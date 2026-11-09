@@ -1,4 +1,6 @@
 import { fuzzyMatchWords, normalizeWords } from "@/lib/search/fuzzy-match";
+import type { FilterOption } from "@/components/shared/filter-chip";
+import { BACKWORK_LIST_CAP } from "@/components/backwork/backwork-library";
 import type { ChapterDocument } from "@/components/documents/document-types";
 
 /**
@@ -13,8 +15,11 @@ import type { ChapterDocument } from "@/components/documents/document-types";
  * backwork (#3525); past it the page says it is showing only part.
  */
 
-/** PostgREST's `max_rows`; a response this long is treated as truncated. */
-export const DOCUMENT_LIST_CAP = 1000;
+/**
+ * PostgREST's `max_rows`, the same cap backwork's list meets; a response this
+ * long is treated as truncated.
+ */
+export const DOCUMENT_LIST_CAP = BACKWORK_LIST_CAP;
 
 export type DocumentSort = "name" | "newest" | "oldest" | "uploader";
 
@@ -43,6 +48,8 @@ export type LibraryDocument = {
   doc: ChapterDocument;
   uploader: string | null;
   words: readonly string[];
+  /** The same text lowercased, for the substring match the title search had. */
+  text: string;
 };
 
 export function toLibraryDocuments(
@@ -51,7 +58,8 @@ export function toLibraryDocuments(
 ): LibraryDocument[] {
   return documents.map((doc) => {
     const uploader = doc.uploaded_by ? uploaderName(doc.uploaded_by) : null;
-    return { doc, uploader, words: normalizeWords(searchText(doc, uploader)) };
+    const text = searchText(doc, uploader);
+    return { doc, uploader, words: normalizeWords(text), text: text.toLowerCase() };
   });
 }
 
@@ -63,17 +71,25 @@ export function searchText(doc: ChapterDocument, uploader: string | null): strin
 }
 
 /**
- * The academic term `now` falls in, as a `[start, end)` pair of local
- * calendar days: spring is January to May, summer June and July, fall August
- * to December. A chapter's calendar varies by school; these are the common
- * US boundaries, and a custom range covers anything else.
+ * Where "this semester" starts: after the end of the most recent archived
+ * semester's `end_date` day, the window `spec/behavior/semester-rollover.md`
+ * defines and the API's `resolveWindowSince('semester')` reads (end of that
+ * day in UTC, exclusive). Null when the chapter has never rolled over, so
+ * "this semester" is everything.
  */
-export function currentSemester(now: Date): { start: Date; end: Date } {
-  const year = now.getFullYear();
-  const month = now.getMonth();
-  const [from, to] = month < 5 ? [0, 5] : month < 7 ? [5, 7] : [7, 12];
-  return { start: new Date(year, from, 1), end: new Date(year, to, 1) };
+export function semesterSince(
+  archives: readonly { end_date: string }[],
+): Date | null {
+  let latest: string | null = null;
+  for (const archive of archives) {
+    const day = archive.end_date?.slice(0, 10);
+    if (day && (latest === null || day > latest)) latest = day;
+  }
+  return latest ? new Date(`${latest}T23:59:59.999Z`) : null;
 }
+
+/** What a date filter is read against. */
+export type DateContext = { now: Date; semesterSince: Date | null };
 
 /** `YYYY-MM-DD` from a date input, as the start of that local day. */
 function dayStart(value: string): Date | null {
@@ -83,16 +99,17 @@ function dayStart(value: string): Date | null {
 }
 
 /** Whether `createdAt` falls inside the filter, read in the viewer's timezone. */
-export function inDateFilter(createdAt: string, filter: DateFilter, now: Date): boolean {
+export function inDateFilter(
+  createdAt: string,
+  filter: DateFilter,
+  { now, semesterSince: since }: DateContext,
+): boolean {
   const at = new Date(createdAt);
   if (Number.isNaN(at.getTime())) return false;
   if (filter.preset === "30d") {
     return now.getTime() - at.getTime() <= 30 * 24 * 60 * 60 * 1000;
   }
-  if (filter.preset === "semester") {
-    const { start, end } = currentSemester(now);
-    return at >= start && at < end;
-  }
+  if (filter.preset === "semester") return since === null || at > since;
   const from = filter.from ? dayStart(filter.from) : null;
   const toStart = filter.to ? dayStart(filter.to) : null;
   // Inclusive of the whole `to` day.
@@ -100,6 +117,16 @@ export function inDateFilter(createdAt: string, filter: DateFilter, now: Date): 
     ? new Date(toStart.getFullYear(), toStart.getMonth(), toStart.getDate() + 1)
     : null;
   return (!from || at >= from) && (!until || at < until);
+}
+
+/**
+ * Whether a date filter narrows anything. "Custom range" with neither date set
+ * is a filter in waiting: it matches everything, so the chip stays untinted
+ * and the page doesn't read it as filtering.
+ */
+export function isActiveDateFilter(filter: DateFilter | null): filter is DateFilter {
+  if (filter === null) return false;
+  return filter.preset !== "custom" || filter.from !== null || filter.to !== null;
 }
 
 /** A short label for the date chip once a filter is on. */
@@ -137,23 +164,29 @@ export function queryDocuments(
   query: string,
   filters: DocumentFilters,
   sort: DocumentSort,
-  now: Date,
+  dates: DateContext,
 ): LibraryDocument[] {
+  const date = isActiveDateFilter(filters.date) ? filters.date : null;
   const filtered = rows.filter(
     (row) =>
       (filters.uploader === null || row.doc.uploaded_by === filters.uploader) &&
-      (filters.date === null || inDateFilter(row.doc.created_at, filters.date, now)),
+      (date === null || inDateFilter(row.doc.created_at, date, dates)),
   );
-  const matched = query.trim()
-    ? fuzzyMatchWords(filtered, query, (row) => row.words).map((result) => result.item)
-    : filtered;
-  return [...matched].sort(COMPARE[sort]);
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [...filtered].sort(COMPARE[sort]);
+  // Words, prefixes and near misses (backwork's matcher), plus any plain
+  // substring, which the server's title search matched and members rely on:
+  // "laws" in "bylaws", "2026" in "FY2026", or a query that is only "_".
+  const fuzzy = new Set(
+    fuzzyMatchWords(filtered, needle, (row) => row.words).map((result) => result.item),
+  );
+  return filtered
+    .filter((row) => fuzzy.has(row) || row.text.includes(needle))
+    .sort(COMPARE[sort]);
 }
 
 /** The Uploaded by chip's choices: only people who have uploaded something. */
-export function uploaderOptions(
-  rows: readonly LibraryDocument[],
-): { value: string; label: string }[] {
+export function uploaderOptions(rows: readonly LibraryDocument[]): FilterOption[] {
   const people = new Map<string, string>();
   for (const row of rows) {
     if (row.doc.uploaded_by && row.uploader && !people.has(row.doc.uploaded_by)) {

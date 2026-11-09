@@ -1,6 +1,6 @@
 "use client";
 
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import {
   displayNameOrNull,
   useDeleteDocument,
@@ -8,6 +8,7 @@ import {
   useDocuments,
   useMemberDisplayNames,
   useMyPermissions,
+  useSemesters,
 } from "@repo/hooks";
 import { can } from "@repo/validation";
 import { Can } from "@/components/shared/can";
@@ -21,7 +22,9 @@ import { DocumentList } from "@/components/documents/document-list";
 import {
   DOCUMENT_LIST_CAP,
   NO_DOCUMENT_FILTERS,
+  isActiveDateFilter,
   queryDocuments,
+  semesterSince,
   toLibraryDocuments,
   uploaderOptions,
   type DocumentFilters,
@@ -99,6 +102,31 @@ function ChapterDocumentsPage() {
     [documents, namesById],
   );
   const uploaders = useMemo(() => uploaderOptions(library), [library]);
+  // A picked uploader the roster no longer names (they left the chapter) is
+  // dropped rather than left filtering under a raw id nobody can see.
+  const uploader = uploaders.some((option) => option.value === filters.uploader)
+    ? filters.uploader
+    : null;
+  const effectiveFilters = useMemo(
+    () => ({ ...filters, uploader }),
+    [filters, uploader],
+  );
+  /*
+    "This semester" is the chapter's own: since its last rollover
+    (`semesterSince`). The clock ticks each minute so "Last 30 days" and the
+    semester line move while the page stays open.
+  */
+  const semestersQuery = useSemesters();
+  const since = useMemo(
+    () =>
+      semesterSince(asArray<{ end_date: string }>(semestersQuery.data)),
+    [semestersQuery.data],
+  );
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   /*
     From `GET /v1/documents/folders`, not derived over `documents` (#791).
@@ -163,19 +191,29 @@ function ChapterDocumentsPage() {
     (`queryDocuments`). All of it is local, so switching folders or typing is
     instant.
   */
-  const visible = useMemo(() => {
-    const inFolder =
+  const inFolder = useMemo(
+    () =>
       activeFolder === null
         ? library
         : library.filter((row) =>
             activeFolder === ""
               ? !row.doc.folder
               : row.doc.folder === activeFolder,
-          );
-    return queryDocuments(inFolder, deferredSearch, filters, sort, new Date());
-  }, [activeFolder, library, deferredSearch, filters, sort]);
+          ),
+    [activeFolder, library],
+  );
+  const visible = useMemo(
+    () =>
+      queryDocuments(inFolder, deferredSearch, effectiveFilters, sort, {
+        now,
+        semesterSince: since,
+      }),
+    [inFolder, deferredSearch, effectiveFilters, sort, now, since],
+  );
   const filtering =
-    !!deferredSearch || filters.uploader !== null || filters.date !== null;
+    !!deferredSearch ||
+    uploader !== null ||
+    isActiveDateFilter(filters.date);
   // A response at PostgREST's row cap may be missing older files.
   const truncated = documents.length >= DOCUMENT_LIST_CAP;
 
@@ -380,13 +418,13 @@ function ChapterDocumentsPage() {
           loadError={documentsQuery.error}
           visible={visible}
           activeFolder={activeFolder}
-          total={library.length}
+          total={inFolder.length}
           truncated={truncated}
           filtering={filtering}
           search={search}
           setSearch={setSearch}
           deferredSearch={deferredSearch}
-          filters={filters}
+          filters={effectiveFilters}
           setFilters={setFilters}
           uploaders={uploaders}
           sort={sort}

@@ -15,6 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   SORT_OPTIONS,
   dateFilterLabel,
+  isActiveDateFilter,
   type DateFilter,
   type DocumentSort,
 } from "@/components/documents/document-library";
@@ -35,7 +36,7 @@ export function DateFilterChip({
   onChange: (value: DateFilter | null) => void;
 }) {
   const id = useId();
-  const active = value !== null;
+  const active = isActiveDateFilter(value);
   const presets: { key: string; label: string; next: DateFilter | null }[] = [
     { key: "any", label: "Any time", next: null },
     { key: "semester", label: "This semester", next: { preset: "semester" } },

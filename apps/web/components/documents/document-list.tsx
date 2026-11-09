@@ -16,11 +16,13 @@ import {
   DateFilterChip,
   SortChip,
 } from "@/components/documents/document-filters";
-import type {
-  DocumentFilters,
-  DocumentSort,
-  LibraryDocument,
+import {
+  DOCUMENT_LIST_CAP,
+  type DocumentFilters,
+  type DocumentSort,
+  type LibraryDocument,
 } from "@/components/documents/document-library";
+import type { FilterOption } from "@/components/shared/filter-chip";
 import { SectionLabel } from "@/components/shared/section-label";
 import {
   dashboardToolbarSearchClassName,
@@ -62,7 +64,7 @@ export function DocumentList({
   loadError?: unknown;
   /** The rows to draw: folder, search, filters and order applied. */
   visible: LibraryDocument[];
-  /** Every document in the library, for "4 of 10". */
+  /** Documents in the open folder before search and filters, for "4 of 10". */
   total: number;
   /** The list response hit PostgREST's row cap, so older files may be missing. */
   truncated: boolean;
@@ -74,7 +76,7 @@ export function DocumentList({
   deferredSearch: string;
   filters: DocumentFilters;
   setFilters: (filters: DocumentFilters) => void;
-  uploaders: readonly { value: string; label: string }[];
+  uploaders: readonly FilterOption[];
   sort: DocumentSort;
   setSort: (sort: DocumentSort) => void;
   /** Clears the search and both filters, leaving the folder and the order. */
@@ -163,6 +165,16 @@ export function DocumentList({
           <SortChip value={sort} onChange={setSort} />
         </div>
       </div>
+      {/*
+        Above the rows and whatever state replaces them, as backwork's is: a
+        search that finds nothing past the cap is exactly when it matters.
+      */}
+      {truncated ? (
+        <p className="pt-2 text-caption text-muted-foreground" role="status">
+          Showing the newest {DOCUMENT_LIST_CAP.toLocaleString("en-US")} documents.
+          Search and filters look only at these for now.
+        </p>
+      ) : null}
       <div className="pt-2">
         {/*
           Still the nested variants even though the card they were chosen
@@ -271,11 +283,6 @@ export function DocumentList({
             ))}
           </ul>
         )}
-        {truncated && listState === "ready" ? (
-          <InlineNote>
-            Showing the newest {total} documents. Older ones aren&apos;t listed.
-          </InlineNote>
-        ) : null}
       </div>
     </section>
   );

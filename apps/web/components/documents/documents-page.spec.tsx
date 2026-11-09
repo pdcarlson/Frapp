@@ -89,6 +89,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     return documentsQuery;
   },
   useDocumentFolders: () => foldersQuery,
+  useSemesters: () => ({ data: [{ end_date: "2026-07-31" }] }),
   useMemberDisplayNames: () => ({ byId: { "u-1": "Marcus Ellison", "u-2": "Ryan Castellano" } }),
   useDocument: () => ({ refetch: mockDocumentRefetch }),
   useRequestDocumentUploadUrl: () => ({ mutateAsync: mockRequestUpload }),
@@ -837,6 +838,45 @@ describe("DocumentsPage search, filters and sort (#3852)", () => {
     await user.click(await screen.findByRole("menuitem", { name: "Newest first" }));
 
     await waitFor(() => expect(rowTitles()).toEqual(["Rush schedule", "Chapter bylaws"]));
+  });
+
+  it("narrows by Date added, and a custom range with no dates narrows nothing", async () => {
+    // BYLAWS was added Aug 1 2026, after the Jul 31 rollover; an older file
+    // falls before this semester.
+    documentsQuery.data = [
+      BYLAWS,
+      { ...RUSH, created_at: "2026-03-01T00:00:00Z" },
+    ];
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.click(screen.getByRole("button", { name: "Date added" }));
+    await user.click(await screen.findByRole("radio", { name: "Custom range" }));
+    expect(rowTitles()).toEqual(["Chapter bylaws", "Rush schedule"]);
+    expect(screen.getByText("2 documents")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("radio", { name: "This semester" }));
+    await waitFor(() => expect(rowTitles()).toEqual(["Chapter bylaws"]));
+    expect(screen.getByText("1 of 2")).toBeInTheDocument();
+  });
+
+  it("says the list is capped, even when a search finds nothing", async () => {
+    documentsQuery.data = Array.from({ length: 1000 }, (_, i) => ({
+      ...BYLAWS,
+      id: `doc-${i}`,
+      title: `Doc ${i}`,
+    }));
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.type(screen.getByLabelText("Search documents"), "zzzz");
+
+    await waitFor(() =>
+      expect(screen.getByText(/No documents match “zzzz”/)).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByText(/Showing the newest 1,000 documents\./),
+    ).toBeInTheDocument();
   });
 
   it("distinguishes 'no matches' from an empty library", async () => {

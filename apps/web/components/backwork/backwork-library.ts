@@ -219,7 +219,6 @@ export function hasActiveFilters(filters: LibraryFilters): boolean {
   return Object.values(filters).some((value) => value !== null);
 }
 
-export type { FilterOption };
 
 type Options = ReturnType<typeof filterOptions>;
 

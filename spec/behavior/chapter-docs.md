@@ -31,12 +31,12 @@ Document listing accepts an optional case-insensitive substring match on the tit
 
 **Web searches, filters and sorts on the client** *(2026-11-09, #3852; Shawn's idea)*. `/documents` reads the chapter's whole library once (`GET /v1/documents` with no `search`) and does the rest in memory, as `/backwork` does (`apps/web/components/documents/document-library.ts`, reusing `@/lib/search/fuzzy-match`):
 
-- **Search** matches the title, description, uploader's name, folder and document type, every query word required, with backwork's typo tolerance. It works offline over the library already loaded.
-- **Uploaded by** offers only people the chapter roster can name who have uploaded something. A departed member's files keep showing, just without a name.
-- **Date added** offers any time, this semester (spring January to May, summer June and July, fall August to December), the last 30 days, or a custom from and to range, inclusive and read in the viewer's timezone.
+- **Search** matches the title, description, uploader's name, folder and document type: every query word must match a word, a word's start, or a near miss (backwork's typo tolerance), or the query must appear anywhere in that text, as the server's title search matched ("laws" finds "bylaws", and `%` or `_` is just a character). It works offline over the library already loaded.
+- **Uploaded by** offers only people the chapter roster can name who have uploaded something. A departed member's files keep showing, just without a name, and a filter on someone who has since left is dropped.
+- **Date added** offers any time; this semester, which is the chapter's own window from [semester-rollover.md](semester-rollover.md) (after the end of the latest archive's `end_date` day, or everything before a first rollover), read as the API's `resolveWindowSince('semester')` reads it; the last 30 days; or a custom from and to range, inclusive and read in the viewer's timezone. A custom range with no dates set filters nothing. The windows move while the page stays open.
 - **Sort** orders by name A to Z (the default, and the order before #3852), newest first, oldest first, or uploader A to Z. The chosen order applies whether or not a search is typed.
 - **Rows** read "Uploaded Sep 26 by Ryan Castellano · …" when the roster can name the uploader.
-- **Cap.** A response at PostgREST's 1,000-row `max_rows` is treated as truncated, and the page says it is showing only the newest. Backwork hit this cap (#3525); a chapter's documents are far fewer.
+- **Cap.** A response at PostgREST's 1,000-row `max_rows` is treated as truncated, and a status line above the list says it is showing only the newest, whatever the list below shows. Backwork hit this cap (#3525); a chapter's documents are far fewer.
 
 The server's `search` parameter stays for mobile's s12, which still searches titles on the server.
 
