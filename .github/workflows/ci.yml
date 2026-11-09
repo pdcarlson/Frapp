@@ -752,7 +752,19 @@ jobs:
         with:
           install: none
 
-      # scan-secrets.mjs fetches the pinned gitleaks binary on first run (no npm ci needed).
+      # The pinned gitleaks binary, kept between runs so a scan needs no
+      # download from GitHub releases. Four runs failed on 2026-11-09 when that
+      # download returned 504 for half an hour (#3812). Keyed on the
+      # installer, which pins the version, so a bump misses and downloads the
+      # new one; the installer also checks the cached binary's version. A miss
+      # that can't download still fails the job: the scan never skips.
+      - name: Restore the pinned gitleaks binary
+        uses: actions/cache@v6
+        with:
+          path: .cache/gitleaks
+          key: gitleaks-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/install-gitleaks.sh') }}
+
+      # scan-secrets.mjs runs the installer, a no-op on a cache hit (no npm ci needed).
       - name: Scan PR commit range for secrets
         if: github.event_name == 'pull_request'
         run: node scripts/scan-secrets.mjs --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
