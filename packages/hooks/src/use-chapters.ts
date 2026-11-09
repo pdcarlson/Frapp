@@ -130,6 +130,7 @@ export function useOnboardChapter() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["chapters", "onboard-chapter"],
     mutationFn: async (body: OnboardChapterInput) => {
       const { data, error } = await client.POST("/v1/chapters/onboard", {
         body,
@@ -159,6 +160,7 @@ export function useActivateChapter() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["chapters", "activate-chapter"],
     mutationFn: async (chapterId: string) => {
       const { data, error } = await client.POST("/v1/chapters/{id}/activate", {
         params: { path: { id: chapterId } },
@@ -212,6 +214,7 @@ export function useUpdateChapter() {
   const client = useFrappClient();
   const invalidate = useInvalidateCurrentChapter();
   return useMutation({
+    mutationKey: ["chapters", "update-chapter"],
     mutationFn: async (body: {
       name?: string;
       university?: string;
@@ -253,6 +256,7 @@ export function useUploadChapterLogo() {
   const client = useFrappClient();
   const invalidate = useInvalidateCurrentChapter();
   return useMutation({
+    mutationKey: ["chapters", "upload-chapter-logo"],
     mutationFn: async ({ body, filename, contentType }: ChapterLogoUpload) => {
       const signed = await mintChapterLogoUpload(client, filename, contentType);
       const { signedUrl, storagePath } = readSignedUpload(signed);
@@ -281,6 +285,7 @@ export function useUploadChapterLogo() {
 export function useRequestChapterLogoUploadUrl() {
   const client = useFrappClient();
   return useMutation({
+    mutationKey: ["chapters", "request-chapter-logo-upload-url"],
     mutationFn: (body: { filename: string; content_type: string }) =>
       mintChapterLogoUpload(client, body.filename, body.content_type),
   });
@@ -295,6 +300,7 @@ export function useConfirmChapterLogo() {
   const client = useFrappClient();
   const invalidate = useInvalidateCurrentChapter();
   return useMutation({
+    mutationKey: ["chapters", "confirm-chapter-logo"],
     mutationFn: (storagePath: string) =>
       confirmChapterLogo(client, storagePath),
     // Returned, so the mutation resolves only once the refetch lands.
@@ -307,6 +313,7 @@ export function useRemoveChapterLogo() {
   const client = useFrappClient();
   const invalidate = useInvalidateCurrentChapter();
   return useMutation({
+    mutationKey: ["chapters", "remove-chapter-logo"],
     mutationFn: async () => {
       const { data, error } = await client.DELETE("/v1/chapters/current/logo");
       if (error) throw error;

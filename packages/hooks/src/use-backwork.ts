@@ -114,6 +114,7 @@ export function useSaveBackworkCourse() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["backwork", "save-backwork-course"],
     mutationFn: async (body: {
       department_id: string;
       course_number: string;
@@ -191,6 +192,7 @@ export function useDeleteBackworkResource() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["backwork", "delete-backwork-resource"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.DELETE("/v1/backwork/{id}", {
         params: { path: { id } },
@@ -207,6 +209,7 @@ export function useDeleteBackworkResource() {
 export function useRequestBackworkUploadUrl() {
   const client = useFrappClient();
   return useMutation({
+    mutationKey: ["backwork", "request-backwork-upload-url"],
     // `size_bytes` lets the API refuse an oversized file before the PUT
     // (its 100 MB backwork ceiling) rather than storage refusing it after.
     mutationFn: async (body: {
@@ -227,6 +230,7 @@ export function useConfirmBackworkUpload() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["backwork", "confirm-backwork-upload"],
     mutationFn: async (body: {
       storage_path: string;
       file_hash: string;
@@ -300,6 +304,7 @@ export function useUpdateDepartment() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["backwork", "update-department"],
     mutationFn: async ({
       id,
       body,
@@ -327,6 +332,7 @@ export function useDeleteDepartment() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["backwork", "delete-department"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.DELETE(
         "/v1/backwork/departments/{id}",
@@ -348,6 +354,7 @@ export function useMergeDepartments() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["backwork", "merge-departments"],
     mutationFn: async ({
       id,
       targetId,
@@ -374,6 +381,7 @@ export function useUpdateProfessor() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["backwork", "update-professor"],
     mutationFn: async ({
       id,
       body,
@@ -401,6 +409,7 @@ export function useDeleteProfessor() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["backwork", "delete-professor"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.DELETE(
         "/v1/backwork/professors/{id}",
@@ -422,6 +431,7 @@ export function useMergeProfessors() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["backwork", "merge-professors"],
     mutationFn: async ({
       id,
       targetId,
