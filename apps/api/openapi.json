@@ -2401,6 +2401,46 @@
         ]
       }
     },
+    "/v1/invites/mine": {
+      "get": {
+        "operationId": "InviteController_listMine_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PendingInviteDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Pending invites emailed to the caller's verified address, with their tokens",
+        "tags": [
+          "Invites"
+        ]
+      }
+    },
     "/v1/invites/{id}": {
       "delete": {
         "operationId": "InviteController_revoke_v1",
@@ -12391,6 +12431,53 @@
           }
         },
         "required": [
+          "token"
+        ]
+      },
+      "PendingInviteDto": {
+        "type": "object",
+        "properties": {
+          "chapter_name": {
+            "type": "string"
+          },
+          "university": {
+            "type": "string"
+          },
+          "mark_text": {
+            "type": "string",
+            "nullable": true,
+            "description": "The chapter's text mark: its short name, else its Greek letters if it shows them, else null. Never letters the chapter hides, nor those of an organization that never displays them (such as Phi Gamma Delta), whatever the chapter's stored switch says (#3421)."
+          },
+          "accent_color": {
+            "type": "string",
+            "nullable": true
+          },
+          "invited_by": {
+            "type": "string",
+            "nullable": true,
+            "description": "The inviter's display name, or null when it can't be read."
+          },
+          "role": {
+            "type": "string",
+            "nullable": true,
+            "description": "The role name joining grants, or null when it would grant none (the invite role is gone and the chapter has no Member role)"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string",
+            "description": "The single-use token, for redeem. Returned only because the invite was emailed to the address Auth verified for the caller."
+          }
+        },
+        "required": [
+          "chapter_name",
+          "university",
+          "mark_text",
+          "accent_color",
+          "invited_by",
+          "role",
+          "expires_at",
           "token"
         ]
       },

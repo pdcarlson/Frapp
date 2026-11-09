@@ -8,6 +8,7 @@ import type {
 import { IInviteRepository } from '#domain/repositories/invite.repository.interface';
 import { Invite } from '#domain/entities/invite.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
+import { escapeLikePattern } from '../supabase.utils';
 
 @Injectable()
 export class SupabaseInviteRepository implements IInviteRepository {
@@ -53,6 +54,28 @@ export class SupabaseInviteRepository implements IInviteRepository {
       .order('created_at', { ascending: false });
     if (error) throw new SupabaseQueryError(error);
     return data || [];
+  }
+
+  async findPendingByEmail(email: string, now: Date): Promise<Invite[]> {
+    // Narrowed in SQL, decided in code. The `ilike` bounds the read to this
+    // address (case-insensitively: addresses are stored as typed), but it is
+    // not exact on its own: PostgREST reads `*` in a like pattern as `%`, and
+    // no escaping turns it back into a literal, so `*@school.edu` would match
+    // everyone at that domain. The comparison below is what decides, so a `*`
+    // can only widen the read, never the answer.
+    const wanted = email.trim().toLowerCase();
+    const { data, error } = await this.supabase
+      .from('invites')
+      .select('*')
+      .ilike('email', escapeLikePattern(wanted))
+      .is('used_at', null)
+      .is('revoked_at', null)
+      .gt('expires_at', now.toISOString())
+      .order('created_at', { ascending: false });
+    if (error) throw new SupabaseQueryError(error);
+    return (data || []).filter(
+      (invite) => invite.email?.trim().toLowerCase() === wanted,
+    );
   }
 
   async create(inviteData: TablesInsert<'invites'>): Promise<Invite> {
