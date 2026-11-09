@@ -80,7 +80,7 @@ export function DateFilterChip({
               disabled={preset.key === "semester" && !semesterKnown}
               title={
                 preset.key === "semester" && !semesterKnown
-                  ? "Loading the chapter's semesters"
+                  ? "The chapter's semesters haven't loaded"
                   : undefined
               }
               onClick={() => onChange(preset.next)}
