@@ -31,6 +31,7 @@ describe('NotificationController', () => {
       removePushToken: jest.fn(),
       listNotifications: jest.fn(),
       markNotificationRead: jest.fn(),
+      markNotificationsRead: jest.fn(),
       getPreferences: jest.fn(),
       updatePreference: jest.fn(),
       getSettings: jest.fn(),
@@ -95,6 +96,24 @@ describe('NotificationController', () => {
         userId,
       );
       expect(result).toEqual({ success: true });
+    });
+  });
+
+  describe('markAllRead (#3929)', () => {
+    it('marks the caller rows read in the active chapter, passing the screens through', async () => {
+      const answer = { read_at: '2026-11-09T22:00:00.000Z', updated: 3 };
+      notificationService.markNotificationsRead.mockResolvedValue(answer);
+
+      const result = await controller.markAllRead('user-1', 'chapter-1', {
+        screens: ['events'],
+      });
+
+      expect(notificationService.markNotificationsRead).toHaveBeenCalledWith(
+        'user-1',
+        'chapter-1',
+        { screens: ['events'] },
+      );
+      expect(result).toEqual(answer);
     });
   });
 

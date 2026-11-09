@@ -46,6 +46,18 @@ export interface INotificationRepository {
     channelId: string,
     readThrough: string,
   ): Promise<void>;
+  /**
+   * Mark read every unread row this member has in the chapter, created at or
+   * before `readThrough` (#3929), and return how many changed. `screens`
+   * narrows it to rows whose `data.target.screen` is one of them; omitted, it
+   * is every row, chat rows the in-app list withholds included.
+   */
+  markAllRead(
+    userId: string,
+    chapterId: string,
+    readThrough: string,
+    screens?: readonly string[],
+  ): Promise<number>;
 }
 
 export interface IPushTokenRepository {

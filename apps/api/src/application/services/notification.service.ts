@@ -823,6 +823,31 @@ export class NotificationService {
     );
   }
 
+  /**
+   * Mark the member's unread notifications in this chapter read in one write
+   * (#3929): all of them for "Mark all read", or only the rows that point at
+   * `screens` once the member has opened one of those screens. Rows created
+   * after this call began stay unread. Answers with the stamp it wrote, so a
+   * client can put the same instant in its cache.
+   */
+  async markNotificationsRead(
+    userId: string,
+    chapterId: string,
+    options?: { screens?: readonly string[] },
+  ): Promise<{ read_at: string; updated: number }> {
+    const readAt = new Date().toISOString();
+    const screens = options?.screens?.length
+      ? [...new Set(options.screens)]
+      : undefined;
+    const updated = await this.notificationRepo.markAllRead(
+      userId,
+      chapterId,
+      readAt,
+      screens,
+    );
+    return { read_at: readAt, updated };
+  }
+
   async registerPushToken(
     userId: string,
     token: string,

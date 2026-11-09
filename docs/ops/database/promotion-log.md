@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-09: Clear chat notifications already seen (#3929)
+
+### 20261109233000_notifications_backfill_seen_chat_rows.sql
+
+- **Purpose**: One-off data backfill on `notifications`, no schema change. Marks read every unread chat row (`data.target.screen` is `chat`) its member's `channel_read_receipts.last_read_at` already covers (the row was created at or before the receipt), stamping `read_at` with the receipt's instant, and every unread chat row whose channel no longer exists, stamped `now()`. Since #3788 the API clears these on each channel read; rows from before that API was live stayed unread (in production on 2026-11-09, 16 of the owner's 17 unread chat rows were older than his own receipt, and one named a deleted channel). Rows newer than the receipt and every non-chat row are untouched. The rule is [`spec/behavior/notifications.md`](../../../spec/behavior/notifications.md#delivery-flow) § How an in-app row is marked read.
+- **Checks**: After `db push`, `select count(*) from notifications n join channel_read_receipts r on r.user_id = n.user_id and r.channel_id::text = n.data->'target'->>'channelId' where n.read_at is null and n.data->'target'->>'screen' = 'chat' and n.created_at <= r.last_read_at;` returns `0`.
+- **Promoter notes**: Order-free against the API, and worth little without an API that carries #3807: an older API never clears a chat row on a channel read, so new stale rows build up again after the backfill. Both statements match only `read_at is null`, so re-applying changes nothing. Each fires the `notif:<users.id>` change ping once per affected member; an open client refetches. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-notifications-seen-chat-backfill-20261109233000) § Rollback notifications seen-chat backfill.
+
 ## 2026-11-09: Member status and Do Not Disturb
 
 ### 20261109230001_user_settings_member_status.sql
