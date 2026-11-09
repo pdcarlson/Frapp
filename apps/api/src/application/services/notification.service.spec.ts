@@ -1094,6 +1094,30 @@ describe('NotificationService', () => {
       expectSilentPush();
     });
 
+    it('still rings URGENT for a member with DND on, on the batched path (#3845)', async () => {
+      stubChapterNotify({
+        settings: [
+          {
+            ...baseSettings,
+            quiet_hours_start: null,
+            quiet_hours_end: null,
+            status: 'dnd',
+          },
+        ],
+      });
+
+      await service.notifyChapter('ch-1', {
+        title: 'Urgent',
+        body: 'Emergency',
+        priority: 'URGENT',
+      });
+
+      expect(mockPushProvider.sendToUser).toHaveBeenCalledWith(
+        [basePushToken.token],
+        expect.objectContaining({ priority: 'URGENT' }),
+      );
+    });
+
     it('reports a failed insert chunk once and still delivers the surviving chunk', async () => {
       const warn = spyWarn();
       const error = jest

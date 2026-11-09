@@ -3207,9 +3207,9 @@ alter table public.discord_import_channels
 
 Dropping it loses only the scan's record. Each mapped row keeps the `new_channel_is_read_only` it saved, and the channels an import already created keep their own `is_read_only`.
 
-## Rollback user settings member status (20261109213000)
+## Rollback user settings member status (20261109230001)
 
-* **Migration**: `20261109213000_user_settings_member_status.sql`
+* **Migration**: `20261109230001_user_settings_member_status.sql`
 
 Four columns on `user_settings`: `status`, `status_expires_at`, `custom_status` and `custom_status_expires_at`, with their checks. Nothing was backfilled.
 
