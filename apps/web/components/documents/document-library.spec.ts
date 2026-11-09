@@ -104,8 +104,19 @@ describe("queryDocuments", () => {
 describe("date filters", () => {
   it("starts this semester after the latest archive's end day, as the API does", () => {
     expect(
-      semesterSince([{ end_date: "2026-01-15" }, { end_date: "2026-07-31" }]),
+      semesterSince([
+        { end_date: "2026-01-15", created_at: "2026-01-16T00:00:00Z" },
+        { end_date: "2026-07-31", created_at: "2026-08-01T00:00:00Z" },
+      ]),
     ).toEqual(new Date("2026-07-31T23:59:59.999Z"));
+    // The newest archive wins even with an earlier end date, as the API's
+    // findLatestByChapter picks it (a correction filed after the fact).
+    expect(
+      semesterSince([
+        { end_date: "2027-12-31", created_at: "2026-10-01T00:00:00Z" },
+        { end_date: "2026-05-15", created_at: "2026-11-01T00:00:00Z" },
+      ]),
+    ).toEqual(new Date("2026-05-15T23:59:59.999Z"));
     // Never rolled over: this semester is everything.
     expect(semesterSince([])).toBeNull();
     const noArchive = { now: NOW, semesterSince: null };
@@ -124,6 +135,18 @@ describe("date filters", () => {
     expect(inDateFilter(new Date(2026, 8, 26, 0, 1).toISOString(), sept, DATES)).toBe(false);
     expect(inDateFilter("2020-01-01T00:00:00Z", { preset: "custom", from: null, to: "2026-01-01" }, DATES)).toBe(true);
     expect(dateFilterLabel(sept)).toBe("2026-09-01 to 2026-09-25");
+  });
+
+  it("applies no semester filter while the archives are unknown", () => {
+    const rows = queryDocuments(
+      ROWS,
+      "",
+      { uploader: null, date: { preset: "semester" } },
+      "name",
+      { now: NOW, semesterSince: undefined },
+    );
+    expect(rows).toHaveLength(3);
+    expect(isActiveDateFilter({ preset: "semester" }, false)).toBe(false);
   });
 
   it("treats a custom range with no dates as no filter yet", () => {

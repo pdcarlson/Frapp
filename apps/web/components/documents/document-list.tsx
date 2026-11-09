@@ -47,6 +47,7 @@ export function DocumentList({
   setSearch,
   deferredSearch,
   filters,
+  semesterKnown,
   setFilters,
   uploaders,
   sort,
@@ -75,6 +76,8 @@ export function DocumentList({
   setSearch: (search: string) => void;
   deferredSearch: string;
   filters: DocumentFilters;
+  /** The chapter's semester archives have loaded. */
+  semesterKnown: boolean;
   setFilters: (filters: DocumentFilters) => void;
   uploaders: readonly FilterOption[];
   sort: DocumentSort;
@@ -159,6 +162,7 @@ export function DocumentList({
             onChange={(uploader) => setFilters({ ...filters, uploader })}
           />
           <DateFilterChip
+            semesterKnown={semesterKnown}
             value={filters.date}
             onChange={(date) => setFilters({ ...filters, date })}
           />
@@ -169,7 +173,7 @@ export function DocumentList({
         Above the rows and whatever state replaces them, as backwork's is: a
         search that finds nothing past the cap is exactly when it matters.
       */}
-      {truncated ? (
+      {truncated && (listState === "ready" || listState === "empty") ? (
         <p className="pt-2 text-caption text-muted-foreground" role="status">
           Showing the newest {DOCUMENT_LIST_CAP.toLocaleString("en-US")} documents.
           Search and filters look only at these for now.

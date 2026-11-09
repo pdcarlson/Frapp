@@ -71,25 +71,32 @@ export function searchText(doc: ChapterDocument, uploader: string | null): strin
 }
 
 /**
- * Where "this semester" starts: after the end of the most recent archived
- * semester's `end_date` day, the window `spec/behavior/semester-rollover.md`
- * defines and the API's `resolveWindowSince('semester')` reads (end of that
- * day in UTC, exclusive). Null when the chapter has never rolled over, so
- * "this semester" is everything.
+ * Where "this semester" starts: after the end of the most recently created
+ * archive's `end_date` day. That is the window `spec/behavior/semester-rollover.md`
+ * defines, picked the way the API picks it (`findLatestByChapter`, newest
+ * `created_at`) and read the way `resolveWindowSince('semester')` reads it
+ * (end of that day in UTC, exclusive). Null when the chapter has never rolled
+ * over, so "this semester" is everything.
  */
 export function semesterSince(
-  archives: readonly { end_date: string }[],
+  archives: readonly { end_date: string; created_at?: string }[],
 ): Date | null {
-  let latest: string | null = null;
+  let latest: { end_date: string; created_at?: string } | null = null;
   for (const archive of archives) {
-    const day = archive.end_date?.slice(0, 10);
-    if (day && (latest === null || day > latest)) latest = day;
+    if (!archive.end_date) continue;
+    if (latest === null || (archive.created_at ?? "") > (latest.created_at ?? "")) {
+      latest = archive;
+    }
   }
-  return latest ? new Date(`${latest}T23:59:59.999Z`) : null;
+  return latest ? new Date(`${latest.end_date.slice(0, 10)}T23:59:59.999Z`) : null;
 }
 
-/** What a date filter is read against. */
-export type DateContext = { now: Date; semesterSince: Date | null };
+/**
+ * What a date filter is read against. `semesterSince` is `undefined` while
+ * the archives are loading or failed to load: the semester is unknown, which
+ * is not the same as a chapter that never rolled over (`null`).
+ */
+export type DateContext = { now: Date; semesterSince: Date | null | undefined };
 
 /** `YYYY-MM-DD` from a date input, as the start of that local day. */
 function dayStart(value: string): Date | null {
@@ -109,7 +116,8 @@ export function inDateFilter(
   if (filter.preset === "30d") {
     return now.getTime() - at.getTime() <= 30 * 24 * 60 * 60 * 1000;
   }
-  if (filter.preset === "semester") return since === null || at > since;
+  // Unknown (`undefined`) never reaches here: `queryDocuments` drops the filter.
+  if (filter.preset === "semester") return since == null || at > since;
   const from = filter.from ? dayStart(filter.from) : null;
   const toStart = filter.to ? dayStart(filter.to) : null;
   // Inclusive of the whole `to` day.
@@ -124,8 +132,12 @@ export function inDateFilter(
  * is a filter in waiting: it matches everything, so the chip stays untinted
  * and the page doesn't read it as filtering.
  */
-export function isActiveDateFilter(filter: DateFilter | null): filter is DateFilter {
+export function isActiveDateFilter(
+  filter: DateFilter | null,
+  semesterKnown = true,
+): filter is DateFilter {
   if (filter === null) return false;
+  if (filter.preset === "semester") return semesterKnown;
   return filter.preset !== "custom" || filter.from !== null || filter.to !== null;
 }
 
@@ -166,7 +178,9 @@ export function queryDocuments(
   sort: DocumentSort,
   dates: DateContext,
 ): LibraryDocument[] {
-  const date = isActiveDateFilter(filters.date) ? filters.date : null;
+  const date = isActiveDateFilter(filters.date, dates.semesterSince !== undefined)
+    ? filters.date
+    : null;
   const filtered = rows.filter(
     (row) =>
       (filters.uploader === null || row.doc.uploaded_by === filters.uploader) &&

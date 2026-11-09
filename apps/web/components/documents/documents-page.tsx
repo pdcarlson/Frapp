@@ -9,6 +9,7 @@ import {
   useMemberDisplayNames,
   useMyPermissions,
   useSemesters,
+  type SemesterArchive,
 } from "@repo/hooks";
 import { can } from "@repo/validation";
 import { Can } from "@/components/shared/can";
@@ -101,12 +102,20 @@ function ChapterDocumentsPage() {
       ),
     [documents, namesById],
   );
-  const uploaders = useMemo(() => uploaderOptions(library), [library]);
   // A picked uploader the roster no longer names (they left the chapter) is
-  // dropped rather than left filtering under a raw id nobody can see.
-  const uploader = uploaders.some((option) => option.value === filters.uploader)
-    ? filters.uploader
-    : null;
+  // dropped rather than left filtering under a raw id nobody can see. One the
+  // roster still names stays picked even with no files left, and stays in the
+  // menu, so the list says nothing matches rather than quietly widening.
+  const pickedName =
+    filters.uploader === null ? null : displayNameOrNull(namesById[filters.uploader]);
+  const uploader = pickedName === null ? null : filters.uploader;
+  const uploaders = useMemo(() => {
+    const options = uploaderOptions(library);
+    if (uploader !== null && pickedName !== null && !options.some((o) => o.value === uploader)) {
+      options.push({ value: uploader, label: pickedName });
+    }
+    return options;
+  }, [library, uploader, pickedName]);
   const effectiveFilters = useMemo(
     () => ({ ...filters, uploader }),
     [filters, uploader],
@@ -117,9 +126,12 @@ function ChapterDocumentsPage() {
     semester line move while the page stays open.
   */
   const semestersQuery = useSemesters();
+  // `undefined` until the archives load: unknown, never "no rollover yet".
   const since = useMemo(
     () =>
-      semesterSince(asArray<{ end_date: string }>(semestersQuery.data)),
+      semestersQuery.data === undefined
+        ? undefined
+        : semesterSince(asArray<SemesterArchive>(semestersQuery.data)),
     [semestersQuery.data],
   );
   const [now, setNow] = useState(() => new Date());
@@ -213,7 +225,7 @@ function ChapterDocumentsPage() {
   const filtering =
     !!deferredSearch ||
     uploader !== null ||
-    isActiveDateFilter(filters.date);
+    isActiveDateFilter(filters.date, since !== undefined);
   // A response at PostgREST's row cap may be missing older files.
   const truncated = documents.length >= DOCUMENT_LIST_CAP;
 
@@ -425,6 +437,7 @@ function ChapterDocumentsPage() {
           setSearch={setSearch}
           deferredSearch={deferredSearch}
           filters={effectiveFilters}
+          semesterKnown={since !== undefined}
           setFilters={setFilters}
           uploaders={uploaders}
           sort={sort}

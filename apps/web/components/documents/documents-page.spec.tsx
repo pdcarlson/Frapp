@@ -860,6 +860,22 @@ describe("DocumentsPage search, filters and sort (#3852)", () => {
     expect(screen.getByText("1 of 2")).toBeInTheDocument();
   });
 
+  it("keeps a picked uploader whose last file went, and says nothing matches", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<DocumentsPage />);
+    await user.click(screen.getByRole("button", { name: "Uploaded by" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Ryan Castellano" }));
+    await waitFor(() => expect(rowTitles()).toEqual(["Rush schedule"]));
+
+    documentsQuery.data = [BYLAWS];
+    rerender(<DocumentsPage />);
+
+    expect(await screen.findByText("No documents match these filters.")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Uploaded by: Ryan Castellano" }),
+    ).toBeInTheDocument();
+  });
+
   it("says the list is capped, even when a search finds nothing", async () => {
     documentsQuery.data = Array.from({ length: 1000 }, (_, i) => ({
       ...BYLAWS,

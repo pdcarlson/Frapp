@@ -30,13 +30,16 @@ const CHIP = "gap-1 rounded-full font-semibold";
  */
 export function DateFilterChip({
   value,
+  semesterKnown,
   onChange,
 }: {
   value: DateFilter | null;
+  /** The chapter's semester archives have loaded; until then "This semester" waits. */
+  semesterKnown: boolean;
   onChange: (value: DateFilter | null) => void;
 }) {
   const id = useId();
-  const active = isActiveDateFilter(value);
+  const active = isActiveDateFilter(value, semesterKnown);
   const presets: { key: string; label: string; next: DateFilter | null }[] = [
     { key: "any", label: "Any time", next: null },
     { key: "semester", label: "This semester", next: { preset: "semester" } },
@@ -74,8 +77,14 @@ export function DateFilterChip({
               type="button"
               role="radio"
               aria-checked={current === preset.key}
+              disabled={preset.key === "semester" && !semesterKnown}
+              title={
+                preset.key === "semester" && !semesterKnown
+                  ? "Loading the chapter's semesters"
+                  : undefined
+              }
               onClick={() => onChange(preset.next)}
-              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-card-hover focus-visible:bg-card-hover focus-visible:outline-none"
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-card-hover focus-visible:bg-card-hover focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
             >
               <Check
                 className={cn("h-4 w-4", current !== preset.key && "invisible")}
