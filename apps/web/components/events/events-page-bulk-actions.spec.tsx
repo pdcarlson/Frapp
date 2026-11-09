@@ -30,7 +30,28 @@ const EVENTS = [
     is_mandatory: true,
     point_value: 5,
   },
+  // Long over, so its check-in has closed and auto-absent can run. Shown
+  // under the "Past" time filter.
+  {
+    id: "evt-past",
+    name: "Spring Retreat",
+    location: "Lodge",
+    start_time: "2020-04-01T18:00:00.000Z",
+    end_time: "2020-04-01T19:00:00.000Z",
+    is_mandatory: true,
+    point_value: 5,
+  },
 ];
+
+async function selectSpringRetreat(user: ReturnType<typeof userEvent.setup>) {
+  await user.selectOptions(
+    screen.getByLabelText("Filter events by time window"),
+    "past",
+  );
+  await user.click(
+    screen.getByRole("checkbox", { name: /select spring retreat/i }),
+  );
+}
 
 vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => ({
@@ -126,9 +147,7 @@ describe("EventsPage bulk actions", () => {
     autoAbsentMutateAsync.mockResolvedValue({ marked: 3 });
     const user = userEvent.setup();
     render(<EventsPage />);
-    await user.click(
-      screen.getByRole("checkbox", { name: /select chapter meeting/i }),
-    );
+    await selectSpringRetreat(user);
 
     await user.click(
       screen.getByRole("button", { name: /mark attendance complete/i }),
@@ -148,7 +167,7 @@ describe("EventsPage bulk actions", () => {
     );
 
     await waitFor(() =>
-      expect(autoAbsentMutateAsync).toHaveBeenCalledWith("evt-1"),
+      expect(autoAbsentMutateAsync).toHaveBeenCalledWith("evt-past"),
     );
     await waitFor(() =>
       expect(toastSpy).toHaveBeenCalledWith(
@@ -180,9 +199,7 @@ describe("EventsPage bulk actions", () => {
     });
     const user = userEvent.setup();
     render(<EventsPage />);
-    await user.click(
-      screen.getByRole("checkbox", { name: /select chapter meeting/i }),
-    );
+    await selectSpringRetreat(user);
     await user.click(
       screen.getByRole("button", { name: /mark attendance complete/i }),
     );
@@ -202,7 +219,7 @@ describe("EventsPage bulk actions", () => {
           // generic "probably the grace period" guess that would be wrong
           // here — the mutation actually rejected with a different message.
           description: expect.stringContaining(
-            "Chapter Meeting: Wait until the grace period ends to mark absences.",
+            "Spring Retreat: Wait until the grace period ends to mark absences.",
           ),
         }),
       ),
@@ -210,7 +227,38 @@ describe("EventsPage bulk actions", () => {
     // Selection survives a failure so the officer can retry once the grace
     // period passes, rather than having to re-select from scratch.
     expect(
-      screen.getByRole("checkbox", { name: /select chapter meeting/i }),
+      screen.getByRole("checkbox", { name: /select spring retreat/i }),
     ).toBeChecked();
+  });
+
+  it("doesn't send an event whose check-in is still open, and names it (FRAPP-WEB-7)", async () => {
+    // The API refuses auto-absent until check-in closes, 15 minutes after
+    // the end; sending it anyway only produced that 400, reported to Sentry.
+    const user = userEvent.setup();
+    render(<EventsPage />);
+    await user.click(
+      screen.getByRole("checkbox", { name: /select chapter meeting/i }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: /mark attendance complete/i }),
+    );
+    const dialog = screen.getByRole("dialog");
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: /^mark attendance complete$/i,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Some events couldn't be finalized",
+          description: expect.stringMatching(
+            /0 succeeded, 1 failed\. Chapter Meeting: Check-in is open until /,
+          ),
+        }),
+      ),
+    );
+    expect(autoAbsentMutateAsync).not.toHaveBeenCalled();
   });
 });

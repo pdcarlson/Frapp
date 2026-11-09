@@ -226,6 +226,34 @@ describe("AttendancePanel subscription gating", () => {
   });
 });
 
+describe("AttendancePanel auto-absent before check-in closes (FRAPP-WEB-7)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("waits for check-in to close, which is when the API accepts it", () => {
+    chapter.active();
+    // Ended five minutes ago: still inside the 15-minute check-in grace.
+    const end = new Date(Date.now() - 5 * 60_000).toISOString();
+    render(<AttendancePanel eventId="evt-1" eventEnd={end} />);
+
+    expect(autoAbsentButton()).toBeDisabled();
+    expect(autoAbsentButton()).toHaveAttribute(
+      "title",
+      expect.stringMatching(/^Available once check-in closes at /),
+    );
+    // The row write is not held: officers correct statuses during check-in.
+    expect(rowStatusSelect()).toBeEnabled();
+  });
+
+  it("offers it once check-in has closed", () => {
+    chapter.active();
+    const end = new Date(Date.now() - 20 * 60_000).toISOString();
+    render(<AttendancePanel eventId="evt-1" eventEnd={end} />);
+
+    expect(autoAbsentButton()).toBeEnabled();
+    expect(autoAbsentButton()).not.toHaveAttribute("title");
+  });
+});
+
 describe("EventsPage subscription gating", () => {
   // `POST /v1/events` and `PATCH /v1/events/:id` are paid-ops. The page owns the
   // editor dialog's `open`, so §5 rule 1 lands here: the New event button and

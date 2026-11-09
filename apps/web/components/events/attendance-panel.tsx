@@ -9,6 +9,7 @@ import {
   useAttendance,
   useAutoAbsent,
   useMembers,
+  useNow,
   useUpdateAttendanceStatus,
 } from "@repo/hooks";
 import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
@@ -36,6 +37,8 @@ import {
 } from "@/components/events/attendance-status";
 import type { AttendanceStatus } from "@/components/events/attendance-status";
 import { checkInLabel } from "@/components/events/event-labels";
+import { formatTimeOfDay } from "@repo/formatting";
+import { checkInClosesAt } from "@/components/events/check-in-close";
 import { InlineNote } from "@/components/shared/inline-note";
 
 type AttendanceRow = {
@@ -50,6 +53,7 @@ type AttendanceRow = {
 export function AttendancePanel({
   eventId,
   eventStart,
+  eventEnd,
 }: {
   eventId: string;
   /**
@@ -57,6 +61,12 @@ export function AttendancePanel({
    * time alone ("Checked in 5:03 PM") and one on another day names the day.
    */
   eventStart?: unknown;
+  /**
+   * The event's `end_time`. Auto-absent is refused (400) until check-in
+   * closes, so the button waits for the same instant. Without it the button
+   * is offered and the server's answer stands.
+   */
+  eventEnd?: unknown;
 }) {
   const chapterId = useActiveChapterId();
   const { toast } = useToast();
@@ -69,6 +79,20 @@ export function AttendancePanel({
   // Reading attendance stays live — `enforceSubscription` returns early for
   // GET, so a lapsed chapter can still see who showed up.
   const gate = useSubscriptionGate();
+  const now = useNow();
+  const closesAt = checkInClosesAt(eventEnd, now);
+  const autoAbsentGateProps = gate.controlProps(
+    autoAbsent.isPending || closesAt !== null,
+  );
+  // The gate's own reason (offline) wins; otherwise say why it is waiting.
+  const autoAbsentControlProps = {
+    ...autoAbsentGateProps,
+    title:
+      autoAbsentGateProps.title ??
+      (closesAt
+        ? `Available once check-in closes at ${formatTimeOfDay(closesAt.toISOString())}`
+        : undefined),
+  };
 
   const [statusFilter, setStatusFilter] = useState<
     "ALL" | AttendanceStatus | "UNRECORDED"
@@ -318,7 +342,7 @@ export function AttendancePanel({
             <Button
               variant="secondary"
               size="sm"
-              {...gate.controlProps(autoAbsent.isPending)}
+              {...autoAbsentControlProps}
               onClick={runAutoAbsent}
             >
               {autoAbsent.isPending ? (

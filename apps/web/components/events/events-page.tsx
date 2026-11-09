@@ -60,7 +60,12 @@ import { pointsLabel, recurrenceLabel } from "@/components/events/event-labels";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
-import { formatRelativeDayTime, parseInstant } from "@repo/formatting";
+import {
+  formatRelativeDayTime,
+  formatTimeOfDay,
+  parseInstant,
+} from "@repo/formatting";
+import { checkInClosesAt } from "@/components/events/check-in-close";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { cn, getErrorMessage } from "@/lib/utils";
@@ -272,8 +277,8 @@ export function EventsPage() {
   // `POST /events/:id/attendance/auto-absent` is real, guarded, per-event
   // support for this action — it records ABSENT for whoever the event
   // required and never checked in or was otherwise marked. It refuses (400)
-  // before an event's check-in grace period ends, so a batch spanning an
-  // in-progress event fails that event without blocking the rest.
+  // before an event's check-in grace period ends, so an event still inside
+  // it is failed here without being sent, and the rest go ahead.
   async function markSelectedAttendanceComplete() {
     const ids = [...selectedEventIds];
     if (ids.length === 0) return;
@@ -285,17 +290,46 @@ export function EventsPage() {
     });
     if (!confirmed) return;
 
+    // An event whose check-in is still open is refused with a 400, so it is
+    // not sent: it fails here, by name, without the request (FRAPP-WEB-7,
+    // #3905).
+    const now = Date.now();
+    const stillOpen = ids.flatMap((eventId) => {
+      const event = events.find(
+        (candidate) => String(candidate.id ?? candidate.name ?? "") === eventId,
+      );
+      const closesAt = checkInClosesAt(event?.end_time, now);
+      return closesAt
+        ? [
+            {
+              eventId,
+              message: `Check-in is open until ${formatTimeOfDay(closesAt.toISOString())}.`,
+            },
+          ]
+        : [];
+    });
+    const toSend = ids.filter(
+      (eventId) => !stillOpen.some((open) => open.eventId === eventId),
+    );
     const results = await Promise.allSettled(
-      ids.map((eventId) => autoAbsent.mutateAsync(eventId)),
+      toSend.map((eventId) => autoAbsent.mutateAsync(eventId)),
     );
-    // `results` is positionally aligned with `ids`, which is the only way to
-    // name which event failed — `Promise.allSettled` itself carries no id.
-    const failures = results.flatMap((result, index) =>
-      result.status === "rejected"
-        ? [{ eventId: ids[index]!, reason: result.reason }]
-        : [],
-    );
-    const succeeded = results.length - failures.length;
+    // `results` is positionally aligned with `toSend`, which is the only way
+    // to name which event failed — `Promise.allSettled` itself carries no id.
+    const failures = [
+      ...stillOpen,
+      ...results.flatMap((result, index) =>
+        result.status === "rejected"
+          ? [
+              {
+                eventId: toSend[index]!,
+                message: getErrorMessage(result.reason, "Try again in a moment."),
+              },
+            ]
+          : [],
+      ),
+    ];
+    const succeeded = ids.length - failures.length;
 
     if (failures.length === 0) {
       const totalMarked = results.reduce(
@@ -317,10 +351,7 @@ export function EventsPage() {
           )?.name ?? eventId,
         );
       const detail = failures
-        .map(
-          ({ eventId, reason }) =>
-            `${eventName(eventId)}: ${getErrorMessage(reason, "Try again in a moment.")}`,
-        )
+        .map(({ eventId, message }) => `${eventName(eventId)}: ${message}`)
         .join("; ");
       toast({
         title: "Some events couldn't be finalized",

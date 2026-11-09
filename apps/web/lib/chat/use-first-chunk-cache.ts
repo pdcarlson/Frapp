@@ -271,9 +271,18 @@ function seedQuery(
     authoritative list would land later than it would have with no cache at
     all, having cost the server two requests. Passing `false` keeps the
     in-flight fetch and simply marks the query for one if none is running.
+
+    `refetchType: "active"` (the default), not `"all"`. A seeded tail is a
+    query `setQueryData` just created, and until a `useQuery` mounts on it
+    the query has no `queryFn`: refetching it rejects with
+    `Missing queryFn: '<hash>'`, which the query-error reporter sends to
+    Sentry (FRAPP-WEB-3, #3905). Every cached channel the member is not
+    looking at is such a query. The invalidation alone is what this needs:
+    it marks the seed stale, so the observer that mounts on it later
+    refetches on mount, and one already mounted refetches now.
   */
   void queryClient.invalidateQueries(
-    { queryKey, exact: true, refetchType: "all" },
+    { queryKey, exact: true },
     // Second argument, not the first: `cancelRefetch` is an *option*, and
     // `invalidateQueries` ignores it inside the filters object, where it reads
     // as a silently-accepted no-op.
