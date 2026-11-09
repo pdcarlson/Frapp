@@ -118,6 +118,18 @@ export function buildSentryOptions(dsn: string): NodeOptions {
      */
     enableOpenTelemetrySetup: false,
     /**
+     * Send a `captureMessage` report as a plain message event. The SDK's
+     * default, `true`, attaches the caller's stack as a synthetic exception,
+     * one with a stack and no error type, and Sentry titles a synthetic
+     * exception by the function in its top frame. Every message report leaves
+     * through `reportSwallowed`, so each one was titled `reportSwallowed` and
+     * the issue list could not tell an auth spike from a worker outage
+     * (#3906). A plain message event is titled by its message. What the stack
+     * said, which site reported, is in each report's tags and fingerprint.
+     * Exceptions are untouched: the option only reaches message events.
+     */
+    attachStacktrace: false,
+    /**
      * What the SDK collects before `beforeSend` runs. v11 replaced
      * `sendDefaultPii` with this object and defaults every category to on,
      * so each one is set explicitly. The values, and why each is set as it
