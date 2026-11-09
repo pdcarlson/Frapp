@@ -1217,6 +1217,19 @@ describe('ServiceEntryService', () => {
     });
   });
 
+  describe('getPointsRate', () => {
+    it('reports the rate through the same lookup approve uses', async () => {
+      mockChapterServiceConfig.getMinutesPerPoint.mockResolvedValue(45);
+
+      await expect(service.getPointsRate('ch-1')).resolves.toEqual({
+        minutes_per_point: 45,
+      });
+      expect(mockChapterServiceConfig.getMinutesPerPoint).toHaveBeenCalledWith(
+        'ch-1',
+      );
+    });
+  });
+
   describe('leaderboard', () => {
     const row = {
       user_id: 'user-1',
