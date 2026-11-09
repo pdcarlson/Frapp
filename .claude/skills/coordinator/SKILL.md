@@ -10,6 +10,10 @@ description: >
 
 # Coordinator
 
+> **Since 2026-11-09:** Shawn and Winston work in their own Claude chats under their own GitHub
+> accounts ([`AGENTS.md` § Operating mindset](../../../AGENTS.md#operating-mindset)), not through
+> this board. The Shawn intake and approval rules below apply only to anything he still brings here.
+
 Claude Code projects, a coordinator chat that spins off threads, aren't offered on Team plans
 (checked 2026-11-08, [docs](https://code.claude.com/docs/en/claude-projects)). This skill builds the
 same shape from parts this environment has. Checked on 2026-11-08: `create_session` starts a worker,
