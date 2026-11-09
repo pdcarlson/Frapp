@@ -13,6 +13,7 @@ import {
   useCreateTask,
   useViewerUserId,
 } from "@repo/hooks";
+import type { DispatchResult, TaskInput } from "@repo/chat-core/dispatch";
 import {
   avatarRadius,
   fieldTypeRole,
@@ -124,6 +125,16 @@ export interface NewTaskSheetProps {
   now?: Date;
   /** Fired after a successful create, with the assignee's name for the confirmation. */
   onCreated?: (assigneeName: string | null, wasSelf: boolean) => void;
+  /**
+   * Set when the sheet was opened from a chat's + (#3865): the create goes
+   * through chat-core's `postTask` into that channel, the call web's `/task`
+   * makes, so its card gets the thread's placeholder. A refusal keeps the
+   * draft, as a create from the quick actions does; anything else is a task
+   * that may exist (neither route dedupes), so the sheet closes and hands the
+   * result to `onPosted` to say what it carries (`warning`, `unconfirmed`).
+   */
+  postToChannel?: (input: TaskInput) => Promise<DispatchResult>;
+  onPosted?: (result: DispatchResult) => void;
 }
 
 interface RosterMember {
@@ -153,7 +164,7 @@ function selectRoster(
 }
 
 export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
-  function NewTaskSheet({ now, onCreated }, ref) {
+  function NewTaskSheet({ now, onCreated, postToChannel, onPosted }, ref) {
     const { tokens } = useFrappTheme();
     const brand = useChapterBranding();
     const { accent } = brand;
@@ -169,6 +180,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const viewerUserId = useViewerUserId();
     const rosterQuery = useChapterRoster();
     const createTask = useCreateTask();
+    // `postToChannel` isn't a mutation, so its flight is held here.
+    const [posting, setPosting] = useState(false);
 
     // Read when the host's clock moves rather than per render, so the presets
     // cannot shift under the member mid-edit.
@@ -229,7 +242,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
 
     // See the header: a relative chip re-reads today, a held date stays put.
     const { date: dueDate, chipId: dueChipId } = resolveDue(due, at);
-    const pending = createTask.isPending;
+    const pending = createTask.isPending || posting;
 
     const draft = {
       title,
@@ -291,13 +304,14 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       setSubmitFailed(false);
       setRefusal(null);
       const sentFrom = visit();
-      createTask.mutate(body, {
-        onSuccess: () => {
+      const handlers = {
+        onSuccess: (posted?: DispatchResult) => {
           sending.current = false;
           const wasSelf = body.assignee_id === viewerUserId;
           // The confirming action (`spec/ui/mobile/README.md` § Native-feel
           // rules), felt once the task exists.
-          successHaptic();
+          // Not for a lost answer: the task may not exist.
+          if (!posted?.unconfirmed) successHaptic();
           // The draft was saved, so it goes whichever visit is on screen:
           // keeping it would invite a duplicate. A visit reopened since is
           // read-only until now (see the header), so it still holds what
@@ -307,8 +321,9 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           // the create doesn't close it under them.
           if (isSameVisit(sentFrom)) dismiss();
           onCreated?.(assigneeName, wasSelf);
+          if (posted) onPosted?.(posted);
         },
-        onError: (error) => {
+        onError: (error: unknown) => {
           sending.current = false;
           // A visit that has ended doesn't latch its outcome into the next
           // one, which would greet the member with a stale error.
@@ -326,7 +341,29 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           }
           setSubmitFailed(true);
         },
-      });
+      };
+      if (!postToChannel) {
+        createTask.mutate(body, {
+          onSuccess: () => handlers.onSuccess(),
+          onError: handlers.onError,
+        });
+        return;
+      }
+      setPosting(true);
+      void postToChannel(body)
+        .catch((cause: unknown): DispatchResult => ({
+          ok: false,
+          error: "Couldn't create task",
+          cause,
+        }))
+        .then((result) => {
+          setPosting(false);
+          if (!result.ok) {
+            handlers.onError(result.cause ?? new Error(result.error));
+            return;
+          }
+          handlers.onSuccess(result);
+        });
     }, [
       body,
       canSubmit,
@@ -338,6 +375,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       isSameVisit,
       onCreated,
       assigneeName,
+      postToChannel,
+      onPosted,
     ]);
 
     const filteredRoster = useMemo(() => {

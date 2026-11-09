@@ -486,10 +486,20 @@ describe("Tasks with nothing assigned", () => {
 
   it("tells an officer the + assigns a task", () => {
     tasks = [];
-    permissions = ["tasks:manage"];
+    permissions = ["tasks:manage", "members:view"];
     const tree = render();
 
     expect(text(tree)).toContain("Nothing on your plate. Tap + to assign a task.");
+    act(() => tree.unmount());
+  });
+
+  it("points at no + for a role the quick actions don't offer New task (#3865)", () => {
+    // `POST /v1/tasks` also needs members:view, so the + has no New task.
+    tasks = [];
+    permissions = ["tasks:manage"];
+    const tree = render();
+
+    expect(text(tree)).not.toContain("Tap + to assign a task.");
     act(() => tree.unmount());
   });
 

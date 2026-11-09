@@ -783,6 +783,52 @@ describe("useUpdateUserSettings", () => {
     });
   });
 
+  // #3845: the status pairs are predicted the way the server applies them.
+  it.each([
+    [
+      "a status sent alone clears the old end time",
+      { status: "dnd", status_expires_at: "2026-11-10T08:00:00.000Z" },
+      { status: "invisible" },
+      { status: "invisible", status_expires_at: null },
+    ],
+    [
+      "Online never keeps an end time",
+      { status: "dnd", status_expires_at: "2026-11-10T08:00:00.000Z" },
+      { status: "online", status_expires_at: "2026-11-10T09:00:00.000Z" },
+      { status: "online", status_expires_at: null },
+    ],
+    [
+      "a blank line clears the line and its end time",
+      { custom_status: "Out", custom_status_expires_at: "2026-11-10T00:00:00.000Z" },
+      { custom_status: "  " },
+      { custom_status: null, custom_status_expires_at: null },
+    ],
+    [
+      "a line sent alone has no end time",
+      { custom_status: "Out", custom_status_expires_at: "2026-11-10T00:00:00.000Z" },
+      { custom_status: " Back at 6 " },
+      { custom_status: "Back at 6", custom_status_expires_at: null },
+    ],
+  ])("%s", async (_name, cached, body, expected) => {
+    queryClient.setQueryData(userSettingsKey, cached);
+    const { patch, succeed } = deferredPatch();
+    const { result } = renderHook(() => useUpdateUserSettings(), {
+      wrapper: createWrapper({ PATCH: patch }, queryClient),
+    });
+
+    act(() => {
+      result.current.mutate(body as Parameters<typeof result.current.mutate>[0]);
+    });
+
+    await waitFor(() => {
+      expect(queryClient.getQueryData(userSettingsKey)).toEqual(expected);
+    });
+
+    await act(async () => {
+      succeed();
+    });
+  });
+
   it("restores the previous settings when the PATCH fails", async () => {
     const original = {
       quiet_hours_start: "22:00",

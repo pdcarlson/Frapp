@@ -1,0 +1,260 @@
+import { forwardRef, useCallback, useRef, type ComponentType } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
+import { Circle, Path, Rect } from "react-native-svg";
+import type { PlusMenuCommand, PlusMenuModel } from "@repo/chat-core/plus-menu";
+import { SignetTokens } from "@repo/theme/signet";
+import { typeRole, useFrappTheme } from "@/lib/theme";
+import {
+  SheetBackToClose,
+  SheetGrabber,
+  SheetHeader,
+  SheetScrim,
+  SHEET_STACK_BEHAVIOR,
+  useSheetBackgroundStyle,
+  useSheetClose,
+} from "@/components/sheet-scaffold";
+import {
+  EventsGlyph,
+  GlyphFrame,
+  glyphPaint,
+  STROKE_WIDTH,
+  TabGlyph,
+  TasksGlyph,
+  type TabGlyphProps,
+} from "@/components/tab-glyphs";
+import { ServiceHoursGlyph } from "./card-glyphs";
+
+/**
+ * The composer's **+** on the phone (#3865): Photo, then a row per form the
+ * member can open here (Poll, Event, Task, Service hours), in web's + menu
+ * order. What it offers, greys and explains is `plusMenuModel` in
+ * `@repo/chat-core/plus-menu`, web's own rule, so the two can't drift:
+ *
+ * - a row the role can't use, or whose module the chapter turned off, is left
+ *   out, and a line at the bottom says why;
+ * - a row that can't work this second (offline, a photo or a reply staged) is
+ *   greyed with the reason beside it. A poll queues like a message, so
+ *   offline doesn't grey it.
+ *
+ * It always opens, even with Photo alone, so that line can show. Points has no
+ * phone form yet, so the host doesn't list it.
+ *
+ * A row's action runs once this sheet has finished closing, not on the tap:
+ * presenting the photo library or another sheet while this one animates out
+ * can leave the next one drawing nothing.
+ */
+
+export interface ComposerPlusSheetProps {
+  model: PlusMenuModel;
+  /**
+   * Why Photo can't be used this second (offline), ahead of the model's own
+   * reason (the tray is full); `null` when nothing stops it but the model.
+   */
+  photoDisabledReason: string | null;
+  onPhoto: () => void;
+  onOpenForm: (command: PlusMenuCommand) => void;
+}
+
+const ROW_GLYPH: Record<PlusMenuCommand, ComponentType<TabGlyphProps>> = {
+  poll: PollGlyph,
+  event: EventsGlyph,
+  task: TasksGlyph,
+  hours: ServiceHoursGlyph,
+  points: PointsRowGlyph,
+};
+
+export const ComposerPlusSheet = forwardRef<
+  BottomSheetModal,
+  ComposerPlusSheetProps
+>(function ComposerPlusSheet(
+  { model, photoDisabledReason, onPhoto, onOpenForm },
+  ref,
+) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const backgroundStyle = useSheetBackgroundStyle();
+  const closeSheet = useSheetClose(ref);
+  // The chosen row's action, run on dismiss (see the header).
+  const chosen = useRef<(() => void) | null>(null);
+
+  const choose = useCallback(
+    (run: () => void) => {
+      chosen.current = run;
+      closeSheet();
+    },
+    [closeSheet],
+  );
+  const dismissed = useCallback(() => {
+    const run = chosen.current;
+    chosen.current = null;
+    run?.();
+  }, []);
+
+  const photoReason = photoDisabledReason ?? model.attachDisabledReason;
+  const muted = tokens.color.text.mutedForeground;
+
+  return (
+    <BottomSheetModal
+      ref={ref}
+      stackBehavior={SHEET_STACK_BEHAVIOR}
+      enableDynamicSizing
+      backgroundStyle={backgroundStyle}
+      handleComponent={SheetGrabber}
+      backdropComponent={SheetScrim}
+      onDismiss={dismissed}
+    >
+      <SheetBackToClose onClose={closeSheet} />
+      <BottomSheetView onAccessibilityEscape={closeSheet} style={styles.body}>
+        <SheetHeader title="Add to the conversation" onCancel={closeSheet} />
+        <PlusRow
+          label="Photo"
+          glyph={PhotoGlyph}
+          reason={photoReason}
+          onPress={() => choose(onPhoto)}
+          muted={muted}
+          styles={styles}
+        />
+        {model.rows.map((row) => (
+          <PlusRow
+            key={row.command}
+            label={row.label}
+            glyph={ROW_GLYPH[row.command]}
+            reason={row.disabledReason}
+            onPress={() => choose(() => onOpenForm(row.command))}
+            muted={muted}
+            styles={styles}
+          />
+        ))}
+        {model.footer.length > 0 ? (
+          <View style={styles.footer}>
+            {model.footer.map((line) => (
+              <Text key={line} style={styles.footerLine}>
+                {line}
+              </Text>
+            ))}
+          </View>
+        ) : null}
+      </BottomSheetView>
+    </BottomSheetModal>
+  );
+});
+
+function PlusRow({
+  label,
+  glyph: Glyph,
+  reason,
+  onPress,
+  muted,
+  styles,
+}: {
+  label: string;
+  glyph: ComponentType<TabGlyphProps>;
+  /** Why it can't be used this second; greys the row and is read with it. */
+  reason: string | null;
+  onPress: () => void;
+  muted: string;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  const disabled = reason !== null;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={reason ? `${label}, ${reason}` : label}
+      accessibilityState={disabled ? { disabled: true } : undefined}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.row,
+        disabled ? styles.rowDisabled : null,
+        pressed ? styles.rowPressed : null,
+      ]}
+    >
+      <Glyph focused={false} accent={muted} muted={muted} size={20} />
+      <Text style={styles.rowLabel}>{label}</Text>
+      {reason ? <Text style={styles.rowReason}>{reason}</Text> : null}
+    </Pressable>
+  );
+}
+
+/** Photo: a framed picture, sun and hill, in the card eyebrows' stroke recipe. */
+function PhotoGlyph(props: TabGlyphProps) {
+  const { stroke, fill } = glyphPaint(props);
+  return (
+    <GlyphFrame size={props.size}>
+      <Rect
+        x={3.5}
+        y={5}
+        width={17}
+        height={14}
+        rx={2.4}
+        fill={fill}
+        stroke={stroke}
+        strokeWidth={STROKE_WIDTH}
+      />
+      <Circle
+        cx={9}
+        cy={10}
+        r={1.6}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={STROKE_WIDTH}
+      />
+      <Path
+        d="M4 17l5-4.6 3.2 2.8 3.3-3.4L20 16"
+        fill="none"
+        stroke={stroke}
+        strokeWidth={STROKE_WIDTH}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </GlyphFrame>
+  );
+}
+
+function PollGlyph(props: TabGlyphProps) {
+  return <TabGlyph name="polls" {...props} />;
+}
+
+// Points isn't offered on the phone yet (no form); the map stays total.
+function PointsRowGlyph(props: TabGlyphProps) {
+  return <TabGlyph name="points" {...props} />;
+}
+
+function createStyles(tokens: SignetTokens) {
+  return StyleSheet.create({
+    body: {
+      paddingHorizontal: tokens.spacing.lg,
+      paddingBottom: tokens.spacing.xl,
+    },
+    row: {
+      minHeight: tokens.touch.minimum,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.md,
+    },
+    rowDisabled: {
+      opacity: 0.4,
+    },
+    rowPressed: {
+      opacity: 0.7,
+    },
+    rowLabel: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.foreground,
+      flex: 1,
+    },
+    rowReason: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+    },
+    footer: {
+      marginTop: tokens.spacing.sm,
+      gap: tokens.spacing.xs,
+    },
+    footerLine: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+    },
+  });
+}
