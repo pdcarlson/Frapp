@@ -253,7 +253,11 @@ const AT_BOTTOM_SLOP_PX = 4;
  */
 const NEW_ROW_SETTLE_MS = 100;
 
-/** Keys that scroll the list when no text field has focus. */
+/**
+ * Keys that scroll the list when no text field has focus. Not Space: on a
+ * focused button (a reaction on the message a jump landed on) it presses the
+ * button rather than scrolling.
+ */
 const SCROLL_KEYS = new Set([
   "ArrowUp",
   "ArrowDown",
@@ -261,7 +265,6 @@ const SCROLL_KEYS = new Set([
   "PageDown",
   "Home",
   "End",
-  " ",
 ]);
 
 /**
