@@ -249,6 +249,10 @@ export default function CreateChapter() {
     role: INVITE_ROLE,
     onError: setError,
   });
+  // A write in flight on any step, which Sign out waits for: the create, a
+  // logo upload, an invite being minted and shared, or the OS push prompt.
+  // Signing out under one would land its result on no session.
+  const writing = submitting || logoBusy || invite.busy || primer.isRequesting;
 
   function applyDirectoryMatch(row: ChapterDirectoryResult) {
     const known = knownArchetype(row.archetype);
@@ -320,7 +324,11 @@ export default function CreateChapter() {
   // and popping the flow would drop what was entered (navigation.md § Going
   // back).
   useHoldSwipeBack(step === "confirm" || step === "color");
-  useBackToClose(created, finish);
+  // Held, not passed through, while a sign-out runs: the press is still
+  // taken, so it can't leave setup under a session that is going away.
+  useBackToClose(created, () => {
+    if (!signingOut) finish();
+  });
 
   async function submitChapter() {
     if (!accentValid) {
@@ -361,7 +369,7 @@ export default function CreateChapter() {
   }
 
   async function addLogo() {
-    if (logoBusy) return;
+    if (logoBusy || signingOut) return;
     setLogoBusy(true);
     setLogoNote(null);
     const result = await pickAndSetChapterLogo({
@@ -494,7 +502,7 @@ export default function CreateChapter() {
             <SignedInAs
               signOut={signOut}
               signingOut={signingOut}
-              disabled={submitting}
+              disabled={writing}
             />
 
             {step === "live" ? (
@@ -635,7 +643,7 @@ export default function CreateChapter() {
                             ? "Change logo"
                             : "Add your chapter's logo"
                         }
-                        disabled={logoBusy}
+                        disabled={logoBusy || signingOut}
                         busy={logoBusy}
                         onPress={() => {
                           void addLogo();
@@ -766,7 +774,10 @@ function Footer({
   canConfirm: boolean;
   canSubmit: boolean;
   submitting: boolean;
-  /** A sign-out on its way: every step's primary holds for it. */
+  /**
+   * A sign-out on its way: every control here holds for it, each step's
+   * primary, the push answers and the invite step's way to chat.
+   */
   signingOut: boolean;
   logoBusy: boolean;
   displayName: string;
@@ -783,7 +794,7 @@ function Footer({
   if (step === "primer") {
     return (
       <View style={styles.footer}>
-        <PushAskActions {...primer} />
+        <PushAskActions {...primer} disabled={signingOut} />
       </View>
     );
   }
@@ -799,9 +810,12 @@ function Footer({
         />
         <OnboardingPressable
           accessibilityRole="button"
+          accessibilityState={{ disabled: signingOut }}
+          disabled={signingOut}
           onPress={onFinish}
           quiet
-          style={styles.quietButton}
+          // A quiet line takes no dim of its own (`OnboardingPressable`).
+          style={[styles.quietButton, signingOut ? styles.held : null]}
         >
           <Text style={styles.quietButtonText}>
             {hasShared ? "Go to chat" : "Skip for now"}
@@ -1361,6 +1375,10 @@ function createStyles(tokens: SignetTokens) {
       paddingHorizontal: tokens.spacing.lg,
       justifyContent: "center",
       marginTop: tokens.spacing.xs,
+    },
+    // The invite step's way to chat while a sign-out holds it.
+    held: {
+      opacity: 0.5,
     },
     quietButtonText: {
       ...typeRole(tokens.typography.role.label),

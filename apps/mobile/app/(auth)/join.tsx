@@ -381,9 +381,15 @@ export default function JoinChapter() {
   const fromParamsNow = inviteFromParams(params);
   // A route param stays set for the life of the screen, like web's
   // `initialToken`, so any param counts.
+  //
+  // `Linking.useURL()` is null on its first render (it reads the launch URL
+  // in an effect), so the link is also peeked from `getLinkingURL()`, which
+  // answers the launch URL synchronously. A link that arrives later, while
+  // the app is open, is seen only once `useURL` reports it; an offers read
+  // already in flight then stops being shown when the effect applies it.
   const inviteIncoming =
     fromParamsNow !== null ||
-    peekInviteTokenFromLink(deepLinkUrl) !== null ||
+    peekInviteTokenFromLink(deepLinkUrl ?? Linking.getLinkingURL()) !== null ||
     peekRememberedInviteToken() !== null;
   const arrivedWithInvite = appliedLinkInvite || inviteIncoming;
   // Invites emailed to this account, offered on the question (#3782). Not

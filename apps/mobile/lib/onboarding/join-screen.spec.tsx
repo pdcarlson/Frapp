@@ -1425,6 +1425,36 @@ describe("join screen — invites for this account (#3782)", () => {
     expect(pendingGet).not.toHaveBeenCalled();
   });
 
+  it("never reads the offers when a launch link alone opened the screen", async () => {
+    // As on a device: `useURL` is null on its first render and reports the
+    // launch URL only after its effect, while `getLinkingURL` has it at once.
+    vi.mocked(Linking.getLinkingURL).mockReturnValue(
+      "frapp://join?token=link-token-61",
+    );
+    vi.mocked(Linking.useURL)
+      .mockReturnValueOnce(null)
+      .mockReturnValue("frapp://join?token=link-token-61");
+    try {
+      const tree = render();
+      await settle();
+      rerender(tree);
+      await settle();
+      expect(allText(tree.root)).toContain(JOIN_CONFIRM_TITLE);
+      expect(pendingGet).not.toHaveBeenCalled();
+    } finally {
+      vi.mocked(Linking.getLinkingURL).mockReturnValue(null);
+    }
+  });
+
+  it("never reads the offers when a remembered invite brought the member back", async () => {
+    // The sign-in bounce: no params and no link, only the invite remembered.
+    rememberInviteToken("remembered-token-62");
+    const tree = render();
+    await settle();
+    expect(allText(tree.root)).toContain(JOIN_CONFIRM_TITLE);
+    expect(pendingGet).not.toHaveBeenCalled();
+  });
+
   it("opens the confirm step on the offer's invite, and Join redeems that invite", async () => {
     const tree = render();
     await settle();

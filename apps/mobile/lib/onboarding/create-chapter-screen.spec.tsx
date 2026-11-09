@@ -487,6 +487,78 @@ describe("chapter setup — signed in as (#3782)", () => {
     expect(control(root, "Back")?.props.disabled).toBe(true);
   });
 
+  /** Starts a sign-out that doesn't come back, from wherever setup is. */
+  async function startSigningOut(root: Node): Promise<void> {
+    signOut.mockReturnValueOnce(new Promise<void>(() => {}));
+    await press(root, "Sign out");
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(control(root, "Sign out")?.props.disabled).toBe(true);
+  }
+
+  it("holds the confirm step's Continue while the sign-out is on its way", async () => {
+    const { root } = await render();
+    await pickRow(root, "Phi Gamma Delta");
+    expect(control(root, "Continue")?.props.disabled).toBe(false);
+    await startSigningOut(root);
+    expect(control(root, "Continue")?.props.disabled).toBe(true);
+  });
+
+  it("holds the live step's Continue and logo while the sign-out is on its way", async () => {
+    const { root } = await render();
+    await createFromMatch(root);
+    expect(title(root)).toBe("FIJI is live");
+    expect(control(root, "Add your chapter's logo")?.props.disabled).toBe(
+      false,
+    );
+    await startSigningOut(root);
+    expect(control(root, "Continue")?.props.disabled).toBe(true);
+    expect(control(root, "Add your chapter's logo")?.props.disabled).toBe(true);
+  });
+
+  it("holds both push answers while the sign-out is on its way", async () => {
+    pushAvailable = true;
+    permission = { granted: false };
+    const { root } = await render();
+    await createFromMatch(root);
+    await press(root, "Continue");
+    expect(title(root)).toBe(SETUP_TITLES.primer);
+    expect(control(root, "Not now")?.props.disabled).toBe(false);
+    await startSigningOut(root);
+    for (const label of ["Turn on notifications", "Not now"]) {
+      expect(control(root, label)?.props.disabled).toBe(true);
+    }
+  });
+
+  it("holds Share invite and the way to chat while the sign-out is on its way", async () => {
+    const { root } = await render();
+    await createFromMatch(root);
+    await press(root, "Continue");
+    expect(title(root)).toBe(SETUP_TITLES.invite);
+    expect(control(root, "Skip for now")?.props.disabled).toBe(false);
+    await startSigningOut(root);
+    expect(control(root, "Share invite")?.props.disabled).toBe(true);
+    expect(control(root, "Skip for now")?.props.disabled).toBe(true);
+  });
+
+  it("holds Sign out while a logo uploads", async () => {
+    pickAndSetChapterLogo.mockReturnValueOnce(new Promise(() => {}));
+    const { root } = await render();
+    await createFromMatch(root);
+    expect(control(root, "Sign out")?.props.disabled).toBe(false);
+    await press(root, "Add your chapter's logo");
+    expect(control(root, "Sign out")?.props.disabled).toBe(true);
+  });
+
+  it("holds Sign out while an invite link is being made", async () => {
+    createInvite.mockReturnValueOnce(new Promise(() => {}));
+    const { root } = await render();
+    await createFromMatch(root);
+    await press(root, "Continue");
+    expect(control(root, "Sign out")?.props.disabled).toBe(false);
+    await press(root, "Share invite");
+    expect(control(root, "Sign out")?.props.disabled).toBe(true);
+  });
+
   it("signs out to sign-in", async () => {
     const { root } = await render();
     await pickRow(root, "Phi Gamma Delta");

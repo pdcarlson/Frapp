@@ -433,8 +433,9 @@ describe("AuthSessionProvider — token persistence", () => {
     expect(mockState.signOutCalls).toBe(1);
     expect(result.current.status).toBe("unauthenticated");
     expect(result.current.chapterId).toBeNull();
-    // Owned here rather than in each screen: there are three sign-out paths and
-    // the picker's clear landed only after the leak was noticed a second time.
+    // Owned here rather than in each screen: every sign-out goes through this
+    // `signOut`, and the picker's own clear landed only after the leak was
+    // noticed a second time.
     expect(queryClient.getQueryData(ACCOUNT_AGNOSTIC_KEY)).toBeUndefined();
     expect(resetObservabilityOnLogout).toHaveBeenCalledTimes(1);
   });
