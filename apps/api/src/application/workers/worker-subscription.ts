@@ -23,23 +23,28 @@ export const WORKER_REOPEN_BASE_DELAY_MS = 1_000;
 /** Reopens back off by doubling, and never wait longer than this. */
 export const WORKER_REOPEN_MAX_DELAY_MS = 60_000;
 
-/**
- * The window both Sentry reports run on. The outage report repeats once per
- * window while the outage lasts. The unstable report counts drops inside one
- * window, and is sent at most once per window.
- */
+/** The outage report repeats once per this long while the outage lasts. */
 export const WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS = 10 * 60 * 1000;
 
 /**
- * This many drops inside {@link WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS} is a
+ * This many drops inside {@link WORKER_SUBSCRIPTION_UNSTABLE_WINDOW_MS} is a
  * subscription that keeps dropping, and Sentry hears about it at warning level.
  *
  * A drop is a subscribed channel failing. One that recovers is routine: the
  * socket is cut every few hours (close code 1006, no close frame) and rejoins
- * in about a second, at least 20 minutes apart in the 26 that Sentry recorded
- * from 2026-11-05 to 11-09 (#3906). Three in ten minutes is not that.
+ * in about a second. Production's log lines, which nothing throttles, show 15
+ * of them on 2026-11-06 and 11-07, each one failure long, the closest two 20
+ * minutes apart and no three inside an hour (#3906).
  */
 export const WORKER_SUBSCRIPTION_UNSTABLE_DROPS = 3;
+
+/**
+ * The window {@link WORKER_SUBSCRIPTION_UNSTABLE_DROPS} are counted in, and the
+ * least time between two unstable reports. Wide enough to catch a subscription
+ * dropping every 15 minutes, and narrow enough that the routine cuts above
+ * never fill it.
+ */
+export const WORKER_SUBSCRIPTION_UNSTABLE_WINDOW_MS = 30 * 60 * 1000;
 
 /** How long the reopen after `reopens` failed reopens in a row waits. */
 export function reopenDelayMs(reopens: number): number {
@@ -130,7 +135,7 @@ export interface WorkerSubscriptionConfig {
  *   clock, so one that drops and rejoins over and over never becomes an
  *   outage, while every drop loses inserts.
  *   {@link WORKER_SUBSCRIPTION_UNSTABLE_DROPS} drops inside
- *   {@link WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS} are reported once, at
+ *   {@link WORKER_SUBSCRIPTION_UNSTABLE_WINDOW_MS} are reported once, at
  *   warning level.
  *
  * Inserts made while the subscription is down are never delivered later:
@@ -158,7 +163,7 @@ export class WorkerSubscription {
   private lastFailure = 'NONE';
   /** Reopens in a row that ended without a `SUBSCRIBED`, for the backoff. */
   private reopens = 0;
-  /** When each drop inside the current report window happened. */
+  /** When each drop inside the current unstable window happened. */
   private dropsAt: number[] = [];
   private lastUnstableReportAt = Number.NEGATIVE_INFINITY;
 
@@ -291,18 +296,18 @@ export class WorkerSubscription {
   /**
    * A subscribed channel failed. Reports the subscription as unstable once
    * {@link WORKER_SUBSCRIPTION_UNSTABLE_DROPS} of these fall inside one
-   * {@link WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS}, at most once per window.
+   * {@link WORKER_SUBSCRIPTION_UNSTABLE_WINDOW_MS}, at most once per window.
    */
   private recordDrop(status: string): void {
     const { worker, impact, logger } = this.config;
     const now = Date.now();
     this.dropsAt = this.dropsAt.filter(
-      (at) => now - at < WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS,
+      (at) => now - at < WORKER_SUBSCRIPTION_UNSTABLE_WINDOW_MS,
     );
     this.dropsAt.push(now);
     if (
       this.dropsAt.length < WORKER_SUBSCRIPTION_UNSTABLE_DROPS ||
-      now - this.lastUnstableReportAt < WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS
+      now - this.lastUnstableReportAt < WORKER_SUBSCRIPTION_UNSTABLE_WINDOW_MS
     ) {
       return;
     }

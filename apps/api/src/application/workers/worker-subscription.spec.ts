@@ -13,6 +13,7 @@ import {
   WORKER_SUBSCRIPTION_DOWN_AFTER_MS,
   WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS,
   WORKER_SUBSCRIPTION_UNSTABLE_DROPS,
+  WORKER_SUBSCRIPTION_UNSTABLE_WINDOW_MS,
   WorkerSubscription,
 } from './worker-subscription';
 
@@ -352,6 +353,23 @@ describe('WorkerSubscription', () => {
         await jest.advanceTimersByTimeAsync(gapMs);
       };
 
+      // Literals on purpose: `render.md` § 5.5 states these two numbers, and a
+      // test written in terms of the constants would follow them anywhere.
+      it('means three drops inside 30 minutes', async () => {
+        expect(WORKER_SUBSCRIPTION_UNSTABLE_DROPS).toBe(3);
+        expect(WORKER_SUBSCRIPTION_UNSTABLE_WINDOW_MS).toBe(30 * 60 * 1000);
+        sub.start();
+        const ch = latest();
+        ch.status('SUBSCRIBED');
+
+        await blip(ch, 14 * 60 * 1000);
+        await blip(ch, 14 * 60 * 1000);
+        expect(captured()).toHaveLength(0);
+        await blip(ch, 0);
+
+        expect(captured()).toEqual([UNSTABLE]);
+      });
+
       it(`is reported as a warning on drop ${WORKER_SUBSCRIPTION_UNSTABLE_DROPS} inside one window`, async () => {
         sub.start();
         const ch = latest();
@@ -395,7 +413,7 @@ describe('WorkerSubscription', () => {
         for (let n = 0; n < WORKER_SUBSCRIPTION_UNSTABLE_DROPS * 2; n += 1) {
           await blip(
             ch,
-            WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS /
+            WORKER_SUBSCRIPTION_UNSTABLE_WINDOW_MS /
               (WORKER_SUBSCRIPTION_UNSTABLE_DROPS - 1),
           );
         }
@@ -415,6 +433,29 @@ describe('WorkerSubscription', () => {
         expect(captured()).toHaveLength(0);
       });
 
+      // An outage is not a subscription that keeps dropping: these reach
+      // Sentry through the outage report, and only that.
+      it('does not count a channel that never subscribed, whatever fails', async () => {
+        realtime.channel.mockImplementationOnce(() => {
+          throw new Error('no socket');
+        });
+        sub.start();
+        await settle();
+
+        for (let n = 0; n < WORKER_SUBSCRIPTION_UNSTABLE_DROPS * 2; n += 1) {
+          await jest.advanceTimersByTimeAsync(reopenDelayMs(n));
+          latest().status('CLOSED');
+          await settle();
+        }
+
+        expect(logger.warn.mock.calls.length).toBeGreaterThan(
+          WORKER_SUBSCRIPTION_UNSTABLE_DROPS,
+        );
+        expect(
+          captured().filter(([, context]) => levelOf(context) === 'warning'),
+        ).toHaveLength(0);
+      });
+
       it('is reported at most once per window', async () => {
         sub.start();
         const ch = latest();
@@ -426,7 +467,7 @@ describe('WorkerSubscription', () => {
         expect(captured()).toHaveLength(1);
 
         await jest.advanceTimersByTimeAsync(
-          WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS,
+          WORKER_SUBSCRIPTION_UNSTABLE_WINDOW_MS,
         );
         for (let n = 0; n < WORKER_SUBSCRIPTION_UNSTABLE_DROPS; n += 1) {
           await blip(ch, 10_000);

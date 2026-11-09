@@ -125,7 +125,8 @@ export function buildSentryOptions(dsn: string): NodeOptions {
      * through `reportSwallowed`, so each one was titled `reportSwallowed` and
      * the issue list could not tell an auth spike from a worker outage
      * (#3906). A plain message event is titled by its message. What the stack
-     * said, which site reported, is in each report's tags and fingerprint.
+     * said, which site reported, is in each report's tags and in the
+     * fingerprint `reportSwallowed` requires of a message.
      * Exceptions are untouched: the option only reaches message events.
      */
     attachStacktrace: false,

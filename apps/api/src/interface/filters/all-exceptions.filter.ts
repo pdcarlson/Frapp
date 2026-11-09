@@ -282,6 +282,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
           failure_count: String(trip.count),
           window_ms: String(trip.windowMs),
         },
+        fingerprint: ['auth-failure-spike'],
       }));
     } catch (error) {
       logThrowable(
