@@ -1577,7 +1577,6 @@ describe('NotificationService', () => {
         quiet_hours_end: '08:00',
         quiet_hours_tz: null,
         theme: 'system',
-        ...NO_STATUS,
       });
     });
 
@@ -1593,7 +1592,6 @@ describe('NotificationService', () => {
         quiet_hours_end: '08:00:00',
         quiet_hours_tz: 'America/New_York',
         theme: 'dark',
-        ...NO_STATUS,
       });
     });
 
@@ -1622,7 +1620,6 @@ describe('NotificationService', () => {
         quiet_hours_end: '08:00:00',
         quiet_hours_tz: 'America/New_York',
         theme: 'dark',
-        ...NO_STATUS,
       });
     });
 
@@ -1647,7 +1644,6 @@ describe('NotificationService', () => {
         quiet_hours_end: null,
         quiet_hours_tz: null,
         theme: 'system',
-        ...NO_STATUS,
       });
       expect(result.quiet_hours_start).toBeNull();
       expect(result.quiet_hours_end).toBeNull();
@@ -1666,7 +1662,6 @@ describe('NotificationService', () => {
         quiet_hours_end: '08:00:00',
         quiet_hours_tz: null,
         theme: 'system',
-        ...NO_STATUS,
       });
     });
 
@@ -1816,7 +1811,9 @@ describe('NotificationService', () => {
         );
       });
 
-      it('keeps the status and line when an unrelated field is saved', async () => {
+      // An unrelated save must not write the status back: a value read before
+      // another device switched DND on would undo it.
+      it('leaves the status and line out of an unrelated save', async () => {
         mockSettingsRepo.findByUser.mockResolvedValue({
           ...baseSettings,
           status: 'idle',
@@ -1826,14 +1823,39 @@ describe('NotificationService', () => {
 
         await service.updateSettings('u-1', { theme: 'dark' });
 
+        const written = mockSettingsRepo.upsert.mock.calls[0][0];
+        expect(written).not.toHaveProperty('status');
+        expect(written).not.toHaveProperty('status_expires_at');
+        expect(written).not.toHaveProperty('custom_status');
+        expect(written).not.toHaveProperty('custom_status_expires_at');
+      });
+
+      it('gives a new custom line its own end time, not the old one', async () => {
+        mockSettingsRepo.findByUser.mockResolvedValue({
+          ...baseSettings,
+          custom_status: 'At practice',
+          custom_status_expires_at: LATER,
+        });
+
+        await service.updateSettings('u-1', { custom_status: 'Studying' });
+
         expect(mockSettingsRepo.upsert).toHaveBeenCalledWith(
           expect.objectContaining({
-            status: 'idle',
-            status_expires_at: null,
             custom_status: 'Studying',
-            custom_status_expires_at: LATER,
+            custom_status_expires_at: null,
           }),
         );
+      });
+
+      it('rejects an end time on a day that does not exist', async () => {
+        mockSettingsRepo.findByUser.mockResolvedValue(baseSettings);
+
+        await expect(
+          service.updateSettings('u-1', {
+            status: 'dnd',
+            status_expires_at: '2027-02-30T10:00:00Z',
+          }),
+        ).rejects.toBeInstanceOf(BadRequestException);
       });
     });
   });

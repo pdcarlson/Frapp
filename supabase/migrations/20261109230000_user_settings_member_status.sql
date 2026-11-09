@@ -15,21 +15,17 @@ alter table public.user_settings
   add column if not exists custom_status text,
   add column if not exists custom_status_expires_at timestamptz;
 
+-- Plain constraints, not NOT VALID then VALIDATE: the columns were just added
+-- with `online` or null in every row, so no row can fail either check, and the
+-- `add column` above already holds the table's exclusive lock until commit.
 alter table public.user_settings
   drop constraint if exists user_settings_status_valid;
 alter table public.user_settings
   add constraint user_settings_status_valid
-  check (status in ('online', 'idle', 'dnd', 'invisible')) not valid;
+  check (status in ('online', 'idle', 'dnd', 'invisible'));
 
 alter table public.user_settings
   drop constraint if exists user_settings_custom_status_length;
 alter table public.user_settings
   add constraint user_settings_custom_status_length
-  check (custom_status is null or char_length(custom_status) <= 80) not valid;
-
--- Added NOT VALID, then validated, so the scan runs under a lock that does not
--- block reads and writes of a table the push fan-out reads.
-alter table public.user_settings
-  validate constraint user_settings_status_valid;
-alter table public.user_settings
-  validate constraint user_settings_custom_status_length;
+  check (custom_status is null or char_length(custom_status) <= 80);

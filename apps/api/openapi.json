@@ -12543,7 +12543,8 @@
             "type": "string",
             "description": "When `status` reverts to `online`, as an ISO 8601 instant in the future. Accepted only together with `status`. Null or absent: until the member changes it.",
             "nullable": true,
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,6})?)?(Z|[+-]\\d{2}:\\d{2})$"
           },
           "custom_status": {
             "type": "string",
@@ -12555,7 +12556,8 @@
             "type": "string",
             "description": "When the custom status line clears, as an ISO 8601 instant in the future. Accepted only together with `custom_status`. Null or absent: until the member clears it.",
             "nullable": true,
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,6})?)?(Z|[+-]\\d{2}:\\d{2})$"
           }
         }
       },

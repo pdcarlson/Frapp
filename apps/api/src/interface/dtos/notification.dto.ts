@@ -1,7 +1,6 @@
 import {
   IsIn,
   IsInt,
-  IsISO8601,
   IsOptional,
   IsString,
   IsUUID,
@@ -18,6 +17,11 @@ import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { isSupportedTimeZone, MAX_TIME_ZONE_LENGTH } from '@repo/validation';
+import {
+  ISO_INSTANT_MESSAGE,
+  ISO_INSTANT_PATTERN,
+  ISO_INSTANT_REGEX,
+} from '#domain/constants/iso-instant';
 import {
   CUSTOM_STATUS_MAX_LENGTH,
   MEMBER_STATUSES,
@@ -129,6 +133,31 @@ export class UpdateNotificationPreferenceDto {
   is_enabled: boolean;
 }
 
+/**
+ * A custom status line (#3845): at most {@link CUSTOM_STATUS_MAX_LENGTH} code
+ * points, on one line.
+ *
+ * Counts code points, as the column's `char_length` check does, and not
+ * class-validator's `@MaxLength`, which discounts a variation selector after a
+ * character: forty-one "❤️" pass `@MaxLength(80)` as 41 and reach Postgres as
+ * 82, which the check rejects as a 500. "One line" refuses every control
+ * character and the Unicode line and paragraph separators, not only CR and LF.
+ */
+@ValidatorConstraint({ name: 'customStatusLine', async: false })
+export class CustomStatusLineConstraint implements ValidatorConstraintInterface {
+  validate(value: unknown): boolean {
+    return (
+      typeof value === 'string' &&
+      [...value].length <= CUSTOM_STATUS_MAX_LENGTH &&
+      !/[\p{Cc}\u2028\u2029]/u.test(value)
+    );
+  }
+
+  defaultMessage(): string {
+    return `custom_status must be a single line of at most ${CUSTOM_STATUS_MAX_LENGTH} characters`;
+  }
+}
+
 export class UpdateUserSettingsDto {
   @ApiPropertyOptional({
     description:
@@ -205,10 +234,12 @@ export class UpdateUserSettingsDto {
     nullable: true,
     type: String,
     format: 'date-time',
+    pattern: ISO_INSTANT_PATTERN,
   })
   @IsOptional()
   @ValidateIf((_, value) => value !== null)
-  @IsISO8601({ strict: true })
+  @IsString()
+  @Matches(ISO_INSTANT_REGEX, { message: `$property ${ISO_INSTANT_MESSAGE}` })
   status_expires_at?: string | null;
 
   @ApiPropertyOptional({
@@ -221,10 +252,7 @@ export class UpdateUserSettingsDto {
   @Transform(({ value }) => normalizeBlankToNull(value))
   @ValidateIf((_, value) => value !== null)
   @IsString()
-  @MaxLength(CUSTOM_STATUS_MAX_LENGTH)
-  @Matches(/^[^\r\n]*$/, {
-    message: 'custom_status must be a single line',
-  })
+  @Validate(CustomStatusLineConstraint)
   custom_status?: string | null;
 
   @ApiPropertyOptional({
@@ -233,10 +261,12 @@ export class UpdateUserSettingsDto {
     nullable: true,
     type: String,
     format: 'date-time',
+    pattern: ISO_INSTANT_PATTERN,
   })
   @IsOptional()
   @ValidateIf((_, value) => value !== null)
-  @IsISO8601({ strict: true })
+  @IsString()
+  @Matches(ISO_INSTANT_REGEX, { message: `$property ${ISO_INSTANT_MESSAGE}` })
   custom_status_expires_at?: string | null;
 }
 

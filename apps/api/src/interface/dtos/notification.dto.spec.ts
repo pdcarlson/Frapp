@@ -241,3 +241,60 @@ describe('ListNotificationsQueryDto (#1627)', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
+
+describe('UpdateUserSettingsDto — member status (#3845)', () => {
+  it('accepts every status and refuses anything else', async () => {
+    for (const status of ['online', 'idle', 'dnd', 'invisible']) {
+      expect(await failingProps({ status })).not.toContain('status');
+    }
+    expect(await failingProps({ status: 'busy' })).toContain('status');
+  });
+
+  it('takes end times only as an instant with an explicit offset', async () => {
+    for (const field of ['status_expires_at', 'custom_status_expires_at']) {
+      expect(
+        await failingProps({ [field]: '2027-11-09T10:00:00.000Z' }),
+      ).not.toContain(field);
+      expect(await failingProps({ [field]: null })).not.toContain(field);
+      // Shapes `@IsISO8601` lets through that Postgres refuses (a 500) or
+      // reads in a different zone than Node does.
+      for (const bad of ['2027', '2027-11', '2027-11-09', '2027-11-09T10:00']) {
+        expect(await failingProps({ [field]: bad })).toContain(field);
+      }
+    }
+  });
+
+  it('trims a custom line and reads blank as a clear', async () => {
+    const dto = plainToInstance(UpdateUserSettingsDto, {
+      custom_status: '  At practice  ',
+    });
+    expect(dto.custom_status).toBe('At practice');
+    const blank = plainToInstance(UpdateUserSettingsDto, {
+      custom_status: '   ',
+    });
+    expect(blank.custom_status).toBeNull();
+    expect(await validate(blank)).toHaveLength(0);
+  });
+
+  it('caps a custom line at 80 code points, as the column check counts', async () => {
+    expect(await failingProps({ custom_status: 'a'.repeat(80) })).not.toContain(
+      'custom_status',
+    );
+    expect(await failingProps({ custom_status: 'a'.repeat(81) })).toContain(
+      'custom_status',
+    );
+    // 41 hearts with a variation selector are 82 code points. `@MaxLength`
+    // counts them as 41, and Postgres's `char_length` check then fails as a 500.
+    expect(await failingProps({ custom_status: '❤️'.repeat(41) })).toContain(
+      'custom_status',
+    );
+  });
+
+  it('refuses a custom line that breaks onto a second line', async () => {
+    for (const sep of ['\n', '\r', ' ', ' ', '\u0085', '\t']) {
+      expect(
+        await failingProps({ custom_status: `At practice${sep}till 6` }),
+      ).toContain('custom_status');
+    }
+  });
+});

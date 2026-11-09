@@ -26,6 +26,7 @@ import type {
   UserSettingsValues,
 } from '#domain/entities/notification.entity';
 import { clampListLimit } from '#domain/constants/list-query-limits';
+import { parseIsoInstant } from '#domain/constants/iso-instant';
 import { ID_CHUNK_SIZE, chunkIds } from '#domain/utils/chunk-ids';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
@@ -105,8 +106,10 @@ function assertFutureExpiry(
   now: Date,
 ): void {
   if (value === null) return;
-  const at = new Date(value).getTime();
-  if (Number.isNaN(at) || at <= now.getTime()) {
+  // `parseIsoInstant`, not `new Date`: it refuses an impossible day rather
+  // than rolling it forward to one Postgres would then reject as a 500.
+  const at = parseIsoInstant(value);
+  if (at === null || at <= now.getTime()) {
     throw new BadRequestException(`${field} must be a time in the future`);
   }
 }
@@ -895,35 +898,42 @@ export class NotificationService {
   ): Promise<UserSettingsValues> {
     const now = new Date();
     const existing = await this.settingsRepo.findByUser(userId);
-    const current = existing
-      ? toUserSettingsValues(existing, now)
-      : USER_SETTINGS_DEFAULTS;
 
     // A status and its end time are one choice (#3845): picking a status
     // replaces the old end time, so switching from "DND for 1 hour" to
     // Invisible does not end Invisible an hour later. An end time alone has no
     // status to attach to, so it is refused rather than guessed at. The same
     // holds for the custom line and its end time.
-    let { status, status_expires_at } = current;
+    //
+    // A pair the PATCH did not touch is left out of the write, so the upsert
+    // leaves the stored columns alone. Writing back the values read above
+    // would let a theme save from one device undo DND switched on from another
+    // between this read and the write.
+    const statusWrite: Partial<UserSettingsValues> = {};
     if (data.status !== undefined && data.status !== null) {
-      status = data.status;
-      status_expires_at =
-        status === 'online' ? null : (data.status_expires_at ?? null);
-      assertFutureExpiry('status_expires_at', status_expires_at, now);
+      statusWrite.status = data.status;
+      statusWrite.status_expires_at =
+        data.status === 'online' ? null : (data.status_expires_at ?? null);
+      assertFutureExpiry(
+        'status_expires_at',
+        statusWrite.status_expires_at,
+        now,
+      );
     } else if (data.status_expires_at !== undefined) {
       throw new BadRequestException(
         'status_expires_at is accepted only together with status',
       );
     }
 
-    let { custom_status, custom_status_expires_at } = current;
     if (data.custom_status !== undefined) {
-      custom_status = data.custom_status ?? null;
-      custom_status_expires_at =
-        custom_status === null ? null : (data.custom_status_expires_at ?? null);
+      statusWrite.custom_status = data.custom_status ?? null;
+      statusWrite.custom_status_expires_at =
+        statusWrite.custom_status === null
+          ? null
+          : (data.custom_status_expires_at ?? null);
       assertFutureExpiry(
         'custom_status_expires_at',
-        custom_status_expires_at,
+        statusWrite.custom_status_expires_at,
         now,
       );
     } else if (data.custom_status_expires_at !== undefined) {
@@ -947,10 +957,7 @@ export class NotificationService {
       quiet_hours_end: resolve('quiet_hours_end'),
       quiet_hours_tz: resolve('quiet_hours_tz'),
       theme: data.theme ?? existing?.theme ?? USER_SETTINGS_DEFAULTS.theme,
-      status,
-      status_expires_at,
-      custom_status,
-      custom_status_expires_at,
+      ...statusWrite,
     });
     return toUserSettingsValues(saved, now);
   }

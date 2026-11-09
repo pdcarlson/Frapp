@@ -59,12 +59,22 @@ export class SupabaseUserSettingsRepository implements IUserSettingsRepository {
       quiet_hours_end: data.quiet_hours_end ?? null,
       quiet_hours_tz: data.quiet_hours_tz ?? null,
       theme: data.theme ?? 'system',
-      status: data.status ?? 'online',
-      status_expires_at: data.status_expires_at ?? null,
-      custom_status: data.custom_status ?? null,
-      custom_status_expires_at: data.custom_status_expires_at ?? null,
       updated_at: new Date().toISOString(),
     };
+    // The status columns are written only when the caller names them (#3845).
+    // PostgREST's upsert updates only the columns in the payload, so a save
+    // that did not touch a status keeps the stored one, and a new row takes the
+    // column defaults.
+    for (const key of [
+      'status',
+      'status_expires_at',
+      'custom_status',
+      'custom_status_expires_at',
+    ] as const) {
+      if (data[key] !== undefined) {
+        Object.assign(row, { [key]: data[key] });
+      }
+    }
     const { data: result, error } = await this.supabase
       .from('user_settings')
       .upsert(row, {

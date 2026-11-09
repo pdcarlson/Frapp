@@ -111,10 +111,14 @@ describe('GET /v1/settings — a member with no settings row (#2885)', () => {
       quiet_hours_end: null,
       quiet_hours_tz: null,
       theme: 'system',
+      status: 'online',
+      status_expires_at: null,
+      custom_status: null,
+      custom_status_expires_at: null,
     });
   });
 
-  it('answers a stored row with the same four fields', async () => {
+  it('answers a stored row with its editable fields', async () => {
     settingsRepo.findByUser.mockResolvedValue({
       id: 'us-1',
       user_id: 'user-1',
@@ -132,6 +136,10 @@ describe('GET /v1/settings — a member with no settings row (#2885)', () => {
       quiet_hours_end: '08:00:00',
       quiet_hours_tz: 'America/New_York',
       theme: 'dark',
+      status: 'online',
+      status_expires_at: null,
+      custom_status: null,
+      custom_status_expires_at: null,
     });
   });
 
