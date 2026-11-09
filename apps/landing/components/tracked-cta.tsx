@@ -14,7 +14,9 @@ type TrackedCtaProps = ComponentProps<typeof Link> & {
 };
 
 /**
- * Homepage CTA wrapper. Captures `{ cta, surface }` only — never `href`.
+ * Storefront CTA wrapper: the homepage's controls, plus the header's and
+ * footer's on `/about` and `/changelog`. Captures `{ cta, surface }` only —
+ * never `href`.
  * Styling is entirely the caller's `className`.
  */
 export function TrackedCta({
