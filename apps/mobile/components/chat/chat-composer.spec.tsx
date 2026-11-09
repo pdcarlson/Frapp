@@ -90,25 +90,30 @@ function photo(overrides: Partial<StagedPhoto> = {}): StagedPhoto {
   };
 }
 
-describe("ChatComposer attach affordance", () => {
-  it("renders no attach control at all when no handler is supplied", () => {
+describe("ChatComposer + (#3865)", () => {
+  const PLUS = "Add a photo, poll, event and more";
+
+  it("renders no + at all when no handler is supplied, as while editing", () => {
     // #2296's lesson, kept: a control for a capability that does not exist
-    // reads as a bug and, on iOS, ships a purpose string for nothing. Absent
-    // beats inert.
+    // reads as a bug. Absent beats inert.
     const { tree } = renderComposer();
-    expect(byLabel(tree, "Attach photo")).toBeUndefined();
+    expect(byLabel(tree, PLUS)).toBeUndefined();
   });
 
-  it("enables the attach control when a handler is supplied and posting is live", () => {
-    const { tree } = renderComposer({ onAttach: vi.fn() });
-    expect(byLabel(tree, "Attach photo").props.disabled).toBe(false);
+  it("opens the sheet, whatever it will hold: the sheet says what can't work", () => {
+    const onOpenPlus = vi.fn();
+    const { tree } = renderComposer({ onOpenPlus });
+    const button = byLabel(tree, PLUS);
+    expect(button.props.disabled).toBe(false);
+    act(() => button.props.onPress());
+    expect(onOpenPlus).toHaveBeenCalledTimes(1);
   });
 
-  it("disables attach while the photo picker is up, and marks it busy", () => {
+  it("locks while the photo picker is up, and marks it busy", () => {
     // A live button through the system sheet invites a second picker stacked
     // on the first.
-    const { tree } = renderComposer({ onAttach: vi.fn(), isPicking: true });
-    const button = byLabel(tree, "Attach photo");
+    const { tree } = renderComposer({ onOpenPlus: vi.fn(), isPicking: true });
+    const button = byLabel(tree, PLUS);
     expect(button.props.disabled).toBe(true);
     expect(button.props.accessibilityState).toEqual({
       disabled: true,
@@ -116,96 +121,27 @@ describe("ChatComposer attach affordance", () => {
     });
   });
 
-  it("keeps attach live while photos upload: uploads never lock the tray", () => {
+  it("stays live while photos upload: uploads never lock the tray", () => {
     const { tree } = renderComposer({
-      onAttach: vi.fn(),
+      onOpenPlus: vi.fn(),
       photos: [photo({ status: "uploading" })],
     });
-    expect(byLabel(tree, "Attach photo").props.disabled).toBe(false);
+    expect(byLabel(tree, PLUS).props.disabled).toBe(false);
   });
 
-  it("disables attach, still visible, once the tray is full", () => {
-    const { tree } = renderComposer({ onAttach: vi.fn(), attachFull: true });
-    expect(byLabel(tree, "Attach photo").props.disabled).toBe(true);
-  });
-
-  it("disables attach — but keeps it visible — when a reason is given", () => {
-    // An upload is a live PUT with no outbox behind it, so unlike the composer
-    // itself it does have to go dark offline. Hiding it instead would read as
-    // a missing feature.
+  it("goes dark, still visible, where nothing it offers can work", () => {
     const { tree } = renderComposer({
-      onAttach: vi.fn(),
-      attachDisabledReason:
-        "Photos need a connection — you can still send text.",
+      onOpenPlus: vi.fn(),
+      plusDisabled: true,
     });
-    const button = byLabel(tree, "Attach photo");
+    const button = byLabel(tree, PLUS);
     expect(button).toBeDefined();
     expect(button.props.disabled).toBe(true);
   });
-});
-
-describe("ChatComposer + with a poll (#3701)", () => {
-  const PLUS = "Add photo or poll";
-
-  it("names both when a poll is offered, and keeps the photo-only name otherwise", () => {
-    const { tree } = renderComposer({
-      onAttach: vi.fn(),
-      onCreatePoll: vi.fn(),
-    });
-    expect(byLabel(tree, PLUS).props.disabled).toBe(false);
-    expect(byLabel(tree, "Attach photo")).toBeUndefined();
-  });
-
-  it("stays live with a full tray, and goes straight to the poll", () => {
-    const onAttach = vi.fn();
-    const onCreatePoll = vi.fn();
-    const { tree } = renderComposer({
-      onAttach,
-      onCreatePoll,
-      attachFull: true,
-    });
-    const button = byLabel(tree, PLUS);
-    expect(button.props.disabled).toBe(false);
-    act(() => button.props.onPress());
-    expect(onCreatePoll).toHaveBeenCalledTimes(1);
-    expect(onAttach).not.toHaveBeenCalled();
-  });
-
-  it("stays live offline, since a poll queues like a message", () => {
-    const onCreatePoll = vi.fn();
-    const { tree } = renderComposer({
-      onAttach: vi.fn(),
-      onCreatePoll,
-      attachDisabledReason: "offline",
-    });
-    const button = byLabel(tree, PLUS);
-    expect(button.props.disabled).toBe(false);
-    act(() => button.props.onPress());
-    expect(onCreatePoll).toHaveBeenCalledTimes(1);
-  });
-
-  it("locks while the photo picker is up", () => {
-    const { tree } = renderComposer({
-      onAttach: vi.fn(),
-      onCreatePoll: vi.fn(),
-      isPicking: true,
-    });
-    expect(byLabel(tree, PLUS).props.disabled).toBe(true);
-  });
 
   it("locks while the composer can't send at all", () => {
-    const { tree } = renderComposer({
-      onCreatePoll: vi.fn(),
-      canSend: false,
-    });
+    const { tree } = renderComposer({ onOpenPlus: vi.fn(), canSend: false });
     expect(byLabel(tree, PLUS).props.disabled).toBe(true);
-  });
-
-  it("opens photos at once for a member offered no poll", () => {
-    const onAttach = vi.fn();
-    const { tree } = renderComposer({ onAttach });
-    act(() => byLabel(tree, "Attach photo").props.onPress());
-    expect(onAttach).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -216,7 +152,6 @@ describe("ChatComposer staged photos", () => {
     const { tree } = renderComposer({
       value: "   ",
       photos: [photo()],
-      onAttach: vi.fn(),
     });
     expect(byLabel(tree, "Send message").props.disabled).toBe(false);
   });
@@ -361,9 +296,11 @@ describe("ChatComposer accent", () => {
   it("rests in the attach button's neutral recipe when nothing can be sent", () => {
     const { tree } = renderComposer({ value: "  " });
     const send = byLabel(tree, "Send message")!;
-    const attach = renderComposer({ onAttach: vi.fn() }).tree;
+    const attach = renderComposer({ onOpenPlus: vi.fn() }).tree;
     const style = restingStyle(send);
-    const attachStyle = restingStyle(byLabel(attach, "Attach photo")!);
+    const attachStyle = restingStyle(
+      byLabel(attach, "Add a photo, poll, event and more")!,
+    );
 
     // Not a faded accent: no opacity, no accent anywhere on it.
     expect(style).not.toHaveProperty("opacity");

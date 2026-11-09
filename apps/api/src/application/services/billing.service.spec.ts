@@ -1498,6 +1498,10 @@ describe('BillingService', () => {
           const [message, context] = captureMessage.mock.calls[0];
           expect(message).toContain('checkout.session.completed');
           expect(context.level).toBe('error');
+          expect(context.fingerprint).toEqual([
+            'billing-unknown-chapter',
+            'checkout_unknown_chapter',
+          ]);
           expect(context.tags).toMatchObject({
             billing_event: 'checkout_unknown_chapter',
             stripe_event_type: 'checkout.session.completed',

@@ -1,6 +1,5 @@
-import { can, POLL_OPTIONS_MAX, POLL_OPTIONS_MIN } from "@repo/validation";
+import { POLL_OPTIONS_MAX, POLL_OPTIONS_MIN } from "@repo/validation";
 import { tokenizeQuotedArgs } from "./integrations/parsers";
-import { type PollsGate } from "./polls";
 
 /**
  * The model behind the New poll form on both clients: mobile's New poll sheet
@@ -59,31 +58,6 @@ export function emptyPollDraft(): PollDraft {
     options: Array.from({ length: POLL_OPTIONS_MIN }, newRow),
     closes: DEFAULT_POLL_CLOSE,
   };
-}
-
-/**
- * Whether this member may start a poll here: their role grants `polls:create`
- * and the chapter has Polls on (#3701, `spec/behavior/polls.md`).
- *
- * `pollsGate` is the same Polls read the poll card's Vote takes (`pollsGateOf`
- * in `@repo/chat-core/polls`): only `"on"` offers a poll, so while the
- * chapter is still loading, or couldn't be read, the + offers photos only
- * rather than a poll the server may refuse. Permissions still loading read as
- * none, for the same reason.
- *
- * Only the module half is the server's too (#2993). The chat send route
- * doesn't check `polls:create` for a poll card, on this client's posts or
- * web's `/poll`: whether it should is #3007's open decision. Until then this
- * is a client-side offer, not enforcement.
- */
-export function canCreatePoll({
-  permissions,
-  pollsGate,
-}: {
-  permissions: readonly string[] | undefined;
-  pollsGate: PollsGate;
-}): boolean {
-  return pollsGate === "on" && can("polls:create", permissions);
 }
 
 export function closesAtFor(choice: PollCloseChoice, now: Date): Date {

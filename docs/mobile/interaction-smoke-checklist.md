@@ -59,7 +59,7 @@ in the S2 nav restructure (#957) — see
 |---|---|---|
 | Chat (`/`) | Open #general thread preview | Opens `chat-thread` route |
 | Events (`/(app)/(tabs)/events`) | Open event details | Opens `event-details` route |
-| Any tab | The + beside the tab bar | Opens the quick-actions panel; New task (shown only with `tasks:manage`) and New event (shown only with `events:create` and `members:view`) open their sheets over the current tab, and a create confirms above the bar. Events draws no + of its own. Press and hold the panel to edit it |
+| Any tab | The + beside the tab bar | Opens the quick-actions panel; New task (shown only with `tasks:manage` and `members:view`) and New event (shown only with `events:create` and `members:view`) open their sheets over the current tab, and a create confirms above the bar. Events draws no + of its own. Press and hold the panel to edit it |
 | More (`/(app)/(tabs)/more`) | Each row | Opens selected route. The exception is Host check-in (shown with `events:update`): with no upcoming event it reads "No upcoming event" and is disabled |
 
 ## 3) Detail routes with action controls

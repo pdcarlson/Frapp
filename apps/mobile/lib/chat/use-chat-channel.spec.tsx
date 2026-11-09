@@ -29,7 +29,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { createFrappClient } from "@repo/api-sdk";
-import { FrappClientProvider } from "@repo/hooks";
+import { FrappClientProvider, taskKeys } from "@repo/hooks";
+import { SIGNED_OUT_POST_COPY } from "@repo/chat-core/dispatch";
 import { emptyCache, upsertOptimistic } from "@repo/chat-core/cache";
 import {
   chatMessagesKey,
@@ -133,6 +134,18 @@ vi.mock("@repo/chat-core/chat-client", () => ({
   actOnCard: mocks.actOnCard,
   editMessage: mocks.editMessage,
   deleteMessage: mocks.deleteMessage,
+}));
+
+// The + sheet's Task and Service hours posts (#3865): chat-core's own calls,
+// stubbed here so a spec can see what the hook binds and refreshes.
+const dispatchMocks = vi.hoisted(() => ({
+  postTask: vi.fn(),
+  postHours: vi.fn(),
+}));
+vi.mock("@repo/chat-core/dispatch", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/chat-core/dispatch")>()),
+  postTask: dispatchMocks.postTask,
+  postHours: dispatchMocks.postHours,
 }));
 
 vi.mock("@repo/chat-core/realtime-manager", () => ({
@@ -1819,8 +1832,92 @@ describe("sendPoll() (#3701)", () => {
 
     expect(outcome).toEqual({
       ok: false,
-      error: "Couldn't post that poll. Try again.",
+      error: SIGNED_OUT_POST_COPY,
     });
     expect(mocks.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("passes on a posted-but-not-saved warning, for the sheet's host to show", async () => {
+    mocks.sendMessage.mockImplementation(async () => ({
+      warning: "Posted, but not saved on this phone.",
+    }));
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await result.current.sendPoll(poll);
+    });
+
+    expect(outcome).toEqual({
+      ok: true,
+      warning: "Posted, but not saved on this phone.",
+    });
+  });
+});
+
+describe("postTask() / postHours() from the + sheet (#3865)", () => {
+  const task = {
+    title: "Sweep the porch",
+    assignee_id: "user-1",
+    due_date: "2026-11-12",
+  };
+  const hours = {
+    date: "2026-11-09",
+    duration_minutes: 90,
+    description: "Food bank",
+  };
+
+  it("posts into this channel, and refreshes the board or the Service page", async () => {
+    dispatchMocks.postTask.mockResolvedValue({ ok: true });
+    dispatchMocks.postHours.mockResolvedValue({
+      ok: true,
+      unconfirmed: true,
+      warning: "Couldn't confirm.",
+    });
+    const { result, queryClient } = renderChannel();
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+
+    await act(async () => {
+      await result.current.postTask(task);
+      await result.current.postHours(hours);
+    });
+
+    expect(dispatchMocks.postTask).toHaveBeenCalledWith(
+      mocks.runtime.ctx,
+      CHANNEL,
+      task,
+    );
+    expect(dispatchMocks.postHours).toHaveBeenCalledWith(
+      mocks.runtime.ctx,
+      CHANNEL,
+      hours,
+    );
+    // A lost answer refreshes too: the entry may exist.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: taskKeys.all });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["service-entries"] });
+  });
+
+  it("refreshes nothing after a refusal", async () => {
+    dispatchMocks.postTask.mockResolvedValue({ ok: false, error: "nope" });
+    const { result, queryClient } = renderChannel();
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    await act(async () => {
+      await result.current.postTask(task);
+    });
+    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: taskKeys.all });
+  });
+
+  it("says signed out, without posting, with no runtime", async () => {
+    mocks.runtime.ctx = null;
+    const { result } = renderChannel();
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await result.current.postTask(task);
+    });
+    expect(outcome).toEqual({ ok: false, error: SIGNED_OUT_POST_COPY });
+    expect(dispatchMocks.postTask).not.toHaveBeenCalled();
   });
 });
