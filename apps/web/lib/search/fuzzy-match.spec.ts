@@ -97,6 +97,18 @@ describe("fuzzyMatch", () => {
     expect(find("21")).toEqual([]);
   });
 
+  it("matches a Roman numeral from I to X as a whole word only, like a short number", () => {
+    const titles = ["Calculus I Final", "Calculus II Midterm", "Integral practice", "Unit VII notes"];
+    const findTitle = (query: string) => fuzzyMatch(titles, query, (t) => t).map((r) => r.item);
+    // "i" neither prefixes "ii" nor "integral"; "calc i" behaves as "calc 1".
+    expect(findTitle("calc i")).toEqual(["Calculus I Final"]);
+    expect(findTitle("i")).toEqual(["Calculus I Final"]);
+    expect(matchQueryWord("i", ["integral"]).score).toBe(0);
+    // "viii" is four letters, yet never fuzzes to "vii".
+    expect(matchQueryWord("viii", ["vii"]).score).toBe(0);
+    expect(findTitle("vii")).toEqual(["Unit VII notes"]);
+  });
+
   it("lets a single letter start a word, so live search never blanks on the first key", () => {
     expect(find("d")).toEqual([docs[2], docs[3]]);
   });

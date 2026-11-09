@@ -321,19 +321,30 @@ type PhraseMatch = {
 };
 
 /**
- * How the query matches each of the row's course phrases. A word matches a
- * phrase's text words the way search matches any word (prefix, typo). A
- * number from 1 to 10, in either spelling, matches only exactly, in either
- * spelling ("1" finds "I", never "II"), and only when some other query word
- * matched the same phrase: a bare number must not reach a file through its
- * course's name.
+ * Whether a query word counts toward a course's name or nickname only beside
+ * another, non-numeric query word on the same phrase: a number from 1 to 10
+ * in either spelling ("1", "i"), or any word with a digit in it ("200").
+ */
+function isGatedCourseWord(word: string): boolean {
+  return isNumeralWord(word) || /\d/.test(word);
+}
+
+/**
+ * How the query matches each of the row's course phrases. A word that is not
+ * a number matches a phrase's text words the way search matches any word
+ * (prefix, typo). A number counts only when some non-numeric query word
+ * matched the same phrase, so a bare number never reaches a file through its
+ * course's name or nickname ("200" alone does not find "Stat 200"; "stat 200"
+ * does). Then a number from 1 to 10, in either spelling, matches only exactly,
+ * in either spelling ("1" finds "I", never "II"), and any other word with a
+ * digit matches the phrase's words as search matches a number (never by typo).
  */
 function courseMatch(row: LibraryRow, queryWords: readonly string[]): PhraseMatch[] {
   return row.coursePhrases.map((phrase) => {
     const matched = new Set<string>();
     const hits: string[] = [];
     for (const word of queryWords) {
-      if (isNumeralWord(word)) continue;
+      if (isGatedCourseWord(word)) continue;
       const { hit } = matchQueryWord(word, phrase.textWords, BACKWORK_SEARCH_ALIASES);
       if (hit) {
         matched.add(word);
@@ -342,11 +353,19 @@ function courseMatch(row: LibraryRow, queryWords: readonly string[]): PhraseMatc
     }
     if (matched.size > 0) {
       for (const word of queryWords) {
-        if (!isNumeralWord(word)) continue;
-        const numeral = phrase.numerals.find((n) => n.forms.includes(word));
-        if (numeral) {
+        if (!isGatedCourseWord(word)) continue;
+        if (isNumeralWord(word)) {
+          const numeral = phrase.numerals.find((n) => n.forms.includes(word));
+          if (numeral) {
+            matched.add(word);
+            hits.push(numeral.word);
+          }
+          continue;
+        }
+        const { hit } = matchQueryWord(word, phrase.textWords, BACKWORK_SEARCH_ALIASES);
+        if (hit) {
           matched.add(word);
-          hits.push(numeral.word);
+          hits.push(hit);
         }
       }
     }
@@ -382,17 +401,21 @@ export function queryLibrary(
   /**
    * A word's match through the course. A word that isn't a number matches
    * the course's words as search matches any word (prefix, typo). A number
-   * from 1 to 10, in either spelling, never matches by prefix or typo there:
-   * it counts only exactly, beside another query word on the same name or
-   * nickname (`courseMatch`).
+   * (a word with a digit, or a Roman numeral from I to X) counts only beside
+   * a non-numeric query word on the same name or nickname (`courseMatch`);
+   * a number from 1 to 10, in either spelling, counts only exactly.
    */
   const courseFallback = (row: LibraryRow, word: string) => {
     if (row.coursePhrases.length === 0) return { score: 0, hit: null };
-    if (!isNumeralWord(word)) {
+    if (!isGatedCourseWord(word)) {
       return matchQueryWord(word, row.courseWords, BACKWORK_SEARCH_ALIASES);
     }
     const phrase = phrasesOf(row).find((p) => p.matched.has(word));
-    const numeral = phrase?.phrase.numerals.find((n) => n.forms.includes(word));
+    if (!phrase) return { score: 0, hit: null };
+    if (!isNumeralWord(word)) {
+      return matchQueryWord(word, phrase.phrase.textWords, BACKWORK_SEARCH_ALIASES);
+    }
+    const numeral = phrase.phrase.numerals.find((n) => n.forms.includes(word));
     // No `hit`: the numeral lights up the course line (`courseHits`), never
     // an "I" in the title, tags or professor.
     return numeral ? { score: NUMERAL_SCORE, hit: null } : { score: 0, hit: null };

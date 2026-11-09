@@ -17,9 +17,10 @@
  *   neighbouring letters as one edit;
  * - a word with a digit in it never fuzzes, so "2210" does not find "2120"
  *   and "cs201" does not find "cs101";
- * - a number of one or two digits must match a whole word, so "hw 2" finds
- *   Homework 2 but not a Homework 5 from 2025; from three digits a number may
- *   start a word ("212" finds "2120");
+ * - a number of one or two digits, or a Roman numeral from I to X, must match
+ *   a whole word, so "hw 2" finds Homework 2 but not a Homework 5 from 2025,
+ *   and "calc i" does not find "Calculus II" or "integral"; from three digits
+ *   a number may start a word ("212" finds "2120");
  * - a short alias table expands the shorthand people type ("hw", "mt");
  * - Roman and Arabic numerals are not equated here, because "i" and "v" are
  *   ordinary words in titles; `withNumeralVariants` and `isNumeralWord` let a
@@ -128,9 +129,12 @@ function scoreWord(
   query: string,
   words: readonly string[],
 ): { score: number; hit: string | null } {
-  const hasDigit = /\d/.test(query);
-  const edits = hasDigit ? 0 : allowedEdits(query);
-  const prefixOk = !/^\d{1,2}$/.test(query);
+  // A short number, in digits or as a Roman numeral from I to X, matches a
+  // whole word only: "1" must not start "12", nor "i" start "ii" or
+  // "integral", nor "viii" fuzz to "vii".
+  const wholeWordOnly = /^\d{1,2}$/.test(query) || ROMAN_NUMERALS.includes(query);
+  const edits = wholeWordOnly || /\d/.test(query) ? 0 : allowedEdits(query);
+  const prefixOk = !wholeWordOnly;
   let best = 0;
   let hit: string | null = null;
   for (const word of words) {

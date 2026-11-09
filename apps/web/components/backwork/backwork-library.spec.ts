@@ -485,16 +485,98 @@ describe("roman numerals in the query (#3848 second review)", () => {
     expect(ids("i")).toEqual([]);
   });
 
-  it("still lets 'i' match a title word as before (prefix included)", () => {
+  it("lets 'i' match a title word only whole, never by prefix", () => {
     const titled = toLibraryRows(
-      [resource({ id: "intro", title: "Intro notes" }), resource({ id: "i-am", title: "I am notes" })],
+      [
+        resource({ id: "intro", title: "Intro notes" }),
+        resource({ id: "integral", title: "Integral practice" }),
+        resource({ id: "i-am", title: "I am notes" }),
+      ],
       [],
       [],
     );
-    expect(queryLibrary(titled, "i", NO_FILTERS).map((r) => r.item.resource.id).sort()).toEqual([
+    expect(queryLibrary(titled, "i", NO_FILTERS).map((r) => r.item.resource.id)).toEqual([
       "i-am",
-      "intro",
     ]);
+  });
+});
+
+describe("roman numerals in a title (#3848 fourth review)", () => {
+  const math = { id: "d-math", code: "MATH", name: "Mathematics" };
+  const rows = toLibraryRows(
+    [
+      resource({ id: "calc1-final", title: "Final", department_id: "d-math", course_number: "1010" }),
+      resource({
+        id: "calc2-mid",
+        title: "Calculus II Midterm",
+        department_id: "d-math",
+        course_number: "1020",
+      }),
+    ],
+    [math],
+    [],
+    [
+      {
+        id: "c1",
+        department_id: "d-math",
+        course_number: "1010",
+        course_key: "1010",
+        name: "Calculus I",
+        nicknames: [],
+      },
+      {
+        id: "c2",
+        department_id: "d-math",
+        course_number: "1020",
+        course_key: "1020",
+        name: "Calculus II",
+        nicknames: [],
+      },
+    ],
+  );
+  const ids = (query: string) => queryLibrary(rows, query, NO_FILTERS).map((r) => r.item.resource.id);
+
+  it("'calc i' and 'calc 1' both find only Calculus I, not a title reading 'Calculus II'", () => {
+    expect(ids("calc i")).toEqual(["calc1-final"]);
+    expect(ids("calc 1")).toEqual(["calc1-final"]);
+  });
+});
+
+describe("numbers through a course name or nickname (#3848 fourth review)", () => {
+  const stats = { id: "d-stat", code: "STAT", name: "Statistics" };
+  const rows = toLibraryRows(
+    [resource({ id: "stat-final", title: "Final", department_id: "d-stat", course_number: "2100" })],
+    [stats],
+    [],
+    [
+      {
+        id: "c-stat",
+        department_id: "d-stat",
+        course_number: "2100",
+        course_key: "2100",
+        name: "Introductory Statistics",
+        nicknames: ["Stat 200"],
+      },
+    ],
+  );
+  const results = (query: string) => queryLibrary(rows, query, NO_FILTERS);
+
+  it("a bare number above 10 does not find a file through a nickname", () => {
+    expect(results("200")).toEqual([]);
+    expect(results("final 200")).toEqual([]);
+  });
+
+  it("a number counts beside a non-numeric word on the same nickname", () => {
+    const [found] = results("stat 200");
+    expect(found?.item.resource.id).toBe("stat-final");
+    expect(found?.nickname).toBe("Stat 200");
+    // "stat" also starts the name's "statistics"; "200" only the nickname.
+    expect(found?.courseHits.sort()).toEqual(["200", "stat", "statistics"]);
+  });
+
+  it("a number does not count beside a word that matched a different phrase", () => {
+    // "introductory" matches the name, "200" only the nickname.
+    expect(results("introductory 200")).toEqual([]);
   });
 });
 

@@ -3213,7 +3213,7 @@ Dropping it loses only the scan's record. Each mapped row keeps the `new_channel
 
 One new table, `backwork_courses`; its CHECK helper `backwork_course_nicknames_ok`; the write function `backwork_course_write` and its helper `backwork_course_merge_nicknames`; and a new body for `search_backwork_resources`. No existing row changed. The API from the same PR reads and writes the table, so roll the API back first: dropping the table under the new API fails `GET /v1/backwork/courses`, every course `PUT` and every department merge; an upload that names a course still succeeds without saving the name.
 
-**Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). After the API is back on the earlier version, re-run the `create or replace function public.search_backwork_resources` block from `20261106190000_backwork_search_wider.sql` first (the new body joins the table), then:
+**Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). After the API is back on the earlier version, re-run the `create or replace function public.search_backwork_resources` block from `20261106190000_backwork_search_wider.sql` first (the new body joins the table), and the `comment on function public.search_backwork_resources(uuid, text, integer)` statement after it in the same file (this migration replaced the comment too, and it would otherwise still describe course-name search), then:
 
 ```sql
 drop function if exists public.backwork_course_write(uuid, uuid, text, boolean, text, boolean, text[], text[], boolean);
