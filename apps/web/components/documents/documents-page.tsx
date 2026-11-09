@@ -16,6 +16,7 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { DocumentList } from "@/components/documents/document-list";
+import { DocumentViewer } from "@/components/documents/document-viewer";
 import type {
   ChapterDocument,
   ChapterDocumentFolder,
@@ -135,6 +136,10 @@ function ChapterDocumentsPage() {
   }, [folders, foldersQuery.isError, deferredSearch, documents]);
 
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
+  // The document open in the viewer (#3849), by id: the viewer reads the row
+  // from `visible`, so it steps through the list as shown and closes when the
+  // row leaves it.
+  const [openId, setOpenId] = useState<string | null>(null);
   const { data: permissionsPayload } = useMyPermissions();
   const canUpload = can(
     "chapter_docs:upload",
@@ -390,6 +395,7 @@ function ChapterDocumentsPage() {
           onRetry={() => void documentsQuery.refetch()}
           gate={gate}
           deletingIds={deletingIds}
+          onOpen={(doc) => setOpenId(doc.id)}
           onDelete={(doc) => void handleDelete(doc)}
           onShowAllFiles={() => setActiveFolder(null)}
           onUpload={canUpload ? () => upload.openPanel() : undefined}
@@ -403,6 +409,11 @@ function ChapterDocumentsPage() {
         interaction the Chapter Ops slice shipped and its guard caught.
       */}
       <FolderDialog gate={gate} management={folderManagement} />
+      <DocumentViewer
+        documents={visible}
+        openId={openId}
+        onOpenChange={setOpenId}
+      />
 
       {confirmDialog}
     </div>
