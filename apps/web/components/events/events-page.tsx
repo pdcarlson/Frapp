@@ -62,7 +62,6 @@ import { useNetwork } from "@/lib/providers/network-provider";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import {
   formatRelativeDayTime,
-  formatTimeOfDay,
   parseInstant,
 } from "@repo/formatting";
 import { checkInClosesAt } from "@/components/events/check-in-close";
@@ -274,11 +273,21 @@ export function EventsPage() {
     );
   }
 
+  // Keyed the way the selection is (`visibleEventIds`), so a selected id
+  // always finds its row.
+  const eventsById = useMemo(
+    () =>
+      new Map(
+        events.map((event) => [String(event.id ?? event.name ?? ""), event]),
+      ),
+    [events],
+  );
+
   // `POST /events/:id/attendance/auto-absent` is real, guarded, per-event
   // support for this action — it records ABSENT for whoever the event
   // required and never checked in or was otherwise marked. It refuses (400)
-  // before an event's check-in grace period ends, so an event still inside
-  // it is failed here without being sent, and the rest go ahead.
+  // before an event's check-in grace period ends, so an event whose check-in
+  // hasn't closed is failed here without being sent, and the rest go ahead.
   async function markSelectedAttendanceComplete() {
     const ids = [...selectedEventIds];
     if (ids.length === 0) return;
@@ -290,26 +299,26 @@ export function EventsPage() {
     });
     if (!confirmed) return;
 
-    // An event whose check-in is still open is refused with a 400, so it is
+    // The API refuses (400) an event whose check-in hasn't closed, so it is
     // not sent: it fails here, by name, without the request (FRAPP-WEB-7,
     // #3905).
-    const now = Date.now();
-    const stillOpen = ids.flatMap((eventId) => {
-      const event = events.find(
-        (candidate) => String(candidate.id ?? candidate.name ?? "") === eventId,
+    const now = new Date();
+    const notClosed = ids.flatMap((eventId) => {
+      const closesAt = checkInClosesAt(
+        eventsById.get(eventId)?.end_time,
+        now.getTime(),
       );
-      const closesAt = checkInClosesAt(event?.end_time, now);
       return closesAt
         ? [
             {
               eventId,
-              message: `Check-in is open until ${formatTimeOfDay(closesAt.toISOString())}.`,
+              message: `Check-in hasn't closed yet; it closes ${formatRelativeDayTime(closesAt.toISOString(), now)}.`,
             },
           ]
         : [];
     });
     const toSend = ids.filter(
-      (eventId) => !stillOpen.some((open) => open.eventId === eventId),
+      (eventId) => !notClosed.some((pending) => pending.eventId === eventId),
     );
     const results = await Promise.allSettled(
       toSend.map((eventId) => autoAbsent.mutateAsync(eventId)),
@@ -317,7 +326,7 @@ export function EventsPage() {
     // `results` is positionally aligned with `toSend`, which is the only way
     // to name which event failed — `Promise.allSettled` itself carries no id.
     const failures = [
-      ...stillOpen,
+      ...notClosed,
       ...results.flatMap((result, index) =>
         result.status === "rejected"
           ? [
@@ -345,11 +354,7 @@ export function EventsPage() {
       setSelectedEventIds([]);
     } else {
       const eventName = (eventId: string) =>
-        String(
-          events.find(
-            (event) => String(event.id ?? event.name ?? "") === eventId,
-          )?.name ?? eventId,
-        );
+        String(eventsById.get(eventId)?.name ?? eventId);
       const detail = failures
         .map(({ eventId, message }) => `${eventName(eventId)}: ${message}`)
         .join("; ");

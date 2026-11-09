@@ -1,7 +1,7 @@
 "use client";
 
 import { describeLoadFailure } from "@repo/hooks/error-copy";
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { DirectoryGlyph } from "@/components/events/chapter-ops-glyphs";
 import {
@@ -37,7 +37,7 @@ import {
 } from "@/components/events/attendance-status";
 import type { AttendanceStatus } from "@/components/events/attendance-status";
 import { checkInLabel } from "@/components/events/event-labels";
-import { formatTimeOfDay } from "@repo/formatting";
+import { formatRelativeDayTime } from "@repo/formatting";
 import { checkInClosesAt } from "@/components/events/check-in-close";
 import { InlineNote } from "@/components/shared/inline-note";
 
@@ -84,14 +84,17 @@ export function AttendancePanel({
   const autoAbsentGateProps = gate.controlProps(
     autoAbsent.isPending || closesAt !== null,
   );
-  // The gate's own reason (offline) wins; otherwise say why it is waiting.
+  /*
+    Why the button waits, said in visible text: a disabled Button takes no
+    pointer events, so a `title` alone is never seen. Only when the gate
+    allows writes: a lapsed chapter's button stays disabled past the close,
+    and its own notice says why, so a promise about the close would be false.
+  */
+  const waitingNoticeId = useId();
+  const waitingForClose = closesAt !== null && gate.allowed;
   const autoAbsentControlProps = {
     ...autoAbsentGateProps,
-    title:
-      autoAbsentGateProps.title ??
-      (closesAt
-        ? `Available once check-in closes at ${formatTimeOfDay(closesAt.toISOString())}`
-        : undefined),
+    ...(waitingForClose ? { "aria-describedby": waitingNoticeId } : {}),
   };
 
   const [statusFilter, setStatusFilter] = useState<
@@ -355,6 +358,17 @@ export function AttendancePanel({
           </Can>
         </div>
       </div>
+      {waitingForClose ? (
+        <Can permission="events:update">
+          <p
+            id={waitingNoticeId}
+            className="mt-2 text-caption text-muted-foreground"
+          >
+            Auto-absent can run once check-in closes (
+            {formatRelativeDayTime(closesAt.toISOString(), new Date(now))}).
+          </p>
+        </Can>
+      ) : null}
       <div className="mt-4 space-y-3">
         {/*
           Disable, don't hide (§5 rule 4): the roster, the counts, and the

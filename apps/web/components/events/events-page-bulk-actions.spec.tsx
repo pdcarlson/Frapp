@@ -231,7 +231,7 @@ describe("EventsPage bulk actions", () => {
     ).toBeChecked();
   });
 
-  it("doesn't send an event whose check-in is still open, and names it (FRAPP-WEB-7)", async () => {
+  it("doesn't send an event whose check-in hasn't closed, and names it (FRAPP-WEB-7)", async () => {
     // The API refuses auto-absent until check-in closes, 15 minutes after
     // the end; sending it anyway only produced that 400, reported to Sentry.
     const user = userEvent.setup();
@@ -254,11 +254,52 @@ describe("EventsPage bulk actions", () => {
         expect.objectContaining({
           title: "Some events couldn't be finalized",
           description: expect.stringMatching(
-            /0 succeeded, 1 failed\. Chapter Meeting: Check-in is open until /,
+            /0 succeeded, 1 failed\. Chapter Meeting: Check-in hasn't closed yet; it closes Jan 1, 2099 · /,
           ),
         }),
       ),
     );
     expect(autoAbsentMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("names each failure against its own event when some are held back and some rejected", async () => {
+    // `results` lines up with the events sent, not with the selection.
+    autoAbsentMutateAsync.mockRejectedValue({
+      statusCode: 400,
+      message: "Cannot mark auto-absent before the grace period ends",
+    });
+    const user = userEvent.setup();
+    render(<EventsPage />);
+    await user.selectOptions(
+      screen.getByLabelText("Filter events by time window"),
+      "all",
+    );
+    await user.click(
+      screen.getByRole("checkbox", { name: /select chapter meeting/i }),
+    );
+    await user.click(
+      screen.getByRole("checkbox", { name: /select spring retreat/i }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: /mark attendance complete/i }),
+    );
+    const dialog = screen.getByRole("dialog");
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: /^mark attendance complete$/i,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: expect.stringMatching(
+            /0 succeeded, 2 failed\. Chapter Meeting: Check-in hasn't closed yet;.*; Spring Retreat: Wait until the grace period ends/,
+          ),
+        }),
+      ),
+    );
+    expect(autoAbsentMutateAsync).toHaveBeenCalledTimes(1);
+    expect(autoAbsentMutateAsync).toHaveBeenCalledWith("evt-past");
   });
 });
