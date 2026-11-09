@@ -45,6 +45,12 @@ const mutate = vi.fn((_body: unknown, options: Options) =>
   outcome.ok ? options.onSuccess() : options.onError(outcome.error),
 );
 
+/** The chat path's create (#3865): the same outcome, as a promise. */
+const mutateAsync = vi.fn<(body: unknown) => Promise<unknown>>(async () => {
+  if (outcome.ok) return undefined;
+  throw outcome.error;
+});
+
 const updateMutate = vi.fn((_body: unknown, options: Options) =>
   options.onSuccess(),
 );
@@ -55,7 +61,7 @@ let permissions: string[] = ["*"];
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useCreateEvent: () => ({ mutate, isPending: false }),
+  useCreateEvent: () => ({ mutate, mutateAsync, isPending: false }),
   useUpdateEvent: () => ({ mutate: updateMutate, isPending: false }),
   useDeleteEvent: () => ({ mutate: deleteMutate, isPending: false }),
   usePermissionList: () => permissions,
@@ -631,19 +637,21 @@ describe("New event from a chat's + (#3865)", () => {
   }
 
   beforeEach(() => {
+    mutateAsync.mockClear();
     trackCard.mockClear();
     card.failed.mockClear();
     card.lost.mockClear();
     outcome = { ok: true };
   });
 
-  it("asks the server to post its card in the channel, under the placeholder's id", () => {
+  it("asks the server to post its card in the channel, under the placeholder's id", async () => {
     const onCreated = vi.fn();
     const tree = renderFromChat(onCreated);
     type(tree, "Event name", "Formal");
-    act(() => createButton(tree).props.onPress());
+    await act(async () => createButton(tree).props.onPress());
     expect(trackCard).toHaveBeenCalledWith("Formal");
-    expect(mutate.mock.calls.at(-1)![0]).toEqual(
+    expect(mutate).not.toHaveBeenCalled();
+    expect(mutateAsync.mock.calls.at(-1)![0]).toEqual(
       expect.objectContaining({
         name: "Formal",
         channel_id: "ch-1",
@@ -658,16 +666,12 @@ describe("New event from a chat's + (#3865)", () => {
     act(() => tree.unmount());
   });
 
-  it("keeps the recorded row when the event saved but its card didn't post", () => {
-    mutate.mockImplementationOnce((_body, options) =>
-      (options.onSuccess as (created: unknown) => void)({
-        card_posted: false,
-      }),
-    );
+  it("keeps the recorded row when the event saved but its card didn't post", async () => {
+    mutateAsync.mockResolvedValueOnce({ card_posted: false });
     const onCreated = vi.fn();
     const tree = renderFromChat(onCreated);
     type(tree, "Event name", "Formal");
-    act(() => createButton(tree).props.onPress());
+    await act(async () => createButton(tree).props.onPress());
     expect(card.lost).toHaveBeenCalledTimes(1);
     expect(onCreated).toHaveBeenCalledWith(
       expect.objectContaining({ cardLost: true }),
@@ -675,13 +679,32 @@ describe("New event from a chat's + (#3865)", () => {
     act(() => tree.unmount());
   });
 
-  it("drops the placeholder when the create fails", () => {
+  it("drops the placeholder when the create fails", async () => {
     outcome = { ok: false, error: new Error("nope") };
     const tree = renderFromChat();
     type(tree, "Event name", "Formal");
-    act(() => createButton(tree).props.onPress());
+    await act(async () => createButton(tree).props.onPress());
     expect(card.failed).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
+  });
+
+  it("settles the placeholder even when the member leaves the thread mid-create", async () => {
+    // `mutate`'s per-call callbacks don't fire after an unmount; the chat
+    // path's promise does, so the card's row is never stranded.
+    let settle!: (created: unknown) => void;
+    mutateAsync.mockImplementationOnce(
+      () => new Promise((resolve) => (settle = resolve)),
+    );
+    const onCreated = vi.fn();
+    const tree = renderFromChat(onCreated);
+    type(tree, "Event name", "Formal");
+    act(() => createButton(tree).props.onPress());
+    act(() => tree.unmount());
+    await act(async () => settle({ card_posted: false }));
+    expect(card.lost).toHaveBeenCalledTimes(1);
+    expect(onCreated).toHaveBeenCalledWith(
+      expect.objectContaining({ cardLost: true }),
+    );
   });
 
   it("asks for no card when the event keeps anyone out, and says so", () => {

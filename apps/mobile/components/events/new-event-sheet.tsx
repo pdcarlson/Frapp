@@ -505,42 +505,47 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       const cardKeptOut = !!chat && eventLimitsAudience(result.body);
       const card =
         chat && !cardKeptOut ? chat.trackCard(result.body.name) : null;
-      createEvent.mutate(
-        card && chat
-          ? {
-              ...result.body,
-              channel_id: chat.channelId,
-              client_message_id: card.clientMessageId,
-            }
-          : result.body,
-        {
-          onSuccess: (created) => {
-            sending.current = false;
-            const cardLost = card !== null && created?.card_posted === false;
-            if (cardLost) card.lost();
-            successHaptic();
-            // Saved, so the draft goes whichever visit is on screen.
-            reset();
-            if (isSameVisit(sentFrom)) dismiss();
-            onCreated?.({ name: result.body.name, cardKeptOut, cardLost });
-          },
-          onError: (error) => {
-            sending.current = false;
-            // Refused or lost, the placeholder goes: a lost answer's event may
-            // exist, and the sheet's own line says to check before trying again.
-            card?.failed();
-            if (!isSameVisit(sentFrom)) return;
-            const gated = gateRefusalOf(error, GATE_COPY);
-            if (gated) setRefusal(gated);
-            else if (
-              error instanceof Error &&
-              error.message === EVENT_CREATE_UNCONFIRMED
-            ) {
-              setUnconfirmed(true);
-            } else setSubmitFailed(true);
-          },
+      const handlers = {
+        onSuccess: (created?: { card_posted?: boolean }) => {
+          sending.current = false;
+          const cardLost = card !== null && created?.card_posted === false;
+          if (cardLost) card.lost();
+          successHaptic();
+          // Saved, so the draft goes whichever visit is on screen.
+          reset();
+          if (isSameVisit(sentFrom)) dismiss();
+          onCreated?.({ name: result.body.name, cardKeptOut, cardLost });
         },
-      );
+        onError: (error: unknown) => {
+          sending.current = false;
+          // Refused or lost, the placeholder goes: a lost answer's event may
+          // exist, and the sheet's own line says to check before trying again.
+          card?.failed();
+          if (!isSameVisit(sentFrom)) return;
+          const gated = gateRefusalOf(error, GATE_COPY);
+          if (gated) setRefusal(gated);
+          else if (
+            error instanceof Error &&
+            error.message === EVENT_CREATE_UNCONFIRMED
+          ) {
+            setUnconfirmed(true);
+          } else setSubmitFailed(true);
+        },
+      };
+      if (!card || !chat) {
+        createEvent.mutate(result.body, handlers);
+        return;
+      }
+      // The thread's placeholder has to be settled even if the member leaves
+      // the thread mid-create, which unmounts this sheet: `mutate`'s per-call
+      // callbacks don't fire after an unmount, `mutateAsync`'s promise does.
+      void createEvent
+        .mutateAsync({
+          ...result.body,
+          channel_id: chat.channelId,
+          client_message_id: card.clientMessageId,
+        })
+        .then(handlers.onSuccess, handlers.onError);
     }
 
     // An existing series' length was set when it was made; the line comes

@@ -18,7 +18,10 @@ import {
   type PlusMenuCommand,
   type PlusMenuModuleStatus,
 } from "@repo/chat-core/plus-menu";
-import type { DispatchResult } from "@repo/chat-core/dispatch";
+import {
+  eventCardOutcomeCopy,
+  type DispatchResult,
+} from "@repo/chat-core/dispatch";
 import { ComposerPlusSheet } from "@/components/chat/composer-plus-sheet";
 import { NewPollSheet } from "@/components/chat/new-poll-sheet";
 import {
@@ -71,22 +74,13 @@ export function presentPostOutcome(
   );
 }
 
-/** Web's event-form words for a create from chat whose card isn't there. */
+/** Says where an event's card went when it isn't in the thread, in web's words. */
 export function presentEventOutcome(
   outcome: EventCreatedOutcome,
   alert: typeof Alert.alert = Alert.alert,
 ): void {
-  if (outcome.cardKeptOut) {
-    alert(
-      "Event created",
-      `${outcome.name} is on the calendar. It isn't posted in chat because it's only for some roles.`,
-    );
-  } else if (outcome.cardLost) {
-    alert(
-      "Event created",
-      `${outcome.name} is on the calendar, but its card couldn't be posted in chat.`,
-    );
-  }
+  const copy = eventCardOutcomeCopy(outcome.name, outcome);
+  if (copy) alert("Event created", copy);
 }
 
 /**
@@ -225,10 +219,12 @@ export function useComposerPlus({
         return;
       }
       pendingForm.current = command;
-      setMounted({
+      setMounted((prev) => ({
         channelId,
-        keys: new Set(mountedForms).add(command),
-      });
+        keys: new Set(prev.channelId === channelId ? prev.keys : NO_FORMS).add(
+          command,
+        ),
+      }));
     },
     [channelId, mountedForms, formRefs],
   );

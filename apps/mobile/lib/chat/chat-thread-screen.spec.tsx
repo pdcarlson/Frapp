@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import React from "react";
 import { act } from "react";
+import { Alert } from "react-native";
 import * as expoRouter from "expo-router";
 import {
   create,
@@ -2086,6 +2087,72 @@ describe("chat thread + sheet (#3865)", () => {
     const task = tree.root.findByType("NewTaskSheet" as never);
     expect(task.props.postToChannel).toBe(channel.postTask);
     expect(presentTaskSheet).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("opens Event and Service hours posting into this channel", () => {
+    permissionList = ["*"];
+    const tree = render();
+    const openForm = plusSheet(tree).props.onOpenForm as (c: string) => void;
+    act(() => openForm("event"));
+    act(() => openForm("hours"));
+    const event = tree.root.findByType("NewEventSheet" as never);
+    expect(event.props.chat).toEqual({
+      channelId: CHANNEL,
+      trackCard: channel.trackEventCard,
+    });
+    const hours = tree.root.findByType("LogHoursSheet" as never);
+    expect(hours.props.postToChannel).toBe(channel.postHours);
+    act(() => tree.unmount());
+  });
+
+  it("says what a post carries: a lost task, a poll not saved, an event's missing card", async () => {
+    permissionList = ["*"];
+    const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+    channel = channelState({
+      sendPoll: vi.fn(async () => ({
+        ok: true as const,
+        warning: "Posted, but not saved on this phone.",
+      })),
+    });
+    const tree = render();
+    const openForm = plusSheet(tree).props.onOpenForm as (c: string) => void;
+    act(() => openForm("task"));
+    act(() => openForm("event"));
+    const task = tree.root.findByType("NewTaskSheet" as never);
+    act(() =>
+      (task.props.onPosted as (r: unknown) => void)({
+        ok: true,
+        unconfirmed: true,
+        warning: "Check the task board.",
+      }),
+    );
+    expect(alert).toHaveBeenLastCalledWith(
+      "Couldn't confirm the task",
+      "Check the task board.",
+    );
+    const onPost = tree.root.findByType("NewPollSheet" as never).props
+      .onPost as (poll: unknown) => Promise<unknown>;
+    await act(async () => {
+      await onPost({ content: "Q", payload: {} });
+    });
+    expect(alert).toHaveBeenLastCalledWith(
+      "Poll posted",
+      "Posted, but not saved on this phone.",
+    );
+    const event = tree.root.findByType("NewEventSheet" as never);
+    act(() =>
+      (event.props.onCreated as (o: unknown) => void)({
+        name: "Formal",
+        cardKeptOut: false,
+        cardLost: true,
+      }),
+    );
+    expect(alert).toHaveBeenLastCalledWith(
+      "Event created",
+      "Formal is on the calendar, but its card couldn't be posted in chat.",
+    );
+    alert.mockRestore();
     act(() => tree.unmount());
   });
 

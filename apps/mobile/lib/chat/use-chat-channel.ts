@@ -106,6 +106,7 @@ import {
   postHours,
   postPoll,
   postTask,
+  SIGNED_OUT_POST_COPY,
   trackEventCard,
   type DispatchResult,
   type EventCardTrack,
@@ -124,9 +125,6 @@ import { taskKeys, useFrappClient } from "@repo/hooks";
 
 import { getSupabaseClient } from "@/lib/supabase";
 import { bootChatAdapters, useChatRuntime } from "./use-chat-runtime";
-
-/** chat-core's `postPoll` sentence for a write with no identity behind it. */
-const SIGNED_OUT_COPY = "You're signed out. Sign in, then post it again.";
 
 /** Matches web's debounce so a draft write never rides every keystroke. */
 const DRAFT_SAVE_DEBOUNCE_MS = 400;
@@ -939,9 +937,9 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     }): Promise<
       { ok: true; warning?: string } | { ok: false; error: string }
     > => {
-      if (!channelId || !ctx) {
-        return { ok: false, error: "Couldn't post that poll. Try again." };
-      }
+      // The sheet opens only while the composer can send, so no runtime by the
+      // time Post lands means the viewer is gone: signed out, as on Task.
+      if (!channelId || !ctx) return { ok: false, error: SIGNED_OUT_POST_COPY };
       const result = await postPoll(ctx, channelId, poll);
       if (result.ok) return result;
       // `cause` is for error reporting; the sheet shows the sentence.
@@ -950,11 +948,11 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, ctx],
   );
 
-  // No channel or identity means no + (the composer can't send), so these
-  // only answer a caller that raced a sign-out.
+  // No channel or identity means no + (the composer can't send), so these,
+  // like `sendPoll`, only answer a caller that raced a sign-out.
   const postTaskHere = useCallback(
     async (input: TaskInput): Promise<DispatchResult> => {
-      if (!channelId || !ctx) return { ok: false, error: SIGNED_OUT_COPY };
+      if (!channelId || !ctx) return { ok: false, error: SIGNED_OUT_POST_COPY };
       const result = await postTask(ctx, channelId, input);
       // `postTask` writes the chat's cache, not the task board's. A lost
       // answer refreshes it too: the task may exist.
@@ -966,7 +964,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   );
   const postHoursHere = useCallback(
     async (input: HoursInput): Promise<DispatchResult> => {
-      if (!channelId || !ctx) return { ok: false, error: SIGNED_OUT_COPY };
+      if (!channelId || !ctx) return { ok: false, error: SIGNED_OUT_POST_COPY };
       const result = await postHours(ctx, channelId, input);
       // As above, for the Service page's entries.
       if (result.ok) {

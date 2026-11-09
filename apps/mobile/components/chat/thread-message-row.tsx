@@ -285,8 +285,9 @@ function ThreadMessageRowBody({
  * keeps its own malformed state, which names the poll.
  *
  * Not cards on mobile: `dues`, which web draws as a "coming soon" card, and
- * `loading`, web's placeholder for a slash command in flight, which mobile
- * never sends.
+ * `loading`, the placeholder for a heavy write in flight, which the + sheet's
+ * Task, Service hours and Event forms send (#3865); it reads as its text
+ * ("Creating task …") until the server's card replaces it.
  */
 function cardFor(
   frame: ChatCardFrameProps,

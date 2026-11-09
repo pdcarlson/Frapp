@@ -38,12 +38,16 @@ export const PLUS_MENU_ROW_COPY: Record<
 };
 
 /**
- * What each form's write needs, from the routes' guards: `POST /v1/polls`
- * (the poll card) is `polls:create`; `POST /v1/events` is
- * `EVENT_CREATE_PERMISSIONS`; `POST /v1/tasks` is `tasks:manage` under the
+ * The grant each form needs. Four are their routes' guards: `POST /v1/events`
+ * is `EVENT_CREATE_PERMISSIONS`; `POST /v1/tasks` is `tasks:manage` under the
  * controller's `members:view`; `POST /v1/service-entries` is `service:log`;
  * `POST /v1/points/adjust` is `points:adjust` under `members:view`. The task
  * and points forms also list members to pick from, which `members:view` reads.
+ *
+ * Poll is not: a poll card goes through the chat send route like a message,
+ * which doesn't check `polls:create` (web's `/poll` posts for anyone), so this
+ * is a client-side offer, the phone's rule since #3701. Whether the server
+ * should enforce it is #3007's open decision.
  */
 export const PLUS_MENU_PERMISSIONS: Record<PlusMenuCommand, readonly string[]> =
   {

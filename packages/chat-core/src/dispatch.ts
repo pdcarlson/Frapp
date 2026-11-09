@@ -187,9 +187,13 @@ async function dispatchPoll(
   });
 }
 
+/** A post from a form with no signed-in member behind it, on either surface. */
+export const SIGNED_OUT_POST_COPY =
+  "You're signed out. Sign in, then post it again.";
+
 /**
  * Posts a poll card a New poll form built (`buildPollMessage`): web's dialog
- * (#3865) and, in time, mobile's sheet. Through the outbox like a message, so
+ * (#3865) and the phone's New poll sheet. Through the outbox like a message, so
  * it is optimistic and survives going offline. Unlike `/poll` it leaves the
  * channel's saved draft alone: the composer may hold a message the member is
  * still writing beside the form.
@@ -200,6 +204,7 @@ async function dispatchPoll(
  * `{ ok: true, warning }` is `sendMessage`'s posted-but-not-saved warning,
  * which the caller must show, as `notifyDispatchOutcome` does for `/poll`.
  */
+
 export async function postPoll(
   ctx: ChatActionContext,
   channelId: string,
@@ -209,7 +214,7 @@ export async function postPoll(
   | { ok: false; error: string; cause?: unknown }
 > {
   if (!ctx.userId) {
-    return { ok: false, error: "You're signed out. Sign in, then post it again." };
+    return { ok: false, error: SIGNED_OUT_POST_COPY };
   }
   try {
     const sent = await sendMessage(ctx, {
@@ -1000,6 +1005,25 @@ async function dispatchEvent(
  * (`card_posted: false`), since `POST /v1/events` has no dedupe and the toast
  * alone is evictable.
  */
+/**
+ * What a create from chat says when its event card isn't in the thread: kept
+ * out because the event is only for some roles (none is asked for), or lost
+ * (`card_posted: false`). `null` when the card is there. Web's event form and
+ * the phone's New event sheet both say it.
+ */
+export function eventCardOutcomeCopy(
+  name: string,
+  card: { cardKeptOut: boolean; cardLost: boolean },
+): string | null {
+  if (card.cardKeptOut) {
+    return `${name} is on the calendar. It isn't posted in chat because it's only for some roles.`;
+  }
+  if (card.cardLost) {
+    return `${name} is on the calendar, but its card couldn't be posted in chat.`;
+  }
+  return null;
+}
+
 export interface EventCardTrack {
   clientMessageId: string;
   failed: () => void;
