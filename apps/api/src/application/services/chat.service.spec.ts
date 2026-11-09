@@ -1222,6 +1222,29 @@ describe('ChatService', () => {
         );
       });
 
+      it('clears the chat notifications the hide marked read (#3788)', async () => {
+        mockChannelRepo.findById.mockResolvedValue(dm);
+        mockReadReceiptRepo.hideDirectMessage.mockResolvedValue({
+          id: 'r-1',
+          channel_id: 'ch-dm',
+          user_id: 'user-1',
+          last_read_at: '2026-09-25T20:00:00.000Z',
+          hidden_at: '2026-09-25T20:00:00.000Z',
+          updated_at: '2026-09-25T20:00:00.000Z',
+        });
+
+        await service.leaveChannel('ch-dm', 'ch-1', 'user-1');
+
+        expect(
+          mockNotificationService.markChatChannelNotificationsRead,
+        ).toHaveBeenCalledWith(
+          'user-1',
+          'ch-1',
+          'ch-dm',
+          '2026-09-25T20:00:00.000Z',
+        );
+      });
+
       it('changes nothing the other member sees, and deletes nothing', async () => {
         mockChannelRepo.findById.mockResolvedValue(dm);
         mockReadReceiptRepo.hideDirectMessage.mockResolvedValue({

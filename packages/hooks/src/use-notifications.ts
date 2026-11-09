@@ -1,9 +1,11 @@
 "use client";
 
+import { useCallback } from "react";
 import {
   type QueryClient,
-  useQuery,
   useMutation,
+  useMutationState,
+  useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 import { throwUnlessOk, type components } from "@repo/api-sdk";
@@ -170,9 +172,46 @@ function revertCategory(
   );
 }
 
+/**
+ * The member's in-app notifications in the active chapter.
+ *
+ * A row with a read receipt still in flight (`useMarkNotificationRead`, from
+ * any caller in this app) is returned already read (#3788), so the dot and
+ * every count drawn from this list clear on the tap rather than after the
+ * PATCH and the refetch behind it. The overlay is a `select`, not a cache
+ * write: a refetch that lands before the PATCH commits can't relight the row,
+ * and a write that fails stops overlaying it with nothing to roll back.
+ */
 export function useNotifications(limit?: number) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
+  const pendingReads = useMutationState({
+    filters: { mutationKey: markNotificationReadMutationKey, status: "pending" },
+    select: (mutation) => {
+      const id = mutation.state.variables;
+      return typeof id === "string"
+        ? `${id}\t${new Date(mutation.state.submittedAt).toISOString()}`
+        : null;
+    },
+  });
+  // A string, so the `select` below keeps its identity (and the query its
+  // memoized result) until the set of pending receipts actually changes.
+  const pendingKey = pendingReads.filter(Boolean).sort().join("\n");
+  const select = useCallback(
+    <T,>(data: T): T =>
+      withPendingReads(
+        data,
+        new Map(
+          pendingKey
+            ? pendingKey.split("\n").map((entry) => {
+                const [id = "", sentAt = ""] = entry.split("\t");
+                return [id, sentAt] as const;
+              })
+            : [],
+        ),
+      ),
+    [pendingKey],
+  );
   return useQuery({
     queryKey: notificationKeys.list(chapterId, limit),
     queryFn: async () => {
@@ -184,6 +223,7 @@ export function useNotifications(limit?: number) {
     },
     staleTime: 10_000,
     enabled: !!chapterId,
+    select,
   });
 }
 
@@ -326,6 +366,30 @@ function markCachedRowsRead(
   return changed;
 }
 
+/**
+ * Refetch the mounted in-app lists. Narrower than `notificationKeys.all`,
+ * which would refetch a mounted preferences screen for a read that cannot
+ * change it.
+ */
+export function invalidateNotificationLists(queryClient: QueryClient) {
+  return queryClient.invalidateQueries({
+    predicate: (query) => isNotificationListKey(query.queryKey),
+  });
+}
+
+/**
+ * The cached list with every row a pending read receipt names shown read
+ * (#3788). `pending` maps a notification id to when its receipt was sent.
+ */
+function withPendingReads<T>(data: T, pending: ReadonlyMap<string, string>): T {
+  if (pending.size === 0) return data;
+  let result: unknown = data;
+  for (const [id, sentAt] of pending) {
+    result = withRowsRead(result, (row) => row.id === id, sentAt);
+  }
+  return result as T;
+}
+
 function chatChannelOf(row: CachedNotificationRow): string | null {
   const data = row.data;
   if (!data || typeof data !== "object") return null;
@@ -353,6 +417,32 @@ export function markChannelNotificationsReadInCache(
   );
 }
 
+/**
+ * Refetch the in-app lists when one of them shows an unread chat row for
+ * `channelId`, without writing anything: for a server change the client can't
+ * predict row by row (leaving a group DM clears nothing, hiding a DM clears
+ * its rows).
+ */
+export function refetchIfChannelNotificationsShown(
+  queryClient: QueryClient,
+  channelId: string,
+): void {
+  const shown = queryClient
+    .getQueriesData({ predicate: (query) => isNotificationListKey(query.queryKey) })
+    .some(
+      ([, rows]) =>
+        Array.isArray(rows) &&
+        rows.some(
+          (row: unknown) =>
+            !!row &&
+            typeof row === "object" &&
+            (row as CachedNotificationRow).read_at === null &&
+            chatChannelOf(row as CachedNotificationRow) === channelId,
+        ),
+    );
+  if (shown) void invalidateNotificationLists(queryClient);
+}
+
 export function useMarkNotificationRead({
   sentOnOpen = false,
 }: {
@@ -373,40 +463,23 @@ export function useMarkNotificationRead({
       throwUnlessOk(result);
       return result.data;
     },
-    // Optimistic (#3788): the dot and every count drawn from these lists
-    // clear on the tap, not after the PATCH and the refetch behind it, which
-    // read as "opening it did nothing" when the tap also navigated away. No
-    // `cancelQueries` first: a push tap's receipt can go out while the list's
-    // first fetch is still in flight, and cancelling that would strand the
-    // list empty if the write then failed. A fetch that lands stale is put
-    // right by the invalidation on success.
-    onMutate: (id) => {
-      const readAt = new Date().toISOString();
-      const wrote = markCachedRowsRead(queryClient, (row) => row.id === id, readAt);
-      return { readAt, wrote };
-    },
-    onError: (_error, id, context) => {
-      if (!context?.wrote) return;
-      // Put back only the row this write marked, and only while it still
-      // carries this write's stamp: a refetch may have landed a real read.
-      for (const [queryKey, rows] of queryClient.getQueriesData({
-        predicate: (query) => isNotificationListKey(query.queryKey),
-      })) {
-        if (!Array.isArray(rows)) continue;
-        let reverted = false;
-        const next = rows.map((row: unknown) => {
-          const candidate = row as CachedNotificationRow | null;
-          if (candidate?.id !== id || candidate.read_at !== context.readAt) {
-            return row;
-          }
-          reverted = true;
-          return { ...candidate, read_at: null };
-        });
-        if (reverted) queryClient.setQueryData(queryKey, next);
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: notificationKeys.all });
+    // The row reads as read while this write is pending through
+    // `useNotifications`' overlay of pending receipts (#3788), not a cache
+    // write, so a refetch landing mid-write can't relight it and a failed
+    // write simply stops overlaying. On success the server's stamp goes into
+    // the cache before the overlay lifts, and the refetch reconciles: its
+    // invalidation cancels any GET that started before this write committed.
+    onSuccess: (updated, id) => {
+      const stamp =
+        updated && typeof updated === "object" && "read_at" in updated
+          ? (updated as { read_at?: unknown }).read_at
+          : null;
+      markCachedRowsRead(
+        queryClient,
+        (row) => row.id === id,
+        typeof stamp === "string" ? stamp : new Date().toISOString(),
+      );
+      invalidateNotificationLists(queryClient);
     },
   });
 }

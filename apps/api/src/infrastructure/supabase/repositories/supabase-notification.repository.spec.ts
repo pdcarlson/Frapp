@@ -129,6 +129,13 @@ describe('SupabaseNotificationRepository — tenant scope', () => {
         read_at: null,
         created_at: '2026-01-01T00:00:00.000Z',
       },
+      // Not a chat row, though it names the channel: only chat rows clear.
+      {
+        id: 'report',
+        data: { target: { screen: 'chat_reports', channelId: CHANNEL } },
+        read_at: null,
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
     ];
     const row = (r: (typeof rows)[number], prefix: string) => ({
       ...r,
@@ -165,11 +172,13 @@ describe('SupabaseNotificationRepository — tenant scope', () => {
       'b-read': '2025-12-31T00:00:00.000Z',
       'b-other-channel': null,
       'b-event': null,
+      'b-report': null,
       'a-before': null,
       'a-after': null,
       'a-read': '2025-12-31T00:00:00.000Z',
       'a-other-channel': null,
       'a-event': null,
+      'a-report': null,
     });
   });
 

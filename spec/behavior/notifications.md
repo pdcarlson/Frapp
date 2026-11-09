@@ -19,11 +19,18 @@ Other modules (Chat, Events, Study, Billing) call these methods without knowing 
 6. Send push notification via Expo Push Service with the appropriate priority.
 7. If Expo reports a token as permanently undeliverable (`DeviceNotRegistered`), remove it from `push_tokens`. This is classified from the *ticket* Expo returns at send time (`ExpoPushProvider.recordTickets`), not from polling delivery *receipts* — receipt polling is a separate, unimplemented enhancement. Every other Expo error (rate limit, oversized message, bad app credentials, transport failure) is transient or describes something other than this specific token, and does not prune it — pruning on those would unregister a device that is still valid.
 
+
+**How an in-app row is marked read** (#3788). A row is read once the member has seen what it is about, by any of these routes:
+
+- **Opening the row.** Tapping it in the mobile inbox or the web drawer, or tapping its push, sends `PATCH /v1/notifications/{id}/read` (a push carries the row's id as `notificationId`). "Mark all read" sends the same write per row.
+- **Reading its channel.** `POST /v1/channels/{id}/read` stamps the caller's receipt, then sets `read_at` on their unread rows in that chapter whose `data.target` is that chat channel and that were created at or before the receipt's instant. Hiding a 1:1 DM marks it read the same way and clears the same rows. A row created after the read is about a message it did not cover, so it stays unread. The clear is best-effort: if it fails, the receipt still succeeds and the row keeps its dot. Members mostly read chat by opening the channel rather than the row, so without this the inbox kept every chat push unread after the messages were seen.
+
+Both clients show a row read as soon as its `PATCH` is sent: `useNotifications` in `@repo/hooks` overlays every pending receipt on the list, so a refetch that lands before the write commits can't relight the dot, and a failed write simply stops overlaying it.
 **URGENT outranks the category preference** (#1041). A member cannot mute a chapter emergency — or the president's subscription-status alert — by switching its category off, and the exemption covers the in-app row as well as the push: suppressing the row would leave no trace of the broadcast anywhere, which is the same failure in a slower form. Step 2 is the only gate URGENT skips; it is otherwise delivered exactly like any other payload. Note the ordering is an implementation detail of *when the preference is read*, not of what is checked — `notifyUser` skips the lookup entirely for URGENT rather than reading it and discarding the result. `notifyChapter` does the same at roster scale: it never issues the batched preference read for an URGENT payload, so an emergency broadcast costs no preference query.
 
 `notifyChapter` does **not** fan out `notifyUser`. It loads the roster once, then (unless URGENT) the category preference for the whole audience in chunked `in (user_id)` reads of 100 ids — the 414 bound measured in `apps/api/src/domain/utils/chunk-ids.ts` — pages each chunk under the #686 rule, evaluates quiet hours in memory against a similarly batched `user_settings` read, inserts in-app rows with `createMany` in the same 100-row chunks, and looks up `push_tokens` in those same id chunks for the users who got a row. Push itself stays per recipient, because each Expo payload must stamp that user's `notificationId`. Missing preference rows stay enabled, matching `notifyUser`. Failed preference, settings, insert, or token pages are isolated at chunk grain and logged as aggregate counts rather than swallowed; a rejected Expo send is counted the same way.
 
-Push delivery is mobile-only (Expo); **web push is intentionally out of scope** for this phase. The web dashboard surfaces the in-app history instead: its notification drawer reads `GET /v1/notifications` (optional `limit`) — **active chapter only**, per step 4 — and subscribes to a **private Supabase Realtime broadcast** topic, `notif:<users.id>`, so new rows appear without a manual refresh. The ping carries `{table, op}` and **no row data** — it only tells the client to refetch, and the refetch goes through the API above, which stays the enforcing layer. It deliberately does *not* use `postgres_changes`: `notifications` is RLS-on with no policy, and the SELECT policy needed to make Postgres changes fire would equally expose the table to direct browser reads (see [`authorization-model.md`](../../docs/security/authorization-model.md) §4 and #867). Tapping a row deep-links via the payload `target` and marks it read with `PATCH /v1/notifications/{id}/read`. Both clients clear the row's unread dot as the tap happens and put it back if the write fails (`useMarkNotificationRead` in `@repo/hooks`).
+Push delivery is mobile-only (Expo); **web push is intentionally out of scope** for this phase. The web dashboard surfaces the in-app history instead: its notification drawer reads `GET /v1/notifications` (optional `limit`) — **active chapter only**, per step 4 — and subscribes to a **private Supabase Realtime broadcast** topic, `notif:<users.id>`, so new rows appear without a manual refresh. The ping carries `{table, op}` and **no row data** — it only tells the client to refetch, and the refetch goes through the API above, which stays the enforcing layer. It deliberately does *not* use `postgres_changes`: `notifications` is RLS-on with no policy, and the SELECT policy needed to make Postgres changes fire would equally expose the table to direct browser reads (see [`authorization-model.md`](../../docs/security/authorization-model.md) §4 and #867). Tapping a row deep-links via the payload `target` and marks it read with `PATCH /v1/notifications/{id}/read`.
 
 ## Deep Linking
 
@@ -138,15 +145,6 @@ single "N new messages" push, and that decision reaches the client only as
   clears the next time the app comes forward. Clearing while the app stays
   closed would need a silent (`content-available`) push and a background task,
   which the app does not have.
-- Reading a channel also marks its in-app notification rows read (#3788).
-  `POST /v1/channels/{id}/read` stamps the receipt, then sets `read_at` on the
-  caller's unread rows in that chapter whose `data.target` is that chat channel
-  and that were created at or before the receipt's instant. A row created after
-  it is about a message the read did not cover, so it stays unread. The clear
-  is best-effort: if it fails, the receipt still succeeds and the row keeps its
-  dot until the member taps it or reads the channel again. A member mostly
-  reads a chat by opening the channel, not by tapping its inbox row, so without
-  this the inbox kept every chat push unread after the messages were seen.
 
 No collapse identifier is sent, so no push replaces another. The Android
 **notification channel** is a separate thing and is not a grouping key; which

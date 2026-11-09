@@ -570,6 +570,14 @@ export class ChatService {
         // this row existed and was a DM a moment ago, and a type never changes.
         throw new NotFoundException('Channel not found');
       }
+      // Hiding marks the DM read, so it clears the notifications about it as
+      // a read does (#3788).
+      await this.clearChannelNotifications(
+        channelId,
+        chapterId,
+        userId,
+        receipt.last_read_at,
+      );
       // No cache eviction: the push worker's cached row is unchanged, and a
       // hidden DM still notifies — a new message is what brings it back.
       return;
@@ -1311,10 +1319,7 @@ export class ChatService {
   /**
    * Stamp the caller's read receipt, then clear the chat notifications the
    * read covers (#3788): the inbox row for a message is "viewed" once its
-   * channel is, however the member got there. Awaited, so the client's refetch
-   * after this call sees the rows cleared, but best-effort: a failed clear
-   * leaves a stale dot in the inbox, which must not fail the read receipt
-   * that drives every unread badge.
+   * channel is, however the member got there.
    */
   async markChannelRead(channelId: string, chapterId: string, userId: string) {
     await this.assertChannelAccess(channelId, chapterId, userId);
@@ -1324,12 +1329,29 @@ export class ChatService {
       userId,
       readAt,
     );
+    await this.clearChannelNotifications(channelId, chapterId, userId, readAt);
+    return receipt;
+  }
+
+  /**
+   * Mark the caller's chat notifications for a channel read, through the
+   * instant its receipt now reads (#3788). Awaited, so a client's refetch
+   * after the request sees the rows cleared, but best-effort: a failed clear
+   * leaves a stale dot in the inbox, which must not fail the read receipt
+   * that drives every unread badge.
+   */
+  private async clearChannelNotifications(
+    channelId: string,
+    chapterId: string,
+    userId: string,
+    readThrough: string,
+  ): Promise<void> {
     try {
       await this.notifications.markChatChannelNotificationsRead(
         userId,
         chapterId,
         channelId,
-        readAt,
+        readThrough,
       );
     } catch (error) {
       reportCaughtFailure(this.logger, {
@@ -1339,7 +1361,6 @@ export class ChatService {
         error,
       });
     }
-    return receipt;
   }
 
   /**
