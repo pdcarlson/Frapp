@@ -34,6 +34,7 @@ export function DocumentList({
   onRetry,
   gate,
   deletingIds,
+  onOpen,
   onDelete,
   onShowAllFiles,
   onUpload,
@@ -49,6 +50,8 @@ export function DocumentList({
   onRetry: () => void;
   gate: SubscriptionGate;
   deletingIds: ReadonlySet<string>;
+  /** Opens a document in the viewer (#3849). */
+  onOpen: (doc: ChapterDocument) => void;
   onDelete: (doc: ChapterDocument) => void;
   /** Leaves the folder for "All files". */
   onShowAllFiles: () => void;
@@ -216,6 +219,7 @@ export function DocumentList({
                 doc={doc}
                 gate={gate}
                 deleting={deletingIds.has(doc.id)}
+                onOpen={onOpen}
                 onDelete={onDelete}
               />
             ))}

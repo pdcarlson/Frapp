@@ -135,7 +135,7 @@ export function useDeleteDocumentFolder() {
   });
 }
 
-export function useDocument(id: string) {
+export function useDocument(id: string, options?: { enabled?: boolean }) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["documents", id],
@@ -147,7 +147,7 @@ export function useDocument(id: string) {
       return data;
     },
     staleTime: 60_000,
-    enabled: !!id,
+    enabled: !!id && (options?.enabled ?? true),
   });
 }
 

@@ -199,6 +199,7 @@ describe('Chat hot path (e2e)', () => {
   const storageProviderMock: jest.Mocked<IStorageProvider> = {
     getSignedUploadUrl: jest.fn(),
     getSignedDownloadUrl: jest.fn(),
+    getSignedInlineAndAttachmentUrls: jest.fn(),
     getSignedDownloadUrls: jest.fn(),
     uploadFile: jest.fn(),
     downloadFile: jest.fn(),
