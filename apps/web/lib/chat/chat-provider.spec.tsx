@@ -65,8 +65,7 @@ vi.mock("@repo/chat-core/adapters", () => ({
 }));
 
 const { ChatProvider } = await import("./chat-provider");
-const { chatRealtime, createBackfillFetcher } =
-  await import("@repo/chat-core/realtime-manager");
+const { chatRealtime } = await import("@repo/chat-core/realtime-manager");
 const { useChatViewerId } = await import("./viewer-id");
 const { CachedBlockFloorContext } = await import("./use-thread-block-list");
 
@@ -150,7 +149,7 @@ describe("ChatProvider publishes the persisted block-list floor (#2688)", () => 
   });
 });
 
-describe("ChatProvider rebinds the realtime manager without tearing it down (#3002)", () => {
+describe("ChatProvider leaves the realtime manager to the shell (#3745)", () => {
   beforeEach(() => {
     vi.mocked(chatRealtime.configure).mockClear();
     vi.mocked(chatRealtime.destroy).mockClear();
@@ -158,94 +157,19 @@ describe("ChatProvider rebinds the realtime manager without tearing it down (#30
     blockFloor.current = null;
   });
 
-  it("re-configures for the viewer once it resolves, and never destroys to do it", () => {
-    // `destroy()` here dropped the thread's channel subscription, which the
-    // thread never re-took: its subscribe effect is keyed on the channel.
+  it("neither configures nor destroys it, across a mount, a rebind and an unmount", () => {
+    // The dashboard shell binds the manager for every page so the nav's Chat
+    // row stays live off `/chat` (`use-chat-realtime-binding.ts`). This
+    // provider remounts on every visit to `/chat`; a `destroy()` here would
+    // drop the shell's inbox each time the member left (realtime-resilience
+    // rule 1).
     liveViewerId.current = null;
-    const { rerenderProvider } = renderProvider();
-    expect(chatRealtime.configure).toHaveBeenLastCalledWith(
-      expect.objectContaining({ viewerId: null }),
-    );
-
+    const { rerenderProvider, unmount } = renderProvider();
     liveViewerId.current = "user-live";
     rerenderProvider();
-
-    expect(chatRealtime.configure).toHaveBeenLastCalledWith(
-      expect.objectContaining({ viewerId: "user-live" }),
-    );
-    expect(chatRealtime.destroy).not.toHaveBeenCalled();
-  });
-
-  it("re-configures for a different viewer without destroying, too", () => {
-    // An account switch with the surface still mounted. `configure` rejoins
-    // every channel for the new member itself; a `destroy()` would drop the
-    // open thread's subscription for good, as it did on resolve.
-    liveViewerId.current = "user-a";
-    const { rerenderProvider } = renderProvider();
-
-    liveViewerId.current = "user-b";
-    rerenderProvider();
-
-    expect(chatRealtime.configure).toHaveBeenLastCalledWith(
-      expect.objectContaining({ viewerId: "user-b" }),
-    );
-    expect(chatRealtime.destroy).not.toHaveBeenCalled();
-  });
-
-  it("hands the manager chat-core's one backfill read, on its own API client (#2807)", () => {
-    // The full-page and unknown-cursor rules live in that read and the
-    // manager; an inline fetcher here would skip the second.
-    liveViewerId.current = "user-live";
-    renderProvider();
-
-    const fetcher = vi.mocked(createBackfillFetcher);
-    expect(fetcher.mock.lastCall?.[0]).toHaveProperty("GET");
-    expect(chatRealtime.configure).toHaveBeenLastCalledWith(
-      expect.objectContaining({ backfill: fetcher.mock.results.at(-1)?.value }),
-    );
-  });
-
-  it("hands the manager the activity handler that keeps the rail's unread live (#3698)", () => {
-    liveViewerId.current = "user-live";
-    renderProvider();
-
-    expect(chatRealtime.configure).toHaveBeenLastCalledWith(
-      expect.objectContaining({ onMessageActivity }),
-    );
-  });
-
-  it("resumes the manager when the tab becomes visible again, and stops listening on unmount (#3698)", () => {
-    vi.mocked(chatRealtime.resume).mockClear();
-    let visibility: DocumentVisibilityState = "visible";
-    const spy = vi
-      .spyOn(document, "visibilityState", "get")
-      .mockImplementation(() => visibility);
-    try {
-      liveViewerId.current = "user-live";
-      const { unmount } = renderProvider();
-
-      visibility = "hidden";
-      document.dispatchEvent(new Event("visibilitychange"));
-      expect(chatRealtime.resume).not.toHaveBeenCalled();
-
-      visibility = "visible";
-      document.dispatchEvent(new Event("visibilitychange"));
-      expect(chatRealtime.resume).toHaveBeenCalledTimes(1);
-
-      unmount();
-      document.dispatchEvent(new Event("visibilitychange"));
-      expect(chatRealtime.resume).toHaveBeenCalledTimes(1);
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
-  it("destroys the manager when the chat surface unmounts", () => {
-    liveViewerId.current = "user-live";
-    const { unmount } = renderProvider();
-
     unmount();
 
-    expect(chatRealtime.destroy).toHaveBeenCalledTimes(1);
+    expect(chatRealtime.configure).not.toHaveBeenCalled();
+    expect(chatRealtime.destroy).not.toHaveBeenCalled();
   });
 });
