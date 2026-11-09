@@ -194,6 +194,9 @@ export function filterSlashCommands(
       return false;
     }
     if (needle.length === 0) return true;
+    // A command word with details after it (`event Chapter Dinner`): the
+    // palette's search box is where a member types a whole command (#3773).
+    if (paletteCommandArgs(query, command, options) !== null) return true;
     if (command.name === "rush") {
       return (
         command.name.includes(needle) ||
@@ -213,6 +216,33 @@ export function filterSlashCommands(
       ? { ...command, displayName }
       : command,
   );
+}
+
+/**
+ * The details typed after `command`'s own word in the palette's search box,
+ * or `null` when the query doesn't start with that word followed by more.
+ *
+ * Typing `/` opens the palette, and everything after it is typed into the
+ * palette's search box rather than the composer, so `/event Chapter Dinner`
+ * reaches the palette as the query `event Chapter Dinner`. Matching on the
+ * first word keeps the command listed, and this hands the rest to it on pick
+ * (#3773). The word must be the command's exactly (or, for rush, the
+ * chapter's recruitment word or an alias), so a multi-word description search
+ * like `interactive card` passes no arguments.
+ */
+export function paletteCommandArgs(
+  query: string,
+  command: SlashCommand,
+  options?: { recruitment?: string },
+): string | null {
+  const match = /^(\S+)\s+(\S[\s\S]*)$/.exec(query.trim());
+  if (!match) return null;
+  const word = match[1]!.toLowerCase();
+  const isCommandWord =
+    command.name === "rush"
+      ? isRushCommandToken(word, options?.recruitment)
+      : word === command.name;
+  return isCommandWord ? match[2]!.trim() : null;
 }
 
 /** Result of parsing composer text for a slash command. */

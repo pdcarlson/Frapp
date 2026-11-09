@@ -158,6 +158,11 @@ describe("ChapterNavHeader", () => {
 
     openMenu();
     expect(await screen.findByText("Join another chapter")).toBeInTheDocument();
+    // Unmarked on purpose: `/join?from=sign-in` would skip a member straight
+    // back to /chat, so this link could never join a second chapter (#3850).
+    expect(
+      screen.getByRole("menuitem", { name: "Join another chapter" }).getAttribute("href"),
+    ).toBe("/join");
     expect(screen.getByText("Chapter settings")).toBeInTheDocument();
   });
 
