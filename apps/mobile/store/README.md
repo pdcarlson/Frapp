@@ -889,12 +889,38 @@ production minimum above it fails the deploy, so record a build before raising t
 **Drop an entry only once production's minimum for its platform is above it**, that is,
 `MOBILE_MIN_VERSION_IOS` or `MOBILE_MIN_VERSION_ANDROID` on `frapp-api-prod` names a later build
 ([`ENV_REFERENCE.md`](../../../docs/internal/environment/ENV_REFERENCE.md) § API-Only Settings), so
-every install of it is held at the update gate until its owner updates. Name the minimum and the
-date it went live in that PR. Until then the build is still calling the API, whatever the stores
-show. The one exception is an entry for a build that never reached a store: Deploy production
-records a build once EAS accepts its submission, and its `confirm` job goes red when the upload
-then fails (#3483). No install of that build exists, and keeping its entry would make each
-deploy's client check ask about a build nobody runs, so drop it at once and link that run.
+every install of it is held at the update gate until its owner updates. Until then the build is
+still calling the API, whatever the stores show. The one exception is an entry for a build that
+never reached a store: Deploy production records a build once EAS accepts its submission, and its
+`confirm` job goes red when the upload then fails (#3483). No install of that build exists, and
+keeping its entry would make each deploy's client check ask about a build nobody runs, so drop it
+at once.
+
+**To drop an entry, move it from `builds` to a top-level `dropped` list**, unchanged, adding the
+date and the reason: the minimum and the date it went live, or the run whose upload failed. No
+contract is compared against a dropped build, and no deploy probes it; the list is the record of
+every drop, so it only grows too: CI fails a PR that removes a `dropped` entry or changes its
+`dropped` date (its `reason` may be reworded). Its version's `mobile-vX.Y.Z` tag never
+moves, but the Mobile release tags workflow rewrites that version's GitHub Release to list only the
+builds still in `builds`, as it did when an entry was deleted.
+
+```json
+"dropped": [
+  { "platform": "ios", "version": "0.9.1", "build": "8", "sha": "<40-character commit SHA>", "recorded": "2026-11-05", "dropped": "2026-12-01", "reason": "MOBILE_MIN_VERSION_IOS 0.10.0 live since 2026-11-30" }
+]
+```
+
+**The registry only grows, and CI holds it to that (#3783).** On a pull request,
+`api-contract-check` also fails when an entry the base branch has in `builds` is missing, or has a
+different `platform`, `version`, `build`, `sha` or `recorded`, unless it moved to `dropped`. A
+`note` may change. It also fails a key repeated inside one entry, which `JSON.parse` would resolve
+by silently keeping one value: that is how a bad conflict resolution splices two builds into one
+(`5df56abc`). Two record PRs always conflict, because each appends to the same array, so the
+[PR base sync](../../../docs/ci-cd/pr-babysitting.md#base-branch-sync-scriptscipr-base-syncmjs) sweep
+merges `main` into a conflicted PR itself when the registry is the only file it changes and it only
+adds entries. Any other conflict still gets the usual wake comment, as does one whose merge GitHub
+refuses, and is resolved by hand the same way: `main`'s registry plus the branch's new entries, and
+nothing else.
 
 **A break the shipped binaries don't depend on** (a route only the web dashboard calls) is waived
 in [`api-breaking-ignore.txt`](api-breaking-ignore.txt), which the check hands to oasdiff's
