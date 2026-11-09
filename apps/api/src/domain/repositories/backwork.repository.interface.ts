@@ -89,6 +89,21 @@ export interface IBackworkProfessorRepository {
   delete(id: string, chapterId: string): Promise<void>;
 }
 
+/**
+ * One write to a course's name and nicknames. `name` applies only when
+ * `setName`; with `mayRename` false it only fills an empty name. Nicknames:
+ * stored minus `remove` (case-insensitive), plus `add`, de-duplicated.
+ */
+export interface BackworkCourseWrite {
+  departmentId: string;
+  courseNumber: string;
+  setName: boolean;
+  name: string | null;
+  mayRename: boolean;
+  add: string[];
+  remove: string[];
+}
+
 export interface IBackworkCourseRepository {
   findByChapter(chapterId: string): Promise<BackworkCourse[]>;
   /** Every course of one department, for the department merge. */
@@ -107,7 +122,15 @@ export interface IBackworkCourseRepository {
   ): Promise<BackworkCourse | null>;
   /** Chapter-scoped; resolves to `null` when no course in `chapterId` has `id`. */
   findById(id: string, chapterId: string): Promise<BackworkCourse | null>;
-  create(data: Partial<BackworkCourse>): Promise<BackworkCourse>;
+  /**
+   * Creates or edits a course's entry in one statement (the database's
+   * `backwork_course_write`), applied to the row as it is when it runs.
+   * Resolves to `null` when the department isn't in `chapterId`.
+   */
+  write(
+    chapterId: string,
+    edit: BackworkCourseWrite,
+  ): Promise<BackworkCourse | null>;
   /** Chapter-scoped; resolves to `null` when no course in `chapterId` has `id`. */
   update(
     id: string,

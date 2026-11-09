@@ -74,6 +74,126 @@ alter table public.backwork_courses enable row level security;
 comment on table public.backwork_courses is
   'Per-chapter Backwork course names and nicknames, keyed by department and trimmed lowercase course number. Files join by (department_id, course_key). See 20261109120000_backwork_courses.sql.';
 
+-- ── Course writes, one statement each ─────────────────────────────────────
+--
+-- Every write to a course's name and nicknames goes through
+-- `backwork_course_write`, an insert-or-update in one statement, so two
+-- members saving at once can't lose each other's nicknames (each applies its
+-- change to the row as it is when the statement runs) and two first writes
+-- can't race on the unique key (the second updates the row the first made).
+--
+--   nicknames  stored, minus `p_remove` (case-insensitive), plus `p_add`,
+--              de-duplicated case-insensitively, stored order then added
+--              order, minus any that repeat the resulting name;
+--   name       untouched unless `p_set_name`; then `p_name` when
+--              `p_may_rename` (an admin), otherwise the stored name if there
+--              is one, so a member or an upload only ever fills an empty name.
+--
+-- Who may do what is decided in the API (`courseEditRefusal`); the API passes
+-- `p_may_rename` and refuses a non-admin's removal before calling. The
+-- department must belong to `p_chapter_id`, or nothing is written and the
+-- function returns null. Lengths and the nickname cap are the table's checks.
+
+create or replace function public.backwork_course_merge_nicknames(
+  p_stored text[],
+  p_add text[],
+  p_remove text[],
+  p_name text
+)
+returns text[]
+language sql
+immutable
+set search_path = public, pg_temp
+as $$
+  select coalesce(array_agg(kept.n order by kept.ord), '{}')
+    from (
+      select distinct on (lower(c.n)) c.n, c.ord
+        from (
+          select s.n, s.ord
+            from unnest(coalesce(p_stored, '{}')) with ordinality as s(n, ord)
+           where not exists (
+             select 1 from unnest(coalesce(p_remove, '{}')) as r(n)
+              where lower(r.n) = lower(s.n)
+           )
+          union all
+          select a.n, 100000 + a.ord
+            from unnest(coalesce(p_add, '{}')) with ordinality as a(n, ord)
+        ) as c
+       where p_name is null or lower(c.n) <> lower(p_name)
+       order by lower(c.n), c.ord
+    ) as kept;
+$$;
+
+comment on function public.backwork_course_merge_nicknames(text[], text[], text[], text) is
+  'Nickname arithmetic for backwork_course_write: stored minus remove, plus add, case-insensitive, de-duplicated, without the name. See 20261109120000_backwork_courses.sql.';
+
+create or replace function public.backwork_course_write(
+  p_chapter_id uuid,
+  p_department_id uuid,
+  p_course_number text,
+  p_set_name boolean,
+  p_name text,
+  p_may_rename boolean,
+  p_add text[],
+  p_remove text[]
+)
+returns public.backwork_courses
+language sql
+volatile
+security invoker
+set search_path = public, pg_temp
+as $$
+  insert into public.backwork_courses as c
+    (chapter_id, department_id, course_number, name, nicknames)
+  select
+    p_chapter_id,
+    d.id,
+    btrim(p_course_number),
+    case when p_set_name then p_name end,
+    public.backwork_course_merge_nicknames(
+      '{}', p_add, '{}', case when p_set_name then p_name end
+    )
+  from public.backwork_departments d
+  where d.id = p_department_id and d.chapter_id = p_chapter_id
+  on conflict on constraint backwork_courses_unique_course do update set
+    name = case
+      when not p_set_name then c.name
+      when p_may_rename then p_name
+      else coalesce(c.name, p_name)
+    end,
+    nicknames = public.backwork_course_merge_nicknames(
+      c.nicknames,
+      p_add,
+      p_remove,
+      case
+        when not p_set_name then c.name
+        when p_may_rename then p_name
+        else coalesce(c.name, p_name)
+      end
+    ),
+    updated_at = now()
+  returning c.*;
+$$;
+
+comment on function public.backwork_course_write(uuid, uuid, text, boolean, text, boolean, text[], text[]) is
+  'One-statement insert-or-update of a Backwork course name and nicknames (PUT /v1/backwork/courses, and upload naming in fill-only mode). See 20261109120000_backwork_courses.sql.';
+
+revoke execute on function public.backwork_course_write(uuid, uuid, text, boolean, text, boolean, text[], text[]) from public;
+
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    revoke execute on function public.backwork_course_write(uuid, uuid, text, boolean, text, boolean, text[], text[]) from anon;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    revoke execute on function public.backwork_course_write(uuid, uuid, text, boolean, text, boolean, text[], text[]) from authenticated;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    grant execute on function public.backwork_course_write(uuid, uuid, text, boolean, text, boolean, text[], text[]) to service_role;
+  end if;
+end
+$$;
+
 create or replace function public.search_backwork_resources(
   p_chapter_id uuid,
   p_query text,

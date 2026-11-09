@@ -1,5 +1,6 @@
 import { ASSIGNMENT_TYPES, DOCUMENT_VARIANTS } from "@repo/validation";
 import {
+  fuzzyMatchWords,
   isNumeralWord,
   matchQueryWord,
   normalizeWords,
@@ -91,8 +92,14 @@ export type LibraryRow = {
   /** "Fall 2026", "Fall", "2026", or null. */
   term: string | null;
   title: string;
-  /** `searchText` normalised once, so a keystroke only scores. */
+  /**
+   * `searchText` normalised once, so a keystroke only scores: everything but
+   * the course's name and nicknames, which `coursePhrases` holds and which
+   * match under stricter rules (`queryLibrary`).
+   */
   words: readonly string[];
+  /** The course's name and nickname words that aren't numbers, de-duplicated. */
+  courseWords: readonly string[];
 };
 
 /**
@@ -213,14 +220,9 @@ export function toLibraryRows(
       term: joinNonEmpty([resource.semester, resource.year]),
       title: resource.title?.trim() || fallbackTitle || "Untitled",
       words: [] as readonly string[],
+      courseWords: [...new Set(coursePhrases.flatMap((phrase) => phrase.textWords))],
     };
-    // The course's names join the row's words without their numbers: a
-    // number in a course name counts only beside a word of the same name
-    // (`courseMatch`), so "hw 1" can't find Calculus I's Homework 5.
-    row.words = [
-      ...normalizeWords(searchText(row, { courseNames: false })),
-      ...coursePhrases.flatMap((phrase) => phrase.textWords),
-    ];
+    row.words = normalizeWords(searchText(row, { courseNames: false }));
     return row;
   });
 }
@@ -352,10 +354,10 @@ function courseMatch(row: LibraryRow, queryWords: readonly string[]): PhraseMatc
 }
 
 /**
- * Filters, then searches. Every query word must match the row (AND, as
- * `fuzzyMatchWords`), either among its words or, for a number, through its
- * course's name (`courseMatch`). With a query, best match first (ties newest
- * term first); without one, newest term first. A file whose course the query
+ * Filters, then searches, with `fuzzyMatchWords`'s rules over a row's own
+ * words. A query word that matches none of them may still match the row's
+ * course (`courseFallback`). With a query, best match first (ties newest term
+ * first); without one, newest term first. A file whose course the query
  * names, by its name or a nickname, ranks first (`COURSE_PHRASE_WEIGHT`).
  */
 export function queryLibrary(
@@ -365,43 +367,62 @@ export function queryLibrary(
 ): LibraryResult[] {
   const ordered = rows.filter((row) => passesFilters(row, filters)).sort(compareByTerm);
   const queryWords = normalizeWords(query);
+  // Per row, at most once per query: only for a row whose own words failed a
+  // query word, or that matched and is being ranked.
+  const phraseCache = new Map<LibraryRow, PhraseMatch[]>();
+  const phrasesOf = (row: LibraryRow) => {
+    let found = phraseCache.get(row);
+    if (!found) {
+      found = courseMatch(row, queryWords);
+      phraseCache.set(row, found);
+    }
+    return found;
+  };
+  /**
+   * A word's match through the course. A word that isn't a number matches
+   * the course's words as search matches any word (prefix, typo). A number
+   * from 1 to 10, in either spelling, never matches by prefix or typo there:
+   * it counts only exactly, beside another query word on the same name or
+   * nickname (`courseMatch`).
+   */
+  const courseFallback = (row: LibraryRow, word: string) => {
+    if (row.coursePhrases.length === 0) return { score: 0, hit: null };
+    if (!isNumeralWord(word)) {
+      return matchQueryWord(word, row.courseWords, BACKWORK_SEARCH_ALIASES);
+    }
+    const phrase = phrasesOf(row).find((p) => p.matched.has(word));
+    const numeral = phrase?.phrase.numerals.find((n) => n.forms.includes(word));
+    return numeral ? { score: NUMERAL_SCORE, hit: numeral.word } : { score: 0, hit: null };
+  };
+  const matched = fuzzyMatchWords(
+    ordered,
+    query,
+    (row) => row.words,
+    BACKWORK_SEARCH_ALIASES,
+    courseFallback,
+  );
   if (queryWords.length === 0) {
-    return ordered.map((item) => ({ item, score: 0, hits: [], nickname: null, courseHits: [] }));
+    return matched.map((result) => ({ ...result, nickname: null, courseHits: [] }));
   }
-  const results: { index: number; result: LibraryResult }[] = [];
-  ordered.forEach((row, index) => {
-    const phrases = courseMatch(row, queryWords);
-    let score = 0;
-    const hits: string[] = [];
-    for (const word of queryWords) {
-      const best = matchQueryWord(word, row.words, BACKWORK_SEARCH_ALIASES);
-      if (best.score > 0 && best.hit) {
-        score += best.score;
-        hits.push(best.hit);
-      } else if (phrases.some((p) => p.matched.has(word))) {
-        score += NUMERAL_SCORE;
-      } else {
-        return;
+  return matched
+    .map((result, index) => {
+      const phrases = result.item.coursePhrases.length ? phrasesOf(result.item) : [];
+      let best: PhraseMatch | null = null;
+      for (const p of phrases) {
+        if (p.matched.size > (best?.matched.size ?? 0)) best = p;
       }
-    }
-    let best: PhraseMatch | null = null;
-    for (const p of phrases) {
-      if (p.matched.size > (best?.matched.size ?? 0)) best = p;
-    }
-    const nameMatched = phrases.find((p) => !p.phrase.isNickname)?.matched.size ?? 0;
-    results.push({
-      index,
-      result: {
-        item: row,
-        score: score + (best?.matched.size ?? 0) * COURSE_PHRASE_WEIGHT,
-        hits,
-        nickname:
-          best?.phrase.isNickname && best.matched.size > nameMatched ? best.phrase.text : null,
-        courseHits: phrases.flatMap((p) => p.hits),
-      },
-    });
-  });
-  return results
+      const nameMatched = phrases.find((p) => !p.phrase.isNickname)?.matched.size ?? 0;
+      return {
+        index,
+        result: {
+          ...result,
+          score: result.score + (best?.matched.size ?? 0) * COURSE_PHRASE_WEIGHT,
+          nickname:
+            best?.phrase.isNickname && best.matched.size > nameMatched ? best.phrase.text : null,
+          courseHits: phrases.flatMap((p) => p.hits),
+        },
+      };
+    })
     .sort((a, b) => b.result.score - a.result.score || a.index - b.index)
     .map(({ result }) => result);
 }

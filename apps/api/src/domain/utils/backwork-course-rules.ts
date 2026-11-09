@@ -34,8 +34,10 @@ export function courseEditRefusal(
 }
 
 /**
- * The nicknames after an edit, applied to the list as stored now (not to the
- * list the editor saw), so two people editing at once don't undo each other:
+ * The nicknames an edit would leave, predicted from the row as the service
+ * read it, so it can refuse a list past the cap with a 400 before writing.
+ * The write itself (`backwork_course_write`) applies the same arithmetic in
+ * SQL to the row as it is when the statement runs:
  * `remove` matches case-insensitively, `add` joins the end, and the result is
  * normalised (`normalizeCourseNicknames`; one that repeats `name` drops). Not
  * capped: the caller refuses a list past `MAX_COURSE_NICKNAMES`.

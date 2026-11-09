@@ -200,6 +200,13 @@ export function fuzzyMatchWords<T>(
   query: string,
   toWords: (item: T) => readonly string[],
   aliases: Readonly<Record<string, string>> = {},
+  /**
+   * Asked only when a query word matches none of the item's words: another
+   * way that word may match the item, scored on the same scale (0 is no
+   * match). Backwork uses it for words of a course's name, which match under
+   * stricter rules than the rest of a row.
+   */
+  fallback?: (item: T, queryWord: string) => { score: number; hit: string | null },
 ): FuzzyResult<T>[] {
   const queryWords = normalizeWords(query);
   if (queryWords.length === 0) {
@@ -212,7 +219,10 @@ export function fuzzyMatchWords<T>(
     const hits: string[] = [];
     let matched = true;
     for (const queryWord of queryWords) {
-      const best = matchQueryWord(queryWord, words, aliases);
+      let best = matchQueryWord(queryWord, words, aliases);
+      if ((best.score === 0 || !best.hit) && fallback) {
+        best = fallback(item, queryWord);
+      }
       if (best.score === 0 || !best.hit) {
         matched = false;
         break;

@@ -31,3 +31,31 @@ export function normalizeCourseNicknames(
   }
   return out;
 }
+
+/**
+ * Length as Postgres `char_length` counts it: code points, so an emoji made
+ * of two UTF-16 units counts once, and "❤️" (heart + variation selector)
+ * counts twice. Use it for every course-name and nickname limit, so a value
+ * the API accepts never trips the table's checks.
+ */
+export function courseTextLength(text: string): number {
+  return [...text].length;
+}
+
+/**
+ * Why a course name or nickname is too long, or null when every one fits
+ * (`MAX_COURSE_NAME_LENGTH`, `MAX_COURSE_NICKNAME_LENGTH`, by
+ * `courseTextLength`).
+ */
+export function courseTextTooLong(
+  name: string | null | undefined,
+  nicknames: readonly string[],
+): string | null {
+  if (name && courseTextLength(name) > MAX_COURSE_NAME_LENGTH) {
+    return `A course name takes at most ${MAX_COURSE_NAME_LENGTH} characters`;
+  }
+  if (nicknames.some((n) => courseTextLength(n) > MAX_COURSE_NICKNAME_LENGTH)) {
+    return `A nickname takes at most ${MAX_COURSE_NICKNAME_LENGTH} characters`;
+  }
+  return null;
+}

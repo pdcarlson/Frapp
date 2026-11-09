@@ -234,6 +234,19 @@ export interface Database {
         Args: { p_chapter_id: string; p_query: string; p_limit?: number };
         Returns: BackworkResource[];
       };
+      backwork_course_write: {
+        Args: {
+          p_chapter_id: string;
+          p_department_id: string;
+          p_course_number: string;
+          p_set_name: boolean;
+          p_name: string | null;
+          p_may_rename: boolean;
+          p_add: string[];
+          p_remove: string[];
+        };
+        Returns: BackworkCourse;
+      };
       get_poll_vote_option_totals: {
         Args: { p_message_ids: string[] };
         Returns: {

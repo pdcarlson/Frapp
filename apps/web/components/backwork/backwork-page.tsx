@@ -477,7 +477,15 @@ export function BackworkPage() {
     // read-only).
     const courseNumber = row.resource.course_number?.trim();
     const courseName = row.courseEntry?.name;
-    if (department && course && courseNumber && (isAdmin || canUpload)) {
+    // Not until the course list has loaded: before then a named course looks
+    // unnamed, and the entry and its dialog would offer the wrong thing.
+    if (
+      courseDialog.ready &&
+      department &&
+      course &&
+      courseNumber &&
+      (isAdmin || canUpload)
+    ) {
       nameCourse = {
         type: "item",
         key: "name-course",

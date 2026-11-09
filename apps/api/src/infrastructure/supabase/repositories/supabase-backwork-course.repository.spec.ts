@@ -40,7 +40,12 @@ describe('SupabaseBackworkCourseRepository — tenant scope', () => {
   let repo: SupabaseBackworkCourseRepository;
 
   beforeEach(() => {
-    harness = createTenantHarness({ tables: seed() });
+    harness = createTenantHarness({
+      tables: seed(),
+      rpc: {
+        backwork_course_write: { data: { id: COURSE_B, ...course } },
+      },
+    });
     repo = new SupabaseBackworkCourseRepository(harness.client);
   });
 
@@ -95,5 +100,36 @@ describe('SupabaseBackworkCourseRepository — tenant scope', () => {
     expect(
       harness.rows('backwork_courses').some((c) => c.id === COURSE_A),
     ).toBe(true);
+  });
+
+  it('write passes the chapter to the one-statement write', async () => {
+    const written = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.write(CHAPTER_B, {
+        departmentId: DEPT,
+        courseNumber: '1010',
+        setName: true,
+        name: 'Calculus I',
+        mayRename: false,
+        add: ['Calc I'],
+        remove: [],
+      }),
+    );
+
+    expect(written?.id).toBe(COURSE_B);
+    expect(harness.rpcCalls).toEqual([
+      {
+        fn: 'backwork_course_write',
+        args: {
+          p_chapter_id: CHAPTER_B,
+          p_department_id: DEPT,
+          p_course_number: '1010',
+          p_set_name: true,
+          p_name: 'Calculus I',
+          p_may_rename: false,
+          p_add: ['Calc I'],
+          p_remove: [],
+        },
+      },
+    ]);
   });
 });

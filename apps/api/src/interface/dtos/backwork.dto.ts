@@ -205,8 +205,9 @@ export class BackworkCourseDto {
 
 /**
  * A change to a course's name and nicknames, creating its entry on first
- * write. Nicknames travel as a delta applied to the stored list, so an editor
- * holding a stale list can't drop what someone else added. Who
+ * write. Nicknames travel as a change (remove, then add) that one SQL
+ * statement applies to the row as it is when it runs, so an edit never drops a
+ * nickname someone else saved and two first writes don't collide. Who
  * may change what is `courseEditRefusal` (domain/utils/backwork-course-rules).
  */
 export class UpsertBackworkCourseDto {

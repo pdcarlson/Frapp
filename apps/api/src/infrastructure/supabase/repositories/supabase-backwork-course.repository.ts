@@ -1,11 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient, TablesUpdate } from '../database.types';
 import type {
-  FrappSupabaseClient,
-  TablesInsert,
-  TablesUpdate,
-} from '../database.types';
-import type { IBackworkCourseRepository } from '#domain/repositories/backwork.repository.interface';
+  BackworkCourseWrite,
+  IBackworkCourseRepository,
+} from '#domain/repositories/backwork.repository.interface';
 import { BackworkCourse } from '#domain/entities/backwork.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
 
@@ -74,16 +73,24 @@ export class SupabaseBackworkCourseRepository implements IBackworkCourseReposito
     return data;
   }
 
-  async create(
-    data: TablesInsert<'backwork_courses'>,
-  ): Promise<BackworkCourse> {
-    const { data: created, error } = await this.supabase
-      .from('backwork_courses')
-      .insert(data)
-      .select()
-      .single();
+  async write(
+    chapterId: string,
+    edit: BackworkCourseWrite,
+  ): Promise<BackworkCourse | null> {
+    const { data, error } = await this.supabase.rpc('backwork_course_write', {
+      p_chapter_id: chapterId,
+      p_department_id: edit.departmentId,
+      p_course_number: edit.courseNumber,
+      p_set_name: edit.setName,
+      p_name: edit.name,
+      p_may_rename: edit.mayRename,
+      p_add: edit.add,
+      p_remove: edit.remove,
+    });
     if (error) throw new SupabaseQueryError(error);
-    return created;
+    // The function returns no row (all-null columns) when the department
+    // isn't in this chapter.
+    return data?.id ? data : null;
   }
 
   async update(

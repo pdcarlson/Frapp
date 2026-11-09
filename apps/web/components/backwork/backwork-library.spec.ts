@@ -437,3 +437,62 @@ describe("numbers in course names (#3848 review)", () => {
     });
   });
 });
+
+describe("roman numerals in the query (#3848 second review)", () => {
+  const math = { id: "d-math", code: "MATH", name: "Mathematics" };
+  const rows = toLibraryRows(
+    [
+      resource({ id: "calc1-final", title: "Final", department_id: "d-math", course_number: "1010" }),
+      resource({
+        id: "calc2-hw5",
+        title: "Homework 5",
+        department_id: "d-math",
+        course_number: "1020",
+        assignment_type: "Homework",
+        assignment_number: 5,
+      }),
+    ],
+    [math],
+    [],
+    [
+      {
+        id: "c1",
+        department_id: "d-math",
+        course_number: "1010",
+        course_key: "1010",
+        name: "Calculus I",
+        nicknames: [],
+      },
+      {
+        id: "c2",
+        department_id: "d-math",
+        course_number: "1020",
+        course_key: "1020",
+        name: "Calculus II",
+        nicknames: ["Integral Calculus"],
+      },
+    ],
+  );
+  const ids = (query: string) => queryLibrary(rows, query, NO_FILTERS).map((r) => r.item.resource.id);
+
+  it("'calc i' finds only Calculus I: 'i' neither prefixes 'ii' nor 'integral'", () => {
+    expect(ids("calc i")).toEqual(["calc1-final"]);
+  });
+
+  it("'hw i' and a bare 'i' find nothing through a course name", () => {
+    expect(ids("hw i")).toEqual([]);
+    expect(ids("i")).toEqual([]);
+  });
+
+  it("still lets 'i' match a title word as before (prefix included)", () => {
+    const titled = toLibraryRows(
+      [resource({ id: "intro", title: "Intro notes" }), resource({ id: "i-am", title: "I am notes" })],
+      [],
+      [],
+    );
+    expect(queryLibrary(titled, "i", NO_FILTERS).map((r) => r.item.resource.id).sort()).toEqual([
+      "i-am",
+      "intro",
+    ]);
+  });
+});

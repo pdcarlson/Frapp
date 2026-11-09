@@ -48,7 +48,15 @@ export type CourseTarget = {
 export function useBackworkCourseDialog(
   gate: SubscriptionGate,
   isAdmin: boolean,
-): { requestCourseName: (target: CourseTarget) => void; dialog: ReactNode } {
+): {
+  requestCourseName: (target: CourseTarget) => void;
+  dialog: ReactNode;
+  /**
+   * Whether the course list has loaded. Until it has, the dialog can't tell a
+   * named course from an unnamed one, so the page offers no entry into it.
+   */
+  ready: boolean;
+} {
   const { toast } = useToast();
   const coursesQuery = useBackworkCourses();
   const courses = useMemo(
@@ -60,37 +68,57 @@ export function useBackworkCourseDialog(
   const [target, setTarget] = useState<CourseTarget | null>(null);
   // Kept after close so the title doesn't read "Name undefined" as it fades.
   const [shown, setShown] = useState<CourseTarget | null>(null);
-  const [stored, setStored] = useState<BackworkCourse | null>(null);
-  const [name, setName] = useState("");
-  const [nicknames, setNicknames] = useState<string[]>([]);
-  const [added, setAdded] = useState<ReadonlySet<string>>(() => new Set());
+  // The edit, not a copy of the course: what was typed into the name (null
+  // until touched) and the nicknames added and removed, exactly as written.
+  // Shown over the stored row as it is now, so a refetch while the dialog is
+  // open shows the fresh row and the save still sends only this edit.
+  const [nameDraft, setNameDraft] = useState<string | null>(null);
+  const [added, setAdded] = useState<string[]>([]);
+  const [removed, setRemoved] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const stored = useMemo(() => {
+    if (!shown) return null;
+    const key = shown.courseNumber.trim().toLowerCase();
+    return (
+      courses.find((c) => c.department_id === shown.departmentId && c.course_key === key) ??
+      null
+    );
+  }, [courses, shown]);
+  const nameLocked = !isAdmin && !!stored?.name;
+  const name = nameDraft ?? stored?.name ?? "";
+  const nicknames = [
+    ...(stored?.nicknames ?? []).filter((n) => !removed.includes(n)),
+    ...added,
+  ];
+
   function requestCourseName(next: CourseTarget) {
-    const key = next.courseNumber.trim().toLowerCase();
-    const existing =
-      courses.find((c) => c.department_id === next.departmentId && c.course_key === key) ??
-      null;
     setTarget(next);
     setShown(next);
-    setStored(existing);
-    setName(existing?.name ?? "");
-    setNicknames(existing?.nicknames ?? []);
-    setAdded(new Set());
+    setNameDraft(null);
+    setAdded([]);
+    setRemoved([]);
     setDraft("");
   }
 
-  const nameLocked = !isAdmin && !!stored?.name;
-
-  function addDraft(): string[] {
-    const next = normalizeCourseNicknames([...nicknames, draft]).slice(0, MAX_COURSE_NICKNAMES);
-    if (next.length > nicknames.length) {
-      setAdded((prev) => new Set(prev).add(next[next.length - 1]!.toLowerCase()));
-    }
-    setNicknames(next);
+  /** Adds the typed nickname to the edit; returns the edit's additions. */
+  function addDraft(): { add: string[]; remove: string[] } {
+    const text = normalizeCourseNicknames([draft])[0];
     setDraft("");
-    return next;
+    if (!text || nicknames.length >= MAX_COURSE_NICKNAMES) return { add: added, remove: removed };
+    if (removed.includes(text)) {
+      // Typed back exactly what was removed: undo the removal.
+      const remove = removed.filter((n) => n !== text);
+      setRemoved(remove);
+      return { add: added, remove };
+    }
+    if (nicknames.some((n) => n.toLowerCase() === text.toLowerCase())) {
+      return { add: added, remove: removed };
+    }
+    const add = [...added, text];
+    setAdded(add);
+    return { add, remove: removed };
   }
 
   function onNicknameKey(event: KeyboardEvent<HTMLInputElement>) {
@@ -101,38 +129,42 @@ export function useBackworkCourseDialog(
   }
 
   function removable(nickname: string): boolean {
-    return isAdmin || added.has(nickname.toLowerCase());
+    return isAdmin || added.includes(nickname);
+  }
+
+  function removeNickname(nickname: string) {
+    if (added.includes(nickname)) {
+      setAdded((prev) => prev.filter((n) => n !== nickname));
+    } else {
+      setRemoved((prev) => [...prev, nickname]);
+    }
   }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!target || !gate.allowed) return;
     // A nickname typed but not yet entered still counts.
-    const list = draft.trim() ? addDraft() : nicknames;
+    const { add, remove } = draft.trim() ? addDraft() : { add: added, remove: removed };
     const trimmedName = name.trim();
-    const nameChanged = !nameLocked && trimmedName !== (stored?.name ?? "");
-    // Only what this person changed: the API applies it to the list as
-    // stored now, so a nickname someone else added meanwhile survives.
-    const had = new Set((stored?.nicknames ?? []).map((n) => n.toLowerCase()));
-    const has = new Set(list.map((n) => n.toLowerCase()));
-    const addNicknames = list.filter((n) => !had.has(n.toLowerCase()));
-    const removeNicknames = (stored?.nicknames ?? []).filter((n) => !has.has(n.toLowerCase()));
-    if (!nameChanged && addNicknames.length === 0 && removeNicknames.length === 0) {
-      setTarget(null);
-      return;
-    }
-    if (!stored && !trimmedName && list.length === 0) {
+    const nameChanged =
+      !nameLocked && nameDraft !== null && trimmedName !== (stored?.name ?? "");
+    if (!nameChanged && add.length === 0 && remove.length === 0) {
+      toast({ title: "Nothing to save", description: "Nothing changed." });
       setTarget(null);
       return;
     }
     setSaving(true);
     try {
+      // Exactly what this person changed, by exact text: the API removes
+      // first (case-insensitively), then adds, against the row as it is when
+      // it writes, so replacing "orgo" with "Orgo" is remove "orgo", add
+      // "Orgo", and a nickname someone else saved meanwhile stays.
       await save.mutateAsync({
         department_id: target.departmentId,
         course_number: target.courseNumber.trim(),
         ...(nameChanged ? { name: trimmedName || null } : {}),
-        ...(addNicknames.length ? { add_nicknames: addNicknames } : {}),
-        ...(removeNicknames.length ? { remove_nicknames: removeNicknames } : {}),
+        ...(add.length ? { add_nicknames: add } : {}),
+        ...(remove.length ? { remove_nicknames: remove } : {}),
       });
       toast({ title: `Saved ${target.label}` });
       setTarget(null);
@@ -167,7 +199,7 @@ export function useBackworkCourseDialog(
             <Input
               id="bw-course-name"
               value={name}
-              onChange={(event) => setName(event.target.value)}
+              onChange={(event) => setNameDraft(event.target.value)}
               placeholder="Calculus I"
               maxLength={MAX_COURSE_NAME_LENGTH}
               autoFocus={!nameLocked}
@@ -197,9 +229,7 @@ export function useBackworkCourseDialog(
                         className="-mr-1 ml-1 inline-flex h-4 w-4 items-center justify-center rounded-xs text-muted-foreground hover:text-foreground"
                         aria-label={`Remove ${nickname}`}
                         disabled={saving}
-                        onClick={() =>
-                          setNicknames((prev) => prev.filter((n) => n !== nickname))
-                        }
+                        onClick={() => removeNickname(nickname)}
                       >
                         <X className="h-3 w-3" aria-hidden="true" />
                       </button>
@@ -242,5 +272,5 @@ export function useBackworkCourseDialog(
     </Dialog>
   );
 
-  return { requestCourseName, dialog };
+  return { requestCourseName, dialog, ready: coursesQuery.isSuccess };
 }

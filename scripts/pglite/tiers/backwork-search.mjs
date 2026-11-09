@@ -102,6 +102,43 @@ console.log("\n=== Functional: backwork search over every field (#585) ===");
         !(await search(B, "brainy")).includes(HW),
       { a: await search(A, "perception"), b: await search(B, "brainy") },
     );
+    // backwork_course_write (#3848): each write applies to the row as it is.
+    const write = async (name, setName, mayRename, add, remove) =>
+      (
+        await db.query(
+          `select name, nicknames from backwork_course_write($1, $2, '2120', $3, $4, $5, $6, $7)`,
+          [A, DEPT, setName, name, mayRename, add, remove],
+        )
+      ).rows[0];
+    await write(null, false, false, ["Cog One"], []);
+    const both = await write(null, false, false, ["Cog 1"], []);
+    check(
+      "two nickname adds both survive",
+      ["Brainy", "Cog One", "Cog 1"].every((n) => both.nicknames.includes(n)),
+      both,
+    );
+    const filled = await write("Something Else", true, false, [], []);
+    check(
+      "fill-only never overwrites a set name",
+      filled.name === "Cognition Fundamentals",
+      filled,
+    );
+    const swapped = await write(null, false, true, ["BRAINY"], ["brainy"]);
+    check(
+      "remove applies before add, so a case-only fix keeps the new spelling",
+      swapped.nicknames.includes("BRAINY") && !swapped.nicknames.includes("Brainy"),
+      swapped,
+    );
+    check(
+      "writes nothing for a department in another chapter",
+      (
+        await db.query(
+          `select (backwork_course_write($1, $2, '2120', true, 'X', true, '{}', '{}')).id as id`,
+          [A, DEPT_B],
+        )
+      ).rows[0].id === null,
+      "row returned",
+    );
     check(
       "forgives a typo",
       (await search(A, "homewrk")).join() === HW,
