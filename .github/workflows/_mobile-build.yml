@@ -337,6 +337,10 @@ jobs:
             echo "::error::The latest tag, $LATEST, is on $OBJECT, not $DEPLOY_SHA: production has shipped another commit since this run. Store builds are made only from the latest v* tag; dispatch Deploy production for it instead."
             exit 1
           fi
+          # The tag list this check passed on, for the wait step's retry to
+          # compare against (#3812): an unchanged list means an unchanged
+          # latest tag.
+          echo "tags=$(printf '%s\n' "$TAGS" | LC_ALL=C sort | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           echo "$DEPLOY_SHA is the latest tag ($LATEST)."
 
       # Each platform starts on its own (see the header). `--no-wait --json`
@@ -408,18 +412,26 @@ jobs:
       # so the list always goes out. A build is handed to
       # its upload only when EAS reports it FINISHED from the shipped commit.
       #
-      # A build that errors or is cancelled is reported in the round that sees
-      # it, within POLL_SECONDS, while the other platform builds on (#3812).
+      # Each build's status is logged as it changes, and a build that errors
+      # or is cancelled is reported in the round that sees it, usually within
+      # POLL_SECONDS (slower only when a read stalls or a retry is starting),
+      # while the other platform builds on (#3812). A build that has ended is
+      # not read again, so a late failed read can't turn it back into UNREAD.
       # One that ERRORED on a transient network failure is started again,
       # once per platform: a 5xx, timeout or reset while fetching
       # dependencies (TRANSIENT, matched against EAS's error message and the
       # last LOG_TAIL_LINES of the build's logs, the signed `logFiles` URLs
-      # `build:view` returns). The 504 that sank iOS 0.10.3 came from GitHub's
+      # `build:view` returns). The window is short so that a network warning
+      # a build recovered from long before it failed doesn't count; it is a
+      # heuristic, and a wrong call costs at most that one build. The 504 that sank iOS 0.10.3 came from GitHub's
       # release download behind `RNSentry.podspec`, and the next one can come
       # from any pod or package host, so retrying the build covers what
       # pinning that one fetch wouldn't. EAS meters every build, so nothing
-      # else is retried, a cancelled build never is, and no retry starts with
-      # under RETRY_MIN_MINUTES left before the deadline. The retry's id goes
+      # else is retried, a cancelled build never is, no retry starts with
+      # under RETRY_MIN_MINUTES left before the deadline, and none starts
+      # unless the `v*` tags still read exactly as the check before the
+      # builds saw them (TAGS_AT_BUILD): rule 1 holds for a retry too, and a
+      # tag list that can't be read means no retry. The retry's id goes
       # out at once as `<platform>_retry`, which the job's `*-started` outputs
       # prefer, and it replaces the errored build in `builds`.
       - name: Wait for the EAS builds
@@ -432,12 +444,15 @@ jobs:
           IDS: ${{ steps.start-ios.outputs.id }} ${{ steps.start-android.outputs.id }}
           DEPLOY_SHA: ${{ inputs.sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAGS_AT_BUILD: ${{ steps.tag-before-build.outputs.tags }}
           DEADLINE_MINUTES: "230"
           POLL_SECONDS: "60"
           READ_TIMEOUT_SECONDS: "120"
           START_TIMEOUT_SECONDS: "540"
           RETRY_MIN_MINUTES: "60"
-          LOG_TAIL_LINES: "400"
+          LOG_TAIL_LINES: "100"
         run: |
           set -uo pipefail
           if [ -z "${IDS// /}" ]; then
@@ -447,29 +462,47 @@ jobs:
           DEADLINE=$(( $(date +%s) + DEADLINE_MINUTES * 60 ))
           TERMINAL='(.status == "FINISHED" or .status == "ERRORED" or .status == "CANCELED")'
           READ_ERR="$RUNNER_TEMP/eas-build-view-stderr.txt"
-          TRANSIENT='HTTPError: 5[0-9]{2}|HTTP error 5[0-9]{2}|5[0-9]{2} (Bad Gateway|Service Unavailable|Gateway Time-?out)|ECONNRESET|ETIMEDOUT|EAI_AGAIN|Connection reset by peer|Could not resolve host|Empty reply from server|SSL_ERROR_SYSCALL'
+          TRANSIENT='HTTPError: 5[0-9]{2}|HTTP error 5[0-9]{2}|status code 5[0-9]{2}|5[0-9]{2} (Bad Gateway|Service Unavailable|Gateway Time-?out)|ECONNRESET|ETIMEDOUT|EAI_AGAIN|Connection reset by peer|Could not resolve host|Empty reply from server|SSL_ERROR_SYSCALL'
           # Why each build's latest read failed. Logged, never put in an
           # output: a job output carrying a masked value is dropped.
           declare -A WHY=()
-          # Builds already reported as ended, and platforms already retried.
-          declare -A REPORTED=() RETRIED=()
+          # Builds already reported as ended, platforms already retried, each
+          # build's last logged status, and the last read of each build that
+          # has ended (never read again).
+          declare -A REPORTED=() RETRIED=() SEEN=() ENDED_READ=()
 
           # Whether an errored build's error message, or the end of its logs,
           # names a transient network failure. The log URLs are signed, so
           # they are fetched, never printed.
           transient() {
             local view="$1" logs="$RUNNER_TEMP/eas-build-logs.txt" url
-            if jq -r '.error.message // ""' <<< "$view" | grep -Eiq "$TRANSIENT"; then return 0; fi
+            # Never `producer | grep -q` here: under pipefail, grep exiting on
+            # an early match can kill the producer with SIGPIPE, and the
+            # pipeline then reads as no match.
+            if grep -Eiq "$TRANSIENT" <<< "$(jq -r '.error.message // ""' <<< "$view" 2>/dev/null)"; then return 0; fi
             : > "$logs"
             while IFS= read -r url; do
               [ -n "$url" ] && curl -fsSL --compressed --max-time 60 "$url" >> "$logs" 2>/dev/null
             done < <(jq -r '.logFiles // [] | .[]' <<< "$view" 2>/dev/null)
-            tail -n "$LOG_TAIL_LINES" "$logs" | grep -Eiq "$TRANSIENT"
+            grep -Eiq "$TRANSIENT" < <(tail -n "$LOG_TAIL_LINES" "$logs")
+          }
+
+          # Whether the `v*` tags read exactly as the check before the builds
+          # saw them. One read, no retries: anything else means no retry.
+          tags_unmoved() {
+            local tags
+            [ -n "${TAGS_AT_BUILD:-}" ] || return 1
+            tags="$(gh api "repos/$REPO/git/matching-refs/tags/v" --paginate --jq '.[].ref | ltrimstr("refs/tags/")' 2>/dev/null)" || return 1
+            [ "$(printf '%s\n' "$tags" | LC_ALL=C sort | sha256sum | cut -d' ' -f1)" = "$TAGS_AT_BUILD" ]
           }
 
           while :; do
             BUILDS='[]'
             for ID in $IDS; do
+              if [ -n "${ENDED_READ[$ID]:-}" ]; then
+                BUILDS="$(jq -c --argjson one "${ENDED_READ[$ID]}" '. + [$one]' <<< "$BUILDS")"
+                continue
+              fi
               ONE=""
               STATUS=0
               VIEW="$(timeout "$READ_TIMEOUT_SECONDS" eas build:view "$ID" --json 2>"$READ_ERR")" || STATUS=$?
@@ -491,12 +524,18 @@ jobs:
               fi
 
               STATE="$(jq -r '.status' <<< "$ONE")"
+              if [ "$STATE" != UNREAD ] && [ "$STATE" != "${SEEN[$ID]:-}" ]; then
+                SEEN[$ID]="$STATE"
+                echo "$(jq -r '.platform // "?"' <<< "$ONE") $ID: $STATE"
+              fi
+              if jq -e "$TERMINAL" <<< "$ONE" > /dev/null; then ENDED_READ[$ID]="$ONE"; fi
               if { [ "$STATE" = ERRORED ] || [ "$STATE" = CANCELED ]; } && [ -z "${REPORTED[$ID]:-}" ]; then
                 REPORTED[$ID]=1
                 P="$(jq -r '.platform // "UNKNOWN"' <<< "$ONE")"
                 CAUSE="$(jq -r '[.error.errorCode, .error.message] | map(select(. != null and . != "")) | join(": ") | gsub("\\s+"; " ") | ltrimstr(" ") | rtrimstr(" ")' <<< "$VIEW" 2>/dev/null || true)"
                 LEFT=$(( DEADLINE - $(date +%s) ))
-                if [ "$STATE" = ERRORED ] && [ -z "${RETRIED[$P]:-}" ] && [ "$LEFT" -ge $(( RETRY_MIN_MINUTES * 60 )) ] && transient "$VIEW"; then
+                if [ "$STATE" = ERRORED ] && [ -z "${RETRIED[$P]:-}" ] && [ "$LEFT" -ge $(( RETRY_MIN_MINUTES * 60 )) ] && transient "$VIEW" \
+                  && { tags_unmoved || { echo "::error::The $P build $ID errored on a transient network failure, but the v* tags changed since the builds started, or couldn't be read, so it is not started again: production may have moved off $DEPLOY_SHA."; false; }; }; then
                   RETRIED[$P]=1
                   PL="$(tr '[:upper:]' '[:lower:]' <<< "$P")"
                   echo "::warning::The $P build $ID errored on a transient network failure (${CAUSE:-no error message}). Starting it again, once."
@@ -626,6 +665,10 @@ jobs:
             echo "::error::The latest tag, $LATEST, is on $OBJECT, not $DEPLOY_SHA: production has shipped another commit since this run. Store builds are made only from the latest v* tag; dispatch Deploy production for it instead."
             exit 1
           fi
+          # The tag list this check passed on, for the wait step's retry to
+          # compare against (#3812): an unchanged list means an unchanged
+          # latest tag.
+          echo "tags=$(printf '%s\n' "$TAGS" | LC_ALL=C sort | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           echo "$DEPLOY_SHA is the latest tag ($LATEST)."
 
       - name: Upload iOS to TestFlight (not submitted for review)

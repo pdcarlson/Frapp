@@ -345,14 +345,19 @@ calls [`_mobile-build.yml`](../../../.github/workflows/_mobile-build.yml) (#3111
      build id on at once. `eas build --platform all` would start Android and then die on an iOS
      failure, leaving the Android build running unreported.
    - One step polls the builds (`eas build:view <id> --json`) until each ends, under a 230-minute
-     deadline of its own. A build still queued at the deadline is reported by id, not lost. A
-     build that errors or is cancelled is named in the log within a minute, while the other
-     platform builds on (#3812).
+     deadline of its own. A build still queued at the deadline is reported by id, not lost. Each
+     build's status is logged as it changes, and a build that errors or is cancelled is named in
+     the log the round it is seen, usually within a minute (longer only when an EAS read stalls
+     or a retry is starting), while the other platform builds on (#3812). A build that has ended
+     is not read again.
    - A build that errored on a transient network failure (a 5xx, timeout or reset while fetching
      pods or packages, read from EAS's error message and the end of the build's logs) is started
      again, once per platform, and the retry takes its place. Nothing else is retried, because EAS
-     meters every build: not a cancelled build, any other error, or a failure with under an hour
-     left before the deadline. iOS 0.10.3 is why: a 504 from GitHub's release download behind
+     meters every build: not a cancelled build, any other error, a failure with under an hour
+     left before the deadline, or one after the `v*` tags changed since the builds started (or
+     couldn't be read), since a retry is a build start like any other. The log match only looks
+     at the last 100 lines, so a network warning the build recovered from long before it failed
+     doesn't count; it is a heuristic, and a wrong call costs one build. iOS 0.10.3 is why: a 504 from GitHub's release download behind
      `RNSentry.podspec` sank it in pod install (run 42567552486). Retrying the build covers any
      pod or package host, where pinning that one fetch wouldn't.
    - Only a build EAS reports `FINISHED` from the shipped commit goes on.
@@ -423,8 +428,8 @@ nothing is still building.
   another. When it finishes, and its commit is still the latest `v*` tag, upload it with the same
   `npm run eas -- submit … --id` and record it.
 - **One platform uploaded and the other didn't build:** fix the cause, then build and upload the
-  other by hand from the latest `v*` tag (below), and record it. A transient network failure was
-  already retried once; the wait step's log names both builds.
+  other by hand from the latest `v*` tag (below), and record it. The wait step's log says whether
+  a transient network failure was retried (and names both builds) or why it wasn't.
 - **Production shipped another commit before or while EAS was building:** nothing from this run
   may upload. The next store build comes with the next ship.
 - **A tag check failed without finding production moved** (a GitHub API error that outlasted its
