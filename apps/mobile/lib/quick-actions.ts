@@ -1,5 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { can, canAll, isModuleEnabled } from "@repo/validation";
+import {
+  can,
+  canAll,
+  EVENT_CREATE_PERMISSIONS,
+  isModuleEnabled,
+} from "@repo/validation";
 
 /**
  * The quick-actions panel behind the tab bar's + (owner ask 2026-11-06;
@@ -90,7 +95,7 @@ export function availableQuickActions({
     // The event sheet's own gate: creating reads the roster, which the events
     // controller guards with members:view.
     newEvent:
-      on("events") && canAll(["events:create", "members:view"], permissions),
+      on("events") && canAll(EVENT_CREATE_PERMISSIONS, permissions),
     newTask: on("tasks") && can("tasks:manage", permissions),
     // Every invite route (`POST /v1/invites`, `GET /v1/invites`) checks
     // `members:invite`. Invites have no module switch.
