@@ -43,7 +43,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Edit and Reply open the keyboard straight away, with room for a long message, and closing a sheet you opened from another sheet takes you back to the first.",
       "Handing over the presidency no longer locks the old president out, and changing roles asks first if it would take away someone's access.",
       "Only officers who can do something about it are pinged when someone new joins, and Add to calendar is gone until calendar sync arrives.",
-      "On the web, an invite sent to your email shows up when you sign in, ready to join in one tap, and every join step lets you sign out.",
+      "On the web, an invite sent to your email shows up when you sign in, ready to join in one tap, and signing in with Google or Apple tells you if it just made a new account.",
     ],
   },
   {
