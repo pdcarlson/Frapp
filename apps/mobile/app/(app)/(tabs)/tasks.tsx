@@ -18,7 +18,8 @@ import {
 } from "@repo/hooks";
 import { nextUpLine } from "@repo/formatting";
 import { memberLabel } from "@repo/hooks/display-names";
-import { can, isModuleEnabled } from "@repo/validation";
+import { canAll, isModuleEnabled } from "@repo/validation";
+import { PLUS_MENU_PERMISSIONS } from "@repo/chat-core/plus-menu";
 import { SignetTokens } from "@repo/theme/signet";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
@@ -114,7 +115,9 @@ export default function TasksScreen() {
   // wildcard `*`, so a membership test would hide the control from exactly the
   // people who assign work. The C2 pattern, verbatim.
   const permissions = usePermissionList();
-  const canManageTasks = can("tasks:manage", permissions);
+  // The hint points at the quick actions' New task, so it reads that action's
+  // grant (`PLUS_MENU_PERMISSIONS.task`: `tasks:manage` under `members:view`).
+  const canManageTasks = canAll(PLUS_MENU_PERMISSIONS.task, permissions);
 
   // One clock for the whole render, so the two sections cannot straddle a tick
   // and disagree about what "today" means — but re-read whenever the member

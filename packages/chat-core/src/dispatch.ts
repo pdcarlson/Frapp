@@ -204,7 +204,6 @@ export const SIGNED_OUT_POST_COPY =
  * `{ ok: true, warning }` is `sendMessage`'s posted-but-not-saved warning,
  * which the caller must show, as `notifyDispatchOutcome` does for `/poll`.
  */
-
 export async function postPoll(
   ctx: ChatActionContext,
   channelId: string,
@@ -995,17 +994,6 @@ async function dispatchEvent(
 }
 
 /**
- * The chat side of an event created from the event form rather than the
- * one-liner (web chat's `/event` with details it can't read, #3773). The form
- * makes its own `POST /v1/events`; this gives it the one-liner's timeline
- * bookkeeping for the card: a `loading` placeholder under the request's
- * `client_message_id`, which the server's card reconciles by Realtime echo;
- * `failed()` drops it when the create is refused; `lost()` turns it into the
- * durable `recorded` row when the event committed but its card didn't post
- * (`card_posted: false`), since `POST /v1/events` has no dedupe and the toast
- * alone is evictable.
- */
-/**
  * What a create from chat says when its event card isn't in the thread: kept
  * out because the event is only for some roles (none is asked for), or lost
  * (`card_posted: false`). `null` when the card is there. Web's event form and
@@ -1024,6 +1012,17 @@ export function eventCardOutcomeCopy(
   return null;
 }
 
+/**
+ * The chat side of an event created from the event form rather than the
+ * one-liner (web chat's `/event` with details it can't read, #3773). The form
+ * makes its own `POST /v1/events`; this gives it the one-liner's timeline
+ * bookkeeping for the card: a `loading` placeholder under the request's
+ * `client_message_id`, which the server's card reconciles by Realtime echo;
+ * `failed()` drops it when the create is refused; `lost()` turns it into the
+ * durable `recorded` row when the event committed but its card didn't post
+ * (`card_posted: false`), since `POST /v1/events` has no dedupe and the toast
+ * alone is evictable.
+ */
 export interface EventCardTrack {
   clientMessageId: string;
   failed: () => void;

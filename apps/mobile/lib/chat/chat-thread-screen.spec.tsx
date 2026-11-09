@@ -2131,6 +2131,19 @@ describe("chat thread + sheet (#3865)", () => {
       "Couldn't confirm the task",
       "Check the task board.",
     );
+    act(() => openForm("hours"));
+    const hours = tree.root.findByType("LogHoursSheet" as never);
+    act(() =>
+      (hours.props.onPosted as (r: unknown) => void)({
+        ok: true,
+        unconfirmed: true,
+        warning: "Check the Service page.",
+      }),
+    );
+    expect(alert).toHaveBeenLastCalledWith(
+      "Couldn't confirm the hours",
+      "Check the Service page.",
+    );
     const onPost = tree.root.findByType("NewPollSheet" as never).props
       .onPost as (poll: unknown) => Promise<unknown>;
     await act(async () => {

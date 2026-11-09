@@ -532,19 +532,24 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
           } else setSubmitFailed(true);
         },
       };
-      if (!card || !chat) {
+      if (!chat) {
         createEvent.mutate(result.body, handlers);
         return;
       }
-      // The thread's placeholder has to be settled even if the member leaves
-      // the thread mid-create, which unmounts this sheet: `mutate`'s per-call
-      // callbacks don't fire after an unmount, `mutateAsync`'s promise does.
+      // From chat, the outcome has to land even if the member leaves the
+      // thread mid-create, which unmounts this sheet: the card's placeholder
+      // settled, or the alert saying why there's no card. `mutate`'s per-call
+      // callbacks don't fire after an unmount; `mutateAsync`'s promise does.
       void createEvent
-        .mutateAsync({
-          ...result.body,
-          channel_id: chat.channelId,
-          client_message_id: card.clientMessageId,
-        })
+        .mutateAsync(
+          card
+            ? {
+                ...result.body,
+                channel_id: chat.channelId,
+                client_message_id: card.clientMessageId,
+              }
+            : result.body,
+        )
         .then(handlers.onSuccess, handlers.onError);
     }
 

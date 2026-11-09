@@ -707,7 +707,7 @@ describe("New event from a chat's + (#3865)", () => {
     );
   });
 
-  it("asks for no card when the event keeps anyone out, and says so", () => {
+  it("asks for no card when the event keeps anyone out, and says so", async () => {
     const onCreated = vi.fn();
     const tree = renderFromChat(onCreated);
     type(tree, "Event name", "Formal");
@@ -723,9 +723,11 @@ describe("New event from a chat's + (#3865)", () => {
         roles: { "role-alumni": "not_invited" },
       }),
     );
-    act(() => createButton(tree).props.onPress());
+    await act(async () => createButton(tree).props.onPress());
     expect(trackCard).not.toHaveBeenCalled();
-    expect(mutate.mock.calls.at(-1)![0]).not.toHaveProperty("channel_id");
+    // Still the promise path, so the alert lands even after an unmount.
+    expect(mutate).not.toHaveBeenCalled();
+    expect(mutateAsync.mock.calls.at(-1)![0]).not.toHaveProperty("channel_id");
     expect(onCreated).toHaveBeenCalledWith(
       expect.objectContaining({ cardKeptOut: true }),
     );
