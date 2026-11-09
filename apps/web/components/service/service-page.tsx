@@ -134,7 +134,6 @@ export function ServiceHoursPage() {
     (wf) => wf.key === "wf_hours_receipt",
   );
   const receiptRequired = receiptWorkflow?.enabled === true;
-
   const proofLabel = receiptRequired
     ? "Proof file (required by chapter policy)"
     : receiptWorkflow
