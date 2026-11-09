@@ -1362,6 +1362,108 @@ describe("MessageTimeline — staying at the newest message as rows grow", () =>
     expect(virtuosoProps.scrollToIndex).toHaveBeenCalledWith(TO_NEWEST);
   });
 
+  it("follows again when the member's input finds the list at the bottom", () => {
+    // A wheel with nothing left to scroll fires no scroll event; the input
+    // alone has to read the list back.
+    const ref = createRef<MessageTimelineHandle>();
+    renderTimeline(rows(1, 5), { ref });
+    const node = attachScroller(300);
+
+    expect(ref.current?.scrollToMessage("msg-4")).toBe(true);
+    scrollTo(node, 600);
+    node.dispatchEvent(new Event("wheel"));
+    rowsGrow();
+
+    expect(virtuosoProps.scrollToIndex).toHaveBeenCalledWith(TO_NEWEST);
+  });
+
+  it("ends a jump's hold when a new message lands at the end", () => {
+    // Virtuoso follows the new message, which moves the jumped-to one up
+    // anyway; its photo growing after that is followed too.
+    const ref = createRef<MessageTimelineHandle>();
+    const { rerender } = render(view(rows(1, 5), { ref }));
+    const node = attachScroller(300);
+    act(() => virtuosoProps.current.totalListHeightChanged?.(1000));
+
+    expect(ref.current?.scrollToMessage("msg-4")).toBe(true);
+    scrollTo(node, 600);
+    now += 1_000;
+    rerender(view(rows(1, 6), { ref }));
+    act(() => virtuosoProps.current.totalListHeightChanged?.(1100));
+    // Virtuoso's smooth follow lands at the bottom.
+    scrollTo(node, 600);
+    rowsGrow();
+
+    expect(virtuosoProps.scrollToIndex).toHaveBeenCalledWith(TO_NEWEST);
+  });
+
+  it.each([
+    ["a swipe", (node: HTMLElement) => node.dispatchEvent(new Event("touchmove"))],
+    [
+      "a scroll key",
+      (node: HTMLElement) =>
+        node.dispatchEvent(new KeyboardEvent("keydown", { key: "PageDown" })),
+    ],
+    [
+      "a press on the scrollbar",
+      (node: HTMLElement) => node.dispatchEvent(new Event("pointerdown")),
+    ],
+  ])("counts %s as the member moving the list after a jump", (_, input) => {
+    const ref = createRef<MessageTimelineHandle>();
+    renderTimeline(rows(1, 5), { ref });
+    const node = attachScroller(300);
+
+    expect(ref.current?.scrollToMessage("msg-4")).toBe(true);
+    scrollTo(node, 600);
+    input(node);
+    rowsGrow();
+
+    expect(virtuosoProps.scrollToIndex).toHaveBeenCalledWith(TO_NEWEST);
+  });
+
+  it.each([
+    [
+      "a press on a row's control",
+      (node: HTMLElement) => {
+        const control = document.createElement("button");
+        node.appendChild(control);
+        control.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      },
+    ],
+    [
+      "typing in a field in the list",
+      (node: HTMLElement) => {
+        const field = document.createElement("textarea");
+        node.appendChild(field);
+        field.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+        );
+      },
+    ],
+  ])("keeps a jump's hold through %s", (_, input) => {
+    const ref = createRef<MessageTimelineHandle>();
+    renderTimeline(rows(1, 5), { ref });
+    const node = attachScroller(300);
+
+    expect(ref.current?.scrollToMessage("msg-4")).toBe(true);
+    scrollTo(node, 600);
+    input(node);
+    rowsGrow();
+
+    expect(virtuosoProps.scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it("does not read 5px short of the bottom as at it", () => {
+    // Virtuoso's own threshold: past it, it would not follow a new message.
+    renderTimeline(rows(1, 5));
+    const node = attachScroller(600);
+    scrollTo(node, 595);
+
+    rowsGrow();
+
+    expect(virtuosoProps.scrollToIndex).not.toHaveBeenCalled();
+  });
+
   it("does not follow while a jump is on its way", () => {
     renderTimeline(rows(1, 5), { holdFollow: true });
     attachScroller(600);
@@ -1383,6 +1485,21 @@ describe("MessageTimeline — staying at the newest message as rows grow", () =>
     act(() => virtuosoProps.current.totalListHeightChanged?.(1100));
 
     rowsGrow();
+
+    expect(virtuosoProps.scrollToIndex).toHaveBeenCalledWith(TO_NEWEST);
+  });
+
+  it("follows growth at once when rows land above rather than at the end", () => {
+    // Older history (or a delete) moves the count but not the newest row,
+    // and Virtuoso scrolls for neither, so nothing waits.
+    const { rerender } = render(view(rows(11, 20)));
+    attachScroller(600);
+    act(() => virtuosoProps.current.totalListHeightChanged?.(1000));
+    now += 1_000;
+    rerender(view(rows(1, 20)));
+    virtuosoProps.scrollToIndex.mockClear();
+
+    act(() => virtuosoProps.current.totalListHeightChanged?.(1400));
 
     expect(virtuosoProps.scrollToIndex).toHaveBeenCalledWith(TO_NEWEST);
   });
@@ -1432,6 +1549,48 @@ describe("MessageTimeline — staying at the newest message as rows grow", () =>
 
     rerender(view(rows(1, 5), { channelId: "chan-2" }));
     rowsGrow();
+
+    expect(virtuosoProps.scrollToIndex).toHaveBeenCalledWith(TO_NEWEST);
+  });
+
+  it("ends a jump's hold on a switch to a cached channel", () => {
+    const ref = createRef<MessageTimelineHandle>();
+    const { rerender } = render(view(rows(1, 5), { ref }));
+    const node = attachScroller(600);
+    expect(ref.current?.scrollToMessage("msg-2")).toBe(true);
+
+    rerender(view(rows(1, 5), { ref, channelId: "chan-2" }));
+    // The switch's own scroll lands at the bottom, then the member scrolls
+    // up by a means the scroller sees no input for (focus moving into a row).
+    scrollTo(node, 200);
+    rowsGrow();
+
+    expect(virtuosoProps.scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it("ends a jump's hold when a fresh list mounts", () => {
+    const ref = createRef<MessageTimelineHandle>();
+    renderTimeline(rows(1, 5), { ref });
+    attachScroller(600);
+    expect(ref.current?.scrollToMessage("msg-2")).toBe(true);
+
+    const fresh = attachScroller(600);
+    scrollTo(fresh, 200);
+    rowsGrow();
+
+    expect(virtuosoProps.scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it("does not wait on the first resize of a fresh list with other rows", () => {
+    const { rerender } = render(view(rows(1, 5)));
+    attachScroller(600);
+    act(() => virtuosoProps.current.totalListHeightChanged?.(1000));
+    now += 1_000;
+    rerender(view(rows(1, 8)));
+    attachScroller(600);
+    virtuosoProps.scrollToIndex.mockClear();
+
+    act(() => virtuosoProps.current.totalListHeightChanged?.(1300));
 
     expect(virtuosoProps.scrollToIndex).toHaveBeenCalledWith(TO_NEWEST);
   });

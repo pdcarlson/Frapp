@@ -248,12 +248,49 @@ function usePrependAwareFirstIndex(keys: readonly string[]): {
 const AT_BOTTOM_SLOP_PX = 4;
 
 /**
- * How long after the row count changes `useStayAtBottom` leaves resizes to
- * Virtuoso's smooth follow of that change.
+ * How long after a new message lands `useStayAtBottom` leaves resizes to
+ * Virtuoso's smooth follow of it.
  */
-const COUNT_SETTLE_MS = 100;
+const NEW_ROW_SETTLE_MS = 100;
 
-/** Input that means the member, not the timeline, is moving the list. */
+/** Keys that scroll the list when no text field has focus. */
+const SCROLL_KEYS = new Set([
+  "ArrowUp",
+  "ArrowDown",
+  "PageUp",
+  "PageDown",
+  "Home",
+  "End",
+  " ",
+]);
+
+/**
+ * Whether an input event on the scroller is the member moving the list: a
+ * wheel or a swipe anywhere on it, a scroll key outside a text field, or a
+ * press on the scroller itself (its scrollbar). A press on a row's own
+ * controls is not: reacting to the message a jump landed on keeps it in view.
+ */
+function isMemberScroll(event: Event, scroller: HTMLElement): boolean {
+  switch (event.type) {
+    case "wheel":
+    case "touchmove":
+      return true;
+    case "pointerdown":
+      return event.target === scroller;
+    case "keydown": {
+      const target = event.target;
+      const typing =
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA");
+      return !typing && SCROLL_KEYS.has((event as KeyboardEvent).key);
+    }
+    default:
+      return false;
+  }
+}
+
 const MEMBER_SCROLL_EVENTS = [
   "wheel",
   "touchmove",
@@ -281,28 +318,34 @@ const MEMBER_SCROLL_EVENTS = [
  * read).
  *
  * A jump to a message (pin, saved message, reply quote, search, a link) ends
- * the following until the member moves the list themselves: wheel, touch,
- * keys or a pointer on the scroller. Its scroll events alone don't restore
- * it, because a jump to a message near the end clamps to the bottom, and
- * following from there would pull the message it jumped to up and out of
- * view as the rows under it grow. A channel switch lands on the bottom and
- * follows at once.
+ * the following until the member moves the list themselves
+ * ({@link isMemberScroll}), or a new message lands at the end. Its
+ * scroll events alone don't restore it, because a jump to a message near the
+ * end clamps to the bottom, and following from there would pull the message
+ * it jumped to up and out of view as the rows under it grow. A new message
+ * moves that message up anyway when Virtuoso follows it, so it ends the hold
+ * too. Either way the flag is read back off the scroller then. A channel
+ * switch lands on the bottom and follows at once.
  *
- * A rise in the row count is Virtuoso's to follow, smoothly. Answering its
+ * A new message at the end is Virtuoso's to follow, smoothly. Answering its
  * resizes too would snap that smooth scroll to the end, so a resize within
- * {@link COUNT_SETTLE_MS} of the first one at a new count is answered when
- * that window closes instead: by then the smooth scroll has either landed (and
- * any growth since is followed) or is still under way (and its scroll events
- * have cleared the flag until it lands). The count arrives with the resize
- * rather than from an effect, because Virtuoso reports the resize from its own
- * layout effect, before this component's effects run.
+ * {@link NEW_ROW_SETTLE_MS} of the first one with a new newest row is
+ * answered when that window closes instead: by then the smooth scroll has
+ * either landed (and any growth since is followed) or is still under way (and
+ * its scroll events have cleared the flag until it lands). Rows landing above
+ * (older history) or leaving start no such window: Virtuoso scrolls for
+ * neither. The newest row's key arrives with the resize rather than from an
+ * effect, because Virtuoso reports the resize from its own layout effect,
+ * before this component's effects run.
  */
 function useStayAtBottom(virtuoso: React.RefObject<VirtuosoHandle | null>) {
   const atBottom = useRef(true);
   const afterJump = useRef(false);
   const held = useRef(false);
-  const seenCount = useRef<number | null>(null);
-  const countChangedAt = useRef(Number.NEGATIVE_INFINITY);
+  const scroller = useRef<HTMLElement | null>(null);
+  // `undefined` until a fresh list's first resize; a channel can be empty.
+  const seenNewest = useRef<string | null | undefined>(undefined);
+  const newRowAt = useRef(Number.NEGATIVE_INFINITY);
   const deferred = useRef<ReturnType<typeof setTimeout> | null>(null);
   const detach = useRef<(() => void) | null>(null);
 
@@ -322,7 +365,7 @@ function useStayAtBottom(virtuoso: React.RefObject<VirtuosoHandle | null>) {
     function follow() {
       if (held.current || !atBottom.current) return;
       const wait =
-        COUNT_SETTLE_MS - (performance.now() - countChangedAt.current);
+        NEW_ROW_SETTLE_MS - (performance.now() - newRowAt.current);
       if (wait > 0) {
         deferred.current ??= setTimeout(() => {
           deferred.current = null;
@@ -341,18 +384,22 @@ function useStayAtBottom(virtuoso: React.RefObject<VirtuosoHandle | null>) {
         detach.current?.();
         detach.current = null;
         cancelDeferred();
+        scroller.current = null;
         if (!(node instanceof HTMLElement)) return;
+        scroller.current = node;
         // A fresh list opens at its newest row (`initialTopMostItemIndex`),
         // and settling there is Virtuoso's, not a count change to stand back
         // from.
         atBottom.current = true;
         afterJump.current = false;
-        seenCount.current = null;
+        seenNewest.current = undefined;
         const onScroll = () => {
           if (!afterJump.current) atBottom.current = isAtBottom(node);
         };
-        const onMemberScroll = () => {
+        const onMemberScroll = (event: Event) => {
+          if (!afterJump.current || !isMemberScroll(event, node)) return;
           afterJump.current = false;
+          atBottom.current = isAtBottom(node);
         };
         node.addEventListener("scroll", onScroll, { passive: true });
         for (const type of MEMBER_SCROLL_EVENTS) {
@@ -376,13 +423,19 @@ function useStayAtBottom(virtuoso: React.RefObject<VirtuosoHandle | null>) {
         afterJump.current = true;
         cancelDeferred();
       },
-      /** Virtuoso's `totalListHeightChanged`, with the count it drew. */
-      listResized: (rowCount: number, holdFollow: boolean) => {
+      /** Virtuoso's `totalListHeightChanged`, with the newest row it drew. */
+      listResized: (newestKey: string | null, holdFollow: boolean) => {
         held.current = holdFollow;
-        if (seenCount.current !== rowCount) {
-          const first = seenCount.current === null;
-          seenCount.current = rowCount;
-          if (!first) countChangedAt.current = performance.now();
+        if (seenNewest.current !== newestKey) {
+          const first = seenNewest.current === undefined;
+          seenNewest.current = newestKey;
+          if (!first) {
+            newRowAt.current = performance.now();
+            if (afterJump.current && scroller.current) {
+              afterJump.current = false;
+              atBottom.current = isAtBottom(scroller.current);
+            }
+          }
         }
         follow();
       },
@@ -864,7 +917,6 @@ export const MessageTimeline = forwardRef<
     else if (channelId) setArmedFor(channelId);
   };
 
-
   const headerContext = useMemo<TimelineHeaderContext>(
     () => ({
       olderStatus: isLoadingOlder ? "loading" : olderError ? "error" : "idle",
@@ -1048,7 +1100,7 @@ export const MessageTimeline = forwardRef<
           // above (a cold open's live page over its cached tail) still wants
           // the rows under them followed as they grow.
           totalListHeightChanged={() =>
-            stayAtBottom.listResized(decorated.length, holdFollow)
+            stayAtBottom.listResized(rowKeys.at(-1) ?? null, holdFollow)
           }
           initialTopMostItemIndex={Math.max(decorated.length - 1, 0)}
           atTopStateChange={handleAtTop}
