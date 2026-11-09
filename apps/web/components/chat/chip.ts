@@ -1,4 +1,4 @@
-import { FOCUS_RING } from "@/components/ui/focus";
+import { FOCUS_RING, FOCUS_RING_OFFSET } from "@/components/ui/focus";
 
 /**
  * The chat chip — reaction chips, the add-reaction chip, and the hover-row
@@ -69,6 +69,20 @@ export const CHIP = {
 export const MENTION_CHIP = [
   "rounded-[5px] px-1 py-px",
   "bg-mention-chip text-mention-chip-text",
+].join(" ");
+
+/**
+ * The button inside a mention chip that opens a member's profile (#3726). The
+ * chip's `<mark>` still paints it, so this draws nothing at rest (the
+ * preflight already leaves a button transparent, unpadded and in the run's
+ * font, color and line height): a pointer and an underline on hover, and the
+ * offset focus ring (`FOCUS_RING_OFFSET`, since it has no border for
+ * `FOCUS_RING` to swap), rounded to the chip's own 5px. A chip that opens a
+ * profile and one that doesn't (a role mention) look the same at rest.
+ */
+export const MENTION_CHIP_BUTTON = [
+  "cursor-pointer rounded-[5px] underline-offset-2 hover:underline",
+  FOCUS_RING_OFFSET,
 ].join(" ");
 
 /**

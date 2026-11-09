@@ -26,8 +26,9 @@ type EventsCalendarProps = {
    */
   onCreateOnDay: (day: Date) => void;
   /**
-   * The viewer holds `events:create`. Without it a day number is a plain
-   * date: no button, and no dashed "+" on today.
+   * The viewer can create events (`EVENT_CREATE_PERMISSIONS`: `events:create`
+   * and `members:view`). Otherwise a day number is a plain date: no button,
+   * and no dashed "+" on today.
    */
   canCreate: boolean;
   /**

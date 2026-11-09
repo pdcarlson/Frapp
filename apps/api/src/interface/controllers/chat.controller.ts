@@ -508,8 +508,8 @@ export class ChatController {
               : 0,
           },
   )
-  // `/poll` posts a `kind: 'poll'` message through this route
-  // (`@repo/chat-core/dispatch`).
+  // Web's `/poll` and mobile's New poll sheet post a `kind: 'poll'` message
+  // through this route (`buildPollMessage` in `@repo/chat-core/polls`).
   @FeatureEvent(
     'poll-created',
     ({ body, result }: FeatureEventInput<SendMessageDto, SentMessage>) => {

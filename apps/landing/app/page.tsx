@@ -4,10 +4,8 @@ import { EventsProofSection } from "../components/home/events-proof-section";
 import { HeroSection } from "../components/home/hero-section";
 import { OfficersSection } from "../components/home/officers-section";
 import { PricingSection } from "../components/home/pricing-section";
-import { SiteFooter } from "../components/home/site-footer";
-import { SiteHeader } from "../components/home/site-header";
-import { FOCUS_RING } from "../components/home/styles";
-import { buildAuthUrls } from "../lib/auth-urls";
+import { SiteChrome } from "../components/home/site-chrome";
+import { landingAuthUrls } from "../lib/auth-urls";
 
 /*
  * The storefront, rebuilt to the reskin boards (#2367).
@@ -53,10 +51,7 @@ import { buildAuthUrls } from "../lib/auth-urls";
  */
 
 export default function Home() {
-  const { signupUrl, loginUrl } = buildAuthUrls(
-    process.env.NEXT_PUBLIC_APP_URL,
-    { vercelEnv: process.env.VERCEL_ENV },
-  );
+  const { signupUrl, loginUrl } = landingAuthUrls();
 
   /*
    * The invite CTA points at this origin's own `/join`, which is what the
@@ -99,36 +94,18 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <SiteChrome signupUrl={signupUrl} loginUrl={loginUrl} anchorBase="">
+      <HeroSection signupUrl={signupUrl} joinUrl={joinUrl} />
+      <OfficersSection />
+      <ChatProofSection />
+      <EventsProofSection />
+      <PricingSection signupUrl={signupUrl} />
+      <ClosingSection signupUrl={signupUrl} loginUrl={loginUrl} />
+      {/* Last, so the hero stays the first thing inside `main`. */}
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
-
-      {/*
-        The skip link is the first thing in the tab order and targets the
-        landmark itself rather than a heading inside it, so a screen reader
-        lands on `main` with the nav already behind it.
-      */}
-      <a
-        href="#top"
-        className={`sr-only focus:not-sr-only focus:absolute focus:left-5 focus:top-5 focus:z-50 focus:inline-flex focus:h-11 focus:items-center focus:rounded-md focus:bg-primary focus:px-4 focus:text-label focus:font-bold focus:text-primary-foreground ${FOCUS_RING}`}
-      >
-        Skip to content
-      </a>
-
-      <SiteHeader signupUrl={signupUrl} loginUrl={loginUrl} />
-
-      <main id="top" tabIndex={-1} className="focus:outline-none">
-        <HeroSection signupUrl={signupUrl} joinUrl={joinUrl} />
-        <OfficersSection />
-        <ChatProofSection />
-        <EventsProofSection />
-        <PricingSection signupUrl={signupUrl} />
-        <ClosingSection signupUrl={signupUrl} loginUrl={loginUrl} />
-      </main>
-
-      <SiteFooter loginUrl={loginUrl} />
-    </div>
+    </SiteChrome>
   );
 }

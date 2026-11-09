@@ -49,7 +49,7 @@ vi.mock("@repo/hooks", () => ({
   useUpdateAttendanceStatus: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useAutoAbsent: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useMyPermissions: () => ({
-    data: { permissions: ["events:update", "events:create"] },
+    data: { permissions: ["events:update", "events:create", "members:view"] },
   }),
   useEvents: () => eventsQuery,
   useNow: () => Date.parse("2026-09-01T12:00:00Z"),

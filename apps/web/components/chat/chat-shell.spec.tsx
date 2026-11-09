@@ -255,10 +255,66 @@ vi.mock("./report-message-dialog", () => ({
 }));
 // The member list owns its own reads and has its own spec; here it is only a
 // column the shell decides to show.
-vi.mock("./channel-member-list", () => ({
-  ChannelMemberList: ({ channelId }: { channelId: string | null }) => (
-    <div data-testid="channel-member-list" data-channel-id={channelId ?? ""} />
+const mockTrackEventCard = vi.fn();
+
+vi.mock("@/components/events/event-editor-dialog", () => ({
+  EventEditorDialog: (props: {
+    open: boolean;
+    initialName?: string;
+    initialStartAt?: string;
+    initialEndAt?: string;
+    postToChannelId?: string;
+    trackChatCard?: (channelId: string, name: string) => unknown;
+  }) => (
+    <div
+      data-testid="event-form"
+      data-open={String(props.open)}
+      data-name={props.initialName ?? ""}
+      data-start={props.initialStartAt ?? ""}
+      data-end={props.initialEndAt ?? ""}
+      data-channel={props.postToChannelId ?? ""}
+    >
+      {/* What the dialog does on Create: ask the chat to track the card. */}
+      <button
+        data-testid="event-form-track"
+        onClick={() => props.trackChatCard?.(props.postToChannelId ?? "", "Formal")}
+      >
+        track
+      </button>
+    </div>
   ),
+}));
+
+vi.mock("./channel-member-list", () => ({
+  ChannelMemberList: ({
+    channelId,
+    onOpenProfile,
+  }: {
+    channelId: string | null;
+    onOpenProfile?: (userId: string) => void;
+  }) => (
+    <div data-testid="channel-member-list" data-channel-id={channelId ?? ""}>
+      <button onClick={() => onOpenProfile?.("u-row")}>open-row-profile</button>
+    </div>
+  ),
+}));
+// The profile sheet owns its reads and has its own spec; here it only says
+// whether the shell opened it, and for whom (#3726).
+vi.mock("@/components/members/member-detail-sheet", () => ({
+  MemberDetailSheet: ({
+    open,
+    userId,
+    onOpenChange,
+  }: {
+    open: boolean;
+    userId: string | null;
+    onOpenChange: (open: boolean) => void;
+  }) =>
+    open ? (
+      <div data-testid="member-profile" data-user-id={userId ?? ""}>
+        <button onClick={() => onOpenChange(false)}>close-profile</button>
+      </div>
+    ) : null,
 }));
 
 vi.mock("@repo/hooks", async () => ({
@@ -639,8 +695,13 @@ vi.mock("./composer", () => ({
     isModuleEnabled,
     slashCommandsStatus,
     recruitmentVocab,
+    onOpenCommandForm,
   }: {
     channelId: string;
+    onOpenCommandForm?: (
+      command: { name: string; implemented: boolean },
+      args: string,
+    ) => string | null;
     recruitmentVocab?: string;
     isModuleEnabled?: (moduleKey: string) => boolean;
     slashCommandsStatus?: string;
@@ -703,6 +764,30 @@ vi.mock("./composer", () => ({
         >
           send
         </button>
+        {/* The command-form seam (#3773): what the shell answers when the
+            real composer offers it a command before dispatching. */}
+        {[
+          "",
+          "Chapter Dinner",
+          "Chapter Dinner 2026-11-20 9:00-11:00",
+          '"Formal" 2026-11-20 18:00-20:00',
+        ].map(
+          (args) => (
+            <button
+              key={args}
+              data-testid={`composer-event:${args}`}
+              onClick={(event) => {
+                const took = onOpenCommandForm?.(
+                  { name: "event", implemented: true },
+                  args,
+                );
+                event.currentTarget.dataset.took = String(took);
+              }}
+            >
+              /event {args}
+            </button>
+          ),
+        )}
         <button data-testid="composer-cancel-reply" onClick={onCancelReply}>
           cancel reply
         </button>
@@ -818,9 +903,11 @@ vi.mock("./message-timeline", async () => {
       canManageChannel?: boolean;
       holdFollow?: boolean;
       channelStart?: React.ReactNode;
+      onOpenProfile?: (userId: string) => void;
     }
   >(function MessageTimeline(
     {
+      onOpenProfile,
       messages,
       onDelete,
       onReply,
@@ -859,6 +946,9 @@ vi.mock("./message-timeline", async () => {
         {/* Edit is withheld the same way where the member can't post (#2775). */}
         <span data-testid="edit-offered">{String(!!onEdit)}</span>
         <button onClick={() => onDelete?.("msg-1")}>trigger-delete</button>
+        <button onClick={() => onOpenProfile?.("u-author")}>
+          open-author-profile
+        </button>
         {/* One Reply control per message, so a test can stage a reply against
             a top-level message and against a reply — the two cases AC 3's
             root-normalization rule distinguishes. */}
@@ -882,7 +972,7 @@ vi.mock("./message-timeline", async () => {
 
 import { blockClearance } from "@repo/chat-core/blocks";
 import { useOpenChatTransport } from "@repo/hooks/open-chat-transport";
-import { ChatShell } from "./chat-shell";
+import { ChatShell, prefillLocalInput } from "./chat-shell";
 import {
   NavFaceContext,
   type NavFaceContextValue,
@@ -928,6 +1018,7 @@ function chatChannelResult(
     retry: vi.fn(),
     discard: vi.fn(),
     dispatchSlash: vi.fn(),
+    trackEventCard: mockTrackEventCard,
     act: vi.fn(),
     hasOlder: overrides.hasOlder ?? false,
     isLoadingOlder: overrides.isLoadingOlder ?? false,
@@ -3791,6 +3882,33 @@ describe("ChatShell member list", () => {
     document.cookie = "frapp_chat_members_hidden=; Max-Age=0; Path=/";
   });
 
+  // #3726: a name or chip in the timeline, or a member-list row, opens the
+  // directory's profile sheet for that member.
+  it("opens one profile sheet from the timeline and from the member column", () => {
+    stubWide(true);
+    render(<ChatShell />);
+    expect(screen.queryByTestId("member-profile")).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "open-author-profile" }),
+    );
+    expect(screen.getByTestId("member-profile")).toHaveAttribute(
+      "data-user-id",
+      "u-author",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "close-profile" }));
+    expect(screen.queryByTestId("member-profile")).not.toBeInTheDocument();
+
+    const column = screen.getByRole("complementary", { name: "Members" });
+    fireEvent.click(
+      within(column).getByRole("button", { name: "open-row-profile" }),
+    );
+    expect(screen.getByTestId("member-profile")).toHaveAttribute(
+      "data-user-id",
+      "u-row",
+    );
+  });
+
   it("shows the column for the open channel by default, and hides it from the header", () => {
     stubWide(true);
     render(<ChatShell />);
@@ -4040,5 +4158,112 @@ describe("ChatShell claims the open channel as viewed (#3698)", () => {
 
     unmount();
     expect(viewedChannelId()).toBeNull();
+  });
+});
+
+describe("ChatShell opens the event form for an /event it can't read (#3773)", () => {
+  function eventButton(args: string) {
+    return screen.getByTestId(`composer-event:${args}`);
+  }
+
+  it("opens the form, filled in, for the active channel", () => {
+    mockUseMyPermissions.mockReturnValue({
+      data: { permissions: ["events:create", "members:view"] },
+    });
+    render(<ChatShell />);
+    expect(screen.queryByTestId("event-form")).toBeNull();
+
+    fireEvent.click(eventButton("Chapter Dinner"));
+
+    expect(eventButton("Chapter Dinner").dataset.took).toBe("opened");
+    const form = screen.getByTestId("event-form");
+    expect(form).toHaveAttribute("data-open", "true");
+    expect(form).toHaveAttribute("data-name", "Chapter Dinner");
+    // The composer stub prints its `channelId` first: the card goes there.
+    const channelId = form.getAttribute("data-channel")!;
+    expect(channelId).not.toBe("");
+    expect(screen.getByTestId("composer").textContent).toMatch(
+      new RegExp(`^${channelId}`),
+    );
+  });
+
+  it("hands the typed date and times to the form as start and end", () => {
+    mockUseMyPermissions.mockReturnValue({
+      data: { permissions: ["events:create", "members:view"] },
+    });
+    render(<ChatShell />);
+    fireEvent.click(eventButton("Chapter Dinner 2026-11-20 9:00-11:00"));
+
+    const form = screen.getByTestId("event-form");
+    expect(form).toHaveAttribute("data-name", "Chapter Dinner");
+    expect(form).toHaveAttribute("data-start", "2026-11-20T09:00");
+    expect(form).toHaveAttribute("data-end", "2026-11-20T11:00");
+  });
+
+  it("hands the form the chat's card tracker, so the card gets its placeholder and recorded row", () => {
+    mockUseMyPermissions.mockReturnValue({
+      data: { permissions: ["events:create", "members:view"] },
+    });
+    mockTrackEventCard.mockClear();
+    render(<ChatShell />);
+    fireEvent.click(eventButton("Chapter Dinner"));
+    fireEvent.click(screen.getByTestId("event-form-track"));
+
+    const channelId = screen
+      .getByTestId("event-form")
+      .getAttribute("data-channel");
+    expect(mockTrackEventCard).toHaveBeenCalledWith(channelId, "Formal");
+  });
+
+  it("opens it for a bare /event, as a palette pick sends", () => {
+    mockUseMyPermissions.mockReturnValue({
+      data: { permissions: ["*"] },
+    });
+    render(<ChatShell />);
+    fireEvent.click(eventButton(""));
+
+    expect(screen.getByTestId("event-form")).toHaveAttribute(
+      "data-open",
+      "true",
+    );
+  });
+
+  it("leaves a one-liner it can read to the dispatcher", () => {
+    mockUseMyPermissions.mockReturnValue({
+      data: { permissions: ["events:create", "members:view"] },
+    });
+    render(<ChatShell />);
+    const oneLiner = '"Formal" 2026-11-20 18:00-20:00';
+    fireEvent.click(eventButton(oneLiner));
+
+    expect(eventButton(oneLiner).dataset.took).toBe("null");
+    expect(screen.queryByTestId("event-form")).toBeNull();
+  });
+
+  it("says a member without the grant can't create events, instead of opening a form the server refuses", () => {
+    mockUseMyPermissions.mockReturnValue({
+      data: { permissions: ["events:create"] },
+    });
+    mockToast.mockClear();
+    render(<ChatShell />);
+    fireEvent.click(eventButton("Chapter Dinner"));
+
+    expect(eventButton("Chapter Dinner").dataset.took).toBe("refused");
+    expect(screen.queryByTestId("event-form")).toBeNull();
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "You can't create events" }),
+    );
+  });
+});
+
+describe("prefillLocalInput", () => {
+  it("joins a typed date and clock time, padding the hour", () => {
+    expect(prefillLocalInput("2026-11-12", "9:05")).toBe("2026-11-12T09:05");
+    expect(prefillLocalInput("2026-11-12", "18:00")).toBe("2026-11-12T18:00");
+  });
+
+  it("is undefined without both", () => {
+    expect(prefillLocalInput("2026-11-12", undefined)).toBeUndefined();
+    expect(prefillLocalInput(undefined, "18:00")).toBeUndefined();
   });
 });
