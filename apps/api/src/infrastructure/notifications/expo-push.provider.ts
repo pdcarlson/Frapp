@@ -59,6 +59,51 @@ export function redactPushTokens(
   return exact.replace(EXPO_TOKEN_PATTERN, '$1REDACTED$2');
 }
 
+/**
+ * Body a push falls back to, by category, when its sender built none. Each
+ * still says what kind of thing happened, which a bare "Notification" does not.
+ */
+const FALLBACK_BODY_BY_CATEGORY: Record<string, string> = {
+  chat: 'New message',
+  announcements: 'New announcement',
+  events: 'Event update',
+  tasks: 'Task update',
+  points: 'Points update',
+  billing: 'Billing update',
+  service: 'Service hours update',
+  admin: 'Chapter update',
+};
+
+const FALLBACK_TITLE = 'Frapp';
+const FALLBACK_BODY = 'Open Frapp to see what happened';
+
+/**
+ * The title and body a push goes out with: the caller's own, or a fallback
+ * when either is blank (#3846). A push whose alert has no text reaches an
+ * iPhone as the bare app name and the word "Notification", which tells the
+ * member nothing (`spec/behavior/notifications.md` § What a push says).
+ *
+ * The fallback is a last line of defence, not the copy: every sender builds
+ * its own title and body, and `repaired` lets the provider report the one
+ * that did not.
+ */
+export function completePushCopy(payload: PushPayload): {
+  title: string;
+  body: string;
+  repaired: boolean;
+} {
+  const title = typeof payload.title === 'string' ? payload.title.trim() : '';
+  const body = typeof payload.body === 'string' ? payload.body.trim() : '';
+  return {
+    title: title || FALLBACK_TITLE,
+    body:
+      body ||
+      FALLBACK_BODY_BY_CATEGORY[payload.category ?? ''] ||
+      FALLBACK_BODY,
+    repaired: !title || !body,
+  };
+}
+
 @Injectable()
 export class ExpoPushProvider implements INotificationProvider {
   private readonly expo = new Expo();
@@ -93,10 +138,24 @@ export class ExpoPushProvider implements INotificationProvider {
       return { invalidTokens };
     }
 
+    const copy = completePushCopy(payload);
+    if (copy.repaired) {
+      // Category and which half was blank only: never the text itself, which
+      // may be a member's message.
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'expo-push-blank-copy',
+        message: `push sent with a blank ${
+          payload.title?.trim() ? 'body' : 'title'
+        } (category ${payload.category ?? 'default'}); filled with a fallback`,
+        tags: { category: payload.category ?? 'default' },
+      });
+    }
+
     const messages: ExpoPushMessage[] = validTokens.map((token) => ({
       to: token,
-      title: payload.title,
-      body: payload.body,
+      title: copy.title,
+      body: copy.body,
       data: payload.data,
       ...(payload.threadId ? { threadId: payload.threadId } : {}),
       sound: payload.priority === 'SILENT' ? undefined : 'default',

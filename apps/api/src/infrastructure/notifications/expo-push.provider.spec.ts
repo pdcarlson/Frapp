@@ -151,6 +151,71 @@ describe('ExpoPushProvider', () => {
     });
   });
 
+  // #3846: a push with no text reaches an iPhone as the bare word
+  // "Notification". Nothing goes to Expo without a title and a body, whichever
+  // sender built it.
+  describe('push copy', () => {
+    const sentMessages = (): Record<string, unknown>[] =>
+      (
+        mockSendPushNotificationsAsync.mock.calls as [
+          Record<string, unknown>[],
+        ][]
+      ).flatMap(([chunk]) => chunk);
+
+    beforeEach(() => {
+      mockSendPushNotificationsAsync.mockImplementation((chunk: unknown[]) =>
+        Promise.resolve(chunk.map(() => ({ status: 'ok', id: 'r' }))),
+      );
+    });
+
+    it.each([
+      ['an empty body', { title: 'Sam Rivera', body: '' }],
+      ['a whitespace body', { title: 'Sam Rivera', body: '  \n' }],
+      ['an empty title', { title: '', body: 'hello' }],
+      ['neither', { title: '', body: '' }],
+      [
+        'missing fields',
+        { title: undefined, body: undefined } as unknown as {
+          title: string;
+          body: string;
+        },
+      ],
+    ])('never sends %s, and reports it', async (_label, copy) => {
+      await provider.sendToUser([VALID_A], { ...copy, category: 'chat' });
+
+      const [message] = sentMessages();
+      expect(String(message.title).trim()).not.toBe('');
+      expect(String(message.body).trim()).not.toBe('');
+      expect(captureMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('names the kind of thing when it has to fill the body', async () => {
+      await provider.sendToUser([VALID_A], {
+        title: 'Chapter',
+        body: '',
+        category: 'events',
+      });
+      expect(sentMessages()[0]).toMatchObject({
+        title: 'Chapter',
+        body: 'Event update',
+      });
+    });
+
+    it("sends a sender's own copy untouched and reports nothing", async () => {
+      await provider.sendToUser([VALID_A], {
+        title: 'Sam Rivera in #general',
+        body: 'see you at 8',
+        category: 'chat',
+      });
+      expect(sentMessages()[0]).toMatchObject({
+        title: 'Sam Rivera in #general',
+        body: 'see you at 8',
+      });
+      expect(captureMessage).not.toHaveBeenCalled();
+      expect(captureException).not.toHaveBeenCalled();
+    });
+  });
+
   describe('ticket errors', () => {
     it('counts error tickets as failures and breaks them down by Expo error code', async () => {
       mockSendPushNotificationsAsync.mockResolvedValue([
