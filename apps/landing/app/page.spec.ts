@@ -422,7 +422,7 @@ describe("landing page structure", () => {
     const pricing = withoutComments(homeSource("pricing-section.tsx"));
     expect(pricing).toContain('id="pricing"');
     expect(pricing.match(/surface="pricing"/g) ?? []).toHaveLength(1);
-    expect(pricing).toContain("Upgrade any time from Settings inside the app.");
+    expect(pricing).toContain("Upgrade any time from Billing in the web app.");
   });
 });
 

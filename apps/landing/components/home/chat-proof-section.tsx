@@ -17,7 +17,7 @@ import {
 const chatProof = [
   {
     title: "Events post as cards.",
-    body: "Check in without leaving the thread. Officers watch the count update live.",
+    body: "Check in without leaving the thread. Officers watch the count climb on Host check-in.",
   },
   {
     title: "Red means you.",
@@ -25,7 +25,7 @@ const chatProof = [
   },
   {
     title: "Officer changes are public.",
-    body: "Dues, roles and module changes post to #chapter-audit. Every member can read it.",
+    body: "Role, settings and module changes post to #chapter-audit. Every member can read it.",
   },
 ];
 
@@ -41,8 +41,8 @@ export function ChatProofSection() {
           </h2>
           <p className={`${PROOF_BODY} reveal-item`} style={{ "--i": 2 } as StaggerStyle}>
             Members open chat. So that is where the event lands, where the
-            check-in happens, and where the treasurer says the invoice batch
-            went out. Nothing sits behind a tab nobody opens.
+            check-in happens, and where an officer&apos;s change is posted for
+            everyone to read. Nothing sits behind a tab nobody opens.
           </p>
           <div className="reveal-rule mt-2 border-t border-border" />
           <div className="flex flex-col border-t-0">

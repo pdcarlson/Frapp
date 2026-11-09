@@ -68,9 +68,10 @@ export function EventsProofSection() {
             Check-in that keeps its own books.
           </h2>
           <p className={`${PROOF_BODY} reveal-item`} style={{ "--i": 2 } as StaggerStyle}>
-            An officer opens check-in for a window. Members scan the QR in
-            the room, attendance is recorded, and the points post. Nobody
-            keeps a spreadsheet.
+            Check-in opens on its own just before the event starts. Members
+            scan the host&apos;s QR in the room or tap Check in on the card,
+            attendance is recorded, and the points post. Nobody keeps a
+            spreadsheet.
           </p>
           <div className="reveal-rule mt-2 border-t border-border" />
           <div className="flex flex-col">

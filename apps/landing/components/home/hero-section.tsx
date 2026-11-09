@@ -62,7 +62,7 @@ export function HeroSection({
         </div>
         <p className="max-w-[616px] text-body text-muted-foreground">
           Free for chat, members and announcements. No card. Officers add
-          Chapter Pro when the chapter needs events, dues and points.
+          Chapter Pro when the chapter needs events, check-in and points.
         </p>
       </div>
 

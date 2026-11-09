@@ -101,7 +101,7 @@ function ChatThread({ animate }: { animate: boolean }) {
       {row.kind === "them" && (
         <RunStart initials="JE" author="Jordan Ellis" time="4:02 PM">
           <p className={BODY}>
-            Chapter is 6:30 tonight. Dues forms in by then if yours is not.
+            Chapter is 6:30 tonight. Committee reports go first.
           </p>
         </RunStart>
       )}
@@ -214,14 +214,17 @@ function Composer() {
   );
 }
 
+/*
+ * A channel carries no count: a plain unread channel is a bold name only
+ * (`foundations.md`, 2026-11-07), and the one counted row, the DM's red
+ * badge, is drawn by the DM row below.
+ */
 function ChannelRow({
   name,
   state,
-  badge,
 }: {
   name: string;
   state: "active" | "unread" | "rest";
-  badge?: { count: string; tone: "neutral" | "mention" };
 }) {
   const tone =
     state === "active"
@@ -233,17 +236,6 @@ function ChannelRow({
     <div className={`flex h-8 items-center gap-2 rounded-sm px-2 ${tone}`}>
       <span className="w-4 font-bold">#</span>
       <span className="min-w-0 flex-1 truncate text-[14px]">{name}</span>
-      {badge ? (
-        <span
-          className={`inline-flex h-5 min-w-5 items-center justify-center rounded-[6px] px-1.5 text-[11.5px] font-bold ${
-            badge.tone === "mention"
-              ? "bg-mention text-mention-foreground"
-              : "bg-input text-foreground"
-          }`}
-        >
-          {badge.count}
-        </span>
-      ) : null}
     </div>
   );
 }
@@ -313,11 +305,8 @@ export function ChatFrame({
               +
             </span>
           </div>
-          <ChannelRow
-            name="announcements"
-            state="unread"
-            badge={{ count: "2", tone: "neutral" }}
-          />
+          {/* A plain unread channel is a bold name and no count (#3869). */}
+          <ChannelRow name="announcements" state="unread" />
           <ChannelRow name="general" state="active" />
           <ChannelRow name="treasury" state="rest" />
           <ChannelRow name="house" state="rest" />

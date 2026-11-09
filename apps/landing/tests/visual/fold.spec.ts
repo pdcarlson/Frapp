@@ -63,6 +63,9 @@ import { expect, test, type Page } from "@playwright/test";
  *     section's grid track held at that 350px at 320 and 360 (#3079). At 375
  *     the held track ran into the shell's gutter without scrolling, which only
  *     the content-box half sees.
+ *  8. The header's Product and Pricing light while their section is on
+ *     screen, one at a time and after a jump, with and without reduced
+ *     motion, and lighting one moves no nav link (#3869).
  *
  * **What was tried and is deliberately NOT here.** An assertion that a direct
  * `/#pricing` load never arms an already-painted block — the flash slice 2 fixed
@@ -458,6 +461,68 @@ test.describe("the landing fold holds the boards' geometry", () => {
             ).toBeGreaterThanOrEqual(-0.5);
           }
         }
+      } finally {
+        await context.close();
+      }
+    });
+  }
+});
+
+/*
+ * Check 8 (#3869): the header's Product and Pricing light up while their
+ * section is on screen, one at a time, and lighting one moves nothing. The
+ * jumps are `scrollIntoView` calls rather than wheel scrolls on purpose: a
+ * jump is the case an observer can miss, so it is the one worth proving. Run
+ * under reduced motion too, where the colour change still has to land.
+ */
+test.describe("the header nav lights the section on screen", () => {
+  for (const reducedMotion of ["no-preference", "reduce"] as const) {
+    test(`Product and Pricing light in turn (${reducedMotion})`, async ({
+      browser,
+    }) => {
+      const context = await browser.newContext({
+        viewport: { width: 1440, height: 900 },
+        reducedMotion,
+      });
+      const page = await context.newPage();
+      try {
+        await page.goto("/");
+        const nav = page.getByRole("navigation", { name: "Primary" });
+        const lit = () =>
+          nav.evaluate((el) =>
+            [...el.querySelectorAll("a[aria-current]")].map((a) =>
+              a.textContent?.trim(),
+            ),
+          );
+        const boxes = () =>
+          nav.evaluate((el) =>
+            [...el.querySelectorAll("a")].map((a) => {
+              const r = a.getBoundingClientRect();
+              return [r.x, r.y, r.width, r.height].map(Math.round).join(",");
+            }),
+          );
+
+        await expect.poll(lit).toEqual([]);
+        const atRest = await boxes();
+
+        const jumpTo = (selector: string) =>
+          page.evaluate((s) => {
+            document.querySelector(s)?.scrollIntoView({ block: "start" });
+          }, selector);
+
+        await jumpTo("#product");
+        await expect.poll(lit).toEqual(["Product"]);
+        // The events section is Product's too.
+        await jumpTo('[aria-labelledby="events"]');
+        await expect.poll(lit).toEqual(["Product"]);
+        expect(await boxes(), "lighting Product moved the nav").toEqual(atRest);
+
+        await jumpTo("#pricing");
+        await expect.poll(lit).toEqual(["Pricing"]);
+        expect(await boxes(), "lighting Pricing moved the nav").toEqual(atRest);
+
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await expect.poll(lit).toEqual([]);
       } finally {
         await context.close();
       }
