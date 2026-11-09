@@ -160,6 +160,27 @@ describe("a pending read receipt shows its row read (#3788)", () => {
     expect(readAtOf(result.current.list.data, "notif-2")).toBeNull();
   });
 
+  it("serves a push tap's receipt (the on-open key) read while it is pending", async () => {
+    const queryClient = makeQueryClient();
+    const get = vi.fn().mockResolvedValue({ data: serverRows(), error: undefined });
+    const { patch } = deferredPatch();
+    const { result } = renderHook(
+      () => ({
+        list: useNotifications(),
+        markRead: useMarkNotificationRead({ sentOnOpen: true }),
+      }),
+      { wrapper: createWrapper({ GET: get, PATCH: patch }, queryClient) },
+    );
+    await waitFor(() => expect(result.current.list.isSuccess).toBe(true));
+
+    act(() => result.current.markRead.mutate("notif-2"));
+
+    await waitFor(() =>
+      expect(readAtOf(result.current.list.data, "notif-2")).toEqual(expect.any(String)),
+    );
+    expect(readAtOf(result.current.list.data, "notif-1")).toBeNull();
+  });
+
   it("keeps it read when a refetch lands before the PATCH commits", async () => {
     const queryClient = makeQueryClient();
     // The second read differs elsewhere, so the list really is replaced.

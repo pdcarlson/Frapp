@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useMemo } from "react";
 import {
   type QueryClient,
   useMutation,
@@ -185,6 +185,8 @@ function revertCategory(
 export function useNotifications(limit?: number) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
+  // Every pending receipt, the push tap's `on-open` ones included: mutation
+  // filters match by key prefix.
   const pendingReads = useMutationState({
     filters: { mutationKey: markNotificationReadMutationKey, status: "pending" },
     select: (mutation) => {
@@ -194,24 +196,17 @@ export function useNotifications(limit?: number) {
         : null;
     },
   });
-  // A string, so the `select` below keeps its identity (and the query its
-  // memoized result) until the set of pending receipts actually changes.
+  // Reduced to a string, so the `select` below keeps its identity (and the
+  // query its memoized result) until the set of pending receipts changes.
   const pendingKey = pendingReads.filter(Boolean).sort().join("\n");
-  const select = useCallback(
-    <T,>(data: T): T =>
-      withPendingReads(
-        data,
-        new Map(
-          pendingKey
-            ? pendingKey.split("\n").map((entry) => {
-                const [id = "", sentAt = ""] = entry.split("\t");
-                return [id, sentAt] as const;
-              })
-            : [],
-        ),
-      ),
-    [pendingKey],
-  );
+  const select = useMemo(() => {
+    const pending = new Map<string, string>();
+    for (const entry of pendingKey ? pendingKey.split("\n") : []) {
+      const [id = "", sentAt = ""] = entry.split("\t");
+      pending.set(id, sentAt);
+    }
+    return <T,>(data: T): T => withPendingReads(data, pending);
+  }, [pendingKey]);
   return useQuery({
     queryKey: notificationKeys.list(chapterId, limit),
     queryFn: async () => {
@@ -333,7 +328,8 @@ type CachedNotificationRow = Record<string, unknown> & {
 function withRowsRead(
   rows: unknown,
   select: (row: CachedNotificationRow) => boolean,
-  readAt: string,
+  /** The stamp, or a function read right after `select` picked the row. */
+  readAt: string | (() => string),
 ): unknown {
   if (!Array.isArray(rows)) return rows;
   let changed = false;
@@ -342,7 +338,10 @@ function withRowsRead(
     const candidate = row as CachedNotificationRow;
     if (candidate.read_at !== null || !select(candidate)) return row;
     changed = true;
-    return { ...candidate, read_at: readAt };
+    return {
+      ...candidate,
+      read_at: typeof readAt === "function" ? readAt() : readAt,
+    };
   });
   return changed ? next : rows;
 }
@@ -383,11 +382,19 @@ export function invalidateNotificationLists(queryClient: QueryClient) {
  */
 function withPendingReads<T>(data: T, pending: ReadonlyMap<string, string>): T {
   if (pending.size === 0) return data;
-  let result: unknown = data;
-  for (const [id, sentAt] of pending) {
-    result = withRowsRead(result, (row) => row.id === id, sentAt);
-  }
-  return result as T;
+  // One pass however many receipts are pending: web's Mark all read sends one
+  // per unread row, and this reruns in every observer as each one settles.
+  let stamp = "";
+  return withRowsRead(
+    data,
+    (row) => {
+      const sentAt = typeof row.id === "string" ? pending.get(row.id) : undefined;
+      if (sentAt === undefined) return false;
+      stamp = sentAt;
+      return true;
+    },
+    () => stamp,
+  ) as T;
 }
 
 function chatChannelOf(row: CachedNotificationRow): string | null {

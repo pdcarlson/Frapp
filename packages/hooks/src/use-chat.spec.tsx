@@ -165,6 +165,9 @@ describe("useMarkChannelRead", () => {
     queryClient.setQueryData(listKey, [
       { id: "n-1", read_at: null, data: { target: { screen: "chat", channelId: "chan-1" } } },
     ]);
+    // Shares the `notifications` prefix, but a read can't change it.
+    const prefsKey = ["notifications", "preferences", "chapter-1"];
+    queryClient.setQueryData(prefsKey, []);
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
     const { result } = renderHook(() => useMarkChannelRead(), {
       wrapper: createWrapper(queryClient, { POST: mockPost }),
@@ -178,9 +181,8 @@ describe("useMarkChannelRead", () => {
         ?.read_at,
     ).toEqual(expect.any(String));
     // The inbox list is refetched; preferences, which share the prefix, aren't.
-    const prefsKey = ["notifications", "preferences", "chapter-1"];
-    queryClient.setQueryData(prefsKey, []);
     expect(queryClient.getQueryState(listKey)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(prefsKey)?.isInvalidated).toBe(false);
 
     invalidateSpy.mockClear();
     result.current.mutate("chan-1");
