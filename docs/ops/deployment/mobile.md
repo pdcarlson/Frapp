@@ -357,9 +357,10 @@ calls [`_mobile-build.yml`](../../../.github/workflows/_mobile-build.yml) (#3111
      left before the deadline, or one after the `v*` tags changed since the builds started (or
      couldn't be read), since a retry is a build start like any other. The log match only looks
      at the last 100 lines, so a network warning the build recovered from long before it failed
-     doesn't count; it is a heuristic, and a wrong call costs one build. iOS 0.10.3 is why: a 504 from GitHub's release download behind
-     `RNSentry.podspec` sank it in pod install (run 42567552486). Retrying the build covers any
-     pod or package host, where pinning that one fetch wouldn't.
+     doesn't count; it is a heuristic, and a wrong call costs one build. iOS 0.10.3 is why: a 504
+     from GitHub's release download behind `RNSentry.podspec` sank it in pod install (run
+     42567552486). Retrying the build covers any pod or package host, where pinning that one fetch
+     wouldn't.
    - Only a build EAS reports `FINISHED` from the shipped commit goes on.
    - The latest-tag check runs again: a ship made while EAS was building (a rollback, say) stops
      every upload.

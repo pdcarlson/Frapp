@@ -423,10 +423,11 @@ jobs:
       # last LOG_TAIL_LINES of the build's logs, the signed `logFiles` URLs
       # `build:view` returns). The window is short so that a network warning
       # a build recovered from long before it failed doesn't count; it is a
-      # heuristic, and a wrong call costs at most that one build. The 504 that sank iOS 0.10.3 came from GitHub's
-      # release download behind `RNSentry.podspec`, and the next one can come
-      # from any pod or package host, so retrying the build covers what
-      # pinning that one fetch wouldn't. EAS meters every build, so nothing
+      # heuristic, and a wrong call costs at most that one build. The 504
+      # that sank iOS 0.10.3 came from GitHub's release download behind
+      # `RNSentry.podspec`, and the next one can come from any pod or package
+      # host, so retrying the build covers what pinning that one fetch
+      # wouldn't. EAS meters every build, so nothing
       # else is retried, a cancelled build never is, no retry starts with
       # under RETRY_MIN_MINUTES left before the deadline, and none starts
       # unless the `v*` tags still read exactly as the check before the
