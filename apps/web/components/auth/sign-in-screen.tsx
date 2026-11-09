@@ -7,6 +7,7 @@ import {
   SESSION_ENDED_PARAM,
   SESSION_ENDED_VALUE,
 } from "@/lib/auth/rejected-session";
+import { JOIN_FROM_SIGN_IN_PATH } from "@/lib/auth/join-visit";
 import { Loader2 } from "lucide-react";
 import { AuthModeToggle } from "@/components/auth/auth-mode-toggle";
 import { AuthDivider, AuthScreen } from "@/components/auth/auth-screen";
@@ -286,7 +287,9 @@ function SignInFooter({ redirectTo }: { redirectTo: string }) {
     <p>
       Have an invite?{" "}
       <Link
-        href={`/sign-in?redirectTo=${encodeURIComponent("/join")}`}
+        // Marked, so a member who signs in here lands in their chapter, not
+        // on a join form they don't need (#3850).
+        href={`/sign-in?redirectTo=${encodeURIComponent(JOIN_FROM_SIGN_IN_PATH)}`}
         className="font-semibold text-accent-text hover:underline"
       >
         Join your chapter
