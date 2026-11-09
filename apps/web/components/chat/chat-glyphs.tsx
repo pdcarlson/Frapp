@@ -15,8 +15,8 @@
  *   a channel as a **text `#`** at 17px/700 and a DM as an initials avatar, not
  *   as icons. The reference wins over a tidier all-icons row.
  *
- * The six silhouettes chat shares with the shell's nav intents (events, tasks,
- * points, search, service hours, and the directory as the member list toggle)
+ * The seven silhouettes chat shares with the shell's nav intents (events, tasks,
+ * points, polls, search, service hours, and the directory as the member list toggle)
  * are re-exported rather than redrawn — a second
  * copy of the same path data is exactly the drift §1 rule 1 bans.
  */
@@ -28,6 +28,7 @@ export {
   DirectoryGlyph as MembersGlyph,
   EventsGlyph,
   PointsGlyph,
+  PollsGlyph,
   SearchGlyph,
   ServiceGlyph,
   TasksGlyph,
@@ -107,24 +108,17 @@ export function ReactionGlyph({ className, active }: ChatGlyphProps) {
 }
 
 /**
- * Slash commands. Deliberately not a sparkle: ✦ is claimed by the Ask/AI
- * affordance and "MUST NOT mark anything that is not an Ask/AI entry point or
- * answer" (`components.md` §11). A slash palette is a command launcher, so it
- * takes a command silhouette with a literal `/` as its detail stroke.
+ * The composer's **+** (#3865): the one control that opens everything a
+ * message can carry besides text (a file, and every command's form). Stroke
+ * only, like `SendArrowGlyph`: a plus has no area to fill. Deliberately not a
+ * sparkle, for the reason the slash palette's old button wasn't one: ✦ is
+ * claimed by the Ask/AI affordance (`components.md` §11), and this is a
+ * launcher, not an answer surface.
  */
-export function SlashCommandGlyph({ className, active }: ChatGlyphProps) {
+export function PlusGlyph({ className }: ChatGlyphProps) {
   return (
     <Svg className={className}>
-      <rect
-        x="3.5"
-        y="4.5"
-        width="17"
-        height="15"
-        rx="3.5"
-        {...stroke}
-        {...fillProps(active)}
-      />
-      <path d="M13.6 8.4l-3.2 7.2" {...detail} />
+      <path d="M12 5v14M5 12h14" {...detail} strokeWidth={2} />
     </Svg>
   );
 }

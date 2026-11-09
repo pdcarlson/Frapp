@@ -47,7 +47,7 @@ import {
   setPollOption,
   type PollCloseChoice,
   type PollDraft,
-} from "@/lib/chat/new-poll";
+} from "@repo/chat-core/poll-draft";
 
 /**
  * s05's New poll sheet (#3701): an officer on their phone in the group chat
@@ -229,7 +229,7 @@ export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
             <OptionRow
               // The row's own key, not its position: a moved row takes its
               // field with it, so a member typing in it keeps typing in it
-              // (`PollOptionRow` in `lib/chat/new-poll.ts`).
+              // (`PollOptionRow` in `@repo/chat-core/poll-draft`).
               key={option.key}
               index={index}
               count={draft.options.length}

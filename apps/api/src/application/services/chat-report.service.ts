@@ -1000,8 +1000,8 @@ export class ChatReportService {
  * the question, not `content`), then one `- label` line per option. The web
  * queue renders the snapshot with its line breaks.
  *
- * Polls come in two shapes, and both are read: web's `/poll` and mobile's
- * New poll sheet post `kind: 'poll'` with `payload.options: [{ id, label }]`
+ * Polls come in two shapes, and both are read: web's `/poll` and New poll
+ * dialog and mobile's New poll sheet post `kind: 'poll'` with `payload.options: [{ id, label }]`
  * (both built by chat-core's `buildPollMessage`), and the older
  * `POST /v1/channels/:id/polls` writes
  * `type: 'POLL'` with `metadata.options: string[]` (`PollService.createPoll`).
