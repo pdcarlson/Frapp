@@ -25,8 +25,9 @@ const EVENTS = [
     id: "evt-1",
     name: "Chapter Meeting",
     location: "Great Hall",
-    start_time: "2099-01-01T18:00:00.000Z",
-    end_time: "2099-01-01T19:00:00.000Z",
+    // Tomorrow, inside the list's two-week horizon whenever the suite runs.
+    start_time: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    end_time: new Date(Date.now() + 25 * 60 * 60 * 1000).toISOString(),
     is_mandatory: true,
     point_value: 5,
   },
@@ -55,6 +56,12 @@ vi.mock("@repo/hooks", () => ({
   useNow: () => Date.now(),
 }));
 
+// The viewer whose last view (List or Calendar) the page reads; no stored
+// choice unless a test writes one.
+vi.mock("@/lib/auth/use-frapp-user", () => ({
+  useFrappUser: () => ({ userId: "user-1", isLoading: false }),
+}));
+
 vi.mock("@/lib/providers/network-provider", () => ({
   useNetwork: () => ({ isOffline: false }),
 }));
@@ -79,10 +86,14 @@ vi.mock("@/lib/realtime/use-realtime-table", () => ({
 
 import { EventsPage } from "./events-page";
 
-function selectChapterMeeting() {
-  return userEvent
-    .setup()
-    .click(screen.getByRole("checkbox", { name: /select chapter meeting/i }));
+// Bulk actions sit behind Select (#3822): the default list has no checkboxes.
+async function selectChapterMeeting(
+  user: ReturnType<typeof userEvent.setup> = userEvent.setup(),
+) {
+  await user.click(screen.getByRole("button", { name: "Select" }));
+  await user.click(
+    screen.getByRole("checkbox", { name: /select chapter meeting/i }),
+  );
 }
 
 beforeEach(() => {
@@ -98,6 +109,7 @@ describe("EventsPage bulk actions", () => {
     access.permissions = [];
     render(<EventsPage />);
     expect(screen.getByText("Chapter Meeting")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Select" })).toBeNull();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });
 
@@ -126,9 +138,7 @@ describe("EventsPage bulk actions", () => {
     autoAbsentMutateAsync.mockResolvedValue({ marked: 3 });
     const user = userEvent.setup();
     render(<EventsPage />);
-    await user.click(
-      screen.getByRole("checkbox", { name: /select chapter meeting/i }),
-    );
+    await selectChapterMeeting(user);
 
     await user.click(
       screen.getByRole("button", { name: /mark attendance complete/i }),
@@ -160,9 +170,7 @@ describe("EventsPage bulk actions", () => {
   it("cancelling the confirmation never calls the mutation", async () => {
     const user = userEvent.setup();
     render(<EventsPage />);
-    await user.click(
-      screen.getByRole("checkbox", { name: /select chapter meeting/i }),
-    );
+    await selectChapterMeeting(user);
     await user.click(
       screen.getByRole("button", { name: /mark attendance complete/i }),
     );
@@ -180,9 +188,7 @@ describe("EventsPage bulk actions", () => {
     });
     const user = userEvent.setup();
     render(<EventsPage />);
-    await user.click(
-      screen.getByRole("checkbox", { name: /select chapter meeting/i }),
-    );
+    await selectChapterMeeting(user);
     await user.click(
       screen.getByRole("button", { name: /mark attendance complete/i }),
     );

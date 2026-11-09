@@ -9,6 +9,7 @@
     "./channel-start": "./src/channel-start.ts",
     "./field-reveal": "./src/field-reveal.ts",
     "./error-copy": "./src/error-copy.ts",
+    "./event-series": "./src/event-series.ts",
     "./open-chat-transport": "./src/open-chat-transport.ts",
     "./mention-chips": "./src/mention-chips.ts"
   },

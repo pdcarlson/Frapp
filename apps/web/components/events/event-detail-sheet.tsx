@@ -41,9 +41,10 @@ import {
 } from "@/components/shared/panel";
 import { AttendancePanel } from "@/components/events/attendance-panel";
 import { normalizeRoleOptions } from "@/lib/roles";
-import { formatDayTimeRange } from "@repo/formatting";
+import { formatDayTime, formatDayTimeRange } from "@repo/formatting";
 import { pointsLabel, recurrenceLabel } from "@/components/events/event-labels";
-import { getErrorMessage } from "@/lib/utils";
+import { cn, getErrorMessage } from "@/lib/utils";
+import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 
 type EventRecord = Record<string, unknown>;
@@ -52,6 +53,14 @@ type EventDetailSheetProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   event: EventRecord | null;
+  /**
+   * The upcoming meetings of the series this occurrence belongs to, soonest
+   * first and this one included, listed under it (#3707). `null` or absent
+   * for a one-time event, or one opened from the calendar.
+   */
+  series?: EventRecord[] | null;
+  /** Opens another meeting of {@link series} in this sheet. */
+  onSelectOccurrence?: (event: EventRecord) => void;
   usingPreviewData: boolean;
   onRequestEdit: (event: EventRecord) => void;
   onEventDeleted: () => Promise<void> | void;
@@ -61,6 +70,8 @@ export function EventDetailSheet({
   open,
   onOpenChange,
   event,
+  series = null,
+  onSelectOccurrence,
   usingPreviewData,
   onRequestEdit,
   onEventDeleted,
@@ -386,6 +397,52 @@ export function EventDetailSheet({
                 eventId={eventId}
                 eventStart={resolvedEvent?.start_time}
               />
+            ) : null}
+
+            {/*
+              The series below the meeting it opened (#3707): the list shows a
+              repeating event once, so this is where its other dates live.
+            */}
+            {series && series.length > 1 ? (
+              <section
+                aria-labelledby="event-series-label"
+                className="rounded-lg border border-border p-3"
+              >
+                <p
+                  id="event-series-label"
+                  className="mb-1 text-caption text-muted-foreground"
+                >
+                  Upcoming in this series
+                </p>
+                <ul role="list" className="grid gap-0.5">
+                  {series.map((occurrence) => {
+                    const occurrenceId =
+                      typeof occurrence.id === "string" ? occurrence.id : "";
+                    const isOpen = occurrenceId === eventId;
+                    const when =
+                      formatDayTime(occurrence.start_time) ?? "Date not set";
+                    return (
+                      <li key={occurrenceId || when}>
+                        <button
+                          type="button"
+                          aria-current={isOpen ? "true" : undefined}
+                          disabled={isOpen || !onSelectOccurrence}
+                          onClick={() => onSelectOccurrence?.(occurrence)}
+                          className={cn(
+                            "flex min-h-9 w-full items-center rounded-md px-2 text-left text-sm transition-colors pointer-coarse:min-h-11",
+                            isOpen
+                              ? "bg-accent-subtle font-semibold text-accent-text"
+                              : "hover:bg-card-hover",
+                            FOCUS_RING_OFFSET,
+                          )}
+                        >
+                          {when}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
             ) : null}
           </div>
         </PanelBody>

@@ -52,10 +52,10 @@ type EventsCalendarProps = {
    */
   createTitle?: string;
   /**
-   * Lifted to the parent rather than kept as local state: the Calendar tab
-   * lives inside a Radix `TabsContent`, which unmounts on tab switch by
-   * default, and a `useState` here would silently reset to the current month
-   * every time an officer navigates away and back.
+   * Lifted to the parent rather than kept as local state: the page unmounts
+   * the calendar while the list is showing, and a `useState` here would
+   * silently reset to the current month every time an officer switches to
+   * the list and back.
    */
   monthAnchor: Date;
   onMonthAnchorChange: (next: Date) => void;

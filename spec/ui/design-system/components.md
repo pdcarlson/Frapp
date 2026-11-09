@@ -187,7 +187,7 @@ Track 36×22px with an 18px thumb to a fine pointer (the board's `4c` toggle) an
 
 ### Segmented control
 
-*(Added 2026-11-06, for attendance by role.)* Two or three answers side by side, the held one lit, so the current answer never hides behind a menu: a 1px `border-input` track on `surface-1`, padding 2, each segment 32px to a mouse and 44 on touch, the held one in the accent's subtle tint with accent text, the rest muted. It is a radio group to assistive tech (`radiogroup` / `radio`, checked on the held one). Use it for a short closed set the member switches between often; a longer set is a list or a menu. Mobile: `apps/mobile/components/segmented.tsx`; web: `SegmentedChoice` in `apps/web/components/events/attendance-editor.tsx`. First users: the Who's coming default and each role row.
+*(Added 2026-11-06, for attendance by role.)* Two or three answers side by side, the held one lit, so the current answer never hides behind a menu: a 1px `border-input` track on `surface-1`, padding 2, each segment 32px to a mouse and 44 on touch, the held one in the accent's subtle tint with accent text, the rest muted. It is a radio group to assistive tech (`radiogroup` / `radio`, checked on the held one). Use it for a short closed set the member switches between often; a longer set is a list or a menu. Mobile: `apps/mobile/components/segmented.tsx`; web: `SegmentedChoice` in `apps/web/components/ui/segmented.tsx`. First users: the Who's coming default and each role row; on web the Events page's List/Calendar view toggle and its Filter popover's Time, Attendance and Cadence also use it (2026-11-09, #3822).
 
 ## 5. Badges and chips
 

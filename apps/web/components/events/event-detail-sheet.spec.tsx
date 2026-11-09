@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
 const {
@@ -97,6 +98,70 @@ describe("EventDetailSheet who's coming", () => {
     );
 
     expect(screen.getByText("Optional for everyone")).toBeInTheDocument();
+  });
+});
+
+describe("EventDetailSheet series", () => {
+  const series = [
+    baseEvent,
+    {
+      ...baseEvent,
+      id: "e2",
+      start_time: "2026-07-08T18:00:00.000Z",
+      end_time: "2026-07-08T19:00:00.000Z",
+    },
+    {
+      ...baseEvent,
+      id: "e3",
+      start_time: "2026-07-15T18:00:00.000Z",
+      end_time: "2026-07-15T19:00:00.000Z",
+    },
+  ];
+
+  it("lists the series' upcoming meetings under the one it opened, and opens another", async () => {
+    const user = userEvent.setup();
+    const onSelectOccurrence = vi.fn();
+    render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        event={baseEvent}
+        series={series}
+        onSelectOccurrence={onSelectOccurrence}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+
+    const list = within(
+      screen.getByRole("region", { name: "Upcoming in this series" }),
+    );
+    const meetings = list.getAllByRole("button");
+    expect(meetings).toHaveLength(3);
+    // The one open is marked and isn't a way to reopen itself.
+    expect(meetings[0]).toHaveAttribute("aria-current", "true");
+    expect(meetings[0]).toBeDisabled();
+
+    await user.click(meetings[2]!);
+    expect(onSelectOccurrence).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "e3" }),
+    );
+  });
+
+  it("shows no series block for a one-time event", () => {
+    render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        event={baseEvent}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+
+    expect(screen.queryByText("Upcoming in this series")).toBeNull();
   });
 });
 
