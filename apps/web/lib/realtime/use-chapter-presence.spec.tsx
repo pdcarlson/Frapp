@@ -44,7 +44,7 @@ vi.mock("@/lib/realtime/supabase-realtime", () => ({
 
 import { useChapterPresence } from "./use-chapter-presence";
 import { IDLE_AFTER_MS, PRESENCE_HEARTBEAT_MS } from "./presence-status";
-import type { OwnStatus } from "./member-status";
+import type { OwnStatus } from "@repo/hooks/member-status";
 
 function ownStatus(patch: Partial<OwnStatus> = {}): OwnStatus {
   return {

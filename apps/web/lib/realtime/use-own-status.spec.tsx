@@ -4,7 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const settings = vi.hoisted(() => ({
   value: { data: undefined as unknown, isError: false },
 }));
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async () => ({
+  // The real end-time timer, shared with mobile.
+  useOwnStatusAt: (await import("@repo/hooks/use-own-status-at"))
+    .useOwnStatusAt,
   useUserSettings: () => settings.value,
   useUpdateUserSettings: () => ({ mutateAsync: vi.fn(), isPending: false }),
   userSettingsKey: ["settings"],
@@ -15,7 +18,9 @@ vi.mock("@tanstack/react-query", () => ({
 vi.mock("@/lib/auth/use-frapp-user", () => ({
   useFrappUser: () => ({ userId: "me" }),
 }));
-vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({
+  useToast: () => ({ toast: vi.fn() }),
+}));
 
 import { useOwnStatus } from "./use-own-status";
 
