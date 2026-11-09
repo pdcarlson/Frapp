@@ -1860,6 +1860,14 @@ describe('NotificationService', () => {
         );
       });
 
+      it('treats theme: null as not supplied, since the column is NOT NULL', async () => {
+        await service.updateSettings('u-1', { theme: null as never });
+
+        expect(mockSettingsRepo.upsert).toHaveBeenCalledWith({
+          user_id: 'u-1',
+        });
+      });
+
       // A null end time on its own asks for nothing, so it must not fail the
       // save and take the member's other edits with it.
       it('ignores a null end time sent without its status', async () => {

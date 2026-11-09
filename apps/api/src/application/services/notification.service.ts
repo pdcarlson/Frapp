@@ -939,7 +939,9 @@ export class NotificationService {
     ] as const) {
       if (data[field] !== undefined) write[field] = data[field] ?? null;
     }
-    if (data.theme !== undefined) write.theme = data.theme;
+    // `!= null`: the DTO's `@IsOptional` lets `theme: null` through, and the
+    // column is NOT NULL, so null means "not supplied" here, never a clear.
+    if (data.theme != null) write.theme = data.theme;
 
     // A status and its end time are one choice: picking a status replaces the
     // old end time, so switching from "DND for 1 hour" to Invisible does not
