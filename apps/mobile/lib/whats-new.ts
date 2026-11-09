@@ -3,15 +3,18 @@
  * `spec/ui/mobile/screens.md` s16). This file holds the rule and the phone's
  * memory of it; `components/whats-new/whats-new-host.tsx` shows the sheet.
  *
- * The phone remembers the date of the newest entry it has shown
- * ({@link WHATS_NEW_SEEN_STORAGE_KEY}). When the app carries an entry newer
- * than that, the sheet opens over whatever is on screen and the date moves up,
- * so each entry shows once. The notes ship in the JS bundle, so a new entry
- * only ever arrives with a new process (an over-the-air update reloads the
- * bundle; a store update relaunches the app). One check per process is
- * therefore "on launch, and on return after an update" both.
+ * The phone remembers which version of the newest entry it has shown
+ * ({@link WHATS_NEW_SEEN_STORAGE_KEY}, holding {@link releaseNoteId}: the
+ * entry's date plus a fingerprint of its text). When the app carries a newer
+ * entry, or the same day's entry with lines added since (a second release on
+ * one day extends that day's entry, because dates are unique), the sheet opens
+ * over whatever is on screen and the marker moves up, so each version shows
+ * once. The notes ship in the JS bundle, so a new entry only ever arrives with
+ * a new process (an over-the-air update reloads the bundle; a store update
+ * relaunches the app). One check per process is therefore "on launch, and on
+ * return after an update" both.
  *
- * Three cases record the newest entry without showing it:
+ * Two cases record the newest entry without showing it:
  *
  * - **First launch.** No marker, and the phone held no chat state when this
  *   process started: a fresh install, or a fresh install signed into an
@@ -20,10 +23,10 @@
  *   so this launch belongs to the tour, and what changed before they joined
  *   is not news.
  *
- * And one shows without a marker: **an install from before this existed.** No
- * marker, but chat state on the phone at launch. Without this the build that
- * ships the feature would show nobody anything. It gets the newest entry only;
- * what it saw before is unknown.
+ * And one case shows without a marker: **an install from before this
+ * existed.** No marker, but chat state on the phone at launch. Without it the
+ * build that ships the feature would show nobody anything. It gets the newest
+ * entry only; what it saw before is unknown.
  *
  * "Chat state at launch" is read once, at module load, which the root layout
  * triggers ({@link startWhatsNewBootRead}). Read later, a fresh install's own
@@ -35,13 +38,18 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { ReleaseNote } from "@repo/validation";
 import { CHAT_KV_PREFIX } from "@/lib/chat/key-value-store";
 
-/** The `date` of the newest entry this phone has shown or skipped. */
+/** {@link releaseNoteId} of the newest entry this phone has shown or skipped. */
 export const WHATS_NEW_SEEN_STORAGE_KEY = "frapp.mobile.whats-new-seen";
 
 /**
  * Keys only a phone that has been in a chapter's chat holds: the read cursor
  * per channel, and the last channel per member and chapter
  * (`lastChannelStorageKey` in `@repo/hooks`). Both shipped before this did.
+ *
+ * The last-channel prefix is spelled out rather than derived from
+ * `lastChannelStorageKey` on purpose: it has to match the keys builds from
+ * before this feature already wrote to disk, whatever shape that helper takes
+ * later. Once a phone has a marker, these prefixes are never read again.
  */
 export const EXISTING_INSTALL_KEY_PREFIXES: readonly string[] = [
   CHAT_KV_PREFIX,
@@ -82,16 +90,30 @@ export function resetWhatsNewBootReadForTests(): void {
   bootRead = null;
 }
 
+/**
+ * Which version of an entry this is: its date, plus a short fingerprint of
+ * its title and lines, so lines added to the same day's entry read as new.
+ */
+export function releaseNoteId(note: ReleaseNote): string {
+  const text = [note.title, ...note.changes].join("\n");
+  let hash = 5381;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = ((hash * 33) ^ text.charCodeAt(i)) >>> 0;
+  }
+  return `${note.date}#${hash.toString(36)}`;
+}
+
 export interface WhatsNewDecision {
   /** The entries to show, newest first; empty shows nothing. */
   show: readonly ReleaseNote[];
-  /** The date to store as seen, or `null` to leave the marker alone. */
+  /** The id to store as seen, or `null` to leave the marker alone. */
   record: string | null;
 }
 
 /**
  * What this launch does. `notes` is `RELEASE_NOTES` (newest first); dates are
- * `YYYY-MM-DD`, so they compare as strings.
+ * `YYYY-MM-DD`, so they compare as strings. `seen` is a stored
+ * {@link releaseNoteId}.
  */
 export function decideWhatsNew(input: {
   notes: readonly ReleaseNote[];
@@ -102,14 +124,27 @@ export function decideWhatsNew(input: {
   const { notes, seen, tourDue, existingInstall } = input;
   const newest = notes[0];
   if (!newest) return { show: [], record: null };
-  const upToDate = seen !== null && seen >= newest.date;
-  if (upToDate) return { show: [], record: null };
+  const newestId = releaseNoteId(newest);
+  const seenDate = seen === null ? null : seen.split("#")[0]!;
+  // Shown already, or the marker comes from a newer bundle (an update rolled
+  // back): nothing is new.
+  if (seen === newestId || (seenDate !== null && seenDate > newest.date)) {
+    return { show: [], record: null };
+  }
   if (tourDue || (seen === null && !existingInstall)) {
-    return { show: [], record: newest.date };
+    return { show: [], record: newestId };
   }
   const show =
-    seen === null ? [newest] : notes.filter((note) => note.date > seen);
-  return { show, record: newest.date };
+    seenDate === null
+      ? [newest]
+      : // Every entry after the one last shown, and that day's entry itself
+        // when lines were added to it since.
+        notes.filter(
+          (note) =>
+            note.date > seenDate ||
+            (note.date === seenDate && releaseNoteId(note) !== seen),
+        );
+  return { show, record: newestId };
 }
 
 export async function readWhatsNewSeen(
@@ -125,11 +160,11 @@ export async function readWhatsNewSeen(
 }
 
 export async function recordWhatsNewSeen(
-  date: string,
+  id: string,
   storage: Storage = AsyncStorage,
 ): Promise<void> {
   try {
-    await storage.setItem(WHATS_NEW_SEEN_STORAGE_KEY, date);
+    await storage.setItem(WHATS_NEW_SEEN_STORAGE_KEY, id);
   } catch {
     // It shows once more at worst.
   }

@@ -22,9 +22,9 @@ export type ReleaseNote = {
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
   {
     date: "2026-11-09",
-    title: "Easier check-in, live unread counts, and this screen opens by itself",
+    title: "Easier check-in, live unread counts, and what's new on your phone",
     changes: [
-      "After an update, what's new opens on its own once, so you don't have to go looking for it.",
+      "On your phone, what's new now opens on its own once after an update, so you don't have to go looking for it.",
       "Check-in opens 10 minutes before an event starts, and once you're checked in the event says so, with your points.",
       "Hosts get Host check-in right on the event, and a second scan just tells you you're already in.",
       "Unread counts and your Messages list stay in step across your phone and computer, and the app catches up the moment you come back to it.",

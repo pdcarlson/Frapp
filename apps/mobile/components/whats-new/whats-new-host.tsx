@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { StyleSheet } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { useCurrentUser } from "@repo/hooks";
 import { RELEASE_NOTES, type ReleaseNote } from "@repo/validation";
@@ -7,10 +7,11 @@ import { SignetTokens } from "@repo/theme/signet";
 import {
   SheetBackToClose,
   SheetGrabber,
-  SheetHeader,
   SheetScrim,
+  TallSheetHeader,
   useSheetBackgroundStyle,
   useSheetClose,
+  useTallSheetProps,
 } from "@/components/sheet-scaffold";
 import { ReleaseNoteCard } from "@/components/whats-new/release-note-card";
 import { isTourDue } from "@/lib/onboarding/tour";
@@ -23,26 +24,25 @@ import {
 } from "@/lib/whats-new";
 
 /**
- * Opens What's new by itself, once, after an update brings a new entry
- * (`lib/whats-new.ts` has the rule). Mounted in the tab layout beside the
- * first-run tour's host, so it never runs during onboarding, which lives in
- * the auth group, and it sits out any launch the tour is due on.
+ * Opens What's new by itself, once, after an update brings a new or changed
+ * entry (`lib/whats-new.ts` has the rule). Mounted in the tab layout beside
+ * the first-run tour's host, so it never runs during onboarding, which lives
+ * in the auth group, and it sits out any launch the tour is due on.
  *
- * A read-only sheet over whatever is on screen: the chat home, or the channel
- * the launch jumped into. It closes like any other read-only sheet (a swipe,
- * the scrim, Android back, VoiceOver's escape), with no button of its own
- * (`spec/ui/design-system/components.md` § Chrome weight). The full list
- * stays in Settings → What's new.
+ * A tall sheet over whatever is on screen (the chat home, or the channel the
+ * launch jumped into): its body scrolls and grows with every update a member
+ * skipped, which `spec/ui/design-system/components.md` § Surface size gives
+ * the full-height sheet with the X pinned in its header. It also closes by a
+ * swipe, Android back and VoiceOver's escape. The full list stays in
+ * Settings → What's new.
  *
- * Showing it records it, before the sheet is up, so a member who kills the
- * app with it open isn't shown it again.
+ * The entry is recorded as seen once the sheet has been asked to present, so
+ * a member who kills the app with it open isn't shown it again, and a sheet
+ * that never presented burns nothing.
  */
 
 /** Long enough for the launch jump into the last channel to finish sliding. */
 export const WHATS_NEW_OPEN_DELAY_MS = 800;
-
-/** Fixed detent with the scroll view as the modal's direct child. */
-const SNAP_POINTS = ["75%"];
 
 export function WhatsNewHost() {
   const sheet = useRef<BottomSheetModal>(null);
@@ -50,9 +50,13 @@ export function WhatsNewHost() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
+  const tallSheet = useTallSheetProps();
   const userQuery = useCurrentUser();
   const userId = (userQuery.data as { id?: string } | undefined)?.id ?? null;
-  const [notes, setNotes] = useState<readonly ReleaseNote[]>([]);
+  const [shown, setShown] = useState<{
+    notes: readonly ReleaseNote[];
+    record: string;
+  } | null>(null);
   // Once per process: a new entry only arrives with a new bundle.
   const checked = useRef(false);
 
@@ -77,10 +81,10 @@ export function WhatsNewHost() {
         if (decision.record) await recordWhatsNewSeen(decision.record);
         return;
       }
+      const record = decision.record;
+      if (!record) return;
       timer = setTimeout(() => {
-        if (!live) return;
-        if (decision.record) void recordWhatsNewSeen(decision.record);
-        setNotes(decision.show);
+        if (live) setShown({ notes: decision.show, record });
       }, WHATS_NEW_OPEN_DELAY_MS);
     })();
     return () => {
@@ -93,26 +97,33 @@ export function WhatsNewHost() {
   }, [userId]);
 
   useEffect(() => {
-    if (notes.length > 0) sheet.current?.present();
-  }, [notes]);
+    if (!shown || !sheet.current) return;
+    sheet.current.present();
+    void recordWhatsNewSeen(shown.record);
+  }, [shown]);
 
   return (
     <BottomSheetModal
       ref={sheet}
-      enableDynamicSizing={false}
-      snapPoints={SNAP_POINTS}
+      {...tallSheet}
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}
       backdropComponent={SheetScrim}
-      onDismiss={() => setNotes([])}
+      onDismiss={() => setShown(null)}
     >
       <SheetBackToClose onClose={closeSheet} />
       <BottomSheetScrollView
         onAccessibilityEscape={closeSheet}
+        style={styles.scroll}
         contentContainerStyle={styles.body}
+        // The X stays pinned while a long list scrolls under it: at full
+        // height there is no scrim to tap.
+        stickyHeaderIndices={[0]}
       >
-        <SheetHeader title="What's new" />
-        {notes.map((note) => (
+        <View style={styles.stickyHeader}>
+          <TallSheetHeader title="What's new" onClose={closeSheet} />
+        </View>
+        {(shown?.notes ?? []).map((note) => (
           <ReleaseNoteCard key={note.date} note={note} />
         ))}
       </BottomSheetScrollView>
@@ -122,6 +133,13 @@ export function WhatsNewHost() {
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
+    scroll: {
+      flex: 1,
+    },
+    stickyHeader: {
+      // Sticky, so it paints the sheet's own fill over the notes passing under.
+      backgroundColor: tokens.color.surface.popover,
+    },
     body: {
       paddingHorizontal: tokens.spacing.lg,
       paddingBottom: tokens.spacing.xl,
