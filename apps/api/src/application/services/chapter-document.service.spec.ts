@@ -607,18 +607,37 @@ describe('ChapterDocumentService', () => {
   });
 
   describe('findById', () => {
-    it('should return document with download URL', async () => {
+    it('returns an inline link and a forced-download link', async () => {
       mockDocumentRepo.findById.mockResolvedValue(baseDocument);
-      mockStorageProvider.getSignedDownloadUrl.mockResolvedValue(
-        'https://storage.supabase.co/download/signed',
+      mockStorageProvider.getSignedDownloadUrl.mockImplementation(
+        (_bucket: string, _path: string, _expires?: number, as?: string) =>
+          Promise.resolve(
+            as
+              ? `https://storage.supabase.co/signed?download=${as}`
+              : 'https://storage.supabase.co/signed',
+          ),
       );
 
       const result = await service.findById('doc-1', 'ch-1');
 
-      expect(result.downloadUrl).toBe(
-        'https://storage.supabase.co/download/signed',
-      );
       expect(result.id).toBe('doc-1');
+      // Inline, as before: the viewer and mobile's in-app browser read it.
+      expect(result.downloadUrl).toBe('https://storage.supabase.co/signed');
+      expect(mockStorageProvider.getSignedDownloadUrl).toHaveBeenCalledWith(
+        'documents',
+        baseDocument.storage_path,
+      );
+      // Saved under the stored key's last segment.
+      const filename = baseDocument.storage_path.split('/').pop();
+      expect(mockStorageProvider.getSignedDownloadUrl).toHaveBeenCalledWith(
+        'documents',
+        baseDocument.storage_path,
+        undefined,
+        filename,
+      );
+      expect(result.forcedDownloadUrl).toBe(
+        `https://storage.supabase.co/signed?download=${filename}`,
+      );
     });
 
     it('should throw NotFoundException when document not found', async () => {

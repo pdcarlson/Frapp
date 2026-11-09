@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { selectDownloadUrl } from "./document-download";
+import { selectDownloadUrl, selectForcedDownloadUrl } from "./document-download";
 
 // #1040: web read `download_url` at two call sites and opened `undefined`,
 // because `ChapterDocumentService.findById` returns `downloadUrl` and
@@ -53,5 +53,21 @@ describe("selectDownloadUrl", () => {
     expect(selectDownloadUrl(undefined)).toBeNull();
     expect(selectDownloadUrl(null)).toBeNull();
     expect(selectDownloadUrl("https://not/a/document")).toBeNull();
+  });
+});
+
+describe("selectForcedDownloadUrl", () => {
+  it("reads forcedDownloadUrl", () => {
+    expect(
+      selectForcedDownloadUrl({ downloadUrl: "https://a", forcedDownloadUrl: "https://b" }),
+    ).toBe("https://b");
+  });
+
+  // Backwork and a server from before #3849 carry no such key: the caller
+  // falls back to the inline link rather than failing the download.
+  it("returns null when the key is missing, blank or the body isn't an object", () => {
+    expect(selectForcedDownloadUrl({ downloadUrl: "https://a" })).toBeNull();
+    expect(selectForcedDownloadUrl({ forcedDownloadUrl: "  " })).toBeNull();
+    expect(selectForcedDownloadUrl(null)).toBeNull();
   });
 });

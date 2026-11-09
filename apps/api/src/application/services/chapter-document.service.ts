@@ -212,21 +212,44 @@ export class ChapterDocumentService {
     return this.documentRepo.findByChapter(chapterId, filter);
   }
 
+  /**
+   * The document with two signed links to its file, both good for an hour.
+   *
+   * - `downloadUrl` serves the file inline: a browser shows a PDF or image
+   *   in place. The web viewer reads the file through it (PDF.js fetches it,
+   *   an `<img>` draws it, and neither runs it as a page), and mobile opens
+   *   it in the in-app browser. Unchanged since before the viewer (#3849).
+   * - `forcedDownloadUrl` carries `Content-Disposition: attachment` under the
+   *   stored filename, so following it saves the file. The web Download
+   *   control uses it; before it, Download opened a PDF in a tab.
+   *
+   * Whether `downloadUrl` should stay inline for every client is #3867.
+   */
   async findById(
     id: string,
     chapterId: string,
-  ): Promise<ChapterDocument & { downloadUrl: string }> {
+  ): Promise<
+    ChapterDocument & { downloadUrl: string; forcedDownloadUrl: string }
+  > {
     const document = await this.documentRepo.findById(id, chapterId);
     if (!document) {
       throw new NotFoundException('Document not found');
     }
 
-    const downloadUrl = await this.storageProvider.getSignedDownloadUrl(
-      DOCUMENTS_BUCKET,
-      document.storage_path,
-    );
+    const [downloadUrl, forcedDownloadUrl] = await Promise.all([
+      this.storageProvider.getSignedDownloadUrl(
+        DOCUMENTS_BUCKET,
+        document.storage_path,
+      ),
+      this.storageProvider.getSignedDownloadUrl(
+        DOCUMENTS_BUCKET,
+        document.storage_path,
+        undefined,
+        storedFilename(document.storage_path),
+      ),
+    ]);
 
-    return { ...document, downloadUrl };
+    return { ...document, downloadUrl, forcedDownloadUrl };
   }
 
   async delete(id: string, chapterId: string): Promise<void> {
@@ -397,4 +420,12 @@ function normalizeFolderName(folder: string | null | undefined): string | null {
   if (folder === null || folder === undefined) return null;
   const trimmed = folder.trim();
   return trimmed === '' ? null : trimmed;
+}
+
+/**
+ * The filename a saved copy takes: the last segment of the storage key, which
+ * the upload mint already made safe (`safeObjectFilename`).
+ */
+function storedFilename(storagePath: string): string {
+  return storagePath.slice(storagePath.lastIndexOf('/') + 1);
 }
