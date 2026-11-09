@@ -191,7 +191,11 @@ for (const manifestPath of findManifests(join(NEXT_DIR, "server/app"))) {
         // Route groups are a source-tree device; they are not in the URL.
         .replace(/\/\([^)]*\)/g, "") || "/";
     if (!byEntry.has(entry)) {
-      byEntry.set(entry, { route, chunks });
+      byEntry.set(entry, {
+        route,
+        chunks,
+        inDashboardGroup: entry.includes("/(dashboard)/"),
+      });
     }
   }
 }
@@ -212,14 +216,14 @@ if (routes.length === 0) {
  * because a chunk is only unavoidable if it is genuinely on all of them — a
  * vendor chunk that four routes happen to share is the fifth route's own cost,
  * not the shell's.
+ *
+ * A dashboard route is a page in the `(dashboard)` group, read off the entry
+ * key rather than a list of URLs to leave out: the list missed `/new-account`
+ * when it joined `(auth)` (#3786), and a page outside the shell in that set
+ * collapses the intersection to the root layout. The group's own index is `/`,
+ * a redirect, so it stays out too.
  */
-const dashboard = routes.filter(
-  (r) =>
-    r.route !== "/" &&
-    !["/sign-in", "/sign-up", "/join", "/no-access", "/dashboard"].includes(
-      r.route,
-    ),
-);
+const dashboard = routes.filter((r) => r.inDashboardGroup && r.route !== "/");
 const shared = dashboard.length
   ? dashboard
       .map((r) => new Set(r.chunks))
