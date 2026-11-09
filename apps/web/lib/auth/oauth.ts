@@ -144,9 +144,11 @@ type FirstSignInUser = {
  * GoTrue does not hand the `user_signedup` event to the code exchange, so this
  * reads it off the user: the account was created by Google or Apple
  * (`app_metadata.provider`, set from the first identity) and its first sign-in
- * is this one. Email accounts are out of scope: a magic link creates the user
- * when it is requested, not when it is opened, so the timestamps can't tell. A member whose Google identity GoTrue auto-linked onto an older
+ * is this one. A member whose Google identity GoTrue auto-linked onto an older
  * account by verified email keeps the old `created_at` and is not flagged.
+ *
+ * Email accounts are out of scope: a magic link creates the user when it is
+ * requested, not when it is opened, so the timestamps can't tell (#3801).
  */
 export function isFirstOAuthSignIn(
   user: FirstSignInUser | null | undefined,
