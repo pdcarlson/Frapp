@@ -124,6 +124,8 @@ describe("date filters", () => {
   });
 
   it("reads the rollover day's end in UTC wherever the viewer is, as the API does", () => {
+    // The viewer's timezone is the point of this test, not a build input.
+    /* eslint-disable turbo/no-undeclared-env-vars */
     const tz = process.env.TZ;
     process.env.TZ = "America/New_York";
     try {
@@ -135,6 +137,7 @@ describe("date filters", () => {
     } finally {
       process.env.TZ = tz;
     }
+    /* eslint-enable turbo/no-undeclared-env-vars */
   });
 
   it("keeps the last 30 days and drops what's older", () => {
