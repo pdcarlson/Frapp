@@ -295,7 +295,8 @@ export function ChannelMappingStep({
   const importing = readable.filter(
     (channel) => (choices[channel.channelId]?.action ?? "skip") !== "skip",
   ).length;
-  // A DM or group DM is never somewhere to import into (`isImportTarget`).
+  // A DM, group DM or the audit log is never somewhere to import into
+  // (`isImportTarget`).
   const existingNames = asArray<ExistingChannel>(existingChannels.data).filter(
     isImportTarget,
   );
