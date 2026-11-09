@@ -33,7 +33,7 @@ const NAMES: Record<string, string> = { u1: "Ryan Castellano", u2: "Devin Okafor
 const ROWS = toLibraryDocuments(
   [
     doc("a", "Recruitment Handbook", "u1", "2026-09-25T12:00:00Z", { folder: "Recruitment" }),
-    doc("b", "Fall 2026 Operating Budget", "u2", "2026-09-10T12:00:00Z", {
+    doc("b", "FY2026 Operating Budget", "u2", "2026-09-10T12:00:00Z", {
       folder: "Finance",
       description: "Approved by exec and the house corporation.",
     }),
@@ -52,10 +52,10 @@ describe("queryDocuments", () => {
       "Recruitment Handbook",
     ]);
     expect(titles(queryDocuments(ROWS, "house corp", NO_DOCUMENT_FILTERS, "name", DATES))).toEqual([
-      "Fall 2026 Operating Budget",
+      "FY2026 Operating Budget",
     ]);
     expect(titles(queryDocuments(ROWS, "finance", NO_DOCUMENT_FILTERS, "name", DATES))).toEqual([
-      "Fall 2026 Operating Budget",
+      "FY2026 Operating Budget",
     ]);
   });
 
@@ -64,14 +64,14 @@ describe("queryDocuments", () => {
       "Chapter Bylaws",
     ]);
     expect(titles(queryDocuments(ROWS, "2026", NO_DOCUMENT_FILTERS, "name", DATES))).toEqual([
-      "Fall 2026 Operating Budget",
+      "FY2026 Operating Budget",
     ]);
   });
 
   it("orders by the chosen sort, with or without a query", () => {
     expect(titles(queryDocuments(ROWS, "", NO_DOCUMENT_FILTERS, "name", DATES))).toEqual([
       "Chapter Bylaws",
-      "Fall 2026 Operating Budget",
+      "FY2026 Operating Budget",
       "Recruitment Handbook",
     ]);
     expect(titles(queryDocuments(ROWS, "", NO_DOCUMENT_FILTERS, "newest", DATES))[0]).toBe(
@@ -82,7 +82,7 @@ describe("queryDocuments", () => {
     );
     // A person the roster can't name sorts last.
     expect(titles(queryDocuments(ROWS, "", NO_DOCUMENT_FILTERS, "uploader", DATES))).toEqual([
-      "Fall 2026 Operating Budget",
+      "FY2026 Operating Budget",
       "Recruitment Handbook",
       "Chapter Bylaws",
     ]);
@@ -91,10 +91,10 @@ describe("queryDocuments", () => {
   it("filters by uploader and by date", () => {
     expect(
       titles(queryDocuments(ROWS, "", { uploader: "u2", date: null }, "name", DATES)),
-    ).toEqual(["Fall 2026 Operating Budget"]);
+    ).toEqual(["FY2026 Operating Budget"]);
     expect(
       titles(queryDocuments(ROWS, "", { uploader: null, date: { preset: "semester" } }, "name", DATES)),
-    ).toEqual(["Fall 2026 Operating Budget", "Recruitment Handbook"]);
+    ).toEqual(["FY2026 Operating Budget", "Recruitment Handbook"]);
     expect(
       titles(queryDocuments(ROWS, "", { uploader: null, date: { preset: "30d" } }, "name", DATES)),
     ).toEqual([]);
@@ -121,6 +121,20 @@ describe("date filters", () => {
     expect(semesterSince([])).toBeNull();
     const noArchive = { now: NOW, semesterSince: null };
     expect(inDateFilter("2020-01-01T00:00:00Z", { preset: "semester" }, noArchive)).toBe(true);
+  });
+
+  it("reads the rollover day's end in UTC wherever the viewer is, as the API does", () => {
+    const tz = process.env.TZ;
+    process.env.TZ = "America/New_York";
+    try {
+      const since = semesterSince([{ end_date: "2026-07-31", created_at: "2026-08-01T00:00:00Z" }]);
+      const window = { now: NOW, semesterSince: since };
+      // 9pm Jul 31 in New York is already Aug 1 in UTC: inside the semester.
+      expect(inDateFilter("2026-08-01T01:00:00Z", { preset: "semester" }, window)).toBe(true);
+      expect(inDateFilter("2026-07-31T23:00:00Z", { preset: "semester" }, window)).toBe(false);
+    } finally {
+      process.env.TZ = tz;
+    }
   });
 
   it("keeps the last 30 days and drops what's older", () => {

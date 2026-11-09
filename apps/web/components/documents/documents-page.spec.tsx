@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -28,6 +29,7 @@ const {
   foldersQuery,
   mockOffline,
   canGate,
+  roster,
 } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
   mockDeleteDoc: vi.fn().mockResolvedValue({}),
@@ -44,6 +46,10 @@ const {
   // Whether the mocked `Can` renders its children. Only the gate-remount test
   // flips it; everything else sees a pass-through.
   canGate: { granted: true },
+  // The chapter roster's names, which a test may change to drop someone.
+  roster: {
+    names: { "u-1": "Marcus Ellison", "u-2": "Ryan Castellano" } as Record<string, string>,
+  },
   documentsQuery: {
     data: [] as unknown[],
     isPending: false,
@@ -90,7 +96,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   },
   useDocumentFolders: () => foldersQuery,
   useSemesters: () => ({ data: [{ end_date: "2026-07-31" }] }),
-  useMemberDisplayNames: () => ({ byId: { "u-1": "Marcus Ellison", "u-2": "Ryan Castellano" } }),
+  useMemberDisplayNames: () => ({ byId: roster.names }),
   useDocument: () => ({ refetch: mockDocumentRefetch }),
   useRequestDocumentUploadUrl: () => ({ mutateAsync: mockRequestUpload }),
   useConfirmDocumentUpload: () => ({ mutateAsync: mockConfirmUpload }),
@@ -786,6 +792,7 @@ describe("DocumentsPage search, filters and sort (#3852)", () => {
     mockOffline.value = false;
     resolvedDocumentsQuery();
     documentsQuery.data = [BYLAWS, RUSH];
+    roster.names = { "u-1": "Marcus Ellison", "u-2": "Ryan Castellano" };
     chapter.active();
   });
 
@@ -853,6 +860,8 @@ describe("DocumentsPage search, filters and sort (#3852)", () => {
     await user.click(screen.getByRole("button", { name: "Date added" }));
     await user.click(await screen.findByRole("radio", { name: "Custom range" }));
     expect(rowTitles()).toEqual(["Chapter bylaws", "Rush schedule"]);
+    // Untinted too: the chip doesn't claim a filter that narrows nothing.
+    expect(screen.getByRole("button", { name: "Date added" })).toBeInTheDocument();
     expect(screen.getByText("2 documents")).toBeInTheDocument();
 
     await user.click(screen.getByRole("radio", { name: "This semester" }));
@@ -874,6 +883,59 @@ describe("DocumentsPage search, filters and sort (#3852)", () => {
     expect(
       screen.getByRole("button", { name: "Uploaded by: Ryan Castellano" }),
     ).toBeInTheDocument();
+  });
+
+  it("drops a picked uploader who has left the roster", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<DocumentsPage />);
+    await user.click(screen.getByRole("button", { name: "Uploaded by" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Ryan Castellano" }));
+    await waitFor(() => expect(rowTitles()).toEqual(["Rush schedule"]));
+
+    roster.names = { "u-1": "Marcus Ellison" };
+    rerender(<DocumentsPage />);
+
+    expect(rowTitles()).toEqual(["Chapter bylaws", "Rush schedule"]);
+    expect(screen.getByRole("button", { name: "Uploaded by" })).toBeInTheDocument();
+  });
+
+  it("counts against the open folder, not the whole library", async () => {
+    documentsQuery.data = [
+      BYLAWS,
+      RUSH,
+      { ...RUSH, id: "doc-3", title: "Rush budget", description: null },
+    ];
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.click(screen.getByRole("button", { name: /^Rush$/ }));
+    await user.type(screen.getByLabelText("Search documents"), "schedule");
+
+    await waitFor(() => expect(rowTitles()).toEqual(["Rush schedule"]));
+    expect(screen.getByText("1 of 2")).toBeInTheDocument();
+  });
+
+  it("moves Last 30 days along while the page stays open", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.setSystemTime(new Date("2026-11-09T12:00:00Z"));
+      // 28 days old now; 31 days old three days on.
+      documentsQuery.data = [{ ...RUSH, created_at: "2026-10-12T12:00:00Z" }];
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      render(<DocumentsPage />);
+      await user.click(screen.getByRole("button", { name: "Date added" }));
+      await user.click(await screen.findByRole("radio", { name: "Last 30 days" }));
+      expect(rowTitles()).toEqual(["Rush schedule"]);
+
+      act(() => {
+        vi.setSystemTime(new Date("2026-11-12T12:00:00Z"));
+        vi.advanceTimersByTime(60_000);
+      });
+
+      expect(rowTitles()).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("says the list is capped, even when a search finds nothing", async () => {
