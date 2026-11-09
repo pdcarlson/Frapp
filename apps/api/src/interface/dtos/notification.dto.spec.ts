@@ -288,6 +288,14 @@ describe('UpdateUserSettingsDto — member status (#3845)', () => {
     expect(await failingProps({ custom_status: '❤️'.repeat(41) })).toContain(
       'custom_status',
     );
+    // An emoji outside the Basic Multilingual Plane is one code point but two
+    // UTF-16 units, so this pair is what tells the count from `value.length`.
+    expect(
+      await failingProps({ custom_status: '😀'.repeat(80) }),
+    ).not.toContain('custom_status');
+    expect(await failingProps({ custom_status: '😀'.repeat(81) })).toContain(
+      'custom_status',
+    );
   });
 
   it('refuses a custom line that breaks onto a second line', async () => {

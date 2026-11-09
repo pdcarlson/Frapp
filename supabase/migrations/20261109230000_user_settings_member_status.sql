@@ -7,8 +7,9 @@
 -- their settings, and so the push fan-out, which already reads this row for
 -- quiet hours, sees Do Not Disturb without another read.
 --
--- An expired value stays stored until the member's next save; the API reads a
--- status or line whose end time has passed as Online / no line.
+-- An expired value stays stored until the member next sets that status or
+-- line; the API reads a status or line whose end time has passed as Online /
+-- no line.
 alter table public.user_settings
   add column if not exists status text not null default 'online',
   add column if not exists status_expires_at timestamptz,

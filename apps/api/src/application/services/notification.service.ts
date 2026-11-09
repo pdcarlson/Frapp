@@ -61,7 +61,8 @@ function hasExpired(expiresAt: string | null | undefined, now: Date): boolean {
 /**
  * The {@link UserSettingsValues} a stored row holds, as of `now`. A status whose
  * end time has passed reads as `online`, and an expired custom line as none
- * (#3845): the row keeps the stale values until the member's next save, so
+ * (#3845): the row keeps the stale values until the member next sets that status or
+ * line, so
  * every read resolves them.
  */
 function toUserSettingsValues(

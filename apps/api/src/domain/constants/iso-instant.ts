@@ -88,6 +88,9 @@ export function parseIsoInstant(value: string): number | null {
     return null;
   }
 
+  // An offset's minutes run 00-59 like a clock's: Postgres refuses `+00:60`
+  // (22009), so letting it through here turns a 400 into a 500.
+  if (m[8] !== 'Z' && Number(m[11]) > 59) return null;
   const offsetMinutes =
     m[8] === 'Z'
       ? 0
