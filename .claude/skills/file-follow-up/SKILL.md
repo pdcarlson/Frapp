@@ -38,7 +38,7 @@ low). The `area:` roster lives in
 
 Body:
 
-- **Meta block:** `Blocked by #N` lines where relevant (dependencies are body lines, not labels),
+- **Meta block:** `Asked by: <name>, <date>` (whose request it is, or the routine or PR it came from), `Blocked by #N` lines where relevant (dependencies are body lines, not labels),
   the originating PR, and an `### Agent brief` (`depth:` / `model:` / `ultracode:`; lean toward
   `depth:deep`; syntax in
   [`github-pm.md`](../../../docs/ci-cd/github-pm.md#agent-briefs-depth--model--ultracode)).
@@ -46,6 +46,12 @@ Body:
 - **Acceptance criteria:** objectively verifiable checkboxes.
 - **Implementation notes:** constraints, helpers to reuse, gotchas.
 - **Definition of done:** "PR linked with `Fixes #N`, criteria met, CI green."
+
+Epic: when an open epic covers the work, file the issue as its child in one call (`issue_write`
+create with `parent_issue_number`), so it never sits loose. Find epics the way
+[`issue-triage`](../issue-triage/SKILL.md) step 5 does: `[Epic]` or `Epic:` titles, or
+`has_children: true`. In a chat or `/next` session, when three or more related issues have no epic,
+create one (`[Epic] <name>`) and attach them. A routine follows its own skill's epic rule.
 
 Lifecycle: filed with `triage` → accepted to Backlog (label removed, priority confirmed) → claimed
 via `/next` → PR with `Fixes #N`. An issue with an open `Blocked by #N` isn't started.
@@ -66,6 +72,7 @@ Body:
 ```markdown
 **Human action required — hold in triage; not for /next.**
 
+Asked by: <name>, <date>.
 Tried: <what you ran>. Output: <the exact error, as proof>.
 Steps for the owner: <numbered, with exact setting, secret, and file names>.
 

@@ -55,7 +55,7 @@ export const DASHBOARD_ROUTES = [
  * chapter, while these four are exactly what a signed-out visitor sees.
  *
  * **`/join` is deliberately absent and is not covered.** It is in `proxy.ts`'s
- * protected prefixes, and the page itself calls `getSessionUser()` and
+ * protected prefixes, and the page itself calls `getLiveSessionUser()` and
  * redirects to `/sign-in?redirectTo=/join` when there is no session — so a
  * sessionless harness can only ever measure the redirect target. Covering it
  * needs a seeded session, which `README.md` in this directory already scopes

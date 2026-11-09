@@ -31,6 +31,7 @@ import {
 import {
   CurrentUser,
   CurrentChapterId,
+  CurrentVerifiedEmail,
 } from '../decorators/current-user.decorator';
 import {
   CreateInviteDto,
@@ -41,6 +42,7 @@ import {
   InvitePreviewResponseDto,
   InviteListItemDto,
   BulkEmailInviteResponseDto,
+  PendingInviteDto,
 } from '../dtos/invite.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
@@ -168,6 +170,26 @@ export class InviteController {
       dto.token,
       userId,
       dto.accept_terms_privacy === true,
+    );
+  }
+
+  /**
+   * No chapter guard: the caller may belong to no chapter yet, and the read is
+   * scoped by their verified address, not by a chapter (#3776).
+   */
+  @Get('mine')
+  @ApiOperation({
+    summary:
+      "Pending invites emailed to the caller's verified address, with their tokens",
+  })
+  @ApiOkResponse({ type: PendingInviteDto, isArray: true })
+  async listMine(
+    @CurrentUser('id') userId: string,
+    @CurrentVerifiedEmail() verifiedEmail: string | null,
+  ): Promise<PendingInviteDto[]> {
+    return this.inviteService.findPendingForVerifiedEmail(
+      verifiedEmail,
+      userId,
     );
   }
 
