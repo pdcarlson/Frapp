@@ -5,6 +5,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { AUDIT_LOG_SETTINGS_NOTE } from "@repo/chat-core/audit-log-copy";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { denseListClassName } from "@/components/shared/table-controls";
 import { cardFilledContainers } from "@/tests/card-surfaces";
@@ -702,5 +703,47 @@ describe("ChatAdminPage — opened from a channel start", () => {
       "aria-pressed",
       "false",
     );
+  });
+});
+
+// #3909: only Frapp posts in the audit log, and the server refuses renaming
+// it or switching its read-only off, so the form locks both.
+describe("ChatAdminPage — the audit log", () => {
+  beforeEach(() => {
+    reads.channels = settled([
+      ...CHANNELS,
+      {
+        ...channel("ch-4", "chapter-audit", "PUBLIC"),
+        is_read_only: true,
+        is_audit_log: true,
+      },
+    ]);
+  });
+
+  it("locks its name and shows the audit log line in place of the read-only switch", () => {
+    render(<ChatAdminPage />);
+    fireEvent.click(screen.getByRole("button", { name: /^#chapter-audit/ }));
+
+    const pane = screen.getByRole("region", { name: "Edit #chapter-audit" });
+    expect(within(pane).getByLabelText("Name")).toBeDisabled();
+    expect(within(pane).getByText(AUDIT_LOG_SETTINGS_NOTE)).toBeInTheDocument();
+    expect(within(pane).queryByText(/^Read-only/)).toBeNull();
+    // The server refuses deleting it, so no Delete control is offered.
+    expect(
+      screen.queryByRole("button", { name: "Delete #chapter-audit" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Delete #general" }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the name and the read-only switch open on an ordinary channel", () => {
+    render(<ChatAdminPage />);
+    selectExec();
+
+    const pane = screen.getByRole("region", { name: "Edit #exec" });
+    expect(within(pane).getByLabelText("Name")).toBeEnabled();
+    expect(within(pane).getByText(/^Read-only/)).toBeInTheDocument();
+    expect(within(pane).queryByText(AUDIT_LOG_SETTINGS_NOTE)).toBeNull();
   });
 });

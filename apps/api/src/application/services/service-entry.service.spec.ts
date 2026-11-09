@@ -98,6 +98,7 @@ describe('ServiceEntryService', () => {
       getSignedDownloadUrl: jest
         .fn()
         .mockResolvedValue('https://signed-download'),
+      getSignedInlineAndAttachmentUrls: jest.fn(),
       getSignedDownloadUrls: jest.fn().mockResolvedValue({}),
       uploadFile: jest.fn().mockResolvedValue(undefined),
       downloadFile: jest.fn().mockResolvedValue(null),
@@ -1214,6 +1215,19 @@ describe('ServiceEntryService', () => {
       });
 
       expect(mockServiceEntryRepo.findByChapterFiltered).toHaveBeenCalled();
+    });
+  });
+
+  describe('getPointsRate', () => {
+    it('reports the rate through the same lookup approve uses', async () => {
+      mockChapterServiceConfig.getMinutesPerPoint.mockResolvedValue(45);
+
+      await expect(service.getPointsRate('ch-1')).resolves.toEqual({
+        minutes_per_point: 45,
+      });
+      expect(mockChapterServiceConfig.getMinutesPerPoint).toHaveBeenCalledWith(
+        'ch-1',
+      );
     });
   });
 

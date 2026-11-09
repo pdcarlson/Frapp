@@ -11,8 +11,6 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  Check,
-  ChevronDown,
   Download,
   FileArchive,
   FolderUp,
@@ -26,6 +24,7 @@ import {
 } from "lucide-react";
 import {
   selectDownloadUrl,
+  useBackworkCourses,
   useBackworkResources,
   useDeleteBackworkResource,
   useDepartments,
@@ -49,6 +48,7 @@ import {
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { RowMenu, type RowMenuEntry } from "@/components/shared/row-menu";
+import { FilterChip } from "@/components/shared/filter-chip";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Can } from "@/components/shared/can";
 import {
@@ -57,6 +57,7 @@ import {
 } from "@/components/shared/subscription-gate";
 import { BackworkTaxonomyDrawer } from "@/components/backwork/backwork-taxonomy-drawer";
 import { useBackworkTaxonomyActions } from "@/components/backwork/backwork-taxonomy-actions";
+import { useBackworkCourseDialog } from "@/components/backwork/backwork-course-dialog";
 import { BackworkUploadSheet } from "@/components/backwork/backwork-upload-sheet";
 import { BulkDropZone } from "@/components/backwork/bulk/drop-zone";
 import type { CollectedFiles } from "@/lib/backwork-bulk/collect-files";
@@ -76,10 +77,10 @@ import {
   hasActiveFilters,
   queryLibrary,
   toLibraryRows,
+  type BackworkCourse,
   type BackworkDepartment,
   type BackworkProfessor,
   type BackworkResource,
-  type FilterOption,
   type LibraryFilters,
   type LibraryRow,
 } from "@/components/backwork/backwork-library";
@@ -142,62 +143,6 @@ const CHIPS: { key: ChipKey; label: string; anyLabel: string }[] = [
 const ROW_GRID =
   "md:grid-cols-[112px_minmax(0,1fr)_140px_104px_128px_64px_76px]";
 
-function FilterChip({
-  label,
-  anyLabel,
-  options,
-  value,
-  onChange,
-}: {
-  label: string;
-  anyLabel: string;
-  options: FilterOption[];
-  value: string | null;
-  onChange: (value: string | null) => void;
-}) {
-  const selected = options.find((option) => option.value === value);
-  const active = value !== null;
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant={active ? "tinted" : "secondary"}
-          size="toolbar"
-          className="gap-1 rounded-full font-semibold"
-          aria-label={active ? `${label}: ${selected?.label ?? value}` : label}
-          disabled={options.length === 0 && !active}
-        >
-          <span className="max-w-[160px] truncate">
-            {active ? (selected?.label.split(" · ")[0] ?? value) : label}
-          </span>
-          <ChevronDown className="h-3.5 w-3.5 opacity-70" aria-hidden="true" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="max-h-80 min-w-[200px]">
-        <DropdownMenuItem onSelect={() => onChange(null)}>
-          <Check
-            className={cn("h-4 w-4", active && "invisible")}
-            aria-hidden="true"
-          />
-          {anyLabel}
-        </DropdownMenuItem>
-        {options.map((option) => (
-          <DropdownMenuItem
-            key={option.value}
-            onSelect={() => onChange(option.value)}
-          >
-            <Check
-              className={cn("h-4 w-4", option.value !== value && "invisible")}
-              aria-hidden="true"
-            />
-            {option.label}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
 
 /**
  * A search for the joined course form ("cogs2120") hits that one word, which
@@ -246,6 +191,9 @@ export function BackworkPage() {
   const resourcesQuery = useBackworkResources();
   const departmentsQuery = useDepartments();
   const professorsQuery = useProfessors();
+  // Course names are extra: a failed read leaves rows on their department
+  // name rather than failing the page.
+  const coursesQuery = useBackworkCourses();
   const fetchResource = useFetchBackworkResource();
   const fetchDownloadUrls = useFetchBackworkDownloadUrls();
   // Files fetched so far while a zip builds; null when none is building.
@@ -258,7 +206,9 @@ export function BackworkPage() {
   const deleteResource = useDeleteBackworkResource();
   const { data: permissionsPayload } = useMyPermissions();
   const isAdmin = can("backwork:admin", permissionsPayload?.permissions);
+  const canUpload = can("backwork:upload", permissionsPayload?.permissions);
   const taxonomy = useBackworkTaxonomyActions(gate);
+  const courseDialog = useBackworkCourseDialog(gate, isAdmin);
   const { confirm, confirmDialog } = useConfirmDialog();
   const router = useRouter();
 
@@ -286,8 +236,9 @@ export function BackworkPage() {
         asArray<BackworkResource>(resourcesQuery.data),
         asArray<BackworkDepartment>(departmentsQuery.data),
         asArray<BackworkProfessor>(professorsQuery.data),
+        asArray<BackworkCourse>(coursesQuery.data),
       ),
-    [resourcesQuery.data, departmentsQuery.data, professorsQuery.data],
+    [resourcesQuery.data, departmentsQuery.data, professorsQuery.data, coursesQuery.data],
   );
   const options = useMemo(() => filterOptions(rows), [rows]);
   // A filter whose value no row has any more (a merge from a row menu deleted
@@ -461,9 +412,50 @@ export function BackworkPage() {
         onSelect: () => setFilter("professorId", professor.id),
       });
     }
-    if (!isAdmin) return entries;
+    let nameCourse: RowMenuEntry | null = null;
+    // Uploaders name an unnamed course and add nicknames to a named one; an
+    // admin may also rename (#3848; the rule is the API's
+    // `courseEditRefusal`, and the dialog shows a member a set name
+    // read-only).
+    const courseNumber = row.resource.course_number?.trim();
+    const courseName = row.courseEntry?.name;
+    // Not until the course list has loaded: before then a named course looks
+    // unnamed, and the entry and its dialog would offer the wrong thing.
+    if (
+      courseDialog.ready &&
+      department &&
+      course &&
+      courseNumber &&
+      (isAdmin || canUpload)
+    ) {
+      nameCourse = {
+        type: "item",
+        key: "name-course",
+        disabled: writeBlocked,
+        describedBy,
+        label: !courseName
+          ? `Name the ${course} course…`
+          : isAdmin
+            ? `Rename the ${course} course…`
+            : `Add a nickname for ${course}…`,
+        icon: Pencil,
+        onSelect: () =>
+          courseDialog.requestCourseName({
+            departmentId: department.id,
+            courseNumber,
+            label: course,
+          }),
+      };
+    }
+    if (!isAdmin) {
+      if (nameCourse) {
+        entries.push({ type: "separator", key: "officer-sep" }, nameCourse);
+      }
+      return entries;
+    }
 
     const officer: RowMenuEntry[] = [];
+
     if (professor) {
       officer.push(
         {
@@ -497,6 +489,7 @@ export function BackworkPage() {
         },
       );
     }
+    if (nameCourse) officer.push(nameCourse);
     if (department) {
       officer.push(
         {
@@ -789,7 +782,9 @@ export function BackworkPage() {
           (resourcesQuery.isPending &&
             resourcesQuery.fetchStatus === "paused") ||
           // Rows join departments and professors on the client; without them
-          // a course reads as a bare number and search misses "cogs".
+          // a course reads as a bare number and search misses "cogs". Course
+          // names are not waited on: rows show the department's name until
+          // they arrive.
           (rows.length > 0 && (departmentsQuery.isLoading || professorsQuery.isLoading)) ? (
           <BackworkRowsSkeleton />
         ) : resourcesQuery.isError ||
@@ -837,7 +832,7 @@ export function BackworkPage() {
             </div>
             <ul className={denseListClassName}>
               {/* eslint-disable-next-line react-hooks/refs -- `rowEntries` closes over `removeFile`, which reads `gateRef` after its confirm resolves, not during render */}
-              {results.map(({ item: row, hits }) => (
+              {results.map(({ item: row, hits, nickname, courseHits: nameHits }) => (
                 <RowMenu
                   key={row.resource.id}
                   entries={rowEntries(row)}
@@ -863,18 +858,28 @@ export function BackworkPage() {
                               className="font-mono text-caption tracking-[0.02em] text-foreground"
                             />
                           ) : null}
-                          {row.department?.name ? (
+                          {row.courseLabel ? (
                             <>
                               {row.course ? " · " : null}
                               <Highlighted
-                                text={row.department.name}
-                                hits={hits}
+                                text={row.courseLabel}
+                                hits={[...hits, ...nameHits]}
                               />
                             </>
                           ) : null}
+                          {nickname ? (
+                            <span className="text-muted">
+                              {" ("}
+                              <Highlighted
+                                text={nickname}
+                                hits={nameHits}
+                              />
+                              {")"}
+                            </span>
+                          ) : null}
                           {row.resource.tags?.length ? (
                             <>
-                              {row.course || row.department?.name
+                              {row.course || row.courseLabel
                                 ? " · "
                                 : null}
                               <Highlighted
@@ -947,6 +952,7 @@ export function BackworkPage() {
       </section>
 
       {taxonomy.dialogs}
+      {courseDialog.dialog}
       {confirmDialog}
     </div>
   );

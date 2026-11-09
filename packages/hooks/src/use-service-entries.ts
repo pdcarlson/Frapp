@@ -54,6 +54,33 @@ export function useServiceEntries(
 }
 
 /**
+ * The SERVICE points rate approving an entry applies right now
+ * (`GET /v1/service-entries/points-rate`, `service:approve`), for the review
+ * queue's preview of what Approve will award (#3862). Pass `enabled: false`
+ * for a viewer without `service:approve`, who would only get a 403.
+ *
+ * Under the `["service-entries"]` prefix, so a review refetches it: the server
+ * reads the rate again at every approval, and a refetch then picks up a rate
+ * another officer changed in the meantime.
+ */
+export function useServicePointsRate(options?: { enabled?: boolean }) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: ["service-entries", chapterId, "points-rate"],
+    queryFn: async () => {
+      const { data, error } = await client.GET(
+        "/v1/service-entries/points-rate",
+      );
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 30_000,
+    enabled: !!chapterId && (options?.enabled ?? true),
+  });
+}
+
+/**
  * One service entry, as `GET /v1/service-entries/{id}` returns it, or `null`
  * when the server answers that there is none for this viewer: what a chat
  * hours card reads its live review status from.
@@ -98,6 +125,7 @@ export function useCreateServiceEntry() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["service-entries", "create-service-entry"],
     mutationFn: async (body: {
       date: string;
       duration_minutes: number;
@@ -119,6 +147,7 @@ export function useCreateServiceEntry() {
 export function useRequestServiceProofUploadUrl() {
   const client = useFrappClient();
   return useMutation({
+    mutationKey: ["service-entries", "request-service-proof-upload-url"],
     mutationFn: async (body: {
       filename: string;
       content_type: string;
@@ -138,6 +167,7 @@ export function useRequestServiceProofUploadUrl() {
 export function useGetServiceProofUrl() {
   const client = useFrappClient();
   return useMutation({
+    mutationKey: ["service-entries", "get-service-proof-url"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.GET(
         "/v1/service-entries/{id}/proof-url",
@@ -153,6 +183,7 @@ export function useReviewServiceEntry() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["service-entries", "review-service-entry"],
     mutationFn: async ({
       id,
       body,
@@ -180,6 +211,7 @@ export function useDeleteServiceEntry() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["service-entries", "delete-service-entry"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.DELETE("/v1/service-entries/{id}", {
         params: { path: { id } },

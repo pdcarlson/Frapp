@@ -10,14 +10,19 @@
   ordering and nothing to do with storage.
 */
 import { act, render, renderHook, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  QueryCache,
+  QueryClient,
+  QueryClientProvider,
+  QueryObserver,
+} from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   chatMessagesKey,
   normalizeRow,
   type ChannelCache,
 } from "@repo/chat-core/types";
-import { selectMessages } from "@repo/chat-core/cache";
+import { emptyCache, selectMessages } from "@repo/chat-core/cache";
 import type { ChatChannel } from "@/components/chat/channel-list";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import type { FirstChunk } from "./first-chunk-cache";
@@ -376,6 +381,52 @@ describe("seedFirstChunk", () => {
     });
 
     expect(client.getQueryState(["channels"])?.isInvalidated).toBe(true);
+  });
+
+  it("leaves a tail no screen observes unfetched, and fetches it when one mounts", async () => {
+    /*
+      FRAPP-WEB-3 (#3905). A tail for a channel the member isn't viewing is a
+      query `setQueryData` created, with no `queryFn` until a `useQuery`
+      mounts on it. Refetching it then rejects with `Missing queryFn`, which
+      the query cache's `onError` reports to Sentry.
+    */
+    const onError = vi.fn();
+    const client = new QueryClient({
+      queryCache: new QueryCache({ onError }),
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    seedFirstChunk(client, {
+      channels: null,
+      tails: [
+        {
+          userId: "auth-alice",
+          chapterId: "chapter-1",
+          channelId: "chan-1",
+          rows: [message("5")],
+          cachedAt: AT,
+        },
+      ],
+      viewer: null,
+      blockFloor: null,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(onError).not.toHaveBeenCalled();
+    const key = chatMessagesKey("chan-1");
+    expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+
+    // The observer that mounts later still reconciles: the seed is stale.
+    const queryFn = vi.fn(async () => emptyCache());
+    const observer = new QueryObserver(client, {
+      queryKey: key,
+      queryFn,
+      staleTime: Infinity,
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    await waitFor(() => expect(queryFn).toHaveBeenCalledTimes(1));
+    unsubscribe();
+    expect(onError).not.toHaveBeenCalled();
   });
 });
 

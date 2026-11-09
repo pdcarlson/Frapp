@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   addPollOption,
-  canCreatePoll,
   checkPollDraft,
   closesAtFor,
   DEFAULT_POLL_CLOSE,
   DUPLICATE_OPTION_PROBLEM,
   emptyPollDraft,
   movePollOption,
+  pollDraftFromArgs,
   removePollOption,
   setPollOption,
   type PollDraft,
-} from "./new-poll";
+} from "./poll-draft";
 
 function draft(question: string, options: string[]): PollDraft {
   return {
@@ -22,40 +22,6 @@ function draft(question: string, options: string[]): PollDraft {
 }
 
 const texts = (d: PollDraft) => d.options.map((row) => row.text);
-
-describe("canCreatePoll (#3701)", () => {
-  it("needs polls:create", () => {
-    expect(
-      canCreatePoll({ permissions: ["polls:create"], pollsGate: "on" }),
-    ).toBe(true);
-    expect(
-      canCreatePoll({ permissions: ["members:view"], pollsGate: "on" }),
-    ).toBe(false);
-  });
-
-  it("lets a President's * through", () => {
-    expect(canCreatePoll({ permissions: ["*"], pollsGate: "on" })).toBe(true);
-  });
-
-  it("is off while Polls is off, whatever the role", () => {
-    expect(canCreatePoll({ permissions: ["*"], pollsGate: "off" })).toBe(false);
-  });
-
-  it("fails closed while Polls is unread or unreadable, as the card's Vote does", () => {
-    expect(canCreatePoll({ permissions: ["*"], pollsGate: "loading" })).toBe(
-      false,
-    );
-    expect(canCreatePoll({ permissions: ["*"], pollsGate: "error" })).toBe(
-      false,
-    );
-  });
-
-  it("offers nothing while permissions are still loading", () => {
-    expect(canCreatePoll({ permissions: undefined, pollsGate: "on" })).toBe(
-      false,
-    );
-  });
-});
 
 describe("checkPollDraft (#3701)", () => {
   it("starts unfinished, with nothing to complain about", () => {
@@ -147,6 +113,55 @@ describe("closesAtFor (#3701)", () => {
     );
     expect(closesAtFor("1w", now).toISOString()).toBe(
       "2026-11-16T12:00:00.000Z",
+    );
+  });
+});
+
+describe("pollDraftFromArgs (#3865)", () => {
+  const texts = (d: PollDraft) => d.options.map((row) => row.text);
+
+  it("opens an empty draft for a bare /poll", () => {
+    const d = pollDraftFromArgs("  ");
+    expect(d.question).toBe("");
+    expect(texts(d)).toEqual(["", ""]);
+  });
+
+  it("reads the question and the options the one-liner would", () => {
+    const d = pollDraftFromArgs('"Who drives?" Sam closes=60');
+    expect(d.question).toBe("Who drives?");
+    expect(texts(d)).toEqual(["Sam", ""]);
+    // `closes=60` is the form's "1 hour", not the default day.
+    expect(d.closes).toBe("1h");
+  });
+
+  it("snaps closes= to the nearest choice the form offers", () => {
+    expect(pollDraftFromArgs('"Q" closes=4000').closes).toBe("3d");
+  });
+
+  it("recovers the options when the last one's closing quote is missing", () => {
+    const d = pollDraftFromArgs('"Who drives?" Sam "Alex Smith');
+    expect(d.question).toBe("Who drives?");
+    expect(texts(d)).toEqual(["Sam", "Alex Smith"]);
+  });
+
+  it("keeps every typed option, past the maximum, for the member to trim", () => {
+    const d = pollDraftFromArgs('"Q" A B C D E F G H I J K');
+    expect(texts(d)).toHaveLength(11);
+    expect(checkPollDraft(d)).toEqual({
+      ok: false,
+      problem: "A poll can have up to 10 options.",
+    });
+  });
+
+  it("adds rows past the minimum, with keys of their own", () => {
+    const d = pollDraftFromArgs('"Q" A B C');
+    expect(texts(d)).toEqual(["A", "B", "C"]);
+    expect(new Set(d.options.map((row) => row.key)).size).toBe(3);
+  });
+
+  it("keeps a question still being typed inside an open quote", () => {
+    expect(pollDraftFromArgs('"Who is driving').question).toBe(
+      "Who is driving",
     );
   });
 });

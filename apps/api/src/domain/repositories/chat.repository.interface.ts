@@ -114,11 +114,16 @@ export interface IChatChannelRepository {
    * The chapter's channel with this exact name, or `null`. Nothing makes a
    * name unique within a chapter, so more than one match is a query error,
    * not a pick. Onboarding calls it where a duplicate cannot exist yet, for
-   * the `general` channel it seeded moments earlier. The audit bridge calls it
-   * for `#chapter-audit` and treats that error as a skipped mirror (logged),
-   * which is how a duplicate `chapter-audit` channel stops the feed.
+   * the `general` channel it seeded moments earlier.
    */
   findByName(chapterId: string, name: string): Promise<ChatChannel | null>;
+  /**
+   * The chapter's audit-log channel (`is_audit_log`, #3909), or null when the
+   * chapter has none. Keyed on the flag rather than the name, so neither a
+   * rename nor a second channel called `chapter-audit` moves the audit feed;
+   * a partial unique index holds it to one per chapter.
+   */
+  findAuditLog(chapterId: string): Promise<ChatChannel | null>;
   create(data: Partial<ChatChannel>): Promise<ChatChannel>;
   /** Insert several channels in one statement, all or none. */
   createMany(data: Partial<ChatChannel>[]): Promise<void>;

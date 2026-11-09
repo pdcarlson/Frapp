@@ -50,6 +50,7 @@ export function useCreateCustomRole() {
   const chapterId = useActiveChapterId();
 
   return useMutation({
+    mutationKey: ["custom-roles", "create-custom-role"],
     mutationFn: async (body: CreateCustomRoleInput) => {
       const { data, error } = await client.POST("/v1/custom-roles", {
         body: body as never,
@@ -71,6 +72,7 @@ export function useUpdateCustomRole() {
   const chapterId = useActiveChapterId();
 
   return useMutation({
+    mutationKey: ["custom-roles", "update-custom-role"],
     mutationFn: async ({
       id,
       body,
@@ -99,6 +101,7 @@ export function useDeleteCustomRole() {
   const chapterId = useActiveChapterId();
 
   return useMutation({
+    mutationKey: ["custom-roles", "delete-custom-role"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.DELETE("/v1/custom-roles/{id}", {
         params: { path: { id } },

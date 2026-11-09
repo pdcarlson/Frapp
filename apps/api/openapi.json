@@ -2797,7 +2797,7 @@
             "bearer": []
           }
         ],
-        "summary": "Update user settings (quiet hours, theme)",
+        "summary": "Update user settings (quiet hours, theme, status)",
         "tags": [
           "Notifications"
         ]
@@ -6865,6 +6865,130 @@
         ]
       }
     },
+    "/v1/backwork/courses": {
+      "get": {
+        "operationId": "BackworkController_listCourses_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BackworkCourseDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List chapter course names and nicknames",
+        "tags": [
+          "Backwork"
+        ]
+      },
+      "put": {
+        "operationId": "BackworkController_upsertCourse_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertBackworkCourseDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackworkCourseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Name a course or add nicknames (create on first write)",
+        "tags": [
+          "Backwork"
+        ]
+      }
+    },
+    "/v1/backwork/courses/{id}": {
+      "delete": {
+        "operationId": "BackworkController_deleteCourse_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a course's name and nicknames (its files are untouched)",
+        "tags": [
+          "Backwork"
+        ]
+      }
+    },
     "/v1/backwork/professors": {
       "get": {
         "operationId": "BackworkController_listProfessors_v1",
@@ -7279,6 +7403,44 @@
           }
         ],
         "summary": "Chapter-wide service leaderboard (approved hours)",
+        "tags": [
+          "Service Entries"
+        ]
+      }
+    },
+    "/v1/service-entries/points-rate": {
+      "get": {
+        "description": "Minutes of approved service per SERVICE point, read the way the approve path reads it (chapter rate, default 60). The rate is read again at approval, so this is the current rate, not a promise.",
+        "operationId": "ServiceEntryController_pointsRate_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServicePointsRateResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "SERVICE points rate that approving an entry applies",
         "tags": [
           "Service Entries"
         ]
@@ -8892,7 +9054,14 @@
         ],
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatMessageDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -8910,7 +9079,7 @@
             "bearer": []
           }
         ],
-        "summary": "Manually close a poll early (creator only)",
+        "summary": "Manually close a poll early (creator only): a REST poll or a chat-card poll",
         "tags": [
           "Polls"
         ]
@@ -12548,13 +12717,45 @@
               "dark",
               "system"
             ]
+          },
+          "status": {
+            "type": "string",
+            "description": "The status in force now (#3845). `online` until the member picks another, and once a picked status reaches its end time.",
+            "enum": [
+              "online",
+              "idle",
+              "dnd",
+              "invisible"
+            ]
+          },
+          "status_expires_at": {
+            "type": "string",
+            "description": "When `status` reverts to `online`. Null: until the member changes it.",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "custom_status": {
+            "type": "string",
+            "description": "The custom status line in force now, or null for none (also once it has reached its end time).",
+            "nullable": true,
+            "example": "At practice till 6"
+          },
+          "custom_status_expires_at": {
+            "type": "string",
+            "description": "When the custom status line clears. Null: until the member clears it.",
+            "nullable": true,
+            "format": "date-time"
           }
         },
         "required": [
           "quiet_hours_start",
           "quiet_hours_end",
           "quiet_hours_tz",
-          "theme"
+          "theme",
+          "status",
+          "status_expires_at",
+          "custom_status",
+          "custom_status_expires_at"
         ]
       },
       "UpdateUserSettingsDto": {
@@ -12583,6 +12784,36 @@
               "dark",
               "system"
             ]
+          },
+          "status": {
+            "type": "string",
+            "description": "The status the member picks (#3845). Sending it replaces `status_expires_at` with the value sent alongside it (absent: no end time). `online` never carries an end time.",
+            "enum": [
+              "online",
+              "idle",
+              "dnd",
+              "invisible"
+            ]
+          },
+          "status_expires_at": {
+            "type": "string",
+            "description": "When `status` reverts to `online`, as an ISO 8601 instant in the future. Accepted only together with `status`; null, blank or absent means no end time (and alone is ignored).",
+            "nullable": true,
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,6})?)?(Z|[+-]\\d{2}:\\d{2})$"
+          },
+          "custom_status": {
+            "type": "string",
+            "description": "One short custom status line (at most 80 characters, no line breaks). Trimmed; null or an empty string clears it, and its end time with it. Sending it replaces `custom_status_expires_at` with the value sent alongside it.",
+            "nullable": true,
+            "maxLength": 80
+          },
+          "custom_status_expires_at": {
+            "type": "string",
+            "description": "When the custom status line clears, as an ISO 8601 instant in the future. Accepted only together with `custom_status`; null, blank or absent means no end time (and alone is ignored).",
+            "nullable": true,
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,6})?)?(Z|[+-]\\d{2}:\\d{2})$"
           }
         }
       },
@@ -14539,6 +14770,11 @@
             "type": "string",
             "description": "Course number (e.g. \"101\")"
           },
+          "course_name": {
+            "type": "string",
+            "description": "The course's name (\"Calculus I\"). Saved only when the course has no name yet; an upload never renames a course.",
+            "maxLength": 255
+          },
           "professor_name": {
             "type": "string",
             "description": "Professor name"
@@ -14664,6 +14900,103 @@
           "reassigned"
         ]
       },
+      "BackworkCourseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "department_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "course_number": {
+            "type": "string",
+            "description": "Course number as first saved, e.g. \"1010\""
+          },
+          "course_key": {
+            "type": "string",
+            "description": "The course number trimmed and lowercased; files join a course by department_id and this."
+          },
+          "name": {
+            "type": "string",
+            "nullable": true,
+            "example": "Calculus I"
+          },
+          "nicknames": {
+            "example": [
+              "Calc 1",
+              "Calc I"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "department_id",
+          "course_number",
+          "course_key",
+          "name",
+          "nicknames",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "UpsertBackworkCourseDto": {
+        "type": "object",
+        "properties": {
+          "department_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "course_number": {
+            "type": "string",
+            "description": "Course number (e.g. \"1010\")",
+            "maxLength": 20
+          },
+          "name": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 255,
+            "description": "Omit to keep the stored name. A blank or null clears it (backwork:admin)."
+          },
+          "add_nicknames": {
+            "maxItems": 20,
+            "description": "Nicknames to add to the list as stored. Open to backwork:upload; a list past the cap is a 400.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "remove_nicknames": {
+            "maxItems": 20,
+            "description": "Nicknames to remove from the list as stored, matched case-insensitively. Needs backwork:admin.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "department_id",
+          "course_number"
+        ]
+      },
       "UpdateProfessorDto": {
         "type": "object",
         "properties": {
@@ -14672,6 +15005,20 @@
             "description": "Professor name"
           }
         }
+      },
+      "ServicePointsRateResponseDto": {
+        "type": "object",
+        "properties": {
+          "minutes_per_point": {
+            "type": "number",
+            "description": "Minutes of approved service per SERVICE point, as the approve path reads it now (default 60). Approving awards floor(duration_minutes / minutes_per_point).",
+            "minimum": 1,
+            "example": 60
+          }
+        },
+        "required": [
+          "minutes_per_point"
+        ]
       },
       "RequestProofUploadUrlDto": {
         "type": "object",
@@ -14739,7 +15086,7 @@
           },
           "channel_id": {
             "type": "string",
-            "description": "When set with `client_message_id`, posts a read-only hours card to this chat channel after the entry is created (the `/hours log` slash command). Omit for dashboard creates. Chat cannot attach proof — when `wf_hours_receipt` is on, this route still 400s without `proof_path`."
+            "description": "When set with `client_message_id`, posts a read-only hours card to this chat channel after the entry is created (the `/hours log` slash command). Omit for dashboard creates. The one-liner cannot attach proof (the Service hours form in the chat composer can) — when `wf_hours_receipt` is on, this route still 400s without `proof_path`."
           },
           "client_message_id": {
             "type": "string",

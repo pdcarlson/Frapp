@@ -151,6 +151,14 @@ const {
   },
 }));
 
+// The member's own status (#3845) has its own spec
+// (`components/chat/home-header.spec.tsx`); here it is simply unknown.
+vi.mock("@/lib/account/own-status", () => ({
+  useOwnStatus: () => null,
+  useOwnStatusSync: () => undefined,
+  useSaveOwnStatus: () => ({ save: vi.fn(), isSaving: false }),
+}));
+
 vi.mock("@repo/hooks", async () => {
   // The pure helpers run for real: the point is to catch the screen using
   // them wrongly, and a stub would decide the answer itself.

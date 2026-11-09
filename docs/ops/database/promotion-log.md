@@ -29,6 +29,36 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-09: Member status and Do Not Disturb
+
+### 20261109230001_user_settings_member_status.sql
+
+- **Purpose**: Adds four columns to `user_settings` for member status (#3845): `status text not null default 'online'` (check: `online`, `idle`, `dnd`, `invisible`), `status_expires_at timestamptz`, `custom_status text` (at most 80 characters, by check constraint) and `custom_status_expires_at timestamptz`. `GET`/`PATCH /v1/settings` read and write them, and push delivery treats `dnd` as quiet hours switched on now. The behaviour is in [`spec/behavior/notifications.md`](../../../spec/behavior/notifications.md#do-not-disturb) § Do Not Disturb. No backfill: every existing row takes `online` and no line. Account deletion's existing `delete from user_settings` clears them.
+- **Checks**: After `db push`, `select column_name, is_nullable, column_default from information_schema.columns where table_name = 'user_settings' and column_name in ('status', 'status_expires_at', 'custom_status', 'custom_status_expires_at');` returns four rows, `status` with `NO` and `'online'::text`. `select count(*) from user_settings where status <> 'online';` is `0` until members start picking one.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The newer API against an unmigrated database fails every settings save that sets a status or custom line (PostgREST refuses the unknown columns; a theme or quiet-hours save leaves them out and still works), so don't deploy the API first. The older API never reads or writes the columns. `add column if not exists` and `drop constraint if exists` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-user-settings-member-status-20261109230001) § Rollback user settings member status.
+
+## 2026-11-09: Backwork course names and nicknames (#3848)
+
+### 20261109230000_backwork_courses.sql
+
+- **Purpose**: Adds `backwork_courses`, a per-chapter dictionary of what members call a course: one row per (chapter, department, course number) with an optional `name` and up to 20 `nicknames`, unique on `(chapter_id, department_id, course_key)` where `course_key` is generated as `lower(btrim(course_number))`. FKs to `chapters` and `backwork_departments` cascade. RLS on, no policies (API only, service role). Adds `backwork_course_nicknames_ok(text[])`, an immutable helper its CHECK calls (at most 20 nicknames, each 1 to 60 characters). Adds `backwork_course_write(...)`, the one-statement insert-or-update every course write goes through, the department merge's fold included (security invoker, EXECUTE for `service_role` only; `p_clamp` keeps a merge within the table's limits), and its immutable helper `backwork_course_merge_nicknames(text[], text[], text[], text, boolean)`. Replaces `search_backwork_resources` so global search also matches the course name and nicknames (weight B with the course); everything else it does is unchanged from `20261106190000`. No existing row changes. The rule is [`spec/behavior/backwork.md` § Course Names](../../../spec/behavior/backwork.md#course-names).
+- **Checks**: After `db push`, `select relrowsecurity from pg_class where relname = 'backwork_courses';` returns `true`, `select count(*) from pg_policies where tablename = 'backwork_courses';` returns `0`, and `select has_function_privilege('authenticated', 'public.search_backwork_resources(uuid, text, integer)', 'execute');` and `select has_function_privilege('authenticated', 'public.backwork_course_write(uuid, uuid, text, boolean, text, boolean, text[], text[], boolean)', 'execute');` both return `false`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR. A deploy applies migrations first. The older API never reads the table, and the replaced search function works with or without rows in it. The newer API against an unmigrated database fails `GET /v1/backwork/courses`, every course `PUT`, and every department merge (it reads the courses first). An upload that names a course still succeeds, since naming after the file is best effort, but the name isn't saved. The web library reads the course list on load and falls back to department names, so browsing still works. `create table if not exists`, `create index if not exists` and `create or replace` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-backwork-courses-20261109230000) § Rollback backwork courses.
+
+## 2026-11-09: #chapter-audit is system-write only (#3909)
+
+### 20261109210000_chat_channels_is_audit_log.sql
+
+- **Purpose**: Adds `chat_channels.is_audit_log` (not null, default false) and the partial unique index `chat_channels_one_audit_log_per_chapter`, then backfills the flag, with `is_read_only = true`, onto each chapter's seeded `#chapter-audit` (PUBLIC, named `chapter-audit`; the oldest if a chapter has two). A `before insert` trigger, `chat_channels_flag_audit_log`, does the same for a `#chapter-audit` seeded into a chapter under an hour old that has no flagged channel, so a chapter the older API onboards between this migration and the deploy still gets the flag. The API refuses every member write in a flagged channel whatever the caller's permissions, the audit mirror finds the channel by the flag instead of its name, and Chat settings can no longer rename it or switch read-only off.
+- **Checks**: After `db push`, `select count(*) from chat_channels where is_audit_log;` equals the number of chapters that have a `#chapter-audit`, `select count(*) from chat_channels where is_audit_log and not is_read_only;` is 0, and `select tgname from pg_trigger where tgname = 'chat_channels_flag_audit_log';` returns one row.
+- **Promoter notes**: Apply before the API from the same PR deploys. That API writes the column when it seeds a new chapter's channels and filters on it to find the audit log, so without it chapter onboarding fails (`POST /v1/chapters/onboard` 500s on the channel insert), every audit mirror is skipped (the lookup errors, `chat-bridge-audit-channel-lookup-failed`), and the post gate quietly falls back to plain read-only gating, letting `*` and `announcements:post` holders post in `#chapter-audit` again. Channel reads keep working, so they are not the signal. The backfill rewrites `is_read_only` to true on any audit channel an officer had switched off; that is the intended repair. A chapter that renamed or deleted its audit channel before this change gets no flag, and the mirror (already cut off by the rename) stays cut off until it is set by hand. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-chapter-audit-system-write-20261109210000) § Rollback chapter-audit system-write.
+
 ## 2026-11-09: A partial index for invites waiting on an address
 
 ### 20261109050000_invites_pending_by_email_index.sql

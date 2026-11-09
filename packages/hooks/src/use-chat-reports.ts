@@ -265,6 +265,7 @@ export function useResolveChatReport() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["chat-reports", "resolve-chat-report"],
     // No retry (`docs/hooks/README.md`): this is a compare-and-set on
     // `status = 'open'`, so if the first attempt lands and only its response
     // is lost, the web client's default retry of a transient failure is
@@ -316,6 +317,7 @@ export function useRemoveReportedMessage(timeline: ReportedMessageTimeline) {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["chat-reports", "remove-reported-message"],
     // No retry, although the route is idempotent and a retry is safe. A first
     // attempt that removed the message and then lost its response would be
     // answered, on the web client's default retry of a transient failure, with

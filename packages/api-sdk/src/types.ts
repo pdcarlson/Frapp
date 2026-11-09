@@ -885,7 +885,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Update user settings (quiet hours, theme) */
+        /** Update user settings (quiet hours, theme, status) */
         patch: operations["NotificationController_updateSettings_v1"];
         trace?: never;
     };
@@ -2063,6 +2063,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/backwork/courses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List chapter course names and nicknames */
+        get: operations["BackworkController_listCourses_v1"];
+        /** Name a course or add nicknames (create on first write) */
+        put: operations["BackworkController_upsertCourse_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/backwork/courses/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a course's name and nicknames (its files are untouched) */
+        delete: operations["BackworkController_deleteCourse_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/backwork/professors": {
         parameters: {
             query?: never;
@@ -2163,6 +2198,26 @@ export interface paths {
          * @description Members ranked by total APPROVED service minutes, highest first. Optional inclusive date window filters on the service date; omitting both gives all-time.
          */
         get: operations["ServiceEntryController_leaderboard_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/service-entries/points-rate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * SERVICE points rate that approving an entry applies
+         * @description Minutes of approved service per SERVICE point, read the way the approve path reads it (chapter rate, default 60). The rate is read again at approval, so this is the current rate, not a promise.
+         */
+        get: operations["ServiceEntryController_pointsRate_v1"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2673,7 +2728,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Manually close a poll early (creator only) */
+        /** Manually close a poll early (creator only): a REST poll or a chat-card poll */
         post: operations["PollController_close_v1"];
         delete?: never;
         options?: never;
@@ -3928,6 +3983,26 @@ export interface components {
              * @enum {string}
              */
             theme: "light" | "dark" | "system";
+            /**
+             * @description The status in force now (#3845). `online` until the member picks another, and once a picked status reaches its end time.
+             * @enum {string}
+             */
+            status: "online" | "idle" | "dnd" | "invisible";
+            /**
+             * Format: date-time
+             * @description When `status` reverts to `online`. Null: until the member changes it.
+             */
+            status_expires_at: string | null;
+            /**
+             * @description The custom status line in force now, or null for none (also once it has reached its end time).
+             * @example At practice till 6
+             */
+            custom_status: string | null;
+            /**
+             * Format: date-time
+             * @description When the custom status line clears. Null: until the member clears it.
+             */
+            custom_status_expires_at: string | null;
         };
         UpdateUserSettingsDto: {
             /** @description Quiet hours start (HH:mm format, e.g. 22:00). Pass null or an empty string to clear. */
@@ -3941,6 +4016,23 @@ export interface components {
              * @enum {string}
              */
             theme?: "light" | "dark" | "system";
+            /**
+             * @description The status the member picks (#3845). Sending it replaces `status_expires_at` with the value sent alongside it (absent: no end time). `online` never carries an end time.
+             * @enum {string}
+             */
+            status?: "online" | "idle" | "dnd" | "invisible";
+            /**
+             * Format: date-time
+             * @description When `status` reverts to `online`, as an ISO 8601 instant in the future. Accepted only together with `status`; null, blank or absent means no end time (and alone is ignored).
+             */
+            status_expires_at?: string | null;
+            /** @description One short custom status line (at most 80 characters, no line breaks). Trimmed; null or an empty string clears it, and its end time with it. Sending it replaces `custom_status_expires_at` with the value sent alongside it. */
+            custom_status?: string | null;
+            /**
+             * Format: date-time
+             * @description When the custom status line clears, as an ISO 8601 instant in the future. Accepted only together with `custom_status`; null, blank or absent means no end time (and alone is ignored).
+             */
+            custom_status_expires_at?: string | null;
         };
         ChannelUnreadCountDto: {
             /** Format: uuid */
@@ -4609,6 +4701,8 @@ export interface components {
             department_code?: string;
             /** @description Course number (e.g. "101") */
             course_number?: string;
+            /** @description The course's name ("Calculus I"). Saved only when the course has no name yet; an upload never renames a course. */
+            course_name?: string;
             /** @description Professor name */
             professor_name?: string;
             year?: number;
@@ -4645,9 +4739,51 @@ export interface components {
             /** @description Count of resources reassigned from source to target */
             reassigned: number;
         };
+        BackworkCourseDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /** Format: uuid */
+            department_id: string;
+            /** @description Course number as first saved, e.g. "1010" */
+            course_number: string;
+            /** @description The course number trimmed and lowercased; files join a course by department_id and this. */
+            course_key: string;
+            /** @example Calculus I */
+            name: string | null;
+            /**
+             * @example [
+             *       "Calc 1",
+             *       "Calc I"
+             *     ]
+             */
+            nicknames: string[];
+            created_at: string;
+            updated_at: string;
+        };
+        UpsertBackworkCourseDto: {
+            /** Format: uuid */
+            department_id: string;
+            /** @description Course number (e.g. "1010") */
+            course_number: string;
+            /** @description Omit to keep the stored name. A blank or null clears it (backwork:admin). */
+            name?: string | null;
+            /** @description Nicknames to add to the list as stored. Open to backwork:upload; a list past the cap is a 400. */
+            add_nicknames?: string[];
+            /** @description Nicknames to remove from the list as stored, matched case-insensitively. Needs backwork:admin. */
+            remove_nicknames?: string[];
+        };
         UpdateProfessorDto: {
             /** @description Professor name */
             name?: string;
+        };
+        ServicePointsRateResponseDto: {
+            /**
+             * @description Minutes of approved service per SERVICE point, as the approve path reads it now (default 60). Approving awards floor(duration_minutes / minutes_per_point).
+             * @example 60
+             */
+            minutes_per_point: number;
         };
         RequestProofUploadUrlDto: {
             /** @description Original filename (image or PDF) */
@@ -4677,7 +4813,7 @@ export interface components {
             description: string;
             /** @description Storage path to proof file (e.g. from upload) */
             proof_path?: string;
-            /** @description When set with `client_message_id`, posts a read-only hours card to this chat channel after the entry is created (the `/hours log` slash command). Omit for dashboard creates. Chat cannot attach proof — when `wf_hours_receipt` is on, this route still 400s without `proof_path`. */
+            /** @description When set with `client_message_id`, posts a read-only hours card to this chat channel after the entry is created (the `/hours log` slash command). Omit for dashboard creates. The one-liner cannot attach proof (the Service hours form in the chat composer can) — when `wf_hours_receipt` is on, this route still 400s without `proof_path`. */
             channel_id?: string;
             /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Not a server-side dedupe key — a replay creates a duplicate entry. */
             client_message_id?: string;
@@ -10057,6 +10193,94 @@ export interface operations {
             };
         };
     };
+    BackworkController_listCourses_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackworkCourseDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BackworkController_upsertCourse_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpsertBackworkCourseDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackworkCourseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BackworkController_deleteCourse_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     BackworkController_listProfessors_v1: {
         parameters: {
             query?: never;
@@ -10319,6 +10543,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ServiceEntryController_pointsRate_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServicePointsRateResponseDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -11493,7 +11745,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ChatMessageDto"];
+                };
             };
             /** @description Error */
             default: {

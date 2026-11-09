@@ -7,10 +7,6 @@ import { serviceStatusKind } from "@/components/service/service-status";
 import { studySessionStatusKind } from "@/components/study/study-status";
 import { geofenceStatusKind } from "@/components/geofences/geofence-status";
 import {
-  pollStatusKind,
-  pollStatusLabel,
-} from "@/components/polls/poll-status";
-import {
   invoiceStatusKind,
   subscriptionStatusKind,
 } from "@/components/billing/invoice-status";
@@ -71,7 +67,6 @@ const MAPPERS = {
  */
 const BOOLEAN_MAPPERS: Record<string, (value: boolean) => string> = {
   geofence: geofenceStatusKind,
-  poll: pollStatusKind,
 };
 
 describe("a cancelled invoice is not a failure", () => {
@@ -183,20 +178,5 @@ describe("the mappings themselves", () => {
     // invoice, and the same word on a module states the opposite.
     expect(moduleTierLabel("free")).toBe("Free");
     expect(moduleTierLabel("paid")).toBe("Chapter Pro");
-  });
-
-  it("reads a closed poll the same way — an end, not a failure", () => {
-    // `spec/behavior/polls.md`: a poll past its deadline "is locked". That is
-    // the expected end of a poll's life, so it takes Hairline rather than a
-    // semantic hue, exactly as a switched-off zone and a `DRAFT` invoice do.
-    expect(pollStatusKind(true)).toBe("success");
-    expect(pollStatusKind(false)).toBe("outline");
-  });
-
-  it("keeps the poll labels the page already shipped", () => {
-    // A repaint must not quietly change user-visible copy. These are the two
-    // strings `polls-page.tsx` rendered from its inline ternary.
-    expect(pollStatusLabel(true)).toBe("Open");
-    expect(pollStatusLabel(false)).toBe("Closed");
   });
 });

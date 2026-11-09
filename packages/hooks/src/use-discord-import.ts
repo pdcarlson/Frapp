@@ -194,6 +194,7 @@ export function useClearDiscordImport() {
   const chapterId = useActiveChapterId();
 
   return useMutation({
+    mutationKey: ["discord-imports", "clear-discord-import"],
     mutationFn: async (vars: { id: string }) => {
       const { data, error } = await client.POST(
         "/v1/discord-imports/{id}/clear",
@@ -223,6 +224,7 @@ export function useCancelDiscordImport() {
   const chapterId = useActiveChapterId();
 
   return useMutation({
+    mutationKey: ["discord-imports", "cancel-discord-import"],
     mutationFn: async (vars: { id: string }) => {
       const { data, error } = await client.POST(
         "/v1/discord-imports/{id}/cancel",
@@ -245,6 +247,7 @@ export function useCreateDiscordImport() {
   const chapterId = useActiveChapterId();
 
   return useMutation({
+    mutationKey: ["discord-imports", "create-discord-import"],
     mutationFn: async (vars: {
       consent_acknowledged: boolean;
       guild_name?: string;
@@ -276,6 +279,7 @@ export function useRequestDiscordUploadUrls() {
   const client = useFrappClient();
 
   return useMutation({
+    mutationKey: ["discord-imports", "request-discord-upload-urls"],
     mutationFn: async (vars: {
       id: string;
       files: {
@@ -302,6 +306,7 @@ export function useConfirmDiscordUploads() {
   const chapterId = useActiveChapterId();
 
   return useMutation({
+    mutationKey: ["discord-imports", "confirm-discord-uploads"],
     mutationFn: async (vars: { id: string; storage_paths: string[] }) => {
       const { data, error } = await client.POST(
         "/v1/discord-imports/{id}/uploads/confirm",
@@ -327,6 +332,7 @@ export function useSetDiscordChannelMapping() {
   const chapterId = useActiveChapterId();
 
   return useMutation({
+    mutationKey: ["discord-imports", "set-discord-channel-mapping"],
     mutationFn: async (vars: {
       id: string;
       channels: {
@@ -369,6 +375,7 @@ export function useSetDiscordRoleMapping() {
   const client = useFrappClient();
 
   return useMutation({
+    mutationKey: ["discord-imports", "set-discord-role-mapping"],
     mutationFn: async (vars: {
       id: string;
       roles: {
@@ -396,6 +403,7 @@ export function useStartDiscordImport() {
   const chapterId = useActiveChapterId();
 
   return useMutation({
+    mutationKey: ["discord-imports", "start-discord-import"],
     /**
      * `messagesAfter` is a bot import's date cutoff (#2858), an ISO instant;
      * left out, the import keeps the one it has, which on a first start is
@@ -428,6 +436,7 @@ export function useDeleteDiscordImport() {
   const chapterId = useActiveChapterId();
 
   return useMutation({
+    mutationKey: ["discord-imports", "delete-discord-import"],
     mutationFn: async (vars: { id: string }) => {
       const { data, error } = await client.DELETE("/v1/discord-imports/{id}", {
         params: { path: { id: vars.id } },

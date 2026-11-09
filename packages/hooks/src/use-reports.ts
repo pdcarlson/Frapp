@@ -89,6 +89,7 @@ export function isReportExportEnvelope(
 export function useAttendanceReport() {
   const client = useFrappClient();
   return useMutation({
+    mutationKey: ["reports", "attendance-report"],
     mutationFn: async ({
       format = "json",
       body,
@@ -116,6 +117,7 @@ export function useAttendanceReport() {
 export function usePointsReport() {
   const client = useFrappClient();
   return useMutation({
+    mutationKey: ["reports", "points-report"],
     mutationFn: async ({
       format = "json",
       body,
@@ -143,6 +145,7 @@ export function usePointsReport() {
 export function useRosterReport() {
   const client = useFrappClient();
   return useMutation({
+    mutationKey: ["reports", "roster-report"],
     mutationFn: async ({ format = "json" }: { format?: ReportFormat } = {}) => {
       const { data, error, response } = await client.POST(
         "/v1/reports/roster",
@@ -159,6 +162,7 @@ export function useRosterReport() {
 export function useServiceReport() {
   const client = useFrappClient();
   return useMutation({
+    mutationKey: ["reports", "service-report"],
     mutationFn: async ({
       format = "json",
       body,

@@ -1146,6 +1146,12 @@ export class DiscordImportWorkerService {
           `Channel mapping for #${mapping.discord_channel_name} points at a direct message. Map the channels again, then restart the import.`,
         );
       }
+      // And the audit log, where only Frapp posts (#3909).
+      if (target.is_audit_log) {
+        throw new DiscordImportStoppedError(
+          `Channel mapping for #${mapping.discord_channel_name} points at the audit log. Map the channels again, then restart the import.`,
+        );
+      }
       // A new-channel row's target is the channel this import made for it,
       // so it must still have the readers the row asks for. It may not: an
       // upload mapped before #2856 kept whatever target the client sent, and
@@ -1251,6 +1257,15 @@ export class DiscordImportWorkerService {
     // import rewrites the mapping rows without targets, and this is how the
     // purge still finds a channel the import made (#2905).
     await this.importRepo.recordCreatedChannel(importId, created.id);
+    // The audit log is flagged only while a chapter is seeded
+    // (`chat_channels_flag_audit_log`), so a channel made here should never
+    // be it. If it is, stop before any history lands in it
+    // (#3909); recorded first, so the purge can still find it.
+    if (created.is_audit_log) {
+      throw new DiscordImportStoppedError(
+        `The new channel for #${mapping.discord_channel_name} became the chapter's audit log. Rename it in the mapping, then restart the import.`,
+      );
+    }
     await this.importRepo.updateChannel(mapping.id, importId, {
       target_channel_id: created.id,
     });

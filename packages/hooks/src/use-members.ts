@@ -266,6 +266,7 @@ export function useUpdateMemberRoles() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["members", "update-member-roles"],
     mutationFn: async ({
       id,
       role_ids,
@@ -309,6 +310,7 @@ export function useRemoveMember() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["members", "remove-member"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.DELETE("/v1/members/{id}", {
         params: { path: { id } },
@@ -330,6 +332,7 @@ export function useUpdateOnboarding() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["members", "update-onboarding"],
     mutationFn: async (body: { has_completed_onboarding: boolean }) => {
       const { data, error } = await client.PATCH("/v1/members/me/onboarding", {
         body,
@@ -391,6 +394,7 @@ export function useDismissOpsNudge() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["members", "dismiss-ops-nudge"],
     scope: { id: "ops-nudge-dismiss" },
     mutationFn: async (body: { module_key: MemberDismissalKey }) => {
       const { data, error } = await client.PATCH(

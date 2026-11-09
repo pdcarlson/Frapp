@@ -16,12 +16,16 @@
  * reads the channel's newest page instead (`readBackfill`), and whatever that
  * page doesn't reach is read when the member scrolls back
  * (`spec/ui/resilience/message-delivery.md` § Receiving Messages). So a cold
- * mirror costs a re-read, not data. `chat-core` also reads heavy-command
- * notices through this port (`heavy-command-notices.ts`), which mobile never
- * writes because it has no slash dispatch, so those reads always miss
- * harmlessly. Do not add a consumer with stricter durability needs, or start
- * writing notices here, without revisiting this (`spec/ui/mobile/patterns.md`
- * § Chat).
+ * mirror costs a re-read, not data. `chat-core` also reads and writes
+ * heavy-command notices through this port (`heavy-command-notices.ts`). Mobile
+ * writes one since the chat + sheet's forms (#3865), when a record lands but
+ * its card doesn't post. Within a session the mirror holds it, and opening
+ * the channel merges it back (`hydrateOutboxIntoCache` →
+ * `mergePersistedNotices`); the boot hydrate reads only `chat:lastSeen:`
+ * keys, so after an app restart the `recorded` row is gone and its AsyncStorage
+ * copy is orphaned (#3922). Do not add
+ * a consumer with stricter durability needs without revisiting this
+ * (`spec/ui/mobile/patterns.md` § Chat).
  *
  * MMKV would give a genuinely synchronous store and remove the seam, but it
  * needs a native build and mobile currently runs in Expo Go

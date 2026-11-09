@@ -26,6 +26,8 @@ export function OnboardingSecondaryButton({
   busy = false,
   leading,
   accessibilityLabel,
+  accessibilityHint,
+  fill = false,
 }: {
   label: string;
   onPress: () => void;
@@ -33,6 +35,12 @@ export function OnboardingSecondaryButton({
   busy?: boolean;
   leading?: ReactNode;
   accessibilityLabel?: string;
+  accessibilityHint?: string;
+  /**
+   * Spans its container instead of the onboarding column, for a screen
+   * inside the chapter whose cards run the full gutter (Invite members).
+   */
+  fill?: boolean;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -41,11 +49,12 @@ export function OnboardingSecondaryButton({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? (busy ? label : undefined)}
       accessibilityState={{ disabled, busy }}
+      accessibilityHint={accessibilityHint}
       disabled={disabled}
       onPress={onPress}
       rippleColor={styles.ripple.color}
       heldStyle={styles.pressed}
-      style={styles.button}
+      style={[styles.button, fill ? null : styles.column]}
     >
       {busy ? (
         <ActivityIndicator color={tokens.color.text.foreground} />
@@ -63,10 +72,14 @@ export function OnboardingSecondaryButton({
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    button: {
-      width: "100%",
+    // The onboarding column: the button stops at the column's width and
+    // centers in a wider screen. `fill` leaves it out.
+    column: {
       maxWidth: ONBOARDING_COLUMN_WIDTH,
       alignSelf: "center",
+    },
+    button: {
+      width: "100%",
       flexDirection: "row",
       gap: tokens.spacing.sm,
       borderRadius: tokens.radius.control,

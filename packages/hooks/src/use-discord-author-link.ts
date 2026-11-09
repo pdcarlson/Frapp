@@ -45,6 +45,7 @@ export function useDiscordAuthorLink(options?: { enabled?: boolean }) {
 export function useBeginDiscordAuthorLink() {
   const client = useFrappClient();
   return useMutation({
+    mutationKey: ["discord-author-link", "begin-discord-author-link"],
     mutationFn: async () => {
       const { data, error } = await client.POST(
         "/v1/discord/author-link/start",
@@ -65,6 +66,7 @@ export function useConfirmDiscordAuthorLink() {
   const chapterId = useActiveChapterId();
 
   return useMutation({
+    mutationKey: ["discord-author-link", "confirm-discord-author-link"],
     mutationFn: async (vars: { handshake: string }) => {
       const { data, error } = await client.POST(
         "/v1/discord/author-link/confirm",
@@ -87,6 +89,7 @@ export function useUnlinkDiscordAuthor() {
   const chapterId = useActiveChapterId();
 
   return useMutation({
+    mutationKey: ["discord-author-link", "unlink-discord-author"],
     mutationFn: async () => {
       const { data, error } = await client.DELETE("/v1/discord/author-link");
       if (error) throw error;

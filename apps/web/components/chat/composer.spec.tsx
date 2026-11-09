@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { AUDIT_LOG_COMPOSER_NOTE } from "@repo/chat-core/audit-log-copy";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { act } from "react";
@@ -179,25 +180,30 @@ describe("Composer placeholder wiring", () => {
  * whether that dialog is currently open — a screen-reader user got no signal
  * distinguishing this from a plain action button.
  */
-describe("Composer slash-command trigger (#396)", () => {
-  it("reflects the palette's open state via aria-expanded, and opens a modal dialog", async () => {
+/**
+ * Opens the slash palette the way a keyboard member does: Cmd/Ctrl+/ from
+ * inside the composer. The toolbar's `/` button is gone since #3865 (the +
+ * menu replaced it), and typing `/` in the editor needs a real ProseMirror
+ * view, which jsdom doesn't host.
+ */
+async function openPalette(user: ReturnType<typeof userEvent.setup>) {
+  screen.getByRole("button", { name: /add a file, poll, event/i }).focus();
+  await user.keyboard("{Control>}/{/Control}");
+}
+
+describe("Composer slash palette (#396)", () => {
+  it("opens as a modal dialog on Cmd/Ctrl+/", async () => {
     const user = userEvent.setup();
     render(<Composer {...baseProps()} />);
 
-    const trigger = screen.getByRole("button", {
-      name: /open slash commands/i,
-    });
-    expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
-    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.queryByRole("button", { name: /open slash commands/i }),
+    ).toBeNull();
+    await openPalette(user);
 
-    await user.click(trigger);
-
-    expect(trigger).toHaveAttribute("aria-expanded", "true");
     // `findBy`, not `getBy`: the palette is a `next/dynamic` boundary now
     // (`cmdk` and a Radix Dialog are `chat-extras` under the board's `1s`
     // split), so the first open resolves a module before the dialog exists.
-    // `aria-expanded` above flips synchronously either way — the state that
-    // drives it is the composer's, not the palette's.
     expect(await screen.findByRole("dialog")).toHaveAttribute(
       "aria-modal",
       "true",
@@ -302,7 +308,9 @@ describe("Composer staged reply (#489)", () => {
     const onCancelReply = vi.fn();
     render(<Composer {...baseProps({ onCancelReply })} />);
 
-    await user.click(screen.getByRole("button", { name: /attach file/i }));
+    await user.click(
+      screen.getByRole("button", { name: /add a file, poll, event/i }),
+    );
     await user.keyboard("{Escape}");
 
     expect(onCancelReply).not.toHaveBeenCalled();
@@ -342,9 +350,7 @@ describe("Composer slash refusals cover the palette path too (#489)", () => {
     const user = userEvent.setup();
     const onSlashDispatch = vi.fn(async () => ({ ok: true }));
     render(<Composer {...baseProps({ onSlashDispatch, ...props })} />);
-    await user.click(
-      screen.getByRole("button", { name: /open slash commands/i }),
-    );
+    await openPalette(user);
     return { user, onSlashDispatch };
   }
 
@@ -367,9 +373,19 @@ describe("Composer slash refusals cover the palette path too (#489)", () => {
       isOffline: true,
     });
 
-    await user.click(await screen.findByRole("option", { name: /poll/i }));
+    await user.click(await screen.findByRole("option", { name: /^\/points/i }));
 
     expect(onSlashDispatch).not.toHaveBeenCalled();
+  });
+
+  it("lets /poll through offline, since a poll queues like a message (#3865)", async () => {
+    const { user, onSlashDispatch } = await pickFromPalette({
+      isOffline: true,
+    });
+
+    await user.click(await screen.findByRole("option", { name: /poll/i }));
+
+    await waitFor(() => expect(onSlashDispatch).toHaveBeenCalledTimes(1));
   });
 
   it("refuses when a file is staged, as the typed path does", async () => {
@@ -388,9 +404,7 @@ describe("Composer slash refusals cover the palette path too (#489)", () => {
     await user.upload(input, file);
     await screen.findByRole("button", { name: /remove notes\.pdf/i });
 
-    await user.click(
-      screen.getByRole("button", { name: /open slash commands/i }),
-    );
+    await openPalette(user);
     await user.click(await screen.findByRole("option", { name: /poll/i }));
 
     expect(onSlashDispatch).not.toHaveBeenCalled();
@@ -558,16 +572,26 @@ describe("Composer typed slash dispatch respects the module gate (#2993)", () =>
   it("says it needs a connection while offline, not that the modules are loading", async () => {
     // Offline, the module read can't answer either; "try again in a moment"
     // would be the wrong reason.
-    const { onSlashDispatch } = typeAndSend(POLL, {
-      isModuleEnabled: () => false,
-      slashCommandsStatus: "loading",
-      isOffline: true,
-    });
+    const { onSlashDispatch } = typeAndSend(
+      '/event "Formal" 2026-11-20 18:00-20:00',
+      {
+        isModuleEnabled: () => false,
+        slashCommandsStatus: "loading",
+        isOffline: true,
+      },
+    );
 
     expect(mockToast).toHaveBeenCalledWith(
-      expect.objectContaining({ title: "/poll needs a connection" }),
+      expect.objectContaining({ title: "/event needs a connection" }),
     );
     expect(onSlashDispatch).not.toHaveBeenCalled();
+  });
+
+  it("lets /announce through offline, since it queues like a message", () => {
+    const { onSlashDispatch } = typeAndSend("/announce Chapter at 7", {
+      isOffline: true,
+    });
+    expect(onSlashDispatch).toHaveBeenCalledTimes(1);
   });
 
   it("never gates a command with no module (/announce)", async () => {
@@ -1955,12 +1979,8 @@ describe("Composer hands a command to onOpenCommandForm before dispatching (#377
     const user = userEvent.setup();
     const onSlashDispatch = vi.fn(async () => ({ ok: true as const }));
     const onOpenCommandForm = vi.fn((): CommandFormOutcome => "opened");
-    render(
-      <Composer {...baseProps({ onSlashDispatch, onOpenCommandForm })} />,
-    );
-    await user.click(
-      screen.getByRole("button", { name: /open slash commands/i }),
-    );
+    render(<Composer {...baseProps({ onSlashDispatch, onOpenCommandForm })} />);
+    await openPalette(user);
     await user.click(await screen.findByRole("option", { name: /event/i }));
 
     expect(onOpenCommandForm).toHaveBeenCalledWith(
@@ -1982,9 +2002,7 @@ describe("Composer hands a command to onOpenCommandForm before dispatching (#377
         })}
       />,
     );
-    await user.click(
-      screen.getByRole("button", { name: /open slash commands/i }),
-    );
+    await openPalette(user);
     await user.click(await screen.findByRole("option", { name: /event/i }));
 
     expect(onOpenCommandForm).not.toHaveBeenCalled();
@@ -2003,9 +2021,7 @@ describe("Composer passes details typed into the palette's search (#3773)", () =
         })}
       />,
     );
-    await user.click(
-      screen.getByRole("button", { name: /open slash commands/i }),
-    );
+    await openPalette(user);
     await user.type(
       await screen.findByRole("combobox"),
       "event Chapter Dinner",
@@ -2069,9 +2085,7 @@ describe("Composer form handoff keeps the member's input on a refusal (#3773 rev
     const user = userEvent.setup();
     const onSlashDispatch = vi.fn(async () => ({ ok: true as const }));
     render(<Composer {...baseProps({ onSlashDispatch, ...overrides })} />);
-    await user.click(
-      screen.getByRole("button", { name: /open slash commands/i }),
-    );
+    await openPalette(user);
     const search = await screen.findByRole("combobox");
     await user.type(search, query);
     return { user, onSlashDispatch, search };
@@ -2132,5 +2146,123 @@ describe("Composer form handoff keeps the member's input on a refusal (#3773 rev
       expect.objectContaining({ name: "event" }),
       expect.stringContaining("Dinner"),
     );
+  });
+});
+
+/**
+ * #3865 — the + menu, driven through the composer: the rows it offers open
+ * their form through `onOpenCommandForm`, and the composer's own state (a
+ * staged reply, a staged file, offline) greys them. `plusMenuModel` is unit
+ * tested beside the menu; this pins that the composer feeds it.
+ */
+describe("Composer + menu (#3865)", () => {
+  const FORMS = [
+    { command: "poll" as const, roleAllows: true },
+    { command: "event" as const, roleAllows: true },
+  ];
+
+  async function openPlus(overrides: Partial<ComposerProps> = {}) {
+    const user = userEvent.setup();
+    const onOpenCommandForm = vi.fn((): CommandFormOutcome => "opened");
+    render(
+      <Composer
+        {...baseProps({ onOpenCommandForm, commandForms: FORMS, ...overrides })}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: /add a file, poll, event/i }),
+    );
+    return { user, onOpenCommandForm };
+  }
+
+  it("sits first on the toolbar: + · emoji · help", () => {
+    render(<Composer {...baseProps({ commandForms: FORMS })} />);
+    const plus = screen.getByRole("button", {
+      name: /add a file, poll, event/i,
+    });
+    const emoji = screen.getByRole("button", { name: /open emoji picker/i });
+    expect(
+      plus.compareDocumentPosition(emoji) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("opens the form a bare command opens", async () => {
+    const { user, onOpenCommandForm } = await openPlus();
+    await user.click(await screen.findByRole("menuitem", { name: /poll/i }));
+    expect(onOpenCommandForm).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "poll" }),
+      "",
+    );
+  });
+
+  it("greys the rows while a reply is staged", async () => {
+    await openPlus({
+      replyTo: { id: "msg-1", author: "Alice Chen", preview: "the original" },
+    });
+    expect(
+      await screen.findByRole("menuitem", { name: /event/i }),
+    ).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("menuitem", { name: /poll/i })).toHaveTextContent(
+      "Not while replying",
+    );
+  });
+
+  it("greys the rows while a file is staged", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <Composer {...baseProps({ commandForms: FORMS })} />,
+    );
+    await user.upload(
+      container.querySelector<HTMLInputElement>('input[type="file"]')!,
+      new File(["x"], "notes.pdf", { type: "application/pdf" }),
+    );
+    await screen.findByRole("button", { name: /remove notes\.pdf/i });
+    await user.click(
+      screen.getByRole("button", { name: /add a file, poll, event/i }),
+    );
+    expect(
+      await screen.findByRole("menuitem", { name: /poll/i }),
+    ).toHaveTextContent("Send the file first");
+  });
+
+  it("greys the rows while the module read is still loading", async () => {
+    await openPlus({ slashCommandsStatus: "loading" });
+    expect(
+      await screen.findByRole("menuitem", { name: /event/i }),
+    ).toHaveTextContent("Still loading");
+  });
+
+  it("greys Event offline and keeps Poll, which queues", async () => {
+    await openPlus({ isOffline: true });
+    expect(
+      await screen.findByRole("menuitem", { name: /event/i }),
+    ).toHaveTextContent("Reconnect first");
+    expect(screen.getByRole("menuitem", { name: /poll/i })).not.toHaveAttribute(
+      "aria-disabled",
+    );
+  });
+});
+
+// #3909: `#chapter-audit` is system-write only. The server already refuses a
+// post there; the composer gives way to a line that says why, even for a
+// caller the capability projection has not reached yet.
+describe("Composer in the audit log", () => {
+  it("shows the audit log line instead of a composer, whatever canPost says", () => {
+    render(
+      <Composer
+        {...baseProps({
+          channelName: "chapter-audit",
+          isReadOnly: true,
+          isAuditLog: true,
+          canPost: true,
+        })}
+      />,
+    );
+    expect(
+      screen.getByText(AUDIT_LOG_COMPOSER_NOTE),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("This channel is read-only for your role."),
+    ).not.toBeInTheDocument();
   });
 });

@@ -84,6 +84,7 @@ export function useCreateDocumentFolder() {
   const client = useFrappClient();
   const invalidate = useInvalidateDocumentFolders();
   return useMutation({
+    mutationKey: ["documents", "create-document-folder"],
     mutationFn: async (body: { name: string; sort_order?: number }) => {
       const { data, error } = await client.POST("/v1/documents/folders", {
         body,
@@ -100,6 +101,7 @@ export function useUpdateDocumentFolder() {
   const client = useFrappClient();
   const invalidate = useInvalidateDocumentFolders();
   return useMutation({
+    mutationKey: ["documents", "update-document-folder"],
     mutationFn: async ({
       id,
       ...body
@@ -123,6 +125,7 @@ export function useDeleteDocumentFolder() {
   const client = useFrappClient();
   const invalidate = useInvalidateDocumentFolders();
   return useMutation({
+    mutationKey: ["documents", "delete-document-folder"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.DELETE(
         "/v1/documents/folders/{id}",
@@ -135,7 +138,7 @@ export function useDeleteDocumentFolder() {
   });
 }
 
-export function useDocument(id: string) {
+export function useDocument(id: string, options?: { enabled?: boolean }) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["documents", id],
@@ -147,7 +150,7 @@ export function useDocument(id: string) {
       return data;
     },
     staleTime: 60_000,
-    enabled: !!id,
+    enabled: !!id && (options?.enabled ?? true),
   });
 }
 
@@ -165,6 +168,7 @@ export function useDocument(id: string) {
 export function useDocumentDownloadUrl() {
   const client = useFrappClient();
   return useMutation({
+    mutationKey: ["documents", "document-download-url"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.GET("/v1/documents/{id}", {
         params: { path: { id } },
@@ -178,6 +182,7 @@ export function useDocumentDownloadUrl() {
 export function useRequestDocumentUploadUrl() {
   const client = useFrappClient();
   return useMutation({
+    mutationKey: ["documents", "request-document-upload-url"],
     // The generated body, so `size_bytes` reaches the API's own size check
     // from the phone (#3399); web's call site still omits it (#1515).
     mutationFn: async (
@@ -196,6 +201,7 @@ export function useConfirmDocumentUpload() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["documents", "confirm-document-upload"],
     mutationFn: async (
       body: components["schemas"]["ConfirmDocumentUploadDto"],
     ) => {
@@ -213,6 +219,7 @@ export function useDeleteDocument() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["documents", "delete-document"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.DELETE("/v1/documents/{id}", {
         params: { path: { id } },
