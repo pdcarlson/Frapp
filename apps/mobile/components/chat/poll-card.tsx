@@ -2,7 +2,6 @@ import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
   POLL_VOTE_ACTION_TYPE,
-  pollsGateOf,
   pollsGateReason,
   readPollPayload,
   tallyPollVotes,
@@ -10,10 +9,10 @@ import {
 } from "@repo/chat-core/polls";
 import { parseInstant } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
-import { isModuleEnabled } from "@repo/validation";
 import { useChapterBranding, type ChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import { useCurrentChapter, useNow } from "@repo/hooks";
+import { useNow } from "@repo/hooks";
+import { usePollsGate } from "@/lib/chat/use-polls-gate";
 import {
   CardEyebrow,
   CardTitle,
@@ -47,10 +46,12 @@ import {
  * the standalone `/polls` dashboard page and its own `poll_votes` table;
  * `chat_messages.type='POLL'` rows they create default to `kind: 'text'`
  * (never set by `PollService.createPoll`) and so never reach this renderer.
- * The `/poll` slash command (`packages/chat-core/src/dispatch.ts`) is the
- * only thing that creates a `kind: 'poll'` message, and it votes through
- * `chat_message_actions`, not `poll_votes` — confirmed by reading both
- * paths before choosing which one to mirror.
+ * A `kind: 'poll'` message is created only by web's `/poll` slash command
+ * (`packages/chat-core/src/dispatch.ts`) and this app's New poll sheet
+ * (`new-poll-sheet.tsx`, #3701), both through `buildPollMessage` in
+ * `@repo/chat-core/polls`, and it votes through `chat_message_actions`, not
+ * `poll_votes` — confirmed by reading both paths before choosing which one
+ * to mirror.
  */
 
 /**
@@ -80,19 +81,10 @@ export function PollCard(props: PollCardProps) {
   const now = useNow();
   // A card vote is a Polls write, and the server refuses it while Polls is off
   // (#2993). The gate is mirrored here so the member sees that before tapping
-  // (#3012). It reads the member view (`useCurrentChapter`'s
-  // `enabled_modules`, as `app/(app)/study.tsx` does), never the officer-only
-  // config, and fails closed until that read answers, saying whether it is
-  // still running or needs a Retry (`pollsGateOf`, shared with web). A missing
-  // `polls` key is on.
-  const chapterQuery = useCurrentChapter();
-  const pollsGate = pollsGateOf({
-    pollsEnabled:
-      chapterQuery.data === undefined
-        ? undefined
-        : isModuleEnabled(chapterQuery.data?.enabled_modules, "polls"),
-    fetchStatus: chapterQuery.fetchStatus,
-  });
+  // (#3012), failing closed until the chapter read answers and saying whether
+  // it is still running or needs a Retry (`usePollsGate`, which the
+  // composer's Poll offer reads too).
+  const { gate: pollsGate, recheck: recheckPolls } = usePollsGate();
 
   const {
     byOption,
@@ -204,7 +196,7 @@ export function PollCard(props: PollCardProps) {
               accessibilityRole="button"
               accessibilityLabel="Retry checking whether polls are on"
               hitSlop={8}
-              onPress={() => void chapterQuery.refetch()}
+              onPress={recheckPolls}
             >
               <Text style={styles.retryText}>Retry</Text>
             </Pressable>

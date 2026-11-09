@@ -37,7 +37,7 @@ const EVENTS = [
 
 const eventsQuery: { data: unknown } = { data: EVENTS };
 const permissionsRef: { current: string[] } = {
-  current: ["events:create", "events:update"],
+  current: ["events:create", "events:update", "members:view"],
 };
 
 vi.mock("@repo/hooks", () => ({
@@ -102,7 +102,7 @@ const row = (name: RegExp) => {
 beforeEach(() => {
   vi.clearAllMocks();
   eventsQuery.data = EVENTS;
-  permissionsRef.current = ["events:create", "events:update"];
+  permissionsRef.current = ["events:create", "events:update", "members:view"];
 });
 
 describe("EventsPage list", () => {
@@ -348,6 +348,18 @@ describe("EventsPage empty states", () => {
 
     expect(screen.getByText("No events yet.")).toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: /select all/i })).toBeNull();
+  });
+
+  it("offers no create control to a role with events:create but not members:view, which the API refuses", () => {
+    // `EVENT_CREATE_PERMISSIONS`: `POST /v1/events` needs both.
+    permissionsRef.current = ["events:create"];
+    eventsQuery.data = [];
+    render(<EventsPage />);
+
+    expect(screen.queryByRole("button", { name: /new event/i })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /^create event on/i }),
+    ).toBeNull();
   });
 
   it("gives a member the calendar without a create control", () => {

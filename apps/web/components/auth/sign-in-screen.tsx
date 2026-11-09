@@ -7,6 +7,7 @@ import {
   SESSION_ENDED_PARAM,
   SESSION_ENDED_VALUE,
 } from "@/lib/auth/rejected-session";
+import { JOIN_FROM_SIGN_IN_PATH } from "@/lib/auth/join-visit";
 import { Loader2 } from "lucide-react";
 import { AuthModeToggle } from "@/components/auth/auth-mode-toggle";
 import { AuthDivider, AuthScreen } from "@/components/auth/auth-screen";
@@ -310,9 +311,11 @@ function SignInPageContent() {
  * bounced back to this form, with any invite they arrived with dropped on the
  * way. Instead:
  *
- * - Not yet headed to `/join`: "Join your chapter" points this form at `/join`
- *   (`?redirectTo=/join`), so an existing account signs in above and lands
- *   there, where its emailed invites are offered. The footer then changes to:
+ * - Not yet headed to `/join`: "Join your chapter" points this form at
+ *   `/join?from=sign-in` (`JOIN_FROM_SIGN_IN_PATH`), so an existing account
+ *   signs in above and lands there, where its emailed invites are offered. A
+ *   member with access and no emailed invite goes on to `/chat` instead
+ *   (#3850). The footer then changes to:
  * - Headed to `/join` (with or without an invite): "Create an account" opens
  *   sign-up carrying that `redirectTo`, so a new account lands on `/join` with
  *   its invite intact. The toggle carries it too.
@@ -335,7 +338,9 @@ function SignInFooter({ redirectTo }: { redirectTo: string }) {
     <p>
       Have an invite?{" "}
       <Link
-        href={`/sign-in?redirectTo=${encodeURIComponent("/join")}`}
+        // Marked, so a member who signs in here lands in their chapter, not
+        // on a join form they don't need (#3850).
+        href={`/sign-in?redirectTo=${encodeURIComponent(JOIN_FROM_SIGN_IN_PATH)}`}
         className="font-semibold text-accent-text hover:underline"
       >
         Join your chapter

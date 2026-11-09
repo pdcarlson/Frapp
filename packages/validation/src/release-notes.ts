@@ -1,15 +1,22 @@
 /**
  * What's new, in members' words: the one list behind mobile Settings → What's
- * new, web's account menu → What's new, and the block Paul pastes to beta
- * testers (`npm run release-notes`).
+ * new, web's account menu → What's new, the public changelog at
+ * frapp.live/changelog (`apps/landing/app/changelog/page.tsx`), and the block
+ * Paul pastes to beta testers (`npm run release-notes`).
+ *
+ * The changelog is public and indexed, so every line is read by people who
+ * have never opened the app. The writing rules below are the whole set for an
+ * entry, there and everywhere else; the landing page's own rules bind its page
+ * copy, not these lines (spec/ui/landing/README.md § Section inventory).
  *
  * Newest first. Each entry is one batch of changes that reached members on
  * `date` (a store build or an over-the-air update; members never see which).
  *
  * How to write a line: say what a member can now do or will notice, the way
  * you'd tell a friend. No feature codes, issue numbers, version strings,
- * screen ids, or emojis. A bit vague is fine; wrong is not, so only list what
- * is merged and shipped. Five to eight lines a new entry, each one sentence.
+ * screen ids, emojis, or em dashes. A bit vague is fine; wrong is not, so
+ * only list what is merged and shipped. Five to eight lines a new entry, each
+ * one sentence.
  *
  * Mobile opens the newest entry by itself once after an update
  * (`apps/mobile/lib/whats-new.ts`), and a phone remembers how many lines it

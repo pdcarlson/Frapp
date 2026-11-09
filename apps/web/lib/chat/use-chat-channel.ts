@@ -81,7 +81,9 @@ import type { ReplayRequest } from "@repo/chat-core/types";
 import {
   dispatchSlashCommand,
   retryPointsDispatch,
+  trackEventCard,
   type DispatchResult,
+  type EventCardTrack,
   type ResolveMember,
 } from "@repo/chat-core/dispatch";
 import type { SlashCommand } from "@repo/chat-core/integrations";
@@ -152,6 +154,8 @@ export interface UseChatChannelResult {
     announcementsChannelId: string | null,
     resolveMember?: ResolveMember,
   ) => Promise<DispatchResult>;
+  /** The event form's card bookkeeping in a channel (#3773, `trackEventCard`). */
+  trackEventCard: (channelId: string, name: string) => EventCardTrack;
   /** Card action invoker (Vote, RSVP, …). Goes through the NestJS chat actions endpoint (ADR-11). */
   act: (
     messageId: string,
@@ -582,6 +586,15 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, ctx],
   );
 
+  // The event form's card bookkeeping, for whichever channel the form posts to
+  // (#3773). Takes the channel rather than this hook's, since a form can
+  // outlive a channel switch.
+  const trackEventCardCb = useCallback(
+    (targetChannelId: string, name: string) =>
+      trackEventCard(ctx, targetChannelId, name),
+    [ctx],
+  );
+
   // Best-effort flush whenever the connection comes live for this channel.
   useEffect(() => {
     if (connection !== "live") return;
@@ -619,6 +632,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     discard,
     retryUnconfirmed,
     dispatchSlash,
+    trackEventCard: trackEventCardCb,
     act,
   };
 }

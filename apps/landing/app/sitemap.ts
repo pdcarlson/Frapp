@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { RELEASE_NOTES } from "@repo/validation";
 
 const baseUrl = "https://frapp.live";
 
@@ -9,6 +10,21 @@ export default function sitemap(): MetadataRoute.Sitemap {
       lastModified: new Date(),
       changeFrequency: "weekly",
       priority: 1,
+    },
+    {
+      url: `${baseUrl}/about`,
+      lastModified: new Date(),
+      changeFrequency: "monthly",
+      priority: 0.7,
+    },
+    {
+      // Dated by its newest entry, so a crawler sees it change when one lands.
+      url: `${baseUrl}/changelog`,
+      lastModified: RELEASE_NOTES[0]
+        ? new Date(`${RELEASE_NOTES[0].date}T00:00:00Z`)
+        : new Date(),
+      changeFrequency: "weekly",
+      priority: 0.7,
     },
     {
       url: `${baseUrl}/terms`,
