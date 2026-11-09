@@ -56,6 +56,7 @@ import {
 import {
   can,
   canAll,
+  EVENT_CREATE_PERMISSIONS,
   isAnnouncementChannel,
   type MentionCandidate,
   type MentionChipTargets,
@@ -111,7 +112,12 @@ import {
   MessageTimelineSkeleton,
   type MessageTimelineHandle,
 } from "./message-timeline";
-import { Composer, ComposerShell, notifyDispatchOutcome } from "./composer";
+import {
+  Composer,
+  ComposerShell,
+  notifyDispatchOutcome,
+  type CommandFormOutcome,
+} from "./composer";
 import {
   canBlockSender,
   channelAllowsReplies,
@@ -215,6 +221,19 @@ const UNREACHABLE_COPY: Record<UnreachableReason, string> = {
 };
 
 /**
+ * A typed `/event` date and clock time as a `datetime-local` value, or
+ * `undefined` unless both are there (the form's field takes neither alone).
+ */
+export function prefillLocalInput(
+  date: string | undefined,
+  time: string | undefined,
+): string | undefined {
+  if (!date || !time) return undefined;
+  const [hours = "", minutes = ""] = time.split(":");
+  return `${date}T${hours.padStart(2, "0")}:${minutes}`;
+}
+
+/**
  * The chat surface: channels column, then thread and composer.
  *
  * **Two columns, flush, full height** (`1b`). It was three, the third being a
@@ -240,25 +259,6 @@ const UNREACHABLE_COPY: Record<UnreachableReason, string> = {
  * the last exception and is one too, as of #2145.
  */
 
-/**
- * What `POST /v1/events` needs: the route's `events:create` and the
- * controller's class-level `members:view` (mobile's `new-event-sheet.tsx`
- * gates its button on the same pair).
- */
-const EVENT_CREATE_PERMISSIONS = ["events:create", "members:view"] as const;
-
-/**
- * A typed `/event` date and clock time as a `datetime-local` value, or
- * `undefined` unless both are there (the form's field takes neither alone).
- */
-export function prefillLocalInput(
-  date: string | undefined,
-  time: string | undefined,
-): string | undefined {
-  if (!date || !time) return undefined;
-  const [hours = "", minutes = ""] = time.split(":");
-  return `${date}T${hours.padStart(2, "0")}:${minutes}`;
-}
 export function ChatShell({
   initialChannelId = null,
   initialMessageId = null,
@@ -944,9 +944,9 @@ export function ChatShell({
     prefill: EventFormPrefill;
   } | null>(null);
   const openCommandForm = useCallback(
-    (command: SlashCommand, args: string): boolean => {
-      if (command.name !== "event" || !activeChannelId) return false;
-      if (parseEventArgs(args).ok) return false;
+    (command: SlashCommand, args: string): CommandFormOutcome => {
+      if (command.name !== "event" || !activeChannelId) return null;
+      if (parseEventArgs(args).ok) return null;
       // Unknown until the read lands, and the server enforces it either way,
       // so only a loaded grant without it refuses before the form opens.
       if (
@@ -959,14 +959,14 @@ export function ChatShell({
             "Your role doesn't include creating events. An officer can add it in Settings.",
           variant: "destructive",
         });
-        return true;
+        return "refused";
       }
       setEventForm({
         open: true,
         channelId: activeChannelId,
         prefill: eventFormPrefill(args),
       });
-      return true;
+      return "opened";
     },
     [activeChannelId, permissionsPayload, toast],
   );
@@ -2572,6 +2572,7 @@ export function ChatShell({
             eventForm.prefill.endTime,
           )}
           postToChannelId={eventForm.channelId}
+          trackChatCard={channel.trackEventCard}
         />
       ) : null}
       <ReportMessageDialog

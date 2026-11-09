@@ -17,7 +17,12 @@ import {
 } from "@/components/events/chapter-ops-glyphs";
 import { AttendanceEditor } from "@/components/events/attendance-editor";
 import { MoreOptionsToggle } from "@/components/ui/more-options-toggle";
-import { useCreateEvent, useRoles, useUpdateEvent } from "@repo/hooks";
+import {
+  EVENT_CREATE_UNCONFIRMED,
+  useCreateEvent,
+  useRoles,
+  useUpdateEvent,
+} from "@repo/hooks";
 import {
   RECURRENCE_REPEAT_LABELS,
   RECURRENCE_RULES,
@@ -59,6 +64,7 @@ import {
 } from "@/lib/utils";
 import { parseInstant } from "@repo/formatting";
 import { randomClientId } from "@repo/api-sdk";
+import type { EventCardTrack } from "@repo/chat-core/dispatch";
 
 type EventRecord = Record<string, unknown>;
 
@@ -242,6 +248,14 @@ type EventEditorDialogProps = {
    * says so. Ignored in edit mode.
    */
   postToChannelId?: string;
+  /**
+   * The chat's card bookkeeping for `postToChannelId` (`trackEventCard`): a
+   * `loading` placeholder in the channel while the create runs, dropped on a
+   * refusal, and kept as a durable "card didn't post" row when the event
+   * committed without its card, as the one-liner does. Without it the create
+   * still posts its card, with no placeholder.
+   */
+  trackChatCard?: (channelId: string, name: string) => EventCardTrack;
 };
 
 export function EventEditorDialog({
@@ -258,6 +272,7 @@ export function EventEditorDialog({
   initialLocation,
   initialPointValue,
   postToChannelId,
+  trackChatCard,
 }: EventEditorDialogProps) {
   const createEventMutation = useCreateEvent();
   const updateEventMutation = useUpdateEvent();
@@ -504,40 +519,50 @@ export function EventEditorDialog({
         // one for an event that keeps anyone out (`EventService.create`).
         const cardKeptOut =
           postToChannelId !== undefined && eventLimitsAudience(wire);
-        const postsCard = postToChannelId !== undefined && !cardKeptOut;
-        const created = await createEventMutation.mutateAsync({
-          ...payload,
-          ...(postsCard
-            ? {
-                channel_id: postToChannelId,
-                client_message_id: randomClientId(),
-              }
-            : {}),
-          ...(wire.required_role_ids.length > 0
-            ? { required_role_ids: wire.required_role_ids }
-            : {}),
-          ...(othersInvitedForCreate(wire) !== undefined
-            ? { others_invited: othersInvitedForCreate(wire) }
-            : {}),
-          ...(wire.optional_role_ids.length > 0
-            ? { optional_role_ids: wire.optional_role_ids }
-            : {}),
-          ...(wire.excluded_role_ids.length > 0
-            ? { excluded_role_ids: wire.excluded_role_ids }
-            : {}),
-          ...(zone.length > 0
-            ? {
-                check_in_zone: zone,
-                ...(zoneName ? { check_in_zone_name: zoneName } : {}),
-              }
-            : {}),
-        });
-        toast(
-          createdToast(payload.name, {
-            cardKeptOut,
-            cardLost: postsCard && created?.card_posted === false,
-          }),
-        );
+        const card =
+          postToChannelId !== undefined && !cardKeptOut
+            ? (trackChatCard?.(postToChannelId, payload.name) ?? {
+                clientMessageId: randomClientId(),
+                failed: () => undefined,
+                lost: () => undefined,
+              })
+            : null;
+        let created: { card_posted?: boolean } | undefined;
+        try {
+          created = await createEventMutation.mutateAsync({
+            ...payload,
+            ...(card
+              ? {
+                  channel_id: postToChannelId,
+                  client_message_id: card.clientMessageId,
+                }
+              : {}),
+            ...(wire.required_role_ids.length > 0
+              ? { required_role_ids: wire.required_role_ids }
+              : {}),
+            ...(othersInvitedForCreate(wire) !== undefined
+              ? { others_invited: othersInvitedForCreate(wire) }
+              : {}),
+            ...(wire.optional_role_ids.length > 0
+              ? { optional_role_ids: wire.optional_role_ids }
+              : {}),
+            ...(wire.excluded_role_ids.length > 0
+              ? { excluded_role_ids: wire.excluded_role_ids }
+              : {}),
+            ...(zone.length > 0
+              ? {
+                  check_in_zone: zone,
+                  ...(zoneName ? { check_in_zone_name: zoneName } : {}),
+                }
+              : {}),
+          });
+        } catch (error) {
+          card?.failed();
+          throw error;
+        }
+        const cardLost = card !== null && created?.card_posted === false;
+        if (cardLost) card.lost();
+        toast(createdToast(payload.name, { cardKeptOut, cardLost }));
       } else {
         if (!eventId) return;
         await updateEventMutation.mutateAsync({
@@ -564,9 +589,13 @@ export function EventEditorDialog({
         });
       }
     } catch (error) {
+      // A lost answer isn't a refusal: the event may exist (#1717).
+      const unconfirmed =
+        error instanceof Error && error.message === EVENT_CREATE_UNCONFIRMED;
       toast({
-        title:
-          mode === "create"
+        title: unconfirmed
+          ? "Couldn't confirm the event"
+          : mode === "create"
             ? "Could not create event"
             : "Could not update event",
         description: getErrorMessage(

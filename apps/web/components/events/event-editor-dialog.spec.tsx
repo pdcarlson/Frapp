@@ -19,6 +19,7 @@ const { createMutate, updateMutate, mockCurrentChapter, mockToast } =
   }));
 
 vi.mock("@repo/hooks", () => ({
+  EVENT_CREATE_UNCONFIRMED: "unconfirmed-sentinel",
   useCreateEvent: () => ({ mutateAsync: createMutate, isPending: false }),
   useUpdateEvent: () => ({ mutateAsync: updateMutate, isPending: false }),
   useRoles: () => ({
@@ -713,6 +714,7 @@ describe("EventEditorDialog opened from chat (#3773)", () => {
       initialEndAt: "2026-11-12T20:00",
     });
     expect(screen.getByLabelText("Event name")).toHaveValue("Chapter Dinner");
+    expect(screen.getByLabelText("Location")).toHaveValue("Main House");
     expect(screen.getByLabelText("Start")).toHaveValue("2026-11-12T18:00");
     expect(screen.getByLabelText("End")).toHaveValue("2026-11-12T20:00");
     expect(
@@ -778,6 +780,46 @@ describe("EventEditorDialog opened from chat (#3773)", () => {
           title: "Event created",
           description: expect.stringMatching(/card couldn't be posted/),
         }),
+      ),
+    );
+  });
+
+  it("keeps a durable row in chat when the card didn't post, through the chat's tracker", async () => {
+    createMutate.mockResolvedValue({ card_posted: false });
+    const track = { clientMessageId: "22222222-2222-4222-8222-222222222222", failed: vi.fn(), lost: vi.fn() };
+    const trackChatCard = vi.fn(() => track);
+    renderFromChat({ trackChatCard });
+    fillRequiredFields();
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() => expect(track.lost).toHaveBeenCalledTimes(1));
+    expect(trackChatCard).toHaveBeenCalledWith(CHANNEL, "Exec Sync");
+    expect(createMutate.mock.calls[0]![0].client_message_id).toBe(
+      track.clientMessageId,
+    );
+    expect(track.failed).not.toHaveBeenCalled();
+  });
+
+  it("drops the chat placeholder when the create is refused", async () => {
+    createMutate.mockRejectedValue(new Error("Forbidden"));
+    const track = { clientMessageId: "33333333-3333-4333-8333-333333333333", failed: vi.fn(), lost: vi.fn() };
+    renderFromChat({ trackChatCard: () => track });
+    fillRequiredFields();
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() => expect(track.failed).toHaveBeenCalledTimes(1));
+    expect(track.lost).not.toHaveBeenCalled();
+  });
+
+  it("says it couldn't confirm, not that it failed, when the answer was lost", async () => {
+    createMutate.mockRejectedValue(new Error("unconfirmed-sentinel"));
+    renderFromChat();
+    fillRequiredFields();
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Couldn't confirm the event" }),
       ),
     );
   });

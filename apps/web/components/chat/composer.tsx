@@ -458,12 +458,16 @@ interface ComposerBaseProps {
   ) => Promise<DispatchResult>;
   /**
    * Offered every implemented command before it dispatches, typed or picked
-   * from the palette, once the composer's own refusals have passed. Returns
-   * `true` when it took the command over (it opened a form for one typed bare
-   * or with details the one-liner can't read, #3773), and the composer then
-   * clears itself without dispatching.
+   * from the palette, once the composer's own refusals have passed (#3773).
+   * `"opened"`: it opened a form for a command typed bare or with details the
+   * one-liner can't read, and the composer clears itself without dispatching.
+   * `"refused"`: it said why the command can't run, and the composer keeps the
+   * member's text (and the palette's) where it is. `null`: dispatch as usual.
    */
-  onOpenCommandForm?: (command: SlashCommand, args: string) => boolean;
+  onOpenCommandForm?: (
+    command: SlashCommand,
+    args: string,
+  ) => CommandFormOutcome;
   onTyping: () => void;
   /**
    * The chapter's module gate. The palette filters by it, and a typed module
@@ -696,6 +700,9 @@ export async function runDispatch(
  * so the server's idempotency index (#1719) does not dedupe it and a second
  * ledger row lands.
  */
+/** What `onOpenCommandForm` did with a command; `null` hands it to dispatch. */
+export type CommandFormOutcome = "opened" | "refused" | null;
+
 export function notifyDispatchOutcome(
   toast: ReturnType<typeof useToast>["toast"],
   commandName: string,
@@ -1305,8 +1312,11 @@ export function Composer({
           toast({ ...refusal, variant: "destructive" });
           return;
         }
+        // Asked before clearing: a refusal keeps the member's text to fix.
+        const form = onOpenCommandForm?.(command, parsed.args) ?? null;
+        if (form === "refused") return;
         editor.commands.clearContent(true);
-        if (onOpenCommandForm?.(command, parsed.args)) return;
+        if (form === "opened") return;
         void (async () => {
           notifyDispatchOutcome(
             toast,
@@ -1637,10 +1647,10 @@ export function Composer({
         paletteCommandArgs(palette.query, command, {
           recruitment: recruitmentVocab,
         }) ?? "";
-      setPalette({ open: false, query: "" });
       // Implemented commands route through dispatch; unimplemented ones keep
       // the "coming soon" toast so the Chunk 10 stubs still surface intent.
       if (!command.implemented || !onSlashDispatch) {
+        setPalette({ open: false, query: "" });
         toast({
           title: `/${slashToken(command)}`,
           description:
@@ -1653,6 +1663,9 @@ export function Composer({
       // a way around all three: picking `/poll` while offline, with a file
       // staged, or with a reply staged dispatched anyway and dropped whichever
       // context could not ride along.
+      //
+      // A refusal leaves the palette open: what the member typed after `/`
+      // lives in its search box, and closing it would throw that away.
       const refusal = slashRefusal(command);
       if (refusal) {
         toast({ ...refusal, variant: "destructive" });
@@ -1663,12 +1676,18 @@ export function Composer({
       const typed = parsed.command
         ? getSlashCommand(parsed.command, { recruitment: recruitmentVocab })
         : undefined;
-      const args = typed?.name === command.name ? parsed.args : paletteArgs;
+      // The palette's details win: the editor holds at most the command word
+      // the palette opened on, and its arguments only when pasted in whole.
+      const editorArgs = typed?.name === command.name ? parsed.args : "";
+      const args = paletteArgs || editorArgs;
+      const form = onOpenCommandForm?.(command, args) ?? null;
+      if (form === "refused") return;
+      setPalette({ open: false, query: "" });
       // Clear the composer optimistically — the dispatch enqueues the message
       // through the same hot path as `onSend`, so the optimistic card appears
       // immediately and a toast surfaces any parse / authz failure.
       if (editor) editor.commands.clearContent(true);
-      if (onOpenCommandForm?.(command, args)) return;
+      if (form === "opened") return;
       notifyDispatchOutcome(
         toast,
         slashToken(command),

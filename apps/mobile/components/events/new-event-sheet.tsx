@@ -29,6 +29,7 @@ import {
   RECURRENCE_REPEAT_LABELS,
   RECURRENCE_RULES,
   canAll,
+  EVENT_CREATE_PERMISSIONS,
   describeAttendance,
   isRecurrenceRule,
 } from "@repo/validation";
@@ -143,18 +144,12 @@ export interface NewEventSheetProps {
   onDeleted?: () => void;
 }
 
-/**
- * The permissions `POST /v1/events` needs: the route's `events:create`, plus
- * the controller's class-level `members:view`, which `PermissionsGuard`
- * requires alongside it. Offering the button on `events:create` alone would
- * hand a custom role a sheet whose every save is refused.
- */
-const CREATE_EVENT_PERMISSIONS = ["events:create", "members:view"] as const;
-
 /** Whether the viewer may create events. */
 export function useCanCreateEvents(): boolean {
   // `canAll`, not `includes`: an owner's grant is the wildcard `*`.
-  return canAll(CREATE_EVENT_PERMISSIONS, usePermissionList());
+  // `EVENT_CREATE_PERMISSIONS`: the route's `events:create` and the
+  // controller's class-level `members:view`, which the API requires together.
+  return canAll(EVENT_CREATE_PERMISSIONS, usePermissionList());
 }
 
 /** Whether the viewer may edit, and delete, any event in the chapter. */

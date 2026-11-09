@@ -36,6 +36,13 @@ export function useEvent(id: string) {
   });
 }
 
+/**
+ * Why `useCreateEvent` rejected when the server's answer was lost: the event
+ * may exist. Callers show it as is.
+ */
+export const EVENT_CREATE_UNCONFIRMED =
+  "The server didn't confirm it. Check the Events calendar before trying again: the event may already be there.";
+
 export function useCreateEvent() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
@@ -69,8 +76,15 @@ export function useCreateEvent() {
       channel_id?: string;
       client_message_id?: string;
     }) => {
-      const { data, error } = await client.POST("/v1/events", { body });
+      const { data, error, response } = await client.POST("/v1/events", {
+        body,
+      });
       if (error) throw error;
+      // A gateway 502/504 with no body comes back as `{ error: undefined }`
+      // (or ""), so `error` alone would read it as a create. The origin may or
+      // may not have written the row, and the route has no dedupe, so say so
+      // rather than "failed", which invites a duplicate (#1717).
+      if (!response.ok) throw new Error(EVENT_CREATE_UNCONFIRMED);
       return data;
     },
     onSuccess: () => {

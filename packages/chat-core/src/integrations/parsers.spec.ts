@@ -504,9 +504,28 @@ describe("eventFormPrefill (#3773)", () => {
     });
   });
 
-  it("reads an unterminated quote as closed", () => {
+  it("drops an unterminated quote", () => {
     expect(eventFormPrefill('"Chapter Dinner')).toEqual({
       name: "Chapter Dinner",
+    });
+  });
+
+  it("keeps the fields after a forgotten closing quote in their own slots", () => {
+    expect(
+      eventFormPrefill('"Chapter Dinner 2026-05-01 19:00-21:00 Hall'),
+    ).toEqual({
+      name: "Chapter Dinner",
+      date: "2026-05-01",
+      startTime: "19:00",
+      endTime: "21:00",
+      location: "Hall",
+    });
+  });
+
+  it("drops only the unterminated quote when an earlier pair is closed", () => {
+    expect(eventFormPrefill('"Formal" 2026-05-01 "Main House')).toEqual({
+      name: "Formal",
+      date: "2026-05-01",
     });
   });
 
@@ -545,6 +564,14 @@ describe("eventFormPrefill (#3773)", () => {
   it("keeps an invalid date in the name rather than inventing one", () => {
     expect(eventFormPrefill("Formal 2026-02-30")).toEqual({
       name: "Formal 2026-02-30",
+    });
+  });
+
+  it("takes points= straight after the date, where a time range was expected", () => {
+    expect(eventFormPrefill("Dinner 2026-05-01 points=5")).toEqual({
+      name: "Dinner",
+      date: "2026-05-01",
+      pointValue: 5,
     });
   });
 

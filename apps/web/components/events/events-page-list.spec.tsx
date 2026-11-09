@@ -37,7 +37,7 @@ const EVENTS = [
 
 const eventsQuery: { data: unknown } = { data: EVENTS };
 const permissionsRef: { current: string[] } = {
-  current: ["events:create", "events:update"],
+  current: ["events:create", "events:update", "members:view"],
 };
 
 vi.mock("@repo/hooks", () => ({
@@ -102,7 +102,7 @@ const row = (name: RegExp) => {
 beforeEach(() => {
   vi.clearAllMocks();
   eventsQuery.data = EVENTS;
-  permissionsRef.current = ["events:create", "events:update"];
+  permissionsRef.current = ["events:create", "events:update", "members:view"];
 });
 
 describe("EventsPage list", () => {

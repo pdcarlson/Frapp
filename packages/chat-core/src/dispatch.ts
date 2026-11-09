@@ -840,8 +840,9 @@ async function dispatchEvent(
         location: parsed.value.location ?? undefined,
         // point_value and is_mandatory are required in the generated SDK type
         // (their DTO `@default` makes them non-optional); send the spec defaults
-        // (10 points, not mandatory) when the command omits them — slash-created
-        // events are non-mandatory by design (mandatory is dashboard-only).
+        // (10 points, not mandatory) when the command omits them — the
+        // one-liner creates non-mandatory events by design (a required event
+        // goes through the event form).
         point_value: parsed.value.pointValue ?? 10,
         is_mandatory: false,
         channel_id: channelId,
@@ -879,6 +880,44 @@ async function dispatchEvent(
   // Success: the server posts the `event` card (same client_message_id); the
   // Realtime echo reconciles the placeholder via mergeServerRow.
   return { ok: true };
+}
+
+/**
+ * The chat side of an event created from the event form rather than the
+ * one-liner (web chat's `/event` with details it can't read, #3773). The form
+ * makes its own `POST /v1/events`; this gives it the one-liner's timeline
+ * bookkeeping for the card: a `loading` placeholder under the request's
+ * `client_message_id`, which the server's card reconciles by Realtime echo;
+ * `failed()` drops it when the create is refused; `lost()` turns it into the
+ * durable `recorded` row when the event committed but its card didn't post
+ * (`card_posted: false`), since `POST /v1/events` has no dedupe and the toast
+ * alone is evictable.
+ */
+export interface EventCardTrack {
+  clientMessageId: string;
+  failed: () => void;
+  lost: () => void;
+}
+
+export function trackEventCard(
+  ctx: ChatActionContext,
+  channelId: string,
+  name: string,
+): EventCardTrack {
+  const clientMessageId = randomClientId();
+  const content = `Creating event "${name}"…`;
+  insertLocalPlaceholder(ctx, { channelId, clientMessageId, content });
+  return {
+    clientMessageId,
+    failed: () => removeLocalPlaceholder(ctx, channelId, clientMessageId),
+    lost: () =>
+      markLocalRecorded(ctx, {
+        channelId,
+        clientMessageId,
+        note: EVENT_RECORDED_ROW_NOTE,
+        content,
+      }),
+  };
 }
 
 /**

@@ -664,7 +664,7 @@ vi.mock("./composer", () => ({
     onOpenCommandForm?: (
       command: { name: string; implemented: boolean },
       args: string,
-    ) => boolean;
+    ) => string | null;
     recruitmentVocab?: string;
     isModuleEnabled?: (moduleKey: string) => boolean;
     slashCommandsStatus?: string;
@@ -729,7 +729,12 @@ vi.mock("./composer", () => ({
         </button>
         {/* The command-form seam (#3773): what the shell answers when the
             real composer offers it a command before dispatching. */}
-        {["", "Chapter Dinner", '"Formal" 2026-11-20 18:00-20:00'].map(
+        {[
+          "",
+          "Chapter Dinner",
+          "Chapter Dinner 2026-11-20 9:00-11:00",
+          '"Formal" 2026-11-20 18:00-20:00',
+        ].map(
           (args) => (
             <button
               key={args}
@@ -4100,7 +4105,7 @@ describe("ChatShell opens the event form for an /event it can't read (#3773)", (
 
     fireEvent.click(eventButton("Chapter Dinner"));
 
-    expect(eventButton("Chapter Dinner").dataset.took).toBe("true");
+    expect(eventButton("Chapter Dinner").dataset.took).toBe("opened");
     const form = screen.getByTestId("event-form");
     expect(form).toHaveAttribute("data-open", "true");
     expect(form).toHaveAttribute("data-name", "Chapter Dinner");
@@ -4110,6 +4115,19 @@ describe("ChatShell opens the event form for an /event it can't read (#3773)", (
     expect(screen.getByTestId("composer").textContent).toMatch(
       new RegExp(`^${channelId}`),
     );
+  });
+
+  it("hands the typed date and times to the form as start and end", () => {
+    mockUseMyPermissions.mockReturnValue({
+      data: { permissions: ["events:create", "members:view"] },
+    });
+    render(<ChatShell />);
+    fireEvent.click(eventButton("Chapter Dinner 2026-11-20 9:00-11:00"));
+
+    const form = screen.getByTestId("event-form");
+    expect(form).toHaveAttribute("data-name", "Chapter Dinner");
+    expect(form).toHaveAttribute("data-start", "2026-11-20T09:00");
+    expect(form).toHaveAttribute("data-end", "2026-11-20T11:00");
   });
 
   it("opens it for a bare /event, as a palette pick sends", () => {
@@ -4133,7 +4151,7 @@ describe("ChatShell opens the event form for an /event it can't read (#3773)", (
     const oneLiner = '"Formal" 2026-11-20 18:00-20:00';
     fireEvent.click(eventButton(oneLiner));
 
-    expect(eventButton(oneLiner).dataset.took).toBe("false");
+    expect(eventButton(oneLiner).dataset.took).toBe("null");
     expect(screen.queryByTestId("event-form")).toBeNull();
   });
 
@@ -4145,7 +4163,7 @@ describe("ChatShell opens the event form for an /event it can't read (#3773)", (
     render(<ChatShell />);
     fireEvent.click(eventButton("Chapter Dinner"));
 
-    expect(eventButton("Chapter Dinner").dataset.took).toBe("true");
+    expect(eventButton("Chapter Dinner").dataset.took).toBe("refused");
     expect(screen.queryByTestId("event-form")).toBeNull();
     expect(mockToast).toHaveBeenCalledWith(
       expect.objectContaining({ title: "You can't create events" }),
