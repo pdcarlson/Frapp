@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-09: Backwork course names and nicknames (#3848)
+
+### 20261109230000_backwork_courses.sql
+
+- **Purpose**: Adds `backwork_courses`, a per-chapter dictionary of what members call a course: one row per (chapter, department, course number) with an optional `name` and up to 20 `nicknames`, unique on `(chapter_id, department_id, course_key)` where `course_key` is generated as `lower(btrim(course_number))`. FKs to `chapters` and `backwork_departments` cascade. RLS on, no policies (API only, service role). Adds `backwork_course_nicknames_ok(text[])`, an immutable helper its CHECK calls (at most 20 nicknames, each 1 to 60 characters). Adds `backwork_course_write(...)`, the one-statement insert-or-update every course write goes through, the department merge's fold included (security invoker, EXECUTE for `service_role` only; `p_clamp` keeps a merge within the table's limits), and its immutable helper `backwork_course_merge_nicknames(text[], text[], text[], text, boolean)`. Replaces `search_backwork_resources` so global search also matches the course name and nicknames (weight B with the course); everything else it does is unchanged from `20261106190000`. No existing row changes. The rule is [`spec/behavior/backwork.md` § Course Names](../../../spec/behavior/backwork.md#course-names).
+- **Checks**: After `db push`, `select relrowsecurity from pg_class where relname = 'backwork_courses';` returns `true`, `select count(*) from pg_policies where tablename = 'backwork_courses';` returns `0`, and `select has_function_privilege('authenticated', 'public.search_backwork_resources(uuid, text, integer)', 'execute');` and `select has_function_privilege('authenticated', 'public.backwork_course_write(uuid, uuid, text, boolean, text, boolean, text[], text[], boolean)', 'execute');` both return `false`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR. A deploy applies migrations first. The older API never reads the table, and the replaced search function works with or without rows in it. The newer API against an unmigrated database fails `GET /v1/backwork/courses`, every course `PUT`, and every department merge (it reads the courses first). An upload that names a course still succeeds, since naming after the file is best effort, but the name isn't saved. The web library reads the course list on load and falls back to department names, so browsing still works. `create table if not exists`, `create index if not exists` and `create or replace` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-backwork-courses-20261109230000) § Rollback backwork courses.
+
 ## 2026-11-09: Member status and Do Not Disturb
 
 ### 20261109213000_user_settings_member_status.sql

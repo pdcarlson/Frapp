@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -19,6 +20,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { BackworkService } from '../../application/services/backwork.service';
+import { RbacService } from '../../application/services/rbac.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -47,6 +49,8 @@ import {
   MergeBackworkTaxonomyResponseDto,
   BackworkDownloadUrlsQueryDto,
   BackworkDownloadUrlsResponseDto,
+  BackworkCourseDto,
+  UpsertBackworkCourseDto,
 } from '../dtos/backwork.dto';
 
 @ApiTags('Backwork')
@@ -59,7 +63,10 @@ import {
 @RequireModule('backwork')
 @Controller('backwork')
 export class BackworkController {
-  constructor(private readonly backworkService: BackworkService) {}
+  constructor(
+    private readonly backworkService: BackworkService,
+    private readonly rbacService: RbacService,
+  ) {}
 
   @Post('upload-url')
   @ThrottleFanOutWrite()
@@ -214,6 +221,54 @@ export class BackworkController {
     @Body() dto: MergeBackworkTaxonomyDto,
   ) {
     return this.backworkService.mergeDepartments(id, dto.target_id, chapterId);
+  }
+
+  // MUST stay above `@Get(':id')`, like `departments` above: a single-segment
+  // `:id` would otherwise swallow this path as `getOne('courses')`.
+  // Enforced by `test/route-declaration-order.e2e-spec.ts` (#990).
+  @Get('courses')
+  @ApiOperation({ summary: 'List chapter course names and nicknames' })
+  @ApiOkResponse({ type: [BackworkCourseDto] })
+  async listCourses(
+    @CurrentChapterId() chapterId: string,
+  ): Promise<BackworkCourseDto[]> {
+    return this.backworkService.getCourses(chapterId);
+  }
+
+  // Open to `backwork:upload` (the class baseline): an uploader may name an
+  // unnamed course and add nicknames. Renaming and removing need
+  // `backwork:admin`, which the service decides against the stored row
+  // (`courseEditRefusal`), so the permission is resolved here rather than by
+  // a decorator.
+  @Put('courses')
+  @ApiOperation({
+    summary: 'Name a course or add nicknames (create on first write)',
+  })
+  @ApiOkResponse({ type: BackworkCourseDto })
+  async upsertCourse(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: UpsertBackworkCourseDto,
+  ): Promise<BackworkCourseDto> {
+    const isAdmin = await this.rbacService.memberHasAnyPermission(
+      chapterId,
+      userId,
+      [SystemPermissions.BACKWORK_ADMIN],
+    );
+    return this.backworkService.upsertCourse(chapterId, dto, isAdmin);
+  }
+
+  @Delete('courses/:id')
+  @RequirePermissions(SystemPermissions.BACKWORK_ADMIN)
+  @ApiOperation({
+    summary: "Delete a course's name and nicknames (its files are untouched)",
+  })
+  async deleteCourse(
+    @CurrentChapterId() chapterId: string,
+    @Param('id') id: string,
+  ) {
+    await this.backworkService.deleteCourse(id, chapterId);
+    return { success: true };
   }
 
   // MUST stay above `@Get(':id')`. Nest matches routes in declaration order and

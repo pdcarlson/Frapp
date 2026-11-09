@@ -2,11 +2,13 @@ import {
   BackworkResource,
   BackworkDepartment,
   BackworkProfessor,
+  BackworkCourse,
 } from '../entities/backwork.entity';
 
 export const BACKWORK_RESOURCE_REPOSITORY = 'BACKWORK_RESOURCE_REPOSITORY';
 export const BACKWORK_DEPARTMENT_REPOSITORY = 'BACKWORK_DEPARTMENT_REPOSITORY';
 export const BACKWORK_PROFESSOR_REPOSITORY = 'BACKWORK_PROFESSOR_REPOSITORY';
+export const BACKWORK_COURSE_REPOSITORY = 'BACKWORK_COURSE_REPOSITORY';
 
 export interface BackworkResourceFilter {
   department_id?: string;
@@ -84,5 +86,55 @@ export interface IBackworkProfessorRepository {
     chapterId: string,
     data: Partial<BackworkProfessor>,
   ): Promise<BackworkProfessor | null>;
+  delete(id: string, chapterId: string): Promise<void>;
+}
+
+/**
+ * One write to a course's name and nicknames. `name` applies only when
+ * `setName`; with `mayRename` false it only fills an empty name. Nicknames:
+ * stored minus `remove` (case-insensitive), plus `add`, de-duplicated.
+ */
+export interface BackworkCourseWrite {
+  departmentId: string;
+  courseNumber: string;
+  setName: boolean;
+  name: string | null;
+  mayRename: boolean;
+  add: string[];
+  remove: string[];
+  /**
+   * For a department merge, which must not fail on the table's limits: drop
+   * any nickname over 60 characters and keep the first 20, stored first.
+   */
+  clamp?: boolean;
+}
+
+export interface IBackworkCourseRepository {
+  findByChapter(chapterId: string): Promise<BackworkCourse[]>;
+  /** Every course of one department, for the department merge. */
+  findByDepartment(
+    chapterId: string,
+    departmentId: string,
+  ): Promise<BackworkCourse[]>;
+  /**
+   * The course with this department and number, the number compared trimmed
+   * and case-insensitively; `null` when none is named yet.
+   */
+  findByCourse(
+    chapterId: string,
+    departmentId: string,
+    courseNumber: string,
+  ): Promise<BackworkCourse | null>;
+  /** Chapter-scoped; resolves to `null` when no course in `chapterId` has `id`. */
+  findById(id: string, chapterId: string): Promise<BackworkCourse | null>;
+  /**
+   * Creates or edits a course's entry in one statement (the database's
+   * `backwork_course_write`), applied to the row as it is when it runs.
+   * Resolves to `null` when the department isn't in `chapterId`.
+   */
+  write(
+    chapterId: string,
+    edit: BackworkCourseWrite,
+  ): Promise<BackworkCourse | null>;
   delete(id: string, chapterId: string): Promise<void>;
 }
