@@ -119,6 +119,24 @@ vi.mock("@/components/chat/message-actions-sheet", async () => {
   };
 });
 
+const presentProfileSheet = vi.fn();
+vi.mock("@/components/directory/member-detail-sheet", async () => {
+  const { createElement, forwardRef, useImperativeHandle } =
+    await import("react");
+  return {
+    MemberDetailSheet: forwardRef(function MemberDetailSheet(
+      props: Record<string, unknown>,
+      ref,
+    ) {
+      useImperativeHandle(ref, () => ({
+        present: presentProfileSheet,
+        dismiss: vi.fn(),
+      }));
+      return createElement("MemberDetailSheet", props);
+    }),
+  };
+});
+
 const presentMemberSheet = vi.fn();
 const dismissMemberSheet = vi.fn();
 vi.mock("@/components/chat/channel-member-sheet", async () => {
@@ -261,7 +279,9 @@ const ROSTER = {
 
 /** The chapter roster the composer's `@` offers. */
 const MENTION_ROSTER = [{ user_id: "u-paul", display_name: "Paul Carlson" }];
-const MENTION_ROLES = [{ role_id: "r-1", name: "Officers", color: null, mentionable: true }];
+const MENTION_ROLES = [
+  { role_id: "r-1", name: "Officers", color: null, mentionable: true },
+];
 
 const NOTIFICATION_PREFS = [
   { channel_id: CHANNEL, level: "all" as const },
@@ -299,6 +319,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useMemberDisplayNames: () => ROSTER,
   useChapterRoster: () => ({ data: MENTION_ROSTER }),
   useMentionRoles: () => ({ data: MENTION_ROLES }),
+  // No imported authors with avatars in these fixtures.
+  useAuthorAvatars: () => ({ data: undefined }),
   usePermissionList: () => [],
   useMarkChannelRead: () => markRead,
   useRequestChatUploadUrl: () => requestUploadUrl,
@@ -1694,6 +1716,23 @@ describe("chat thread channel start", () => {
   });
 });
 
+describe("chat thread member profile", () => {
+  it("opens the profile sheet for whoever a row names, from a name, photo or @ chip", () => {
+    const tree = render();
+    const row = rows(tree)[0]!;
+    act(() => (row.props.onOpenProfile as (id: string) => void)("user-42"));
+    expect(presentProfileSheet).toHaveBeenCalled();
+    const sheet = tree.root.findByType("MemberDetailSheet" as never);
+    expect(sheet.props.member).toEqual({ userId: "user-42" });
+    expect(sheet.props.openChannelId).toBe(CHANNEL);
+    // The member list opens the same sheet.
+    expect(
+      tree.root.findByType("ChannelMemberSheet" as never).props.onOpenProfile,
+    ).toBe(row.props.onOpenProfile);
+    act(() => tree.unmount());
+  });
+});
+
 describe("chat thread member list (#3536)", () => {
   const membersButtons = (tree: ReactTestRenderer) =>
     header(tree).findAllByType("ChannelMembersButton" as never);
@@ -1798,5 +1837,35 @@ describe("chat thread reports its transport to the connection pill", () => {
       tree.unmount();
       reader.unmount();
     });
+  });
+});
+
+/*
+ * The thread says it is the one on screen only while focused (#3698): the
+ * activity handler re-stamps the viewed channel read when a message lands in
+ * it, and this screen stays mounted under one pushed over it (another thread
+ * opened from the member sheet), where nothing it receives has been seen.
+ */
+describe("chat thread claims the viewed channel while focused (#3698)", () => {
+  const blur = (expoRouter as unknown as { __blur: () => void }).__blur;
+
+  beforeEach(() => {
+    params = { channelId: CHANNEL };
+  });
+
+  it("claims on focus, releases on blur, claims again on refocus", async () => {
+    const { viewedChannelId } =
+      await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
+    const tree = render();
+    expect(viewedChannelId()).toBe(CHANNEL);
+
+    act(() => blur());
+    expect(viewedChannelId()).toBeNull();
+
+    act(() => refocus());
+    expect(viewedChannelId()).toBe(CHANNEL);
+
+    act(() => tree.unmount());
+    expect(viewedChannelId()).toBeNull();
   });
 });

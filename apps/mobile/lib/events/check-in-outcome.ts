@@ -77,6 +77,9 @@ export const CHECK_IN_CODE_REFUSED_MESSAGE =
  */
 export const CHECK_IN_TOKEN_FIELD = "token";
 
+/** s18's success-panel title for a repeat scan (a 409): they are on the list. */
+export const ALREADY_CHECKED_IN_TITLE = "You're already in";
+
 export const ALREADY_CHECKED_IN_COPY =
   "You're already checked in for this event.";
 

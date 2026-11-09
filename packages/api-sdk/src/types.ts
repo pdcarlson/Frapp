@@ -562,6 +562,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/members/by-user/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get member profile by user ID */
+        get: operations["MemberController_getByUser_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/members/{id}": {
         parameters: {
             query?: never;
@@ -1554,23 +1571,6 @@ export interface paths {
         patch: operations["EventController_update_v1"];
         trace?: never;
     };
-    "/v1/events/{id}/ics": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Download .ics calendar file for an event */
-        get: operations["EventController_getIcs_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/events/{eventId}/attendance/check-in": {
         parameters: {
             query?: never;
@@ -1603,6 +1603,26 @@ export interface paths {
          * @description Returns the current 30-second token, its QR payload, and the short manual code. Officer-only: the code is what admits members to the attendance record. Returns 503 when the environment has no signing secret configured.
          */
         get: operations["AttendanceController_mintCheckInToken_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{eventId}/attendance/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's own attendance for an event
+         * @description Lets a member's event page show that they are checked in (and when) instead of offering check-in again. `attendance` is null when they have no row.
+         */
+        get: operations["AttendanceController_mine_v1"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4339,6 +4359,8 @@ export interface components {
             check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
             /** @description Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone"). */
             check_in_zone_name?: string;
+            /** @description Minutes before start_time that check-in opens. Omitted on create, it is 10; the window closes 15 minutes after end_time. */
+            check_in_opens_minutes?: number;
             /** @description When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when the event keeps anyone out (`others_invited` false, including its default when `required_role_ids` is non-empty, or a non-empty `excluded_role_ids`), on this key or `client_message_id` alone — the card is broadcast to every reader of the channel, so a create cannot both limit its audience and post one. (`PATCH` can still limit the audience of an event whose card already posted; that card is left as-is.) */
             channel_id?: string;
             /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Rejected with a 400 when the event keeps anyone out, even without `channel_id` — see that field. */
@@ -4370,6 +4392,8 @@ export interface components {
             /** @description Optional check-in geofence. `null` means the event has no zone. */
             check_in_zone: components["schemas"]["GeofenceCoordinateDto"][] | null;
             check_in_zone_name: string | null;
+            /** @description Minutes before start_time that check-in opens; it closes 15 minutes after end_time. */
+            check_in_opens_minutes: number;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the event row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
@@ -4398,6 +4422,8 @@ export interface components {
             check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
             /** @description Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone"). */
             check_in_zone_name?: string;
+            /** @description Minutes before start_time that check-in opens; the window closes 15 minutes after end_time. Omitted leaves it unchanged; null is refused. */
+            check_in_opens_minutes?: number;
             /**
              * @description Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved.
              * @enum {string}
@@ -4416,6 +4442,27 @@ export interface components {
             lat?: number;
             /** @description Scanner longitude. Required when the event defines a check-in geofence; ignored when it doesn't. */
             lng?: number;
+        };
+        EventAttendanceDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            event_id: string;
+            /** Format: uuid */
+            user_id: string;
+            /** @enum {string} */
+            status: "PRESENT" | "EXCUSED" | "ABSENT" | "LATE";
+            /** Format: date-time */
+            check_in_time: string | null;
+            excuse_reason: string | null;
+            /** Format: uuid */
+            marked_by: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        MyAttendanceDto: {
+            /** @description The caller's row, or null when they have none (not checked in, and not yet marked). */
+            attendance: components["schemas"]["EventAttendanceDto"] | null;
         };
         UpdateAttendanceDto: {
             /** @enum {string} */
@@ -5130,8 +5177,8 @@ export interface components {
             /** Format: uuid */
             target_channel_id?: string;
             new_channel_name?: string;
-            /** @default true */
-            new_channel_is_read_only: boolean;
+            /** @description Whether the channel `create_new` makes is read-only (only `announcements:post` holders post). Omitted means as in Discord: read-only only when the scan saw Discord make it read-only (`read_only_in_discord`), otherwise postable by whoever can read it. On an uploaded export, which carries no permissions, omitted means postable. */
+            new_channel_is_read_only?: boolean;
             /**
              * @description Who can read the channel `create_new` makes: the whole chapter, only members holding one of `new_channel_required_permissions` (a ROLE_GATED channel), or `discord` ("Same as Discord"): ROLE_GATED on the read permissions of the Frapp roles mapped (on the roles route) from the Discord roles that could read it. `discord` is for a bot channel the scan saw was private, with at least one of its reader roles mapped; the API works out its permissions and ignores any sent. Omitted or null means not chosen, which is refused unless this is a bot import whose scan saw the channel was public in Discord and holding no private thread. An uploaded export always needs it, and cannot use `discord`.
              * @enum {string}
@@ -5167,7 +5214,7 @@ export interface components {
             discord_role_name: string;
         };
         DiscordDiscoveryResponseDto: {
-            /** @description Every channel in the server, and the threads of each channel the bot can read, all recorded as `skip` until the admin says otherwise. Threads carry `parent_discord_channel_id` and are not mapped separately — they follow their parent. Each row carries `readable` (whether the bot can read its history; false rows can only be skipped, null means the scan could not tell) and `private_in_discord` (some member could not read its history in Discord; a thread is true when it is a private thread or its channel is private; null means the scan could not tell). A channel that is private, holds a private thread, or whose privacy is null needs an explicit `new_channel_visibility` to be created. A top-level channel that was private also carries `discord_reader_role_ids`: the Discord roles (from `roles`) that could read it, each on its own, which is what `new_channel_visibility: discord` copies. Empty when `@everyone` alone could read it (a deny hid it from someone); null when unknown. A top-level channel in a Discord category carries `discord_category` (its name) and `discord_category_position` (its place in the server), which is how the admin keeps categories as channel groups (`new_channel_group`). */
+            /** @description Every channel in the server, and the threads of each channel the bot can read, all recorded as `skip` until the admin says otherwise. Threads carry `parent_discord_channel_id` and are not mapped separately — they follow their parent. Each row carries `readable` (whether the bot can read its history; false rows can only be skipped, null means the scan could not tell) and `private_in_discord` (some member could not read its history in Discord; a thread is true when it is a private thread or its channel is private; null means the scan could not tell). A channel that is private, holds a private thread, or whose privacy is null needs an explicit `new_channel_visibility` to be created. A top-level channel also carries `read_only_in_discord`: true when Discord made it read-only, none of its ordinary readers able to talk there (an announcements-style channel; in a forum, able to reply), which is the default for `new_channel_is_read_only`; null when unknown. A top-level channel that was private also carries `discord_reader_role_ids`: the Discord roles (from `roles`) that could read it, each on its own, which is what `new_channel_visibility: discord` copies. Empty when `@everyone` alone could read it (a deny hid it from someone); null when unknown. A top-level channel in a Discord category carries `discord_category` (its name) and `discord_category_position` (its place in the server), which is how the admin keeps categories as channel groups (`new_channel_group`). */
             channels: {
                 [key: string]: unknown;
             }[];
@@ -6576,6 +6623,36 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MemberRosterEntryDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MemberController_getByUser_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberProfileDto"];
                 };
             };
             /** @description Error */
@@ -8985,34 +9062,6 @@ export interface operations {
             };
         };
     };
-    EventController_getIcs_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorResponseDto"];
-                };
-            };
-        };
-    };
     AttendanceController_checkIn_v1: {
         parameters: {
             query?: never;
@@ -9061,6 +9110,36 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AttendanceController_mine_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyAttendanceDto"];
+                };
             };
             /** @description Error */
             default: {

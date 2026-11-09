@@ -34,8 +34,7 @@
 // design system's accent ("Signet accent contrast below AA"), the one phrase
 // the API walk lets through. The binary's permanent identifiers are
 // mobile-permanent-identifiers'; which permission prompts exist is
-// scripts/check-mobile-native-declarations.mjs'; the @frapp.live ICS UID host
-// is ics-uid-host's.
+// scripts/check-mobile-native-declarations.mjs'.
 //
 // SCOPE LIMITS, kept from the locks this replaces. Do not PATCH Auth, send
 // mail or run eas init from here. Do not assert live staging titles (Vercel
@@ -499,11 +498,6 @@ export const PINS = [
     has: ["`frapp-${kind}-report-"],
   },
   {
-    file: "apps/api/src/application/services/event.service.ts",
-    why: "the API's ICS PRODID",
-    has: ["PRODID:-//Frapp//Events//EN"],
-  },
-  {
     // The From host stays mail.frapp.live; frapp.live is the burned apex.
     file: "apps/api/src/modules/email/email.module.ts",
     why: "invite email From",
@@ -594,18 +588,11 @@ export const PINS = [
     lacks: [/headline:\s*"[^"]*\bSignet\b/, /description:\s*"[^"]*\bSignet\b/],
   },
   {
-    // A rename that drops the brand altogether passes the walk. Only the CSV
-    // name also has a unit spec (apps/web/lib/utils.spec.ts), so for the .ics
-    // fallback and the invite header these pins are the only check. The
-    // fallback's `.ics` is also on the next line, out of the download-name ban's sight.
+    // A rename that drops the brand altogether passes the walk. The CSV name
+    // also has a unit spec (apps/web/lib/utils.spec.ts).
     file: "apps/web/lib/utils.ts",
     why: "the CSV download name",
     has: ["`frapp-${filenamePrefix}-"],
-  },
-  {
-    file: "apps/web/components/events/event-detail-sheet.tsx",
-    why: "the empty-title .ics fallback",
-    has: ['|| "frapp-event"'],
   },
   {
     // The template puts the name in every child tab and `default` serves the
@@ -646,11 +633,6 @@ export const PINS = [
       // Prettier may move a long JSX child onto its own line; it renders the same.
       /<Text style=\{styles\.subtitle\}>\s*Everything your chapter needs is already in chat\.\s*<\/Text>/,
     ],
-  },
-  {
-    file: "apps/mobile/lib/calendar-export.ts",
-    why: "the mobile ICS PRODID and filename fallback",
-    has: ["PRODID:-//Frapp//Chapter Events//EN", /\|\| "frapp-event"\}\.ics/],
   },
   {
     file: "apps/mobile/lib/payments/stripe.ts",

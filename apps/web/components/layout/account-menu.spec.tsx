@@ -107,6 +107,17 @@ describe("AccountMenu", () => {
     ).toHaveAttribute("href", "/profile#notification-settings");
   });
 
+  it("opens What's new, the same changelog mobile Settings shows", async () => {
+    const user = userEvent.setup();
+    render(<AccountMenu variant="topbar" />);
+
+    await user.click(screen.getByRole("button", { name: /account menu/i }));
+
+    expect(
+      screen.getByRole("menuitem", { name: /what's new/i }),
+    ).toHaveAttribute("href", "/whats-new");
+  });
+
   it("keeps chapter switching out of the account menu", async () => {
     // Identity and chapter are separate menus: switching lives in the nav's
     // chapter header row. Folding it in here is the merge the board warns off.

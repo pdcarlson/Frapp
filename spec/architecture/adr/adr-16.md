@@ -236,7 +236,9 @@ restore `LINEAR_API_KEY`.
 SessionStart ([`.claude/hooks/session-start.sh`](../../../.claude/hooks/session-start.sh)), and the
 bringup in `scripts/cloud-sandbox-up.sh`, which was shared and is now Claude Code web's alone. Skills
 stay under `.claude/skills/`. Claude Code Routines are the scheduled path (**corrected 2026-11-06:**
-Claude scheduled tasks bound to a project thread replaced them, amendment 11); their prompts live in
+Claude scheduled tasks bound to a project thread replaced them, amendment 11; **corrected
+2026-11-08:** bound to a plain session since the move to the Team organization, which has no
+projects); their prompts live in
 [`routines.md`](../../../docs/ci-cd/routines.md). The review gate is the Git pre-push hook
 from the 2026-09-16 correction above, satisfied by `/diff-review`.
 
@@ -278,6 +280,13 @@ Routines UI, so each fire resumes that thread's session and posts to the owner t
 can edit them with `update_trigger`. That reverses the "create them in the UI" advice in
 `routines.md`, which came from a 2026-09-22 agent-created Routine that lost its repository and
 connectors. A bound task carries its session's repository and connectors instead.
+
+*Corrected 2026-11-08:* the work moved to the owner's account in the Frapp Claude Team
+organization, where Claude Code projects aren't offered. The three tasks were re-created there,
+bound with `persistent_session_id` to a plain session, *Frapp scheduled tasks*, instead of a project
+thread. A fresh session per run was tried first and stored neither the repository nor the
+connectors, which is the 2026-09-22 failure again. Everything else in this amendment stands
+([`routines.md`](../../../docs/ci-cd/routines.md), [#3737](https://github.com/pdcarlson/Frapp/issues/3737)).
 
 **What this changes and what it does not.** The five skills stay as the phases' behavior
 contracts. The shared ownership boundary, the product-code ban (Hygiene Scan still excepted,

@@ -18,7 +18,7 @@ import {
   FrappClientProvider,
 } from "@repo/hooks";
 import {
-  ALREADY_CHECKED_IN_COPY,
+  ALREADY_CHECKED_IN_TITLE,
   CHECK_IN_CODE_REFUSED_MESSAGE,
 } from "@/lib/events/check-in-outcome";
 import { requireForegroundFix } from "@/lib/location";
@@ -90,6 +90,19 @@ const state = vi.hoisted(() => ({
    * of one tree.
    */
   realCheckIn: false,
+  /**
+   * What the member's own row reads as when s18 asks on a 409
+   * (`useMyAttendance(...).refetch()`): a check-in by default.
+   */
+  ownRow: {
+    isSuccess: true,
+    data: {
+      attendance: {
+        status: "PRESENT",
+        check_in_time: "2026-11-07T00:52:00.000Z",
+      },
+    },
+  } as { isSuccess: boolean; data?: unknown },
 }));
 
 /**
@@ -116,6 +129,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
       state.useEvent
         ? state.useEvent(id)
         : { data: id === OTHER_EVENT.id ? OTHER_EVENT : EVENT },
+    useMyAttendance: () => ({ refetch: async () => state.ownRow }),
     useCheckIn: () =>
       state.realCheckIn
         ? actual.useCheckIn()
@@ -660,18 +674,23 @@ describe("Check-in keeps each event's state to itself", () => {
   });
 
   it("leaves the last event's refusal and typed code behind", async () => {
-    checkIn.mockRejectedValue({ statusCode: 409, message: "Conflict" });
+    const REFUSED =
+      "That code is wrong or has expired. Ask the host for the current one.";
+    checkIn.mockRejectedValue({
+      statusCode: 403,
+      message: CHECK_IN_CODE_REFUSED_MESSAGE,
+    });
     const tree = render();
     await scan(tree, qrFor("evt-1"));
-    expect(screenText(tree)).toContain(ALREADY_CHECKED_IN_COPY);
+    expect(screenText(tree)).toContain(REFUSED);
     act(() => manualInput(tree).props.onChangeText("4KQ88"));
 
     moveTo(tree, OTHER_EVENT.id);
 
-    expect(screenText(tree)).not.toContain(ALREADY_CHECKED_IN_COPY);
+    expect(screenText(tree)).not.toContain(REFUSED);
     openSheet(tree);
     const sheet = tree.root.findByType("BottomSheetModal" as never);
-    expect(drawnText(sheet)).not.toContain(ALREADY_CHECKED_IN_COPY);
+    expect(drawnText(sheet)).not.toContain(REFUSED);
     expect(manualInput(tree).props.value).toBe("");
     act(() => tree.unmount());
   });
@@ -875,6 +894,15 @@ describe("Check-in's way out", () => {
         node.props.accessibilityLabel === "Close check-in",
     );
 
+  it("closes with the app's glass close, not a bare ✕ (#3703)", () => {
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      eventId: "evt-1",
+    });
+    const tree = render();
+    expect(close(tree).props.testID).toBe("glass-close");
+    act(() => tree.unmount());
+  });
+
   it("goes to the event's detail, where Scan QR opened it", () => {
     vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
       eventId: "evt-1",
@@ -1002,14 +1030,73 @@ describe("Check-in's manual code", () => {
     }
   });
 
-  it("keeps an already-checked-in answer when the sheet opens", async () => {
+  // #3703: a repeat scan is the member already on the list, which is what
+  // they came for, so it is the success panel in its own words, with no
+  // points (none were awarded this time), not an error.
+  it("says an officer's mark, not you're in, when a 409 is over one", async () => {
+    const saved = state.ownRow;
+    state.ownRow = {
+      isSuccess: true,
+      data: { attendance: { status: "ABSENT", check_in_time: null } },
+    };
+    try {
+      checkIn.mockRejectedValue({ statusCode: 409, message: "Conflict" });
+      const tree = render();
+      await scan(tree, qrFor("evt-1"));
+
+      const text = screenText(tree);
+      expect(text).toContain("An officer marked you absent for this event.");
+      expect(text).not.toContain(ALREADY_CHECKED_IN_TITLE);
+      act(() => tree.unmount());
+    } finally {
+      state.ownRow = saved;
+    }
+  });
+
+  it("reads a hand-marked PRESENT row as you're in", async () => {
+    const saved = state.ownRow;
+    state.ownRow = {
+      isSuccess: true,
+      data: { attendance: { status: "PRESENT", check_in_time: null } },
+    };
+    try {
+      checkIn.mockRejectedValue({ statusCode: 409, message: "Conflict" });
+      const tree = render();
+      await scan(tree, qrFor("evt-1"));
+      expect(screenText(tree)).toContain(ALREADY_CHECKED_IN_TITLE);
+      act(() => tree.unmount());
+    } finally {
+      state.ownRow = saved;
+    }
+  });
+
+  it("claims nothing when the own-row read after a 409 fails", async () => {
+    const saved = state.ownRow;
+    state.ownRow = { isSuccess: false };
+    try {
+      checkIn.mockRejectedValue({ statusCode: 409, message: "Conflict" });
+      const tree = render();
+      await scan(tree, qrFor("evt-1"));
+
+      const text = screenText(tree);
+      expect(text).toContain("You're already checked in for this event.");
+      expect(text).not.toContain(ALREADY_CHECKED_IN_TITLE);
+      act(() => tree.unmount());
+    } finally {
+      state.ownRow = saved;
+    }
+  });
+
+  it("reads a repeat scan (409) as you're in, on the success panel", async () => {
     checkIn.mockRejectedValue({ statusCode: 409, message: "Conflict" });
     const tree = render();
     await scan(tree, qrFor("evt-1"));
 
-    openSheet(tree);
-    const sheet = tree.root.findByType("BottomSheetModal" as never);
-    expect(drawnText(sheet)).toContain(ALREADY_CHECKED_IN_COPY);
+    const text = screenText(tree);
+    expect(text).toContain(ALREADY_CHECKED_IN_TITLE);
+    expect(text).toContain("Back to event");
+    expect(text).not.toMatch(/\+\d+ pts/);
+    expect(tree.root.findAllByType("CameraView" as never)).toHaveLength(0);
     act(() => tree.unmount());
   });
 

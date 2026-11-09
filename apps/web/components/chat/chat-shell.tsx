@@ -27,6 +27,7 @@ import {
   useGetOrCreateDm,
   useLeaveChannel,
   useChannelNotificationPreferences,
+  claimViewedChannel,
   useChannelUnreadCounts,
   useChannels,
   useSetChannelNotificationLevel,
@@ -34,6 +35,7 @@ import {
   useCategories,
   useChapterRoster,
   useMemberDisplayNames,
+  useMentionRoles,
   useMyPermissions,
   useBookmarks,
   useBookmarkedMessageIds,
@@ -51,7 +53,13 @@ import {
   useSidebarPreferences,
   landingChannelId,
 } from "@repo/hooks";
-import { can, isAnnouncementChannel } from "@repo/validation";
+import {
+  can,
+  isAnnouncementChannel,
+  type MentionCandidate,
+  type MentionChipTargets,
+} from "@repo/validation";
+import { MentionChipTargetsContext } from "@repo/hooks/mention-chips";
 import { ChevronLeft, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
@@ -706,6 +714,18 @@ export function ChatShell({
   // only ever touches `user_id` and `display_name`, so the fat profile put every
   // member's email, bio and city on the chat page to match a name (#986).
   const membersQuery = useChapterRoster();
+  // Which `@`-tokens in the timeline really pinged someone (`useMentionChips`):
+  // the roster above and the chapter's role names.
+  const mentionRoles = useMentionRoles();
+  const mentionChipTargets = useMemo<MentionChipTargets>(
+    () => ({
+      members: membersQuery.data
+        ? asArray<MentionCandidate>(membersQuery.data)
+        : undefined,
+      roleNames: mentionRoles.data?.map((role) => role.name),
+    }),
+    [membersQuery.data, mentionRoles.data],
+  );
   const resolveMember = useMemo<ResolveMember>(() => {
     const list = asArray<DirectoryMember>(membersQuery.data);
     return (token: string) => matchMember(list, token);
@@ -1035,10 +1055,13 @@ export function ChatShell({
 
   // Opening a channel stamps the read cursor, and so does hiding a DM (#2303:
   // a hidden row must leave no badge), and so does the rail's right-click
-  // Mark as read. Those are the only things that move it, and the only things
-  // that clear the badges above. Without it the rail lights up
-  // on first load and never goes out, which is worse than the dead badge this
-  // slice replaced: it would show every channel as permanently unread.
+  // Mark as read. So does a message from someone else landing in the open
+  // channel while the tab is visible (#3698: `useChatActivityHandler`, which
+  // `ChatProvider` wires, re-stamps the channel claimed below). Those are the
+  // only things that move it, and the only things that clear the badges
+  // above. Without it the rail lights up on first load and never goes out,
+  // which is worse than the dead badge this slice replaced: it would show
+  // every channel as permanently unread.
   // `spec/behavior/chat/README.md` § Read Receipts: opening stamps to server
   // `now()`; there is no mark-read-to-a-message.
   const markRead = useMarkChannelRead();
@@ -1046,9 +1069,13 @@ export function ChatShell({
   useEffect(() => {
     if (!activeChannelId) return;
     markReadMutate(activeChannelId);
+    const releaseViewed = claimViewedChannel(activeChannelId);
     // Stamp again on the way out, so messages that arrived while the channel
     // was open do not resurface as unread. Mobile does the same on blur.
-    return () => markReadMutate(activeChannelId);
+    return () => {
+      releaseViewed();
+      markReadMutate(activeChannelId);
+    };
   }, [activeChannelId, markReadMutate]);
 
   // The rail row's right-click menu (owner, 2026-11-06). Which rows a channel
@@ -2229,90 +2256,92 @@ export function ChatShell({
                 FOCUS_RING,
               )}
             >
-              <MessageTimeline
-                ref={timeline}
-                channelId={activeChannel?.id}
-                nameFor={nameFor}
-                roleColorFor={roleColorFor}
-                avatarFor={avatarFor}
-                messages={channel.messages}
-                blockList={{ blockState, thread }}
-                onUnblock={handleUnblock}
-                onReloadMasked={handleReloadMasked}
-                maskedRefresh={maskedRefresh}
-                viewerId={userId}
-                isLoading={channel.isLoading}
-                loadError={channel.loadError}
-                hasOlder={channel.hasOlder}
-                isLoadingOlder={channel.isLoadingOlder}
-                olderError={channel.olderError}
-                onLoadOlder={loadOlderHistory}
-                channelStart={channelStartNode}
-                // Only while the jump is still working. Once it has settled on a
-                // notice the target stays pending (so a late arrival still lands),
-                // but holding follow through that would stop new messages
-                // scrolling into view until the member dismissed it.
-                holdFollow={
-                  pendingMessageId !== null &&
-                  (pendingJumpChannelId === null ||
-                    pendingJumpChannelId === activeChannelId) &&
-                  !showUnreachableNotice
-                }
-                onReact={channel.react}
-                onUnreact={channel.unreact}
-                onReply={canReplyHere ? startReply : undefined}
-                // The quote above a reply scrolls to the message it quotes. It used
-                // to open `ThreadPanel` in the Details rail; #2142 deleted both, and
-                // this is the same machinery pins and saved messages already use.
-                onJumpToParent={(message) => jumpToMessage(message.id)}
-                onRetry={channel.retry}
-                onDiscard={channel.discard}
-                // Heavy-command rows bypass the outbox, so `channel.retry` above
-                // cannot reach them. This replays the original request under its
-                // original idempotency key and toasts the outcome through the same
-                // three-way channel a first dispatch uses (#1733).
-                onRetryUnconfirmed={async (replay) => {
-                  // Every path here must end in a toast. The first dispatch gets
-                  // that guarantee from `runDispatch` in the composer (which also
-                  // tags Sentry); this control sits in the timeline and had
-                  // neither, so a throw produced a blinking spinner, no message,
-                  // and no telemetry — and an officer who concludes Retry is broken
-                  // re-types the command, mints a fresh key and double-grants.
-                  try {
-                    const result = await channel.retryUnconfirmed(replay);
-                    notifyDispatchOutcome(toast, replay.command, result);
-                  } catch (error) {
-                    Sentry.captureException(error, {
-                      tags: { slash_command: `${replay.command}_retry` },
-                    });
-                    // Non-destructive on purpose: the retry failing says nothing
-                    // about whether the original attempt committed, and a red
-                    // "failed" is what invites the re-type.
-                    toast({
-                      title: "Couldn't retry that command",
-                      description:
-                        "The retry didn't go through. Check the points ledger before running the command again. A second run would record the points twice.",
-                    });
+              <MentionChipTargetsContext.Provider value={mentionChipTargets}>
+                <MessageTimeline
+                  ref={timeline}
+                  channelId={activeChannel?.id}
+                  nameFor={nameFor}
+                  roleColorFor={roleColorFor}
+                  avatarFor={avatarFor}
+                  messages={channel.messages}
+                  blockList={{ blockState, thread }}
+                  onUnblock={handleUnblock}
+                  onReloadMasked={handleReloadMasked}
+                  maskedRefresh={maskedRefresh}
+                  viewerId={userId}
+                  isLoading={channel.isLoading}
+                  loadError={channel.loadError}
+                  hasOlder={channel.hasOlder}
+                  isLoadingOlder={channel.isLoadingOlder}
+                  olderError={channel.olderError}
+                  onLoadOlder={loadOlderHistory}
+                  channelStart={channelStartNode}
+                  // Only while the jump is still working. Once it has settled on a
+                  // notice the target stays pending (so a late arrival still lands),
+                  // but holding follow through that would stop new messages
+                  // scrolling into view until the member dismissed it.
+                  holdFollow={
+                    pendingMessageId !== null &&
+                    (pendingJumpChannelId === null ||
+                      pendingJumpChannelId === activeChannelId) &&
+                    !showUnreachableNotice
                   }
-                }}
-                onAct={(messageId, actionType, payload) =>
-                  void channel.act(messageId, actionType, payload)
-                }
-                // An edit authorizes as a post (`spec/behavior/chat/README.md`
-                // § Channels → Channel-access enforcement), so a member who can't
-                // post here, such as an alumnus in an ordinary channel, isn't
-                // offered one (#2775).
-                onEdit={
-                  activeChannel?.can_post !== false ? channel.edit : undefined
-                }
-                onDelete={handleDeleteMessage}
-                bookmarkedMessageIds={bookmarkedMessageIds}
-                onToggleBookmark={handleToggleBookmark}
-                canManageChannel={canManageChannel}
-                onReport={handleReport}
-                onBlock={handleBlock}
-                isMember={isMember}
-              />
+                  onReact={channel.react}
+                  onUnreact={channel.unreact}
+                  onReply={canReplyHere ? startReply : undefined}
+                  // The quote above a reply scrolls to the message it quotes. It used
+                  // to open `ThreadPanel` in the Details rail; #2142 deleted both, and
+                  // this is the same machinery pins and saved messages already use.
+                  onJumpToParent={(message) => jumpToMessage(message.id)}
+                  onRetry={channel.retry}
+                  onDiscard={channel.discard}
+                  // Heavy-command rows bypass the outbox, so `channel.retry` above
+                  // cannot reach them. This replays the original request under its
+                  // original idempotency key and toasts the outcome through the same
+                  // three-way channel a first dispatch uses (#1733).
+                  onRetryUnconfirmed={async (replay) => {
+                    // Every path here must end in a toast. The first dispatch gets
+                    // that guarantee from `runDispatch` in the composer (which also
+                    // tags Sentry); this control sits in the timeline and had
+                    // neither, so a throw produced a blinking spinner, no message,
+                    // and no telemetry — and an officer who concludes Retry is broken
+                    // re-types the command, mints a fresh key and double-grants.
+                    try {
+                      const result = await channel.retryUnconfirmed(replay);
+                      notifyDispatchOutcome(toast, replay.command, result);
+                    } catch (error) {
+                      Sentry.captureException(error, {
+                        tags: { slash_command: `${replay.command}_retry` },
+                      });
+                      // Non-destructive on purpose: the retry failing says nothing
+                      // about whether the original attempt committed, and a red
+                      // "failed" is what invites the re-type.
+                      toast({
+                        title: "Couldn't retry that command",
+                        description:
+                          "The retry didn't go through. Check the points ledger before running the command again. A second run would record the points twice.",
+                      });
+                    }
+                  }}
+                  onAct={(messageId, actionType, payload) =>
+                    void channel.act(messageId, actionType, payload)
+                  }
+                  // An edit authorizes as a post (`spec/behavior/chat/README.md`
+                  // § Channels → Channel-access enforcement), so a member who can't
+                  // post here, such as an alumnus in an ordinary channel, isn't
+                  // offered one (#2775).
+                  onEdit={
+                    activeChannel?.can_post !== false ? channel.edit : undefined
+                  }
+                  onDelete={handleDeleteMessage}
+                  bookmarkedMessageIds={bookmarkedMessageIds}
+                  onToggleBookmark={handleToggleBookmark}
+                  canManageChannel={canManageChannel}
+                  onReport={handleReport}
+                  onBlock={handleBlock}
+                  isMember={isMember}
+                />
+              </MentionChipTargetsContext.Provider>
             </div>
             {/*
           Directly above the composer, which is where Discord and Slack both put

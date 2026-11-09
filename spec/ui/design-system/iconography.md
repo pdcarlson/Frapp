@@ -281,7 +281,7 @@ the chapter accent in a back-row slot (2026-11-05).
 
 | Semantic intent | Glyph | Drawn by | Web counterpart |
 |---|---|---|---|
-| Dismiss, close, remove | `CloseGlyph` (an ×) | the network banner, the thread's error banner, the composer's reply strip (16px) and photo thumbnails (12px on a dark disc), the image viewer (24px), the service-hours proof row, Chat home's setup-checklist hide (16px) | Lucide `X` |
+| Dismiss, close, remove | `CloseGlyph` (an ×) | the network banner, the thread's error banner, the composer's reply strip (16px) and photo thumbnails (12px on a dark disc), the image viewer (24px), the service-hours proof row, Chat home's setup-checklist hide (16px), the glass close on the check-in scanner (s18) and host QR (s22) (18px, `glass-close-button.tsx`) | Lucide `X` |
 | Try again | `RetryGlyph` (a circling arrow) | a chat photo that didn't upload, in the composer tray (22px, destructive ink) | Lucide `RotateCw` |
 | Edit | `PencilGlyph` | Profile's back row | Lucide `Pencil` |
 | Mark all read | `CheckAllGlyph` (two checks) | the Notifications screen header | Lucide `CheckCheck` |
@@ -519,8 +519,7 @@ points — and the events table drew its role-targeting and recurrence markers a
 12px, under §2's 14–16 badge-companion floor.
 
 - **Control furniture**, unchanged from §6.2.2's rule: `Loader2`,
-  `AlertCircle`, `AlertTriangle`, `Trash2`, `Pencil`, `Plus`, `Save`, and the
-  event detail sheet's `CalendarPlus` (Add to calendar). This family has
+  `AlertCircle`, `AlertTriangle`, `Trash2`, `Pencil`, `Plus` and `Save`. This family has
   more of the second kind than any other — every pair naming a *control's own
   action* rather than a domain object stays Lucide: `Play`/`Pause`/`Square` on
   the study timer, `Eye`/`EyeOff` on its tracking state, `Power`/`PowerOff` on

@@ -74,6 +74,8 @@ export interface ThreadMessageRowProps {
   nameFor: (userId: string) => string | null;
   /** `users.id` → role color for the author line (#3485); `null` keeps it plain. */
   roleColorFor?: (userId: string) => string | null;
+  /** A row → its author's photo URL for the run's avatar; `null` draws initials. */
+  avatarFor?: (message: ChatMessage) => string | null;
   replyParent: ChatMessage | null | undefined;
   blockState: BlockState;
   onVote: (
@@ -88,6 +90,8 @@ export interface ThreadMessageRowProps {
   onOpenActions: (message: ChatMessage) => void;
   /** Scrolls the thread to a loaded message: a reply quote's tap. */
   onJumpToMessage: (messageId: string) => void;
+  /** Opens a member's profile: a tap on a name, a photo or an `@` chip. */
+  onOpenProfile?: (userId: string) => void;
   onUnblock: (userId: string) => void;
   /** Each member's post-unblock re-read (`useMaskedRefresh`), for stale tombstones. */
   maskedRefresh: ReadonlyMap<string, MaskedRefreshState>;
@@ -119,6 +123,7 @@ function ThreadMessageRowBody({
   viewerId,
   nameFor,
   roleColorFor,
+  avatarFor,
   replyParent,
   blockState,
   onVote,
@@ -128,6 +133,7 @@ function ThreadMessageRowBody({
   onUnreact,
   onOpenActions,
   onJumpToMessage,
+  onOpenProfile,
   onUnblock,
   maskedRefresh,
   onReload,
@@ -216,27 +222,28 @@ function ThreadMessageRowBody({
         { onVote },
       );
   if (card) {
-    const quote =
-      message.reply_to_id ? (
-        <ReplyQuote
-          message={message}
-          replyParent={quotedParent}
-          hiddenText={replyParentHidden}
-          nameFor={nameFor}
-          viewerId={viewerId}
-          onPress={onJumpToParent}
-          onLongPress={openActions}
-        />
-      ) : null;
+    const quote = message.reply_to_id ? (
+      <ReplyQuote
+        message={message}
+        replyParent={quotedParent}
+        hiddenText={replyParentHidden}
+        nameFor={nameFor}
+        viewerId={viewerId}
+        onPress={onJumpToParent}
+        onLongPress={openActions}
+      />
+    ) : null;
     return (
       <MessageRowFrame
         message={message}
         viewerId={viewerId}
         nameFor={nameFor}
         roleColorFor={roleColorFor}
+        avatarFor={avatarFor}
         startsRun={startsRun}
         quote={quote}
         onOpenActions={openActions}
+        onOpenProfile={onOpenProfile}
       >
         {card}
         <OwnLineMarkers message={message} />
@@ -250,6 +257,7 @@ function ThreadMessageRowBody({
       viewerId={viewerId}
       nameFor={nameFor}
       roleColorFor={roleColorFor}
+      avatarFor={avatarFor}
       startsRun={startsRun}
       replyParent={quotedParent}
       replyParentHidden={replyParentHidden}
@@ -259,6 +267,7 @@ function ThreadMessageRowBody({
       onUnreact={onUnreact}
       onOpenActions={openActions}
       onJumpToParent={onJumpToParent}
+      onOpenProfile={onOpenProfile}
     />
   );
 }
@@ -308,7 +317,9 @@ function cardFor(
     }
     case "announcement": {
       const body = readAnnouncementBody(message);
-      return body ? <AnnouncementCard {...frame} body={body} /> : null;
+      return body ? (
+        <AnnouncementCard {...frame} body={body} mentions={message.mentions} />
+      ) : null;
     }
     default:
       return null;

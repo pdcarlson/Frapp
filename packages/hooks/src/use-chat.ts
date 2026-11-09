@@ -1,9 +1,15 @@
 "use client";
 
+import { throwUnlessOk } from "@repo/api-sdk";
 import type { ChatNotificationLevel } from "@repo/validation";
 
 import { useEffect, useMemo, useRef } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { createChapterQueryKeys } from "./chapter-query-keys";
 import { putSignedUpload } from "./put-signed-upload";
@@ -11,7 +17,7 @@ import { putSignedUpload } from "./put-signed-upload";
 /** The query key `useChannels` caches the channel list under. */
 export const CHANNEL_LIST_KEY = ["channels"] as const;
 
-export function useChannels() {
+export function useChannels(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   return useQuery({
     queryKey: CHANNEL_LIST_KEY,
@@ -21,6 +27,7 @@ export function useChannels() {
       return data;
     },
     staleTime: 60_000,
+    enabled: options?.enabled ?? true,
   });
 }
 
@@ -525,16 +532,35 @@ export function useUnpinMessage() {
   });
 }
 
+/**
+ * Identifies `useMarkChannelRead` (#3393), so a client can give it its own
+ * defaults. Mobile retries it once through a resume-time socket drop (#3747,
+ * `apps/mobile/lib/query-client.ts`): it stamps the read cursor to the API
+ * server's clock, so a replay is harmless.
+ *
+ * The key is also the Sentry grouping root for its failures
+ * (`@repo/observability`'s `query-errors.ts`), on web and mobile: they group
+ * under `channels` now, not `unkeyed`. The unkeyed issues that likely
+ * reported them before (FRAPP-MOBILE-F, J, unkeyed mutations from chat-thread
+ * opening) going quiet therefore says nothing either way.
+ */
+export const markChannelReadMutationKey = ["channels", "read"] as const;
+
 export function useMarkChannelRead() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: markChannelReadMutationKey,
     mutationFn: async (id: string) => {
-      const { data, error } = await client.POST("/v1/channels/{id}/read", {
+      const result = await client.POST("/v1/channels/{id}/read", {
         params: { path: { id } },
       });
-      if (error) throw error;
-      return data;
+      // On the status, not `error` (see `throwUnlessOk`): an empty-bodied 5xx
+      // has no `error` and would read as a stamp that landed, and a non-JSON
+      // 4xx would carry no status, so the retry above it couldn't tell a
+      // refusal from a dropped connection.
+      throwUnlessOk(result);
+      return result.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["channels"] });
@@ -707,6 +733,10 @@ export function useAuthorAvatars(
   return useQuery({
     queryKey: ["channels", channelId, "avatars", messageIdsByDistinctPath],
     enabled: !!channelId && messageIdsByDistinctPath.length > 0,
+    // The key grows as history pages in and new authors appear; keeping the
+    // previous map while the larger one loads stops every avatar already on
+    // screen dropping back to initials for a round-trip.
+    placeholderData: keepPreviousData,
     // Comfortably inside the API's signed-URL TTL, so a URL handed to the DOM
     // is still live when it renders.
     staleTime: 10 * 60_000,

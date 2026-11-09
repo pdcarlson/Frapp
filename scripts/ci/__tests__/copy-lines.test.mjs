@@ -84,7 +84,8 @@ test("a signet- download name is copy, a design-system file name is not", () => 
       { rel: "c.ts", source: '/* was signet-events */ const name = "signet-dues.ics";\n' },
       { rel: "d.ts", source: "// the old fallback was signet-event.ics\n" },
       { rel: "e.ts", source: "downloadBlob(blob, `signet-${filenamePrefix}-${day}.csv`);\n" },
-      // The `.ics` is on the next line, out of sight: why frapp-naming pins this fallback by value.
+      // The `.ics` is on the next line, out of sight: the scanner's known blind spot. No product
+      // code has this shape since the .ics export was deleted (#3708); a new one needs a by-value pin.
       { rel: "f.ts", source: '.replace(/^-+|-+$/g, "") || "signet-event";\ndownloadBlob(icsBlob, `${slug}.ics`);\n' },
     ]),
     ["a.ts:1", "c.ts:1", "e.ts:1"],

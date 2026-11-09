@@ -7,6 +7,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import type { PostgrestMaybeSingleResponse } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import {
   MemberContext,
@@ -28,7 +29,7 @@ import {
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { isWithinSubscriptionGrace } from '#domain/constants/subscription-grace';
 import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
-import { lookupUnavailable } from './guard-lookup';
+import { InFlightLookups, lookupUnavailable } from './guard-lookup';
 
 /**
  * Every lookup here tells "no row" (`.maybeSingle()`'s `null`, the 4xx it
@@ -47,6 +48,55 @@ const UUID_PATTERN = new RegExp(
 
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
+type ChapterRow = {
+  subscription_status: SubscriptionStatus;
+  past_due_since: string | null;
+  enabled_modules: Record<string, boolean> | null;
+};
+
+/**
+ * Process-wide, not per guard instance: Nest builds a guard per module, and
+ * the requests a mobile resume fires together (#3728) hit several modules'
+ * routes. Only two reads are shared: the user's own row id, and the chapter's
+ * subscription state and module toggles, for which no spec promises
+ * same-instant freshness. A joiner's answer can predate its request by up to
+ * `IN_FLIGHT_JOIN_WINDOW_MS`. Membership is still read per request, because
+ * spec/behavior/multi-tenancy.md promises that a revoked membership refuses
+ * every later request.
+ */
+const appUserLookups = new InFlightLookups<
+  PostgrestMaybeSingleResponse<{ id: string }>
+>();
+const chapterLookups = new InFlightLookups<
+  PostgrestMaybeSingleResponse<ChapterRow>
+>();
+
+function lookupAppUser(
+  supabase: FrappSupabaseClient,
+  supabaseAuthId: string,
+): Promise<PostgrestMaybeSingleResponse<{ id: string }>> {
+  return appUserLookups.run(supabaseAuthId, () =>
+    supabase
+      .from('users')
+      .select('id')
+      .eq('supabase_auth_id', supabaseAuthId)
+      .maybeSingle<{ id: string }>(),
+  );
+}
+
+function lookupChapter(
+  supabase: FrappSupabaseClient,
+  chapterId: string,
+): Promise<PostgrestMaybeSingleResponse<ChapterRow>> {
+  return chapterLookups.run(chapterId, () =>
+    supabase
+      .from('chapters')
+      .select('subscription_status, past_due_since, enabled_modules')
+      .eq('id', chapterId)
+      .maybeSingle<ChapterRow>(),
+  );
+}
+
 @Injectable()
 export class ChapterGuard implements CanActivate {
   constructor(
@@ -64,14 +114,22 @@ export class ChapterGuard implements CanActivate {
       );
     }
 
-    // Resolved before the chapter context, because auto-resolving a
-    // single-chapter user requires knowing which memberships they hold.
-    const { data: appUser, error: appUserError } = await this.supabase
-      .from('users')
-      .select('id')
-      .eq('supabase_auth_id', supabaseUser.id)
-      .maybeSingle<{ id: string }>();
+    // Read before any lookup so an explicit chapter's row can be fetched
+    // alongside the user's, one round trip instead of two (#3728). A refusal
+    // is held until the user lookup has been judged, which keeps the order
+    // callers always saw: a missing profile is reported before a bad chapter.
+    const requested = this.readRequestedChapter(request);
+    const explicitChapterId =
+      requested.kind === 'explicit' ? requested.chapterId : undefined;
 
+    const [appUserResult, prefetchedChapter] = await Promise.all([
+      lookupAppUser(this.supabase, supabaseUser.id),
+      explicitChapterId
+        ? lookupChapter(this.supabase, explicitChapterId)
+        : undefined,
+    ]);
+
+    const { data: appUser, error: appUserError } = appUserResult;
     if (appUserError) {
       throw lookupUnavailable(
         LOOKUP_FAILED,
@@ -81,8 +139,15 @@ export class ChapterGuard implements CanActivate {
     if (!appUser) {
       throw new ForbiddenException('User profile not found');
     }
+    if (requested.kind === 'refused') {
+      throw requested.refusal;
+    }
 
-    const resolved = await this.resolveChapterContext(request, appUser.id);
+    // Resolved after the user, because auto-resolving a single-chapter user
+    // requires knowing which memberships they hold.
+    const resolved = explicitChapterId
+      ? { chapterId: explicitChapterId }
+      : await this.resolveSoleChapter(appUser.id);
     const chapterId = resolved.chapterId;
 
     // The auto-resolve path already read the membership row it selected the
@@ -97,15 +162,8 @@ export class ChapterGuard implements CanActivate {
       });
     }
 
-    const { data: chapter, error: chapterError } = await this.supabase
-      .from('chapters')
-      .select('subscription_status, past_due_since, enabled_modules')
-      .eq('id', chapterId)
-      .maybeSingle<{
-        subscription_status: SubscriptionStatus;
-        past_due_since: string | null;
-        enabled_modules: Record<string, boolean> | null;
-      }>();
+    const { data: chapter, error: chapterError } =
+      prefetchedChapter ?? (await lookupChapter(this.supabase, chapterId));
 
     if (chapterError) {
       throw lookupUnavailable(
@@ -117,11 +175,13 @@ export class ChapterGuard implements CanActivate {
       throw new ForbiddenException('Chapter not found');
     }
 
-    request.appUser = appUser;
+    // Copies of the two shared lookups (`appUserLookups`, `chapterLookups`):
+    // their results go to every request that joined them.
+    request.appUser = { id: appUser.id };
     request.member = member;
     request.chapterId = chapterId;
     request.subscriptionStatus = chapter.subscription_status;
-    request.enabledModules = chapter.enabled_modules;
+    request.enabledModules = structuredClone(chapter.enabled_modules);
 
     this.enforceSubscription(
       context,
@@ -139,20 +199,26 @@ export class ChapterGuard implements CanActivate {
   }
 
   /**
-   * Resolves the active chapter per spec/behavior/multi-tenancy.md:
+   * Reads the active chapter the caller named, per
+   * spec/behavior/multi-tenancy.md:
    *
    * 1. The JWT `active_chapter_id` claim is authoritative.
    * 2. `x-chapter-id` is a fallback for clients that have not refreshed their
    *    token since the claim was introduced.
    * 3. Both present and disagreeing is a hard `403 chapter.context.mismatch` —
    *    the header never overrides the JWT.
-   * 4. Neither present: a single-chapter user is auto-resolved server-side;
-   *    anyone else gets `400 chapter.context.required`.
+   * 4. Neither present: a single-chapter user is auto-resolved server-side
+   *    (`resolveSoleChapter`); anyone else gets `400 chapter.context.required`.
+   *
+   * A refusal is returned, not thrown, so the caller can report it in its
+   * place after the user lookup.
    */
-  private async resolveChapterContext(
+  private readRequestedChapter(
     request: RequestContext,
-    appUserId: string,
-  ): Promise<{ chapterId: string; member?: MemberContext }> {
+  ):
+    | { kind: 'explicit'; chapterId: string }
+    | { kind: 'auto' }
+    | { kind: 'refused'; refusal: ForbiddenException } {
     const jwtChapterId = getActiveChapterClaim(request.jwtClaims);
     const headerChapterId = getHeaderValue(request.headers, 'x-chapter-id');
 
@@ -161,37 +227,48 @@ export class ChapterGuard implements CanActivate {
       headerChapterId &&
       jwtChapterId.toLowerCase() !== headerChapterId.toLowerCase()
     ) {
-      throw new ForbiddenException({
-        code: 'chapter.context.mismatch',
-        message:
-          'The x-chapter-id header disagrees with the active chapter in your token.',
-      });
+      return {
+        kind: 'refused',
+        refusal: new ForbiddenException({
+          code: 'chapter.context.mismatch',
+          message:
+            'The x-chapter-id header disagrees with the active chapter in your token.',
+        }),
+      };
     }
 
     const explicit = jwtChapterId ?? headerChapterId;
-    if (explicit) {
-      // A chapter id that is not a uuid names no chapter, so it is refused as
-      // one the caller is not a member of. Checked here because Postgres
-      // answers a malformed uuid comparison with an error (22P02), not zero
-      // rows, which the membership lookup would now report as a 503 (#3143).
-      if (!UUID_PATTERN.test(explicit)) {
-        throw new ForbiddenException({
+    if (!explicit) return { kind: 'auto' };
+
+    // A chapter id that is not a uuid names no chapter, so it is refused as
+    // one the caller is not a member of. Checked here because Postgres
+    // answers a malformed uuid comparison with an error (22P02), not zero
+    // rows, which the membership lookup would now report as a 503 (#3143).
+    if (!UUID_PATTERN.test(explicit)) {
+      return {
+        kind: 'refused',
+        refusal: new ForbiddenException({
           code: 'chapter.context.invalid',
           message: 'You are not a member of the requested chapter.',
-        });
-      }
-      // #688: Postgres `uuid` comparison is case-insensitive, so an
-      // uppercase-cased header/claim is authorized normally — but storage
-      // prefix math (profileFolderPrefix, backwork/chapter-document/chat
-      // attachment paths, the chapter logo path) is exact-case string
-      // concatenation. Normalizing once here, at the single place every
-      // `@CurrentChapterId()` consumer reads from, keeps every write path
-      // canonical without patching each storage key builder individually —
-      // and matches what a chapter-id column read back from the DB already
-      // is, since `chapters.id` is always generated lowercase.
-      return { chapterId: explicit.toLowerCase() };
+        }),
+      };
     }
+    // #688: Postgres `uuid` comparison is case-insensitive, so an
+    // uppercase-cased header/claim is authorized normally — but storage
+    // prefix math (profileFolderPrefix, backwork/chapter-document/chat
+    // attachment paths, the chapter logo path) is exact-case string
+    // concatenation. Normalizing once here, at the single place every
+    // `@CurrentChapterId()` consumer reads from, keeps every write path
+    // canonical without patching each storage key builder individually —
+    // and matches what a chapter-id column read back from the DB already
+    // is, since `chapters.id` is always generated lowercase.
+    return { kind: 'explicit', chapterId: explicit.toLowerCase() };
+  }
 
+  /** Rule 4 of `readRequestedChapter`: neither the claim nor the header. */
+  private async resolveSoleChapter(
+    appUserId: string,
+  ): Promise<{ chapterId: string; member?: MemberContext }> {
     // Two rows is all it takes to tell "exactly one" from "more than one".
     const { data: memberships, error: membershipsError } = await this.supabase
       .from('members')
@@ -229,7 +306,7 @@ export class ChapterGuard implements CanActivate {
       .select('id, role_ids, custom_role_ids')
       .eq('user_id', appUserId)
       .eq('chapter_id', chapterId)
-      .maybeSingle();
+      .maybeSingle<MemberContext>();
 
     if (error) {
       throw lookupUnavailable(LOOKUP_FAILED, new SupabaseQueryError(error));

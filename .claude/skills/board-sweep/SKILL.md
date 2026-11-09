@@ -51,8 +51,9 @@ phase is named in the report and the record's second line, and next week's run s
 
 ## Telling the owner
 
-The owner wants a ping only for a real decision. Post to him (in the Frapp project thread this
-routine reports into, with the chat tool the session has) only when the run found at least one of:
+The owner wants a ping only for a real decision. He reads the run's final message in the *Frapp
+scheduled tasks* session, so the ping is the report's **Needs you** line, and it lists items only
+when the run found at least one of:
 
 - a new `[human]` or `[pr-followup][human]` item filed this run;
 - an owner decision a phase can't make (a spec-vs-code contradiction, a priority he set that looks
@@ -60,7 +61,11 @@ routine reports into, with the chat tool the session has) only when the run foun
 
 List each one with its issue link and the one-line question, at most about eight lines, with the
 most urgent first. Don't list PRs waiting to merge: he merges everything anyway. When nothing needs
-him, post nothing.
+him, the line reads "Needs you: nothing."
+
+**Connectors.** The session holds every connector the owner has, write tools included. Use Sentry,
+Supabase, Vercel, Render and PostHog for reads only, and never call Stripe, Gmail, Resend or any
+messaging connector.
 
 ## How the run ends
 

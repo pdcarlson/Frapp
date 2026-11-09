@@ -565,6 +565,143 @@ describe("connection monitor", () => {
     });
   });
 
+  // #3747: TanStack's focus waits on this, so a resume-time retry goes out
+  // after the network has answered, not into the socket iOS tore down.
+  describe("the foreground verdict", () => {
+    function deferredProbe(fetchMock: ReturnType<typeof vi.fn>) {
+      let answer: (response: Response) => void = () => {};
+      fetchMock.mockReturnValueOnce(
+        new Promise<Response>((resolve) => {
+          answer = resolve;
+        }),
+      );
+      return (response: Response) => answer(response);
+    }
+
+    it("is pending from background until the first foreground probe answers, and fires once", async () => {
+      const { monitor, fetchMock, appState } = harness();
+      fetchMock.mockResolvedValue(OK);
+      const settled = vi.fn();
+      monitor.onResumeSettled(settled);
+      monitor.start();
+      await settle();
+      // A cold start is not a resume.
+      expect(monitor.resumePending()).toBe(false);
+      expect(settled).not.toHaveBeenCalled();
+
+      appState("background");
+      expect(monitor.resumePending()).toBe(true);
+      const answer = deferredProbe(fetchMock);
+      appState("active");
+      await settle();
+      expect(monitor.resumePending()).toBe(true);
+      expect(settled).not.toHaveBeenCalled();
+
+      answer(OK);
+      await settle();
+      expect(monitor.resumePending()).toBe(false);
+      expect(settled).toHaveBeenCalledTimes(1);
+
+      // Later probes are ordinary polls, not a second verdict.
+      await monitor.probeOnce();
+      expect(settled).toHaveBeenCalledTimes(1);
+    });
+
+    it("waits out a first failure's confirm retry, then settles on the counted result", async () => {
+      const { monitor, fetchMock, appState, elapse } = harness();
+      fetchMock.mockResolvedValue(OK);
+      const settled = vi.fn();
+      monitor.onResumeSettled(settled);
+      monitor.start();
+      await settle();
+
+      appState("background");
+      fetchMock.mockRejectedValue(new Error("The network connection was lost."));
+      appState("active");
+      await settle();
+      expect(settled).not.toHaveBeenCalled();
+
+      elapse(CONFIRM_RETRY_MS);
+      await settle();
+      expect(settled).toHaveBeenCalledTimes(1);
+      expect(monitor.get()).toBe("DEGRADED");
+    });
+
+    it("reports nothing for a return the app backgrounds again before the probe answers", async () => {
+      const { monitor, fetchMock, appState } = harness();
+      fetchMock.mockResolvedValue(OK);
+      const settled = vi.fn();
+      monitor.onResumeSettled(settled);
+      monitor.start();
+      await settle();
+
+      appState("background");
+      const answerStale = deferredProbe(fetchMock);
+      appState("active");
+      await settle();
+      appState("background");
+      answerStale(OK);
+      await settle();
+      expect(settled).not.toHaveBeenCalled();
+      expect(monitor.resumePending()).toBe(true);
+
+      appState("active");
+      await settle();
+      expect(settled).toHaveBeenCalledTimes(1);
+    });
+
+    it("settles on the probe that confirms a link drop seen during the return", async () => {
+      const { monitor, fetchMock, appState, link, elapse } = harness();
+      fetchMock.mockResolvedValue(OK);
+      const settled = vi.fn();
+      monitor.onResumeSettled(settled);
+      monitor.start();
+      await settle();
+
+      appState("background");
+      const answerWake = deferredProbe(fetchMock);
+      appState("active");
+      await settle();
+      // The drop discards the wake probe; the grace's probe decides.
+      link()?.({ isConnected: false, isInternetReachable: false });
+      answerWake(OK);
+      await settle();
+      expect(settled).not.toHaveBeenCalled();
+
+      fetchMock.mockRejectedValue(new Error("offline"));
+      elapse(LINK_DOWN_GRACE_MS);
+      await settle();
+      expect(monitor.get()).toBe("OFFLINE");
+      expect(settled).toHaveBeenCalledTimes(1);
+    });
+
+    it("settles at once with no API configured", async () => {
+      delete process.env.EXPO_PUBLIC_API_URL;
+      const { monitor, appState } = harness();
+      const settled = vi.fn();
+      monitor.onResumeSettled(settled);
+      monitor.start();
+      appState("background");
+      appState("active");
+      await settle();
+      expect(settled).toHaveBeenCalledTimes(1);
+    });
+
+    it("releases a pending return on stop, and is never pending while stopped", async () => {
+      const { monitor, fetchMock, appState } = harness();
+      fetchMock.mockResolvedValue(OK);
+      const settled = vi.fn();
+      monitor.onResumeSettled(settled);
+      expect(monitor.resumePending()).toBe(false);
+      monitor.start();
+      await settle();
+      appState("background");
+      monitor.stop();
+      expect(settled).toHaveBeenCalledTimes(1);
+      expect(monitor.resumePending()).toBe(false);
+    });
+  });
+
   it("degrades on a confirmed first failure and goes offline on the third", async () => {
     const { monitor, fetchMock, elapse } = harness();
     fetchMock.mockRejectedValue(new Error("timeout"));

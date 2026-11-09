@@ -127,7 +127,7 @@ describe("QuietHoursSection", () => {
     expect(dateToTimeOfDay(start.props.value)).toBe("22:00");
     expect(dateToTimeOfDay(end.props.value)).toBe("07:00");
     expect(start.props.accentColor).toBe("#8E4EC6");
-    expect(screenText(tree)).toContain("Notifications arrive silently.");
+    expect(screenText(tree)).not.toContain("Notifications arrive silently.");
   });
 
   it("saves the wheel once it rests, not every position it passes", () => {

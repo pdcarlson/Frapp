@@ -22,9 +22,8 @@
 /**
  * Two-letter initials for an avatar, matching the drawn `MR`.
  *
- * `spec/ui/design-system/components.md` specifies the incoming message avatar as
- * initials, not an image, so this is the whole avatar — there is no photo
- * variant to fall back from.
+ * The fallback under a member's photo (`components/member-avatar.tsx`), and the
+ * whole avatar when they have none.
  *
  * Deliberately *not* unified with web's `initials()` (`apps/web/lib/utils.ts`),
  * which yields one letter for a single-word name where this yields two. The

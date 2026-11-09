@@ -10,6 +10,12 @@ import {
 import { isBetaOffModule } from "./beta-off-modules";
 
 export { BETA_OFF_MODULES, isBetaOffModule } from "./beta-off-modules";
+export {
+  RELEASE_NOTES,
+  formatReleaseNoteDate,
+  releaseNoteText,
+  type ReleaseNote,
+} from "./release-notes";
 
 // ── Legal / compliance ───────────────────────────────────────────────────────
 // The policy version itself is the API's (`apps/api/src/domain/constants/
@@ -582,9 +588,11 @@ export type {
 export {
   activeMentionQuery,
   extractMentionTokens,
+  draftWithMention,
   findMentionSpans,
   foldMentionName,
   matchMentionCandidate,
+  mentionChipFilter,
   mentionLabelFor,
   mentionPickerEntries,
   mentionSuggestions,
@@ -593,6 +601,7 @@ export {
 export type {
   ActiveMentionQuery,
   MentionCandidate,
+  MentionChipTargets,
   MentionPickerEntry,
   MentionRole,
   MentionRoleOption,
@@ -661,6 +670,8 @@ export {
   canAny,
   CHAPTER_PROFILE_PERMISSIONS,
   CHAT_REPORT_QUEUE_PERMISSIONS,
+  memberAccessRoleIds,
+  removesMemberAccess,
   WILDCARD_PERMISSION,
 } from "./permissions";
 
@@ -798,10 +809,9 @@ export {
   assertProductionSupabaseUrl,
 } from "./invite-token";
 
-// Event recurrence: the rule catalog the DTOs validate against, the child
-// counts the series generator materializes, and the RFC 5545 RRULE the two
-// .ics exporters emit. One source so the generated series and the exported
-// series cannot describe different meetings.
+// Event recurrence: the rule catalog the DTOs validate against and the child
+// counts the series generator materializes. One source so the generated series
+// and what the Repeat pickers promise cannot describe different meetings.
 export {
   RECURRENCE_RULES,
   RECURRENCE_REPEAT_LABELS,
@@ -811,7 +821,6 @@ export {
   recurrenceChildCount,
   recurrenceLastStart,
   recurrenceMeetingCount,
-  toRRuleLine,
 } from "./recurrence";
 export type { RecurrenceRule } from "./recurrence";
 // Event attendance by role: who an event is for, read the same way by the
@@ -887,6 +896,14 @@ export type {
 export { STATUS_LABELS, statusLabel } from "./status-labels";
 export type { StatusVocabulary } from "./status-labels";
 export { checkInZoneLine } from "./check-in-zone-copy";
+export {
+  CHECK_IN_GRACE_MINUTES,
+  DEFAULT_CHECK_IN_OPENS_MINUTES,
+  MAX_CHECK_IN_OPENS_MINUTES,
+  checkInOpensMinutes,
+  checkInWindowBounds,
+} from "./check-in-window";
+export type { CheckInWindowBounds } from "./check-in-window";
 export {
   OFFLINE_COPY,
   SERVER_MESSAGE_COPY,

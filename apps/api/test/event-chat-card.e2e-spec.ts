@@ -58,7 +58,6 @@ describe('Event chat card — create endpoint wiring (e2e)', () => {
     create: jest.fn().mockResolvedValue(createdEvent),
     update: jest.fn(),
     delete: jest.fn(),
-    generateIcs: jest.fn(),
   };
 
   beforeAll(async () => {

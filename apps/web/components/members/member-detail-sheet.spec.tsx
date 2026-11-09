@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Shared spy so tests can assert the exact mutation payload the sheet sends.
 const updateRolesMutateAsync = vi.fn().mockResolvedValue({});
@@ -10,6 +10,7 @@ const {
   mockCurrentUserId,
   mockCurrentUserLoading,
   mockPermissions,
+  mockRoles,
   memberQueryState,
 } =
   vi.hoisted(() => ({
@@ -22,13 +23,14 @@ const {
     mockCurrentUserId: { current: "viewer-1" as string | null },
     mockCurrentUserLoading: { current: false },
     mockPermissions: { current: ["*"] as string[] },
+    mockRoles: { current: [] as unknown[] | undefined },
   }));
 
 // The sheet pulls live data + mutations from @repo/hooks; stub them so the
 // component renders from its `member` prop (usingPreviewData bypasses useMember).
 vi.mock("@repo/hooks", () => ({
   useMember: () => ({ data: undefined, isLoading: memberQueryState.isLoading, isError: false, refetch: vi.fn() }),
-  useRoles: () => ({ data: [], isError: false }),
+  useRoles: () => ({ data: mockRoles.current, isError: false }),
   useRemoveMember: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateMemberRoles: () => ({ mutateAsync: updateRolesMutateAsync, isPending: false }),
   useGetOrCreateDm: () => ({ mutateAsync: dmMutateAsync, isPending: false }),
@@ -269,6 +271,111 @@ describe("MemberDetailSheet save payload", () => {
       id: "m1",
       role_ids: [],
     });
+  });
+});
+
+// #3670: taking away the last role with member access locks the member out of
+// chat, the roster and events, so the save asks first.
+describe("MemberDetailSheet member-access warning", () => {
+  beforeEach(() => {
+    updateRolesMutateAsync.mockClear();
+    customRolesState.data = [];
+    customRolesState.isSuccess = true;
+    customRolesState.isError = false;
+    mockRoles.current = [
+      { id: "r-member", name: "Member", permissions: ["members:view"] },
+      { id: "r-cabinet", name: "Cabinet", permissions: ["channels:read:cabinet"] },
+    ];
+  });
+
+  afterEach(() => {
+    mockRoles.current = [];
+  });
+
+  function renderHolding(roleIds: string[]) {
+    render(
+      <MemberDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData={false}
+        member={{ ...baseMember, role_ids: roleIds }}
+      />,
+    );
+  }
+
+  function untick(name: string) {
+    const row = screen.getByText(name).closest("label");
+    fireEvent.click(row!.querySelector("input")!);
+  }
+
+  it("asks before saving away the last role with member access, and saves nothing on Cancel", async () => {
+    renderHolding(["r-member", "r-cabinet"]);
+    untick("Member");
+    fireEvent.click(screen.getByRole("button", { name: "Save role changes" }));
+
+    expect(
+      await screen.findByText("Take away Jane Smith's access?"),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() =>
+      expect(screen.queryByText("Take away Jane Smith's access?")).not.toBeInTheDocument(),
+    );
+    expect(updateRolesMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("saves once the officer confirms", async () => {
+    renderHolding(["r-member", "r-cabinet"]);
+    untick("Member");
+    fireEvent.click(screen.getByRole("button", { name: "Save role changes" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Take away access" }),
+    );
+
+    await waitFor(() => expect(updateRolesMutateAsync).toHaveBeenCalledTimes(1));
+    expect(updateRolesMutateAsync).toHaveBeenCalledWith({
+      id: "m1",
+      role_ids: ["r-cabinet"],
+      custom_role_ids: [],
+    });
+  });
+
+  it("counts a custom role carrying members:view as access", async () => {
+    customRolesState.data = [
+      { id: "cr-rush", key: "rush", label: "Rush", rank: 5, capabilities: ["members:view"], core: false },
+    ];
+    render(
+      <MemberDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData={false}
+        member={{ ...baseMember, role_ids: ["r-cabinet"], custom_role_ids: ["cr-rush"] }}
+      />,
+    );
+    untick("Rush");
+    fireEvent.click(screen.getByRole("button", { name: "Save role changes" }));
+
+    expect(
+      await screen.findByText("Take away Jane Smith's access?"),
+    ).toBeInTheDocument();
+    expect(updateRolesMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("doesn't let a save through before the roles list loads", () => {
+    mockRoles.current = undefined;
+    renderHolding(["r-member"]);
+    expect(
+      screen.getByRole("button", { name: "Save role changes" }),
+    ).toBeDisabled();
+  });
+
+  it("saves without asking when the member keeps access", async () => {
+    renderHolding(["r-member", "r-cabinet"]);
+    untick("Cabinet");
+    fireEvent.click(screen.getByRole("button", { name: "Save role changes" }));
+
+    await waitFor(() => expect(updateRolesMutateAsync).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("Take away Jane Smith's access?")).not.toBeInTheDocument();
   });
 });
 

@@ -265,6 +265,18 @@ export class MemberService {
     return member;
   }
 
+  /** {@link findProfileById} for the member a `users.id` names in this chapter. */
+  async findProfileByUserId(
+    userId: string,
+    chapterId: string,
+    viewerUserId: string,
+  ): Promise<MemberProfile> {
+    // `findByUserAndChapter` already scopes to the chapter, so the profile is
+    // built from that row rather than re-read by id.
+    const member = await this.findByUserAndChapter(userId, chapterId);
+    return this.buildProfile(member, chapterId, viewerUserId);
+  }
+
   async updateRoles(
     memberId: string,
     roleIds: string[],
@@ -523,7 +535,15 @@ export class MemberService {
     if (member.chapter_id !== chapterId) {
       throw new ForbiddenException('Member not in current chapter');
     }
+    return this.buildProfile(member, chapterId, viewerUserId);
+  }
 
+  /** The profile of a membership row already known to be in `chapterId`. */
+  private async buildProfile(
+    member: Member,
+    chapterId: string,
+    viewerUserId: string,
+  ): Promise<MemberProfile> {
     // The user fetch and the viewer's permission resolution are independent
     // (the latter keys off the viewer, not the target member), so run them
     // together rather than serially.
@@ -544,7 +564,7 @@ export class MemberService {
     const customFields =
       await this.customFieldService.findVisibleValuesForMember(
         chapterId,
-        memberId,
+        member.id,
         allowed,
       );
 

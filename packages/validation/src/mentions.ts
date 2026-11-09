@@ -334,6 +334,25 @@ export function mentionLabelFor(displayName: string): string {
   return displayName.replace(/[^\p{L}\p{N}\p{M}]/gu, "");
 }
 
+/**
+ * The draft with `@Name ` added at its end: a message menu's Mention (mobile's
+ * long-press, as Discord's), which writes the same body the picker would.
+ * A space separates it from text already there, and the trailing space lets
+ * the member keep typing. `null` when the name leaves no label the picker
+ * would write.
+ */
+export function draftWithMention(
+  draft: string,
+  displayName: string,
+): string | null {
+  const label = mentionLabelFor(displayName);
+  // The picker's own refusals (`mentionSuggestions`): a label the tokenizer
+  // wouldn't read as a mention reaches nobody.
+  if (!/^\p{L}/u.test(label) || label.length > MAX_TOKEN_LENGTH) return null;
+  const gap = draft.length === 0 || /\s$/.test(draft) ? "" : " ";
+  return `${draft}${gap}@${label} `;
+}
+
 /** One member as a mention picker offers them. */
 export interface MentionSuggestion<T extends MentionCandidate> {
   member: T;
@@ -495,4 +514,53 @@ export function activeMentionQuery(
   const tail =
     query.length > 0 ? (HANDLE_TAIL.exec(text.slice(caret))?.[0] ?? "") : "";
   return { start: match.index, query, end: caret + tail.length };
+}
+
+/**
+ * What a reader knows about who a message could have addressed: the chapter
+ * roster and the names of its roles. Either half may still be loading.
+ */
+export interface MentionChipTargets {
+  members?: readonly MentionCandidate[];
+  roleNames?: readonly string[];
+}
+
+/**
+ * Decides, per `@`-token, whether a message body should paint it as a mention
+ * chip. Lowercase tokens in, `true` for "paint it".
+ *
+ * A chip says "this pinged someone", so it follows the server's own answer,
+ * `chat_messages.mentions` (the `users.id`s the send resolved and notified):
+ *
+ * - A message that reached nobody chips nothing. `@bigsigma` in prose, a name
+ *   nobody in the chapter has, used to chip anyway (tester report 2026-11-07).
+ * - A token naming a role chips when the message reached someone. The client
+ *   holds role names, not who holds each role, so it cannot say which mention
+ *   a role token produced; a role that reached nobody leaves `mentions` empty.
+ * - A token naming a member chips only when that member is in `mentions`, so
+ *   `@President @bigsigma` chips the first and not the second.
+ * - Before the roster has loaded, every token chips on a message that reached
+ *   someone, rather than none: the common case is a real mention.
+ *
+ * Two kinds of row chip by token instead, decided by the caller
+ * (`useMentionChips` in `@repo/hooks/mention-chips`): an imported archive
+ * message, whose `mentions` the Discord import never resolves though it
+ * rewrites names precisely so they chip, and the sender's own row before the
+ * server confirms it.
+ */
+export function mentionChipFilter(
+  mentionedIds: readonly string[],
+  targets: MentionChipTargets | null,
+): (token: string) => boolean {
+  if (mentionedIds.length === 0) return () => false;
+  const members = targets?.members;
+  if (!members) return () => true;
+  const mentioned = new Set(mentionedIds);
+  const roles = new Set((targets?.roleNames ?? []).map(fold));
+  return (token) => {
+    const folded = fold(token);
+    if (folded.length > 0 && roles.has(folded)) return true;
+    const member = matchMentionCandidate(members, token);
+    return member !== null && mentioned.has(member.user_id);
+  };
 }

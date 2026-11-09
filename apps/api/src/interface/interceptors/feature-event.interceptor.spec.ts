@@ -5,20 +5,17 @@ import {
   CanActivate,
   Controller,
   ExecutionContext,
-  Get,
   INestApplication,
   Injectable,
   Logger,
   NestInterceptor,
   Post,
-  Res,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { IsOptional, IsString } from 'class-validator';
 import { Test } from '@nestjs/testing';
-import type { Response } from 'express';
 import request from 'supertest';
 import * as Sentry from '@sentry/nestjs';
 import { configureApp } from '../../bootstrap';
@@ -183,14 +180,6 @@ class FeatureEventTestController {
   )
   mistyped() {
     return { ok: true };
-  }
-
-  @Get('ics')
-  @UseGuards(FakeChapterGuard)
-  @FeatureEvent('event-calendar-downloaded')
-  ics(@Res() res: Response) {
-    res.setHeader('Content-Type', 'text/calendar');
-    res.send('BEGIN:VCALENDAR');
   }
 
   @Post('plain')
@@ -394,15 +383,6 @@ describe('FeatureEventInterceptor (#593)', () => {
           'Error',
         ],
       }),
-    );
-  });
-
-  it('sends the event for a handler that writes its own response (@Res)', async () => {
-    await request(server()).get('/v1/fe/ics').expect(200);
-    expect(track).toHaveBeenCalledWith(
-      'event-calendar-downloaded',
-      USER_ID,
-      expect.objectContaining({ properties: { feature: 'events' } }),
     );
   });
 

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   useChannelUnreadCounts,
   useMarkChannelRead,
+  markChannelReadMutationKey,
   useLeaveChannel,
   useAuthorAvatars,
   useChannelNotificationPreferences,
@@ -104,7 +105,11 @@ describe("useMarkChannelRead", () => {
   });
 
   it("posts to the channel's read endpoint and invalidates channel queries", async () => {
-    const mockPost = vi.fn().mockResolvedValue({ data: { success: true }, error: null });
+    const mockPost = vi.fn().mockResolvedValue({
+      data: { success: true },
+      error: undefined,
+      response: { ok: true, status: 200 },
+    });
     const mockClient = { POST: mockPost };
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
@@ -127,8 +132,12 @@ describe("useMarkChannelRead", () => {
   });
 
   it("surfaces an error without invalidating anything", async () => {
-    const mockError = new Error("mark-read failed");
-    const mockPost = vi.fn().mockResolvedValue({ data: null, error: mockError });
+    const body = { statusCode: 403, error: "Forbidden", message: "Not a member" };
+    const mockPost = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: body,
+      response: { ok: false, status: 403 },
+    });
     const mockClient = { POST: mockPost };
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
@@ -140,8 +149,46 @@ describe("useMarkChannelRead", () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
 
-    expect(result.current.error).toEqual(mockError);
+    expect(result.current.error).toEqual(body);
     expect(invalidateSpy).not.toHaveBeenCalled();
+  });
+
+  // openapi-fetch gives an empty-bodied 5xx no `error` at all. Read off
+  // `error`, the stamp that never landed looked like one that did, and mobile's
+  // retry (#3747) never ran.
+  it("fails an empty-bodied 5xx, with its status, rather than reading it as a stamp", async () => {
+    const mockPost = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: undefined,
+      response: { ok: false, status: 503 },
+    });
+    const { result } = renderHook(() => useMarkChannelRead(), {
+      wrapper: createWrapper(queryClient, { POST: mockPost }),
+    });
+
+    result.current.mutate("chan-1");
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toMatchObject({ statusCode: 503 });
+  });
+
+  // Mobile's retry default is registered by this key; without it the hook
+  // silently falls back to `retry: 0`.
+  it("carries markChannelReadMutationKey", async () => {
+    const mockPost = vi.fn().mockResolvedValue({
+      data: { success: true },
+      error: undefined,
+      response: { ok: true, status: 200 },
+    });
+    const { result } = renderHook(() => useMarkChannelRead(), {
+      wrapper: createWrapper(queryClient, { POST: mockPost }),
+    });
+
+    result.current.mutate("chan-1");
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const [mutation] = queryClient.getMutationCache().getAll();
+    expect(mutation?.options.mutationKey).toEqual(markChannelReadMutationKey);
   });
 });
 

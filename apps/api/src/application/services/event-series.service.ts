@@ -158,9 +158,7 @@ export class EventSeriesService {
    */
   private occurrenceCountFor(rule: string): number | null {
     // Sourced from @repo/validation so the series this materializes and the
-    // RRULE `generateIcs` exports are derived from one number. They were
-    // separate before, and an .ics that promises one occurrence fewer than the
-    // app actually creates is invisible until a member misses the last meeting.
+    // meeting count the Repeat pickers promise are derived from one number.
     return recurrenceChildCount(rule);
   }
 
@@ -195,7 +193,7 @@ export class EventSeriesService {
     // could invert the interval: a MONTHLY event running 2027-01-29T20:00Z to
     // 2027-01-30T08:00Z generated a February occurrence ending twelve hours
     // before it began, slipping past the `end <= start` guard that `create` and
-    // `update` both enforce and emitting DTEND before DTSTART in its .ics.
+    // `update` both enforce.
     const durationMs = end.getTime() - start.getTime();
 
     // Bounds the catch-up scan for a long-dormant series: ~11 years of weeks or
@@ -260,6 +258,7 @@ export class EventSeriesService {
         // set a zone that a later regenerate silently dropped again.
         check_in_zone: parent.check_in_zone,
         check_in_zone_name: parent.check_in_zone_name,
+        check_in_opens_minutes: parent.check_in_opens_minutes,
       });
     }
 

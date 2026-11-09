@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { components } from "@repo/api-sdk";
+import { throwUnlessOk, type components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 /**
@@ -248,17 +248,45 @@ export function useRemovePushToken() {
   });
 }
 
-export function useMarkNotificationRead() {
+/**
+ * Identifies `useMarkNotificationRead` (#3393), so a client can give it its
+ * own defaults. Its failures group in Sentry under `notifications`, not
+ * `unkeyed` (`@repo/observability`'s `query-errors.ts`).
+ */
+export const markNotificationReadMutationKey = ["notifications", "read"] as const;
+
+/**
+ * The read receipt a push tap sends as it opens the app: the same write, under
+ * a longer key so a client can default it on its own. Mobile retries it once
+ * (#3747, `apps/mobile/lib/query-client.ts`), because it goes out the moment
+ * the app comes back. The inbox's taps and its Mark all read keep the shorter
+ * key and no retry: a batch awaits every write, and a retry parked offline
+ * would never let it settle.
+ */
+export const markNotificationReadOnOpenMutationKey = [
+  ...markNotificationReadMutationKey,
+  "on-open",
+] as const;
+
+export function useMarkNotificationRead({
+  sentOnOpen = false,
+}: {
+  /** A push tap's receipt, sent as the app opens (see the key above). */
+  sentOnOpen?: boolean;
+} = {}) {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: sentOnOpen
+      ? markNotificationReadOnOpenMutationKey
+      : markNotificationReadMutationKey,
     mutationFn: async (id: string) => {
-      const { data, error } = await client.PATCH(
-        "/v1/notifications/{id}/read",
-        { params: { path: { id } } },
-      );
-      if (error) throw error;
-      return data;
+      const result = await client.PATCH("/v1/notifications/{id}/read", {
+        params: { path: { id } },
+      });
+      // On the status, not `error`: see `useMarkChannelRead`.
+      throwUnlessOk(result);
+      return result.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: notificationKeys.all });

@@ -67,7 +67,15 @@ export default function AppLayout() {
       <Stack.Screen name="(tabs)" />
       <Stack.Screen
         name="chat-thread"
-        options={{ title: SCREEN_TITLES["chat-thread"] }}
+        // The launch jump to the last channel lands with no slide
+        // (`landing`, chat home); every other open slides in.
+        options={({ route }) => ({
+          title: SCREEN_TITLES["chat-thread"],
+          animation:
+            (route.params as { landing?: string } | undefined)?.landing === "1"
+              ? "none"
+              : "default",
+        })}
       />
       <Stack.Screen
         name="event-details"
@@ -112,6 +120,10 @@ export default function AppLayout() {
       <Stack.Screen
         name="host-check-in"
         options={{ title: SCREEN_TITLES["host-check-in"] }}
+      />
+      <Stack.Screen
+        name="whats-new"
+        options={{ title: SCREEN_TITLES["whats-new"] }}
       />
     </Stack>
   );

@@ -116,23 +116,40 @@ Multiple notifications from the same source are collapsed before they reach the 
   `<N> new messages`; an announcement burst stays URGENT in the `announcements` category.
 - Events: "2 upcoming events today."
 
-**Grouping happens server-side, in the push worker — not on the device.** The
+**Bundling happens server-side, in the push worker.** The
 `BurstBundler` (`apps/api/src/application/workers/burst-bundler.ts`) collapses
 3+ messages from the same sender to the same recipient inside a 60s window into a
 single "N new messages" push, and that decision reaches the client only as
-`data.bundled` / `data.count`. No category, thread, collapse or channel identifier is
-sent: `ExpoPushProvider` builds each message from `to`, `title`, `body`, `data`,
-`sound` and `priority` alone, so a client cannot group on identifiers it never
-receives. The Android **notification channel** is a separate thing and is not a
-grouping key; which channels the app defines is owned by
+`data.bundled` / `data.count`.
+
+**On the device, a conversation's pushes stack and leave once read.**
+
+- Every chat push (bundled or not, announcements included) carries `threadId`
+  `chat:<channelId>`, which `ExpoPushProvider` sends as iOS `aps.thread-id`, so
+  Notification Center stacks one channel's pushes together. A DM or group DM is
+  its own channel, so a DM stacks per person. Android has no equivalent through
+  Expo's push service and keeps the system's own per-app bundling.
+- Mobile takes a channel's chat pushes out of the tray once the server counts
+  the channel as fully read (`GET /v1/channels/unread` reads `unread_count: 0`):
+  `useBadgeSyncRuntime` passes those channels to `clearReadChatNotifications`,
+  which dismisses presented notifications whose `data.target` is that chat
+  channel. Opening a channel marks it read and refetches the counts, and the
+  counts refetch on foreground, so a channel read on another device or the web
+  clears the next time the app comes forward. Clearing while the app stays
+  closed would need a silent (`content-available`) push and a background task,
+  which the app does not have.
+
+No collapse identifier is sent, so no push replaces another. The Android
+**notification channel** is a separate thing and is not a grouping key; which
+channels the app defines is owned by
 [`../ui/mobile/patterns.md` § Push notifications](../ui/mobile/patterns.md#push-notifications). The "2 upcoming events today" example
 above is aspirational: only chat is bundled today.
 
 ## Badge Count
 
-The app icon badge shows the total unread count: unread in-app notifications + unread chat messages across all channels. Badge count is updated on every notification delivery and when the user reads content.
+The app icon badge counts what addresses the member: unread in-app notifications, chat @-mentions across all channels, and every unread message in a direct or group message. A channel that is merely busy adds nothing, the same rule the channel list's badges follow ([foundations.md](../ui/design-system/foundations.md) §5; owner decision 2026-11-07). Badge count is updated on every notification delivery and when the user reads content.
 
-**Mobile syncs the OS badge from the same queries the app already fetches, not from a dedicated count endpoint.** `apps/mobile/lib/notifications/use-badge-sync.ts`'s `useBadgeSyncRuntime` (mounted app-wide from `components/app-runtime.tsx`) sums `GET /v1/notifications`' unread rows (`read_at === null`, the same definition the in-app history and its "Mark all read" use) with `GET /v1/channels/unread`'s per-channel `unread_count`, and calls `Notifications.setBadgeCountAsync`. It resyncs whenever either query's data changes — including on app foreground, since `refetchOnWindowFocus` is already wired to `AppState` (`lib/connection/query-connectivity.ts`) — so no separate resume listener is needed. Badge setting needs no EAS `projectId`; it is a local OS call, not a remote push.
+**Mobile syncs the OS badge from the same queries the app already fetches, not from a dedicated count endpoint.** `apps/mobile/lib/notifications/use-badge-sync.ts`'s `useBadgeSyncRuntime` (mounted app-wide from `components/app-runtime.tsx`) sums `GET /v1/notifications`' unread rows (`read_at === null`, the same definition the in-app history and its "Mark all read" use) with `GET /v1/channels/unread`'s per-channel `mention_count`, or `unread_count` for a direct message (`addressedUnreadTotal` in `@repo/hooks`, which reads `GET /v1/channels` to tell which channels are direct), and calls `Notifications.setBadgeCountAsync`. It resyncs whenever either query's data changes — including on app foreground, since `refetchOnWindowFocus` is already wired to `AppState` (`lib/connection/query-connectivity.ts`) — so no separate resume listener is needed. Badge setting needs no EAS `projectId`; it is a local OS call, not a remote push.
 
 Two adjustments keep the two sources additive rather than double-counted or unbounded: the chat push worker writes a `notifications` row for every chat push it sends, DMs, group DMs and announcements included (to each recipient who has not blocked its sender and is not in the channel right now) on top of the read-receipt count `GET /v1/channels/unread` already reflects for that channel, so the notification half excludes chat-targeted rows (`selectUnreadNonChatCount`) rather than summing both unfiltered. And like the in-app history it mirrors, the notification half only sees the first page (`GET /v1/notifications`' default 50-row limit), so a member with more than 50 unread in-app notifications sees an undercounted badge until they clear some — the same accepted cap the history screen and its own unread pill already carry.
 
@@ -352,7 +369,7 @@ A push is read on a lock screen, in a glance, next to iOS Calendar and Google Ca
 | Tasks         | Task completion confirmed (points awarded)                         | NORMAL                      |
 | Service       | Service hours approved                                             | NORMAL                      |
 | Service       | Service hours rejected                                             | NORMAL                      |
-| Admin         | New member joined                                                  | NORMAL                      |
+| Admin         | New member joined (to members who can open the roster and invite or assign roles: `members:view` with `members:invite` or `roles:manage`; never the joiner, #3656) | NORMAL |
 | Admin         | Invite accepted                                                    | SILENT                      |
 | Admin         | Role change on a member                                            | SILENT                      |
 | Admin         | Chat message reported (to report-queue officers; never the reported sender or the reporter; content-free) | NORMAL |

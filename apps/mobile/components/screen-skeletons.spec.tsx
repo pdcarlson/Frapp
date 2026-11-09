@@ -308,20 +308,17 @@ describe("Screen skeletons sit on their screen's frames", () => {
     ]);
   });
 
-  it("Event details: the check-in card's frame and the calendar button, as itself", () => {
+  it("Event details: the check-in card's frame, and no section an event may not carry", () => {
     const tree = render(<EventDetailSkeleton />);
-    // The button's label is fixed, so it is text, not a bar; the sections an
-    // event may not carry are not drawn at all.
-    expect(screenText(tree)).toBe("Add to calendar");
+    // The sections an event may not carry are not drawn at all, so the
+    // skeleton holds no text.
+    expect(screenText(tree)).toBe("");
     expect(
       views(tree).filter(
         (style) =>
           style.borderRadius === tokens.radius.card &&
           style.padding === tokens.spacing.lg,
       ),
-    ).toHaveLength(1);
-    expect(
-      views(tree).filter((style) => style.height === tokens.touch.buttonLarge),
     ).toHaveLength(1);
   });
 

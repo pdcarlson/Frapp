@@ -209,6 +209,7 @@ The API's throttler sets this sentence (`THROTTLED_MESSAGE`, `custom-throttler.g
 | Error | `Couldn't load members` | the load-failure line (§ copy rules) |
 | Error (roles and points) | `Couldn't load roles and points` | `Filtering, sorting and assignment need both.` |
 | Offline | `Members unavailable offline` | `Reconnect to load the roster.` |
+| Member sheet: a role save that removes the last role carrying member access | `Take away <name>'s access?` | `Without a role like Member, <name> can't open chat, the member list or events.` Buttons `Cancel` and `Take away access`. Mobile s13 asks the same per tap with `Remove <role>` ([Edit roles](#edit-roles-mobile-s13)); one web save can remove several roles, so its button names the outcome. Set in `components/members/member-detail-sheet.tsx` (`handleSaveRoles`) |
 
 The empty and no-results rows are one line, an `InlineNote`, where the rows go, with the way back as a link in the line (empty-states plan rule 7, 2026-11-07). The split the paragraphs below argue for still holds; only the card went.
 
@@ -876,10 +877,10 @@ names a control only one client has lives with that client, under `apps/mobile/`
 | Block failed | `Couldn't block <name>` | `Nothing changed. Check your connection and try again.` Also any 404 other than the one below (an alert on mobile, a toast on web) | `block-copy` (`blockFailedTitle`, `BLOCK_FAILURE_BODY`) |
 | Unblock failed | `Couldn't unblock <name>` | `Nothing changed. Check your connection and try again.` (an alert on mobile, a toast on web) | `block-copy` (`unblockFailedTitle`, `BLOCK_FAILURE_BODY`) |
 | Block refused, not a member | `Couldn't block <name>` | `This member is no longer in your chapter, so there's nothing to block.` Only for a 404 whose message is `Member not found` (`isMemberNotFound`) | `block-copy` (`BLOCK_NOT_A_MEMBER_BODY`) |
-| Actions sheet, Report row | — | `Report message` · `Your chapter's officers will be able to see it.` | mobile `components/chat/message-actions-sheet.tsx` |
+| Actions sheet rows | — | `Reply`, `Edit message`, `Copy text` (`Copied`), `Mention`, `Report message`, `Delete message`: bare labels, no line explaining a row (owner, 2026-11-07). The add-reaction cell is named `Add a reaction`; the picker's field reads `Search emoji` | mobile `components/chat/message-actions-sheet.tsx`, `emoji-picker-sheet.tsx` |
 | Action bar More menu (web) | — | `More actions` (the button's name) · `Report message`; `Block <name>` (destructive) | web `components/chat/message-item.tsx`; the Block label is `block-copy` (`blockActionLabel`) on every surface |
 | Report form | `Report message` | `Why are you reporting it?` · the reasons · `Details (optional)` · `Send report`. Mobile's field placeholder reads `Add details (optional)` | `report-copy` (`REPORT_FORM_TITLE`, `REPORT_FORM_PROMPT`, `REPORT_SEND_LABEL`, `REPORT_REASON_LABELS`); the details field's label is each client's own |
-| Block / Unblock rows (message actions sheet and the directory's member sheet) | — | `Block <name>` · `Hides their messages from you in this chapter's chat. They aren't told.`; `Unblock <name>` · `Their messages in this chapter's chat show again.` (directory only) | mobile `lib/chat/block-actions.ts` (`BLOCK_ROW_DESCRIPTION`, `UNBLOCK_ROW_DESCRIPTION`) |
+| Block / Unblock rows (the report form, Report sent, and the directory's member sheet) | — | `Block <name>`; `Unblock <name>` (directory only). No line under either: what a block does is said in its confirmation (2026-11-07) | `block-copy` (`blockActionLabel`, `blockConfirmBody`) |
 | Report sent | `Report sent` | `Your chapter's officers can see this report. The member you reported isn't told.` · then `Block <name>` where the sender can be blocked, and `Done` | `report-copy` (`REPORT_SENT_TITLE`, `REPORT_SENT_BODY`) |
 | Already reported | `Already reported` | `You already reported this message, and that report is still open. Your chapter's officers can see it.` | `report-copy` (`REPORT_ALREADY_TITLE`, `REPORT_ALREADY_BODY`) |
 | Report failed, form open | — | `Your report didn't send. Check your connection and try again.` — no response, a 5xx, or any status the next row doesn't list | `report-copy` (`reportFailureBody`) |
@@ -991,7 +992,7 @@ roles are edited. Who gets it, and what it changes, is owned by
 
 | State | Title | Description | Home |
 |---|---|---|---|
-| The sheet | `<name>'s roles` | Search field `Search roles`; under it one fixed-height status line: `Tap a role to add or remove it.`, then `Saving…` and `Saved` | mobile `components/directory/member-roles-sheet.tsx` |
+| The sheet | `<name>'s roles` | Search field `Search roles`; under it one fixed-height status line, blank until `Saving…` and `Saved` (it said `Tap a role to add or remove it.` until 2026-11-07) | mobile `components/directory/member-roles-sheet.tsx` |
 | President's row | — | `Changes with Transfer presidency` under the name; the row can't be tapped | mobile `lib/directory/role-editor.ts` (`ROLES_LOCKED_CAPTION`) |
 | Custom roles held | — | `<names> is a custom role, changed on the web.` (`are custom roles` for several) | mobile `lib/directory/role-editor.ts` (`customRolesCaption`) |
 | Empty | — | `This chapter has no roles yet.`, or `No roles match that search.` while searching | mobile `components/directory/member-roles-sheet.tsx` |

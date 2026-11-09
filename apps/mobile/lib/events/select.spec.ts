@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { type EventRow, groupByWeek, selectEventDetail } from "./select";
+import {
+  type EventRow,
+  groupByWeek,
+  selectEventDetail,
+  selectMyAttendance,
+} from "./select";
 
 function event(overrides: Record<string, unknown> = {}) {
   return {
@@ -52,8 +57,8 @@ describe("selectEventDetail — recurrence", () => {
   });
 
   // A one-off carries neither. Both must read as null rather than undefined:
-  // the calendar export branches on `parent_event_id` to decide whether the
-  // event may describe a series at all.
+  // the edit flow branches on `parent_event_id` to decide whether the event
+  // belongs to a series at all.
   it("is null for a one-off event, including when the keys are absent", () => {
     const detail = selectEventDetail(event());
     expect(detail?.recurrence_rule).toBeNull();
@@ -71,6 +76,43 @@ describe("selectEventDetail — recurrence", () => {
   });
 });
 
+describe("selectEventDetail — check-in lead", () => {
+  it("keeps the event's lead and defaults a row without one", () => {
+    expect(
+      selectEventDetail(event({ check_in_opens_minutes: 25 }))
+        ?.check_in_opens_minutes,
+    ).toBe(25);
+    expect(selectEventDetail(event())?.check_in_opens_minutes).toBe(10);
+  });
+});
+
+describe("selectMyAttendance", () => {
+  const at = "2026-11-07T00:52:00.000Z";
+
+  it("reads a PRESENT or LATE row's check-in time", () => {
+    for (const status of ["PRESENT", "LATE"]) {
+      expect(
+        selectMyAttendance({ attendance: { status, check_in_time: at } }),
+      ).toEqual({ status, checkedInAt: new Date(at) });
+    }
+  });
+
+  it("keeps an officer's mark, with no check-in", () => {
+    expect(
+      selectMyAttendance({ attendance: { status: "EXCUSED", check_in_time: at } }),
+    ).toEqual({ status: "EXCUSED", checkedInAt: null });
+    expect(
+      selectMyAttendance({ attendance: { status: "PRESENT", check_in_time: null } }),
+    ).toEqual({ status: "PRESENT", checkedInAt: null });
+  });
+
+  it("is null with no row, or one it can't read", () => {
+    expect(selectMyAttendance({ attendance: null })).toBeNull();
+    expect(selectMyAttendance({ attendance: { status: "GONE" } })).toBeNull();
+    expect(selectMyAttendance(undefined)).toBeNull();
+  });
+});
+
 describe("groupByWeek", () => {
   function at(start: Date | string, name: string): EventRow {
     return {
@@ -80,6 +122,7 @@ describe("groupByWeek", () => {
       start_time: typeof start === "string" ? start : start.toISOString(),
       end_time: typeof start === "string" ? start : start.toISOString(),
       point_value: null,
+      check_in_opens_minutes: 10,
       attendance: { is_mandatory: false },
     };
   }

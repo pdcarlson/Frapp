@@ -17,9 +17,11 @@ import {
   eventChangeOf,
 } from './event-announcement.service';
 import { SystemPermissions } from '#domain/constants/permissions';
-import { toRRuleLine } from '@repo/validation';
-import { isInvited } from './event-role-targeting';
-import { eventLimitsAudience } from '@repo/validation';
+import { isEventVisibleTo, isInvited } from './event-role-targeting';
+import {
+  DEFAULT_CHECK_IN_OPENS_MINUTES,
+  eventLimitsAudience,
+} from '@repo/validation';
 import { normalizeCheckInZone } from './event-input';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import type {
@@ -30,7 +32,7 @@ import type {
 } from './event-input';
 
 /**
- * Event reads, single-row writes and the `.ics` export. Recurring-series writes
+ * Event reads and single-row writes. Recurring-series writes
  * live in `EventSeriesService` and the pushes and chat card that follow a write
  * in `EventAnnouncementService` (#3270).
  */
@@ -59,27 +61,17 @@ export class EventService {
    * `EventSeriesService` for a series edit) — those routes are already
    * gated on `events:update`/`events:delete`, a stronger authorization than
    * read visibility, so they must not be narrowed by it. Only the read-only
-   * routes (`list`/`getOne`/`getIcs`) pass a viewer.
+   * routes (`list`/`getOne`) pass a viewer.
    */
   private async isVisibleToViewer(
     event: Event,
     chapterId: string,
     viewerId: string,
   ): Promise<boolean> {
-    if (!eventLimitsAudience(event)) return true;
-    if (
-      await this.rbac.memberHasAnyPermission(chapterId, viewerId, [
-        SystemPermissions.EVENTS_UPDATE,
-      ])
-    ) {
-      return true;
-    }
-    const member = await this.memberRepo.findByUserAndChapter(
-      viewerId,
-      chapterId,
-    );
-    if (!member) return false;
-    return isInvited(event, member.role_ids);
+    return isEventVisibleTo(event, chapterId, viewerId, {
+      rbac: this.rbac,
+      memberRepo: this.memberRepo,
+    });
   }
 
   async findById(
@@ -138,7 +130,7 @@ export class EventService {
     }
 
     // An event that leaves anyone out must not be broadcast as a chat card. #1463 made
-    // `required_role_ids` gate read access — list, detail, ICS, search and the
+    // `required_role_ids` gate read access — list, detail, search and the
     // event notifications all restrict a targeted event to members holding one
     // of its roles — but the `kind:"event"` card bypassed all of it: it embeds
     // name / start / end / location / point_value into a message row that
@@ -207,6 +199,8 @@ export class EventService {
       notes: input.notes ?? null,
       check_in_zone: normalizeCheckInZone(input.check_in_zone) ?? null,
       check_in_zone_name: input.check_in_zone_name ?? null,
+      check_in_opens_minutes:
+        input.check_in_opens_minutes ?? DEFAULT_CHECK_IN_OPENS_MINUTES,
     });
 
     if (parent.recurrence_rule) {
@@ -351,59 +345,5 @@ export class EventService {
     await this.series.handOffSeriesHead(target, chapterId);
 
     await this.eventRepo.delete(id, chapterId);
-  }
-
-  async generateIcs(
-    eventId: string,
-    chapterId: string,
-    viewerId?: string,
-  ): Promise<string> {
-    const event = await this.findById(eventId, chapterId, viewerId);
-
-    const formatDate = (iso: string): string =>
-      new Date(iso)
-        .toISOString()
-        .replace(/[-:]/g, '')
-        .replace(/\.\d{3}/, '');
-
-    const escapeText = (text: string): string =>
-      text
-        .replace(/\\/g, '\\\\')
-        .replace(/;/g, '\\;')
-        .replace(/,/g, '\\,')
-        .replace(/\n/g, '\\n');
-
-    const lines = [
-      'BEGIN:VCALENDAR',
-      'VERSION:2.0',
-      'PRODID:-//Frapp//Events//EN',
-      'BEGIN:VEVENT',
-      `DTSTART:${formatDate(event.start_time)}`,
-      `DTEND:${formatDate(event.end_time)}`,
-      `SUMMARY:${escapeText(event.name)}`,
-    ];
-
-    if (event.description) {
-      lines.push(`DESCRIPTION:${escapeText(event.description)}`);
-    }
-    if (event.location) {
-      lines.push(`LOCATION:${escapeText(event.location)}`);
-    }
-
-    // Only a series *parent* carries the rule. A materialized child is a real
-    // row with its own id and its own attendance, so it exports as the single
-    // event it is — giving it a RECURRENCE-ID would mean re-using the parent's
-    // UID and presenting to the calendar as an override of a series the member
-    // may never have imported. An unrecognized rule falls through to a plain
-    // VEVENT rather than failing the download, matching
-    // `EventSeriesService.occurrenceCountFor`.
-    if (event.parent_event_id === null) {
-      const rrule = toRRuleLine(event.recurrence_rule);
-      if (rrule) lines.push(rrule);
-    }
-
-    lines.push(`UID:${event.id}@frapp.live`, 'END:VEVENT', 'END:VCALENDAR');
-
-    return lines.join('\r\n');
   }
 }

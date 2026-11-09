@@ -7,6 +7,7 @@ import {
 import Svg, { Path } from "react-native-svg";
 import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
+import { MemberAvatar } from "@/components/member-avatar";
 import { initialsFor } from "@/lib/chat/display-name";
 import { gutterBleed, PressableRow } from "@/components/list-section";
 import { SkeletonBlock, SkeletonRegion } from "@/components/state-block";
@@ -27,9 +28,10 @@ import {
  *   one fact — *you were addressed*: an @-mention or a direct message. It MUST
  *   NOT be replaced by the chapter accent under any seed", so "you were
  *   addressed" reads identically in every chapter.
- * - **Channel unread is neutral — never red, never accent.** A plain unread
- *   channel takes the `border.input` fill with `text.foreground` text, plus a
- *   bold title. A read row keeps a bright regular-weight title and no badge.
+ * - **Channel unread is neutral — never red, never accent, and has no
+ *   number** (2026-11-07). A plain unread channel is a bold title alone; only
+ *   a mention or an unread DM draws the badge. A read row keeps a bright
+ *   regular-weight title.
  *
  * **A read name stays bright** (owner, 2026-11-07). The emphasis is weight,
  * the sigil and the badge: a 700 title against a read row's 400, both in
@@ -43,10 +45,7 @@ import {
  * `surface1`, which on a busy chapter striped the list in card-coloured bars
  * that said nothing the badge didn't; the lift is now only the iOS press
  * state (`usePressFeedback`, through `PressableRow`).
- *
- * "fill and text are the only difference, so badge geometry stays one recipe" —
- * hence a single `styles.badge` with two colour overlays rather than two badges.
- *
+ * *
  * **Neither count is computed here.** `spec/behavior/chat/README.md`
  * § Read Receipts requires both to come from `GET /v1/channels/unread`, because
  * the server excludes the viewer's own and deleted messages and treats a channel
@@ -54,10 +53,18 @@ import {
  * exactly those cases. This component only renders what it is handed.
  */
 
+/** A DM row's avatar diameter. */
+const DIRECT_AVATAR_SIZE = 34;
+
 export interface ChannelRowProps {
   name: string;
-  /** DM/group rows draw initials; channel rows draw a `#` sigil. */
+  /** DM/group rows draw an avatar; channel rows draw a `#` sigil. */
   isDirect?: boolean;
+  /**
+   * A one-to-one DM's other member's photo, drawn over the initials. `null`
+   * (a group DM, or no photo) keeps the initials.
+   */
+  avatarUrl?: string | null;
   /**
    * The member pinned this row (#2877). Names the pin action "Unpin from top".
    * The sigil stays muted like every row's: a row icon is neutral, never the
@@ -126,6 +133,7 @@ export function badgeLabel(unreadCount: number, mentionCount: number): string {
 export function ChannelRow({
   name,
   isDirect = false,
+  avatarUrl = null,
   isPinned = false,
   preview,
   isMuted = false,
@@ -140,7 +148,7 @@ export function ChannelRow({
   const styles = createStyles(tokens);
   // Red means "you were addressed": an @-mention, or anything unread in a
   // direct message (foundations.md §5). The DM half was missing here until
-  // #2877, so an unread DM drew the neutral badge while web drew it red; the
+  // #2877, so an unread DM drew a neutral badge while web drew it red; the
   // rule is now `countsAddressMember` in `@repo/hooks`, which the shared
   // sidebar arrangement uses too.
   const hasMention = countsAddressMember(isDirect, {
@@ -200,9 +208,13 @@ export function ChannelRow({
       style={[styles.row, preview == null ? styles.rowOneLine : null]}
     >
       {isDirect ? (
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{initialsFor(name)}</Text>
-        </View>
+        <MemberAvatar
+          uri={avatarUrl}
+          initials={initialsFor(name)}
+          size={DIRECT_AVATAR_SIZE}
+          style={styles.avatar}
+          textStyle={styles.avatarText}
+        />
       ) : (
         <Text
           style={[
@@ -247,12 +259,10 @@ export function ChannelRow({
       </View>
 
       <View style={styles.trailing}>
-        {isUnread ? (
-          <UnreadBadge
-            unreadCount={unreadCount}
-            mentionCount={mentionCount}
-            addressed={hasMention}
-          />
+        {/* A number only when it addresses the member, as Discord does: a
+            merely unread channel says so with its bold name (2026-11-07). */}
+        {hasMention ? (
+          <UnreadBadge unreadCount={unreadCount} mentionCount={mentionCount} />
         ) : null}
       </View>
     </PressableRow>
@@ -278,34 +288,24 @@ function MutedGlyph({ color }: { color: string }) {
 }
 
 /**
- * The count badge: neutral for plain unread, the fixed mention red when the
- * member was addressed. Exported for the folded section headers on s04
- * (#2877), so a header's total draws with the row's recipe.
+ * The count badge, drawn only when the member was addressed (a mention or an
+ * unread DM), in the fixed mention red. A merely unread channel carries no
+ * number since 2026-11-07, so the neutral fill it used is gone. Exported for
+ * the folded section headers on s04 (#2877), so a header's total draws with
+ * the row's recipe.
  */
 export function UnreadBadge({
   unreadCount,
   mentionCount,
-  addressed,
 }: {
   unreadCount: number;
   mentionCount: number;
-  addressed: boolean;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   return (
-    <View
-      style={[
-        styles.badge,
-        addressed ? styles.badgeMention : styles.badgeNeutral,
-      ]}
-    >
-      <Text
-        style={[
-          styles.badgeText,
-          addressed ? styles.badgeTextMention : styles.badgeTextNeutral,
-        ]}
-      >
+    <View style={[styles.badge, styles.badgeMention]}>
+      <Text style={[styles.badgeText, styles.badgeTextMention]}>
         {badgeLabel(unreadCount, mentionCount)}
       </Text>
     </View>
@@ -386,7 +386,7 @@ export function accessibilityLabelFor({
 }
 
 function createStyles(tokens: SignetTokens) {
-  const AVATAR_SIZE = 34;
+  const AVATAR_SIZE = DIRECT_AVATAR_SIZE;
 
   return StyleSheet.create({
     row: {
@@ -493,17 +493,11 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       justifyContent: "center",
     },
-    badgeNeutral: {
-      backgroundColor: tokens.color.border.input,
-    },
     badgeMention: {
       backgroundColor: tokens.color.semantic.mention,
     },
     badgeText: {
       ...typeRole(tokens.typography.role.caption),
-    },
-    badgeTextNeutral: {
-      color: tokens.color.text.foreground,
     },
     badgeTextMention: {
       color: tokens.color.semantic.mentionForeground,

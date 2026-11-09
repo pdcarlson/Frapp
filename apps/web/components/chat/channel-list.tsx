@@ -257,7 +257,7 @@ export interface ChannelListProps {
  * #1191.
  *
  * **Red means one thing.** A mention or a DM takes the fixed `#E5484D` badge and
- * nothing else does — a plain unread channel is the neutral `--input` badge,
+ * nothing else does — a plain unread channel carries no badge, only its bold name (2026-11-07),
  * because red is reserved for direct address and must read identically under
  * every chapter seed (foundations.md §5, accent-engine.md §5).
  */
@@ -458,14 +458,22 @@ export function ChannelList({
               row. The channel says it is read-only where that matters, in
               its composer.
             */}
-              {isUnread ? (
+              {/* A number only when it addresses the member, as Discord does:
+                  a merely unread channel says so with its bold name
+                  (2026-11-07). */}
+              {countsKnown && hasMention ? (
                 <Badge
-                  variant={hasMention ? "mention" : "secondary"}
+                  variant="mention"
                   className="h-6 justify-center px-2"
                   aria-label={unreadAnnouncement(counts, isDm(channel))}
                 >
                   {badgeLabel(counts.unreadCount, counts.mentionCount)}
                 </Badge>
+              ) : isUnread ? (
+                // No number to draw, but a screen reader still hears it.
+                <span className="sr-only">
+                  {unreadAnnouncement(counts, isDm(channel))}
+                </span>
               ) : null}
             </span>
           </button>
@@ -516,6 +524,11 @@ export function ChannelList({
                   // resting layout and gives the pinned label room.
                   "sticky top-0 z-10 -mt-1 bg-surface-1 pt-1",
                   EYEBROW,
+                  // Folded with something unread inside, it reads as an
+                  // unread row does, since only a mention carries a number.
+                  section.collapsed &&
+                    section.unreadCount > 0 &&
+                    "text-foreground",
                 )}
               >
                 {section.collapsed ? (
@@ -530,15 +543,18 @@ export function ChannelList({
                   />
                 )}
                 <span className="truncate">{section.label}</span>
-                {section.collapsed &&
-                (section.unreadCount > 0 || section.addressed) ? (
+                {section.collapsed && section.addressed ? (
                   <Badge
-                    variant={section.addressed ? "mention" : "secondary"}
+                    variant="mention"
                     className="ml-auto h-5 justify-center px-1.5 normal-case tracking-normal"
                     aria-label={foldedSectionAnnouncement(section)}
                   >
-                    {badgeLabel(section.unreadCount, section.mentionCount)}
+                    {badgeLabel(section.addressedCount, section.mentionCount)}
                   </Badge>
+                ) : section.collapsed && section.unreadCount > 0 ? (
+                  <span className="sr-only">
+                    {foldedSectionAnnouncement(section)}
+                  </span>
                 ) : null}
               </button>
             ) : (

@@ -93,7 +93,7 @@ export interface MessageAttachmentsProps {
    */
   confirmed?: boolean;
   /**
-   * The message's own long-press (report, block — #2257), forwarded to each
+   * The message's own long-press (its actions sheet — #2257), forwarded to each
    * file. A file row is a `Pressable` that claims the touch, so without it a
    * long press on a photo would end as a tap that opens the photo, and a
    * photo-only message would have no way to reach its actions at all.
@@ -574,10 +574,17 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.control,
       overflow: "hidden",
     },
-    // Its width, max width and aspect ratio come from the photo (above).
+    // Its max width and aspect ratio come from the photo (above). The height
+    // cap is not redundant with that max width: Yoga derives the height from
+    // the unclamped 100% width before `maxWidth` narrows it, so a portrait
+    // photo's row came out 144x587 on a 330pt column, the photo drawing its
+    // 256pt at the top and an empty 330pt block below it, which pushed the
+    // thread up and cut the sender's name off (Paul's iOS screenshot,
+    // 2026-11-07, #3699).
     imageRowSized: {
       alignSelf: "flex-start",
       width: "100%",
+      maxHeight: PREVIEW_MAX_HEIGHT,
     },
     fileRow: {
       flexDirection: "row",

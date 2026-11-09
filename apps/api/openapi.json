@@ -1826,6 +1826,52 @@
         ]
       }
     },
+    "/v1/members/by-user/{userId}": {
+      "get": {
+        "operationId": "MemberController_getByUser_v1",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberProfileDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get member profile by user ID",
+        "tags": [
+          "Members"
+        ]
+      }
+    },
     "/v1/members/{id}": {
       "get": {
         "operationId": "MemberController_getOne_v1",
@@ -5319,45 +5365,6 @@
         ]
       }
     },
-    "/v1/events/{id}/ics": {
-      "get": {
-        "operationId": "EventController_getIcs_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Download .ics calendar file for an event",
-        "tags": [
-          "Events"
-        ]
-      }
-    },
     "/v1/events/{eventId}/attendance/check-in": {
       "post": {
         "description": "Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. `lat`/`lng` are required when the event defines a check-in geofence.",
@@ -5443,6 +5450,53 @@
           }
         ],
         "summary": "Mint the rotating check-in code for the host display (s22)",
+        "tags": [
+          "Attendance"
+        ]
+      }
+    },
+    "/v1/events/{eventId}/attendance/me": {
+      "get": {
+        "description": "Lets a member's event page show that they are checked in (and when) instead of offering check-in again. `attendance` is null when they have no row.",
+        "operationId": "AttendanceController_mine_v1",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyAttendanceDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own attendance for an event",
         "tags": [
           "Attendance"
         ]
@@ -13767,6 +13821,12 @@
             "type": "string",
             "description": "Human-readable name for `check_in_zone`, shown on the mobile scanner (\"Inside the Great Hall zone\")."
           },
+          "check_in_opens_minutes": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 120,
+            "description": "Minutes before start_time that check-in opens. Omitted on create, it is 10; the window closes 15 minutes after end_time."
+          },
           "channel_id": {
             "type": "string",
             "description": "When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when the event keeps anyone out (`others_invited` false, including its default when `required_role_ids` is non-empty, or a non-empty `excluded_role_ids`), on this key or `client_message_id` alone — the card is broadcast to every reader of the channel, so a create cannot both limit its audience and post one. (`PATCH` can still limit the audience of an event whose card already posted; that card is left as-is.)"
@@ -13869,6 +13929,12 @@
             "type": "string",
             "nullable": true
           },
+          "check_in_opens_minutes": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 120,
+            "description": "Minutes before start_time that check-in opens; it closes 15 minutes after end_time."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -13897,6 +13963,7 @@
           "notes",
           "check_in_zone",
           "check_in_zone_name",
+          "check_in_opens_minutes",
           "created_at"
         ]
       },
@@ -13967,6 +14034,12 @@
             "type": "string",
             "description": "Human-readable name for `check_in_zone`, shown on the mobile scanner (\"Inside the Great Hall zone\")."
           },
+          "check_in_opens_minutes": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 120,
+            "description": "Minutes before start_time that check-in opens; the window closes 15 minutes after end_time. Omitted leaves it unchanged; null is refused."
+          },
           "scope": {
             "type": "string",
             "enum": [
@@ -13998,6 +14071,78 @@
             "description": "Scanner longitude. Required when the event defines a check-in geofence; ignored when it doesn't."
           }
         }
+      },
+      "EventAttendanceDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PRESENT",
+              "EXCUSED",
+              "ABSENT",
+              "LATE"
+            ]
+          },
+          "check_in_time": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "excuse_reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "marked_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "event_id",
+          "user_id",
+          "status",
+          "check_in_time",
+          "excuse_reason",
+          "marked_by",
+          "created_at"
+        ]
+      },
+      "MyAttendanceDto": {
+        "type": "object",
+        "properties": {
+          "attendance": {
+            "nullable": true,
+            "description": "The caller's row, or null when they have none (not checked in, and not yet marked).",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EventAttendanceDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "attendance"
+        ]
       },
       "UpdateAttendanceDto": {
         "type": "object",
@@ -15926,7 +16071,7 @@
           },
           "new_channel_is_read_only": {
             "type": "boolean",
-            "default": true
+            "description": "Whether the channel `create_new` makes is read-only (only `announcements:post` holders post). Omitted means as in Discord: read-only only when the scan saw Discord make it read-only (`read_only_in_discord`), otherwise postable by whoever can read it. On an uploaded export, which carries no permissions, omitted means postable."
           },
           "new_channel_visibility": {
             "type": "string",
@@ -16043,7 +16188,7 @@
         "properties": {
           "channels": {
             "type": "array",
-            "description": "Every channel in the server, and the threads of each channel the bot can read, all recorded as `skip` until the admin says otherwise. Threads carry `parent_discord_channel_id` and are not mapped separately — they follow their parent. Each row carries `readable` (whether the bot can read its history; false rows can only be skipped, null means the scan could not tell) and `private_in_discord` (some member could not read its history in Discord; a thread is true when it is a private thread or its channel is private; null means the scan could not tell). A channel that is private, holds a private thread, or whose privacy is null needs an explicit `new_channel_visibility` to be created. A top-level channel that was private also carries `discord_reader_role_ids`: the Discord roles (from `roles`) that could read it, each on its own, which is what `new_channel_visibility: discord` copies. Empty when `@everyone` alone could read it (a deny hid it from someone); null when unknown. A top-level channel in a Discord category carries `discord_category` (its name) and `discord_category_position` (its place in the server), which is how the admin keeps categories as channel groups (`new_channel_group`).",
+            "description": "Every channel in the server, and the threads of each channel the bot can read, all recorded as `skip` until the admin says otherwise. Threads carry `parent_discord_channel_id` and are not mapped separately — they follow their parent. Each row carries `readable` (whether the bot can read its history; false rows can only be skipped, null means the scan could not tell) and `private_in_discord` (some member could not read its history in Discord; a thread is true when it is a private thread or its channel is private; null means the scan could not tell). A channel that is private, holds a private thread, or whose privacy is null needs an explicit `new_channel_visibility` to be created. A top-level channel also carries `read_only_in_discord`: true when Discord made it read-only, none of its ordinary readers able to talk there (an announcements-style channel; in a forum, able to reply), which is the default for `new_channel_is_read_only`; null when unknown. A top-level channel that was private also carries `discord_reader_role_ids`: the Discord roles (from `roles`) that could read it, each on its own, which is what `new_channel_visibility: discord` copies. Empty when `@everyone` alone could read it (a deny hid it from someone); null when unknown. A top-level channel in a Discord category carries `discord_category` (its name) and `discord_category_position` (its place in the server), which is how the admin keeps categories as channel groups (`new_channel_group`).",
             "items": {
               "type": "object",
               "additionalProperties": true

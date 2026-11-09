@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CHECK_IN_OPENS_ERROR,
   defaultEventStart,
   emptyEventDraft,
   moreOptionsSummary,
@@ -75,6 +76,34 @@ describe("validateNewEvent", () => {
         recurrence_rule: "WEEKLY",
       },
     });
+  });
+
+  it("sends a check-in lead only when it isn't the server's default (#3703)", () => {
+    const body = (checkInOpensInput: string) => {
+      const result = validateNewEvent(
+        draft({ start: local(8, 21), checkInOpensInput }),
+        AFTERNOON,
+      );
+      if (!result.ok) throw new Error(JSON.stringify(result.errors));
+      return result.body;
+    };
+    expect(body("10")).not.toHaveProperty("check_in_opens_minutes");
+    expect(body("")).not.toHaveProperty("check_in_opens_minutes");
+    expect(body("0").check_in_opens_minutes).toBe(0);
+    expect(body("45").check_in_opens_minutes).toBe(45);
+  });
+
+  it("refuses a check-in lead past two hours, or not a whole number", () => {
+    for (const checkInOpensInput of ["121", "-5", "7.5", "soon"]) {
+      const result = validateNewEvent(
+        draft({ start: local(8, 21), checkInOpensInput }),
+        AFTERNOON,
+      );
+      expect(result).toEqual({
+        ok: false,
+        errors: { checkInOpens: CHECK_IN_OPENS_ERROR },
+      });
+    }
   });
 
   it("omits a blank location and sends a blank points field as 0", () => {
@@ -156,6 +185,7 @@ describe("the More options summary", () => {
       moreOptionsSummary(
         {
           pointsInput: "10",
+          checkInOpensInput: "10",
           attendance: { everyone: "required", roles: { a: "optional" } },
           recurrenceRule: "BIWEEKLY",
         },
@@ -167,6 +197,20 @@ describe("the More options summary", () => {
     expect(moreOptionsSummary(emptyEventDraft(), () => undefined)).toBe(
       "10 pts · Optional for everyone · Doesn't repeat",
     );
+  });
+
+  it("says a check-in lead only when it isn't the default", () => {
+    const summary = (checkInOpensInput: string) =>
+      moreOptionsSummary(
+        { ...emptyEventDraft(), checkInOpensInput },
+        () => undefined,
+      );
+    expect(summary("30")).toBe(
+      "10 pts · Optional for everyone · Check-in opens 30 min early · Doesn't repeat",
+    );
+    expect(summary("0")).toContain("Check-in opens at the start");
+    expect(summary("")).not.toContain("Check-in");
+    expect(summary("500")).toContain("Check-in time needs a fix");
   });
 
   it("says how long a series runs", () => {

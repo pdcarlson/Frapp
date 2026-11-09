@@ -82,7 +82,7 @@
 - **Quiet hours:** Per-user configurable time window; NORMAL notifications silenced during quiet hours.
 - **Grouping:** Multiple notifications from the same source collapsed into one.
 - **Per-channel mute:** Users can mute individual chat channels.
-- **Badge count:** Total unread across notifications and chat.
+- **Badge count:** Unread notifications plus what addresses the member in chat: @-mentions and unread direct messages ([`notifications.md`](../behavior/notifications.md) § Badge Count).
 - **Triggers:** Chat mentions, DMs, announcements, event reminders, point changes, study session events, billing alerts, admin notifications.
 - **In-app history:** All notifications stored in `notifications` table; viewable and dismissable.
 - **Preferences:** Per-category opt-in/opt-out.
@@ -113,7 +113,7 @@
 - **Auto-absent:** For mandatory or role-targeted events, required members who did not check in and were not excused are auto-marked ABSENT.
 - **Meeting minutes:** Events have an optional notes field (markdown) editable by admins after the event. Visible to all members with access to the event.
 - Unique constraint: one attendance record per (event, user).
-- **Calendar integration:** "Add to Calendar" generates .ics file or deep-links to device calendar.
+- **Calendar integration:** none for now. The `.ics` export was withdrawn on 2026-11-08 (#3708) until real calendar sync ships (#3322); [`events.md` § Calendar Integration](../behavior/events.md#calendar-integration).
 
 ## Polls and Voting
 

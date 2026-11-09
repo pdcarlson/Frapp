@@ -18,9 +18,10 @@
  * - **Tab screens mount lazily.** A tap that deep-links straight to
  *   `/chat-thread` need never mount `(app)/(tabs)/index.tsx`, so a runtime hosted
  *   there would miss the very cold-start read it exists to perform.
- * - `(app)/(tabs)/index.tsx` deliberately does *not* call `useChatRuntime()`, because
- *   that would reconfigure the realtime manager from a list screen. Hanging a
- *   second app-wide runtime off it would repeat exactly that mistake.
+ * - `(app)/(tabs)/index.tsx` is a list screen with no chat runtime of its own;
+ *   the realtime manager is bound app-wide by `useChatRealtimeBinding`
+ *   (`lib/chat/use-chat-runtime.ts`, #3698), beside this runtime rather than
+ *   from a screen.
  *
  * Mounting above the auth gate means this starts before anyone is routed. That
  * is handled rather than avoided: a cold-start target is **held pending** until
@@ -55,7 +56,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useRouter } from "expo-router";
+import { usePathname, useRouter } from "expo-router";
 import {
   useMarkNotificationRead,
   useRegisterPushToken,
@@ -98,11 +99,20 @@ let handlerConfigured = false;
 
 export function usePushRuntime(): void {
   const router = useRouter();
+  // The focused screen's path, so a tap for a channel while one is open
+  // replaces it rather than stacking a second (`openHref`).
+  const pathname = usePathname();
+  const pathnameRef = useRef(pathname);
+  useLayoutEffect(() => {
+    pathnameRef.current = pathname;
+  }, [pathname]);
   const isAuthenticated = useIsApiAuthenticated();
   const { isChapterResolving, status } = useAuthSession();
   const registerToken = useRegisterPushToken();
   const removeToken = useRemovePushToken();
-  const markRead = useMarkNotificationRead();
+  // Sent as the app opens from a tap, so it retries once through a resume-time
+  // socket drop (#3747); see `markNotificationReadOnOpenMutationKey`.
+  const markRead = useMarkNotificationRead({ sentOnOpen: true });
 
   /**
    * A tap read before the member could be sent anywhere. Held in state rather
@@ -212,7 +222,7 @@ export function usePushRuntime(): void {
     // unrecognized payload resolves to the notification list, and pushing that
     // from a tap that arrived *as* a notification stacks the list on itself.
     if (target.pathname !== NOTIFICATION_FALLBACK_PATHNAME || target.params) {
-      openHref(router, asRoute(notificationHref(target)));
+      openHref(router, asRoute(notificationHref(target)), pathnameRef.current);
     }
   }, [pendingTap, status, isChapterResolving, isAuthenticated, router]);
 

@@ -204,7 +204,40 @@ describe("EventCard", () => {
     ).toBeInTheDocument();
   });
 
-  it("hides Check in before the event starts", () => {
+  it("shows Check in inside the event's lead before the start (#3703)", () => {
+    const now = Date.now();
+    render(
+      <EventCard
+        message={makeMessage({
+          start_time: new Date(now + 5 * 60_000).toISOString(),
+          end_time: new Date(now + 65 * 60_000).toISOString(),
+          check_in_opens_minutes: 10,
+        })}
+        isConfirmed
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: /check in/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("opens ten minutes early on a card posted before the lead existed", () => {
+    const now = Date.now();
+    render(
+      <EventCard
+        message={makeMessage({
+          start_time: new Date(now + 5 * 60_000).toISOString(),
+          end_time: new Date(now + 65 * 60_000).toISOString(),
+        })}
+        isConfirmed
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: /check in/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("hides Check in before the event's lead", () => {
     const now = Date.now();
     render(
       <EventCard

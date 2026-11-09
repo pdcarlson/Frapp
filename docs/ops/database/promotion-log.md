@@ -29,6 +29,36 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-08: Event check-in opens before the start
+
+### 20261108210000_event_check_in_opens_minutes.sql
+
+- **Purpose**: Adds `events.check_in_opens_minutes integer not null default 10`, checked to `0–120` (`events_check_in_opens_minutes_range`): how many minutes before `start_time` an event's check-in opens. Check-in used to open at the start exactly, and at a real chapter event members arriving early were turned away (#3703). The rule is in [`spec/behavior/events.md`](../../../spec/behavior/events.md#check-in) § Check-In. The default fills every existing row, so **every event, including ones already scheduled, opens check-in ten minutes early from this release on**. That is the intended change.
+- **Checks**: After `db push`, `select column_name, is_nullable, column_default from information_schema.columns where table_name = 'events' and column_name = 'check_in_opens_minutes';` returns one row, `NO`, `10`, and `select count(*) from events where check_in_opens_minutes <> 10;` returns 0 until an officer changes one.
+- **Promoter notes**: Ship it before, or with, the API from the same PR. A deploy applies migrations first. The older API never names the column, so it is unaffected and keeps the old zero-minute window. The newer API writes it on every event create and series occurrence and reads it in event search, so against an unmigrated database those fail on the unknown column; don't deploy the API first. A mobile build behind the API doesn't break, but it predates the field: it keeps opening check-in at the start in its UI, so its members see check-in open only once the event starts, until they update (the server would accept them from the lead). A build ahead of it is not: it sends the field when an officer sets a lead other than 10, which an older API refuses with a 400 (`forbidNonWhitelisted`), and its event page reads `GET …/attendance/me`, which an older API 404s, so the card never shows the member checked in. So mobile ships after the API, never before. The constraint is dropped and re-added and the column added `if not exists`, so re-applying is idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-event-check_in_opens_minutes-20261108210000) § Rollback event check_in_opens_minutes.
+
+## 2026-11-08: A presidency transfer keeps the outgoing President's member access
+
+### 20261108200000_transfer_presidency_keeps_member_access.sql
+
+- **Purpose**: Redefines `transfer_presidency` with the same signature. After the compare-and-set strips President from the outgoing member, the same transaction appends the chapter's Member role (`system_key = 'MEMBER'`) when their remaining roles grant no member access (no live role in the chapter carrying `members:view` or `*`, no custom role carrying `members:view`). A founder holds President alone, so a transfer used to leave them with no roles and refused on every screen (#3670). Re-pins `search_path = public, pg_temp`, which `create or replace` resets. An outgoing President who already holds Member (a chapter that took `members:view` off it) gets no second copy, and a chapter with no `system_key = 'MEMBER'` role transfers as before. No repair: on 2026-11-08 neither `frapp-prod` nor `frapp-staging` had a `presidency_transferred` audit row or a member without member access, and none of `frapp-prod`'s 3 chapters lacked a Member role or had one without `members:view` (checked with the Supabase connector: `select count(*) filter (where not exists (select 1 from roles r where r.chapter_id = c.id and r.system_key = 'MEMBER')) from chapters c`, and the same with `not (r.permissions && array['members:view','*'])`). Exercised by the pglite tier `scripts/pglite/tiers/transfer-presidency-keeps-member-access.mjs`.
+- **Checks**: After `db push`, `select proconfig from pg_proc where proname = 'transfer_presidency';` returns `{search_path=public, pg_temp}`, and `select has_function_privilege('authenticated', 'public.transfer_presidency(uuid, uuid, uuid, text)', 'execute');` returns `false` (the grants from 20260604120000 survive `create or replace`).
+- **Promoter notes**: Order-independent with the API: the API calls the RPC with the same arguments and reads the same rows back. Idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-transfer-presidency-keeps-member-access-20261108200000) § Rollback transfer presidency keeps member access.
+
+## 2026-11-08: Discord-imported channels are postable
+
+### 20261108163000_discord_import_read_only_in_discord.sql
+
+- **Purpose**: Adds one nullable column to `discord_import_channels`: `read_only_in_discord` (the scan's record that Discord took Send Messages away from the channel's readers, an announcements-style channel; null for a thread, when the roles could not be read, and on the upload path). It becomes the default for `new_channel_is_read_only`, which until now was true for every channel an import created, so only `announcements:post` holders could post in them (#3697). The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages. No backfill, and channels already imported are not changed: repairing them is a separate data fix that needs the owner's OK. (2026-11-08: that repair is [`supabase/data-fixes/20261108_3743_discord_imported_channels_postable.sql`](../../../supabase/data-fixes/20261108_3743_discord_imported_channels_postable.sql), #3743. The owner approved its list, and the issue records when it was applied on prod.)
+- **Checks**: After `db push`, `select column_name, is_nullable from information_schema.columns where table_name = 'discord_import_channels' and column_name = 'read_only_in_discord';` returns one row, `YES`. A new scan then fills it on each top-level channel.
+- **Promoter notes**: Ship it before, or with, the API from the same PR. A deploy applies migrations first. The older API never names the column, so it is unaffected. The newer API names it on every scan and every channel-mapping write, so against an unmigrated database those fail on the unknown column; don't deploy the API first. Deploy the web app with the API: until the web from this PR is out, the wizard keeps sending every new channel read-only. Existing rows read as null, which means postable unless the admin chooses otherwise, so an import mapped before this release keeps the read-only choice it saved, and remapping it makes its channels postable. `add column if not exists` makes re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-discord-import-read_only_in_discord-20261108163000) § Rollback Discord import read_only_in_discord.
+
 ## 2026-11-07: Database functions callable only by who needs them
 
 ### 20261107160000_function_grants_and_search_path.sql

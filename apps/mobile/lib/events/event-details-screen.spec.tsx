@@ -12,8 +12,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
-import { expectRoundedRipple } from "@/test/pressable-row";
 import { screenText } from "@/test/screen-text";
+import { formatEventClock } from "@/lib/events/format";
 
 /**
  * #2101. s07 is often opened before check-in opens: a member arriving early
@@ -29,7 +29,8 @@ import { screenText } from "@/test/screen-text";
  */
 
 const START = new Date("2026-09-25T18:00:00Z");
-const MOUNTED_AT = new Date(START.getTime() - 60_000);
+// A minute before check-in opens, ten minutes before the start.
+const MOUNTED_AT = new Date(START.getTime() - 11 * 60_000);
 
 const ACCENT = "#DDB844";
 const ACCENT_SUBTLE = "#251E0E";
@@ -51,6 +52,11 @@ let routeId: string | undefined = EVENT.id as string;
 let chapterId: string | null = "chapter-1";
 // The viewer's grants: a plain member by default.
 let permissions: string[] = ["members:view"];
+// `GET …/attendance/me`: not checked in by default.
+let myAttendance: unknown = { attendance: null };
+// That read's state: settled by default.
+let myAttendancePending = false;
+let myAttendancePaused = false;
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -61,6 +67,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useUpdateEvent: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteEvent: () => ({ mutate: vi.fn(), isPending: false }),
   useListChapters: () => ({ data: [{ chapter_id: "chapter-1", role_ids: [] }] }),
+  useMyAttendance: () => ({
+    isPending: myAttendancePending,
+    isPaused: myAttendancePaused,
+    data: myAttendancePending ? undefined : myAttendance,
+  }),
   useEvent: () => ({
     isPending: eventPending,
     isError: false,
@@ -77,14 +88,6 @@ vi.mock("@/lib/chapter-branding", () => ({
     accentBorder: "#6B5619",
   }),
 }));
-
-// Real by default; the exporting spec holds one export open.
-const exportCalendar = vi.hoisted(() => vi.fn());
-vi.mock("@/lib/calendar-export", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/calendar-export")>();
-  exportCalendar.mockImplementation(actual.exportEventToCalendar);
-  return { ...actual, exportEventToCalendar: exportCalendar };
-});
 
 vi.mocked(expoRouter.useLocalSearchParams).mockImplementation(
   (): Record<string, string> => (routeId === undefined ? {} : { id: routeId }),
@@ -252,6 +255,14 @@ describe("Event details layout", () => {
     vi.useRealTimers();
     event = EVENT;
     chapterId = "chapter-1";
+    permissions = ["members:view"];
+    myAttendance = { attendance: null };
+    myAttendancePending = false;
+    myAttendancePaused = false;
+  });
+
+  it("offers no calendar export until calendar sync ships (#3708)", () => {
+    expect(screenText(render())).not.toMatch(/add to calendar/i);
   });
 
   it("puts the place in the line under the title, not beside the chips", () => {
@@ -322,50 +333,6 @@ describe("Event details layout", () => {
     );
   });
 
-  it("draws Add to calendar at the scan button's height and radius", () => {
-    const tree = render();
-    const [button] = tree.root.findAll(
-      (node) =>
-        node.props.accessibilityLabel === "Add this event to your calendar" &&
-        typeof node.props.style === "function",
-    );
-    const rest = StyleSheet.flatten(button.props.style({ pressed: false }));
-    const held = StyleSheet.flatten(button.props.style({ pressed: true }));
-
-    expect(rest).toMatchObject({
-      height: signetDarkTokens.touch.buttonLarge,
-      borderRadius: signetDarkTokens.radius.control,
-    });
-    // Press feedback is a lift up the surface ladder (the stub is iOS) and a
-    // ripple on Android, never an opacity fade.
-    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
-    expect(held).not.toHaveProperty("opacity");
-    // The ripple is rounded by a parent clip with the button's radius
-    // (`PressableRow`); the button's own `overflow` would leave it square.
-    expectRoundedRipple(button, signetDarkTokens.radius.control);
-  });
-
-  it("drops Add to calendar's ripple while it is exporting", () => {
-    // The export never settles here, so the button stays in "Adding…".
-    exportCalendar.mockReturnValueOnce(new Promise<boolean>(() => {}));
-    const tree = render();
-    const button = () =>
-      tree.root.find(
-        (node) =>
-          node.props.accessibilityLabel === "Add this event to your calendar" &&
-          typeof node.props.style === "function",
-      );
-
-    act(() => {
-      button().props.onPress();
-    });
-
-    expect(screenText(tree)).toContain("Adding…");
-    expect(button().props.disabled).toBe(true);
-    expect(button().props.accessibilityState).toEqual({ disabled: true });
-    expect(button().props.android_ripple).toBeUndefined();
-  });
-
   it("says no more than the card does", () => {
     event = {
       ...EVENT,
@@ -379,6 +346,153 @@ describe("Event details layout", () => {
     expect(zone).toBeDefined();
     // Not info blue: the board draws no semantic hue here.
     expect(flat(zone!).color).toBe(signetDarkTokens.color.text.mutedForeground);
+  });
+
+  it("says only when an upcoming check-in opens (#3703)", () => {
+    vi.setSystemTime(new Date(START.getTime() - 30 * 60_000));
+    const tree = render();
+    const opensAt = new Date(START.getTime() - 10 * 60_000);
+
+    expect(
+      textNode(tree, `Check-in opens at ${formatEventClock(opensAt)}`),
+    ).toBeDefined();
+    expect(screenText(tree)).not.toMatch(/hasn't opened/);
+    expect(textNode(tree, "Scan QR to check in")).toBeUndefined();
+  });
+
+  it("swaps the scanner for the member's check-in once they're in (#3703)", () => {
+    event = { ...EVENT, point_value: 10 };
+    const at = new Date(START.getTime() + 2 * 60_000);
+    myAttendance = {
+      attendance: {
+        id: "a-1",
+        status: "PRESENT",
+        check_in_time: at.toISOString(),
+      },
+    };
+    const tree = render();
+
+    const title = `Checked in at ${formatEventClock(at)}`;
+    expect(textNode(tree, title)).toBeDefined();
+    expect(dotColor(tree, title)).toBe(signetDarkTokens.color.semantic.success);
+    expect(textNode(tree, "Scan QR to check in")).toBeUndefined();
+    expect(screenText(tree)).not.toContain("Check-in is open");
+    // The badge row's chip and the card's line both say the points.
+    expect(screenText(tree).match(/\+10 pts/g)).toHaveLength(2);
+  });
+
+  it("says an officer's mark and offers no scan the server would refuse", () => {
+    myAttendance = {
+      attendance: { id: "a-1", status: "EXCUSED", check_in_time: null },
+    };
+    const tree = render();
+    expect(textNode(tree, "Marked excused")).toBeDefined();
+    expect(textNode(tree, "Scan QR to check in")).toBeUndefined();
+    // Nothing to do before a deadline: no "closes", no live dot.
+    expect(screenText(tree)).not.toMatch(/closes /);
+    expect(dotColor(tree, "Marked excused")).toBe(
+      signetDarkTokens.color.text.muted,
+    );
+  });
+
+  it("holds the scanner back while the member's own row is first read", () => {
+    myAttendancePending = true;
+    expect(textNode(render(), "Scan QR to check in")).toBeUndefined();
+  });
+
+  it("offers the scanner when that read is paused offline", () => {
+    myAttendancePending = true;
+    myAttendancePaused = true;
+    expect(textNode(render(), "Scan QR to check in")).toBeDefined();
+  });
+
+  it("says only the time before check-in opens, even with a zone", () => {
+    vi.setSystemTime(new Date(START.getTime() - 30 * 60_000));
+    event = {
+      ...EVENT,
+      check_in_zone: [[0, 0]],
+      check_in_zone_name: "Great Room",
+    };
+    expect(screenText(render())).not.toContain("Great Room zone");
+  });
+
+  it("gives a host Host check-in in place of the scanner (#3703)", () => {
+    permissions = ["events:update"];
+    const tree = render();
+
+    expect(textNode(tree, "Host check-in")).toBeDefined();
+    expect(textNode(tree, "Scan QR to check in")).toBeUndefined();
+    const [host] = tree.root.findAll(
+      (node) =>
+        typeof node.props.onPress === "function" &&
+        node.findAll((text) => text.props.children === "Host check-in")
+          .length > 0,
+    );
+    act(() => host.props.onPress());
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/host-check-in",
+      params: { eventId: "evt-1" },
+    });
+  });
+
+  it("lets a host who attends check themselves in, under the host button", () => {
+    permissions = ["events:update"];
+    const tree = render();
+    const [self] = tree.root.findAll(
+      (node) =>
+        typeof node.props.onPress === "function" &&
+        node.findAll((text) => text.props.children === "Check myself in")
+          .length > 0,
+    );
+    act(() => self.props.onPress());
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/check-in",
+      params: { eventId: "evt-1" },
+    });
+  });
+
+  it("offers a host no self check-in once they're in", () => {
+    permissions = ["events:update"];
+    myAttendance = {
+      attendance: {
+        id: "a-1",
+        status: "PRESENT",
+        check_in_time: START.toISOString(),
+      },
+    };
+    expect(textNode(render(), "Check myself in")).toBeUndefined();
+  });
+
+  it("offers a host no self check-in before it opens", () => {
+    permissions = ["events:update"];
+    vi.setSystemTime(new Date(START.getTime() - 30 * 60_000));
+    const tree = render();
+    expect(textNode(tree, "Host check-in")).toBeDefined();
+    expect(textNode(tree, "Check myself in")).toBeUndefined();
+  });
+
+  it("opens on the event's own lead, not the default", () => {
+    // Twenty minutes before the start: early for the default ten, inside a
+    // thirty-minute lead.
+    vi.setSystemTime(new Date(START.getTime() - 20 * 60_000));
+    event = { ...EVENT, check_in_opens_minutes: 30 };
+    const tree = render();
+    expect(textNode(tree, "Check-in is open")).toBeDefined();
+    expect(textNode(tree, "Scan QR to check in")).toBeDefined();
+  });
+
+  it("says when a zero lead opens, at the start itself", () => {
+    vi.setSystemTime(new Date(START.getTime() - 5 * 60_000));
+    event = { ...EVENT, check_in_opens_minutes: 0 };
+    expect(
+      textNode(render(), `Check-in opens at ${formatEventClock(START)}`),
+    ).toBeDefined();
+  });
+
+  it("lets a host put the QR up before check-in opens", () => {
+    permissions = ["*"];
+    vi.setSystemTime(new Date(START.getTime() - 30 * 60_000));
+    expect(textNode(render(), "Host check-in")).toBeDefined();
   });
 
   it("says a closed window in one line", () => {

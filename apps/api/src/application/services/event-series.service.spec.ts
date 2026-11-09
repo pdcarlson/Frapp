@@ -193,6 +193,31 @@ describe('EventSeriesService', () => {
       }
     });
 
+    // #3703: a weekly meeting that opens check-in 30 minutes early does so
+    // every week, not only on the first.
+    it("gives every occurrence the series' check-in lead", async () => {
+      const earlyWeekly: Event = {
+        ...baseEvent,
+        recurrence_rule: 'WEEKLY',
+        check_in_opens_minutes: 30,
+      };
+      mockEventRepo.create.mockResolvedValue(earlyWeekly);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        name: 'Chapter Meeting',
+        start_time: baseEvent.start_time,
+        end_time: baseEvent.end_time,
+        recurrence_rule: 'WEEKLY',
+        check_in_opens_minutes: 30,
+      });
+
+      expect(occurrenceRows(mockEventRepo)).toHaveLength(12);
+      for (const call of occurrenceRows(mockEventRepo)) {
+        expect(call.check_in_opens_minutes).toBe(30);
+      }
+    });
+
     it('generated occurrences inherit the parent attendance by role', async () => {
       // Without this every date after the first would read the column
       // defaults: an officers-only series open to the whole chapter.
@@ -1059,7 +1084,7 @@ describe('EventSeriesService', () => {
         // start and end were clamped against their own months independently, so
         // a MONTHLY event spanning midnight could generate an occurrence ending
         // before it began — slipping past the end<=start guard that create and
-        // update both enforce, and emitting DTEND before DTSTART in its .ics.
+        // update both enforce.
         const overnight: Event = {
           ...baseEvent,
           recurrence_rule: 'MONTHLY',

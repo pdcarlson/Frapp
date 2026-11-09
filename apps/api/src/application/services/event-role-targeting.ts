@@ -1,14 +1,16 @@
 import {
   eventAttendanceFor,
+  eventLimitsAudience,
   type EventAttendance,
   type EventAttendanceFields,
   type EventAttendanceStatus,
 } from '@repo/validation';
+import { SystemPermissions } from '#domain/constants/permissions';
 
 /**
  * `spec/behavior/events.md` § Attendance by role. The API's one door to the
  * rule in `@repo/validation` (`event-attendance.ts`): who an event is for,
- * read the same way by the read gate (list, detail, `.ics`, search, feed),
+ * read the same way by the read gate (list, detail, search, feed),
  * check-in, the auto-absent sweep and the pushes, so a change to the rule
  * can't land at one call site and miss another.
  */
@@ -50,4 +52,51 @@ export function memberAttendance(
     return 'optional';
   }
   return status;
+}
+
+/**
+ * Whether `userId` may see `event` through the read routes
+ * (`spec/behavior/events.md` § Attendance by role): an event that invites
+ * everyone is visible to every member; one that leaves anyone out, to an
+ * `events:update` holder and to the members it invites. A caller that can't
+ * see an event gets the same 404 a nonexistent id does, so no response
+ * confirms a role-targeted event exists.
+ *
+ * The single-event form of the rule: `GET /v1/events/:id`
+ * (`EventService.findById`) and `GET /v1/events/:id/attendance/me`
+ * (`AttendanceService.getMyAttendance`) both answer through it. The list
+ * (`EventService.findByChapter`) and search (`SearchService.filterVisibleEvents`)
+ * apply the same rule in batch form, reading the permission and member row
+ * once for many events, so a change to the rule lands in all three.
+ */
+export async function isEventVisibleTo(
+  event: EventAttendanceFields,
+  chapterId: string,
+  userId: string,
+  deps: {
+    rbac: {
+      memberHasAnyPermission(
+        chapterId: string,
+        userId: string,
+        permissions: string[],
+      ): Promise<boolean>;
+    };
+    memberRepo: {
+      findByUserAndChapter(
+        userId: string,
+        chapterId: string,
+      ): Promise<{ role_ids: string[] } | null>;
+    };
+  },
+): Promise<boolean> {
+  if (!eventLimitsAudience(event)) return true;
+  if (
+    await deps.rbac.memberHasAnyPermission(chapterId, userId, [
+      SystemPermissions.EVENTS_UPDATE,
+    ])
+  ) {
+    return true;
+  }
+  const member = await deps.memberRepo.findByUserAndChapter(userId, chapterId);
+  return !!member && isInvited(event, member.role_ids);
 }
