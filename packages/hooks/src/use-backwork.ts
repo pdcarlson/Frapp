@@ -114,6 +114,7 @@ export function useSaveBackworkCourse() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["backwork", "save-backwork-course"],
     mutationFn: async (body: {
       department_id: string;
       course_number: string;
