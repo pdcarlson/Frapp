@@ -44,7 +44,7 @@ as $$
 $$;
 
 comment on function public.backwork_course_nicknames_ok(text[]) is
-  'CHECK helper for backwork_courses.nicknames: at most 20, each 1 to 60 characters. See 20261109120000_backwork_courses.sql.';
+  'CHECK helper for backwork_courses.nicknames: at most 20, each 1 to 60 characters. See 20261109230000_backwork_courses.sql.';
 
 create table if not exists public.backwork_courses (
   id uuid primary key default gen_random_uuid(),
@@ -73,7 +73,7 @@ create index if not exists idx_backwork_courses_department
 alter table public.backwork_courses enable row level security;
 
 comment on table public.backwork_courses is
-  'Per-chapter Backwork course names and nicknames, keyed by department and trimmed lowercase course number. Files join by (department_id, course_key). See 20261109120000_backwork_courses.sql.';
+  'Per-chapter Backwork course names and nicknames, keyed by department and trimmed lowercase course number. Files join by (department_id, course_key). See 20261109230000_backwork_courses.sql.';
 
 -- ── Course writes, one statement each ─────────────────────────────────────
 --
@@ -153,7 +153,7 @@ as $$
 $$;
 
 comment on function public.backwork_course_merge_nicknames(text[], text[], text[], text, boolean) is
-  'Nickname arithmetic for backwork_course_write: stored minus remove, plus add, case- and whitespace-insensitive, de-duplicated, without the name; clamped to the table limits when asked. See 20261109120000_backwork_courses.sql.';
+  'Nickname arithmetic for backwork_course_write: stored minus remove, plus add, case- and whitespace-insensitive, de-duplicated, without the name; clamped to the table limits when asked. See 20261109230000_backwork_courses.sql.';
 
 create or replace function public.backwork_course_write(
   p_chapter_id uuid,
@@ -206,7 +206,7 @@ as $$
 $$;
 
 comment on function public.backwork_course_write(uuid, uuid, text, boolean, text, boolean, text[], text[], boolean) is
-  'One-statement insert-or-update of a Backwork course name and nicknames (PUT /v1/backwork/courses, upload naming and department merge, the last two fill-only). See 20261109120000_backwork_courses.sql.';
+  'One-statement insert-or-update of a Backwork course name and nicknames (PUT /v1/backwork/courses, upload naming and department merge, the last two fill-only). See 20261109230000_backwork_courses.sql.';
 
 revoke execute on function public.backwork_course_write(uuid, uuid, text, boolean, text, boolean, text[], text[], boolean) from public;
 
@@ -313,7 +313,7 @@ as $$
 $$;
 
 comment on function public.search_backwork_resources(uuid, text, integer) is
-  'Backwork search for GET /v1/search: title, course (number, department, course name and nicknames), professor and tags, with trigram typo tolerance. One chapter only. See 20261106190000_backwork_search_wider.sql and 20261109120000_backwork_courses.sql.';
+  'Backwork search for GET /v1/search: title, course (number, department, course name and nicknames), professor and tags, with trigram typo tolerance. One chapter only. See 20261106190000_backwork_search_wider.sql and 20261109230000_backwork_courses.sql.';
 
 -- `create or replace` keeps the grants 20261106190000 set; restated so this
 -- file alone says who may call it.

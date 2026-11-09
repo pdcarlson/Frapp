@@ -13,7 +13,7 @@ import { db, miss } from "../harness.mjs";
 //   - nothing comes from another chapter, even a better match;
 //   - an unrelated word, an exclusion-only query and an empty query find
 //     nothing;
-//   - since 20261109120000, a course's name and nicknames (`backwork_courses`)
+//   - since 20261109230000, a course's name and nicknames (`backwork_courses`)
 //     find its files, the course number matched trimmed and case-insensitively,
 //     and another chapter's course name never does.
 //

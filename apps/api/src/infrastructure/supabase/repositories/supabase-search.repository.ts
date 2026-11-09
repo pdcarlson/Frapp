@@ -105,7 +105,7 @@ export class SupabaseSearchRepository implements ISearchRepository {
   /**
    * Backwork search through `search_backwork_resources`
    * (20261106190000_backwork_search_wider.sql, replaced by
-   * 20261109120000_backwork_courses.sql): title, course, department, the
+   * 20261109230000_backwork_courses.sql): title, course, department, the
    * course's name and nicknames (#3848), professor and tags, ranked, with
    * trigram typo tolerance (#585). It joins the department, course and
    * professor at query time, which a generated column can't, so it is a

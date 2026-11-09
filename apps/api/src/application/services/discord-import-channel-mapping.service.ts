@@ -621,6 +621,14 @@ export class DiscordImportChannelMappingService {
           `#${channel.discord_channel_name} can't be imported into a direct message. Pick a channel.`,
         );
       }
+      // The audit log is system-write only (#3909): the importer inserts
+      // member-authored history without passing `canAccessChannel`, so this
+      // is the rule that keeps it out. The web leaves it out of the picker.
+      if (target.is_audit_log) {
+        throw new BadRequestException(
+          `#${channel.discord_channel_name} can't be imported into the audit log. Pick another channel.`,
+        );
+      }
     }
     if (
       channel.mapping_action === 'create_new' &&

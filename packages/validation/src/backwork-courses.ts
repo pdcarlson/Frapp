@@ -2,7 +2,7 @@
  * Limits on a Backwork course's name and nicknames (#3848). The API's DTO
  * enforces all three. The database backs them too: a check on `name`'s
  * length, and `backwork_course_nicknames_ok` (count, and each nickname 1 to
- * 60 characters) in `supabase/migrations/20261109120000_backwork_courses.sql`,
+ * 60 characters) in `supabase/migrations/20261109230000_backwork_courses.sql`,
  * which repeats these numbers. The web dialog stops typing at them.
  */
 export const MAX_COURSE_NAME_LENGTH = 255;

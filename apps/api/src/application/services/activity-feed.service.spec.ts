@@ -47,6 +47,7 @@ describe('ActivityFeedService', () => {
     archived_at: null,
     default_notification_level: null,
     is_default: false,
+    is_audit_log: false,
     // Read-only, and this member is not an officer.
     can_post: false,
   };

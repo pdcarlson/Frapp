@@ -179,7 +179,7 @@ That returns **56** rows. The "API only" row of that table is those 56 plus the 
 tables (`members`, `users`, `member_custom_field_values`), which carry
 non-widening policies and are therefore listed there rather than in a row of
 their own — **59**. The count was re-derived 2026-11-09 against a local stack at
-migration `20261109120000`, which added `backwork_courses` (#3848); the names in
+migration `20261109230000`, which added `backwork_courses` (#3848); the names in
 the row were not re-checked one by one. `20261105220000` added
 `discord_import_created_categories` (RLS on, no policies) on 2026-11-05, added
 to the list by hand. Before that, re-derived 2026-09-30 against a local stack at
