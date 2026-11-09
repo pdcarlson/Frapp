@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Ban, Flag, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { SYSTEM_SENDER_ID } from "@repo/validation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -41,6 +41,12 @@ import {
   type MemberLookup,
 } from "@repo/chat-core/message-actions";
 import { MessageRenderer } from "./renderers";
+import { MentionOpenerContext } from "./renderers/message-markdown";
+import {
+  authorProfileUserId,
+  mentionedUserId,
+} from "@repo/chat-core/profile-targets";
+import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import {
   hiddenQuoteText,
   visibleReactions,
@@ -243,6 +249,57 @@ export interface MessageItemProps {
   isTapRevealed: boolean;
   /** Toggles `isTapRevealed` for this row, and dismisses every other row's. */
   onToggleTapReveal: () => void;
+  /**
+   * Opens a member's profile by `users.id` (#3726): the author's from their
+   * name or photo, or a mentioned member's from an `@` chip, as on mobile.
+   * Optional, so a surface with no profile sheet draws plain names.
+   */
+  onOpenProfile?: (userId: string) => void;
+}
+
+/**
+ * The author's name, as a button that opens their profile when the row has
+ * one to open (`authorProfileUserId`), else plain text. A button, not a
+ * clickable span, so it is reached by Tab and pressed by Enter or Space.
+ * `FOCUS_RING_OFFSET`: the name carries no border for `FOCUS_RING` to swap.
+ */
+function AuthorName({
+  openProfile,
+  slot,
+  className,
+  style,
+  children,
+}: {
+  openProfile: (() => void) | null;
+  /** `author-line` where the name is the line itself (compact density). */
+  slot?: string;
+  className: string;
+  style?: React.CSSProperties;
+  children: React.ReactNode;
+}) {
+  if (!openProfile) {
+    return (
+      <span data-slot={slot} className={className} style={style}>
+        {children}
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      data-slot={slot}
+      aria-haspopup="dialog"
+      onClick={openProfile}
+      className={cn(
+        className,
+        "rounded-sm text-left hover:underline",
+        FOCUS_RING_OFFSET,
+      )}
+      style={style}
+    >
+      {children}
+    </button>
+  );
 }
 
 /**
@@ -300,6 +357,7 @@ export function MessageItem({
   isMember,
   isTapRevealed,
   onToggleTapReveal,
+  onOpenProfile,
 }: MessageItemProps) {
   // Resolved for every sender including the viewer: the label says "You" for its
   // own row, but the avatar still needs the initials — falling through to a uuid
@@ -311,6 +369,25 @@ export function MessageItem({
   // `message.sender_id.slice(...)` fallbacks below threw on it.
   const authorName = resolveAuthorName(message, nameFor);
   const authorLabel = resolveAuthorLabel(message, nameFor, viewerId);
+  // The name and photo open the author's profile, as Discord's and mobile's
+  // do; Frapp's own posts, an imported author and a member who left open
+  // nothing (`authorProfileUserId`).
+  const authorUserId = onOpenProfile
+    ? authorProfileUserId(message, nameFor)
+    : null;
+  const openAuthor =
+    onOpenProfile && authorUserId ? () => onOpenProfile(authorUserId) : null;
+  // An `@` chip in the body opens the member it names, resolved only against
+  // the members the server resolved for this message, so a role mention
+  // (`@Brothers`) opens nothing (`mentionedUserId`).
+  const openMention = useCallback(
+    (token: string): (() => void) | null => {
+      if (!onOpenProfile) return null;
+      const userId = mentionedUserId(message, token, nameFor);
+      return userId ? () => onOpenProfile(userId) : null;
+    },
+    [onOpenProfile, message, nameFor],
+  );
   // The server resolved who this message pings (`chat_messages.mentions`),
   // so the row trusts that list rather than re-reading the body: it is the
   // same set the notifier used. A viewer's own message never lights up.
@@ -665,17 +742,45 @@ export function MessageItem({
   // attachment-only message and the open editor have no line to lead.
   const inlineName = compact && drawsHeader && !isEditing && !trailingOnOwnLine;
 
+  // The run's first row draws the author's 32px photo in the cozy gutter.
+  const authorAvatar = (
+    <Avatar
+      className="h-8 w-8"
+      aria-hidden="true"
+      data-system-avatar={isSystemPost || undefined}
+      style={isSystemPost ? { backgroundColor: CREST_FIELD } : undefined}
+    >
+      {avatarSrc ? <AvatarImage src={avatarSrc} alt="" /> : null}
+      {/*
+        Radix draws the fallback until the image loads, and for good if it
+        fails. A system post's fallback is the crest's own field with no text,
+        never a letter tile: its name resolves to "Frapp" (#3347), so initials
+        would draw an "F" where the crest goes.
+      */}
+      <AvatarFallback
+        style={isSystemPost ? { backgroundColor: CREST_FIELD } : undefined}
+      >
+        {isSystemPost
+          ? null
+          : authorName
+            ? initials(authorName)
+            : authorInitialsFallback(message)}
+      </AvatarFallback>
+    </Avatar>
+  );
   const renderer = (
-    <MessageRenderer
-      message={message}
-      viewerId={viewerId}
-      nameFor={nameFor}
-      isConfirmed={isConfirmed}
-      onAct={onAct ?? (() => {})}
-      onClosePoll={onClosePoll}
-      trailing={trailingOnOwnLine ? undefined : trailing}
-      muted={isPending || isFailed}
-    />
+    <MentionOpenerContext.Provider value={onOpenProfile ? openMention : null}>
+      <MessageRenderer
+        message={message}
+        viewerId={viewerId}
+        nameFor={nameFor}
+        isConfirmed={isConfirmed}
+        onAct={onAct ?? (() => {})}
+        onClosePoll={onClosePoll}
+        trailing={trailingOnOwnLine ? undefined : trailing}
+        muted={isPending || isFailed}
+      />
+    </MentionOpenerContext.Provider>
   );
   // A card in flight has no text to gray, so the whole card dims instead.
   const body =
@@ -1108,35 +1213,27 @@ export function MessageItem({
                     : formatTimeOfDayShort(message.created_at, runStartedAt)}
                 </time>
               ) : showHeader ? (
-                <Avatar
-                  className="h-8 w-8"
-                  aria-hidden="true"
-                  data-system-avatar={isSystemPost || undefined}
-                  style={
-                    isSystemPost ? { backgroundColor: CREST_FIELD } : undefined
-                  }
-                >
-                  {avatarSrc ? <AvatarImage src={avatarSrc} alt="" /> : null}
-                  {/*
-                Radix draws the fallback until the image loads, and for good if
-                it fails. A system post's fallback is the crest's own field with
-                no text, never a letter tile: its name resolves to "Frapp"
-                (#3347), so initials would draw an "F" where the crest goes.
-              */}
-                  <AvatarFallback
-                    style={
-                      isSystemPost
-                        ? { backgroundColor: CREST_FIELD }
-                        : undefined
-                    }
+                openAuthor ? (
+                  /*
+                    The photo opens the profile too, as a pointer target only:
+                    out of the Tab order and hidden from assistive tech,
+                    because the name beside it is the same control and is
+                    reached by keyboard. Two stops for one action would only
+                    add noise.
+                  */
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    aria-hidden="true"
+                    data-slot="author-avatar"
+                    onClick={openAuthor}
+                    className="block rounded-full"
                   >
-                    {isSystemPost
-                      ? null
-                      : authorName
-                        ? initials(authorName)
-                        : authorInitialsFallback(message)}
-                  </AvatarFallback>
-                </Avatar>
+                    {authorAvatar}
+                  </button>
+                ) : (
+                  authorAvatar
+                )
               ) : (
                 /*
               A follow-on's own time, revealed with the row. Opacity rather than
@@ -1169,14 +1266,15 @@ export function MessageItem({
                   data-slot="author-line"
                   className="flex min-w-0 items-baseline gap-2 leading-5"
                 >
-                  <span
-                    className="truncate text-sm font-semibold text-foreground"
+                  <AuthorName
+                    openProfile={openAuthor}
+                    className="min-w-0 truncate text-sm font-semibold text-foreground"
                     // A literal from the role palette, which is contrast-checked
                     // against these surfaces (`@repo/validation` role-colors).
                     style={authorColor ? { color: authorColor } : undefined}
                   >
                     {authorLabel}
-                  </span>
+                  </AuthorName>
                   <time
                     dateTime={message.created_at}
                     className="shrink-0 text-caption leading-5 text-muted-foreground"
@@ -1188,12 +1286,15 @@ export function MessageItem({
               {compact && drawsHeader && !inlineName ? (
                 // A card, an attachment-only message, or the editor: nothing
                 // to lead with the name, so it takes a line of its own.
-                <div
-                  data-slot="author-line"
-                  className="truncate text-base font-semibold leading-[25px] text-foreground"
-                  style={authorColor ? { color: authorColor } : undefined}
-                >
-                  {authorLabel}
+                <div className="flex min-w-0">
+                  <AuthorName
+                    openProfile={openAuthor}
+                    slot="author-line"
+                    className="min-w-0 truncate text-base font-semibold leading-[25px] text-foreground"
+                    style={authorColor ? { color: authorColor } : undefined}
+                  >
+                    {authorLabel}
+                  </AuthorName>
                 </div>
               ) : null}
               {inlineName ? (
@@ -1204,15 +1305,16 @@ export function MessageItem({
                   Body size at 600, so the name and the text share a baseline.
                 */
                 <div className="flow-root min-w-0">
-                  <span
-                    data-slot="author-line"
+                  <AuthorName
+                    openProfile={openAuthor}
+                    slot="author-line"
                     // `max-w-full break-words`: an unbroken imported handle
                     // wraps inside the column rather than spilling past it.
                     className="float-left mr-2 max-w-full break-words text-base font-semibold leading-[25px] text-foreground"
                     style={authorColor ? { color: authorColor } : undefined}
                   >
                     {authorLabel}
-                  </span>
+                  </AuthorName>
                   {body}
                 </div>
               ) : isEditing ? (

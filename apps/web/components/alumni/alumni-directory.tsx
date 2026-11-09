@@ -366,11 +366,11 @@ export function AlumniDirectory() {
       <MemberDetailSheet
         open={sheetOpen}
         onOpenChange={setSheetOpen}
-        member={openAlumnus}
+        userId={openAlumnus?.user_id ?? null}
+        initialMember={openAlumnus}
         // Alumni accrue no points (`spec/behavior/alumni.md`), and the
-        // leaderboard this would come from ranks actives.
-        points={null}
-        usingPreviewData={false}
+        // leaderboard this would come from ranks actives, so the sheet draws
+        // no Points row.
       />
     </section>
   );

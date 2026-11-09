@@ -265,12 +265,50 @@ Subject: `Sign in to Frapp`
 
 Body: `<h2>Sign in to Frapp</h2><p>Use this one-time link to sign in. It expires soon.</p><p><a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=magiclink">Sign in to Frapp</a></p><p>If you did not ask to sign in, you can ignore this email.</p>`
 
-Paste this only on the **Magic Link** template. Confirm signup / invite / recovery keep their
-own `type` (`signup`, `invite`, `recovery`) — copying this body onto those breaks them.
+Paste this only on the **Magic Link** template: its `type=magiclink` breaks the others.
+Confirm signup has its own body, with `type=email`, in the section below. Invite and
+recovery keep their own `type` (`invite`, `recovery`; #1925).
 Do **not** paste that on a host whose web deploy does not yet include the `token_hash` handler.
 Leave Resend open/click tracking off (single-use links). Production SMTP uses the prod
 mail subdomain From above, then 300/hour — dashboard-only; do not put the key in Slack
 or git. Auth SMTP itself is proven on staging and production.
+
+#### Confirm signup template: the link signs in on any device
+
+*2026-11-09, launch day.* The hosted **Confirm signup** template still links
+`{{ .ConfirmationURL }}`. Production's auth log shows the cost: an invited member signed up
+on web at 12:20 UTC, opened the confirmation at 12:22 (GoTrue `GET /verify`, `303`,
+`email_confirmed_at` set), and never got a session (no `grant_type=pkce` call, zero
+`auth.sessions` rows). That link comes back as `?code=…`, and `/auth/callback` can
+exchange it only with the PKCE verifier cookie of the browser that signed up. The server
+reads `@supabase/auth-js`'s single legacy verifier slot, which holds the newest email
+flow's verifier (auth-js 2.119 `retrievePKCEVerifier`). Any later flow in that browser
+replaces it: a magic-link request, or a refused one, which deletes it. A different
+device or the mail app's own browser has none. So the link confirms the address and
+signs nobody in. Since this date web sends that case to `/sign-in` saying the email is
+confirmed (`intent=confirm`, `EMAIL_CONFIRMED_AUTH_ERROR` in
+`apps/web/lib/auth/redirect.ts`). The template change below removes the case, as the
+Magic Link change did for magic links.
+
+Body for **Confirm signup**, on staging and production. The format is Supabase's own for a
+server-side confirm route (`token_hash={{ .TokenHash }}&type=email`, per Supabase's
+"Confirm signup" server-side auth guide):
+
+`<h2>Confirm your email</h2><p>Open this link to finish creating your Frapp account.</p><p><a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=email">Confirm your email</a></p><p>If you did not create a Frapp account, you can ignore this email.</p>`
+
+Subject: `Confirm your Frapp account`
+
+`{{ .RedirectTo }}` already carries a `?` everywhere this email is sent from: web sign-up,
+Resend and the web magic link pass `/auth/callback?next=…&intent=confirm`, and mobile
+passes `frapp:///?`. GoTrue sends this template, not
+Magic Link, to an address that isn't confirmed yet. `/auth/callback` (web) and
+`createSessionFromUrl` (mobile, `apps/mobile/lib/auth-session.tsx`) already verify a
+`token_hash` with `type=email` through `verifyOtp`, which needs no verifier. So the paste
+needs no deploy first. The paste is
+[#1925](https://github.com/pdcarlson/Frapp/issues/1925), which covers the invite,
+recovery and email-change templates too. Until
+[#1926](https://github.com/pdcarlson/Frapp/issues/1926) asserts the template daily, a
+dashboard reset to `{{ .ConfirmationURL }}` would sit green.
 
 #### ADR-25 step 3: the sender becomes Frapp
 

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { ChannelMemberList } from "./channel-member-list";
 
 const membersQuery = vi.hoisted(() => ({
@@ -129,6 +130,34 @@ describe("ChannelMemberList", () => {
     // A reader the roster cannot name is still listed, under the fallback.
     expect(members[1]).toHaveTextContent(/Member u-gon/);
     expect(screen.getByText("Amy Officer")).toHaveStyle({ color: "#5865F2" });
+  });
+
+  // #3726: a row opens that member's profile, as on mobile.
+  it("opens a member's profile from their row, a keyboard-reachable button", async () => {
+    const onOpenProfile = vi.fn();
+    render(
+      <ChannelMemberList channelId="chan-1" onOpenProfile={onOpenProfile} />,
+    );
+
+    const row = within(screen.getByText("Bob Member").closest("li")!).getByRole(
+      "button",
+    );
+    fireEvent.click(row);
+    expect(onOpenProfile).toHaveBeenCalledWith("u-member");
+
+    onOpenProfile.mockClear();
+    row.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(onOpenProfile).toHaveBeenCalledWith("u-member");
+  });
+
+  it("draws plain rows where no profile can open", () => {
+    render(<ChannelMemberList channelId="chan-1" />);
+    expect(
+      within(screen.getByText("Bob Member").closest("li")!).queryByRole(
+        "button",
+      ),
+    ).not.toBeInTheDocument();
   });
 
   it("does not move a row when presence arrives", () => {

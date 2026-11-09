@@ -674,6 +674,7 @@ export {
   canAny,
   CHAPTER_PROFILE_PERMISSIONS,
   CHAT_REPORT_QUEUE_PERMISSIONS,
+  EVENT_CREATE_PERMISSIONS,
   memberAccessRoleIds,
   removesMemberAccess,
   WILDCARD_PERMISSION,
@@ -888,11 +889,14 @@ export type { SidebarFixedSectionKey, SidebarSectionKey } from "./chat-sidebar";
 export {
   ROLE_COLOR_HEXES,
   ROLE_COLOR_PALETTE,
+  resolveCustomRoleNames,
+  resolveRoleChips,
   roleColor,
   roleColorOrNull,
   topRoleColor,
 } from "./role-colors";
 export type {
+  MemberRoleChip,
   RoleColorHex,
   RoleColorKey,
   RoleColorSource,
@@ -919,3 +923,8 @@ export {
   copyForServerMessage,
   refusalCopy,
 } from "./error-copy";
+export {
+  SERVICE_MINUTES_PER_POINT_DEFAULT,
+  effectiveMinutesPerPoint,
+  servicePointsForDuration,
+} from "./service-points";

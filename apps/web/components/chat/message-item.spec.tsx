@@ -2252,3 +2252,124 @@ describe("MessageItem compact density", () => {
     expect(name?.className).not.toContain("float-left");
   });
 });
+
+// #3726: a sender's name or photo, and an `@` chip that names one member, open
+// that member's profile, as mobile's thread does. A role mention opens nothing.
+describe("MessageItem opens profiles", () => {
+  it("opens the author's profile from their name, a keyboard-reachable button", async () => {
+    const onOpenProfile = vi.fn();
+    renderItemWithProps({ onOpenProfile });
+
+    const name = screen.getByRole("button", { name: "Alice Chen" });
+    expect(name.tagName).toBe("BUTTON");
+    fireEvent.click(name);
+    expect(onOpenProfile).toHaveBeenCalledWith(OTHER);
+
+    onOpenProfile.mockClear();
+    name.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(onOpenProfile).toHaveBeenCalledWith(OTHER);
+  });
+
+  it("opens the author's profile from their photo, which is not a second Tab stop", () => {
+    const onOpenProfile = vi.fn();
+    const { container } = renderItemWithProps({ onOpenProfile });
+
+    const photo = container.querySelector<HTMLButtonElement>(
+      '[data-slot="author-avatar"]',
+    )!;
+    expect(photo.tabIndex).toBe(-1);
+    fireEvent.click(photo);
+    expect(onOpenProfile).toHaveBeenCalledWith(OTHER);
+  });
+
+  it("does not toggle the row's action bar when the name is clicked", () => {
+    const onToggleTapReveal = vi.fn();
+    renderItemWithProps({ onOpenProfile: vi.fn(), onToggleTapReveal });
+    fireEvent.click(screen.getByRole("button", { name: "Alice Chen" }));
+    expect(onToggleTapReveal).not.toHaveBeenCalled();
+  });
+
+  it("draws plain names where no profile can open", () => {
+    const onOpenProfile = vi.fn();
+    // Frapp's own post.
+    const { unmount } = renderItemWithProps({
+      onOpenProfile,
+      message: message({ sender_id: SYSTEM_SENDER_ID }),
+    });
+    expect(
+      screen.queryByRole("button", { name: "Frapp" }),
+    ).not.toBeInTheDocument();
+    unmount();
+    // A sender the roster no longer lists (they left the chapter).
+    renderItemWithProps({ onOpenProfile, nameFor: () => null });
+    expect(
+      screen.queryByRole("button", { name: /^Member / }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("draws a plain name on a surface with no profile sheet", () => {
+    renderItem(message());
+    expect(
+      screen.queryByRole("button", { name: "Alice Chen" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens the profile of a member an @ chip names", async () => {
+    const onOpenProfile = vi.fn();
+    renderItemWithProps({
+      onOpenProfile,
+      message: message({
+        content: "ask @AliceChen about it",
+        mentions: [OTHER],
+      }),
+    });
+
+    const chip = screen.getByRole("button", { name: "@AliceChen" });
+    // The mark still paints the chip; the button sits inside it.
+    expect(chip.closest("mark")).toHaveAttribute("data-mention", "AliceChen");
+    fireEvent.click(chip);
+    expect(onOpenProfile).toHaveBeenCalledWith(OTHER);
+
+    onOpenProfile.mockClear();
+    chip.focus();
+    await userEvent.keyboard(" ");
+    expect(onOpenProfile).toHaveBeenCalledWith(OTHER);
+  });
+
+  it("opens nothing from a role mention", () => {
+    const onOpenProfile = vi.fn();
+    const { container } = renderItemWithProps({
+      onOpenProfile,
+      // `@Brothers` reached Alice as one of its holders, so it chips, but it
+      // names no single member.
+      message: message({ content: "hey @Brothers", mentions: [OTHER] }),
+    });
+
+    const chip = container.querySelector('[data-mention="Brothers"]');
+    expect(chip?.tagName).toBe("MARK");
+    expect(chip?.querySelector("button")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "@Brothers" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens nothing from a member the message did not notify", () => {
+    renderItemWithProps({
+      onOpenProfile: vi.fn(),
+      nameFor: (id) =>
+        id === OTHER ? "Alice Chen" : id === VIEWER ? "Morgan" : null,
+      // Only Alice was resolved; `@Morgan` is plain text or a plain chip.
+      message: message({
+        content: "@AliceChen and @Morgan",
+        mentions: [OTHER],
+      }),
+    });
+    expect(
+      screen.getByRole("button", { name: "@AliceChen" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "@Morgan" }),
+    ).not.toBeInTheDocument();
+  });
+});

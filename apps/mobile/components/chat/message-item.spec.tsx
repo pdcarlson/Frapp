@@ -61,7 +61,6 @@ import {
   groupReactions,
   MessageItem,
   authorProfileOpener,
-  mentionedUserId,
 } from "./message-item";
 
 const VIEWER = "11111111-1111-4111-8111-111111111111";
@@ -1235,16 +1234,5 @@ describe("opening a member's profile from a row", () => {
     // Left the chapter: the roster no longer names them.
     expect(authorProfileOpener(message(), open, () => null)).toBeUndefined();
     expect(authorProfileOpener(message(), open, nameFor)).toBeTypeOf("function");
-  });
-
-  it("resolves a tapped @ chip only against the members the message mentioned", () => {
-    const names: Record<string, string> = { [OTHER]: "Casey Jones", [VIEWER]: "Morgan" };
-    const nameFor = (id: string) => names[id] ?? null;
-    const mentioned = message({ mentions: [OTHER] });
-    expect(mentionedUserId(mentioned, "@CaseyJones", nameFor)).toBe(OTHER);
-    // Morgan is a member but this message didn't notify them.
-    expect(mentionedUserId(mentioned, "@Morgan", nameFor)).toBeNull();
-    // A role mention names no single member.
-    expect(mentionedUserId(mentioned, "@Brothers", nameFor)).toBeNull();
   });
 });
