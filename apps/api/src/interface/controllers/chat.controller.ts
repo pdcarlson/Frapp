@@ -508,7 +508,7 @@ export class ChatController {
               : 0,
           },
   )
-  // Web's `/poll` and mobile's New poll sheet post a `kind: 'poll'` message
+  // Web's `/poll` and New poll dialog, and mobile's New poll sheet, post a `kind: 'poll'` message
   // through this route (`buildPollMessage` in `@repo/chat-core/polls`).
   @FeatureEvent(
     'poll-created',

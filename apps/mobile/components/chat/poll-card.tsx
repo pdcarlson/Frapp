@@ -45,13 +45,13 @@ import {
  * Voting itself is the generic inline-card-action mechanism (`actOnCard` in
  * `@repo/chat-core/chat-client`, wired through `useChatChannel`'s `act`) —
  * the same one reactions use — **not** the separate `/v1/polls` REST
- * resource (`usePoll`/`useVoteOnPoll` in `@repo/hooks`). Those hooks back
- * the standalone `/polls` dashboard page and its own `poll_votes` table;
- * `chat_messages.type='POLL'` rows they create default to `kind: 'text'`
+ * resource and its own `poll_votes` table, which no client reads any more
+ * (web's `/polls` page and its hooks were retired, #3871).
+ * `chat_messages.type='POLL'` rows that resource creates default to `kind: 'text'`
  * (never set by `PollService.createPoll`) and so never reach this renderer.
  * A `kind: 'poll'` message is created only by web's `/poll` slash command
- * (`packages/chat-core/src/dispatch.ts`) and this app's New poll sheet
- * (`new-poll-sheet.tsx`, #3701), both through `buildPollMessage` in
+ * (`packages/chat-core/src/dispatch.ts`), web's New poll dialog (#3865) and
+ * this app's New poll sheet (`new-poll-sheet.tsx`, #3701), all through `buildPollMessage` in
  * `@repo/chat-core/polls`, and it votes through `chat_message_actions`, not
  * `poll_votes` — confirmed by reading both paths before choosing which one
  * to mirror.

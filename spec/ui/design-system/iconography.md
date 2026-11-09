@@ -311,7 +311,7 @@ This table is the intent → glyph map; it MUST change in the same PR as
 | Points | `PointsGlyph` | `points`, `trophy` |
 | Study hours | `StudyGlyph` | `study`, `graduation-cap` |
 | Service hours | `ServiceGlyph` | `service`, `hand-heart` |
-| Polls | `PollsGlyph` | `polls`, `chart-bar` |
+| Polls (no nav row since #3871; kept for the chat composer's + menu, #3865) | `PollsGlyph` | `polls`, `chart-bar` |
 | Documents | `DocumentsGlyph` | `documents`, `file-text` |
 | Backwork | `BackworkGlyph` | `backwork`, `books` |
 | Directory | `DirectoryGlyph` | `directory`, `users-three` |
@@ -363,7 +363,7 @@ One pick worth pinning meanwhile:
 Since the #920 chat slice the chat family draws the duotone recipe (§1). The
 glyphs live in
 [`apps/web/components/chat/chat-glyphs.tsx`](../../../apps/web/components/chat/chat-glyphs.tsx),
-which composes the shared recipe module and re-exports the six silhouettes the
+which composes the shared recipe module and re-exports the seven silhouettes the
 shell already draws rather than redrawing them. Rendered at 20px in headers and
 composer controls, 16px in card eyebrows and inline metadata (§2).
 
@@ -374,7 +374,8 @@ composer controls, 16px in card eyebrows and inline metadata (§2).
 | Bookmarked message (personal) | `BookmarkGlyph` |
 | Attach a file | `AttachGlyph` |
 | Add a reaction | `ReactionGlyph` |
-| Slash commands | `SlashCommandGlyph` |
+| The composer's **+**, which opens Attach a file and every command's form (#3865): stroke only at 2, a plus has no area to fill | `PlusGlyph` |
+| Poll, in the composer's **+** menu | `PollsGlyph` (shared with the nav intent) |
 | Send a message: an up arrow, stroke only at 2.4 on the accent-filled round button, the web face of mobile's `↑` (2026-11-06) | `SendArrowGlyph` |
 | Announcement | `AnnouncementGlyph` |
 | `#chapter-audit` / audit row | `AuditGlyph` |
@@ -400,7 +401,8 @@ Three things this table deliberately does not contain:
 - **The ✦ Ask mark.** It is a text glyph claimed by the Ask/AI affordance
   ([components.md](components.md) §11) and MUST NOT mark anything else — which
   is why chat's slash-command trigger, which used to draw Lucide's `Sparkles`,
-  now takes `SlashCommandGlyph`.
+  took a command silhouette instead, and why the **+** that replaced that
+  trigger (#3865) is a plain plus.
 - **Control furniture**, which stays Lucide on this surface exactly as it does
   in the shell: `Loader2` and `RefreshCw` (spinners), `X` (close), `Trash2`
   (discard), and the three glyphs that sit *inside* an action button and name
@@ -528,12 +530,12 @@ points — and the events table drew its role-targeting and recurrence markers a
 
 ### 6.2.5 Resources & Reporting (Signet duotone)
 
-Since the #920 Resources & Reporting slice these four families draw Signet
-glyphs, all from the nav set (§1.1) except the stroke-recipe search glyph. The
+Since the #920 Resources & Reporting slice these families draw Signet
+glyphs (`/polls` was one until #3871 retired it), all from the nav set (§1.1) except the stroke-recipe search glyph. The
 glyphs live in
 [`apps/web/components/documents/resources-glyphs.tsx`](../../../apps/web/components/documents/resources-glyphs.tsx),
-one file for four screens rather than four files, for the reason §6.2.4 gives:
-the four share their intents rather than partitioning them. The document
+one file for three screens rather than three files, for the reason §6.2.4 gives:
+the three share their intents rather than partitioning them. The document
 silhouette marks a file row on `/documents`, an unfiled document's folder
 button, and the PDF a report exports to.
 
@@ -541,13 +543,12 @@ button, and the PDF a report exports to.
 |---|---|
 | A document row on `/documents`, the "No folder" filter, and the PDF a report exports to | `DocumentsGlyph` (re-export) |
 | A folder, and the folder filter that names one | `FolderGlyph` |
-| A poll, and the control that casts a vote on one | `PollsGlyph` (re-export) |
 | A report, and the control that generates one | `ReportsGlyph` (re-export) |
 | Search, in the `/documents` and `/backwork` toolbars | `SearchGlyph` (re-export) |
 
 **Backwork's copy markers are Lucide, on purpose (2026-11-05).** A backwork row marks which copy a file is with one icon per copy type, from one set and in the row's muted text tone (Paul: "with the copy, keep the icons consistent"): `FileCheck` a student copy, `File` a blank copy, `KeyRound` an answer key, and `Lock` beside any of them for a redacted file (`apps/web/components/backwork/backwork-row-parts.tsx`). They are small inline markers beside a text label, not domain glyphs that stand for a screen, so they stay in the control-furniture set rather than the duotone family; a later pass that draws them in the Signet set changes this paragraph and that file together.
 
-Four of the five are re-exports from
+Three of the four are re-exports from
 [`apps/web/components/layout/nav-glyphs.tsx`](../../../apps/web/components/layout/nav-glyphs.tsx),
 which is §1 rule 1's rule and the two preceding families' practice. Only
 `FolderGlyph` is not a re-export, because no nav intent covers a folder (the
@@ -569,7 +570,8 @@ is accented.
 Two of the swaps were corrections rather than a pack change, in §6.2.4's sense:
 
 - `/polls` drew `RefreshCcw`, which §6.2.3 already recorded as "a stray second
-  spelling of §6.2.2's `RefreshCw`". It was the last one in the tree.
+  spelling of §6.2.2's `RefreshCw`". It was the last one in the tree. (The
+  page itself was retired in #3871.)
 - `/reports` marked **Generate report** with `FileSpreadsheet` and **Download
   PDF** with `FileText` — a spreadsheet labelling a report, and a generic page
   labelling the PDF. Both now name what the control produces.
