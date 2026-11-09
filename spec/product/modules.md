@@ -121,7 +121,7 @@
 - Polls have a question, 2-10 options, optional expiration time, and single-choice or multi-choice mode.
 - Members in the channel vote; results visible in real-time.
 - Polls are a special message type within chat.
-- Chapter-wide poll **listing** with aggregate results (web dashboard) is a separate surface from channel voting: it requires `polls:view_all` in addition to baseline chapter read permissions. It is not on the default Member role; which seeded roles carry it: [`spec/behavior/rbac.md` § Role Lifecycle](../behavior/rbac.md#role-lifecycle). See [`spec/behavior/polls.md`](../behavior/polls.md) and [`spec/ui/web-dashboard/README.md`](../ui/web-dashboard/README.md).
+- There is no chapter-wide poll list in any client: a poll lives in the channel where it was made. The web dashboard's `/polls` list was retired in [#3871](https://github.com/pdcarlson/Frapp/issues/3871) (Shawn, 2026-11-09), because it read only the older REST poll shape no client creates ([#3885](https://github.com/pdcarlson/Frapp/issues/3885)). The REST list behind it, `GET /v1/polls` and its `polls:view_all` gate, is still in the API until [#3887](https://github.com/pdcarlson/Frapp/issues/3887) removes it. See [`spec/behavior/polls.md`](../behavior/polls.md).
 
 ## Member Directory
 

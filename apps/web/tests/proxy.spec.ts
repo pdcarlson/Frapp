@@ -85,6 +85,21 @@ describe("apps/web/proxy.ts", () => {
       expect(onNavigation(`${prefix}x`), `${prefix}x`).toBe(false);
     }
 
+    // And the other direction: every route the regex spells out is still a
+    // protected prefix. A route deleted from the array but left in the regex
+    // keeps a billed proxy run on a path that now 404s, which is how `polls`
+    // outlived the `/polls` page (#3871) with every check above green.
+    const spelled = config.matcher.flatMap((entry) =>
+      typeof entry === "string" ? [] : [entry.source],
+    );
+    const alternatives = spelled.flatMap(
+      (source) => /\(\?:([^)]*)\)/.exec(source)?.[1]?.split("|") ?? [],
+    );
+    expect(alternatives.length).toBeGreaterThan(0);
+    expect(alternatives.map((name) => `/${name}`).sort()).toEqual(
+      [...dynamicPrefixes].sort(),
+    );
+
     for (const path of ["/robots.txt", "/auth/callback", "/_next/static/a.js"]) {
       expect(onNavigation(path), path).toBe(false);
     }

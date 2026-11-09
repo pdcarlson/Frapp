@@ -38,7 +38,6 @@ const OFFICER: readonly string[] = [
   "reports:export",
   "channels:manage",
   "chapter-config:view",
-  "polls:view_all",
 ];
 
 function renderNav(

@@ -34,6 +34,9 @@ const SHIPPED = new Set<string>([
   ...DASHBOARD_NAV_ITEMS.flatMap((item) => (item.module ? [item.module] : [])),
   ...SETTINGS_TOOLS.flatMap((tool) => (tool.module ? [tool.module] : [])),
   "dues",
+  // Polls live in chat since #3871 retired the nav row, as dues lives on
+  // /billing: still paid, still shipped, with no row for the nav to read.
+  "polls",
 ]);
 const PAID = MODULE_CATALOG.filter(
   (entry) => entry.tier === "paid" && SHIPPED.has(entry.key),
