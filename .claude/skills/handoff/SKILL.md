@@ -5,7 +5,7 @@ description: >
   the session has that tool, otherwise a copy-pasteable block — for when this session's context is
   filling up, when a task is finishing and the next one should start clean, or when a parallel
   workstream should run in its own chat. Offer this proactively; do not wait to be asked.
-argument-hint: "[continue|next|parallel|walkthrough] [<what the new session should pick up>]"
+argument-hint: "[continue|next|parallel|walkthrough|research] [<what the new session should pick up>]"
 allowed-tools: Read, Grep, Glob, Bash(git status *), Bash(git log *), Bash(git branch *), Bash(git rev-parse *), Bash(git diff *)
 ---
 
@@ -59,10 +59,12 @@ sessions on one branch collide.
 | `continue` | This session is degrading mid-task | Pick up the same task with clean context |
 | `next` | Current task is done or nearly | Start the next piece of work, usually via `/next` |
 | `parallel` | An independent track exists | Work a different task without touching this one's branch |
+| `research` | An idea, a bug with no known cause, or a question isn't ready to build | Investigate (code, tracker, read-only runtime), then define the work: file a GitHub issue per `file-follow-up` with acceptance criteria and an Agent brief, or sharpen the existing one, and report what it found. It builds nothing; the issue's own `/next` card does |
 | `walkthrough` | The user has something to do by hand (a device, a provider dashboard, a `[human]` issue) and wants a session guiding them | Walk them through it one step at a time (`AGENTS.md` § Operating mindset), checking each outcome, and record the result on the issue if there is one |
 
 Default to `next` if the user didn't say and the current task looks complete, `continue` otherwise.
-`walkthrough` is never a default: pick it when the work is the user's hands, not an agent's.
+`walkthrough` is never a default: pick it when the work is the user's hands, not an agent's. Pick
+`research` over `next` when nobody could yet write the issue's acceptance criteria.
 
 ## Multi-stage programs
 
@@ -128,7 +130,8 @@ In order:
 
 1. **Command line.** `/next` for mode `next`. For `continue`, a plain instruction naming the task,
    since the issue is already picked. For `parallel`, `/next <N>` when the track is a tracker issue,
-   else a plain instruction naming it. For `walkthrough`, a plain instruction naming what to walk the
+   else a plain instruction naming it. For `research`, a plain instruction naming the question or
+   idea to investigate and define, and its issue if there is one. For `walkthrough`, a plain instruction naming what to walk the
    user through, and its issue if there is one.
 2. **Task and why.** Two to four sentences on what we're achieving and why it's worth doing. Not
    how.
