@@ -57,12 +57,23 @@ Borders MUST be low-opacity white. Fixed-hex border colors are banned: an opaque
 
 | Token | Value | Role |
 |-------|-------|------|
-| `--foreground` | `#EBEBEB` | Primary text |
-| `--muted-foreground` | `#A3A3A3` | Secondary text |
-| `--muted` | `#737373` | Muted text — placeholders, timestamps, metadata |
-| `--disabled` | `#525252` | Disabled text |
+| `--foreground` | `#F5F5F5` | Primary text |
+| `--muted-foreground` | `#C4C4C4` | Secondary text |
+| `--muted` | `#9E9E9E` | Muted text — placeholders, timestamps, metadata |
+| `--disabled` | `#6B6B6B` | Disabled text |
 
 Token names follow panel 4h (ShadCN-style); panel 4a labels the same values text / secondary / muted. All four are neutral, matching the surface ladder: cream text on the graphite ladder reads yellow. Until 2026-11-05 they were warm-tinted (`#EDEAE3` / `#A9A399` / `#78716A` / `#57534C`) to match the warm ladder (§2).
+
+**Every text tone clears its floor on every surface** (2026-11-09, at the owner's request, [#3826](https://github.com/pdcarlson/Frapp/issues/3826): "it looks very dim… you have to squint… it's not even white, the letters", and worse on an external monitor than on a laptop). `--foreground` and `--muted-foreground` clear 7:1 and `--muted` clears 4.5:1 against all four ladder steps, as the table shows. Until then the ladder was `#EBEBEB` / `#A3A3A3` / `#737373` / `#525252`, and `--muted`, the metadata tone on hundreds of web call sites (event lines, timestamps, section eyebrows), measured 3.5–4.2:1, under the 4.5:1 gate ([`README.md`](README.md) §6) on every step. That gap was most of "the dashboard looks dim"; the surface ladder's own imperceptible steps are the rest, tracked in [#2399](https://github.com/pdcarlson/Frapp/issues/2399). `--disabled` is deliberately under AA (WCAG exempts disabled controls) and stays a clear step under `--muted`.
+
+| Text tone, on: | Background | Surface 1 | Card | Popover |
+| --- | --- | --- | --- | --- |
+| Foreground | 18.16 | 17.32 | 16.44 | 15.29 |
+| Muted foreground | 11.35 | 10.83 | 10.28 | 9.56 |
+| Muted | 7.39 | 7.05 | 6.69 | 6.22 |
+| Disabled | 3.72 | 3.54 | 3.36 | 3.13 |
+
+Was, for comparison: foreground 16.61 / 15.84 / 15.04 / 13.98; muted foreground 7.85 / 7.49 / 7.11 / 6.61; muted 4.18 / 3.98 / 3.78 / 3.52; disabled 2.53 / 2.42 / 2.29 / 2.13.
 
 ---
 

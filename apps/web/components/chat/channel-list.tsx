@@ -431,7 +431,10 @@ export function ChannelList({
                 ? "bg-accent-subtle font-semibold text-accent-text"
                 : isUnread
                   ? "font-semibold text-foreground hover:bg-card"
-                  : "text-muted-foreground hover:bg-card hover:text-foreground",
+                  : // A read row keeps the primary tone and drops the weight,
+                    // as mobile's `channel-row.tsx` does: unread reads by
+                    // weight, never by a dimmer colour (#3777).
+                    "text-foreground hover:bg-card",
             )}
           >
             <ChannelMark channel={channel} title={titleFor(channel)} />

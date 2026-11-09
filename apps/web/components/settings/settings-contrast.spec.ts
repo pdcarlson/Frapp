@@ -63,19 +63,21 @@ describe("the capability matrix states held and missing in text tones", () => {
     // this comment said 2.3:1 from memory and the review recomputed it at
     // 2.184. A number in a comment is not a measurement — so the number is an
     // assertion now, and the comment cites the assertion. (2.189 on the
-    // neutral ladder, 2026-11-05.)
+    // neutral ladder, 2026-11-05; 2.681 with the 2026-11-09 text ladder.)
     const washed = ratio(
       mix(TEXT.mutedForeground, MATRIX_SURFACE, 0.4),
       MATRIX_SURFACE,
     );
     expect(washed).toBeLessThan(AA_TEXT);
-    expect(washed).toBeCloseTo(2.189, 2);
+    expect(washed).toBeCloseTo(2.681, 2);
   });
 
-  it("rules out `--muted`, which reads like the right token and is not", () => {
-    // The fix this file's own review rejected. Recorded so the next reader
-    // does not re-derive it: 3.781:1 on the card the matrix sits in.
-    expect(ratio(TEXT.muted, MATRIX_SURFACE)).toBeLessThan(AA_TEXT);
+  it("would also read in `--muted`, since the 2026-11-09 text ladder", () => {
+    // This file's own review once rejected `--muted` here at 3.781:1 on the
+    // card the matrix sits in. foundations.md §4 (#3826) lifted it to 6.69:1,
+    // so it is now a legal tone; the matrix keeps `--muted-foreground` for
+    // its hierarchy, not because the quieter tone fails.
+    expect(ratio(TEXT.muted, MATRIX_SURFACE)).toBeGreaterThanOrEqual(AA_TEXT);
   });
 
   it("keeps success clear of the tab's own surface too", () => {

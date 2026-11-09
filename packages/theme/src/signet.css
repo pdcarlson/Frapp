@@ -42,9 +42,9 @@
     --background: #0A0A0A;
     --surface-1: #111111;
     --card: #171717;
-    --card-foreground: #EBEBEB;
+    --card-foreground: #F5F5F5;
     --popover: #1E1E1E;
-    --popover-foreground: #EBEBEB;
+    --popover-foreground: #F5F5F5;
 
     /* ── Borders & hairlines (foundations §3) ─────────────────────
      * Low-opacity white only, so a hairline tracks whatever surface
@@ -54,13 +54,13 @@
 
     /* ── Text ladder (foundations §4) ─────────────────────────────
      * NOTE the ShadCN-era name collision, resolved in foundations'
-     * favor: `--muted` is muted TEXT (#737373), not a fill. Subtle
+     * favor: `--muted` is muted TEXT (#9E9E9E), not a fill. Subtle
      * fills use the surface ladder (`--surface-1`, `--card`) instead;
      * the web reskin retargeted every `bg-muted` call site accordingly. */
-    --foreground: #EBEBEB;
-    --muted-foreground: #A3A3A3;
-    --muted: #737373;
-    --disabled: #525252;
+    --foreground: #F5F5F5;
+    --muted-foreground: #C4C4C4;
+    --muted: #9E9E9E;
+    --disabled: #6B6B6B;
 
     /* ── Semantic status (foundations §5; status-only, never decorative) ──
      * Foregrounds are for text ON a solid semantic fill; measured against

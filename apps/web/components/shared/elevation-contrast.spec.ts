@@ -208,9 +208,10 @@ describe("the notification drawer's rows hover off the sheet (#1208)", () => {
 
 describe("an overlay's close control is text-toned (#1208)", () => {
   // `ui/dialog.tsx` and `ui/sheet.tsx` draw the same accessibly named "Close"
-  // glyph on `--popover`. components.md §1: `--muted` is not a text token.
-  it("would have caught --muted on the overlay's own fill", () => {
-    expect(ratio(TEXT.muted, SURFACE.popover)).toBeLessThan(AA_TEXT);
+  // glyph on `--popover`. `--muted` missed the gate here (3.52:1) until the
+  // 2026-11-09 text ladder (foundations.md §4, #3826); both tones now clear it.
+  it("clears the text gate in --muted too", () => {
+    expect(ratio(TEXT.muted, SURFACE.popover)).toBeGreaterThanOrEqual(AA_TEXT);
   });
 
   it("clears the text gate in --muted-foreground", () => {

@@ -195,7 +195,7 @@ sheet is option `3a`.
 
 > **Superseded 2026-11-05.** The owner replaced this warm ladder with a darker, pure neutral one
 > (`#0A0A0A` / `#111111` / `#171717` / `#1E1E1E`, text `#EBEBEB` / `#A3A3A3` / `#737373` /
-> `#525252`). The table above is the lock as it was settled; the current values and the reasons
+> `#525252`; the text ladder was lifted again on 2026-11-09, [#3826](https://github.com/pdcarlson/Frapp/issues/3826)). The table above is the lock as it was settled; the current values and the reasons
 > live in [`../design-system/foundations.md`](../design-system/foundations.md) §2 and §4.
 
 This closes the lock as stated. The board does **not** close L-06 or L-08, which it was also hoped to
