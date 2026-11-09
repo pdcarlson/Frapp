@@ -20,6 +20,7 @@ export { formatBytes } from "./bytes";
 export { localIsoDate } from "./local-date";
 export {
   formatDay,
+  formatDayHeading,
   formatDayRange,
   formatDayTime,
   formatDayTimeRange,

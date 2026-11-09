@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatDay,
+  formatDayHeading,
   formatDayRange,
   formatDayTime,
   formatDayTimeRange,
@@ -70,6 +71,18 @@ describe("house date shapes", () => {
     expect(formatRelativeDayTime("2026-11-03T17:00:00-08:00", NOW)).toBe("Yesterday · 5:00 PM");
     expect(formatRelativeDayTime(FRI_5PM, NOW)).toBe("Friday · 5:00 PM");
     expect(formatRelativeDayTime("2026-11-20T17:00:00-08:00", NOW)).toBe("Nov 20 · 5:00 PM");
+  });
+
+  it("writes a day heading out, as the Events lists group by", () => {
+    expect(formatDayHeading("2026-11-04T17:00:00-08:00", NOW)).toBe("Today");
+    expect(formatDayHeading("2026-11-05T08:00:00-08:00", NOW)).toBe("Tomorrow");
+    expect(formatDayHeading("2026-11-03T17:00:00-08:00", NOW)).toBe("Yesterday");
+    expect(formatDayHeading(FRI_5PM, NOW)).toBe("Friday");
+    expect(formatDayHeading("2026-11-10T17:00:00-08:00", NOW)).toBe("Tuesday");
+    expect(formatDayHeading("2026-11-11T17:00:00-08:00", NOW)).toBe("November 11");
+    expect(formatDayHeading("2026-10-30T17:00:00-07:00", NOW)).toBe("October 30");
+    expect(formatDayHeading("2027-01-03T17:00:00-08:00", NOW)).toBe("January 3, 2027");
+    expect(formatDayHeading(null, NOW)).toBeNull();
   });
 
   it("counts a due date down, as mobile's task subtitle does", () => {
