@@ -3,7 +3,7 @@
 import { useId, useState, type ReactNode } from "react";
 import { Check, Link2, Loader2 } from "lucide-react";
 import { useCreateInvite, useEmailInvites } from "@repo/hooks";
-import { MAX_INVITE_EMAILS } from "@repo/validation";
+import { MAX_INVITE_EMAILS, splitAddresses } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
@@ -12,7 +12,6 @@ import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import {
   addChips,
   EmailChipsInput,
-  splitAddresses,
   type EmailChip,
 } from "@/components/members/email-chips-input";
 

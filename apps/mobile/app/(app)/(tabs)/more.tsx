@@ -316,7 +316,7 @@ export default function MoreScreen() {
               <ListRow
                 label="Invite members"
                 leading={<InviteGlyph color={glyphColor} />}
-                accessibilityHint="Opens invite links to share with new members."
+                accessibilityHint="Opens invites to email or share with new members."
                 onPress={() => router.push("/invite")}
               />
             ) : null}
