@@ -47,7 +47,8 @@ type Missing = { assignee?: boolean; due?: boolean };
  * Pressing it opens the row in place. Typing a title and pressing Enter
  * creates the task once it has an assignee and a due date, which the API
  * requires (`CreateTaskDto`); a missing one is flagged and focused on submit,
- * never while typing. The due date is typed as a month and a day, with no
+ * never while typing (once flagged, the due field's line follows what is
+ * typed until it reads as a date). The due date is typed as a month and a day, with no
  * year to set (`due-date-field.tsx`, #3928). After a create the row stays open with a fresh title,
  * so an officer can add several in a row. Escape or Cancel closes it.
  */

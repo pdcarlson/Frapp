@@ -245,6 +245,34 @@ describe("parseTaskArgs", () => {
     expect(due('"Task" @alice 06/15/2027')).toEqual(["2027-06-15", null]);
   });
 
+  it("gives a typed year to the date, never to the points (#3928 review)", () => {
+    const due = (args: string) => {
+      const r = parseTaskArgs(args, NOW);
+      return r.ok ? [r.value.dueDate, r.value.pointReward] : r.error;
+    };
+    expect(due('"Task" @alice Nov 14 2027')).toEqual(["2027-11-14", null]);
+    expect(due('"Task" @alice Nov 14, 2027 5')).toEqual(["2027-11-14", 5]);
+    expect(due('"Task" @alice 14 Nov 2027')).toEqual(["2027-11-14", null]);
+    expect(due('"Task" @alice 11/14 2027')).toEqual(["2027-11-14", null]);
+    // What the web field shows reads here too.
+    expect(due('"Task" @alice Mar 14, 2027')).toEqual(["2027-03-14", null]);
+    expect(due('"Task" @alice Sat, Nov 14 5')).toEqual(["2026-11-14", 5]);
+    // A number that is no year is the points.
+    expect(due('"Task" @alice Nov 14 1000')).toEqual(["2026-11-14", 1000]);
+    expect(due('"Task" @alice 11/14 10')).toEqual(["2026-11-14", 10]);
+  });
+
+  it("refuses a run that is not a date and then the points", () => {
+    for (const args of [
+      '"Task" @alice 1.5',
+      '"Task" @alice help tom sweep',
+      '"Task" @alice 11/14 5 extra',
+      '"Task" @alice November 14th 2027 5 6',
+    ]) {
+      expect(parseTaskArgs(args, NOW).ok, args).toBe(false);
+    }
+  });
+
   it("rejects text that is not a date", () => {
     const r = parseTaskArgs('"Task" @alice soon', NOW);
     expect(r.ok).toBe(false);
@@ -658,6 +686,35 @@ describe("taskFormPrefill (#3865)", () => {
     expect(taskFormPrefill("Sweep @bobby friday", now).dueDate).toBe(
       "2026-11-13",
     );
+    expect(taskFormPrefill("Sweep @bobby Sat, Nov 14 5", now)).toEqual({
+      title: "Sweep",
+      assigneeToken: "bobby",
+      dueDate: "2026-11-14",
+      pointReward: 5,
+    });
+    expect(taskFormPrefill("Sweep @bobby Nov 14 2027", now)).toEqual({
+      title: "Sweep",
+      assigneeToken: "bobby",
+      dueDate: "2027-11-14",
+    });
+    // Words and numbers that are not a date fill nothing (#3928 review).
+    for (const args of [
+      "@bobby help tom sweep",
+      "@bobby sweep 1.5 hours",
+      "@bobby Sweep the 3/4 landing",
+      "@bobby Order 5 May pizzas",
+      "@bobby 11/14 5 nov",
+    ]) {
+      expect(taskFormPrefill(args, now), args).toEqual({
+        assigneeToken: "bobby",
+      });
+    }
+    // A full date is still found among other words, as before.
+    expect(taskFormPrefill("@bobby by 2026-11-12 5 please", now)).toEqual({
+      assigneeToken: "bobby",
+      dueDate: "2026-11-12",
+      pointReward: 5,
+    });
     // Ahead of the @member a loose date is a word of the title.
     expect(taskFormPrefill("Room 3/4 cleanup Friday @bobby", now)).toEqual({
       title: "Room 3/4 cleanup Friday",

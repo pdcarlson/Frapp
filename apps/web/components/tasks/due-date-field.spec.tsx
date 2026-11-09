@@ -93,6 +93,7 @@ describe("DueDateField (#3928)", () => {
     render(<Harness missing />);
     expect(screen.getByRole("alert")).toHaveTextContent("Pick a due date.");
     expect(field()).toHaveAttribute("aria-invalid", "true");
+    expect(field()).toHaveAccessibleDescription("Pick a due date.");
   });
 
   it("says how to write one when the form was submitted with unreadable text", () => {
@@ -109,6 +110,8 @@ describe("DueDateField (#3928)", () => {
     const reading = screen.getByText("Sat, Nov 14");
     expect(reading.tagName).toBe("SPAN");
     expect(reading).toHaveClass("absolute");
+    // A screen reader hears the reading, the filled-in year included.
+    expect(field()).toHaveAccessibleDescription("Sat, Nov 14");
     // Out of the flow: no line under the field for a blur to remove.
     expect(container.querySelectorAll("p")).toHaveLength(0);
   });

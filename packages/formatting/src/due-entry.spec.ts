@@ -12,7 +12,6 @@ describe("parseDueEntry (#3928)", () => {
     ["Nov. 14", "2026-11-14"],
     ["11/14", "2026-11-14"],
     ["11-14", "2026-11-14"],
-    ["11.14", "2026-11-14"],
     ["  12/1 ", "2026-12-01"],
     ["sept 3", "2027-09-03"],
   ])("reads %j as a month and a day", (text, expected) => {
@@ -36,6 +35,7 @@ describe("parseDueEntry (#3928)", () => {
     expect(parseDueEntry("Nov 14, 2027", NOW)).toBe("2027-11-14");
     expect(parseDueEntry("11/14/27", NOW)).toBe("2027-11-14");
     expect(parseDueEntry("11/14/2028", NOW)).toBe("2028-11-14");
+    expect(parseDueEntry("11/14 2027", NOW)).toBe("2027-11-14");
     expect(parseDueEntry("2027-11-14", NOW)).toBe("2027-11-14");
     // A named year is not second-guessed, as the date input it replaced.
     expect(parseDueEntry("2020-01-01", NOW)).toBe("2020-01-01");
@@ -68,6 +68,23 @@ describe("parseDueEntry (#3928)", () => {
       "2025-06-01",
     ]) {
       expect(parseDueEntry(formatDueEntry(iso, NOW), NOW)).toBe(iso);
+    }
+  });
+
+  it("reads narrowly where a number could be something else", () => {
+    // `/task` runs this over what follows the @member.
+    for (const text of [
+      "1.5",
+      "11.14",
+      "tom",
+      "11/14 10",
+      "11/14 5",
+      "Nov 14 1000",
+      "Nov 14 5",
+      "11/14/1999",
+      "2150-01-01",
+    ]) {
+      expect(parseDueEntry(text, NOW), text).toBeNull();
     }
   });
 

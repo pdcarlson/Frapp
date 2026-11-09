@@ -342,7 +342,7 @@ The **Accent server contrast disclosure** row is independent of every row above 
 | Nothing assigned (member) | — | `Nothing on your plate.` then, when an event is ahead and Events is on, `Next up: {event}, {when}.` (one line, in place of the board) |
 | Add row (officer) | — | `Add a task`, at the top of To do |
 | Add row, required field left out | — | `Pick an assignee.` / `Pick a due date.` (under the field, on submit only) |
-| Add row or chat Task form, due date typed but not readable | — | `Try a date like Nov 14 or 11/14, or a day like Friday.` (under the field, on submit only; #3928) |
+| Add row or chat Task form, due date typed but not readable | — | `Try a date like Nov 14 or 11/14, or a day like Friday.` (under the field; it takes the place of `Pick a due date.` once a submit has left the date out and what is typed is still not a date, and goes when it is; #3928) |
 | Error | `Couldn't load tasks` | the load-failure line (§ copy rules) |
 | Offline | `Tasks unavailable offline` | `Reconnect to load the chapter board and move tasks through it.` |
 

@@ -14,15 +14,20 @@ import { localIsoDate } from "./local-date";
  * - a weekday, `fri` or `Friday`: the next one after today;
  * - a month and a day in either order, `Nov 14`, `November 14th`, `14 Nov`,
  *   with an optional year, `Nov 14 2027`;
- * - numbers, month first, `11/14`, `11-14`, `11.14`, with an optional two- or
- *   four-digit year, `11/14/27`;
+ * - numbers, month first, `11/14` or `11-14`, with an optional year,
+ *   `11/14/27` or `11/14 2027`;
  * - `2027-11-14`, what the API takes and what a prefill carries;
  * - its own output ({@link formatDueEntry}), so a shown value reads back to
  *   the date it shows.
  *
  * Month-first is the one locale assumption: the product is for US chapters.
  * A date that names its year is taken as written, past or not, as the date
- * input this replaced took it. Returns `YYYY-MM-DD`, or `null` for text that
+ * input this replaced took it, within {@link MIN_YEAR} to {@link MAX_YEAR}.
+ *
+ * `/task` runs this over what follows the `@member`, where a number may be the
+ * point reward instead, so it reads narrowly: no `1.5` (a dotted date), no
+ * `tom` (a name), and a year after a space only as four digits in range, so
+ * `11/14 10` and `Nov 14 1000` are never a date in year 2010 or 1000. Returns `YYYY-MM-DD`, or `null` for text that
  * is not a date (`Feb 30`, `soon`).
  */
 export function parseDueEntry(raw: string, now: Date): string | null {
@@ -42,10 +47,8 @@ export function parseDueEntry(raw: string, now: Date): string | null {
     return localIsoDate(next);
   };
 
-  if (text === "today" || text === "tod") return inDays(0);
-  if (text === "tomorrow" || text === "tom" || text === "tmrw") {
-    return inDays(1);
-  }
+  if (text === "today") return inDays(0);
+  if (text === "tomorrow" || text === "tmrw") return inDays(1);
   if (text === "next week") return inDays(7);
 
   const weekday = indexOfName(WEEKDAYS, text);
@@ -56,12 +59,13 @@ export function parseDueEntry(raw: string, now: Date): string | null {
   const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(text);
   if (iso) return dated(Number(iso[2]), Number(iso[3]), Number(iso[1]), today);
 
-  const numeric = /^(\d{1,2})[/.-](\d{1,2})(?:[/.-](\d{2}|\d{4}))?$/.exec(text);
+  const numeric =
+    /^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2}|\d{4})| (\d{4}))?$/.exec(text);
   if (numeric) {
     return dated(
       Number(numeric[1]),
       Number(numeric[2]),
-      yearOf(numeric[3]),
+      yearOf(numeric[3] ?? numeric[4]),
       today,
     );
   }
@@ -161,6 +165,10 @@ function yearOf(token: string | undefined): number | undefined {
   return token.length === 2 ? 2000 + Number(token) : Number(token);
 }
 
+/** The years a typed year may name. Outside them the text is not a date. */
+const MIN_YEAR = 2000;
+const MAX_YEAR = 2100;
+
 /** A leap day's next occurrence is at most eight years out (2096 → 2104). */
 const YEARS_TO_SEARCH = 8;
 
@@ -171,6 +179,7 @@ function dated(
   today: Date,
 ): string | null {
   if (year !== undefined) {
+    if (year < MIN_YEAR || year > MAX_YEAR) return null;
     const at = calendarDay(year, month, day);
     return at ? localIsoDate(at) : null;
   }
