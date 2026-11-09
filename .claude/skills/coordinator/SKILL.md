@@ -10,6 +10,10 @@ description: >
 
 # Coordinator
 
+> **Since 2026-11-09:** Shawn and Winston work in their own Claude chats under their own GitHub
+> accounts ([`AGENTS.md` § Operating mindset](../../../AGENTS.md#operating-mindset)), not through
+> this board. The Shawn intake and approval rules below apply only to anything he still brings here.
+
 Claude Code projects, a coordinator chat that spins off threads, aren't offered on Team plans
 (checked 2026-11-08, [docs](https://code.claude.com/docs/en/claude-projects)). This skill builds the
 same shape from parts this environment has. Checked on 2026-11-08: `create_session` starts a worker,
@@ -76,7 +80,8 @@ The board is an artifact page built from [`hub.html`](hub.html): a live list of 
 - **Comments.** A comment sent to Claude arrives as a new turn. Read it with `ArtifactComments`,
   answer in its thread briefly and plainly, then route it like anything said here.
 - **Ledger.** The board holds everything a successor needs. Park work that won't happen now as a
-  `parked` row with its reason. File a GitHub issue only when Paul asks for one.
+  `parked` row with its reason. Each row links its GitHub issue, filed per `file-follow-up`: the
+  issues are the record ([`AGENTS.md` § Work tracking](../../../AGENTS.md#work-tracking)).
 
 ## Context: hand off at 50%
 

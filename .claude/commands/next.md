@@ -51,8 +51,8 @@ batch takes at most one, and one you can't size runs solo. Estimates (the option
 **Nothing discovered is dropped.** A defect, drift, or coverage gap you notice mid-run is fixed now
 or filed. Fix it now when it sits in or next to the surface you're touching, doesn't change the PR's
 revert story, and wouldn't itself trip a §1.3 veto (destructive DDL, auth/RLS, and billing are never
-drive-bys); note it in the PR body. Otherwise file it (`issue_write` create, labels `triage` + a
-priority + one `area:<x>`, `file:line` evidence, an Agent brief when you can). A fixed defect that
+drive-bys); note it in the PR body. Otherwise file it per [`file-follow-up`](../skills/file-follow-up/SKILL.md) (`Asked by:`, labels `triage` + a
+priority + one `area:<x>`, `file:line` evidence, its epic as parent, an Agent brief when you can). A fixed defect that
 deserves its own record (user-visible, security, anything someone would search the tracker for) is
 filed and claimed into the unit: same `CLAIM_ID`, claim comment and all. This record-keeping claim
 sits outside `MAX_BATCH` and the estimate ceiling, which cap planned scope. Apart from a named issue
