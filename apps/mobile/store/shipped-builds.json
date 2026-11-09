@@ -121,6 +121,13 @@
       "build": "10",
       "sha": "547c136479ef652b79669153ecf214cd6ab63829",
       "recorded": "2026-11-07"
+    },
+    {
+      "platform": "android",
+      "version": "0.10.3",
+      "build": "11",
+      "sha": "68a470199c61fdc5a61c15003c1e26594cc0fa08",
+      "recorded": "2026-11-09"
     }
   ]
 }
