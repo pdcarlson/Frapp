@@ -531,6 +531,70 @@ export function eventFormPrefill(args: string): EventFormPrefill {
   return prefill;
 }
 
+/** What a partly typed `/task` can hand the task form (#3773 step 3, #3865). */
+export interface TaskFormPrefill {
+  title?: string;
+  /** The `@member` token without its `@`, for the host to resolve. */
+  assigneeToken?: string;
+  dueDate?: string;
+  pointReward?: number;
+}
+
+/**
+ * Pull whatever `/task` arguments are usable out of text that
+ * {@link parseTaskArgs} refuses, so web chat opens the task form filled in
+ * rather than answering with the usage string. Lenient like
+ * {@link eventFormPrefill}: the title needn't be quoted (every token before
+ * the first `@member` or date joins it), an unterminated quote is dropped,
+ * and a token that doesn't fit its slot is dropped rather than refused.
+ */
+export function taskFormPrefill(args: string): TaskFormPrefill {
+  const trimmed = args.trim();
+  if (trimmed.length === 0) return {};
+  const tokens =
+    tokenizeQuotedArgs(trimmed) ??
+    tokenizeQuotedArgs(
+      trimmed.slice(0, trimmed.lastIndexOf('"')) +
+        trimmed.slice(trimmed.lastIndexOf('"') + 1),
+    ) ??
+    trimmed.split(/\s+/);
+
+  const prefill: TaskFormPrefill = {};
+  const titleParts: string[] = [];
+  let i = 0;
+  for (; i < tokens.length; i++) {
+    const token = tokens[i]!.trim();
+    if (token.startsWith("@") || parseIsoDate(token) !== null) break;
+    if (token.length > 0) titleParts.push(token);
+  }
+  const title = titleParts.join(" ").slice(0, TASK_MAX_TITLE_LENGTH).trim();
+  if (title.length > 0) prefill.title = title;
+
+  for (; i < tokens.length; i++) {
+    const token = tokens[i]!.trim();
+    if (token.startsWith("@") && token.length > 1) {
+      prefill.assigneeToken ??= token.slice(1);
+      continue;
+    }
+    const date = parseIsoDate(token);
+    if (date !== null) {
+      prefill.dueDate ??= date;
+      continue;
+    }
+    // Points only after the date, as the one-liner orders them.
+    const points = parseNumericArg(token);
+    if (
+      prefill.dueDate !== undefined &&
+      points !== null &&
+      Number.isInteger(points) &&
+      points >= 0
+    ) {
+      prefill.pointReward ??= points;
+    }
+  }
+  return prefill;
+}
+
 const HOURS_DESCRIPTION_MAX = 2000;
 const HOURS_USAGE = "Usage: /hours log <duration> <description>";
 
@@ -578,7 +642,7 @@ function parseDurationToMinutes(token: string | undefined): number | null {
  * accepts `2h`, `90m`/`90min`, or a bare number of hours. Description is
  * everything after the duration (quoted spans allowed, same tokenizer as
  * `/poll`). Date is not parsed here — dispatch stamps today's local
- * `YYYY-MM-DD`. Chat cannot attach proof; when `wf_hours_receipt` is on, the
+ * `YYYY-MM-DD`. The one-liner cannot attach proof; when `wf_hours_receipt` is on, the
  * API 400s and that is the correct UX.
  */
 export function parseHoursArgs(args: string): ParseResult<HoursArgs> {

@@ -257,6 +257,53 @@ vi.mock("./report-message-dialog", () => ({
 // column the shell decides to show.
 const mockTrackEventCard = vi.fn();
 const mockSendPoll = vi.fn(async () => ({ ok: true as const }));
+const mockPostTask = vi.fn(
+  async (): Promise<Record<string, unknown>> => ({ ok: true }),
+);
+const mockPostHours = vi.fn(async () => ({ ok: true }));
+const mockPostPoints = vi.fn(async () => ({ ok: true }));
+
+// The + menu's Task, Service hours and Points forms (#3865) have their own
+// specs; here each is only what the shell opens and what it does on submit.
+vi.mock("@/components/tasks/new-task-dialog", () => ({
+  NewTaskDialog: (props: {
+    open: boolean;
+    prefill?: { title?: string; dueDate?: string };
+    initialAssigneeId?: string;
+    onPost: (input: unknown) => Promise<unknown>;
+  }) => (
+    <div
+      data-testid="task-form"
+      data-open={String(props.open)}
+      data-title={props.prefill?.title ?? ""}
+      data-due={props.prefill?.dueDate ?? ""}
+      data-assignee={props.initialAssigneeId ?? ""}
+    >
+      <button
+        data-testid="task-form-post"
+        onClick={() =>
+          void props.onPost({
+            title: "Sweep",
+            assignee_id: "u-1",
+            due_date: "2026-11-12",
+          })
+        }
+      >
+        post
+      </button>
+    </div>
+  ),
+}));
+vi.mock("@/components/service/log-hours-dialog", () => ({
+  LogHoursDialog: (props: { open: boolean }) => (
+    <div data-testid="hours-form" data-open={String(props.open)} />
+  ),
+}));
+vi.mock("@/components/points/points-adjustment-dialog", () => ({
+  PointsAdjustmentDialog: (props: { open: boolean }) => (
+    <div data-testid="points-form" data-open={String(props.open)} />
+  ),
+}));
 
 vi.mock("@/components/events/event-editor-dialog", () => ({
   EventEditorDialog: (props: {
@@ -684,7 +731,10 @@ vi.mock("./channel-list", () => ({
 // real ProseMirror view (jsdom can't render one; see composer.spec.tsx).
 // Keyed off `channelId` rather than `channelName` because this file's
 // `directChannelDisplayName` stub always returns `""`.
+const mockNotifyOutcome = vi.hoisted(() => vi.fn());
+
 vi.mock("./composer", () => ({
+  notifyDispatchOutcome: mockNotifyOutcome,
   Composer: ({
     channelId,
     draft,
@@ -807,6 +857,28 @@ vi.mock("./composer", () => ({
             }}
           >
             /poll {args}
+          </button>
+        ))}
+        {[
+          ["task", ""],
+          ["task", "Sweep the porch @bobby 2026-11-12"],
+          ["task", '"Sweep" @bobby 2026-11-12'],
+          ["hours", ""],
+          ["hours", "log 2h"],
+          ["points", ""],
+        ].map(([name, args]) => (
+          <button
+            key={`${name}:${args}`}
+            data-testid={`composer-${name}:${args}`}
+            onClick={(event) => {
+              const took = onOpenCommandForm?.(
+                { name: name as "task", implemented: true },
+                args!,
+              );
+              event.currentTarget.dataset.took = String(took);
+            }}
+          >
+            /{name} {args}
           </button>
         ))}
         <button data-testid="composer-cancel-reply" onClick={onCancelReply}>
@@ -1047,6 +1119,9 @@ function chatChannelResult(
     dispatchSlash: vi.fn(),
     trackEventCard: mockTrackEventCard,
     sendPoll: mockSendPoll,
+    postTask: mockPostTask,
+    postHours: mockPostHours,
+    postPointsAdjustment: mockPostPoints,
     act: vi.fn(),
     hasOlder: overrides.hasOlder ?? false,
     isLoadingOlder: overrides.isLoadingOlder ?? false,
@@ -4640,6 +4715,91 @@ describe("ChatShell opens the New poll form for a /poll it can't read (#3865)", 
   });
 });
 
+describe("ChatShell opens the Task, Service hours and Points forms (#3865)", () => {
+  beforeEach(() => {
+    mockUseMyPermissions.mockReturnValue({
+      data: {
+        permissions: [
+          "tasks:manage",
+          "service:log",
+          "points:adjust",
+          "members:view",
+        ],
+      },
+    });
+  });
+
+  const click = (id: string) => {
+    const button = screen.getByTestId(id);
+    fireEvent.click(button);
+    return button.dataset.took;
+  };
+
+  it("opens the task form on what a half-typed /task named", () => {
+    render(<ChatShell />);
+    expect(click("composer-task:Sweep the porch @bobby 2026-11-12")).toBe(
+      "opened",
+    );
+    const form = screen.getByTestId("task-form");
+    expect(form.dataset.open).toBe("true");
+    expect(form.dataset.title).toBe("Sweep the porch");
+    expect(form.dataset.due).toBe("2026-11-12");
+  });
+
+  it("leaves a /task it can read to the dispatcher", () => {
+    render(<ChatShell />);
+    expect(click('composer-task:"Sweep" @bobby 2026-11-12')).toBe("null");
+    expect(screen.queryByTestId("task-form")).toBeNull();
+  });
+
+  it("posts the task into the channel it came from and shows a lost card's warning", async () => {
+    mockPostTask.mockResolvedValueOnce({
+      ok: true,
+      warning: "Task was created, but the chat card couldn't be posted.",
+    });
+    mockNotifyOutcome.mockClear();
+    render(<ChatShell />);
+    click("composer-task:");
+    fireEvent.click(screen.getByTestId("task-form-post"));
+    await waitFor(() => expect(mockPostTask).toHaveBeenCalled());
+    const [channelId] = mockPostTask.mock.calls[0] as unknown as [string];
+    expect(screen.getByTestId("composer").textContent).toMatch(
+      new RegExp(`^${channelId}`),
+    );
+    // The typed command's own notice, so a lost card reads the same either way.
+    await waitFor(() =>
+      expect(mockNotifyOutcome).toHaveBeenCalledWith(
+        expect.any(Function),
+        "task",
+        expect.objectContaining({ warning: expect.any(String) }),
+      ),
+    );
+  });
+
+  it("opens Service hours and Points only when picked bare", () => {
+    render(<ChatShell />);
+    expect(click("composer-hours:log 2h")).toBe("null");
+    expect(screen.queryByTestId("hours-form")).toBeNull();
+    expect(click("composer-hours:")).toBe("opened");
+    expect(screen.getByTestId("hours-form").dataset.open).toBe("true");
+    expect(click("composer-points:")).toBe("opened");
+    expect(screen.getByTestId("points-form").dataset.open).toBe("true");
+  });
+
+  it("refuses a role that can't, before any form opens", () => {
+    mockUseMyPermissions.mockReturnValue({
+      data: { permissions: ["members:view"] },
+    } as unknown as { data: { permissions: string[] } });
+    mockToast.mockClear();
+    render(<ChatShell />);
+    expect(click("composer-points:")).toBe("refused");
+    expect(screen.queryByTestId("points-form")).toBeNull();
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "You can't adjust points" }),
+    );
+  });
+});
+
 describe("ChatShell tells the composer's + which forms the role may use (#3865)", () => {
   function formsFor(payload: unknown) {
     mockUseMyPermissions.mockReturnValue(
@@ -4655,25 +4815,49 @@ describe("ChatShell tells the composer's + which forms the role may use (#3865)"
 
   it("maps polls:create and the event grants", () => {
     expect(formsFor({ data: { permissions: ["polls:create"] } })).toBe(
-      "poll:true,event:false",
+      "poll:true,event:false,task:false,hours:false,points:false",
     );
     expect(
       formsFor({ data: { permissions: ["events:create", "members:view"] } }),
-    ).toBe("poll:false,event:true");
+    ).toBe("poll:false,event:true,task:false,hours:false,points:false");
     // Both event grants, not `events:create` alone: the form needs the roster.
     expect(formsFor({ data: { permissions: ["events:create"] } })).toBe(
-      "poll:false,event:false",
+      "poll:false,event:false,task:false,hours:false,points:false",
     );
   });
 
+  it("maps the task, hours and points grants, each with the roster its form lists", () => {
+    expect(
+      formsFor({
+        data: {
+          permissions: [
+            "tasks:manage",
+            "service:log",
+            "points:adjust",
+            "members:view",
+          ],
+        },
+      }),
+    ).toBe("poll:false,event:false,task:true,hours:true,points:true");
+    // Without `members:view` the task and points forms can't list anyone;
+    // logging your own hours needs no roster.
+    expect(
+      formsFor({
+        data: { permissions: ["tasks:manage", "service:log", "points:adjust"] },
+      }),
+    ).toBe("poll:false,event:false,task:false,hours:true,points:false");
+  });
+
   it("blames nothing on the role while permissions load, and says when they couldn't be read", () => {
-    expect(formsFor({ data: undefined })).toBe("poll:loading,event:loading");
+    expect(formsFor({ data: undefined })).toBe(
+      "poll:loading,event:loading,task:loading,hours:loading,points:loading",
+    );
     expect(formsFor({ data: undefined, isError: true })).toBe(
-      "poll:unknown,event:unknown",
+      "poll:unknown,event:unknown,task:unknown,hours:unknown,points:unknown",
     );
     // Paused offline before it ever landed: it can't answer either.
     expect(formsFor({ data: undefined, fetchStatus: "paused" })).toBe(
-      "poll:unknown,event:unknown",
+      "poll:unknown,event:unknown,task:unknown,hours:unknown,points:unknown",
     );
   });
 });

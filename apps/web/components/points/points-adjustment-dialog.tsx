@@ -21,6 +21,10 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { getErrorMessage } from "@/lib/utils";
+import type {
+  DispatchResult,
+  PointsAdjustmentInput,
+} from "@repo/chat-core/dispatch";
 
 type MemberOption = {
   userId: string;
@@ -40,6 +44,14 @@ type PointsAdjustmentDialogProps = {
    * therefore drops focus to `<body>`. Pass `contentProps.onCloseAutoFocus`.
    */
   onCloseAutoFocus?: (event: Event) => void;
+  /**
+   * The chat composer's + menu (#3865): adjust through chat, so the points
+   * card lands in the channel the form was opened in, as `/points` does, with
+   * its placeholder and unconfirmed-retry row. `{ ok: false }` keeps the
+   * dialog open; anything else closes it, and the host reports a warning.
+   * Without it the dialog writes through `useAdjustPoints`, with no card.
+   */
+  submitToChannel?: (input: PointsAdjustmentInput) => Promise<DispatchResult>;
 };
 
 export function PointsAdjustmentDialog({
@@ -47,6 +59,7 @@ export function PointsAdjustmentDialog({
   onOpenChange,
   onAdjusted,
   onCloseAutoFocus,
+  submitToChannel,
 }: PointsAdjustmentDialogProps) {
   // `POST /v1/points/adjust` carries no `@FreeTier`, so it is paid-ops and this
   // dialog has to mirror the subscription gate (#841). No `useGatedDialog`
@@ -60,6 +73,8 @@ export function PointsAdjustmentDialog({
   const [amount, setAmount] = useState("10");
   const [category, setCategory] = useState<"MANUAL" | "FINE">("MANUAL");
   const [reason, setReason] = useState("");
+  const [postingToChannel, setPostingToChannel] = useState(false);
+  const submitting = adjustPointsMutation.isPending || postingToChannel;
 
   const memberOptions = useMemo(() => {
     return (membersQuery.data ?? [])
@@ -99,7 +114,7 @@ export function PointsAdjustmentDialog({
     if (open) resetAdjustment();
   }, [open, resetAdjustment]);
 
-  const submitLabel = adjustPointsMutation.isPending
+  const submitLabel = submitting
     ? "Submitting..."
     : "Submit adjustment";
 
@@ -138,6 +153,31 @@ export function PointsAdjustmentDialog({
         description: "Add a reason with at least 8 characters for audit clarity.",
         variant: "destructive",
       });
+      return;
+    }
+
+    if (submitToChannel) {
+      if (postingToChannel) return;
+      setPostingToChannel(true);
+      try {
+        const result = await submitToChannel({
+          target_user_id: targetUserId,
+          amount: parsedAmount,
+          category,
+          reason: reason.trim(),
+        });
+        if (!result.ok) {
+          toast({
+            title: "Could not adjust points",
+            description: result.error ?? "Something went wrong. Please retry.",
+            variant: "destructive",
+          });
+          return;
+        }
+      } finally {
+        setPostingToChannel(false);
+      }
+      onOpenChange(false);
       return;
     }
 
@@ -272,9 +312,9 @@ export function PointsAdjustmentDialog({
           </Button>
           <Button
             onClick={handleSubmit}
-            {...gate.controlProps(adjustPointsMutation.isPending)}
+            {...gate.controlProps(submitting)}
           >
-            {adjustPointsMutation.isPending ? (
+            {submitting ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : null}
             {submitLabel}

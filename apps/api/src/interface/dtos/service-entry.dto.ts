@@ -50,7 +50,7 @@ export class CreateServiceEntryDto {
 
   @ApiPropertyOptional({
     description:
-      'When set with `client_message_id`, posts a read-only hours card to this chat channel after the entry is created (the `/hours log` slash command). Omit for dashboard creates. Chat cannot attach proof — when `wf_hours_receipt` is on, this route still 400s without `proof_path`.',
+      'When set with `client_message_id`, posts a read-only hours card to this chat channel after the entry is created (the `/hours log` slash command). Omit for dashboard creates. The one-liner cannot attach proof (the Service hours form in the chat composer can) — when `wf_hours_receipt` is on, this route still 400s without `proof_path`.',
   })
   @IsOptional()
   @IsUUID()

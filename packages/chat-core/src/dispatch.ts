@@ -285,14 +285,41 @@ async function dispatchPoints(
       error: `No member matches @${parsed.value.memberToken}`,
     };
   }
-  if (ctx.userId && member.user_id === ctx.userId) {
+  return postPointsAdjustment(ctx, channelId, {
+    target_user_id: member.user_id,
+    amount:
+      parsed.value.action === "grant"
+        ? parsed.value.amount
+        : -parsed.value.amount,
+    category: parsed.value.category,
+    reason: parsed.value.reason,
+  });
+}
+
+/** What a points adjustment posted into a channel carries (`/points` or the + menu's form). */
+export interface PointsAdjustmentInput {
+  target_user_id: string;
+  /** Signed: negative deducts. */
+  amount: number;
+  category: ReplayRequest["body"]["category"];
+  reason: string;
+}
+
+/**
+ * Adjust a member's points and post the points card in `channelId`: the
+ * `/points` one-liner, and the composer's + menu's Points form (#3865). Mints
+ * the idempotency key and shows the `loading` placeholder;
+ * {@link submitPointsAdjustment} owns everything after it, so the command,
+ * the form and an explicit retry cannot drift.
+ */
+export async function postPointsAdjustment(
+  ctx: ChatActionContext,
+  channelId: string,
+  input: PointsAdjustmentInput,
+): Promise<DispatchResult> {
+  if (ctx.userId && input.target_user_id === ctx.userId) {
     return { ok: false, error: "You can't adjust your own points" };
   }
-
-  const signedAmount =
-    parsed.value.action === "grant"
-      ? parsed.value.amount
-      : -parsed.value.amount;
   const clientMessageId = randomClientId();
 
   const replay: ReplayRequest = {
@@ -300,21 +327,19 @@ async function dispatchPoints(
     channelId,
     clientMessageId,
     body: {
-      target_user_id: member.user_id,
-      amount: signedAmount,
-      category: parsed.value.category,
-      reason: parsed.value.reason,
+      target_user_id: input.target_user_id,
+      amount: input.amount,
+      category: input.category,
+      reason: input.reason,
       channel_id: channelId,
       client_message_id: clientMessageId,
     },
   };
 
-  const placeholderContent = pointsPlaceholderContent(replay);
-
   insertLocalPlaceholder(ctx, {
     channelId,
     clientMessageId,
-    content: placeholderContent,
+    content: pointsPlaceholderContent(replay),
   });
 
   return submitPointsAdjustment(ctx, replay, false);
@@ -735,9 +760,39 @@ async function dispatchTask(
     };
   }
 
+  return postTask(ctx, channelId, {
+    title: parsed.value.title,
+    assignee_id: member.user_id,
+    due_date: parsed.value.dueDate,
+    point_reward: parsed.value.pointReward ?? undefined,
+  });
+}
+
+/** What a task posted into a channel carries (`/task` or the + menu's form). */
+export interface TaskInput {
+  title: string;
+  description?: string;
+  assignee_id: string;
+  /** `YYYY-MM-DD`. */
+  due_date: string;
+  point_reward?: number;
+}
+
+/**
+ * Create a task and post its card in `channelId`: the `/task` one-liner, and
+ * the composer's + menu's Task form (#3865). A `loading` placeholder until
+ * the server's card reconciles it by Realtime echo; dropped on a refusal;
+ * kept as the durable `recorded` row when the task committed without its
+ * card. No server-side dedupe, so no retry path.
+ */
+export async function postTask(
+  ctx: ChatActionContext,
+  channelId: string,
+  input: TaskInput,
+): Promise<DispatchResult> {
   const clientMessageId = randomClientId();
 
-  const placeholderContent = `Creating task "${parsed.value.title}"…`;
+  const placeholderContent = `Creating task "${input.title}"…`;
 
   insertLocalPlaceholder(ctx, {
     channelId,
@@ -748,10 +803,11 @@ async function dispatchTask(
   try {
     const result = await ctx.apiClient.POST("/v1/tasks", {
       body: {
-        title: parsed.value.title,
-        assignee_id: member.user_id,
-        due_date: parsed.value.dueDate,
-        point_reward: parsed.value.pointReward ?? undefined,
+        title: input.title,
+        description: input.description,
+        assignee_id: input.assignee_id,
+        due_date: input.due_date,
+        point_reward: input.point_reward,
         channel_id: channelId,
         client_message_id: clientMessageId,
       },
@@ -947,9 +1003,9 @@ export function trackEventCard(
  * placeholder and surface the server's message. No server-side dedupe — a
  * replay would duplicate the entry, so there is no retry path.
  *
- * Chat cannot attach proof. When the chapter's `wf_hours_receipt` workflow is
- * on, the API 400s with its existing receipt message; that is the correct UX,
- * not a bypass.
+ * The one-liner cannot attach proof (the + menu's form can). When the
+ * chapter's `wf_hours_receipt` workflow is on, the API 400s with its existing
+ * receipt message; that is the correct UX, not a bypass.
  */
 async function dispatchHours(
   ctx: ChatActionContext,
@@ -959,9 +1015,37 @@ async function dispatchHours(
   const parsed = parseHoursArgs(args);
   if (!parsed.ok) return { ok: false, error: parsed.error };
 
+  return postHours(ctx, channelId, {
+    // `/hours log` has no date token: the entry is for the local today.
+    date: localIsoDate(new Date()),
+    duration_minutes: parsed.value.durationMinutes,
+    description: parsed.value.description,
+  });
+}
+
+/** What a service entry posted into a channel carries (`/hours log` or the + menu's form). */
+export interface HoursInput {
+  /** `YYYY-MM-DD`. */
+  date: string;
+  duration_minutes: number;
+  description: string;
+  /** From `POST /v1/service-entries/proof-upload-url`; only the form can attach one. */
+  proof_path?: string;
+}
+
+/**
+ * Log a service entry and post its hours card in `channelId`: `/hours log`,
+ * and the composer's + menu's Service hours form (#3865), which can also
+ * attach proof. Same placeholder bookkeeping as {@link postTask}.
+ */
+export async function postHours(
+  ctx: ChatActionContext,
+  channelId: string,
+  input: HoursInput,
+): Promise<DispatchResult> {
   const clientMessageId = randomClientId();
 
-  const placeholderContent = `Logging ${parsed.value.durationMinutes} minutes of service…`;
+  const placeholderContent = `Logging ${input.duration_minutes} minutes of service…`;
 
   insertLocalPlaceholder(ctx, {
     channelId,
@@ -972,10 +1056,10 @@ async function dispatchHours(
   try {
     const result = await ctx.apiClient.POST("/v1/service-entries", {
       body: {
-        // `/hours log` has no date token: the entry is for the local today.
-        date: localIsoDate(new Date()),
-        duration_minutes: parsed.value.durationMinutes,
-        description: parsed.value.description,
+        date: input.date,
+        duration_minutes: input.duration_minutes,
+        description: input.description,
+        proof_path: input.proof_path,
         channel_id: channelId,
         client_message_id: clientMessageId,
       },

@@ -1,6 +1,10 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
+import type {
+  DispatchResult,
+  PointsAdjustmentInput,
+} from "@repo/chat-core/dispatch";
 
 const { mockCurrentChapter, mockAdjustMutate, mockAdjustReset } = vi.hoisted(
   () => ({
@@ -9,6 +13,15 @@ const { mockCurrentChapter, mockAdjustMutate, mockAdjustReset } = vi.hoisted(
     mockAdjustReset: vi.fn(),
   }),
 );
+
+const MEMBERS_QUERY = {
+  data: [
+    { user_id: "u-1", display_name: "Rush Chair" },
+    // `users.display_name` is NOT NULL DEFAULT '', so this is what a member
+    // who never set a name actually looks like on the wire.
+    { user_id: "u-2", display_name: "" },
+  ],
+};
 
 // Only the chapter payload is stubbed — `useSubscriptionWriteState` and
 // `subscriptionWriteState` run for real, so this covers the whole path from
@@ -20,14 +33,9 @@ vi.mock("@repo/hooks", () => ({
     reset: mockAdjustReset,
     isPending: false,
   }),
-  useMembers: () => ({
-    data: [
-      { user_id: "u-1", display_name: "Rush Chair" },
-      // `users.display_name` is NOT NULL DEFAULT '', so this is what a member
-      // who never set a name actually looks like on the wire.
-      { user_id: "u-2", display_name: "" },
-    ],
-  }),
+  // One array for every render, as React Query hands back: a fresh one each
+  // render would re-run the dialog's reset effect and wipe a typed draft.
+  useMembers: () => MEMBERS_QUERY,
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -221,5 +229,60 @@ describe("PointsAdjustmentDialog idempotency key", () => {
       <PointsAdjustmentDialog open onOpenChange={vi.fn()} onAdjusted={vi.fn()} />,
     );
     expect(mockAdjustReset).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("PointsAdjustmentDialog posting into a chat channel (#3865)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chapter.active();
+  });
+
+  function renderInChat(
+    submitToChannel: (input: PointsAdjustmentInput) => Promise<DispatchResult>,
+    onOpenChange = vi.fn(),
+  ) {
+    render(
+      <PointsAdjustmentDialog
+        open
+        onOpenChange={onOpenChange}
+        onAdjusted={vi.fn()}
+        submitToChannel={submitToChannel}
+      />,
+    );
+    return onOpenChange;
+  }
+
+  function fillAndSubmit() {
+    fireEvent.change(amountInput(), { target: { value: "-5" } });
+    fireEvent.change(categorySelect(), { target: { value: "FINE" } });
+    fireEvent.change(reasonField(), { target: { value: "Missed chapter" } });
+    fireEvent.click(submit());
+  }
+
+  it("adjusts through chat, not the dashboard hook, and closes", async () => {
+    const submitToChannel = vi.fn().mockResolvedValue({ ok: true });
+    const onOpenChange = renderInChat(submitToChannel);
+    fillAndSubmit();
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(submitToChannel).toHaveBeenCalledWith({
+      target_user_id: "u-1",
+      amount: -5,
+      category: "FINE",
+      reason: "Missed chapter",
+    });
+    expect(mockAdjustMutate).not.toHaveBeenCalled();
+  });
+
+  it("stays open with the draft when chat refuses it", async () => {
+    const submitToChannel = vi
+      .fn()
+      .mockResolvedValue({ ok: false, error: "You can't adjust your own points" });
+    const onOpenChange = renderInChat(submitToChannel);
+    fillAndSubmit();
+    await waitFor(() => expect(submitToChannel).toHaveBeenCalled());
+    await waitFor(() => expect(submit()).toBeEnabled());
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(reasonField()).toHaveValue("Missed chapter");
   });
 });

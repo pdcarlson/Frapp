@@ -3,7 +3,10 @@ import { QueryClient } from "@tanstack/react-query";
 import type { SlashCommand } from "./integrations";
 import {
   dispatchSlashCommand,
+  postHours,
+  postPointsAdjustment,
   postPoll,
+  postTask,
   retryPointsDispatch,
   trackEventCard,
 } from "./dispatch";
@@ -1439,5 +1442,127 @@ describe("trackEventCard", () => {
         note: expect.stringMatching(/Event created.*didn't post/),
       }),
     ]);
+  });
+});
+
+describe("the + menu's Task, Service hours and Points forms post as their commands do (#3865)", () => {
+  function okPost(body: Record<string, unknown> = { card_posted: true }) {
+    return vi.fn().mockResolvedValue({
+      data: body,
+      error: undefined,
+      response: { status: 201 },
+    });
+  }
+
+  it("postTask sends the form's description and leaves a placeholder for the card", async () => {
+    const post = okPost();
+    const ctx = buildCtx(post);
+    const result = await postTask(ctx, CHANNEL_ID, {
+      title: "Sweep the porch",
+      description: "Front and back",
+      assignee_id: "user-2",
+      due_date: "2026-11-12",
+      point_reward: 5,
+    });
+    expect(result).toEqual({ ok: true });
+    const [path, { body }] = post.mock.calls[0]!;
+    expect(path).toBe("/v1/tasks");
+    expect(body).toMatchObject({
+      title: "Sweep the porch",
+      description: "Front and back",
+      assignee_id: "user-2",
+      due_date: "2026-11-12",
+      point_reward: 5,
+      channel_id: CHANNEL_ID,
+    });
+    expect(body.client_message_id).toEqual(expect.any(String));
+    expect(placeholderCount(ctx)).toBe(1);
+  });
+
+  it("postTask drops the placeholder and names the refusal", async () => {
+    const post = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: { message: "Assignee is not a member" },
+      response: { status: 400 },
+    });
+    const ctx = buildCtx(post);
+    const result = await postTask(ctx, CHANNEL_ID, {
+      title: "Sweep",
+      assignee_id: "user-9",
+      due_date: "2026-11-12",
+    });
+    expect(result.ok).toBe(false);
+    expect(placeholderCount(ctx)).toBe(0);
+  });
+
+  it("postHours carries the form's date and proof", async () => {
+    const post = okPost();
+    const ctx = buildCtx(post);
+    expect(
+      await postHours(ctx, CHANNEL_ID, {
+        date: "2026-11-08",
+        duration_minutes: 90,
+        description: "Food bank",
+        proof_path: "chapter/proof.pdf",
+      }),
+    ).toEqual({ ok: true });
+    const [path, { body }] = post.mock.calls[0]!;
+    expect(path).toBe("/v1/service-entries");
+    expect(body).toMatchObject({
+      date: "2026-11-08",
+      duration_minutes: 90,
+      description: "Food bank",
+      proof_path: "chapter/proof.pdf",
+      channel_id: CHANNEL_ID,
+    });
+  });
+
+  it("postHours keeps the durable row when the entry landed without its card", async () => {
+    const ctx = buildCtx(okPost({ card_posted: false }));
+    const result = await postHours(ctx, CHANNEL_ID, {
+      date: "2026-11-08",
+      duration_minutes: 30,
+      description: "Cleanup",
+    });
+    expect(result.ok).toBe(true);
+    expect(result.warning).toMatch(/Hours were logged/);
+  });
+
+  it("postPointsAdjustment refuses the officer's own row before any write", async () => {
+    const post = okPost();
+    const ctx = buildCtx(post);
+    const result = await postPointsAdjustment(ctx, CHANNEL_ID, {
+      target_user_id: "user-1",
+      amount: 5,
+      category: "MANUAL",
+      reason: "Testing the form",
+    });
+    expect(result).toEqual({
+      ok: false,
+      error: "You can't adjust your own points",
+    });
+    expect(post).not.toHaveBeenCalled();
+    expect(placeholderCount(ctx)).toBe(0);
+  });
+
+  it("postPointsAdjustment sends a signed amount with its key and placeholder", async () => {
+    const post = okPost();
+    const ctx = buildCtx(post);
+    await postPointsAdjustment(ctx, CHANNEL_ID, {
+      target_user_id: "user-2",
+      amount: -10,
+      category: "FINE",
+      reason: "Missed chapter",
+    });
+    const [path, { body }] = post.mock.calls[0]!;
+    expect(path).toBe("/v1/points/adjust");
+    expect(body).toMatchObject({
+      target_user_id: "user-2",
+      amount: -10,
+      category: "FINE",
+      reason: "Missed chapter",
+      channel_id: CHANNEL_ID,
+    });
+    expect(placeholderCount(ctx)).toBe(1);
   });
 });
