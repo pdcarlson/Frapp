@@ -59,7 +59,7 @@ sessions on one branch collide.
 | `continue` | This session is degrading mid-task | Pick up the same task with clean context |
 | `next` | Current task is done or nearly | Start the next piece of work, usually via `/next` |
 | `parallel` | An independent track exists | Work a different task without touching this one's branch |
-| `research` | An idea, a bug with no known cause, or a question isn't ready to build | Investigate (code, tracker, read-only runtime), then define the work: file a GitHub issue per `file-follow-up` with acceptance criteria and an Agent brief, or sharpen the existing one, and report what it found. It builds nothing; the issue's own `/next` card does |
+| `research` | An idea, a bug with no known cause, or a question isn't ready to build | Investigate (code, tracker, read-only runtime), then define the work: file a new GitHub issue per `file-follow-up` with acceptance criteria and an Agent brief, or, for an issue that exists, post the findings and proposed criteria as a comment (never rewrite its body: [`github-pm.md`](../../../docs/ci-cd/github-pm.md#ownership-boundary-organize-broadly-destroy-narrowly)). It claims nothing and builds nothing; when the work is defined it queues the issue's `/next <N>` card for the user |
 | `walkthrough` | The user has something to do by hand (a device, a provider dashboard, a `[human]` issue) and wants a session guiding them | Walk them through it one step at a time (`AGENTS.md` § Operating mindset), checking each outcome, and record the result on the issue if there is one |
 
 Default to `next` if the user didn't say and the current task looks complete, `continue` otherwise.
