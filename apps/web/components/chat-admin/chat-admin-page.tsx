@@ -1,6 +1,7 @@
 "use client";
 
 import { describeLoadFailure } from "@repo/hooks/error-copy";
+import { AUDIT_LOG_SETTINGS_NOTE } from "@repo/chat-core/audit-log-copy";
 import { useCallback, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { Loader2, Pencil, PinOff, Plus, Trash2 } from "lucide-react";
@@ -942,8 +943,7 @@ function ChatAdminBody({
                   </div>
                   {selectedChannel.is_audit_log ? (
                     <p className="text-xs text-muted-foreground">
-                      Only Frapp posts here: it&apos;s the chapter&apos;s audit
-                      log. It stays read-only and keeps its name.
+                      {AUDIT_LOG_SETTINGS_NOTE}
                     </p>
                   ) : (
                     <label className="flex items-center gap-3">

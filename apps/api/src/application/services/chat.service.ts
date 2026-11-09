@@ -482,7 +482,13 @@ export class ChatService {
   }
 
   async deleteChannel(id: string, chapterId: string): Promise<void> {
-    await this.requireChannelInChapter(id, chapterId);
+    const existing = await this.requireChannelInChapter(id, chapterId);
+    // The audit log (#3909) is the chapter's record of officer changes, and
+    // the mirror has nowhere else to post. Refused like a rename; DMs and
+    // group DMs are #3633's half.
+    if (existing.is_audit_log) {
+      throw new BadRequestException("The audit log channel can't be deleted");
+    }
     await this.channelRepo.delete(id, chapterId);
     // A deleted channel's stale row must not outlive it in the push worker's
     // cache — see `updateChannel`'s note on `ChannelCacheService`.

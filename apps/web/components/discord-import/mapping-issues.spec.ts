@@ -4,6 +4,7 @@ import {
   choiceIsReadOnly,
   defaultChoice,
   defaultChoices,
+  isImportTarget,
   mappingIssues,
   mergeTarget,
   newChannelGroups,
@@ -618,5 +619,29 @@ describe("like-named channels that Discord answered differently on read-only", (
     const choices = defaultChoices(pair);
     choices["2"] = { ...choices["2"]!, readOnly: false };
     expect(mappingIssues(pair, choices, [])).toEqual([]);
+  });
+});
+
+// #3909: the audit log is system-write only, so the picker never offers it.
+describe("isImportTarget", () => {
+  it("takes an ordinary channel", () => {
+    expect(isImportTarget({ id: "c1", name: "general", type: "PUBLIC" })).toBe(
+      true,
+    );
+  });
+
+  it("leaves out DMs, group DMs and the audit log", () => {
+    expect(isImportTarget({ id: "d1", name: "dm", type: "DM" })).toBe(false);
+    expect(
+      isImportTarget({ id: "g1", name: "officers", type: "GROUP_DM" }),
+    ).toBe(false);
+    expect(
+      isImportTarget({
+        id: "a1",
+        name: "chapter-audit",
+        type: "PUBLIC",
+        is_audit_log: true,
+      }),
+    ).toBe(false);
   });
 });

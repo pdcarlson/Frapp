@@ -358,6 +358,7 @@ async function buildWorker(
             type: 'PUBLIC',
             required_permissions: null,
             is_read_only: true,
+            is_audit_log: false,
             archived_at: null,
           }
         : null,
@@ -998,6 +999,7 @@ describe('DiscordImportWorkerService — importing', () => {
       type: 'GROUP_DM',
       required_permissions: null,
       is_read_only: true,
+      is_audit_log: false,
       archived_at: null,
     });
 
@@ -1005,6 +1007,28 @@ describe('DiscordImportWorkerService — importing', () => {
 
     expect(repoRef.insertMessages).not.toHaveBeenCalled();
     expect(repoRef.state().error).toMatch(/points at a direct message/);
+  });
+
+  it('stops rather than import into the audit log (#3909)', async () => {
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+    channelRepo.findById.mockResolvedValue({
+      id: SIGNET_CHANNEL,
+      chapter_id: CHAPTER,
+      name: 'chapter-audit',
+      type: 'PUBLIC',
+      required_permissions: null,
+      is_read_only: true,
+      is_audit_log: true,
+      archived_at: null,
+    });
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.insertMessages).not.toHaveBeenCalled();
+    expect(repoRef.state().error).toMatch(/points at the audit log/);
   });
 
   // An officer may delete any channel, one an import merges into included

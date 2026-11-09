@@ -1357,6 +1357,20 @@ describe('ChatService', () => {
       expect(mockChannelRepo.delete).toHaveBeenCalledWith('ch-chan-1', 'ch-1');
     });
 
+    it('refuses deleting the audit log (#3909)', async () => {
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        name: 'chapter-audit',
+        is_read_only: true,
+        is_audit_log: true,
+      });
+
+      await expect(service.deleteChannel('ch-chan-1', 'ch-1')).rejects.toThrow(
+        "The audit log channel can't be deleted",
+      );
+      expect(mockChannelRepo.delete).not.toHaveBeenCalled();
+    });
+
     it('should throw if channel not found', async () => {
       mockChannelRepo.findById.mockResolvedValue(null);
       await expect(service.deleteChannel('ch-chan-x', 'ch-1')).rejects.toThrow(

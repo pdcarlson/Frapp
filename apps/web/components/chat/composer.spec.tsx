@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { AUDIT_LOG_COMPOSER_NOTE } from "@repo/chat-core/audit-log-copy";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { act } from "react";
@@ -2258,7 +2259,7 @@ describe("Composer in the audit log", () => {
       />,
     );
     expect(
-      screen.getByText("Only Frapp posts here: it's the chapter's audit log."),
+      screen.getByText(AUDIT_LOG_COMPOSER_NOTE),
     ).toBeInTheDocument();
     expect(
       screen.queryByText("This channel is read-only for your role."),

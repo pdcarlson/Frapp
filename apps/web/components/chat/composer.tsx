@@ -30,6 +30,7 @@ import {
   ReactionGlyph,
   SendArrowGlyph,
 } from "./chat-glyphs";
+import { AUDIT_LOG_COMPOSER_NOTE } from "@repo/chat-core/audit-log-copy";
 import { cn } from "@/lib/utils";
 import { compactControlClassName } from "@/components/shared/table-controls";
 import { MENTION_CHIP } from "./chip";
@@ -1798,7 +1799,7 @@ export function Composer({
     return (
       <p className="border-t border-border px-4 py-3 text-caption text-muted-foreground">
         {isAuditLog ? (
-          <>Only Frapp posts here: it&apos;s the chapter&apos;s audit log.</>
+          <>{AUDIT_LOG_COMPOSER_NOTE}</>
         ) : isReadOnly ? (
           <>This channel is read-only for your role.</>
         ) : (

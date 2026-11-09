@@ -1146,6 +1146,12 @@ export class DiscordImportWorkerService {
           `Channel mapping for #${mapping.discord_channel_name} points at a direct message. Map the channels again, then restart the import.`,
         );
       }
+      // And the audit log, where only Frapp posts (#3909).
+      if (target.is_audit_log) {
+        throw new DiscordImportStoppedError(
+          `Channel mapping for #${mapping.discord_channel_name} points at the audit log. Map the channels again, then restart the import.`,
+        );
+      }
       // A new-channel row's target is the channel this import made for it,
       // so it must still have the readers the row asks for. It may not: an
       // upload mapped before #2856 kept whatever target the client sent, and

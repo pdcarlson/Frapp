@@ -181,10 +181,6 @@ export function selectPostCapability(data: unknown): ChannelPostCapability {
   };
 }
 
-/** The line the audit log shows in place of a composer (#3909). */
-export const AUDIT_LOG_NOTE =
-  "Only Frapp posts here: it's the chapter's audit log.";
-
 /**
  * The composer's hint when the caller may not post here, or `null` when they
  * may. Copy: `spec/ui/design-system/writing.md` § Chat.
@@ -198,7 +194,6 @@ export const AUDIT_LOG_NOTE =
 export function postRefusalHint(
   capability: ChannelPostCapability,
 ): string | null {
-  if (capability.isAuditLog) return AUDIT_LOG_NOTE;
   if (capability.canPost) return null;
   if (capability.isArchived) {
     return "This conversation is archived because everyone else left. You can still read it.";

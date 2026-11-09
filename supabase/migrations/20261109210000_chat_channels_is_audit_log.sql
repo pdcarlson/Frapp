@@ -10,6 +10,11 @@
 --                 its read-only switch off.
 --
 -- Not null with a constant default, so adding it rewrites no row.
+--
+-- The backfill below covers the chapters that exist when this runs; the
+-- trigger after it covers a `#chapter-audit` created later by an API that
+-- doesn't set the flag (the older API in the gap between this migration and
+-- its deploy, or after an API-only rollback).
 
 alter table public.chat_channels
   add column if not exists is_audit_log boolean not null default false;
@@ -38,3 +43,40 @@ from (
   order by chapter_id, created_at, id
 ) audit
 where c.id = audit.id;
+
+-- A `#chapter-audit` inserted into a chapter that has no audit log yet is that
+-- chapter's audit log: flag it, and keep it read-only. Matches the backfill's
+-- rule (a PUBLIC channel with the seeded name), so a chapter created by any
+-- API version ends up the same. A second channel of that name, in a chapter
+-- whose audit log is already flagged, stays an ordinary channel. The API
+-- refuses renaming or deleting the flagged one, so this only runs at seeding.
+create or replace function public.chat_channels_flag_audit_log()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+begin
+  if new.name = 'chapter-audit'
+     and new.type = 'PUBLIC'
+     and not new.is_audit_log
+     and not exists (
+       select 1 from public.chat_channels
+       where chapter_id = new.chapter_id and is_audit_log
+     ) then
+    new.is_audit_log := true;
+    new.is_read_only := true;
+  end if;
+  return new;
+end;
+$$;
+
+-- A trigger function is not an RPC (20261107160000): no client role keeps
+-- EXECUTE on it.
+revoke execute on function public.chat_channels_flag_audit_log()
+  from public, anon, authenticated;
+
+drop trigger if exists chat_channels_flag_audit_log on public.chat_channels;
+create trigger chat_channels_flag_audit_log
+  before insert on public.chat_channels
+  for each row execute function public.chat_channels_flag_audit_log();

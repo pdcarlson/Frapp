@@ -103,12 +103,12 @@ import {
   withDeparted,
   type DepartedMembers,
 } from "@repo/chat-core/message-actions";
+import { AUDIT_LOG_COMPOSER_NOTE } from "@repo/chat-core/audit-log-copy";
 import { useMaskedRefresh } from "@/lib/chat/masked-refresh";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
 import { writeLastChannel } from "@/lib/chat/last-channel";
 import { useThreadBlockList } from "@/lib/chat/use-thread-block-list";
 import {
-  AUDIT_LOG_NOTE,
   postRefusalHint,
   selectPostCapability,
   isDirectChannel,
@@ -1326,7 +1326,7 @@ export default function ChatThreadScreen() {
               accessibilityRole="text"
               testID="chat-audit-log-note"
             >
-              {AUDIT_LOG_NOTE}
+              {AUDIT_LOG_COMPOSER_NOTE}
             </Text>
           ) : (
             <ChatComposer

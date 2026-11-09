@@ -3142,11 +3142,13 @@ Dropping them loses each photo's blur and the link to its preview copy; photos s
 
 * **Migration**: `20261109210000_chat_channels_is_audit_log.sql`
 
-One not-null column with a default on `chat_channels`, `is_audit_log`, and its partial unique index. The API from the same PR selects and filters on it (the audit mirror's channel lookup, the post gate), so roll the API back first: dropping the column under the new API stops the mirror and fails channel reads. With the older API, `*` and `announcements:post` holders can post in `#chapter-audit` again (#3909).
+One not-null column with a default on `chat_channels`, `is_audit_log`, its partial unique index, and the `before insert` trigger `chat_channels_flag_audit_log` with its function. The API from the same PR writes the column when it seeds a chapter and filters on it to find the audit log, so roll the API back first: dropping the column under the new API fails chapter onboarding, skips every audit mirror (the lookup errors), and quietly reopens `#chapter-audit` to `*` and `announcements:post` holders, while channel reads keep working. With the older API those holders can post there again too (#3909); that is what rolling back means.
 
 **Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). After the API is back on the earlier version:
 
 ```sql
+drop trigger if exists chat_channels_flag_audit_log on public.chat_channels;
+drop function if exists public.chat_channels_flag_audit_log();
 drop index if exists public.chat_channels_one_audit_log_per_chapter;
 alter table public.chat_channels
   drop column if exists is_audit_log;

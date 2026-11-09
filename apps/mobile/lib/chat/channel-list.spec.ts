@@ -5,7 +5,6 @@ import {
   listedChannels,
   selectCategories,
   selectChannels,
-  AUDIT_LOG_NOTE,
   postRefusalHint,
   selectPostCapability,
   type ChannelPostCapability,
@@ -436,17 +435,6 @@ describe("the audit log", () => {
       isArchived: false,
       isAuditLog: true,
     });
-  });
-
-  it("explains itself with the audit log line", () => {
-    expect(
-      postRefusalHint({
-        canPost: false,
-        isReadOnly: true,
-        isArchived: false,
-        isAuditLog: true,
-      }),
-    ).toBe(AUDIT_LOG_NOTE);
   });
 });
 

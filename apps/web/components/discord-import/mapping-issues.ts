@@ -14,15 +14,22 @@ export interface ExistingChannel {
   /** `PUBLIC`, `ROLE_GATED`, `PRIVATE`, `DM` or `GROUP_DM`. */
   type?: string;
   archived_at?: string | null;
+  /** The chapter's audit log, `#chapter-audit`, where only Frapp posts. */
+  is_audit_log?: boolean;
 }
 
 /**
  * Whether a channel can take an import at all. The admin's own DMs and group
  * DMs are in the channel list, and a group DM has a name its members chose,
- * so "Officers" could be one; chapter history never belongs in one.
+ * so "Officers" could be one; chapter history never belongs in one. Nor does
+ * the audit log, where only Frapp posts (#3909); the server refuses both.
  */
 export function isImportTarget(channel: ExistingChannel): boolean {
-  return channel.type !== "DM" && channel.type !== "GROUP_DM";
+  return (
+    channel.type !== "DM" &&
+    channel.type !== "GROUP_DM" &&
+    channel.is_audit_log !== true
+  );
 }
 
 export interface ChannelChoice {
