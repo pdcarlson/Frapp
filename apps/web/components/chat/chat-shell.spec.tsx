@@ -3104,6 +3104,35 @@ describe("ChatShell narrow viewports (#2142)", () => {
     });
   });
 
+  it("still goes back through its own entry after Next rewrites it on a same-URL navigation (#3824)", async () => {
+    window.history.replaceState(null, "");
+    render(<ChatShell />);
+    fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+    fireEvent.click(screen.getByTestId("pick-random"));
+    await waitFor(() => {
+      expect(columns().thread.className).not.toContain("max-lg:hidden");
+    });
+
+    // The nav's Chat link while on /chat: Next replaces the entry's state
+    // with its own, and our marker is gone (`preserveCustomHistoryState`).
+    window.history.replaceState({ __NA: true }, "");
+
+    // The arrow still goes back through it, pushing nothing new.
+    const push = vi.spyOn(window.history, "pushState");
+    const back = vi.spyOn(window.history, "back");
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+      expect(back).toHaveBeenCalledTimes(1);
+      expect(push).not.toHaveBeenCalled();
+    } finally {
+      push.mockRestore();
+      back.mockRestore();
+    }
+    await waitFor(() => {
+      expect(columns().channels.className).not.toContain("max-lg:hidden");
+    });
+  });
+
   it("shows the list without going back from a thread a link opened after a pick (#3824)", async () => {
     window.history.replaceState(null, "");
     const { rerender } = render(<ChatShell />);
