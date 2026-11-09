@@ -20,13 +20,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  CUSTOM_STATUS_MAX,
   DEFAULT_LINE_DURATION,
+  LINE_DURATIONS,
   codePointLength,
   lineEndsAt,
   lineProblem,
   type LineDuration,
-} from "@/lib/realtime/member-status";
-import { CUSTOM_STATUS_MAX } from "@/lib/realtime/presence-status";
+} from "@repo/hooks/member-status";
 import { useSaveOwnStatus } from "@/lib/realtime/use-own-status";
 import { cn } from "@/lib/utils";
 
@@ -35,13 +36,12 @@ import { cn } from "@/lib/utils";
  * Select's string values; "never" stands for "Don't clear" (`null`), since a
  * Radix Select item can't carry an empty value.
  */
-const CLEAR_AFTER: { value: string; label: string; duration: LineDuration }[] = [
-  { value: "30m", label: "30 minutes", duration: "30m" },
-  { value: "1h", label: "1 hour", duration: "1h" },
-  { value: "4h", label: "4 hours", duration: "4h" },
-  { value: "today", label: "Today", duration: "today" },
-  { value: "never", label: "Don't clear", duration: null },
-];
+const CLEAR_AFTER: { value: string; label: string; duration: LineDuration }[] =
+  LINE_DURATIONS.map(({ duration, label }) => ({
+    value: duration ?? "never",
+    label,
+    duration,
+  }));
 
 const DEFAULT_CLEAR_AFTER =
   CLEAR_AFTER.find((option) => option.duration === DEFAULT_LINE_DURATION)!

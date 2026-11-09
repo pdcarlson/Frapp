@@ -13,7 +13,7 @@ import {
   ownStatusAt,
   type MemberStatusSettings,
   type OwnStatus,
-} from "@/lib/realtime/member-status";
+} from "@repo/hooks/member-status";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useToast } from "@/lib/hooks/use-toast";
 
