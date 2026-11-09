@@ -1311,6 +1311,34 @@ describe("BackworkPage library (2026-11-05 redesign)", () => {
       expect(mockSaveCourse).not.toHaveBeenCalled();
     });
 
+    it("removing a stored chip also drops a local add of the same nickname", async () => {
+      taxonomyData.courses = [{ ...COGS_2120, nicknames: [] }];
+      const user = userEvent.setup();
+      const { rerender } = render(<BackworkPage />);
+
+      fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+      await user.click(
+        await screen.findByRole("menuitem", { name: "Rename the COGS 2120 course…" }),
+      );
+      const dialog = await screen.findByRole("dialog", { name: "Name COGS 2120" });
+      await user.type(within(dialog).getByLabelText("Also called"), "Brainy{Enter}");
+      // A refetch brings "brainy", which hides the local "Brainy".
+      taxonomyData.courses = [{ ...COGS_2120, nicknames: ["brainy"] }];
+      rerender(<BackworkPage />);
+
+      await user.click(within(dialog).getByRole("button", { name: "Remove brainy" }));
+      expect(within(dialog).queryByRole("list", { name: "Nicknames" })).toBeNull();
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      await waitFor(() =>
+        expect(mockSaveCourse).toHaveBeenCalledWith({
+          department_id: "dept-cogs",
+          course_number: "2120",
+          remove_nicknames: ["brainy"],
+        }),
+      );
+    });
+
     it("offers no course entry while course names load", async () => {
       taxonomyData.coursesLoading = true;
       try {

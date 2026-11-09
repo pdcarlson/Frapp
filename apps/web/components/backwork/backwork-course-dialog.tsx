@@ -33,6 +33,11 @@ export type CourseTarget = {
   label: string;
 };
 
+/** How the dialog compares nicknames: collapsed and lowercased. */
+function nicknameKey(text: string): string {
+  return collapseCourseText(text).toLowerCase();
+}
+
 /**
  * "Name MATH 1010": a course's name and the nicknames members call it
  * (#3848), opened from a `/backwork` row's menu.
@@ -46,10 +51,6 @@ export type CourseTarget = {
  *
  * The save is a paid-ops write, gated like the department rename.
  */
-function nicknameKey(text: string): string {
-  return collapseCourseText(text).toLowerCase();
-}
-
 export function useBackworkCourseDialog(
   gate: SubscriptionGate,
   isAdmin: boolean,
@@ -167,7 +168,10 @@ export function useBackworkCourseDialog(
     if (chip.local) {
       setAdded((prev) => prev.filter((n) => nicknameKey(n) !== chip.key));
     } else {
+      // A local add hidden behind this stored spelling would otherwise
+      // surface as the chip is removed, and be sent as an add.
       setRemoved((prev) => [...prev, chip.text]);
+      setAdded((prev) => prev.filter((n) => nicknameKey(n) !== chip.key));
     }
   }
 

@@ -123,7 +123,6 @@ describe('BackworkService', () => {
       findByCourse: jest.fn().mockResolvedValue(null),
       findById: jest.fn(),
       write: jest.fn().mockResolvedValue(null),
-      update: jest.fn(),
       delete: jest.fn(),
     };
 
@@ -355,7 +354,6 @@ describe('BackworkService', () => {
         await service.confirmUpload(upload);
 
         expect(mockCourseRepo.write).toHaveBeenCalledWith('ch-1', fillOnly);
-        expect(mockCourseRepo.update).not.toHaveBeenCalled();
       });
 
       it.each([
@@ -920,7 +918,6 @@ describe('BackworkService', () => {
           }),
         );
         expect(mockCourseRepo.delete).toHaveBeenCalledWith('course-1', 'ch-1');
-        expect(mockCourseRepo.update).not.toHaveBeenCalled();
       });
 
       it('writes before it deletes, and both before the source department goes', async () => {

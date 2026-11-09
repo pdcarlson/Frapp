@@ -81,17 +81,6 @@ describe('SupabaseBackworkCourseRepository — tenant scope', () => {
     expect(found).toBeNull();
   });
 
-  it('update refuses an id belonging to another chapter', async () => {
-    const updated = await harness.expectTenantScoped(CHAPTER_B, () =>
-      repo.update(COURSE_A, CHAPTER_B, { name: 'Renamed' }),
-    );
-
-    expect(updated).toBeNull();
-    expect(
-      harness.rows('backwork_courses').find((c) => c.id === COURSE_A)?.name,
-    ).toBe('Calculus I');
-  });
-
   it('delete refuses an id belonging to another chapter', async () => {
     await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.delete(COURSE_A, CHAPTER_B),

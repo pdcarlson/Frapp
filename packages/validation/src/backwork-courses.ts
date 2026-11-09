@@ -10,19 +10,20 @@ export const MAX_COURSE_NICKNAMES = 20;
 export const MAX_COURSE_NICKNAME_LENGTH = 60;
 
 /**
- * Nicknames as stored: trimmed, inner whitespace collapsed, blanks dropped,
- * and de-duplicated case-insensitively (first spelling kept). A nickname that
- * repeats `name` is dropped too, since the name already finds the course.
- */
-/**
  * A course name or nickname as stored: trimmed, inner whitespace collapsed to
- * one space. The one spelling of that rule for the API, the web dialog, and
- * the SQL that compares nicknames (`backwork_course_merge_nicknames`).
+ * one space. The API and the web dialog share it. The SQL that compares
+ * nicknames (`backwork_course_merge_nicknames`) spells its own version,
+ * which agrees with this for ASCII whitespace.
  */
 export function collapseCourseText(text: string): string {
   return text.trim().replace(/\s+/g, " ");
 }
 
+/**
+ * Nicknames as stored: trimmed, inner whitespace collapsed, blanks dropped,
+ * and de-duplicated case-insensitively (first spelling kept). A nickname that
+ * repeats `name` is dropped too, since the name already finds the course.
+ */
 export function normalizeCourseNicknames(
   nicknames: readonly string[],
   name?: string | null,

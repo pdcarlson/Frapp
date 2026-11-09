@@ -136,11 +136,5 @@ export interface IBackworkCourseRepository {
     chapterId: string,
     edit: BackworkCourseWrite,
   ): Promise<BackworkCourse | null>;
-  /** Chapter-scoped; resolves to `null` when no course in `chapterId` has `id`. */
-  update(
-    id: string,
-    chapterId: string,
-    data: Partial<BackworkCourse>,
-  ): Promise<BackworkCourse | null>;
   delete(id: string, chapterId: string): Promise<void>;
 }

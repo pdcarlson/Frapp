@@ -86,8 +86,11 @@ comment on table public.backwork_courses is
 --
 --   nicknames  stored, minus `p_remove`, plus `p_add`, de-duplicated, stored
 --              order then added order, minus any that repeat the resulting
---              name. Comparisons ignore case and collapse whitespace, as the
---              API's `normalizeCourseNicknames` does.
+--              name. Comparisons use `lower(btrim(regexp_replace(x, '\s+',
+--              ' ', 'g')))`: whitespace runs collapsed to one space, then
+--              trimmed, then lowercased. That agrees with the API's
+--              `collapseCourseText` + `toLowerCase` for ASCII whitespace;
+--              Postgres's `\s` and JS's `\s` differ on some Unicode spaces.
 --   name       untouched unless `p_set_name`; then `p_name` when
 --              `p_may_rename` (an admin), otherwise the stored name if there
 --              is one, so a member or an upload only ever fills an empty name.
@@ -115,27 +118,27 @@ immutable
 set search_path = public, pg_temp
 as $$
   with norm as (
-    select regexp_replace(btrim(coalesce(p_name, '')), '\s+', ' ', 'g') as name_key
+    select btrim(regexp_replace(coalesce(p_name, ''), '\s+', ' ', 'g')) as name_key
   ),
   combined as (
     select s.n, s.ord
       from unnest(coalesce(p_stored, '{}')) with ordinality as s(n, ord)
      where not exists (
        select 1 from unnest(coalesce(p_remove, '{}')) as r(n)
-        where lower(regexp_replace(btrim(r.n), '\s+', ' ', 'g'))
-            = lower(regexp_replace(btrim(s.n), '\s+', ' ', 'g'))
+        where lower(btrim(regexp_replace(r.n, '\s+', ' ', 'g')))
+            = lower(btrim(regexp_replace(s.n, '\s+', ' ', 'g')))
      )
     union all
     select a.n, 100000 + a.ord
       from unnest(coalesce(p_add, '{}')) with ordinality as a(n, ord)
   ),
   kept as (
-    select distinct on (lower(regexp_replace(btrim(c.n), '\s+', ' ', 'g'))) c.n, c.ord
+    select distinct on (lower(btrim(regexp_replace(c.n, '\s+', ' ', 'g')))) c.n, c.ord
       from combined c, norm
-     where btrim(c.n) <> ''
-       and lower(regexp_replace(btrim(c.n), '\s+', ' ', 'g')) <> lower(norm.name_key)
+     where btrim(regexp_replace(c.n, '\s+', ' ', 'g')) <> ''
+       and lower(btrim(regexp_replace(c.n, '\s+', ' ', 'g'))) <> lower(norm.name_key)
        and (not p_clamp or char_length(c.n) <= 60)
-     order by lower(regexp_replace(btrim(c.n), '\s+', ' ', 'g')), c.ord
+     order by lower(btrim(regexp_replace(c.n, '\s+', ' ', 'g'))), c.ord
   )
   select coalesce(
     (

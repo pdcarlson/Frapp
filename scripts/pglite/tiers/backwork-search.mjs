@@ -154,7 +154,8 @@ console.log("\n=== Functional: backwork search over every field (#585) ===");
       "Remembering",
       true,
       false,
-      ["Source nick", "x".repeat(61), "Third", "Remembering"],
+      // The over-60 item first, where the 20 cap alone wouldn't cut it.
+      ["😀".repeat(61), "Source nick", "Third", "Remembering"],
       [],
       true,
     );
@@ -169,8 +170,37 @@ console.log("\n=== Functional: backwork search over every field (#585) ===");
       "the merge clamp keeps 20, the target's own first, and drops one over 60",
       folded.nicknames.length === 20 &&
         folded.nicknames.slice(0, 19).join() === [...many, "Late add"].join() &&
-        !folded.nicknames.some((n) => n.length > 60),
+        !folded.nicknames.some((n) => [...n].length > 60),
       folded,
+    );
+    // A fold with room under the cap: what the service sends for a source
+    // course named "Brain Science" into a target named "Neuroscience".
+    await writeTo(DEPT, "5000", "Neuroscience", true, false, ["Neuro"], []);
+    const roomy = await writeTo(
+      DEPT,
+      "5000",
+      "Brain Science",
+      true,
+      false,
+      ["Brainy", "😀".repeat(61), "neuroscience", "Brain Science"],
+      [],
+      true,
+    );
+    check(
+      "a fold keeps the losing source name as a nickname",
+      roomy.name === "Neuroscience" && roomy.nicknames.includes("Brain Science"),
+      roomy,
+    );
+    check(
+      "a fold never makes the target's own name a nickname",
+      !roomy.nicknames.some((n) => n.toLowerCase() === "neuroscience"),
+      roomy,
+    );
+    check(
+      "a fold drops a source nickname over 60 code points",
+      !roomy.nicknames.some((n) => [...n].length > 60) &&
+        roomy.nicknames.join() === "Neuro,Brainy,Brain Science",
+      roomy,
     );
     check(
       "writes nothing for a department in another chapter",

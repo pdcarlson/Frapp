@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient, TablesUpdate } from '../database.types';
+import type { FrappSupabaseClient } from '../database.types';
 import type {
   BackworkCourseWrite,
   IBackworkCourseRepository,
@@ -92,24 +92,6 @@ export class SupabaseBackworkCourseRepository implements IBackworkCourseReposito
     // The function returns no row (all-null columns) when the department
     // isn't in this chapter.
     return data?.id ? data : null;
-  }
-
-  async update(
-    id: string,
-    chapterId: string,
-    data: TablesUpdate<'backwork_courses'>,
-  ): Promise<BackworkCourse | null> {
-    // `chapter_id` in the filter, so the write itself can't reach another
-    // chapter's row; `maybeSingle` turns "no row" into `null` for a 404.
-    const { data: updated, error } = await this.supabase
-      .from('backwork_courses')
-      .update({ ...data, updated_at: new Date().toISOString() })
-      .eq('id', id)
-      .eq('chapter_id', chapterId)
-      .select()
-      .maybeSingle();
-    if (error) throw new SupabaseQueryError(error);
-    return updated;
   }
 
   async delete(id: string, chapterId: string): Promise<void> {
