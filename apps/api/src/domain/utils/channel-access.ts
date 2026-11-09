@@ -27,9 +27,9 @@ export interface ChannelAccessRecord {
   member_ids: string[] | null;
   required_permissions: string[] | null;
   /**
-   * Whether the channel rejects member writes (e.g. `#announcements` and
-   * `#chapter-audit`). Only consulted when `operation === "post"`; safe to
-   * omit (treated as `false`) for read checks. (Chunk 05 / ADR-07.)
+   * Whether the channel rejects member writes from anyone without
+   * `announcements:post` (e.g. `#announcements`). Only consulted for a write;
+   * safe to omit (treated as `false`) for read checks. (Chunk 05 / ADR-07.)
    */
   is_read_only?: boolean | null;
   /**
@@ -40,6 +40,13 @@ export interface ChannelAccessRecord {
    * channel stays directly readable by whoever is still in `member_ids`.
    */
   archived_at?: string | null;
+  /**
+   * The chapter's audit-log channel (`#chapter-audit`, #3909). System-write
+   * only: every member write is denied, with no permission that clears it,
+   * because only the server's audit mirror posts there. Safe to omit for read
+   * checks.
+   */
+  is_audit_log?: boolean | null;
 }
 
 /**
@@ -167,8 +174,9 @@ export function allowsInThreadReplies(channel: ChannelAccessRecord): boolean {
  * - Unknown channel type: denied (guarded default — never falls open).
  *
  * When `operation` is a write (`"post"` or `"vote"`), the read check above must
- * pass AND the channel must either not be read-only, or the caller must hold
- * `"*"` or `"announcements:post"`. Existing callers default to `"read"`, so the
+ * pass, the channel must not be the audit log (`is_audit_log`, which no
+ * member writes in, #3909), AND the channel must either not be read-only, or
+ * the caller must hold `"*"` or `"announcements:post"`. Existing callers default to `"read"`, so the
  * predicate stays backward-compatible.
  *
  * When `operation === "post"` and `isAlumni` is set, the caller is additionally
@@ -219,6 +227,13 @@ export function canAccessChannel(input: ChannelAccessInput): boolean {
   // unlike the read-only / announcements:post gate, there is no override,
   // because there is no "unarchive" flow to make an override meaningful.
   if (channel.archived_at) return false;
+
+  // The audit log (#3909) is system-write only. The audit mirror inserts its
+  // rows directly and never comes through here, so refusing every caller,
+  // the President's `*` included, leaves exactly the server writing in it.
+  // Checked before the read-only gate below, which `*` and
+  // `announcements:post` would otherwise pass.
+  if (channel.is_audit_log) return false;
 
   const isPresident = permissions.includes('*');
 

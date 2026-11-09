@@ -46,7 +46,7 @@ A `points`, `task`, `event`, `hours`, `rush`, or `system_audit` card asserts tha
 
 ## Announcement gating
 
-`/announce` is exec-only and posts to the current chapter's `#announcements`. The gate is the `operation: 'read' | 'post'` parameter on the shared `canAccessChannel` predicate (default `'read'`): for `operation:'post'`, after the read check passes, the predicate denies when the channel `is_read_only` and the caller holds neither `announcements:post` nor `*`. Enforced server-side in `ChatService.sendMessage`, which asserts channel access on every send. The `system_audit` writers listed above, and the Discord importer, write on the service-role path instead and never reach it. The client hides the disallowed command for UX, but the server is the trust boundary.
+`/announce` is exec-only and posts to the current chapter's `#announcements`. The gate is the `operation: 'read' | 'post'` parameter on the shared `canAccessChannel` predicate (default `'read'`): for `operation:'post'`, after the read check passes, the predicate denies when the channel `is_read_only` and the caller holds neither `announcements:post` nor `*` (and denies everyone in the audit log, [README § The audit log is system-write only](README.md#the-audit-log-is-system-write-only)). Enforced server-side in `ChatService.sendMessage`, which asserts channel access on every send. The `system_audit` writers listed above, and the Discord importer, write on the service-role path instead and never reach it. The client hides the disallowed command for UX, but the server is the trust boundary.
 
 ## Vote-change (UPSERT semantics)
 

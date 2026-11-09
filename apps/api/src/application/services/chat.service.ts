@@ -415,6 +415,22 @@ export class ChatService {
   ): Promise<ChatChannel> {
     const existing = await this.requireChannelInChapter(id, chapterId);
 
+    // The audit log (#3909) is the chapter's record of officer changes, so
+    // its two defining settings are locked: it stays read-only, and it keeps
+    // its name, which members know it by. The flag (not the name) is what
+    // the server keys on, so this is about members finding it, not about the
+    // mirror. Description, group and push default stay editable.
+    if (existing.is_audit_log) {
+      if (data.is_read_only === false) {
+        throw new BadRequestException(
+          'The audit log channel is always read-only',
+        );
+      }
+      if (data.name !== undefined && data.name !== existing.name) {
+        throw new BadRequestException("The audit log channel can't be renamed");
+      }
+    }
+
     // Chat opens on the chapter default for everyone who can see it; a DM is
     // two members' conversation, not somewhere to send the whole chapter.
     if (isDirectChannel(existing) && data.is_default === true) {
@@ -466,7 +482,13 @@ export class ChatService {
   }
 
   async deleteChannel(id: string, chapterId: string): Promise<void> {
-    await this.requireChannelInChapter(id, chapterId);
+    const existing = await this.requireChannelInChapter(id, chapterId);
+    // The audit log (#3909) is the chapter's record of officer changes, and
+    // the mirror has nowhere else to post. Refused like a rename; DMs and
+    // group DMs are #3633's half.
+    if (existing.is_audit_log) {
+      throw new BadRequestException("The audit log channel can't be deleted");
+    }
     await this.channelRepo.delete(id, chapterId);
     // A deleted channel's stale row must not outlive it in the push worker's
     // cache — see `updateChannel`'s note on `ChannelCacheService`.
@@ -795,8 +817,9 @@ export class ChatService {
    * Hot-path send. Mirrors the retired `chat-send` Edge Function:
    *
    * - Authorizes via the shared `canAccessChannel` predicate with
-   *   `operation: "post"` so read-only channels (#announcements,
-   *   #chapter-audit) gate on the `announcements:post` permission.
+   *   `operation: "post"` so read-only channels (#announcements) gate on the
+   *   `announcements:post` permission, and the audit log (`is_audit_log`,
+   *   #chapter-audit) refuses every member, the President included (#3909).
    * - Cross-channel reply links are rejected before the insert, as are
    *   in-thread replies in a read-only channel — a broadcast is not a thread,
    *   regardless of the sender's permissions.

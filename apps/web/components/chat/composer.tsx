@@ -30,6 +30,7 @@ import {
   ReactionGlyph,
   SendArrowGlyph,
 } from "./chat-glyphs";
+import { AUDIT_LOG_COMPOSER_NOTE } from "@repo/chat-core/audit-log-copy";
 import { cn } from "@/lib/utils";
 import { compactControlClassName } from "@/components/shared/table-controls";
 import { MENTION_CHIP } from "./chip";
@@ -430,6 +431,11 @@ interface ComposerBaseProps {
    */
   isDirect?: boolean;
   isReadOnly: boolean;
+  /**
+   * The chapter's audit log (#3909), where only Frapp posts: no member gets a
+   * composer, whatever `canPost` says, and the line that replaces it says why.
+   */
+  isAuditLog?: boolean;
   /**
    * Server-decided capability (#704): whether the caller may post in this
    * channel at all, from `ChatChannel.can_post` — already folds in the
@@ -973,6 +979,7 @@ export function Composer({
   channelName,
   isDirect,
   isReadOnly,
+  isAuditLog = false,
   canPost,
   draft,
   onChangeDraft,
@@ -1062,7 +1069,7 @@ export function Composer({
   // Hoisted above `useEditor` so `onCreate` can honour it — the early return
   // that reads it next is ~400 lines down, but Tiptap builds the editor from
   // here regardless of whether anything ever renders it. See `onCreate`.
-  const resolvedCanPost = canPost ?? !isReadOnly;
+  const resolvedCanPost = isAuditLog ? false : (canPost ?? !isReadOnly);
   const sendRef = useRef<() => void>(() => {});
   /*
     What is staged as of the last commit, for a refused send to compare
@@ -1795,7 +1802,9 @@ export function Composer({
   if (!resolvedCanPost) {
     return (
       <p className="border-t border-border px-4 py-3 text-caption text-muted-foreground">
-        {isReadOnly ? (
+        {isAuditLog ? (
+          <>{AUDIT_LOG_COMPOSER_NOTE}</>
+        ) : isReadOnly ? (
           <>This channel is read-only for your role.</>
         ) : (
           <>

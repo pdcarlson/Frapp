@@ -101,6 +101,7 @@ import {
   withDeparted,
   type DepartedMembers,
 } from "@repo/chat-core/message-actions";
+import { AUDIT_LOG_COMPOSER_NOTE } from "@repo/chat-core/audit-log-copy";
 import { useMaskedRefresh } from "@/lib/chat/masked-refresh";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
 import { writeLastChannel } from "@/lib/chat/last-channel";
@@ -1304,52 +1305,66 @@ export default function ChatThreadScreen() {
           impossible, which is the whole failure the outbox exists to prevent,
           and would contradict the banner directly above it.
         */}
-          <ChatComposer
-            value={staging.value}
-            onChangeText={staging.onChangeText}
-            onSend={handleSend}
-            canSend={canSend && channelCanPost && !staging.isSavingEdit}
-            context={staging.context}
-            mentionCandidates={mentionRoster.data}
-            avatarFor={memberAvatarFor}
-            mentionRoles={mentionRoles.data}
-            placeholder={composerPlaceholder}
-            // A send that never reached the outbox has no failed row to show
-            // (nothing was queued), so this line is the only report of it.
-            //
-            // Offline is not said here: #501's "clearly labeled" half is the
-            // app-wide pill, whose sentence carries the queue's promise while
-            // a chat is open (`spec/ui/resilience/connection-state.md` § One
-            // indicator). `lib/connection/state.ts` holds the rule for the
-            // surfaces that have to block instead.
-            disabledHint={
-              attachError ??
-              staging.editError ??
-              sendError ??
-              // `canSend` first. It is false until `ctx` resolves, and
-              // `ChatComposer` keys `editable` on it. The channel-level
-              // `can_post` gate (#704) comes next.
-              (!canSend
-                ? "Connecting to chat…"
-                : !channelCanPost
-                  ? postRefusalHint(postCapability)
-                  : null)
-            }
-            hintTone={
-              sendError || attachError || staging.editError ? "error" : "muted"
-            }
-            // An edit changes text only, so the staged photos and the + stand
-            // aside until it is saved or cancelled.
-            photos={staging.isEditing ? undefined : photos}
-            // The + (#3865): Photo, Poll, Event, Task and Service hours, in
-            // a sheet that greys what can't work this second and says why
-            // (offline Photo among them: an upload has no outbox).
-            onOpenPlus={staging.isEditing ? undefined : composerPlus.openPlus}
-            plusDisabled={!channelCanPost}
-            onRemovePhoto={removePhoto}
-            onRetryPhoto={retryPhoto}
-            isPicking={isPicking}
-          />
+          {/* The audit log (#3909): only Frapp posts there, so there is no
+              composer at all, just the line that says so. */}
+          {postCapability.isAuditLog ? (
+            <Text
+              style={styles.auditLogNote}
+              accessibilityRole="text"
+              testID="chat-audit-log-note"
+            >
+              {AUDIT_LOG_COMPOSER_NOTE}
+            </Text>
+          ) : (
+            <ChatComposer
+              value={staging.value}
+              onChangeText={staging.onChangeText}
+              onSend={handleSend}
+              canSend={canSend && channelCanPost && !staging.isSavingEdit}
+              context={staging.context}
+              mentionCandidates={mentionRoster.data}
+              avatarFor={memberAvatarFor}
+              mentionRoles={mentionRoles.data}
+              placeholder={composerPlaceholder}
+              // A send that never reached the outbox has no failed row to show
+              // (nothing was queued), so this line is the only report of it.
+              //
+              // Offline is not said here: #501's "clearly labeled" half is the
+              // app-wide pill, whose sentence carries the queue's promise while
+              // a chat is open (`spec/ui/resilience/connection-state.md` § One
+              // indicator). `lib/connection/state.ts` holds the rule for the
+              // surfaces that have to block instead.
+              disabledHint={
+                attachError ??
+                staging.editError ??
+                sendError ??
+                // `canSend` first. It is false until `ctx` resolves, and
+                // `ChatComposer` keys `editable` on it. The channel-level
+                // `can_post` gate (#704) comes next.
+                (!canSend
+                  ? "Connecting to chat…"
+                  : !channelCanPost
+                    ? postRefusalHint(postCapability)
+                    : null)
+              }
+              hintTone={
+                sendError || attachError || staging.editError
+                  ? "error"
+                  : "muted"
+              }
+              // An edit changes text only, so the staged photos and the + stand
+              // aside until it is saved or cancelled.
+              photos={staging.isEditing ? undefined : photos}
+              // The + (#3865): Photo, Poll, Event, Task and Service hours, in
+              // a sheet that greys what can't work this second and says why
+              // (offline Photo among them: an upload has no outbox).
+              onOpenPlus={staging.isEditing ? undefined : composerPlus.openPlus}
+              plusDisabled={!channelCanPost}
+              onRemovePhoto={removePhoto}
+              onRetryPhoto={retryPhoto}
+              isPicking={isPicking}
+            />
+          )}
         </View>
         {/*
           Last, so it is above the header, the inverted list and the composer
@@ -1475,6 +1490,16 @@ function createStyles(tokens: SignetTokens) {
       backgroundColor: tokens.color.surface.surface1,
       borderTopWidth: 1,
       borderTopColor: tokens.color.border.hairline,
+    },
+    // Sits where the composer would, with its hairline and padding.
+    auditLogNote: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+      borderTopWidth: 1,
+      borderTopColor: tokens.color.border.hairline,
+      paddingHorizontal: tokens.spacing.lg,
+      paddingVertical: tokens.spacing.md,
+      backgroundColor: tokens.color.surface.background,
     },
     reactionErrorText: {
       ...typeRole(tokens.typography.role.caption),

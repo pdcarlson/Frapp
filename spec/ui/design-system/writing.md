@@ -368,24 +368,24 @@ Mobile's Tasks tab (s08) is a personal board for everyone, so with nothing assig
 |---|---|---|
 | Loading | — | `Loading chapter documents...` |
 | Empty | — | `No documents yet.`, `Nothing in {folder} yet.`, or on No folder `Every document is in a folder.`; for a viewer with `chapter_docs:upload` then **Upload a file** `or drop one anywhere on this page.` (one line) |
-| Empty (search, all files) | — | `No documents match “{query}”.` then a **Clear search** link (one line) |
-| Empty (search, inside a folder) | — | `Nothing in {folder} matches “{query}”.` (on No folder, `No documents outside a folder match “{query}”.`) then a **Search all files** link, which keeps the search (one line) |
+| Empty (search or filter, all files) | — | `No documents match “{query}”.`, or with no search typed `No documents match these filters.`, then a **Clear filters** link that clears the search and both filters (one line) |
+| Empty (search or filter, inside a folder) | — | `Nothing in {folder} matches.` (on No folder, `No documents outside a folder match.`) then a **Search all files** link, which keeps the search and filters (one line) |
+| Capped list (status line above the rows) | — | `Showing the newest 1,000 documents. Search and filters look only at these for now.` |
 | Empty, mobile s12 | — | `No documents yet.` or `Nothing in {folder} yet.`; for a viewer with `chapter_docs:upload` then `Tap + to upload one.`, the screen's own + (one line) |
-| Empty (search), mobile s12 | — | The web lines and links: `No documents match “{query}”.` with **Clear search**, or inside a folder chip `Nothing in {folder} matches “{query}”.` with **Search all files** (one line) |
+| Empty (search), mobile s12 | — | `No documents match “{query}”.` with **Clear search**, or inside a folder chip `Nothing in {folder} matches “{query}”.` with **Search all files** (one line). Web's lines differ since #3852, which added filters there |
 | Error | `Couldn't load documents` | the load-failure line (§ copy rules) |
 | Offline | `Documents unavailable offline` | `Reconnect to browse the chapter library and download files.` |
-| Offline (search active) | `Search needs a connection` | `Clear the search to browse the documents already on this device.` |
 | Folder list failed (inline, under the rail) | — | `Couldn't load the folder list, so these are read from the documents shown. Empty folders and folder management are unavailable until it loads.` |
 
-Three of these exist to keep one state from impersonating another:
+Why the states are split this way:
 
 - A search that matched nothing is not an empty library. The default empty copy
   invites an upload, which is the wrong instruction for a member who mistyped a
   title.
-- Search is served by the API, so each query is a cache key that an offline
-  member has never fetched. Falling to the plain offline card would replace a
-  library they still have cached; naming the search as the thing that needs a
-  connection keeps the recovery in the member's hands.
+- Web search runs over the library already loaded (#3852), so an offline
+  member keeps searching what they have; there is no offline-search state.
+  (Before #3852 search went to the API, and an offline query landed on a cache
+  key never fetched, which needed its own "Search needs a connection" state.)
 - The folder rail is its own request and can fail while the documents load
   fine. It degrades to names derived from the loaded documents rather than
   rendering as a chapter with no folders — so the notice reports what is
@@ -572,6 +572,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Error | `Couldn't load channels` / `Couldn't load messages` | the load-failure line (§ copy rules) |
 | Channel list refused by role (a 403 with no `chapter.*` code; both clients, `@repo/chat-core/channels-refused-copy`) | `Chat isn't open to you yet` | `Your role in <chapter> doesn't include chat. Ask an officer to give you the Member role.` (`this chapter` until the name loads). A `chapter.*` 403 keeps the error row above |
 | Read-only channel | — | `This channel is read-only for your role.` (mobile still quotes the permission key, [#3422](https://github.com/pdcarlson/Frapp/issues/3422)) |
+| Audit log channel (`#chapter-audit`, in place of the composer; both clients, #3909) | — | `Only Frapp posts here: it's the chapter's audit log.` In Chat settings (web) the read-only switch gives way to `Only Frapp posts here: it's the chapter's audit log. It stays read-only and keeps its name.` |
 | Alumni-restricted channel | — | `Alumni can read this channel but not post. Alumni may post in #alumni and direct messages.` |
 | Archived conversation (mobile only: a Group DM everyone else left, #348; web's channel list leaves archived channels out) | — | `This conversation is archived because everyone else left. You can still read it.` |
 | No chapter selected | — | `Pick an active chapter to load its channels.` (one line) |

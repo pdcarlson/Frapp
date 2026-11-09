@@ -2844,6 +2844,7 @@ export function ChatShell({
               activeChannel.type === "DM" || activeChannel.type === "GROUP_DM"
             }
             isReadOnly={!!activeChannel.is_read_only}
+            isAuditLog={activeChannel.is_audit_log === true}
             // Undefined (not yet through the server's capability
             // projection) is left to `Composer`'s own default, which
             // resolves to `!isReadOnly` rather than an unconditional
