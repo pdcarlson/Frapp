@@ -166,7 +166,7 @@ personal token that can write; no stored CI token can.
 | --- | --- | --- |
 | Site URL | `https://app.frapp.live` (read 2026-09-07) | `https://app.staging.frapp.live` (read 2026-09-07) |
 | Redirect allow list | `https://app.frapp.live`, `https://api.frapp.live`, **`frapp://**`**, **`https://app.frapp.live/**`** (read 2026-09-07) | `https://app.staging.frapp.live`, `https://api-staging.frapp.live`, `exp://localhost:8081`, **`frapp://**`**, **`https://app.staging.frapp.live/**`** (read 2026-09-07) |
-| Email confirmations | required (`mailer_autoconfirm: false`) | required |
+| Email confirmations | required (`mailer_autoconfirm: false`; asserted daily as `auth-email-confirm` since #3776, which hands an invite's token to an account whose address is confirmed) | required (asserted daily as `auth-email-confirm`) |
 | Custom SMTP | **on** — Resend `smtp.resend.com:465`, user `resend`, From `Signet <no-reply@mail.frapp.live>` (owner send proof 2026-09-09 ~23:07Z from `https://app.frapp.live`). Target sender name `Frapp`: [ADR-25 step 3](#adr-25-step-3-the-sender-becomes-frapp) | **on** — Resend `smtp.resend.com:465`, From `Signet <no-reply@mail.staging.frapp.live>` (owner send proof 2026-09-09 from `https://app.staging.frapp.live`). Target sender name `Frapp`: [ADR-25 step 3](#adr-25-step-3-the-sender-becomes-frapp) |
 | Auth email rate limit | **300 per hour** (owner dashboard toast 2026-09-09) | **300 per hour** (owner dashboard 2026-09-09; asserted daily as `auth-smtp`) |
 | Sign-ups and sign-ins (`rate_limit_otp`, per 5 min per IP) | **150** (owner dashboard 2026-11-06, raised from the default 30 for migration day, [#925](https://github.com/pdcarlson/Frapp/issues/925)) | unread |

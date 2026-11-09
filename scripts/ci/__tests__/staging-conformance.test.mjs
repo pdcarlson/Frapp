@@ -14,6 +14,7 @@ import {
   buildRunSummary,
   canResolveAlert,
   checkAuthHook,
+  checkAuthEmailConfirm,
   checkAuthLeakedPassword,
   checkAuthRedirects,
   checkAuthSignIn,
@@ -701,8 +702,49 @@ test("leaked-password check skips without credentials and makes no call", async 
   assert.equal(called, false);
 });
 
+// ── Email confirmations: what GET /v1/invites/mine's safety rests on (#3776) ──
+
+const emailConfirmCheck = (config) =>
+  checkAuthEmailConfirm({ accessToken: "t", projectRef: "ref", fetchImpl: async () => ok(config) });
+
+test("autoconfirm on fails and says why it matters", async () => {
+  const result = await emailConfirmCheck({ mailer_autoconfirm: true });
+  assert.equal(result.id, "auth-email-confirm");
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /mailer_autoconfirm is true/);
+  assert.match(result.detail, /invites\/mine/);
+  assert.match(result.detail, /Confirm email/);
+});
+
+test("autoconfirm unset (null) is not a pass", async () => {
+  const result = await emailConfirmCheck({ mailer_autoconfirm: null });
+  assert.equal(result.status, FAIL);
+});
+
+test("a response without mailer_autoconfirm fails as unassertable, never skips", async () => {
+  const result = await emailConfirmCheck({ password_hibp_enabled: true });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /no mailer_autoconfirm field/);
+});
+
+test("confirmations required passes", async () => {
+  const result = await emailConfirmCheck({ mailer_autoconfirm: false });
+  assert.equal(result.status, PASS);
+  assert.equal(result.detail, "mailer_autoconfirm=false");
+});
+
+test("default staging toRun asserts email confirmations", () => {
+  const source = readFileSync(
+    new URL("../staging-conformance.mjs", import.meta.url),
+    "utf8",
+  );
+  const toRun = source.slice(source.indexOf("const toRun = checks ??"));
+  assert.match(toRun, /id: "auth-email-confirm"/);
+  assert.match(toRun, /checkAuthEmailConfirm\(/);
+});
+
 test("every Auth check's skip and HTTP-error rows carry its own id and label", async () => {
-  // readAuthConfig builds these rows for all five checks. A row under the wrong
+  // readAuthConfig builds these rows for every Auth check. A row under the wrong
   // id drops the real id from the run, and canResolveAlert then closes an alert
   // raised for it on a run that asserted nothing.
   const checks = [
@@ -711,6 +753,7 @@ test("every Auth check's skip and HTTP-error rows carry its own id and label", a
     ["auth-smtp", checkAuthSmtp],
     ["auth-magic-link", checkAuthMagicLink],
     ["auth-leaked-password", checkAuthLeakedPassword],
+    ["auth-email-confirm", checkAuthEmailConfirm],
   ];
   const labels = new Set();
   for (const [id, check] of checks) {

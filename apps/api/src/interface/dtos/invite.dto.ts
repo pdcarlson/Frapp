@@ -21,7 +21,10 @@ import type {
   InviteListItem,
   InviteStatus,
 } from '../../application/services/invite.service';
-import type { InvitePreview } from '../../application/services/invite.service';
+import type {
+  InvitePreview,
+  PendingInvite,
+} from '../../application/services/invite.service';
 
 /**
  * #422: `role` is optional on all three create routes. Omitting it falls back
@@ -152,6 +155,18 @@ export class InvitePreviewResponseDto implements InvitePreview {
 
   @ApiProperty()
   expires_at: string;
+}
+
+/** One row of `GET /v1/invites/mine` (`PendingInvite`, #3776). */
+export class PendingInviteDto
+  extends InvitePreviewResponseDto
+  implements PendingInvite
+{
+  @ApiProperty({
+    description:
+      'The single-use token, for redeem. Returned only because the invite was emailed to the address Auth verified for the caller.',
+  })
+  token: string;
 }
 
 const INVITE_STATUSES: InviteStatus[] = [
