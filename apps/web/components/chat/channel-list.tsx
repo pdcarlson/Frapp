@@ -79,6 +79,11 @@ export interface ChatChannel {
    * last channel (`landingChannelId` in `@repo/hooks`).
    */
   is_default?: boolean;
+  /**
+   * The chapter's audit log, `#chapter-audit` (#3909). Only Frapp posts there,
+   * so the composer gives way to a line saying so.
+   */
+  is_audit_log?: boolean;
 }
 
 /**

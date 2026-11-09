@@ -134,6 +134,15 @@ export interface ChatChannel {
    * never a DM or group DM. `spec/behavior/chat/README.md` § Where Chat opens.
    */
   is_default: boolean;
+  /**
+   * The chapter's audit-log channel, `#chapter-audit` (#3909): at most one
+   * per chapter (a partial unique index), set when the chapter is seeded
+   * (`DEFAULT_CHANNELS`, or the `chat_channels_flag_audit_log` trigger for an
+   * API that doesn't send it) and never by an officer. It is system-write only: `canAccessChannel` refuses
+   * every member write in it whatever the caller's permissions, and the audit
+   * mirror (`ChatBridgeWorkerService`) finds it by this flag, not its name.
+   */
+  is_audit_log: boolean;
 }
 
 /**

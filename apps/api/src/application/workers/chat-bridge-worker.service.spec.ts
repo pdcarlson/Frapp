@@ -32,8 +32,8 @@ type Insert = (
  */
 function buildRepos(lookup: Lookup, insert?: Insert) {
   const insertCalls: Array<Record<string, unknown>> = [];
-  // The bridge reads only the id off `findByName`'s row.
-  const findByName = jest.fn(async () => {
+  // The bridge reads only the id off `findAuditLog`'s row.
+  const findAuditLog = jest.fn(async () => {
     const id = await lookup();
     return id === null ? null : { id };
   });
@@ -45,7 +45,7 @@ function buildRepos(lookup: Lookup, insert?: Insert) {
       }),
   );
   return {
-    channels: { findByName },
+    channels: { findAuditLog },
     messages: { insertIdempotent },
     insertCalls,
   };
@@ -120,10 +120,9 @@ describe('ChatBridgeWorkerService.handleAuditRow', () => {
     const { insertCalls } = repos;
     const service = await instantiate(repos);
     await service.handleAuditRow(baseRow);
-    expect(repos.channels.findByName).toHaveBeenCalledWith(
-      'chap-1',
-      'chapter-audit',
-    );
+    // Found by its `is_audit_log` flag, not its name (#3909), so a rename
+    // can't cut the mirror off.
+    expect(repos.channels.findAuditLog).toHaveBeenCalledWith('chap-1');
     expect(insertCalls).toHaveLength(1);
     expect(insertCalls[0]).toMatchObject({
       channel_id: 'ch-audit',
