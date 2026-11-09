@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import {
   joinErrorCopy,
+  pendingInviteDetail,
+  pendingInviteTitle,
   redeemChapterId,
   useJoinTermsCheckbox,
   usePendingInvites,
@@ -299,16 +301,10 @@ function JoinPageContent() {
               />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-foreground">
-                  You&apos;ve been invited to {offer.chapter_name}
+                  {pendingInviteTitle(offer.chapter_name)}
                 </p>
                 <p className="truncate text-xs text-muted-foreground">
-                  {[
-                    offer.university,
-                    offer.invited_by ? `from ${offer.invited_by}` : null,
-                    offer.role,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
+                  {pendingInviteDetail(offer)}
                 </p>
               </div>
               <Button
