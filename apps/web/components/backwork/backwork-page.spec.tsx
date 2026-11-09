@@ -247,7 +247,7 @@ describe("BackworkPage disabled-query handling", () => {
   });
 
   it("keeps a loaded archive readable when the connection drops", () => {
-    // Same rule as `/documents` and `/polls`: offline replaces the list only
+    // Same rule as `/documents`: offline replaces the list only
     // when there is nothing loaded to replace.
     mockOffline.value = true;
 
@@ -260,7 +260,7 @@ describe("BackworkPage disabled-query handling", () => {
   });
 
   it("keeps the loaded archive through a paused background refetch", () => {
-    // Same distinction as `/polls`: a paused *background* refetch keeps the
+    // A paused *background* refetch keeps the
     // cached rows, so it must not render as a first load.
     resourcesQuery.isPending = false;
     resourcesQuery.isLoading = false;

@@ -11,8 +11,6 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  Check,
-  ChevronDown,
   Download,
   FileArchive,
   FolderUp,
@@ -50,6 +48,7 @@ import {
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { RowMenu, type RowMenuEntry } from "@/components/shared/row-menu";
+import { FilterChip } from "@/components/shared/filter-chip";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Can } from "@/components/shared/can";
 import {
@@ -82,7 +81,6 @@ import {
   type BackworkDepartment,
   type BackworkProfessor,
   type BackworkResource,
-  type FilterOption,
   type LibraryFilters,
   type LibraryRow,
 } from "@/components/backwork/backwork-library";
@@ -145,62 +143,6 @@ const CHIPS: { key: ChipKey; label: string; anyLabel: string }[] = [
 const ROW_GRID =
   "md:grid-cols-[112px_minmax(0,1fr)_140px_104px_128px_64px_76px]";
 
-function FilterChip({
-  label,
-  anyLabel,
-  options,
-  value,
-  onChange,
-}: {
-  label: string;
-  anyLabel: string;
-  options: FilterOption[];
-  value: string | null;
-  onChange: (value: string | null) => void;
-}) {
-  const selected = options.find((option) => option.value === value);
-  const active = value !== null;
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant={active ? "tinted" : "secondary"}
-          size="toolbar"
-          className="gap-1 rounded-full font-semibold"
-          aria-label={active ? `${label}: ${selected?.label ?? value}` : label}
-          disabled={options.length === 0 && !active}
-        >
-          <span className="max-w-[160px] truncate">
-            {active ? (selected?.label.split(" · ")[0] ?? value) : label}
-          </span>
-          <ChevronDown className="h-3.5 w-3.5 opacity-70" aria-hidden="true" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="max-h-80 min-w-[200px]">
-        <DropdownMenuItem onSelect={() => onChange(null)}>
-          <Check
-            className={cn("h-4 w-4", active && "invisible")}
-            aria-hidden="true"
-          />
-          {anyLabel}
-        </DropdownMenuItem>
-        {options.map((option) => (
-          <DropdownMenuItem
-            key={option.value}
-            onSelect={() => onChange(option.value)}
-          >
-            <Check
-              className={cn("h-4 w-4", option.value !== value && "invisible")}
-              aria-hidden="true"
-            />
-            {option.label}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
 
 /**
  * A search for the joined course form ("cogs2120") hits that one word, which

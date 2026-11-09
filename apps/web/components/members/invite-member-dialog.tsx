@@ -9,9 +9,12 @@ import {
   useOrgConfig,
   useRevokeInvite,
   useRoles,
+  INVITE_STATUS_LABEL,
+  inviteMenuActions,
+  listedInvites,
   type InviteListItem,
 } from "@repo/hooks";
-import { formatRelativeDayTime } from "@repo/formatting";
+import { formatSentLabel } from "@repo/formatting";
 import { useToast } from "@/lib/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import {
@@ -55,44 +58,6 @@ import { buildJoinUrl } from "@/lib/invite-link";
  */
 const SEEDED_MEMBER_ROLE_NAME = "Member";
 const MEMBER_SYSTEM_KEY = "MEMBER";
-
-/** Joined and expired invites stay listed this long, then drop off. */
-const SETTLED_LIST_DAYS = 14;
-
-const STATUS_LABEL: Record<InviteListItem["status"], string> = {
-  pending: "Pending",
-  joined: "Joined",
-  expired: "Expired",
-  revoked: "Revoked",
-};
-
-/**
- * The invites worth listing: every pending one, and joined or expired ones
- * from the last two weeks. Revoked ones go: the officer chose to forget them.
- * Pure, for the spec.
- */
-export function listedInvites(
-  rows: readonly InviteListItem[],
-  now: Date = new Date(),
-): InviteListItem[] {
-  const cutoff = now.getTime() - SETTLED_LIST_DAYS * 24 * 60 * 60 * 1000;
-  return rows.filter((row) => {
-    if (row.status === "revoked") return false;
-    if (row.status === "pending") return true;
-    return new Date(row.created_at).getTime() >= cutoff;
-  });
-}
-
-/** "Sent today at 4:46 PM", "Sent yesterday at …", "Sent Nov 3 at …". */
-export function sentLabel(createdAt: string, now: Date = new Date()): string {
-  const when = formatRelativeDayTime(createdAt, now);
-  if (!when) return "Sent";
-  const [day = when, clock] = when.split(" · ");
-  const spoken = /^(Today|Yesterday|Tomorrow)$/.test(day)
-    ? day.toLowerCase()
-    : day;
-  return clock ? `Sent ${spoken} at ${clock}` : `Sent ${spoken}`;
-}
 
 type InviteMemberDialogProps = {
   trigger: React.ReactNode;
@@ -324,41 +289,39 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     const revokeDisabled = revokeGate.controlProps(
       revokeInviteMutation.isPending || hasLiveDataError,
     ).disabled;
-    if (invite.status === "pending") {
-      entries.push({
-        type: "item",
-        key: "copy",
-        label: "Copy link",
-        icon: Link2,
-        onSelect: () => void copyInviteLink(invite),
-      });
-    }
-    if (
-      invite.email &&
-      (invite.status === "pending" || invite.status === "expired")
-    ) {
-      entries.push({
-        type: "item",
-        key: "again",
-        label: "Send again",
-        icon: RotateCw,
-        onSelect: () => void sendAgain(invite),
-        disabled: mintDisabled || emailInvites.isPending,
-      });
-    }
-    if (invite.status === "pending") {
-      entries.push(
-        { type: "separator", key: "sep" },
-        {
+    // Which actions a row offers is shared with mobile (`inviteMenuActions`).
+    for (const action of inviteMenuActions(invite)) {
+      if (action === "link") {
+        entries.push({
           type: "item",
-          key: "revoke",
-          label: "Revoke invite",
-          icon: Trash2,
-          destructive: true,
-          onSelect: () => void revoke(invite),
-          disabled: revokeDisabled,
-        },
-      );
+          key: "copy",
+          label: "Copy link",
+          icon: Link2,
+          onSelect: () => void copyInviteLink(invite),
+        });
+      } else if (action === "again") {
+        entries.push({
+          type: "item",
+          key: "again",
+          label: "Send again",
+          icon: RotateCw,
+          onSelect: () => void sendAgain(invite),
+          disabled: mintDisabled || emailInvites.isPending,
+        });
+      } else {
+        entries.push(
+          { type: "separator", key: "sep" },
+          {
+            type: "item",
+            key: "revoke",
+            label: "Revoke invite",
+            icon: Trash2,
+            destructive: true,
+            onSelect: () => void revoke(invite),
+            disabled: revokeDisabled,
+          },
+        );
+      }
     }
     return entries;
   }
@@ -478,6 +441,7 @@ function InviteRow({
 }) {
   const name = invite.email ?? "Invite link";
   const Icon = invite.email ? Mail : Link2;
+  const sent = formatSentLabel(invite.created_at);
   const row = (menuButton: React.ReactNode) => (
     <li className="group flex min-h-12 items-center gap-3 rounded-md px-2 py-1.5 hover:bg-card-hover">
       <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-card text-muted-foreground">
@@ -486,7 +450,7 @@ function InviteRow({
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold">{name}</p>
         <p className="truncate text-caption text-muted-foreground">
-          {invite.role} · {sentLabel(invite.created_at)}
+          {[invite.role, sent].filter(Boolean).join(" · ")}
         </p>
       </div>
       <span
@@ -495,7 +459,7 @@ function InviteRow({
           invite.status === "joined" ? "text-success" : "text-muted-foreground",
         )}
       >
-        {STATUS_LABEL[invite.status]}
+        {INVITE_STATUS_LABEL[invite.status]}
       </span>
       {/* Same width with or without a menu, so statuses line up. */}
       {menuButton ?? <span className="w-9 shrink-0" aria-hidden="true" />}
@@ -506,7 +470,7 @@ function InviteRow({
     // Share links all read "Invite link", so their menus also name when.
     <RowMenu
       entries={entries}
-      label={`More for ${name}${invite.email ? "" : `, ${sentLabel(invite.created_at).replace(/^Sent/, "sent")}`}`}
+      label={`More for ${name}${invite.email || !sent ? "" : `, ${sent.replace(/^Sent/, "sent")}`}`}
     >
       {row}
     </RowMenu>

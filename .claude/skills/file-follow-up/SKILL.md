@@ -32,7 +32,8 @@ closed, including `[human]` titles) and refresh a near-match rather than duplica
 
 ## How to write one (so an agent can execute it)
 
-Labels: `triage`, exactly one `area:<x>`, and a priority (`P1` urgent, `P2` high, `P3` medium, `P4`
+Labels: `triage` (except where [`AGENTS.md` § Work tracking](../../../AGENTS.md#work-tracking)
+says a person's own ask skips it), exactly one `area:<x>`, and a priority (`P1` urgent, `P2` high, `P3` medium, `P4`
 low). The `area:` roster lives in
 [`routines.md` → Tracker access](../../../docs/ci-cd/routines.md#tracker-access-shared-by-all-routines).
 
@@ -53,7 +54,7 @@ create with `parent_issue_number`), so it never sits loose. Find epics the way
 `has_children: true`. In a chat or `/next` session, when three or more related issues have no epic,
 create one (`[Epic] <name>`) and attach them. A routine follows its own skill's epic rule.
 
-Lifecycle: filed with `triage` → accepted to Backlog (label removed, priority confirmed) → claimed
+Lifecycle: filed with `triage` (or straight to the Backlog, for the asks above) → accepted to Backlog (label removed, priority confirmed) → claimed
 via `/next` → PR with `Fixes #N`. An issue with an open `Blocked by #N` isn't started.
 
 ## Proven human-only blockers

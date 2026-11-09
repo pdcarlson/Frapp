@@ -1,6 +1,7 @@
 /**
- * Signet duotone glyphs for the Resources & Reporting family — documents,
- * polls and reports, plus the toolbar search glyph `/backwork` shares.
+ * Signet duotone glyphs for the Resources & Reporting family — documents and
+ * reports, plus the toolbar search glyph `/backwork` shares. (`/polls` was the
+ * fourth screen until #3871 retired it.)
  *
  * Every glyph here draws the shared two-tone set (`@repo/theme/nav-glyphs`,
  * `spec/ui/design-system/iconography.md` §1.1) except the re-exported
@@ -8,13 +9,13 @@
  * intent → glyph map lives in `iconography.md` §6.2.5 and MUST be updated in
  * the same PR as any change here (§6.3).
  *
- * One file for four screens, as the Chapter Ops family does for its five: the
- * four share their intents rather than partitioning them. The document
+ * One file for three screens, as the Chapter Ops family does for its five: the
+ * three share their intents rather than partitioning them. The document
  * silhouette marks a document row on `/documents`, the "No folder" filter
  * beside it, and the PDF a report exports to — two screens, one shape.
  *
- * **Four of the five are re-exports, and that is the point.** `nav-glyphs.tsx`
- * already draws all four, and a second copy of
+ * **Three of the four are re-exports, and that is the point.** `nav-glyphs.tsx`
+ * already draws all three, and a second copy of
  * the same path data is the drift §1 rule 1 bans. Since the nav glyphs moved
  * to the shared two-tone set (`@repo/theme/nav-glyphs`, iconography.md §1.1),
  * `DocumentsGlyph` is Phosphor `file-text`, no longer the board's s12/s21 file
@@ -40,7 +41,6 @@ import { NavGlyph } from "@/components/layout/nav-glyphs";
 
 export {
   DocumentsGlyph,
-  PollsGlyph,
   ReportsGlyph,
   SearchGlyph,
 } from "@/components/layout/nav-glyphs";

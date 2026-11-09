@@ -57,7 +57,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { BlockListNotice } from "@/components/chat/block-list-notice";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { NewPollSheet } from "@/components/chat/new-poll-sheet";
-import { canCreatePoll } from "@/lib/chat/new-poll";
+import { canCreatePoll } from "@repo/chat-core/poll-draft";
 import { usePollsGate } from "@/lib/chat/use-polls-gate";
 import {
   ImageViewer,
@@ -121,6 +121,7 @@ import {
   ChannelMembersButton,
 } from "@/components/chat/channel-member-sheet";
 import { MemberDetailSheet } from "@/components/directory/member-detail-sheet";
+import { confirmClosePoll } from "@/lib/chat/confirm-close-poll";
 import { confirmDeleteMessage } from "@/lib/chat/confirm-delete-message";
 import { useComposerStaging } from "@/lib/chat/use-composer-staging";
 import {
@@ -237,6 +238,7 @@ export default function ChatThreadScreen() {
     sendPoll,
     edit,
     remove,
+    closePoll,
     react,
     unreact,
     act,
@@ -661,6 +663,12 @@ export default function ChatThreadScreen() {
     [remove],
   );
 
+  // A poll card's Close poll (#3794), asked first like Delete.
+  const handleClosePoll = useCallback(
+    (messageId: string) => confirmClosePoll(() => closePoll(messageId)),
+    [closePoll],
+  );
+
   // The menu's Mention: `@Name ` at the end of the draft, the body the `@`
   // picker would have written.
   const handleMention = useCallback(
@@ -888,6 +896,7 @@ export default function ChatThreadScreen() {
           onVote={(id, actionType, payload) =>
             void act(id, actionType, payload)
           }
+          onClosePoll={handleClosePoll}
           onRetry={(id) => void retry(id)}
           onDiscard={(id) => void discard(id)}
           onReact={handleReact}
@@ -914,6 +923,7 @@ export default function ChatThreadScreen() {
       handleReact,
       handleUnreact,
       act,
+      handleClosePoll,
       byId,
       layout,
       blockState,

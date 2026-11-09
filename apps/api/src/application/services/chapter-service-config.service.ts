@@ -4,6 +4,10 @@ import {
   CHAPTER_CONFIG_REPOSITORY,
   type IChapterConfigRepository,
 } from '#domain/repositories/chapter-config.repository.interface';
+import {
+  SERVICE_MINUTES_PER_POINT_DEFAULT,
+  effectiveMinutesPerPoint,
+} from '@repo/validation';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 /**
@@ -14,7 +18,7 @@ import { reportCaughtFailure } from '../../infrastructure/observability/report-c
  * was needed.
  */
 export const SERVICE_CONFIG_DEFAULTS: ServiceConfig = {
-  minutes_per_point: 60,
+  minutes_per_point: SERVICE_MINUTES_PER_POINT_DEFAULT,
 };
 
 /**
@@ -75,8 +79,6 @@ export class ChapterServiceConfigService {
    */
   async getMinutesPerPoint(chapterId: string): Promise<number> {
     const { minutes_per_point } = await this.getConfig(chapterId);
-    return Number.isInteger(minutes_per_point) && minutes_per_point >= 1
-      ? minutes_per_point
-      : SERVICE_CONFIG_DEFAULTS.minutes_per_point;
+    return effectiveMinutesPerPoint(minutes_per_point);
   }
 }

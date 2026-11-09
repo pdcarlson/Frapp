@@ -1,3 +1,4 @@
+import type { FilterOption } from "@/components/shared/filter-chip";
 import { ASSIGNMENT_TYPES, DOCUMENT_VARIANTS } from "@repo/validation";
 import {
   fuzzyMatchWords,
@@ -433,7 +434,6 @@ export function hasActiveFilters(filters: LibraryFilters): boolean {
   return Object.values(filters).some((value) => value !== null);
 }
 
-export type FilterOption = { value: string; label: string };
 
 type Options = ReturnType<typeof filterOptions>;
 

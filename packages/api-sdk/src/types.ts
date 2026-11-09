@@ -2206,6 +2206,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/service-entries/points-rate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * SERVICE points rate that approving an entry applies
+         * @description Minutes of approved service per SERVICE point, read the way the approve path reads it (chapter rate, default 60). The rate is read again at approval, so this is the current rate, not a promise.
+         */
+        get: operations["ServiceEntryController_pointsRate_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/service-entries/{id}": {
         parameters: {
             query?: never;
@@ -2708,7 +2728,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Manually close a poll early (creator only) */
+        /** Manually close a poll early (creator only): a REST poll or a chat-card poll */
         post: operations["PollController_close_v1"];
         delete?: never;
         options?: never;
@@ -4720,6 +4740,13 @@ export interface components {
         UpdateProfessorDto: {
             /** @description Professor name */
             name?: string;
+        };
+        ServicePointsRateResponseDto: {
+            /**
+             * @description Minutes of approved service per SERVICE point, as the approve path reads it now (default 60). Approving awards floor(duration_minutes / minutes_per_point).
+             * @example 60
+             */
+            minutes_per_point: number;
         };
         RequestProofUploadUrlDto: {
             /** @description Original filename (image or PDF) */
@@ -10491,6 +10518,34 @@ export interface operations {
             };
         };
     };
+    ServiceEntryController_pointsRate_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServicePointsRateResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     ServiceEntryController_getOne_v1: {
         parameters: {
             query?: never;
@@ -11653,7 +11708,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ChatMessageDto"];
+                };
             };
             /** @description Error */
             default: {

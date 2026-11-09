@@ -11,6 +11,18 @@ import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 import { SearchGlyph } from "@/components/documents/resources-glyphs";
 import { DocumentRow } from "@/components/documents/document-row";
 import type { ChapterDocument } from "@/components/documents/document-types";
+import { FilterChip } from "@/components/shared/filter-chip";
+import {
+  DateFilterChip,
+  SortChip,
+} from "@/components/documents/document-filters";
+import {
+  DOCUMENT_LIST_CAP,
+  type DocumentFilters,
+  type DocumentSort,
+  type LibraryDocument,
+} from "@/components/documents/document-library";
+import type { FilterOption } from "@/components/shared/filter-chip";
 import { SectionLabel } from "@/components/shared/section-label";
 import {
   dashboardToolbarSearchClassName,
@@ -21,19 +33,30 @@ import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import { DocumentRowsSkeleton } from "@/components/documents/documents-skeleton";
 
 export type DocumentListState =
-  "offline-search" | "offline" | "loading" | "error" | "empty" | "ready";
+  "offline" | "loading" | "error" | "empty" | "ready";
 
 export function DocumentList({
   listState,
   loadError,
   visible,
+  total,
+  truncated,
+  filtering,
   activeFolder,
   search,
   setSearch,
   deferredSearch,
+  filters,
+  semesterKnown,
+  setFilters,
+  uploaders,
+  sort,
+  setSort,
+  onClearFilters,
   onRetry,
   gate,
   deletingIds,
+  onOpen,
   onDelete,
   onShowAllFiles,
   onUpload,
@@ -41,14 +64,32 @@ export function DocumentList({
   listState: DocumentListState;
   /** The failed read behind `listState === "error"`, for its wording. */
   loadError?: unknown;
-  visible: ChapterDocument[];
+  /** The rows to draw: folder, search, filters and order applied. */
+  visible: LibraryDocument[];
+  /** Documents in the open folder before search and filters, for "4 of 10". */
+  total: number;
+  /** The list response hit PostgREST's row cap, so older files may be missing. */
+  truncated: boolean;
+  /** A search or filter is narrowing the list. */
+  filtering: boolean;
   activeFolder: string | null;
   search: string;
   setSearch: (search: string) => void;
   deferredSearch: string;
+  filters: DocumentFilters;
+  /** The chapter's semester archives have loaded. */
+  semesterKnown: boolean;
+  setFilters: (filters: DocumentFilters) => void;
+  uploaders: readonly FilterOption[];
+  sort: DocumentSort;
+  setSort: (sort: DocumentSort) => void;
+  /** Clears the search and both filters, leaving the folder and the order. */
+  onClearFilters: () => void;
   onRetry: () => void;
   gate: SubscriptionGate;
   deletingIds: ReadonlySet<string>;
+  /** Opens a document in the viewer (#3849). */
+  onOpen: (doc: ChapterDocument) => void;
   onDelete: (doc: ChapterDocument) => void;
   /** Leaves the folder for "All files". */
   onShowAllFiles: () => void;
@@ -74,7 +115,9 @@ export function DocumentList({
           id="doc-list-label"
           count={
             listState === "ready"
-              ? `${visible.length} document${visible.length === 1 ? "" : "s"}${deferredSearch ? ` matching "${deferredSearch}"` : ""}`
+              ? filtering
+                ? `${visible.length} of ${total}`
+                : `${visible.length} document${visible.length === 1 ? "" : "s"}`
               : null
           }
         >
@@ -95,21 +138,50 @@ export function DocumentList({
           glyph class sized against the toolbar field. The wrapper carries the
           spacing so the icon offset never has to compensate for it.
         */}
-        <div className="relative w-full sm:w-64">
-          <Label htmlFor="doc-search" className="sr-only">
-            Search documents
-          </Label>
-          <SearchGlyph className={dashboardToolbarSearchGlyphClassName} />
-          <Input
-            id="doc-search"
-            type="search"
-            className={dashboardToolbarSearchClassName}
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search by title"
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+          <div className="relative w-full sm:w-64">
+            <Label htmlFor="doc-search" className="sr-only">
+              Search documents
+            </Label>
+            <SearchGlyph className={dashboardToolbarSearchGlyphClassName} />
+            <Input
+              id="doc-search"
+              type="search"
+              className={dashboardToolbarSearchClassName}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search titles, people, folders"
+            />
+          </div>
+          {/*
+            Backwork's toolbar grammar (#3852): chips beside the search, each
+            applied the moment it's picked. Folders stay in the rail.
+          */}
+          <FilterChip
+            label="Uploaded by"
+            anyLabel="Anyone"
+            options={uploaders}
+            value={filters.uploader}
+            onChange={(uploader) => setFilters({ ...filters, uploader })}
           />
+          <DateFilterChip
+            semesterKnown={semesterKnown}
+            value={filters.date}
+            onChange={(date) => setFilters({ ...filters, date })}
+          />
+          <SortChip value={sort} onChange={setSort} />
         </div>
       </div>
+      {/*
+        Above the rows and whatever state replaces them, as backwork's is: a
+        search that finds nothing past the cap is exactly when it matters.
+      */}
+      {truncated && (listState === "ready" || listState === "empty") ? (
+        <p className="pt-2 text-caption text-muted-foreground" role="status">
+          Showing the newest {DOCUMENT_LIST_CAP.toLocaleString("en-US")} documents.
+          Search and filters look only at these for now.
+        </p>
+      ) : null}
       <div className="pt-2">
         {/*
           Still the nested variants even though the card they were chosen
@@ -121,13 +193,7 @@ export function DocumentList({
           are right here is the flatter one, that these states sit inside a
           region rather than replacing the screen.
         */}
-        {listState === "offline-search" ? (
-          <NestedOffline
-            sole
-            title="Search needs a connection"
-            description="Clear the search to browse the documents already on this device."
-          />
-        ) : listState === "offline" ? (
+        {listState === "offline" ? (
           <NestedOffline
             sole
             title="Documents unavailable offline"
@@ -153,20 +219,22 @@ export function DocumentList({
             someone who can, here where the first row will land; the whole
             page is a drop target too.
           */
-          deferredSearch ? (
+          filtering ? (
             <InlineNote>
               {activeFolder === null ? (
                 <>
-                  No documents match “{deferredSearch}”.{" "}
-                  <InlineNoteAction onClick={() => setSearch("")}>
-                    Clear search
+                  {deferredSearch
+                    ? `No documents match “${deferredSearch}”.`
+                    : "No documents match these filters."}{" "}
+                  <InlineNoteAction onClick={onClearFilters}>
+                    Clear filters
                   </InlineNoteAction>
                 </>
               ) : (
                 <>
                   {activeFolder === ""
-                    ? `No documents outside a folder match “${deferredSearch}”.`
-                    : `Nothing in ${activeFolder} matches “${deferredSearch}”.`}{" "}
+                    ? "No documents outside a folder match."
+                    : `Nothing in ${activeFolder} matches.`}{" "}
                   <InlineNoteAction onClick={onShowAllFiles}>
                     Search all files
                   </InlineNoteAction>
@@ -210,12 +278,14 @@ export function DocumentList({
             became the third and fourth copy of the same string.
           */
           <ul className={denseListClassName}>
-            {visible.map((doc) => (
+            {visible.map(({ doc, uploader }) => (
               <DocumentRow
                 key={doc.id}
                 doc={doc}
+                uploader={uploader}
                 gate={gate}
                 deleting={deletingIds.has(doc.id)}
+                onOpen={onOpen}
                 onDelete={onDelete}
               />
             ))}
