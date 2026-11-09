@@ -1257,10 +1257,11 @@ export function ChatShell({
   // in the form (which says so and keeps the draft), and a committed write
   // with a lost card, or an unknown outcome, gets the command's own notice.
   //
-  // The chat-core calls never reject on a refusal, so a throw here comes from
-  // after the request: the write may well have committed (#1718's class).
-  // That reads as unconfirmed, not failed, so the form closes rather than
-  // inviting a resubmit under a fresh key, which would write it twice.
+  // The chat-core calls report a lost answer themselves, as unconfirmed. A
+  // throw here comes from their cache bookkeeping, usually after the request
+  // went out, so the write may have committed (#1718's class). It reads as
+  // unconfirmed too, never as failed: the form closes rather than inviting a
+  // resubmit under a fresh key, which would write it twice.
   const postFromForm = useCallback(
     async (
       commandName: "task" | "hours" | "points",

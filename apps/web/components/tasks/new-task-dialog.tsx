@@ -5,7 +5,7 @@ import { Loader2 } from "lucide-react";
 import { useMembers } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
 import type { DispatchResult, TaskInput } from "@repo/chat-core/dispatch";
-import { TASK_MAX_TITLE_LENGTH } from "@repo/chat-core/integrations";
+import { TASK_TITLE_MAX_LENGTH } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -100,7 +100,7 @@ export function NewTaskDialog({
     const trimmed = title.trim();
     const nextMissing: Missing = {
       title: !trimmed,
-      titleTooLong: trimmed.length > TASK_MAX_TITLE_LENGTH,
+      titleTooLong: trimmed.length > TASK_TITLE_MAX_LENGTH,
       assignee: !assigneeId,
       due: !dueDate,
     };
@@ -163,7 +163,7 @@ export function NewTaskDialog({
                   ...prev,
                   title: prev.title && !next.trim(),
                   titleTooLong:
-                    prev.titleTooLong && next.trim().length > TASK_MAX_TITLE_LENGTH,
+                    prev.titleTooLong && next.trim().length > TASK_TITLE_MAX_LENGTH,
                 }));
               }}
               {...gate.controlProps()}
@@ -174,7 +174,7 @@ export function NewTaskDialog({
               </p>
             ) : missing.titleTooLong ? (
               <p role="alert" className="text-caption text-destructive-text">
-                Keep the title to {TASK_MAX_TITLE_LENGTH} characters. It&apos;s{" "}
+                Keep the title to {TASK_TITLE_MAX_LENGTH} characters. It&apos;s{" "}
                 {title.trim().length} now.
               </p>
             ) : null}

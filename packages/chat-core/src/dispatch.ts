@@ -612,6 +612,31 @@ const EVENT_RECORDED_ROW_NOTE =
 const HOURS_RECORDED_ROW_NOTE =
   "Hours logged — the chat card didn't post. Don't run this command again.";
 
+const TASK_UNCONFIRMED_WARNING =
+  "Couldn't confirm the task was created. Check the task board before you create it again.";
+
+const HOURS_UNCONFIRMED_WARNING =
+  "Couldn't confirm the hours were logged. Check the service hours page before you log them again.";
+
+/**
+ * A `/task` or `/hours` write whose answer never arrived: a transport failure,
+ * a 5xx, or a status an intermediary emits after the origin may have
+ * committed. Neither route dedupes, so this must not read as a refusal: a
+ * red "failed" invites the resubmit (one click on the + menu's form, which
+ * keeps the draft) that writes it twice. It reads as unconfirmed instead, and
+ * the placeholder goes; if the write did commit, its card still arrives by
+ * Realtime echo as a fresh row.
+ */
+function lostResponse(
+  ctx: ChatActionContext,
+  channelId: string,
+  clientMessageId: string,
+  warning: string,
+): DispatchResult {
+  removeLocalPlaceholder(ctx, channelId, clientMessageId);
+  return { ok: true, unconfirmed: true, warning };
+}
+
 const RUSH_CARD_LOST_WARNING =
   "Candidate was added, but the chat card couldn't be posted. Don't run the command again.";
 
@@ -823,6 +848,9 @@ export async function postTask(
     if (result.error) status ??= 0;
     const ok = typeof status === "number" && status >= 200 && status < 300;
     if (!ok) {
+      if (!isTerminalStatus(status)) {
+        return lostResponse(ctx, channelId, clientMessageId, TASK_UNCONFIRMED_WARNING);
+      }
       removeLocalPlaceholder(ctx, channelId, clientMessageId);
       return {
         ok: false,
@@ -839,8 +867,7 @@ export async function postTask(
       return { ok: true, warning: TASK_CARD_LOST_WARNING };
     }
   } catch {
-    removeLocalPlaceholder(ctx, channelId, clientMessageId);
-    return { ok: false, error: "Couldn't reach the tasks service" };
+    return lostResponse(ctx, channelId, clientMessageId, TASK_UNCONFIRMED_WARNING);
   }
 
   // Success: the server posts the `task` card (same client_message_id); the
@@ -1072,6 +1099,9 @@ export async function postHours(
     if (result.error) status ??= 0;
     const ok = typeof status === "number" && status >= 200 && status < 300;
     if (!ok) {
+      if (!isTerminalStatus(status)) {
+        return lostResponse(ctx, channelId, clientMessageId, HOURS_UNCONFIRMED_WARNING);
+      }
       removeLocalPlaceholder(ctx, channelId, clientMessageId);
       return {
         ok: false,
@@ -1088,8 +1118,7 @@ export async function postHours(
       return { ok: true, warning: HOURS_CARD_LOST_WARNING };
     }
   } catch {
-    removeLocalPlaceholder(ctx, channelId, clientMessageId);
-    return { ok: false, error: "Couldn't reach the hours service" };
+    return lostResponse(ctx, channelId, clientMessageId, HOURS_UNCONFIRMED_WARNING);
   }
 
   return { ok: true };

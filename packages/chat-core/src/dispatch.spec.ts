@@ -919,6 +919,12 @@ function describeCreateCardPosted(
     fourXxMessage: string;
     gatewayError: RegExp;
     transportError: string;
+    /**
+     * Set for a command whose lost answer reads as unconfirmed rather than
+     * failed (`/task`, `/hours`, #3865): the + menu's form keeps its draft,
+     * so a "failed" there is one click from a duplicate write.
+     */
+    lostResponse?: RegExp;
     onPosted?: (post: ReturnType<typeof vi.fn>) => void;
   },
 ) {
@@ -980,9 +986,17 @@ function describeCreateCardPosted(
       });
       const ctx = buildCtx(post);
       const result = await dispatch(ctx);
-      expect(result.ok).toBe(false);
-      expect(result.unconfirmed).toBeUndefined();
-      expect(result.error).toMatch(copy.gatewayError);
+      if (copy.lostResponse) {
+        expect(result).toEqual({
+          ok: true,
+          unconfirmed: true,
+          warning: expect.stringMatching(copy.lostResponse),
+        });
+      } else {
+        expect(result.ok).toBe(false);
+        expect(result.unconfirmed).toBeUndefined();
+        expect(result.error).toMatch(copy.gatewayError);
+      }
       expect(placeholderCount(ctx)).toBe(0);
     });
 
@@ -990,10 +1004,15 @@ function describeCreateCardPosted(
       const post = vi.fn().mockRejectedValue(new Error("network down"));
       const ctx = buildCtx(post);
       const result = await dispatch(ctx);
-      expect(result).toEqual({
-        ok: false,
-        error: copy.transportError,
-      });
+      expect(result).toEqual(
+        copy.lostResponse
+          ? {
+              ok: true,
+              unconfirmed: true,
+              warning: expect.stringMatching(copy.lostResponse),
+            }
+          : { ok: false, error: copy.transportError },
+      );
       expect(placeholderCount(ctx)).toBe(0);
     });
   });
@@ -1004,6 +1023,7 @@ describeCreateCardPosted("dispatchTask — card_posted (#1717)", dispatchTaskCmd
   fourXxMessage: "nope",
   gatewayError: /Couldn't create task/i,
   transportError: "Couldn't reach the tasks service",
+  lostResponse: /Couldn't confirm the task was created/,
 });
 
 describeCreateCardPosted(
@@ -1022,6 +1042,7 @@ describeCreateCardPosted("dispatchHours — card_posted", dispatchHoursCmd, {
   fourXxMessage: "This chapter requires a receipt",
   gatewayError: /Couldn't log hours/i,
   transportError: "Couldn't reach the hours service",
+  lostResponse: /Couldn't confirm the hours were logged/,
   onPosted: (post) => {
     expect(post).toHaveBeenCalledWith(
       "/v1/service-entries",

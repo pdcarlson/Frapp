@@ -132,6 +132,25 @@ describe("NewTaskDialog (#3865)", () => {
     expect(onPost).not.toHaveBeenCalled();
   });
 
+  it("posts once however fast Create task is pressed", async () => {
+    let finish: (value: { ok: true }) => void = () => undefined;
+    const onPost = vi.fn(
+      () => new Promise<{ ok: true }>((resolve) => (finish = resolve)),
+    );
+    renderDialog({
+      prefill: { title: "Sweep", dueDate: "2026-11-12" },
+      initialAssigneeId: "u-1",
+      onPost,
+    });
+    fireEvent.click(create());
+    fireEvent.click(screen.getByRole("button", { name: "Creating…" }));
+    fireEvent.submit(screen.getByLabelText("Title").closest("form")!);
+    expect(onPost).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Creating…" })).toBeDisabled();
+    finish({ ok: true });
+    await waitFor(() => expect(onPost).toHaveBeenCalledTimes(1));
+  });
+
   it("holds the form shut for a chapter that can't write", () => {
     chapter.incomplete();
     renderDialog({ prefill: { title: "Sweep" } });

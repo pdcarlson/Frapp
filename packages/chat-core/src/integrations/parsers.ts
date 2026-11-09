@@ -13,6 +13,7 @@ import {
   POINTS_REASON_MAX_LENGTH,
   POLL_OPTIONS_MAX,
   POLL_OPTIONS_MIN,
+  TASK_TITLE_MAX_LENGTH,
 } from "@repo/validation";
 
 /** Result of a successful parse for `/poll`. */
@@ -246,8 +247,7 @@ export function parsePointsArgs(args: string): ParseResult<PointsArgs> {
   };
 }
 
-/** `CreateTaskDto.title`'s bound; the task form checks it too. */
-export const TASK_MAX_TITLE_LENGTH = 255;
+const TASK_MAX_TITLE_LENGTH = TASK_TITLE_MAX_LENGTH;
 const TASK_USAGE = 'Usage: /task "<title>" @assignee <YYYY-MM-DD> [points]';
 
 /**
@@ -586,12 +586,14 @@ export function taskFormPrefill(args: string): TaskFormPrefill {
       prefill.dueDate ??= date;
       continue;
     }
-    // Points only after the date, as the one-liner orders them.
-    const points = parseNumericArg(token);
+    // Points only after the date, as the one-liner orders them, and only
+    // plain digits the form can hold: `1e21` or `0x10` would show one number
+    // and post another.
+    const points = /^\d+$/.test(token) ? parseNumericArg(token) : null;
     if (
       prefill.dueDate !== undefined &&
       points !== null &&
-      Number.isInteger(points) &&
+      Number.isSafeInteger(points) &&
       points >= 0
     ) {
       prefill.pointReward ??= points;

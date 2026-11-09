@@ -284,6 +284,21 @@ describe("PointsAdjustmentDialog posting into a chat channel (#3865)", () => {
     expect(submitToChannel).not.toHaveBeenCalled();
   });
 
+  it("adjusts once however fast Submit is pressed", async () => {
+    let finish: (value: DispatchResult) => void = () => undefined;
+    const submitToChannel = vi.fn(
+      () => new Promise<DispatchResult>((resolve) => (finish = resolve)),
+    );
+    renderInChat(submitToChannel);
+    fillAndSubmit();
+    const busy = await screen.findByRole("button", { name: /submitting/i });
+    expect(busy).toBeDisabled();
+    fireEvent.click(busy);
+    expect(submitToChannel).toHaveBeenCalledTimes(1);
+    finish({ ok: true });
+    await waitFor(() => expect(submitToChannel).toHaveBeenCalledTimes(1));
+  });
+
   it("stays open with the draft when chat refuses it", async () => {
     const submitToChannel = vi
       .fn()

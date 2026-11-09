@@ -297,9 +297,14 @@ vi.mock("@/components/tasks/new-task-dialog", () => ({
 vi.mock("@/components/service/log-hours-dialog", () => ({
   LogHoursDialog: (props: {
     open: boolean;
+    showSubscriptionNotice?: boolean;
     submitToChannel?: (input: unknown) => Promise<unknown>;
   }) => (
-    <div data-testid="hours-form" data-open={String(props.open)}>
+    <div
+      data-testid="hours-form"
+      data-open={String(props.open)}
+      data-notice={String(Boolean(props.showSubscriptionNotice))}
+    >
       <button
         data-testid="hours-form-post"
         onClick={() =>
@@ -4841,6 +4846,23 @@ describe("ChatShell opens the Task, Service hours and Points forms (#3865)", () 
     );
     expect(pointsChannel).toBe(hoursChannel);
     expect(channelId).toBeTruthy();
+  });
+
+  it("posts into the channel a form was opened in, even after a switch", async () => {
+    mockPostHours.mockClear();
+    render(<ChatShell initialChannelId="chan-general" />);
+    click("composer-hours:");
+    // Chat has no notice of its own for the hours form's gate; the dialog
+    // carries it (the Service page shows its own).
+    expect(screen.getByTestId("hours-form").dataset.notice).toBe("true");
+    fireEvent.click(screen.getByTestId("pick-random"));
+    fireEvent.click(screen.getByTestId("hours-form-post"));
+    await waitFor(() => expect(mockPostHours).toHaveBeenCalled());
+    const [channelId] = mockPostHours.mock.calls[0] as unknown as [string];
+    expect(channelId).toBe("chan-general");
+    expect(screen.getByTestId("composer").textContent).not.toMatch(
+      /^chan-general/,
+    );
   });
 
   it("reads a form write that threw as unconfirmed, never as a refusal to resubmit", async () => {
