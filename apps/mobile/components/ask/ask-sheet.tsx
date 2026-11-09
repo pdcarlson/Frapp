@@ -13,6 +13,7 @@ import {
   useSheetBackgroundStyle,
   SheetBackToClose,
   useSheetClose,
+  SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import { AnswerCard } from "@/components/ask/answer-card";
 import {
@@ -172,6 +173,7 @@ export const AskSheet = forwardRef<BottomSheetModal>(
     return (
       <BottomSheetModal
         ref={ref}
+        stackBehavior={SHEET_STACK_BEHAVIOR}
         // **Required, not redundant.** `enableDynamicSizing` defaults to `true`
         // in gorhom v5, and when it is on the library computes a content-height
         // detent, inserts it into the provided snap points and opens at index 0

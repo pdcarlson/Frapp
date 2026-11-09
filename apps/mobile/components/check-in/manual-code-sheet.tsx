@@ -15,6 +15,7 @@ import {
   useSheetBackgroundStyle,
   SheetBackToClose,
   useSheetClose,
+  SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
@@ -78,6 +79,7 @@ export const ManualCodeSheet = forwardRef<
   return (
     <BottomSheetModal
       ref={ref}
+      stackBehavior={SHEET_STACK_BEHAVIOR}
       enableDynamicSizing
       keyboardBehavior="interactive"
       backgroundStyle={backgroundStyle}

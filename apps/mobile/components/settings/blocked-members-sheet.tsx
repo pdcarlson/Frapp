@@ -31,6 +31,7 @@ import {
   useSheetBackgroundStyle,
   SheetBackToClose,
   useSheetClose,
+  SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import {
   ErrorState,
@@ -176,6 +177,7 @@ export const BlockedMembersSheet = forwardRef<BottomSheetModal>(
     return (
       <BottomSheetModal
         ref={ref}
+        stackBehavior={SHEET_STACK_BEHAVIOR}
         enableDynamicSizing={false}
         snapPoints={SNAP_POINTS}
         backgroundStyle={backgroundStyle}

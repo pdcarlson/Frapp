@@ -47,6 +47,29 @@ import { IconButton } from "@/components/icon-button";
 /** `rgba(0,0,0,.55)` as drawn; the backdrop's own default is 0.5. */
 const SCRIM_OPACITY = 0.55;
 
+/**
+ * How a sheet stacks over one already up, for `BottomSheetModal`'s
+ * `stackBehavior`. Every sheet passes it (or `"replace"`, for a sheet that
+ * takes an action menu's place on purpose), and `lib/sheet-scrim.spec.ts` fails
+ * the build on one that falls back to gorhom's default.
+ *
+ * `push` leaves the sheet underneath presented, so closing the sheet on top by
+ * its X, a swipe or Android back shows the one that opened it, in the state it
+ * was left (#3790). Only closing the last sheet shows the screen.
+ *
+ * gorhom's default, `switch`, is meant to lower the sheet underneath and bring
+ * it back afterwards, but in 5.2.14 it dismisses it. `minimize()` closes the
+ * sheet with its status at `MINIMIZING`. When the close animation ends,
+ * `BottomSheet` calls `onChange(-1)` before `onClose()`, and the modal's
+ * `onChange` handler sets the status to `MINIMIZED` for any closed index. The
+ * modal's `onClose` handler then doesn't see `MINIMIZING`, so it treats the
+ * close as a dismissal and unmounts the sheet. That fires its `onDismiss` and
+ * drops it from the provider's stack, so closing the sheet on top had nothing
+ * to restore, and the member who opened the roles editor from a profile landed
+ * back on the page. `push` never minimizes, so it never reaches that path.
+ */
+export const SHEET_STACK_BEHAVIOR = "push";
+
 /** A sheet's ref, as a component holds it or as `forwardRef` hands it in. */
 type SheetRef =
   ForwardedRef<BottomSheetModal> | RefObject<BottomSheetModal | null>;
