@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type KeyboardEvent, type ReactNode } from "react";
+import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { FOCUS_RING } from "@/components/ui/focus";
@@ -90,8 +90,9 @@ export function MediaViewer({
   contentClassName?: string;
   children: ReactNode;
 }) {
-  // Whether the current press started on the backdrop (see `onPointerUp`).
-  const pressedBackdrop = useRef(false);
+  // Where the current press started, when it started on the backdrop (see
+  // `onPointerUp`); null otherwise.
+  const pressedBackdrop = useRef<{ x: number; y: number } | null>(null);
   const many = step !== undefined && step.total > 1;
 
   function isBackdrop(event: {
@@ -151,12 +152,21 @@ export function MediaViewer({
             onPointerDown={(event) => {
               // The primary button only: a right-click there opens the
               // browser's menu and shouldn't also close the viewer.
-              pressedBackdrop.current = event.button === 0 && isBackdrop(event);
+              pressedBackdrop.current =
+                event.button === 0 && isBackdrop(event)
+                  ? { x: event.clientX, y: event.clientY }
+                  : null;
             }}
             onPointerUp={(event) => {
-              const fromBackdrop = pressedBackdrop.current;
-              pressedBackdrop.current = false;
-              if (fromBackdrop && isBackdrop(event)) onClose();
+              const start = pressedBackdrop.current;
+              pressedBackdrop.current = null;
+              // A press that moved is a drag (an overlay scrollbar's thumb
+              // takes no layout width, so `isBackdrop` can't see it), not a
+              // tap on the backdrop.
+              const moved =
+                start !== null &&
+                Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4;
+              if (start && !moved && isBackdrop(event)) onClose();
             }}
             onKeyDown={handleKeyDown}
             // Focus the viewer itself, not its first control: a screen reader
@@ -183,6 +193,16 @@ export function MediaViewer({
             </DialogPrimitive.Description>
 
             {children}
+
+            {/*
+              Stepping keeps the dialog and the focus where they are, so
+              nothing else tells a screen reader the content changed: this
+              says which item is showing now. Polite, and empty until a step,
+              since the dialog's own name and description cover the open.
+            */}
+            <StepAnnouncer
+              text={many ? `${label}. ${capitalize(step.noun)} ${step.index + 1} of ${step.total}.` : ""}
+            />
 
             {heading ? (
               <div className="pointer-events-none absolute left-3 top-3 max-w-[calc(100%-8.5rem)] rounded-lg bg-black/55 px-2.5 py-1.5">
@@ -239,6 +259,24 @@ export function MediaViewer({
         </DialogPrimitive.Portal>
       ) : null}
     </DialogPrimitive.Root>
+  );
+}
+
+/** Announces `text` when it changes after the first render, never on mount. */
+function StepAnnouncer({ text }: { text: string }) {
+  // React's adjust-on-change pattern: the first `text` is the open, which the
+  // dialog's name already reads; every later one is a step, back to the first
+  // item included.
+  const [last, setLast] = useState(text);
+  const [said, setSaid] = useState("");
+  if (text !== last) {
+    setLast(text);
+    setSaid(text);
+  }
+  return (
+    <p aria-live="polite" aria-atomic="true" className="sr-only">
+      {said}
+    </p>
   );
 }
 

@@ -46,7 +46,7 @@ There is no separate download endpoint: `GET /v1/documents/{id}` returns the doc
 `GET /v1/documents/{id}` returns two signed links to the file from one signing call, each good for an hour (#3849):
 
 - **`downloadUrl`** serves the file inline, with no `Content-Disposition`, so a browser shows a PDF or image in place. Mobile's s12 opens it in the in-app browser, and the web viewer (§ Preview) reads the file through it. Whether it should stay inline for every client is [#3867](https://github.com/pdcarlson/Frapp/issues/3867); Backwork's `GET /v1/backwork/{id}` link is inline too.
-- **`forcedDownloadUrl`** is the same object signed with `Content-Disposition: attachment` under the stored filename (the storage key's last segment), so following it saves the file. Web's Download controls follow it (`selectForcedDownloadUrl`), and fall back to opening `downloadUrl` in a new tab when a server predates it.
+- **`forcedDownloadUrl`** is the same signed link with a `download` query parameter naming the stored filename (the storage key's last segment), so storage serves it with `Content-Disposition: attachment` and following it saves the file. The parameter sits outside the signature, so anyone holding `downloadUrl` can turn it into a download; nothing is protected by the difference. Web's Download controls follow it (`selectForcedDownloadUrl`), and fall back to opening `downloadUrl` in a new tab when a server predates it.
 
 ## Preview
 

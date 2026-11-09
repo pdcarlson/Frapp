@@ -236,11 +236,9 @@ function DocumentPreview({
   // Bumped once a retry's refetch has landed, so the remounted preview reads
   // the fresh link rather than the one that failed.
   const [attempt, setAttempt] = useState(0);
-  const [imageFailed, setImageFailed] = useState(false);
   const { refetch } = query;
   async function retry() {
     await refetch();
-    setImageFailed(false);
     setAttempt((n) => n + 1);
   }
 
@@ -268,23 +266,15 @@ function DocumentPreview({
   }
   if (!url) return <PageSkeleton />;
   if (kind === "image") {
-    return imageFailed ? (
-      <Notice
-        title="Couldn't load this preview."
-        detail="Check your connection and try again, or download the file."
-        action={{ label: "Try again", onClick: () => void retry() }}
-      />
-    ) : (
-      /* A plain <img>, as chat's viewer draws one: the signed URL's query
-         string is the signature, and the Next image loader would strip it. An
-         image whose bytes don't decode (the bucket gates the declared type,
-         not the bytes) or whose link failed lands on the notice above. */
-      /* eslint-disable-next-line @next/next/no-img-element */
-      <img
-        src={url}
-        alt={doc.title}
-        onError={() => setImageFailed(true)}
-        className="max-h-full max-w-full rounded-sm object-contain"
+    // Keyed by link and attempt, so a fresh link (a refetch on focus) or a Try
+    // again gets a
+    // fresh attempt rather than the last link's failure.
+    return (
+      <ImagePreview
+        key={`${attempt}:${url}`}
+        url={url}
+        title={doc.title}
+        onRetry={() => void retry()}
       />
     );
   }
@@ -292,9 +282,46 @@ function DocumentPreview({
     <PdfPages
       key={attempt}
       url={url}
+      // A link pinned from an old cache entry can be past its hour; when the
+      // load fails and a newer one has arrived since, try that one.
+      onStale={() => setAttempt((n) => n + 1)}
       title={doc.title}
       onRetry={() => void retry()}
       onDownload={onSave}
+    />
+  );
+}
+
+function ImagePreview({
+  url,
+  title,
+  onRetry,
+}: {
+  url: string;
+  title: string;
+  onRetry: () => void;
+}) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <Notice
+        title="Couldn't load this preview."
+        detail="Check your connection and try again, or download the file."
+        action={{ label: "Try again", onClick: onRetry }}
+      />
+    );
+  }
+  /* A plain <img>, as chat's viewer draws one: the signed URL's query string
+     is the signature, and the Next image loader would strip it. An image whose
+     bytes don't decode (the bucket gates the declared type, not the bytes) or
+     whose link failed lands on the notice above. */
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={url}
+      alt={title}
+      onError={() => setFailed(true)}
+      className="max-h-full max-w-full rounded-sm object-contain"
     />
   );
 }
@@ -314,15 +341,22 @@ function PdfPages({
   url,
   title,
   onRetry,
+  onStale,
   onDownload,
 }: {
   url: string;
   title: string;
   onRetry: () => void;
+  /** The load failed and `url` has moved on from the link it pinned. */
+  onStale: () => void;
   onDownload: () => void;
 }) {
   const [src] = useState(url);
   const [state, setState] = useState<PdfState>({ status: "loading" });
+  const stale = state.status === "error" && url !== src;
+  useEffect(() => {
+    if (stale) onStale();
+  }, [stale, onStale]);
 
   useEffect(() => {
     let cancelled = false;

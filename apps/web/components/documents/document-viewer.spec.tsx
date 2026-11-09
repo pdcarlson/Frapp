@@ -327,4 +327,101 @@ describe("DocumentViewer", () => {
     expect(assign).toHaveBeenCalledWith("https://signed/photo-attachment");
     expect(mockSignedLinks).not.toHaveBeenCalled();
   });
+
+  it("tells a screen reader which file a step lands on, back to the first included", async () => {
+    const user = userEvent.setup();
+    render(<Harness initial="d-1" />);
+    const live = () => screen.getByRole("dialog").querySelector("[aria-live]")!;
+    expect(live().textContent).toBe("");
+
+    await user.keyboard("{ArrowRight}");
+    expect(live().textContent).toBe("House photo. File 2 of 3.");
+    await user.keyboard("{ArrowLeft}");
+    expect(live().textContent).toBe("Chapter bylaws. File 1 of 3.");
+  });
+
+  it("tries again with the refetched link, not the one that failed", async () => {
+    const user = userEvent.setup();
+    documentQuery.data = { ...BYLAWS, downloadUrl: "https://signed/dead" };
+    pdf.loadPdf.mockRejectedValueOnce(new Error("expired"));
+    documentQuery.refetch.mockImplementationOnce(() => {
+      documentQuery.data = { ...BYLAWS, downloadUrl: "https://signed/fresh" };
+      return Promise.resolve(undefined);
+    });
+    const { rerender } = render(<Harness initial="d-1" />);
+
+    await user.click(await screen.findByRole("button", { name: "Try again" }));
+    rerender(<Harness initial="d-1" />);
+
+    await screen.findByRole("img", { name: /page 1 of 2/ });
+    expect(globalThis.fetch).toHaveBeenLastCalledWith("https://signed/fresh");
+  });
+
+  it("moves to a newer link on its own when the pinned one failed", async () => {
+    documentQuery.data = { ...BYLAWS, downloadUrl: "https://signed/old" };
+    pdf.loadPdf.mockRejectedValueOnce(new Error("expired"));
+    const { rerender } = render(<Harness initial="d-1" />);
+    await screen.findByText("Couldn't load this preview.");
+
+    // The refetch on mount lands after the old link failed.
+    documentQuery.data = { ...BYLAWS, downloadUrl: "https://signed/new" };
+    rerender(<Harness initial="d-1" />);
+
+    await screen.findByRole("img", { name: /page 1 of 2/ });
+    expect(globalThis.fetch).toHaveBeenLastCalledWith("https://signed/new");
+  });
+
+  it("gives a photo a fresh try when a new link arrives", () => {
+    documentQuery.data = { ...PHOTO, downloadUrl: "https://signed/one" };
+    const { rerender } = render(<Harness initial="d-2" />);
+    fireEvent.error(screen.getByRole("img", { name: "House photo" }));
+    expect(screen.getByText("Couldn't load this preview.")).toBeInTheDocument();
+
+    documentQuery.data = { ...PHOTO, downloadUrl: "https://signed/two" };
+    rerender(<Harness initial="d-2" />);
+
+    expect(screen.getByRole("img", { name: "House photo" })).toHaveAttribute(
+      "src",
+      "https://signed/two",
+    );
+  });
+
+  it("asks for fresh links to save once the ones in hand are near their hour", async () => {
+    const user = userEvent.setup();
+    documentQuery.data = {
+      ...PHOTO,
+      downloadUrl: "https://signed/photo",
+      forcedDownloadUrl: "https://signed/old-attachment",
+    };
+    documentQuery.dataUpdatedAt = Date.now() - 55 * 60 * 1000;
+    mockSignedLinks.mockResolvedValue({
+      ...PHOTO,
+      downloadUrl: "https://signed/photo",
+      forcedDownloadUrl: "https://signed/new-attachment",
+    });
+    render(<Harness initial="d-2" />);
+
+    await user.click(screen.getByRole("button", { name: "Download" }));
+
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("https://signed/new-attachment"));
+    expect(mockSignedLinks).toHaveBeenCalledWith("d-2");
+  });
+
+  it("doesn't close on a drag that starts and ends beside the pages", async () => {
+    documentQuery.data = { ...BYLAWS, downloadUrl: "https://signed/inline" };
+    render(<Harness initial="d-1" />);
+    await screen.findByRole("img", { name: /page 2 of 2/ });
+    const column = screen
+      .getByRole("dialog")
+      .querySelector<HTMLElement>(`[${VIEWER_BACKDROP_ATTRIBUTE}]`)!;
+    Object.defineProperty(column, "clientWidth", { value: 600 });
+    Object.defineProperty(column, "clientHeight", { value: 800 });
+    column.getBoundingClientRect = () => ({ left: 0, top: 0 }) as DOMRect;
+
+    // An overlay scrollbar's thumb takes no width: only the movement tells.
+    fireEvent.pointerDown(column, { button: 0, clientX: 595, clientY: 100 });
+    fireEvent.pointerUp(column, { button: 0, clientX: 595, clientY: 400 });
+
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
 });
