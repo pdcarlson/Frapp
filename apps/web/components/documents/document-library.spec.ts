@@ -135,7 +135,9 @@ describe("date filters", () => {
       expect(inDateFilter("2026-08-01T01:00:00Z", { preset: "semester" }, window)).toBe(true);
       expect(inDateFilter("2026-07-31T23:00:00Z", { preset: "semester" }, window)).toBe(false);
     } finally {
-      process.env.TZ = tz;
+      // Assigning undefined would store the string "undefined".
+      if (tz === undefined) delete process.env.TZ;
+      else process.env.TZ = tz;
     }
     /* eslint-enable turbo/no-undeclared-env-vars */
   });
