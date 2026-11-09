@@ -146,21 +146,37 @@ export function buildAuthCallbackUrl(
 }
 
 /**
- * Which screen started the round trip. Only `sign-in` is ever sent: it tells
- * `/auth/callback` that a brand-new account on return was not what the member
- * asked for (#3786). The sign-up screen sends none, because creating an
- * account there is the point. The value only decides whether a notice is
+ * Which screen started the round trip. The value only decides which notice is
  * shown, so a tampered one can't do more than show or skip it.
+ *
+ * - `sign-in`, on an OAuth start from the sign-in screen: a brand-new account
+ *   on return was not what the member asked for (#3786). The sign-up screen's
+ *   OAuth buttons send none, because creating an account there is the point.
+ * - `confirm`, on the sign-up confirmation email (and its resend): if that
+ *   link's PKCE code can't be exchanged, GoTrue has already confirmed the
+ *   address, because it only hands out a code after verifying the link (a
+ *   dead link comes back as `error_code` instead). So the member is told their
+ *   email is confirmed and to sign in, not that the link failed
+ *   ({@link EMAIL_CONFIRMED_AUTH_ERROR}).
  */
-export type AuthCallbackIntent = "sign-in";
+export type AuthCallbackIntent = "sign-in" | "confirm";
 export const AUTH_CALLBACK_INTENT_PARAM = "intent";
+
+/**
+ * The `authError` `/auth/callback` sends when a sign-up confirmation link
+ * confirmed the address but couldn't sign this browser in: the code's PKCE
+ * verifier lives in the browser that signed up, and only the newest email
+ * flow's survives (a magic link asked for afterwards replaces it, or deletes
+ * it when the send is refused). The sign-in screen reads it as good news.
+ */
+export const EMAIL_CONFIRMED_AUTH_ERROR = "email_confirmed";
 
 /** The notice a brand-new OAuth account sees after choosing sign-in (#3786). */
 export const NEW_ACCOUNT_PATH = "/new-account";
 
 /**
  * Member-facing wording for the `authError` `/auth/callback` hands to
- * `/sign-in`. GoTrue's `error_code` values are the first three; the last two
+ * `/sign-in`. GoTrue's `error_code` values are the first three; the next three
  * are this app's own.
  */
 export function describeAuthError(code: string): string {
@@ -177,6 +193,9 @@ export function describeAuthError(code: string): string {
       return "The link could not be used. Request a new one below, or sign in with your password.";
     case "missing_code":
       return "The link was incomplete. Request a new one below.";
+    case EMAIL_CONFIRMED_AUTH_ERROR:
+      // Under the toast title "Email confirmed".
+      return "Sign in with your password to continue.";
     case "identity_already_exists":
     case "user_already_exists":
     case "email_exists":
