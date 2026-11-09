@@ -619,6 +619,33 @@ describe("Documents search, filters, sort and delete, as web's (#3938)", () => {
     expect(byLabel(tree, "Sort and filter, 2 set")).toBeDefined();
   });
 
+  it("filters by file type, from the declared type or the stored name", () => {
+    documentRows = [
+      { ...LIBRARY[0], content_type: "application/pdf" },
+      {
+        ...LIBRARY[1],
+        content_type: null,
+        storage_path: "chapters/c/documents/x/budget.xlsx",
+      },
+      LIBRARY[2],
+    ];
+    names = { "u-ryan": "Ryan Castellano", "u-ana": "Ana Ruiz" };
+    const tree = render();
+    openPanel(tree);
+    const types = byLabel(tree, "Filter by file type");
+    expect(
+      (types.props.chips as { label: string }[]).map((chip) => chip.label),
+    ).toEqual(["Any type", "PDF", "Spreadsheet", "Other"]);
+
+    act(() => types.props.onSelect("spreadsheet"));
+    expect(rowLabels(tree)).toEqual(["Budget FY2026"]);
+    expect(byLabel(tree, "Sort and filter, 1 set")).toBeDefined();
+
+    act(() => byLabel(tree, "Filter by file type").props.onSelect(null));
+    act(() => byLabel(tree, "Search documents").props.onChangeText("pdf"));
+    expect(rowLabels(tree)).toEqual(["Chapter bylaws"]);
+  });
+
   it("offers This semester only once the archives have loaded", () => {
     semesterRows = undefined;
     const tree = loaded();

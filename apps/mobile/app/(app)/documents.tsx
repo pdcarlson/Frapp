@@ -21,6 +21,7 @@ import {
   deleteDocumentTitle,
   isActiveDateFilter,
   type DocumentSort,
+  type FileKind,
 } from "@repo/hooks/document-library";
 import { errorCopy } from "@repo/hooks/error-copy";
 import { SignetTokens } from "@repo/theme/signet";
@@ -93,7 +94,9 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * (`@repo/hooks/document-library`, the module `/documents` imports): the
  * folder chip, then a typo-tolerant search over title, description,
  * uploader, folder and type, the Uploaded by and Date added filters, and the
- * order, Name A–Z by default as on web. All of it is local, so a keystroke or
+ * order, Name A–Z by default as on web. A File type filter (PDF, Word,
+ * Slides, Spreadsheet, Image, Other) reads each file's declared type or its
+ * stored extension, and search finds those words too. All of it is local, so a keystroke or
  * a chip re-ranks what is in hand, offline too. The filters and the order sit
  * behind one "Sort & filter" chip that opens a panel of chip rows under it,
  * as Directory's alumni Filters do. Web's custom date range is not offered: a
@@ -166,6 +169,7 @@ export default function DocumentsScreen() {
   const [sort, setSort] = useState<DocumentSort>("name");
   const [pickedUploader, setPickedUploader] = useState<string | null>(null);
   const [datePreset, setDatePreset] = useState<"semester" | "30d" | null>(null);
+  const [kind, setKind] = useState<FileKind | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [deletingIds, setDeletingIds] = useState<ReadonlySet<string>>(
     () => new Set(),
@@ -204,8 +208,9 @@ export default function DocumentsScreen() {
     () => ({
       uploader: pickedUploader,
       date: datePreset === null ? null : { preset: datePreset },
+      kind,
     }),
-    [pickedUploader, datePreset],
+    [pickedUploader, datePreset, kind],
   );
   // Web's own hook (#3938): uploader names and the kept-pick rule, the
   // semester window, the ticking clock, the folder, then search, filters and
@@ -213,6 +218,7 @@ export default function DocumentsScreen() {
   const {
     visible,
     uploaders,
+    kinds,
     filters: applied,
     semesterKnown,
     filtering,
@@ -231,6 +237,7 @@ export default function DocumentsScreen() {
   const filterCount =
     (uploader !== null ? 1 : 0) +
     (dateActive ? 1 : 0) +
+    (kind !== null ? 1 : 0) +
     (sort !== "name" ? 1 : 0);
   const deleteFailed =
     deleteFailure && deleteFailure.chapterId === (chapterId ?? null)
@@ -241,6 +248,7 @@ export default function DocumentsScreen() {
     setSearch("");
     setPickedUploader(null);
     setDatePreset(null);
+    setKind(null);
   }
 
   // The latest tap's number, and whether a browser is already on its way up.
@@ -399,7 +407,10 @@ export default function DocumentsScreen() {
           <InlineNote
             action={{
               label:
-                deferredSearch && uploader === null && !dateActive
+                deferredSearch &&
+                uploader === null &&
+                !dateActive &&
+                kind === null
                   ? "Clear search"
                   : "Clear filters",
               onPress: clearFilters,
@@ -544,6 +555,18 @@ export default function DocumentsScreen() {
               { value: "30d", label: "Last 30 days" },
             ]}
           />
+          {kinds.length > 0 ? (
+            <>
+              <Text style={styles.panelLabel}>File type</Text>
+              <FilterChips
+                accessibilityLabel="Filter by file type"
+                scroll
+                selected={kind}
+                onSelect={(value) => setKind(value as FileKind | null)}
+                chips={[{ value: null, label: "Any type" }, ...kinds]}
+              />
+            </>
+          ) : null}
         </View>
       ) : null}
 

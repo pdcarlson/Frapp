@@ -26,6 +26,9 @@ export interface MobileDocument {
   document_type: string | null;
   uploaded_by: string | null;
   created_at: string;
+  /** For the File type filter (`fileKind`); null on older rows. */
+  content_type: string | null;
+  storage_path: string | null;
 }
 
 export interface DocumentFolder {
@@ -52,6 +55,8 @@ export function selectDocuments(data: unknown): MobileDocument[] {
         document_type: str(row, "document_type"),
         uploaded_by: str(row, "uploaded_by"),
         created_at: str(row, "created_at") ?? "",
+        content_type: str(row, "content_type"),
+        storage_path: str(row, "storage_path"),
       };
     })
     .filter((row): row is MobileDocument => !!row);

@@ -20,6 +20,7 @@ import {
   DOCUMENT_CAP_NOTICE,
   type DocumentFilters,
   type DocumentSort,
+  type FileKind,
   type LibraryDocument,
 } from "@repo/hooks/document-library";
 import type { FilterOption } from "@/components/shared/filter-chip";
@@ -50,6 +51,7 @@ export function DocumentList({
   semesterKnown,
   setFilters,
   uploaders,
+  kinds,
   sort,
   setSort,
   onClearFilters,
@@ -81,9 +83,11 @@ export function DocumentList({
   semesterKnown: boolean;
   setFilters: (filters: DocumentFilters) => void;
   uploaders: readonly FilterOption[];
+  /** The File type choices: groups some document is in (`kindOptions`). */
+  kinds: readonly FilterOption[];
   sort: DocumentSort;
   setSort: (sort: DocumentSort) => void;
-  /** Clears the search and both filters, leaving the folder and the order. */
+  /** Clears the search and every filter, leaving the folder and the order. */
   onClearFilters: () => void;
   onRetry: () => void;
   gate: SubscriptionGate;
@@ -168,6 +172,15 @@ export function DocumentList({
             semesterKnown={semesterKnown}
             value={filters.date}
             onChange={(date) => setFilters({ ...filters, date })}
+          />
+          <FilterChip
+            label="File type"
+            anyLabel="Any type"
+            options={kinds}
+            value={filters.kind}
+            onChange={(kind) =>
+              setFilters({ ...filters, kind: kind as FileKind | null })
+            }
           />
           <SortChip value={sort} onChange={setSort} />
         </div>

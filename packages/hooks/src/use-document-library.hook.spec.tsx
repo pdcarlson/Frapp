@@ -50,7 +50,7 @@ afterEach(() => {
 describe("useDocumentLibrary (#3938)", () => {
   it("drops a picked uploader the roster no longer names", () => {
     const { result } = render({
-      filters: { uploader: "u-gone", date: null },
+      filters: { uploader: "u-gone", date: null, kind: null },
     });
     expect(result.current.filters.uploader).toBeNull();
     expect(result.current.filtering).toBe(false);
@@ -60,7 +60,7 @@ describe("useDocumentLibrary (#3938)", () => {
   it("keeps a named pick, and its choice, after their last file goes", () => {
     const { result } = render({
       documents: [DOCS[1]!],
-      filters: { uploader: "u-ryan", date: null },
+      filters: { uploader: "u-ryan", date: null, kind: null },
     });
     expect(result.current.filters.uploader).toBe("u-ryan");
     expect(result.current.uploaders).toContainEqual({
@@ -80,7 +80,7 @@ describe("useDocumentLibrary (#3938)", () => {
   it("treats the semester as unknown until the archives load", () => {
     const { result } = render({
       semesters: undefined,
-      filters: { uploader: null, date: { preset: "semester" } },
+      filters: { uploader: null, date: { preset: "semester" }, kind: null },
     });
     expect(result.current.semesterKnown).toBe(false);
     expect(result.current.filtering).toBe(false);
@@ -93,6 +93,7 @@ describe("useDocumentLibrary (#3938)", () => {
     const filters: DocumentFilters = {
       uploader: null,
       date: { preset: "30d" },
+      kind: null,
     };
     const { result, rerender } = render({ filters });
     act(() => {

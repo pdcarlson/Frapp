@@ -160,6 +160,7 @@ function ChapterDocumentsPage() {
     folderTotal,
     visible,
     uploaders,
+    kinds,
     filters: effectiveFilters,
     semesterKnown,
     filtering,
@@ -386,6 +387,7 @@ function ChapterDocumentsPage() {
           semesterKnown={semesterKnown}
           setFilters={setFilters}
           uploaders={uploaders}
+          kinds={kinds}
           sort={sort}
           setSort={setSort}
           onClearFilters={() => {

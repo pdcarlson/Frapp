@@ -49,7 +49,118 @@ export type LibrarySourceDocument = {
   document_type?: string | null;
   uploaded_by: string | null;
   created_at: string;
+  /** The declared MIME type; null on rows filed before 2026-08-31. */
+  content_type?: string | null;
+  /** The storage key, whose extension stands in when `content_type` is null. */
+  storage_path?: string | null;
 };
+
+/**
+ * A file format group, for the File type filter and for search (#3938, Shawn's
+ * addition; Google Drive's Type filter).
+ */
+export type FileKind = "pdf" | "word" | "slides" | "spreadsheet" | "image" | "other";
+
+/** The groups in the order the filter offers them. */
+export const FILE_KIND_OPTIONS: readonly { value: FileKind; label: string }[] = [
+  { value: "pdf", label: "PDF" },
+  { value: "word", label: "Word" },
+  { value: "slides", label: "Slides" },
+  { value: "spreadsheet", label: "Spreadsheet" },
+  { value: "image", label: "Image" },
+  { value: "other", label: "Other" },
+];
+
+/**
+ * The words a member types to mean a group. They match a query word exactly
+ * or as its start ("spread", "power"), never as a near miss: "word" is one
+ * letter from "work", and "sheet" from "sheep".
+ */
+const FILE_KIND_WORDS: Record<FileKind, readonly string[]> = {
+  pdf: ["pdf"],
+  word: ["word", "doc", "docx"],
+  slides: ["slides", "slide", "powerpoint", "presentation", "deck"],
+  spreadsheet: ["spreadsheet", "excel", "sheet", "sheets", "csv"],
+  image: ["image", "photo", "picture"],
+  other: [],
+};
+
+const EXTENSION_KIND: Record<string, FileKind> = {
+  pdf: "pdf",
+  doc: "word",
+  docx: "word",
+  odt: "word",
+  rtf: "word",
+  ppt: "slides",
+  pptx: "slides",
+  key: "slides",
+  odp: "slides",
+  xls: "spreadsheet",
+  xlsx: "spreadsheet",
+  csv: "spreadsheet",
+  ods: "spreadsheet",
+  jpg: "image",
+  jpeg: "image",
+  png: "image",
+  gif: "image",
+  webp: "image",
+  heic: "image",
+  heif: "image",
+  bmp: "image",
+  tif: "image",
+  tiff: "image",
+  svg: "image",
+};
+
+function kindOfMime(mime: string): FileKind | null {
+  const type = mime.split(";")[0]!.trim().toLowerCase();
+  if (type === "application/pdf") return "pdf";
+  if (type.startsWith("image/")) return "image";
+  if (
+    type === "application/msword" ||
+    type.includes("wordprocessingml") ||
+    type === "application/vnd.oasis.opendocument.text" ||
+    type === "application/rtf" ||
+    type === "text/rtf"
+  ) {
+    return "word";
+  }
+  if (
+    type === "application/vnd.ms-powerpoint" ||
+    type.includes("presentationml") ||
+    type === "application/vnd.oasis.opendocument.presentation" ||
+    type === "application/vnd.apple.keynote" ||
+    type === "application/x-iwork-keynote-sffkey"
+  ) {
+    return "slides";
+  }
+  if (
+    type === "application/vnd.ms-excel" ||
+    type.includes("spreadsheetml") ||
+    type === "application/vnd.oasis.opendocument.spreadsheet" ||
+    type === "text/csv"
+  ) {
+    return "spreadsheet";
+  }
+  return null;
+}
+
+/**
+ * A document's format group: from its declared `content_type`, or, when that
+ * is missing or the generic `application/octet-stream`, from the extension of
+ * the stored filename. Anything unrecognised is Other.
+ */
+export function fileKind(doc: Pick<LibrarySourceDocument, "content_type" | "storage_path">): FileKind {
+  const mime = doc.content_type?.trim();
+  if (mime && mime.toLowerCase() !== "application/octet-stream") {
+    const kind = kindOfMime(mime);
+    if (kind) return kind;
+  }
+  const name = doc.storage_path?.split("/").pop() ?? "";
+  const dot = name.lastIndexOf(".");
+  const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
+  return EXTENSION_KIND[ext] ?? "other";
+}
 
 /** One choice in the Uploaded by filter. */
 export type UploaderOption = { value: string; label: string };
@@ -72,9 +183,15 @@ export type DocumentFilters = {
   /** `uploaded_by`, or null for anyone. */
   uploader: string | null;
   date: DateFilter | null;
+  /** A format group, or null for any. */
+  kind: FileKind | null;
 };
 
-export const NO_DOCUMENT_FILTERS: DocumentFilters = { uploader: null, date: null };
+export const NO_DOCUMENT_FILTERS: DocumentFilters = {
+  uploader: null,
+  date: null,
+  kind: null,
+};
 
 /** A document with its uploader's name resolved and its words normalised once. */
 export type LibraryDocument<D extends LibrarySourceDocument = LibrarySourceDocument> = {
@@ -83,6 +200,7 @@ export type LibraryDocument<D extends LibrarySourceDocument = LibrarySourceDocum
   words: readonly string[];
   /** The same text lowercased, for the substring match the title search had. */
   text: string;
+  kind: FileKind;
 };
 
 export function toLibraryDocuments<D extends LibrarySourceDocument>(
@@ -92,7 +210,13 @@ export function toLibraryDocuments<D extends LibrarySourceDocument>(
   return documents.map((doc) => {
     const uploader = doc.uploaded_by ? uploaderName(doc.uploaded_by) : null;
     const text = searchText(doc, uploader);
-    return { doc, uploader, words: normalizeWords(text), text: text.toLowerCase() };
+    return {
+      doc,
+      uploader,
+      words: normalizeWords(text),
+      text: text.toLowerCase(),
+      kind: fileKind(doc),
+    };
   });
 }
 
@@ -194,6 +318,7 @@ export function isFiltering(
   return (
     query.trim() !== "" ||
     filters.uploader !== null ||
+    filters.kind !== null ||
     isActiveDateFilter(filters.date, semesterKnown)
   );
 }
@@ -241,6 +366,7 @@ export function queryDocuments<D extends LibrarySourceDocument>(
   const filtered = rows.filter(
     (row) =>
       (filters.uploader === null || row.doc.uploaded_by === filters.uploader) &&
+      (filters.kind === null || row.kind === filters.kind) &&
       (date === null || inDateFilter(row.doc.created_at, date, dates)),
   );
   const needle = query.trim().toLowerCase();
@@ -252,12 +378,43 @@ export function queryDocuments<D extends LibrarySourceDocument>(
   // every row for that; only the substring match then applies.
   const fuzzy = new Set(
     normalizeWords(needle).length > 0
-      ? fuzzyMatchWords(filtered, needle, (row) => row.words).map((result) => result.item)
+      ? fuzzyMatchWords(
+          filtered,
+          needle,
+          (row) => row.words,
+          {},
+          (row, word) => matchKindWord(row.kind, word),
+        ).map((result) => result.item)
       : [],
   );
   return filtered
     .filter((row) => fuzzy.has(row) || row.text.includes(needle))
     .sort(COMPARE[sort]);
+}
+
+/**
+ * A query word against the document's format words ("pdf", "slides",
+ * "excel"): exact, or as the start of one from three letters, scored as the
+ * fuzzy matcher scores an exact word and a prefix. No near misses.
+ */
+function matchKindWord(kind: FileKind, word: string): { score: number; hit: null } {
+  let score = 0;
+  for (const kindWord of FILE_KIND_WORDS[kind]) {
+    if (kindWord === word) return { score: 3, hit: null };
+    if (word.length >= 3 && kindWord.startsWith(word)) score = 2.5;
+  }
+  return { score, hit: null };
+}
+
+/**
+ * The File type filter's choices: only the groups in `kinds` (the library's,
+ * plus any kept pick), in the fixed order.
+ */
+export function kindOptions(
+  kinds: Iterable<FileKind>,
+): { value: FileKind; label: string }[] {
+  const present = new Set(kinds);
+  return FILE_KIND_OPTIONS.filter((option) => present.has(option.value));
 }
 
 /** The Uploaded by chip's choices: only people who have uploaded something. */

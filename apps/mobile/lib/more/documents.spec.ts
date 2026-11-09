@@ -43,6 +43,8 @@ describe("selectDocuments", () => {
         document_type: "Bylaws",
         uploaded_by: "u-1",
         created_at: "2026-08-12T14:00:00.000Z",
+        content_type: null,
+        storage_path: "chapters/c/documents/x/bylaws.pdf",
       },
     ]);
   });

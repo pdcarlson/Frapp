@@ -5,12 +5,14 @@ import { displayNameOrNull } from "./display-names";
 import {
   DOCUMENT_LIST_CAP,
   isFiltering,
+  kindOptions,
   queryDocuments,
   semesterSince,
   toLibraryDocuments,
   uploaderOptions,
   type DocumentFilters,
   type DocumentSort,
+  type FileKind,
   type LibraryDocument,
   type LibrarySourceDocument,
   type UploaderOption,
@@ -26,6 +28,8 @@ export type DocumentLibrary<D extends LibrarySourceDocument> = {
   visible: LibraryDocument<D>[];
   /** The Uploaded by choices (`uploaderOptions`, plus a kept pick). */
   uploaders: UploaderOption[];
+  /** The File type choices: groups some document is in, plus a kept pick. */
+  kinds: { value: FileKind; label: string }[];
   /**
    * `filters` as applied: an uploader the roster no longer names is dropped,
    * so a control shows it unpicked rather than filtering under a raw id.
@@ -103,6 +107,16 @@ export function useDocumentLibrary<D extends LibrarySourceDocument>({
     }
     return options;
   }, [library, uploader, pickedName]);
+  // A picked group whose last file went stays a choice, as an uploader does,
+  // so the list says nothing matches rather than the chip vanishing.
+  const kinds = useMemo(
+    () =>
+      kindOptions([
+        ...library.map((row) => row.kind),
+        ...(filters.kind === null ? [] : [filters.kind]),
+      ]),
+    [library, filters.kind],
+  );
   const applied = useMemo(
     () => ({ ...filters, uploader }),
     [filters, uploader],
@@ -151,6 +165,7 @@ export function useDocumentLibrary<D extends LibrarySourceDocument>({
     folderTotal: inFolder.length,
     visible,
     uploaders,
+    kinds,
     filters: applied,
     semesterKnown: since !== undefined,
     filtering: isFiltering(search, applied, since !== undefined),
