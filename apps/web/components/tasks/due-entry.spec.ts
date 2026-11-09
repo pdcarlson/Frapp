@@ -1,0 +1,77 @@
+import { describe, expect, it } from "vitest";
+import { formatDueEntry, parseDueEntry } from "./due-entry";
+
+// Monday, 9 November 2026, mid-afternoon local.
+const NOW = new Date(2026, 10, 9, 15, 30);
+
+describe("parseDueEntry (#3928)", () => {
+  it.each([
+    ["Nov 14", "2026-11-14"],
+    ["november 14th", "2026-11-14"],
+    ["14 Nov", "2026-11-14"],
+    ["Nov. 14", "2026-11-14"],
+    ["11/14", "2026-11-14"],
+    ["11-14", "2026-11-14"],
+    ["11.14", "2026-11-14"],
+    ["  12/1 ", "2026-12-01"],
+    ["sept 3", "2027-09-03"],
+  ])("reads %j as a month and a day", (text, expected) => {
+    expect(parseDueEntry(text, NOW)).toBe(expected);
+  });
+
+  it("fills in the year as the next time the date comes round", () => {
+    // Today counts: a task can be due the day it is filed.
+    expect(parseDueEntry("11/9", NOW)).toBe("2026-11-09");
+    // Yesterday's date is next year's.
+    expect(parseDueEntry("11/8", NOW)).toBe("2027-11-08");
+    expect(parseDueEntry("Jan 5", NOW)).toBe("2027-01-05");
+  });
+
+  it("finds the next leap day", () => {
+    expect(parseDueEntry("Feb 29", NOW)).toBe("2028-02-29");
+  });
+
+  it("takes a typed year as written, so a far-off date stays reachable", () => {
+    expect(parseDueEntry("Nov 14 2027", NOW)).toBe("2027-11-14");
+    expect(parseDueEntry("Nov 14, 2027", NOW)).toBe("2027-11-14");
+    expect(parseDueEntry("11/14/27", NOW)).toBe("2027-11-14");
+    expect(parseDueEntry("11/14/2028", NOW)).toBe("2028-11-14");
+    expect(parseDueEntry("2027-11-14", NOW)).toBe("2027-11-14");
+    // A named year is not second-guessed, as the date input it replaced.
+    expect(parseDueEntry("2020-01-01", NOW)).toBe("2020-01-01");
+  });
+
+  it("reads the relative words", () => {
+    expect(parseDueEntry("today", NOW)).toBe("2026-11-09");
+    expect(parseDueEntry("Tomorrow", NOW)).toBe("2026-11-10");
+    expect(parseDueEntry("next week", NOW)).toBe("2026-11-16");
+  });
+
+  it("reads a weekday as the next one after today", () => {
+    expect(parseDueEntry("fri", NOW)).toBe("2026-11-13");
+    expect(parseDueEntry("Friday", NOW)).toBe("2026-11-13");
+    expect(parseDueEntry("sun", NOW)).toBe("2026-11-15");
+    // On a Monday, "Monday" is next week's, not today.
+    expect(parseDueEntry("monday", NOW)).toBe("2026-11-16");
+  });
+
+  it("reads back what the field shows", () => {
+    for (const iso of ["2026-11-14", "2026-12-31", "2027-03-14", "2028-02-29"]) {
+      expect(parseDueEntry(formatDueEntry(iso, NOW), NOW)).toBe(iso);
+    }
+  });
+
+  it.each(["", "   ", "soon", "Feb 30", "13/1", "11/31", "nov", "14", "ma 3"])(
+    "returns null for %j",
+    (text) => {
+      expect(parseDueEntry(text, NOW)).toBeNull();
+    },
+  );
+});
+
+describe("formatDueEntry", () => {
+  it("leaves the year off inside the current one and shows it outside", () => {
+    expect(formatDueEntry("2026-11-14", NOW)).toBe("Sat, Nov 14");
+    expect(formatDueEntry("2027-03-14", NOW)).toBe("Sun, Mar 14, 2027");
+  });
+});

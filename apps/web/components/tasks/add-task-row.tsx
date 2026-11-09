@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { FOCUS_RING } from "@/components/ui/focus";
+import { DueDateField } from "@/components/tasks/due-date-field";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import { cn, guardIntDraft, parseGuardedInt } from "@/lib/utils";
 
@@ -46,7 +47,8 @@ type Missing = { assignee?: boolean; due?: boolean };
  * Pressing it opens the row in place. Typing a title and pressing Enter
  * creates the task once it has an assignee and a due date, which the API
  * requires (`CreateTaskDto`); a missing one is flagged and focused on submit,
- * never while typing. After a create the row stays open with a fresh title,
+ * never while typing. The due date is typed as a month and a day, with no
+ * year to set (`due-date-field.tsx`, #3928). After a create the row stays open with a fresh title,
  * so an officer can add several in a row. Escape or Cancel closes it.
  */
 export function AddTaskRow({
@@ -197,27 +199,17 @@ export function AddTaskRow({
           ) : null}
         </div>
         <div className="min-w-0">
-          <Input
+          <DueDateField
             ref={dueRef}
-            type="date"
             aria-label="Due date"
-            aria-invalid={missing.due || undefined}
-            aria-describedby={missing.due ? "add-task-due-missing" : undefined}
+            placeholder="Due: Nov 14, Friday"
+            missing={missing.due}
             value={draft.due_date}
-            onChange={(event) => {
-              const value = event.target.value;
+            onChange={(value) => {
               setDraft((prev) => ({ ...prev, due_date: value }));
               if (value) setMissing((prev) => ({ ...prev, due: false }));
             }}
           />
-          {missing.due ? (
-            <p
-              id="add-task-due-missing"
-              className="mt-1 text-caption text-destructive-text"
-            >
-              Pick a due date.
-            </p>
-          ) : null}
         </div>
       </div>
       <Input
