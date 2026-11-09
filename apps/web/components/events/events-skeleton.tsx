@@ -10,8 +10,8 @@ import { stateMicrocopy } from "@/lib/state-microcopy";
 /**
  * `/events` while it loads: the one toolbar row (search, three filters, the
  * List/Calendar toggle), then the list view's select-all header and its
- * checkbox rows. No New event placeholder: the button is `events:create`
- * only, and a placeholder for a gated control draws a row that then vanishes
+ * checkbox rows. No New event placeholder: the button is gated on
+ * `EVENT_CREATE_PERMISSIONS`, and a placeholder for a gated control draws a row that then vanishes
  * (`components.md` §10 Skeleton). A chapter with no events opens on the
  * calendar instead of these rows; nothing knows that until the read lands.
  */

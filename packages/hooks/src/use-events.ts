@@ -36,6 +36,16 @@ export function useEvent(id: string) {
   });
 }
 
+/**
+ * Why `useCreateEvent` rejected when the server's answer was lost: the event
+ * may exist. Callers show it as is.
+ */
+/** Gateway statuses: the edge answered, so the origin's outcome is unknown. */
+const LOST_ANSWER_STATUSES = new Set([502, 503, 504]);
+
+export const EVENT_CREATE_UNCONFIRMED =
+  "The server didn't confirm it. Check the Events calendar before trying again: the event may already be there.";
+
 export function useCreateEvent() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
@@ -64,13 +74,38 @@ export function useCreateEvent() {
       check_in_zone_name?: string;
       // Minutes before the start that check-in opens; the server defaults it.
       check_in_opens_minutes?: number;
+      // Both or neither: posts the event's card to this chat channel. The API
+      // refuses either key on an event that keeps anyone out.
+      channel_id?: string;
+      client_message_id?: string;
     }) => {
-      const { data, error } = await client.POST("/v1/events", { body });
+      const { data, error, response } = await client.POST("/v1/events", {
+        body,
+      });
+      // An answer that was lost is not a refusal: the origin may or may not
+      // have written the row, and the route has no dedupe, so it rejects as
+      // unconfirmed rather than "failed", which invites a duplicate (#1717).
+      // Two shapes: a gateway's own 502/503/504, whatever body it carries (an
+      // HTML or text page is a truthy `error`), and any non-2xx with no body,
+      // which openapi-fetch hands back as `error: undefined` (or "").
+      if (
+        !response.ok &&
+        (LOST_ANSWER_STATUSES.has(response.status) || !error)
+      ) {
+        throw new Error(EVENT_CREATE_UNCONFIRMED);
+      }
       if (error) throw error;
       return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["events", chapterId] });
+    },
+    onError: (error) => {
+      // The event may exist, and the copy says to check for it: refetch the
+      // list so a cached one doesn't hide it.
+      if (error instanceof Error && error.message === EVENT_CREATE_UNCONFIRMED) {
+        void queryClient.invalidateQueries({ queryKey: ["events", chapterId] });
+      }
     },
   });
 }
