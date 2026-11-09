@@ -154,6 +154,25 @@ const MODULE_GATED_KINDS: Readonly<Partial<Record<ChatMessageKind, string>>> = {
   dues: 'dues',
 };
 
+/**
+ * A poll card's early close (`payload.closed_at` / `closed_by`, #3794) is
+ * written only by `PollService.close`, which checks the caller is the poll's
+ * creator. A client composes the rest of the card, so the pair is dropped from
+ * what it posts: a card can't arrive already closed, or "closed by" someone
+ * else.
+ */
+function withoutServerPollFields(
+  kind: ChatMessageKind,
+  payload: Record<string, any> | null | undefined,
+): Record<string, any> | null {
+  if (!payload) return null;
+  if (kind !== 'poll') return payload;
+  const card = { ...payload };
+  delete card.closed_at;
+  delete card.closed_by;
+  return card;
+}
+
 /** What {@link ChatService.deleteReportedMessage} did, and where. */
 export interface ReportedMessageRemoval {
   /** True when the message was already soft-deleted and nothing was written. */
@@ -892,7 +911,7 @@ export class ChatService {
         content: input.content,
         type: 'TEXT',
         kind,
-        payload: input.payload ?? null,
+        payload: withoutServerPollFields(kind, input.payload),
         client_message_id: input.client_message_id ?? null,
         reply_to_id: input.reply_to_id ?? null,
         // `attachment_count` is a COUNT, not a copy — `chat_message_attachments`
