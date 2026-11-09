@@ -83,6 +83,8 @@ export interface ThreadMessageRowProps {
     actionType: string,
     payload: Record<string, unknown>,
   ) => void;
+  /** A poll card's Close poll, on the viewer's own open poll (#3794). */
+  onClosePoll: (messageId: string) => void;
   onRetry: (clientMessageId: string) => void;
   onDiscard: (clientMessageId: string) => void;
   onReact: (messageId: string, emoji: string) => void;
@@ -127,6 +129,7 @@ function ThreadMessageRowBody({
   replyParent,
   blockState,
   onVote,
+  onClosePoll,
   onRetry,
   onDiscard,
   onReact,
@@ -219,7 +222,7 @@ function ThreadMessageRowBody({
           onOpenActions: openActions,
           onJumpToParent: message.reply_to_id ? onJumpToParent : undefined,
         },
-        { onVote },
+        { onVote, onClosePoll },
       );
   if (card) {
     const quote = message.reply_to_id ? (
@@ -289,12 +292,19 @@ function cardFor(
   frame: ChatCardFrameProps,
   row: {
     onVote: ThreadMessageRowProps["onVote"];
+    onClosePoll: ThreadMessageRowProps["onClosePoll"];
   },
 ): ReactNode | null {
   const { message } = frame;
   switch (message.kind) {
     case "poll":
-      return <PollCard {...frame} onVote={row.onVote} />;
+      return (
+        <PollCard
+          {...frame}
+          onVote={row.onVote}
+          onClosePoll={row.onClosePoll}
+        />
+      );
     case "event": {
       const payload = readEventPayload(message);
       return payload ? <EventCard {...frame} payload={payload} /> : null;

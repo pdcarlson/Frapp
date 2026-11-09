@@ -62,6 +62,18 @@ export interface IStorageProvider {
     downloadAs?: string,
   ): Promise<string>;
   /**
+   * One signature, two links to the same object: `inline` serves it as
+   * stored, and `attachment` forces a download saved as `downloadAs`. The
+   * storage backend's `download` option rides outside the signature, so one
+   * signing call yields both and neither can fail without the other.
+   */
+  getSignedInlineAndAttachmentUrls(
+    bucket: string,
+    path: string,
+    downloadAs: string,
+    expiresIn?: number,
+  ): Promise<{ inline: string; attachment: string }>;
+  /**
    * Batch counterpart to {@link getSignedDownloadUrl} — signs many paths in
    * as few provider calls as the backend allows, mirroring `deleteFiles`.
    * Returns a `path → signedUrl` map covering only the paths that could be

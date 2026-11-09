@@ -57,6 +57,8 @@ export interface MessageRendererProps {
     actionType: string,
     payload: Record<string, unknown>,
   ) => void;
+  /** A poll card's Close poll, on the viewer's own open poll (#3794). */
+  onClosePoll?: (messageId: string) => void;
 }
 
 /**
@@ -75,6 +77,7 @@ export function MessageRenderer({
   nameFor,
   isConfirmed,
   onAct,
+  onClosePoll,
   trailing,
   muted,
 }: MessageRendererProps) {
@@ -91,6 +94,7 @@ export function MessageRenderer({
           viewerId={viewerId}
           isConfirmed={isConfirmed}
           onVote={onAct}
+          onClosePoll={onClosePoll}
         />
       );
     case "announcement":
