@@ -4,11 +4,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { parseRegistry } from "../../check-api-breaking-changes.mjs";
+import { REGISTRY_PATH, mergeRegistry, parseRegistry } from "../lib/shipped-builds-registry.mjs";
 import {
-  REGISTRY_PATH,
   branchName,
-  mergeRegistry,
   parseBuilds,
   planRecord,
   prBody,
@@ -54,6 +52,24 @@ const plan = (over = {}) =>
 
 const b64 = (text) => Buffer.from(text, "utf8").toString("base64");
 const EMPTY_REGISTRY = '{\n  "builds": []\n}\n';
+
+describe("mergeRegistry and dropped entries (#3783)", () => {
+  const entry = { platform: "ios", version: "0.9.0", build: "12", sha: SHA, recorded: DAY };
+  const dropped = { ...entry, dropped: "2026-12-01", reason: "minimum 0.9.1 live since 2026-11-30" };
+  const withDropped = `${JSON.stringify({ builds: [], dropped: [dropped] }, null, 2)}\n`;
+
+  it("doesn't re-add a build already moved to dropped (a re-run)", () => {
+    const { text, added } = mergeRegistry(withDropped, [entry]);
+    assert.deepEqual(added, []);
+    assert.equal(text, withDropped);
+  });
+
+  it("keeps the dropped list when it appends", () => {
+    const next = { ...entry, build: "13" };
+    const { text } = mergeRegistry(withDropped, [next]);
+    assert.deepEqual(parseRegistry(text), { builds: [next], dropped: [dropped] });
+  });
+});
 
 describe("parseBuilds", () => {
   it("reads the build job's JSON array", () => {
@@ -204,7 +220,7 @@ describe("the PR", () => {
     assert.deepEqual(entries.map((e) => e.platform), ["ios", "android"]);
     const body = prBody({ entries, rows, sha: SHA, runUrl: "https://x/runs/9", repo: "pdcarlson/Frapp" });
     assert.match(body, /submitted these builds to the stores without releasing them/);
-    assert.match(body, /EAS accepted each submission, and Expo may still be uploading it\. \[The run\]\(https:\/\/x\/runs\/9\)'s `confirm` job says whether each upload finished\. If one failed, drop its entry before merging, or in a PR of its own once this has merged\./);
+    assert.match(body, /EAS accepted each submission, and Expo may still be uploading it\. \[The run\]\(https:\/\/x\/runs\/9\)'s `confirm` job says whether each upload finished\. If one failed, drop its entry before merging, or, once this has merged, move it to the registry's `dropped` list in a PR of its own\./);
     assert.match(body, /\| Submitted to \|/);
     assert.doesNotMatch(body, /[Uu]ploaded (build|to)/);
   });

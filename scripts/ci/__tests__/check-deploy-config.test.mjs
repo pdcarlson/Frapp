@@ -64,7 +64,9 @@ function trustedFiles({ builds = [], version = "0.9.0" } = {}) {
     [SHIPPED_BUILDS]:
       builds instanceof Error
         ? builds
-        : JSON.stringify({ builds: builds.map(([platform, v, build]) => ({ platform, version: v, build })) }),
+        : JSON.stringify({
+            builds: builds.map(([platform, v, build]) => ({ platform, version: v, build, sha: "c".repeat(40), recorded: "2026-10-01" })),
+          }),
     [APP_JSON]: version instanceof Error ? version : JSON.stringify({ expo: { version } }),
   };
   return (path) => {
