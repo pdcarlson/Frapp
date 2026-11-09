@@ -86,6 +86,93 @@ describe('SupabaseNotificationRepository — tenant scope', () => {
     expect(rows.find((n) => n.id === NOTIF_A)?.read_at).toBeNull();
   });
 
+  it("markChatChannelRead clears only the channel's chat rows read through the instant, in the caller chapter", async () => {
+    const CHANNEL = 'c0000000-0000-4000-8000-000000003788';
+    const OTHER_CHANNEL = 'c1000000-0000-4000-8000-000000003788';
+    const chat = (channelId: string) => ({
+      target: { screen: 'chat', channelId },
+    });
+    // Each row has a twin in the other chapter, as the harness requires; only
+    // the caller chapter's rows may change.
+    const rows = [
+      // In the channel, before the read: cleared.
+      {
+        id: 'before',
+        data: chat(CHANNEL),
+        read_at: null,
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+      // In the channel, after the read: a message not yet seen.
+      {
+        id: 'after',
+        data: chat(CHANNEL),
+        read_at: null,
+        created_at: '2026-01-01T00:05:00.000Z',
+      },
+      // Already read: keeps its own timestamp.
+      {
+        id: 'read',
+        data: chat(CHANNEL),
+        read_at: '2025-12-31T00:00:00.000Z',
+        created_at: '2025-12-30T00:00:00.000Z',
+      },
+      // Another channel, and a non-chat row: untouched.
+      {
+        id: 'other-channel',
+        data: chat(OTHER_CHANNEL),
+        read_at: null,
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'event',
+        data: { target: { screen: 'events' } },
+        read_at: null,
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+    ];
+    const row = (r: (typeof rows)[number], prefix: string) => ({
+      ...r,
+      id: `${prefix}-${r.id}`,
+      user_id: USER_SHARED,
+      title: 'Alex',
+      body: 'hi',
+    });
+    harness = createTenantHarness({
+      tables: {
+        notifications: [
+          ...rows.map((r) => inA(row(r, 'a'))),
+          ...rows.map((r) => inB(row(r, 'b'))),
+        ],
+      },
+    });
+    repo = new SupabaseNotificationRepository(harness.client);
+
+    await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.markChatChannelRead(
+        USER_SHARED,
+        CHAPTER_B,
+        CHANNEL,
+        '2026-01-01T00:01:00.000Z',
+      ),
+    );
+
+    const readAt = Object.fromEntries(
+      harness.rows('notifications').map((n) => [n.id, n.read_at]),
+    );
+    expect(readAt).toEqual({
+      'b-before': '2026-01-01T00:01:00.000Z',
+      'b-after': null,
+      'b-read': '2025-12-31T00:00:00.000Z',
+      'b-other-channel': null,
+      'b-event': null,
+      'a-before': null,
+      'a-after': null,
+      'a-read': '2025-12-31T00:00:00.000Z',
+      'a-other-channel': null,
+      'a-event': null,
+    });
+  });
+
   it('create issues the row under the caller chapter', async () => {
     const created = await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.create({

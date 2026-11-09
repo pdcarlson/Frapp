@@ -1,6 +1,11 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  useQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { throwUnlessOk, type components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
@@ -268,6 +273,86 @@ export const markNotificationReadOnOpenMutationKey = [
   "on-open",
 ] as const;
 
+/**
+ * True for a cached in-app list (`notificationKeys.list`), not the
+ * preferences entries that share the `notifications` prefix.
+ */
+function isNotificationListKey(queryKey: readonly unknown[]): boolean {
+  return queryKey[0] === "notifications" && queryKey[1] !== "preferences";
+}
+
+type CachedNotificationRow = Record<string, unknown> & {
+  read_at?: unknown;
+};
+
+/**
+ * `rows` with `read_at` set on every unread row `select` picks, or `rows`
+ * itself (same reference) when nothing changed, so an unrelated cache entry
+ * is not re-rendered by a write that did not touch it.
+ */
+function withRowsRead(
+  rows: unknown,
+  select: (row: CachedNotificationRow) => boolean,
+  readAt: string,
+): unknown {
+  if (!Array.isArray(rows)) return rows;
+  let changed = false;
+  const next = rows.map((row: unknown) => {
+    if (!row || typeof row !== "object") return row;
+    const candidate = row as CachedNotificationRow;
+    if (candidate.read_at !== null || !select(candidate)) return row;
+    changed = true;
+    return { ...candidate, read_at: readAt };
+  });
+  return changed ? next : rows;
+}
+
+/** Mark rows read in every cached list. True when any row changed. */
+function markCachedRowsRead(
+  queryClient: QueryClient,
+  select: (row: CachedNotificationRow) => boolean,
+  readAt: string,
+): boolean {
+  let changed = false;
+  for (const [queryKey, rows] of queryClient.getQueriesData({
+    predicate: (query) => isNotificationListKey(query.queryKey),
+  })) {
+    const next = withRowsRead(rows, select, readAt);
+    if (next !== rows) {
+      changed = true;
+      queryClient.setQueryData(queryKey, next);
+    }
+  }
+  return changed;
+}
+
+function chatChannelOf(row: CachedNotificationRow): string | null {
+  const data = row.data;
+  if (!data || typeof data !== "object") return null;
+  const target = (data as Record<string, unknown>).target;
+  if (!target || typeof target !== "object") return null;
+  const { screen, channelId } = target as Record<string, unknown>;
+  return screen === "chat" && typeof channelId === "string" ? channelId : null;
+}
+
+/**
+ * Clear the cached chat notifications for a channel the member just read
+ * (#3788), the way `POST /v1/channels/{id}/read` now clears them on the
+ * server. True when a cached row changed, so the caller refetches the lists
+ * only when they were showing one.
+ */
+export function markChannelNotificationsReadInCache(
+  queryClient: QueryClient,
+  channelId: string,
+  readAt: string = new Date().toISOString(),
+): boolean {
+  return markCachedRowsRead(
+    queryClient,
+    (row) => chatChannelOf(row) === channelId,
+    readAt,
+  );
+}
+
 export function useMarkNotificationRead({
   sentOnOpen = false,
 }: {
@@ -287,6 +372,38 @@ export function useMarkNotificationRead({
       // On the status, not `error`: see `useMarkChannelRead`.
       throwUnlessOk(result);
       return result.data;
+    },
+    // Optimistic (#3788): the dot and every count drawn from these lists
+    // clear on the tap, not after the PATCH and the refetch behind it, which
+    // read as "opening it did nothing" when the tap also navigated away. No
+    // `cancelQueries` first: a push tap's receipt can go out while the list's
+    // first fetch is still in flight, and cancelling that would strand the
+    // list empty if the write then failed. A fetch that lands stale is put
+    // right by the invalidation on success.
+    onMutate: (id) => {
+      const readAt = new Date().toISOString();
+      const wrote = markCachedRowsRead(queryClient, (row) => row.id === id, readAt);
+      return { readAt, wrote };
+    },
+    onError: (_error, id, context) => {
+      if (!context?.wrote) return;
+      // Put back only the row this write marked, and only while it still
+      // carries this write's stamp: a refetch may have landed a real read.
+      for (const [queryKey, rows] of queryClient.getQueriesData({
+        predicate: (query) => isNotificationListKey(query.queryKey),
+      })) {
+        if (!Array.isArray(rows)) continue;
+        let reverted = false;
+        const next = rows.map((row: unknown) => {
+          const candidate = row as CachedNotificationRow | null;
+          if (candidate?.id !== id || candidate.read_at !== context.readAt) {
+            return row;
+          }
+          reverted = true;
+          return { ...candidate, read_at: null };
+        });
+        if (reverted) queryClient.setQueryData(queryKey, next);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: notificationKeys.all });

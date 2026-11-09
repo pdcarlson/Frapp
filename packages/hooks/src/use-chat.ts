@@ -13,6 +13,10 @@ import {
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { createChapterQueryKeys } from "./chapter-query-keys";
 import { putSignedUpload } from "./put-signed-upload";
+import {
+  markChannelNotificationsReadInCache,
+  notificationKeys,
+} from "./use-notifications";
 
 /** The query key `useChannels` caches the channel list under. */
 export const CHANNEL_LIST_KEY = ["channels"] as const;
@@ -562,8 +566,14 @@ export function useMarkChannelRead() {
       throwUnlessOk(result);
       return result.data;
     },
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ["channels"] });
+      // The read also cleared this channel's chat notifications on the server
+      // (#3788). Mirror that in the inbox's cache, and refetch it only when it
+      // was showing one, so a busy channel's reads don't each cost a list GET.
+      if (markChannelNotificationsReadInCache(queryClient, id)) {
+        queryClient.invalidateQueries({ queryKey: notificationKeys.all });
+      }
     },
   });
 }

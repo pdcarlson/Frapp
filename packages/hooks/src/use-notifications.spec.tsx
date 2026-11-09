@@ -7,6 +7,7 @@ import type { createFrappClient } from "@repo/api-sdk";
 import { FrappClientProvider } from "./use-frapp-client";
 import {
   markNotificationReadMutationKey,
+  markChannelNotificationsReadInCache,
   markNotificationReadOnOpenMutationKey,
   notificationKeys,
   useMarkNotificationRead,
@@ -123,6 +124,95 @@ describe("useMarkNotificationRead", () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error).toMatchObject({ statusCode: 502 });
+  });
+});
+
+describe("useMarkNotificationRead — optimistic (#3788)", () => {
+  const listKey = notificationKeys.list("chapter-1", undefined);
+  const rows = () => [
+    { id: "notif-1", title: "A", read_at: null },
+    { id: "notif-2", title: "B", read_at: null },
+  ];
+  const readAtOf = (queryClient: QueryClient, id: string) =>
+    (
+      queryClient.getQueryData(listKey) as {
+        id: string;
+        read_at: string | null;
+      }[]
+    ).find((row) => row.id === id)?.read_at;
+
+  it("clears the tapped row in the cached list before the PATCH answers", async () => {
+    const queryClient = makeQueryClient();
+    queryClient.setQueryData(listKey, rows());
+    const { patch } = deferredPatch();
+    const { result } = renderHook(() => useMarkNotificationRead(), {
+      wrapper: createWrapper({ PATCH: patch }, queryClient),
+    });
+
+    act(() => result.current.mutate("notif-1"));
+
+    await waitFor(() => expect(readAtOf(queryClient, "notif-1")).toEqual(expect.any(String)));
+    expect(readAtOf(queryClient, "notif-2")).toBeNull();
+  });
+
+  it("puts the row back to unread when the PATCH fails", async () => {
+    const queryClient = makeQueryClient();
+    queryClient.setQueryData(listKey, rows());
+    const { patch, fail } = deferredPatch();
+    const { result } = renderHook(() => useMarkNotificationRead(), {
+      wrapper: createWrapper({ PATCH: patch }, queryClient),
+    });
+
+    act(() => result.current.mutate("notif-1"));
+    await waitFor(() => expect(readAtOf(queryClient, "notif-1")).not.toBeNull());
+    await act(async () => fail());
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(readAtOf(queryClient, "notif-1")).toBeNull();
+  });
+
+  it("leaves the preferences entries alone", async () => {
+    const queryClient = makeQueryClient();
+    const prefs = [{ category: "events", is_enabled: true }];
+    queryClient.setQueryData(notificationKeys.preferences("chapter-1"), prefs);
+    queryClient.setQueryData(listKey, rows());
+    const { patch } = deferredPatch();
+    const { result } = renderHook(() => useMarkNotificationRead(), {
+      wrapper: createWrapper({ PATCH: patch }, queryClient),
+    });
+
+    act(() => result.current.mutate("notif-1"));
+    await waitFor(() => expect(readAtOf(queryClient, "notif-1")).not.toBeNull());
+
+    expect(
+      queryClient.getQueryData(notificationKeys.preferences("chapter-1")),
+    ).toBe(prefs);
+  });
+});
+
+describe("markChannelNotificationsReadInCache (#3788)", () => {
+  const listKey = notificationKeys.list("chapter-1", undefined);
+  const chat = (channelId: string) => ({ target: { screen: "chat", channelId } });
+
+  it("clears only that channel's unread chat rows and says whether it changed any", () => {
+    const queryClient = makeQueryClient();
+    queryClient.setQueryData(listKey, [
+      { id: "in-channel", read_at: null, data: chat("chan-1") },
+      { id: "other-channel", read_at: null, data: chat("chan-2") },
+      { id: "event", read_at: null, data: { target: { screen: "events" } } },
+      { id: "already-read", read_at: "2026-01-01T00:00:00.000Z", data: chat("chan-1") },
+    ]);
+
+    expect(
+      markChannelNotificationsReadInCache(queryClient, "chan-1", "2026-11-09T00:00:00.000Z"),
+    ).toBe(true);
+    expect(queryClient.getQueryData(listKey)).toEqual([
+      { id: "in-channel", read_at: "2026-11-09T00:00:00.000Z", data: chat("chan-1") },
+      { id: "other-channel", read_at: null, data: chat("chan-2") },
+      { id: "event", read_at: null, data: { target: { screen: "events" } } },
+      { id: "already-read", read_at: "2026-01-01T00:00:00.000Z", data: chat("chan-1") },
+    ]);
+    expect(markChannelNotificationsReadInCache(queryClient, "chan-1")).toBe(false);
   });
 });
 

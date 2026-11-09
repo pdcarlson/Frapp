@@ -57,6 +57,8 @@ import { ActivationService } from './activation.service';
 import { ChannelCacheService } from './channel-cache.service';
 import { ChatMentionService } from './chat-mention.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
+import { NotificationService } from './notification.service';
 
 const MAX_PINNED_MESSAGES = 50;
 const MAX_GROUP_DM_MEMBERS = 10;
@@ -190,6 +192,8 @@ export class ChatService {
     private readonly attachments: ChatAttachmentService,
     // `@`-mention resolution, members and roles (2026-11-06).
     private readonly mentions: ChatMentionService,
+    // A channel read also clears the chat notifications about it (#3788).
+    private readonly notifications: NotificationService,
   ) {}
 
   // ── Channels ─────────────────────────────────────────────────────────
@@ -1304,13 +1308,38 @@ export class ChatService {
 
   // ── Read Receipts ────────────────────────────────────────────────────
 
+  /**
+   * Stamp the caller's read receipt, then clear the chat notifications the
+   * read covers (#3788): the inbox row for a message is "viewed" once its
+   * channel is, however the member got there. Awaited, so the client's refetch
+   * after this call sees the rows cleared, but best-effort: a failed clear
+   * leaves a stale dot in the inbox, which must not fail the read receipt
+   * that drives every unread badge.
+   */
   async markChannelRead(channelId: string, chapterId: string, userId: string) {
     await this.assertChannelAccess(channelId, chapterId, userId);
-    return this.readReceiptRepo.upsert(
+    const readAt = new Date().toISOString();
+    const receipt = await this.readReceiptRepo.upsert(
       channelId,
       userId,
-      new Date().toISOString(),
+      readAt,
     );
+    try {
+      await this.notifications.markChatChannelNotificationsRead(
+        userId,
+        chapterId,
+        channelId,
+        readAt,
+      );
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'chat-read-clears-notifications',
+        message: `Could not clear chat notifications for channel ${channelId}`,
+        error,
+      });
+    }
+    return receipt;
   }
 
   /**

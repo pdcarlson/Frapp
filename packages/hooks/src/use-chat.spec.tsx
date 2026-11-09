@@ -153,6 +153,41 @@ describe("useMarkChannelRead", () => {
     expect(invalidateSpy).not.toHaveBeenCalled();
   });
 
+  it("clears the channel's cached chat notifications and refetches the inbox only when it showed one (#3788)", async () => {
+    // Seeded entries no component observes need a gc window to survive.
+    queryClient.setDefaultOptions({ queries: { retry: false, gcTime: Infinity } });
+    const mockPost = vi.fn().mockResolvedValue({
+      data: { success: true },
+      error: undefined,
+      response: { ok: true, status: 200 },
+    });
+    const listKey = ["notifications", "chapter-1", undefined];
+    queryClient.setQueryData(listKey, [
+      { id: "n-1", read_at: null, data: { target: { screen: "chat", channelId: "chan-1" } } },
+    ]);
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHook(() => useMarkChannelRead(), {
+      wrapper: createWrapper(queryClient, { POST: mockPost }),
+    });
+
+    result.current.mutate("chan-1");
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(
+      (queryClient.getQueryData(listKey) as { read_at: string | null }[])[0]
+        ?.read_at,
+    ).toEqual(expect.any(String));
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["notifications"] });
+
+    invalidateSpy.mockClear();
+    result.current.mutate("chan-1");
+    // The second success is the one that just invalidated `["channels"]`.
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["channels"] }),
+    );
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ["notifications"] });
+  });
+
   // openapi-fetch gives an empty-bodied 5xx no `error` at all. Read off
   // `error`, the stamp that never landed looked like one that did, and mobile's
   // retry (#3747) never ran.
