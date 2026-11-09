@@ -165,6 +165,10 @@ Unchanged from the Linear era. An issue's description may carry a machine-readab
   architectural, security-sensitive, or subtle-correctness work). Advisory, read at spin-up.
   Sessions default to Opus 5.5, which does about 95% of the work here (owner decision 2026-09-22),
   so `any` means that default and `fable` marks the minority of issues that warrant Fable.
+  *Changed 2026-11-09 (Paul):* agents start on Fable 5.2, so the coordinator starts every worker on
+  it whatever this field says ([`coordinator` § Workers](../../.claude/skills/coordinator/SKILL.md#workers)).
+  The field still tells a session someone starts by hand which issues warranted Fable under the
+  2026-09-22 default.
 - **`ultracode`** — whether multi-agent orchestration likely pays for itself.
 
 **Who writes it:** the curator files every suggestion with a brief; the triage routine backfills
