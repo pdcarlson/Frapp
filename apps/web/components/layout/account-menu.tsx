@@ -42,6 +42,7 @@ import {
 import { presenceLabel } from "@/lib/realtime/presence-status";
 import { useOwnStatus, useSaveOwnStatus } from "@/lib/realtime/use-own-status";
 import { signOutCurrentSession } from "@/lib/auth/session";
+import { useWhatsNewUnread } from "@/lib/whats-new";
 import { cn, initials } from "@/lib/utils";
 import { FOCUS_RING_SHELL } from "@/components/ui/focus";
 import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confirm-drop-bulk-uploads";
@@ -64,7 +65,7 @@ type CurrentUser = {
  * Contents are exactly Status and the custom status line, a divider, Profile,
  * Notification settings, What's new, a divider, Sign out (`1i`, plus What's
  * new, 2026-11-07: the changelog members read, the same list as mobile
- * Settings → What's new; plus Status, 2026-11-09, #3845: the member's own
+ * Settings → What's new, with a dot while an entry is unread, #3943; plus Status, 2026-11-09, #3845: the member's own
  * Online / Idle / Do Not Disturb / Invisible and custom line, first because
  * it is the row people reach for before practice, as on Discord and Slack). **Chapter switching is deliberately not here**: it lives in the nav's
  * chapter header row, because identity and chapter are separate menus. Putting
@@ -91,6 +92,9 @@ export function AccountMenu({
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [editingLine, setEditingLine] = useState(false);
   const own = useOwnStatus();
+  // Entries this browser hasn't shown yet (`lib/whats-new.ts`). The dot is
+  // neutral, as every unread mark is (components.md § Chrome weight).
+  const whatsNewUnread = useWhatsNewUnread();
   const { data } = useCurrentUser();
 
   const user = (data ?? {}) as CurrentUser;
@@ -229,6 +233,15 @@ export function AccountMenu({
           <Link href="/whats-new" onClick={onNavigate}>
             <Sparkles className="h-4 w-4" aria-hidden="true" />
             <span>What&apos;s new</span>
+            {whatsNewUnread ? (
+              <>
+                <span
+                  aria-hidden="true"
+                  className="ml-auto h-1.5 w-1.5 rounded-full bg-foreground"
+                />
+                <span className="sr-only">, new</span>
+              </>
+            ) : null}
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />

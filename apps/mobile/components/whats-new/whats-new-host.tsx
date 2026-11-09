@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { useCurrentUser } from "@repo/hooks";
-import { RELEASE_NOTES, type ReleaseNote } from "@repo/validation";
+import {
+  RELEASE_NOTES,
+  decideWhatsNew,
+  type ReleaseNote,
+} from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   SheetBackToClose,
@@ -18,7 +22,6 @@ import { ReleaseNoteCard } from "@/components/whats-new/release-note-card";
 import { isTourDue } from "@/lib/onboarding/tour";
 import { useFrappTheme } from "@/lib/theme";
 import {
-  decideWhatsNew,
   readWhatsNewSeen,
   recordWhatsNewSeen,
   startWhatsNewBootRead,
