@@ -339,8 +339,8 @@ Provider client ids and secrets live in the **Supabase dashboard** (Authenticati
 
 | Surface | Redirect the app asks GoTrue to use |
 | --- | --- |
-| Web staging | `https://app.staging.frapp.live/auth/callback?next=<guarded path>` |
-| Web production | `https://app.frapp.live/auth/callback?next=<guarded path>` |
+| Web staging | `https://app.staging.frapp.live/auth/callback?next=<guarded path>` (the sign-in screen's OAuth adds `&intent=sign-in`, #3786) |
+| Web production | `https://app.frapp.live/auth/callback?next=<guarded path>` (same) |
 | Mobile (release / dev-client) | `frapp:///?` (`Linking.createURL("/")` plus a trailing `?`) |
 | Mobile Expo Go | `exp://<host>:8081/--/?` — same per-machine gap as magic-link (#765) |
 
