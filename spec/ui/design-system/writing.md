@@ -368,24 +368,24 @@ Mobile's Tasks tab (s08) is a personal board for everyone, so with nothing assig
 |---|---|---|
 | Loading | — | `Loading chapter documents...` |
 | Empty | — | `No documents yet.`, `Nothing in {folder} yet.`, or on No folder `Every document is in a folder.`; for a viewer with `chapter_docs:upload` then **Upload a file** `or drop one anywhere on this page.` (one line) |
-| Empty (search, all files) | — | `No documents match “{query}”.` then a **Clear search** link (one line) |
-| Empty (search, inside a folder) | — | `Nothing in {folder} matches “{query}”.` (on No folder, `No documents outside a folder match “{query}”.`) then a **Search all files** link, which keeps the search (one line) |
+| Empty (search or filter, all files) | — | `No documents match “{query}”.`, or with no search typed `No documents match these filters.`, then a **Clear filters** link that clears the search and both filters (one line) |
+| Empty (search or filter, inside a folder) | — | `Nothing in {folder} matches.` (on No folder, `No documents outside a folder match.`) then a **Search all files** link, which keeps the search and filters (one line) |
+| Capped list (status line above the rows) | — | `Showing the newest 1,000 documents. Search and filters look only at these for now.` |
 | Empty, mobile s12 | — | `No documents yet.` or `Nothing in {folder} yet.`; for a viewer with `chapter_docs:upload` then `Tap + to upload one.`, the screen's own + (one line) |
-| Empty (search), mobile s12 | — | The web lines and links: `No documents match “{query}”.` with **Clear search**, or inside a folder chip `Nothing in {folder} matches “{query}”.` with **Search all files** (one line) |
+| Empty (search), mobile s12 | — | `No documents match “{query}”.` with **Clear search**, or inside a folder chip `Nothing in {folder} matches “{query}”.` with **Search all files** (one line). Web's lines differ since #3852, which added filters there |
 | Error | `Couldn't load documents` | the load-failure line (§ copy rules) |
 | Offline | `Documents unavailable offline` | `Reconnect to browse the chapter library and download files.` |
-| Offline (search active) | `Search needs a connection` | `Clear the search to browse the documents already on this device.` |
 | Folder list failed (inline, under the rail) | — | `Couldn't load the folder list, so these are read from the documents shown. Empty folders and folder management are unavailable until it loads.` |
 
-Three of these exist to keep one state from impersonating another:
+Why the states are split this way:
 
 - A search that matched nothing is not an empty library. The default empty copy
   invites an upload, which is the wrong instruction for a member who mistyped a
   title.
-- Search is served by the API, so each query is a cache key that an offline
-  member has never fetched. Falling to the plain offline card would replace a
-  library they still have cached; naming the search as the thing that needs a
-  connection keeps the recovery in the member's hands.
+- Web search runs over the library already loaded (#3852), so an offline
+  member keeps searching what they have; there is no offline-search state.
+  (Before #3852 search went to the API, and an offline query landed on a cache
+  key never fetched, which needed its own "Search needs a connection" state.)
 - The folder rail is its own request and can fail while the documents load
   fine. It degrades to names derived from the loaded documents rather than
   rendering as a chapter with no folders — so the notice reports what is

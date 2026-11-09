@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -28,6 +29,7 @@ const {
   foldersQuery,
   mockOffline,
   canGate,
+  roster,
 } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
   mockDeleteDoc: vi.fn().mockResolvedValue({}),
@@ -44,6 +46,10 @@ const {
   // Whether the mocked `Can` renders its children. Only the gate-remount test
   // flips it; everything else sees a pass-through.
   canGate: { granted: true },
+  // The chapter roster's names, which a test may change to drop someone.
+  roster: {
+    names: { "u-1": "Marcus Ellison", "u-2": "Ryan Castellano" } as Record<string, string>,
+  },
   documentsQuery: {
     data: [] as unknown[],
     isPending: false,
@@ -89,6 +95,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     return documentsQuery;
   },
   useDocumentFolders: () => foldersQuery,
+  useSemesters: () => ({ data: [{ end_date: "2026-07-31" }] }),
+  useMemberDisplayNames: () => ({ byId: roster.names }),
   useDocumentDownloadUrl: () => ({ mutateAsync: mockSignedLinks }),
   // The viewer's read of the signed links; never settles here, so an open
   // viewer shows its loading page. `document-viewer.spec.tsx` covers the rest.
@@ -800,58 +808,275 @@ describe("DocumentsPage delete confirmation", () => {
   });
 });
 
-describe("DocumentsPage title search (#402)", () => {
+describe("DocumentsPage search, filters and sort (#3852)", () => {
+  const RUSH = {
+    ...BYLAWS,
+    id: "doc-2",
+    title: "Rush schedule",
+    folder: "Rush",
+    description: "Week one events",
+    uploaded_by: "u-2",
+    created_at: "2026-09-20T00:00:00Z",
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockOffline.value = false;
     resolvedDocumentsQuery();
+    documentsQuery.data = [BYLAWS, RUSH];
+    roster.names = { "u-1": "Marcus Ellison", "u-2": "Ryan Castellano" };
     chapter.active();
   });
 
-  it("sends the query to the server rather than filtering in memory", async () => {
-    // The whole point of #402's residual: #793 shipped `?search=`, and the
-    // page has to actually use it. An in-memory filter would pass a "does it
-    // narrow the list" assertion while never touching the endpoint.
+  const rowTitles = () =>
+    screen
+      .queryAllByRole("button", { name: /^Download / })
+      .map((button) => button.getAttribute("aria-label")!.replace(/^Download /, ""));
+
+  it("searches in memory and never asks the server to", async () => {
+    // Backwork's model: one list response, re-ranked locally per keystroke.
     const user = userEvent.setup();
     render(<DocumentsPage />);
 
-    await user.type(screen.getByLabelText("Search documents"), "bylaws");
+    await user.type(screen.getByLabelText("Search documents"), "week one");
 
-    await waitFor(() =>
-      expect(documentsArgs.value).toEqual({ search: "bylaws" }),
-    );
+    await waitFor(() => expect(rowTitles()).toEqual(["Rush schedule"]));
+    expect(documentsArgs.value).toBeUndefined();
+    expect(screen.getByText("1 of 2")).toBeInTheDocument();
   });
 
-  it("trims the query, and sends undefined rather than an empty string", async () => {
+  it("matches the uploader's name and forgives a typo", async () => {
     const user = userEvent.setup();
     render(<DocumentsPage />);
-    const input = screen.getByLabelText("Search documents");
 
-    await user.type(input, "  bylaws  ");
-    await waitFor(() =>
-      expect(documentsArgs.value).toEqual({ search: "bylaws" }),
-    );
+    await user.type(screen.getByLabelText("Search documents"), "castelano");
 
-    // Whitespace-only must collapse to the unfiltered query, not to a
-    // `search=" "` cache entry that can never match anything.
-    await user.clear(input);
-    await user.type(input, "   ");
-    await waitFor(() =>
-      expect(documentsArgs.value).toEqual({ search: undefined }),
-    );
+    await waitFor(() => expect(rowTitles()).toEqual(["Rush schedule"]));
+    expect(screen.getByText(/by Ryan Castellano/)).toBeInTheDocument();
   });
 
-  it("does not escape % or _ — the server matches them literally", async () => {
-    // spec/behavior/chapter-docs.md § Search. A client that escaped them would
-    // silently stop matching a document actually titled "Budget_2026".
+  it("filters by uploader from a menu of people who uploaded something", async () => {
     const user = userEvent.setup();
     render(<DocumentsPage />);
 
-    await user.type(screen.getByLabelText("Search documents"), "Budget_2026");
+    await user.click(screen.getByRole("button", { name: "Uploaded by" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Marcus Ellison" }));
+
+    await waitFor(() => expect(rowTitles()).toEqual(["Chapter bylaws"]));
+    expect(
+      screen.getByRole("button", { name: "Uploaded by: Marcus Ellison" }),
+    ).toBeInTheDocument();
+  });
+
+  it("sorts by name by default and newest first on request", async () => {
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+    expect(rowTitles()).toEqual(["Chapter bylaws", "Rush schedule"]);
+
+    await user.click(screen.getByRole("button", { name: "Sort: Name A–Z" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Newest first" }));
+
+    await waitFor(() => expect(rowTitles()).toEqual(["Rush schedule", "Chapter bylaws"]));
+  });
+
+  it("narrows by Date added, and a custom range with no dates narrows nothing", async () => {
+    // BYLAWS was added Aug 1 2026, after the Jul 31 rollover; an older file
+    // falls before this semester.
+    documentsQuery.data = [
+      BYLAWS,
+      { ...RUSH, created_at: "2026-03-01T00:00:00Z" },
+    ];
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.click(screen.getByRole("button", { name: "Date added" }));
+    await user.click(await screen.findByRole("radio", { name: "Custom range" }));
+    expect(rowTitles()).toEqual(["Chapter bylaws", "Rush schedule"]);
+    // Untinted too: the chip doesn't claim a filter that narrows nothing.
+    expect(screen.getByRole("button", { name: "Date added" })).toBeInTheDocument();
+    expect(screen.getByText("2 documents")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("radio", { name: "This semester" }));
+    await waitFor(() => expect(rowTitles()).toEqual(["Chapter bylaws"]));
+    expect(screen.getByText("1 of 2")).toBeInTheDocument();
+  });
+
+  it("keeps a picked uploader whose last file went, and says nothing matches", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<DocumentsPage />);
+    await user.click(screen.getByRole("button", { name: "Uploaded by" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Ryan Castellano" }));
+    await waitFor(() => expect(rowTitles()).toEqual(["Rush schedule"]));
+
+    documentsQuery.data = [BYLAWS];
+    rerender(<DocumentsPage />);
+
+    expect(await screen.findByText("No documents match these filters.")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Uploaded by: Ryan Castellano" }),
+    ).toBeInTheDocument();
+  });
+
+  it("drops a picked uploader who has left the roster", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<DocumentsPage />);
+    await user.click(screen.getByRole("button", { name: "Uploaded by" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Ryan Castellano" }));
+    await waitFor(() => expect(rowTitles()).toEqual(["Rush schedule"]));
+
+    roster.names = { "u-1": "Marcus Ellison" };
+    rerender(<DocumentsPage />);
+
+    expect(rowTitles()).toEqual(["Chapter bylaws", "Rush schedule"]);
+    expect(screen.getByRole("button", { name: "Uploaded by" })).toBeInTheDocument();
+  });
+
+  it("counts against the open folder, not the whole library", async () => {
+    documentsQuery.data = [
+      BYLAWS,
+      RUSH,
+      { ...RUSH, id: "doc-3", title: "Rush budget", description: null },
+    ];
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.click(screen.getByRole("button", { name: /^Rush$/ }));
+    await user.type(screen.getByLabelText("Search documents"), "schedule");
+
+    await waitFor(() => expect(rowTitles()).toEqual(["Rush schedule"]));
+    expect(screen.getByText("1 of 2")).toBeInTheDocument();
+  });
+
+  it("moves Last 30 days along while the page stays open", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.setSystemTime(new Date("2026-11-09T12:00:00Z"));
+      // 28 days old now; 31 days old three days on.
+      documentsQuery.data = [{ ...RUSH, created_at: "2026-10-12T12:00:00Z" }];
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      render(<DocumentsPage />);
+      await user.click(screen.getByRole("button", { name: "Date added" }));
+      await user.click(await screen.findByRole("radio", { name: "Last 30 days" }));
+      expect(rowTitles()).toEqual(["Rush schedule"]);
+
+      act(() => {
+        vi.setSystemTime(new Date("2026-11-12T12:00:00Z"));
+        vi.advanceTimersByTime(60_000);
+      });
+
+      expect(rowTitles()).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("steps the viewer through the list as filtered and sorted, and closes it when a filter drops the file", async () => {
+    documentsQuery.data = [
+      BYLAWS,
+      RUSH,
+      { ...RUSH, id: "doc-3", title: "Rush budget", description: null, created_at: "2026-09-01T00:00:00Z" },
+    ];
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+    await user.click(screen.getByRole("button", { name: "Uploaded by" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Ryan Castellano" }));
+    await user.click(screen.getByRole("button", { name: "Sort: Name A–Z" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Newest first" }));
+    await waitFor(() => expect(rowTitles()).toEqual(["Rush schedule", "Rush budget"]));
+
+    await user.click(screen.getByRole("button", { name: /^Rush schedule/ }));
+    await user.keyboard("{ArrowRight}");
+    expect(screen.getByRole("dialog", { name: "Rush budget" })).toBeInTheDocument();
+    // Wraps within Ryan's two files: Marcus's bylaws are filtered out.
+    await user.keyboard("{ArrowRight}");
+    expect(screen.getByRole("dialog", { name: "Rush schedule" })).toBeInTheDocument();
+
+    // A search typed behind the viewer drops the open file: the viewer closes.
+    fireEvent.change(screen.getByLabelText("Search documents"), { target: { value: "budget" } });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("names the uploader inside the row's open button", () => {
+    render(<DocumentsPage />);
+    expect(
+      screen.getByRole("button", { name: /^Rush schedule.*Uploaded .* by Ryan Castellano/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("filters by a typed custom range, and Clear filters resets every filter", async () => {
+    documentsQuery.data = [BYLAWS, { ...RUSH, created_at: "2026-03-01T00:00:00Z" }];
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+    await user.click(screen.getByRole("button", { name: "Date added" }));
+    await user.click(await screen.findByRole("radio", { name: "Custom range" }));
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-07-01" } });
+    await waitFor(() => expect(rowTitles()).toEqual(["Chapter bylaws"]));
+
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-07-15" } });
+    await user.click(await screen.findByRole("button", { name: "Clear filters" }));
+
+    await waitFor(() => expect(rowTitles()).toEqual(["Chapter bylaws", "Rush schedule"]));
+    expect(screen.getByRole("button", { name: "Date added" })).toBeInTheDocument();
+  });
+
+  it("matches a punctuation-only search literally", async () => {
+    documentsQuery.data = [BYLAWS, { ...RUSH, title: "Budget_2026" }];
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.type(screen.getByLabelText("Search documents"), "_");
+
+    await waitFor(() => expect(rowTitles()).toEqual(["Budget_2026"]));
+  });
+
+  it("holds the date windows still while a file is open", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.setSystemTime(new Date("2026-11-09T12:00:00Z"));
+      // 29 days 23 hours old at the start; past 30 days a day later.
+      documentsQuery.data = [{ ...RUSH, created_at: "2026-10-10T13:00:00Z" }];
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      render(<DocumentsPage />);
+      await user.click(screen.getByRole("button", { name: "Date added" }));
+      await user.click(await screen.findByRole("radio", { name: "Last 30 days" }));
+      await user.keyboard("{Escape}");
+      await user.click(screen.getByRole("button", { name: /^Rush schedule/ }));
+
+      act(() => {
+        vi.setSystemTime(new Date("2026-11-10T12:00:00Z"));
+        vi.advanceTimersByTime(120_000);
+      });
+      expect(screen.getByRole("dialog", { name: "Rush schedule" })).toBeInTheDocument();
+
+      await user.keyboard("{Escape}");
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      // Closing catches the clock up, and the file has aged out.
+      act(() => {
+        vi.advanceTimersByTime(10);
+      });
+      await waitFor(() => expect(rowTitles()).toEqual([]));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("says the list is capped, even when a search finds nothing", async () => {
+    documentsQuery.data = Array.from({ length: 1000 }, (_, i) => ({
+      ...BYLAWS,
+      id: `doc-${i}`,
+      title: `Doc ${i}`,
+    }));
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.type(screen.getByLabelText("Search documents"), "zzzz");
 
     await waitFor(() =>
-      expect(documentsArgs.value).toEqual({ search: "Budget_2026" }),
+      expect(screen.getByText(/No documents match “zzzz”/)).toBeInTheDocument(),
     );
+    expect(
+      screen.getByText(/Showing the newest 1,000 documents\./),
+    ).toBeInTheDocument();
   });
 
   it("distinguishes 'no matches' from an empty library", async () => {
@@ -870,11 +1095,10 @@ describe("DocumentsPage title search (#402)", () => {
     await waitFor(() =>
       expect(screen.getByText(/No documents match “zzz”/)).toBeInTheDocument(),
     );
-    expect(screen.queryByText(/^No documents yet/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Upload a file" })).toBeNull();
 
     // The miss offers the way back, and the way back is the library.
-    await user.click(screen.getByRole("button", { name: "Clear search" }));
+    await user.click(screen.getByRole("button", { name: "Clear filters" }));
     await waitFor(() =>
       expect(screen.getByText(/^No documents yet\./)).toBeInTheDocument(),
     );
@@ -885,23 +1109,12 @@ describe("DocumentsPage title search (#402)", () => {
     render(<DocumentsPage />);
 
     await user.type(screen.getByLabelText("Search documents"), "bylaws");
-    await waitFor(() =>
-      expect(documentsArgs.value).toEqual({ search: "bylaws" }),
-    );
-
-    // The server narrows by title; the tab then narrows that to one folder.
-    // BYLAWS is filed under Governance, so Rush must show the search-aware
-    // empty state rather than the row.
     await user.click(screen.getByRole("button", { name: /^Rush$/ }));
-    expect(
-      screen.getByText(/Nothing in Rush matches “bylaws”/),
-    ).toBeInTheDocument();
-    expect(documentsArgs.value).toEqual({ search: "bylaws" });
+    expect(screen.getByText(/Nothing in Rush matches\./)).toBeInTheDocument();
 
     // The way out of a folder miss is the whole library, search kept.
     await user.click(screen.getByRole("button", { name: "Search all files" }));
-    expect(screen.queryByText(/Nothing in Rush matches/)).toBeNull();
-    expect(documentsArgs.value).toEqual({ search: "bylaws" });
+    await waitFor(() => expect(rowTitles()).toEqual(["Chapter bylaws"]));
   });
 });
 
@@ -1140,31 +1353,21 @@ describe("DocumentsPage search and folder resilience", () => {
     chapter.active();
   });
 
-  it("keeps a cached library reachable when a search is typed offline", async () => {
-    // Server-side search made every query string its own cache key, so an
-    // offline search lands on a key that was never fetched and `documents`
-    // empties. The plain offline card would then replace a library the member
-    // still has — the exact discard this page's state comment forbids.
+  it("keeps searching a cached library offline", async () => {
+    // Search runs over the library in hand (#3852), so a dropped connection
+    // changes nothing about it. Server-side search needed a whole
+    // "Search needs a connection" state for this.
     const user = userEvent.setup();
-    const { rerender } = render(<DocumentsPage />);
+    mockOffline.value = true;
+    render(<DocumentsPage />);
+
     await user.type(screen.getByLabelText("Search documents"), "bylaws");
 
-    // The connection drops with the query still in the box: the search key was
-    // never fetched, so the list empties even though the unfiltered library is
-    // still cached under its own key.
-    mockOffline.value = true;
-    documentsQuery.data = [];
-    rerender(<DocumentsPage />);
-
-    expect(
-      await screen.findByText("Search needs a connection"),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText("Documents unavailable offline"),
-    ).not.toBeInTheDocument();
+    expect(await screen.findByText("Chapter bylaws")).toBeInTheDocument();
+    expect(screen.queryByText("Documents unavailable offline")).toBeNull();
   });
 
-  it("still shows the plain offline state when nothing is being searched", () => {
+  it("shows the offline state when nothing is cached", () => {
     mockOffline.value = true;
     documentsQuery.data = [];
     render(<DocumentsPage />);
@@ -1172,9 +1375,6 @@ describe("DocumentsPage search and folder resilience", () => {
     expect(
       screen.getByText("Documents unavailable offline"),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByText("Search needs a connection"),
-    ).not.toBeInTheDocument();
   });
 
   it("falls back to folders derived from documents when the endpoint fails", () => {
@@ -1238,10 +1438,9 @@ describe("DocumentsPage search and folder resilience", () => {
     // match and must show the search-aware empty state.
     await waitFor(() =>
       expect(
-        screen.getByText("No documents outside a folder match “bylaws”."),
+        screen.getByText("No documents outside a folder match."),
       ).toBeInTheDocument(),
     );
-    expect(documentsArgs.value).toEqual({ search: "bylaws" });
   });
 
   it("keeps folder controls at the 44px touch floor", async () => {
@@ -1265,12 +1464,10 @@ describe("DocumentsPage derived folder fallback under search", () => {
     chapter.active();
   });
 
-  it("never derives folder tabs from a search result set", async () => {
-    // The fallback derives from `documents`, which IS the search response. If it
-    // ran mid-search, a query matching only Governance files would delete the
-    // Rush tab keystroke by keystroke — the rail describing the result set
-    // instead of the chapter. It drops to the two built-in filters instead, and
-    // the notice says why.
+  it("derives folder tabs from the whole library, never the matches", async () => {
+    // With the folder endpoint down the rail reads folders off the documents.
+    // Search narrows the rows, not the library, so a query matching only
+    // Governance files must not take the Rush tab away.
     foldersQuery.data = [];
     foldersQuery.isError = true;
     documentsQuery.data = [
@@ -1278,32 +1475,14 @@ describe("DocumentsPage derived folder fallback under search", () => {
       { ...BYLAWS, id: "doc-2", title: "Rush schedule", folder: "Rush" },
     ];
     const user = userEvent.setup();
-    const { rerender } = render(<DocumentsPage />);
+    render(<DocumentsPage />);
 
-    // Unfiltered: both folders derive fine.
+    await user.type(screen.getByLabelText("Search documents"), "bylaws");
+
+    await waitFor(() => expect(screen.queryByText("Rush schedule")).toBeNull());
     expect(screen.getByRole("button", { name: /^Rush$/ })).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /^Governance$/ }),
-    ).toBeInTheDocument();
-
-    await user.type(screen.getByLabelText("Search documents"), "bylaws");
-    // The server answers with Governance matches only.
-    documentsQuery.data = [BYLAWS];
-    rerender(<DocumentsPage />);
-
-    await waitFor(() =>
-      expect(documentsArgs.value).toEqual({ search: "bylaws" }),
-    );
-    // Neither tab survives — crucially including Governance, which the result
-    // set *would* have produced. Deriving a rail from matches is the bug.
-    expect(
-      screen.queryByRole("button", { name: /^Governance$/ }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /^Rush$/ }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByText(/folder filters are unavailable while searching/i),
     ).toBeInTheDocument();
   });
 });
