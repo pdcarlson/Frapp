@@ -1,19 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  useOwnStatusAt,
   useUpdateUserSettings,
   useUserSettings,
   userSettingsKey,
   type UpdateUserSettingsBody,
 } from "@repo/hooks";
 import {
-  nextStatusChangeAt,
-  ownStatusAt,
   type MemberStatusSettings,
   type OwnStatus,
-} from "@/lib/realtime/member-status";
+} from "@repo/hooks/member-status";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useToast } from "@/lib/hooks/use-toast";
 
@@ -38,9 +37,6 @@ const TAB_ID =
  * visible tab; a hidden tab waits until it is shown, and re-reads then.
  */
 export const STATUS_RESYNC_MS = 60 * 1000;
-
-/** `setTimeout` takes at most a signed 32-bit delay; past it, it fires at once. */
-const MAX_TIMER_MS = 2_147_483_647;
 
 /** The last settings this browser saw for a member, for a failed read. */
 const lastKnownKey = (userId: string) => `frapp:own-status:${userId}`;
@@ -83,13 +79,13 @@ function writeLastKnown(userId: string, settings: MemberStatusSettings) {
  * went Invisible on another device, on a browser that never saw it, shows
  * Online until the read recovers, which the periodic re-read retries.
  *
- * Re-renders at the next end time, so a DND for 1 hour ends on screen and on
- * the wire an hour later even if nothing refetches.
+ * Re-renders at the next end time (`useOwnStatusAt`, shared with mobile), so a
+ * DND for 1 hour ends on screen and on the wire an hour later even if nothing
+ * refetches.
  */
 export function useOwnStatus(): OwnStatus | null {
   const settings = useUserSettings();
   const { userId } = useFrappUser();
-  const [now, setNow] = useState(() => Date.now());
 
   const data = settings.data;
   const failed = data === undefined && settings.isError;
@@ -103,31 +99,7 @@ export function useOwnStatus(): OwnStatus | null {
     if (data !== undefined && userId) writeLastKnown(userId, data);
   }, [data, userId]);
 
-  const own = useMemo(
-    () => (source === null ? null : ownStatusAt(source, now)),
-    [source, now],
-  );
-  const nextChange = own ? nextStatusChangeAt(own) : null;
-
-  // The delay is measured from the real clock, not from `now`, so an end time
-  // that has already passed (a tab woken from sleep) fires at once. `now` is a
-  // dependency so a timer cut short by the 32-bit cap re-arms for the rest.
-  useEffect(() => {
-    if (nextChange === null) return undefined;
-    const delay = Math.max(nextChange - Date.now(), 0);
-    const capped = delay > MAX_TIMER_MS;
-    const timer = setTimeout(
-      // Never earlier than the end itself when the timer was not capped: a
-      // timer that fired a millisecond early would otherwise leave the status
-      // live, with nothing scheduled to end it. A capped one moves the clock
-      // only to now, so it can't end a status weeks early.
-      () => setNow(capped ? Date.now() : Math.max(Date.now(), nextChange)),
-      capped ? MAX_TIMER_MS : delay,
-    );
-    return () => clearTimeout(timer);
-  }, [nextChange, now]);
-
-  return own;
+  return useOwnStatusAt(source);
 }
 
 /**

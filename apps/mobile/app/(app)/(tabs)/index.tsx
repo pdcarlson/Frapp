@@ -57,6 +57,7 @@ import { PushReminder } from "@/components/notifications/push-reminder";
 import { useTourAnchor, useTourReady } from "@/components/onboarding/tour";
 import { ScreenShell, StickyHeader } from "@/components/screen-shell";
 import { AskSheet } from "@/components/ask/ask-sheet";
+import { StatusSheet } from "@/components/account/status-sheet";
 import { AskPill } from "@/components/chat/ask-pill";
 import {
   AccountButton,
@@ -151,6 +152,7 @@ export default function ChatHomeScreen() {
   // modal and the ✦ pill only presents it — the arrangement `tasks.tsx` uses
   // for s19.
   const askSheetRef = useRef<BottomSheetModal>(null);
+  const statusSheetRef = useRef<BottomSheetModal>(null);
   // Chat home is titled by the chapter, its mark and name, not by the word
   // "Chat" (`components/chapter-mark.tsx`).
   const { chapterName } = useChapterBranding();
@@ -547,7 +549,10 @@ export default function ChatHomeScreen() {
       overlay={{
         open: filterMenu.visible || accountMenu.visible,
         content: accountMenu.visible ? (
-          <AccountMenu menu={accountMenu} />
+          <AccountMenu
+            menu={accountMenu}
+            onStatus={() => statusSheetRef.current?.present()}
+          />
         ) : (
           <ChannelFilterMenu
             menu={filterMenu}
@@ -763,6 +768,7 @@ export default function ChatHomeScreen() {
       )}
 
       <AskSheet ref={askSheetRef} />
+      <StatusSheet ref={statusSheetRef} />
       <ChannelActionsMenu
         target={menuTarget}
         onClose={closeMenu}

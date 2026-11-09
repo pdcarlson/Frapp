@@ -33,6 +33,11 @@
  * restores a member after a drop) and a genuine change in activity.
  */
 
+import {
+  CUSTOM_STATUS_MAX,
+  MEMBER_STATUS_LABEL,
+} from "@repo/hooks/member-status";
+
 /** Spec: "Idle (app open but inactive for >5 minutes)". */
 export const IDLE_AFTER_MS = 5 * 60 * 1000;
 
@@ -72,8 +77,6 @@ export type PresenceEntry = {
   line: string | null;
 };
 
-/** The custom status line's cap, the same one the API and the column enforce. */
-export const CUSTOM_STATUS_MAX = 80;
 
 /**
  * Status for a member, given the presence entry we hold for them.
@@ -97,11 +100,7 @@ export function presenceStatusFor(
 
 /** Human-readable label. Also the accessible name — screen readers get these words. */
 export function presenceLabel(status: PresenceStatus): string {
-  if (status === "online") return "Online";
-  if (status === "idle") return "Idle";
-  if (status === "dnd") return "Do Not Disturb";
-  if (status === "invisible") return "Invisible";
-  return "Offline";
+  return status === "offline" ? "Offline" : MEMBER_STATUS_LABEL[status];
 }
 
 /**

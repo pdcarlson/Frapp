@@ -7,11 +7,11 @@ import {
   presenceStatusFor,
   presenceStatusKind,
   sameRoster,
-  CUSTOM_STATUS_MAX,
   type PresenceEntry,
   type PresenceStatus,
 } from "./presence-status";
 import { chapterPresenceTopic } from "./presence-topics";
+import { CUSTOM_STATUS_MAX } from "@repo/hooks/member-status";
 
 const ALL_STATUSES: PresenceStatus[] = [
   "online",
