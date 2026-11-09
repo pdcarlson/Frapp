@@ -81,12 +81,18 @@ import {
 import type { ReplayRequest } from "@repo/chat-core/types";
 import {
   dispatchSlashCommand,
+  postHours,
+  postPointsAdjustment,
   postPoll,
+  postTask,
   retryPointsDispatch,
   trackEventCard,
   type DispatchResult,
   type EventCardTrack,
+  type HoursInput,
+  type PointsAdjustmentInput,
   type ResolveMember,
+  type TaskInput,
 } from "@repo/chat-core/dispatch";
 import type { SlashCommand } from "@repo/chat-core/integrations";
 import type { PollPayload } from "@repo/chat-core/polls";
@@ -179,6 +185,19 @@ export interface UseChatChannelResult {
   ) => ReturnType<typeof postPoll>;
   /** The event form's card bookkeeping in a channel (#3773, `trackEventCard`). */
   trackEventCard: (channelId: string, name: string) => EventCardTrack;
+  /**
+   * The + menu's Task, Service hours and Points forms (#3865): the same
+   * writes `/task`, `/hours log` and `/points` make, posting the card into
+   * `targetChannelId` with the same placeholder, recorded-row and (for
+   * points) unconfirmed-retry bookkeeping. Never reject; read the result as
+   * `notifyDispatchOutcome` does.
+   */
+  postTask: (targetChannelId: string, input: TaskInput) => Promise<DispatchResult>;
+  postHours: (targetChannelId: string, input: HoursInput) => Promise<DispatchResult>;
+  postPointsAdjustment: (
+    targetChannelId: string,
+    input: PointsAdjustmentInput,
+  ) => Promise<DispatchResult>;
   /** Card action invoker (Vote, RSVP, …). Goes through the NestJS chat actions endpoint (ADR-11). */
   act: (
     messageId: string,
@@ -646,6 +665,23 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [ctx],
   );
 
+  // The + menu's forms (#3865). Each names its channel, as `sendPoll` does.
+  const postTaskCb = useCallback(
+    (targetChannelId: string, input: TaskInput) =>
+      postTask(ctx, targetChannelId, input),
+    [ctx],
+  );
+  const postHoursCb = useCallback(
+    (targetChannelId: string, input: HoursInput) =>
+      postHours(ctx, targetChannelId, input),
+    [ctx],
+  );
+  const postPointsCb = useCallback(
+    (targetChannelId: string, input: PointsAdjustmentInput) =>
+      postPointsAdjustment(ctx, targetChannelId, input),
+    [ctx],
+  );
+
   // Best-effort flush whenever the connection comes live for this channel.
   useEffect(() => {
     if (connection !== "live") return;
@@ -686,6 +722,9 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     dispatchSlash,
     sendPoll,
     trackEventCard: trackEventCardCb,
+    postTask: postTaskCb,
+    postHours: postHoursCb,
+    postPointsAdjustment: postPointsCb,
     act,
   };
 }
