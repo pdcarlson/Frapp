@@ -6,6 +6,8 @@ import {
   isIdentityCollisionError,
   isPlaceholderAuthEmail,
   OAUTH_UNAVAILABLE_COPY,
+  FIRST_SIGN_IN_WINDOW_MS,
+  isFirstOAuthSignIn,
   startWebOAuth,
 } from "./oauth";
 
@@ -138,5 +140,92 @@ describe("startWebOAuth", () => {
       message: "already been registered",
       code: "identity_already_exists",
     });
+  });
+});
+
+describe("startWebOAuth from the sign-in screen", () => {
+  it("tags the callback as a sign-in so a new account can be flagged", async () => {
+    const signInWithOAuth = vi.fn(async () => ({ error: null }));
+    await startWebOAuth(
+      { auth: { signInWithOAuth } },
+      "google",
+      "https://app.frapp.live",
+      "/chat",
+      "sign-in",
+    );
+    expect(signInWithOAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({
+          redirectTo:
+            "https://app.frapp.live/auth/callback?next=%2Fchat&intent=sign-in",
+        }),
+      }),
+    );
+  });
+});
+
+describe("isFirstOAuthSignIn", () => {
+  const created = "2026-11-09T04:23:05.120Z";
+
+  it("is true when Google or Apple created the account in this sign-in", () => {
+    for (const provider of ["google", "apple"]) {
+      expect(
+        isFirstOAuthSignIn({
+          created_at: created,
+          last_sign_in_at: "2026-11-09T04:23:05.900Z",
+          app_metadata: { provider },
+        }),
+      ).toBe(true);
+    }
+  });
+
+  it("holds across a slow redirect up to the window, and not past it", () => {
+    // With PKCE, `last_sign_in_at` is written at the app's code exchange, a
+    // browser round trip after GoTrue created the user.
+    const at = (ms: number) => new Date(Date.parse(created) + ms).toISOString();
+    const user = (gapMs: number) => ({
+      created_at: created,
+      last_sign_in_at: at(gapMs),
+      app_metadata: { provider: "google" },
+    });
+    expect(FIRST_SIGN_IN_WINDOW_MS).toBeGreaterThanOrEqual(60_000);
+    expect(isFirstOAuthSignIn(user(45_000))).toBe(true);
+    expect(isFirstOAuthSignIn(user(FIRST_SIGN_IN_WINDOW_MS - 1_000))).toBe(true);
+    expect(isFirstOAuthSignIn(user(FIRST_SIGN_IN_WINDOW_MS + 1_000))).toBe(false);
+  });
+
+  it("is false for a returning member", () => {
+    expect(
+      isFirstOAuthSignIn({
+        created_at: "2026-09-01T12:00:00Z",
+        last_sign_in_at: created,
+        app_metadata: { provider: "apple" },
+      }),
+    ).toBe(false);
+  });
+
+  it("is false for an account that started as email, even if new", () => {
+    expect(
+      isFirstOAuthSignIn({
+        created_at: created,
+        last_sign_in_at: created,
+        app_metadata: { provider: "email" },
+      }),
+    ).toBe(false);
+  });
+
+  it("is false when the timestamps are missing or unreadable", () => {
+    expect(isFirstOAuthSignIn(null)).toBe(false);
+    expect(isFirstOAuthSignIn(undefined)).toBe(false);
+    expect(
+      isFirstOAuthSignIn({ created_at: created, app_metadata: { provider: "google" } }),
+    ).toBe(false);
+    expect(
+      isFirstOAuthSignIn({
+        created_at: "not a date",
+        last_sign_in_at: created,
+        app_metadata: { provider: "google" },
+      }),
+    ).toBe(false);
   });
 });

@@ -57,6 +57,8 @@ import { ActivationService } from './activation.service';
 import { ChannelCacheService } from './channel-cache.service';
 import { ChatMentionService } from './chat-mention.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
+import { NotificationService } from './notification.service';
 
 const MAX_PINNED_MESSAGES = 50;
 const MAX_GROUP_DM_MEMBERS = 10;
@@ -190,6 +192,8 @@ export class ChatService {
     private readonly attachments: ChatAttachmentService,
     // `@`-mention resolution, members and roles (2026-11-06).
     private readonly mentions: ChatMentionService,
+    // A channel read also clears the chat notifications about it (#3788).
+    private readonly notifications: NotificationService,
   ) {}
 
   // ── Channels ─────────────────────────────────────────────────────────
@@ -566,6 +570,14 @@ export class ChatService {
         // this row existed and was a DM a moment ago, and a type never changes.
         throw new NotFoundException('Channel not found');
       }
+      // Hiding marks the DM read, so it clears the notifications about it as
+      // a read does (#3788).
+      await this.clearChannelNotifications(
+        channelId,
+        chapterId,
+        userId,
+        receipt.last_read_at,
+      );
       // No cache eviction: the push worker's cached row is unchanged, and a
       // hidden DM still notifies — a new message is what brings it back.
       return;
@@ -1304,13 +1316,51 @@ export class ChatService {
 
   // ── Read Receipts ────────────────────────────────────────────────────
 
+  /**
+   * Stamp the caller's read receipt, then clear the chat notifications the
+   * read covers (#3788): the inbox row for a message is "viewed" once its
+   * channel is, however the member got there.
+   */
   async markChannelRead(channelId: string, chapterId: string, userId: string) {
     await this.assertChannelAccess(channelId, chapterId, userId);
-    return this.readReceiptRepo.upsert(
+    const readAt = new Date().toISOString();
+    const receipt = await this.readReceiptRepo.upsert(
       channelId,
       userId,
-      new Date().toISOString(),
+      readAt,
     );
+    await this.clearChannelNotifications(channelId, chapterId, userId, readAt);
+    return receipt;
+  }
+
+  /**
+   * Mark the caller's chat notifications for a channel read, through the
+   * instant its receipt now reads (#3788). Awaited, so a client's refetch
+   * after the request sees the rows cleared, but best-effort: a failed clear
+   * leaves a stale dot in the inbox, which must not fail the read receipt
+   * that drives every unread badge.
+   */
+  private async clearChannelNotifications(
+    channelId: string,
+    chapterId: string,
+    userId: string,
+    readThrough: string,
+  ): Promise<void> {
+    try {
+      await this.notifications.markChatChannelNotificationsRead(
+        userId,
+        chapterId,
+        channelId,
+        readThrough,
+      );
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'chat-read-clears-notifications',
+        message: `Could not clear chat notifications for channel ${channelId}`,
+        error,
+      });
+    }
   }
 
   /**
