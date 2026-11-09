@@ -178,6 +178,9 @@ constraints web habits most often break:
 
 ## Proposing a UI change
 
+Propose only when the person asked to see options first. Otherwise build the change and show it in
+the PR with before and after screenshots of the real screens (AGENTS.md, Operating mindset).
+
 Owner rule, 2026-11-08, after a proposal page drew its screens from memory: placeholder phones and
 an invented Profile left nothing to judge. A proposal is a mock, but a mock of the real app.
 
