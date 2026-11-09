@@ -67,3 +67,28 @@ describe("pr-base-sync.yml", () => {
     assert.match(uncommented, /^ {2}checks: read$/m);
   });
 });
+
+// The job holds the base-sync App key, so nothing it loads may shell out
+// (docs/ci-cd/pr-babysitting.md § Why the App is safe on a public repo). The
+// registry merge (#3783) is why this is pinned: its first draft imported the
+// API checker, which runs git and oasdiff.
+describe("pr-base-sync.mjs's import graph", () => {
+  it("never reaches child_process, transitively", () => {
+    const seen = new Set();
+    const shells = [];
+    const walk = (file) => {
+      if (seen.has(file)) return;
+      seen.add(file);
+      const source = readFileSync(file, "utf8");
+      for (const [, spec] of source.matchAll(/^\s*(?:import|export)\b[^;]*?\bfrom\s+["']([^"']+)["']/gm)) {
+        if (/^(node:)?child_process$/.test(spec)) shells.push(file);
+        else if (spec.startsWith(".")) walk(join(dirname(file), spec));
+      }
+      if (/\bimport\(\s*["'](node:)?child_process["']\s*\)|\brequire\(\s*["'](node:)?child_process["']/.test(source)) shells.push(file);
+    };
+    walk(join(dirname(fileURLToPath(import.meta.url)), "..", "pr-base-sync.mjs"));
+    assert.ok(seen.size > 3, "the walk found the import graph");
+    assert.ok([...seen].some((f) => f.endsWith("shipped-builds-registry.mjs")), "it covers the registry merge");
+    assert.deepEqual(shells, []);
+  });
+});

@@ -23,12 +23,15 @@
 // API, with a non-force ref update: a branch that moved since it was read
 // refuses it, and nothing is ever rewritten.
 
-import { compareRegistries, entryId, parseRegistry } from "../check-api-breaking-changes.mjs";
 import { ghRequest } from "./lib/github.mjs";
-import { REGISTRY_PATH, mergeRegistry } from "./record-shipped-builds.mjs";
-
-const FIELDS = ["platform", "version", "build", "sha", "recorded", "note"];
-const sameEntry = (a, b) => FIELDS.every((f) => a[f] === b[f]);
+import {
+  REGISTRY_PATH,
+  compareRegistries,
+  entryId,
+  mergeRegistry,
+  parseRegistry,
+  sameEntry,
+} from "./lib/shipped-builds-registry.mjs";
 
 /**
  * Decide the merged registry, or why there is none.
@@ -89,49 +92,43 @@ export function planRegistryMerge({ mergeBaseText, headText, baseText }) {
 
 const label = (e) => `${e.platform} ${e.version} (${e.build})`;
 
-/**
- * Merge the base branch into a conflicted PR whose only change is new registry
- * entries, and push the merge commit to its head branch.
- *
- * `token` reads; `pushToken` (the base-sync App's) makes the commit and moves
- * the branch, because only a push through it starts the PR's CI.
- *
- * @returns {Promise<{ resolved: true, sha: string, added: object[] } | { resolved: false, reason: string }>}
- */
-export async function resolveRegistryConflict({ token, pushToken, repo, pr, baseRef, baseSha, fetchImpl = fetch }) {
-  const call = async (method, path, body) => {
-    const res = await ghRequest({
-      token: method === "GET" ? token : pushToken,
-      fetchImpl,
-      method,
-      path,
-      body,
-      retry: method === "GET",
-    });
+/** A `ghRequest` that returns the data or throws naming the call. */
+function caller({ token, fetchImpl }) {
+  return async (method, path, body) => {
+    const res = await ghRequest({ token, fetchImpl, method, path, body, retry: method === "GET" });
     if (!res.ok) {
       const detail = typeof res.data === "string" ? res.data : res.data?.message ?? "";
       throw new Error(`${method} ${path.split("?")[0]} failed (HTTP ${res.status}${detail ? `: ${detail}` : ""})`);
     }
     return res.data;
   };
+}
+
+/**
+ * Read a conflicted PR and decide whether its merge with the base is
+ * mechanical (`planRegistryMerge`). Reads only, through `token`.
+ *
+ * @returns {Promise<{ ok: true, text: string, added: object[], headSha: string, branch: string }
+ *   | { ok: false, reason: string }>}
+ */
+export async function planRegistryConflict({ token, repo, pr, baseSha, fetchImpl = fetch }) {
   const headSha = pr?.head?.sha;
   const branch = pr?.head?.ref;
   if (pr?.head?.repo?.full_name !== repo || typeof headSha !== "string" || typeof branch !== "string") {
-    return { resolved: false, reason: "the head branch is not in this repository" };
+    return { ok: false, reason: "the head branch is not in this repository" };
   }
-
+  const call = caller({ token, fetchImpl });
   try {
     const compare = await call("GET", `/repos/${repo}/compare/${baseSha}...${headSha}`);
     const mergeBaseSha = compare?.merge_base_commit?.sha;
     const files = Array.isArray(compare?.files) ? compare.files : null;
     if (typeof mergeBaseSha !== "string" || files === null) {
-      return { resolved: false, reason: "the compare with the base returned no merge base or file list" };
+      return { ok: false, reason: "the compare with the base returned no merge base or file list" };
     }
     // The compare lists at most 300 files; a list that long is not registry-only anyway.
     if (files.length !== 1 || files[0]?.filename !== REGISTRY_PATH) {
-      return { resolved: false, reason: `the PR changes more than ${REGISTRY_PATH}` };
+      return { ok: false, reason: `the PR changes more than ${REGISTRY_PATH}` };
     }
-
     const fileAt = async (ref) => {
       const res = await ghRequest({
         token,
@@ -151,31 +148,52 @@ export async function resolveRegistryConflict({ token, pushToken, repo, pr, base
       fileAt(baseSha),
     ]);
     if (headText === null || baseText === null) {
-      return { resolved: false, reason: `${REGISTRY_PATH} is missing on one side` };
+      return { ok: false, reason: `${REGISTRY_PATH} is missing on one side` };
     }
     const plan = planRegistryMerge({ mergeBaseText, headText, baseText });
-    if (!plan.ok) return { resolved: false, reason: plan.reason };
+    return plan.ok ? { ...plan, headSha, branch } : plan;
+  } catch (error) {
+    return { ok: false, reason: error.message };
+  }
+}
 
-    // Every file but the registry is the base's: the branch changed no other.
-    const baseCommit = await call("GET", `/repos/${repo}/git/commits/${baseSha}`);
-    const tree = await call("POST", `/repos/${repo}/git/trees`, {
+/**
+ * Push a planned registry merge: a two-parent merge commit (the PR head, then
+ * the base) whose tree is the base's with the merged registry, moving the head
+ * branch without force. Reads through `token`; writes through `pushToken` (the
+ * base-sync App's), because only a push through it starts the PR's CI.
+ *
+ * Every file but the registry is the base's, since the branch changed no
+ * other. That also keeps `.github/workflows` identical to the base tip's, which
+ * matters: GitHub refuses an App without the Workflows permission a ref whose
+ * commit's workflows differ from the default branch's (agent-infra.md, the
+ * Release tags row). A refusal is reported, never retried another way.
+ *
+ * @returns {Promise<{ resolved: true, sha: string } | { resolved: false, reason: string }>}
+ */
+export async function pushRegistryMerge({ token, pushToken, repo, plan, baseRef, baseSha, fetchImpl = fetch }) {
+  const read = caller({ token, fetchImpl });
+  const write = caller({ token: pushToken, fetchImpl });
+  try {
+    const baseCommit = await read("GET", `/repos/${repo}/git/commits/${baseSha}`);
+    const tree = await write("POST", `/repos/${repo}/git/trees`, {
       base_tree: baseCommit?.tree?.sha,
       tree: [{ path: REGISTRY_PATH, mode: "100644", type: "blob", content: plan.text }],
     });
     const added = plan.added.length > 0 ? plan.added.map(label).join(", ") : "nothing new (the base already lists them)";
-    const commit = await call("POST", `/repos/${repo}/git/commits`, {
+    const commit = await write("POST", `/repos/${repo}/git/commits`, {
       message:
-        `Merge branch '${baseRef}' into ${branch}\n\n` +
+        `Merge branch '${baseRef}' into ${plan.branch}\n\n` +
         `Resolved by pr-base-sync (#3783): ${REGISTRY_PATH} is the only file this branch ` +
         `changes, and it only adds entries, so the merge is ${baseRef}'s registry plus this ` +
         `branch's: ${added}.`,
       tree: tree?.sha,
-      parents: [headSha, baseSha],
+      parents: [plan.headSha, baseSha],
     });
     // Not forced: a head that moved since it was read refuses the update.
-    const ref = branch.split("/").map(encodeURIComponent).join("/");
-    await call("PATCH", `/repos/${repo}/git/refs/heads/${ref}`, { sha: commit?.sha, force: false });
-    return { resolved: true, sha: commit.sha, added: plan.added };
+    const ref = plan.branch.split("/").map(encodeURIComponent).join("/");
+    await write("PATCH", `/repos/${repo}/git/refs/heads/${ref}`, { sha: commit?.sha, force: false });
+    return { resolved: true, sha: commit.sha };
   } catch (error) {
     return { resolved: false, reason: error.message };
   }

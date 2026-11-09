@@ -93,6 +93,7 @@ import { execFileSync } from "node:child_process";
 import { CLIENT_PLATFORMS } from "./lib/client-version.mjs";
 import { fetchWithRetry } from "./lib/http.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
+import { parseRegistry } from "./lib/shipped-builds-registry.mjs";
 
 /** A real `GET` route, so a preflight to it is one the dashboard could send. */
 export const CLIENT_POLICY_PATH = "/v1/client-policy";
@@ -232,10 +233,12 @@ function isNewerBuild(a, b) {
 
 /**
  * The newest recorded build per platform in shipped-builds.json's text, or
- * null for a platform with none. It accepts exactly the `platform`, `version`
- * and `build` shapes `parseRegistry` (`scripts/check-api-breaking-changes.mjs`)
- * accepts, which is what the required `api-contract-check` holds every entry on
- * `main` to; the test pins the two together. An entry the API's header parser
+ * null for a platform with none. It parses with the registry's own
+ * `parseRegistry` (`lib/shipped-builds-registry.mjs`, dependency-free), the
+ * parse the required `api-contract-check` holds every entry on `main` to, so a
+ * key repeated inside one entry fails here too rather than probing whichever
+ * value `JSON.parse` kept (#3783). Entries in `dropped` are not probed: their
+ * installs are held at the update gate. An entry the API's header parser
  * would refuse (a build past nine digits, a version with a leading zero) is
  * probed as recorded: the API answers it `update_required: false`, which is
  * also what the real binary is told, because the gate fails open.
@@ -243,20 +246,12 @@ function isNewerBuild(a, b) {
 export function newestShippedBuilds(text, file = SHIPPED_BUILDS) {
   let builds;
   try {
-    builds = JSON.parse(text)?.builds;
+    ({ builds } = parseRegistry(text));
   } catch (error) {
-    throw new Error(`${file} is not valid JSON: ${error.message}`);
+    throw new Error(`${file} is invalid: ${error.message.replaceAll("\n", "; ")}`);
   }
-  if (!Array.isArray(builds)) throw new Error(`${file} has no \`builds\` array.`);
   const newest = Object.fromEntries(PLATFORMS.map((platform) => [platform, null]));
-  builds.forEach((entry, i) => {
-    const ok =
-      PLATFORMS.includes(entry?.platform) &&
-      typeof entry.version === "string" &&
-      /^\d+\.\d+\.\d+$/.test(entry.version) &&
-      typeof entry.build === "string" &&
-      /^[1-9]\d*$/.test(entry.build);
-    if (!ok) throw new Error(`${file} builds[${i}] needs a platform, a version like 0.9.0 and a build number.`);
+  builds.forEach((entry) => {
     const current = newest[entry.platform];
     if (current === null || isNewerBuild(entry, current)) newest[entry.platform] = { version: entry.version, build: entry.build };
   });

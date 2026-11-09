@@ -1,19 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import {
-  baselinesFor,
-  checkShipped,
-  compareRegistries,
-  findRepeatedKeys,
-  parseRegistry,
-  runOasdiff,
-  waiverLines,
-} from "../../check-api-breaking-changes.mjs";
+import { baselinesFor, checkShipped, registryAtRef, runOasdiff, waiverLines } from "../../check-api-breaking-changes.mjs";
+import { compareRegistries, findRepeatedKeys, parseRegistry } from "../lib/shipped-builds-registry.mjs";
 import { workflowJobs, workflowSteps } from "./helpers/workflow-yaml.mjs";
 
 // The shipped-contract check is the one thing between a PR and every install
@@ -203,9 +197,28 @@ test("a base that kept everything, or has no registry, passes; an invalid base c
   const none = run([build()], { baseRegistryText: null, baseLabel: "the base" });
   assert.equal(none.code, 0);
   assert.match(none.out, /the base doesn't exist/);
+  // A PR that fixes a bad base, or tightens the parser with the file, must pass.
   const invalid = run([build()], { baseRegistryText: "{", baseLabel: "the base" });
-  assert.equal(invalid.code, 2);
-  assert.match(invalid.out, /::error::the base is invalid/);
+  assert.equal(invalid.code, 0);
+  assert.match(invalid.out, /::warning::the base doesn't pass this branch's parse, so this registry was not compared/);
+});
+
+test("registryAtRef reads the file at a commit, null when it has none, undefined when the commit is unreadable", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "registry-at-ref-"));
+  const git = (...args) => execFileSync("git", args, { cwd: dir, encoding: "utf8" }).trim();
+  git("init", "-q");
+  git("config", "user.email", "t@example.com");
+  git("config", "user.name", "t");
+  git("commit", "-q", "--allow-empty", "-m", "before the registry");
+  const before = git("rev-parse", "HEAD");
+  mkdirSync(path.join(dir, "store"));
+  writeFileSync(path.join(dir, "store/shipped-builds.json"), registry([build()]));
+  git("add", ".");
+  git("commit", "-q", "-m", "registry");
+  const after = git("rev-parse", "HEAD");
+  assert.equal(registryAtRef(after, "store/shipped-builds.json", dir), registry([build()]));
+  assert.equal(registryAtRef(before, "store/shipped-builds.json", dir), null);
+  assert.equal(registryAtRef("f".repeat(40), "store/shipped-builds.json", dir), undefined);
 });
 
 test("builds made from one SHA share one comparison", () => {

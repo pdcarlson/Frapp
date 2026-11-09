@@ -914,8 +914,9 @@ by silently keeping one value: that is how a bad conflict resolution splices two
 (`5df56abc`). Two record PRs always conflict, because each appends to the same array, so the
 [PR base sync](../../../docs/ci-cd/pr-babysitting.md#base-branch-sync-scriptscipr-base-syncmjs) sweep
 merges `main` into a conflicted PR itself when the registry is the only file it changes and it only
-adds entries. Any other conflict still gets the usual wake comment, and is resolved by hand the same
-way: `main`'s registry plus the branch's new entries, and nothing else.
+adds entries. Any other conflict still gets the usual wake comment, as does one whose merge GitHub
+refuses, and is resolved by hand the same way: `main`'s registry plus the branch's new entries, and
+nothing else.
 
 **A break the shipped binaries don't depend on** (a route only the web dashboard calls) is waived
 in [`api-breaking-ignore.txt`](api-breaking-ignore.txt), which the check hands to oasdiff's

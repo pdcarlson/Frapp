@@ -29,7 +29,7 @@
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 
-import { parseRegistry } from "../check-api-breaking-changes.mjs";
+import { parseRegistry } from "./lib/shipped-builds-registry.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 export const TAG_PREFIX = "mobile-v";
@@ -198,11 +198,22 @@ function mintTag(repo, { tag, sha, version }) {
   }
 }
 
+/**
+ * Every uploaded build in the registry's text, oldest recorded first (a stable
+ * sort, so a moved entry keeps its place among its version's).
+ *
+ * Through the registry's own parse, so a key repeated inside one entry fails
+ * here rather than tagging whichever value JSON.parse kept (#3783). Dropped
+ * builds are included: a dropped build was still uploaded, so dropping one must
+ * not rewrite the title, body or "Changes since" link of a published Release.
+ */
+export function uploadedBuilds(text) {
+  const { builds, dropped } = parseRegistry(text);
+  return [...builds, ...dropped].sort((a, b) => a.recorded.localeCompare(b.recorded));
+}
+
 export function run({ registryPath, repo, log = console.log }) {
-  // The checker's own parse: a key repeated inside one entry fails here too,
-  // rather than tagging whichever value JSON.parse kept (#3783).
-  const registry = parseRegistry(readFileSync(registryPath, "utf8"));
-  const plan = planMobileReleases(registry, { repo });
+  const plan = planMobileReleases({ builds: uploadedBuilds(readFileSync(registryPath, "utf8")) }, { repo });
   let warnings = 0;
 
   for (const release of plan) {

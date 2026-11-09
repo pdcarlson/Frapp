@@ -4,9 +4,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { parseRegistry } from "../../check-api-breaking-changes.mjs";
-import { REGISTRY_PATH } from "../record-shipped-builds.mjs";
-import { planRegistryMerge, resolveRegistryConflict } from "../resolve-registry-conflict.mjs";
+import { REGISTRY_PATH, parseRegistry } from "../lib/shipped-builds-registry.mjs";
+import { planRegistryConflict, planRegistryMerge, pushRegistryMerge } from "../resolve-registry-conflict.mjs";
 import { makeFetchMock } from "./helpers.mjs";
 
 const REPO = "pdcarlson/Frapp";
@@ -70,6 +69,17 @@ describe("planRegistryMerge", () => {
     assert.match(refuse(text([M[1]], { dropped: [dropped] })).reason, /changes or drops/);
   });
 
+  it("refuses a branch that edits a dropped entry's reason, rather than merging the edit away", () => {
+    const dropped = { ...M[0], dropped: "2026-12-01", reason: "minimum raised" };
+    const plan = planRegistryMerge({
+      mergeBaseText: text([M[1]], { dropped: [dropped] }),
+      headText: text([M[1], ...A], { dropped: [{ ...dropped, reason: "minimum 0.10.1 live since 2026-11-30" }] }),
+      baseText: text([M[1], ...B], { dropped: [dropped] }),
+    });
+    assert.equal(plan.ok, false);
+    assert.match(plan.reason, /changes or drops/);
+  });
+
   it("refuses an id the base records differently", () => {
     const plan = planRegistryMerge({
       mergeBaseText: text(M),
@@ -112,11 +122,13 @@ const routes = ({ files = [{ filename: REGISTRY_PATH }], head = text([...M, ...A
     body: refStatus === 200 ? {} : { message: "Update is not a fast forward" },
   },
 ];
-const resolve = (over = {}, routeOver = {}) => {
+// The sweep's two steps, as it runs them: plan (reads), then push.
+const resolve = async (over = {}, routeOver = {}) => {
   const { fetchImpl, calls } = makeFetchMock(routes(routeOver));
-  return resolveRegistryConflict({ token: "t", pushToken: "app", repo: REPO, pr: pr(), baseRef: "main", baseSha: BASE, fetchImpl, ...over }).then(
-    (result) => ({ result, calls }),
-  );
+  const args = { token: "t", pushToken: "app", repo: REPO, pr: pr(), baseRef: "main", baseSha: BASE, fetchImpl, ...over };
+  const plan = await planRegistryConflict(args);
+  if (!plan.ok) return { result: { resolved: false, reason: plan.reason }, calls };
+  return { result: await pushRegistryMerge({ ...args, plan }), calls };
 };
 const bodyOf = (calls, method, path) => JSON.parse(calls.find((c) => c.method === method && c.url.includes(path)).body);
 

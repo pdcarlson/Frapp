@@ -58,9 +58,8 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseRegistry } from "./check-api-breaking-changes.mjs";
 import { latestReleaseTag } from "./ci/lib/release-tag.mjs";
-import { REGISTRY_PATH } from "./ci/record-shipped-builds.mjs";
+import { REGISTRY_PATH, parseRegistry } from "./ci/lib/shipped-builds-registry.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
