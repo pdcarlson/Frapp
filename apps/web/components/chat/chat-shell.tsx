@@ -230,6 +230,19 @@ function isThreadPaneEntry(state: unknown): boolean {
   );
 }
 
+/** Pushes this document's marked, same-URL entry for an opened thread. */
+function pushThreadPaneEntry(): void {
+  // The spread keeps Next's own `__NA` state, so its patched `pushState`
+  // passes the entry straight through.
+  window.history.pushState(
+    {
+      ...(window.history.state as object | null),
+      [THREAD_PANE_HISTORY_KEY]: THREAD_PANE_DOCUMENT_TOKEN,
+    },
+    "",
+  );
+}
+
 /**
  * Overlays that own `Esc` while open. Radix closes them on the same keydown,
  * before this listener runs but while they are still in the DOM.
@@ -503,6 +516,11 @@ export function ChatShell({
   // params without remounting the page — so without this, the new target is
   // silently dropped. Re-applying it here whenever it's genuinely new (not
   // on every render) is what makes each deep link a fresh navigation intent.
+  // The pane-history refs (#3824), described with `openThreadPane` below.
+  // Declared here because the URL-target effect clears `onThreadEntry`.
+  const onThreadEntry = useRef(false);
+  const backPending = useRef(false);
+  const openAfterBack = useRef(false);
   const appliedTargetRef = useRef({
     channelId: initialChannelId,
     messageId: initialMessageId,
@@ -563,6 +581,10 @@ export function ChatShell({
       channelId: initialChannelId,
       messageId: initialMessageId,
     };
+    // A new URL target (a Find result, a notification) is a new history entry
+    // Next pushed, not the one this mount marked (#3824), so the arrow must
+    // not go back through it and the next pick pushes its own.
+    onThreadEntry.current = false;
     setSelectedChannelId(initialChannelId);
     setChannelTargetDismissed(false);
     setPendingMessageId(initialMessageId);
@@ -602,9 +624,11 @@ export function ChatShell({
     navigation to the same URL (the nav's Chat link, a notification for
     `/chat`): Next then rewrites the entry's state without our marker
     (`preserveCustomHistoryState: false`), and only this mount still knows the
-    entry is the one it pushed. `backPending` keeps a quick second press from
-    going back a second entry, out of `/chat`, before the first `popstate`
-    lands.
+    entry is the one it pushed. A new URL target (a Find result, a
+    notification) is an entry Next pushed, so it clears the ref.
+    `backPending` keeps a quick second press from going back a second entry,
+    out of `/chat`, before the first `popstate` lands, and a pick made in that
+    window pushes its entry once the `popstate` has.
 
     The spread keeps Next's own `__NA` state on the entry, which its patched
     `pushState` then passes straight through, and its `popstate` handler
@@ -615,22 +639,21 @@ export function ChatShell({
     module nav. An entry pushed below `lg` that outlives a widening past it
     costs one Back press that changes nothing on screen.
   */
-  const onThreadEntry = useRef(false);
-  const backPending = useRef(false);
   const openThreadPane = useCallback(() => {
     setNarrowPane("thread");
-    if (isDesktopShell || onThreadEntry.current) return;
+    if (isDesktopShell) return;
+    // A pick while our own Back is still traversing: `history.state` is the
+    // entry being left, so push only once the `popstate` lands.
+    if (backPending.current) {
+      openAfterBack.current = true;
+      return;
+    }
+    if (onThreadEntry.current) return;
     if (isThreadPaneEntry(window.history.state)) {
       onThreadEntry.current = true;
       return;
     }
-    window.history.pushState(
-      {
-        ...(window.history.state as object | null),
-        [THREAD_PANE_HISTORY_KEY]: THREAD_PANE_DOCUMENT_TOKEN,
-      },
-      "",
-    );
+    pushThreadPaneEntry();
     onThreadEntry.current = true;
   }, [isDesktopShell]);
   const backToChannels = useCallback(() => {
@@ -645,6 +668,13 @@ export function ChatShell({
   useEffect(() => {
     const onPopState = (event: PopStateEvent) => {
       backPending.current = false;
+      if (openAfterBack.current) {
+        openAfterBack.current = false;
+        pushThreadPaneEntry();
+        onThreadEntry.current = true;
+        setNarrowPane("thread");
+        return;
+      }
       const thread = isThreadPaneEntry(event.state);
       onThreadEntry.current = thread;
       setNarrowPane(thread ? "thread" : "channels");
@@ -1182,8 +1212,8 @@ export function ChatShell({
     Only while the thread is on screen. Below `lg` the list and the thread are
     one screen each, and a member back on the list (the arrow, `Esc`, the
     browser's Back, #3824) is not looking at the channel: still claimed, a
-    message landing in it was stamped read before they ever saw it, its row
-    never went bold and the nav's Chat row never lit. Leaving the thread for
+    message landing in it was stamped read before they ever saw it, so the
+    nav's Chat row never lit and the channel came back read. Leaving the thread for
     the list runs the cleanup, which stamps it read on the way out as leaving
     a channel always has; coming back claims and stamps it again. From `lg`
     up both are on screen and `narrowPane` changes nothing.

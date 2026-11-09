@@ -3104,6 +3104,51 @@ describe("ChatShell narrow viewports (#2142)", () => {
     });
   });
 
+  it("shows the list without going back from a thread a link opened after a pick (#3824)", async () => {
+    window.history.replaceState(null, "");
+    const { rerender } = render(<ChatShell />);
+    fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+    fireEvent.click(screen.getByTestId("pick-random"));
+    await waitFor(() => {
+      expect(columns().thread.className).not.toContain("max-lg:hidden");
+    });
+
+    // A Find result or a notification: Next pushes its own unmarked entry
+    // and the shell sees a new URL target, without remounting.
+    window.history.pushState({}, "");
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    const back = vi.spyOn(window.history, "back");
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+      expect(back).not.toHaveBeenCalled();
+      expect(columns().channels.className).not.toContain("max-lg:hidden");
+    } finally {
+      back.mockRestore();
+    }
+  });
+
+  it("opens a channel picked while its own Back is still traversing, with its own entry (#3824)", async () => {
+    window.history.replaceState(null, "");
+    render(<ChatShell />);
+    fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+    fireEvent.click(screen.getByTestId("pick-random"));
+    await waitFor(() => {
+      expect(columns().thread.className).not.toContain("max-lg:hidden");
+    });
+
+    // Back to the list, and a pick before the `popstate` lands.
+    fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+    fireEvent.click(screen.getByTestId("pick-general"));
+
+    await waitFor(() => {
+      expect(window.history.state).toMatchObject({
+        frappChatThreadPane: expect.any(String),
+      });
+    });
+    expect(columns().thread.className).not.toContain("max-lg:hidden");
+  });
+
   it("never goes back through a marker another document left, as after a reload (#3824)", () => {
     // History state outlives a reload; the entry under it does not belong to
     // this document, so going back would reload the page into the thread.
@@ -4191,7 +4236,7 @@ describe("ChatShell claims the open channel as viewed (#3698)", () => {
 
   it("releases it below lg while the list is on screen, and claims it again on the way back in (#3824)", async () => {
     // Still claimed on the list, a message landing in the channel was stamped
-    // read before the member saw it: no bold row, no lit nav.
+    // read before the member saw it: no lit nav, nothing unread on return.
     const { viewedChannelId } =
       await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
     render(<ChatShell initialChannelId="chan-general" />);
