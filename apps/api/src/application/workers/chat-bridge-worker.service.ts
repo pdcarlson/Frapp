@@ -147,8 +147,7 @@ export class ChatBridgeWorkerService
       let channelId: string | null;
       try {
         channelId =
-          (await this.channels.findByName(row.chapter_id, 'chapter-audit'))
-            ?.id ?? null;
+          (await this.channels.findAuditLog(row.chapter_id))?.id ?? null;
       } catch (channelError) {
         reportCaughtFailure(this.logger, {
           level: 'error',

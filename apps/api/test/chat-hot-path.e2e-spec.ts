@@ -84,6 +84,7 @@ describe('Chat hot path (e2e)', () => {
     archived_at: null,
     default_notification_level: null,
     is_default: false,
+    is_audit_log: false,
   };
 
   const announcementsChannel: ChatChannel = {
@@ -142,6 +143,7 @@ describe('Chat hot path (e2e)', () => {
     findPushRouting: jest.fn(),
     createDm: jest.fn(),
     findByName: jest.fn(),
+    findAuditLog: jest.fn(),
     createMany: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),

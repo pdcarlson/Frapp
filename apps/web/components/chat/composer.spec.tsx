@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { AUDIT_LOG_COMPOSER_NOTE } from "@repo/chat-core/audit-log-copy";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { act } from "react";
@@ -1978,9 +1979,7 @@ describe("Composer hands a command to onOpenCommandForm before dispatching (#377
     const user = userEvent.setup();
     const onSlashDispatch = vi.fn(async () => ({ ok: true as const }));
     const onOpenCommandForm = vi.fn((): CommandFormOutcome => "opened");
-    render(
-      <Composer {...baseProps({ onSlashDispatch, onOpenCommandForm })} />,
-    );
+    render(<Composer {...baseProps({ onSlashDispatch, onOpenCommandForm })} />);
     await openPalette(user);
     await user.click(await screen.findByRole("option", { name: /event/i }));
 
@@ -2178,7 +2177,9 @@ describe("Composer + menu (#3865)", () => {
 
   it("sits first on the toolbar: + · emoji · help", () => {
     render(<Composer {...baseProps({ commandForms: FORMS })} />);
-    const plus = screen.getByRole("button", { name: /add a file, poll, event/i });
+    const plus = screen.getByRole("button", {
+      name: /add a file, poll, event/i,
+    });
     const emoji = screen.getByRole("button", { name: /open emoji picker/i });
     expect(
       plus.compareDocumentPosition(emoji) & Node.DOCUMENT_POSITION_FOLLOWING,
@@ -2239,5 +2240,29 @@ describe("Composer + menu (#3865)", () => {
     expect(screen.getByRole("menuitem", { name: /poll/i })).not.toHaveAttribute(
       "aria-disabled",
     );
+  });
+});
+
+// #3909: `#chapter-audit` is system-write only. The server already refuses a
+// post there; the composer gives way to a line that says why, even for a
+// caller the capability projection has not reached yet.
+describe("Composer in the audit log", () => {
+  it("shows the audit log line instead of a composer, whatever canPost says", () => {
+    render(
+      <Composer
+        {...baseProps({
+          channelName: "chapter-audit",
+          isReadOnly: true,
+          isAuditLog: true,
+          canPost: true,
+        })}
+      />,
+    );
+    expect(
+      screen.getByText(AUDIT_LOG_COMPOSER_NOTE),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("This channel is read-only for your role."),
+    ).not.toBeInTheDocument();
   });
 });

@@ -113,6 +113,17 @@ const CHANNELS = [
     is_read_only: false,
     can_post: false,
   },
+  // The audit log (#3909): the shell must tell the composer, which swaps in
+  // the audit log line.
+  {
+    id: "chan-audit",
+    name: "chapter-audit",
+    type: "PUBLIC",
+    member_ids: [],
+    is_read_only: true,
+    is_audit_log: true,
+    can_post: false,
+  },
 ];
 
 /**
@@ -698,8 +709,10 @@ vi.mock("./composer", () => ({
     recruitmentVocab,
     onOpenCommandForm,
     commandForms,
+    isAuditLog,
   }: {
     channelId: string;
+    isAuditLog?: boolean;
     commandForms?: readonly { command: string; roleAllows: unknown }[];
     onOpenCommandForm?: (
       command: { name: string; implemented: boolean },
@@ -739,6 +752,7 @@ vi.mock("./composer", () => ({
     return (
       <div
         data-testid="composer"
+        data-audit-log={String(isAuditLog ?? false)}
         data-draft={draft ?? ""}
         data-slash-status={slashCommandsStatus ?? ""}
         data-polls-enabled={String(isModuleEnabled?.("polls"))}
@@ -1875,6 +1889,28 @@ describe("ChatShell deep-link targets", () => {
       <ChatShell initialChannelId="chan-general" initialMessageId="msg-2" />,
     );
     expect(mockScrollToMessage).toHaveBeenCalledWith("msg-2");
+  });
+});
+
+describe("ChatShell audit log (#3909)", () => {
+  it("tells the composer when the open channel is the audit log", async () => {
+    render(<ChatShell initialChannelId="chan-audit" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("composer")).toHaveAttribute(
+        "data-audit-log",
+        "true",
+      );
+    });
+  });
+
+  it("doesn't in an ordinary channel", async () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("composer")).toHaveAttribute(
+        "data-audit-log",
+        "false",
+      );
+    });
   });
 });
 

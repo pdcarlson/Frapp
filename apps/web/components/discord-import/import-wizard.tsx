@@ -36,7 +36,7 @@ import {
   choiceIsReadOnly,
   mappingIssues,
   restageChoices,
-  isImportTarget,
+  isChapterChannel,
   withMergeDefaults,
   type ExistingChannel,
 } from "./mapping-issues";
@@ -218,11 +218,12 @@ export function ImportWizard({
       existingChannels.data === undefined
         ? null
         : asArray<ExistingChannel>(existingChannels.data).map(
-            ({ id, name, type, archived_at }) => ({
+            ({ id, name, type, archived_at, is_audit_log }) => ({
               id,
               name,
               type,
               archived_at,
+              is_audit_log,
             }),
           ),
     [existingChannels.data],
@@ -500,8 +501,9 @@ export function ImportWizard({
     const issues = mappingIssues(
       staged.channels,
       channelChoices,
+      // Every chapter channel's name is taken, the audit log's included.
       asArray<ExistingChannel>(existingChannels.data)
-        .filter(isImportTarget)
+        .filter(isChapterChannel)
         .map((channel) => channel.name),
       readersOf,
       sidebarGroups,
