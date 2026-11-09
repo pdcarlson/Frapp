@@ -1161,6 +1161,50 @@ export async function deleteMessage(
   }
 }
 
+export interface ClosePollArgs {
+  channelId: string;
+  messageId: string;
+}
+
+/**
+ * Close a chat-card poll early (#3794). Creator only, and refused on a poll
+ * that is already closed or past its deadline: the API enforces both
+ * (`PollService.close`), the card only offers the control when it should work
+ * (`canClosePoll` in `./polls`).
+ *
+ * Not optimistic, like `deleteMessage`: the server stamps `payload.closed_at`,
+ * and the row it returns is merged as the confirmation, so the closer's card
+ * draws closed even before the Realtime UPDATE every other client draws it
+ * from. A duplicate echo of the same row is a no-op merge.
+ */
+export async function closePoll(
+  ctx: ChatActionContext,
+  args: ClosePollArgs,
+): Promise<void> {
+  if (!ctx.userId) return;
+  try {
+    const { data, error, response } = await ctx.apiClient.POST(
+      "/v1/polls/{messageId}/close",
+      { params: { path: { messageId: args.messageId } } },
+    );
+    if (error || !data) {
+      throwApiError(error, response, "Couldn't close poll");
+    }
+    patchCache(ctx.queryClient, args.channelId, (cache) =>
+      mergeHeldServerRow(cache, data as unknown as RawChatMessage),
+    );
+  } catch (err) {
+    const { message } = classifyChatError(err);
+    ctx.toast?.({
+      title: "Couldn't close poll",
+      description: message,
+      variant: "destructive",
+    });
+    ctx.onError?.({ title: "Couldn't close poll", description: message });
+    throw err;
+  }
+}
+
 export interface CardActionArgs {
   channelId: string;
   messageId: string;

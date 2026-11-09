@@ -2673,7 +2673,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Manually close a poll early (creator only) */
+        /** Manually close a poll early (creator only): a REST poll or a chat-card poll */
         post: operations["PollController_close_v1"];
         delete?: never;
         options?: never;
@@ -11493,7 +11493,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ChatMessageDto"];
+                };
             };
             /** @description Error */
             default: {

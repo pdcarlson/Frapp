@@ -11,6 +11,7 @@ import { POLL_OPTIONS_MAX, POLL_OPTIONS_MIN } from '@repo/validation';
 import {
   isPollClosed,
   validateIndexedPollVote,
+  type CardPollPayload,
 } from '#domain/utils/poll-vote-rules';
 import { CHAT_MESSAGE_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import type { IChatMessageRepository } from '#domain/repositories/chat.repository.interface';
@@ -305,6 +306,10 @@ export class PollService {
     chapterId: string,
     userId: string,
     operation: ChannelOperation,
+    // Only `close` takes a chat-card poll (`kind: 'poll'`, #3794). Every other
+    // operation here reads or writes the REST shape (`metadata`, `poll_votes`);
+    // a card votes through `chat_message_actions` instead.
+    { allowCard = false }: { allowCard?: boolean } = {},
   ): Promise<ChatMessage> {
     const message = await this.messageRepo.findById(messageId);
     if (!message) {
@@ -318,6 +323,7 @@ export class PollService {
       operation,
     );
 
+    if (allowCard && message.kind === 'poll') return message;
     if (message.type !== 'POLL') {
       throw new BadRequestException('Message is not a poll');
     }
@@ -354,6 +360,7 @@ export class PollService {
       chapterId,
       userId,
       'vote',
+      { allowCard: true },
     );
 
     // Mirrors `editMessage`'s guard (chat.service.ts) — deletion is soft, so
@@ -369,6 +376,8 @@ export class PollService {
       throw new ForbiddenException('Only the poll creator can close it');
     }
 
+    if (message.kind === 'poll') return this.closeCard(message, userId);
+
     const metadata = message.metadata as PollMetadata;
     if (metadata.closed_at) {
       throw new BadRequestException('Poll is already closed');
@@ -383,6 +392,44 @@ export class PollService {
         closed_at: new Date().toISOString(),
         closed_by: userId,
       } satisfies PollMetadata,
+    });
+  }
+
+  /**
+   * Early close of a chat-card poll (`kind: 'poll'`, #3794). The card keeps
+   * its poll in `payload`, not `metadata`, so the close is stamped there:
+   * `payload.closed_at` / `closed_by`, the same pair the REST shape keeps in
+   * `metadata`. The API is the only writer — a client can't update a message's
+   * payload, and `ChatService.sendMessage` strips the pair from a card a
+   * client posts. The row update reaches every open client as a Realtime
+   * UPDATE, which is how both cards draw it closed live, and the card vote
+   * path (`ChatReactionService`) refuses a vote once `closed_at` is set.
+   *
+   * Creator, deletion and access checks are `close`'s, shared with the REST
+   * shape; only the storage differs.
+   */
+  private async closeCard(
+    message: ChatMessage,
+    userId: string,
+  ): Promise<ChatMessage> {
+    const payload = message.payload;
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      throw new BadRequestException('Malformed poll card');
+    }
+    const card = payload as CardPollPayload;
+    if (card.closed_at) {
+      throw new BadRequestException('Poll is already closed');
+    }
+    if (isPollClosed(card.closes_at)) {
+      throw new BadRequestException('Poll has expired');
+    }
+
+    return this.messageRepo.update(message.id, {
+      payload: {
+        ...payload,
+        closed_at: new Date().toISOString(),
+        closed_by: userId,
+      },
     });
   }
 

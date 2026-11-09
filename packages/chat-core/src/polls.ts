@@ -1,3 +1,4 @@
+import { parseInstant } from "@repo/formatting";
 import { moduleRefusalFromServerMessage } from "@repo/validation";
 import type { ChatMessage } from "./types";
 import {
@@ -155,12 +156,66 @@ export function readPollPayload(message: ChatMessage): PollPayload | null {
     }
   }
   if (parsed.length < 2) return null;
+  const closedAt = (raw as { closed_at?: unknown }).closed_at;
+  const closedBy = (raw as { closed_by?: unknown }).closed_by;
   return {
     question,
     options: parsed,
     closes_at: typeof closesAt === "string" ? closesAt : "",
+    // Only on a card closed early (#3794), so an open card reads back exactly
+    // as `buildPollMessage` built it.
+    ...(typeof closedAt === "string" && closedAt !== ""
+      ? {
+          closed_at: closedAt,
+          closed_by: typeof closedBy === "string" ? closedBy : null,
+        }
+      : {}),
   };
 }
+
+/**
+ * Whether a poll card takes no more votes: its creator closed it early
+ * (`closed_at`, #3794), or its deadline has passed. The API refuses a vote on
+ * either (`ChatReactionService`); this is the same answer for the cards to
+ * draw. A deadline that doesn't parse never closes the card, as on the server.
+ */
+export function isPollCardClosed(payload: PollPayload, now: number): boolean {
+  if (payload.closed_at) return true;
+  const deadline = parseInstant(payload.closes_at);
+  return deadline ? deadline.getTime() < now : false;
+}
+
+/**
+ * Whether the viewer is offered Close poll on this card (#3794): it is their
+ * own poll, the server has it (a pending or failed row has no id the API
+ * knows), it isn't deleted, and it is still open. The API enforces the same
+ * rules (`PollService.close`); this only keeps a card from offering a control
+ * that would be refused.
+ */
+export function canClosePoll(
+  message: Pick<ChatMessage, "sender_id" | "_status" | "is_deleted">,
+  payload: PollPayload,
+  viewerId: string | null,
+  now: number,
+): boolean {
+  return (
+    !!viewerId &&
+    message.sender_id === viewerId &&
+    message._status === "confirmed" &&
+    !message.is_deleted &&
+    !isPollCardClosed(payload, now)
+  );
+}
+
+/**
+ * Close poll asks first, with the same words on web's dialog and mobile's
+ * alert: it can't be undone, and it stops everyone's voting at once.
+ */
+export const CLOSE_POLL_LABEL = "Close poll";
+export const CLOSE_POLL_CONFIRM_TITLE = "Close this poll?";
+export const CLOSE_POLL_CONFIRM_BODY =
+  "No one can vote after it closes, and it can't be reopened. The results stay on the card.";
+export const CLOSE_POLL_CONFIRM_LABEL = "Close poll";
 
 export interface PollTally {
   byOption: Record<string, number>;

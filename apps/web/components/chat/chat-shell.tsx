@@ -125,6 +125,11 @@ import {
   type DepartedMembers,
 } from "@repo/chat-core/message-actions";
 import { blockActionLabel } from "@repo/chat-core/block-copy";
+import {
+  CLOSE_POLL_CONFIRM_BODY,
+  CLOSE_POLL_CONFIRM_LABEL,
+  CLOSE_POLL_CONFIRM_TITLE,
+} from "@repo/chat-core/polls";
 import { replyPreviewText } from "./reply-quote";
 import { OpsSetupNudge } from "./ops-setup-nudge";
 import { SetupChecklistSection } from "./setup-checklist";
@@ -981,6 +986,29 @@ export function ChatShell({
       })();
     },
     [confirm, deleteMessage],
+  );
+
+  // A poll card's Close poll (#3794): asked first, in the words mobile's
+  // alert uses, because it stops everyone's voting and can't be undone.
+  const closePoll = channel.closePoll;
+  const handleClosePoll = useCallback(
+    (messageId: string) => {
+      void (async () => {
+        const confirmed = await confirm({
+          title: CLOSE_POLL_CONFIRM_TITLE,
+          description: CLOSE_POLL_CONFIRM_BODY,
+          confirmLabel: CLOSE_POLL_CONFIRM_LABEL,
+          tone: "destructive",
+        });
+        if (!confirmed) return;
+        try {
+          await closePoll(messageId);
+        } catch {
+          // The close action already toasted the failure.
+        }
+      })();
+    },
+    [confirm, closePoll],
   );
 
   const setNotificationLevel = useSetChannelNotificationLevel();
@@ -2334,6 +2362,7 @@ export function ChatShell({
                     activeChannel?.can_post !== false ? channel.edit : undefined
                   }
                   onDelete={handleDeleteMessage}
+                  onClosePoll={handleClosePoll}
                   bookmarkedMessageIds={bookmarkedMessageIds}
                   onToggleBookmark={handleToggleBookmark}
                   canManageChannel={canManageChannel}

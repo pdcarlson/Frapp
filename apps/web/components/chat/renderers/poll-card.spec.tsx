@@ -279,3 +279,78 @@ describe("PollCard module gate (#3012)", () => {
     expect(screen.queryByText(POLLS_OFF_COPY)).not.toBeInTheDocument();
   });
 });
+
+describe("PollCard closed early by its creator (#3794)", () => {
+  beforeEach(() => {
+    chapterStore.activeChapterId = "chapter-1";
+    chapterRead.current = {
+      data: { enabled_modules: { polls: true } },
+      isError: false,
+      fetchStatus: "idle",
+      refetch: vi.fn(),
+    };
+  });
+
+  const card = {
+    question: "Lunch?",
+    options: [
+      { id: "yes", label: "Yes" },
+      { id: "no", label: "No" },
+    ],
+    closes_at: "2999-01-01T00:00:00.000Z",
+  };
+
+  function renderWithClose(message: ChatMessage) {
+    const onVote = vi.fn();
+    const onClosePoll = vi.fn();
+    render(
+      <PollCard
+        message={message}
+        viewerId={VIEWER}
+        isConfirmed
+        onVote={onVote}
+        onClosePoll={onClosePoll}
+      />,
+    );
+    return { onVote, onClosePoll };
+  }
+
+  it("offers Close poll on the viewer's own open poll, and calls back with its id", () => {
+    const { onClosePoll } = renderWithClose(
+      poll({ sender_id: VIEWER, payload: card }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Close poll" }));
+    expect(onClosePoll).toHaveBeenCalledWith("msg-1");
+  });
+
+  it("offers it to nobody else", () => {
+    renderWithClose(poll({ sender_id: OTHER, payload: card }));
+
+    expect(
+      screen.queryByRole("button", { name: "Close poll" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("draws a card closed early as closed, with its tally and no vote, before its deadline", () => {
+    const { onVote } = renderWithClose(
+      poll({
+        sender_id: VIEWER,
+        payload: {
+          ...card,
+          closed_at: "2026-01-01T00:00:00.000Z",
+          closed_by: VIEWER,
+        },
+      }),
+    );
+
+    expect(screen.getByText("Poll · Closed")).toBeInTheDocument();
+    expectReadable();
+    expect(optionButton("No")).toBeDisabled();
+    fireEvent.click(optionButton("No"));
+    expect(onVote).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("button", { name: "Close poll" }),
+    ).not.toBeInTheDocument();
+  });
+});

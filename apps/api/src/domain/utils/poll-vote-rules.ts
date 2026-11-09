@@ -34,6 +34,28 @@ export interface CardPollPayload {
   options?: { id?: unknown }[];
   closes_at?: string | null;
   choice_mode?: 'single' | 'multi';
+  /**
+   * When the creator closed the card early (#3794). Written only by
+   * `PollService.close`; `ChatService.sendMessage` strips it from a card a
+   * client posts, so a card can't arrive already "closed by" anyone.
+   */
+  closed_at?: string | null;
+  /** `users.id` of the creator who closed it; set with `closed_at`. */
+  closed_by?: string | null;
+}
+
+/**
+ * The card's effective deadline for the vote rules: the early close once
+ * there is one, else `closes_at`. `closed_at` is stamped with the time of the
+ * close, so it is always already past, and `isPollClosed` reads it as closed
+ * with the same single check — the trick `PollService.vote` uses for the REST
+ * shape's `metadata.closed_at`.
+ */
+export function cardPollDeadline(card: CardPollPayload): string | null {
+  if (typeof card.closed_at === 'string' && card.closed_at !== '') {
+    return card.closed_at;
+  }
+  return card.closes_at ?? null;
 }
 
 /**

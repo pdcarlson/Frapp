@@ -8892,7 +8892,14 @@
         ],
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatMessageDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -8910,7 +8917,7 @@
             "bearer": []
           }
         ],
-        "summary": "Manually close a poll early (creator only)",
+        "summary": "Manually close a poll early (creator only): a REST poll or a chat-card poll",
         "tags": [
           "Polls"
         ]

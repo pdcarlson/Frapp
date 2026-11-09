@@ -2,6 +2,7 @@ import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import {
   CARD_VOTE_ACTION_TYPE,
   cardPollChoiceMode,
+  cardPollDeadline,
   cardPollOptionIds,
   cardVoteSelection,
   validateCardPollVote,
@@ -41,7 +42,9 @@ function assertCardPollVoteAllowed(
   if (optionIds.length === 0) return;
 
   const rejection = validateCardPollVote({
-    closesAt: card.closes_at,
+    // A card its creator closed early (#3794) refuses votes here, on the
+    // server, not just in the client that drew it closed.
+    closesAt: cardPollDeadline(card),
     optionIds,
     selected: cardVoteSelection(actionPayload),
     choiceMode: cardPollChoiceMode(card),

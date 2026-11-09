@@ -190,6 +190,8 @@ export interface MessageItemProps {
   onEdit?: (messageId: string, content: string) => Promise<void>;
   /** Own message, or any message when the viewer holds `channels:manage`. */
   onDelete?: (messageId: string) => void;
+  /** A poll card's Close poll, on the viewer's own open poll (#3794). */
+  onClosePoll?: (messageId: string) => void;
   /**
    * Whether the viewer has bookmarked this message (#462).
    *
@@ -289,6 +291,7 @@ export function MessageItem({
   onAct,
   onEdit,
   onDelete,
+  onClosePoll,
   isBookmarked,
   onToggleBookmark,
   canManageChannel,
@@ -669,6 +672,7 @@ export function MessageItem({
       nameFor={nameFor}
       isConfirmed={isConfirmed}
       onAct={onAct ?? (() => {})}
+      onClosePoll={onClosePoll}
       trailing={trailingOnOwnLine ? undefined : trailing}
       muted={isPending || isFailed}
     />

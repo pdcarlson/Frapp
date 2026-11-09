@@ -1,13 +1,15 @@
 import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
+  CLOSE_POLL_LABEL,
   POLL_VOTE_ACTION_TYPE,
+  canClosePoll,
+  isPollCardClosed,
   pollsGateReason,
   readPollPayload,
   tallyPollVotes,
   type PollOption,
 } from "@repo/chat-core/polls";
-import { parseInstant } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { useChapterBranding, type ChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -66,10 +68,16 @@ export interface PollCardProps extends ChatCardFrameProps {
     actionType: string,
     payload: Record<string, unknown>,
   ) => void;
+  /**
+   * Close poll on the viewer's own open poll (#3794). The caller confirms
+   * first (`confirmClosePoll`); the card only offers it (`canClosePoll`).
+   */
+  onClosePoll?: (messageId: string) => void;
 }
 
 export function PollCard(props: PollCardProps) {
-  const { message, viewerId, isConfirmed, onVote, onOpenActions } = props;
+  const { message, viewerId, isConfirmed, onVote, onClosePoll, onOpenActions } =
+    props;
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
   const styles = createStyles(tokens, brand);
@@ -108,8 +116,12 @@ export function PollCard(props: PollCardProps) {
     );
   }
 
-  const closesAt = parseInstant(payload.closes_at);
-  const isClosed = closesAt ? closesAt.getTime() < now : false;
+  // Closed by its deadline or, early, by its creator (#3794). The server row's
+  // `payload.closed_at` arrives as a Realtime UPDATE, so every open card
+  // redraws closed the moment the creator closes it.
+  const isClosed = isPollCardClosed(payload, now);
+  const showClose =
+    !!onClosePoll && canClosePoll(message, payload, viewerId, now);
   const canVote = isConfirmed && !isClosed && pollsGate === "on";
   const gateReason = pollsGateReason(pollsGate, { isClosed, isConfirmed });
 
@@ -188,6 +200,16 @@ export function PollCard(props: PollCardProps) {
           ? `No votes yet${canVote ? " · be the first to vote" : ""}.`
           : `${total} vote${total === 1 ? "" : "s"}${viewerVote ? " · your vote is highlighted" : ""}`}
       </Text>
+      {showClose ? (
+        <Pressable
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={() => onClosePoll?.(message.id)}
+          style={styles.closeButton}
+        >
+          <Text style={styles.closeText}>{CLOSE_POLL_LABEL}</Text>
+        </Pressable>
+      ) : null}
       {gateReason ? (
         <View style={styles.gateRow}>
           <Text style={styles.gateText}>{gateReason}</Text>
@@ -265,6 +287,15 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       color: tokens.color.text.mutedForeground,
     },
     retryText: {
+      ...typeRole(tokens.typography.role.caption),
+      color: brand.accent,
+    },
+    closeButton: {
+      alignSelf: "flex-start",
+      marginTop: tokens.spacing.xs,
+      paddingVertical: tokens.spacing.xs,
+    },
+    closeText: {
       ...typeRole(tokens.typography.role.caption),
       color: brand.accent,
     },

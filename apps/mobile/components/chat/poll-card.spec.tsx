@@ -329,3 +329,86 @@ describe("PollCard module gate (#3012)", () => {
     }
   });
 });
+
+describe("PollCard closed early by its creator (#3794)", () => {
+  const card = {
+    question: "Lunch?",
+    options: [
+      { id: "yes", label: "Yes" },
+      { id: "no", label: "No" },
+    ],
+    closes_at: "2999-01-01T00:00:00.000Z",
+  };
+
+  function renderWithClose(message: ChatMessage) {
+    const onVote = vi.fn();
+    const onClosePoll = vi.fn();
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <PollCard
+            message={message}
+            viewerId={VIEWER}
+            isConfirmed={message._status === "confirmed"}
+            onVote={onVote}
+            onClosePoll={onClosePoll}
+            onRetry={vi.fn()}
+            onDiscard={vi.fn()}
+            onReact={vi.fn()}
+            onUnreact={vi.fn()}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    return { tree, onVote, onClosePoll };
+  }
+
+  /** The Close poll control: the card's button whose label reads it. */
+  function closeButton(tree: ReactTestRenderer) {
+    return tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "button" &&
+        JSON.stringify(node.props.children?.props?.children) === '"Close poll"',
+    );
+  }
+
+  it("offers Close poll on the viewer's own open poll, and calls back with its id", () => {
+    const { tree, onClosePoll } = renderWithClose(poll({ payload: card }));
+
+    const [button] = closeButton(tree);
+    expect(button).toBeDefined();
+    act(() => button.props.onPress());
+    expect(onClosePoll).toHaveBeenCalledWith("msg-1");
+  });
+
+  it("offers it to nobody else", () => {
+    const { tree } = renderWithClose(poll({ sender_id: OTHER, payload: card }));
+    expect(closeButton(tree)).toHaveLength(0);
+  });
+
+  it("draws a card closed early as closed, with no vote, before its deadline", () => {
+    const { tree, onVote } = renderWithClose(
+      poll({
+        payload: {
+          ...card,
+          closed_at: "2026-01-01T00:00:00.000Z",
+          closed_by: VIEWER,
+        },
+      }),
+    );
+
+    expect(JSON.stringify(tree.toJSON())).toContain("Poll · Closed");
+    const options = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityState?.selected !== undefined,
+    );
+    expect(options).toHaveLength(2);
+    for (const option of options) expect(option.props.disabled).toBe(true);
+    act(() => options[1].props.onPress());
+    expect(onVote).not.toHaveBeenCalled();
+    expect(closeButton(tree)).toHaveLength(0);
+  });
+});

@@ -1,4 +1,5 @@
 import {
+  cardPollDeadline,
   cardPollChoiceMode,
   cardPollOptionIds,
   cardVoteSelection,
@@ -214,5 +215,37 @@ describe('reading a chat poll card and its vote', () => {
     expect(cardVoteSelection({ option_id: [] })).toEqual([]);
     expect(cardVoteSelection({})).toEqual([]);
     expect(cardVoteSelection(undefined)).toEqual([]);
+  });
+});
+
+describe('cardPollDeadline (#3794)', () => {
+  it('is the early close once the creator closed the card', () => {
+    expect(
+      cardPollDeadline({
+        closes_at: '2999-01-01T00:00:00.000Z',
+        closed_at: '2026-01-01T00:00:00.000Z',
+      }),
+    ).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('is closes_at while the card is open, and null with neither', () => {
+    expect(cardPollDeadline({ closes_at: '2999-01-01T00:00:00.000Z' })).toBe(
+      '2999-01-01T00:00:00.000Z',
+    );
+    expect(cardPollDeadline({ closed_at: '', closes_at: null })).toBeNull();
+    expect(cardPollDeadline({})).toBeNull();
+  });
+
+  it('reads a closed card as closed whatever its deadline says', () => {
+    const now = new Date('2026-06-01T00:00:00.000Z');
+    expect(
+      isPollClosed(
+        cardPollDeadline({
+          closes_at: '2999-01-01T00:00:00.000Z',
+          closed_at: '2026-05-31T00:00:00.000Z',
+        }),
+        now,
+      ),
+    ).toBe(true);
   });
 });
