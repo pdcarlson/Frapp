@@ -1673,6 +1673,9 @@ describe("BackworkPage library (2026-11-05 redesign)", () => {
     expect(mockDeleteResource).not.toHaveBeenCalled();
   });
 
+  // Renders all 1,000 rows, which takes ~3.5s in jsdom on a laptop (already
+  // so on main before #3848) and passed 5s on a loaded CI runner, so this one
+  // test gets a longer budget than vitest's 5s default.
   it("says when the list hit the server's row cap", () => {
     resourcesQuery.data = Array.from({ length: 1000 }, (_, i) => ({
       ...RESOURCE,
@@ -1680,7 +1683,7 @@ describe("BackworkPage library (2026-11-05 redesign)", () => {
     }));
     render(<BackworkPage />);
     expect(screen.getByText(/showing the newest 1,000 files/i)).toBeInTheDocument();
-  });
+  }, 20_000);
 
   it("keeps each download's spinner until that download finishes", async () => {
     const user = userEvent.setup();
