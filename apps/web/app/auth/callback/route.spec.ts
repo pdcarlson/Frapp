@@ -114,4 +114,72 @@ describe("GET /auth/callback", () => {
     expect(url.pathname).toBe("/sign-in");
     expect(url.searchParams.get("authError")).toBe("verify_failed");
   });
+
+  describe("a sign-in that created a new account (#3786)", () => {
+    const now = "2026-11-09T04:23:05.120Z";
+    const freshGoogleUser = {
+      email: "member@gmail.com",
+      created_at: now,
+      last_sign_in_at: "2026-11-09T04:23:05.410Z",
+      app_metadata: { provider: "google" },
+    };
+
+    it("sends a brand-new Google account from the sign-in screen to the notice, keeping `next`", async () => {
+      exchangeCodeForSession.mockResolvedValue({
+        data: { user: freshGoogleUser },
+        error: null,
+      });
+      const { url } = await callback("code=abc123&next=%2Fjoin%3Ftoken%3Dinv-1&intent=sign-in");
+      expect(url.origin).toBe(ORIGIN);
+      expect(url.pathname).toBe("/new-account");
+      expect(url.searchParams.get("next")).toBe("/join?token=inv-1");
+    });
+
+    it("treats a brand-new Apple account the same way", async () => {
+      exchangeCodeForSession.mockResolvedValue({
+        data: { user: { ...freshGoogleUser, app_metadata: { provider: "apple" } } },
+        error: null,
+      });
+      const { url } = await callback("code=abc123&intent=sign-in");
+      expect(url.pathname).toBe("/new-account");
+      expect(url.searchParams.get("next")).toBe("/chat");
+    });
+
+    it("sends a returning member straight on to `next`", async () => {
+      exchangeCodeForSession.mockResolvedValue({
+        data: {
+          user: {
+            ...freshGoogleUser,
+            created_at: "2026-09-01T12:00:00Z",
+            last_sign_in_at: now,
+          },
+        },
+        error: null,
+      });
+      const { url } = await callback("code=abc123&next=%2Fevents&intent=sign-in");
+      expect(url.pathname).toBe("/events");
+    });
+
+    it("does not stop a new account made from the sign-up screen", async () => {
+      exchangeCodeForSession.mockResolvedValue({
+        data: { user: freshGoogleUser },
+        error: null,
+      });
+      const { url } = await callback("code=abc123&next=%2Fchat");
+      expect(url.pathname).toBe("/chat");
+    });
+
+    it("never carries an off-origin `next` onto the notice", async () => {
+      exchangeCodeForSession.mockResolvedValue({
+        data: { user: freshGoogleUser },
+        error: null,
+      });
+      const { url } = await callback(
+        `code=abc123&intent=sign-in&next=${encodeURIComponent("//evil.example/x")}`,
+      );
+      expect(url.origin).toBe(ORIGIN);
+      expect(url.pathname).toBe("/new-account");
+      expect(url.searchParams.get("next")).toBe("/chat");
+    });
+  });
 });

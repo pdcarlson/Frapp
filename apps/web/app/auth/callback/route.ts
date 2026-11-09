@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
-import { isEmailOtpType, resolveRedirectPath } from "@/lib/auth/redirect";
+import { isFirstOAuthSignIn } from "@/lib/auth/oauth";
+import {
+  AUTH_CALLBACK_INTENT_PARAM,
+  NEW_ACCOUNT_PATH,
+  isEmailOtpType,
+  resolveRedirectPath,
+} from "@/lib/auth/redirect";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 /**
@@ -29,6 +35,14 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
  * `next` is re-validated with the same open-redirect guard the proxy applies
  * (a same-origin path or `/chat`), so tampering with the link cannot send a
  * freshly signed-in session to another host.
+ *
+ * **A sign-in that created an account.** When the sign-in screen started an
+ * OAuth round trip (`intent=sign-in`) and the exchange returns a user that
+ * Google or Apple created just now, the member asked to sign in and got a new,
+ * empty account instead: GoTrue links nothing it can't verify, so a member who
+ * joined on the phone with Apple and picks Google here is split (#3786). They
+ * go to `/new-account` first, which names the account and offers sign-out in
+ * one step, before onboarding treats them as new. Nothing is linked or merged.
  */
 export async function GET(request: Request): Promise<NextResponse> {
   const url = new URL(request.url);
@@ -61,8 +75,16 @@ export async function GET(request: Request): Promise<NextResponse> {
 
   if (code && !linkError) {
     const supabase = await createSupabaseServerClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
+      if (
+        url.searchParams.get(AUTH_CALLBACK_INTENT_PARAM) === "sign-in" &&
+        isFirstOAuthSignIn(data?.user)
+      ) {
+        const notice = new URL(NEW_ACCOUNT_PATH, url.origin);
+        notice.searchParams.set("next", next);
+        return NextResponse.redirect(notice);
+      }
       return NextResponse.redirect(new URL(next, url.origin));
     }
   }
