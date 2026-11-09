@@ -86,6 +86,7 @@ export class SupabaseBackworkCourseRepository implements IBackworkCourseReposito
       p_may_rename: edit.mayRename,
       p_add: edit.add,
       p_remove: edit.remove,
+      p_clamp: edit.clamp ?? false,
     });
     if (error) throw new SupabaseQueryError(error);
     // The function returns no row (all-null columns) when the department

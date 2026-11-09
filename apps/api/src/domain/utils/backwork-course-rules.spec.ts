@@ -1,8 +1,4 @@
-import {
-  applyNicknameEdit,
-  courseEditRefusal,
-  mergeCourseNames,
-} from './backwork-course-rules';
+import { applyNicknameEdit, courseEditRefusal } from './backwork-course-rules';
 
 describe('courseEditRefusal', () => {
   const named = { name: 'Calculus I' };
@@ -89,51 +85,5 @@ describe('applyNicknameEdit', () => {
 
   it('drops a nickname that repeats the name', () => {
     expect(applyNicknameEdit(['Calc 1'], [], [], 'calc 1')).toEqual([]);
-  });
-});
-
-describe('mergeCourseNames', () => {
-  it("keeps the target's name and adds the source's as a nickname", () => {
-    expect(
-      mergeCourseNames(
-        { name: 'Calculus I', nicknames: ['Calc 1'] },
-        { name: 'Calc One', nicknames: ['calc 1', 'Calc I'] },
-      ),
-    ).toEqual({
-      name: 'Calculus I',
-      nicknames: ['Calc 1', 'Calc One', 'Calc I'],
-    });
-  });
-
-  it("takes the source's name when the target has none", () => {
-    expect(
-      mergeCourseNames(
-        { name: null, nicknames: ['Orgo'] },
-        { name: 'Organic Chemistry I', nicknames: [] },
-      ),
-    ).toEqual({ name: 'Organic Chemistry I', nicknames: ['Orgo'] });
-  });
-
-  it('drops a losing name too long to be a nickname', () => {
-    const long =
-      'An Introduction to the Theory and Practice of Organic Synthesis';
-    expect(long.length).toBeGreaterThan(60);
-    expect(
-      mergeCourseNames(
-        { name: 'Organic Chemistry I', nicknames: [] },
-        { name: long, nicknames: ['Orgo'] },
-      ),
-    ).toEqual({ name: 'Organic Chemistry I', nicknames: ['Orgo'] });
-  });
-
-  it('caps the union at the nickname limit, target first', () => {
-    const many = (prefix: string) =>
-      Array.from({ length: 15 }, (_, i) => `${prefix}${i}`);
-    const merged = mergeCourseNames(
-      { name: null, nicknames: many('t') },
-      { name: null, nicknames: many('s') },
-    );
-    expect(merged.nicknames).toHaveLength(20);
-    expect(merged.nicknames.slice(0, 15)).toEqual(many('t'));
   });
 });

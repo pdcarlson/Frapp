@@ -1,8 +1,4 @@
-import {
-  MAX_COURSE_NICKNAMES,
-  MAX_COURSE_NICKNAME_LENGTH,
-  normalizeCourseNicknames,
-} from '@repo/validation';
+import { normalizeCourseNicknames } from '@repo/validation';
 
 /**
  * Who may edit a Backwork course's name and nicknames (#3848, the
@@ -53,28 +49,4 @@ export function applyNicknameEdit(
     [...stored.filter((n) => !removed.has(n.trim().toLowerCase())), ...add],
     name,
   );
-}
-
-/**
- * The course a department merge keeps when source and target both name the
- * same course number: the target's name (or the source's when the target has
- * none), every nickname of both, and the losing name as a nickname, so what
- * people typed keeps finding the course. Two exceptions keep the row within
- * the database's limits: a losing name longer than a nickname may be
- * (`MAX_COURSE_NICKNAME_LENGTH`) is dropped, and past `MAX_COURSE_NICKNAMES`
- * the target's own nicknames win.
- */
-export function mergeCourseNames(
-  target: { name: string | null; nicknames: readonly string[] },
-  source: { name: string | null; nicknames: readonly string[] },
-): { name: string | null; nicknames: string[] } {
-  const name = target.name ?? source.name;
-  const losing = target.name && source.name ? source.name : null;
-  const nicknames = normalizeCourseNicknames(
-    [...target.nicknames, ...(losing ? [losing] : []), ...source.nicknames],
-    name,
-  )
-    .filter((n) => n.length <= MAX_COURSE_NICKNAME_LENGTH)
-    .slice(0, MAX_COURSE_NICKNAMES);
-  return { name, nicknames };
 }

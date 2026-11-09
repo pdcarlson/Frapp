@@ -7,6 +7,7 @@ import {
   MAX_COURSE_NAME_LENGTH,
   MAX_COURSE_NICKNAMES,
   MAX_COURSE_NICKNAME_LENGTH,
+  collapseCourseText,
   normalizeCourseNicknames,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,10 @@ export type CourseTarget = {
  *
  * The save is a paid-ops write, gated like the department rename.
  */
+function nicknameKey(text: string): string {
+  return collapseCourseText(text).toLowerCase();
+}
+
 export function useBackworkCourseDialog(
   gate: SubscriptionGate,
   isAdmin: boolean,
@@ -77,6 +82,8 @@ export function useBackworkCourseDialog(
   const [removed, setRemoved] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
+  // Set when someone else named the course while this person was typing one.
+  const [namedMeanwhile, setNamedMeanwhile] = useState(false);
 
   const stored = useMemo(() => {
     if (!shown) return null;
@@ -87,11 +94,34 @@ export function useBackworkCourseDialog(
     );
   }, [courses, shown]);
   const nameLocked = !isAdmin && !!stored?.name;
-  const name = nameDraft ?? stored?.name ?? "";
-  const nicknames = [
-    ...(stored?.nicknames ?? []).filter((n) => !removed.includes(n)),
-    ...added,
-  ];
+  // A refetch can name the course under a member's draft. The field turns
+  // read-only, so the draft goes (a read-only field never shows text that
+  // won't save) and a caption says why. Adjusted during render, React's
+  // pattern for state that follows a prop, so the draft never paints locked.
+  if (nameLocked && nameDraft !== null && target && !saving) {
+    setNameDraft(null);
+    setNamedMeanwhile(true);
+  }
+  const name = nameLocked ? (stored?.name ?? "") : (nameDraft ?? stored?.name ?? "");
+
+  // What the chips show: the stored nicknames as they are now, minus this
+  // edit's removals, plus its additions, de-duplicated case-insensitively.
+  // A stored spelling wins over a local add of the same nickname, which
+  // also keeps each chip's key (its lowercased text) unique.
+  const removedKeys = new Set(removed.map(nicknameKey));
+  const storedKeys = new Set((stored?.nicknames ?? []).map(nicknameKey));
+  const chips: { text: string; key: string; local: boolean }[] = [];
+  for (const [list, local] of [
+    [stored?.nicknames ?? [], false],
+    [added, true],
+  ] as const) {
+    for (const text of list) {
+      const key = nicknameKey(text);
+      if ((!local && removedKeys.has(key)) || chips.some((c) => c.key === key)) continue;
+      chips.push({ text, key, local });
+    }
+  }
+  const nicknames = chips.map((c) => c.text);
 
   function requestCourseName(next: CourseTarget) {
     setTarget(next);
@@ -100,6 +130,7 @@ export function useBackworkCourseDialog(
     setAdded([]);
     setRemoved([]);
     setDraft("");
+    setNamedMeanwhile(false);
   }
 
   /** Adds the typed nickname to the edit; returns the edit's additions. */
@@ -113,7 +144,7 @@ export function useBackworkCourseDialog(
       setRemoved(remove);
       return { add: added, remove };
     }
-    if (nicknames.some((n) => n.toLowerCase() === text.toLowerCase())) {
+    if (chips.some((c) => c.key === nicknameKey(text))) {
       return { add: added, remove: removed };
     }
     const add = [...added, text];
@@ -128,15 +159,15 @@ export function useBackworkCourseDialog(
     if (draft.trim()) addDraft();
   }
 
-  function removable(nickname: string): boolean {
-    return isAdmin || added.includes(nickname);
+  function removable(chip: { local: boolean }): boolean {
+    return isAdmin || chip.local;
   }
 
-  function removeNickname(nickname: string) {
-    if (added.includes(nickname)) {
-      setAdded((prev) => prev.filter((n) => n !== nickname));
+  function removeNickname(chip: { text: string; key: string; local: boolean }) {
+    if (chip.local) {
+      setAdded((prev) => prev.filter((n) => nicknameKey(n) !== chip.key));
     } else {
-      setRemoved((prev) => [...prev, nickname]);
+      setRemoved((prev) => [...prev, chip.text]);
     }
   }
 
@@ -144,7 +175,10 @@ export function useBackworkCourseDialog(
     event.preventDefault();
     if (!target || !gate.allowed) return;
     // A nickname typed but not yet entered still counts.
-    const { add, remove } = draft.trim() ? addDraft() : { add: added, remove: removed };
+    const edit = draft.trim() ? addDraft() : { add: added, remove: removed };
+    // An add the stored row now has anyway (a refetch brought it) is no edit.
+    const add = edit.add.filter((n) => !storedKeys.has(nicknameKey(n)) || removedKeys.has(nicknameKey(n)));
+    const remove = edit.remove;
     const trimmedName = name.trim();
     const nameChanged =
       !nameLocked && nameDraft !== null && trimmedName !== (stored?.name ?? "");
@@ -209,7 +243,9 @@ export function useBackworkCourseDialog(
             />
             {nameLocked ? (
               <p id="bw-course-name-locked" className="text-caption text-muted-foreground">
-                Only a backwork admin can change a name that&rsquo;s set.
+                {namedMeanwhile
+                  ? "Someone just named this course. Only a backwork admin can change it."
+                  : "Only a backwork admin can change a name that’s set."}
               </p>
             ) : null}
           </div>
@@ -217,19 +253,19 @@ export function useBackworkCourseDialog(
             <Label htmlFor="bw-course-nickname">Also called</Label>
             {nicknames.length ? (
               <ul className="flex flex-wrap gap-1.5" aria-label="Nicknames">
-                {nicknames.map((nickname) => (
+                {chips.map((chip) => (
                   <li
-                    key={nickname}
+                    key={chip.key}
                     className="inline-flex h-6 items-center rounded-sm border border-input bg-card px-2 text-caption font-semibold"
                   >
-                    {nickname}
-                    {removable(nickname) ? (
+                    {chip.text}
+                    {removable(chip) ? (
                       <button
                         type="button"
                         className="-mr-1 ml-1 inline-flex h-4 w-4 items-center justify-center rounded-xs text-muted-foreground hover:text-foreground"
-                        aria-label={`Remove ${nickname}`}
+                        aria-label={`Remove ${chip.text}`}
                         disabled={saving}
-                        onClick={() => removeNickname(nickname)}
+                        onClick={() => removeNickname(chip)}
                       >
                         <X className="h-3 w-3" aria-hidden="true" />
                       </button>
@@ -272,5 +308,6 @@ export function useBackworkCourseDialog(
     </Dialog>
   );
 
-  return { requestCourseName, dialog, ready: coursesQuery.isSuccess };
+  // Loaded at least once; a background refetch error keeps the data.
+  return { requestCourseName, dialog, ready: coursesQuery.data !== undefined };
 }

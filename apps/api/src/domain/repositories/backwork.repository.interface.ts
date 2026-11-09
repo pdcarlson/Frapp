@@ -102,6 +102,11 @@ export interface BackworkCourseWrite {
   mayRename: boolean;
   add: string[];
   remove: string[];
+  /**
+   * For a department merge, which must not fail on the table's limits: drop
+   * any nickname over 60 characters and keep the first 20, stored first.
+   */
+  clamp?: boolean;
 }
 
 export interface IBackworkCourseRepository {

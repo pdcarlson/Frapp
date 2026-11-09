@@ -244,6 +244,7 @@ export interface Database {
           p_may_rename: boolean;
           p_add: string[];
           p_remove: string[];
+          p_clamp?: boolean;
         };
         Returns: BackworkCourse;
       };

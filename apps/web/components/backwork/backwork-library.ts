@@ -392,7 +392,9 @@ export function queryLibrary(
     }
     const phrase = phrasesOf(row).find((p) => p.matched.has(word));
     const numeral = phrase?.phrase.numerals.find((n) => n.forms.includes(word));
-    return numeral ? { score: NUMERAL_SCORE, hit: numeral.word } : { score: 0, hit: null };
+    // No `hit`: the numeral lights up the course line (`courseHits`), never
+    // an "I" in the title, tags or professor.
+    return numeral ? { score: NUMERAL_SCORE, hit: null } : { score: 0, hit: null };
   };
   const matched = fuzzyMatchWords(
     ordered,

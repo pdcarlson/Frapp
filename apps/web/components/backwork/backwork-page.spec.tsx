@@ -113,7 +113,6 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useBackworkCourses: () => ({
     data: taxonomyData.coursesLoading ? undefined : taxonomyData.courses,
     isLoading: taxonomyData.coursesLoading,
-    isSuccess: !taxonomyData.coursesLoading,
     isError: false,
     refetch: vi.fn(),
   }),
@@ -1259,6 +1258,57 @@ describe("BackworkPage library (2026-11-05 redesign)", () => {
           remove_nicknames: ["Cog 1"],
         }),
       );
+    });
+
+    it("drops a member's name draft when someone else names the course meanwhile", async () => {
+      taxonomyData.courses = [{ ...COGS_2120, name: null }];
+      mockPermissions.value = ["backwork:upload"];
+      const user = userEvent.setup();
+      const { rerender } = render(<BackworkPage />);
+
+      fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+      await user.click(
+        await screen.findByRole("menuitem", { name: "Name the COGS 2120 course…" }),
+      );
+      const dialog = await screen.findByRole("dialog", { name: "Name COGS 2120" });
+      await user.type(within(dialog).getByLabelText("Course name"), "My draft");
+
+      // A refetch brings the name someone else saved.
+      taxonomyData.courses = [{ ...COGS_2120, name: "Cognition I" }];
+      rerender(<BackworkPage />);
+
+      const field = within(dialog).getByLabelText("Course name");
+      await waitFor(() => expect(field).toHaveValue("Cognition I"));
+      expect(field).toHaveAttribute("readonly");
+      expect(within(dialog).getByText(/Someone just named this course/)).toBeInTheDocument();
+    });
+
+    it("shows a nickname once when a refetch brings a local add, and doesn't resend it", async () => {
+      taxonomyData.courses = [{ ...COGS_2120, nicknames: [] }];
+      const user = userEvent.setup();
+      const { rerender } = render(<BackworkPage />);
+
+      fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+      await user.click(
+        await screen.findByRole("menuitem", { name: "Rename the COGS 2120 course…" }),
+      );
+      const dialog = await screen.findByRole("dialog", { name: "Name COGS 2120" });
+      await user.type(within(dialog).getByLabelText("Also called"), "Brainy{Enter}");
+
+      taxonomyData.courses = [{ ...COGS_2120, nicknames: ["brainy"] }];
+      rerender(<BackworkPage />);
+
+      const chips = within(within(dialog).getByRole("list", { name: "Nicknames" })).getAllByRole(
+        "listitem",
+      );
+      expect(chips.map((c) => c.textContent)).toEqual(["brainy"]);
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+      await waitFor(() =>
+        expect(mockToast).toHaveBeenCalledWith(
+          expect.objectContaining({ title: "Nothing to save" }),
+        ),
+      );
+      expect(mockSaveCourse).not.toHaveBeenCalled();
     });
 
     it("offers no course entry while course names load", async () => {

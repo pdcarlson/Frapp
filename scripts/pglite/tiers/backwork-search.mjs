@@ -103,13 +103,27 @@ console.log("\n=== Functional: backwork search over every field (#585) ===");
       { a: await search(A, "perception"), b: await search(B, "brainy") },
     );
     // backwork_course_write (#3848): each write applies to the row as it is.
-    const write = async (name, setName, mayRename, add, remove) =>
+    const writeTo = async (dept, number, name, setName, mayRename, add, remove, clamp = false) =>
       (
         await db.query(
-          `select name, nicknames from backwork_course_write($1, $2, '2120', $3, $4, $5, $6, $7)`,
-          [A, DEPT, setName, name, mayRename, add, remove],
+          `select name, nicknames from backwork_course_write($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [A, dept, number, setName, name, mayRename, add, remove, clamp],
         )
       ).rows[0];
+    const write = (name, setName, mayRename, add, remove) =>
+      writeTo(DEPT, "2120", name, setName, mayRename, add, remove);
+    const first = await writeTo(DEPT, "3000", "Perception", true, false, ["Percept"], []);
+    check(
+      "a first write stores the name and nicknames",
+      first.name === "Perception" && first.nicknames.join() === "Percept",
+      first,
+    );
+    const renamed = await writeTo(DEPT, "3000", "Sensation", true, true, [], []);
+    check(
+      "an admin write (set and may-rename) changes a set name",
+      renamed.name === "Sensation",
+      renamed,
+    );
     await write(null, false, false, ["Cog One"], []);
     const both = await write(null, false, false, ["Cog 1"], []);
     check(
@@ -128,6 +142,35 @@ console.log("\n=== Functional: backwork search over every field (#585) ===");
       "remove applies before add, so a case-only fix keeps the new spelling",
       swapped.nicknames.includes("BRAINY") && !swapped.nicknames.includes("Brainy"),
       swapped,
+    );
+    // A department merge: fold a source course into the target's twin,
+    // fill-only and clamped, after someone added a nickname to the target.
+    const many = Array.from({ length: 18 }, (_, i) => `Own ${i}`);
+    await writeTo(DEPT, "4000", "Memory", true, false, many, []);
+    await writeTo(DEPT, "4000", null, false, false, ["Late add"], []);
+    const folded = await writeTo(
+      DEPT,
+      "4000",
+      "Remembering",
+      true,
+      false,
+      ["Source nick", "x".repeat(61), "Third", "Remembering"],
+      [],
+      true,
+    );
+    check(
+      "a merge fold keeps an add made just before it and the target's name",
+      folded.name === "Memory" &&
+        folded.nicknames.includes("Late add") &&
+        folded.nicknames.includes("Source nick"),
+      folded,
+    );
+    check(
+      "the merge clamp keeps 20, the target's own first, and drops one over 60",
+      folded.nicknames.length === 20 &&
+        folded.nicknames.slice(0, 19).join() === [...many, "Late add"].join() &&
+        !folded.nicknames.some((n) => n.length > 60),
+      folded,
     );
     check(
       "writes nothing for a department in another chapter",

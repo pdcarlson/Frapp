@@ -14,6 +14,7 @@ import {
   MAX_BACKWORK_UPLOAD_BYTES,
   MAX_BACKWORK_UPLOAD_LABEL,
   MAX_COURSE_NICKNAMES,
+  collapseCourseText,
   courseTextTooLong,
   normalizeCourseNicknames,
 } from '@repo/validation';
@@ -49,15 +50,10 @@ import { safeObjectFilename } from '#domain/constants/storage';
 import {
   applyNicknameEdit,
   courseEditRefusal,
-  mergeCourseNames,
 } from '#domain/utils/backwork-course-rules';
 
 const BACKWORK_BUCKET = 'backwork';
 
-/** Trimmed, inner whitespace collapsed: how course names are stored. */
-function collapse(text: string): string {
-  return text.trim().replace(/\s+/g, ' ');
-}
 /** Long enough to fetch 50 files one after another on a slow connection. */
 const ZIP_LINK_TTL_SECONDS = 15 * 60;
 
@@ -229,7 +225,9 @@ export class BackworkService {
       is_redacted: input.is_redacted ?? false,
     });
 
-    const courseName = input.course_name?.trim();
+    const courseName = input.course_name
+      ? collapseCourseText(input.course_name)
+      : '';
     if (departmentId && courseNumber && courseName) {
       // Best effort: the file is filed by now, and a course name that didn't
       // save must not report the upload as failed (the member would retry and
@@ -388,8 +386,10 @@ export class BackworkService {
       courseNumber,
     );
     const setName = input.name !== undefined;
-    const name = setName ? collapse(input.name ?? '') || null : null;
-    const remove = (input.remove_nicknames ?? []).map(collapse).filter(Boolean);
+    const name = setName ? collapseCourseText(input.name ?? '') || null : null;
+    const remove = (input.remove_nicknames ?? [])
+      .map(collapseCourseText)
+      .filter(Boolean);
     const add = normalizeCourseNicknames(input.add_nicknames ?? []);
     const refusal = courseEditRefusal(
       stored,
@@ -504,9 +504,9 @@ export class BackworkService {
       throw new NotFoundException('Department not found');
     }
     // Courses first, so the source's names survive the delete below (its FK
-    // cascades): each moves to the target, or folds into the target's entry
-    // for the same course number.
-    await this.moveCourses(chapterId, sourceId, targetId);
+    // cascades): each folds into the target's entry for the same course
+    // number, created if the target has none.
+    await this.foldCourses(chapterId, sourceId, targetId);
     const reassigned = await this.resourceRepo.reassignDepartment(
       chapterId,
       sourceId,
@@ -540,33 +540,38 @@ export class BackworkService {
     return { reassigned };
   }
 
-  private async moveCourses(
+  /**
+   * Folds each of the source department's courses into the target, one
+   * `backwork_course_write` per course, then deletes the source course. The
+   * write is fill-only (the target keeps its name, or takes the source's when
+   * it has none) and adds the source's nicknames and name as nicknames, so
+   * what people typed keeps finding the course. Being an upsert, it merges
+   * into a twin created a moment ago instead of colliding with it. `clamp`
+   * keeps the fold from failing on the table's limits: it drops a nickname
+   * over 60 characters (a long losing name) and keeps the first 20, the
+   * target's own first.
+   */
+  private async foldCourses(
     chapterId: string,
     sourceId: string,
     targetId: string,
   ): Promise<void> {
-    const [sourceCourses, targetCourses] = await Promise.all([
-      this.courseRepo.findByDepartment(chapterId, sourceId),
-      this.courseRepo.findByDepartment(chapterId, targetId),
-    ]);
-    const targetByKey = new Map(
-      targetCourses.map((course) => [course.course_key, course]),
+    const sourceCourses = await this.courseRepo.findByDepartment(
+      chapterId,
+      sourceId,
     );
     for (const course of sourceCourses) {
-      const twin = targetByKey.get(course.course_key);
-      if (!twin) {
-        await this.courseRepo.update(course.id, chapterId, {
-          department_id: targetId,
-        });
-        continue;
-      }
-      // The twin first: if its write fails, the source entry is still
-      // there, and the department merge stops before anything is lost.
-      await this.courseRepo.update(
-        twin.id,
-        chapterId,
-        mergeCourseNames(twin, course),
-      );
+      const written = await this.courseRepo.write(chapterId, {
+        departmentId: targetId,
+        courseNumber: course.course_number,
+        setName: course.name !== null,
+        name: course.name,
+        mayRename: false,
+        add: [...course.nicknames, ...(course.name ? [course.name] : [])],
+        remove: [],
+        clamp: true,
+      });
+      if (!written) throw new NotFoundException('Department not found');
       await this.courseRepo.delete(course.id, chapterId);
     }
   }

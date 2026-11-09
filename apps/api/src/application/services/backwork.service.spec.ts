@@ -332,7 +332,7 @@ describe('BackworkService', () => {
         file_hash: 'abc123hash',
         department_code: 'CS',
         course_number: '101',
-        course_name: ' Intro to CS ',
+        course_name: ' Intro  to\t CS ', // collapsed like the PUT path
       };
 
       beforeEach(() => {
@@ -878,120 +878,86 @@ describe('BackworkService', () => {
     });
 
     describe('carries course names along (#3848)', () => {
+      const fold = (overrides: Partial<BackworkCourseWrite>) => ({
+        departmentId: 'dept-2',
+        courseNumber: '101',
+        setName: false,
+        name: null,
+        mayRename: false,
+        add: [],
+        remove: [],
+        clamp: true,
+        ...overrides,
+      });
+
       beforeEach(() => {
         mockDepartmentRepo.findById.mockImplementation(async (id) =>
           id === 'dept-1' ? baseDepartment : id === 'dept-2' ? other : null,
         );
         mockResourceRepo.reassignDepartment.mockResolvedValue(1);
+        mockCourseRepo.write.mockResolvedValue({
+          ...baseCourse,
+          id: 'course-2',
+        });
       });
 
-      it('moves a course the target lacks to the target', async () => {
-        mockCourseRepo.findByDepartment.mockImplementation(async (_c, dept) =>
-          dept === 'dept-1' ? [{ ...baseCourse, name: 'Intro to CS' }] : [],
-        );
+      it('folds each source course into the target in one fill-only, clamped write, then deletes it', async () => {
+        mockCourseRepo.findByDepartment.mockResolvedValue([
+          { ...baseCourse, name: 'Calc One', nicknames: ['Calc I'] },
+        ]);
 
         await service.mergeDepartments('dept-1', 'dept-2', 'ch-1');
 
-        expect(mockCourseRepo.update).toHaveBeenCalledWith('course-1', 'ch-1', {
-          department_id: 'dept-2',
-        });
-        expect(mockCourseRepo.delete).not.toHaveBeenCalled();
-        // Before the source department (and its cascade) goes.
-        expect(mockCourseRepo.update.mock.invocationCallOrder[0]).toBeLessThan(
+        // The target keeps its name (or takes this one when it has none);
+        // the losing name and every nickname join as nicknames, and the SQL
+        // drops whichever repeats the resulting name.
+        expect(mockCourseRepo.write).toHaveBeenCalledWith(
+          'ch-1',
+          fold({
+            setName: true,
+            name: 'Calc One',
+            add: ['Calc I', 'Calc One'],
+          }),
+        );
+        expect(mockCourseRepo.delete).toHaveBeenCalledWith('course-1', 'ch-1');
+        expect(mockCourseRepo.update).not.toHaveBeenCalled();
+      });
+
+      it('writes before it deletes, and both before the source department goes', async () => {
+        mockCourseRepo.findByDepartment.mockResolvedValue([baseCourse]);
+
+        await service.mergeDepartments('dept-1', 'dept-2', 'ch-1');
+
+        const write = mockCourseRepo.write.mock.invocationCallOrder[0];
+        const del = mockCourseRepo.delete.mock.invocationCallOrder[0];
+        expect(write).toBeLessThan(del);
+        expect(del).toBeLessThan(
           mockDepartmentRepo.delete.mock.invocationCallOrder[0],
         );
       });
 
-      it("keeps the target's name, unions nicknames and keeps the losing name as a nickname", async () => {
-        const source = {
-          ...baseCourse,
-          name: 'Calc One',
-          nicknames: ['Calc I'],
-        };
-        const target = {
-          ...baseCourse,
-          id: 'course-2',
-          department_id: 'dept-2',
-          course_number: ' 101 ',
-          name: 'Calculus I',
-          nicknames: ['Calc 1'],
-        };
-        mockCourseRepo.findByDepartment.mockImplementation(async (_c, dept) =>
-          dept === 'dept-1' ? [source] : [target],
-        );
+      it('passes an unnamed source as nicknames only', async () => {
+        mockCourseRepo.findByDepartment.mockResolvedValue([
+          { ...baseCourse, nicknames: ['CS1'] },
+        ]);
 
         await service.mergeDepartments('dept-1', 'dept-2', 'ch-1');
 
-        expect(mockCourseRepo.delete).toHaveBeenCalledWith('course-1', 'ch-1');
-        // The twin is written before the source goes, so a failed write
-        // leaves the source in place.
-        expect(mockCourseRepo.update.mock.invocationCallOrder[0]).toBeLessThan(
-          mockCourseRepo.delete.mock.invocationCallOrder[0],
+        expect(mockCourseRepo.write).toHaveBeenCalledWith(
+          'ch-1',
+          fold({ add: ['CS1'] }),
         );
-        expect(mockCourseRepo.update).toHaveBeenCalledWith('course-2', 'ch-1', {
-          name: 'Calculus I',
-          nicknames: ['Calc 1', 'Calc One', 'Calc I'],
-        });
       });
 
-      it('leaves the source course in place when the twin write fails', async () => {
-        mockCourseRepo.findByDepartment.mockImplementation(async (_c, dept) =>
-          dept === 'dept-1'
-            ? [{ ...baseCourse, name: 'Intro to CS' }]
-            : [{ ...baseCourse, id: 'course-2', department_id: 'dept-2' }],
-        );
-        mockCourseRepo.update.mockRejectedValue(new Error('write failed'));
+      it('leaves the source course in place when the fold fails', async () => {
+        mockCourseRepo.findByDepartment.mockResolvedValue([baseCourse]);
+        mockCourseRepo.write.mockRejectedValue(new Error('write failed'));
 
         await expect(
           service.mergeDepartments('dept-1', 'dept-2', 'ch-1'),
         ).rejects.toThrow('write failed');
         expect(mockCourseRepo.delete).not.toHaveBeenCalled();
         expect(mockDepartmentRepo.delete).not.toHaveBeenCalled();
-      });
-
-      it('never stores a losing name too long to be a nickname', async () => {
-        const long = 'x'.repeat(61);
-        mockCourseRepo.findByDepartment.mockImplementation(async (_c, dept) =>
-          dept === 'dept-1'
-            ? [{ ...baseCourse, name: long }]
-            : [
-                {
-                  ...baseCourse,
-                  id: 'course-2',
-                  department_id: 'dept-2',
-                  name: 'Intro to CS',
-                },
-              ],
-        );
-
-        await service.mergeDepartments('dept-1', 'dept-2', 'ch-1');
-
-        expect(mockCourseRepo.update).toHaveBeenCalledWith('course-2', 'ch-1', {
-          name: 'Intro to CS',
-          nicknames: [],
-        });
-      });
-
-      it("takes the source's name when the target's twin has none", async () => {
-        mockCourseRepo.findByDepartment.mockImplementation(async (_c, dept) =>
-          dept === 'dept-1'
-            ? [{ ...baseCourse, name: 'Intro to CS' }]
-            : [
-                {
-                  ...baseCourse,
-                  id: 'course-2',
-                  department_id: 'dept-2',
-                  nicknames: ['CS1'],
-                },
-              ],
-        );
-
-        await service.mergeDepartments('dept-1', 'dept-2', 'ch-1');
-
-        expect(mockCourseRepo.update).toHaveBeenCalledWith('course-2', 'ch-1', {
-          name: 'Intro to CS',
-          nicknames: ['CS1'],
-        });
       });
     });
 

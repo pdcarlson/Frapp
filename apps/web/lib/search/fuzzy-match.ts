@@ -204,7 +204,9 @@ export function fuzzyMatchWords<T>(
    * Asked only when a query word matches none of the item's words: another
    * way that word may match the item, scored on the same scale (0 is no
    * match). Backwork uses it for words of a course's name, which match under
-   * stricter rules than the rest of a row.
+   * stricter rules than the rest of a row. A fallback match may carry no
+   * `hit`: it counts toward the item but lights up none of its words, for a
+   * match the caller highlights itself.
    */
   fallback?: (item: T, queryWord: string) => { score: number; hit: string | null },
 ): FuzzyResult<T>[] {
@@ -220,15 +222,15 @@ export function fuzzyMatchWords<T>(
     let matched = true;
     for (const queryWord of queryWords) {
       let best = matchQueryWord(queryWord, words, aliases);
-      if ((best.score === 0 || !best.hit) && fallback) {
+      if (best.score === 0 && fallback) {
         best = fallback(item, queryWord);
       }
-      if (best.score === 0 || !best.hit) {
+      if (best.score === 0) {
         matched = false;
         break;
       }
       total += best.score;
-      hits.push(best.hit);
+      if (best.hit) hits.push(best.hit);
     }
     if (matched) results.push({ item, score: total, hits });
   }

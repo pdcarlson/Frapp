@@ -768,6 +768,7 @@ export {
   MAX_COURSE_NAME_LENGTH,
   MAX_COURSE_NICKNAMES,
   MAX_COURSE_NICKNAME_LENGTH,
+  collapseCourseText,
   courseTextLength,
   courseTextTooLong,
   normalizeCourseNicknames,

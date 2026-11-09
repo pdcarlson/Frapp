@@ -11,6 +11,7 @@ import {
   toLibraryRows,
   type BackworkResource,
 } from "./backwork-library";
+import { highlightRuns } from "@/lib/search/fuzzy-match";
 
 function resource(overrides: Partial<BackworkResource>): BackworkResource {
   return {
@@ -494,5 +495,30 @@ describe("roman numerals in the query (#3848 second review)", () => {
       "i-am",
       "intro",
     ]);
+  });
+});
+
+describe("highlights for a numeral matched through the course (#3848 third review)", () => {
+  it("'calc 1' lights the course name's 'I', never the title's", () => {
+    const rows = toLibraryRows(
+      [resource({ id: "ps1", title: "Problem Set I", department_id: "d-math", course_number: "1010" })],
+      [{ id: "d-math", code: "MATH", name: "Mathematics" }],
+      [],
+      [
+        {
+          id: "c1",
+          department_id: "d-math",
+          course_number: "1010",
+          course_key: "1010",
+          name: "Calculus I",
+          nicknames: [],
+        },
+      ],
+    );
+    const [result] = queryLibrary(rows, "calc 1", NO_FILTERS);
+    expect(result?.item.resource.id).toBe("ps1");
+    expect(result?.hits).not.toContain("i");
+    expect(highlightRuns("Problem Set I", result!.hits).some((run) => run.hit)).toBe(false);
+    expect(result?.courseHits).toContain("i");
   });
 });

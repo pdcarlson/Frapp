@@ -128,6 +128,7 @@ describe('SupabaseBackworkCourseRepository — tenant scope', () => {
           p_may_rename: false,
           p_add: ['Calc I'],
           p_remove: [],
+          p_clamp: false,
         },
       },
     ]);

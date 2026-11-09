@@ -3198,9 +3198,9 @@ One new table, `backwork_courses`; its CHECK helper `backwork_course_nicknames_o
 **Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). After the API is back on the earlier version, re-run the `create or replace function public.search_backwork_resources` block from `20261106190000_backwork_search_wider.sql` first (the new body joins the table), then:
 
 ```sql
-drop function if exists public.backwork_course_write(uuid, uuid, text, boolean, text, boolean, text[], text[]);
+drop function if exists public.backwork_course_write(uuid, uuid, text, boolean, text, boolean, text[], text[], boolean);
 drop table if exists public.backwork_courses;
-drop function if exists public.backwork_course_merge_nicknames(text[], text[], text[], text);
+drop function if exists public.backwork_course_merge_nicknames(text[], text[], text[], text, boolean);
 drop function if exists public.backwork_course_nicknames_ok(text[]);
 ```
 

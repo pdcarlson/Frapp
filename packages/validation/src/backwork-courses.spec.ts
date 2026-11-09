@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  collapseCourseText,
   courseTextLength,
   courseTextTooLong,
   normalizeCourseNicknames,
@@ -33,5 +34,11 @@ describe("course text lengths count code points, like Postgres char_length", () 
   it("refuses a name past 255 code points", () => {
     expect(courseTextTooLong("x".repeat(256), [])).toMatch(/course name/);
     expect(courseTextTooLong("😀".repeat(255), [])).toBeNull();
+  });
+});
+
+describe("collapseCourseText", () => {
+  it("trims and collapses inner whitespace", () => {
+    expect(collapseCourseText("  Calc \t  I \n")).toBe("Calc I");
   });
 });

@@ -17,7 +17,8 @@
 --
 -- `department_id` cascades: deleting a department (which the API refuses while
 -- any file is filed under it) deletes its course names with it. The department
--- merge moves them to the target first (BackworkService.mergeDepartments).
+-- merge folds each into the target first, through `backwork_course_write`
+-- (BackworkService.mergeDepartments).
 --
 -- RLS on with no policies, the same posture as `backwork_departments`: the API
 -- reads and writes with the service role and enforces who may edit.
@@ -81,51 +82,75 @@ comment on table public.backwork_courses is
 -- members saving at once can't lose each other's nicknames (each applies its
 -- change to the row as it is when the statement runs) and two first writes
 -- can't race on the unique key (the second updates the row the first made).
+-- A department merge folds each source course into the target the same way.
 --
---   nicknames  stored, minus `p_remove` (case-insensitive), plus `p_add`,
---              de-duplicated case-insensitively, stored order then added
---              order, minus any that repeat the resulting name;
+--   nicknames  stored, minus `p_remove`, plus `p_add`, de-duplicated, stored
+--              order then added order, minus any that repeat the resulting
+--              name. Comparisons ignore case and collapse whitespace, as the
+--              API's `normalizeCourseNicknames` does.
 --   name       untouched unless `p_set_name`; then `p_name` when
 --              `p_may_rename` (an admin), otherwise the stored name if there
 --              is one, so a member or an upload only ever fills an empty name.
+--   p_clamp    for a department merge, which must never fail on the table's
+--              limits: drops any nickname over 60 characters and keeps the
+--              first 20 (the target's own before the source's). Without it, a
+--              list past the limits fails the CHECK, which the API answers
+--              as a 400 after checking the same limits first.
 --
 -- Who may do what is decided in the API (`courseEditRefusal`); the API passes
 -- `p_may_rename` and refuses a non-admin's removal before calling. The
 -- department must belong to `p_chapter_id`, or nothing is written and the
--- function returns null. Lengths and the nickname cap are the table's checks.
+-- function returns null.
 
 create or replace function public.backwork_course_merge_nicknames(
   p_stored text[],
   p_add text[],
   p_remove text[],
-  p_name text
+  p_name text,
+  p_clamp boolean
 )
 returns text[]
 language sql
 immutable
 set search_path = public, pg_temp
 as $$
-  select coalesce(array_agg(kept.n order by kept.ord), '{}')
-    from (
-      select distinct on (lower(c.n)) c.n, c.ord
+  with norm as (
+    select regexp_replace(btrim(coalesce(p_name, '')), '\s+', ' ', 'g') as name_key
+  ),
+  combined as (
+    select s.n, s.ord
+      from unnest(coalesce(p_stored, '{}')) with ordinality as s(n, ord)
+     where not exists (
+       select 1 from unnest(coalesce(p_remove, '{}')) as r(n)
+        where lower(regexp_replace(btrim(r.n), '\s+', ' ', 'g'))
+            = lower(regexp_replace(btrim(s.n), '\s+', ' ', 'g'))
+     )
+    union all
+    select a.n, 100000 + a.ord
+      from unnest(coalesce(p_add, '{}')) with ordinality as a(n, ord)
+  ),
+  kept as (
+    select distinct on (lower(regexp_replace(btrim(c.n), '\s+', ' ', 'g'))) c.n, c.ord
+      from combined c, norm
+     where btrim(c.n) <> ''
+       and lower(regexp_replace(btrim(c.n), '\s+', ' ', 'g')) <> lower(norm.name_key)
+       and (not p_clamp or char_length(c.n) <= 60)
+     order by lower(regexp_replace(btrim(c.n), '\s+', ' ', 'g')), c.ord
+  )
+  select coalesce(
+    (
+      select array_agg(k.n order by k.ord)
         from (
-          select s.n, s.ord
-            from unnest(coalesce(p_stored, '{}')) with ordinality as s(n, ord)
-           where not exists (
-             select 1 from unnest(coalesce(p_remove, '{}')) as r(n)
-              where lower(r.n) = lower(s.n)
-           )
-          union all
-          select a.n, 100000 + a.ord
-            from unnest(coalesce(p_add, '{}')) with ordinality as a(n, ord)
-        ) as c
-       where p_name is null or lower(c.n) <> lower(p_name)
-       order by lower(c.n), c.ord
-    ) as kept;
+          select n, ord from kept order by ord
+           limit case when p_clamp then 20 end
+        ) k
+    ),
+    '{}'
+  );
 $$;
 
-comment on function public.backwork_course_merge_nicknames(text[], text[], text[], text) is
-  'Nickname arithmetic for backwork_course_write: stored minus remove, plus add, case-insensitive, de-duplicated, without the name. See 20261109120000_backwork_courses.sql.';
+comment on function public.backwork_course_merge_nicknames(text[], text[], text[], text, boolean) is
+  'Nickname arithmetic for backwork_course_write: stored minus remove, plus add, case- and whitespace-insensitive, de-duplicated, without the name; clamped to the table limits when asked. See 20261109120000_backwork_courses.sql.';
 
 create or replace function public.backwork_course_write(
   p_chapter_id uuid,
@@ -135,7 +160,8 @@ create or replace function public.backwork_course_write(
   p_name text,
   p_may_rename boolean,
   p_add text[],
-  p_remove text[]
+  p_remove text[],
+  p_clamp boolean default false
 )
 returns public.backwork_courses
 language sql
@@ -151,7 +177,7 @@ as $$
     btrim(p_course_number),
     case when p_set_name then p_name end,
     public.backwork_course_merge_nicknames(
-      '{}', p_add, '{}', case when p_set_name then p_name end
+      '{}', p_add, '{}', case when p_set_name then p_name end, p_clamp
     )
   from public.backwork_departments d
   where d.id = p_department_id and d.chapter_id = p_chapter_id
@@ -169,27 +195,28 @@ as $$
         when not p_set_name then c.name
         when p_may_rename then p_name
         else coalesce(c.name, p_name)
-      end
+      end,
+      p_clamp
     ),
     updated_at = now()
   returning c.*;
 $$;
 
-comment on function public.backwork_course_write(uuid, uuid, text, boolean, text, boolean, text[], text[]) is
-  'One-statement insert-or-update of a Backwork course name and nicknames (PUT /v1/backwork/courses, and upload naming in fill-only mode). See 20261109120000_backwork_courses.sql.';
+comment on function public.backwork_course_write(uuid, uuid, text, boolean, text, boolean, text[], text[], boolean) is
+  'One-statement insert-or-update of a Backwork course name and nicknames (PUT /v1/backwork/courses, upload naming and department merge, the last two fill-only). See 20261109120000_backwork_courses.sql.';
 
-revoke execute on function public.backwork_course_write(uuid, uuid, text, boolean, text, boolean, text[], text[]) from public;
+revoke execute on function public.backwork_course_write(uuid, uuid, text, boolean, text, boolean, text[], text[], boolean) from public;
 
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'anon') then
-    revoke execute on function public.backwork_course_write(uuid, uuid, text, boolean, text, boolean, text[], text[]) from anon;
+    revoke execute on function public.backwork_course_write(uuid, uuid, text, boolean, text, boolean, text[], text[], boolean) from anon;
   end if;
   if exists (select 1 from pg_roles where rolname = 'authenticated') then
-    revoke execute on function public.backwork_course_write(uuid, uuid, text, boolean, text, boolean, text[], text[]) from authenticated;
+    revoke execute on function public.backwork_course_write(uuid, uuid, text, boolean, text, boolean, text[], text[], boolean) from authenticated;
   end if;
   if exists (select 1 from pg_roles where rolname = 'service_role') then
-    grant execute on function public.backwork_course_write(uuid, uuid, text, boolean, text, boolean, text[], text[]) to service_role;
+    grant execute on function public.backwork_course_write(uuid, uuid, text, boolean, text, boolean, text[], text[], boolean) to service_role;
   end if;
 end
 $$;
