@@ -149,6 +149,31 @@ export function formatRelativeDayTime(
 }
 
 /**
+ * A day heading over a list's rows, the day written out (owner, 2026-11-07):
+ * `"Today"`, `"Tomorrow"`, `"Yesterday"`, the weekday 2–6 days ahead
+ * (`"Sunday"`), otherwise `"November 14"`, with the year outside the current
+ * one. The same ladder as the mobile up-next strip's days, without a clock,
+ * for a list grouped by day where each row says its own time (#3707).
+ */
+export function formatDayHeading(
+  value: unknown,
+  now: Date = new Date(),
+): string | null {
+  const at = toDate(value);
+  if (!at) return null;
+  const days = dayDelta(now, at);
+  if (days === 0) return "Today";
+  if (days === 1) return "Tomorrow";
+  if (days === -1) return "Yesterday";
+  if (days > 1 && days < 7) return weekdayName(at);
+  return at.toLocaleDateString(undefined, {
+    month: "long",
+    day: "numeric",
+    ...(sameYear(at, now) ? {} : { year: "numeric" }),
+  });
+}
+
+/**
  * A due date as a countdown: `"Due today"`, `"Due tomorrow"`, `"Due Friday"`
  * within the week, `"Due Nov 6"` beyond it, and `"Overdue by 2 days"` once it
  * has passed. Mobile's task subtitle (`formatDueSubtitle`) is a separate copy

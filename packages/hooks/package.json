@@ -21,6 +21,7 @@
   "dependencies": {
     "@repo/api-sdk": "*",
     "@repo/color": "*",
+    "@repo/formatting": "*",
     "@repo/org-archetypes": "*",
     "@repo/theme": "*",
     "@repo/validation": "*",
