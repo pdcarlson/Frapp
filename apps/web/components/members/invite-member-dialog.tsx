@@ -9,9 +9,11 @@ import {
   useOrgConfig,
   useRevokeInvite,
   useRoles,
+  INVITE_STATUS_LABEL,
+  listedInvites,
   type InviteListItem,
 } from "@repo/hooks";
-import { formatRelativeDayTime } from "@repo/formatting";
+import { formatSentLabel } from "@repo/formatting";
 import { useToast } from "@/lib/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import {
@@ -55,44 +57,6 @@ import { buildJoinUrl } from "@/lib/invite-link";
  */
 const SEEDED_MEMBER_ROLE_NAME = "Member";
 const MEMBER_SYSTEM_KEY = "MEMBER";
-
-/** Joined and expired invites stay listed this long, then drop off. */
-const SETTLED_LIST_DAYS = 14;
-
-const STATUS_LABEL: Record<InviteListItem["status"], string> = {
-  pending: "Pending",
-  joined: "Joined",
-  expired: "Expired",
-  revoked: "Revoked",
-};
-
-/**
- * The invites worth listing: every pending one, and joined or expired ones
- * from the last two weeks. Revoked ones go: the officer chose to forget them.
- * Pure, for the spec.
- */
-export function listedInvites(
-  rows: readonly InviteListItem[],
-  now: Date = new Date(),
-): InviteListItem[] {
-  const cutoff = now.getTime() - SETTLED_LIST_DAYS * 24 * 60 * 60 * 1000;
-  return rows.filter((row) => {
-    if (row.status === "revoked") return false;
-    if (row.status === "pending") return true;
-    return new Date(row.created_at).getTime() >= cutoff;
-  });
-}
-
-/** "Sent today at 4:46 PM", "Sent yesterday at …", "Sent Nov 3 at …". */
-export function sentLabel(createdAt: string, now: Date = new Date()): string {
-  const when = formatRelativeDayTime(createdAt, now);
-  if (!when) return "Sent";
-  const [day = when, clock] = when.split(" · ");
-  const spoken = /^(Today|Yesterday|Tomorrow)$/.test(day)
-    ? day.toLowerCase()
-    : day;
-  return clock ? `Sent ${spoken} at ${clock}` : `Sent ${spoken}`;
-}
 
 type InviteMemberDialogProps = {
   trigger: React.ReactNode;
@@ -486,7 +450,7 @@ function InviteRow({
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold">{name}</p>
         <p className="truncate text-caption text-muted-foreground">
-          {invite.role} · {sentLabel(invite.created_at)}
+          {invite.role} · {formatSentLabel(invite.created_at)}
         </p>
       </div>
       <span
@@ -495,7 +459,7 @@ function InviteRow({
           invite.status === "joined" ? "text-success" : "text-muted-foreground",
         )}
       >
-        {STATUS_LABEL[invite.status]}
+        {INVITE_STATUS_LABEL[invite.status]}
       </span>
       {/* Same width with or without a menu, so statuses line up. */}
       {menuButton ?? <span className="w-9 shrink-0" aria-hidden="true" />}
@@ -506,7 +470,7 @@ function InviteRow({
     // Share links all read "Invite link", so their menus also name when.
     <RowMenu
       entries={entries}
-      label={`More for ${name}${invite.email ? "" : `, ${sentLabel(invite.created_at).replace(/^Sent/, "sent")}`}`}
+      label={`More for ${name}${invite.email ? "" : `, ${formatSentLabel(invite.created_at).replace(/^Sent/, "sent")}`}`}
     >
       {row}
     </RowMenu>

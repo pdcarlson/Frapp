@@ -56,6 +56,15 @@ export function inviteShareContent(
 }
 
 /**
+ * The share sheet's options: an iOS mail target (Mail, Gmail) takes `subject`
+ * as the email's subject line, so an invite sent from the sheet doesn't go out
+ * blank (#3828). Android has no subject option and ignores it.
+ */
+export function inviteShareOptions(chapterName: string): { subject: string } {
+  return { subject: `Join ${chapterName} on Frapp` };
+}
+
+/**
  * The tokens in a `GET /v1/invites` answer that someone joined with.
  *
  * A row's `status` decides (#3607): revoking a link also stamps `used_at`, so
@@ -156,6 +165,7 @@ export function useInviteShares({
     try {
       result = await Share.share(
         inviteShareContent(webJoinUrl(token), chapterName),
+        inviteShareOptions(chapterName),
       );
     } catch {
       // A second sheet over one already showing is refused; the first is

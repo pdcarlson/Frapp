@@ -900,9 +900,11 @@ describe("chapter setup — invite", () => {
 
     await press(root, "Share invite");
     expect(createInvite).toHaveBeenCalledTimes(1);
-    expect(Share.share).toHaveBeenLastCalledWith({
-      message: expect.stringContaining("Join FIJI on Frapp"),
-    });
+    expect(Share.share).toHaveBeenLastCalledWith(
+      { message: expect.stringContaining("Join FIJI on Frapp") },
+      // A mail target gets a subject line (iOS).
+      { subject: "Join FIJI on Frapp" },
+    );
     expect(sharedText(0)).toContain("/join?token=tok123");
     expect(allText(root)).not.toContain("tok123");
     expect(allText(root)).toContain("Link 1");

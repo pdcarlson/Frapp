@@ -149,6 +149,24 @@ export function formatRelativeDayTime(
 }
 
 /**
+ * When something was sent, in words: `"Sent today at 4:46 PM"`,
+ * `"Sent yesterday at 9:00 AM"`, `"Sent Friday at …"`, `"Sent Nov 3 at …"`.
+ * Read by web's and mobile's invite lists.
+ */
+export function formatSentLabel(
+  value: unknown,
+  now: Date = new Date(),
+): string {
+  const when = formatRelativeDayTime(value, now);
+  if (!when) return "Sent";
+  const [day = when, clock] = when.split(" · ");
+  const spoken = /^(Today|Yesterday|Tomorrow)$/.test(day)
+    ? day.toLowerCase()
+    : day;
+  return clock ? `Sent ${spoken} at ${clock}` : `Sent ${spoken}`;
+}
+
+/**
  * A due date as a countdown: `"Due today"`, `"Due tomorrow"`, `"Due Friday"`
  * within the week, `"Due Nov 6"` beyond it, and `"Overdue by 2 days"` once it
  * has passed. Mobile's task subtitle (`formatDueSubtitle`) is a separate copy

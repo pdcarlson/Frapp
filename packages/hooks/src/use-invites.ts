@@ -13,6 +13,34 @@ import type { components } from "@repo/api-sdk";
 export type InviteListItem = components["schemas"]["InviteListItemDto"];
 export type InviteStatus = components["schemas"]["InviteStatus"];
 
+/** What each invite status reads as in a list: web's Invited and mobile's. */
+export const INVITE_STATUS_LABEL: Record<InviteStatus, string> = {
+  pending: "Pending",
+  joined: "Joined",
+  expired: "Expired",
+  revoked: "Revoked",
+};
+
+/** Joined and expired invites stay listed this long, then drop off. */
+const SETTLED_LIST_DAYS = 14;
+
+/**
+ * The invites worth listing: every pending one, and joined or expired ones
+ * from the last two weeks. Revoked ones go: the officer chose to forget them.
+ * Web's Invited list and mobile's Invite members screen both read this.
+ */
+export function listedInvites(
+  rows: readonly InviteListItem[],
+  now: Date = new Date(),
+): InviteListItem[] {
+  const cutoff = now.getTime() - SETTLED_LIST_DAYS * 24 * 60 * 60 * 1000;
+  return rows.filter((row) => {
+    if (row.status === "revoked") return false;
+    if (row.status === "pending") return true;
+    return new Date(row.created_at).getTime() >= cutoff;
+  });
+}
+
 /**
  * `refetchInterval` is for a screen that watches its invites get used while
  * it is open, such as mobile setup's invite step, which marks a shared link

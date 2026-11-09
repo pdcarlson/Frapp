@@ -7,6 +7,7 @@ import {
   formatDayTimeRange,
   formatDueLabel,
   formatRelativeDayTime,
+  formatSentLabel,
   formatTimestampFull,
   formatWeekdayDay,
 } from "./display";
@@ -78,5 +79,23 @@ describe("house date shapes", () => {
     expect(formatDueLabel("2026-11-20", NOW)).toBe("Due Nov 20");
     expect(formatDueLabel("2026-11-03", NOW)).toBe("Overdue by 1 day");
     expect(formatDueLabel("2026-11-01", NOW)).toBe("Overdue by 3 days");
+  });
+});
+
+describe("formatSentLabel", () => {
+  it("says when, in words", () => {
+    expect(formatSentLabel("2026-11-04T08:46:00-08:00", NOW)).toBe(
+      "Sent today at 8:46 AM",
+    );
+    expect(formatSentLabel("2026-11-03T09:00:00-08:00", NOW)).toBe(
+      "Sent yesterday at 9:00 AM",
+    );
+    expect(formatSentLabel("2026-10-20T09:00:00-07:00", NOW)).toMatch(
+      /^Sent Oct 20 at 9:00/,
+    );
+  });
+
+  it("falls back to a bare Sent for an unreadable time", () => {
+    expect(formatSentLabel("not a date", NOW)).toBe("Sent");
   });
 });
