@@ -41,6 +41,7 @@ describe('ChatService', () => {
   let mockRbac: ChatServiceFixture['mockRbac'];
   let mockChatBlocks: ChatServiceFixture['mockChatBlocks'];
   let mockReportRepo: ChatServiceFixture['mockReportRepo'];
+  let mockNotificationService: ChatServiceFixture['mockNotificationService'];
   beforeEach(async () => {
     ({
       service,
@@ -56,6 +57,7 @@ describe('ChatService', () => {
       mockRbac,
       mockChatBlocks,
       mockReportRepo,
+      mockNotificationService,
     } = await createChatServiceFixture());
   });
 
@@ -1217,6 +1219,29 @@ describe('ChatService', () => {
           'ch-dm',
           'ch-1',
           'user-1',
+        );
+      });
+
+      it('clears the chat notifications the hide marked read (#3788)', async () => {
+        mockChannelRepo.findById.mockResolvedValue(dm);
+        mockReadReceiptRepo.hideDirectMessage.mockResolvedValue({
+          id: 'r-1',
+          channel_id: 'ch-dm',
+          user_id: 'user-1',
+          last_read_at: '2026-09-25T20:00:00.000Z',
+          hidden_at: '2026-09-25T20:00:00.000Z',
+          updated_at: '2026-09-25T20:00:00.000Z',
+        });
+
+        await service.leaveChannel('ch-dm', 'ch-1', 'user-1');
+
+        expect(
+          mockNotificationService.markChatChannelNotificationsRead,
+        ).toHaveBeenCalledWith(
+          'user-1',
+          'ch-1',
+          'ch-dm',
+          '2026-09-25T20:00:00.000Z',
         );
       });
 
@@ -3110,6 +3135,56 @@ describe('ChatService', () => {
         'ch-1',
         'user-1',
       );
+      expect(result.channel_id).toBe('ch-chan-1');
+    });
+
+    it('clears the chat notifications the read covers, through the receipt instant (#3788)', async () => {
+      mockReadReceiptRepo.upsert.mockImplementation(
+        async (channelId, userId, lastReadAt) => ({
+          id: 'rr-1',
+          channel_id: channelId,
+          user_id: userId,
+          last_read_at: lastReadAt,
+          hidden_at: null,
+          updated_at: lastReadAt,
+        }),
+      );
+
+      const result = await service.markChannelRead(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+      );
+
+      expect(
+        mockNotificationService.markChatChannelNotificationsRead,
+      ).toHaveBeenCalledWith(
+        'user-1',
+        'ch-1',
+        'ch-chan-1',
+        result.last_read_at,
+      );
+    });
+
+    it('still returns the receipt when clearing the notifications fails', async () => {
+      mockReadReceiptRepo.upsert.mockResolvedValue({
+        id: 'rr-1',
+        channel_id: 'ch-chan-1',
+        user_id: 'user-1',
+        last_read_at: '2026-01-01T12:00:00.000Z',
+        hidden_at: null,
+        updated_at: '2026-01-01T12:00:00.000Z',
+      });
+      mockNotificationService.markChatChannelNotificationsRead.mockRejectedValueOnce(
+        new Error('db down'),
+      );
+
+      const result = await service.markChannelRead(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+      );
+
       expect(result.channel_id).toBe('ch-chan-1');
     });
   });
