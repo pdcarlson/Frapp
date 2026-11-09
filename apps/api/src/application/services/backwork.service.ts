@@ -4,6 +4,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   isAllowedUploadExtension,
@@ -11,22 +12,27 @@ import {
   isWithinUploadSizeLimit,
   MAX_BACKWORK_UPLOAD_BYTES,
   MAX_BACKWORK_UPLOAD_LABEL,
+  MAX_COURSE_NICKNAMES,
+  normalizeCourseNicknames,
 } from '@repo/validation';
 import {
   BACKWORK_RESOURCE_REPOSITORY,
   BACKWORK_DEPARTMENT_REPOSITORY,
   BACKWORK_PROFESSOR_REPOSITORY,
+  BACKWORK_COURSE_REPOSITORY,
   type BackworkResourceFilter,
 } from '#domain/repositories/backwork.repository.interface';
 import type {
   IBackworkResourceRepository,
   IBackworkDepartmentRepository,
   IBackworkProfessorRepository,
+  IBackworkCourseRepository,
 } from '#domain/repositories/backwork.repository.interface';
 import type {
   BackworkResource,
   BackworkDepartment,
   BackworkProfessor,
+  BackworkCourse,
   Semester,
   AssignmentType,
   DocumentVariant,
@@ -37,6 +43,10 @@ import {
 } from '#domain/adapters/storage.interface';
 import { assertSafeStoragePath } from '#domain/utils/storage-path';
 import { safeObjectFilename } from '#domain/constants/storage';
+import {
+  courseEditRefusal,
+  mergeCourseNames,
+} from '#domain/utils/backwork-course-rules';
 
 const BACKWORK_BUCKET = 'backwork';
 /** Long enough to fetch 50 files one after another on a slow connection. */
@@ -49,6 +59,15 @@ export interface RequestUploadUrlInput {
   sizeBytes?: number;
 }
 
+export interface UpsertCourseInput {
+  department_id: string;
+  course_number: string;
+  /** Omitted keeps the stored name; `null` or blank clears it (admin only). */
+  name?: string | null;
+  /** The full list wanted; omitted keeps the stored list. */
+  nicknames?: string[];
+}
+
 export interface ConfirmUploadInput {
   chapter_id: string;
   uploader_id: string;
@@ -57,6 +76,11 @@ export interface ConfirmUploadInput {
   title?: string | null;
   department_code?: string | null;
   course_number?: string | null;
+  /**
+   * The course's name, from the upload sheet. Saved only when the course has
+   * no name yet: an upload never renames a course.
+   */
+  course_name?: string | null;
   professor_name?: string | null;
   year?: number | null;
   semester?: string | null;
@@ -76,6 +100,8 @@ export class BackworkService {
     private readonly departmentRepo: IBackworkDepartmentRepository,
     @Inject(BACKWORK_PROFESSOR_REPOSITORY)
     private readonly professorRepo: IBackworkProfessorRepository,
+    @Inject(BACKWORK_COURSE_REPOSITORY)
+    private readonly courseRepo: IBackworkCourseRepository,
     @Inject(STORAGE_PROVIDER)
     private readonly storageProvider: IStorageProvider,
   ) {}
@@ -169,7 +195,7 @@ export class BackworkService {
       );
     }
 
-    return this.resourceRepo.create({
+    const created = await this.resourceRepo.create({
       chapter_id: input.chapter_id,
       uploader_id: input.uploader_id,
       storage_path: input.storage_path,
@@ -186,6 +212,18 @@ export class BackworkService {
       tags: input.tags ?? [],
       is_redacted: input.is_redacted ?? false,
     });
+
+    const courseName = input.course_name?.trim();
+    const courseNumber = input.course_number?.trim();
+    if (departmentId && courseNumber && courseName) {
+      await this.nameCourseIfUnnamed(
+        input.chapter_id,
+        departmentId,
+        courseNumber,
+        courseName,
+      );
+    }
+    return created;
   }
 
   async findById(
@@ -291,6 +329,81 @@ export class BackworkService {
     return updated;
   }
 
+  async getCourses(chapterId: string): Promise<BackworkCourse[]> {
+    return this.courseRepo.findByChapter(chapterId);
+  }
+
+  /**
+   * Names a course, or adds to its nicknames, creating its entry on first
+   * write. `courseEditRefusal` decides what a non-admin may change; a refused
+   * edit is a 403 and writes nothing.
+   */
+  async upsertCourse(
+    chapterId: string,
+    input: UpsertCourseInput,
+    isAdmin: boolean,
+  ): Promise<BackworkCourse> {
+    const department = await this.departmentRepo.findById(
+      input.department_id,
+      chapterId,
+    );
+    if (!department) {
+      throw new NotFoundException('Department not found');
+    }
+    const courseNumber = input.course_number.trim();
+    if (!courseNumber) {
+      throw new BadRequestException('course_number must not be blank');
+    }
+    const stored = await this.courseRepo.findByCourse(
+      chapterId,
+      department.id,
+      courseNumber,
+    );
+    const name =
+      input.name === undefined
+        ? (stored?.name ?? null)
+        : input.name?.trim().replace(/\s+/g, ' ') || null;
+    const nicknames = normalizeCourseNicknames(
+      input.nicknames ?? stored?.nicknames ?? [],
+      name,
+    );
+    if (nicknames.length > MAX_COURSE_NICKNAMES) {
+      throw new BadRequestException(
+        `A course takes at most ${MAX_COURSE_NICKNAMES} nicknames`,
+      );
+    }
+    const refusal = courseEditRefusal(stored, { name, nicknames }, isAdmin);
+    if (refusal) throw new ForbiddenException(refusal);
+
+    if (stored) {
+      const updated = await this.courseRepo.update(stored.id, chapterId, {
+        name,
+        nicknames,
+      });
+      if (!updated) throw new NotFoundException('Course not found');
+      return updated;
+    }
+    if (!name && nicknames.length === 0) {
+      throw new BadRequestException('Give the course a name or a nickname');
+    }
+    return this.courseRepo.create({
+      chapter_id: chapterId,
+      department_id: department.id,
+      course_number: courseNumber,
+      name,
+      nicknames,
+    });
+  }
+
+  /** Deletes a course's name and nicknames (`backwork:admin`). Files keep their course. */
+  async deleteCourse(id: string, chapterId: string): Promise<void> {
+    const existing = await this.courseRepo.findById(id, chapterId);
+    if (!existing) {
+      throw new NotFoundException('Course not found');
+    }
+    await this.courseRepo.delete(id, chapterId);
+  }
+
   /**
    * Deletes a department, or a professor when `entity: 'professor'`. Blocks
    * with a 400 (rather than orphaning the taxonomy on every resource that
@@ -351,6 +464,10 @@ export class BackworkService {
     if (!source || !target) {
       throw new NotFoundException('Department not found');
     }
+    // Courses first, so the source's names survive the delete below (its FK
+    // cascades): each moves to the target, or folds into the target's entry
+    // for the same course number.
+    await this.moveCourses(chapterId, sourceId, targetId);
     const reassigned = await this.resourceRepo.reassignDepartment(
       chapterId,
       sourceId,
@@ -382,6 +499,73 @@ export class BackworkService {
     );
     await this.professorRepo.delete(sourceId, chapterId);
     return { reassigned };
+  }
+
+  private async moveCourses(
+    chapterId: string,
+    sourceId: string,
+    targetId: string,
+  ): Promise<void> {
+    const [sourceCourses, targetCourses] = await Promise.all([
+      this.courseRepo.findByDepartment(chapterId, sourceId),
+      this.courseRepo.findByDepartment(chapterId, targetId),
+    ]);
+    const targetByKey = new Map(
+      targetCourses.map((course) => [course.course_key, course]),
+    );
+    for (const course of sourceCourses) {
+      const twin = targetByKey.get(course.course_key);
+      if (!twin) {
+        await this.courseRepo.update(course.id, chapterId, {
+          department_id: targetId,
+        });
+        continue;
+      }
+      // Delete the source entry first: the target keeps the unique key.
+      await this.courseRepo.delete(course.id, chapterId);
+      await this.courseRepo.update(
+        twin.id,
+        chapterId,
+        mergeCourseNames(twin, course),
+      );
+    }
+  }
+
+  /** The upload sheet's "Course name": fills an empty name, never renames. */
+  private async nameCourseIfUnnamed(
+    chapterId: string,
+    departmentId: string,
+    courseNumber: string,
+    name: string,
+  ): Promise<void> {
+    const stored = await this.courseRepo.findByCourse(
+      chapterId,
+      departmentId,
+      courseNumber,
+    );
+    if (stored?.name) return;
+    if (stored) {
+      await this.courseRepo.update(stored.id, chapterId, {
+        name,
+        nicknames: normalizeCourseNicknames(stored.nicknames, name),
+      });
+      return;
+    }
+    try {
+      await this.courseRepo.create({
+        chapter_id: chapterId,
+        department_id: departmentId,
+        course_number: courseNumber,
+        name,
+        nicknames: [],
+      });
+    } catch (error) {
+      // Another upload created the entry between the read and this insert.
+      // The file is already filed, and that entry stands: an upload never
+      // renames a course, so there is nothing left to do.
+      if ((error as { code?: string }).code === '23505') return;
+      throw error;
+    }
   }
 
   private async resolveOrCreateDepartment(

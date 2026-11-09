@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-09: Backwork course names and nicknames (#3848)
+
+### 20261109120000_backwork_courses.sql
+
+- **Purpose**: Adds `backwork_courses`, a per-chapter dictionary of what members call a course: one row per (chapter, department, course number) with an optional `name` and up to 20 `nicknames`, unique on `(chapter_id, department_id, course_key)` where `course_key` is generated as `lower(btrim(course_number))`. FKs to `chapters` and `backwork_departments` cascade. RLS on, no policies (API only, service role). Replaces `search_backwork_resources` so global search also matches the course name and nicknames (weight B with the course); everything else it does is unchanged from `20261106190000`. No existing row changes. The rule is [`spec/behavior/backwork.md` § Course Names](../../../spec/behavior/backwork.md#course-names).
+- **Checks**: After `db push`, `select relrowsecurity from pg_class where relname = 'backwork_courses';` returns `true`, `select count(*) from pg_policies where tablename = 'backwork_courses';` returns `0`, and `select has_function_privilege('authenticated', 'public.search_backwork_resources(uuid, text, integer)', 'execute');` returns `false`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR. A deploy applies migrations first. The older API never reads the table, and the replaced search function works with or without rows in it. The newer API against an unmigrated database fails `GET /v1/backwork/courses` and every `PUT`, which the web library reads on load (it falls back to department names, so browsing still works). `create table if not exists`, `create index if not exists` and `create or replace` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-backwork-courses-20261109120000) § Rollback backwork courses.
+
 ## 2026-11-09: A partial index for invites waiting on an address
 
 ### 20261109050000_invites_pending_by_email_index.sql

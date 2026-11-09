@@ -15,6 +15,8 @@ import {
   useUpdateDepartment,
   useUpdateProfessor,
   useMergeDepartments,
+  useBackworkCourses,
+  useSaveBackworkCourse,
 } from "./use-backwork";
 import { FrappClientProvider } from "./use-frapp-client";
 
@@ -210,6 +212,75 @@ const CHAPTER_ID = "chapter-abc";
       });
 
       expect(result.current.error).toBe(mockError);
+    });
+  });
+
+  describe("useBackworkCourses", () => {
+    it("fetches courses", async () => {
+      const mockData = [{ id: "c1", name: "Calculus I", nicknames: ["Calc 1"] }];
+      const mockGet = vi.fn().mockResolvedValue({ data: mockData, error: null });
+
+      const { result } = renderHook(() => useBackworkCourses(), {
+        wrapper: createWrapper({ GET: mockGet }),
+      });
+
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+      expect(mockGet).toHaveBeenCalledWith("/v1/backwork/courses");
+      expect(result.current.data).toEqual(mockData);
+    });
+  });
+
+  describe("useSaveBackworkCourse", () => {
+    const COURSES_KEY = ["backwork", "courses"];
+
+    it("PUTs the course and puts the saved row in the cache at once", async () => {
+      queryClient.setQueryData(COURSES_KEY, [{ id: "c1", name: null, nicknames: [] }]);
+      const saved = { id: "c1", name: "Calculus I", nicknames: ["Calc 1"] };
+      const mockPut = vi.fn().mockResolvedValue({ data: saved, error: null });
+      const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+      const { result } = renderHook(() => useSaveBackworkCourse(), {
+        wrapper: createWrapper({ PUT: mockPut }),
+      });
+      const body = {
+        department_id: "dep1",
+        course_number: "1010",
+        name: "Calculus I",
+        nicknames: ["Calc 1"],
+      };
+      await result.current.mutateAsync(body);
+
+      expect(mockPut).toHaveBeenCalledWith("/v1/backwork/courses", { body });
+      expect(queryClient.getQueryData(COURSES_KEY)).toEqual([saved]);
+      expect(invalidateQueriesSpy).toHaveBeenCalledWith({ queryKey: COURSES_KEY });
+    });
+
+    it("appends a newly created course to the cache", async () => {
+      queryClient.setQueryData(COURSES_KEY, []);
+      const saved = { id: "c2", name: "Orgo", nicknames: [] };
+      const mockPut = vi.fn().mockResolvedValue({ data: saved, error: null });
+
+      const { result } = renderHook(() => useSaveBackworkCourse(), {
+        wrapper: createWrapper({ PUT: mockPut }),
+      });
+      await result.current.mutateAsync({ department_id: "d", course_number: "1" });
+
+      expect(queryClient.getQueryData(COURSES_KEY)).toEqual([saved]);
+    });
+
+    it("surfaces a refusal", async () => {
+      const mockError = new Error("Only a backwork admin can remove a nickname.");
+      const mockPut = vi.fn().mockResolvedValue({ data: null, error: mockError });
+
+      const { result } = renderHook(() => useSaveBackworkCourse(), {
+        wrapper: createWrapper({ PUT: mockPut }),
+      });
+
+      await expect(
+        result.current.mutateAsync({ department_id: "d", course_number: "1", nicknames: [] }),
+      ).rejects.toThrowError(mockError);
     });
   });
 

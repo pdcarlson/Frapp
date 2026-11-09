@@ -3189,3 +3189,16 @@ alter table public.discord_import_channels
 
 Dropping it loses only the scan's record. Each mapped row keeps the `new_channel_is_read_only` it saved, and the channels an import already created keep their own `is_read_only`.
 
+## Rollback backwork courses (20261109120000)
+
+* **Migration**: `20261109120000_backwork_courses.sql`
+
+One new table, `backwork_courses`, and a new body for `search_backwork_resources`. No existing row changed. The API from the same PR reads and writes the table, so roll the API back first: dropping the table under the new API fails `GET /v1/backwork/courses`, every course `PUT`, a department merge, and any upload that names a course.
+
+**Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). After the API is back on the earlier version, re-run the `create or replace function public.search_backwork_resources` block from `20261106190000_backwork_search_wider.sql` first (the new body joins the table), then:
+
+```sql
+drop table if exists public.backwork_courses;
+```
+
+Dropping it loses every course name and nickname members saved; the files keep their department and course number.

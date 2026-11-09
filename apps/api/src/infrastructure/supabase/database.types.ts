@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
+  BackworkCourse,
   BackworkDepartment,
   BackworkProfessor,
   BackworkResource,
@@ -111,6 +112,7 @@ export interface Database {
       roles: TableDefinition<Role>;
       invites: TableDefinition<Invite>;
       backwork_departments: TableDefinition<BackworkDepartment>;
+      backwork_courses: TableDefinition<BackworkCourse>;
       backwork_professors: TableDefinition<BackworkProfessor>;
       backwork_resources: TableDefinition<BackworkResource>;
       point_transactions: TableDefinition<PointTransaction>;

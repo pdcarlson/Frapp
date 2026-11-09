@@ -3,6 +3,7 @@ import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory'
 import { InternalServerErrorException } from '@nestjs/common';
 import { BackworkController } from './backwork.controller';
 import { BackworkService } from '../../application/services/backwork.service';
+import { RbacService } from '../../application/services/rbac.service';
 import {
   RequestBackworkUploadUrlDto,
   ConfirmBackworkUploadDto,
@@ -27,9 +28,14 @@ describe('BackworkController', () => {
     updateProfessor: jest.fn(),
     deleteProfessor: jest.fn(),
     mergeProfessors: jest.fn(),
+    getCourses: jest.fn(),
+    upsertCourse: jest.fn(),
+    deleteCourse: jest.fn(),
     findById: jest.fn(),
     delete: jest.fn(),
   };
+
+  const mockRbacService = { memberHasAnyPermission: jest.fn() };
 
   beforeEach(async () => {
     const module: TestingModule = await createUnguardedTestingModule({
@@ -39,6 +45,7 @@ describe('BackworkController', () => {
           provide: BackworkService,
           useValue: mockBackworkService,
         },
+        { provide: RbacService, useValue: mockRbacService },
       ],
     }).compile();
 
@@ -327,5 +334,34 @@ describe('BackworkController', () => {
       expect(service.delete).toHaveBeenCalledWith(id, chapterId);
       expect(result).toEqual({ success: true });
     });
+  });
+
+  describe('upsertCourse', () => {
+    const dto = {
+      department_id: 'dept-1',
+      course_number: '1010',
+      name: 'Calculus I',
+    };
+
+    it.each([true, false])(
+      'tells the service whether the caller is a backwork admin (%s)',
+      async (isAdmin) => {
+        mockRbacService.memberHasAnyPermission.mockResolvedValue(isAdmin);
+        mockBackworkService.upsertCourse.mockResolvedValue({ id: 'course-1' });
+
+        await controller.upsertCourse('chapter-123', 'user-1', dto);
+
+        expect(mockRbacService.memberHasAnyPermission).toHaveBeenCalledWith(
+          'chapter-123',
+          'user-1',
+          ['backwork:admin'],
+        );
+        expect(service.upsertCourse).toHaveBeenCalledWith(
+          'chapter-123',
+          dto,
+          isAdmin,
+        );
+      },
+    );
   });
 });

@@ -236,3 +236,112 @@ describe("department filter", () => {
     expect(ids.sort()).toEqual(["a", "b"]);
   });
 });
+
+describe("course names and nicknames (#3848)", () => {
+  const math = { id: "d-math", code: "MATH", name: "Mathematics" };
+  const chem = { id: "d-chem", code: "CHEM", name: "Chemistry" };
+  const courses = [
+    {
+      id: "c-calc1",
+      department_id: "d-math",
+      course_number: "1010",
+      course_key: "1010",
+      name: "Calculus I",
+      nicknames: [],
+    },
+    {
+      id: "c-orgo",
+      department_id: "d-chem",
+      course_number: "2250",
+      course_key: "2250",
+      name: "Organic Chemistry I",
+      nicknames: ["Orgo"],
+    },
+  ];
+  const library = [
+    resource({
+      id: "calc2-mid",
+      title: "Calculus II — Midterm 1",
+      department_id: "d-math",
+      course_number: "1020",
+      assignment_type: "Midterm",
+      assignment_number: 1,
+      year: 2026,
+      semester: "Spring",
+    }),
+    resource({
+      id: "calc1-final",
+      title: "Final Exam",
+      department_id: "d-math",
+      // Stored with stray case and spaces; still joins course "1010".
+      course_number: " 1010 ",
+      assignment_type: "Final Exam",
+      year: 2025,
+      semester: "Fall",
+    }),
+    resource({
+      id: "orgo-quiz",
+      title: "Quiz 3",
+      department_id: "d-chem",
+      course_number: "2250",
+      assignment_type: "Quiz",
+      assignment_number: 3,
+    }),
+    resource({
+      id: "chem-lab",
+      title: "Lab report",
+      department_id: "d-chem",
+      course_number: "1100",
+      assignment_type: "Lab",
+    }),
+  ];
+  const rows = toLibraryRows(library, [math, chem], [], courses);
+  const ids = (query: string) =>
+    queryLibrary(rows, query, NO_FILTERS).map((r) => r.item.resource.id);
+
+  it("puts the course named by 'Calc 1' above a file that only shares words with it", () => {
+    // Before course names, "calc 1" found only Calculus II's midterm: "calc"
+    // by its title, "1" by its assignment number.
+    expect(ids("Calc 1")[0]).toBe("calc1-final");
+    expect(ids("Calc 1")).toEqual(["calc1-final", "calc2-mid"]);
+  });
+
+  it("treats Roman and Arabic numerals as one", () => {
+    for (const query of ["Calc 1", "Calc I", "Calculus 1", "Calculus I"]) {
+      expect(ids(query)[0]).toBe("calc1-final");
+    }
+  });
+
+  it("does not let a lone 'i' match every file", () => {
+    expect(ids("i")).not.toContain("chem-lab");
+  });
+
+  it("finds a file by a nickname, and reports the nickname", () => {
+    const results = queryLibrary(rows, "orgo", NO_FILTERS);
+    expect(results.map((r) => r.item.resource.id)).toEqual(["orgo-quiz"]);
+    expect(results[0]?.nickname).toBe("Orgo");
+  });
+
+  it("reports no nickname when the name matched as well", () => {
+    const results = queryLibrary(rows, "organic", NO_FILTERS);
+    expect(results[0]?.item.resource.id).toBe("orgo-quiz");
+    expect(results[0]?.nickname).toBeNull();
+  });
+
+  it("forgives a typo in a course name", () => {
+    expect(ids("calculsu")).toContain("calc1-final");
+  });
+
+  it("labels a course by its name, else its department's", () => {
+    const byId = new Map(rows.map((row) => [row.resource.id, row]));
+    expect(byId.get("calc1-final")?.courseLabel).toBe("Calculus I");
+    expect(byId.get("calc2-mid")?.courseLabel).toBe("Mathematics");
+    expect(searchText(byId.get("orgo-quiz")!)).toContain("Orgo");
+  });
+
+  it("labels the Course filter option with the course name when there is one", () => {
+    const options = filterOptions(rows).course;
+    expect(options).toContainEqual({ value: "MATH 1010", label: "MATH 1010 · Calculus I" });
+    expect(options).toContainEqual({ value: "MATH 1020", label: "MATH 1020 · Mathematics" });
+  });
+});

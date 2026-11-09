@@ -4,7 +4,9 @@ import {
   fuzzyMatch,
   fuzzyMatchWords,
   highlightRuns,
+  matchQueryWord,
   normalizeWords,
+  withNumeralVariants,
 } from "./fuzzy-match";
 
 const docs = [
@@ -145,5 +147,45 @@ describe("highlightRuns", () => {
       { text: " ", hit: false },
       { text: "2", hit: false },
     ]);
+  });
+});
+
+describe("withNumeralVariants", () => {
+  it("adds the digits after a Roman numeral and the numeral after a digit", () => {
+    expect(withNumeralVariants(["calculus", "i"])).toEqual(["calculus", "i", "1"]);
+    expect(withNumeralVariants(["calc", "2"])).toEqual(["calc", "2", "ii"]);
+    expect(withNumeralVariants(["ix", "10"])).toEqual(["ix", "9", "10", "x"]);
+  });
+
+  it("leaves longer numbers and numerals past X alone", () => {
+    expect(withNumeralVariants(["1010", "xi", "11", "0"])).toEqual(["1010", "xi", "11", "0"]);
+  });
+
+  it("makes 'calc 1' and 'calc i' find either spelling", () => {
+    const items = [
+      { id: "roman", words: withNumeralVariants(normalizeWords("Calculus I")) },
+      { id: "digit", words: withNumeralVariants(normalizeWords("Calc 1")) },
+    ];
+    const ids = (query: string) =>
+      fuzzyMatchWords(items, query, (item) => item.words)
+        .map((r) => r.item.id)
+        .sort();
+    expect(ids("calc 1")).toEqual(["digit", "roman"]);
+    expect(ids("calc i")).toEqual(["digit", "roman"]);
+    expect(ids("calculus 1")).toEqual(["roman"]);
+    expect(ids("calculus i")).toEqual(["roman"]);
+  });
+
+  it("keeps a lone digit a whole-word match: '1' does not find Calculus II", () => {
+    const words = withNumeralVariants(normalizeWords("Calculus II"));
+    expect(matchQueryWord("1", words).score).toBe(0);
+    expect(matchQueryWord("2", words).score).toBeGreaterThan(0);
+  });
+});
+
+describe("matchQueryWord", () => {
+  it("tries the alias too", () => {
+    expect(matchQueryWord("hw", ["homework"], { hw: "homework" }).hit).toBe("homework");
+    expect(matchQueryWord("hw", ["homework"]).score).toBe(0);
   });
 });

@@ -12,7 +12,10 @@ import { db, miss } from "../harness.mjs";
 //   - a typo still finds the word it was meant to be ("homewrk");
 //   - nothing comes from another chapter, even a better match;
 //   - an unrelated word, an exclusion-only query and an empty query find
-//     nothing.
+//     nothing;
+//   - since 20261109120000, a course's name and nicknames (`backwork_courses`)
+//     find its files, the course number matched trimmed and case-insensitively,
+//     and another chapter's course name never does.
 //
 // Everything runs inside one transaction and is rolled back.
 console.log("\n=== Functional: backwork search over every field (#585) ===");
@@ -26,6 +29,8 @@ console.log("\n=== Functional: backwork search over every field (#585) ===");
   const HW = "f5850000-0000-4000-8000-0000000000f1";
   const EXAM = "f5850000-0000-4000-8000-0000000000f2";
   const OTHER = "f5850000-0000-4000-8000-0000000000f3";
+  const COURSE = "a3848000-0000-4000-8000-0000000000c1";
+  const COURSE_B = "a3848000-0000-4000-8000-0000000000c2";
   const results = [];
   const check = (name, ok, detail) => results.push({ name, ok, detail });
   const search = async (chapter, query) =>
@@ -51,6 +56,9 @@ console.log("\n=== Functional: backwork search over every field (#585) ===");
         ('${HW}', '${A}', '${DEPT}', '2120', '${PROF}', '${USER}', 'Homework 2', 'a/hw.pdf', 'h1', '{curved}', now() - interval '1 day'),
         ('${EXAM}', '${A}', null, '1200', null, '${USER}', 'Data Structures Exam', 'a/exam.pdf', 'h2', '{}', now()),
         ('${OTHER}', '${B}', '${DEPT_B}', '2120', null, '${USER}', 'Homework 2', 'b/hw.pdf', 'h3', '{curved}', now());
+      insert into backwork_courses (id, chapter_id, department_id, course_number, name, nicknames) values
+        ('${COURSE}', '${A}', '${DEPT}', ' 2120 ', 'Cognition Fundamentals', '{Brainy}'),
+        ('${COURSE_B}', '${B}', '${DEPT_B}', '2120', 'Perception', '{}');
     `);
 
     check(
@@ -77,6 +85,22 @@ console.log("\n=== Functional: backwork search over every field (#585) ===");
       "finds a file by course written together",
       (await search(A, "cogs2120")).includes(HW),
       await search(A, "cogs2120"),
+    );
+    check(
+      "finds a file by its course's name",
+      (await search(A, "fundamentals")).join() === HW,
+      await search(A, "fundamentals"),
+    );
+    check(
+      "finds a file by its course's nickname",
+      (await search(A, "brainy")).join() === HW,
+      await search(A, "brainy"),
+    );
+    check(
+      "never finds a file by another chapter's course name",
+      (await search(A, "perception")).length === 0 &&
+        !(await search(B, "brainy")).includes(HW),
+      { a: await search(A, "perception"), b: await search(B, "brainy") },
     );
     check(
       "forgives a typo",

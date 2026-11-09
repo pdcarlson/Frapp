@@ -1,7 +1,9 @@
 import { ASSIGNMENT_TYPES, DOCUMENT_VARIANTS } from "@repo/validation";
 import {
   fuzzyMatchWords,
+  matchQueryWord,
   normalizeWords,
+  withNumeralVariants,
   type FuzzyResult,
 } from "@/lib/search/fuzzy-match";
 
@@ -44,14 +46,44 @@ export type BackworkResource = {
 
 export type BackworkDepartment = { id: string; code: string; name: string | null };
 export type BackworkProfessor = { id: string; name: string };
+/**
+ * What the chapter calls one course (#3848). A file joins it by its
+ * department and course number, the number trimmed and lowercased
+ * (`course_key`, which the database generates).
+ */
+export type BackworkCourse = {
+  id: string;
+  department_id: string;
+  course_number: string;
+  course_key: string;
+  name: string | null;
+  nicknames: string[];
+};
+
+/** One way to say a course (its name, or one nickname), ready to score. */
+export type CoursePhrase = {
+  text: string;
+  isNickname: boolean;
+  /** Normalised, with Roman and Arabic numerals both present. */
+  words: readonly string[];
+};
 
 /** A row with its department and professor resolved, as the list draws it. */
 export type LibraryRow = {
   resource: BackworkResource;
   department: BackworkDepartment | null;
   professor: BackworkProfessor | null;
+  /** The named course this file belongs to, when someone named it. */
+  courseEntry: BackworkCourse | null;
+  /** The course's name and nicknames, each scored on its own for ranking. */
+  coursePhrases: readonly CoursePhrase[];
   /** "COGS 2120", "COGS", "2120", or null. */
   course: string | null;
+  /**
+   * What follows the course code: the course's name, or the department's
+   * when the course has none ("Calculus I", else "Mathematics").
+   */
+  courseLabel: string | null;
   /** "Fall 2026", "Fall", "2026", or null. */
   term: string | null;
   title: string;
@@ -113,13 +145,34 @@ function joinNonEmpty(parts: readonly (string | number | null | undefined)[]): s
   return kept.length ? kept.join(" ") : null;
 }
 
+function courseKey(departmentId: string, courseNumber: string): string {
+  return `${departmentId}:${courseNumber.trim().toLowerCase()}`;
+}
+
+function phrasesFor(course: BackworkCourse | null): CoursePhrase[] {
+  if (!course) return [];
+  const phrase = (text: string, isNickname: boolean): CoursePhrase => ({
+    text,
+    isNickname,
+    words: withNumeralVariants(normalizeWords(text)),
+  });
+  return [
+    ...(course.name ? [phrase(course.name, false)] : []),
+    ...course.nicknames.map((nickname) => phrase(nickname, true)),
+  ];
+}
+
 export function toLibraryRows(
   resources: readonly BackworkResource[],
   departments: readonly BackworkDepartment[],
   professors: readonly BackworkProfessor[],
+  courses: readonly BackworkCourse[] = [],
 ): LibraryRow[] {
   const departmentById = new Map(departments.map((d) => [d.id, d]));
   const professorById = new Map(professors.map((p) => [p.id, p]));
+  const courseByKey = new Map(
+    courses.map((c) => [courseKey(c.department_id, c.course_number), c]),
+  );
   return resources.map((resource) => {
     const department = resource.department_id
       ? (departmentById.get(resource.department_id) ?? null)
@@ -127,22 +180,35 @@ export function toLibraryRows(
     const professor = resource.professor_id
       ? (professorById.get(resource.professor_id) ?? null)
       : null;
-    const course = joinNonEmpty([department?.code, resource.course_number]);
+    const courseEntry =
+      department && resource.course_number?.trim()
+        ? (courseByKey.get(courseKey(department.id, resource.course_number)) ?? null)
+        : null;
+    const course = joinNonEmpty([department?.code, resource.course_number?.trim()]);
     const fallbackTitle = joinNonEmpty([
       resource.assignment_type ?? "Resource",
       resource.assignment_number,
       course ? `· ${course}` : null,
     ]);
+    const coursePhrases = phrasesFor(courseEntry);
     const row = {
       resource,
       department,
       professor,
+      courseEntry,
+      coursePhrases,
       course,
+      courseLabel: courseEntry?.name ?? department?.name ?? null,
       term: joinNonEmpty([resource.semester, resource.year]),
       title: resource.title?.trim() || fallbackTitle || "Untitled",
       words: [] as readonly string[],
     };
-    row.words = normalizeWords(searchText(row));
+    // The course's names join the row's words with their numeral variants,
+    // so "calc 1" finds a course named "Calculus I" (and the reverse).
+    row.words = [
+      ...normalizeWords(searchText(row)),
+      ...coursePhrases.flatMap((phrase) => phrase.words),
+    ];
     return row;
   });
 }
@@ -159,6 +225,8 @@ export function searchText(row: LibraryRow): string {
     department?.code && resource.course_number
       ? `${department.code}${resource.course_number}`
       : null,
+    row.courseEntry?.name,
+    ...(row.courseEntry?.nicknames ?? []),
     professor?.name,
     resource.semester,
     resource.year,
@@ -202,16 +270,68 @@ function passesFilters(row: LibraryRow, filters: LibraryFilters): boolean {
 }
 
 /**
+ * Weight per query word a course's name or one nickname matches on its own.
+ * Above anything the word-by-word score can reach for the same query, so a
+ * file in the course the query names ranks above a file that only shares a
+ * word with it: "calc 1" puts Calculus I's files above "Calculus II —
+ * Midterm 1", which matches "calc" by its course and "1" by its number.
+ */
+const COURSE_PHRASE_WEIGHT = 10;
+
+export type LibraryResult = FuzzyResult<LibraryRow> & {
+  /**
+   * The nickname the query matched when it matched the course by a nickname
+   * better than by its name, for the row to show "(Orgo)"; otherwise null.
+   */
+  nickname: string | null;
+};
+
+/** The phrase of `row`'s course that matches the most query words. */
+function bestCoursePhrase(
+  row: LibraryRow,
+  queryWords: readonly string[],
+): { matched: number; phrase: CoursePhrase | null; nameMatched: number } {
+  let best: { matched: number; phrase: CoursePhrase | null } = { matched: 0, phrase: null };
+  let nameMatched = 0;
+  for (const phrase of row.coursePhrases) {
+    const matched = queryWords.filter(
+      (word) => matchQueryWord(word, phrase.words, BACKWORK_SEARCH_ALIASES).score > 0,
+    ).length;
+    if (!phrase.isNickname) nameMatched = matched;
+    if (matched > best.matched) best = { matched, phrase };
+  }
+  return { ...best, nameMatched };
+}
+
+/**
  * Filters, then searches. With a query, best match first (ties newest term
- * first); without one, newest term first.
+ * first); without one, newest term first. A file whose course the query
+ * names, by its name or a nickname, ranks first (`COURSE_PHRASE_WEIGHT`).
  */
 export function queryLibrary(
   rows: readonly LibraryRow[],
   query: string,
   filters: LibraryFilters,
-): FuzzyResult<LibraryRow>[] {
+): LibraryResult[] {
   const ordered = rows.filter((row) => passesFilters(row, filters)).sort(compareByTerm);
-  return fuzzyMatchWords(ordered, query, (row) => row.words, BACKWORK_SEARCH_ALIASES);
+  const matched = fuzzyMatchWords(ordered, query, (row) => row.words, BACKWORK_SEARCH_ALIASES);
+  const queryWords = normalizeWords(query);
+  if (queryWords.length === 0) return matched.map((result) => ({ ...result, nickname: null }));
+  return matched
+    .map((result, index) => {
+      const best = bestCoursePhrase(result.item, queryWords);
+      return {
+        index,
+        result: {
+          ...result,
+          score: result.score + best.matched * COURSE_PHRASE_WEIGHT,
+          nickname:
+            best.phrase?.isNickname && best.matched > best.nameMatched ? best.phrase.text : null,
+        },
+      };
+    })
+    .sort((a, b) => b.result.score - a.result.score || a.index - b.index)
+    .map(({ result }) => result);
 }
 
 export function hasActiveFilters(filters: LibraryFilters): boolean {
@@ -278,7 +398,7 @@ export function filterOptions(rows: readonly LibraryRow[]): {
     if (row.course) {
       courses.set(
         row.course,
-        row.department?.name ? `${row.course} · ${row.department.name}` : row.course,
+        row.courseLabel ? `${row.course} · ${row.courseLabel}` : row.course,
       );
     }
     if (row.professor) professors.set(row.professor.id, row.professor.name);

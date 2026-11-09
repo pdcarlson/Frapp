@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { MAX_BACKWORK_UPLOAD_BYTES, MAX_UPLOAD_BYTES } from '@repo/validation';
 import { BackworkService } from './backwork.service';
@@ -10,11 +11,13 @@ import {
   BACKWORK_RESOURCE_REPOSITORY,
   BACKWORK_DEPARTMENT_REPOSITORY,
   BACKWORK_PROFESSOR_REPOSITORY,
+  BACKWORK_COURSE_REPOSITORY,
 } from '#domain/repositories/backwork.repository.interface';
 import type {
   IBackworkResourceRepository,
   IBackworkDepartmentRepository,
   IBackworkProfessorRepository,
+  IBackworkCourseRepository,
 } from '#domain/repositories/backwork.repository.interface';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import type { IStorageProvider } from '#domain/adapters/storage.interface';
@@ -22,6 +25,7 @@ import type {
   BackworkResource,
   BackworkDepartment,
   BackworkProfessor,
+  BackworkCourse,
 } from '#domain/entities/backwork.entity';
 
 describe('BackworkService', () => {
@@ -30,6 +34,19 @@ describe('BackworkService', () => {
   let mockDepartmentRepo: jest.Mocked<IBackworkDepartmentRepository>;
   let mockProfessorRepo: jest.Mocked<IBackworkProfessorRepository>;
   let mockStorageProvider: jest.Mocked<IStorageProvider>;
+  let mockCourseRepo: jest.Mocked<IBackworkCourseRepository>;
+
+  const baseCourse: BackworkCourse = {
+    id: 'course-1',
+    chapter_id: 'ch-1',
+    department_id: 'dept-1',
+    course_number: '101',
+    course_key: '101',
+    name: null,
+    nicknames: [],
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+  };
 
   const baseDepartment: BackworkDepartment = {
     id: 'dept-1',
@@ -98,6 +115,16 @@ describe('BackworkService', () => {
       delete: jest.fn(),
     };
 
+    mockCourseRepo = {
+      findByChapter: jest.fn(),
+      findByDepartment: jest.fn().mockResolvedValue([]),
+      findByCourse: jest.fn().mockResolvedValue(null),
+      findById: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    };
+
     mockStorageProvider = {
       getSignedUploadUrl: jest.fn(),
       getSignedDownloadUrl: jest.fn(),
@@ -126,6 +153,7 @@ describe('BackworkService', () => {
           provide: BACKWORK_PROFESSOR_REPOSITORY,
           useValue: mockProfessorRepo,
         },
+        { provide: BACKWORK_COURSE_REPOSITORY, useValue: mockCourseRepo },
         { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
       ],
     }).compile();
@@ -292,6 +320,78 @@ describe('BackworkService', () => {
           file_hash: 'abc123hash',
         }),
       );
+    });
+
+    describe('course_name (#3848)', () => {
+      const upload = {
+        chapter_id: 'ch-1',
+        uploader_id: 'user-1',
+        storage_path: 'chapters/ch-1/backwork/res-1/midterm1.pdf',
+        file_hash: 'abc123hash',
+        department_code: 'CS',
+        course_number: '101',
+        course_name: ' Intro to CS ',
+      };
+
+      beforeEach(() => {
+        mockResourceRepo.findByFileHash.mockResolvedValue(null);
+        mockDepartmentRepo.findByCode.mockResolvedValue(baseDepartment);
+        mockResourceRepo.create.mockResolvedValue(baseResource);
+      });
+
+      it('names a course that has no entry yet', async () => {
+        await service.confirmUpload(upload);
+
+        expect(mockCourseRepo.create).toHaveBeenCalledWith({
+          chapter_id: 'ch-1',
+          department_id: 'dept-1',
+          course_number: '101',
+          name: 'Intro to CS',
+          nicknames: [],
+        });
+      });
+
+      it('fills an entry with no name', async () => {
+        mockCourseRepo.findByCourse.mockResolvedValue({
+          ...baseCourse,
+          nicknames: ['CS1'],
+        });
+
+        await service.confirmUpload(upload);
+
+        expect(mockCourseRepo.update).toHaveBeenCalledWith('course-1', 'ch-1', {
+          name: 'Intro to CS',
+          nicknames: ['CS1'],
+        });
+      });
+
+      it('never renames a named course', async () => {
+        mockCourseRepo.findByCourse.mockResolvedValue({
+          ...baseCourse,
+          name: 'Computing 101',
+        });
+
+        await service.confirmUpload(upload);
+
+        expect(mockCourseRepo.update).not.toHaveBeenCalled();
+        expect(mockCourseRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('keeps the upload when another upload named the course first', async () => {
+        mockCourseRepo.create.mockRejectedValue(
+          Object.assign(new Error('duplicate'), { code: '23505' }),
+        );
+
+        await expect(service.confirmUpload(upload)).resolves.toEqual(
+          baseResource,
+        );
+      });
+
+      it('ignores a name without a department or number', async () => {
+        await service.confirmUpload({ ...upload, course_number: undefined });
+
+        expect(mockCourseRepo.findByCourse).not.toHaveBeenCalled();
+      });
     });
 
     it('should create resource with minimal metadata (file only)', async () => {
@@ -763,6 +863,81 @@ describe('BackworkService', () => {
       expect(result).toEqual({ reassigned: 4 });
     });
 
+    describe('carries course names along (#3848)', () => {
+      beforeEach(() => {
+        mockDepartmentRepo.findById.mockImplementation(async (id) =>
+          id === 'dept-1' ? baseDepartment : id === 'dept-2' ? other : null,
+        );
+        mockResourceRepo.reassignDepartment.mockResolvedValue(1);
+      });
+
+      it('moves a course the target lacks to the target', async () => {
+        mockCourseRepo.findByDepartment.mockImplementation(async (_c, dept) =>
+          dept === 'dept-1' ? [{ ...baseCourse, name: 'Intro to CS' }] : [],
+        );
+
+        await service.mergeDepartments('dept-1', 'dept-2', 'ch-1');
+
+        expect(mockCourseRepo.update).toHaveBeenCalledWith('course-1', 'ch-1', {
+          department_id: 'dept-2',
+        });
+        expect(mockCourseRepo.delete).not.toHaveBeenCalled();
+        // Before the source department (and its cascade) goes.
+        expect(mockCourseRepo.update.mock.invocationCallOrder[0]).toBeLessThan(
+          mockDepartmentRepo.delete.mock.invocationCallOrder[0],
+        );
+      });
+
+      it("keeps the target's name, unions nicknames and keeps the losing name as a nickname", async () => {
+        const source = {
+          ...baseCourse,
+          name: 'Calc One',
+          nicknames: ['Calc I'],
+        };
+        const target = {
+          ...baseCourse,
+          id: 'course-2',
+          department_id: 'dept-2',
+          course_number: ' 101 ',
+          name: 'Calculus I',
+          nicknames: ['Calc 1'],
+        };
+        mockCourseRepo.findByDepartment.mockImplementation(async (_c, dept) =>
+          dept === 'dept-1' ? [source] : [target],
+        );
+
+        await service.mergeDepartments('dept-1', 'dept-2', 'ch-1');
+
+        expect(mockCourseRepo.delete).toHaveBeenCalledWith('course-1', 'ch-1');
+        expect(mockCourseRepo.update).toHaveBeenCalledWith('course-2', 'ch-1', {
+          name: 'Calculus I',
+          nicknames: ['Calc 1', 'Calc One', 'Calc I'],
+        });
+      });
+
+      it("takes the source's name when the target's twin has none", async () => {
+        mockCourseRepo.findByDepartment.mockImplementation(async (_c, dept) =>
+          dept === 'dept-1'
+            ? [{ ...baseCourse, name: 'Intro to CS' }]
+            : [
+                {
+                  ...baseCourse,
+                  id: 'course-2',
+                  department_id: 'dept-2',
+                  nicknames: ['CS1'],
+                },
+              ],
+        );
+
+        await service.mergeDepartments('dept-1', 'dept-2', 'ch-1');
+
+        expect(mockCourseRepo.update).toHaveBeenCalledWith('course-2', 'ch-1', {
+          name: 'Intro to CS',
+          nicknames: ['CS1'],
+        });
+      });
+    });
+
     it('rejects merging a department into itself', async () => {
       await expect(
         service.mergeDepartments('dept-1', 'dept-1', 'ch-1'),
@@ -820,6 +995,155 @@ describe('BackworkService', () => {
       ).rejects.toThrow(NotFoundException);
       expect(mockResourceRepo.reassignProfessor).not.toHaveBeenCalled();
       expect(mockProfessorRepo.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('upsertCourse (#3848)', () => {
+    const input = { department_id: 'dept-1', course_number: ' 101 ' };
+
+    beforeEach(() => {
+      mockDepartmentRepo.findById.mockResolvedValue(baseDepartment);
+      mockCourseRepo.create.mockImplementation(async (data) => ({
+        ...baseCourse,
+        ...data,
+      }));
+      mockCourseRepo.update.mockImplementation(async (_id, _c, data) => ({
+        ...baseCourse,
+        ...data,
+      }));
+    });
+
+    it('creates the entry on first write, number trimmed', async () => {
+      await service.upsertCourse(
+        'ch-1',
+        { ...input, name: ' Intro  to CS ', nicknames: ['CS1', 'cs1', ' '] },
+        false,
+      );
+
+      expect(mockCourseRepo.findByCourse).toHaveBeenCalledWith(
+        'ch-1',
+        'dept-1',
+        '101',
+      );
+      expect(mockCourseRepo.create).toHaveBeenCalledWith({
+        chapter_id: 'ch-1',
+        department_id: 'dept-1',
+        course_number: '101',
+        name: 'Intro to CS',
+        nicknames: ['CS1'],
+      });
+    });
+
+    it('404s for a department outside the chapter', async () => {
+      mockDepartmentRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.upsertCourse('ch-1', { ...input, name: 'X' }, true),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockCourseRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses an empty first write', async () => {
+      await expect(
+        service.upsertCourse('ch-1', { ...input, nicknames: [] }, false),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('lets an uploader name an unnamed course and add a nickname', async () => {
+      mockCourseRepo.findByCourse.mockResolvedValue({
+        ...baseCourse,
+        nicknames: ['CS1'],
+      });
+
+      await service.upsertCourse(
+        'ch-1',
+        { ...input, name: 'Intro to CS', nicknames: ['CS1', 'Intro'] },
+        false,
+      );
+
+      expect(mockCourseRepo.update).toHaveBeenCalledWith('course-1', 'ch-1', {
+        name: 'Intro to CS',
+        nicknames: ['CS1', 'Intro'],
+      });
+    });
+
+    it('keeps the stored name when only nicknames are sent', async () => {
+      mockCourseRepo.findByCourse.mockResolvedValue({
+        ...baseCourse,
+        name: 'Intro to CS',
+      });
+
+      await service.upsertCourse(
+        'ch-1',
+        { ...input, nicknames: ['CS1'] },
+        false,
+      );
+
+      expect(mockCourseRepo.update).toHaveBeenCalledWith('course-1', 'ch-1', {
+        name: 'Intro to CS',
+        nicknames: ['CS1'],
+      });
+    });
+
+    it('403s an uploader renaming a named course, and writes nothing', async () => {
+      mockCourseRepo.findByCourse.mockResolvedValue({
+        ...baseCourse,
+        name: 'Intro to CS',
+      });
+
+      await expect(
+        service.upsertCourse('ch-1', { ...input, name: 'CS Intro' }, false),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockCourseRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('403s an uploader removing a nickname', async () => {
+      mockCourseRepo.findByCourse.mockResolvedValue({
+        ...baseCourse,
+        nicknames: ['CS1', 'Intro'],
+      });
+
+      await expect(
+        service.upsertCourse('ch-1', { ...input, nicknames: ['CS1'] }, false),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('lets an admin rename, clear the name and remove nicknames', async () => {
+      mockCourseRepo.findByCourse.mockResolvedValue({
+        ...baseCourse,
+        name: 'Intro to CS',
+        nicknames: ['CS1'],
+      });
+
+      await service.upsertCourse(
+        'ch-1',
+        { ...input, name: null, nicknames: [] },
+        true,
+      );
+
+      expect(mockCourseRepo.update).toHaveBeenCalledWith('course-1', 'ch-1', {
+        name: null,
+        nicknames: [],
+      });
+    });
+  });
+
+  describe('deleteCourse', () => {
+    it('404s for a course outside the chapter', async () => {
+      mockCourseRepo.findById.mockResolvedValue(null);
+
+      await expect(service.deleteCourse('course-x', 'ch-1')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(mockCourseRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('deletes a course in the chapter', async () => {
+      mockCourseRepo.findById.mockResolvedValue(baseCourse);
+
+      await service.deleteCourse('course-1', 'ch-1');
+
+      expect(mockCourseRepo.delete).toHaveBeenCalledWith('course-1', 'ch-1');
     });
   });
 });

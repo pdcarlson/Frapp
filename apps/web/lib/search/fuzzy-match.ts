@@ -20,7 +20,11 @@
  * - a number of one or two digits must match a whole word, so "hw 2" finds
  *   Homework 2 but not a Homework 5 from 2025; from three digits a number may
  *   start a word ("212" finds "2120");
- * - a short alias table expands the shorthand people type ("hw", "mt").
+ * - a short alias table expands the shorthand people type ("hw", "mt");
+ * - a caller can make Roman and Arabic numerals one word by passing an item's
+ *   words through `withNumeralVariants` (Backwork does for course names), so
+ *   "calc 1" and "calc i" both find "Calculus I". It is opt-in per item text
+ *   rather than a rule here, because "i" and "v" are ordinary words in titles.
  *
  * The result keeps the item words each query word matched, so the caller can
  * highlight them.
@@ -45,6 +49,28 @@ export function normalizeWords(text: string): string[] {
     .trim()
     .split(" ")
     .filter(Boolean);
+}
+
+const ROMAN_NUMERALS = ["i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"];
+
+/**
+ * `words` with each Roman numeral from I to X followed by its digits, and each
+ * whole number from 1 to 10 by its Roman numeral ("i" → "i", "1"; "2" → "2",
+ * "ii"), so a query in either spelling matches it exactly. Only whole words
+ * convert: "1010" and "xi" stay as they are.
+ */
+export function withNumeralVariants(words: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const word of words) {
+    out.push(word);
+    const roman = ROMAN_NUMERALS.indexOf(word);
+    if (roman !== -1) {
+      out.push(String(roman + 1));
+    } else if (/^(?:[1-9]|10)$/.test(word)) {
+      out.push(ROMAN_NUMERALS[Number(word) - 1]!);
+    }
+  }
+  return out;
 }
 
 /**
@@ -126,6 +152,25 @@ function scoreWord(
 }
 
 /**
+ * How well one normalised query word matches `words`, trying its alias too:
+ * the per-word rule `fuzzyMatchWords` applies, for a caller that scores a
+ * subset of an item's words (one phrase) on its own. Score 0 is no match.
+ */
+export function matchQueryWord(
+  queryWord: string,
+  words: readonly string[],
+  aliases: Readonly<Record<string, string>> = {},
+): { score: number; hit: string | null } {
+  let best = scoreWord(queryWord, words);
+  const alias = aliases[queryWord];
+  if (alias) {
+    const viaAlias = scoreWord(alias, words);
+    if (viaAlias.score > best.score) best = viaAlias;
+  }
+  return best;
+}
+
+/**
  * Filters and ranks `items` by `query`. An empty query returns every item with
  * score 0 in its original order, so a caller can apply its own default sort.
  */
@@ -159,12 +204,7 @@ export function fuzzyMatchWords<T>(
     const hits: string[] = [];
     let matched = true;
     for (const queryWord of queryWords) {
-      let best = scoreWord(queryWord, words);
-      const alias = aliases[queryWord];
-      if (alias) {
-        const viaAlias = scoreWord(alias, words);
-        if (viaAlias.score > best.score) best = viaAlias;
-      }
+      const best = matchQueryWord(queryWord, words, aliases);
       if (best.score === 0 || !best.hit) {
         matched = false;
         break;

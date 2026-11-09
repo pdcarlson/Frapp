@@ -2,11 +2,13 @@ import {
   BackworkResource,
   BackworkDepartment,
   BackworkProfessor,
+  BackworkCourse,
 } from '../entities/backwork.entity';
 
 export const BACKWORK_RESOURCE_REPOSITORY = 'BACKWORK_RESOURCE_REPOSITORY';
 export const BACKWORK_DEPARTMENT_REPOSITORY = 'BACKWORK_DEPARTMENT_REPOSITORY';
 export const BACKWORK_PROFESSOR_REPOSITORY = 'BACKWORK_PROFESSOR_REPOSITORY';
+export const BACKWORK_COURSE_REPOSITORY = 'BACKWORK_COURSE_REPOSITORY';
 
 export interface BackworkResourceFilter {
   department_id?: string;
@@ -84,5 +86,33 @@ export interface IBackworkProfessorRepository {
     chapterId: string,
     data: Partial<BackworkProfessor>,
   ): Promise<BackworkProfessor | null>;
+  delete(id: string, chapterId: string): Promise<void>;
+}
+
+export interface IBackworkCourseRepository {
+  findByChapter(chapterId: string): Promise<BackworkCourse[]>;
+  /** Every course of one department, for the department merge. */
+  findByDepartment(
+    chapterId: string,
+    departmentId: string,
+  ): Promise<BackworkCourse[]>;
+  /**
+   * The course with this department and number, the number compared trimmed
+   * and case-insensitively; `null` when none is named yet.
+   */
+  findByCourse(
+    chapterId: string,
+    departmentId: string,
+    courseNumber: string,
+  ): Promise<BackworkCourse | null>;
+  /** Chapter-scoped; resolves to `null` when no course in `chapterId` has `id`. */
+  findById(id: string, chapterId: string): Promise<BackworkCourse | null>;
+  create(data: Partial<BackworkCourse>): Promise<BackworkCourse>;
+  /** Chapter-scoped; resolves to `null` when no course in `chapterId` has `id`. */
+  update(
+    id: string,
+    chapterId: string,
+    data: Partial<BackworkCourse>,
+  ): Promise<BackworkCourse | null>;
   delete(id: string, chapterId: string): Promise<void>;
 }

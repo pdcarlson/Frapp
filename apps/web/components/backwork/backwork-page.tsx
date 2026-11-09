@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import {
   selectDownloadUrl,
+  useBackworkCourses,
   useBackworkResources,
   useDeleteBackworkResource,
   useDepartments,
@@ -57,6 +58,7 @@ import {
 } from "@/components/shared/subscription-gate";
 import { BackworkTaxonomyDrawer } from "@/components/backwork/backwork-taxonomy-drawer";
 import { useBackworkTaxonomyActions } from "@/components/backwork/backwork-taxonomy-actions";
+import { useBackworkCourseDialog } from "@/components/backwork/backwork-course-dialog";
 import { BackworkUploadSheet } from "@/components/backwork/backwork-upload-sheet";
 import { BulkDropZone } from "@/components/backwork/bulk/drop-zone";
 import type { CollectedFiles } from "@/lib/backwork-bulk/collect-files";
@@ -69,6 +71,7 @@ import {
 } from "@/components/backwork/backwork-row-parts";
 import {
   BACKWORK_LIST_CAP,
+  BACKWORK_SEARCH_ALIASES,
   NO_FILTERS,
   OPTION_FOR,
   filterOptions,
@@ -76,6 +79,7 @@ import {
   hasActiveFilters,
   queryLibrary,
   toLibraryRows,
+  type BackworkCourse,
   type BackworkDepartment,
   type BackworkProfessor,
   type BackworkResource,
@@ -103,6 +107,11 @@ import {
 } from "@/components/shared/table-controls";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
+import {
+  matchQueryWord,
+  normalizeWords,
+  withNumeralVariants,
+} from "@/lib/search/fuzzy-match";
 
 /**
  * `/backwork`, rebuilt 2026-11-05 around the files instead of a filter form
@@ -210,6 +219,21 @@ function courseHits(row: LibraryRow, hits: readonly string[]): readonly string[]
   return [...hits, code, number];
 }
 
+/**
+ * The words of a course's name or nickname the query matched, scored against
+ * that text alone: the row's own hits may have landed on another phrase
+ * ("calc" exactly on the nickname "Calc 1", not on "Calculus"), and a numeral
+ * may have matched in its other spelling ("1" for "I").
+ */
+function phraseHits(text: string, query: string): readonly string[] {
+  const words = withNumeralVariants(normalizeWords(text));
+  const hits = normalizeWords(query).flatMap((word) => {
+    const { hit } = matchQueryWord(word, words, BACKWORK_SEARCH_ALIASES);
+    return hit ? [hit] : [];
+  });
+  return hits.length ? withNumeralVariants(hits) : hits;
+}
+
 export function BackworkPage() {
   const { toast } = useToast();
   // `POST /v1/backwork/upload-url` and `POST /v1/backwork` carry no `@FreeTier`,
@@ -246,6 +270,9 @@ export function BackworkPage() {
   const resourcesQuery = useBackworkResources();
   const departmentsQuery = useDepartments();
   const professorsQuery = useProfessors();
+  // Course names are extra: a failed read leaves rows on their department
+  // name rather than failing the page.
+  const coursesQuery = useBackworkCourses();
   const fetchResource = useFetchBackworkResource();
   const fetchDownloadUrls = useFetchBackworkDownloadUrls();
   // Files fetched so far while a zip builds; null when none is building.
@@ -258,7 +285,9 @@ export function BackworkPage() {
   const deleteResource = useDeleteBackworkResource();
   const { data: permissionsPayload } = useMyPermissions();
   const isAdmin = can("backwork:admin", permissionsPayload?.permissions);
+  const canUpload = can("backwork:upload", permissionsPayload?.permissions);
   const taxonomy = useBackworkTaxonomyActions(gate);
+  const courseDialog = useBackworkCourseDialog(gate, isAdmin);
   const { confirm, confirmDialog } = useConfirmDialog();
   const router = useRouter();
 
@@ -286,8 +315,9 @@ export function BackworkPage() {
         asArray<BackworkResource>(resourcesQuery.data),
         asArray<BackworkDepartment>(departmentsQuery.data),
         asArray<BackworkProfessor>(professorsQuery.data),
+        asArray<BackworkCourse>(coursesQuery.data),
       ),
-    [resourcesQuery.data, departmentsQuery.data, professorsQuery.data],
+    [resourcesQuery.data, departmentsQuery.data, professorsQuery.data, coursesQuery.data],
   );
   const options = useMemo(() => filterOptions(rows), [rows]);
   // A filter whose value no row has any more (a merge from a row menu deleted
@@ -461,9 +491,43 @@ export function BackworkPage() {
         onSelect: () => setFilter("professorId", professor.id),
       });
     }
-    if (!isAdmin) return entries;
+    let nameCourse: RowMenuEntry | null = null;
+    // Naming a course is open to uploaders while it has no name (#3848;
+    // who may change what is the API's `courseEditRefusal`).
+    const courseNumber = row.resource.course_number?.trim();
+    const courseName = row.courseEntry?.name;
+    if (
+      department &&
+      course &&
+      courseNumber &&
+      (isAdmin || (canUpload && !courseName))
+    ) {
+      nameCourse = {
+        type: "item",
+        key: "name-course",
+        disabled: writeBlocked,
+        describedBy,
+        label: courseName
+          ? `Rename the ${course} course…`
+          : `Name the ${course} course…`,
+        icon: Pencil,
+        onSelect: () =>
+          courseDialog.requestCourseName({
+            departmentId: department.id,
+            courseNumber,
+            label: course,
+          }),
+      };
+    }
+    if (!isAdmin) {
+      if (nameCourse) {
+        entries.push({ type: "separator", key: "officer-sep" }, nameCourse);
+      }
+      return entries;
+    }
 
     const officer: RowMenuEntry[] = [];
+
     if (professor) {
       officer.push(
         {
@@ -497,6 +561,7 @@ export function BackworkPage() {
         },
       );
     }
+    if (nameCourse) officer.push(nameCourse);
     if (department) {
       officer.push(
         {
@@ -788,9 +853,13 @@ export function BackworkPage() {
         ) : resourcesQuery.isLoading ||
           (resourcesQuery.isPending &&
             resourcesQuery.fetchStatus === "paused") ||
-          // Rows join departments and professors on the client; without them
-          // a course reads as a bare number and search misses "cogs".
-          (rows.length > 0 && (departmentsQuery.isLoading || professorsQuery.isLoading)) ? (
+          // Rows join departments, professors and course names on the
+          // client; without them a course reads as a bare number and search
+          // misses "cogs" or "calc 1".
+          (rows.length > 0 &&
+            (departmentsQuery.isLoading ||
+              professorsQuery.isLoading ||
+              coursesQuery.isLoading)) ? (
           <BackworkRowsSkeleton />
         ) : resourcesQuery.isError ||
           departmentsQuery.isError ||
@@ -837,7 +906,7 @@ export function BackworkPage() {
             </div>
             <ul className={denseListClassName}>
               {/* eslint-disable-next-line react-hooks/refs -- `rowEntries` closes over `removeFile`, which reads `gateRef` after its confirm resolves, not during render */}
-              {results.map(({ item: row, hits }) => (
+              {results.map(({ item: row, hits, nickname }) => (
                 <RowMenu
                   key={row.resource.id}
                   entries={rowEntries(row)}
@@ -863,18 +932,28 @@ export function BackworkPage() {
                               className="font-mono text-caption tracking-[0.02em] text-foreground"
                             />
                           ) : null}
-                          {row.department?.name ? (
+                          {row.courseLabel ? (
                             <>
                               {row.course ? " · " : null}
                               <Highlighted
-                                text={row.department.name}
-                                hits={hits}
+                                text={row.courseLabel}
+                                hits={[...hits, ...phraseHits(row.courseLabel, deferredQuery)]}
                               />
                             </>
                           ) : null}
+                          {nickname ? (
+                            <span className="text-muted">
+                              {" ("}
+                              <Highlighted
+                                text={nickname}
+                                hits={phraseHits(nickname, deferredQuery)}
+                              />
+                              {")"}
+                            </span>
+                          ) : null}
                           {row.resource.tags?.length ? (
                             <>
-                              {row.course || row.department?.name
+                              {row.course || row.courseLabel
                                 ? " · "
                                 : null}
                               <Highlighted
@@ -947,6 +1026,7 @@ export function BackworkPage() {
       </section>
 
       {taxonomy.dialogs}
+      {courseDialog.dialog}
       {confirmDialog}
     </div>
   );
