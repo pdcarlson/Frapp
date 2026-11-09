@@ -84,6 +84,72 @@ export function useDepartments(options: { enabled?: boolean } = {}) {
   });
 }
 
+/**
+ * The chapter's course names and nicknames (#3848). A file joins its course
+ * by `department_id` and `course_key` (its course number trimmed and
+ * lowercased). `enabled` as for `useDepartments`.
+ */
+export function useBackworkCourses(options: { enabled?: boolean } = {}) {
+  const client = useFrappClient();
+  return useQuery({
+    queryKey: ["backwork", "courses"],
+    queryFn: async () => {
+      const { data, error } = await client.GET("/v1/backwork/courses");
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 60_000,
+    enabled: options.enabled ?? true,
+  });
+}
+
+/**
+ * Changes a course's name or nicknames (`PUT /v1/backwork/courses`), creating
+ * its entry on first write. Nicknames go as a delta (`add_nicknames`,
+ * `remove_nicknames`) the API applies to the list as stored, so send only
+ * what the person changed. Without `backwork:admin` the API refuses a rename
+ * of a set name or any removal with a 403.
+ */
+export function useSaveBackworkCourse() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: {
+      department_id: string;
+      course_number: string;
+      name?: string | null;
+      add_nicknames?: string[];
+      remove_nicknames?: string[];
+    }) => {
+      const { data, error } = await client.PUT("/v1/backwork/courses", {
+        body,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (saved) => {
+      // In the cache at once (replacing by id, or appended when new), for the
+      // reason `patchNamedRow` gives; the refetch stays as the fallback.
+      if (saved && typeof saved === "object" && "id" in saved) {
+        queryClient.setQueryData(["backwork", "courses"], (current: unknown) => {
+          if (!Array.isArray(current)) return current;
+          const found = current.some(
+            (row) => row && typeof row === "object" && "id" in row && row.id === saved.id,
+          );
+          return found
+            ? current.map((row) =>
+                row && typeof row === "object" && "id" in row && row.id === saved.id
+                  ? saved
+                  : row,
+              )
+            : [...current, saved];
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ["backwork", "courses"] });
+    },
+  });
+}
+
 export function useProfessors() {
   const client = useFrappClient();
   return useQuery({
@@ -167,6 +233,8 @@ export function useConfirmBackworkUpload() {
       title?: string;
       department_code?: string;
       course_number?: string;
+      /** Saved only when the course has no name yet. */
+      course_name?: string;
       professor_name?: string;
       year?: number;
       semester?: "Spring" | "Summer" | "Fall" | "Winter";
@@ -295,7 +363,8 @@ export function useMergeDepartments() {
       return data;
     },
     onSuccess: () => {
-      // Reassignment also changes every affected resource's department_id.
+      // Reassignment also changes every affected resource's department_id,
+      // and the source's course names move with it (`["backwork", "courses"]`).
       queryClient.invalidateQueries({ queryKey: ["backwork"] });
     },
   });

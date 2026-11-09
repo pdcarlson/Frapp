@@ -21,6 +21,7 @@ const {
   mockFetchResource,
   mockUpdateProfessor,
   mockMergeDepartments,
+  mockSaveCourse,
   mockDeleteResource,
   mockPermissions,
   taxonomyData,
@@ -45,11 +46,14 @@ const {
   mockFetchResource: vi.fn(),
   mockUpdateProfessor: vi.fn().mockResolvedValue({}),
   mockMergeDepartments: vi.fn().mockResolvedValue({ reassigned: 1 }),
+  mockSaveCourse: vi.fn().mockResolvedValue({}),
   mockDeleteResource: vi.fn().mockResolvedValue({}),
   mockPermissions: { value: ["backwork:upload", "backwork:admin"] as string[] },
   taxonomyData: {
     departments: [] as unknown[],
     professors: [] as unknown[],
+    courses: [] as unknown[],
+    coursesLoading: false,
     loading: false,
     failed: false,
   },
@@ -106,6 +110,13 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isError: false,
     refetch: vi.fn(),
   }),
+  useBackworkCourses: () => ({
+    data: taxonomyData.coursesLoading ? undefined : taxonomyData.courses,
+    isLoading: taxonomyData.coursesLoading,
+    isError: false,
+    refetch: vi.fn(),
+  }),
+  useSaveBackworkCourse: () => ({ mutateAsync: mockSaveCourse }),
   useRequestBackworkUploadUrl: () => ({
     mutateAsync: mockRequestUpload,
     isPending: false,
@@ -875,6 +886,95 @@ describe("BackworkPage year and assignment-number guard (#2206)", () => {
   });
 });
 
+describe("BackworkPage upload: course name (#3848)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resolvedResourcesQuery();
+    chapter.active();
+    // RESOURCE is a file with no department: MATH 1010 has none yet.
+    taxonomyData.departments = [{ id: "dept-math", code: "MATH", name: "Mathematics" }];
+    mockRequestUpload.mockResolvedValue({
+      upload_url: "https://storage.example/put",
+      storage_path: "chapters/chap-1/backwork/res-1/notes.pdf",
+    });
+    mockConfirmUpload.mockResolvedValue({});
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true } as Response));
+    vi.spyOn(globalThis.crypto.subtle, "digest").mockResolvedValue(
+      new Uint8Array(32).buffer,
+    );
+  });
+
+  afterEach(() => {
+    taxonomyData.departments = [];
+    taxonomyData.courses = [];
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  async function typeCourse(code: string, number: string) {
+    render(<BackworkPage />);
+    await userEvent.click(uploadTrigger());
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText(/^department code$/i), {
+      target: { value: code },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/^course number$/i), {
+      target: { value: number },
+    });
+    return dialog;
+  }
+
+  it("shows a named course's name under Course number", async () => {
+    taxonomyData.courses = [
+      {
+        id: "c1",
+        department_id: "dept-math",
+        course_number: "1010",
+        course_key: "1010",
+        name: "Calculus I",
+        nicknames: [],
+      },
+    ];
+    const dialog = await typeCourse("MATH", "1010");
+
+    expect(within(dialog).getByText("Calculus I")).toHaveClass("font-semibold");
+    expect(within(dialog).getByText(/MATH 1010 ·/)).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText(/course name/i)).toBeNull();
+  });
+
+  it("asks for a new course's name and confirms the upload with it", async () => {
+    const dialog = await typeCourse("MATH", "1010");
+
+    expect(
+      within(dialog).getByText("New course. Name it once and everyone can find it by name."),
+    ).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText(/^course name \(optional\)$/i), {
+      target: { value: " Calculus I " },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/^file$/i), {
+      target: {
+        files: [new File(["%PDF"], "notes.pdf", { type: "application/pdf" })],
+      },
+    });
+    await pickVariant();
+    await userEvent.click(within(dialog).getByRole("button", { name: /^upload$/i }));
+
+    await waitFor(() => expect(mockConfirmUpload).toHaveBeenCalledTimes(1));
+    expect(mockConfirmUpload.mock.calls[0]![0]).toMatchObject({
+      department_code: "MATH",
+      course_number: "1010",
+      course_name: "Calculus I",
+    });
+  });
+
+  it("does not offer a name for a course that already has files", async () => {
+    resourcesQuery.data = [{ ...RESOURCE, department_id: "dept-math", course_number: "1010" }];
+    const dialog = await typeCourse("MATH", "1010");
+
+    expect(within(dialog).queryByLabelText(/course name/i)).toBeNull();
+  });
+});
+
 describe("BackworkPage library (2026-11-05 redesign)", () => {
   const LIBRARY = [
     {
@@ -1035,6 +1135,7 @@ describe("BackworkPage library (2026-11-05 redesign)", () => {
       "Show only Bram",
       "Rename Bram…",
       "Merge Bram into…",
+      "Name the COGS 2120 course…",
       "Name the COGS department…",
       "Merge COGS into…",
       "Delete file…",
@@ -1049,7 +1150,317 @@ describe("BackworkPage library (2026-11-05 redesign)", () => {
     const items = (await screen.findAllByRole("menuitem")).map(
       (item) => item.textContent,
     );
-    expect(items).toEqual(["Download", "Show only COGS 2120", "Show only Bram"]);
+    expect(items).toEqual([
+      "Download",
+      "Show only COGS 2120",
+      "Show only Bram",
+      "Name the COGS 2120 course…",
+    ]);
+  });
+
+  describe("course names (#3848)", () => {
+    const COGS_2120 = {
+      id: "course-cogs",
+      department_id: "dept-cogs",
+      course_number: "2120",
+      course_key: "2120",
+      name: "Cognition I",
+      nicknames: ["Cog 1"],
+    };
+
+    afterEach(() => {
+      taxonomyData.courses = [];
+    });
+
+    it("shows the course name after the code, and the department's when it has none", () => {
+      taxonomyData.courses = [COGS_2120];
+      render(<BackworkPage />);
+
+      const [cogs, csci] = screen.getAllByRole("listitem");
+      expect(within(cogs!).getByText("Cognition I")).toBeInTheDocument();
+      expect(within(cogs!).queryByText("Cognitive Science")).not.toBeInTheDocument();
+      // CSCI has neither a course name nor a department name.
+      expect(within(csci!).getByText("CSCI 1200")).toBeInTheDocument();
+    });
+
+    it("adds the nickname a search matched, in parentheses", async () => {
+      taxonomyData.courses = [{ ...COGS_2120, nicknames: ["Brainy"] }];
+      const user = userEvent.setup();
+      render(<BackworkPage />);
+
+      await user.type(screen.getByLabelText(/^search backwork$/i), "brainy");
+
+      await waitFor(() => expect(titles()).toEqual(["Cog Sci Homework 2"]));
+      const row = screen.getAllByRole("listitem")[0]!;
+      expect(row.querySelectorAll("p")[1]?.textContent).toContain("Cognition I (Brainy)");
+    });
+
+    it("finds a course by its name with either numeral", async () => {
+      taxonomyData.courses = [COGS_2120];
+      const user = userEvent.setup();
+      render(<BackworkPage />);
+      const search = screen.getByLabelText(/^search backwork$/i);
+
+      await user.type(search, "cognition 1");
+      await waitFor(() => expect(titles()).toEqual(["Cog Sci Homework 2"]));
+      await user.clear(search);
+      await user.type(search, "cog i");
+      await waitFor(() => expect(titles()).toEqual(["Cog Sci Homework 2"]));
+    });
+
+    it("offers a member a nickname, not a rename, once the course has a name", async () => {
+      taxonomyData.courses = [COGS_2120];
+      mockPermissions.value = ["backwork:upload"];
+      const user = userEvent.setup();
+      render(<BackworkPage />);
+
+      fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+      const items = (await screen.findAllByRole("menuitem")).map((i) => i.textContent);
+      expect(items).not.toContain("Rename the COGS 2120 course…");
+      expect(items).not.toContain("Name the COGS 2120 course…");
+      await user.click(
+        await screen.findByRole("menuitem", { name: "Add a nickname for COGS 2120…" }),
+      );
+
+      const dialog = await screen.findByRole("dialog", { name: "Name COGS 2120" });
+      expect(within(dialog).getByLabelText("Course name")).toHaveAttribute("readonly");
+      await user.type(within(dialog).getByLabelText("Also called"), "Brainy{Enter}");
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      // Only the addition: the name is the member's to leave alone, and the
+      // saved "Cog 1" is not resent.
+      await waitFor(() =>
+        expect(mockSaveCourse).toHaveBeenCalledWith({
+          department_id: "dept-cogs",
+          course_number: "2120",
+          add_nicknames: ["Brainy"],
+        }),
+      );
+    });
+
+    it("sends an admin's removal as a removal", async () => {
+      taxonomyData.courses = [COGS_2120];
+      const user = userEvent.setup();
+      render(<BackworkPage />);
+
+      fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+      await user.click(
+        await screen.findByRole("menuitem", { name: "Rename the COGS 2120 course…" }),
+      );
+      const dialog = await screen.findByRole("dialog", { name: "Name COGS 2120" });
+      await user.click(within(dialog).getByRole("button", { name: "Remove Cog 1" }));
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      await waitFor(() =>
+        expect(mockSaveCourse).toHaveBeenCalledWith({
+          department_id: "dept-cogs",
+          course_number: "2120",
+          remove_nicknames: ["Cog 1"],
+        }),
+      );
+    });
+
+    it("drops a member's name draft when someone else names the course meanwhile", async () => {
+      taxonomyData.courses = [{ ...COGS_2120, name: null }];
+      mockPermissions.value = ["backwork:upload"];
+      const user = userEvent.setup();
+      const { rerender } = render(<BackworkPage />);
+
+      fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+      await user.click(
+        await screen.findByRole("menuitem", { name: "Name the COGS 2120 course…" }),
+      );
+      const dialog = await screen.findByRole("dialog", { name: "Name COGS 2120" });
+      await user.type(within(dialog).getByLabelText("Course name"), "My draft");
+
+      // A refetch brings the name someone else saved.
+      taxonomyData.courses = [{ ...COGS_2120, name: "Cognition I" }];
+      rerender(<BackworkPage />);
+
+      const field = within(dialog).getByLabelText("Course name");
+      await waitFor(() => expect(field).toHaveValue("Cognition I"));
+      expect(field).toHaveAttribute("readonly");
+      expect(within(dialog).getByText(/Someone just named this course/)).toBeInTheDocument();
+    });
+
+    it("shows a nickname once when a refetch brings a local add, and doesn't resend it", async () => {
+      taxonomyData.courses = [{ ...COGS_2120, nicknames: [] }];
+      const user = userEvent.setup();
+      const { rerender } = render(<BackworkPage />);
+
+      fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+      await user.click(
+        await screen.findByRole("menuitem", { name: "Rename the COGS 2120 course…" }),
+      );
+      const dialog = await screen.findByRole("dialog", { name: "Name COGS 2120" });
+      await user.type(within(dialog).getByLabelText("Also called"), "Brainy{Enter}");
+
+      taxonomyData.courses = [{ ...COGS_2120, nicknames: ["brainy"] }];
+      rerender(<BackworkPage />);
+
+      const chips = within(within(dialog).getByRole("list", { name: "Nicknames" })).getAllByRole(
+        "listitem",
+      );
+      expect(chips.map((c) => c.textContent)).toEqual(["brainy"]);
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+      await waitFor(() =>
+        expect(mockToast).toHaveBeenCalledWith(
+          expect.objectContaining({ title: "Nothing to save" }),
+        ),
+      );
+      expect(mockSaveCourse).not.toHaveBeenCalled();
+    });
+
+    it("removing a stored chip also drops a local add of the same nickname", async () => {
+      taxonomyData.courses = [{ ...COGS_2120, nicknames: [] }];
+      const user = userEvent.setup();
+      const { rerender } = render(<BackworkPage />);
+
+      fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+      await user.click(
+        await screen.findByRole("menuitem", { name: "Rename the COGS 2120 course…" }),
+      );
+      const dialog = await screen.findByRole("dialog", { name: "Name COGS 2120" });
+      await user.type(within(dialog).getByLabelText("Also called"), "Brainy{Enter}");
+      // A refetch brings "brainy", which hides the local "Brainy".
+      taxonomyData.courses = [{ ...COGS_2120, nicknames: ["brainy"] }];
+      rerender(<BackworkPage />);
+
+      await user.click(within(dialog).getByRole("button", { name: "Remove brainy" }));
+      expect(within(dialog).queryByRole("list", { name: "Nicknames" })).toBeNull();
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      await waitFor(() =>
+        expect(mockSaveCourse).toHaveBeenCalledWith({
+          department_id: "dept-cogs",
+          course_number: "2120",
+          remove_nicknames: ["brainy"],
+        }),
+      );
+    });
+
+    it("offers no course entry while course names load", async () => {
+      taxonomyData.coursesLoading = true;
+      try {
+        render(<BackworkPage />);
+        fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+        const items = (await screen.findAllByRole("menuitem")).map((i) => i.textContent);
+        expect(items.some((i) => /course…|nickname for/.test(i ?? ""))).toBe(false);
+        // The department's own entry is unaffected.
+        expect(items).toContain("Name the COGS department…");
+      } finally {
+        taxonomyData.coursesLoading = false;
+      }
+    });
+
+    it("sends a case-only nickname fix as remove the old spelling, add the new", async () => {
+      taxonomyData.courses = [{ ...COGS_2120, nicknames: ["cog 1"] }];
+      const user = userEvent.setup();
+      render(<BackworkPage />);
+
+      fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+      await user.click(
+        await screen.findByRole("menuitem", { name: "Rename the COGS 2120 course…" }),
+      );
+      const dialog = await screen.findByRole("dialog", { name: "Name COGS 2120" });
+      await user.click(within(dialog).getByRole("button", { name: "Remove cog 1" }));
+      await user.type(within(dialog).getByLabelText("Also called"), "Cog 1{Enter}");
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      await waitFor(() =>
+        expect(mockSaveCourse).toHaveBeenCalledWith({
+          department_id: "dept-cogs",
+          course_number: "2120",
+          add_nicknames: ["Cog 1"],
+          remove_nicknames: ["cog 1"],
+        }),
+      );
+    });
+
+    it("says so when nothing changed, and saves nothing", async () => {
+      taxonomyData.courses = [COGS_2120];
+      const user = userEvent.setup();
+      render(<BackworkPage />);
+
+      fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+      await user.click(
+        await screen.findByRole("menuitem", { name: "Rename the COGS 2120 course…" }),
+      );
+      const dialog = await screen.findByRole("dialog", { name: "Name COGS 2120" });
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      await waitFor(() =>
+        expect(mockToast).toHaveBeenCalledWith(
+          expect.objectContaining({ title: "Nothing to save" }),
+        ),
+      );
+      expect(mockSaveCourse).not.toHaveBeenCalled();
+    });
+
+    it("renders rows on the department name while course names load", () => {
+      // The list does not wait on course names (they'd hold every row back).
+      taxonomyData.courses = [COGS_2120];
+      taxonomyData.coursesLoading = true;
+      try {
+        render(<BackworkPage />);
+        expect(
+          within(screen.getAllByRole("listitem")[0]!).getByText("Cognitive Science"),
+        ).toBeInTheDocument();
+      } finally {
+        taxonomyData.coursesLoading = false;
+      }
+    });
+
+    it("offers an admin the rename of a named course", async () => {
+      taxonomyData.courses = [COGS_2120];
+      render(<BackworkPage />);
+
+      fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+      expect(
+        await screen.findByRole("menuitem", { name: "Rename the COGS 2120 course…" }),
+      ).toBeInTheDocument();
+    });
+
+    it("names a course from the row menu, with nicknames added by Enter", async () => {
+      mockPermissions.value = ["backwork:upload"];
+      const user = userEvent.setup();
+      render(<BackworkPage />);
+
+      fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+      await user.click(
+        await screen.findByRole("menuitem", { name: "Name the COGS 2120 course…" }),
+      );
+      const dialog = await screen.findByRole("dialog", { name: "Name COGS 2120" });
+      await user.type(within(dialog).getByLabelText("Course name"), "Cognition I");
+      await user.type(within(dialog).getByLabelText("Also called"), "Cog 1{Enter}");
+      // A chip added here can be taken back before saving.
+      expect(within(dialog).getByRole("button", { name: "Remove Cog 1" })).toBeInTheDocument();
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      await waitFor(() =>
+        expect(mockSaveCourse).toHaveBeenCalledWith({
+          department_id: "dept-cogs",
+          course_number: "2120",
+          name: "Cognition I",
+          add_nicknames: ["Cog 1"],
+        }),
+      );
+    });
+
+    it("gives a member no remove on a saved nickname", async () => {
+      taxonomyData.courses = [{ ...COGS_2120, name: null }];
+      mockPermissions.value = ["backwork:upload"];
+      const user = userEvent.setup();
+      render(<BackworkPage />);
+
+      fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+      await user.click(
+        await screen.findByRole("menuitem", { name: "Name the COGS 2120 course…" }),
+      );
+      const dialog = await screen.findByRole("dialog", { name: "Name COGS 2120" });
+      expect(within(dialog).getByText("Cog 1")).toBeInTheDocument();
+      expect(within(dialog).queryByRole("button", { name: "Remove Cog 1" })).toBeNull();
+    });
   });
 
   it("leaves the browser's own menu on selected text", async () => {
@@ -1262,6 +1673,9 @@ describe("BackworkPage library (2026-11-05 redesign)", () => {
     expect(mockDeleteResource).not.toHaveBeenCalled();
   });
 
+  // Renders all 1,000 rows, which takes ~3.5s in jsdom on a laptop (already
+  // so on main before #3848) and passed 5s on a loaded CI runner, so this one
+  // test gets a longer budget than vitest's 5s default.
   it("says when the list hit the server's row cap", () => {
     resourcesQuery.data = Array.from({ length: 1000 }, (_, i) => ({
       ...RESOURCE,
@@ -1269,7 +1683,7 @@ describe("BackworkPage library (2026-11-05 redesign)", () => {
     }));
     render(<BackworkPage />);
     expect(screen.getByText(/showing the newest 1,000 files/i)).toBeInTheDocument();
-  });
+  }, 20_000);
 
   it("keeps each download's spinner until that download finishes", async () => {
     const user = userEvent.setup();
