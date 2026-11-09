@@ -50,7 +50,16 @@ let checking = false;
 let leaving = false;
 
 /** Routes a signed-out visitor belongs on; nothing here sends them away. */
-const SIGNED_OUT_ROUTES = ["/sign-in", "/sign-up", "/join", "/no-access", "/auth"];
+const SIGNED_OUT_ROUTES = [
+  "/sign-in",
+  "/sign-up",
+  "/join",
+  "/no-access",
+  // Its own Sign out sends the member to `/sign-in` with the destination kept;
+  // leaving first would drop it (#3786).
+  "/new-account",
+  "/auth",
+];
 
 /**
  * The session ended outside this tab's own sign-out paths: another tab of the

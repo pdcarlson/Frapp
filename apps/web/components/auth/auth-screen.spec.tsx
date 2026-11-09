@@ -171,7 +171,9 @@ describe("the redirect chain survives the rebuild", () => {
     ).toBeTruthy();
   });
 
-  it("kicks off Apple OAuth toward the callback with redirectTo intact", async () => {
+  it("kicks off Apple OAuth toward the callback with redirectTo intact, tagged as a sign-in", async () => {
+    // The tag is how `/auth/callback` tells a sign-in that created a new
+    // account from a deliberate sign-up (#3786).
     const user = userEvent.setup();
     signInWithOAuth.mockClear();
     searchParams.value = new URLSearchParams("redirectTo=%2Fjoin%3Ftoken%3Dinv-1");
@@ -181,12 +183,26 @@ describe("the redirect chain survives the rebuild", () => {
       provider: "apple",
       options: {
         redirectTo: expect.stringMatching(
-          /\/auth\/callback\?next=%2Fjoin%3Ftoken%3Dinv-1$/,
+          /\/auth\/callback\?next=%2Fjoin%3Ftoken%3Dinv-1&intent=sign-in$/,
         ),
         queryParams: undefined,
       },
     });
     searchParams.value = new URLSearchParams();
+  });
+
+  it("does not tag the sign-up screen's OAuth, which creates accounts on purpose", async () => {
+    const user = userEvent.setup();
+    signInWithOAuth.mockClear();
+    render(<SignUpPage />);
+    await user.click(screen.getByRole("button", { name: "Continue with Apple" }));
+    expect(signInWithOAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({
+          redirectTo: expect.not.stringContaining("intent="),
+        }),
+      }),
+    );
   });
 
   it("applies the open-redirect guard rather than trusting the query", () => {

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { AuthScreen } from "@/components/auth/auth-screen";
 import { NewAccountActions } from "@/components/auth/new-account-actions";
+import { isFirstOAuthSignIn } from "@/lib/auth/oauth";
 import { resolveRedirectPath } from "@/lib/auth/redirect";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -22,7 +23,9 @@ export const metadata = {
  *
  * The callback only sends a sign-in here; the sign-up screen's buttons create
  * an account on purpose and skip it. `next` is re-guarded, since it arrives in
- * the query string.
+ * the query string. The page checks the account itself as well, so a revisit
+ * (a bookmark, or the proxy returning a member here after signing back in with
+ * the method they joined with) sends an account that isn't new on to `next`.
  */
 export default async function NewAccountPage({
   searchParams,
@@ -38,6 +41,9 @@ export default async function NewAccountPage({
   } = await supabase.auth.getUser();
   if (!user) {
     redirect(`/sign-in?${new URLSearchParams({ redirectTo: next })}`);
+  }
+  if (!isFirstOAuthSignIn(user)) {
+    redirect(next);
   }
 
   const account = user.email ? ` for ${user.email}` : "";

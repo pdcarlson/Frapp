@@ -18,6 +18,15 @@ vi.mock("@/lib/auth/session", () => ({ signOutCurrentSession }));
 
 import NewAccountPage from "./page";
 
+function freshUser(email: string) {
+  return {
+    email,
+    created_at: "2026-11-09T04:23:05.120Z",
+    last_sign_in_at: "2026-11-09T04:23:05.410Z",
+    app_metadata: { provider: "google" },
+  };
+}
+
 async function renderPage(next?: string) {
   const ui = await NewAccountPage({
     searchParams: Promise.resolve(next === undefined ? {} : { next }),
@@ -37,7 +46,7 @@ describe("/new-account (#3786)", () => {
   });
 
   it("names the new account and tells a member how to get back to theirs", async () => {
-    getUser.mockResolvedValue({ data: { user: { email: "member@gmail.com" } } });
+    getUser.mockResolvedValue({ data: { user: freshUser("member@gmail.com") } });
     await renderPage("/chat");
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(
@@ -48,7 +57,7 @@ describe("/new-account (#3786)", () => {
   });
 
   it("signs out in one step and returns to sign-in with the destination kept", async () => {
-    getUser.mockResolvedValue({ data: { user: { email: "member@gmail.com" } } });
+    getUser.mockResolvedValue({ data: { user: freshUser("member@gmail.com") } });
     await renderPage("/join?token=inv-1");
     await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
     expect(signOutCurrentSession).toHaveBeenCalledTimes(1);
@@ -56,7 +65,7 @@ describe("/new-account (#3786)", () => {
   });
 
   it("lets a new member carry on to where they were going", async () => {
-    getUser.mockResolvedValue({ data: { user: { email: "new@gmail.com" } } });
+    getUser.mockResolvedValue({ data: { user: freshUser("new@gmail.com") } });
     await renderPage("/join?token=inv-1");
     await userEvent.click(
       screen.getByRole("button", { name: "Continue with the new account" }),
@@ -66,7 +75,7 @@ describe("/new-account (#3786)", () => {
   });
 
   it("guards `next` against leaving the origin", async () => {
-    getUser.mockResolvedValue({ data: { user: { email: "new@gmail.com" } } });
+    getUser.mockResolvedValue({ data: { user: freshUser("new@gmail.com") } });
     await renderPage("//evil.example/x");
     await userEvent.click(
       screen.getByRole("button", { name: "Continue with the new account" }),
@@ -78,5 +87,19 @@ describe("/new-account (#3786)", () => {
     getUser.mockResolvedValue({ data: { user: null } });
     await expect(renderPage("/events")).rejects.toThrow("NEXT_REDIRECT");
     expect(redirect).toHaveBeenCalledWith("/sign-in?redirectTo=%2Fevents");
+  });
+
+  it("sends an account that isn't new straight on to `next`", async () => {
+    getUser.mockResolvedValue({
+      data: {
+        user: {
+          ...freshUser("member@icloud.com"),
+          created_at: "2026-09-01T12:00:00Z",
+          app_metadata: { provider: "apple" },
+        },
+      },
+    });
+    await expect(renderPage("/events")).rejects.toThrow("NEXT_REDIRECT");
+    expect(redirect).toHaveBeenCalledWith("/events");
   });
 });
