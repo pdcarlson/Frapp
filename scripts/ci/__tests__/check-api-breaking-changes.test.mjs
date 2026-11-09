@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url";
 import {
   baselinesFor,
   checkShipped,
+  compareRegistries,
+  findRepeatedKeys,
   parseRegistry,
   runOasdiff,
   waiverLines,
@@ -69,7 +71,7 @@ test("the committed registry parses", () => {
 });
 
 test("an empty registry is valid", () => {
-  assert.deepEqual(parseRegistry('{ "builds": [] }'), { builds: [] });
+  assert.deepEqual(parseRegistry('{ "builds": [] }'), { builds: [], dropped: [] });
 });
 
 test("a registry that isn't the expected shape is refused, not read as empty", () => {
@@ -97,6 +99,113 @@ test("each field is validated", () => {
 
 test("the same build listed twice is refused", () => {
   assert.throws(() => parseRegistry(registry([build(), build({ sha: SHA_B })])), /repeats ios\/1\.0\.0\+12/);
+});
+
+// #3783: a merge that splices two entries into one object is valid JSON, and
+// JSON.parse keeps each repeated key's last value, so one build vanished from
+// every gate. This is 5df56abc's real shape with its missing comma restored.
+test("a key repeated inside one entry is refused, naming the line", () => {
+  const spliced = `{
+  "builds": [
+    {
+      "platform": "ios",
+      "version": "0.10.0",
+      "build": "11",
+      "sha": "${SHA_A}",
+      "version": "0.10.1",
+      "build": "12",
+      "sha": "${SHA_B}",
+      "recorded": "2026-11-06"
+    }
+  ]
+}
+`;
+  assert.equal(JSON.parse(spliced).builds.length, 1, "JSON.parse alone accepts it");
+  assert.throws(
+    () => parseRegistry(spliced),
+    (error) =>
+      /line 8 repeats the key `version`/.test(error.message) &&
+      /line 9 repeats the key `build`/.test(error.message) &&
+      /line 10 repeats the key `sha`/.test(error.message),
+  );
+});
+
+test("findRepeatedKeys reads keys per object, not values or nested objects", () => {
+  assert.deepEqual(findRepeatedKeys('{"a":1,"b":{"a":2},"c":"\\"a\\":"}'), []);
+  assert.deepEqual(findRepeatedKeys('[{"a":1},{"a":2}]'), []);
+  assert.deepEqual(findRepeatedKeys('{"a":1,\n"b":[{"x":1,"x":2}],\n"a":3}'), [
+    { key: "x", line: 2 },
+    { key: "a", line: 3 },
+  ]);
+  assert.deepEqual(findRepeatedKeys('{"a\\u0062":1,"ab":2}'), [{ key: "ab", line: 1 }], "keys compare decoded");
+});
+
+test("an unknown top-level key is refused", () => {
+  assert.throws(() => parseRegistry('{ "builds": [], "retired": [] }'), /top level has an unknown key `retired`/);
+});
+
+const dropped = (overrides = {}) =>
+  build({ dropped: "2026-12-01", reason: "MOBILE_MIN_VERSION_IOS 1.1.0 live on 2026-11-30", ...overrides });
+
+test("a dropped entry keeps its fields and needs a date and a reason", () => {
+  const text = (list) => JSON.stringify({ builds: [], dropped: list });
+  assert.deepEqual(parseRegistry(text([dropped()])).dropped, [dropped()]);
+  assert.throws(() => parseRegistry(text([dropped({ dropped: undefined })])), /dropped\[0\]\.dropped must be the date/);
+  assert.throws(() => parseRegistry(text([dropped({ reason: " " })])), /dropped\[0\]\.reason must say why/);
+  assert.throws(() => parseRegistry(text([dropped({ sha: "abc" })])), /dropped\[0\]\.sha/);
+  assert.throws(() => parseRegistry(JSON.stringify({ builds: [], dropped: {} })), /`dropped` must be an array/);
+  assert.throws(() => parseRegistry(JSON.stringify({ builds: [build()], dropped: [dropped()] })), /dropped\[0\] repeats ios\/1\.0\.0\+12/);
+});
+
+// ── Against the base branch's registry (#3783) ──────────────────────────────
+
+const reg = (builds, droppedList = []) => ({ builds, dropped: droppedList });
+
+test("a head that keeps every base entry, and adds, passes", () => {
+  assert.deepEqual(compareRegistries(reg([build()]), reg([build({ build: "13" }), build()])), []);
+});
+
+test("a base entry missing from the head is reported", () => {
+  const [problem] = compareRegistries(reg([build(), build({ build: "13", sha: SHA_B })]), reg([build()]));
+  assert.match(problem, /ios\/1\.0\.0\+13 \(bbbbbbbbbbbb\) is in `builds` on the base branch and missing here/);
+});
+
+test("a rewritten base entry is reported; an edited note is not", () => {
+  const [problem] = compareRegistries(reg([build()]), reg([build({ sha: SHA_B })]));
+  assert.match(problem, /ios\/1\.0\.0\+12 differs .*sha: a{40} → b{40}/);
+  assert.deepEqual(compareRegistries(reg([build()]), reg([build({ note: "now with a note" })])), []);
+});
+
+test("an entry moved to dropped passes; one that leaves dropped is reported", () => {
+  assert.deepEqual(compareRegistries(reg([build()]), reg([], [dropped()])), []);
+  assert.match(compareRegistries(reg([], [dropped()]), reg([]))[0], /is in `dropped` on the base branch and missing here/);
+  assert.match(compareRegistries(reg([], [dropped()]), reg([], [dropped({ dropped: "2027-01-01" })]))[0], /dropped: 2026-12-01 → 2027-01-01/);
+  assert.deepEqual(compareRegistries(reg([], [dropped()]), reg([build()])), [], "back in builds only adds protection");
+});
+
+test("with a base registry, a lost entry fails the check", () => {
+  const { code, out } = run([build()], {
+    baseRegistryText: registry([build(), build({ build: "13", sha: SHA_B })]),
+    baseLabel: "the base",
+  });
+  assert.equal(code, 1);
+  assert.match(out, /::error::shipped-builds\.json: ios\/1\.0\.0\+13 .* missing here/);
+  assert.match(out, /lost or rewrote 1 entry from the base/);
+});
+
+test("a lost entry fails the check even when nothing is left to compare against", () => {
+  const { code } = run([], { baseRegistryText: registry([build()]), exists: () => false });
+  assert.equal(code, 1);
+});
+
+test("a base that kept everything, or has no registry, passes; an invalid base can't be compared", () => {
+  assert.equal(run([build()], { baseRegistryText: registry([build()]) }).code, 0);
+  const none = run([build()], { baseRegistryText: null, baseLabel: "the base" });
+  assert.equal(none.code, 0);
+  assert.match(none.out, /the base doesn't exist/);
+  const invalid = run([build()], { baseRegistryText: "{", baseLabel: "the base" });
+  assert.equal(invalid.code, 2);
+  assert.match(invalid.out, /::error::the base is invalid/);
 });
 
 test("builds made from one SHA share one comparison", () => {
@@ -279,6 +388,9 @@ test("ci.yml runs the shipped check as a blocking step of the required contract 
   assert.equal(steps.length, 1, "exactly one step runs check:api-breaking:shipped");
   const [step] = steps;
   assert.equal(step.jobId, "api-contract-check");
+  // On a PR it compares the registry with the base's (#3783); on a push, with nothing.
+  assert.match(step.body, /REGISTRY_BASE: \$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.base\.sha \|\| '' \}\}/);
+  assert.match(step.body, /\$\{REGISTRY_BASE:\+--registry-base "\$REGISTRY_BASE"\}/);
   assert.equal(step.if, null, "the step runs on every event");
   assert.doesNotMatch(step.body, /continue-on-error/);
 

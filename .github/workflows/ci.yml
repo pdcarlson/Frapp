@@ -460,9 +460,13 @@ jobs:
         continue-on-error: true
         run: bash scripts/install-oasdiff.sh
 
-      # Runs on push too, so a break that reached main turns main red.
+      # Runs on push too, so a break that reached main turns main red. On a PR
+      # it also fails when the registry lost or rewrote an entry the base has
+      # (#3783): a bad conflict resolution otherwise passes as "fewer builds".
       - name: Check API compatibility with shipped mobile builds (blocking)
-        run: npm run check:api-breaking:shipped
+        env:
+          REGISTRY_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+        run: npm run check:api-breaking:shipped -- ${REGISTRY_BASE:+--registry-base "$REGISTRY_BASE"}
 
       # `!cancelled()`: its findings are the only report of breaks to routes no shipped build had.
       - name: Detect breaking API changes against the PR base (advisory)

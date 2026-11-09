@@ -29,6 +29,7 @@
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 
+import { parseRegistry } from "../check-api-breaking-changes.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 export const TAG_PREFIX = "mobile-v";
@@ -198,7 +199,9 @@ function mintTag(repo, { tag, sha, version }) {
 }
 
 export function run({ registryPath, repo, log = console.log }) {
-  const registry = JSON.parse(readFileSync(registryPath, "utf8"));
+  // The checker's own parse: a key repeated inside one entry fails here too,
+  // rather than tagging whichever value JSON.parse kept (#3783).
+  const registry = parseRegistry(readFileSync(registryPath, "utf8"));
   const plan = planMobileReleases(registry, { repo });
   let warnings = 0;
 

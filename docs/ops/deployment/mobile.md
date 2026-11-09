@@ -368,6 +368,9 @@ calls [`_mobile-build.yml`](../../../.github/workflows/_mobile-build.yml) (#3111
    build until it was listed. Fix it on `main` before the next production ship, or waive a route
    no shipped binary calls ([`apps/mobile/store/README.md` § Shipped builds and the API contract](../../../apps/mobile/store/README.md#shipped-builds-and-the-api-contract)).
    Don't merge around it.
+   Every record PR appends to the same array, so it conflicts with any other record PR that merges
+   first. The PR base sync sweep merges `main` into it itself, with no hand merge
+   ([`pr-babysitting.md` § Base-branch sync](../../ci-cd/pr-babysitting.md#base-branch-sync-scriptscipr-base-syncmjs)).
    Once that PR merges, the **Mobile release tags** workflow tags the build's commit
    `mobile-vX.Y.Z` (the store version) with its own GitHub Release, never marked latest
    (`scripts/ci/mint-mobile-release-tags.mjs`). The plain `vX.Y.Z` tags count web and API

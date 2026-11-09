@@ -242,8 +242,14 @@ next sweep's order, so a deferred PR rotates to the front instead of being starv
 busy twenty. Per PR, after bounded polling of GitHub's lazily-computed `mergeable` flag:
 
 - **Conflicted** → one `<!-- frapp-base-sync -->` wake comment telling the watching agent session
-  to `git fetch origin main && git merge origin/main`, resolve, and push. Conflicts always go to
-  an agent — no API call can resolve them.
+  to `git fetch origin main && git merge origin/main`, resolve, and push. The one exception is a
+  conflict whose resolution is mechanical (#3783): a PR whose only change is new
+  `apps/mobile/store/shipped-builds.json` entries, as every Deploy production record PR is. With
+  the app token minted, the sweep pushes that merge itself (`main`'s registry plus the branch's new
+  entries, as a two-parent merge commit through the git data API, never forced) and posts no
+  comment. It counts as an update, so it takes the auto-merge update slot like one
+  (`scripts/ci/resolve-registry-conflict.mjs`). Anything else it refuses, and the PR gets the
+  comment.
 - **Behind and clean** (measured with the compare API's `behind_by`, not `mergeable_state`, which
   reports `blocked` over `behind`) → auto-updated via `PUT …/update-branch` with
   `expected_head_sha`, **only when the base-sync app token minted**. Pushes made with the default

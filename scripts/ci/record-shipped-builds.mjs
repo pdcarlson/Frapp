@@ -73,7 +73,7 @@
 //   GITHUB_STEP_SUMMARY — where the summary goes
 
 import { appendFileSync } from "node:fs";
-import { parseRegistry } from "../check-api-breaking-changes.mjs";
+import { entryId, parseRegistry } from "../check-api-breaking-changes.mjs";
 import { ghRequest } from "./lib/github.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
@@ -184,19 +184,19 @@ export function planRecord({ builds, platform, uploads, sha, recorded, buildResu
   return { rows, entries, problems };
 }
 
-/** The `<platform>/<version>+<build>` key the checker uses for a duplicate. */
-const keyOf = (b) => `${b.platform}/${b.version}+${b.build}`;
-
 /**
  * The registry with `entries` appended, as file text, and which entries were
- * new. An entry already listed (a re-run after the PR merged) is not added
- * twice. Throws when the current file or the result fails `parseRegistry`.
+ * new. An entry already listed (a re-run after the PR merged), in `builds` or
+ * in `dropped`, is not added again. Everything else in the file, `dropped`
+ * included, is kept as it was. Throws when the current file or the result
+ * fails `parseRegistry`.
  */
 export function mergeRegistry(text, entries) {
-  const { builds } = parseRegistry(text);
-  const listed = new Set(builds.map(keyOf));
-  const added = entries.filter((e) => !listed.has(keyOf(e)));
-  const merged = { builds: [...builds, ...added] };
+  const { builds, dropped } = parseRegistry(text);
+  const listed = new Set([...builds, ...dropped].map(entryId));
+  const added = entries.filter((e) => !listed.has(entryId(e)));
+  // Spread first, so `builds` keeps its place and a `dropped` list survives.
+  const merged = { ...JSON.parse(text), builds: [...builds, ...added] };
   const next = `${JSON.stringify(merged, null, 2)}\n`;
   parseRegistry(next);
   return { text: next, added };

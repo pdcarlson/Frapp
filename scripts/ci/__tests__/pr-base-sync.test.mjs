@@ -294,6 +294,80 @@ test("update-branch goes through the app token, and nothing else does", async ()
   );
 });
 
+// #3783: a record PR conflicts with every other record PR that merges first,
+// and its merge is mechanical, so the sweep merges it instead of waking anyone.
+const REGISTRY = "apps/mobile/store/shipped-builds.json";
+const registryText = (builds) => `${JSON.stringify({ builds }, null, 2)}\n`;
+const registryEntry = (version, build) => ({
+  platform: "ios",
+  version,
+  build,
+  sha: "e".repeat(40),
+  recorded: "2026-11-06",
+});
+function registryConflictRoutes(pr, files) {
+  const at = (sha, builds) => ({
+    method: "GET",
+    path: `/contents/${REGISTRY}?ref=${sha}`,
+    body: { content: Buffer.from(registryText(builds)).toString("base64") },
+  });
+  const mergeBase = "f".repeat(40);
+  return [
+    listRoute([pr]),
+    detailRoute(pr),
+    {
+      method: "GET",
+      path: `/compare/${BASE_SHA}...${pr.head.sha}`,
+      body: { merge_base_commit: { sha: mergeBase }, files },
+    },
+    at(mergeBase, [registryEntry("0.10.0", "10")]),
+    at(pr.head.sha, [registryEntry("0.10.0", "10"), registryEntry("0.10.0", "11")]),
+    at(BASE_SHA, [registryEntry("0.10.0", "10"), registryEntry("0.10.1", "12")]),
+    { method: "GET", path: `/git/commits/${BASE_SHA}`, body: { tree: { sha: "basetree" } } },
+    { method: "POST", path: "/git/trees", body: { sha: "newtree" } },
+    { method: "POST", path: "/git/commits", body: { sha: "9".repeat(40) } },
+    { method: "PATCH", path: "/git/refs/heads/", body: {} },
+    emptyCommentsRoute,
+  ];
+}
+
+test("a conflict only in the shipped-builds registry is merged through the app token, with no wake", async () => {
+  const pr = makePr(38, { mergeable: false, mergeable_state: "dirty" });
+  const { logger, lines } = capture();
+  const { results, calls } = await sweep({
+    routes: registryConflictRoutes(pr, [{ filename: REGISTRY }]),
+    updateToken: "pat",
+    logger,
+  });
+  assert.deepEqual(results, [{ number: 38, verdict: "conflict", action: "updated", how: "registry-merge" }]);
+  const ref = calls.find((c) => c.method === "PATCH");
+  assert.ok(ref.url.endsWith(`/git/refs/heads/${pr.head.ref}`));
+  assert.deepEqual(JSON.parse(ref.body), { sha: "9".repeat(40), force: false });
+  assert.ok(!calls.some((c) => c.method === "POST" && c.url.includes("/comments")), "no wake comment");
+  assert.ok(!calls.some((c) => c.url.includes("/update-branch")));
+  // The app token only writes; every read stays on GITHUB_TOKEN.
+  for (const c of calls) assert.equal(c.token, c.method === "GET" || c.url.includes("/comments") ? "t" : "pat", `${c.method} ${c.url}`);
+  assert.ok(lines.some((l) => /#38: conflicts only in apps\/mobile\/store\/shipped-builds\.json, resolved with merge commit 999999999999/.test(l)));
+});
+
+test("a conflict that touches any other file still gets the wake comment, and nothing is pushed", async () => {
+  const pr = makePr(39, { mergeable: false, mergeable_state: "dirty" });
+  const { logger, lines } = capture();
+  const { results, calls } = await sweep({
+    routes: [
+      ...registryConflictRoutes(pr, [{ filename: REGISTRY }, { filename: "apps/api/src/main.ts" }]),
+      { method: "POST", path: "/issues/39/comments", status: 201, body: { id: 1 } },
+    ],
+    updateToken: "pat",
+    logger,
+  });
+  assert.equal(results[0].verdict, "conflict");
+  assert.notEqual(results[0].action, "updated");
+  assert.ok(calls.some((c) => c.method === "POST" && c.url.includes("/issues/39/comments")));
+  assert.ok(!calls.some((c) => ["PATCH"].includes(c.method) || c.url.includes("/git/")));
+  assert.ok(lines.some((l) => /#39: registry conflict not resolved automatically: the PR changes more than/.test(l)));
+});
+
 test("a behind wake that fails to post says so too", async () => {
   const pr = makePr(32, {
     head: {

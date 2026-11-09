@@ -78,6 +78,8 @@ import {
   resolveAlert as resolveAlertIssue,
 } from "./lib/alert-issue.mjs";
 import { requireEnv } from "./lib/env.mjs";
+import { REGISTRY_PATH } from "./record-shipped-builds.mjs";
+import { resolveRegistryConflict } from "./resolve-registry-conflict.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 import { ALL_REQUIRED_CHECKS } from "./lib/required-checks.mjs";
 import { ACCEPTED_CONCLUSIONS, fetchCheckRuns, latestRunsByName } from "./lib/check-runs.mjs";
@@ -1172,6 +1174,29 @@ async function processOnePr({
   }
 
   const postConflictComment = async () => {
+    // A PR whose only change is new shipped-builds entries conflicts with every
+    // other one that merges first, and its merge is mechanical (#3783). Only the
+    // app token may push it: a push with GITHUB_TOKEN would start no CI.
+    if (updateToken) {
+      const fix = await resolveRegistryConflict({
+        token,
+        pushToken: updateToken,
+        repo,
+        pr,
+        baseRef,
+        baseSha,
+        fetchImpl,
+      });
+      if (fix.resolved) {
+        const cleared = await clearWakeComments({ token, repo, prNumber: number, fetchImpl });
+        logger.log?.(
+          `[pr-base-sync] #${number}: conflicts only in ${REGISTRY_PATH}, resolved with merge commit ${fix.sha.slice(0, 12)}` +
+            `${cleared ? `, cleared ${cleared} stale wake comment(s)` : ""}`,
+        );
+        return { number, verdict: "conflict", action: "updated", how: "registry-merge" };
+      }
+      logger.log?.(`[pr-base-sync] #${number}: registry conflict not resolved automatically: ${fix.reason}`);
+    }
     const wake = await postWakeComment({
       token,
       repo,
