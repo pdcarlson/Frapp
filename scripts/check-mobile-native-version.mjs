@@ -25,7 +25,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseRegistry } from "./check-api-breaking-changes.mjs";
+import { parseRegistry } from "./ci/lib/shipped-builds-registry.mjs";
 import { APP_JSON, LOCKFILE, SHIPPED_BUILDS, compareNativeInputs, gitIn, installProblems, isNativePackage } from "./eas-update.mjs";
 import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
 

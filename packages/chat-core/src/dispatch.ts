@@ -19,9 +19,9 @@ import {
   parseRushArgs,
   parseTaskArgs,
   type AnnouncementPayload,
-  type PollPayload,
   type SlashCommand,
 } from "./integrations";
+import { buildPollMessage } from "./polls";
 import {
   sendMessage,
   insertLocalPlaceholder,
@@ -93,13 +93,6 @@ interface DispatchArgs {
   announcementsChannelId: string | null;
   /** Resolves the `@member` token for member-targeted commands (/points). */
   resolveMember?: ResolveMember;
-}
-
-function makeOptionId(): string {
-  // A poll option id only has to be unique within one message's option list, so
-  // it stays a short readable token rather than a full UUID. (`randomClientId()`
-  // is the right call for anything the server dedupes on.)
-  return Math.random().toString(36).slice(2, 10);
 }
 
 /**
@@ -174,21 +167,15 @@ async function dispatchPoll(
   const parsed = parsePollArgs(args);
   if (!parsed.ok) return { ok: false, error: parsed.error };
 
-  const closesAt = new Date(
-    Date.now() + parsed.value.closesInMinutes * 60 * 1000,
-  ).toISOString();
-  const payload: PollPayload = {
+  const { content, payload } = buildPollMessage({
     question: parsed.value.question,
-    options: parsed.value.options.map((label) => ({
-      id: makeOptionId(),
-      label,
-    })),
-    closes_at: closesAt,
-  };
+    options: parsed.value.options,
+    closesAt: new Date(Date.now() + parsed.value.closesInMinutes * 60 * 1000),
+  });
 
   return sendSimpleCommand(ctx, {
     channelId,
-    content: parsed.value.question,
+    content,
     kind: "poll",
     payload: payload as unknown as Record<string, unknown>,
   });

@@ -38,6 +38,7 @@ vi.mock("@/lib/supabase/client", () => ({
 vi.mock("@repo/hooks", () => ({
   DIRECTORY_MIN_QUERY_LENGTH: 2,
   useAccessibleChapters: () => ({ data: [], isSuccess: true }),
+  useCurrentUser: () => ({ data: { email: "founder@school.edu" } }),
   useChapterDirectorySearch: () => ({
     data: directoryRows.current,
     isFetching: false,
@@ -143,6 +144,32 @@ describe("ChapterWizard legal acceptance gate", () => {
     render(<ChapterWizard onComplete={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: "I have an invite" }));
     expect(routerPush).toHaveBeenCalledWith("/join");
+  });
+
+  it("says which account is signed in, with a way to sign out, on every step (#3776)", async () => {
+    onboardMutate.mockResolvedValue({ chapter: { id: "ch-1" } });
+    render(<ChapterWizard onComplete={() => {}} />);
+    const assertAccount = () => {
+      expect(screen.getByText("founder@school.edu")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
+    };
+    assertAccount(); // find
+    fireEvent.click(screen.getByRole("button", { name: "Manual entry" }));
+    assertAccount(); // archetype
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    assertAccount(); // identity
+    fireEvent.change(screen.getByLabelText("Chapter / organization name"), {
+      target: { value: "Test Chapter" },
+    });
+    fireEvent.change(screen.getByLabelText("University"), {
+      target: { value: "Test University" },
+    });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Create chapter" }));
+    await waitFor(() =>
+      expect(screen.getByText("Invite members")).toBeInTheDocument(),
+    );
+    assertAccount(); // invite
   });
 
   it("blocks Create chapter until Terms/Privacy is accepted", () => {

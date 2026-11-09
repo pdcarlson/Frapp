@@ -28,6 +28,7 @@ import {
   useSheetBackgroundStyle,
   useSheetClose,
   useTallSheetProps,
+  SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import { Segmented } from "@/components/segmented";
 import { CloseGlyph } from "@/components/control-glyphs";
@@ -158,6 +159,7 @@ export const AttendanceSheet = forwardRef<
   return (
     <BottomSheetModal
       ref={ref}
+      stackBehavior={SHEET_STACK_BEHAVIOR}
       {...tall}
       keyboardBehavior="interactive"
       backgroundStyle={backgroundStyle}

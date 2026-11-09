@@ -20,6 +20,7 @@ import {
   useSheetBackgroundStyle,
   useSheetClose,
   useTallSheetProps,
+  SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import {
   filterRoleOptions,
@@ -256,6 +257,7 @@ export const MemberRolesSheet = forwardRef<
   return (
     <BottomSheetModal
       ref={ref}
+      stackBehavior={SHEET_STACK_BEHAVIOR}
       {...tallSheet}
       keyboardBehavior="interactive"
       backgroundStyle={backgroundStyle}

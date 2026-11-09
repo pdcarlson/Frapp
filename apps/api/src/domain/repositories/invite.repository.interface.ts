@@ -6,6 +6,13 @@ export interface IInviteRepository {
   findById(id: string): Promise<Invite | null>;
   findByToken(token: string): Promise<Invite | null>;
   findByChapter(chapterId: string): Promise<Invite[]>;
+  /**
+   * Invites emailed to `email` (matched case-insensitively, exactly) that are
+   * still joinable at `now`: not used, not revoked, not expired. Newest first.
+   * Every chapter's, so only ever called with the caller's own verified
+   * address (`InviteService.findPendingForVerifiedEmail`).
+   */
+  findPendingByEmail(email: string, now: Date): Promise<Invite[]>;
   create(data: Partial<Invite>): Promise<Invite>;
   createMany(data: Partial<Invite>[]): Promise<Invite[]>;
   /**

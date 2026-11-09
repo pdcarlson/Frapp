@@ -286,9 +286,35 @@ vi.mock("@/components/events/event-editor-dialog", () => ({
 }));
 
 vi.mock("./channel-member-list", () => ({
-  ChannelMemberList: ({ channelId }: { channelId: string | null }) => (
-    <div data-testid="channel-member-list" data-channel-id={channelId ?? ""} />
+  ChannelMemberList: ({
+    channelId,
+    onOpenProfile,
+  }: {
+    channelId: string | null;
+    onOpenProfile?: (userId: string) => void;
+  }) => (
+    <div data-testid="channel-member-list" data-channel-id={channelId ?? ""}>
+      <button onClick={() => onOpenProfile?.("u-row")}>open-row-profile</button>
+    </div>
   ),
+}));
+// The profile sheet owns its reads and has its own spec; here it only says
+// whether the shell opened it, and for whom (#3726).
+vi.mock("@/components/members/member-detail-sheet", () => ({
+  MemberDetailSheet: ({
+    open,
+    userId,
+    onOpenChange,
+  }: {
+    open: boolean;
+    userId: string | null;
+    onOpenChange: (open: boolean) => void;
+  }) =>
+    open ? (
+      <div data-testid="member-profile" data-user-id={userId ?? ""}>
+        <button onClick={() => onOpenChange(false)}>close-profile</button>
+      </div>
+    ) : null,
 }));
 
 vi.mock("@repo/hooks", async () => ({
@@ -877,9 +903,11 @@ vi.mock("./message-timeline", async () => {
       canManageChannel?: boolean;
       holdFollow?: boolean;
       channelStart?: React.ReactNode;
+      onOpenProfile?: (userId: string) => void;
     }
   >(function MessageTimeline(
     {
+      onOpenProfile,
       messages,
       onDelete,
       onReply,
@@ -918,6 +946,9 @@ vi.mock("./message-timeline", async () => {
         {/* Edit is withheld the same way where the member can't post (#2775). */}
         <span data-testid="edit-offered">{String(!!onEdit)}</span>
         <button onClick={() => onDelete?.("msg-1")}>trigger-delete</button>
+        <button onClick={() => onOpenProfile?.("u-author")}>
+          open-author-profile
+        </button>
         {/* One Reply control per message, so a test can stage a reply against
             a top-level message and against a reply — the two cases AC 3's
             root-normalization rule distinguishes. */}
@@ -3849,6 +3880,33 @@ describe("ChatShell member list", () => {
   afterEach(() => {
     window.matchMedia = realMatchMedia;
     document.cookie = "frapp_chat_members_hidden=; Max-Age=0; Path=/";
+  });
+
+  // #3726: a name or chip in the timeline, or a member-list row, opens the
+  // directory's profile sheet for that member.
+  it("opens one profile sheet from the timeline and from the member column", () => {
+    stubWide(true);
+    render(<ChatShell />);
+    expect(screen.queryByTestId("member-profile")).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "open-author-profile" }),
+    );
+    expect(screen.getByTestId("member-profile")).toHaveAttribute(
+      "data-user-id",
+      "u-author",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "close-profile" }));
+    expect(screen.queryByTestId("member-profile")).not.toBeInTheDocument();
+
+    const column = screen.getByRole("complementary", { name: "Members" });
+    fireEvent.click(
+      within(column).getByRole("button", { name: "open-row-profile" }),
+    );
+    expect(screen.getByTestId("member-profile")).toHaveAttribute(
+      "data-user-id",
+      "u-row",
+    );
   });
 
   it("shows the column for the open channel by default, and hides it from the header", () => {

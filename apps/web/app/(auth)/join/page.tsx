@@ -6,17 +6,23 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import {
   joinErrorCopy,
+  pendingInviteDetail,
+  pendingInviteTitle,
   redeemChapterId,
   useJoinTermsCheckbox,
+  usePendingInvites,
   useRedeemInvite,
 } from "@repo/hooks";
 import {
+  chapterInitials,
   extractInviteToken,
   extractInviteTokenFromQuery,
 } from "@repo/validation";
 import { AuthNote, AuthScreen } from "@/components/auth/auth-screen";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import { LinkGlyph } from "@/components/profile/profile-glyphs";
+import { CrestTile } from "@/components/layout/crest-tile";
+import { SignedInAs } from "@/components/auth/signed-in-as";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,7 +32,7 @@ import {
   SkeletonText,
 } from "@/components/shared/async-states";
 import { useToast } from "@/lib/hooks/use-toast";
-import { getSessionUser } from "@/lib/auth/session";
+import { getLiveSessionUser } from "@/lib/auth/rejected-session";
 import { useSelectChapter } from "@/lib/auth/select-chapter";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confirm-drop-bulk-uploads";
@@ -53,13 +59,22 @@ import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confir
  *
  * Two failure paths that had none before:
  *
- * - **The session check.** `getSessionUser()` is a network call, and it ran as
+ * - **The session check.** It is a network call (`getLiveSessionUser()`; then a
+ *   helper since deleted), and it ran as
  *   a bare `void ensureSession()` with no `catch`. A member who opened an
  *   invite link on a dropped connection sat on "Verifying your session…"
  *   forever, with no retry and nothing announced.
  * - **Redemption.** Every failure rendered one generic toast. 410 and 409 need
  *   opposite next actions, so the copy comes from `joinErrorCopy` (`@repo/hooks`) and is
  *   rendered inline beside the field rather than as a toast that scrolls away.
+ *
+ * **#3776.** The session check asks Auth (`getLiveSessionUser`) and clears a
+ * cookie Auth refuses. `proxy.ts` trusts the cookie, so a refused one used to
+ * bounce the visitor between here and `/sign-in` with the skeleton up for
+ * good. Once signed in, the invites emailed to the account's verified address
+ * (`GET /v1/invites/mine`) are offered above the field, each a one-tap Join,
+ * so a member who signs in with that address needn't go back for the link.
+ * A visitor who arrived with an invite link sees only that invite.
  */
 function JoinPageContent() {
   const router = useRouter();
@@ -78,18 +93,35 @@ function JoinPageContent() {
   const [sessionState, setSessionState] = useState<
     "checking" | "ready" | "failed"
   >("checking");
+  const [account, setAccount] = useState<{
+    id: string;
+    email: string | null;
+  } | null>(null);
+  const userId = account?.id ?? null;
   const [attempt, setAttempt] = useState(0);
   const [redeemError, setRedeemError] = useState<string | null>(null);
   // When to show the Terms checkbox, and what a refused join means for it,
   // is shared with mobile s02 (#2302).
   const terms = useJoinTermsCheckbox({ enabled: sessionState === "ready" });
+  const pendingInvites = usePendingInvites(
+    sessionState === "ready" ? userId : null,
+  );
+  // A link carries one invite, and that is the one the visitor came for.
+  const offers = initialToken ? [] : (pendingInvites.data ?? []);
+  const [joiningToken, setJoiningToken] = useState<string | null>(null);
+  const [offerError, setOfferError] = useState<string | null>(null);
+  // Held for the whole join, not just the API call: `selectChapter` and the
+  // navigation run after the mutation settles, and a second Join in that
+  // window would redeem another invite and race the first over which chapter
+  // ends up active.
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
 
     async function ensureSession() {
       try {
-        const user = await getSessionUser();
+        const user = await getLiveSessionUser();
         if (!isMounted) {
           return;
         }
@@ -104,6 +136,7 @@ function JoinPageContent() {
           return;
         }
 
+        setAccount({ id: user.id, email: user.email ?? null });
         setSessionState("ready");
       } catch {
         // The check itself could not be made. That is recoverable and must say
@@ -128,6 +161,7 @@ function JoinPageContent() {
   async function handleRedeem(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setRedeemError(null);
+    setOfferError(null);
     const extracted = extractInviteToken(token);
     if (!extracted) {
       setRedeemError(
@@ -135,12 +169,45 @@ function JoinPageContent() {
       );
       return;
     }
+    await redeem(extracted, setRedeemError);
+  }
+
+  /** An offered invite's Join: the same redeem, with its token. */
+  async function handleJoinOffer(offerToken: string) {
+    setRedeemError(null);
+    setOfferError(null);
+    setJoiningToken(offerToken);
+    try {
+      await redeem(offerToken, setOfferError);
+    } finally {
+      setJoiningToken(null);
+    }
+  }
+
+  async function redeem(extracted: string, onError: (copy: string) => void) {
+    if (busy) return;
     if (terms.blocker) {
-      setRedeemError(terms.blocker);
+      onError(terms.blocker);
       return;
     }
-    // Joining switches to the new chapter, which ends this tab's Bulk upload.
-    if (!(await confirmDrop("switch"))) return;
+    setBusy(true);
+    let joined = false;
+    try {
+      // Joining switches to the new chapter, which ends this tab's Bulk upload.
+      if (!(await confirmDrop("switch"))) return;
+      joined = await joinWith(extracted, onError);
+    } finally {
+      // A join that landed keeps the page locked: `router.replace` only starts
+      // the navigation, and this page stays mounted until `/chat` arrives.
+      if (!joined) setBusy(false);
+    }
+  }
+
+  /** True once the member is in and the page is on its way to `/chat`. */
+  async function joinWith(
+    extracted: string,
+    onError: (copy: string) => void,
+  ): Promise<boolean> {
     try {
       const result = await redeemInviteMutation.mutateAsync(
         terms.redeemBody(extracted),
@@ -159,9 +226,11 @@ function JoinPageContent() {
       });
       router.replace("/chat");
       router.refresh();
+      return true;
     } catch (error) {
       terms.onJoinError(error);
-      setRedeemError(joinErrorCopy(error));
+      onError(joinErrorCopy(error));
+      return false;
     }
   }
 
@@ -204,10 +273,60 @@ function JoinPageContent() {
 
   return (
     <AuthScreen
+      toggle={
+        <SignedInAs
+          email={account?.email ?? null}
+          disabled={busy}
+          // Signing in as someone else keeps the invite this page was opened with.
+          returnTo={`/join${searchParams.toString() ? `?${searchParams.toString()}` : ""}`}
+        />
+      }
       title="Join your chapter"
       subtitle="Enter the invite your officer sent. Invites expire after 24 hours and work once."
       footer={JOIN_FOOTER}
     >
+      {offers.length > 0 ? (
+        <section aria-label="Your invites" className="mb-6 flex flex-col gap-3">
+          {offers.map((offer) => (
+            <div
+              key={offer.token}
+              className="flex items-center gap-3 rounded-lg border border-border bg-card p-4"
+            >
+              <CrestTile
+                mark={{
+                  logoUrl: null,
+                  text: offer.mark_text ?? chapterInitials(offer.chapter_name),
+                  source: offer.mark_text ? "short_name" : "initials",
+                }}
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-foreground">
+                  {pendingInviteTitle(offer.chapter_name)}
+                </p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {pendingInviteDetail(offer)}
+                </p>
+              </div>
+              <Button
+                type="button"
+                onClick={() => void handleJoinOffer(offer.token)}
+                disabled={busy}
+                aria-label={`Join ${offer.chapter_name}`}
+              >
+                {joiningToken === offer.token ? (
+                  <Loader2 className="animate-spin" />
+                ) : null}
+                Join
+              </Button>
+            </div>
+          ))}
+          {offerError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {offerError}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
       <form className="flex flex-col gap-4" onSubmit={handleRedeem}>
         <div className="space-y-1.5">
           <Label htmlFor="invite-token">Invite</Label>
@@ -239,16 +358,19 @@ function JoinPageContent() {
             onAcceptedChange={(next) => {
               terms.setAccepted(next);
               setRedeemError(null);
+              setOfferError(null);
             }}
-            disabled={redeemInviteMutation.isPending}
+            disabled={busy}
           />
         ) : null}
         <Button
           type="submit"
           className="w-full"
-          disabled={redeemInviteMutation.isPending}
+          // One primary per screen: an offered invite's Join is it.
+          variant={offers.length > 0 ? "secondary" : "default"}
+          disabled={busy}
         >
-          {redeemInviteMutation.isPending ? (
+          {busy && joiningToken === null ? (
             <Loader2 className="animate-spin" />
           ) : null}
           Join chapter

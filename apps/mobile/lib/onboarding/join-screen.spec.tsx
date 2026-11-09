@@ -47,11 +47,14 @@ let isSuccess = false;
 
 /** The session's status; a spec sets it before rendering. */
 let authStatus: "authenticated" | "unauthenticated" = "authenticated";
+/** The session's email; `null` for an account with none. */
+let sessionEmail: string | null = "brother@westfield.edu";
 
 vi.mock("@/lib/auth-session", () => ({
   useAuthSession: () => ({
     status: authStatus,
-    email: "brother@westfield.edu",
+    email: sessionEmail,
+    userId: "user-1",
     signOut,
   }),
 }));
@@ -92,25 +95,39 @@ const previewPost = vi.fn(() =>
 );
 
 /**
+ * What `GET /v1/invites/mine` answers (#3782): the invites emailed to this
+ * account. Empty unless a spec offers some.
+ */
+let pendingInvites: unknown[] = [];
+const pendingGet = vi.fn(() =>
+  Promise.resolve({ data: pendingInvites, error: undefined }),
+);
+
+/**
  * Answers `GET /v1/users/me/legal-acceptance`, where `undefined` never
  * answers, and the invite preview above.
  */
 const statusClient = {
   POST: previewPost,
-  GET: () =>
-    legalRequired === undefined
-      ? new Promise(() => {})
-      : Promise.resolve({
-          data: { required: legalRequired },
-          error: undefined,
-        }),
+  GET: (path: string) =>
+    path === "/v1/invites/mine"
+      ? pendingGet()
+      : legalRequired === undefined
+        ? new Promise(() => {})
+        : Promise.resolve({
+            data: { required: legalRequired },
+            error: undefined,
+          }),
 };
 
 vi.mock("expo-web-browser", () => ({ openBrowserAsync: vi.fn() }));
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps } from "react";
-import { FrappClientProvider } from "@repo/hooks";
+import {
+  FrappClientProvider,
+  pendingInviteTitle as offerTitle,
+} from "@repo/hooks";
 import { LEGAL_ACCEPTANCE_REQUIRED_MESSAGE } from "@repo/validation";
 import { OAUTH_MEMBERSHIP_HINT } from "@/lib/auth-providers";
 import {
@@ -208,7 +225,10 @@ function control(root: Node, label: string) {
     );
 }
 
-/** Opens the Account menu in the corner, where Sign out and Delete live. */
+/**
+ * Opens the Account menu in the corner, where Delete account lives (Sign out
+ * is on the screen's face, #3782).
+ */
 function openAccount(root: Node): void {
   act(() => {
     control(root, "Account")?.props.onPress();
@@ -287,11 +307,19 @@ describe("join screen — account deletion (5.1.1(v))", () => {
     const tree = render();
     // The trap itself: the same account cannot reach Settings, so this control
     // being reachable here is the whole of the 5.1.1(v) compliance. It lives
-    // in the Account menu in the corner (#3350), one tap away on both views.
+    // in the Account menu in the corner (#3350), one tap away on every view.
+    // Sign out sits on the screen's face, outside the menu (#3782).
+    expect(control(tree.root, "Sign out")).toBeDefined();
+    expect(control(tree.root, "Delete account")).toBeUndefined();
     openAccount(tree.root);
     expect(control(tree.root, "Delete account")).toBeDefined();
-    expect(control(tree.root, "Sign out")).toBeDefined();
-    expect(allText(tree.root)).toContain("brother@westfield.edu");
+    // The menu names the account it would delete.
+    const menuTitle = tree.root
+      .findAllByType("Text" as never, { deep: true })
+      .find((t) => t.props.accessibilityRole === "header");
+    expect(textOf(menuTitle?.props.children)).toBe(
+      "Signed in as brother@westfield.edu",
+    );
 
     // Still one tap away from the invite step.
     openAccount(tree.root);
@@ -601,7 +629,7 @@ describe("join screen — the question (#3350)", () => {
     consumeRememberedInviteToken();
   });
 
-  it("asks how the member is getting in, with the account controls tucked away", () => {
+  it("asks how the member is getting in, with Delete account tucked away and Sign out on its face", () => {
     const tree = render();
     const text = allText(tree.root);
 
@@ -609,9 +637,10 @@ describe("join screen — the question (#3350)", () => {
     expect(control(tree.root, "I have an invite")).toBeDefined();
     expect(control(tree.root, "starting our chapter")).toBeDefined();
     expect(hasField(tree.root)).toBe(false);
-    // Destructive controls no longer lead the first screen.
+    // The destructive control no longer leads the first screen; Sign out
+    // sits on its face, beside the account it would sign out of (#3782).
     expect(control(tree.root, "Delete account")).toBeUndefined();
-    expect(control(tree.root, "Sign out")).toBeUndefined();
+    expect(control(tree.root, "Sign out")).toBeDefined();
   });
 
   it("opens the invite step, with the Hide My Email hint, and comes back", () => {
@@ -727,14 +756,14 @@ describe("join screen — the question (#3350)", () => {
     const tree = render();
     openInvite(tree.root);
     openAccount(tree.root);
-    expect(control(tree.root, "Sign out")).toBeDefined();
+    expect(control(tree.root, "Delete account")).toBeDefined();
 
     let handled = false;
     act(() => {
       handled = latestBackHandler()();
     });
     expect(handled).toBe(true);
-    expect(control(tree.root, "Sign out")).toBeUndefined();
+    expect(control(tree.root, "Delete account")).toBeUndefined();
     expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
 
     act(() => {
@@ -874,7 +903,7 @@ describe("join screen — the question (#3350)", () => {
       handled = menuLive[menuLive.length - 1]();
     });
     expect(handled).toBe(true);
-    expect(control(tree.root, "Sign out")).toBeUndefined();
+    expect(control(tree.root, "Delete account")).toBeUndefined();
   });
 
   it("reads an opened link once, so a later visit asks the question again", () => {
@@ -1315,6 +1344,294 @@ describe("join screen — the confirm card's chapter (#3352)", () => {
 });
 
 /**
+ * #3782. Signed in and not opened by an invite link, the question offers each
+ * invite emailed to the account, as web `/join` does (#3776). An offer opens
+ * the same confirm step a pasted invite does, so Terms and Join run unchanged.
+ */
+describe("join screen — invites for this account (#3782)", () => {
+  const params = vi.mocked(useLocalSearchParams);
+  const FIJI_OFFER = {
+    chapter_name: "FIJI Tau Nu",
+    university: "Rensselaer Polytechnic Institute",
+    mark_text: "FIJI",
+    accent_color: "#5b2c83",
+    invited_by: "Paul Carlson",
+    role: "Member",
+    expires_at: "2026-11-10T20:00:00.000Z",
+    token: "offer-token-fiji",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isPending = false;
+    isSuccess = false;
+    redeemPending = false;
+    redeemSuccess = false;
+    legalRequired = false;
+    pendingInvites = [FIJI_OFFER];
+    redeemMutateAsync.mockResolvedValue({ chapterId: "ch-1", memberId: "m-1" });
+  });
+
+  afterEach(() => {
+    params.mockReturnValue({});
+    vi.mocked(Linking.useURL).mockReturnValue(null);
+    pendingInvites = [];
+    consumeRememberedInviteToken();
+  });
+
+  it("offers each invite above the two answers, with its school, sender and role", async () => {
+    const tree = render();
+    await settle();
+
+    expect(pendingGet).toHaveBeenCalled();
+    const text = allText(tree.root);
+    expect(text).toContain(JOIN_CHOICE_TITLE);
+    expect(text).toContain(offerTitle("FIJI Tau Nu"));
+    expect(text).toContain(
+      "Rensselaer Polytechnic Institute · from Paul Carlson · Member",
+    );
+    // Above the answers, not instead of them.
+    const order = text.indexOf(offerTitle("FIJI Tau Nu"));
+    expect(order).toBeGreaterThan(-1);
+    expect(order).toBeLessThan(text.indexOf("I have an invite"));
+    expect(control(tree.root, "I have an invite")).toBeDefined();
+    expect(markText(tree.root)).toBe("FIJI");
+  });
+
+  it("offers nothing when there are no invites for this account", async () => {
+    pendingInvites = [];
+    const tree = render();
+    await settle();
+    expect(allText(tree.root)).not.toContain("You've been invited");
+  });
+
+  it("offers none when an invite link opened the screen, even back on the question", async () => {
+    params.mockReturnValue({ token: "invite-token-30" });
+    const tree = render();
+    await settle();
+    expect(allText(tree.root)).toContain(JOIN_CONFIRM_TITLE);
+
+    act(() => {
+      labelled(tree.root, "Back to the invite")?.props.onPress();
+    });
+    act(() => {
+      labelled(tree.root, "Back to the choices")?.props.onPress();
+    });
+    await settle();
+    expect(allText(tree.root)).toContain(JOIN_CHOICE_TITLE);
+    expect(allText(tree.root)).not.toContain("You've been invited");
+    // Not fetched and then hidden: never asked for at all, not even on the
+    // first render, before the link was applied.
+    expect(pendingGet).not.toHaveBeenCalled();
+  });
+
+  it("never reads the offers when a launch link alone opened the screen", async () => {
+    // As on a device: `useURL` is null on its first render and reports the
+    // launch URL only after its effect, while `getLinkingURL` has it at once.
+    vi.mocked(Linking.getLinkingURL).mockReturnValue(
+      "frapp://join?token=link-token-61",
+    );
+    vi.mocked(Linking.useURL)
+      .mockReturnValueOnce(null)
+      .mockReturnValue("frapp://join?token=link-token-61");
+    try {
+      const tree = render();
+      await settle();
+      rerender(tree);
+      await settle();
+      expect(allText(tree.root)).toContain(JOIN_CONFIRM_TITLE);
+      expect(pendingGet).not.toHaveBeenCalled();
+    } finally {
+      vi.mocked(Linking.getLinkingURL).mockReturnValue(null);
+    }
+  });
+
+  it("never reads the offers when a remembered invite brought the member back", async () => {
+    // The sign-in bounce: no params and no link, only the invite remembered.
+    rememberInviteToken("remembered-token-62");
+    const tree = render();
+    await settle();
+    expect(allText(tree.root)).toContain(JOIN_CONFIRM_TITLE);
+    expect(pendingGet).not.toHaveBeenCalled();
+  });
+
+  it("opens the confirm step on the offer's invite, and Join redeems that invite", async () => {
+    const tree = render();
+    await settle();
+
+    act(() => {
+      control(tree.root, offerTitle("FIJI Tau Nu"))?.props.onPress();
+    });
+    await settle();
+    // The confirm step, on the offer's invite: nothing joined yet.
+    expect(hasConfirmButton(tree.root)).toBe(true);
+    expect(allText(tree.root)).toContain(inviteTailOf(FIJI_OFFER.token));
+    expect(redeemMutateAsync).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await control(tree.root, "Join chapter")?.props.onPress();
+    });
+    expect(redeemMutateAsync).toHaveBeenCalledWith({
+      token: FIJI_OFFER.token,
+    });
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/welcome");
+  });
+
+  it("steps back from an offer to the question, not to a field it never filled", async () => {
+    const tree = render();
+    await settle();
+    act(() => {
+      control(tree.root, offerTitle("FIJI Tau Nu"))?.props.onPress();
+    });
+
+    act(() => {
+      labelled(tree.root, "Back to the choices")?.props.onPress();
+    });
+    expect(allText(tree.root)).toContain(JOIN_CHOICE_TITLE);
+    expect(allText(tree.root)).toContain(offerTitle("FIJI Tau Nu"));
+
+    openInvite(tree.root);
+    expect(tree.root.findByType("TextInput" as never).props.value).toBe("");
+  });
+
+  it("puts back an invite the member had pasted when they back out of an offer", async () => {
+    const tree = render();
+    await settle();
+    openInvite(tree.root);
+    typeToken(tree.root, "pasted-token-50");
+    act(() => {
+      labelled(tree.root, "Back to the choices")?.props.onPress();
+    });
+
+    act(() => {
+      control(tree.root, offerTitle("FIJI Tau Nu"))?.props.onPress();
+    });
+    expect(hasConfirmButton(tree.root)).toBe(true);
+    act(() => {
+      labelled(tree.root, "Back to the choices")?.props.onPress();
+    });
+
+    openInvite(tree.root);
+    expect(tree.root.findByType("TextInput" as never).props.value).toBe(
+      "pasted-token-50",
+    );
+  });
+
+  /** Whether the confirm step's Join is on screen. */
+  function hasConfirmButton(root: Node): boolean {
+    return control(root, "Join chapter") !== undefined;
+  }
+
+  /** The tail the bare invite card names an invite by. */
+  function inviteTailOf(token: string): string {
+    return token.slice(-4);
+  }
+});
+
+/**
+ * #3782. Every view of s02 shows the account it is signed in as, with Sign
+ * out beside it, as web `/join` does (#3776): signing out no longer hides in
+ * the Account menu.
+ */
+describe("join screen — signed in as (#3782)", () => {
+  const params = vi.mocked(useLocalSearchParams);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isPending = false;
+    isSuccess = false;
+    redeemPending = false;
+    redeemSuccess = false;
+    legalRequired = false;
+    sessionEmail = "brother@westfield.edu";
+  });
+
+  afterEach(() => {
+    params.mockReturnValue({});
+    sessionEmail = "brother@westfield.edu";
+    consumeRememberedInviteToken();
+  });
+
+  /** The account line, with Sign out, is on the face of the screen. */
+  function expectAccountLine(root: Node): void {
+    const text = allText(root);
+    expect(text).toContain("Signed in as");
+    expect(text).toContain("brother@westfield.edu");
+    expect(control(root, "Sign out")).toBeDefined();
+    // Not inside the Account menu: the menu is closed.
+    expect(control(root, "Delete account")).toBeUndefined();
+  }
+
+  it("shows the account and Sign out on the question, the field and the confirm step", () => {
+    const tree = render();
+    expect(allText(tree.root)).toContain(JOIN_CHOICE_TITLE);
+    expectAccountLine(tree.root);
+
+    openInvite(tree.root);
+    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
+    expectAccountLine(tree.root);
+
+    typeToken(tree.root, "invite-token-40");
+    continueToConfirm(tree.root);
+    expect(allText(tree.root)).toContain(JOIN_CONFIRM_TITLE);
+    expectAccountLine(tree.root);
+  });
+
+  it("signs out to sign-in, forgetting a remembered invite", async () => {
+    const tree = render();
+    // An invite remembered for this account, as a link opened while signed
+    // out leaves one for the sign-in bounce.
+    rememberInviteToken("invite-token-41");
+
+    await act(async () => {
+      control(tree.root, "Sign out")?.props.onPress();
+    });
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith(
+      "/(auth)/sign-in",
+    );
+    // The invite was this account's, not the next one's.
+    expect(consumeRememberedInviteToken()).toBeNull();
+  });
+
+  it("says only Signed in when the session has no email", () => {
+    sessionEmail = null;
+    const tree = render();
+    const text = allText(tree.root);
+    expect(text).toContain("Signed in");
+    expect(text).not.toContain("Signed in as");
+    expect(control(tree.root, "Sign out")).toBeDefined();
+  });
+
+  it("locks Join, Account and Back while the sign-out is on its way", async () => {
+    // A sign-out that hasn't come back yet.
+    signOut.mockReturnValueOnce(new Promise<void>(() => {}));
+    const tree = render();
+    openInvite(tree.root);
+    typeToken(tree.root, "invite-token-42");
+    continueToConfirm(tree.root);
+    expect(control(tree.root, "Join chapter")?.props.disabled).toBe(false);
+
+    await act(async () => {
+      control(tree.root, "Sign out")?.props.onPress();
+    });
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(control(tree.root, "Join chapter")?.props.disabled).toBe(true);
+    expect(control(tree.root, "Account")?.props.disabled).toBe(true);
+    expect(control(tree.root, "Sign out")?.props.disabled).toBe(true);
+    expect(labelled(tree.root, "Back to the invite")?.props.disabled).toBe(
+      true,
+    );
+  });
+
+  it("holds Sign out while a join is running", () => {
+    redeemPending = true;
+    const tree = render();
+    expect(control(tree.root, "Sign out")?.props.disabled).toBe(true);
+  });
+});
+
+/**
  * The onboarding polish pass: s02 draws the board's `‹ Back` row in house
  * gold (the shared `BackRow`, not a bare chevron), the question carries no
  * line narrating its own two choices, each view fades in (but not for a
@@ -1356,27 +1673,23 @@ describe("join screen — polish", () => {
     expect(labelled(tree.root, "Back to the invite")).toBeDefined();
   });
 
-  it("lifts an Account menu row a rung while held, and dims it to 0.5 while disabled", () => {
+  it("lifts the Account menu's row a rung while held, and dims it to 0.5 while disabled", () => {
     const tree = render();
     openAccount(tree.root);
-    for (const label of ["Sign out", "Delete account"]) {
-      const row = control(tree.root, label)!;
-      // `ListRow`'s press on iOS (the suite's platform): one rung up the
-      // surface ladder, with no dim.
-      expect(flatStyle(row.props.style, true).backgroundColor).toBe(
-        signetDarkTokens.color.surface.card,
-      );
-      expect(flatStyle(row.props.style, true).opacity).toBeUndefined();
-    }
+    const row = control(tree.root, "Delete account")!;
+    // `ListRow`'s press on iOS (the suite's platform): one rung up the
+    // surface ladder, with no dim.
+    expect(flatStyle(row.props.style, true).backgroundColor).toBe(
+      signetDarkTokens.color.surface.card,
+    );
+    expect(flatStyle(row.props.style, true).opacity).toBeUndefined();
 
-    // A deletion running locks both rows, each dimmed whole to 0.5.
+    // A deletion running locks the row, dimmed whole to 0.5.
     isPending = true;
     const locked = render();
-    for (const label of ["Sign out", "Deleting account"]) {
-      const row = control(locked.root, label)!;
-      expect(row.props.disabled).toBe(true);
-      expect(flatStyle(row.props.style, false).opacity).toBe(0.5);
-    }
+    const lockedRow = control(locked.root, "Deleting account")!;
+    expect(lockedRow.props.disabled).toBe(true);
+    expect(flatStyle(lockedRow.props.style, false).opacity).toBe(0.5);
   });
 
   it("fades each view in, and holds still for reduced motion", async () => {

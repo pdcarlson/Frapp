@@ -3138,6 +3138,18 @@ alter table public.chat_message_attachments
 
 Dropping them loses each photo's blur and the link to its preview copy; photos still draw, from the original. The preview objects stay in the `chat` bucket under each original's `preview/` folder, unreferenced, until a sweep removes them (#2197).
 
+## Rollback invites pending-emailed index (20261109050000)
+
+* **Migration**: `20261109050000_invites_pending_by_email_index.sql`
+
+One partial index on `invites`, `idx_invites_pending_emailed`. Nothing depends on it for correctness: `GET /v1/invites/mine` only gets slower without it, so no API rollback is needed first.
+
+**Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration):
+
+```sql
+drop index if exists public.idx_invites_pending_emailed;
+```
+
 ## Rollback event check_in_opens_minutes (20261108210000)
 
 * **Migration**: `20261108210000_event_check_in_opens_minutes.sql`

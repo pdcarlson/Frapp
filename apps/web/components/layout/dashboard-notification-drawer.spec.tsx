@@ -279,3 +279,30 @@ describe("DashboardNotificationDrawer — a Discord import that ended", () => {
     ).toHaveAttribute("href", "/discord-import");
   });
 });
+
+/**
+ * #3788. Opening a notification from the drawer marks it read and closes the
+ * drawer; a row already read sends no receipt.
+ */
+describe("DashboardNotificationDrawer — opening a notification marks it read", () => {
+  it("sends the read receipt for an unread row and closes the drawer", async () => {
+    const user = userEvent.setup();
+    const onOpenChange = vi.fn();
+    render(<DashboardNotificationDrawer open onOpenChange={onOpenChange} />);
+
+    await user.click(screen.getByRole("link", { name: /Notice/ }));
+
+    expect(mockMarkRead).toHaveBeenCalledWith("n-event");
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("sends nothing for a row already read", async () => {
+    const user = userEvent.setup();
+    notifications.value = [{ ...EVENT, read_at: "2026-09-22T09:05:00Z" }];
+    renderDrawer();
+
+    await user.click(screen.getByRole("link", { name: /Notice/ }));
+
+    expect(mockMarkRead).not.toHaveBeenCalled();
+  });
+});

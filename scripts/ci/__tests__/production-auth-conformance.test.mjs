@@ -60,6 +60,7 @@ const HEALTHY_AUTH = {
   smtp_pass: "must-never-appear-in-detail",
   ...FRAPP_MAGIC_LINK,
   password_hibp_enabled: true,
+  mailer_autoconfirm: false,
 };
 
 function jsonOk(body) {
@@ -138,6 +139,7 @@ describe("identity", () => {
       "auth-smtp",
       "auth-magic-link",
       "auth-leaked-password",
+      "auth-email-confirm",
     ]);
     assert.ok(!DEFAULT_CHECK_IDS.includes("auth-signin"));
     assert.ok(!DEFAULT_CHECK_IDS.includes("infisical-syncs"));
@@ -168,7 +170,7 @@ describe("default assertions", () => {
     assert.equal(outcome, "healthy");
     assert.deepEqual(
       results.map((r) => r.id),
-      ["project-status", "auth-hook", "auth-redirects", "auth-smtp", "auth-magic-link", "auth-leaked-password"],
+      ["project-status", "auth-hook", "auth-redirects", "auth-smtp", "auth-magic-link", "auth-leaked-password", "auth-email-confirm"],
     );
     assert.equal(results.every((r) => r.status === PASS), true);
     assert.ok(seen.some((u) => u.includes(PRODUCTION_REF)));

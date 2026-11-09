@@ -34,6 +34,18 @@ export interface INotificationRepository {
     userId: string,
     chapterId: string,
   ): Promise<Notification>;
+  /**
+   * Mark read every unread chat row (`data.target.screen` is `chat`) this
+   * member has for `channelId`, created at or before `readThrough` (#3788).
+   * A row created after that instant is about a message the member has not
+   * seen, so it stays unread.
+   */
+  markChatChannelRead(
+    userId: string,
+    chapterId: string,
+    channelId: string,
+    readThrough: string,
+  ): Promise<void>;
 }
 
 export interface IPushTokenRepository {
