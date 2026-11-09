@@ -78,6 +78,7 @@ describe('parseIsoInstant', () => {
     ['an out-of-range minute', '2026-01-31T12:60:00Z'],
     ['an out-of-range second', '2026-01-31T12:00:60Z'],
     ['an absurd offset', '2026-01-31T12:00:00+20:00'],
+    ['an offset minute past 59', '2026-01-31T12:00:00+00:60'],
     ['a day that does not exist', '2026-02-30T00:00:00Z'],
     ['a month that does not exist', '2026-13-01T00:00:00Z'],
   ])('rejects %s, by value — the regex alone would admit it', (_why, value) => {

@@ -2797,7 +2797,7 @@
             "bearer": []
           }
         ],
-        "summary": "Update user settings (quiet hours, theme)",
+        "summary": "Update user settings (quiet hours, theme, status)",
         "tags": [
           "Notifications"
         ]
@@ -12717,13 +12717,45 @@
               "dark",
               "system"
             ]
+          },
+          "status": {
+            "type": "string",
+            "description": "The status in force now (#3845). `online` until the member picks another, and once a picked status reaches its end time.",
+            "enum": [
+              "online",
+              "idle",
+              "dnd",
+              "invisible"
+            ]
+          },
+          "status_expires_at": {
+            "type": "string",
+            "description": "When `status` reverts to `online`. Null: until the member changes it.",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "custom_status": {
+            "type": "string",
+            "description": "The custom status line in force now, or null for none (also once it has reached its end time).",
+            "nullable": true,
+            "example": "At practice till 6"
+          },
+          "custom_status_expires_at": {
+            "type": "string",
+            "description": "When the custom status line clears. Null: until the member clears it.",
+            "nullable": true,
+            "format": "date-time"
           }
         },
         "required": [
           "quiet_hours_start",
           "quiet_hours_end",
           "quiet_hours_tz",
-          "theme"
+          "theme",
+          "status",
+          "status_expires_at",
+          "custom_status",
+          "custom_status_expires_at"
         ]
       },
       "UpdateUserSettingsDto": {
@@ -12752,6 +12784,36 @@
               "dark",
               "system"
             ]
+          },
+          "status": {
+            "type": "string",
+            "description": "The status the member picks (#3845). Sending it replaces `status_expires_at` with the value sent alongside it (absent: no end time). `online` never carries an end time.",
+            "enum": [
+              "online",
+              "idle",
+              "dnd",
+              "invisible"
+            ]
+          },
+          "status_expires_at": {
+            "type": "string",
+            "description": "When `status` reverts to `online`, as an ISO 8601 instant in the future. Accepted only together with `status`; null, blank or absent means no end time (and alone is ignored).",
+            "nullable": true,
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,6})?)?(Z|[+-]\\d{2}:\\d{2})$"
+          },
+          "custom_status": {
+            "type": "string",
+            "description": "One short custom status line (at most 80 characters, no line breaks). Trimmed; null or an empty string clears it, and its end time with it. Sending it replaces `custom_status_expires_at` with the value sent alongside it.",
+            "nullable": true,
+            "maxLength": 80
+          },
+          "custom_status_expires_at": {
+            "type": "string",
+            "description": "When the custom status line clears, as an ISO 8601 instant in the future. Accepted only together with `custom_status`; null, blank or absent means no end time (and alone is ignored).",
+            "nullable": true,
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,6})?)?(Z|[+-]\\d{2}:\\d{2})$"
           }
         }
       },
