@@ -146,10 +146,30 @@ describe("ChapterWizard legal acceptance gate", () => {
     expect(routerPush).toHaveBeenCalledWith("/join");
   });
 
-  it("says which account is signed in, with a way to sign out (#3776)", () => {
+  it("says which account is signed in, with a way to sign out, on every step (#3776)", async () => {
+    onboardMutate.mockResolvedValue({ chapter: { id: "ch-1" } });
     render(<ChapterWizard onComplete={() => {}} />);
-    expect(screen.getByText("founder@school.edu")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
+    const assertAccount = () => {
+      expect(screen.getByText("founder@school.edu")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
+    };
+    assertAccount(); // find
+    fireEvent.click(screen.getByRole("button", { name: "Manual entry" }));
+    assertAccount(); // archetype
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    assertAccount(); // identity
+    fireEvent.change(screen.getByLabelText("Chapter / organization name"), {
+      target: { value: "Test Chapter" },
+    });
+    fireEvent.change(screen.getByLabelText("University"), {
+      target: { value: "Test University" },
+    });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Create chapter" }));
+    await waitFor(() =>
+      expect(screen.getByText("Invite members")).toBeInTheDocument(),
+    );
+    assertAccount(); // invite
   });
 
   it("blocks Create chapter until Terms/Privacy is accepted", () => {

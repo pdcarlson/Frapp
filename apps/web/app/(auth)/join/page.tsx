@@ -189,16 +189,23 @@ function JoinPageContent() {
       return;
     }
     setBusy(true);
+    let joined = false;
     try {
       // Joining switches to the new chapter, which ends this tab's Bulk upload.
       if (!(await confirmDrop("switch"))) return;
-      await joinWith(extracted, onError);
+      joined = await joinWith(extracted, onError);
     } finally {
-      setBusy(false);
+      // A join that landed keeps the page locked: `router.replace` only starts
+      // the navigation, and this page stays mounted until `/chat` arrives.
+      if (!joined) setBusy(false);
     }
   }
 
-  async function joinWith(extracted: string, onError: (copy: string) => void) {
+  /** True once the member is in and the page is on its way to `/chat`. */
+  async function joinWith(
+    extracted: string,
+    onError: (copy: string) => void,
+  ): Promise<boolean> {
     try {
       const result = await redeemInviteMutation.mutateAsync(
         terms.redeemBody(extracted),
@@ -217,9 +224,11 @@ function JoinPageContent() {
       });
       router.replace("/chat");
       router.refresh();
+      return true;
     } catch (error) {
       terms.onJoinError(error);
       onError(joinErrorCopy(error));
+      return false;
     }
   }
 
@@ -262,7 +271,14 @@ function JoinPageContent() {
 
   return (
     <AuthScreen
-      toggle={<SignedInAs email={account?.email ?? null} disabled={busy} />}
+      toggle={
+        <SignedInAs
+          email={account?.email ?? null}
+          disabled={busy}
+          // Signing in as someone else keeps the invite this page was opened with.
+          returnTo={`/join${searchParams.toString() ? `?${searchParams.toString()}` : ""}`}
+        />
+      }
       title="Join your chapter"
       subtitle="Enter the invite your officer sent. Invites expire after 24 hours and work once."
       footer={JOIN_FOOTER}

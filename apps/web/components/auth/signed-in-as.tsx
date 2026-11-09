@@ -17,13 +17,17 @@ import { useSignOutToSignIn } from "./use-sign-out";
 export function SignedInAs({
   email,
   disabled = false,
+  returnTo,
   className,
 }: {
   email: string | null;
   disabled?: boolean;
+  /** Where the next sign-in lands (`useSignOutToSignIn`). */
+  returnTo?: string;
   className?: string;
 }) {
-  const { signOut, signingOut, confirmDropDialog } = useSignOutToSignIn();
+  const { signOut, signingOut, confirmDropDialog } =
+    useSignOutToSignIn(returnTo);
   return (
     <div
       className={cn(

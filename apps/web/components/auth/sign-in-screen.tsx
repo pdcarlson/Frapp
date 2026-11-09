@@ -254,7 +254,7 @@ function SignInPageContent() {
 
 /**
  * The form's one other exit (the toggle covers sign-up). A component so the
- * Suspense fallback draws the same footer and nothing shifts on hydration.
+ * Suspense fallback draws its words (`SignInFooterPending`).
  *
  * `/join` is gated, so it never links there (#3776): a signed-out visitor was
  * bounced back to this form, with any invite they arrived with dropped on the
@@ -294,6 +294,21 @@ function SignInFooter({ redirectTo }: { redirectTo: string }) {
   );
 }
 
+/**
+ * The footer before the search params are known: the same words as the
+ * common case, but not a link. Before hydration a link here could only point
+ * somewhere that ignores the `redirectTo` this visit carries, and from an
+ * invite that drops the token (#3776).
+ */
+function SignInFooterPending() {
+  return (
+    <p>
+      Have an invite?{" "}
+      <span className="font-semibold text-accent-text">Join your chapter</span>
+    </p>
+  );
+}
+
 function isJoinPath(path: string): boolean {
   const pathname = path.split(/[?#]/, 1)[0];
   return pathname === "/join";
@@ -316,7 +331,7 @@ export function SignInScreen() {
           toggle={
             <AuthModeToggle current="sign-in" redirectTo={resolveRedirectPath(null)} />
           }
-          footer={<SignInFooter redirectTo={resolveRedirectPath(null)} />}
+          footer={<SignInFooterPending />}
         >
           <div role="status" aria-busy="true" aria-live="polite">
             <span className="sr-only">Loading the sign-in form…</span>

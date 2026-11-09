@@ -8,6 +8,7 @@ import type {
 import { IInviteRepository } from '#domain/repositories/invite.repository.interface';
 import { Invite } from '#domain/entities/invite.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
+import { escapeLikePattern } from '../supabase.utils';
 
 @Injectable()
 export class SupabaseInviteRepository implements IInviteRepository {
@@ -56,17 +57,17 @@ export class SupabaseInviteRepository implements IInviteRepository {
   }
 
   async findPendingByEmail(email: string, now: Date): Promise<Invite[]> {
-    // Exact match, in code. Not `ilike`: PostgREST reads `*` in a like
-    // pattern as `%`, which no escaping turns back into a literal, so an
-    // address with a `*` in it matched other people's invites, tokens and
-    // all. The read is bounded to live emailed invites
-    // (`idx_invites_pending_emailed`), and addresses are stored as typed
-    // (`dedupeEmails` keeps the case), hence the lowercase comparison.
+    // Narrowed in SQL, decided in code. The `ilike` bounds the read to this
+    // address (case-insensitively: addresses are stored as typed), but it is
+    // not exact on its own: PostgREST reads `*` in a like pattern as `%`, and
+    // no escaping turns it back into a literal, so `*@school.edu` would match
+    // everyone at that domain. The comparison below is what decides, so a `*`
+    // can only widen the read, never the answer.
     const wanted = email.trim().toLowerCase();
     const { data, error } = await this.supabase
       .from('invites')
       .select('*')
-      .not('email', 'is', null)
+      .ilike('email', escapeLikePattern(wanted))
       .is('used_at', null)
       .is('revoked_at', null)
       .gt('expires_at', now.toISOString())

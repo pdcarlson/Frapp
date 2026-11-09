@@ -279,10 +279,10 @@ describe('SupabaseInviteRepository — tenant scope', () => {
         'revoked_at',
         'expires_at',
       ]);
-      expect(harness.ops[0].filters[0].op).toBe('__not__');
+      expect(harness.ops[0].filters[0].op).toBe('ilike');
     });
 
-    it('findPendingByEmail matches the address exactly, so `*`, `%` and `_` are literal (#3776)', async () => {
+    it('findPendingByEmail matches the address exactly, so `*` and `%` match nothing else (#3776)', async () => {
       // PostgREST reads `*` in a like pattern as `%`: an `ilike` here handed
       // `*@school.edu` every pending invite at that domain.
       const live = (id: string, email: string) => ({
@@ -316,16 +316,33 @@ describe('SupabaseInviteRepository — tenant scope', () => {
           repo.findPendingByEmail(pattern, new Date()),
         ).resolves.toEqual([]);
       }
-      const underscore = await repo.findPendingByEmail(
-        'a_b@school.edu',
+      // An escaped `_` matching itself is Postgres's to prove, not this
+      // harness's, whose LIKE emulation doesn't read `\_` as a literal.
+      const own = await repo.findPendingByEmail('alice@school.edu', new Date());
+      expect(own.map((i) => i.email)).toEqual(['alice@school.edu']);
+    });
+
+    it('findPendingByEmail drops rows a `*` widened the read to (#3776)', async () => {
+      // The harness treats `*` literally, so stand in for PostgREST, which
+      // answers `ilike.*@school.edu` with everyone at the domain.
+      const rows = [
+        { id: 'x', email: 'alice@school.edu' },
+        { id: 'y', email: 'bob@school.edu' },
+        { id: 'z', email: '*@school.edu' },
+      ];
+      const chain: Record<string, unknown> = {};
+      for (const m of ['from', 'select', 'ilike', 'is', 'gt']) {
+        chain[m] = () => chain;
+      }
+      chain.order = () => Promise.resolve({ data: rows, error: null });
+      const widened = new SupabaseInviteRepository(chain as never);
+
+      const found = await widened.findPendingByEmail(
+        '*@School.edu',
         new Date(),
       );
-      expect(underscore.map((i) => i.email)).toEqual(['a_b@school.edu']);
-      // No like/ilike filter at all: nothing the address holds is a pattern.
-      for (const op of harness.ops) {
-        expect(op.filters.map((f) => f.op)).not.toContain('ilike');
-        expect(op.filters.map((f) => f.op)).not.toContain('like');
-      }
+
+      expect(found.map((i) => i.id)).toEqual(['z']);
     });
 
     it('revokePending skips an invite already redeemed', async () => {

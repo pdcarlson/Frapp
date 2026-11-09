@@ -7,13 +7,23 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
  * `lib/onboarding/join-screen.spec.tsx` pins the same rules.
  */
 
-const { redeemMutate, legal, pending, sessionUser, replace } = vi.hoisted(
+const {
+  redeemMutate,
+  legal,
+  pending,
+  sessionUser,
+  replace,
+  selectChapter,
+  signOut,
+} = vi.hoisted(
   () => ({
     redeemMutate: vi.fn(),
     legal: { data: { required: false } as { required: boolean } | undefined },
     pending: { data: [] as unknown[] | undefined, userIds: [] as unknown[] },
     sessionUser: vi.fn(),
     replace: vi.fn(),
+    selectChapter: vi.fn(),
+    signOut: vi.fn(),
   }),
 );
 
@@ -34,11 +44,14 @@ vi.mock("next/navigation", () => ({
 const searchParams = vi.hoisted(() => ({
   current: new URLSearchParams(),
 }));
+vi.mock("@/lib/auth/session", () => ({
+  signOutCurrentSession: signOut,
+}));
 vi.mock("@/lib/auth/rejected-session", () => ({
   getLiveSessionUser: sessionUser,
 }));
 vi.mock("@/lib/auth/select-chapter", () => ({
-  useSelectChapter: () => vi.fn().mockResolvedValue(true),
+  useSelectChapter: () => selectChapter,
 }));
 vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 vi.mock("@/lib/providers/network-provider", () => ({
@@ -87,6 +100,10 @@ beforeEach(() => {
   sessionUser.mockReset();
   sessionUser.mockResolvedValue({ id: "auth-1", email: "brother@school.edu" });
   replace.mockReset();
+  selectChapter.mockReset();
+  selectChapter.mockResolvedValue(true);
+  signOut.mockReset();
+  signOut.mockResolvedValue(undefined);
   pending.data = [];
   pending.userIds = [];
   searchParams.current = new URLSearchParams();
@@ -278,6 +295,32 @@ describe("web join — who is signed in (#3776)", () => {
     expect(screen.getByText("brother@school.edu")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
   });
+
+  it("signs out and comes back to this invite after signing in again", async () => {
+    searchParams.current = new URLSearchParams("token=abc");
+    const assign = vi.fn();
+    const original = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...original, origin: "http://localhost", assign },
+    });
+    try {
+      renderPage();
+      await screen.findByLabelText("Invite");
+      fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+      await waitFor(() =>
+        expect(assign).toHaveBeenCalledWith(
+          "/sign-in?redirectTo=%2Fjoin%3Ftoken%3Dabc",
+        ),
+      );
+      expect(signOut).toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: original,
+      });
+    }
+  });
 });
 
 describe("web join — one join at a time (#3776)", () => {
@@ -304,8 +347,20 @@ describe("web join — one join at a time (#3776)", () => {
     fireEvent.click(second);
     expect(redeemMutate).toHaveBeenCalledTimes(1);
 
+    // The API answers, but the chapter switch is still running.
+    let switched: (value: unknown) => void = () => {};
+    selectChapter.mockReturnValue(new Promise((resolve) => (switched = resolve)));
     finish({ chapterId: "ch-1", memberId: "m-1" });
+    await waitFor(() => expect(selectChapter).toHaveBeenCalledWith("ch-1"));
+    fireEvent.click(screen.getByRole("button", { name: "Join Theta Chi Beta" }));
+    expect(redeemMutate).toHaveBeenCalledTimes(1);
+
+    // And it stays locked once the navigation to chat has started.
+    switched(true);
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/chat"));
+    const after = screen.getByRole("button", { name: "Join Theta Chi Beta" });
+    expect(after).toHaveProperty("disabled", true);
+    fireEvent.click(after);
     expect(redeemMutate).toHaveBeenCalledTimes(1);
   });
 });
