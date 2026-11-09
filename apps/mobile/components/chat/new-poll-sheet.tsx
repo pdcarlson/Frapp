@@ -58,8 +58,8 @@ import {
  *
  * The form: a question, two to ten options (add, remove, and move up or
  * down), and **More options** for when voting stops, a day by default as on
- * web. A chat-card poll is single-choice and has no early close yet, on any
- * client; both are their own work.
+ * web. A chat-card poll is single-choice (multi-choice is #3793); its creator
+ * closes it early from the card itself (`poll-card.tsx`, #3794).
  *
  * Posting goes through the outbox like any message, so it is optimistic and
  * survives a lost connection, and a server refusal (Polls switched off since

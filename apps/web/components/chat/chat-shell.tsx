@@ -133,6 +133,11 @@ import {
   type DepartedMembers,
 } from "@repo/chat-core/message-actions";
 import { blockActionLabel } from "@repo/chat-core/block-copy";
+import {
+  CLOSE_POLL_CONFIRM_BODY,
+  CLOSE_POLL_CONFIRM_LABEL,
+  CLOSE_POLL_CONFIRM_TITLE,
+} from "@repo/chat-core/polls";
 import { replyPreviewText } from "./reply-quote";
 import { OpsSetupNudge } from "./ops-setup-nudge";
 import { SetupChecklistSection } from "./setup-checklist";
@@ -1087,25 +1092,52 @@ export function ChatShell({
   }, [activeChannelId, resetBookmarkMessage, resetUnbookmarkMessage]);
 
   const { confirm, confirmDialog } = useConfirmDialog();
-  const deleteMessage = channel.delete;
-  const handleDeleteMessage = useCallback(
-    (messageId: string) => {
+  // Delete message and Close poll (#3794) are both destructive, so both ask
+  // first through one flow: the copy is the action's, and a failure was
+  // already toasted by the chat-core action, so it is swallowed here.
+  // Mobile's equivalent is `confirmDestructive`.
+  const confirmThen = useCallback(
+    (
+      copy: { title: string; description: string; confirmLabel: string },
+      action: () => Promise<void>,
+    ) => {
       void (async () => {
-        const confirmed = await confirm({
-          title: DELETE_MESSAGE_CONFIRM_TITLE,
-          description: DELETE_MESSAGE_CONFIRM_BODY,
-          confirmLabel: DELETE_MESSAGE_CONFIRM_LABEL,
-          tone: "destructive",
-        });
+        const confirmed = await confirm({ ...copy, tone: "destructive" });
         if (!confirmed) return;
         try {
-          await deleteMessage(messageId);
+          await action();
         } catch {
-          // The delete action already toasted the failure.
+          // The chat-core action already toasted the failure.
         }
       })();
     },
-    [confirm, deleteMessage],
+    [confirm],
+  );
+  const deleteMessage = channel.delete;
+  const handleDeleteMessage = useCallback(
+    (messageId: string) =>
+      confirmThen(
+        {
+          title: DELETE_MESSAGE_CONFIRM_TITLE,
+          description: DELETE_MESSAGE_CONFIRM_BODY,
+          confirmLabel: DELETE_MESSAGE_CONFIRM_LABEL,
+        },
+        () => deleteMessage(messageId),
+      ),
+    [confirmThen, deleteMessage],
+  );
+  const closePoll = channel.closePoll;
+  const handleClosePoll = useCallback(
+    (messageId: string) =>
+      confirmThen(
+        {
+          title: CLOSE_POLL_CONFIRM_TITLE,
+          description: CLOSE_POLL_CONFIRM_BODY,
+          confirmLabel: CLOSE_POLL_CONFIRM_LABEL,
+        },
+        () => closePoll(messageId),
+      ),
+    [confirmThen, closePoll],
   );
 
   const setNotificationLevel = useSetChannelNotificationLevel();
@@ -2459,6 +2491,7 @@ export function ChatShell({
                     activeChannel?.can_post !== false ? channel.edit : undefined
                   }
                   onDelete={handleDeleteMessage}
+                  onClosePoll={handleClosePoll}
                   bookmarkedMessageIds={bookmarkedMessageIds}
                   onToggleBookmark={handleToggleBookmark}
                   canManageChannel={canManageChannel}
