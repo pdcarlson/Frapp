@@ -35,6 +35,23 @@ later pass. Do not add `string | null` to the factory to make a disabled query
 type-check — leave the query `enabled: false` instead of building an unscoped
 key.
 
+## Mutation keys
+
+Every `useMutation` sets a `mutationKey`, `[<root>, <action>]`: the root is the
+feature's query-key root (`["events", "create-event"]`, `["tasks",
+"update-task-status"]`) and the action names the write, usually the hook's
+name without `use` in kebab case. The query-error reporter groups a failed mutation in Sentry by that
+root and sends nothing else from the key; with no key the failure pools under
+`unkeyed` with every other feature's ([#3393](https://github.com/pdcarlson/Frapp/issues/3393)).
+The root must match `/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/`, and no later element may
+carry text a member typed. `src/mutation-keys.spec.ts` fails on a `useMutation`
+without one.
+
+Keys match by prefix in `useMutationState`, `isMutating` and
+`setMutationDefaults`, so a new key must not start with one those already read:
+`["channels", "read"]` and `["notifications", "read"]` (mobile's retry defaults
+and the pending-read state) and `["chapter-config", chapterId, "patch"]`.
+
 ## Optimistic mutations
 
 `useUpdateNotificationPreference` (`use-notifications.ts`) and the three task
