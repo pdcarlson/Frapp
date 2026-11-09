@@ -18,7 +18,7 @@ import {
   isActiveDateFilter,
   type DateFilter,
   type DocumentSort,
-} from "@/components/documents/document-library";
+} from "@repo/hooks/document-library";
 import { cn } from "@/lib/utils";
 
 const CHIP = "gap-1 rounded-full font-semibold";

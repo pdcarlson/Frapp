@@ -1,39 +1,56 @@
 import { describe, expect, it } from "vitest";
+import { toLibraryDocuments } from "@repo/hooks/document-library";
 import {
+  documentMeta,
   selectDocumentFolders,
-  selectDocumentRows,
+  selectDocuments,
   selectDownloadUrl,
 } from "./documents";
 
-describe("selectDocumentRows", () => {
-  it("narrows a document into a drawable row", () => {
-    const [row] = selectDocumentRows([
+const NOW = new Date("2026-11-09T12:00:00Z");
+
+function metaFor(
+  rows: unknown,
+  names: Record<string, string> = {},
+): (string | null)[] {
+  return toLibraryDocuments(
+    selectDocuments(rows),
+    (id) => names[id] ?? null,
+  ).map((row) => documentMeta(row, NOW));
+}
+
+describe("selectDocuments", () => {
+  it("narrows a document to the fields the library reads", () => {
+    expect(
+      selectDocuments([
+        {
+          id: "d-1",
+          title: "Chapter bylaws",
+          description: "Ratified 2025",
+          folder: "Governance",
+          document_type: "Bylaws",
+          uploaded_by: "u-1",
+          created_at: "2026-08-12T14:00:00.000Z",
+          storage_path: "chapters/c/documents/x/bylaws.pdf",
+        },
+      ]),
+    ).toEqual([
       {
         id: "d-1",
         title: "Chapter bylaws",
+        description: "Ratified 2025",
         folder: "Governance",
+        document_type: "Bylaws",
+        uploaded_by: "u-1",
         created_at: "2026-08-12T14:00:00.000Z",
       },
     ]);
-    expect(row?.id).toBe("d-1");
-    expect(row?.title).toBe("Chapter bylaws");
-    expect(row?.folder).toBe("Governance");
-    expect(row?.meta).toContain("Governance");
   });
 
-  it("sorts newest first — the reference labels this list RECENT", () => {
-    const rows = selectDocumentRows([
-      { id: "d-1", title: "Older", created_at: "2026-08-01T00:00:00.000Z" },
-      { id: "d-2", title: "Newest", created_at: "2026-08-20T00:00:00.000Z" },
-      { id: "d-3", title: "Middle", created_at: "2026-08-10T00:00:00.000Z" },
-    ]);
-    expect(rows.map((row) => row.title)).toEqual(["Newest", "Middle", "Older"]);
-  });
-
-  // A row with no id cannot be opened — opening is the only thing this list does.
+  // A row with no id cannot be opened — opening is what this list does.
   it("drops a row with no id or no title", () => {
     expect(
-      selectDocumentRows([
+      selectDocuments([
         { title: "No id" },
         { id: "d-1" },
         { id: "d-2", title: "Fine" },
@@ -41,16 +58,53 @@ describe("selectDocumentRows", () => {
     ).toHaveLength(1);
   });
 
-  it("omits the meta line when neither folder nor date is known", () => {
-    const [row] = selectDocumentRows([{ id: "d-1", title: "Loose file" }]);
-    expect(row?.meta).toBeNull();
+  it("returns an empty list for an absent payload", () => {
+    expect(selectDocuments(undefined)).toEqual([]);
+  });
+});
+
+describe("documentMeta", () => {
+  it("reads as web's row does: uploaded, by whom, then folder and type", () => {
+    expect(
+      metaFor(
+        [
+          {
+            id: "d-1",
+            title: "Bylaws",
+            folder: "Governance",
+            document_type: "Bylaws",
+            uploaded_by: "u-1",
+            created_at: "2026-08-12T14:00:00.000Z",
+          },
+        ],
+        { "u-1": "Ryan Castellano" },
+      ),
+    ).toEqual(["Uploaded Aug 12 by Ryan Castellano · Governance · Bylaws"]);
+  });
+
+  it("leaves off an uploader the roster can't name", () => {
+    expect(
+      metaFor([
+        {
+          id: "d-1",
+          title: "Bylaws",
+          uploaded_by: "u-gone",
+          created_at: "2026-08-12T14:00:00.000Z",
+        },
+      ]),
+    ).toEqual(["Uploaded Aug 12"]);
+  });
+
+  it("omits the line when nothing is known", () => {
+    expect(metaFor([{ id: "d-1", title: "Loose file" }])).toEqual([null]);
   });
 
   it("survives an unparseable timestamp without rendering Invalid Date", () => {
-    const [row] = selectDocumentRows([
-      { id: "d-1", title: "Odd", folder: "Ops", created_at: "not-a-date" },
-    ]);
-    expect(row?.meta).toBe("Ops");
+    expect(
+      metaFor([
+        { id: "d-1", title: "Odd", folder: "Ops", created_at: "not-a-date" },
+      ]),
+    ).toEqual(["Ops"]);
   });
 });
 

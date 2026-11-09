@@ -21,7 +21,7 @@ import {
   type DocumentFilters,
   type DocumentSort,
   type LibraryDocument,
-} from "@/components/documents/document-library";
+} from "@repo/hooks/document-library";
 import type { FilterOption } from "@/components/shared/filter-chip";
 import { SectionLabel } from "@/components/shared/section-label";
 import {
@@ -65,7 +65,7 @@ export function DocumentList({
   /** The failed read behind `listState === "error"`, for its wording. */
   loadError?: unknown;
   /** The rows to draw: folder, search, filters and order applied. */
-  visible: LibraryDocument[];
+  visible: LibraryDocument<ChapterDocument>[];
   /** Documents in the open folder before search and filters, for "4 of 10". */
   total: number;
   /** The list response hit PostgREST's row cap, so older files may be missing. */

@@ -1,14 +1,28 @@
 import { useDeferredValue, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, StyleSheet, Text } from "react-native";
+import { AccessibilityInfo, Alert, StyleSheet, Text, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import * as WebBrowser from "expo-web-browser";
 import {
+  displayNameOrNull,
   useActiveChapterId,
+  useDeleteDocument,
   useDocumentDownloadUrl,
   useDocumentFolders,
   useDocuments,
+  useMemberDisplayNames,
   usePermissionList,
+  useSemesters,
 } from "@repo/hooks";
+import {
+  DOCUMENT_LIST_CAP,
+  SORT_OPTIONS,
+  isActiveDateFilter,
+  queryDocuments,
+  semesterSince,
+  toLibraryDocuments,
+  uploaderOptions,
+  type DocumentSort,
+} from "@repo/hooks/document-library";
 import { SignetTokens } from "@repo/theme/signet";
 import { can } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
@@ -18,7 +32,7 @@ import {
   UploadDocumentSheet,
   type PendingDocumentUpload,
 } from "@/components/documents/upload-document-sheet";
-import { FilterChips, SearchField } from "@/components/filter-chips";
+import { Chip, FilterChips, SearchField } from "@/components/filter-chips";
 import {
   ListRow,
   ListRowSkeleton,
@@ -28,10 +42,12 @@ import {
 import { InlineNote } from "@/components/inline-note";
 import { ErrorState, SkeletonRegion } from "@/components/state-block";
 import {
+  documentMeta,
   selectDocumentFolders,
-  selectDocumentRows,
+  selectDocuments,
   selectDownloadUrl,
 } from "@/lib/more/documents";
+import { records } from "@/lib/more/narrow";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -70,6 +86,27 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * Photos only: a PDF needs `expo-document-picker`, a native module that waits
  * for a store build.
+ *
+ * ## Search, filters and sort, as web's (#3938)
+ *
+ * The screen reads the chapter's whole library once (`GET /v1/documents`
+ * with no `search` or `folder`) and runs web's library logic over it
+ * (`@repo/hooks/document-library`, the module `/documents` imports): the
+ * folder chip, then a typo-tolerant search over title, description,
+ * uploader, folder and type, the Uploaded by and Date added filters, and the
+ * order, Name A–Z by default as on web. All of it is local, so a keystroke or
+ * a chip re-ranks what is in hand, offline too. The filters and the order sit
+ * behind one "Sort & filter" chip that opens a panel of chip rows under it,
+ * as Directory's alumni Filters do. Web's custom date range is not offered: a
+ * phone date picker is a native module that waits for a store build.
+ *
+ * ## Delete, for whoever may
+ *
+ * A viewer holding `chapter_docs:manage` (the guard on `DELETE
+ * /v1/documents/{id}`) deletes a document by long-pressing its row, or
+ * through the row's named screen-reader action, then confirming in a system
+ * alert, as Invited's Revoke and chat's channel actions do. The row shows
+ * its spinner while the request runs and takes no second press.
  *
  * ## Opening a document
  *
@@ -124,27 +161,109 @@ export default function DocumentsScreen() {
       };
     });
 
-  // Deferred, like s13's: `search` is in the query key, so feeding raw
-  // keystrokes would mint a cache entry and fire a request per character, and
-  // blank the list to a skeleton each time.
+  // Deferred, so a long library re-ranks behind the keystroke rather than
+  // ahead of it, as web's does.
   const deferredSearch = useDeferredValue(search.trim());
+  const [sort, setSort] = useState<DocumentSort>("name");
+  const [pickedUploader, setPickedUploader] = useState<string | null>(null);
+  const [datePreset, setDatePreset] = useState<"semester" | "30d" | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [deletingIds, setDeletingIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [deleteFailed, setDeleteFailed] = useState<string | null>(null);
+  const canManage = can("chapter_docs:manage", usePermissionList());
 
   const foldersQuery = useDocumentFolders();
-  const documentsQuery = useDocuments({
-    folder: folder ?? undefined,
-    search: deferredSearch || undefined,
-  });
+  const documentsQuery = useDocuments();
+  const semestersQuery = useSemesters();
   const openDocument = useDocumentDownloadUrl();
+  const deleteDocument = useDeleteDocument();
   const refresh = useRefetchAll([foldersQuery, documentsQuery]);
 
   const folders = useMemo(
     () => selectDocumentFolders(foldersQuery.data),
     [foldersQuery.data],
   );
-  const rows = useMemo(
-    () => selectDocumentRows(documentsQuery.data),
+  const documents = useMemo(
+    () => selectDocuments(documentsQuery.data),
     [documentsQuery.data],
   );
+  // Uploaders by name, from the roster chat already caches, as web reads
+  // them. A name the roster can't resolve is left off the row and out of the
+  // Uploaded by chips rather than shown as an id.
+  const { byId: namesById } = useMemberDisplayNames();
+  const library = useMemo(
+    () =>
+      toLibraryDocuments(documents, (userId) =>
+        displayNameOrNull(namesById[userId]),
+      ),
+    [documents, namesById],
+  );
+  // Web's rule: a picked uploader the roster no longer names is dropped; one
+  // it still names stays picked, and stays a chip, after their last file goes.
+  const pickedName =
+    pickedUploader === null
+      ? null
+      : displayNameOrNull(namesById[pickedUploader]);
+  const uploader = pickedName === null ? null : pickedUploader;
+  const uploaders = useMemo(() => {
+    const options = uploaderOptions(library);
+    if (
+      uploader !== null &&
+      pickedName !== null &&
+      !options.some((option) => option.value === uploader)
+    ) {
+      options.push({ value: uploader, label: pickedName });
+    }
+    return options;
+  }, [library, uploader, pickedName]);
+  // `undefined` until the archives load: unknown, never "no rollover yet",
+  // so "This semester" is offered only once it means something.
+  const since = useMemo(
+    () =>
+      semestersQuery.data === undefined
+        ? undefined
+        : semesterSince(
+            records(semestersQuery.data).map((row) => ({
+              end_date: typeof row.end_date === "string" ? row.end_date : "",
+              created_at:
+                typeof row.created_at === "string" ? row.created_at : undefined,
+            })),
+          ),
+    [semestersQuery.data],
+  );
+  const filters = useMemo(
+    () => ({
+      uploader,
+      date: datePreset === null ? null : { preset: datePreset },
+    }),
+    [uploader, datePreset],
+  );
+  const dateActive = isActiveDateFilter(filters.date, since !== undefined);
+  const visible = useMemo(() => {
+    const inFolder =
+      folder === null
+        ? library
+        : library.filter((row) => row.doc.folder === folder);
+    return queryDocuments(inFolder, deferredSearch, filters, sort, {
+      now: new Date(),
+      semesterSince: since,
+    });
+  }, [library, folder, deferredSearch, filters, sort, since]);
+  const filtering = !!deferredSearch || uploader !== null || dateActive;
+  const filterCount =
+    (uploader !== null ? 1 : 0) +
+    (dateActive ? 1 : 0) +
+    (sort !== "name" ? 1 : 0);
+  // A response at PostgREST's row cap may be missing older files.
+  const truncated = documents.length >= DOCUMENT_LIST_CAP;
+
+  function clearFilters() {
+    setSearch("");
+    setPickedUploader(null);
+    setDatePreset(null);
+  }
 
   // The latest tap's number, and whether a browser is already on its way up.
   const latestOpen = useRef(0);
@@ -183,8 +302,7 @@ export default function DocumentsScreen() {
   }
 
   // Filed: the pending row holds until the list has re-read, so the document
-  // replaces it in the same slot (newest first) instead of the row going and
-  // the document arriving a beat later. A later upload's row is left alone.
+  // arrives as the row goes instead of a beat later. A later upload's row is left alone.
   function uploaded(title: string) {
     AccessibilityInfo.announceForAccessibility(`“${title}” is in the library.`);
     const filed = pendingUpload;
@@ -193,6 +311,39 @@ export default function DocumentsScreen() {
         current === filed || current?.title === title ? null : current,
       );
     });
+  }
+
+  function confirmDelete(id: string, title: string) {
+    Alert.alert(
+      `Delete ${title}?`,
+      "This removes the file from chapter storage immediately and cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete document",
+          style: "destructive",
+          onPress: () => void remove(id, title),
+        },
+      ],
+      { cancelable: true },
+    );
+  }
+
+  async function remove(id: string, title: string) {
+    setDeleteFailed(null);
+    setDeletingIds((current) => new Set(current).add(id));
+    try {
+      await deleteDocument.mutateAsync(id);
+      AccessibilityInfo.announceForAccessibility(`“${title}” was deleted.`);
+    } catch {
+      setDeleteFailed(title);
+    } finally {
+      setDeletingIds((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+    }
   }
 
   // The upload in flight, or the one that failed, in the slot the document
@@ -239,13 +390,14 @@ export default function DocumentsScreen() {
         />
       );
     }
-    if (rows.length === 0 && !pendingRow) {
+    if (visible.length === 0 && !pendingRow) {
       // Empty-states plan rule 7: one line where the rows would be. A search
-      // that matched nothing names the query and offers the way out: inside a
-      // folder chip, widening to every folder (the search stays); otherwise
-      // clearing it. Uploading lives on the screen's + (writing.md § Chapter
-      // Documents).
-      if (deferredSearch) {
+      // or filter that matched nothing says so and offers the way out: inside
+      // a folder chip, widening to every folder (the search and filters
+      // stay); otherwise clearing them, as web's Clear filters does.
+      // Uploading lives on the screen's + (writing.md § Chapter Documents).
+      if (filtering) {
+        const what = deferredSearch ? `“${deferredSearch}”` : "these filters";
         return folder ? (
           <InlineNote
             action={{
@@ -253,13 +405,19 @@ export default function DocumentsScreen() {
               onPress: () => setFolder(null),
             }}
           >
-            {`Nothing in ${folder} matches “${deferredSearch}”.`}
+            {`Nothing in ${folder} matches ${what}.`}
           </InlineNote>
         ) : (
           <InlineNote
-            action={{ label: "Clear search", onPress: () => setSearch("") }}
+            action={{
+              label:
+                deferredSearch && uploader === null && !dateActive
+                  ? "Clear search"
+                  : "Clear filters",
+              onPress: clearFilters,
+            }}
           >
-            {`No documents match “${deferredSearch}”.`}
+            {`No documents match ${what}.`}
           </InlineNote>
         );
       }
@@ -273,21 +431,45 @@ export default function DocumentsScreen() {
     return (
       <ListSection>
         {pendingRow}
-        {rows.map((row) => (
+        {visible.map((row) => (
           <ListRow
-            key={row.id}
-            label={row.title}
-            description={row.meta}
+            key={row.doc.id}
+            label={row.doc.title}
+            description={documentMeta(row)}
             accessibilityHint="Opens in your browser."
-            // Only the row being opened shows it. The others stay as they
-            // are and take a tap, which moves the spinner to them (`open`).
-            busy={row.id === openingId}
-            onPress={() => void open(row.id)}
+            // Only the row being opened, or deleted, shows it. The others
+            // stay as they are and take a tap, which moves the spinner to
+            // them (`open`).
+            busy={row.doc.id === openingId || deletingIds.has(row.doc.id)}
+            onPress={() => void open(row.doc.id)}
+            onLongPress={
+              canManage
+                ? () => confirmDelete(row.doc.id, row.doc.title)
+                : undefined
+            }
+            longPressLabel={canManage ? "Delete document" : undefined}
           />
         ))}
       </ListSection>
     );
   }
+
+  const filtersChip = (
+    <Chip
+      accessibilityRole="button"
+      accessibilityState={{ expanded: panelOpen }}
+      accessibilityLabel={
+        filterCount > 0
+          ? `Sort and filter, ${filterCount} set`
+          : "Sort and filter"
+      }
+      label={
+        filterCount > 0 ? `Sort & filter · ${filterCount}` : "Sort & filter"
+      }
+      on={panelOpen}
+      onPress={() => setPanelOpen((open) => !open)}
+    />
+  );
 
   return (
     <ScreenShell
@@ -308,7 +490,7 @@ export default function DocumentsScreen() {
         value={search}
         onChangeText={setSearch}
         placeholder="Search documents"
-        accessibilityLabel="Search documents by title"
+        accessibilityLabel="Search documents"
       />
 
       {folders.length > 0 ? (
@@ -324,7 +506,57 @@ export default function DocumentsScreen() {
               label: entry.name,
             })),
           ]}
+          trailing={filtersChip}
         />
+      ) : (
+        <View style={styles.chipAlone}>{filtersChip}</View>
+      )}
+
+      {panelOpen ? (
+        <View style={styles.panel}>
+          <Text style={styles.panelLabel}>Sort</Text>
+          <FilterChips
+            accessibilityLabel="Sort documents"
+            scroll
+            selected={sort}
+            onSelect={(value) =>
+              setSort((value as DocumentSort | null) ?? "name")
+            }
+            chips={SORT_OPTIONS.map((option) => ({
+              value: option.value,
+              label: option.label,
+            }))}
+          />
+          {uploaders.length > 0 ? (
+            <>
+              <Text style={styles.panelLabel}>Uploaded by</Text>
+              <FilterChips
+                accessibilityLabel="Filter by uploader"
+                scroll
+                selected={uploader}
+                onSelect={setPickedUploader}
+                chips={[{ value: null, label: "Anyone" }, ...uploaders]}
+              />
+            </>
+          ) : null}
+          <Text style={styles.panelLabel}>Date added</Text>
+          <FilterChips
+            accessibilityLabel="Filter by date added"
+            scroll
+            selected={datePreset}
+            onSelect={(value) =>
+              setDatePreset(value as "semester" | "30d" | null)
+            }
+            chips={[
+              { value: null, label: "Any time" },
+              // Offered once the archives have loaded, as on web.
+              ...(since !== undefined
+                ? [{ value: "semester", label: "This semester" }]
+                : []),
+              { value: "30d", label: "Last 30 days" },
+            ]}
+          />
+        </View>
       ) : null}
 
       {openFailed ? (
@@ -332,8 +564,22 @@ export default function DocumentsScreen() {
           That document couldn&apos;t be opened. Try again in a moment.
         </Text>
       ) : null}
+      {deleteFailed ? (
+        <Text accessibilityLiveRegion="polite" style={styles.errorNote}>
+          {`Couldn't delete “${deleteFailed}”. Try again in a moment.`}
+        </Text>
+      ) : null}
+      {truncated && !documentsQuery.isError ? (
+        <InlineNote>
+          {`Showing the newest ${DOCUMENT_LIST_CAP.toLocaleString("en-US")} documents.`}
+        </InlineNote>
+      ) : null}
 
-      <SectionHeader>Recent</SectionHeader>
+      <SectionHeader>
+        {documentsQuery.isSuccess
+          ? `${visible.length} ${visible.length === 1 ? "document" : "documents"}`
+          : "Documents"}
+      </SectionHeader>
       {renderList()}
 
       {canUpload ? (
@@ -355,6 +601,17 @@ export default function DocumentsScreen() {
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
+    chipAlone: {
+      flexDirection: "row",
+    },
+    panel: {
+      gap: tokens.spacing.xs,
+    },
+    panelLabel: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+      paddingHorizontal: tokens.spacing.xs,
+    },
     errorNote: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructive,

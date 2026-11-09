@@ -30,7 +30,7 @@ import {
   uploaderOptions,
   type DocumentFilters,
   type DocumentSort,
-} from "@/components/documents/document-library";
+} from "@repo/hooks/document-library";
 import { DocumentViewer } from "@/components/documents/document-viewer";
 import type {
   ChapterDocument,

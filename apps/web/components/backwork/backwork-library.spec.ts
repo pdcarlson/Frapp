@@ -11,7 +11,7 @@ import {
   toLibraryRows,
   type BackworkResource,
 } from "./backwork-library";
-import { highlightRuns } from "@/lib/search/fuzzy-match";
+import { highlightRuns } from "@repo/hooks/fuzzy-match";
 
 function resource(overrides: Partial<BackworkResource>): BackworkResource {
   return {

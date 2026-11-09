@@ -1,13 +1,12 @@
-import { fuzzyMatchWords, normalizeWords } from "@/lib/search/fuzzy-match";
-import type { FilterOption } from "@/components/shared/filter-chip";
-import { BACKWORK_LIST_CAP } from "@/components/backwork/backwork-library";
-import type { ChapterDocument } from "@/components/documents/document-types";
+import { fuzzyMatchWords, normalizeWords } from "./fuzzy-match";
 
 /**
- * The `/documents` list's search, filters and order (#3852), kept free of
- * React so they can be tested on plain rows.
+ * The Documents library's search, filters and order (#3852), kept free of
+ * React so they can be tested on plain rows. Web's `/documents` and mobile's
+ * Documents screen both run it (#3938), so the two apps find, narrow and order
+ * a chapter's files the same way.
  *
- * All of it runs on the client, as `/backwork`'s does (`backwork-library.ts`):
+ * All of it runs on the client, as web `/backwork`'s does (`backwork-library.ts`):
  * `GET /v1/documents` returns the chapter's whole library in one response, so
  * a keystroke or a filter re-ranks what is already in memory instead of asking
  * the server again, and it works offline over what is loaded. A chapter files
@@ -16,10 +15,27 @@ import type { ChapterDocument } from "@/components/documents/document-types";
  */
 
 /**
- * PostgREST's `max_rows`, the same cap backwork's list meets; a response this
- * long is treated as truncated.
+ * PostgREST's `max_rows`, the same cap backwork's list meets
+ * (`BACKWORK_LIST_CAP`); a response this long is treated as truncated.
  */
-export const DOCUMENT_LIST_CAP = BACKWORK_LIST_CAP;
+export const DOCUMENT_LIST_CAP = 1000;
+
+/**
+ * The fields of a `GET /v1/documents` row the library reads. Structural, so
+ * web's `ChapterDocument` and mobile's narrowed rows both fit.
+ */
+export type LibrarySourceDocument = {
+  id: string;
+  title: string;
+  description?: string | null;
+  folder?: string | null;
+  document_type?: string | null;
+  uploaded_by: string | null;
+  created_at: string;
+};
+
+/** One choice in the Uploaded by filter. */
+export type UploaderOption = { value: string; label: string };
 
 export type DocumentSort = "name" | "newest" | "oldest" | "uploader";
 
@@ -44,18 +60,18 @@ export type DocumentFilters = {
 export const NO_DOCUMENT_FILTERS: DocumentFilters = { uploader: null, date: null };
 
 /** A document with its uploader's name resolved and its words normalised once. */
-export type LibraryDocument = {
-  doc: ChapterDocument;
+export type LibraryDocument<D extends LibrarySourceDocument = LibrarySourceDocument> = {
+  doc: D;
   uploader: string | null;
   words: readonly string[];
   /** The same text lowercased, for the substring match the title search had. */
   text: string;
 };
 
-export function toLibraryDocuments(
-  documents: readonly ChapterDocument[],
+export function toLibraryDocuments<D extends LibrarySourceDocument>(
+  documents: readonly D[],
   uploaderName: (userId: string) => string | null,
-): LibraryDocument[] {
+): LibraryDocument<D>[] {
   return documents.map((doc) => {
     const uploader = doc.uploaded_by ? uploaderName(doc.uploaded_by) : null;
     const text = searchText(doc, uploader);
@@ -63,8 +79,19 @@ export function toLibraryDocuments(
   });
 }
 
+/**
+ * "Uploaded Sep 26 by Ryan Castellano", dropping whichever half is unknown:
+ * the lead of each app's row meta line.
+ */
+export function uploadedLine(day: string | null, uploader: string | null): string | null {
+  if (!day && !uploader) return null;
+  return ["Uploaded", day, uploader ? `by ${uploader}` : null]
+    .filter(Boolean)
+    .join(" ");
+}
+
 /** Everything a member might type to find a document. */
-export function searchText(doc: ChapterDocument, uploader: string | null): string {
+export function searchText(doc: LibrarySourceDocument, uploader: string | null): string {
   return [doc.title, doc.description, uploader, doc.folder, doc.document_type]
     .filter((part) => part !== null && part !== undefined && part !== "")
     .join(" ");
@@ -171,13 +198,13 @@ const COMPARE: Record<DocumentSort, (a: LibraryDocument, b: LibraryDocument) => 
  * or not there is a query: the member picked it, so a match's rank doesn't
  * override it. Search forgives typos the way backwork's does.
  */
-export function queryDocuments(
-  rows: readonly LibraryDocument[],
+export function queryDocuments<D extends LibrarySourceDocument>(
+  rows: readonly LibraryDocument<D>[],
   query: string,
   filters: DocumentFilters,
   sort: DocumentSort,
   dates: DateContext,
-): LibraryDocument[] {
+): LibraryDocument<D>[] {
   const date = isActiveDateFilter(filters.date, dates.semesterSince !== undefined)
     ? filters.date
     : null;
@@ -204,7 +231,7 @@ export function queryDocuments(
 }
 
 /** The Uploaded by chip's choices: only people who have uploaded something. */
-export function uploaderOptions(rows: readonly LibraryDocument[]): FilterOption[] {
+export function uploaderOptions(rows: readonly LibraryDocument[]): UploaderOption[] {
   const people = new Map<string, string>();
   for (const row of rows) {
     if (row.doc.uploaded_by && row.uploader && !people.has(row.doc.uploaded_by)) {

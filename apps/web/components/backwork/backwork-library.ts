@@ -7,7 +7,7 @@ import {
   normalizeWords,
   withNumeralVariants,
   type FuzzyResult,
-} from "@/lib/search/fuzzy-match";
+} from "@repo/hooks/fuzzy-match";
 
 /**
  * The `/backwork` library's search, filters and ordering, kept free of React

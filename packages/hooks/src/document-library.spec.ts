@@ -9,7 +9,21 @@ import {
   toLibraryDocuments,
   uploaderOptions,
 } from "./document-library";
-import type { ChapterDocument } from "./document-types";
+
+type ChapterDocument = {
+  id: string;
+  chapter_id: string;
+  title: string;
+  description: string | null;
+  folder: string | null;
+  storage_path: string;
+  uploaded_by: string;
+  created_at: string;
+  content_type: string | null;
+  byte_size: number | null;
+  document_type: string | null;
+  effective_date: string | null;
+};
 
 function doc(id: string, title: string, uploaded_by: string, created_at: string, extra: Partial<ChapterDocument> = {}): ChapterDocument {
   return {

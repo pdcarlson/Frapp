@@ -10,7 +10,9 @@
     "./field-reveal": "./src/field-reveal.ts",
     "./error-copy": "./src/error-copy.ts",
     "./open-chat-transport": "./src/open-chat-transport.ts",
-    "./mention-chips": "./src/mention-chips.ts"
+    "./mention-chips": "./src/mention-chips.ts",
+    "./fuzzy-match": "./src/fuzzy-match.ts",
+    "./document-library": "./src/document-library.ts"
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",
