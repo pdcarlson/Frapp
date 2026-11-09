@@ -18,7 +18,9 @@
  * manager's lifecycle, so its remount on every visit to `/chat` cannot tear a
  * shell-owned manager down (`realtime-resilience` rule 1). Threads still
  * subscribe and release their own channels (`use-chat-channel.ts`), so leaving
- * `/chat` releases the open thread's topic and leaves only the inbox joined.
+ * `/chat` releases the open thread's topic. What `configure()` joins stays up
+ * on every page: the inbox, and also the global reactions topic and the
+ * typing tick, which nothing off `/chat` reads (#3899).
  */
 
 import { useEffect, useMemo } from "react";

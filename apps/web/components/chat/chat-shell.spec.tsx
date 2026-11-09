@@ -3121,7 +3121,9 @@ describe("ChatShell narrow viewports (#2142)", () => {
       cancelable: true,
     });
     handled.preventDefault();
-    document.body.dispatchEvent(handled);
+    act(() => {
+      document.body.dispatchEvent(handled);
+    });
     expect(columns().thread.className).not.toContain("max-lg:hidden");
   });
 

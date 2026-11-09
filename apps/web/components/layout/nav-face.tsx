@@ -68,9 +68,9 @@ export function useIsDesktopShell(): boolean {
 
 /**
  * The back arrow beside the Channels heading, named "Back to menu"
- * (`spec/ui/design-system/components.md` § 7). One component because two
- * places draw it, chat's channels header and the column's own placeholder, and
- * the column moves focus to it by `data-nav-back`.
+ * (`spec/ui/design-system/components.md` § 7). Drawn only inside
+ * `NavChannelsTitle`, which chat's channels header and the column's own
+ * placeholder both use; the column moves focus to it by `data-nav-back`.
  *
  * 40px, and its hit area is the whole title, the arrow and the word Channels
  * (#3824, Paul 2026-11-09: "a tiny back arrow, which is the only way out"). The

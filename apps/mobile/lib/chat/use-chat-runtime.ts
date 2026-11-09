@@ -2,8 +2,9 @@
  * Binds `@repo/chat-core` to React Native and hands screens a ready
  * `ChatActionContext`.
  *
- * Web does this in a `ChatProvider` mounted in its tree
- * (`apps/web/lib/chat/chat-provider.tsx`). Mobile cannot: `app/_layout.tsx` is
+ * Web binds the manager from its dashboard shell
+ * (`apps/web/lib/chat/use-chat-realtime-binding.ts`, called by
+ * `DashboardShell`). Mobile cannot put it in a layout: `app/_layout.tsx` is
  * one of the eight frozen hotspot files (`spec/ui/mobile/navigation.md`
  * § Hotspot freeze), and a screen slice only adds files. So the wiring is a
  * hook the chat screens call instead of a provider above them.
