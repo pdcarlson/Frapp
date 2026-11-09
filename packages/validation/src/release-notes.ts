@@ -1,15 +1,21 @@
 /**
  * What's new, in members' words: the one list behind mobile Settings → What's
- * new, web's account menu → What's new, and the block Paul pastes to beta
- * testers (`npm run release-notes`).
+ * new, web's account menu → What's new, the public changelog at
+ * frapp.live/changelog (`apps/landing/app/changelog/page.tsx`), and the block
+ * Paul pastes to beta testers (`npm run release-notes`).
+ *
+ * The changelog is public and indexed, so every line is read by people who
+ * have never opened the app, and the landing site's copy rules bind it too:
+ * no em dashes, and nothing claimed that hasn't shipped.
  *
  * Newest first. Each entry is one batch of changes that reached members on
  * `date` (a store build or an over-the-air update; members never see which).
  *
  * How to write a line: say what a member can now do or will notice, the way
  * you'd tell a friend. No feature codes, issue numbers, version strings,
- * screen ids, or emojis. A bit vague is fine; wrong is not, so only list what
- * is merged and shipped. Five to eight lines an entry, each one sentence.
+ * screen ids, emojis, or em dashes. A bit vague is fine; wrong is not, so
+ * only list what is merged and shipped. Five to eight lines an entry, each one
+ * sentence.
  */
 export type ReleaseNote = {
   /** The day it reached members, as `YYYY-MM-DD`. */

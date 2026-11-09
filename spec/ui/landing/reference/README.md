@@ -7,7 +7,7 @@
 > § Precedence, rule 1). Drift between them and the page,
 > [`apps/landing/app/page.tsx`](../../../../apps/landing/app/page.tsx) and the sections and frames it
 > composes from [`apps/landing/components/home/`](../../../../apps/landing/components/home/), is a filable bug now rather
-> than an expected gap, with six standing exceptions, none of them drift:
+> than an expected gap, with seven standing exceptions, none of them drift:
 >
 > - the two decisions below that supersede what the boards draw (D8 and D9);
 > - the signature moment, which is **cut** from the shipped page until brand sign-off clears
@@ -27,6 +27,12 @@
 >   ([`components.md` § Chat messages](../../design-system/components.md#chat-messages-compact-layout),
 >   #2873), so the shipped frame draws that layout instead; why is in
 >   [`../README.md`](../README.md) (#2893).
+> - the About and Changelog links. The boards draw a Product / Pricing nav and an eight-link
+>   footer; the owner added the `/about` and `/changelog` pages on 2026-11-09
+>   ([#3817](https://github.com/pdcarlson/Frapp/issues/3817)), so the shipped nav carries About and
+>   Changelog after Pricing, and the footer carries them after Sign in, ten links in all. On those
+>   two pages the Product and Pricing links point at `/#product` and `/#pricing`; on the homepage
+>   they stay bare anchors, as drawn.
 
 ## What this is
 
