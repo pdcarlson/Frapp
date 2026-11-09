@@ -36,12 +36,15 @@ function DownloadButton({ id, title }: { id: string; title: string }) {
 
 export function DocumentRow({
   doc,
+  uploader,
   gate,
   deleting,
   onOpen,
   onDelete,
 }: {
   doc: ChapterDocument;
+  /** Who uploaded it, when the roster can name them (#3852). */
+  uploader: string | null;
   gate: SubscriptionGate;
   deleting: boolean;
   /** Opens the document in the viewer (#3849). */
@@ -104,7 +107,7 @@ export function DocumentRow({
         */}
           <span className="block truncate text-caption text-muted">
             {[
-              labelled("Uploaded", formatDay(doc.created_at)),
+              uploadedLine(formatDay(doc.created_at), uploader),
               doc.folder,
               doc.document_type,
               labelled("Effective", formatDay(doc.effective_date)),
@@ -135,4 +138,12 @@ export function DocumentRow({
       </div>
     </li>
   );
+}
+
+/** "Uploaded Sep 26 by Ryan Castellano", dropping whichever half is unknown. */
+function uploadedLine(day: string | null, uploader: string | null): string | null {
+  if (!day && !uploader) return null;
+  return ["Uploaded", day, uploader ? `by ${uploader}` : null]
+    .filter(Boolean)
+    .join(" ");
 }

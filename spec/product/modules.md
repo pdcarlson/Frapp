@@ -161,7 +161,7 @@
 - "Chapter Files" storage area for organizational documents (bylaws, constitutions, agendas, etc.).
 - Separate from Backwork (no academic metadata).
 - Optional flat folder structure (one level deep). Folders are first-class records: officers create, rename, reorder and delete them from the dashboard, and naming a new folder during upload still registers it. Renaming re-files the documents in it; deleting moves them to the root rather than deleting them.
-- Documents are searchable by title, combinable with the folder filter.
+- Documents are searchable and filterable: on web by title, description, uploader, folder and type, with uploader and date filters and four sort orders; on mobile by title. See [`chapter-docs.md` § Search](../behavior/chapter-docs.md#search).
 - Reads are gated on `members:view`, which every seeded role holds or clears via `*`. Upload requires `chapter_docs:upload`; management requires `chapter_docs:manage`.
 
 ## Semester Rollover
