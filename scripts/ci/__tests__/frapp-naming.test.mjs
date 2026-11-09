@@ -190,6 +190,8 @@ export const COPY_WALKS = [
       "apps/landing/app/terms/page.tsx",
       "apps/landing/app/privacy/page.tsx",
       "apps/landing/app/ferpa/page.tsx",
+      "apps/landing/app/about/page.tsx",
+      "apps/landing/app/changelog/page.tsx",
     ],
   },
 ];
@@ -334,6 +336,8 @@ export const LANDING_ROUTE_TITLES = {
   "apps/landing/app/terms/page.tsx": "Terms of Service · Frapp",
   "apps/landing/app/privacy/page.tsx": "Privacy Policy · Frapp",
   "apps/landing/app/ferpa/page.tsx": "FERPA Notice · Frapp",
+  "apps/landing/app/about/page.tsx": "About · Frapp",
+  "apps/landing/app/changelog/page.tsx": "Changelog · Frapp",
 };
 
 /** Routes with no `<head>` of their own: the homepage owns the root one, and /join only redirects. */
@@ -372,12 +376,12 @@ export const COLLECTED = [
     min: 18,
   },
   {
-    // Root + OG + Twitter on the layout, and one per legal route.
+    // Root + OG + Twitter on the layout, and one per route below the homepage.
     what: "landing metadata title",
     walk: "landing",
     collect: (source) => landingMetadataTitles(source).map((value) => ({ key: "title", value })),
     wrong: (value) => !/Frapp/.test(value) || /Signet/.test(value),
-    min: 7,
+    min: 9,
   },
 ];
 
@@ -921,7 +925,7 @@ test("every Settings recovery path names expo.name", () => {
 test("the table keeps its floors and roots", () => {
   const floor = (what) => COLLECTED.find((row) => row.what === what).min;
   assert.equal(floor("web metadata title"), 18);
-  assert.equal(floor("landing metadata title"), 7);
+  assert.equal(floor("landing metadata title"), 9);
   const pinned = (file) => PINS.filter((pin) => pin.file === file).flatMap((pin) => pin.has ?? []);
   assert.equal(pinned("apps/web/components/auth/auth-frame.tsx").length, 1);
   assert.equal(pinned("apps/landing/app/layout.tsx")[0].exactly, 3);
@@ -1014,7 +1018,7 @@ test("collectedProblems enforces the floor", () => {
   const rel = "apps/landing/app/privacy/page.tsx";
   assert.deepEqual(collectedProblems(row, [{ rel, source: "export const metadata = {\n  title: 'Signet — Privacy',\n};\n" }]), [
     `${rel}:title Signet — Privacy`,
-    "landing metadata title: found 1, floor 7",
+    "landing metadata title: found 1, floor 9",
   ]);
 });
 

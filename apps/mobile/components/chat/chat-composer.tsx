@@ -13,6 +13,10 @@ import {
 import { MemberAvatar } from "@/components/member-avatar";
 import type { StagedPhoto } from "@/lib/chat/use-chat-channel";
 import {
+  attachChoices,
+  presentAttachChoices,
+} from "@/lib/chat/attach-choices";
+import {
   activeMentionQuery,
   mentionPickerEntries,
   type MentionCandidate,
@@ -122,6 +126,13 @@ export interface ChatComposerProps {
   photos?: StagedPhoto[];
   /** Omit to render no attach affordance at all, rather than an inert one. */
   onAttach?: () => void;
+  /**
+   * Opens the New poll sheet (#3701). Set only for a member who may create a
+   * poll here, and not while editing or replying. With it, the + offers Photo
+   * and Poll (`lib/chat/attach-choices.ts`), and stays live while photos
+   * can't be attached (the tray is full, or offline), because a poll still can.
+   */
+  onCreatePoll?: () => void;
   onRemovePhoto?: (key: string) => void;
   onRetryPhoto?: (key: string) => void;
   /** The system photo sheet is up; the attach control shows a spinner and locks. */
@@ -175,6 +186,7 @@ export function ChatComposer({
   hintTone = "muted",
   photos = [],
   onAttach,
+  onCreatePoll,
   onRemovePhoto,
   onRetryPhoto,
   isPicking = false,
@@ -211,8 +223,19 @@ export function ChatComposer({
   // button greyed out and no way to explain why.
   const isSendable = canSend && (value.trim().length > 0 || photos.length > 0);
 
-  const canAttach =
+  const canAttachPhoto =
     !!onAttach && !isPicking && !attachFull && !attachDisabledReason && canSend;
+  // A poll goes through the outbox like a message, so offline doesn't stop it;
+  // only a photo sheet that is up does, which owns the control while it is.
+  const canStartPoll = !!onCreatePoll && !isPicking && canSend;
+  const canAttach = canAttachPhoto || canStartPoll;
+  const openAttach = () =>
+    presentAttachChoices(
+      attachChoices({
+        photo: canAttachPhoto ? onAttach : undefined,
+        poll: canStartPoll ? onCreatePoll : undefined,
+      }),
+    );
 
   return (
     <View style={styles.wrapper}>
@@ -328,13 +351,13 @@ export function ChatComposer({
       ) : null}
 
       <View style={styles.row}>
-        {onAttach ? (
+        {onAttach || onCreatePoll ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Attach photo"
+            accessibilityLabel={onCreatePoll ? "Add photo or poll" : "Attach photo"}
             accessibilityState={{ disabled: !canAttach, busy: isPicking }}
             disabled={!canAttach}
-            onPress={onAttach}
+            onPress={openAttach}
             style={({ pressed }) => [
               styles.attach,
               !canAttach ? styles.attachDisabled : null,

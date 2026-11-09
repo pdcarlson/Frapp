@@ -19,7 +19,12 @@ import {
   useRoles,
   useViewerUserId,
 } from "@repo/hooks";
-import { can } from "@repo/validation";
+import {
+  can,
+  resolveCustomRoleNames,
+  resolveRoleChips,
+  type MemberRoleChip,
+} from "@repo/validation";
 import { MemberAvatar } from "@/components/member-avatar";
 import {
   confirmBlockMember,
@@ -41,12 +46,7 @@ import {
   useSheetClose,
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
-import {
-  resolveCustomRoleNames,
-  resolveRoleChips,
-  selectMemberDetail,
-  type MemberRoleChip,
-} from "@/lib/directory/member-detail";
+import { selectMemberDetail } from "@/lib/directory/member-detail";
 import { parseRoleOptions } from "@/lib/directory/role-editor";
 import {
   MemberRolesSheet,

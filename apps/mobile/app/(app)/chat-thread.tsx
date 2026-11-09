@@ -56,6 +56,9 @@ import { can, draftWithMention } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { BlockListNotice } from "@/components/chat/block-list-notice";
 import { ChatComposer } from "@/components/chat/chat-composer";
+import { NewPollSheet } from "@/components/chat/new-poll-sheet";
+import { canCreatePoll } from "@/lib/chat/new-poll";
+import { usePollsGate } from "@/lib/chat/use-polls-gate";
 import {
   ImageViewer,
   ImageViewerContext,
@@ -231,6 +234,7 @@ export default function ChatThreadScreen() {
     canSend,
     send,
     sendInFlight,
+    sendPoll,
     edit,
     remove,
     react,
@@ -331,7 +335,16 @@ export default function ChatThreadScreen() {
   // Delete on someone else's message (#2775). The server resolves the
   // permission in the message's own chapter; this only decides whether the
   // row is likely to succeed, as web's `canManageChannel` does.
-  const canManageChannel = can("channels:manage", usePermissionList());
+  const permissionList = usePermissionList();
+  const canManageChannel = can("channels:manage", permissionList);
+  // The composer's + offers a poll to a member whose role creates them, in a
+  // chapter with Polls on, in a channel they can post in (#3701). The Polls
+  // read is the poll card's own (`usePollsGate`), failing closed while the
+  // chapter is unread or unreadable.
+  const { gate: pollsGate } = usePollsGate();
+  const pollsAllowed =
+    channelCanPost &&
+    canCreatePoll({ permissions: permissionList, pollsGate });
   const canReplyHere = channelAllowsReplies({
     can_post: channelCanPost,
     is_read_only: channelIsReadOnly,
@@ -730,6 +743,20 @@ export default function ChatThreadScreen() {
   // the directory's sheet, so a profile reads the same from every door. It
   // closes on blur for the same reason the member list does.
   const profileSheetRef = useRef<BottomSheetModal>(null);
+  // The New poll sheet (#3701). Mounted per channel (keyed below), so a draft
+  // kept by a swipe never posts into another channel, and closed on blur like
+  // the member list.
+  const pollSheetRef = useRef<BottomSheetModal>(null);
+  const openPollSheet = useCallback(() => {
+    Keyboard.dismiss();
+    pollSheetRef.current?.present();
+  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      if (!channelId) return;
+      return () => pollSheetRef.current?.dismiss();
+    }, [channelId]),
+  );
   const [profileTarget, setProfileTarget] = useState<{ userId: string } | null>(
     null,
   );
@@ -1318,6 +1345,11 @@ export default function ChatThreadScreen() {
             // control stand aside until it is saved or cancelled.
             photos={staging.isEditing ? undefined : photos}
             onAttach={staging.isEditing ? undefined : handleAttach}
+            // A poll is its own card, so it can't ride a reply or an edit:
+            // the + offers it only with nothing staged.
+            onCreatePoll={
+              pollsAllowed && !staging.context ? openPollSheet : undefined
+            }
             attachFull={photoRoom < 1}
             onRemovePhoto={removePhoto}
             onRetryPhoto={retryPhoto}
@@ -1370,6 +1402,11 @@ export default function ChatThreadScreen() {
         // that the member backed out (the sheet's stale-DM guard).
         onDismiss={() => setProfileTarget(null)}
         openChannelId={channelId ?? null}
+      />
+      <NewPollSheet
+        key={channelId ?? "none"}
+        ref={pollSheetRef}
+        onPost={sendPoll}
       />
       <MessageActionsSheet
         ref={actionsSheetRef}

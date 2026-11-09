@@ -1,7 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import type { SlashCommand } from "./integrations";
-import { dispatchSlashCommand, retryPointsDispatch } from "./dispatch";
+import {
+  dispatchSlashCommand,
+  retryPointsDispatch,
+  trackEventCard,
+} from "./dispatch";
 import { RATE_LIMITED_COPY, type ChatActionContext } from "./chat-client";
 import type { KeyValueStore, OutboxStore } from "./adapters";
 import { chatMessagesKey, type ChannelCache, type ChatMessage } from "./types";
@@ -1321,5 +1325,58 @@ describe("dispatchRush — vote and bid", () => {
       "/v1/rush/candidates/{id}/bid",
       expect.objectContaining({ params: { path: { id: "cand-1" } } }),
     );
+  });
+});
+
+/**
+ * #3773 — the web event form's card bookkeeping in chat. `dispatchEvent` uses
+ * the same helper, so these also pin the one-liner's placeholder and row.
+ */
+describe("trackEventCard", () => {
+  function rows(ctx: ChatActionContext) {
+    return selectMessages(
+      ctx.queryClient.getQueryData<ChannelCache>(chatMessagesKey(CHANNEL_ID)),
+    );
+  }
+
+  it("puts a loading placeholder under the id the create sends", () => {
+    const ctx = buildCtx(vi.fn());
+    const card = trackEventCard(ctx, CHANNEL_ID, "Formal");
+
+    expect(rows(ctx)).toEqual([
+      expect.objectContaining({
+        kind: "loading",
+        client_message_id: card.clientMessageId,
+        content: 'Creating event "Formal"…',
+      }),
+    ]);
+  });
+
+  it("drops the placeholder when the create is refused", () => {
+    const ctx = buildCtx(vi.fn());
+    trackEventCard(ctx, CHANNEL_ID, "Formal").failed();
+
+    expect(placeholderCount(ctx)).toBe(0);
+    expect(rows(ctx)).toEqual([]);
+  });
+
+  it("keeps a durable recorded row, which survives a reload, when the card didn't post", () => {
+    const ctx = buildCtx(vi.fn());
+    const card = trackEventCard(ctx, CHANNEL_ID, "Formal");
+    card.lost();
+
+    expect(rows(ctx)).toEqual([
+      expect.objectContaining({
+        client_message_id: card.clientMessageId,
+        _status: "recorded",
+      }),
+    ]);
+    expect(readNotices(CHANNEL_ID, "user-1", ctx.kv)).toEqual([
+      expect.objectContaining({
+        status: "recorded",
+        content: 'Creating event "Formal"…',
+        note: expect.stringMatching(/Event created.*didn't post/),
+      }),
+    ]);
   });
 });

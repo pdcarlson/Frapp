@@ -111,7 +111,7 @@ describe("sign-in and sign-up are one page with different fields", () => {
     // visitor straight back here. This form, pointed at `/join`.
     expect(
       screen.getByRole("link", { name: "Join your chapter" }).getAttribute("href"),
-    ).toBe("/sign-in?redirectTo=%2Fjoin");
+    ).toBe("/sign-in?redirectTo=%2Fjoin%3Ffrom%3Dsign-in");
   });
 
   it("offers a new account the way to join, keeping the invite (#3776)", () => {

@@ -17,6 +17,8 @@ import {
 import {
   attendanceFieldsOf,
   can,
+  canAll,
+  EVENT_CREATE_PERMISSIONS,
   eventDefaultAttendance,
   eventSetsRolesApart,
 } from "@repo/validation";
@@ -133,9 +135,13 @@ export function EventsPage() {
     "events:update",
     permissionsPayload?.permissions,
   );
-  // `POST /v1/events` is `events:create`. Without it a calendar day is just a
-  // date, not a button that opens a form the server will refuse.
-  const canCreateEvents = can("events:create", permissionsPayload?.permissions);
+  // `POST /v1/events` needs `events:create` and the controller's class-level
+  // `members:view`. Without both a calendar day is just a date, not a button
+  // that opens a form the server will refuse.
+  const canCreateEvents = canAll(
+    EVENT_CREATE_PERMISSIONS,
+    permissionsPayload?.permissions,
+  );
   const { confirm, confirmDialog } = useConfirmDialog();
 
   // Live updates: any admin creating or editing an event in another tab
@@ -484,7 +490,7 @@ export function EventsPage() {
             Calendar
           </TabsTrigger>
         </TabsList>
-        <Can permission="events:create">
+        <Can allOf={EVENT_CREATE_PERMISSIONS}>
           <Button
             size="toolbar"
             className="gap-2"

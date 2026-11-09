@@ -119,3 +119,14 @@ export const SERVICE_DESCRIPTION_MAX_LENGTH = 2_000;
 /** Options on one poll, and the fewest a poll may have. */
 export const POLL_OPTIONS_MAX = 10;
 export const POLL_OPTIONS_MIN = 2;
+
+/**
+ * A poll's question and each option's label, as `CreatePollDto` bounds them
+ * on the REST route (`POST /v1/channels/:id/polls`). Mobile's New poll sheet
+ * stops its fields at the same lengths. That is a client-side cap only: a
+ * phone poll posts a `kind: 'poll'` card through the chat send route, which
+ * bounds `content` (`CHAT_MESSAGE_CONTENT_MAX_LENGTH`) but not the card's
+ * option labels, and web's `/poll` applies no length limit.
+ */
+export const POLL_QUESTION_MAX_LENGTH = 500;
+export const POLL_OPTION_MAX_LENGTH = 200;

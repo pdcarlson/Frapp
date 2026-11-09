@@ -13,6 +13,7 @@ import {
   useReviewServiceEntry,
   useMyPermissions,
   useServiceEntries,
+  useServicePointsRate,
   putSignedUpload,
 } from "@repo/hooks";
 import { can } from "@repo/validation";
@@ -74,6 +75,7 @@ import {
   localIsoDate,
 } from "@repo/formatting";
 import { ServicePageSkeleton } from "@/components/service/service-skeleton";
+import { approvePointsPreview } from "@/components/service/service-points-preview";
 
 type ServiceEntry = {
   id: string;
@@ -192,6 +194,16 @@ export function ServiceHoursPage() {
   const logDialog = useGatedDialog(gate);
   const { data: permissionsPayload } = useMyPermissions();
   const canLog = can("service:log", permissionsPayload?.permissions ?? []);
+  // The rate Approve will apply, for each queue row's points preview (#3862).
+  // Read from its own `service:approve` route, not the chapter config, which
+  // needs `chapter-config:view` that no stock approver but the President holds.
+  // Unknown (loading, failed) leaves the preview off rather than guessing.
+  const canApprove = can(
+    "service:approve",
+    permissionsPayload?.permissions ?? [],
+  );
+  const pointsRate = useServicePointsRate({ enabled: canApprove });
+  const minutesPerPoint = pointsRate.data?.minutes_per_point;
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [draft, setDraft] = useState({
     date: localIsoDate(new Date()),
@@ -629,6 +641,10 @@ export function ServiceHoursPage() {
                 const showApproveReason =
                   cannotApprove && gate.state.allowed && !gate.isPending;
                 const approveReasonId = `svc-approve-reason-${entry.id}`;
+                const pointsPreview = approvePointsPreview(
+                  entry.duration_minutes,
+                  minutesPerPoint,
+                );
                 const approveBlockedReason = isOwnEntry
                   ? "You can't approve your own hours. Another admin has to review them."
                   : viewerLoading
@@ -647,6 +663,11 @@ export function ServiceHoursPage() {
                       <p className="mt-0.5 text-sm text-muted-foreground">
                         {entry.description}
                       </p>
+                      {pointsPreview ? (
+                        <p className="mt-0.5 text-caption text-muted-foreground">
+                          {pointsPreview}
+                        </p>
+                      ) : null}
                       {/* Deliberately ungated: the signed link comes from
                             `GET /v1/service-entries/:id/proof-url`, and
                             `enforceSubscription` returns early for GET — a
