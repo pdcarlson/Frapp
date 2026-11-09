@@ -248,6 +248,8 @@ describe('UpdateUserSettingsDto — member status (#3845)', () => {
       expect(await failingProps({ status })).not.toContain('status');
     }
     expect(await failingProps({ status: 'busy' })).toContain('status');
+    // `@IsOptional` would let null through as a silent no-op.
+    expect(await failingProps({ status: null })).toContain('status');
   });
 
   it('takes end times only as an instant with an explicit offset', async () => {
@@ -256,6 +258,9 @@ describe('UpdateUserSettingsDto — member status (#3845)', () => {
         await failingProps({ [field]: '2027-11-09T10:00:00.000Z' }),
       ).not.toContain(field);
       expect(await failingProps({ [field]: null })).not.toContain(field);
+      // Blank reads as null, like the other nullable settings fields, so it
+      // never fails the payload.
+      expect(await failingProps({ [field]: '  ' })).not.toContain(field);
       // Shapes `@IsISO8601` lets through that Postgres refuses (a 500) or
       // reads in a different zone than Node does.
       for (const bad of ['2027', '2027-11', '2027-11-09', '2027-11-09T10:00']) {

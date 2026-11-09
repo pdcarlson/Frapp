@@ -3988,14 +3988,14 @@ export interface components {
             status?: "online" | "idle" | "dnd" | "invisible";
             /**
              * Format: date-time
-             * @description When `status` reverts to `online`, as an ISO 8601 instant in the future. Accepted only together with `status`. Null or absent: until the member changes it.
+             * @description When `status` reverts to `online`, as an ISO 8601 instant in the future. Accepted only together with `status`; null, blank or absent means no end time (and alone is ignored).
              */
             status_expires_at?: string | null;
             /** @description One short custom status line (at most 80 characters, no line breaks). Trimmed; null or an empty string clears it, and its end time with it. Sending it replaces `custom_status_expires_at` with the value sent alongside it. */
             custom_status?: string | null;
             /**
              * Format: date-time
-             * @description When the custom status line clears, as an ISO 8601 instant in the future. Accepted only together with `custom_status`. Null or absent: until the member clears it.
+             * @description When the custom status line clears, as an ISO 8601 instant in the future. Accepted only together with `custom_status`; null, blank or absent means no end time (and alone is ignored).
              */
             custom_status_expires_at?: string | null;
         };

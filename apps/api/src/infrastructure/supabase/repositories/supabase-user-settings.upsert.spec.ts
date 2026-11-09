@@ -2,8 +2,8 @@ import { SupabaseUserSettingsRepository } from './supabase-user-settings.reposit
 import type { FrappSupabaseClient } from '../database.types';
 
 /**
- * What `upsert` sends to `user_settings` (#3845). The status columns go out
- * only when the caller names them: PostgREST's upsert updates only the columns
+ * What `upsert` sends to `user_settings` (#3845, #3924). A column goes out
+ * only when the caller names it: PostgREST's upsert updates only the columns
  * in the payload, so leaving them out is what keeps a status another device
  * set while this save was in flight.
  *
@@ -26,6 +26,14 @@ function harness() {
 }
 
 describe('SupabaseUserSettingsRepository.upsert', () => {
+  it('writes a null it is given, as a clear', async () => {
+    const { repo, written } = harness();
+
+    await repo.upsert({ user_id: 'u-1', quiet_hours_start: null });
+
+    expect(written()).toMatchObject({ quiet_hours_start: null });
+  });
+
   it('writes the status columns it is given', async () => {
     const { repo, written } = harness();
 
@@ -46,7 +54,7 @@ describe('SupabaseUserSettingsRepository.upsert', () => {
     });
   });
 
-  it('leaves out the status columns it is not given', async () => {
+  it('leaves out every column it is not given', async () => {
     const { repo, written } = harness();
 
     await repo.upsert({ user_id: 'u-1', theme: 'dark' });
@@ -54,6 +62,9 @@ describe('SupabaseUserSettingsRepository.upsert', () => {
     const row = written();
     expect(row).toMatchObject({ user_id: 'u-1', theme: 'dark' });
     for (const key of [
+      'quiet_hours_start',
+      'quiet_hours_end',
+      'quiet_hours_tz',
       'status',
       'status_expires_at',
       'custom_status',
