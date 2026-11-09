@@ -17,7 +17,7 @@ import {
   SortChip,
 } from "@/components/documents/document-filters";
 import {
-  DOCUMENT_LIST_CAP,
+  DOCUMENT_CAP_NOTICE,
   type DocumentFilters,
   type DocumentSort,
   type LibraryDocument,
@@ -178,8 +178,7 @@ export function DocumentList({
       */}
       {truncated && (listState === "ready" || listState === "empty") ? (
         <p className="pt-2 text-caption text-muted-foreground" role="status">
-          Showing the newest {DOCUMENT_LIST_CAP.toLocaleString("en-US")} documents.
-          Search and filters look only at these for now.
+          {DOCUMENT_CAP_NOTICE}
         </p>
       ) : null}
       <div className="pt-2">

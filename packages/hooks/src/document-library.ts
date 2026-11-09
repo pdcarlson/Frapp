@@ -15,10 +15,27 @@ import { fuzzyMatchWords, normalizeWords } from "./fuzzy-match";
  */
 
 /**
- * PostgREST's `max_rows`, the same cap backwork's list meets
- * (`BACKWORK_LIST_CAP`); a response this long is treated as truncated.
+ * PostgREST's `max_rows` (`supabase/config.toml`): an unpaginated list read
+ * returns at most this many rows. Web's backwork list meets the same cap
+ * (`BACKWORK_LIST_CAP` is this constant).
  */
-export const DOCUMENT_LIST_CAP = 1000;
+export const POSTGREST_MAX_ROWS = 1000;
+
+/** A documents response this long is treated as truncated. */
+export const DOCUMENT_LIST_CAP = POSTGREST_MAX_ROWS;
+
+/** The capped-list status line, both apps (`writing.md` § Chapter Documents). */
+export const DOCUMENT_CAP_NOTICE = `Showing the newest ${DOCUMENT_LIST_CAP.toLocaleString(
+  "en-US",
+)} documents. Search and filters look only at these for now.`;
+
+/** The delete confirm, both apps: title, body and confirm label. */
+export function deleteDocumentTitle(title: string): string {
+  return `Delete ${title}?`;
+}
+export const DELETE_DOCUMENT_BODY =
+  "This removes the file from chapter storage immediately and cannot be undone.";
+export const DELETE_DOCUMENT_LABEL = "Delete document";
 
 /**
  * The fields of a `GET /v1/documents` row the library reads. Structural, so
@@ -166,6 +183,19 @@ export function isActiveDateFilter(
   if (filter === null) return false;
   if (filter.preset === "semester") return semesterKnown;
   return filter.preset !== "custom" || filter.from !== null || filter.to !== null;
+}
+
+/** Whether a search or a filter is narrowing the list. */
+export function isFiltering(
+  query: string,
+  filters: DocumentFilters,
+  semesterKnown: boolean,
+): boolean {
+  return (
+    query.trim() !== "" ||
+    filters.uploader !== null ||
+    isActiveDateFilter(filters.date, semesterKnown)
+  );
 }
 
 /** A short label for the date chip once a filter is on. */

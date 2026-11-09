@@ -1,15 +1,14 @@
 "use client";
 
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import {
-  displayNameOrNull,
   useDeleteDocument,
   useDocumentFolders,
+  useDocumentLibrary,
   useDocuments,
   useMemberDisplayNames,
   useMyPermissions,
   useSemesters,
-  type SemesterArchive,
 } from "@repo/hooks";
 import { can } from "@repo/validation";
 import { Can } from "@/components/shared/can";
@@ -21,13 +20,10 @@ import {
 } from "@/components/shared/subscription-gate";
 import { DocumentList } from "@/components/documents/document-list";
 import {
-  DOCUMENT_LIST_CAP,
+  DELETE_DOCUMENT_BODY,
+  DELETE_DOCUMENT_LABEL,
   NO_DOCUMENT_FILTERS,
-  isActiveDateFilter,
-  queryDocuments,
-  semesterSince,
-  toLibraryDocuments,
-  uploaderOptions,
+  deleteDocumentTitle,
   type DocumentFilters,
   type DocumentSort,
 } from "@repo/hooks/document-library";
@@ -90,52 +86,6 @@ function ChapterDocumentsPage() {
     () => asArray<ChapterDocument>(documentsQuery.data),
     [documentsQuery.data],
   );
-  /*
-    Uploaders by name, from the roster chat already caches. A name the roster
-    can't resolve (a member who has left, or a roster still loading) is left
-    off the row and out of the Uploaded by menu rather than shown as an id.
-  */
-  const { byId: namesById } = useMemberDisplayNames();
-  const library = useMemo(
-    () =>
-      toLibraryDocuments(documents, (userId) =>
-        displayNameOrNull(namesById[userId]),
-      ),
-    [documents, namesById],
-  );
-  // A picked uploader the roster no longer names (they left the chapter) is
-  // dropped rather than left filtering under a raw id nobody can see. One the
-  // roster still names stays picked even with no files left, and stays in the
-  // menu, so the list says nothing matches rather than quietly widening.
-  const pickedName =
-    filters.uploader === null ? null : displayNameOrNull(namesById[filters.uploader]);
-  const uploader = pickedName === null ? null : filters.uploader;
-  const uploaders = useMemo(() => {
-    const options = uploaderOptions(library);
-    if (uploader !== null && pickedName !== null && !options.some((o) => o.value === uploader)) {
-      options.push({ value: uploader, label: pickedName });
-    }
-    return options;
-  }, [library, uploader, pickedName]);
-  const effectiveFilters = useMemo(
-    () => ({ ...filters, uploader }),
-    [filters, uploader],
-  );
-  /*
-    "This semester" is the chapter's own: since its last rollover
-    (`semesterSince`). The clock ticks each minute so "Last 30 days" and the
-    semester line move while the page stays open.
-  */
-  const semestersQuery = useSemesters();
-  // `undefined` until the archives load: unknown, never "no rollover yet".
-  const since = useMemo(
-    () =>
-      semestersQuery.data === undefined
-        ? undefined
-        : semesterSince(asArray<SemesterArchive>(semestersQuery.data)),
-    [semestersQuery.data],
-  );
-  const [now, setNow] = useState(() => new Date());
 
   /*
     From `GET /v1/documents/folders`, not derived over `documents` (#791).
@@ -193,18 +143,6 @@ function ChapterDocumentsPage() {
   // from `visible`, so it steps through the list as shown and closes when the
   // row leaves it.
   const [openId, setOpenId] = useState<string | null>(null);
-  // The clock pauses while a document is open: a window moving past the
-  // open file would drop its row and close the viewer mid-read. It catches up
-  // as soon as the viewer closes.
-  useEffect(() => {
-    if (openId !== null) return;
-    const catchUp = setTimeout(() => setNow(new Date()), 0);
-    const timer = setInterval(() => setNow(new Date()), 60_000);
-    return () => {
-      clearTimeout(catchUp);
-      clearInterval(timer);
-    };
-  }, [openId]);
   const { data: permissionsPayload } = useMyPermissions();
   const canUpload = can(
     "chapter_docs:upload",
@@ -212,36 +150,31 @@ function ChapterDocumentsPage() {
   );
 
   /*
-    The folder tab, then the toolbar's search, filters and order
-    (`queryDocuments`). All of it is local, so switching folders or typing is
-    instant.
+    The folder tab, then the toolbar's search, filters and order, all local,
+    through the hook mobile's s12 runs too (#3938): uploader names and the
+    kept-pick rule, the semester window, and the clock. The clock pauses
+    while a document is open: a window moving past the open file would drop
+    its row and close the viewer mid-read. It catches up when it closes.
   */
-  const inFolder = useMemo(
-    () =>
-      activeFolder === null
-        ? library
-        : library.filter((row) =>
-            activeFolder === ""
-              ? !row.doc.folder
-              : row.doc.folder === activeFolder,
-          ),
-    [activeFolder, library],
-  );
-  const visible = useMemo(
-    () =>
-      queryDocuments(inFolder, deferredSearch, effectiveFilters, sort, {
-        now,
-        semesterSince: since,
-      }),
-    [inFolder, deferredSearch, effectiveFilters, sort, now, since],
-  );
+  const {
+    folderTotal,
+    visible,
+    uploaders,
+    filters: effectiveFilters,
+    semesterKnown,
+    filtering,
+    truncated,
+  } = useDocumentLibrary({
+    documents,
+    folder: activeFolder,
+    search: deferredSearch,
+    filters,
+    sort,
+    namesById: useMemberDisplayNames().byId,
+    semesters: useSemesters().data,
+    paused: openId !== null,
+  });
   const visibleDocs = useMemo(() => visible.map((row) => row.doc), [visible]);
-  const filtering =
-    !!deferredSearch ||
-    uploader !== null ||
-    isActiveDateFilter(filters.date, since !== undefined);
-  // A response at PostgREST's row cap may be missing older files.
-  const truncated = documents.length >= DOCUMENT_LIST_CAP;
 
   /*
     The upload panel's type chips: the common types plus every type this
@@ -293,10 +226,9 @@ function ChapterDocumentsPage() {
     // the `null`-vs-`""` distinction only matters where a `comment` is asked
     // for, as it is on the two Chapter Ops rejection flows.
     const confirmed = await confirm({
-      title: `Delete ${doc.title}?`,
-      description:
-        "This removes the file from chapter storage immediately and cannot be undone.",
-      confirmLabel: "Delete document",
+      title: deleteDocumentTitle(doc.title),
+      description: DELETE_DOCUMENT_BODY,
+      confirmLabel: DELETE_DOCUMENT_LABEL,
       tone: "destructive",
     });
     if (!confirmed) return;
@@ -444,14 +376,14 @@ function ChapterDocumentsPage() {
           loadError={documentsQuery.error}
           visible={visible}
           activeFolder={activeFolder}
-          total={inFolder.length}
+          total={folderTotal}
           truncated={truncated}
           filtering={filtering}
           search={search}
           setSearch={setSearch}
           deferredSearch={deferredSearch}
           filters={effectiveFilters}
-          semesterKnown={since !== undefined}
+          semesterKnown={semesterKnown}
           setFilters={setFilters}
           uploaders={uploaders}
           sort={sort}

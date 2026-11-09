@@ -467,13 +467,15 @@ export function ListRow({
       disabled={disabled || busy}
       onPress={onPress}
       onLongPress={onLongPress}
+      // Offered only while the row takes presses: `disabled` doesn't reach a
+      // custom action, so a busy row would otherwise take a second one.
       accessibilityActions={
-        onLongPress
+        onLongPress && !disabled && !busy
           ? [{ name: "longpress", label: longPressLabel ?? "More actions" }]
           : undefined
       }
       onAccessibilityAction={
-        onLongPress
+        onLongPress && !disabled && !busy
           ? (event) => {
               if (event.nativeEvent.actionName === "longpress") onLongPress();
             }

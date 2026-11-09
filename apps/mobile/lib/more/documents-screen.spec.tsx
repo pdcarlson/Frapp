@@ -23,6 +23,7 @@ let folderRows: unknown[] = [];
 let documentRows: unknown[] = [];
 let chapterId: string | null = "chapter-a";
 let semesterRows: unknown[] | undefined = [];
+const documentsArgs: unknown[][] = [];
 let names: Record<string, string> = {};
 const download = vi.fn();
 const deleteDocument = vi.fn(async () => undefined);
@@ -38,11 +39,14 @@ const LOADED = {
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   usePermissionList: () => permissions,
-  useDocuments: () => ({
-    ...LOADED,
-    data: documentRows,
-    refetch: refetchDocuments,
-  }),
+  useDocuments: (...args: unknown[]) => {
+    documentsArgs.push(args);
+    return {
+      ...LOADED,
+      data: documentRows,
+      refetch: refetchDocuments,
+    };
+  },
   useDocumentFolders: () => ({
     ...LOADED,
     data: folderRows,
@@ -106,6 +110,7 @@ afterEach(() => {
   documentRows = [];
   semesterRows = [];
   names = {};
+  documentsArgs.length = 0;
   deleteDocument.mockReset();
   chapterId = "chapter-a";
   present.mockReset();
@@ -575,6 +580,12 @@ describe("Documents search, filters, sort and delete, as web's (#3938)", () => {
       "Budget FY2026",
       "Chapter bylaws",
     ]);
+    // The whole library, unnarrowed on the wire: no `search`, no `folder`.
+    expect(documentsArgs.length).toBeGreaterThan(0);
+    expect(documentsArgs.every((args) => args.length === 0)).toBe(true);
+    act(() => byLabel(tree, "Search documents").props.onChangeText("budget"));
+    expect(documentsArgs.every((args) => args.length === 0)).toBe(true);
+    act(() => byLabel(tree, "Search documents").props.onChangeText(""));
     expect(screenText(tree)).toContain(
       "Uploaded Oct 1 by Ana Ruiz · Finance · Spreadsheet",
     );
@@ -685,7 +696,8 @@ describe("Documents search, filters, sort and delete, as web's (#3938)", () => {
     expect(deleteDocument).toHaveBeenCalledWith("d-1");
     expect(bylaws().props.busy).toBe(true);
     await act(async () => finish());
-    expect(bylaws().props.busy).toBe(false);
+    // Gone at once, not left pressable until the library re-reads.
+    expect(rowLabels(officer)).not.toContain("Chapter bylaws");
     alert.mockRestore();
   });
 

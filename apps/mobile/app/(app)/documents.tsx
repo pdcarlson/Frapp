@@ -3,26 +3,26 @@ import { AccessibilityInfo, Alert, StyleSheet, Text, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import * as WebBrowser from "expo-web-browser";
 import {
-  displayNameOrNull,
   useActiveChapterId,
   useDeleteDocument,
   useDocumentDownloadUrl,
   useDocumentFolders,
+  useDocumentLibrary,
   useDocuments,
   useMemberDisplayNames,
   usePermissionList,
   useSemesters,
 } from "@repo/hooks";
 import {
-  DOCUMENT_LIST_CAP,
+  DELETE_DOCUMENT_BODY,
+  DELETE_DOCUMENT_LABEL,
+  DOCUMENT_CAP_NOTICE,
   SORT_OPTIONS,
+  deleteDocumentTitle,
   isActiveDateFilter,
-  queryDocuments,
-  semesterSince,
-  toLibraryDocuments,
-  uploaderOptions,
   type DocumentSort,
 } from "@repo/hooks/document-library";
+import { errorCopy } from "@repo/hooks/error-copy";
 import { SignetTokens } from "@repo/theme/signet";
 import { can } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
@@ -47,7 +47,6 @@ import {
   selectDocuments,
   selectDownloadUrl,
 } from "@/lib/more/documents";
-import { records } from "@/lib/more/narrow";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -131,8 +130,8 @@ export default function DocumentsScreen() {
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [openFailed, setOpenFailed] = useState(false);
   // The upload the sheet closed on, drawn as the list's first row until the
-  // filed document takes its place (`UploadDocumentSheet` § "Upload closes
-  // the sheet at once").
+  // filed document arrives in the list's order (`UploadDocumentSheet` §
+  // "Upload closes the sheet at once").
   // Held with the chapter it was sent from, so a chapter switch (which mounts
   // a new sheet) doesn't show the last chapter's upload in this one's list.
   const [pendingFor, setPendingFor] = useState<{
@@ -171,12 +170,21 @@ export default function DocumentsScreen() {
   const [deletingIds, setDeletingIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
-  const [deleteFailed, setDeleteFailed] = useState<string | null>(null);
+  // Deleted here and gone from the list at once: `useDeleteDocument`'s
+  // invalidation re-reads the library without the mutation awaiting it, so
+  // the row would otherwise sit there, pressable, until the re-read lands.
+  const [removedIds, setRemovedIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  // Held with the chapter it failed in, as `pendingFor` is.
+  const [deleteFailure, setDeleteFailure] = useState<{
+    chapterId: string | null;
+    message: string;
+  } | null>(null);
   const canManage = can("chapter_docs:manage", usePermissionList());
 
   const foldersQuery = useDocumentFolders();
   const documentsQuery = useDocuments();
-  const semestersQuery = useSemesters();
   const openDocument = useDocumentDownloadUrl();
   const deleteDocument = useDeleteDocument();
   const refresh = useRefetchAll([foldersQuery, documentsQuery]);
@@ -186,78 +194,48 @@ export default function DocumentsScreen() {
     [foldersQuery.data],
   );
   const documents = useMemo(
-    () => selectDocuments(documentsQuery.data),
-    [documentsQuery.data],
-  );
-  // Uploaders by name, from the roster chat already caches, as web reads
-  // them. A name the roster can't resolve is left off the row and out of the
-  // Uploaded by chips rather than shown as an id.
-  const { byId: namesById } = useMemberDisplayNames();
-  const library = useMemo(
     () =>
-      toLibraryDocuments(documents, (userId) =>
-        displayNameOrNull(namesById[userId]),
+      selectDocuments(documentsQuery.data).filter(
+        (doc) => !removedIds.has(doc.id),
       ),
-    [documents, namesById],
-  );
-  // Web's rule: a picked uploader the roster no longer names is dropped; one
-  // it still names stays picked, and stays a chip, after their last file goes.
-  const pickedName =
-    pickedUploader === null
-      ? null
-      : displayNameOrNull(namesById[pickedUploader]);
-  const uploader = pickedName === null ? null : pickedUploader;
-  const uploaders = useMemo(() => {
-    const options = uploaderOptions(library);
-    if (
-      uploader !== null &&
-      pickedName !== null &&
-      !options.some((option) => option.value === uploader)
-    ) {
-      options.push({ value: uploader, label: pickedName });
-    }
-    return options;
-  }, [library, uploader, pickedName]);
-  // `undefined` until the archives load: unknown, never "no rollover yet",
-  // so "This semester" is offered only once it means something.
-  const since = useMemo(
-    () =>
-      semestersQuery.data === undefined
-        ? undefined
-        : semesterSince(
-            records(semestersQuery.data).map((row) => ({
-              end_date: typeof row.end_date === "string" ? row.end_date : "",
-              created_at:
-                typeof row.created_at === "string" ? row.created_at : undefined,
-            })),
-          ),
-    [semestersQuery.data],
+    [documentsQuery.data, removedIds],
   );
   const filters = useMemo(
     () => ({
-      uploader,
+      uploader: pickedUploader,
       date: datePreset === null ? null : { preset: datePreset },
     }),
-    [uploader, datePreset],
+    [pickedUploader, datePreset],
   );
-  const dateActive = isActiveDateFilter(filters.date, since !== undefined);
-  const visible = useMemo(() => {
-    const inFolder =
-      folder === null
-        ? library
-        : library.filter((row) => row.doc.folder === folder);
-    return queryDocuments(inFolder, deferredSearch, filters, sort, {
-      now: new Date(),
-      semesterSince: since,
-    });
-  }, [library, folder, deferredSearch, filters, sort, since]);
-  const filtering = !!deferredSearch || uploader !== null || dateActive;
+  // Web's own hook (#3938): uploader names and the kept-pick rule, the
+  // semester window, the ticking clock, the folder, then search, filters and
+  // order.
+  const {
+    visible,
+    uploaders,
+    filters: applied,
+    semesterKnown,
+    filtering,
+    truncated,
+  } = useDocumentLibrary({
+    documents,
+    folder,
+    search: deferredSearch,
+    filters,
+    sort,
+    namesById: useMemberDisplayNames().byId,
+    semesters: useSemesters().data,
+  });
+  const uploader = applied.uploader;
+  const dateActive = isActiveDateFilter(applied.date, semesterKnown);
   const filterCount =
     (uploader !== null ? 1 : 0) +
     (dateActive ? 1 : 0) +
     (sort !== "name" ? 1 : 0);
-  // A response at PostgREST's row cap may be missing older files.
-  const truncated = documents.length >= DOCUMENT_LIST_CAP;
+  const deleteFailed =
+    deleteFailure && deleteFailure.chapterId === (chapterId ?? null)
+      ? deleteFailure.message
+      : null;
 
   function clearFilters() {
     setSearch("");
@@ -315,12 +293,12 @@ export default function DocumentsScreen() {
 
   function confirmDelete(id: string, title: string) {
     Alert.alert(
-      `Delete ${title}?`,
-      "This removes the file from chapter storage immediately and cannot be undone.",
+      deleteDocumentTitle(title),
+      DELETE_DOCUMENT_BODY,
       [
         { text: "Cancel", style: "cancel" },
         {
-          text: "Delete document",
+          text: DELETE_DOCUMENT_LABEL,
           style: "destructive",
           onPress: () => void remove(id, title),
         },
@@ -330,13 +308,22 @@ export default function DocumentsScreen() {
   }
 
   async function remove(id: string, title: string) {
-    setDeleteFailed(null);
+    setDeleteFailure(null);
     setDeletingIds((current) => new Set(current).add(id));
     try {
       await deleteDocument.mutateAsync(id);
+      setRemovedIds((current) => new Set(current).add(id));
       AccessibilityInfo.announceForAccessibility(`“${title}” was deleted.`);
-    } catch {
-      setDeleteFailed(title);
+    } catch (caught) {
+      // A refusal that names its reason (a read-only chapter, a file already
+      // gone) says it; anything else is worth another try.
+      setDeleteFailure({
+        chapterId: chapterId ?? null,
+        message: errorCopy(
+          caught,
+          `Couldn't delete “${title}”. Try again in a moment.`,
+        ),
+      });
     } finally {
       setDeletingIds((current) => {
         const next = new Set(current);
@@ -346,9 +333,10 @@ export default function DocumentsScreen() {
     }
   }
 
-  // The upload in flight, or the one that failed, in the slot the document
-  // will take. Same two lines as a document row, so nothing moves when it is
-  // replaced; "Uploading…" is the quiet caption, no spinner. A failure says
+  // The upload in flight, or the one that failed, heading the list. Same two
+  // lines as a document row; when it files, the row goes and the document
+  // takes its place in the chosen order (Name A–Z by default, so usually not
+  // the top). "Uploading…" is the quiet caption, no spinner. A failure says
   // so in the destructive hue and reopens the sheet, which kept the draft.
   const pendingRow = pendingUpload ? (
     <ListRow
@@ -550,7 +538,7 @@ export default function DocumentsScreen() {
             chips={[
               { value: null, label: "Any time" },
               // Offered once the archives have loaded, as on web.
-              ...(since !== undefined
+              ...(semesterKnown
                 ? [{ value: "semester", label: "This semester" }]
                 : []),
               { value: "30d", label: "Last 30 days" },
@@ -566,13 +554,11 @@ export default function DocumentsScreen() {
       ) : null}
       {deleteFailed ? (
         <Text accessibilityLiveRegion="polite" style={styles.errorNote}>
-          {`Couldn't delete “${deleteFailed}”. Try again in a moment.`}
+          {deleteFailed}
         </Text>
       ) : null}
       {truncated && !documentsQuery.isError ? (
-        <InlineNote>
-          {`Showing the newest ${DOCUMENT_LIST_CAP.toLocaleString("en-US")} documents.`}
-        </InlineNote>
+        <InlineNote>{DOCUMENT_CAP_NOTICE}</InlineNote>
       ) : null}
 
       <SectionHeader>
