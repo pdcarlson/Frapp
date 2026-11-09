@@ -230,7 +230,8 @@ With no build listed it passes and says it compared against nothing. With one li
 a skipped green (ADR-24 I4): an invalid registry, a missing oasdiff, a SHA whose contract can't be read,
 or oasdiff failing to run each fail it. On a pull request it also fails when the registry lost or
 rewrote an entry the base branch has, because a bad conflict resolution otherwise passes as "fewer
-builds to compare against" (#3783). A break to a route no shipped binary calls (a web-only route)
+builds to compare against" (#3783). A base registry this branch's parse refuses (the PR tightens
+the parser) is compared as written, with a warning; only a base that isn't JSON at all skips it. A break to a route no shipped binary calls (a web-only route)
 is waived by a reviewed line in `apps/mobile/store/api-breaking-ignore.txt`, whose `#` comment lines
 the check strips before oasdiff reads it. When to record a SHA,
 when one may go, and the ignore format:

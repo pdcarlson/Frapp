@@ -1972,35 +1972,72 @@ test("isInFlight: only an up-to-date, same-repo, unconflicted PR can be in fligh
   assert.equal(isInFlight({ ...c, behindBy: 0, checks: { state: "failed" } }, NOW), false);
 });
 
-// ── A registry merge and the update slot (#3783 with #3599) ─────────────────
+// ── A registry merge, the update slot and the token alert (#3783) ────────────
 
-test("an auto-merge PR's registry merge waits while another PR holds the update slot", async () => {
+// Not held behind the slot: a conflicted PR is outside the slot's queue and no
+// slot sweep reaches it, so a hold would leave a record PR conflicted (its builds
+// unprotected) until an unrelated push to main. Pushing costs one racing CI run.
+test("an auto-merge PR's registry merge is pushed even while another PR takes the update slot", async () => {
   const holder = autoPr(44);
   const record = autoPr(45, { mergeable: false, mergeable_state: "dirty" });
-  const { logger, lines } = capture();
   const { results, calls } = await sweep({
     routes: [
       ...slotRoutes([holder, record]),
       ...registryConflictRoutes(record, [{ filename: REGISTRY }], { listed: false }),
     ],
     updateToken: "app",
-    logger,
   });
   const got = byNumber(results);
   assert.equal(got[44].action, "updated");
-  assert.deepEqual(got[45], { number: 45, verdict: "conflict", action: "held", holder: 44 });
-  assert.deepEqual(puts(calls), ["44"]);
-  assert.ok(!calls.some((c) => c.method === "PATCH" || c.url.includes("/git/trees")), "no second push this sweep");
-  assert.equal(commentPosts(calls).length, 0, "held, so no wake either");
-  assert.ok(lines.some((l) => /#45: conflicts only in .* auto-merge on — held, #44 holds the update slot/.test(l)));
+  assert.equal(got[45].action, "registry-merged");
+  assert.ok(calls.some((c) => c.method === "PATCH" && c.url.endsWith(`/git/refs/heads/${record.head.ref}`)));
+  assert.equal(commentPosts(calls).length, 0);
 });
 
-test("an auto-merge PR's registry merge goes ahead when the slot is free, and takes it", async () => {
-  const record = autoPr(46, { mergeable: false, mergeable_state: "dirty" });
-  const { results, calls } = await sweep({
-    routes: [...slotRoutes([record]), ...registryConflictRoutes(record, [{ filename: REGISTRY }], { listed: false })],
+const openAlertRoutes = [
+  { method: "GET", path: "/issues?state=all", body: [{ number: 900, state: "open", title: ALERT.title }] },
+  { method: "PATCH", path: "/issues/900", status: 200, body: {} },
+  { method: "POST", path: "/issues/900/comments", status: 201, body: { id: 2 } },
+];
+
+test("a registry merge is not update-branch proof: it closes the alert only as a quiet sweep would", async () => {
+  const record = makePr(47, { mergeable: false, mergeable_state: "dirty" });
+  const { calls } = await sweep({
+    routes: [...registryConflictRoutes(record, [{ filename: REGISTRY }]), ...openAlertRoutes],
     updateToken: "app",
   });
-  assert.equal(byNumber(results)[46].action, "registry-merged");
-  assert.ok(calls.some((c) => c.method === "PATCH" && c.url.endsWith(`/git/refs/heads/${record.head.ref}`)));
+  const comment = calls.find((c) => c.method === "POST" && c.url.includes("/issues/900/comments"));
+  assert.match(JSON.parse(comment.body).body, /absence of the fault/);
+});
+
+test("a registry merge beside a blocked update-branch leaves the token alert raised", async () => {
+  const record = makePr(48, { mergeable: false, mergeable_state: "dirty" });
+  const behind = makePr(49);
+  const { calls } = await sweep({
+    routes: [
+      listRoute([record, behind]),
+      detailRoute(record),
+      detailRoute(behind),
+      ...registryConflictRoutes(record, [{ filename: REGISTRY }], { listed: false }),
+      compareRoute(behind.head.sha, 1),
+      { method: "PUT", path: "/pulls/49/update-branch", status: 403, body: { message: "Resource not accessible by integration" } },
+      { method: "POST", path: "/issues/49/comments", status: 201, body: { id: 3 } },
+      ...openAlertRoutes,
+    ],
+    updateToken: "app",
+  });
+  assert.ok(calls.some((c) => c.method === "PATCH" && c.url.includes("/git/refs/heads/")), "the registry merge went through");
+  assert.ok(!calls.some((c) => c.method === "PATCH" && c.url.includes("/issues/900")), "the open alert stays open");
+});
+
+test("a refused registry merge never closes the token alert", async () => {
+  const record = makePr(50, { mergeable: false, mergeable_state: "dirty" });
+  const routes = registryConflictRoutes(record, [{ filename: REGISTRY }]).map((r) =>
+    r.method === "PATCH" ? { ...r, status: 403, body: { message: "Resource not accessible by integration" } } : r,
+  );
+  const { calls } = await sweep({
+    routes: [...routes, { method: "POST", path: "/issues/50/comments", status: 201, body: { id: 4 } }, ...openAlertRoutes],
+    updateToken: "app",
+  });
+  assert.ok(!calls.some((c) => c.method === "PATCH" && c.url.includes("/issues/900")));
 });

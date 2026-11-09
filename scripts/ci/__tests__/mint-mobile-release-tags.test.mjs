@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import {
   planMobileReleases,
   TAG_PREFIX,
-  uploadedBuilds,
+  registryBuilds,
 } from "../mint-mobile-release-tags.mjs";
 
 const repo = "pdcarlson/Frapp";
@@ -115,29 +115,20 @@ describe("mobile-release-tags.yml", () => {
   });
 });
 
-describe("uploadedBuilds (#3783)", () => {
-  const entry = (platform, build, recorded, extra = {}) => ({
-    platform,
-    version: "0.9.1",
-    build,
-    sha: A,
-    recorded,
-    ...extra,
-  });
-  it("keeps a dropped build in its version's Release, in recorded order", () => {
-    const ios = entry("ios", "8", "2026-11-05");
-    const android = entry("android", "3", "2026-11-05");
-    const later = entry("ios", "9", "2026-11-06");
-    const dropped = { ...ios, dropped: "2026-12-01", reason: "minimum raised" };
-    const text = JSON.stringify({ builds: [android, later], dropped: [dropped] });
-    assert.deepEqual(
-      uploadedBuilds(text).map((b) => `${b.platform}+${b.build}`),
-      ["android+3", "ios+8", "ios+9"],
-    );
+describe("registryBuilds (#3783)", () => {
+  const entry = { platform: "ios", version: "0.9.1", build: "8", sha: A, recorded: "2026-11-05" };
+  it("reads builds in file order and leaves dropped ones out", () => {
+    const android = { ...entry, platform: "android", build: "3" };
+    const dropped = { ...entry, build: "7", dropped: "2026-12-01", reason: "minimum raised" };
+    assert.deepEqual(registryBuilds(JSON.stringify({ builds: [entry, android], dropped: [dropped] })), [entry, android]);
   });
   it("refuses a key repeated inside one entry instead of tagging the value JSON.parse kept", () => {
     const spliced = '{"builds":[{"platform":"ios","version":"0.9.1","build":"8","version":"0.9.2","sha":"' + A + '","recorded":"2026-11-05"}]}';
-    assert.throws(() => uploadedBuilds(spliced), /repeats the key `version`/);
+    assert.throws(() => registryBuilds(spliced), /repeats the key `version`/);
+  });
+  it("is what run() plans from", () => {
+    const source = readFileSync(new URL("../mint-mobile-release-tags.mjs", import.meta.url), "utf8");
+    assert.match(source, /planMobileReleases\(\{ builds: registryBuilds\(readFileSync\(registryPath, "utf8"\)\) \}/);
+    assert.doesNotMatch(source, /JSON\.parse\(readFileSync\(registryPath/);
   });
 });
-

@@ -143,6 +143,26 @@ export function runOasdiff({ bin, basePath, headPath, ignorePath }) {
   }
 }
 
+/**
+ * A registry's entries as written, for comparing against a base this branch's
+ * parse refuses: every object in `builds` and `dropped` with a string id, or
+ * null when the text isn't a JSON object at all.
+ */
+export function lenientRegistry(text) {
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (data === null || typeof data !== "object" || Array.isArray(data)) return null;
+  const entries = (list) =>
+    (Array.isArray(list) ? list : []).filter(
+      (e) => e !== null && typeof e === "object" && ["platform", "version", "build", "sha"].every((k) => typeof e[k] === "string"),
+    );
+  return { builds: entries(data.builds), dropped: entries(data.dropped) };
+}
+
 /** One baseline per distinct SHA, naming every build made from it. */
 export function baselinesFor(builds) {
   const bySha = new Map();
@@ -216,12 +236,13 @@ export function checkShipped({
     try {
       base = parseRegistry(baseRegistryText);
     } catch (e) {
-      // Not a failure: the PR that fixes a bad base registry, or tightens the
-      // parser and migrates the file with it, must be able to pass. The base
-      // itself went red on its own push.
+      // The PR that fixes a bad base registry, or tightens the parser and
+      // migrates the file with it, must be able to pass, and must still not
+      // lose an entry doing it: compare against the base's entries as written.
+      base = lenientRegistry(baseRegistryText);
       log(
-        `::warning::${baseLabel} doesn't pass this branch's parse, so this registry was not compared ` +
-          `with it: ${e.message.split("\n", 1)[0]}`,
+        `::warning::${baseLabel} doesn't pass this branch's parse (${e.message.split("\n", 1)[0]}), ` +
+          (base ? "so its entries were compared as written." : "and isn't JSON, so this registry was not compared with it."),
       );
     }
     const problems = base ? compareRegistries(base, registry) : [];

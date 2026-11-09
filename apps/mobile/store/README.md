@@ -897,8 +897,12 @@ keeping its entry would make each deploy's client check ask about a build nobody
 at once.
 
 **To drop an entry, move it from `builds` to a top-level `dropped` list**, unchanged, adding the
-date and the reason: the minimum and the date it went live, or the run whose upload failed.
-Nothing compares against `dropped`; it is the record of every drop.
+date and the reason: the minimum and the date it went live, or the run whose upload failed. No
+contract is compared against a dropped build, and no deploy probes it; the list is the record of
+every drop, so it only grows too: CI fails a PR that removes a `dropped` entry or changes its
+`dropped` date (its `reason` may be reworded). Its version's `mobile-vX.Y.Z` tag never
+moves, but the Mobile release tags workflow rewrites that version's GitHub Release to list only the
+builds still in `builds`, as it did when an entry was deleted.
 
 ```json
 "dropped": [

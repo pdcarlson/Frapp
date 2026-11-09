@@ -87,7 +87,7 @@ never reaches `main` and CI never ran.
 | ------ | -------- | ------ |
 | PR-activity webhook (`subscribe_pr_activity`) | CI **failure**, **successful check-suite rollups** (observed 2026-08-21 — see below), comments, reviews | cancelled, timed-out, merge-conflict — all silent |
 | `CI wake` watchdog comment (`ci-wake.yml`) | exactly three things, and it is worth being precise because most of this list is *silent* on attempts 1-2: (a) a **deliberate** cancellation — a run cancelled after some job had started, or with the jobs/runs/annotations API down so it cannot be told from an infra one or a timeout; (b) a **job that ran to its `timeout-minutes`** (verdict `timed-out`, naming the job and its limit), which GitHub concludes `cancelled` and only the job's check-run annotation tells apart (#3162), never requeued because it is usually a hang a re-run meets again, even beside an infra failure that would otherwise be; (c) an **infra failure the auto-requeue did not absorb**, i.e. the re-queue call failed or the 3-attempt cap is spent. A run-level `timed_out`, `startup_failure`, `stale`, and a cancel where no job ever started all classify as infra-failure and are requeued first, so they say nothing until that runs out | outages that kill the watchdog run itself; a wake comment that fails to post (a `::warning::` on the run with GitHub's status and message); merge-conflict; review-state changes. **Deliberately silent:** success and real failures (the webhook carries both), any infra failure that WAS requeued (the fresh attempt's own completion is the wake), `skipped`/`neutral`/`action_required`, and superseded runs |
-| `PR base sync` wake comment (`pr-base-sync.yml`) | `main` moving while this PR is conflicted with it, or behind it and un-updateable for a reason specific to this PR (a fork head, a one-off API error) — the comment says which and what to do | base moves while the sweep run itself dies; PRs past the sweep's 20-PR cap this round (logged; the sweep processes least-recently-updated first, so deferred PRs rotate to the front of a later sweep); unknown mergeability (skipped fail-safe, deliberately silent); an auto-merge PR held behind while another holds the update slot (deliberately silent, so its session doesn't merge `main` and restart the race; #3599); a conflict only in the shipped-builds registry, which the sweep merges itself or holds behind the slot (#3783: the merge commit is the signal, and the CI it starts wakes the session); a wake comment that fails to post (a `::warning::` on the run with GitHub's status and message, and the run stays green; the next push to `main` retries it, #3019) |
+| `PR base sync` wake comment (`pr-base-sync.yml`) | `main` moving while this PR is conflicted with it, or behind it and un-updateable for a reason specific to this PR (a fork head, a one-off API error) — the comment says which and what to do | base moves while the sweep run itself dies; PRs past the sweep's 20-PR cap this round (logged; the sweep processes least-recently-updated first, so deferred PRs rotate to the front of a later sweep); unknown mergeability (skipped fail-safe, deliberately silent); an auto-merge PR held behind while another holds the update slot (deliberately silent, so its session doesn't merge `main` and restart the race; #3599); a conflict only in the shipped-builds registry, which the sweep merges itself (#3783: the merge commit is the signal, and the CI it starts wakes the session); a wake comment that fails to post (a `::warning::` on the run with GitHub's status and message, and the run stays green; the next push to `main` retries it, #3019) |
 | `PR base sync` alert issue | a missing or rejected app token — the one cause that is repo-wide rather than per-PR | anything per-PR (those comment); a sweep where nothing was behind, which proves nothing either way and deliberately leaves an open alert open |
 | Retired — do not call `send_later` | — | Entire layer. Unusable unattended on the cloud surface (prompts the owner every call). Do not re-add it to `permissions.allow`. |
 
@@ -247,11 +247,13 @@ busy twenty. Per PR, after bounded polling of GitHub's lazily-computed `mergeabl
   `apps/mobile/store/shipped-builds.json` entries, as every Deploy production record PR is. With
   the app token minted, the sweep pushes that merge itself (`main`'s registry plus the branch's new
   entries, as a two-parent merge commit through the git data API, never forced) and posts no
-  comment (`scripts/ci/resolve-registry-conflict.mjs`). On an auto-merge PR the push restarts CI
-  as an update does, so it respects the update slot: held, with no wake, while another PR holds
-  it, and taking it when free. Anything else the sweep refuses, and the PR gets the comment; so
-  does a merge GitHub refuses (the App has no Workflows permission, and a ref whose workflows
-  differ from `main`'s is refused it, which the merge's tree, being `main`'s, should avoid).
+  comment (`scripts/ci/resolve-registry-conflict.mjs`). It is **not** held behind the auto-merge
+  update slot: a conflicted PR is outside the slot's queue and no slot sweep reaches it, so a hold
+  would leave a record PR conflicted, its builds unprotected, until some unrelated push to `main`.
+  The cost is at most one CI run racing the slot holder; after that the PR is clean and queues for
+  the slot like any other. Anything else the sweep refuses, and the PR gets the comment; so does a
+  merge GitHub refuses (the App has no Workflows permission, and a ref whose workflows differ from
+  `main`'s is refused it, which the merge's tree, being `main`'s, should avoid).
 - **Behind and clean** (measured with the compare API's `behind_by`, not `mergeable_state`, which
   reports `blocked` over `behind`) → auto-updated via `PUT …/update-branch` with
   `expected_head_sha`, **only when the base-sync app token minted**. Pushes made with the default
@@ -285,7 +287,8 @@ busy twenty. Per PR, after bounded polling of GitHub's lazily-computed `mergeabl
     comments on every raise, which suits `deploy-alert.mjs` (it fires per failed deploy) and not this
     sweep (it fires per merge to `main`), so raising unconditionally would relocate the fan-out from
     N PRs to one issue rather than remove it.
-  - It closes on a real `update-branch` success (a registry merge is not one), or on a sweep that held a token and blocked on
+  - It closes on a real `update-branch` success (a registry merge is not one, and a sweep whose
+    registry merge GitHub refused proves nothing either way), or on a sweep that held a token and blocked on
     nothing. That second condition is deliberate: this repo merges about one PR at a time, so the
     usual sweep has no *other* open PR to update, and an alert gated on a same-sweep success would
     stay open for weeks after the fix. A sweep with **no** token and nothing behind proves nothing

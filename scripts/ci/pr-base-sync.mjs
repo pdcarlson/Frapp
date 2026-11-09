@@ -864,8 +864,6 @@ export async function processBaseMove({
 
   // Shared by every PR in this sweep: see UPDATE_BRANCH_STALLS_BEFORE_STOP.
   const updateBranch = { stalls: 0, stoppedDetail: null };
-  // Who holds the update slot, for the per-PR pass's registry merges (#3783).
-  const slot = { holder: queue?.inFlight ?? null };
   // Belt over the per-PR body: ghRequest already converts network failures into
   // ok:false, so a throw here is a logic error — but even that must cost one PR,
   // not the rest of the sweep (the fail-safe contract in the header).
@@ -883,7 +881,6 @@ export async function processBaseMove({
       updateBranch,
       updateBranchTimeoutMs,
       queue,
-      slot,
     }).catch((error) => {
       logger.log?.(
         `[pr-base-sync] #${number}: unexpected error (${error.message}) — skipping, fail safe`,
@@ -909,7 +906,6 @@ export async function processBaseMove({
         fallback: runOne,
       })
     : [];
-  slot.holder ??= results.find((r) => TAKES_SLOT.has(r.action))?.number ?? null;
   for (const listed of prs) {
     results.push(await runOne(listed.number));
   }
@@ -1099,7 +1095,8 @@ async function reconcileTokenAlert({
   // that genuinely proves nothing, and it must not close a live alert. Nor does
   // a sweep whose behind PRs were all held behind the update slot (#3599): it
   // called update-branch on none of them, so "hit no failure" would be vacuous.
-  const untested = results.some((r) => r.action === "held" || r.action === "raced");
+  // Nor one whose only app-token write was a registry merge GitHub refused (#3783).
+  const untested = results.some((r) => r.action === "held" || r.action === "raced" || r.registryRefused);
   if (!updated && (!updateToken || untested)) return;
 
   const recovery = await resolveAutoUpdateAlert({
@@ -1153,9 +1150,6 @@ async function processOnePr({
   updateBranch,
   updateBranchTimeoutMs,
   queue = null,
-  // { holder }: the PR holding the auto-merge update slot this sweep, which a
-  // registry merge of another auto-merge PR must wait behind (#3783).
-  slot = null,
 }) {
   // An auto-merge PR was already read by assessAutoMergeQueue; reuse it,
   // including an unresolved mergeability (pr: null), which must not be polled
@@ -1189,26 +1183,21 @@ async function processOnePr({
   }
 
   const postConflictComment = async () => {
+    let registryRefused = false;
     // A PR whose only change is new shipped-builds entries conflicts with every
     // other one that merges first, and its merge is mechanical (#3783). Only the
     // app token may push it: a push with GITHUB_TOKEN would start no CI.
     if (updateToken) {
       const plan = await planRegistryConflict({ token, repo, pr, baseSha, fetchImpl });
       if (plan.ok) {
-        // Pushing restarts CI as an update does, so an auto-merge PR takes the
-        // update slot like one (#3599): held while another PR holds it, and
-        // merged on a later sweep, with no wake (it needs no one).
-        const holder = slot?.holder;
-        if (pr.auto_merge && holder && holder !== number) {
-          await clearWakeComments({ token, repo, prNumber: number, fetchImpl });
-          logger.log?.(
-            `[pr-base-sync] #${number}: conflicts only in ${REGISTRY_PATH}, auto-merge on — held, #${holder} holds the update slot`,
-          );
-          return { number, verdict: "conflict", action: "held", holder };
-        }
+        // Not held behind the auto-merge update slot (#3599), deliberately: a
+        // conflicted PR is outside the slot's queue, and a slot sweep never
+        // reaches it, so a hold would leave a record PR (its builds unprotected
+        // until it merges) conflicted until some unrelated push to main. The
+        // cost of pushing now is one CI run racing the holder at most; after
+        // that the PR is clean and queues for the slot like any other.
         const fix = await pushRegistryMerge({ token, pushToken: updateToken, repo, plan, baseRef, baseSha, fetchImpl });
         if (fix.resolved) {
-          if (pr.auto_merge && slot) slot.holder = number;
           const cleared = await clearWakeComments({ token, repo, prNumber: number, fetchImpl });
           logger.log?.(
             `[pr-base-sync] #${number}: conflicts only in ${REGISTRY_PATH}, resolved with merge commit ${fix.sha.slice(0, 12)}` +
@@ -1219,6 +1208,8 @@ async function processOnePr({
           return { number, verdict: "conflict", action: "registry-merged" };
         }
         logger.log?.(`[pr-base-sync] #${number}: registry merge refused, so it gets the wake: ${fix.reason}`);
+        // An app-token write failed: this sweep proves nothing about the token.
+        registryRefused = true;
       } else {
         logger.log?.(`[pr-base-sync] #${number}: conflict not resolved automatically: ${plan.reason}`);
       }
@@ -1232,7 +1223,7 @@ async function processOnePr({
       fetchImpl,
       logger,
     });
-    return { number, verdict: "conflict", ...wake };
+    return { number, verdict: "conflict", ...wake, ...(registryRefused ? { registryRefused } : {}) };
   };
 
   if (pr.mergeable === false) return postConflictComment();

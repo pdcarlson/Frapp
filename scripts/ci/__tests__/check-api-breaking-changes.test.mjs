@@ -197,10 +197,18 @@ test("a base that kept everything, or has no registry, passes; an invalid base c
   const none = run([build()], { baseRegistryText: null, baseLabel: "the base" });
   assert.equal(none.code, 0);
   assert.match(none.out, /the base doesn't exist/);
-  // A PR that fixes a bad base, or tightens the parser with the file, must pass.
-  const invalid = run([build()], { baseRegistryText: "{", baseLabel: "the base" });
-  assert.equal(invalid.code, 0);
-  assert.match(invalid.out, /::warning::the base doesn't pass this branch's parse, so this registry was not compared/);
+  // A PR that fixes a bad base, or tightens the parser with the file, must pass...
+  const notJson = run([build()], { baseRegistryText: "{", baseLabel: "the base" });
+  assert.equal(notJson.code, 0);
+  assert.match(notJson.out, /::warning::the base doesn't pass this branch's parse .* isn't JSON, so this registry was not compared/);
+  const stricter = registry([{ ...build(), legacy: "a key this branch no longer allows" }]);
+  const fixed = run([build()], { baseRegistryText: stricter, baseLabel: "the base" });
+  assert.equal(fixed.code, 0);
+  assert.match(fixed.out, /::warning::the base doesn't pass this branch's parse .* so its entries were compared as written/);
+  // ...without losing an entry on the way.
+  const lost = run([build({ build: "13" })], { baseRegistryText: stricter, baseLabel: "the base" });
+  assert.equal(lost.code, 1);
+  assert.match(lost.out, /ios\/1\.0\.0\+12 .* missing here/);
 });
 
 test("registryAtRef reads the file at a commit, null when it has none, undefined when the commit is unreadable", () => {

@@ -80,11 +80,15 @@ describe("pr-base-sync.mjs's import graph", () => {
       if (seen.has(file)) return;
       seen.add(file);
       const source = readFileSync(file, "utf8");
-      for (const [, spec] of source.matchAll(/^\s*(?:import|export)\b[^;]*?\bfrom\s+["']([^"']+)["']/gm)) {
+      // `import x from "m"`, `export … from "m"` (either across lines), and the
+      // side-effect `import "m"`; the first quoted string after the keyword is the module.
+      for (const [, spec] of source.matchAll(/^\s*(?:import|export)\b(?:[^;"'`]*?\bfrom)?\s*["'`]([^"'`]+)["'`]/gm)) {
         if (/^(node:)?child_process$/.test(spec)) shells.push(file);
         else if (spec.startsWith(".")) walk(join(dirname(file), spec));
+        // Only node: built-ins and relative modules: the job runs with no npm install.
+        else if (!spec.startsWith("node:")) shells.push(`${file} imports a package: ${spec}`);
       }
-      if (/\bimport\(\s*["'](node:)?child_process["']\s*\)|\brequire\(\s*["'](node:)?child_process["']/.test(source)) shells.push(file);
+      if (/\b(?:import|require)\(\s*["'`](node:)?child_process["'`]\s*\)/.test(source)) shells.push(file);
     };
     walk(join(dirname(fileURLToPath(import.meta.url)), "..", "pr-base-sync.mjs"));
     assert.ok(seen.size > 3, "the walk found the import graph");
