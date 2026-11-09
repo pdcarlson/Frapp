@@ -14,6 +14,7 @@ import {
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiOkResponse,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
@@ -45,6 +46,7 @@ import {
   ProofUploadUrlResponseDto,
   ReviewServiceEntryDto,
   ServiceLeaderboardQueryDto,
+  ServicePointsRateResponseDto,
 } from '../dtos/service-entry.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
 import type { ServiceEntry } from '#domain/entities/service-entry.entity';
@@ -107,6 +109,25 @@ export class ServiceEntryController {
       startDate: query.start_date,
       endDate: query.end_date,
     });
+  }
+
+  // Declared before `@Get(':id')` for the same reason as `leaderboard`.
+  // Gated on `service:approve`, not `chapter-config:view`: the review queue's
+  // audience is approvers, and on stock roles no approver but the President
+  // can read the chapter config (#3862).
+  @Get('points-rate')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(SystemPermissions.SERVICE_APPROVE)
+  @ApiOperation({
+    summary: 'SERVICE points rate that approving an entry applies',
+    description:
+      'Minutes of approved service per SERVICE point, read the way the approve path reads it (chapter rate, default 60). The rate is read again at approval, so this is the current rate, not a promise.',
+  })
+  @ApiOkResponse({ type: ServicePointsRateResponseDto })
+  async pointsRate(
+    @CurrentChapterId() chapterId: string,
+  ): Promise<ServicePointsRateResponseDto> {
+    return this.serviceEntryService.getPointsRate(chapterId);
   }
 
   @Get(':id')
