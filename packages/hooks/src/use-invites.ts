@@ -105,6 +105,39 @@ export function useRedeemInvite() {
       queryClient.invalidateQueries({ queryKey: ["members", chapterId] });
       queryClient.invalidateQueries({ queryKey: ["chapters"] });
     },
+    // On failure too: an offered invite the redeem finds dead (410) or
+    // already joined (409) must leave the offers, not stay on as a card
+    // that fails again (#3782).
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["pending-invites"] });
+    },
+  });
+}
+
+/**
+ * The invites waiting for the signed-in account (#3776): every pending invite
+ * emailed to the address Auth verified for it, minus chapters it already
+ * belongs to, each with the preview card's facts and the token to redeem.
+ * The API reads the address from the account, never from the client, so an
+ * unverified account gets an empty list.
+ *
+ * Pass the signed-in user's id, or `null` before the session is known. Keyed
+ * by it, so a second account in the same tab never sees the first one's
+ * invites from the cache. Not retried: no answer just means no offer, and the
+ * pasted-invite form still works.
+ */
+export function usePendingInvites(userId: string | null) {
+  const client = useFrappClient();
+  return useQuery({
+    queryKey: ["pending-invites", userId],
+    queryFn: async () => {
+      const { data, error } = await client.GET("/v1/invites/mine");
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!userId,
+    retry: false,
+    staleTime: 30_000,
   });
 }
 

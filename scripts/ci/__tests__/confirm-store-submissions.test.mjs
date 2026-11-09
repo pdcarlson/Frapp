@@ -182,7 +182,7 @@ describe("nextStep and summary", () => {
   it("says nothing for a finished upload, and what to do with the record PR otherwise", () => {
     assert.equal(nextStep({ store: "ios", id: IOS, status: "FINISHED" }), null);
     const errored = nextStep({ store: "android", id: ANDROID, build: BUILD, status: "ERRORED", error: { errorCode: "SUBMISSION_SERVICE_ANDROID_UNKNOWN", message: "Google rejected the key" } });
-    assert.match(errored, /^Android's upload to the Play internal track failed: Google rejected the key \(`SUBMISSION_SERVICE_ANDROID_UNKNOWN`\)\. The record PR lists this build, so drop its entry from the record PR before merging, or in a PR of its own once that has merged/);
+    assert.match(errored, /^Android's upload to the Play internal track failed: Google rejected the key \(`SUBMISSION_SERVICE_ANDROID_UNKNOWN`\)\. The record PR lists this build, so drop its entry from the record PR before merging, or, once that has merged, move it to the registry's `dropped` list with this run as the reason, in a PR of its own/);
     assert.ok(errored.includes(`\`npm run eas -- submit --platform android --profile production --id ${BUILD} --non-interactive\` from the repo root`), errored);
     assert.match(errored, /while its commit is still the latest `v\*` tag/);
     const ios = nextStep({ store: "ios", id: IOS, build: BUILD, status: "CANCELED", error: null });

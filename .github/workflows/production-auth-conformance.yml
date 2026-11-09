@@ -2,7 +2,8 @@ name: Production Auth conformance
 
 # Sibling of staging-conformance.yml for the Auth settings first users actually
 # hit: custom_access_token_hook, the redirect allow list, Auth SMTP, the
-# Magic Link template, and leaked-password protection on frapp-prod.
+# Magic Link template, leaked-password protection, and required email
+# confirmations (auth-email-confirm, #3776) on frapp-prod.
 # Staging already watches hook, redirects, SMTP and leaked-password
 # protection (plus Infisical and a sign-in probe) and FAILs on empty SMTP.
 # Leaked-password protection is asserted whatever the SMTP state.

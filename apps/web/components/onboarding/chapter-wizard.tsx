@@ -32,6 +32,7 @@ import {
 import {
   DIRECTORY_MIN_QUERY_LENGTH,
   useChapterDirectorySearch,
+  useCurrentUser,
   useOnboardChapter,
   useUploadChapterLogo,
   type ChapterDirectoryResult,
@@ -56,6 +57,7 @@ import {
 } from "@/components/ui/command";
 import { StepDots } from "@/components/onboarding/step-dots";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
+import { SignedInAs } from "@/components/auth/signed-in-as";
 import { SearchGlyph } from "@/components/profile/profile-glyphs";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
@@ -105,6 +107,9 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
   const { confirmDrop, confirmDropDialog } = useConfirmDropBulkUploads();
 
   const onboardChapter = useOnboardChapter();
+  const currentUser = useCurrentUser();
+  const currentUserEmail =
+    (currentUser.data as { email?: string | null } | undefined)?.email ?? null;
   const uploadLogo = useUploadChapterLogo();
 
   const [step, setStep] = useState<WizardStep>("find");
@@ -303,6 +308,13 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
               <StepDots
                 current={stepIndex}
                 total={STEP_ORDER.length}
+                className="mt-4"
+              />
+              {/* The wizard can't be dismissed, so this is the way out for an
+                  account signed in by mistake (#3776). Not mid-create. */}
+              <SignedInAs
+                email={currentUserEmail}
+                disabled={onboardChapter.isPending}
                 className="mt-4"
               />
             </header>

@@ -52,6 +52,10 @@ import {
   PushAskBody,
 } from "@/components/notifications/push-ask";
 import { BackRow } from "@/components/back-row";
+import {
+  SignedInAs,
+  useOnboardingSignOut,
+} from "@/components/onboarding/signed-in-as";
 import { ChapterMarkTile } from "@/components/onboarding/chapter-mark-tile";
 import {
   OnboardingFieldLabel,
@@ -185,6 +189,7 @@ export default function CreateChapter() {
   const requestLogoUrl = useRequestChapterLogoUploadUrl();
   const confirmLogo = useConfirmChapterLogo();
   const primer = usePushPrimer();
+  const { signOut, signingOut } = useOnboardingSignOut();
 
   const [step, setStep] = useState<Step>("find");
   const [rawQuery, setRawQuery] = useState("");
@@ -214,6 +219,10 @@ export default function CreateChapter() {
   const [logoBusy, setLogoBusy] = useState(false);
   const [logoNote, setLogoNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The whole create, not just the API call: `selectChapter` runs after the
+  // mutation settles and before the step moves on, and a sign-out in that
+  // window would leave the new chapter half opened under no session.
+  const [createRunning, setCreateRunning] = useState(false);
 
   const searchQuery = useChapterDirectorySearch(debouncedQuery, {
     enabled: step === "find",
@@ -222,7 +231,9 @@ export default function CreateChapter() {
   const current = useCurrentChapter({ enabled: activated });
   const logoUrl = activated ? current.data?.logo_url || null : null;
 
-  const submitting = onboardChapter.isPending;
+  const submitting = onboardChapter.isPending || createRunning;
+  // What locks the screen's controls: a create, or a sign-out on its way.
+  const locked = submitting || signingOut;
   const isManual = directoryId === null;
   const created = step === "live" || step === "primer" || step === "invite";
   const displayName =
@@ -238,6 +249,10 @@ export default function CreateChapter() {
     role: INVITE_ROLE,
     onError: setError,
   });
+  // A write in flight on any step, which Sign out waits for: the create, a
+  // logo upload, an invite being minted and shared, or the OS push prompt.
+  // Signing out under one would land its result on no session.
+  const writing = submitting || logoBusy || invite.busy || primer.isRequesting;
 
   function applyDirectoryMatch(row: ChapterDirectoryResult) {
     const known = knownArchetype(row.archetype);
@@ -282,7 +297,7 @@ export default function CreateChapter() {
   }
 
   function goBack() {
-    if (submitting) return;
+    if (locked) return;
     setError(null);
     if (step === "confirm") {
       setStep("find");
@@ -309,15 +324,20 @@ export default function CreateChapter() {
   // and popping the flow would drop what was entered (navigation.md § Going
   // back).
   useHoldSwipeBack(step === "confirm" || step === "color");
-  useBackToClose(created, finish);
+  // Held, not passed through, while a sign-out runs: the press is still
+  // taken, so it can't leave setup under a session that is going away.
+  useBackToClose(created, () => {
+    if (!signingOut) finish();
+  });
 
   async function submitChapter() {
     if (!accentValid) {
       setAccentSubmitTried(true);
       return;
     }
-    if (!canSubmit || submitting || archetype === null) return;
+    if (!canSubmit || locked || archetype === null) return;
     setError(null);
+    setCreateRunning(true);
     try {
       const chapter = await onboardChapter.mutateAsync({
         name: identity.name.trim(),
@@ -343,11 +363,13 @@ export default function CreateChapter() {
           "Couldn't create that chapter. Check the details and try again.",
         ),
       );
+    } finally {
+      setCreateRunning(false);
     }
   }
 
   async function addLogo() {
-    if (logoBusy) return;
+    if (logoBusy || signingOut) return;
     setLogoBusy(true);
     setLogoNote(null);
     const result = await pickAndSetChapterLogo({
@@ -437,7 +459,7 @@ export default function CreateChapter() {
                 house
                 label="Back"
                 accessibilityLabel="Back"
-                disabled={submitting}
+                disabled={locked}
                 onPress={goBack}
                 trailing={
                   setupIndex >= 0 ? (
@@ -472,6 +494,17 @@ export default function CreateChapter() {
             contentContainerStyle={styles.scroll}
             keyboardShouldPersistTaps="handled"
           >
+            {/*
+              The account setup runs as, with Sign out, on every step
+              (#3782), as web's setup wizard shows it (#3776). At the top of
+              the column, so the pinned footer never covers it.
+            */}
+            <SignedInAs
+              signOut={signOut}
+              signingOut={signingOut}
+              disabled={writing}
+            />
+
             {step === "live" ? (
               <Animated.View
                 entering={ZoomIn.duration(420).reduceMotion(
@@ -610,7 +643,7 @@ export default function CreateChapter() {
                             ? "Change logo"
                             : "Add your chapter's logo"
                         }
-                        disabled={logoBusy}
+                        disabled={logoBusy || signingOut}
                         busy={logoBusy}
                         onPress={() => {
                           void addLogo();
@@ -671,6 +704,7 @@ export default function CreateChapter() {
             canConfirm={canConfirm}
             canSubmit={canSubmit}
             submitting={submitting}
+            signingOut={signingOut}
             logoBusy={logoBusy}
             displayName={displayName}
             hasShared={invite.shared.length > 0}
@@ -723,6 +757,7 @@ function Footer({
   canConfirm,
   canSubmit,
   submitting,
+  signingOut,
   logoBusy,
   displayName,
   hasShared,
@@ -739,6 +774,11 @@ function Footer({
   canConfirm: boolean;
   canSubmit: boolean;
   submitting: boolean;
+  /**
+   * A sign-out on its way: every control here holds for it, each step's
+   * primary, the push answers and the invite step's way to chat.
+   */
+  signingOut: boolean;
   logoBusy: boolean;
   displayName: string;
   hasShared: boolean;
@@ -754,7 +794,7 @@ function Footer({
   if (step === "primer") {
     return (
       <View style={styles.footer}>
-        <PushAskActions {...primer} />
+        <PushAskActions {...primer} disabled={signingOut} />
       </View>
     );
   }
@@ -765,14 +805,17 @@ function Footer({
           label="Share invite"
           icon={(color) => <ShareGlyph color={color} />}
           onPress={onShare}
-          disabled={shareBusy}
+          disabled={shareBusy || signingOut}
           busy={shareBusy}
         />
         <OnboardingPressable
           accessibilityRole="button"
+          accessibilityState={{ disabled: signingOut }}
+          disabled={signingOut}
           onPress={onFinish}
           quiet
-          style={styles.quietButton}
+          // A quiet line takes no dim of its own (`OnboardingPressable`).
+          style={[styles.quietButton, signingOut ? styles.held : null]}
         >
           <Text style={styles.quietButtonText}>
             {hasShared ? "Go to chat" : "Skip for now"}
@@ -789,18 +832,18 @@ function Footer({
     case "confirm":
       label = "Continue";
       onPress = onConfirm;
-      disabled = !canConfirm;
+      disabled = !canConfirm || signingOut;
       break;
     case "color":
       label = `Create ${displayName}`;
       onPress = onSubmit;
-      disabled = !canSubmit || submitting;
+      disabled = !canSubmit || submitting || signingOut;
       busy = submitting;
       break;
     case "live":
       label = "Continue";
       onPress = onLeaveLive;
-      disabled = logoBusy;
+      disabled = logoBusy || signingOut;
       break;
     default:
       return null;
@@ -1332,6 +1375,10 @@ function createStyles(tokens: SignetTokens) {
       paddingHorizontal: tokens.spacing.lg,
       justifyContent: "center",
       marginTop: tokens.spacing.xs,
+    },
+    // The invite step's way to chat while a sign-out holds it.
+    held: {
+      opacity: 0.5,
     },
     quietButtonText: {
       ...typeRole(tokens.typography.role.label),

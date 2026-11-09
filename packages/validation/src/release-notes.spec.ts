@@ -3,6 +3,9 @@ import {
   RELEASE_NOTES,
   formatReleaseNoteDate,
   releaseNoteText,
+  releaseNoteVersion,
+  parseReleaseNoteVersion,
+  isNewerReleaseNoteVersion,
 } from "./release-notes";
 
 // Pictographic emoji, the product's "no emojis in the UI" rule.
@@ -26,6 +29,9 @@ describe("RELEASE_NOTES", () => {
       for (const line of [note.title, ...note.changes]) {
         expect(line).not.toMatch(EMOJI);
         expect(line).not.toMatch(INTERNALS);
+        // frapp.live/changelog renders these, and landing copy takes no em
+        // dashes (spec/ui/landing/README.md § Marketing copy rules).
+        expect(line).not.toContain("\u2014");
       }
     },
   );
@@ -54,5 +60,34 @@ describe("releaseNoteText", () => {
     ).toBe(
       "What's new in Frapp (November 7, 2026)\n\nA title\n\n- One.\n- Two.",
     );
+  });
+});
+
+describe("releaseNoteVersion", () => {
+  const note = { date: "2026-11-09", title: "A title", changes: ["One.", "Two."] };
+
+  it("is the date and the number of lines", () => {
+    expect(releaseNoteVersion(note)).toBe("2026-11-09#2");
+  });
+
+  it("moves when lines are added, not when one is reworded", () => {
+    expect(releaseNoteVersion({ ...note, changes: [...note.changes, "Three."] })).toBe("2026-11-09#3");
+    expect(releaseNoteVersion({ ...note, title: "Another", changes: ["Uno.", "Dos."] })).toBe("2026-11-09#2");
+  });
+});
+
+describe("parseReleaseNoteVersion / isNewerReleaseNoteVersion", () => {
+  it("reads a version back, and an unreadable count as 0", () => {
+    expect(parseReleaseNoteVersion("2026-11-09#8")).toEqual({ date: "2026-11-09", lines: 8 });
+    expect(parseReleaseNoteVersion("2026-11-09")).toEqual({ date: "2026-11-09", lines: 0 });
+  });
+
+  it("is news for a later day, or the same day with more lines, and nothing else", () => {
+    const seen = { date: "2026-11-09", lines: 8 };
+    expect(isNewerReleaseNoteVersion({ date: "2026-11-10", lines: 1 }, seen)).toBe(true);
+    expect(isNewerReleaseNoteVersion({ date: "2026-11-09", lines: 9 }, seen)).toBe(true);
+    expect(isNewerReleaseNoteVersion({ date: "2026-11-09", lines: 8 }, seen)).toBe(false);
+    expect(isNewerReleaseNoteVersion({ date: "2026-11-09", lines: 7 }, seen)).toBe(false);
+    expect(isNewerReleaseNoteVersion({ date: "2026-11-08", lines: 20 }, seen)).toBe(false);
   });
 });

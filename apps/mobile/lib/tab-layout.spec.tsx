@@ -37,6 +37,10 @@ vi.mock("@/components/onboarding/tour", () => ({
   useTourAnchor: () => undefined,
   useTourReady: () => undefined,
 }));
+// So does What's new's host beside it (`components/whats-new/whats-new-host.spec.tsx`).
+vi.mock("@/components/whats-new/whats-new-host", () => ({
+  WhatsNewHost: "WhatsNewHost",
+}));
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#F4CB63" }),
 }));
@@ -142,6 +146,13 @@ describe("tab bar", () => {
     expect(resolved(tabs.props.screenOptions)).not.toHaveProperty(
       "tabBarStyle",
     );
+  });
+});
+
+describe("What's new", () => {
+  // Opens by itself after an update; dropping the host turns that off.
+  it("mounts its host beside the navigator", () => {
+    expect(hosts(render().root, "WhatsNewHost")).toHaveLength(1);
   });
 });
 

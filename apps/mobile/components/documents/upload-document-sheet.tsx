@@ -24,6 +24,7 @@ import {
   useSheetVisit,
   SheetBackToClose,
   useSheetClose,
+  SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import type { PickedImage } from "@/lib/chat/attachment-upload";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -311,6 +312,7 @@ export const UploadDocumentSheet = forwardRef<
   return (
     <BottomSheetModal
       ref={ref}
+      stackBehavior={SHEET_STACK_BEHAVIOR}
       enableDynamicSizing
       keyboardBehavior="interactive"
       backgroundStyle={backgroundStyle}
