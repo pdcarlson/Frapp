@@ -795,7 +795,9 @@ export function useAuthorAvatars(
  */
 export function useUploadSignedUrl() {
   return useMutation({
-    mutationKey: ["channels", "upload-signed-url"],
+    // Rooted at `storage`, not `channels`: the PUT goes to Supabase Storage,
+    // not our API, so its 5xx is Storage's (Beta Watch reads it that way).
+    mutationKey: ["storage", "upload-signed-url"],
     mutationFn: async ({
       signedUrl,
       file,
@@ -946,7 +948,7 @@ export function useBookmarkMessage() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
-    mutationKey: ["channels", "bookmark-message"],
+    mutationKey: ["bookmarks", "bookmark-message"],
     mutationFn: async (messageId: string) => {
       const { data, error } = await client.POST(
         "/v1/bookmarks/messages/{messageId}",
@@ -968,7 +970,7 @@ export function useUnbookmarkMessage() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
-    mutationKey: ["channels", "unbookmark-message"],
+    mutationKey: ["bookmarks", "unbookmark-message"],
     mutationFn: async (messageId: string) => {
       const { error } = await client.DELETE(
         "/v1/bookmarks/messages/{messageId}",

@@ -43,9 +43,13 @@ feature's query-key root (`["events", "create-event"]`, `["tasks",
 name without `use` in kebab case. The query-error reporter groups a failed mutation in Sentry by that
 root and sends nothing else from the key; with no key the failure pools under
 `unkeyed` with every other feature's ([#3393](https://github.com/pdcarlson/Frapp/issues/3393)).
-The root must match `/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/`, and no later element may
-carry text a member typed. `src/mutation-keys.spec.ts` fails on a `useMutation`
-without one.
+A write that goes to another host rather than our API is rooted there instead:
+the chat upload's PUT to Supabase Storage is `["storage", "upload-signed-url"]`,
+so a Storage 5xx doesn't read as an API failure. The root is a string literal
+the reporter's `KEY_ROOT_RE` accepts (`packages/observability/src/query-errors.ts`),
+and no later element may carry text a member typed. `src/mutation-keys.spec.ts`
+parses the package and fails on a `useMutation` whose key is missing, isn't a
+literal root, or follows a constant or helper to one that isn't.
 
 Keys match by prefix in `useMutationState`, `isMutating` and
 `setMutationDefaults`, so a new key must not start with one those already read:
