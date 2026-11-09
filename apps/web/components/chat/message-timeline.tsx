@@ -3,7 +3,6 @@
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import {
   forwardRef,
-  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -243,27 +242,35 @@ function usePrependAwareFirstIndex(keys: readonly string[]): {
 }
 
 /**
- * How far short of the bottom still counts as at it. Virtuoso's own
- * `atBottomThreshold` is 4px; a little more absorbs sub-pixel row heights.
+ * How far short of the bottom still counts as at it: Virtuoso's own default
+ * `atBottomThreshold`, so the two never disagree about whether to follow.
  */
-const AT_BOTTOM_SLOP_PX = 8;
+const AT_BOTTOM_SLOP_PX = 4;
 
 /**
  * How long after the row count changes `useStayAtBottom` leaves resizes to
- * Virtuoso, which follows that change and answers growth for 100ms after it.
+ * Virtuoso's smooth follow of that change.
  */
-const COUNT_SETTLE_MS = 150;
+const COUNT_SETTLE_MS = 100;
+
+/** Input that means the member, not the timeline, is moving the list. */
+const MEMBER_SCROLL_EVENTS = [
+  "wheel",
+  "touchmove",
+  "keydown",
+  "pointerdown",
+] as const;
 
 /**
  * Keeps the timeline on its newest message while a row already drawn grows.
  *
- * Virtuoso follows the output when the row count rises, and for 100ms after;
- * a row that grows later is not followed. A photo row grows after it mounts:
- * from its one-line "Loading attachment…" to the picture's box when the
- * attachments read lands, and again, for a photo with no stored size, when
- * the image decodes. So a channel opened at its bottom painted the newest
- * messages and then, a moment later, the photos above them pushed those
- * messages down behind the composer.
+ * Virtuoso follows the output when the row count rises; a row that grows
+ * later is not followed. A photo row grows after it mounts: from its one-line
+ * "Loading attachment…" to the picture's box when the attachments read lands
+ * (#3879), and again, for a photo with no stored size, when the image
+ * decodes. So a channel opened at its bottom painted the newest messages and
+ * then, a moment later, the photos above them pushed those messages down
+ * behind the composer (#3878).
  *
  * Whether the member is at the bottom is read off the scroller's scroll
  * events, not Virtuoso's `atBottomStateChange`. A row growing leaves the list
@@ -273,65 +280,119 @@ const COUNT_SETTLE_MS = 150;
  * they are (Virtuoso keeps rows growing above them from moving what they
  * read).
  *
- * The timeline's own scrolls set the flag at once rather than waiting a frame
- * for their scroll event: a jump to a message leaves the bottom (rows measured
- * on the way must not pull it back down), and a channel switch lands on it.
+ * A jump to a message (pin, saved message, reply quote, search, a link) ends
+ * the following until the member moves the list themselves: wheel, touch,
+ * keys or a pointer on the scroller. Its scroll events alone don't restore
+ * it, because a jump to a message near the end clamps to the bottom, and
+ * following from there would pull the message it jumped to up and out of
+ * view as the rows under it grow. A channel switch lands on the bottom and
+ * follows at once.
  *
- * A rise in the row count is Virtuoso's to follow, smoothly, and it answers
- * growth itself for 100ms after. Answering those resizes too would snap its
- * smooth scroll to the end, so this stands back for {@link COUNT_SETTLE_MS}
- * after the count changes; by then the smooth scroll is under way and its
- * scroll events have cleared the flag until it lands.
+ * A rise in the row count is Virtuoso's to follow, smoothly. Answering its
+ * resizes too would snap that smooth scroll to the end, so a resize within
+ * {@link COUNT_SETTLE_MS} of the first one at a new count is answered when
+ * that window closes instead: by then the smooth scroll has either landed (and
+ * any growth since is followed) or is still under way (and its scroll events
+ * have cleared the flag until it lands). The count arrives with the resize
+ * rather than from an effect, because Virtuoso reports the resize from its own
+ * layout effect, before this component's effects run.
  */
-function useStayAtBottom(
-  virtuoso: React.RefObject<VirtuosoHandle | null>,
-  rowCount: number,
-) {
+function useStayAtBottom(virtuoso: React.RefObject<VirtuosoHandle | null>) {
   const atBottom = useRef(true);
+  const afterJump = useRef(false);
+  const held = useRef(false);
+  const seenCount = useRef<number | null>(null);
   const countChangedAt = useRef(Number.NEGATIVE_INFINITY);
-  useEffect(() => {
-    countChangedAt.current = performance.now();
-  }, [rowCount]);
+  const deferred = useRef<ReturnType<typeof setTimeout> | null>(null);
   const detach = useRef<(() => void) | null>(null);
 
-  const scrollerRef = useCallback((node: HTMLElement | Window | null) => {
-    detach.current?.();
-    detach.current = null;
-    if (!(node instanceof HTMLElement)) return;
-    // A fresh list opens at its newest row (`initialTopMostItemIndex`).
-    atBottom.current = true;
-    const onScroll = () => {
-      atBottom.current =
-        node.scrollHeight - node.scrollTop - node.clientHeight <=
-        AT_BOTTOM_SLOP_PX;
-    };
-    node.addEventListener("scroll", onScroll, { passive: true });
-    detach.current = () => node.removeEventListener("scroll", onScroll);
-  }, []);
-  useEffect(() => () => detach.current?.(), []);
+  useEffect(
+    () => () => {
+      detach.current?.();
+      if (deferred.current !== null) clearTimeout(deferred.current);
+    },
+    [],
+  );
 
-  return useMemo(
-    () => ({
-      scrollerRef,
+  return useMemo(() => {
+    const cancelDeferred = () => {
+      if (deferred.current !== null) clearTimeout(deferred.current);
+      deferred.current = null;
+    };
+    function follow() {
+      if (held.current || !atBottom.current) return;
+      const wait =
+        COUNT_SETTLE_MS - (performance.now() - countChangedAt.current);
+      if (wait > 0) {
+        deferred.current ??= setTimeout(() => {
+          deferred.current = null;
+          follow();
+        }, wait);
+        return;
+      }
+      virtuoso.current?.scrollToIndex({
+        index: "LAST",
+        align: "end",
+        behavior: "auto",
+      });
+    }
+    return {
+      scrollerRef: (node: HTMLElement | Window | null) => {
+        detach.current?.();
+        detach.current = null;
+        cancelDeferred();
+        if (!(node instanceof HTMLElement)) return;
+        // A fresh list opens at its newest row (`initialTopMostItemIndex`),
+        // and settling there is Virtuoso's, not a count change to stand back
+        // from.
+        atBottom.current = true;
+        afterJump.current = false;
+        seenCount.current = null;
+        const onScroll = () => {
+          if (!afterJump.current) atBottom.current = isAtBottom(node);
+        };
+        const onMemberScroll = () => {
+          afterJump.current = false;
+        };
+        node.addEventListener("scroll", onScroll, { passive: true });
+        for (const type of MEMBER_SCROLL_EVENTS) {
+          node.addEventListener(type, onMemberScroll, { passive: true });
+        }
+        detach.current = () => {
+          node.removeEventListener("scroll", onScroll);
+          for (const type of MEMBER_SCROLL_EVENTS) {
+            node.removeEventListener(type, onMemberScroll);
+          }
+        };
+      },
+      /** The timeline scrolled to its newest row (a channel switch). */
       landedAtBottom: () => {
         atBottom.current = true;
+        afterJump.current = false;
       },
-      leftBottom: () => {
+      /** The timeline jumped to a message. */
+      jumped: () => {
         atBottom.current = false;
+        afterJump.current = true;
+        cancelDeferred();
       },
-      listResized: () => {
-        if (!atBottom.current) return;
-        if (performance.now() - countChangedAt.current < COUNT_SETTLE_MS) {
-          return;
+      /** Virtuoso's `totalListHeightChanged`, with the count it drew. */
+      listResized: (rowCount: number, holdFollow: boolean) => {
+        held.current = holdFollow;
+        if (seenCount.current !== rowCount) {
+          const first = seenCount.current === null;
+          seenCount.current = rowCount;
+          if (!first) countChangedAt.current = performance.now();
         }
-        virtuoso.current?.scrollToIndex({
-          index: "LAST",
-          align: "end",
-          behavior: "auto",
-        });
+        follow();
       },
-    }),
-    [scrollerRef, virtuoso],
+    };
+  }, [virtuoso]);
+}
+
+function isAtBottom(node: HTMLElement): boolean {
+  return (
+    node.scrollHeight - node.scrollTop - node.clientHeight <= AT_BOTTOM_SLOP_PX
   );
 }
 
@@ -690,7 +751,7 @@ export const MessageTimeline = forwardRef<
     [decorated],
   );
   const { firstItemIndex, prepended } = usePrependAwareFirstIndex(rowKeys);
-  const stayAtBottom = useStayAtBottom(virtuoso, rowKeys.length);
+  const stayAtBottom = useStayAtBottom(virtuoso);
 
   /*
     Load the next older page while the member sits at the top of what is
@@ -803,9 +864,6 @@ export const MessageTimeline = forwardRef<
     else if (channelId) setArmedFor(channelId);
   };
 
-  // Whether the list follows its newest row: as the count rises (Virtuoso's
-  // `followOutput`) and as rows already drawn grow (`useStayAtBottom`).
-  const following = !(holdFollow || (prepended && armed));
 
   const headerContext = useMemo<TimelineHeaderContext>(
     () => ({
@@ -837,10 +895,10 @@ export const MessageTimeline = forwardRef<
         // target — the same silent failure this boolean exists to end, just one
         // level up.
         if (!virtuoso.current) return false;
-        // Off the bottom from here, before the scroll event says so: rows
-        // measured on the way would otherwise pull the list back down to
-        // the newest message and cancel the jump (`useStayAtBottom`).
-        stayAtBottom.leftBottom();
+        // No following from here until the member moves the list: rows
+        // measured on the way, or growing under the message, would otherwise
+        // pull the list back down to the newest one (`useStayAtBottom`).
+        stayAtBottom.jumped();
         // Instant, not smooth. A smooth scroll is computed once from row
         // heights Virtuoso has only estimated, which is every row after a
         // page lands or a channel's rows swap in, and settled tens of rows
@@ -983,11 +1041,15 @@ export const MessageTimeline = forwardRef<
           // Until the list is armed it is still settling onto its bottom, and
           // the live page landing over the cached tail prepends rows; following
           // those is what keeps a cold open at the newest message.
-          followOutput={following ? "smooth" : false}
+          followOutput={holdFollow || (prepended && armed) ? false : "smooth"}
           scrollerRef={stayAtBottom.scrollerRef}
-          totalListHeightChanged={() => {
-            if (following) stayAtBottom.listResized();
-          }}
+          // Held only by a jump in flight. Not by a prepend: that hold is on
+          // a count rise, and a member at the bottom when older rows land
+          // above (a cold open's live page over its cached tail) still wants
+          // the rows under them followed as they grow.
+          totalListHeightChanged={() =>
+            stayAtBottom.listResized(decorated.length, holdFollow)
+          }
           initialTopMostItemIndex={Math.max(decorated.length - 1, 0)}
           atTopStateChange={handleAtTop}
           context={headerContext}

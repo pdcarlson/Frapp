@@ -1219,23 +1219,45 @@ describe("MessageTimeline older history (#1571)", () => {
  * the member left it there. Virtuoso only follows a rising row count.
  */
 describe("MessageTimeline — staying at the newest message as rows grow", () => {
-  const rows = (count: number) =>
-    Array.from({ length: count }, (_, i) =>
+  const rows = (from: number, to: number) =>
+    Array.from({ length: to - from + 1 }, (_, i) =>
       message({
-        id: `msg-${i + 1}`,
-        client_message_id: `cm-${i + 1}`,
-        content: `message ${i + 1}`,
-        created_at: new Date(Date.UTC(2026, 8, 1) + i * 60_000).toISOString(),
+        id: `msg-${from + i}`,
+        client_message_id: `cm-${from + i}`,
+        content: `message ${from + i}`,
+        created_at: new Date(
+          Date.UTC(2026, 8, 1) + (from + i) * 60_000,
+        ).toISOString(),
       }),
     );
+  const view = (
+    messages: ChatMessage[],
+    props: Record<string, unknown> = {},
+  ) => (
+    <MessageTimeline
+      channelId="chan-1"
+      messages={messages}
+      viewerId={VIEWER}
+      nameFor={nameFor}
+      avatarFor={avatarFor}
+      isLoading={false}
+      loadError={null}
+      onReact={vi.fn()}
+      onUnreact={vi.fn()}
+      {...timelineBlockProps(messages, VIEWER)}
+      {...props}
+    />
+  );
   const TO_NEWEST = { index: "LAST", align: "end", behavior: "auto" };
 
   let now = 0;
   beforeEach(() => {
     now = 10_000;
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     vi.spyOn(performance, "now").mockImplementation(() => now);
   });
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -1252,15 +1274,15 @@ describe("MessageTimeline — staying at the newest message as rows grow", () =>
     node.scrollTop = top;
     node.dispatchEvent(new Event("scroll"));
   }
+  /** A resize at the current count, past any count change's settle window. */
   function rowsGrow() {
-    // Past the window in which Virtuoso answers a count change itself.
     now += 1_000;
     virtuosoProps.scrollToIndex.mockClear();
     act(() => virtuosoProps.current.totalListHeightChanged?.(1200));
   }
 
   it("follows a row that grows while the member is at the bottom", () => {
-    renderTimeline(rows(5));
+    renderTimeline(rows(1, 5));
     attachScroller(600);
 
     rowsGrow();
@@ -1268,8 +1290,18 @@ describe("MessageTimeline — staying at the newest message as rows grow", () =>
     expect(virtuosoProps.scrollToIndex).toHaveBeenCalledWith(TO_NEWEST);
   });
 
+  it("follows growth from the first resize of a freshly mounted list", () => {
+    renderTimeline(rows(1, 5));
+    attachScroller(600);
+    virtuosoProps.scrollToIndex.mockClear();
+
+    act(() => virtuosoProps.current.totalListHeightChanged?.(1200));
+
+    expect(virtuosoProps.scrollToIndex).toHaveBeenCalledWith(TO_NEWEST);
+  });
+
   it("leaves a member who scrolled up where they are", () => {
-    renderTimeline(rows(5));
+    renderTimeline(rows(1, 5));
     const node = attachScroller(600);
     scrollTo(node, 200);
 
@@ -1279,7 +1311,7 @@ describe("MessageTimeline — staying at the newest message as rows grow", () =>
   });
 
   it("follows again once the member scrolls back down", () => {
-    renderTimeline(rows(5));
+    renderTimeline(rows(1, 5));
     const node = attachScroller(600);
     scrollTo(node, 200);
     scrollTo(node, 597);
@@ -1290,10 +1322,10 @@ describe("MessageTimeline — staying at the newest message as rows grow", () =>
   });
 
   it("does not pull a jump back to the newest message", () => {
-    // The jump's scroll event arrives a frame later; rows measured on the way
-    // must not read the list as still at the bottom.
+    // Before its scroll event arrives, rows measured on the way must not read
+    // the list as still at the bottom.
     const ref = createRef<MessageTimelineHandle>();
-    renderTimeline(rows(5), { ref });
+    renderTimeline(rows(1, 5), { ref });
     attachScroller(600);
 
     expect(ref.current?.scrollToMessage("msg-2")).toBe(true);
@@ -1302,8 +1334,36 @@ describe("MessageTimeline — staying at the newest message as rows grow", () =>
     expect(virtuosoProps.scrollToIndex).not.toHaveBeenCalled();
   });
 
+  it("keeps a jump that clamped to the bottom on its message", () => {
+    // A message near the end centres past the last scroll offset, so the
+    // jump lands at the bottom; rows growing under it must not push it up.
+    const ref = createRef<MessageTimelineHandle>();
+    renderTimeline(rows(1, 5), { ref });
+    const node = attachScroller(300);
+
+    expect(ref.current?.scrollToMessage("msg-4")).toBe(true);
+    scrollTo(node, 600);
+    rowsGrow();
+
+    expect(virtuosoProps.scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it("follows again once the member scrolls after a jump", () => {
+    const ref = createRef<MessageTimelineHandle>();
+    renderTimeline(rows(1, 5), { ref });
+    const node = attachScroller(600);
+
+    expect(ref.current?.scrollToMessage("msg-2")).toBe(true);
+    scrollTo(node, 100);
+    node.dispatchEvent(new Event("wheel"));
+    scrollTo(node, 600);
+    rowsGrow();
+
+    expect(virtuosoProps.scrollToIndex).toHaveBeenCalledWith(TO_NEWEST);
+  });
+
   it("does not follow while a jump is on its way", () => {
-    renderTimeline(rows(5), { holdFollow: true });
+    renderTimeline(rows(1, 5), { holdFollow: true });
     attachScroller(600);
 
     rowsGrow();
@@ -1311,30 +1371,80 @@ describe("MessageTimeline — staying at the newest message as rows grow", () =>
     expect(virtuosoProps.scrollToIndex).not.toHaveBeenCalled();
   });
 
-  it("leaves a new message to Virtuoso's smooth follow", () => {
-    const { rerender } = renderTimeline(rows(5));
+  it("follows growth after older rows land above a member at the bottom", () => {
+    // A cold open: the live page lands over the cached tail after the list
+    // has armed, which holds Virtuoso's count follow until the keys change
+    // again. The photo rows growing under the member are still followed.
+    const { rerender } = render(view(rows(11, 20)));
+    act(() => virtuosoProps.current.atTopStateChange?.(false));
     attachScroller(600);
+    rerender(view(rows(1, 20)));
+    expect(virtuosoProps.current.followOutput).toBe(false);
+    act(() => virtuosoProps.current.totalListHeightChanged?.(1100));
+
+    rowsGrow();
+
+    expect(virtuosoProps.scrollToIndex).toHaveBeenCalledWith(TO_NEWEST);
+  });
+
+  it("leaves a new message to Virtuoso's smooth follow", () => {
+    const { rerender } = render(view(rows(1, 5)));
+    attachScroller(600);
+    act(() => virtuosoProps.current.totalListHeightChanged?.(1000));
     now += 1_000;
-    const more = rows(6);
-    rerender(
-      <MessageTimeline
-        channelId="chan-1"
-        messages={more}
-        viewerId={VIEWER}
-        nameFor={nameFor}
-        avatarFor={avatarFor}
-        isLoading={false}
-        loadError={null}
-        onReact={vi.fn()}
-        onUnreact={vi.fn()}
-        {...timelineBlockProps(more, VIEWER)}
-      />,
-    );
+    rerender(view(rows(1, 6)));
     virtuosoProps.scrollToIndex.mockClear();
 
     act(() => virtuosoProps.current.totalListHeightChanged?.(1100));
+    now += 50;
+    act(() => virtuosoProps.current.totalListHeightChanged?.(1120));
+    expect(virtuosoProps.scrollToIndex).not.toHaveBeenCalled();
+
+    // When the window closes, growth during it is answered if the smooth
+    // scroll has landed at the bottom by then.
+    now += 50;
+    act(() => vi.advanceTimersByTime(100));
+    expect(virtuosoProps.scrollToIndex).toHaveBeenCalledTimes(1);
+    expect(virtuosoProps.scrollToIndex).toHaveBeenCalledWith(TO_NEWEST);
+  });
+
+  it("does not answer growth after the window while the smooth scroll runs", () => {
+    const { rerender } = render(view(rows(1, 5)));
+    const node = attachScroller(600);
+    act(() => virtuosoProps.current.totalListHeightChanged?.(1000));
+    now += 1_000;
+    rerender(view(rows(1, 6)));
+    virtuosoProps.scrollToIndex.mockClear();
+
+    act(() => virtuosoProps.current.totalListHeightChanged?.(1100));
+    // Mid-glide: short of the bottom.
+    scrollTo(node, 560);
+    now += 100;
+    act(() => vi.advanceTimersByTime(100));
 
     expect(virtuosoProps.scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it("sets the list back at its newest row on a switch to a cached channel", () => {
+    const { rerender } = render(view(rows(1, 5)));
+    const node = attachScroller(600);
+    scrollTo(node, 200);
+
+    rerender(view(rows(1, 5), { channelId: "chan-2" }));
+    rowsGrow();
+
+    expect(virtuosoProps.scrollToIndex).toHaveBeenCalledWith(TO_NEWEST);
+  });
+
+  it("starts a freshly mounted list at its newest row", () => {
+    renderTimeline(rows(1, 5));
+    const first = attachScroller(600);
+    scrollTo(first, 200);
+
+    attachScroller(600);
+    rowsGrow();
+
+    expect(virtuosoProps.scrollToIndex).toHaveBeenCalledWith(TO_NEWEST);
   });
 });
 

@@ -47,9 +47,12 @@ interface MessageAttachmentsProps {
  *
  * **A photo loads small, behind a blur** (2026-11-07). One sent since then
  * carries its size, a ThumbHash and a 1280 px preview copy
- * (`lib/chat/photo-preview.ts`): the picture takes its shape at once, the
- * hash fills it with a soft blur of its colours, and the preview, a fraction
- * of the original's bytes, paints over it. The viewer and the download keep
+ * (`lib/chat/photo-preview.ts`): the picture takes its shape as soon as this
+ * read lands, before any of its bytes, the hash fills it with a soft blur of
+ * its colours, and the preview, a fraction of the original's bytes, paints
+ * over it. Until the read lands the row is the one-line loading caption
+ * above, so the row still grows once (#3879); the timeline keeps a member at
+ * the bottom on the newest message through that (`useStayAtBottom`). The viewer and the download keep
  * the original. An older photo has none of the three and draws as before.
  */
 export function MessageAttachments({
