@@ -8,7 +8,12 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { PollService } from '../../application/services/poll.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -25,6 +30,7 @@ import {
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { CreatePollDto, ListPollsQueryDto, VoteDto } from '../dtos/poll.dto';
+import { ChatMessageDto } from '../dtos/chat.dto';
 import { parseBooleanQueryParam } from '../utils/query-boolean';
 
 @ApiTags('Polls')
@@ -101,8 +107,12 @@ export class PollController {
   @Post('polls/:messageId/close')
   @RequirePermissions(SystemPermissions.POLLS_CREATE)
   @ApiOperation({
-    summary: 'Manually close a poll early (creator only)',
+    summary:
+      'Manually close a poll early (creator only): a REST poll or a chat-card poll',
   })
+  // The closed row, so a client can draw the close before its Realtime echo
+  // (`closePoll` in `@repo/chat-core/chat-client`, #3794).
+  @ApiCreatedResponse({ type: ChatMessageDto })
   async close(
     @Param('messageId') messageId: string,
     @CurrentChapterId() chapterId: string,

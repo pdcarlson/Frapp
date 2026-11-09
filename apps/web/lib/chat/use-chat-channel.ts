@@ -61,6 +61,7 @@ import {
 } from "@repo/chat-core/realtime-manager";
 import {
   actOnCard,
+  closePoll as closePollAction,
   deleteMessage as deleteMessageAction,
   discardOutboxRow,
   editMessage as editMessageAction,
@@ -127,6 +128,11 @@ export interface UseChatChannelResult {
   edit: (messageId: string, content: string) => Promise<void>;
   /** Own message, or any message with `channels:manage` (server-enforced). */
   delete: (messageId: string) => Promise<void>;
+  /**
+   * Closes the viewer's own poll card early (#3794); creator-only on the
+   * server. Toasts and rejects on failure.
+   */
+  closePoll: (messageId: string) => Promise<void>;
   draft: string;
   setDraft: (body: string) => void;
   /** The manager's list: the same array until someone starts or stops typing. */
@@ -520,6 +526,16 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, ctx],
   );
 
+  // A poll card's Close poll (#3794). Pessimistic like delete; the action
+  // toasts a refusal and rethrows.
+  const closePollCb = useCallback(
+    async (messageId: string) => {
+      if (!channelId) return;
+      await closePollAction(ctx, { channelId, messageId });
+    },
+    [channelId, ctx],
+  );
+
   const emitTyping = useCallback(() => {
     if (!channelId || !userId) return;
     chatRealtime.emitTyping(channelId, userId);
@@ -623,6 +639,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     unreact: unreactCb,
     edit: editCb,
     delete: deleteCb,
+    closePoll: closePollCb,
     draft,
     setDraft,
     typingUsers,
