@@ -350,6 +350,18 @@ describe("EventsPage empty states", () => {
     expect(screen.queryByRole("checkbox", { name: /select all/i })).toBeNull();
   });
 
+  it("offers no create control to a role with events:create but not members:view, which the API refuses", () => {
+    // `EVENT_CREATE_PERMISSIONS`: `POST /v1/events` needs both.
+    permissionsRef.current = ["events:create"];
+    eventsQuery.data = [];
+    render(<EventsPage />);
+
+    expect(screen.queryByRole("button", { name: /new event/i })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /^create event on/i }),
+    ).toBeNull();
+  });
+
   it("gives a member the calendar without a create control", () => {
     permissionsRef.current = ["members:view"];
     eventsQuery.data = [];

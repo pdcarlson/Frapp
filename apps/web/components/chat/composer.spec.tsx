@@ -2104,6 +2104,19 @@ describe("Composer form handoff keeps the member's input on a refusal (#3773 rev
     expect(search).toHaveValue("event Dinner 2026-11-20");
   });
 
+  it("leaves the palette open with its details when the form refuses the pick", async () => {
+    const onOpenCommandForm = vi.fn((): CommandFormOutcome => "refused");
+    const { user, onSlashDispatch, search } = await paletteType(
+      "event Dinner 2026-11-20",
+      { onOpenCommandForm },
+    );
+    await user.click(await screen.findByRole("option", { name: /event/i }));
+
+    expect(onOpenCommandForm).toHaveBeenCalled();
+    expect(onSlashDispatch).not.toHaveBeenCalled();
+    expect(search).toHaveValue("event Dinner 2026-11-20");
+  });
+
   it("prefers the palette's details over a bare command word in the editor", async () => {
     editorDouble.current = fakeEditor("/event");
     const onOpenCommandForm = vi.fn((): CommandFormOutcome => "opened");

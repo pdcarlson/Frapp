@@ -687,6 +687,9 @@ export async function runDispatch(
   }
 }
 
+/** What `onOpenCommandForm` did with a command; `null` hands it to dispatch. */
+export type CommandFormOutcome = "opened" | "refused" | null;
+
 /**
  * Toast the outcome of a slash dispatch. Shared by the two call sites (typed
  * `/command` submit and palette pick) so they cannot drift — they previously
@@ -700,9 +703,6 @@ export async function runDispatch(
  * so the server's idempotency index (#1719) does not dedupe it and a second
  * ledger row lands.
  */
-/** What `onOpenCommandForm` did with a command; `null` hands it to dispatch. */
-export type CommandFormOutcome = "opened" | "refused" | null;
-
 export function notifyDispatchOutcome(
   toast: ReturnType<typeof useToast>["toast"],
   commandName: string,

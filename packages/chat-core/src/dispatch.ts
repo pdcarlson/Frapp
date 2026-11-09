@@ -821,15 +821,9 @@ async function dispatchEvent(
     return { ok: false, error: "Couldn't read the event date or time" };
   }
 
-  const clientMessageId = randomClientId();
-
-  const placeholderContent = `Creating event "${parsed.value.name}"…`;
-
-  insertLocalPlaceholder(ctx, {
-    channelId,
-    clientMessageId,
-    content: placeholderContent,
-  });
+  // The same placeholder and recorded-row bookkeeping the event form uses
+  // from chat (#3773), so the two paths can't drift apart.
+  const card = trackEventCard(ctx, channelId, parsed.value.name);
 
   try {
     const result = await ctx.apiClient.POST("/v1/events", {
@@ -846,7 +840,7 @@ async function dispatchEvent(
         point_value: parsed.value.pointValue ?? 10,
         is_mandatory: false,
         channel_id: channelId,
-        client_message_id: clientMessageId,
+        client_message_id: card.clientMessageId,
       },
     });
     // Same status-without-`error` narrowing as `/task` / `/points`. Empty-body
@@ -857,23 +851,18 @@ async function dispatchEvent(
     if (result.error) status ??= 0;
     const ok = typeof status === "number" && status >= 200 && status < 300;
     if (!ok) {
-      removeLocalPlaceholder(ctx, channelId, clientMessageId);
+      card.failed();
       return {
         ok: false,
         error: apiErrorMessage(result.error, "Couldn't create event"),
       };
     }
     if (data?.card_posted === false) {
-      markLocalRecorded(ctx, {
-        channelId,
-        clientMessageId,
-        note: EVENT_RECORDED_ROW_NOTE,
-        content: placeholderContent,
-      });
+      card.lost();
       return { ok: true, warning: EVENT_CARD_LOST_WARNING };
     }
   } catch {
-    removeLocalPlaceholder(ctx, channelId, clientMessageId);
+    card.failed();
     return { ok: false, error: "Couldn't reach the events service" };
   }
 

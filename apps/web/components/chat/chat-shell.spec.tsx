@@ -255,6 +255,8 @@ vi.mock("./report-message-dialog", () => ({
 }));
 // The member list owns its own reads and has its own spec; here it is only a
 // column the shell decides to show.
+const mockTrackEventCard = vi.fn();
+
 vi.mock("@/components/events/event-editor-dialog", () => ({
   EventEditorDialog: (props: {
     open: boolean;
@@ -262,6 +264,7 @@ vi.mock("@/components/events/event-editor-dialog", () => ({
     initialStartAt?: string;
     initialEndAt?: string;
     postToChannelId?: string;
+    trackChatCard?: (channelId: string, name: string) => unknown;
   }) => (
     <div
       data-testid="event-form"
@@ -270,7 +273,15 @@ vi.mock("@/components/events/event-editor-dialog", () => ({
       data-start={props.initialStartAt ?? ""}
       data-end={props.initialEndAt ?? ""}
       data-channel={props.postToChannelId ?? ""}
-    />
+    >
+      {/* What the dialog does on Create: ask the chat to track the card. */}
+      <button
+        data-testid="event-form-track"
+        onClick={() => props.trackChatCard?.(props.postToChannelId ?? "", "Formal")}
+      >
+        track
+      </button>
+    </div>
   ),
 }));
 
@@ -976,6 +987,7 @@ function chatChannelResult(
     retry: vi.fn(),
     discard: vi.fn(),
     dispatchSlash: vi.fn(),
+    trackEventCard: mockTrackEventCard,
     act: vi.fn(),
     hasOlder: overrides.hasOlder ?? false,
     isLoadingOlder: overrides.isLoadingOlder ?? false,
@@ -4128,6 +4140,21 @@ describe("ChatShell opens the event form for an /event it can't read (#3773)", (
     expect(form).toHaveAttribute("data-name", "Chapter Dinner");
     expect(form).toHaveAttribute("data-start", "2026-11-20T09:00");
     expect(form).toHaveAttribute("data-end", "2026-11-20T11:00");
+  });
+
+  it("hands the form the chat's card tracker, so the card gets its placeholder and recorded row", () => {
+    mockUseMyPermissions.mockReturnValue({
+      data: { permissions: ["events:create", "members:view"] },
+    });
+    mockTrackEventCard.mockClear();
+    render(<ChatShell />);
+    fireEvent.click(eventButton("Chapter Dinner"));
+    fireEvent.click(screen.getByTestId("event-form-track"));
+
+    const channelId = screen
+      .getByTestId("event-form")
+      .getAttribute("data-channel");
+    expect(mockTrackEventCard).toHaveBeenCalledWith(channelId, "Formal");
   });
 
   it("opens it for a bare /event, as a palette pick sends", () => {

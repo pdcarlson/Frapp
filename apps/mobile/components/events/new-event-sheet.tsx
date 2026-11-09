@@ -19,6 +19,7 @@ import DateTimePicker, {
 import { formatWeekdayDay } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import {
+  EVENT_CREATE_UNCONFIRMED,
   useCreateEvent,
   useDeleteEvent,
   usePermissionList,
@@ -236,6 +237,10 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     // Written by Create; a field's line goes when that field is edited.
     const [errors, setErrors] = useState<NewEventErrors>({});
     const [submitFailed, setSubmitFailed] = useState(false);
+    // The server's answer was lost (an empty-bodied or gateway 5xx): the
+    // event may exist, and `POST /v1/events` has no dedupe, so this says
+    // check first rather than "try again" (#1717).
+    const [unconfirmed, setUnconfirmed] = useState(false);
     /** A gate refusal's member copy: retrying can't win, so Create goes. */
     const [refusal, setRefusal] = useState<string | null>(null);
     /**
@@ -284,6 +289,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       setFocused(null);
       setErrors({});
       setSubmitFailed(false);
+      setUnconfirmed(false);
       setRefusal(null);
       setRejected(null);
     }, [freshDraft]);
@@ -293,6 +299,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       markClosed();
       setFocused(null);
       setSubmitFailed(false);
+      setUnconfirmed(false);
       setRefusal(null);
       setRejected(null);
     }, [markClosed]);
@@ -344,6 +351,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       sending.current = true;
       setRejected(null);
       setSubmitFailed(false);
+      setUnconfirmed(false);
       setRefusal(null);
       const sentFrom = visit();
       updateEvent.mutate(
@@ -410,6 +418,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       if (!scope) return;
       sending.current = true;
       setSubmitFailed(false);
+      setUnconfirmed(false);
       setRefusal(null);
       const sentFrom = visit();
       deleteEvent.mutate(
@@ -457,6 +466,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       sending.current = true;
       setErrors({});
       setSubmitFailed(false);
+      setUnconfirmed(false);
       setRefusal(null);
       Keyboard.dismiss();
       const sentFrom = visit();
@@ -474,7 +484,12 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
           if (!isSameVisit(sentFrom)) return;
           const gated = gateRefusalOf(error, GATE_COPY);
           if (gated) setRefusal(gated);
-          else setSubmitFailed(true);
+          else if (
+            error instanceof Error &&
+            error.message === EVENT_CREATE_UNCONFIRMED
+          ) {
+            setUnconfirmed(true);
+          } else setSubmitFailed(true);
         },
       });
     }
@@ -734,6 +749,12 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
 
             {refusal ? <Text style={styles.error}>{refusal}</Text> : null}
             {rejected ? <Text style={styles.error}>{rejected}</Text> : null}
+            {unconfirmed ? (
+              <Text style={styles.error}>
+                We couldn&apos;t confirm it saved. Check Events before you
+                create it again: it may already be there.
+              </Text>
+            ) : null}
             {submitFailed ? (
               <Text style={styles.error}>
                 That didn&apos;t save. Your{" "}
