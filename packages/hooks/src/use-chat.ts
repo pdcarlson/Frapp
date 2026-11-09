@@ -13,6 +13,11 @@ import {
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { createChapterQueryKeys } from "./chapter-query-keys";
 import { putSignedUpload } from "./put-signed-upload";
+import {
+  invalidateNotificationLists,
+  markChannelNotificationsReadInCache,
+  refetchIfChannelNotificationsShown,
+} from "./use-notifications";
 
 /** The query key `useChannels` caches the channel list under. */
 export const CHANNEL_LIST_KEY = ["channels"] as const;
@@ -509,8 +514,12 @@ export function useLeaveChannel() {
       return data;
     },
     // `["channels"]` is a prefix, so this also refetches the unread counts,
-    // which a hide changes: it marks the thread read.
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["channels"] }),
+    // which a hide changes: it marks the thread read, and clears the chat
+    // notifications about it (#3788), so the inbox refetches when it shows one.
+    onSuccess: (_data, id) => {
+      refetchIfChannelNotificationsShown(queryClient, id);
+      return queryClient.invalidateQueries({ queryKey: ["channels"] });
+    },
   });
 }
 
@@ -562,8 +571,14 @@ export function useMarkChannelRead() {
       throwUnlessOk(result);
       return result.data;
     },
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ["channels"] });
+      // The read also cleared this channel's chat notifications on the server
+      // (#3788). Mirror that in the inbox's cache, and refetch it only when it
+      // was showing one, so a busy channel's reads don't each cost a list GET.
+      if (markChannelNotificationsReadInCache(queryClient, id)) {
+        void invalidateNotificationLists(queryClient);
+      }
     },
   });
 }

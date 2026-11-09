@@ -196,6 +196,7 @@ describe('Reported attachment evidence, end to end (#2481)', () => {
       unused,
       attachments,
       unused,
+      unused,
     );
     const channelAccess = {
       assertMessageAccess: jest.fn(async (id: string) => messages.get(id)),
