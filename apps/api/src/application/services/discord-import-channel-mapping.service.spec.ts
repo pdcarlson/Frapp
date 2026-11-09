@@ -139,6 +139,27 @@ describe('DiscordImportChannelMappingService — channel mapping', () => {
     }
   });
 
+  it('refuses the audit log as a target (#3909)', async () => {
+    await build();
+    channelRepo.findById.mockResolvedValueOnce({
+      id: OWN_CHANNEL,
+      chapter_id: CHAPTER,
+      name: 'chapter-audit',
+      type: 'PUBLIC',
+      is_audit_log: true,
+    });
+    await expect(
+      channelMapping.setChannelMapping(IMPORT_ID, CHAPTER, [
+        {
+          discord_channel_id: '1',
+          discord_channel_name: 'mod-log',
+          mapping_action: 'use_existing',
+          target_channel_id: OWN_CHANNEL,
+        },
+      ]),
+    ).rejects.toThrow(/can't be imported into the audit log/);
+  });
+
   it('refuses a new channel with no name', async () => {
     await build();
     await expect(
