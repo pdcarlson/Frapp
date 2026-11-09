@@ -25,6 +25,8 @@ const virtuosoProps = vi.hoisted(() => ({
     firstItemIndex?: number;
     followOutput?: unknown;
     atTopStateChange?: (atTop: boolean) => void;
+    scrollerRef?: (node: HTMLElement | Window | null) => void;
+    totalListHeightChanged?: (height: number) => void;
   },
   // The handle's one method the timeline calls, for the cases that assert
   // where it scrolls.
@@ -41,6 +43,8 @@ vi.mock("react-virtuoso", async () => {
         firstItemIndex,
         followOutput,
         atTopStateChange,
+        scrollerRef,
+        totalListHeightChanged,
         components,
         context,
       }: {
@@ -49,6 +53,8 @@ vi.mock("react-virtuoso", async () => {
         firstItemIndex?: number;
         followOutput?: unknown;
         atTopStateChange?: (atTop: boolean) => void;
+        scrollerRef?: (node: HTMLElement | Window | null) => void;
+        totalListHeightChanged?: (height: number) => void;
         components?: {
           Header?: (props: { context?: unknown }) => React.ReactNode;
         };
@@ -63,6 +69,8 @@ vi.mock("react-virtuoso", async () => {
         firstItemIndex,
         followOutput,
         atTopStateChange,
+        scrollerRef,
+        totalListHeightChanged,
       };
       const Header = components?.Header;
       return (
@@ -1202,6 +1210,131 @@ describe("MessageTimeline older history (#1571)", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(onLoadOlder).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * A row that grows after it is drawn (a photo's attachments landing, an
+ * unsized photo decoding) keeps the list on its newest message, as long as
+ * the member left it there. Virtuoso only follows a rising row count.
+ */
+describe("MessageTimeline — staying at the newest message as rows grow", () => {
+  const rows = (count: number) =>
+    Array.from({ length: count }, (_, i) =>
+      message({
+        id: `msg-${i + 1}`,
+        client_message_id: `cm-${i + 1}`,
+        content: `message ${i + 1}`,
+        created_at: new Date(Date.UTC(2026, 8, 1) + i * 60_000).toISOString(),
+      }),
+    );
+  const TO_NEWEST = { index: "LAST", align: "end", behavior: "auto" };
+
+  let now = 0;
+  beforeEach(() => {
+    now = 10_000;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** A scroller of 1000px content in a 400px viewport, scrolled to `top`. */
+  function attachScroller(top: number) {
+    const node = document.createElement("div");
+    Object.defineProperty(node, "scrollHeight", { value: 1000 });
+    Object.defineProperty(node, "clientHeight", { value: 400 });
+    node.scrollTop = top;
+    act(() => virtuosoProps.current.scrollerRef?.(node));
+    return node;
+  }
+  function scrollTo(node: HTMLElement, top: number) {
+    node.scrollTop = top;
+    node.dispatchEvent(new Event("scroll"));
+  }
+  function rowsGrow() {
+    // Past the window in which Virtuoso answers a count change itself.
+    now += 1_000;
+    virtuosoProps.scrollToIndex.mockClear();
+    act(() => virtuosoProps.current.totalListHeightChanged?.(1200));
+  }
+
+  it("follows a row that grows while the member is at the bottom", () => {
+    renderTimeline(rows(5));
+    attachScroller(600);
+
+    rowsGrow();
+
+    expect(virtuosoProps.scrollToIndex).toHaveBeenCalledWith(TO_NEWEST);
+  });
+
+  it("leaves a member who scrolled up where they are", () => {
+    renderTimeline(rows(5));
+    const node = attachScroller(600);
+    scrollTo(node, 200);
+
+    rowsGrow();
+
+    expect(virtuosoProps.scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it("follows again once the member scrolls back down", () => {
+    renderTimeline(rows(5));
+    const node = attachScroller(600);
+    scrollTo(node, 200);
+    scrollTo(node, 597);
+
+    rowsGrow();
+
+    expect(virtuosoProps.scrollToIndex).toHaveBeenCalledWith(TO_NEWEST);
+  });
+
+  it("does not pull a jump back to the newest message", () => {
+    // The jump's scroll event arrives a frame later; rows measured on the way
+    // must not read the list as still at the bottom.
+    const ref = createRef<MessageTimelineHandle>();
+    renderTimeline(rows(5), { ref });
+    attachScroller(600);
+
+    expect(ref.current?.scrollToMessage("msg-2")).toBe(true);
+    rowsGrow();
+
+    expect(virtuosoProps.scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it("does not follow while a jump is on its way", () => {
+    renderTimeline(rows(5), { holdFollow: true });
+    attachScroller(600);
+
+    rowsGrow();
+
+    expect(virtuosoProps.scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it("leaves a new message to Virtuoso's smooth follow", () => {
+    const { rerender } = renderTimeline(rows(5));
+    attachScroller(600);
+    now += 1_000;
+    const more = rows(6);
+    rerender(
+      <MessageTimeline
+        channelId="chan-1"
+        messages={more}
+        viewerId={VIEWER}
+        nameFor={nameFor}
+        avatarFor={avatarFor}
+        isLoading={false}
+        loadError={null}
+        onReact={vi.fn()}
+        onUnreact={vi.fn()}
+        {...timelineBlockProps(more, VIEWER)}
+      />,
+    );
+    virtuosoProps.scrollToIndex.mockClear();
+
+    act(() => virtuosoProps.current.totalListHeightChanged?.(1100));
+
+    expect(virtuosoProps.scrollToIndex).not.toHaveBeenCalled();
   });
 });
 
