@@ -32,7 +32,8 @@ closed, including `[human]` titles) and refresh a near-match rather than duplica
 
 ## How to write one (so an agent can execute it)
 
-Labels: `triage`, exactly one `area:<x>`, and a priority (`P1` urgent, `P2` high, `P3` medium, `P4`
+Labels: `triage` (left off for a person's own ask, per
+[`AGENTS.md` § Work tracking](../../../AGENTS.md#work-tracking)), exactly one `area:<x>`, and a priority (`P1` urgent, `P2` high, `P3` medium, `P4`
 low). The `area:` roster lives in
 [`routines.md` → Tracker access](../../../docs/ci-cd/routines.md#tracker-access-shared-by-all-routines).
 

@@ -24,7 +24,8 @@ GitHub Issues (canonical: planning, status, Triage intake)
 - **GitHub Issues is canonical** for what to work on and its status. There is **no fallback
   tracker** — if the GitHub MCP is down, `/next` and the routines stop rather than guessing.
 - **All issues are opened on GitHub with the `triage` label.** Never in Linear (retired), never in
-  a scratch file. Two carve-outs, neither of them work:
+  a scratch file. A person's own ask skips it (§ Triage is the intake, below). Two other carve-outs,
+  neither of them work:
   - **`routine-state`** infrastructure issues (e.g. the "PR Follow-ups — Human Action List"
     tracking issue) carry `routine-state` instead, and `/next` and the routines skip them as work.
   - **`incident`** issues are the watchdogs' live alerts (`scripts/ci/lib/alert-issue.mjs`), filed
@@ -57,7 +58,9 @@ GitHub Issues (canonical: planning, status, Triage intake)
   on its own branch may file the issue and claim it in the same breath — record-keeping for work
   already underway, not auto-starting inbox work. And a human naming an issue (`/next <N>`) is the
   triage decision, so that run promotes it as it claims it; ranked `/next` still never picks a
-  `triage` item.
+  `triage` item. Likewise, an issue filed for what a person asked for in their own chat skips
+  Triage and goes straight to the Backlog with its priority
+  ([`AGENTS.md` § Work tracking](../../AGENTS.md#work-tracking), Paul, 2026-11-09).
 
 ### How agents reach the tracker
 

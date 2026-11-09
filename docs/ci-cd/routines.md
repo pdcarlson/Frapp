@@ -30,6 +30,12 @@ it waits on. Earlier decisions: ADR-16 amendments 4–10.
 
 Don't bring back the hourly "Next steps" Routine (`/next`), disabled since 2026-09-05: it would
 claim and ship backlog work, product code included, which is outside the ownership boundary below.
+
+*2026-11-09 (Paul):* Backlog work only moved when someone named an issue, so a daily pull runs
+instead. The scheduled task **Frapp Daily Pull** fires once a day in a fresh session and runs
+`/next` on the top viable P1 or P2 Backlog issue only. It opens at most one PR, which Paul merges,
+and ends once that PR is green with auto-merge on. It is not one of the three routines: `/next`'s
+own rules govern it, and the boundary below does not.
 The scheduled GitHub Actions watchdogs (uptime, backups, Supabase quota, npm audit, conformance,
 the stuck-run sweep) are not routines and are listed in
 [`agent-infra.md`](agent-infra.md); a routine doesn't repeat what one of them already checks.
