@@ -104,9 +104,11 @@ export function useBackworkCourses(options: { enabled?: boolean } = {}) {
 }
 
 /**
- * Names a course or sets its nicknames (`PUT /v1/backwork/courses`), creating
- * its entry on first write. Without `backwork:admin` the API refuses a rename
- * of a set name or a removed nickname with a 403.
+ * Changes a course's name or nicknames (`PUT /v1/backwork/courses`), creating
+ * its entry on first write. Nicknames go as a delta (`add_nicknames`,
+ * `remove_nicknames`) the API applies to the list as stored, so send only
+ * what the person changed. Without `backwork:admin` the API refuses a rename
+ * of a set name or any removal with a 403.
  */
 export function useSaveBackworkCourse() {
   const client = useFrappClient();
@@ -116,7 +118,8 @@ export function useSaveBackworkCourse() {
       department_id: string;
       course_number: string;
       name?: string | null;
-      nicknames?: string[];
+      add_nicknames?: string[];
+      remove_nicknames?: string[];
     }) => {
       const { data, error } = await client.PUT("/v1/backwork/courses", {
         body,

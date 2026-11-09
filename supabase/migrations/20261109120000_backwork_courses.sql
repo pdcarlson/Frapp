@@ -7,7 +7,8 @@
 -- course itself is called, so "Calc 1" or "Orgo" found nothing a member had
 -- not typed into a title. `backwork_courses` is a per-chapter dictionary: one
 -- row per (chapter, department, course number), with an optional display
--- `name` ("Calculus I") and any number of `nicknames` ("Calc 1", "Orgo").
+-- `name` ("Calculus I") and up to 20 `nicknames` ("Calc 1", "Orgo"), each at
+-- most 60 characters.
 --
 -- A course is not a parent of its files. Files keep `department_id` +
 -- `course_number` exactly as before, and a file joins its course by those two
@@ -25,6 +26,25 @@
 -- to match the course name and nicknames too, at weight B with the course.
 -- Everything else it does is unchanged from 20261106190000.
 
+-- The nickname limits, per element: a CHECK can't hold a subquery, but it can
+-- call an immutable function that does. Mirrors MAX_COURSE_NICKNAMES and
+-- MAX_COURSE_NICKNAME_LENGTH in @repo/validation (backwork-courses.ts).
+create or replace function public.backwork_course_nicknames_ok(p_nicknames text[])
+returns boolean
+language sql
+immutable
+set search_path = public, pg_temp
+as $$
+  select cardinality(p_nicknames) <= 20
+     and not exists (
+       select 1 from unnest(p_nicknames) as n
+        where n is null or char_length(n) not between 1 and 60
+     );
+$$;
+
+comment on function public.backwork_course_nicknames_ok(text[]) is
+  'CHECK helper for backwork_courses.nicknames: at most 20, each 1 to 60 characters. See 20261109120000_backwork_courses.sql.';
+
 create table if not exists public.backwork_courses (
   id uuid primary key default gen_random_uuid(),
   chapter_id uuid not null references public.chapters(id) on delete cascade,
@@ -39,19 +59,13 @@ create table if not exists public.backwork_courses (
     check (char_length(btrim(course_number)) between 1 and 20),
   constraint backwork_courses_name_len
     check (name is null or char_length(name) between 1 and 255),
-  -- At most 20 nicknames, each at most 60 characters (61 * 20 counts the
-  -- separators). The API's DTO holds the per-item limit exactly.
   constraint backwork_courses_nicknames_cap
-    check (
-      cardinality(nicknames) <= 20
-      and char_length(array_to_string(nicknames, ' ')) <= 61 * 20
-    ),
+    check (public.backwork_course_nicknames_ok(nicknames)),
   constraint backwork_courses_unique_course
     unique (chapter_id, department_id, course_key)
 );
 
-create index if not exists idx_backwork_courses_chapter
-  on public.backwork_courses (chapter_id);
+-- No separate chapter_id index: the unique constraint's index leads with it.
 create index if not exists idx_backwork_courses_department
   on public.backwork_courses (department_id);
 

@@ -204,7 +204,9 @@ export class BackworkCourseDto {
 }
 
 /**
- * Names a course or adds nicknames, creating its entry on first write. Who
+ * A change to a course's name and nicknames, creating its entry on first
+ * write. Nicknames travel as a delta applied to the stored list, so an editor
+ * holding a stale list can't drop what someone else added. Who
  * may change what is `courseEditRefusal` (domain/utils/backwork-course-rules).
  */
 export class UpsertBackworkCourseDto {
@@ -234,14 +236,27 @@ export class UpsertBackworkCourseDto {
     type: [String],
     maxItems: MAX_COURSE_NICKNAMES,
     description:
-      'The full list wanted; omit to keep the stored list. Dropping one needs backwork:admin.',
+      'Nicknames to add to the list as stored. Open to backwork:upload; a list past the cap is a 400.',
   })
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(MAX_COURSE_NICKNAMES)
   @IsString({ each: true })
   @MaxLength(MAX_COURSE_NICKNAME_LENGTH, { each: true })
-  nicknames?: string[];
+  add_nicknames?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    maxItems: MAX_COURSE_NICKNAMES,
+    description:
+      'Nicknames to remove from the list as stored, matched case-insensitively. Needs backwork:admin.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_COURSE_NICKNAMES)
+  @IsString({ each: true })
+  @MaxLength(MAX_COURSE_NICKNAME_LENGTH, { each: true })
+  remove_nicknames?: string[];
 }
 
 export class UpdateProfessorDto {

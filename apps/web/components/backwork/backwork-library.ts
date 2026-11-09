@@ -1,6 +1,6 @@
 import { ASSIGNMENT_TYPES, DOCUMENT_VARIANTS } from "@repo/validation";
 import {
-  fuzzyMatchWords,
+  isNumeralWord,
   matchQueryWord,
   normalizeWords,
   withNumeralVariants,
@@ -64,8 +64,12 @@ export type BackworkCourse = {
 export type CoursePhrase = {
   text: string;
   isNickname: boolean;
-  /** Normalised, with Roman and Arabic numerals both present. */
+  /** Normalised words, as written. */
   words: readonly string[];
+  /** The words that aren't numbers from 1 to 10 (`isNumeralWord`). */
+  textWords: readonly string[];
+  /** Each numeral word with its other spelling ("i" → "i", "1"), for exact matching. */
+  numerals: readonly { word: string; forms: readonly string[] }[];
 };
 
 /** A row with its department and professor resolved, as the list draws it. */
@@ -151,11 +155,18 @@ function courseKey(departmentId: string, courseNumber: string): string {
 
 function phrasesFor(course: BackworkCourse | null): CoursePhrase[] {
   if (!course) return [];
-  const phrase = (text: string, isNickname: boolean): CoursePhrase => ({
-    text,
-    isNickname,
-    words: withNumeralVariants(normalizeWords(text)),
-  });
+  const phrase = (text: string, isNickname: boolean): CoursePhrase => {
+    const words = normalizeWords(text);
+    return {
+      text,
+      isNickname,
+      words,
+      textWords: words.filter((word) => !isNumeralWord(word)),
+      numerals: words
+        .filter(isNumeralWord)
+        .map((word) => ({ word, forms: withNumeralVariants([word]) })),
+    };
+  };
   return [
     ...(course.name ? [phrase(course.name, false)] : []),
     ...course.nicknames.map((nickname) => phrase(nickname, true)),
@@ -203,18 +214,25 @@ export function toLibraryRows(
       title: resource.title?.trim() || fallbackTitle || "Untitled",
       words: [] as readonly string[],
     };
-    // The course's names join the row's words with their numeral variants,
-    // so "calc 1" finds a course named "Calculus I" (and the reverse).
+    // The course's names join the row's words without their numbers: a
+    // number in a course name counts only beside a word of the same name
+    // (`courseMatch`), so "hw 1" can't find Calculus I's Homework 5.
     row.words = [
-      ...normalizeWords(searchText(row)),
-      ...coursePhrases.flatMap((phrase) => phrase.words),
+      ...normalizeWords(searchText(row, { courseNames: false })),
+      ...coursePhrases.flatMap((phrase) => phrase.textWords),
     ];
     return row;
   });
 }
 
-/** Everything a member might type to find a row. */
-export function searchText(row: LibraryRow): string {
+/**
+ * Everything a member might type to find a row. `courseNames: false` leaves
+ * out the course's name and nicknames, which `toLibraryRows` adds itself.
+ */
+export function searchText(
+  row: LibraryRow,
+  { courseNames = true }: { courseNames?: boolean } = {},
+): string {
   const { resource, department, professor } = row;
   return [
     row.title,
@@ -225,8 +243,7 @@ export function searchText(row: LibraryRow): string {
     department?.code && resource.course_number
       ? `${department.code}${resource.course_number}`
       : null,
-    row.courseEntry?.name,
-    ...(row.courseEntry?.nicknames ?? []),
+    ...(courseNames ? [row.courseEntry?.name, ...(row.courseEntry?.nicknames ?? [])] : []),
     professor?.name,
     resource.semester,
     resource.year,
@@ -277,6 +294,8 @@ function passesFilters(row: LibraryRow, filters: LibraryFilters): boolean {
  * Midterm 1", which matches "calc" by its course and "1" by its number.
  */
 const COURSE_PHRASE_WEIGHT = 10;
+/** A numeral matched through the course's name: as good as an exact word. */
+const NUMERAL_SCORE = 3;
 
 export type LibraryResult = FuzzyResult<LibraryRow> & {
   /**
@@ -284,28 +303,59 @@ export type LibraryResult = FuzzyResult<LibraryRow> & {
    * better than by its name, for the row to show "(Orgo)"; otherwise null.
    */
   nickname: string | null;
+  /**
+   * Normalised words of the course's name and nicknames the query matched,
+   * as written ("i" for a query "1"), for highlighting the course line.
+   */
+  courseHits: string[];
 };
 
-/** The phrase of `row`'s course that matches the most query words. */
-function bestCoursePhrase(
-  row: LibraryRow,
-  queryWords: readonly string[],
-): { matched: number; phrase: CoursePhrase | null; nameMatched: number } {
-  let best: { matched: number; phrase: CoursePhrase | null } = { matched: 0, phrase: null };
-  let nameMatched = 0;
-  for (const phrase of row.coursePhrases) {
-    const matched = queryWords.filter(
-      (word) => matchQueryWord(word, phrase.words, BACKWORK_SEARCH_ALIASES).score > 0,
-    ).length;
-    if (!phrase.isNickname) nameMatched = matched;
-    if (matched > best.matched) best = { matched, phrase };
-  }
-  return { ...best, nameMatched };
+type PhraseMatch = {
+  phrase: CoursePhrase;
+  /** Query words this phrase matched, gated as `courseMatch` says. */
+  matched: Set<string>;
+  hits: string[];
+};
+
+/**
+ * How the query matches each of the row's course phrases. A word matches a
+ * phrase's text words the way search matches any word (prefix, typo). A
+ * number from 1 to 10, in either spelling, matches only exactly, in either
+ * spelling ("1" finds "I", never "II"), and only when some other query word
+ * matched the same phrase: a bare number must not reach a file through its
+ * course's name.
+ */
+function courseMatch(row: LibraryRow, queryWords: readonly string[]): PhraseMatch[] {
+  return row.coursePhrases.map((phrase) => {
+    const matched = new Set<string>();
+    const hits: string[] = [];
+    for (const word of queryWords) {
+      if (isNumeralWord(word)) continue;
+      const { hit } = matchQueryWord(word, phrase.textWords, BACKWORK_SEARCH_ALIASES);
+      if (hit) {
+        matched.add(word);
+        hits.push(hit);
+      }
+    }
+    if (matched.size > 0) {
+      for (const word of queryWords) {
+        if (!isNumeralWord(word)) continue;
+        const numeral = phrase.numerals.find((n) => n.forms.includes(word));
+        if (numeral) {
+          matched.add(word);
+          hits.push(numeral.word);
+        }
+      }
+    }
+    return { phrase, matched, hits };
+  });
 }
 
 /**
- * Filters, then searches. With a query, best match first (ties newest term
- * first); without one, newest term first. A file whose course the query
+ * Filters, then searches. Every query word must match the row (AND, as
+ * `fuzzyMatchWords`), either among its words or, for a number, through its
+ * course's name (`courseMatch`). With a query, best match first (ties newest
+ * term first); without one, newest term first. A file whose course the query
  * names, by its name or a nickname, ranks first (`COURSE_PHRASE_WEIGHT`).
  */
 export function queryLibrary(
@@ -314,22 +364,44 @@ export function queryLibrary(
   filters: LibraryFilters,
 ): LibraryResult[] {
   const ordered = rows.filter((row) => passesFilters(row, filters)).sort(compareByTerm);
-  const matched = fuzzyMatchWords(ordered, query, (row) => row.words, BACKWORK_SEARCH_ALIASES);
   const queryWords = normalizeWords(query);
-  if (queryWords.length === 0) return matched.map((result) => ({ ...result, nickname: null }));
-  return matched
-    .map((result, index) => {
-      const best = bestCoursePhrase(result.item, queryWords);
-      return {
-        index,
-        result: {
-          ...result,
-          score: result.score + best.matched * COURSE_PHRASE_WEIGHT,
-          nickname:
-            best.phrase?.isNickname && best.matched > best.nameMatched ? best.phrase.text : null,
-        },
-      };
-    })
+  if (queryWords.length === 0) {
+    return ordered.map((item) => ({ item, score: 0, hits: [], nickname: null, courseHits: [] }));
+  }
+  const results: { index: number; result: LibraryResult }[] = [];
+  ordered.forEach((row, index) => {
+    const phrases = courseMatch(row, queryWords);
+    let score = 0;
+    const hits: string[] = [];
+    for (const word of queryWords) {
+      const best = matchQueryWord(word, row.words, BACKWORK_SEARCH_ALIASES);
+      if (best.score > 0 && best.hit) {
+        score += best.score;
+        hits.push(best.hit);
+      } else if (phrases.some((p) => p.matched.has(word))) {
+        score += NUMERAL_SCORE;
+      } else {
+        return;
+      }
+    }
+    let best: PhraseMatch | null = null;
+    for (const p of phrases) {
+      if (p.matched.size > (best?.matched.size ?? 0)) best = p;
+    }
+    const nameMatched = phrases.find((p) => !p.phrase.isNickname)?.matched.size ?? 0;
+    results.push({
+      index,
+      result: {
+        item: row,
+        score: score + (best?.matched.size ?? 0) * COURSE_PHRASE_WEIGHT,
+        hits,
+        nickname:
+          best?.phrase.isNickname && best.matched.size > nameMatched ? best.phrase.text : null,
+        courseHits: phrases.flatMap((p) => p.hits),
+      },
+    });
+  });
+  return results
     .sort((a, b) => b.result.score - a.result.score || a.index - b.index)
     .map(({ result }) => result);
 }

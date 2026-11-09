@@ -345,3 +345,95 @@ describe("course names and nicknames (#3848)", () => {
     expect(options).toContainEqual({ value: "MATH 1020", label: "MATH 1020 · Mathematics" });
   });
 });
+
+describe("numbers in course names (#3848 review)", () => {
+  const math = { id: "d-math", code: "MATH", name: "Mathematics" };
+  const course = (id: string, number: string, name: string, nicknames: string[] = []) => ({
+    id,
+    department_id: "d-math",
+    course_number: number,
+    course_key: number,
+    name,
+    nicknames,
+  });
+  const file = (id: string, number: string, overrides: Partial<BackworkResource> = {}) =>
+    resource({ id, department_id: "d-math", course_number: number, ...overrides });
+
+  it("'hw 1' ranks another course's Homework 1 first and leaves Calculus I's Homework 5 out", () => {
+    const rows = toLibraryRows(
+      [
+        file("calc1-hw5", "1010", {
+          title: "Homework 5",
+          assignment_type: "Homework",
+          assignment_number: 5,
+        }),
+        file("stats-hw1", "2200", {
+          title: "Homework 1",
+          assignment_type: "Homework",
+          assignment_number: 1,
+        }),
+      ],
+      [math],
+      [],
+      [course("c1", "1010", "Calculus I")],
+    );
+    const ids = queryLibrary(rows, "hw 1", NO_FILTERS).map((r) => r.item.resource.id);
+    expect(ids).toEqual(["stats-hw1"]);
+  });
+
+  it("a bare number never reaches a file through its course name", () => {
+    const rows = toLibraryRows(
+      [file("calc1-final", "1010", { title: "Final" })],
+      [math],
+      [],
+      [course("c1", "1010", "Calculus I")],
+    );
+    expect(queryLibrary(rows, "1", NO_FILTERS)).toEqual([]);
+    expect(queryLibrary(rows, "i", NO_FILTERS)).toEqual([]);
+  });
+
+  describe("Calculus I, II and III", () => {
+    const rows = toLibraryRows(
+      [
+        file("one", "1010", { title: "Final" }),
+        file("two", "1020", { title: "Final" }),
+        file("three", "1030", { title: "Final" }),
+      ],
+      [math],
+      [],
+      [
+        course("c1", "1010", "Calculus I"),
+        course("c2", "1020", "Calculus II", ["Calc 2"]),
+        course("c3", "1030", "Calculus III"),
+      ],
+    );
+    const results = (query: string) => queryLibrary(rows, query, NO_FILTERS);
+
+    it("gives the course bonus only to the exact numeral", () => {
+      for (const [query, first] of [
+        ["Calc I", "one"],
+        ["Calc 1", "one"],
+        ["Calc II", "two"],
+        ["Calc 2", "two"],
+        ["Calculus 3", "three"],
+        ["Calc III", "three"],
+      ] as const) {
+        const found = results(query);
+        expect(found[0]?.item.resource.id).toBe(first);
+        // "I" does not prefix "II": the others lack the numeral and so the
+        // bonus for it, and don't match at all.
+        expect(found).toHaveLength(1);
+      }
+    });
+
+    it("returns the course words it matched, as written, for highlighting", () => {
+      expect(results("Calc 1")[0]?.courseHits.sort()).toEqual(["calculus", "i"]);
+    });
+
+    it("reports a nickname only when it beat the name", () => {
+      // "calc 2": the nickname matches both words exactly, the name too
+      // ("calc" prefixes "calculus", "2" is "ii"); a tie shows no nickname.
+      expect(results("Calc 2")[0]?.nickname).toBeNull();
+    });
+  });
+});

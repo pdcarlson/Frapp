@@ -71,7 +71,6 @@ import {
 } from "@/components/backwork/backwork-row-parts";
 import {
   BACKWORK_LIST_CAP,
-  BACKWORK_SEARCH_ALIASES,
   NO_FILTERS,
   OPTION_FOR,
   filterOptions,
@@ -107,11 +106,6 @@ import {
 } from "@/components/shared/table-controls";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
-import {
-  matchQueryWord,
-  normalizeWords,
-  withNumeralVariants,
-} from "@/lib/search/fuzzy-match";
 
 /**
  * `/backwork`, rebuilt 2026-11-05 around the files instead of a filter form
@@ -217,21 +211,6 @@ function courseHits(row: LibraryRow, hits: readonly string[]): readonly string[]
   const number = row.resource.course_number?.toLowerCase();
   if (!code || !number || !hits.includes(`${code}${number}`)) return hits;
   return [...hits, code, number];
-}
-
-/**
- * The words of a course's name or nickname the query matched, scored against
- * that text alone: the row's own hits may have landed on another phrase
- * ("calc" exactly on the nickname "Calc 1", not on "Calculus"), and a numeral
- * may have matched in its other spelling ("1" for "I").
- */
-function phraseHits(text: string, query: string): readonly string[] {
-  const words = withNumeralVariants(normalizeWords(text));
-  const hits = normalizeWords(query).flatMap((word) => {
-    const { hit } = matchQueryWord(word, words, BACKWORK_SEARCH_ALIASES);
-    return hit ? [hit] : [];
-  });
-  return hits.length ? withNumeralVariants(hits) : hits;
 }
 
 export function BackworkPage() {
@@ -492,24 +471,23 @@ export function BackworkPage() {
       });
     }
     let nameCourse: RowMenuEntry | null = null;
-    // Naming a course is open to uploaders while it has no name (#3848;
-    // who may change what is the API's `courseEditRefusal`).
+    // Uploaders name an unnamed course and add nicknames to a named one; an
+    // admin may also rename (#3848; the rule is the API's
+    // `courseEditRefusal`, and the dialog shows a member a set name
+    // read-only).
     const courseNumber = row.resource.course_number?.trim();
     const courseName = row.courseEntry?.name;
-    if (
-      department &&
-      course &&
-      courseNumber &&
-      (isAdmin || (canUpload && !courseName))
-    ) {
+    if (department && course && courseNumber && (isAdmin || canUpload)) {
       nameCourse = {
         type: "item",
         key: "name-course",
         disabled: writeBlocked,
         describedBy,
-        label: courseName
-          ? `Rename the ${course} course…`
-          : `Name the ${course} course…`,
+        label: !courseName
+          ? `Name the ${course} course…`
+          : isAdmin
+            ? `Rename the ${course} course…`
+            : `Add a nickname for ${course}…`,
         icon: Pencil,
         onSelect: () =>
           courseDialog.requestCourseName({
@@ -853,13 +831,11 @@ export function BackworkPage() {
         ) : resourcesQuery.isLoading ||
           (resourcesQuery.isPending &&
             resourcesQuery.fetchStatus === "paused") ||
-          // Rows join departments, professors and course names on the
-          // client; without them a course reads as a bare number and search
-          // misses "cogs" or "calc 1".
-          (rows.length > 0 &&
-            (departmentsQuery.isLoading ||
-              professorsQuery.isLoading ||
-              coursesQuery.isLoading)) ? (
+          // Rows join departments and professors on the client; without them
+          // a course reads as a bare number and search misses "cogs". Course
+          // names are not waited on: rows show the department's name until
+          // they arrive.
+          (rows.length > 0 && (departmentsQuery.isLoading || professorsQuery.isLoading)) ? (
           <BackworkRowsSkeleton />
         ) : resourcesQuery.isError ||
           departmentsQuery.isError ||
@@ -906,7 +882,7 @@ export function BackworkPage() {
             </div>
             <ul className={denseListClassName}>
               {/* eslint-disable-next-line react-hooks/refs -- `rowEntries` closes over `removeFile`, which reads `gateRef` after its confirm resolves, not during render */}
-              {results.map(({ item: row, hits, nickname }) => (
+              {results.map(({ item: row, hits, nickname, courseHits: nameHits }) => (
                 <RowMenu
                   key={row.resource.id}
                   entries={rowEntries(row)}
@@ -937,7 +913,7 @@ export function BackworkPage() {
                               {row.course ? " · " : null}
                               <Highlighted
                                 text={row.courseLabel}
-                                hits={[...hits, ...phraseHits(row.courseLabel, deferredQuery)]}
+                                hits={[...hits, ...nameHits]}
                               />
                             </>
                           ) : null}
@@ -946,7 +922,7 @@ export function BackworkPage() {
                               {" ("}
                               <Highlighted
                                 text={nickname}
-                                hits={phraseHits(nickname, deferredQuery)}
+                                hits={nameHits}
                               />
                               {")"}
                             </span>

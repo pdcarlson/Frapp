@@ -5,6 +5,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Logger,
 } from '@nestjs/common';
 import {
   isAllowedUploadExtension,
@@ -44,6 +45,7 @@ import {
 import { assertSafeStoragePath } from '#domain/utils/storage-path';
 import { safeObjectFilename } from '#domain/constants/storage';
 import {
+  applyNicknameEdit,
   courseEditRefusal,
   mergeCourseNames,
 } from '#domain/utils/backwork-course-rules';
@@ -64,8 +66,10 @@ export interface UpsertCourseInput {
   course_number: string;
   /** Omitted keeps the stored name; `null` or blank clears it (admin only). */
   name?: string | null;
-  /** The full list wanted; omitted keeps the stored list. */
-  nicknames?: string[];
+  /** Nicknames to add to the list as stored now. */
+  add_nicknames?: string[];
+  /** Nicknames to remove from the list as stored now (admin only). */
+  remove_nicknames?: string[];
 }
 
 export interface ConfirmUploadInput {
@@ -93,6 +97,8 @@ export interface ConfirmUploadInput {
 
 @Injectable()
 export class BackworkService {
+  private readonly logger = new Logger(BackworkService.name);
+
   constructor(
     @Inject(BACKWORK_RESOURCE_REPOSITORY)
     private readonly resourceRepo: IBackworkResourceRepository,
@@ -195,6 +201,9 @@ export class BackworkService {
       );
     }
 
+    // Trimmed like the course key (`lower(btrim(course_number))`), so the
+    // stored number and the course join agree.
+    const courseNumber = input.course_number?.trim() || null;
     const created = await this.resourceRepo.create({
       chapter_id: input.chapter_id,
       uploader_id: input.uploader_id,
@@ -202,7 +211,7 @@ export class BackworkService {
       file_hash: input.file_hash,
       title: input.title ?? null,
       department_id: departmentId,
-      course_number: input.course_number ?? null,
+      course_number: courseNumber,
       professor_id: professorId,
       year: input.year ?? null,
       semester: (input.semester as Semester) ?? null,
@@ -214,14 +223,22 @@ export class BackworkService {
     });
 
     const courseName = input.course_name?.trim();
-    const courseNumber = input.course_number?.trim();
     if (departmentId && courseNumber && courseName) {
-      await this.nameCourseIfUnnamed(
-        input.chapter_id,
-        departmentId,
-        courseNumber,
-        courseName,
-      );
+      // Best effort: the file is filed by now, and a course name that didn't
+      // save must not report the upload as failed (the member would retry and
+      // hit the duplicate-hash 409). It can be named from the row menu.
+      try {
+        await this.nameCourseIfUnnamed(
+          input.chapter_id,
+          departmentId,
+          courseNumber,
+          courseName,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Couldn't name course ${courseNumber} (department ${departmentId}) for chapter ${input.chapter_id} after upload ${created.id}: ${(error as Error)?.message ?? String(error)}`,
+        );
+      }
     }
     return created;
   }
@@ -363,8 +380,19 @@ export class BackworkService {
       input.name === undefined
         ? (stored?.name ?? null)
         : input.name?.trim().replace(/\s+/g, ' ') || null;
-    const nicknames = normalizeCourseNicknames(
-      input.nicknames ?? stored?.nicknames ?? [],
+    const removeNicknames = input.remove_nicknames ?? [];
+    const refusal = courseEditRefusal(
+      stored,
+      { name, removeNicknames },
+      isAdmin,
+    );
+    if (refusal) throw new ForbiddenException(refusal);
+    // Applied to the row as read just now, not to the list the editor saw,
+    // so concurrent edits add up instead of undoing each other.
+    const nicknames = applyNicknameEdit(
+      stored?.nicknames ?? [],
+      input.add_nicknames ?? [],
+      removeNicknames,
       name,
     );
     if (nicknames.length > MAX_COURSE_NICKNAMES) {
@@ -372,8 +400,6 @@ export class BackworkService {
         `A course takes at most ${MAX_COURSE_NICKNAMES} nicknames`,
       );
     }
-    const refusal = courseEditRefusal(stored, { name, nicknames }, isAdmin);
-    if (refusal) throw new ForbiddenException(refusal);
 
     if (stored) {
       const updated = await this.courseRepo.update(stored.id, chapterId, {
@@ -521,13 +547,14 @@ export class BackworkService {
         });
         continue;
       }
-      // Delete the source entry first: the target keeps the unique key.
-      await this.courseRepo.delete(course.id, chapterId);
+      // The twin first: if its write fails, the source entry is still
+      // there, and the department merge stops before anything is lost.
       await this.courseRepo.update(
         twin.id,
         chapterId,
         mergeCourseNames(twin, course),
       );
+      await this.courseRepo.delete(course.id, chapterId);
     }
   }
 
@@ -551,21 +578,15 @@ export class BackworkService {
       });
       return;
     }
-    try {
-      await this.courseRepo.create({
-        chapter_id: chapterId,
-        department_id: departmentId,
-        course_number: courseNumber,
-        name,
-        nicknames: [],
-      });
-    } catch (error) {
-      // Another upload created the entry between the read and this insert.
-      // The file is already filed, and that entry stands: an upload never
-      // renames a course, so there is nothing left to do.
-      if ((error as { code?: string }).code === '23505') return;
-      throw error;
-    }
+    // A concurrent upload creating the same entry fails this insert on the
+    // unique key; the caller logs it and the upload stands.
+    await this.courseRepo.create({
+      chapter_id: chapterId,
+      department_id: departmentId,
+      course_number: courseNumber,
+      name,
+      nicknames: [],
+    });
   }
 
   private async resolveOrCreateDepartment(

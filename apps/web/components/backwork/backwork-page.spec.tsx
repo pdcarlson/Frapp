@@ -53,6 +53,7 @@ const {
     departments: [] as unknown[],
     professors: [] as unknown[],
     courses: [] as unknown[],
+    coursesLoading: false,
     loading: false,
     failed: false,
   },
@@ -110,8 +111,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     refetch: vi.fn(),
   }),
   useBackworkCourses: () => ({
-    data: taxonomyData.courses,
-    isLoading: false,
+    data: taxonomyData.coursesLoading ? undefined : taxonomyData.courses,
+    isLoading: taxonomyData.coursesLoading,
     isError: false,
     refetch: vi.fn(),
   }),
@@ -1207,15 +1208,70 @@ describe("BackworkPage library (2026-11-05 redesign)", () => {
       await waitFor(() => expect(titles()).toEqual(["Cog Sci Homework 2"]));
     });
 
-    it("offers a member no rename once the course has a name", async () => {
+    it("offers a member a nickname, not a rename, once the course has a name", async () => {
       taxonomyData.courses = [COGS_2120];
       mockPermissions.value = ["backwork:upload"];
+      const user = userEvent.setup();
       render(<BackworkPage />);
 
       fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
       const items = (await screen.findAllByRole("menuitem")).map((i) => i.textContent);
       expect(items).not.toContain("Rename the COGS 2120 course…");
       expect(items).not.toContain("Name the COGS 2120 course…");
+      await user.click(
+        await screen.findByRole("menuitem", { name: "Add a nickname for COGS 2120…" }),
+      );
+
+      const dialog = await screen.findByRole("dialog", { name: "Name COGS 2120" });
+      expect(within(dialog).getByLabelText("Course name")).toHaveAttribute("readonly");
+      await user.type(within(dialog).getByLabelText("Also called"), "Brainy{Enter}");
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      // Only the addition: the name is the member's to leave alone, and the
+      // saved "Cog 1" is not resent.
+      await waitFor(() =>
+        expect(mockSaveCourse).toHaveBeenCalledWith({
+          department_id: "dept-cogs",
+          course_number: "2120",
+          add_nicknames: ["Brainy"],
+        }),
+      );
+    });
+
+    it("sends an admin's removal as a removal", async () => {
+      taxonomyData.courses = [COGS_2120];
+      const user = userEvent.setup();
+      render(<BackworkPage />);
+
+      fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+      await user.click(
+        await screen.findByRole("menuitem", { name: "Rename the COGS 2120 course…" }),
+      );
+      const dialog = await screen.findByRole("dialog", { name: "Name COGS 2120" });
+      await user.click(within(dialog).getByRole("button", { name: "Remove Cog 1" }));
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      await waitFor(() =>
+        expect(mockSaveCourse).toHaveBeenCalledWith({
+          department_id: "dept-cogs",
+          course_number: "2120",
+          remove_nicknames: ["Cog 1"],
+        }),
+      );
+    });
+
+    it("renders rows on the department name while course names load", () => {
+      // The list does not wait on course names (they'd hold every row back).
+      taxonomyData.courses = [COGS_2120];
+      taxonomyData.coursesLoading = true;
+      try {
+        render(<BackworkPage />);
+        expect(
+          within(screen.getAllByRole("listitem")[0]!).getByText("Cognitive Science"),
+        ).toBeInTheDocument();
+      } finally {
+        taxonomyData.coursesLoading = false;
+      }
     });
 
     it("offers an admin the rename of a named course", async () => {
@@ -1249,7 +1305,7 @@ describe("BackworkPage library (2026-11-05 redesign)", () => {
           department_id: "dept-cogs",
           course_number: "2120",
           name: "Cognition I",
-          nicknames: ["Cog 1"],
+          add_nicknames: ["Cog 1"],
         }),
       );
     });

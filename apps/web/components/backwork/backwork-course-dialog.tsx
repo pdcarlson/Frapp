@@ -111,10 +111,13 @@ export function useBackworkCourseDialog(
     const list = draft.trim() ? addDraft() : nicknames;
     const trimmedName = name.trim();
     const nameChanged = !nameLocked && trimmedName !== (stored?.name ?? "");
-    const listChanged =
-      list.length !== (stored?.nicknames.length ?? 0) ||
-      list.some((n, i) => n !== stored?.nicknames[i]);
-    if (!nameChanged && !listChanged) {
+    // Only what this person changed: the API applies it to the list as
+    // stored now, so a nickname someone else added meanwhile survives.
+    const had = new Set((stored?.nicknames ?? []).map((n) => n.toLowerCase()));
+    const has = new Set(list.map((n) => n.toLowerCase()));
+    const addNicknames = list.filter((n) => !had.has(n.toLowerCase()));
+    const removeNicknames = (stored?.nicknames ?? []).filter((n) => !has.has(n.toLowerCase()));
+    if (!nameChanged && addNicknames.length === 0 && removeNicknames.length === 0) {
       setTarget(null);
       return;
     }
@@ -128,7 +131,8 @@ export function useBackworkCourseDialog(
         department_id: target.departmentId,
         course_number: target.courseNumber.trim(),
         ...(nameChanged ? { name: trimmedName || null } : {}),
-        nicknames: list,
+        ...(addNicknames.length ? { add_nicknames: addNicknames } : {}),
+        ...(removeNicknames.length ? { remove_nicknames: removeNicknames } : {}),
       });
       toast({ title: `Saved ${target.label}` });
       setTarget(null);

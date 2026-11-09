@@ -4,6 +4,8 @@ import { InternalServerErrorException } from '@nestjs/common';
 import { BackworkController } from './backwork.controller';
 import { BackworkService } from '../../application/services/backwork.service';
 import { RbacService } from '../../application/services/rbac.service';
+import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import { SystemPermissions } from '#domain/constants/permissions';
 import {
   RequestBackworkUploadUrlDto,
   ConfirmBackworkUploadDto,
@@ -363,5 +365,27 @@ describe('BackworkController', () => {
         );
       },
     );
+  });
+
+  describe('course route permissions (#3848)', () => {
+    // Off the route metadata, as attendance.controller.spec.ts does: the guard
+    // has its own spec, and what regresses is a dropped decorator.
+    it('gates DELETE courses/:id on backwork:admin', () => {
+      const permissions = Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        BackworkController.prototype.deleteCourse,
+      ) as string[] | undefined;
+
+      expect(permissions).toEqual([SystemPermissions.BACKWORK_ADMIN]);
+    });
+
+    it('leaves PUT courses on the class baseline, so uploaders reach the service rule', () => {
+      const permissions = Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        BackworkController.prototype.upsertCourse,
+      ) as string[] | undefined;
+
+      expect(permissions).toBeUndefined();
+    });
   });
 });

@@ -4712,8 +4712,10 @@ export interface components {
             course_number: string;
             /** @description Omit to keep the stored name. A blank or null clears it (backwork:admin). */
             name?: string | null;
-            /** @description The full list wanted; omit to keep the stored list. Dropping one needs backwork:admin. */
-            nicknames?: string[];
+            /** @description Nicknames to add to the list as stored. Open to backwork:upload; a list past the cap is a 400. */
+            add_nicknames?: string[];
+            /** @description Nicknames to remove from the list as stored, matched case-insensitively. Needs backwork:admin. */
+            remove_nicknames?: string[];
         };
         UpdateProfessorDto: {
             /** @description Professor name */

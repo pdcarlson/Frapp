@@ -21,10 +21,10 @@
  *   Homework 2 but not a Homework 5 from 2025; from three digits a number may
  *   start a word ("212" finds "2120");
  * - a short alias table expands the shorthand people type ("hw", "mt");
- * - a caller can make Roman and Arabic numerals one word by passing an item's
- *   words through `withNumeralVariants` (Backwork does for course names), so
- *   "calc 1" and "calc i" both find "Calculus I". It is opt-in per item text
- *   rather than a rule here, because "i" and "v" are ordinary words in titles.
+ * - Roman and Arabic numerals are not equated here, because "i" and "v" are
+ *   ordinary words in titles; `withNumeralVariants` and `isNumeralWord` let a
+ *   caller do it for text where they are numbers (Backwork's course names,
+ *   `backwork-library.ts`).
  *
  * The result keeps the item words each query word matched, so the caller can
  * highlight them.
@@ -52,6 +52,14 @@ export function normalizeWords(text: string): string[] {
 }
 
 const ROMAN_NUMERALS = ["i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"];
+
+/**
+ * Whether `word` is a number from 1 to 10 in either spelling ("1", "10", "i",
+ * "x"): the words `withNumeralVariants` converts.
+ */
+export function isNumeralWord(word: string): boolean {
+  return ROMAN_NUMERALS.includes(word) || /^(?:[1-9]|10)$/.test(word);
+}
 
 /**
  * `words` with each Roman numeral from I to X followed by its digits, and each

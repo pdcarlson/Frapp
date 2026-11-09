@@ -14868,9 +14868,17 @@
             "maxLength": 255,
             "description": "Omit to keep the stored name. A blank or null clears it (backwork:admin)."
           },
-          "nicknames": {
+          "add_nicknames": {
             "maxItems": 20,
-            "description": "The full list wanted; omit to keep the stored list. Dropping one needs backwork:admin.",
+            "description": "Nicknames to add to the list as stored. Open to backwork:upload; a list past the cap is a 400.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "remove_nicknames": {
+            "maxItems": 20,
+            "description": "Nicknames to remove from the list as stored, matched case-insensitively. Needs backwork:admin.",
             "type": "array",
             "items": {
               "type": "string"

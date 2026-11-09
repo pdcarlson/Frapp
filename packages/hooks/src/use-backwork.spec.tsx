@@ -248,7 +248,7 @@ const CHAPTER_ID = "chapter-abc";
         department_id: "dep1",
         course_number: "1010",
         name: "Calculus I",
-        nicknames: ["Calc 1"],
+        add_nicknames: ["Calc 1"],
       };
       await result.current.mutateAsync(body);
 
@@ -279,7 +279,7 @@ const CHAPTER_ID = "chapter-abc";
       });
 
       await expect(
-        result.current.mutateAsync({ department_id: "d", course_number: "1", nicknames: [] }),
+        result.current.mutateAsync({ department_id: "d", course_number: "1", remove_nicknames: ["x"] }),
       ).rejects.toThrowError(mockError);
     });
   });
