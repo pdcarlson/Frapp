@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-09: #chapter-audit is system-write only (#3909)
+
+### 20261109210000_chat_channels_is_audit_log.sql
+
+- **Purpose**: Adds `chat_channels.is_audit_log` (not null, default false) and the partial unique index `chat_channels_one_audit_log_per_chapter`, then backfills the flag, with `is_read_only = true`, onto each chapter's seeded `#chapter-audit` (PUBLIC, named `chapter-audit`; the oldest if a chapter has two). The API refuses every member write in a flagged channel whatever the caller's permissions, the audit mirror finds the channel by the flag instead of its name, and Chat settings can no longer rename it or switch read-only off.
+- **Checks**: After `db push`, `select count(*) from chat_channels where is_audit_log;` equals the number of chapters that have a `#chapter-audit`, and `select count(*) from chat_channels where is_audit_log and not is_read_only;` is 0.
+- **Promoter notes**: Apply before the API from the same PR deploys: that API selects and filters on the column, so without it the audit mirror finds no channel and channel reads fail. The backfill rewrites `is_read_only` to true on any audit channel an officer had switched off; that is the intended repair. A chapter that renamed its audit channel before this change gets no flag, and the mirror (already cut off by the rename) stays cut off until it is set by hand. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-chapter-audit-system-write-20261109210000) § Rollback chapter-audit system-write.
+
 ## 2026-11-09: A partial index for invites waiting on an address
 
 ### 20261109050000_invites_pending_by_email_index.sql

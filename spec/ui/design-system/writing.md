@@ -572,6 +572,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Error | `Couldn't load channels` / `Couldn't load messages` | the load-failure line (§ copy rules) |
 | Channel list refused by role (a 403 with no `chapter.*` code; both clients, `@repo/chat-core/channels-refused-copy`) | `Chat isn't open to you yet` | `Your role in <chapter> doesn't include chat. Ask an officer to give you the Member role.` (`this chapter` until the name loads). A `chapter.*` 403 keeps the error row above |
 | Read-only channel | — | `This channel is read-only for your role.` (mobile still quotes the permission key, [#3422](https://github.com/pdcarlson/Frapp/issues/3422)) |
+| Audit log channel (`#chapter-audit`, in place of the composer; both clients, #3909) | — | `Only Frapp posts here: it's the chapter's audit log.` In Chat settings (web) the read-only switch gives way to `Only Frapp posts here: it's the chapter's audit log. It stays read-only and keeps its name.` |
 | Alumni-restricted channel | — | `Alumni can read this channel but not post. Alumni may post in #alumni and direct messages.` |
 | Archived conversation (mobile only: a Group DM everyone else left, #348; web's channel list leaves archived channels out) | — | `This conversation is archived because everyone else left. You can still read it.` |
 | No chapter selected | — | `Pick an active chapter to load its channels.` (one line) |

@@ -5,6 +5,7 @@ import {
   listedChannels,
   selectCategories,
   selectChannels,
+  AUDIT_LOG_NOTE,
   postRefusalHint,
   selectPostCapability,
   type ChannelPostCapability,
@@ -335,16 +336,31 @@ describe("selectPostCapability", () => {
   it("reads can_post and is_read_only off the row", () => {
     expect(
       selectPostCapability({ can_post: false, is_read_only: true }),
-    ).toEqual({ canPost: false, isReadOnly: true, isArchived: false });
+    ).toEqual({
+      canPost: false,
+      isReadOnly: true,
+      isArchived: false,
+      isAuditLog: false,
+    });
     expect(
       selectPostCapability({ can_post: true, is_read_only: false }),
-    ).toEqual({ canPost: true, isReadOnly: false, isArchived: false });
+    ).toEqual({
+      canPost: true,
+      isReadOnly: false,
+      isArchived: false,
+      isAuditLog: false,
+    });
   });
 
   it("distinguishes the alumni case (can_post false, not read-only) from read-only", () => {
     expect(
       selectPostCapability({ can_post: false, is_read_only: false }),
-    ).toEqual({ canPost: false, isReadOnly: false, isArchived: false });
+    ).toEqual({
+      canPost: false,
+      isReadOnly: false,
+      isArchived: false,
+      isAuditLog: false,
+    });
   });
 
   // `GET /v1/channels/{id}` still returns an archived Group DM to whoever can
@@ -356,10 +372,24 @@ describe("selectPostCapability", () => {
         is_read_only: false,
         archived_at: "2026-09-30T12:00:00.000Z",
       }),
-    ).toEqual({ canPost: false, isReadOnly: false, isArchived: true });
+    ).toEqual({
+      canPost: false,
+      isReadOnly: false,
+      isArchived: true,
+      isAuditLog: false,
+    });
     expect(
-      selectPostCapability({ can_post: true, is_read_only: false, archived_at: null }),
-    ).toEqual({ canPost: true, isReadOnly: false, isArchived: false });
+      selectPostCapability({
+        can_post: true,
+        is_read_only: false,
+        archived_at: null,
+      }),
+    ).toEqual({
+      canPost: true,
+      isReadOnly: false,
+      isArchived: false,
+      isAuditLog: false,
+    });
   });
 
   it("defaults to postable, not-read-only while the payload hasn't loaded", () => {
@@ -369,18 +399,54 @@ describe("selectPostCapability", () => {
       canPost: true,
       isReadOnly: false,
       isArchived: false,
+      isAuditLog: false,
     });
     expect(selectPostCapability(null)).toEqual({
       canPost: true,
       isReadOnly: false,
       isArchived: false,
+      isAuditLog: false,
     });
   });
 
   it("defaults can_post to true on a malformed value rather than locking the composer", () => {
     expect(
       selectPostCapability({ can_post: "no", is_read_only: true }),
-    ).toEqual({ canPost: true, isReadOnly: true, isArchived: false });
+    ).toEqual({
+      canPost: true,
+      isReadOnly: true,
+      isArchived: false,
+      isAuditLog: false,
+    });
+  });
+});
+
+// #3909: `#chapter-audit` is system-write only.
+describe("the audit log", () => {
+  it("never offers a post there, even when the row says can_post", () => {
+    expect(
+      selectPostCapability({
+        can_post: true,
+        is_read_only: true,
+        is_audit_log: true,
+      }),
+    ).toEqual({
+      canPost: false,
+      isReadOnly: true,
+      isArchived: false,
+      isAuditLog: true,
+    });
+  });
+
+  it("explains itself with the audit log line", () => {
+    expect(
+      postRefusalHint({
+        canPost: false,
+        isReadOnly: true,
+        isArchived: false,
+        isAuditLog: true,
+      }),
+    ).toBe(AUDIT_LOG_NOTE);
   });
 });
 
@@ -389,6 +455,7 @@ describe("postRefusalHint", () => {
     canPost: false,
     isReadOnly: false,
     isArchived: false,
+    isAuditLog: false,
     ...over,
   });
 
