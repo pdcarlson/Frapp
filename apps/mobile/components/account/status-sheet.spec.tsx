@@ -61,8 +61,15 @@ function render(): ReactTestRenderer {
     );
   });
   mounted.push(tree);
+  // What gorhom reports as `present()` starts bringing the sheet up.
+  act(() => {
+    modal(tree).props.onAnimate(-1, 0);
+  });
   return tree;
 }
+
+const modal = (tree: ReactTestRenderer) =>
+  tree.root.find((node) => (node.type as unknown) === "BottomSheetModal");
 
 const byTestId = (tree: ReactTestRenderer, id: string) =>
   tree.root.find(
@@ -198,6 +205,55 @@ describe("StatusSheet", () => {
       custom_status: "Studying",
       custom_status_expires_at: null,
     });
+  });
+
+  it("keeps a typed line across a close, and drops it on Cancel", () => {
+    const tree = render();
+    press(tree, "status-custom-line");
+    const field = () =>
+      tree.root.find((node) => node.props.testID === "custom-status-input");
+    act(() => {
+      field().props.onChangeText("At practice");
+    });
+    // A swipe or scrim tap: gorhom reports the dismissal.
+    act(() => {
+      modal(tree).props.onDismiss();
+    });
+    expect(field().props.value).toBe("At practice");
+
+    act(() => {
+      pressableWithText(tree, "Cancel").props.onPress();
+    });
+    expect(screenText(tree)).toContain("Set a custom status");
+    press(tree, "status-custom-line");
+    expect(field().props.value).toBe("");
+  });
+
+  it("doesn't close a later visit when an earlier save lands", async () => {
+    let settle!: () => void;
+    mutateAsync.mockReturnValue(
+      new Promise((resolve) => {
+        settle = () => resolve({});
+      }),
+    );
+    const tree = render();
+    press(tree, "status-custom-line");
+    act(() => {
+      tree.root
+        .find((node) => node.props.testID === "custom-status-input")
+        .props.onChangeText("Studying");
+    });
+    act(() => {
+      pressableWithText(tree, "Save").props.onPress();
+    });
+    act(() => {
+      modal(tree).props.onDismiss();
+      modal(tree).props.onAnimate(-1, 0);
+    });
+    await act(async () => {
+      settle();
+    });
+    expect(dismiss).not.toHaveBeenCalled();
   });
 
   it("won't save an 81-character line", () => {

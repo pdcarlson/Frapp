@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useRef, useState } from "react";
+import { forwardRef, useCallback, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
   BottomSheetModal,
@@ -34,6 +34,7 @@ import {
   sheetFieldStyles,
   useSheetBackgroundStyle,
   useSheetClose,
+  useSheetVisit,
 } from "@/components/sheet-scaffold";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import { ChevronGlyph } from "@/components/chat/viewer-glyphs";
@@ -74,7 +75,7 @@ export const StatusSheet = forwardRef<BottomSheetModal>(
     const own = useOwnStatus();
     const { save, isSaving } = useSaveOwnStatus();
     const { writeBlockedReason } = useConnection();
-    const locked = writeBlockedReason !== null || own === null;
+    const locked = writeBlockedReason !== null;
 
     const [view, setView] = useState<"status" | "line">("status");
     const [dndOpen, setDndOpen] = useState(false);
@@ -83,15 +84,20 @@ export const StatusSheet = forwardRef<BottomSheetModal>(
       DEFAULT_LINE_DURATION,
     );
     const [focused, setFocused] = useState(false);
-    // A save that settles after a close mustn't close the next visit.
-    const visit = useRef(0);
+    // A save that settles after a close mustn't close the next visit, and a
+    // dismiss on a sheet that isn't up wedges its next present().
+    const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
+      useSheetVisit(ref);
 
-    const reset = useCallback(() => {
-      visit.current += 1;
-      setView("status");
+    // A close keeps the custom-line form and what was typed in it, as every
+    // form sheet does (patterns.md § Bottom sheets, "A draft outlives a close,
+    // not a Cancel"): the next visit opens on it. Cancel and a save that lands
+    // give it up.
+    const closed = useCallback(() => {
+      markClosed();
       setDndOpen(false);
       setFocused(false);
-    }, []);
+    }, [markClosed]);
 
     const current: MemberStatus = own?.status ?? "online";
     const now = new Date();
@@ -103,7 +109,7 @@ export const StatusSheet = forwardRef<BottomSheetModal>(
         status_expires_at:
           status === "dnd" ? dndEndsAt(duration, new Date()) : null,
       });
-      closeSheet();
+      dismiss();
     }
 
     function openLine() {
@@ -118,7 +124,7 @@ export const StatusSheet = forwardRef<BottomSheetModal>(
 
     async function saveLine(clear: boolean) {
       if (locked || isSaving || (!clear && problem)) return;
-      const at = visit.current;
+      const at = visit();
       const saved = await save(
         clear || trimmed.length === 0
           ? { custom_status: null }
@@ -127,7 +133,9 @@ export const StatusSheet = forwardRef<BottomSheetModal>(
               custom_status_expires_at: lineEndsAt(clearAfter, new Date()),
             },
       );
-      if (saved && at === visit.current) closeSheet();
+      if (!saved) return;
+      setView("status");
+      if (isSameVisit(at)) dismiss();
     }
 
     return (
@@ -139,7 +147,8 @@ export const StatusSheet = forwardRef<BottomSheetModal>(
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}
         backdropComponent={SheetScrim}
-        onDismiss={reset}
+        onAnimate={onAnimate}
+        onDismiss={closed}
       >
         <SheetBackToClose onClose={closeSheet} />
         <BottomSheetView onAccessibilityEscape={closeSheet} style={styles.body}>
@@ -221,6 +230,7 @@ export const StatusSheet = forwardRef<BottomSheetModal>(
                             style={({ pressed }) => [
                               styles.row,
                               styles.nested,
+                              locked ? styles.disabled : null,
                               pressed ? styles.dim : null,
                             ]}
                           >
@@ -275,8 +285,8 @@ export const StatusSheet = forwardRef<BottomSheetModal>(
                 cancelDisabled={isSaving}
               />
               <Text style={styles.note}>
-                Shows under your name in the Directory and in chat, until it
-                clears. Hidden while you&apos;re invisible.
+                Shows under your name on the web dashboard, in the Directory and
+                in chat, until it clears. Hidden while you&apos;re invisible.
               </Text>
               <View
                 style={[styles.fieldRing, focused ? styles.ringActive : null]}

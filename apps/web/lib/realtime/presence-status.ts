@@ -77,8 +77,6 @@ export type PresenceEntry = {
   line: string | null;
 };
 
-/** The custom status line's cap; defined once in `@repo/hooks/member-status`. */
-export { CUSTOM_STATUS_MAX };
 
 /**
  * Status for a member, given the presence entry we hold for them.

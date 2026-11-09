@@ -11,7 +11,8 @@
     "./error-copy": "./src/error-copy.ts",
     "./open-chat-transport": "./src/open-chat-transport.ts",
     "./mention-chips": "./src/mention-chips.ts",
-    "./member-status": "./src/member-status.ts"
+    "./member-status": "./src/member-status.ts",
+    "./use-own-status-at": "./src/use-own-status-at.ts"
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",
