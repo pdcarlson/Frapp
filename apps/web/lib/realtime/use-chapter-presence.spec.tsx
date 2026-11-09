@@ -44,6 +44,17 @@ vi.mock("@/lib/realtime/supabase-realtime", () => ({
 
 import { useChapterPresence } from "./use-chapter-presence";
 import { IDLE_AFTER_MS, PRESENCE_HEARTBEAT_MS } from "./presence-status";
+import type { OwnStatus } from "./member-status";
+
+function ownStatus(patch: Partial<OwnStatus> = {}): OwnStatus {
+  return {
+    status: "online",
+    statusEndsAt: null,
+    line: null,
+    lineEndsAt: null,
+    ...patch,
+  };
+}
 
 type Handler = (payload?: unknown) => void;
 
@@ -51,20 +62,28 @@ function makeFakeChannel() {
   const handlers = new Map<string, Handler>();
   let state: Record<string, unknown[]> = {};
   const track =
-    vi.fn<(payload: { userId: string; ts: number }) => Promise<string>>(
-      async () => "ok",
-    );
+    vi.fn<
+      (payload: {
+        userId: string;
+        ts: number;
+        status?: string;
+        line?: string;
+      }) => Promise<string>
+    >(async () => "ok");
+  const untrack = vi.fn<() => Promise<string>>(async () => "ok");
   const channel = {
     on: vi.fn((type: string, filter: { event: string }, handler: Handler) => {
       handlers.set(`${type}:${filter.event}`, handler);
       return channel;
     }),
     track,
+    untrack,
     presenceState: () => state,
   };
   return {
     channel: channel as unknown as RealtimeChannel,
     track,
+    untrack,
     setState(next: Record<string, unknown[]>) {
       state = next;
     },
@@ -604,5 +623,117 @@ describe("useChapterPresence", () => {
     act(() => fake.fire("sync"));
 
     await waitFor(() => expect(result.current.statusOf).not.toBe(first));
+  });
+});
+
+/**
+ * The member's own picked status (#3845): what rides their entry, and that
+ * Invisible publishes nothing at all (`spec/behavior/chat/README.md` §
+ * Online/offline presence).
+ */
+describe("useChapterPresence, the viewer's own status", () => {
+  test("publishes nothing until the viewer's status is known", async () => {
+    const { rerender } = renderHook(
+      ({ own }: { own: OwnStatus | null }) =>
+        useChapterPresence({ chapterId: CHAPTER, viewerId: "me", own }),
+      { initialProps: { own: null as OwnStatus | null } },
+    );
+    await settleAttach();
+    expect(fake.track).not.toHaveBeenCalled();
+
+    rerender({ own: ownStatus() });
+
+    expect(fake.track).toHaveBeenCalledTimes(1);
+  });
+
+  test("an automatic member's entry is the plain { userId, ts }", async () => {
+    renderHook(() =>
+      useChapterPresence({ chapterId: CHAPTER, viewerId: "me", own: ownStatus() }),
+    );
+    await settleAttach();
+    expect(Object.keys(fake.track.mock.calls[0]![0]).sort()).toEqual([
+      "ts",
+      "userId",
+    ]);
+  });
+
+  test("DND and the custom line ride the entry", async () => {
+    renderHook(() =>
+      useChapterPresence({
+        chapterId: CHAPTER,
+        viewerId: "me",
+        own: ownStatus({ status: "dnd", line: "Studying" }),
+      }),
+    );
+    await settleAttach();
+    expect(fake.track.mock.calls[0]![0]).toMatchObject({
+      userId: "me",
+      status: "dnd",
+      line: "Studying",
+    });
+  });
+
+  test("an invisible member never tracks, on join or on activity", async () => {
+    renderHook(() =>
+      useChapterPresence({
+        chapterId: CHAPTER,
+        viewerId: "me",
+        own: ownStatus({ status: "invisible", line: "Hidden" }),
+      }),
+    );
+    await settleAttach();
+    act(() => {
+      window.dispatchEvent(new Event("pointerdown"));
+    });
+    expect(fake.track).not.toHaveBeenCalled();
+  });
+
+  test("switching to Invisible while joined untracks, and back re-publishes", async () => {
+    const { rerender } = renderHook(
+      ({ own }: { own: OwnStatus }) =>
+        useChapterPresence({ chapterId: CHAPTER, viewerId: "me", own }),
+      { initialProps: { own: ownStatus() } },
+    );
+    await settleAttach();
+    expect(fake.track).toHaveBeenCalledTimes(1);
+
+    rerender({ own: ownStatus({ status: "invisible" }) });
+    expect(fake.untrack).toHaveBeenCalledTimes(1);
+
+    rerender({ own: ownStatus({ status: "idle" }) });
+    expect(fake.track).toHaveBeenCalledTimes(2);
+    expect(fake.track.mock.calls[1]![0]).toMatchObject({ status: "idle" });
+  });
+
+  test("a status change publishes at once, inside the activity throttle", async () => {
+    const { rerender } = renderHook(
+      ({ own }: { own: OwnStatus }) =>
+        useChapterPresence({ chapterId: CHAPTER, viewerId: "me", own }),
+      { initialProps: { own: ownStatus() } },
+    );
+    await settleAttach();
+    rerender({ own: ownStatus({ line: "Back at 6" }) });
+    expect(fake.track).toHaveBeenCalledTimes(2);
+    expect(fake.track.mock.calls[1]![0]).toMatchObject({ line: "Back at 6" });
+  });
+
+  test("the viewer reads Invisible to themselves, and others' lines come off the wire", async () => {
+    fake.setState({
+      a: [{ userId: "u1", ts: Date.now(), status: "dnd", line: "In class" }],
+    });
+    const { result } = renderHook(() =>
+      useChapterPresence({
+        chapterId: CHAPTER,
+        viewerId: "me",
+        own: ownStatus({ status: "invisible", line: "Mine" }),
+      }),
+    );
+    await settleAttach();
+    act(() => fake.fire("sync"));
+
+    expect(result.current.statusOf("me")).toBe("invisible");
+    expect(result.current.lineOf("me")).toBeNull();
+    expect(result.current.statusOf("u1")).toBe("dnd");
+    expect(result.current.lineOf("u1")).toBe("In class");
   });
 });

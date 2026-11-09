@@ -56,7 +56,10 @@ import { useToast } from "@/lib/hooks/use-toast";
 import { InviteMemberDialog } from "@/components/members/invite-member-dialog";
 import { MemberDetailSheet } from "@/components/members/member-detail-sheet";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { AvatarPresenceDot } from "@/components/members/presence-dot";
+import {
+  AvatarPresenceDot,
+  CustomStatusLine,
+} from "@/components/members/presence-dot";
 import { useChapterPresenceContext } from "@/lib/providers/chapter-presence-provider";
 import {
   presenceLabel,
@@ -317,6 +320,10 @@ export function MembersDirectory() {
   // member sourced from our own unfinished join.
   const presenceStatusOf = (member: MemberProfile): PresenceStatus | null =>
     presence.isReady ? presence.statusOf(member.user_id) : null;
+  // The custom status line (#3845) rides presence, so it is `null` while
+  // presence is unresolved, and for anyone offline or invisible.
+  const customLineOf = (member: MemberProfile): string | null =>
+    presence.isReady ? presence.lineOf(member.user_id) : null;
   // `null`, not an em dash, for the same reason `formatJoined` returns one: an
   // absent role drops out of the `·`-joined meta line rather than rendering a
   // placeholder glyph.
@@ -874,6 +881,7 @@ export function MembersDirectory() {
               const joined = formatJoined(member.created_at);
               const points = pointsOf(member);
               const status = presenceStatusOf(member);
+              const customLine = customLineOf(member);
               const selected = selectedMemberIds.includes(id);
               return (
                 <li
@@ -934,6 +942,7 @@ export function MembersDirectory() {
                       joined ? `joined ${joined}` : null,
                       member.email || null,
                       status ? presenceLabel(status) : null,
+                      customLine,
                     ]
                       .filter(Boolean)
                       .join(", ")}
@@ -973,8 +982,15 @@ export function MembersDirectory() {
                       survived.
                     */}
                     <span className="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-center sm:gap-3">
-                      <span className="min-w-0 truncate text-sm font-semibold sm:flex-1">
-                        {name}
+                      {/*
+                        The custom status line (#3845) stacks under the name in
+                        both layouts, one muted caption line that truncates.
+                      */}
+                      <span className="flex min-w-0 flex-col sm:flex-1">
+                        <span className="min-w-0 truncate text-sm font-semibold">
+                          {name}
+                        </span>
+                        <CustomStatusLine line={customLine} />
                       </span>
                       {/*
                         One meta line, `·`-joined, bounded fields first and the

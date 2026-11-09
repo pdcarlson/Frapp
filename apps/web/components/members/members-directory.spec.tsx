@@ -98,6 +98,7 @@ vi.mock("@/lib/providers/chapter-presence-provider", () => ({
   useChapterPresenceContext: () => ({
     isReady: true,
     statusOf: () => "online",
+    lineOf: () => null,
   }),
 }));
 

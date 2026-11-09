@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const useChapterPresence = vi.hoisted(() =>
   vi.fn(() => ({
     statusOf: () => "offline" as const,
+    lineOf: () => null,
     isReady: false,
   })),
 );
@@ -14,6 +15,10 @@ vi.mock("@/lib/realtime/use-chapter-presence", () => ({
 
 vi.mock("@repo/hooks", () => ({
   useActiveChapterId: () => "chapter-1",
+}));
+
+vi.mock("@/lib/realtime/use-own-status", () => ({
+  useOwnStatus: () => null,
 }));
 
 vi.mock("@/lib/auth/use-frapp-user", () => ({

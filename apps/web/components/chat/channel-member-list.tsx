@@ -14,9 +14,15 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { EYEBROW } from "@/components/ui/typography";
 import { Skeleton } from "@/components/shared/async-states";
-import { AvatarPresenceDot } from "@/components/members/presence-dot";
+import {
+  AvatarPresenceDot,
+  CustomStatusLine,
+} from "@/components/members/presence-dot";
 import { useChapterPresenceContext } from "@/lib/providers/chapter-presence-provider";
-import type { PresenceStatus } from "@/lib/realtime/presence-status";
+import {
+  presenceLabel,
+  type PresenceStatus,
+} from "@/lib/realtime/presence-status";
 import { cn, initials } from "@/lib/utils";
 
 /** One row of the list, joined from the channel read, the roster and presence. */
@@ -31,15 +37,11 @@ export interface ChannelMemberRow {
   roleName: string | null;
   /** `null` until presence has resolved: no dot, and no claim of Offline. */
   status: PresenceStatus | null;
+  /** The member's custom status line (#3845), or `null`. */
+  line: string | null;
 }
 
 export type ChannelMemberGroup = ChannelMemberRoleGroup<ChannelMemberRow>;
-
-const STATUS_LABELS: Record<PresenceStatus, string> = {
-  online: "Online",
-  idle: "Idle",
-  offline: "Offline",
-};
 
 /**
  * Who can read the open channel, Discord-style (#3536): grouped under each
@@ -94,6 +96,7 @@ export function ChannelMemberList({
         roleId: member.role_id ?? null,
         roleName: member.role_name ?? null,
         status: presence.isReady ? presence.statusOf(member.user_id) : null,
+        line: presence.isReady ? presence.lineOf(member.user_id) : null,
       })),
     [membersQuery.data, byId, avatarFor, roleColorFor, presence],
   );
@@ -200,13 +203,21 @@ function MemberGroup({ group }: { group: ChannelMemberGroup }) {
  * avatar fades, and a name without a role color drops to the muted text step.
  * A role-colored name keeps its full color, because the palette was
  * contrast-checked at full strength and an opacity would undo that.
+ *
+ * A custom status line (#3845) sits under the name in one muted caption line,
+ * and that row grows to 40px to hold it, as Discord's member list does. A row
+ * without one stays 32. The viewer's own row while invisible dims like an
+ * offline one, because that is what everyone else sees.
  */
 function MemberRow({ row }: { row: ChannelMemberRow }) {
-  const offline = row.status === "offline";
+  const offline = row.status === "offline" || row.status === "invisible";
   return (
     <li
       data-presence={row.status ?? undefined}
-      className="flex h-8 items-center gap-2 rounded-md px-2"
+      className={cn(
+        "flex items-center gap-2 rounded-md px-2",
+        row.line ? "h-10" : "h-8",
+      )}
     >
       <span className="relative shrink-0">
         <Avatar
@@ -220,18 +231,21 @@ function MemberRow({ row }: { row: ChannelMemberRow }) {
         </Avatar>
         <AvatarPresenceDot status={row.status} />
       </span>
-      <span
-        className={cn(
-          "min-w-0 truncate text-label",
-          !row.roleColor &&
-            (offline ? "text-muted-foreground" : "text-foreground"),
-        )}
-        style={row.roleColor ? { color: row.roleColor } : undefined}
-      >
-        {row.name}
+      <span className="flex min-w-0 flex-col">
+        <span
+          className={cn(
+            "min-w-0 truncate text-label",
+            !row.roleColor &&
+              (offline ? "text-muted-foreground" : "text-foreground"),
+          )}
+          style={row.roleColor ? { color: row.roleColor } : undefined}
+        >
+          {row.name}
+        </span>
+        <CustomStatusLine line={row.line} />
       </span>
       {row.status ? (
-        <span className="sr-only">, {STATUS_LABELS[row.status]}</span>
+        <span className="sr-only">, {presenceLabel(row.status)}</span>
       ) : null}
     </li>
   );

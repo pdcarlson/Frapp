@@ -287,7 +287,7 @@ adding that filter would make the bookmark vanish, the opposite of this rule.
 - Member online status is tracked via Supabase Realtime Presence.
 - Presence heartbeat: ~30 seconds. If no heartbeat is received, the user is marked offline.
 - Online status is visible in the member list sidebar and in DM conversations. The web **Directory** (`/members`) and the web channel member list (§ Member list above) render it; the DM view and mobile do not yet.
-- Statuses: Online, Idle (app open but inactive for >5 minutes), Offline.
+- Statuses: Online, Idle (app open but inactive for >5 minutes), Offline, plus the two a member can pick (#3845): Do Not Disturb, and Invisible, which everyone else sees as Offline. § Member-set status below.
 
 **Two presence topics, deliberately.** They answer different questions and must not be merged:
 
@@ -307,6 +307,15 @@ Both are **private** Realtime channels since 2026-09-06 (#1552, migration `20260
 **Presence is published from the app shell, not from the screen that displays it.** A member is present because the app is open, not because they are looking at the Directory — so the tracking half is mounted for every dashboard route. Scoping it to the reading screen would make the dot mean "has the Directory open" and render everyone in Chat as Offline.
 
 Presence is ephemeral per ADR-02: it lives on the Realtime socket and is never persisted, so it costs no Postgres write and leaves no row to reap when a member disconnects.
+
+**Member-set status** (#3845, built on web 2026-11-09; mobile sets it in the next piece and shows no other member's dot, #3917). A member picks Online, Idle, Do Not Disturb or Invisible, and an optional custom line, from the Status row at the top of the web avatar menu. The choice is stored on their `user_settings` row, so it follows them across devices, and its delivery effect (DND silences every non-URGENT push) is in [`../notifications.md`](../notifications.md) § Do Not Disturb. How it shows:
+
+- **It rides the chapter presence entry.** The entry on `presence:chapter:<chapterId>` is `{ userId, ts }` plus, only when there is something to say, `status` (`idle` or `dnd`) and `line` (the custom line). An automatic member's entry is the plain `{ userId, ts }` it always was. Carrying them on presence, rather than reading other members' settings, is what makes them vanish exactly when the dot does: offline, or invisible. Readers validate the payload like any other: an unknown `status` reads automatic, and a `line` is flattened to one line of at most 80 code points before it renders, because the payload is whatever the publishing client sent. The **chat-topic payload is not widened**: `chat:channel:<channelId>` stays `{ userId, ts }`, the contract `presence-contract.spec.ts` pins.
+- **A picked status beats the clock.** A picked Idle stays Idle while the member types, and DND stays DND after five minutes away rather than going Idle. Only an Online member is aged into automatic Idle.
+- **Invisible publishes nothing to the chapter topic.** The client still joins `presence:chapter:<chapterId>`, because it still reads everyone else, but never calls `track()` there, and switching to Invisible while joined calls `untrack()`. No client, modified or not, can learn from that topic that the member is online, and officers can't see through it (Paul's call 2, pending his review on #3923). The per-channel chat track is kept, so pushes for the channel the member is reading stay suppressed; the cost is that a member of that same channel, with a modified client, could tell they have it open (Paul's call 1, the same review).
+- **Nothing is announced until the member's own status is known.** The client waits for `GET /v1/settings` before its first publish, so a member who saved Invisible never flashes Online on load. Another open tab of the same browser is told of a change (a `BroadcastChannel`) and refetches, so it stops publishing the old status too.
+- **End times are the client's to keep.** The server reads a status or line past its end time as gone, but only when asked, so the publishing client re-renders at the end time and re-publishes. A DND for one hour ends for everyone an hour later without a refetch.
+- **What each surface draws.** The dot's shapes are in [`../../ui/design-system/components.md`](../../ui/design-system/components.md) § Chat member list. The member's own avatar on the account menu trigger carries their dot, Invisible included: the grey ring only they see. Their own row in the Directory and the channel member column also reads Invisible to them, dimmed like an offline row, because that is what the chapter sees. The custom line is one muted line under the name in the channel member column and the Directory, and is never shown while its member is invisible or offline, to anyone, the member included, since the line a member sees under their own name is the one the chapter sees.
 
 **Search:**
 

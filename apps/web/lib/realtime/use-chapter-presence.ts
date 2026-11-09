@@ -16,9 +16,11 @@ import {
   presenceMapFrom,
   presenceStatusFor,
   sameRoster,
+  type PresenceEntry,
   type PresenceStatus,
   type RawPresenceState,
 } from "@/lib/realtime/presence-status";
+import type { OwnStatus } from "@/lib/realtime/member-status";
 
 /**
  * Chapter-wide Realtime Presence.
@@ -39,7 +41,18 @@ import {
  *
  * **No Postgres writes.** Presence is ephemeral per ADR-02: it lives on the
  * Realtime socket and nowhere else, so nothing here persists and a member going
- * offline leaves no row to reap.
+ * offline leaves no row to reap. (The status a member *picks* is stored, on
+ * their settings row, #3845; this hook only carries it.)
+ *
+ * **The picked status rides the entry, and Invisible publishes nothing.** A
+ * picked Idle or DND and the custom line travel in the viewer's own entry
+ * (`status`, `line`), so they reach exactly the members who can read the
+ * topic and vanish with the entry when the member goes offline. An invisible
+ * member is never tracked at all: the join still happens, because the roster
+ * is still read, but `track()` is not called, and switching to Invisible while
+ * joined calls `untrack()`. Nothing about them reaches the topic, so no
+ * client, modified or not, can see them online. The per-channel chat track is
+ * a separate topic and is untouched (#3845, Paul's call 1).
  */
 
 /** Events that count as "the member is still using the app". */
@@ -56,8 +69,13 @@ const ACTIVITY_EVENTS = ["pointerdown", "keydown", "scroll", "focus"] as const;
 const ACTIVITY_THROTTLE_MS = PRESENCE_HEARTBEAT_MS;
 
 export type ChapterPresence = {
-  /** Status for one member. Absent from the presence map → `"offline"`. */
+  /**
+   * Status for one member. Absent from the presence map → `"offline"`. The
+   * viewer reads as `"invisible"` while they are, which nobody else can see.
+   */
   statusOf: (userId: string) => PresenceStatus;
+  /** A member's custom status line, or `null`. Never shown while invisible. */
+  lineOf: (userId: string) => string | null;
   /** False until the first `sync` for the current chapter lands. */
   isReady: boolean;
 };
@@ -66,15 +84,34 @@ type Options = {
   chapterId: string | null | undefined;
   viewerId: string | null | undefined;
   enabled?: boolean;
+  /**
+   * The viewer's own picked status, expiry already applied.
+   *
+   * `null` means "not known yet", and nothing is published until it is: a
+   * member who saved Invisible must not flash Online to the chapter while
+   * their settings load. Omitted (`undefined`) means the caller tracks no
+   * picked status, and the viewer publishes as plain automatic presence.
+   * `ChapterPresenceProvider`, the one production caller, always passes it.
+   */
+  own?: OwnStatus | null;
 };
 
-const EMPTY = new Map<string, number>();
+const EMPTY = new Map<string, PresenceEntry>();
+
+const AUTOMATIC: OwnStatus = {
+  status: "online",
+  statusEndsAt: null,
+  line: null,
+  lineEndsAt: null,
+};
 
 export function useChapterPresence({
   chapterId,
   viewerId,
   enabled = true,
+  own: ownOption,
 }: Options): ChapterPresence {
+  const own = ownOption === undefined ? AUTOMATIC : ownOption;
   /**
    * The roster, stamped with the attach generation it was read under.
    *
@@ -86,7 +123,7 @@ export function useChapterPresence({
    */
   const [roster, setRoster] = useState<{
     connection: number;
-    byUser: Map<string, number>;
+    byUser: Map<string, PresenceEntry>;
   }>(() => ({ connection: -1, byUser: EMPTY }));
 
   /**
@@ -209,6 +246,15 @@ export function useChapterPresence({
   }, [viewerId]);
 
   /**
+   * The viewer's own status, read at publish time for the same reason as
+   * `viewerIdRef`: a status change must re-publish, not re-mint the channel.
+   */
+  const ownRef = useRef(own);
+  useLayoutEffect(() => {
+    ownRef.current = own;
+  }, [own]);
+
+  /**
    * The live attach's publish function, so a late-resolving `viewerId` can be
    * published without re-minting the channel.
    *
@@ -220,6 +266,8 @@ export function useChapterPresence({
    * only reads would never appear online at all.
    */
   const publishRef = useRef<(() => void) | null>(null);
+  /** The live attach's `untrack`, for switching to Invisible while joined. */
+  const untrackRef = useRef<(() => void) | null>(null);
 
   // Re-render on a wall-clock tick so a member who stops interacting crosses
   // into Idle on their own. Nothing is broadcast when someone merely stops
@@ -303,16 +351,32 @@ export function useChapterPresence({
 
     function publish() {
       const id = viewerIdRef.current;
+      const self = ownRef.current;
       if (!channel || !id || detached) return;
+      // Not known yet, or Invisible: publish nothing at all (see the header).
+      if (self === null || self.status === "invisible") return;
       lastPublishedAtRef.current = Date.now();
       // Fire-and-forget, as chat's own track is. `RealtimeChannel.send`
       // resolves `'ok' | 'error' | 'timed out'` rather than rejecting once
       // joined, and the cost of a lost publish is one member's dot until the
-      // next activity.
+      // next activity. `status` and `line` are left out when there is nothing
+      // to say, so an automatic member's entry is the same `{ userId, ts }` it
+      // always was.
       void channel.track({
         userId: id,
         ts: lastActiveAtRef.current ?? Date.now(),
+        ...(self.status === "online" ? {} : { status: self.status }),
+        ...(self.line ? { line: self.line } : {}),
       });
+    }
+
+    function untrack() {
+      if (!channel || detached) return;
+      // An untrack only fails when the socket does, and a dropped socket takes
+      // the entry with it (presence is connection-scoped). The rejoin then
+      // starts the member absent, because an invisible `onSubscribed`
+      // publishes nothing.
+      void channel.untrack().catch(() => undefined);
     }
 
     function onActivity() {
@@ -377,6 +441,7 @@ export function useChapterPresence({
     );
 
     publishRef.current = publish;
+    untrackRef.current = untrack;
 
     for (const event of ACTIVITY_EVENTS) {
       window.addEventListener(event, onActivity, { passive: true });
@@ -391,6 +456,7 @@ export function useChapterPresence({
       document.removeEventListener("visibilitychange", onActivity);
       channel = null;
       publishRef.current = null;
+      untrackRef.current = null;
       // Same guard as `onDisconnected`: clear only if this attach is still the
       // live one.
       setLive((previous) =>
@@ -408,18 +474,48 @@ export function useChapterPresence({
     if (viewerId) publishRef.current?.();
   }, [viewerId]);
 
+  // A status or line change publishes at once, outside the activity throttle:
+  // it is the member's own deliberate act, and they expect the chapter to see
+  // it now. Switching to Invisible takes the entry off the topic instead.
+  // Keyed on the values, not the object, so a settings refetch that answers
+  // the same thing publishes nothing.
+  const ownStatus = own?.status ?? null;
+  const ownLine = own?.line ?? null;
+  useEffect(() => {
+    if (ownStatus === null) return;
+    if (ownStatus === "invisible") {
+      untrackRef.current?.();
+      return;
+    }
+    publishRef.current?.();
+  }, [ownStatus, ownLine]);
+
   // `now` advances on the interval above, which is what carries a member from
   // Online into Idle when nothing at all arrives on the wire.
+  //
+  // The viewer's own Invisible is answered from their own choice, since by
+  // design the roster has no entry for them. Everyone else's answer comes off
+  // the wire only.
   const statusOf = useCallback(
-    (userId: string) => presenceStatusFor(presentSince.get(userId), now),
-    [presentSince, now],
+    (userId: string) =>
+      userId === viewerId && ownStatus === "invisible"
+        ? "invisible"
+        : presenceStatusFor(presentSince.get(userId), now),
+    [presentSince, now, viewerId, ownStatus],
+  );
+
+  // Off the wire too, the viewer's own included, so the line a member sees
+  // under their own name is the one the chapter sees: none while invisible.
+  const lineOf = useCallback(
+    (userId: string) => presentSince.get(userId)?.line ?? null,
+    [presentSince],
   );
 
   // Memoized so an unchanged roster does not re-render every context consumer.
   // Safe precisely because `statusOf` above carries the clock — otherwise this
   // would freeze presence at whatever it was when the roster last changed.
   return useMemo(
-    () => ({ statusOf, isReady: isCurrent }),
-    [statusOf, isCurrent],
+    () => ({ statusOf, lineOf, isReady: isCurrent }),
+    [statusOf, lineOf, isCurrent],
   );
 }

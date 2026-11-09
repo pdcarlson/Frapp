@@ -6,6 +6,7 @@ import type { ChapterPresence } from "@/lib/realtime/use-chapter-presence";
 import { useActiveChapterId } from "@repo/hooks";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useNetwork } from "@/lib/providers/network-provider";
+import { useOwnStatus } from "@/lib/realtime/use-own-status";
 
 /**
  * Chapter-wide presence, owned once for the whole dashboard.
@@ -38,6 +39,9 @@ export function ChapterPresenceProvider({ children }: { children: ReactNode }) {
   const chapterId = useActiveChapterId();
   const { userId: viewerId } = useFrappUser();
   const { linkOnline } = useNetwork();
+  // The member's own picked status (#3845). `null` until their settings load,
+  // which holds the publish back so a saved Invisible never flashes Online.
+  const own = useOwnStatus();
 
   // Presence rides the Supabase Realtime socket, a different service from
   // `/health`. Gating on `isOffline` would tear down a healthy channel when
@@ -47,6 +51,7 @@ export function ChapterPresenceProvider({ children }: { children: ReactNode }) {
     chapterId,
     viewerId,
     enabled: linkOnline,
+    own,
   });
 
   return (
@@ -67,6 +72,7 @@ export function ChapterPresenceProvider({ children }: { children: ReactNode }) {
  */
 const NOT_PROVIDED: ChapterPresence = {
   statusOf: () => "offline",
+  lineOf: () => null,
   isReady: false,
 };
 

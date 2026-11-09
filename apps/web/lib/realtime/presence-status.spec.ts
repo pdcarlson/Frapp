@@ -7,11 +7,28 @@ import {
   presenceStatusFor,
   presenceStatusKind,
   sameRoster,
+  CUSTOM_STATUS_MAX,
+  type PresenceEntry,
   type PresenceStatus,
 } from "./presence-status";
 import { chapterPresenceTopic } from "./presence-topics";
 
-const ALL_STATUSES: PresenceStatus[] = ["online", "idle", "offline"];
+const ALL_STATUSES: PresenceStatus[] = [
+  "online",
+  "idle",
+  "dnd",
+  "invisible",
+  "offline",
+];
+
+/** An automatic entry: activity only, nothing picked, no line. */
+function at(ts: number): PresenceEntry {
+  return { ts, picked: null, line: null };
+}
+
+function roster(...entries: [string, number][]): Map<string, PresenceEntry> {
+  return new Map(entries.map(([id, ts]) => [id, at(ts)]));
+}
 
 /**
  * These pin the spec's timing rules (`spec/behavior/chat/README.md` §
@@ -37,16 +54,16 @@ describe("presenceStatusFor", () => {
   });
 
   test("present and recently active is Online", () => {
-    expect(presenceStatusFor(now, now)).toBe("online");
-    expect(presenceStatusFor(now - 1000, now)).toBe("online");
+    expect(presenceStatusFor(at(now), now)).toBe("online");
+    expect(presenceStatusFor(at(now - 1000), now)).toBe("online");
   });
 
   test("exactly at the threshold is still Online — the spec says >5 minutes", () => {
-    expect(presenceStatusFor(now - IDLE_AFTER_MS, now)).toBe("online");
+    expect(presenceStatusFor(at(now - IDLE_AFTER_MS), now)).toBe("online");
   });
 
   test("one millisecond past the threshold is Idle", () => {
-    expect(presenceStatusFor(now - IDLE_AFTER_MS - 1, now)).toBe("idle");
+    expect(presenceStatusFor(at(now - IDLE_AFTER_MS - 1), now)).toBe("idle");
   });
 
   /**
@@ -55,11 +72,21 @@ describe("presenceStatusFor", () => {
    * would render as app-open-but-inactive. The absence contract is `null`.
    */
   test("a zero timestamp is a stale time, not absence", () => {
-    expect(presenceStatusFor(0, now)).toBe("idle");
+    expect(presenceStatusFor(at(0), now)).toBe("idle");
   });
 
   test("a clock-skewed future timestamp reads Online, not Idle", () => {
-    expect(presenceStatusFor(now + 60_000, now)).toBe("online");
+    expect(presenceStatusFor(at(now + 60_000), now)).toBe("online");
+  });
+
+  // #3845: a picked status beats the clock in both directions.
+  test("a picked Idle stays Idle while the member is active", () => {
+    expect(presenceStatusFor({ ...at(now), picked: "idle" }, now)).toBe("idle");
+  });
+
+  test("DND stays DND after five minutes away, rather than going Idle", () => {
+    const stale = now - IDLE_AFTER_MS - 1;
+    expect(presenceStatusFor({ ...at(stale), picked: "dnd" }, now)).toBe("dnd");
   });
 });
 
@@ -68,6 +95,8 @@ describe("presenceLabel", () => {
     expect(presenceLabel("online")).toBe("Online");
     expect(presenceLabel("idle")).toBe("Idle");
     expect(presenceLabel("offline")).toBe("Offline");
+    expect(presenceLabel("dnd")).toBe("Do Not Disturb");
+    expect(presenceLabel("invisible")).toBe("Invisible");
   });
 });
 
@@ -77,8 +106,8 @@ describe("presenceMapFrom", () => {
       a: [{ userId: "u1", ts: 10 }],
       b: [{ userId: "u2", ts: 20 }],
     });
-    expect(map.get("u1")).toBe(10);
-    expect(map.get("u2")).toBe(20);
+    expect(map.get("u1")).toEqual(at(10));
+    expect(map.get("u2")).toEqual(at(20));
   });
 
   /**
@@ -92,8 +121,49 @@ describe("presenceMapFrom", () => {
       b: [{ userId: "u1", ts: 99 }],
       c: [{ userId: "u1", ts: 50 }],
     });
-    expect(map.get("u1")).toBe(99);
+    expect(map.get("u1")?.ts).toBe(99);
     expect(map.size).toBe(1);
+  });
+
+  test("the newest entry's picked status and line come with it", () => {
+    const map = presenceMapFrom({
+      a: [{ userId: "u1", ts: 10, status: "dnd", line: "old tab" }],
+      b: [{ userId: "u1", ts: 99, status: "idle", line: "At practice" }],
+    });
+    expect(map.get("u1")).toEqual({ ts: 99, picked: "idle", line: "At practice" });
+  });
+
+  test("reads status and line, and leaves them out when absent", () => {
+    const map = presenceMapFrom({
+      a: [
+        { userId: "u1", ts: 1, status: "dnd", line: "  Studying  " },
+        { userId: "u2", ts: 1 },
+      ],
+    });
+    expect(map.get("u1")).toEqual({ ts: 1, picked: "dnd", line: "Studying" });
+    expect(map.get("u2")).toEqual(at(1));
+  });
+
+  /**
+   * The payload is whatever a member's client published. An unknown status
+   * must not invent one (and `invisible` never rides the wire: an invisible
+   * member publishes nothing), and a line must stay one bounded line.
+   */
+  test("an unknown status reads automatic, and a crafted line is tamed", () => {
+    const long = "x".repeat(CUSTOM_STATUS_MAX + 20);
+    const map = presenceMapFrom({
+      a: [
+        { userId: "u1", ts: 1, status: "invisible", line: 42 },
+        { userId: "u2", ts: 1, status: "online", line: "two\nlines\u2028here" },
+        { userId: "u3", ts: 1, line: long },
+        { userId: "u4", ts: 1, line: "   " },
+      ],
+    });
+    expect(map.get("u1")).toEqual(at(1));
+    expect(map.get("u2")?.picked).toBeNull();
+    expect(map.get("u2")?.line).toBe("two lines here");
+    expect(map.get("u3")?.line).toHaveLength(CUSTOM_STATUS_MAX);
+    expect(map.get("u4")?.line).toBeNull();
   });
 
   test("several entries under one key are all read", () => {
@@ -174,6 +244,18 @@ describe("presenceStatusKind", () => {
     expect(presenceStatusKind("online")).not.toContain("border-2");
   });
 
+  // Offline is a faint fill, so the viewer's own Invisible is a ring: they
+  // can tell "I chose this" from "I'm disconnected".
+  test("Invisible is a grey ring, apart from Offline's fill", () => {
+    expect(presenceStatusKind("invisible")).toContain("border-2");
+    expect(presenceStatusKind("invisible")).toContain("border-muted-foreground");
+    expect(presenceStatusKind("offline")).not.toContain("border-2");
+  });
+
+  test("DND is the destructive fill", () => {
+    expect(presenceStatusKind("dnd")).toBe("bg-destructive");
+  });
+
   /**
    * The ring's interior sits over an avatar photo. `bg-transparent` would let
    * the photo through, so an amber-ish image would make Idle read as filled —
@@ -188,20 +270,27 @@ describe("presenceStatusKind", () => {
 describe("sameRoster", () => {
   test("equal contents compare equal even as different Map instances", () => {
     expect(
-      sameRoster(new Map([["u1", 1]]), new Map([["u1", 1]])),
+      sameRoster(roster(["u1", 1]), roster(["u1", 1])),
     ).toBe(true);
   });
 
   test("a changed timestamp is a change", () => {
-    expect(sameRoster(new Map([["u1", 1]]), new Map([["u1", 2]]))).toBe(false);
+    expect(sameRoster(roster(["u1", 1]), roster(["u1", 2]))).toBe(false);
+  });
+
+  test("a changed status or line is a change", () => {
+    const base = roster(["u1", 1]);
+    expect(
+      sameRoster(base, new Map([["u1", { ...at(1), picked: "dnd" }]])),
+    ).toBe(false);
+    expect(
+      sameRoster(base, new Map([["u1", { ...at(1), line: "Out" }]])),
+    ).toBe(false);
   });
 
   test("a different member set is a change, both directions", () => {
-    const one = new Map([["u1", 1]]);
-    const two = new Map([
-      ["u1", 1],
-      ["u2", 1],
-    ]);
+    const one = roster(["u1", 1]);
+    const two = roster(["u1", 1], ["u2", 1]);
     expect(sameRoster(one, two)).toBe(false);
     expect(sameRoster(two, one)).toBe(false);
   });
@@ -211,7 +300,7 @@ describe("sameRoster", () => {
    * equal, freezing the directory on the previous roster.
    */
   test("same size with different members is a change", () => {
-    expect(sameRoster(new Map([["u1", 1]]), new Map([["u2", 1]]))).toBe(false);
+    expect(sameRoster(roster(["u1", 1]), roster(["u2", 1]))).toBe(false);
   });
 
   test("two empty rosters are equal", () => {

@@ -20,7 +20,8 @@ const presence = vi.hoisted(() => ({
     isReady: true,
     statusOf: (() => "offline") as (
       id: string,
-    ) => "online" | "idle" | "offline",
+    ) => "online" | "idle" | "dnd" | "invisible" | "offline",
+    lineOf: (() => null) as (id: string) => string | null,
   },
 }));
 
@@ -108,6 +109,7 @@ describe("ChannelMemberList", () => {
           : id === "u-member" || id === "u-blank"
             ? "offline"
             : "online",
+      lineOf: (id) => (id === "u-pres" ? "At nationals" : null),
     };
   });
 
@@ -132,7 +134,11 @@ describe("ChannelMemberList", () => {
   });
 
   it("does not move a row when presence arrives", () => {
-    presence.value = { isReady: false, statusOf: () => "offline" };
+    presence.value = {
+      isReady: false,
+      statusOf: () => "offline",
+      lineOf: () => null,
+    };
     const { rerender } = render(<ChannelMemberList channelId="chan-1" />);
     const before = screen
       .getAllByRole("listitem")
@@ -141,12 +147,24 @@ describe("ChannelMemberList", () => {
     presence.value = {
       isReady: true,
       statusOf: (id) => (id === "u-idle" ? "idle" : "online"),
+      lineOf: () => null,
     };
     rerender(<ChannelMemberList channelId="chan-1" />);
     const after = screen
       .getAllByRole("listitem")
       .map((item) => item.textContent?.replace(/, (Online|Idle|Offline)$/, ""));
     expect(after).toEqual(before);
+  });
+
+  // #3845: the custom line is one muted line under the name, and the row
+  // grows from 32 to 40px only when it has one.
+  it("shows a member's custom status under their name, growing only that row", () => {
+    render(<ChannelMemberList channelId="chan-1" />);
+    const line = screen.getByText("At nationals");
+    const row = line.closest("li")!;
+    expect(row).toHaveTextContent("Zed President");
+    expect(row).toHaveClass("h-10");
+    expect(screen.getByText("Bob Member").closest("li")).toHaveClass("h-8");
   });
 
   it("searches by name past 12 readers and says when no one matches", () => {
