@@ -26,10 +26,16 @@ const {
     signOut: vi.fn(),
   }),
 );
-/** `useAccessibleChapters`' answer; `isPending` holds the membership check open. */
+/** `useAccessibleChapters`' answer; `isLoading` holds the skip decision open. */
 const chapters = vi.hoisted(() => ({
   data: [] as unknown[] | undefined,
-  isPending: false,
+  isLoading: false,
+}));
+/** `useMyPermissions`' answer for the active chapter. */
+const perms = vi.hoisted(() => ({
+  data: { permissions: [] as string[] } as
+    | { permissions: string[] }
+    | undefined,
 }));
 
 // The Terms checkbox runs the real `useJoinTermsCheckbox` against a mock API
@@ -39,8 +45,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useRedeemInvite: () => ({ mutateAsync: redeemMutate, isPending: false }),
   useAccessibleChapters: () => ({
     data: chapters.data,
-    isPending: chapters.isPending,
+    isLoading: chapters.isLoading,
   }),
+  useMyPermissions: () => ({ data: perms.data, isLoading: false }),
   usePendingInvites: (userId: string | null) => {
     pending.userIds.push(userId);
     return { data: userId ? pending.data : undefined };
@@ -116,25 +123,27 @@ beforeEach(() => {
   pending.data = [];
   pending.userIds = [];
   chapters.data = [];
-  chapters.isPending = false;
+  chapters.isLoading = false;
+  perms.data = { permissions: [] };
   searchParams.current = new URLSearchParams();
 });
 
 describe("web join — a member already in a chapter (#3850)", () => {
-  const northfield = {
-    chapter_id: "ch-north",
-    member_id: "m-1",
+  const membership = (id: string, name: string) => ({
+    chapter_id: id,
+    member_id: `m-${id}`,
     role_ids: ["r-1"],
     has_completed_onboarding: true,
-    chapter: { id: "ch-north", name: "Northfield" },
-  };
+    chapter: { id, name },
+  });
+  const northfield = membership("ch-north", "Northfield");
+  const southfield = membership("ch-south", "Southfield");
 
-  async function renderPage() {
-    legal.data = { required: false };
+  function tree(activeChapterId: string | null) {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
-    render(
+    return (
       <QueryClientProvider client={queryClient}>
         <FrappClientProvider
           client={
@@ -142,17 +151,26 @@ describe("web join — a member already in a chapter (#3850)", () => {
               typeof FrappClientProvider
             >["client"]
           }
-          chapterId={null}
+          chapterId={activeChapterId}
         >
           <JoinPage />
         </FrappClientProvider>
-      </QueryClientProvider>,
+      </QueryClientProvider>
     );
   }
 
+  function renderPage(activeChapterId: string | null = null) {
+    legal.data = { required: false };
+    return render(tree(activeChapterId));
+  }
+
+  beforeEach(() => {
+    perms.data = { permissions: ["chat:read"] };
+  });
+
   it("leads with a way back to their chapter and keeps the form for another invite", async () => {
     chapters.data = [northfield];
-    await renderPage();
+    renderPage();
 
     expect(
       await screen.findByText("You're already in Northfield"),
@@ -164,28 +182,95 @@ describe("web join — a member already in a chapter (#3850)", () => {
     expect(replace).not.toHaveBeenCalledWith("/chat");
   });
 
+  it("names the active chapter, not the first one listed", async () => {
+    chapters.data = [northfield, southfield];
+    renderPage("ch-south");
+
+    expect(
+      await screen.findByText("You're already in Southfield"),
+    ).toBeTruthy();
+  });
+
+  it("offers no Open chat to a member with no role, whom /chat would send to /no-access", async () => {
+    chapters.data = [northfield];
+    perms.data = { permissions: [] };
+    renderPage();
+
+    expect(await screen.findByLabelText("Invite")).toBeTruthy();
+    expect(screen.queryByText(/You're already in/)).toBeNull();
+    expect(screen.queryByRole("link", { name: "Open chat" })).toBeNull();
+  });
+
   it("sends a member who came from the sign-in footer, with no invite, to chat", async () => {
     chapters.data = [northfield];
     searchParams.current = new URLSearchParams("from=sign-in");
-    await renderPage();
+    renderPage();
 
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/chat"));
     expect(screen.queryByLabelText("Invite")).toBeNull();
   });
 
+  it("holds the form back while the membership read is loading on that visit", async () => {
+    chapters.data = undefined;
+    chapters.isLoading = true;
+    searchParams.current = new URLSearchParams("from=sign-in");
+    renderPage();
+
+    await waitFor(() => expect(sessionUser).toHaveBeenCalled());
+    expect(await screen.findByText("Verifying your session…")).toBeTruthy();
+    expect(screen.queryByLabelText("Invite")).toBeNull();
+    expect(replace).not.toHaveBeenCalledWith("/chat");
+  });
+
+  it("keeps the page when invites were emailed to the account, which is why the footer asked", async () => {
+    chapters.data = [northfield];
+    pending.data = [
+      {
+        token: "offer-1",
+        chapter_name: "Southfield",
+        university: "State",
+        mark_text: null,
+        accent_color: null,
+        invited_by: null,
+        role: "member",
+      },
+    ];
+    searchParams.current = new URLSearchParams("from=sign-in");
+    renderPage();
+
+    expect(
+      await screen.findByRole("button", { name: "Join Southfield" }),
+    ).toBeTruthy();
+    expect(replace).not.toHaveBeenCalledWith("/chat");
+  });
+
   it("keeps the page when that visit carries an invite, which may be for another chapter", async () => {
     chapters.data = [northfield];
     searchParams.current = new URLSearchParams("from=sign-in&token=abc");
-    await renderPage();
+    renderPage();
 
     expect(await screen.findByLabelText("Invite")).toBeTruthy();
+    expect(replace).not.toHaveBeenCalledWith("/chat");
+  });
+
+  it("decides once, so a join on this page never triggers the skip mid-redeem", async () => {
+    chapters.data = [];
+    searchParams.current = new URLSearchParams("from=sign-in");
+    const { rerender } = renderPage();
+    expect(await screen.findByLabelText("Invite")).toBeTruthy();
+
+    // A redeem refetches the chapter list: the count goes 0 to 1.
+    chapters.data = [northfield];
+    rerender(tree(null));
+
+    expect(await screen.findByText("You're already in Northfield")).toBeTruthy();
     expect(replace).not.toHaveBeenCalledWith("/chat");
   });
 
   it("shows the form to an account with no chapter, even from the sign-in footer", async () => {
     chapters.data = [];
     searchParams.current = new URLSearchParams("from=sign-in");
-    await renderPage();
+    renderPage();
 
     expect(await screen.findByLabelText("Invite")).toBeTruthy();
     expect(screen.queryByText(/You're already in/)).toBeNull();

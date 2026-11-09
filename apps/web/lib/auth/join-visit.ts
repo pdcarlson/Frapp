@@ -17,14 +17,45 @@ export const JOIN_FROM_SIGN_IN = "sign-in";
 /** The sign-in footer's destination: `/join`, marked as coming from sign-in. */
 export const JOIN_FROM_SIGN_IN_PATH = `/join?from=${JOIN_FROM_SIGN_IN}`;
 
+/**
+ * Whether this visit could skip the page at all: the footer's marked visit,
+ * with no invite in the URL. The page waits on the reads below only for
+ * such a visit, so the rule lives here and nowhere else.
+ */
+export function isJoinSkipCandidate({
+  from,
+  hasInvite,
+}: {
+  from: string | null;
+  hasInvite: boolean;
+}): boolean {
+  return from === JOIN_FROM_SIGN_IN && !hasInvite;
+}
+
+/**
+ * Whether a candidate visit goes to `/chat`, decided once on arrival. It
+ * stays on the page when the account has no chapter, when an invite was
+ * emailed to it (the footer asked "Have an invite?", so its offers are why
+ * the member came), or when it has no access in its chapter (a member with
+ * no role, whom `/chat` would send to `/no-access`).
+ */
 export function shouldSkipJoinForMember({
   from,
   hasInvite,
   membershipCount,
+  offerCount,
+  hasAccess,
 }: {
   from: string | null;
   hasInvite: boolean;
   membershipCount: number;
+  offerCount: number;
+  hasAccess: boolean;
 }): boolean {
-  return from === JOIN_FROM_SIGN_IN && !hasInvite && membershipCount > 0;
+  return (
+    isJoinSkipCandidate({ from, hasInvite }) &&
+    membershipCount > 0 &&
+    offerCount === 0 &&
+    hasAccess
+  );
 }
