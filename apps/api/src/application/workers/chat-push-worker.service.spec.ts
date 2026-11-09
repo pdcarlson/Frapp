@@ -610,6 +610,18 @@ describe('ChatPushWorkerService', () => {
       expect(chatPushPreview({ content: '  hi  ' })).toBe('hi');
     });
 
+    it('never splits an emoji at the cut', () => {
+      const preview = chatPushPreview({ content: `${'a'.repeat(199)}😀x` });
+      expect(preview).toBe(`${'a'.repeat(199)}😀`);
+      expect(preview).not.toMatch(/[\uD800-\uDBFF]$/);
+    });
+
+    it('ignores an attachment count that is not a whole number', () => {
+      expect(
+        chatPushPreview({ content: '', metadata: { attachment_count: 2.5 } }),
+      ).toBe('Sent a message');
+    });
+
     it('never comes back blank', () => {
       expect(
         chatPushPreview({ content: '', metadata: { attachment_count: 3 } }),

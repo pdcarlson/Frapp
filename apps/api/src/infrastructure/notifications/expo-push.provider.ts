@@ -79,18 +79,17 @@ const FALLBACK_BODY = 'Open Frapp to see what happened';
 
 /**
  * The title and body a push goes out with: the caller's own, or a fallback
- * when either is blank (#3846). A push whose alert has no text reaches an
- * iPhone as the bare app name and the word "Notification", which tells the
- * member nothing (`spec/behavior/notifications.md` § What a push says).
+ * when either is blank (#3846). A push with no text says nothing on a lock
+ * screen (`spec/behavior/notifications.md` § What a push says).
  *
  * The fallback is a last line of defence, not the copy: every sender builds
- * its own title and body, and `repaired` lets the provider report the one
- * that did not.
+ * its own title and body, and `blank` names the halves it had to fill so the
+ * provider can report the sender that did not.
  */
 export function completePushCopy(payload: PushPayload): {
   title: string;
   body: string;
-  repaired: boolean;
+  blank: 'title' | 'body' | 'title-and-body' | null;
 } {
   const title = typeof payload.title === 'string' ? payload.title.trim() : '';
   const body = typeof payload.body === 'string' ? payload.body.trim() : '';
@@ -100,8 +99,25 @@ export function completePushCopy(payload: PushPayload): {
       body ||
       FALLBACK_BODY_BY_CATEGORY[payload.category ?? ''] ||
       FALLBACK_BODY,
-    repaired: !title || !body,
+    blank:
+      !title && !body
+        ? 'title-and-body'
+        : !title
+          ? 'title'
+          : !body
+            ? 'body'
+            : null,
   };
+}
+
+/** A category as a caught-failure site segment (lowercase, hyphenated). */
+function siteSafe(category: string): string {
+  return (
+    category
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'default'
+  );
 }
 
 @Injectable()
@@ -139,16 +155,16 @@ export class ExpoPushProvider implements INotificationProvider {
     }
 
     const copy = completePushCopy(payload);
-    if (copy.repaired) {
+    if (copy.blank) {
       // Category and which half was blank only: never the text itself, which
-      // may be a member's message.
+      // may be a member's message. The category is in the site, so each
+      // sender's blanks are their own Sentry issue and throttle slot.
+      const category = payload.category ?? 'default';
       reportCaughtFailure(this.logger, {
         level: 'warning',
-        site: 'expo-push-blank-copy',
-        message: `push sent with a blank ${
-          payload.title?.trim() ? 'body' : 'title'
-        } (category ${payload.category ?? 'default'}); filled with a fallback`,
-        tags: { category: payload.category ?? 'default' },
+        site: `expo-push-blank-copy:${siteSafe(category)}`,
+        message: `push sent with a blank ${copy.blank} (category ${category}); filled with a fallback`,
+        tags: { category, blank: copy.blank },
       });
     }
 

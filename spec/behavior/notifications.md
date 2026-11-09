@@ -347,7 +347,7 @@ A push is read on a lock screen, in a glance, next to iOS Calendar and Google Ca
 | Task overdue | `Book the venue` | `Overdue · was due Sat, Nov 14` |
 | Member joined | `Alex Smith joined` | `New member of the chapter` |
 
-**No push goes out without a title and a body (#3846).** An iPhone shows a push with no text as the bare app name over the word "Notification", which says nothing. Every sender builds its own copy by the rules above. As a last line of defence, `ExpoPushProvider` fills a blank title with `Frapp` and a blank body with a line naming the push's category (`New message`, `Event update`, `Task update`, …), and reports the blank to Sentry (`expo-push-blank-copy`) so the sender that built it gets fixed.
+**No push goes out without a title and a body (#3846).** A push with no text tells the reader nothing on a lock screen. Every sender builds its own copy by the rules above. As a last line of defence, `ExpoPushProvider` fills a blank title with `Frapp` and a blank body with a line naming the push's category (`New message`, `Event update`, `Task update`, …), and reports the blank to Sentry under `expo-push-blank-copy:<category>` so the sender that built it gets fixed.
 
 ## Notification Triggers (Complete List)
 

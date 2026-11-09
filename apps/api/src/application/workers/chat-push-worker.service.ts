@@ -76,15 +76,16 @@ interface ChatMessageRow {
 /**
  * The body of a single chat push: the first 200 characters of the message, or,
  * for a message with no text (a photo or file sent on its own), what was sent.
- * An empty body used to go out for those, and an iPhone showed the push as the
- * bare word "Notification" with nothing to say who or what (#3846).
+ * Those used to push an empty body under the sender's name (#3846). The cut is
+ * by code point, so it never splits an emoji into a broken character.
  */
 export function chatPushPreview(
   row: Pick<ChatMessageRow, 'content' | 'metadata'>,
 ): string {
   const text = row.content?.trim() ?? '';
-  if (text) return text.slice(0, 200);
-  const count = Number(row.metadata?.attachment_count) || 0;
+  if (text) return Array.from(text).slice(0, 200).join('');
+  const raw = Number(row.metadata?.attachment_count);
+  const count = Number.isInteger(raw) && raw > 0 ? raw : 0;
   if (count === 1) return 'Sent an attachment';
   if (count > 1) return `Sent ${count} attachments`;
   return 'Sent a message';

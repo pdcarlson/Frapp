@@ -151,9 +151,8 @@ describe('ExpoPushProvider', () => {
     });
   });
 
-  // #3846: a push with no text reaches an iPhone as the bare word
-  // "Notification". Nothing goes to Expo without a title and a body, whichever
-  // sender built it.
+  // #3846: a push with no text tells the reader nothing on a lock screen.
+  // Nothing goes to Expo without a title and a body, whichever sender built it.
   describe('push copy', () => {
     const sentMessages = (): Record<string, unknown>[] =>
       (
@@ -199,6 +198,30 @@ describe('ExpoPushProvider', () => {
         title: 'Chapter',
         body: 'Event update',
       });
+    });
+
+    it('reports which halves were blank, per category', async () => {
+      await provider.sendToUser([VALID_A], {
+        title: '',
+        body: '',
+        category: 'chat',
+      });
+      await provider.sendToUser([VALID_A], {
+        title: 'Chapter',
+        body: '',
+        category: 'events',
+      });
+
+      // One Sentry report each: a frequent blank sender in one category must
+      // not use up the throttle slot another category's blank needs.
+      expect(captureMessage).toHaveBeenCalledTimes(2);
+      const lines = warnSpy.mock.calls.map((call) => String(call[0]));
+      expect(lines).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('blank title-and-body (category chat)'),
+          expect.stringContaining('blank body (category events)'),
+        ]),
+      );
     });
 
     it("sends a sender's own copy untouched and reports nothing", async () => {
