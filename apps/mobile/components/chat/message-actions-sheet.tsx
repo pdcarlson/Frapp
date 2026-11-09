@@ -38,6 +38,7 @@ import {
   useSheetBackgroundStyle,
   SheetBackToClose,
   useSheetClose,
+  SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import * as Clipboard from "expo-clipboard";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -474,6 +475,7 @@ export const MessageActionsSheet = forwardRef<
     <>
       <BottomSheetModal
         ref={menuRef}
+        stackBehavior={SHEET_STACK_BEHAVIOR}
         enableDynamicSizing
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}

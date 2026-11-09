@@ -17,6 +17,7 @@ import {
   SheetScrim,
   useSheetBackgroundStyle,
   useSheetClose,
+  SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import { PressableRow } from "@/components/list-section";
 import { formatDueDate, formatPointsChip } from "@/lib/tasks/format";
@@ -99,6 +100,7 @@ export const TaskDetailSheet = forwardRef<
   return (
     <BottomSheetModal
       ref={ref}
+      stackBehavior={SHEET_STACK_BEHAVIOR}
       enableDynamicSizing
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}
