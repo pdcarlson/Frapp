@@ -59,6 +59,10 @@ export class SupabaseUserSettingsRepository implements IUserSettingsRepository {
       quiet_hours_end: data.quiet_hours_end ?? null,
       quiet_hours_tz: data.quiet_hours_tz ?? null,
       theme: data.theme ?? 'system',
+      status: data.status ?? 'online',
+      status_expires_at: data.status_expires_at ?? null,
+      custom_status: data.custom_status ?? null,
+      custom_status_expires_at: data.custom_status_expires_at ?? null,
       updated_at: new Date().toISOString(),
     };
     const { data: result, error } = await this.supabase

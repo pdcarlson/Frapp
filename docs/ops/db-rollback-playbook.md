@@ -3177,3 +3177,20 @@ alter table public.discord_import_channels
 
 Dropping it loses only the scan's record. Each mapped row keeps the `new_channel_is_read_only` it saved, and the channels an import already created keep their own `is_read_only`.
 
+## Rollback user settings member status (20261109230000)
+
+* **Migration**: `20261109230000_user_settings_member_status.sql`
+
+Four columns on `user_settings`: `status`, `status_expires_at`, `custom_status` and `custom_status_expires_at`, with their checks. Nothing was backfilled.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API stops reading the columns, so Do Not Disturb stops silencing pushes, and stops writing them. Roll back any client that sets a status with it: the older API ignores the unknown fields, so a member's pick would look saved and do nothing.
+
+**Keep the columns unless they are themselves the problem.** Dropping them loses every member's current status and custom line. To remove them, do it in a later forward migration after the code revert has shipped:
+
+```sql
+alter table public.user_settings
+  drop column if exists status,
+  drop column if exists status_expires_at,
+  drop column if exists custom_status,
+  drop column if exists custom_status_expires_at;
+```

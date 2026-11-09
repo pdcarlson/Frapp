@@ -1,6 +1,7 @@
 import {
   IsIn,
   IsInt,
+  IsISO8601,
   IsOptional,
   IsString,
   IsUUID,
@@ -18,7 +19,10 @@ import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { isSupportedTimeZone, MAX_TIME_ZONE_LENGTH } from '@repo/validation';
 import {
+  CUSTOM_STATUS_MAX_LENGTH,
+  MEMBER_STATUSES,
   THEMES,
+  type MemberStatus,
   type Theme,
   type UserSettingsValues,
 } from '#domain/entities/notification.entity';
@@ -183,6 +187,57 @@ export class UpdateUserSettingsDto {
   @IsOptional()
   @IsIn(THEMES, { message: `theme must be one of: ${THEMES.join(', ')}` })
   theme?: Theme;
+
+  @ApiPropertyOptional({
+    description:
+      'The status the member picks (#3845). Sending it replaces `status_expires_at` with the value sent alongside it (absent: no end time). `online` never carries an end time.',
+    enum: MEMBER_STATUSES,
+  })
+  @IsOptional()
+  @IsIn(MEMBER_STATUSES, {
+    message: `status must be one of: ${MEMBER_STATUSES.join(', ')}`,
+  })
+  status?: MemberStatus;
+
+  @ApiPropertyOptional({
+    description:
+      'When `status` reverts to `online`, as an ISO 8601 instant in the future. Accepted only together with `status`. Null or absent: until the member changes it.',
+    nullable: true,
+    type: String,
+    format: 'date-time',
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsISO8601({ strict: true })
+  status_expires_at?: string | null;
+
+  @ApiPropertyOptional({
+    description: `One short custom status line (at most ${CUSTOM_STATUS_MAX_LENGTH} characters, no line breaks). Trimmed; null or an empty string clears it, and its end time with it. Sending it replaces \`custom_status_expires_at\` with the value sent alongside it.`,
+    nullable: true,
+    type: String,
+    maxLength: CUSTOM_STATUS_MAX_LENGTH,
+  })
+  @IsOptional()
+  @Transform(({ value }) => normalizeBlankToNull(value))
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @MaxLength(CUSTOM_STATUS_MAX_LENGTH)
+  @Matches(/^[^\r\n]*$/, {
+    message: 'custom_status must be a single line',
+  })
+  custom_status?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'When the custom status line clears, as an ISO 8601 instant in the future. Accepted only together with `custom_status`. Null or absent: until the member clears it.',
+    nullable: true,
+    type: String,
+    format: 'date-time',
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsISO8601({ strict: true })
+  custom_status_expires_at?: string | null;
 }
 
 /**
@@ -221,4 +276,38 @@ export class UserSettingsDto implements UserSettingsValues {
     enum: THEMES,
   })
   theme: Theme;
+
+  @ApiProperty({
+    description:
+      'The status in force now (#3845). `online` until the member picks another, and once a picked status reaches its end time.',
+    enum: MEMBER_STATUSES,
+  })
+  status: MemberStatus;
+
+  @ApiProperty({
+    description:
+      'When `status` reverts to `online`. Null: until the member changes it.',
+    nullable: true,
+    type: String,
+    format: 'date-time',
+  })
+  status_expires_at: string | null;
+
+  @ApiProperty({
+    description:
+      'The custom status line in force now, or null for none (also once it has reached its end time).',
+    nullable: true,
+    type: String,
+    example: 'At practice till 6',
+  })
+  custom_status: string | null;
+
+  @ApiProperty({
+    description:
+      'When the custom status line clears. Null: until the member clears it.',
+    nullable: true,
+    type: String,
+    format: 'date-time',
+  })
+  custom_status_expires_at: string | null;
 }

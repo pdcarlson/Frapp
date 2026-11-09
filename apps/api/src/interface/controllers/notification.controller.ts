@@ -129,7 +129,9 @@ export class NotificationController {
   }
 
   @Patch('settings')
-  @ApiOperation({ summary: 'Update user settings (quiet hours, theme)' })
+  @ApiOperation({
+    summary: 'Update user settings (quiet hours, theme, status)',
+  })
   @ApiOkResponse({ type: UserSettingsDto })
   async updateSettings(
     @CurrentUser('id') userId: string,

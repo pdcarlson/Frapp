@@ -36,6 +36,18 @@ export const THEMES = ['light', 'dark', 'system'] as const;
 
 export type Theme = (typeof THEMES)[number];
 
+/**
+ * Every status a member can pick (#3845), as `user_settings.status`'s check
+ * constraint lists them. `online` is the default and what an expired status
+ * reads as. The constraint is the other copy, and moves in a migration.
+ */
+export const MEMBER_STATUSES = ['online', 'idle', 'dnd', 'invisible'] as const;
+
+export type MemberStatus = (typeof MEMBER_STATUSES)[number];
+
+/** Longest custom status line, as the column's check constraint caps it. */
+export const CUSTOM_STATUS_MAX_LENGTH = 80;
+
 export interface UserSettings {
   id: string;
   user_id: string;
@@ -50,6 +62,17 @@ export interface UserSettings {
    */
   time_zone?: string | null;
   theme: Theme;
+  /**
+   * The member's chosen status (#3845). Optional here, like `time_zone`, so
+   * fixtures that predate it still type-check; the column defaults to `online`.
+   */
+  status?: MemberStatus;
+  /** When the status reverts to `online`. Null: until the member changes it. */
+  status_expires_at?: string | null;
+  /** One short line ("At practice till 6"), or null for none. */
+  custom_status?: string | null;
+  /** When the custom line clears. Null: until the member clears it. */
+  custom_status_expires_at?: string | null;
   updated_at: string;
 }
 
@@ -61,4 +84,13 @@ export interface UserSettings {
 export type UserSettingsValues = Pick<
   UserSettings,
   'quiet_hours_start' | 'quiet_hours_end' | 'quiet_hours_tz' | 'theme'
->;
+> &
+  Required<
+    Pick<
+      UserSettings,
+      | 'status'
+      | 'status_expires_at'
+      | 'custom_status'
+      | 'custom_status_expires_at'
+    >
+  >;

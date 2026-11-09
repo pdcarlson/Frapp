@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-09: Member status and Do Not Disturb
+
+### 20261109230000_user_settings_member_status.sql
+
+- **Purpose**: Adds four columns to `user_settings` for member status (#3845): `status text not null default 'online'` (check: `online`, `idle`, `dnd`, `invisible`), `status_expires_at timestamptz`, `custom_status text` (at most 80 characters, by check constraint) and `custom_status_expires_at timestamptz`. `GET`/`PATCH /v1/settings` read and write them, and push delivery treats `dnd` as quiet hours switched on now. The behaviour is in [`spec/behavior/notifications.md`](../../../spec/behavior/notifications.md#do-not-disturb) § Do Not Disturb. No backfill: every existing row takes `online` and no line. Account deletion's existing `delete from user_settings` clears them.
+- **Checks**: After `db push`, `select column_name, is_nullable, column_default from information_schema.columns where table_name = 'user_settings' and column_name in ('status', 'status_expires_at', 'custom_status', 'custom_status_expires_at');` returns four rows, `status` with `NO` and `'online'::text`. `select count(*) from user_settings where status <> 'online';` is `0` until members start picking one.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The newer API against an unmigrated database fails every settings save (PostgREST refuses the unknown columns), so don't deploy the API first. The older API never reads or writes the columns. `add column if not exists` and `drop constraint if exists` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-user-settings-member-status-20261109230000) § Rollback user settings member status.
+
 ## 2026-11-08: Event check-in opens before the start
 
 ### 20261108210000_event_check_in_opens_minutes.sql

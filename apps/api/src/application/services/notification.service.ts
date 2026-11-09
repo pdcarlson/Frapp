@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -45,16 +46,69 @@ const USER_SETTINGS_DEFAULTS: UserSettingsValues = {
   quiet_hours_end: null,
   quiet_hours_tz: null,
   theme: 'system',
+  status: 'online',
+  status_expires_at: null,
+  custom_status: null,
+  custom_status_expires_at: null,
 };
 
-/** The {@link UserSettingsValues} a stored row holds. */
-function toUserSettingsValues(row: UserSettings): UserSettingsValues {
+/** True when `expiresAt` is set and is not later than `now`. */
+function hasExpired(expiresAt: string | null | undefined, now: Date): boolean {
+  return expiresAt != null && new Date(expiresAt).getTime() <= now.getTime();
+}
+
+/**
+ * The {@link UserSettingsValues} a stored row holds, as of `now`. A status whose
+ * end time has passed reads as `online`, and an expired custom line as none
+ * (#3845): the row keeps the stale values until the member's next save, so
+ * every read resolves them.
+ */
+function toUserSettingsValues(
+  row: UserSettings,
+  now: Date = new Date(),
+): UserSettingsValues {
+  const statusExpired = hasExpired(row.status_expires_at, now);
+  const customExpired = hasExpired(row.custom_status_expires_at, now);
   return {
     quiet_hours_start: row.quiet_hours_start,
     quiet_hours_end: row.quiet_hours_end,
     quiet_hours_tz: row.quiet_hours_tz,
     theme: row.theme,
+    status: statusExpired ? 'online' : (row.status ?? 'online'),
+    status_expires_at: statusExpired ? null : (row.status_expires_at ?? null),
+    custom_status: customExpired ? null : (row.custom_status ?? null),
+    custom_status_expires_at: customExpired
+      ? null
+      : (row.custom_status_expires_at ?? null),
   };
+}
+
+/**
+ * Whether the member has Do Not Disturb on right now (#3845). DND is quiet
+ * hours switched on now: non-URGENT pushes arrive SILENT, URGENT still rings
+ * (`spec/behavior/notifications.md` § Do Not Disturb).
+ */
+function isDoNotDisturb(settings: UserSettings | null, now: Date): boolean {
+  return (
+    settings?.status === 'dnd' && !hasExpired(settings.status_expires_at, now)
+  );
+}
+
+/**
+ * Rejects an end time that is not a future instant. A past one would save a
+ * status that is already over, which the member would read as their pick being
+ * ignored.
+ */
+function assertFutureExpiry(
+  field: string,
+  value: string | null,
+  now: Date,
+): void {
+  if (value === null) return;
+  const at = new Date(value).getTime();
+  if (Number.isNaN(at) || at <= now.getTime()) {
+    throw new BadRequestException(`${field} must be a time in the future`);
+  }
 }
 
 /** Cap on how much of an offending value reaches a log line. */
@@ -248,10 +302,7 @@ export class NotificationService {
 
     const settings = await this.settingsRepo.findByUser(userId);
     let effectivePriority = priority;
-    if (
-      effectivePriority !== 'URGENT' &&
-      this.isInQuietHours(settings, userId)
-    ) {
+    if (effectivePriority !== 'URGENT' && this.isQuieted(settings, userId)) {
       effectivePriority = 'SILENT';
     }
 
@@ -387,7 +438,7 @@ export class NotificationService {
       let effectivePriority = priority;
       if (
         effectivePriority !== 'URGENT' &&
-        this.isInQuietHours(settingsByUser.get(userId) ?? null, userId)
+        this.isQuieted(settingsByUser.get(userId) ?? null, userId)
       ) {
         effectivePriority = 'SILENT';
       }
@@ -578,6 +629,17 @@ export class NotificationService {
       );
     }
     return { rows, failedIds };
+  }
+
+  /**
+   * Whether a non-URGENT push to this member goes out SILENT: Do Not Disturb is
+   * on, or they are inside their quiet-hours window.
+   */
+  private isQuieted(settings: UserSettings | null, userId: string): boolean {
+    return (
+      isDoNotDisturb(settings, new Date()) ||
+      this.isInQuietHours(settings, userId)
+    );
   }
 
   private isInQuietHours(
@@ -820,11 +882,56 @@ export class NotificationService {
     data: Partial<
       Pick<
         UserSettings,
-        'quiet_hours_start' | 'quiet_hours_end' | 'quiet_hours_tz' | 'theme'
+        | 'quiet_hours_start'
+        | 'quiet_hours_end'
+        | 'quiet_hours_tz'
+        | 'theme'
+        | 'status'
+        | 'status_expires_at'
+        | 'custom_status'
+        | 'custom_status_expires_at'
       >
     >,
   ): Promise<UserSettingsValues> {
+    const now = new Date();
     const existing = await this.settingsRepo.findByUser(userId);
+    const current = existing
+      ? toUserSettingsValues(existing, now)
+      : USER_SETTINGS_DEFAULTS;
+
+    // A status and its end time are one choice (#3845): picking a status
+    // replaces the old end time, so switching from "DND for 1 hour" to
+    // Invisible does not end Invisible an hour later. An end time alone has no
+    // status to attach to, so it is refused rather than guessed at. The same
+    // holds for the custom line and its end time.
+    let { status, status_expires_at } = current;
+    if (data.status !== undefined && data.status !== null) {
+      status = data.status;
+      status_expires_at =
+        status === 'online' ? null : (data.status_expires_at ?? null);
+      assertFutureExpiry('status_expires_at', status_expires_at, now);
+    } else if (data.status_expires_at !== undefined) {
+      throw new BadRequestException(
+        'status_expires_at is accepted only together with status',
+      );
+    }
+
+    let { custom_status, custom_status_expires_at } = current;
+    if (data.custom_status !== undefined) {
+      custom_status = data.custom_status ?? null;
+      custom_status_expires_at =
+        custom_status === null ? null : (data.custom_status_expires_at ?? null);
+      assertFutureExpiry(
+        'custom_status_expires_at',
+        custom_status_expires_at,
+        now,
+      );
+    } else if (data.custom_status_expires_at !== undefined) {
+      throw new BadRequestException(
+        'custom_status_expires_at is accepted only together with custom_status',
+      );
+    }
+
     // `undefined` means "not supplied" and `null` means "clear this". Test the
     // VALUE, not key presence: `field in data` is always true here, because
     // class-transformer materializes every declared DTO property as an own key
@@ -840,7 +947,11 @@ export class NotificationService {
       quiet_hours_end: resolve('quiet_hours_end'),
       quiet_hours_tz: resolve('quiet_hours_tz'),
       theme: data.theme ?? existing?.theme ?? USER_SETTINGS_DEFAULTS.theme,
+      status,
+      status_expires_at,
+      custom_status,
+      custom_status_expires_at,
     });
-    return toUserSettingsValues(saved);
+    return toUserSettingsValues(saved, now);
   }
 }
