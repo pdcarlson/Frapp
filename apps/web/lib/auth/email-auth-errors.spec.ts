@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { AuthApiError, AuthWeakPasswordError } from "@supabase/supabase-js";
+import { IDENTITY_COLLISION_COPY } from "./oauth";
 import {
+  EMAIL_SEND_CAPPED_COPY,
   EXISTING_ACCOUNT_COPY,
   UNCONFIRMED_EMAIL_COPY,
   WRONG_CREDENTIALS_COPY,
@@ -10,6 +12,7 @@ import {
   describeSignUpError,
   emailCooldownSeconds,
   isEmailNotConfirmed,
+  isEmailSendCapped,
   isExistingAccountSignUp,
 } from "./email-auth-errors";
 
@@ -56,10 +59,7 @@ describe("the one-email-a-minute limit", () => {
     expect(emailCooldownSeconds(cooldown(1))).toBe(1);
   });
 
-  it("is null when the sentence names no seconds, undefined for anything else", () => {
-    expect(
-      emailCooldownSeconds(new AuthApiError("slow down", 429, "over_email_send_rate_limit")),
-    ).toBeNull();
+  it("is undefined for anything else", () => {
     expect(emailCooldownSeconds(unconfirmed())).toBeUndefined();
     expect(emailCooldownSeconds(new Error("x"))).toBeUndefined();
   });
@@ -68,7 +68,25 @@ describe("the one-email-a-minute limit", () => {
     expect(describeEmailSendError(cooldown(44))).toBe(cooldownCopy(44));
     expect(cooldownCopy(44)).toContain("in 44 seconds");
     expect(cooldownCopy(1)).toContain("in 1 second.");
-    expect(cooldownCopy(null)).toContain("in a minute");
+    expect(cooldownCopy(0)).toContain("in a moment");
+  });
+});
+
+describe("the project's hourly email cap", () => {
+  // Same code as the per-address minute, no seconds: nothing went out.
+  const capped = () =>
+    new AuthApiError("Email rate limit exceeded", 429, "over_email_send_rate_limit");
+
+  it("is not read as a cooldown", () => {
+    expect(emailCooldownSeconds(capped())).toBeUndefined();
+    expect(isEmailSendCapped(capped())).toBe(true);
+    expect(isEmailSendCapped(cooldown(44))).toBe(false);
+  });
+
+  it("never says an email was just sent", () => {
+    expect(describeEmailSendError(capped())).toBe(EMAIL_SEND_CAPPED_COPY);
+    expect(describeEmailSendError(capped())).not.toMatch(/just sent/i);
+    expect(describeSignUpError(capped())).toBe(EMAIL_SEND_CAPPED_COPY);
   });
 });
 
@@ -85,10 +103,13 @@ describe("sign-up refusals", () => {
     expect(describeSignUpError(error)).toMatch(/at least 6 characters/);
   });
 
-  it("sends an address that already has an account to sign-in", () => {
+  it("sends an address that already has an account to sign-in, in the collision's words", () => {
+    expect(EXISTING_ACCOUNT_COPY).toBe(IDENTITY_COLLISION_COPY);
     expect(
       describeSignUpError(new AuthApiError("User already registered", 422, "user_already_exists")),
     ).toBe(EXISTING_ACCOUNT_COPY);
+    // GoTrue has sent this one without a code.
+    expect(describeSignUpError(new Error("User already registered"))).toBe(EXISTING_ACCOUNT_COPY);
   });
 
   it("reads GoTrue's stand-in user for a taken address", () => {

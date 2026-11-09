@@ -49,7 +49,16 @@ export function confirmationRedirectUrl(origin: string, redirectTo: string): str
  * that device in, and this tab waits for the password.
  *
  * Both the sign-up screen and the sign-in screen (on `email_not_confirmed`)
- * render it.
+ * render it. The sign-in screen can't know when the last email went out, so
+ * its Resend starts live and a refusal inside the minute starts the count.
+ *
+ * **A refused send costs this browser its confirmation link**, until the
+ * Confirm signup template moves to `token_hash` (#1925). The link's `?code=`
+ * is exchanged against the one legacy PKCE verifier `/auth/callback` reads,
+ * and auth-js 2.119 overwrites it on every email request and deletes it when
+ * GoTrue refuses one. The link still confirms the address, so it lands on
+ * `/sign-in` as "Email confirmed" (`intent=confirm`) and the password does
+ * the rest; this tab just doesn't carry on by itself.
  */
 export function CheckEmail({
   email,
@@ -127,7 +136,7 @@ export function CheckEmail({
     } catch (error) {
       const cooldown = emailCooldownSeconds(error);
       if (cooldown !== undefined) {
-        setSecondsLeft(cooldown ?? RESEND_COOLDOWN_SECONDS);
+        setSecondsLeft(Math.max(cooldown, 1));
         setNotice({ text: cooldownCopy(cooldown), isError: false });
       } else {
         setNotice({ text: describeEmailSendError(error), isError: true });

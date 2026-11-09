@@ -173,7 +173,12 @@ function SignInPageContent() {
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          emailRedirectTo: buildAuthCallbackUrl(window.location.origin, redirectTo),
+          // `intent=confirm`: for an address that isn't confirmed yet, GoTrue
+          // answers this with the Confirm signup email, whose `?code=` link is
+          // the one that can confirm and still fail to sign this browser in.
+          emailRedirectTo: buildAuthCallbackUrl(window.location.origin, redirectTo, {
+            intent: "confirm",
+          }),
         },
       });
       if (error) throw error;
@@ -185,8 +190,9 @@ function SignInPageContent() {
     } catch (error) {
       const cooldown = emailCooldownSeconds(error);
       if (cooldown !== undefined) {
-        // An email went out under a minute ago (the confirmation, or the last
-        // link). Not a failure: the newest email is the one to open.
+        // An email went out under a minute ago (the confirmation, or the
+        // last link), so this one wasn't sent. Not a failure: that email's
+        // link still works (a confirmation lands as "Email confirmed").
         toast({ title: "Check your inbox", description: cooldownCopy(cooldown) });
         return;
       }

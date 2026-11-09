@@ -126,6 +126,62 @@ describe("CheckEmail", () => {
     expect(assign).toHaveBeenCalledWith("/join?token=inv-1");
   });
 
+  it("carries on when the tab becomes visible again signed in", async () => {
+    renderPanel();
+    getSession.mockResolvedValue({ data: { session: { access_token: "t" } } });
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(assign).toHaveBeenCalledWith("/join?token=inv-1");
+  });
+
+  it("doesn't read the session while the tab is hidden", async () => {
+    renderPanel();
+    getSession.mockResolvedValue({ data: { session: { access_token: "t" } } });
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    visibility.mockRestore();
+    expect(getSession).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it("stops listening once it's gone, so the restored form isn't sent anywhere", async () => {
+    const { unmount } = render(
+      <CheckEmail
+        email="new.member@example.com"
+        redirectTo="/join?token=inv-1"
+        initialCooldownSeconds={0}
+        backLabel="Back"
+        onBack={vi.fn()}
+      />,
+    );
+    unmount();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    getSession.mockResolvedValue({ data: { session: { access_token: "t" } } });
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(getSession).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it("says plainly when the hourly email cap refused the resend", async () => {
+    resend.mockResolvedValue({
+      data: {},
+      error: new AuthApiError("Email rate limit exceeded", 429, "over_email_send_rate_limit"),
+    });
+    renderPanel();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^resend email$/i }));
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent(/can't send email right now/i);
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByRole("button", { name: /^resend email$/i })).toBeEnabled();
+  });
+
   it("stays put when the member comes back still signed out", async () => {
     renderPanel();
     await act(async () => {

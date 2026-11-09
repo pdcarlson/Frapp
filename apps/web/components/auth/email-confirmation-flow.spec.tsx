@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { AuthApiError } from "@supabase/supabase-js";
+import { AuthApiError, AuthWeakPasswordError } from "@supabase/supabase-js";
 
 /**
  * The launch-day path (2026-11-09), screen by screen: an invited member
@@ -38,7 +38,10 @@ vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast }) }));
 
 import SignUpPage from "@/app/(auth)/sign-up/page";
 import { SignInScreen } from "./sign-in-screen";
-import { WRONG_CREDENTIALS_COPY } from "@/lib/auth/email-auth-errors";
+import {
+  EMAIL_SEND_CAPPED_COPY,
+  WRONG_CREDENTIALS_COPY,
+} from "@/lib/auth/email-auth-errors";
 
 const EMAIL = "new.member@example.com";
 const INVITE = "/join?token=inv-1";
@@ -108,6 +111,43 @@ describe("sign-up on a project that confirms email", () => {
     await submit(/create account/i);
     const link = screen.getByRole("link", { name: /sign in here/i });
     expect(link.getAttribute("href")).toBe(`/sign-in?redirectTo=${encodeURIComponent(INVITE)}`);
+  });
+
+  it("goes back to 'Check your email' when the same address is resubmitted inside the minute", async () => {
+    auth.signUp.mockResolvedValue({
+      data: { session: null, user: null },
+      error: new AuthApiError(
+        "For security purposes, you can only request this after 37 seconds.",
+        429,
+        "over_email_send_rate_limit",
+      ),
+    });
+    render(<SignUpPage />);
+    fill(/email/i, EMAIL);
+    fill(/password/i, "correct horse");
+    await submit(/create account/i);
+
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Check your email");
+    expect(screen.getByRole("button", { name: /resend email in 37s/i })).toBeDisabled();
+    expect(toast).not.toHaveBeenCalledWith(expect.objectContaining({ variant: "destructive" }));
+  });
+
+  it("names a breached password through the page, not GoTrue's sentence", async () => {
+    auth.signUp.mockResolvedValue({
+      data: { session: null, user: null },
+      error: new AuthWeakPasswordError("Password is known to be weak and easy to guess", 422, [
+        "pwned",
+      ]),
+    });
+    render(<SignUpPage />);
+    fill(/email/i, EMAIL);
+    fill(/password/i, "password123");
+    await submit(/create account/i);
+
+    const call = toast.mock.calls.at(-1)?.[0] as { title: string; description: string };
+    expect(call.title).toBe("Unable to create account");
+    expect(call.description).toMatch(/data breach/);
+    expect(call.description).not.toMatch(/known to be weak/);
   });
 
   it("tells an address that already has an account to sign in, not to wait for email", async () => {
@@ -194,6 +234,36 @@ describe("other sign-in refusals", () => {
     expect(call.title).toBe("Check your inbox");
     expect(call.description).toContain("44 seconds");
     expect(call.variant).toBeUndefined();
+  });
+
+  it("asks for the magic link with intent=confirm, for an address GoTrue answers with a confirmation", async () => {
+    auth.signInWithOtp.mockResolvedValue({ data: { session: null, user: null }, error: null });
+    render(<SignInScreen />);
+    fill(/email/i, EMAIL);
+    await submit(/magic link/i);
+    const [args] = auth.signInWithOtp.mock.calls[0] as unknown as [
+      { options: { emailRedirectTo: string } },
+    ];
+    const link = new URL(args.options.emailRedirectTo);
+    expect(link.searchParams.get("next")).toBe(INVITE);
+    expect(link.searchParams.get("intent")).toBe("confirm");
+  });
+
+  it("reports the hourly email cap as a failure that sent nothing", async () => {
+    auth.signInWithOtp.mockResolvedValue({
+      data: { session: null, user: null },
+      error: new AuthApiError("Email rate limit exceeded", 429, "over_email_send_rate_limit"),
+    });
+    render(<SignInScreen />);
+    fill(/email/i, EMAIL);
+    await submit(/magic link/i);
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Unable to send magic link",
+        description: EMAIL_SEND_CAPPED_COPY,
+        variant: "destructive",
+      }),
+    );
   });
 
   it("greets a confirmation link that couldn't sign this browser in as good news", () => {

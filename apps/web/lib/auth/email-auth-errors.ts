@@ -1,3 +1,4 @@
+import { IDENTITY_COLLISION_COPY, isIdentityCollisionError } from "@/lib/auth/oauth";
 import { getErrorMessage } from "@/lib/utils";
 
 /**
@@ -41,14 +42,30 @@ export function isEmailNotConfirmed(error: unknown): boolean {
  * GoTrue lets one address be sent one auth email a minute. A second send
  * inside that minute (a magic link right after the confirmation email, a
  * double-tapped Resend) is refused with `429 over_email_send_rate_limit` and a
- * sentence naming the seconds left. Returns those seconds (null when the
- * sentence doesn't say), or undefined when the error is something else.
+ * sentence naming the seconds left ("…only request this after 44 seconds").
+ * Returns those seconds, or undefined for anything else.
+ *
+ * Only the sentence tells this apart from the project's hourly send cap, which
+ * GoTrue refuses with the same code and no seconds ("Email rate limit
+ * exceeded"). That one means no email went out, so it must never read as
+ * "we just sent you an email" ({@link isEmailSendCapped}).
  */
-export function emailCooldownSeconds(error: unknown): number | null | undefined {
+export function emailCooldownSeconds(error: unknown): number | undefined {
   if (authCodeOf(error) !== "over_email_send_rate_limit") return undefined;
   const match = /after (\d+) seconds?/i.exec(authMessageOf(error));
-  return match ? Number(match[1]) : null;
+  return match ? Number(match[1]) : undefined;
 }
+
+/** The project's hourly auth-email cap: nothing was sent, to anyone. */
+export function isEmailSendCapped(error: unknown): boolean {
+  return (
+    authCodeOf(error) === "over_email_send_rate_limit" &&
+    emailCooldownSeconds(error) === undefined
+  );
+}
+
+export const EMAIL_SEND_CAPPED_COPY =
+  "We can't send email right now. Too many went out in the last hour. Try again in a few minutes.";
 
 export const UNCONFIRMED_EMAIL_COPY =
   "Confirm your email first. Open the link we sent when you created your account.";
@@ -63,11 +80,11 @@ export function describePasswordSignInError(error: unknown): string {
   return describeEmailSendError(error);
 }
 
-export function cooldownCopy(seconds: number | null): string {
+export function cooldownCopy(seconds: number): string {
   const wait =
-    seconds && seconds > 0
+    seconds > 0
       ? `You can ask for another in ${seconds} second${seconds === 1 ? "" : "s"}.`
-      : "You can ask for another in a minute.";
+      : "You can ask for another in a moment.";
   return `We just sent you an email. Check your inbox and spam folder. ${wait}`;
 }
 
@@ -75,6 +92,7 @@ export function cooldownCopy(seconds: number | null): string {
 export function describeEmailSendError(error: unknown): string {
   const cooldown = emailCooldownSeconds(error);
   if (cooldown !== undefined) return cooldownCopy(cooldown);
+  if (isEmailSendCapped(error)) return EMAIL_SEND_CAPPED_COPY;
   if (authCodeOf(error) === "email_address_invalid") {
     return "Enter a valid email address.";
   }
@@ -101,14 +119,15 @@ export function describeSignUpError(error: unknown): string {
     }
     return "Choose a longer password: at least 6 characters.";
   }
-  if (code === "user_already_exists" || code === "email_exists") {
-    return EXISTING_ACCOUNT_COPY;
-  }
+  if (isIdentityCollisionError(error)) return EXISTING_ACCOUNT_COPY;
   return describeEmailSendError(error);
 }
 
-export const EXISTING_ACCOUNT_COPY =
-  "An account with this email already exists. Sign in instead, with your password, a magic link, or the Google or Apple account you joined with.";
+/**
+ * The same sentence an OAuth identity collision reads (`oauth.ts`,
+ * `writing.md` § Identity collision): one fact, one wording.
+ */
+export const EXISTING_ACCOUNT_COPY = IDENTITY_COLLISION_COPY;
 
 /**
  * Whether a sign-up response is GoTrue's stand-in for an address that already

@@ -22,6 +22,7 @@ import { resolveRedirectPath } from "@/lib/auth/redirect";
 import {
   EXISTING_ACCOUNT_COPY,
   describeSignUpError,
+  emailCooldownSeconds,
   isExistingAccountSignUp,
 } from "@/lib/auth/email-auth-errors";
 import {
@@ -72,7 +73,7 @@ function SignUpPageContent() {
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingOAuth, setPendingOAuth] = useState<OAuthProvider | null>(null);
-  const [sentTo, setSentTo] = useState<string | null>(null);
+  const [sent, setSent] = useState<{ email: string; cooldown: number } | null>(null);
   const redirectTo = resolveRedirectPath(searchParams.get("redirectTo"));
 
   async function handleSignUp(event: React.FormEvent<HTMLFormElement>) {
@@ -108,8 +109,18 @@ function SignUpPageContent() {
       }
 
       setPassword("");
-      setSentTo(email);
+      setSent({ email, cooldown: RESEND_COOLDOWN_SECONDS });
     } catch (error) {
+      // Refused inside GoTrue's minute: this address already has an
+      // unconfirmed account whose email went out moments ago (a resubmit
+      // after "Use a different email", a double tap). That email is the one
+      // to open, so this is "Check your email" again, counting down.
+      const cooldown = emailCooldownSeconds(error);
+      if (cooldown !== undefined) {
+        setPassword("");
+        setSent({ email, cooldown: Math.max(cooldown, 1) });
+        return;
+      }
       toast({
         title: "Unable to create account",
         description: describeSignUpError(error),
@@ -144,7 +155,7 @@ function SignUpPageContent() {
 
   const oauthBusy = pendingOAuth !== null;
 
-  if (sentTo) {
+  if (sent) {
     return (
       <AuthScreen
         title="Check your email"
@@ -161,11 +172,11 @@ function SignUpPageContent() {
         }
       >
         <CheckEmail
-          email={sentTo}
+          email={sent.email}
           redirectTo={redirectTo}
-          initialCooldownSeconds={RESEND_COOLDOWN_SECONDS}
+          initialCooldownSeconds={sent.cooldown}
           backLabel="Use a different email"
-          onBack={() => setSentTo(null)}
+          onBack={() => setSent(null)}
         />
       </AuthScreen>
     );

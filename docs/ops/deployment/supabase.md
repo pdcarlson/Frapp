@@ -265,8 +265,9 @@ Subject: `Sign in to Frapp`
 
 Body: `<h2>Sign in to Frapp</h2><p>Use this one-time link to sign in. It expires soon.</p><p><a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=magiclink">Sign in to Frapp</a></p><p>If you did not ask to sign in, you can ignore this email.</p>`
 
-Paste this only on the **Magic Link** template. Confirm signup / invite / recovery keep their
-own `type` (`signup`, `invite`, `recovery`) — copying this body onto those breaks them.
+Paste this only on the **Magic Link** template: its `type=magiclink` breaks the others.
+Confirm signup has its own body, with `type=email`, in the section below. Invite and
+recovery keep their own `type` (`invite`, `recovery`; #1925).
 Do **not** paste that on a host whose web deploy does not yet include the `token_hash` handler.
 Leave Resend open/click tracking off (single-use links). Production SMTP uses the prod
 mail subdomain From above, then 300/hour — dashboard-only; do not put the key in Slack

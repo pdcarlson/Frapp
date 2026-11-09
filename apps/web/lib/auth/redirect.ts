@@ -152,12 +152,15 @@ export function buildAuthCallbackUrl(
  * - `sign-in`, on an OAuth start from the sign-in screen: a brand-new account
  *   on return was not what the member asked for (#3786). The sign-up screen's
  *   OAuth buttons send none, because creating an account there is the point.
- * - `confirm`, on the sign-up confirmation email (and its resend): if that
- *   link's PKCE code can't be exchanged, GoTrue has already confirmed the
- *   address, because it only hands out a code after verifying the link (a
- *   dead link comes back as `error_code` instead). So the member is told their
+ * - `confirm`, on every email link web asks for: sign-up, Resend, and the
+ *   sign-in magic link (which GoTrue answers with the Confirm signup email for
+ *   an address not yet confirmed). If such a link's PKCE code can't be
+ *   exchanged, GoTrue has already verified it, because it only hands out a
+ *   code after verifying (a dead link comes back as `error_code` instead), and
+ *   verifying an email link confirms the address. So the member is told their
  *   email is confirmed and to sign in, not that the link failed
- *   ({@link EMAIL_CONFIRMED_AUTH_ERROR}).
+ *   ({@link EMAIL_CONFIRMED_AUTH_ERROR}). A magic link on the hosted
+ *   `token_hash` template never takes the code path at all.
  */
 export type AuthCallbackIntent = "sign-in" | "confirm";
 export const AUTH_CALLBACK_INTENT_PARAM = "intent";
@@ -176,8 +179,9 @@ export const NEW_ACCOUNT_PATH = "/new-account";
 
 /**
  * Member-facing wording for the `authError` `/auth/callback` hands to
- * `/sign-in`. GoTrue's `error_code` values are the first three; the next three
- * are this app's own.
+ * `/sign-in`. `otp_expired`, `access_denied`, `otp_disabled` and the three
+ * identity-collision codes are GoTrue's `error_code` values; `exchange_failed`,
+ * `verify_failed`, `missing_code` and `email_confirmed` are this app's own.
  */
 export function describeAuthError(code: string): string {
   switch (code) {
@@ -194,8 +198,9 @@ export function describeAuthError(code: string): string {
     case "missing_code":
       return "The link was incomplete. Request a new one below.";
     case EMAIL_CONFIRMED_AUTH_ERROR:
-      // Under the toast title "Email confirmed".
-      return "Sign in with your password to continue.";
+      // Under the toast title "Email confirmed". Not "with your password"
+      // alone: a magic-link account has none.
+      return "Sign in to continue, with your password or a new magic link.";
     case "identity_already_exists":
     case "user_already_exists":
     case "email_exists":
