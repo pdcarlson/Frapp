@@ -81,6 +81,7 @@ import {
 import type { ReplayRequest } from "@repo/chat-core/types";
 import {
   dispatchSlashCommand,
+  postPoll,
   retryPointsDispatch,
   trackEventCard,
   type DispatchResult,
@@ -88,6 +89,8 @@ import {
   type ResolveMember,
 } from "@repo/chat-core/dispatch";
 import type { SlashCommand } from "@repo/chat-core/integrations";
+import type { PollPayload } from "@repo/chat-core/polls";
+import * as Sentry from "@sentry/nextjs";
 import { createDexieOutboxStore } from "./offline-queue";
 import { useChatOutboundScope } from "./chat-scope";
 import { usePersistedChannelTail } from "./use-first-chunk-cache";
@@ -160,6 +163,20 @@ export interface UseChatChannelResult {
     announcementsChannelId: string | null,
     resolveMember?: ResolveMember,
   ) => Promise<DispatchResult>;
+  /**
+   * Posts a poll card (`kind: "poll"`) built by `buildPollMessage`, from the
+   * composer's New poll dialog (#3865), into `targetChannelId`: the dialog
+   * can outlive a channel switch, so it names the channel it was opened in.
+   * It goes through the outbox like any message, so it is optimistic and
+   * survives going offline, and a server refusal lands on the card's own
+   * failed row with Retry and Discard. It leaves the composer's draft alone.
+   * `postPoll` in `@repo/chat-core/dispatch`: never rejects, and a `warning`
+   * on success is one the caller must show.
+   */
+  sendPoll: (
+    targetChannelId: string,
+    poll: { content: string; payload: PollPayload },
+  ) => ReturnType<typeof postPoll>;
   /** The event form's card bookkeeping in a channel (#3773, `trackEventCard`). */
   trackEventCard: (channelId: string, name: string) => EventCardTrack;
   /** Card action invoker (Vote, RSVP, …). Goes through the NestJS chat actions endpoint (ADR-11). */
@@ -602,6 +619,24 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, ctx],
   );
 
+  const sendPoll = useCallback(
+    (
+      targetChannelId: string,
+      poll: { content: string; payload: PollPayload },
+    ) =>
+      postPoll(ctx, targetChannelId, poll).then((result) => {
+        // An outbox that refused the row is reported, as the composer's own
+        // send reports it (`chat_send: "composer"`).
+        if (!result.ok && result.cause !== undefined) {
+          Sentry.captureException(result.cause, {
+            tags: { chat_send: "poll_form" },
+          });
+        }
+        return result;
+      }),
+    [ctx],
+  );
+
   // The event form's card bookkeeping, for whichever channel the form posts to
   // (#3773). Takes the channel rather than this hook's, since a form can
   // outlive a channel switch.
@@ -649,6 +684,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     discard,
     retryUnconfirmed,
     dispatchSlash,
+    sendPoll,
     trackEventCard: trackEventCardCb,
     act,
   };

@@ -121,8 +121,9 @@ export interface PollMessageInput {
 /**
  * The `kind: "poll"` message a client posts: `content` is the question, which
  * is what a notification, the channel preview and search read, and `payload`
- * is the card. Both posting paths build it here, web's `/poll` command
- * (`dispatch.ts`) and mobile's New poll sheet (#3701), so the card a member
+ * is the card. Every posting path builds it here, web's `/poll` command
+ * (`dispatch.ts`), web's New poll dialog (#3865) and mobile's New poll sheet
+ * (#3701), so the card a member
  * votes on can't differ by which client made it. The caller has already
  * validated the text; this only shapes it.
  */
