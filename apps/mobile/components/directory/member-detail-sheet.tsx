@@ -39,6 +39,7 @@ import {
   useTallSheetProps,
   SheetBackToClose,
   useSheetClose,
+  SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import {
   resolveCustomRoleNames,
@@ -264,6 +265,7 @@ export const MemberDetailSheet = forwardRef<
     <>
       <BottomSheetModal
         ref={ref}
+        stackBehavior={SHEET_STACK_BEHAVIOR}
         {...tallSheet}
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}
