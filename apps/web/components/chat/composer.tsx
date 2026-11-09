@@ -346,7 +346,7 @@ export function ComposerShell({
 /**
  * `cmdk` and a Radix Dialog, fetched when the palette is first summoned.
  *
- * The palette opens from typing `/` or from the toolbar's ⌘ button, so on most
+ * The palette opens from typing `/` or Cmd/Ctrl+/, so on most
  * cold loads it is never opened at all — but the eager import put its whole
  * dependency chain in the chunk that has to parse before the composer is
  * focusable, which `1s` budgets at 400ms. It is one of the five surfaces the
@@ -1221,7 +1221,7 @@ export function Composer({
 
   // Radix's default `onCloseAutoFocus` returns focus to whatever rendered
   // `<DialogTrigger>` — this palette has none, since it opens from typing "/"
-  // as often as from clicking the toolbar button, so that handler is a no-op
+  // or Cmd/Ctrl+/ (the toolbar's palette button became the + menu, #3865), so that handler is a no-op
   // here and focus was landing nowhere (effectively `document.body`) on every
   // close. The composer editor is the one place a member always means to end
   // up, whichever of open/select/Escape/backspace-the-slash closed it.
@@ -1262,7 +1262,12 @@ export function Composer({
       // spec/ui/resilience/connection-state.md's split applies within this one control: the text path
       // is labelled and stays live because it queues, and the queueless path
       // refuses and says why.
-      if (isOffline) {
+      //
+      // `/poll` is the exception (#3865): its one-liner and its New poll form
+      // both post through `sendMessage`, which queues in the outbox like a
+      // text message, so offline it runs rather than being refused, as the
+      // + menu's Poll row does.
+      if (isOffline && command.name !== "poll") {
         return {
           title: `/${slashToken(command)} needs a connection`,
           description:
@@ -1890,22 +1895,6 @@ export function Composer({
         */}
         <div className="mt-2 flex items-center justify-between gap-2">
           <div className="flex items-center gap-1">
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className={compactControlClassName}
-                  aria-label="Open emoji picker"
-                >
-                  <ReactionGlyph className="h-5 w-5" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <EmojiPicker onPick={insertEmoji} />
-              </PopoverContent>
-            </Popover>
             {/*
               One + for a file and every command's form (#3865, layout A),
               replacing the paperclip and the slash-palette button. Typing
@@ -1927,6 +1916,22 @@ export function Composer({
               onChange={(event) => void handleAttach(event)}
               aria-hidden="true"
             />
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className={compactControlClassName}
+                  aria-label="Open emoji picker"
+                >
+                  <ReactionGlyph className="h-5 w-5" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <EmojiPicker onPick={insertEmoji} />
+              </PopoverContent>
+            </Popover>
             <ComposerHelp />
           </div>
           {/*

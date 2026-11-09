@@ -372,9 +372,19 @@ describe("Composer slash refusals cover the palette path too (#489)", () => {
       isOffline: true,
     });
 
-    await user.click(await screen.findByRole("option", { name: /poll/i }));
+    await user.click(await screen.findByRole("option", { name: /^\/points/i }));
 
     expect(onSlashDispatch).not.toHaveBeenCalled();
+  });
+
+  it("lets /poll through offline, since a poll queues like a message (#3865)", async () => {
+    const { user, onSlashDispatch } = await pickFromPalette({
+      isOffline: true,
+    });
+
+    await user.click(await screen.findByRole("option", { name: /poll/i }));
+
+    await waitFor(() => expect(onSlashDispatch).toHaveBeenCalledTimes(1));
   });
 
   it("refuses when a file is staged, as the typed path does", async () => {
@@ -561,14 +571,17 @@ describe("Composer typed slash dispatch respects the module gate (#2993)", () =>
   it("says it needs a connection while offline, not that the modules are loading", async () => {
     // Offline, the module read can't answer either; "try again in a moment"
     // would be the wrong reason.
-    const { onSlashDispatch } = typeAndSend(POLL, {
-      isModuleEnabled: () => false,
-      slashCommandsStatus: "loading",
-      isOffline: true,
-    });
+    const { onSlashDispatch } = typeAndSend(
+      '/event "Formal" 2026-11-20 18:00-20:00',
+      {
+        isModuleEnabled: () => false,
+        slashCommandsStatus: "loading",
+        isOffline: true,
+      },
+    );
 
     expect(mockToast).toHaveBeenCalledWith(
-      expect.objectContaining({ title: "/poll needs a connection" }),
+      expect.objectContaining({ title: "/event needs a connection" }),
     );
     expect(onSlashDispatch).not.toHaveBeenCalled();
   });
@@ -2126,6 +2139,73 @@ describe("Composer form handoff keeps the member's input on a refusal (#3773 rev
     expect(onOpenCommandForm).toHaveBeenCalledWith(
       expect.objectContaining({ name: "event" }),
       expect.stringContaining("Dinner"),
+    );
+  });
+});
+
+/**
+ * #3865 — the + menu, driven through the composer: the rows it offers open
+ * their form through `onOpenCommandForm`, and the composer's own state (a
+ * staged reply, a staged file, offline) greys them. `plusMenuModel` is unit
+ * tested beside the menu; this pins that the composer feeds it.
+ */
+describe("Composer + menu (#3865)", () => {
+  const FORMS = [
+    { command: "poll" as const, roleAllows: true },
+    { command: "event" as const, roleAllows: true },
+  ];
+
+  async function openPlus(overrides: Partial<ComposerProps> = {}) {
+    const user = userEvent.setup();
+    const onOpenCommandForm = vi.fn((): CommandFormOutcome => "opened");
+    render(
+      <Composer
+        {...baseProps({ onOpenCommandForm, commandForms: FORMS, ...overrides })}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: /add a file, poll, event/i }),
+    );
+    return { user, onOpenCommandForm };
+  }
+
+  it("sits first on the toolbar: + · emoji · help", () => {
+    render(<Composer {...baseProps({ commandForms: FORMS })} />);
+    const plus = screen.getByRole("button", { name: /add a file, poll, event/i });
+    const emoji = screen.getByRole("button", { name: /open emoji picker/i });
+    expect(
+      plus.compareDocumentPosition(emoji) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("opens the form a bare command opens", async () => {
+    const { user, onOpenCommandForm } = await openPlus();
+    await user.click(await screen.findByRole("menuitem", { name: /poll/i }));
+    expect(onOpenCommandForm).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "poll" }),
+      "",
+    );
+  });
+
+  it("greys the rows while a reply is staged", async () => {
+    await openPlus({
+      replyTo: { id: "msg-1", author: "Alice Chen", preview: "the original" },
+    });
+    expect(
+      await screen.findByRole("menuitem", { name: /event/i }),
+    ).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("menuitem", { name: /poll/i })).toHaveTextContent(
+      "Not while replying",
+    );
+  });
+
+  it("greys Event offline and keeps Poll, which queues", async () => {
+    await openPlus({ isOffline: true });
+    expect(
+      await screen.findByRole("menuitem", { name: /event/i }),
+    ).toHaveTextContent("Reconnect first");
+    expect(screen.getByRole("menuitem", { name: /poll/i })).not.toHaveAttribute(
+      "aria-disabled",
     );
   });
 });

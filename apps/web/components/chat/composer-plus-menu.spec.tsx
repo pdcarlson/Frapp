@@ -46,7 +46,7 @@ describe("plusMenuModel (#3865)", () => {
 
   it("hides a row without blaming the role while permissions load", () => {
     const model = plusMenuModel(
-      ctx({ forms: [{ command: "event", roleAllows: null }] }),
+      ctx({ forms: [{ command: "event", roleAllows: "loading" }] }),
     );
     expect(model.rows).toEqual([]);
     expect(model.footer).toEqual([]);
@@ -83,6 +83,45 @@ describe("plusMenuModel (#3865)", () => {
     expect(
       plusMenuModel(ctx({ moduleStatus: "loading" })).rows[0]!.disabledReason,
     ).toBe("Still loading");
+  });
+
+  it("says the role couldn't be checked when the permissions read failed", () => {
+    const model = plusMenuModel(
+      ctx({
+        forms: [
+          { command: "poll", roleAllows: "unknown" },
+          { command: "event", roleAllows: true },
+        ],
+      }),
+    );
+    expect(model.rows.map((row) => row.command)).toEqual(["event"]);
+    expect(model.footer).toEqual([
+      "Couldn't check whether your role can create polls. Reload to try again.",
+    ]);
+  });
+
+  it("greys every row, Poll too, while the module read is offline or failed", () => {
+    expect(
+      plusMenuModel(ctx({ moduleStatus: "offline" })).rows.map(
+        (row) => row.disabledReason,
+      ),
+    ).toEqual(["Reconnect first", "Reconnect first"]);
+    expect(
+      plusMenuModel(ctx({ moduleStatus: "error" })).rows[0]!.disabledReason,
+    ).toBe("Couldn't check Settings");
+  });
+
+  it("names the staged file before the staged reply, as the typed refusals do", () => {
+    expect(
+      plusMenuModel(ctx({ filesStaged: 1, replying: true })).rows[0]!
+        .disabledReason,
+    ).toBe("Send the file first");
+  });
+
+  it("joins several switched-off modules in one line", () => {
+    expect(
+      plusMenuModel(ctx({ isModuleEnabled: () => false })).footer,
+    ).toEqual(["Polls and Events are turned off in this chapter's Settings."]);
   });
 
   it("greys Attach a file at the file limit", () => {
@@ -154,5 +193,7 @@ describe("ComposerPlusMenu", () => {
     const event = await screen.findByRole("menuitem", { name: /event/i });
     expect(event).toHaveAttribute("aria-disabled", "true");
     expect(event).toHaveTextContent("Reconnect first");
+    // A greyed row still teaches its shortcut.
+    expect(event).toHaveTextContent("/event");
   });
 });

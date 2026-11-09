@@ -165,6 +165,27 @@ describe("pollDraftFromArgs (#3865)", () => {
     const d = pollDraftFromArgs('"Who drives?" Sam closes=60');
     expect(d.question).toBe("Who drives?");
     expect(texts(d)).toEqual(["Sam", ""]);
+    // `closes=60` is the form's "1 hour", not the default day.
+    expect(d.closes).toBe("1h");
+  });
+
+  it("snaps closes= to the nearest choice the form offers", () => {
+    expect(pollDraftFromArgs('"Q" closes=4000').closes).toBe("3d");
+  });
+
+  it("recovers the options when the last one's closing quote is missing", () => {
+    const d = pollDraftFromArgs('"Who drives?" Sam "Alex Smith');
+    expect(d.question).toBe("Who drives?");
+    expect(texts(d)).toEqual(["Sam", "Alex Smith"]);
+  });
+
+  it("keeps every typed option, past the maximum, for the member to trim", () => {
+    const d = pollDraftFromArgs('"Q" A B C D E F G H I J K');
+    expect(texts(d)).toHaveLength(11);
+    expect(checkPollDraft(d)).toEqual({
+      ok: false,
+      problem: "A poll can have up to 10 options.",
+    });
   });
 
   it("adds rows past the minimum, with keys of their own", () => {

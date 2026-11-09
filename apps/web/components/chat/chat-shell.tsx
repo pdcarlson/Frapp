@@ -944,7 +944,8 @@ export function ChatShell({
   // admin — same gate `chat-admin-page.tsx` computes for its own page-level
   // `<Can>`, done inline here since this is a per-row boolean, not a whole
   // surface to hide.
-  const { data: permissionsPayload } = useMyPermissions();
+  const permissionsQuery = useMyPermissions();
+  const permissionsPayload = permissionsQuery.data;
   const canManageChannel = can(
     "channels:manage",
     permissionsPayload?.permissions,
@@ -1010,22 +1011,23 @@ export function ChatShell({
   );
 
   // What the composer's + offers beside Attach a file (#3865), and whether
-  // the member's role may use each: `null` while permissions load, so a row
-  // isn't blamed on the role before the read lands. Task, Service hours and
-  // Points join as their forms learn to post into the channel.
+  // the member's role may use each: `"loading"` until the read lands, so a row
+  // isn't blamed on the role before it does, and `"unknown"` if it failed.
+  // Task, Service hours and Points join as their forms learn to post into the
+  // channel.
+  const permissionsFailed = permissionsQuery.isError;
   const commandForms = useMemo((): PlusMenuForm[] => {
     const granted = permissionsPayload?.permissions;
+    const allows = (check: (list: string[]) => boolean) =>
+      granted ? check(granted) : permissionsFailed ? "unknown" : "loading";
     return [
-      {
-        command: "poll",
-        roleAllows: granted ? can("polls:create", granted) : null,
-      },
+      { command: "poll", roleAllows: allows((list) => can("polls:create", list)) },
       {
         command: "event",
-        roleAllows: granted ? canAll(EVENT_CREATE_PERMISSIONS, granted) : null,
+        roleAllows: allows((list) => canAll(EVENT_CREATE_PERMISSIONS, list)),
       },
     ];
-  }, [permissionsPayload]);
+  }, [permissionsPayload, permissionsFailed]);
 
   // Memoised because the timeline hands it to the virtualizer's header
   // context, and a new element every render would re-render that row.
@@ -2665,7 +2667,15 @@ export function ChatShell({
             )
           }
           initialDraft={pollForm.draft}
-          onPost={(poll) => channel.sendPoll(pollForm.channelId, poll)}
+          onPost={async (poll) => {
+            const result = await channel.sendPoll(pollForm.channelId, poll);
+            // Posted, but this device couldn't finish saving it: the same
+            // non-destructive notice `/poll` gives, so nobody posts it twice.
+            if (result.ok && result.warning) {
+              toast({ title: "Poll posted", description: result.warning });
+            }
+            return result;
+          }}
         />
       ) : null}
       <ReportMessageDialog

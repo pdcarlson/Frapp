@@ -1,8 +1,8 @@
 "use client";
 
 import type { ComponentType } from "react";
-import { isBetaOffModule } from "@repo/validation";
 import { MODULE_CATALOG } from "@repo/org-archetypes";
+import { getSlashCommand } from "@repo/chat-core/integrations";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,23 +55,21 @@ const ROW_COPY: Record<
   points: { label: "Points", noun: "points", glyph: PointsGlyph },
 };
 
-/** The `enabled_modules` key each command's form needs (`SLASH_COMMANDS`). */
-const ROW_MODULE: Record<PlusMenuCommand, string> = {
-  poll: "polls",
-  event: "events",
-  task: "tasks",
-  hours: "hours",
-  points: "points",
-};
+/** The `enabled_modules` key a command's form needs: its `SLASH_COMMANDS` entry's. */
+function rowModule(command: PlusMenuCommand): string | null {
+  return getSlashCommand(command)?.requiredModule ?? null;
+}
 
 /**
  * One form the host can open, and whether the member's role may use it:
- * `null` while their permissions load, which hides the row without blaming
- * the role for it.
+ * `"loading"` while their permissions load, which hides the row without
+ * blaming the role, and `"unknown"` when that read failed, which hides it and
+ * says the role couldn't be checked (README.md §5: say so, don't just hide,
+ * while the check can't be made).
  */
 export interface PlusMenuForm {
   command: PlusMenuCommand;
-  roleAllows: boolean | null;
+  roleAllows: boolean | "loading" | "unknown";
 }
 
 export interface PlusMenuContext {
@@ -122,8 +120,7 @@ function moduleLabel(key: string): string {
  * - **The role can't:** left out, and one line names what ("Your role can't
  *   create events or points."). The role, never a permission key.
  * - **The chapter turned it off:** left out, with "Polls are turned off in
- *   this chapter's Settings." (or "off for every chapter during the beta" for
- *   a module no chapter can switch on yet).
+ *   this chapter's Settings."
  * - **It can't work this second:** shown greyed with the reason, the same
  *   refusals the typed command gives (`slashRefusal` in `composer.tsx`):
  *   offline, a file staged, a reply staged. A poll queues like a message, so
@@ -133,16 +130,24 @@ function moduleLabel(key: string): string {
 export function plusMenuModel(ctx: PlusMenuContext): PlusMenuModel {
   const rows: PlusMenuRow[] = [];
   const roleHidden: string[] = [];
+  const roleUnknown: string[] = [];
   const switchedOff: string[] = [];
-  const betaOff: string[] = [];
   for (const command of PLUS_MENU_COMMANDS) {
     const form = ctx.forms.find((each) => each.command === command);
-    if (!form || form.roleAllows === null) continue;
-    const moduleKey = ROW_MODULE[command];
-    if (ctx.moduleStatus === "ready" && !ctx.isModuleEnabled(moduleKey)) {
-      (isBetaOffModule(moduleKey) ? betaOff : switchedOff).push(
-        moduleLabel(moduleKey),
-      );
+    if (!form || form.roleAllows === "loading") continue;
+    const moduleKey = rowModule(command);
+    if (
+      moduleKey &&
+      ctx.moduleStatus === "ready" &&
+      !ctx.isModuleEnabled(moduleKey)
+    ) {
+      // No row's module is beta-off (`BETA_OFF_MODULES` is Dues alone), so
+      // "turned off in Settings" is always the true reason here.
+      switchedOff.push(moduleLabel(moduleKey));
+      continue;
+    }
+    if (form.roleAllows === "unknown") {
+      roleUnknown.push(ROW_COPY[command].noun);
       continue;
     }
     if (!form.roleAllows) {
@@ -159,14 +164,14 @@ export function plusMenuModel(ctx: PlusMenuContext): PlusMenuModel {
   if (roleHidden.length > 0) {
     footer.push(`Your role can't create ${listNouns(roleHidden)}.`);
   }
+  if (roleUnknown.length > 0) {
+    footer.push(
+      `Couldn't check whether your role can create ${listNouns(roleUnknown)}. Reload to try again.`,
+    );
+  }
   if (switchedOff.length > 0) {
     footer.push(
       `${listLabels(switchedOff)} are turned off in this chapter's Settings.`,
-    );
-  }
-  if (betaOff.length > 0) {
-    footer.push(
-      `${listLabels(betaOff)} are off for every chapter during the beta.`,
     );
   }
   return {
@@ -247,11 +252,10 @@ export function ComposerPlusMenu({
               <span className="flex-1">{row.label}</span>
               {row.disabledReason ? (
                 <span className="text-xs">{row.disabledReason}</span>
-              ) : (
-                <span className="font-mono text-xs text-muted-foreground">
-                  /{row.command}
-                </span>
-              )}
+              ) : null}
+              <span className="font-mono text-xs text-muted-foreground">
+                /{row.command}
+              </span>
             </DropdownMenuItem>
           );
         })}

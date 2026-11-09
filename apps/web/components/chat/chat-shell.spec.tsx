@@ -700,7 +700,7 @@ vi.mock("./composer", () => ({
     commandForms,
   }: {
     channelId: string;
-    commandForms?: readonly { command: string; roleAllows: boolean | null }[];
+    commandForms?: readonly { command: string; roleAllows: unknown }[];
     onOpenCommandForm?: (
       command: { name: string; implemented: boolean },
       args: string,
@@ -4320,24 +4320,31 @@ describe("ChatShell opens the New poll form for a /poll it can't read (#3865)", 
 });
 
 describe("ChatShell tells the composer's + which forms the role may use (#3865)", () => {
-  it("maps polls:create and the event grants, and says nothing while permissions load", () => {
-    mockUseMyPermissions.mockReturnValue({
-      data: undefined as unknown as { permissions: string[] },
-    });
-    const { unmount } = render(<ChatShell />);
-    expect(screen.getByTestId("composer")).toHaveAttribute(
-      "data-command-forms",
-      "poll:null,event:null",
+  function formsFor(payload: unknown) {
+    mockUseMyPermissions.mockReturnValue(
+      payload as { data: { permissions: string[] } },
     );
+    const { unmount } = render(<ChatShell />);
+    const forms = screen
+      .getByTestId("composer")
+      .getAttribute("data-command-forms");
     unmount();
+    return forms;
+  }
 
-    mockUseMyPermissions.mockReturnValue({
-      data: { permissions: ["polls:create"] },
-    });
-    render(<ChatShell />);
-    expect(screen.getByTestId("composer")).toHaveAttribute(
-      "data-command-forms",
+  it("maps polls:create and the event grants", () => {
+    expect(formsFor({ data: { permissions: ["polls:create"] } })).toBe(
       "poll:true,event:false",
+    );
+    expect(
+      formsFor({ data: { permissions: ["events:create", "members:view"] } }),
+    ).toBe("poll:false,event:true");
+  });
+
+  it("blames nothing on the role while permissions load, and says when they couldn't be read", () => {
+    expect(formsFor({ data: undefined })).toBe("poll:loading,event:loading");
+    expect(formsFor({ data: undefined, isError: true })).toBe(
+      "poll:unknown,event:unknown",
     );
   });
 });

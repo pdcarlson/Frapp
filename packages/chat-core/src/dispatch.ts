@@ -21,7 +21,7 @@ import {
   type AnnouncementPayload,
   type SlashCommand,
 } from "./integrations";
-import { buildPollMessage } from "./polls";
+import { buildPollMessage, type PollPayload } from "./polls";
 import {
   sendMessage,
   insertLocalPlaceholder,
@@ -179,6 +179,43 @@ async function dispatchPoll(
     kind: "poll",
     payload: payload as unknown as Record<string, unknown>,
   });
+}
+
+/**
+ * Posts a poll card a New poll form built (`buildPollMessage`): web's dialog
+ * (#3865) and, in time, mobile's sheet. Through the outbox like a message, so
+ * it is optimistic and survives going offline. Unlike `/poll` it leaves the
+ * channel's saved draft alone: the composer may hold a message the member is
+ * still writing beside the form.
+ *
+ * Never rejects. `{ ok: false }` means nothing was queued and the form's
+ * draft is all the member has: signed out (`sendMessage` toasts that itself
+ * and resolves without queuing), or an outbox that refused the row.
+ * `{ ok: true, warning }` is `sendMessage`'s posted-but-not-saved warning,
+ * which the caller must show, as `notifyDispatchOutcome` does for `/poll`.
+ */
+export async function postPoll(
+  ctx: ChatActionContext,
+  channelId: string,
+  poll: { content: string; payload: PollPayload },
+): Promise<{ ok: true; warning?: string } | { ok: false; error: string }> {
+  if (!ctx.userId) {
+    return { ok: false, error: "You're signed out. Sign in, then post it again." };
+  }
+  try {
+    const sent = await sendMessage(ctx, {
+      channelId,
+      content: poll.content,
+      kind: "poll",
+      payload: poll.payload as unknown as Record<string, unknown>,
+      keepDraft: true,
+    });
+    return sent.warning ? { ok: true, warning: sent.warning } : { ok: true };
+  } catch {
+    // The outbox refused the row and `sendMessage` took the optimistic card
+    // back out, so nothing is queued or on screen.
+    return { ok: false, error: "Couldn't post that poll. Try again." };
+  }
 }
 
 async function dispatchAnnounce(

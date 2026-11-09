@@ -191,24 +191,36 @@ export function movePollOption(
  * A draft filled in from what was typed after a bare or unfinished `/poll`
  * (#3773 step 2), so the form opens on the member's own words: the first
  * token is the question and the rest are options, as the one-liner reads them.
- * A `closes=` token is dropped (the form's choices are coarser). Rows are
- * padded to the minimum and cut at the maximum; an unterminated quote reads as
- * the question alone, since that is what the member was still typing.
+ *
+ * - An unclosed quote is closed at the end of the line, so a forgotten
+ *   closing quote costs nothing: `"Who is driving` is the question, and
+ *   `"Who drives?" Sam "Alex Smith` reads Sam and Alex Smith.
+ * - `closes=<minutes>` picks the form's choice nearest to it.
+ * - Every typed option gets a row, past the maximum too: the form then says a
+ *   poll can have up to ten, and the member chooses which to remove, rather
+ *   than losing the last ones unseen.
  */
 export function pollDraftFromArgs(args: string): PollDraft {
   const draft = emptyPollDraft();
   const trimmed = args.trim();
   if (trimmed.length === 0) return draft;
-  const tokens = tokenizeQuotedArgs(trimmed);
-  if (tokens === null) {
-    return { ...draft, question: trimmed.replace(/^"/, "").trim() };
-  }
+  // An unclosed quote is the member still typing inside it: close it.
+  const tokens = tokenizeQuotedArgs(trimmed) ??
+    tokenizeQuotedArgs(`${trimmed}"`) ?? [trimmed.replace(/"/g, "")];
   const [question = "", ...rest] = tokens;
-  const typed = rest
-    .filter((token) => !token.startsWith("closes="))
-    .map((token) => token.trim())
-    .filter((token) => token.length > 0)
-    .slice(0, POLL_OPTIONS_MAX);
+  let closes = draft.closes;
+  const typed: string[] = [];
+  for (const token of rest) {
+    if (token.startsWith("closes=")) {
+      const minutes = Number(token.slice("closes=".length));
+      if (Number.isFinite(minutes) && minutes > 0) {
+        closes = nearestCloseChoice(minutes);
+      }
+      continue;
+    }
+    const text = token.trim();
+    if (text.length > 0) typed.push(text);
+  }
   const options = draft.options.map((row, index) => ({
     ...row,
     text: typed[index] ?? "",
@@ -217,5 +229,15 @@ export function pollDraftFromArgs(args: string): PollDraft {
     nextRowKey += 1;
     options.push({ key: `option-${nextRowKey}`, text });
   }
-  return { ...draft, question: question.trim(), options };
+  return { question: question.trim(), options, closes };
+}
+
+function nearestCloseChoice(minutes: number): PollCloseChoice {
+  let best = POLL_CLOSE_CHOICES[0]!;
+  for (const choice of POLL_CLOSE_CHOICES) {
+    if (Math.abs(choice.minutes - minutes) < Math.abs(best.minutes - minutes)) {
+      best = choice;
+    }
+  }
+  return best.id;
 }

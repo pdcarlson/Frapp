@@ -3,6 +3,7 @@ import { QueryClient } from "@tanstack/react-query";
 import type { SlashCommand } from "./integrations";
 import {
   dispatchSlashCommand,
+  postPoll,
   retryPointsDispatch,
   trackEventCard,
 } from "./dispatch";
@@ -1213,6 +1214,65 @@ describe("dispatchPoll / dispatchAnnounce — sendMessage faults (#1718)", () =>
       expect(onlyRow(ctx).kind).toBe(which.kind);
     },
   );
+});
+
+describe("postPoll — the New poll form's send (#3865)", () => {
+  const POLL = {
+    content: "Who's in?",
+    payload: {
+      question: "Who's in?",
+      options: [
+        { id: "a", label: "Yes" },
+        { id: "b", label: "No" },
+      ],
+      closes_at: "2026-11-10T12:00:00.000Z",
+    },
+  };
+
+  it("posts a poll card and leaves the composer's saved draft alone", async () => {
+    const post = postingApi();
+    const clearDraft = vi.fn();
+    const ctx = buildSimpleCtx(post, stubOutbox({ clearDraft }));
+
+    expect(await postPoll(ctx, CHANNEL_ID, POLL)).toEqual({ ok: true });
+    expect(onlyRow(ctx).kind).toBe("poll");
+    expect(clearDraft).not.toHaveBeenCalled();
+  });
+
+  it("says nothing was queued when the member is signed out", async () => {
+    const post = postingApi();
+    const ctx = { ...buildSimpleCtx(post, stubOutbox()), userId: null };
+
+    const result = await postPoll(ctx, CHANNEL_ID, POLL);
+
+    expect(result.ok).toBe(false);
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("returns a failure instead of throwing when enqueue rejects", async () => {
+    const ctx = buildSimpleCtx(
+      postingApi(),
+      stubOutbox({
+        enqueue: vi.fn().mockRejectedValue(new Error("QuotaExceededError")),
+      }),
+    );
+    expect(await postPoll(ctx, CHANNEL_ID, POLL)).toEqual({
+      ok: false,
+      error: "Couldn't post that poll. Try again.",
+    });
+  });
+
+  it("passes on the posted-but-not-saved warning", async () => {
+    const ctx = buildSimpleCtx(
+      postingApi(),
+      stubOutbox({
+        dequeue: vi.fn().mockRejectedValue(new Error("DatabaseClosedError")),
+      }),
+    );
+    const result = await postPoll(ctx, CHANNEL_ID, POLL);
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.warning).toMatch(/don't send it again/i);
+  });
 });
 
 describe("dispatchRush — vote and bid", () => {

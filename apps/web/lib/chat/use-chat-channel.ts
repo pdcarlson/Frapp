@@ -80,6 +80,7 @@ import {
 import type { ReplayRequest } from "@repo/chat-core/types";
 import {
   dispatchSlashCommand,
+  postPoll,
   retryPointsDispatch,
   trackEventCard,
   type DispatchResult,
@@ -88,7 +89,6 @@ import {
 } from "@repo/chat-core/dispatch";
 import type { SlashCommand } from "@repo/chat-core/integrations";
 import type { PollPayload } from "@repo/chat-core/polls";
-import * as Sentry from "@sentry/nextjs";
 import { createDexieOutboxStore } from "./offline-queue";
 import { useChatOutboundScope } from "./chat-scope";
 import { usePersistedChannelTail } from "./use-first-chunk-cache";
@@ -163,13 +163,13 @@ export interface UseChatChannelResult {
    * It goes through the outbox like any message, so it is optimistic and
    * survives going offline, and a server refusal lands on the card's own
    * failed row with Retry and Discard. It leaves the composer's draft alone.
-   * Resolves once the card is queued, or with why it couldn't be (an outbox
-   * that refused the row). Never rejects.
+   * `postPoll` in `@repo/chat-core/dispatch`: never rejects, and a `warning`
+   * on success is one the caller must show.
    */
   sendPoll: (
     targetChannelId: string,
     poll: { content: string; payload: PollPayload },
-  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  ) => ReturnType<typeof postPoll>;
   /** The event form's card bookkeeping in a channel (#3773, `trackEventCard`). */
   trackEventCard: (channelId: string, name: string) => EventCardTrack;
   /** Card action invoker (Vote, RSVP, …). Goes through the NestJS chat actions endpoint (ADR-11). */
@@ -603,27 +603,10 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   );
 
   const sendPoll = useCallback(
-    async (
+    (
       targetChannelId: string,
       poll: { content: string; payload: PollPayload },
-    ): Promise<{ ok: true } | { ok: false; error: string }> => {
-      try {
-        await sendMessage(ctx, {
-          channelId: targetChannelId,
-          content: poll.content,
-          kind: "poll",
-          payload: poll.payload as unknown as Record<string, unknown>,
-          // The composer may hold a message the member is still writing.
-          keepDraft: true,
-        });
-        return { ok: true };
-      } catch (error) {
-        // The outbox refused the row and `sendMessage` took the optimistic
-        // card back out, so nothing is queued or on screen.
-        Sentry.captureException(error, { tags: { chat_send: "poll_form" } });
-        return { ok: false, error: "Couldn't post that poll. Try again." };
-      }
-    },
+    ) => postPoll(ctx, targetChannelId, poll),
     [ctx],
   );
 
