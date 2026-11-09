@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 import { useEmailInvites } from "@repo/hooks";
 import { errorCopy } from "@repo/hooks/error-copy";
@@ -91,6 +91,10 @@ export function InviteByEmail({
   const [problem, setProblem] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const sending = emailInvites.isPending;
+  // `isPending` settles a render late, so a double tap, or the keyboard's Send
+  // then the button, would both get past it and email everyone twice. A ref
+  // doesn't wait for a render (InvitedList guards its rows the same way).
+  const inFlight = useRef(false);
 
   const draft = readEmailDraft(text);
   const sendLabel =
@@ -99,7 +103,7 @@ export function InviteByEmail({
       : "Send invite";
 
   async function send() {
-    if (sending) return;
+    if (sending || inFlight.current) return;
     setNotice(null);
     const current = readEmailDraft(text);
     if (current.kind !== "send") {
@@ -108,6 +112,7 @@ export function InviteByEmail({
     }
     setProblem(null);
     const { emails } = current;
+    inFlight.current = true;
     try {
       const result = await emailInvites.mutateAsync({ emails });
       const failed = new Set(
@@ -129,6 +134,8 @@ export function InviteByEmail({
       setProblem(
         errorCopy(caught, "Couldn't send invites. Try again in a moment."),
       );
+    } finally {
+      inFlight.current = false;
     }
   }
 
@@ -174,13 +181,16 @@ export function InviteByEmail({
         busy={sending}
         onPress={() => void send()}
       />
+      {/* Both can show: a partial delivery says what went out as well as
+          what didn't, so no one sends the delivered addresses again. */}
+      {notice ? (
+        <Text accessibilityLiveRegion="polite" style={styles.notice}>
+          {notice}
+        </Text>
+      ) : null}
       {problem ? (
         <Text accessibilityLiveRegion="polite" style={styles.problem}>
           {problem}
-        </Text>
-      ) : notice ? (
-        <Text accessibilityLiveRegion="polite" style={styles.notice}>
-          {notice}
         </Text>
       ) : null}
     </View>

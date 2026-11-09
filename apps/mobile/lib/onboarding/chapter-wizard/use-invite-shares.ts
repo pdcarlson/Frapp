@@ -163,11 +163,12 @@ export function useInviteShares({
     return run;
   }
 
-  async function share() {
+  /** Resolves `true` once a link went out, `false` if nothing did. */
+  async function share(): Promise<boolean> {
     onError(null);
     if (unsent.current && isDead?.(unsent.current)) unsent.current = null;
     const token = unsent.current ?? (await mint());
-    if (!token) return;
+    if (!token) return false;
     unsent.current = token;
     opening.current += 1;
     let result: { action?: string };
@@ -180,17 +181,18 @@ export function useInviteShares({
       // A second sheet over one already showing is refused; the first is
       // fine, so only a refusal with nothing else open is news.
       if (opening.current === 1) onError(SHARE_FAILED_MESSAGE);
-      return;
+      return false;
     } finally {
       opening.current -= 1;
     }
-    if (result?.action === "dismissedAction") return;
+    if (result?.action === "dismissedAction") return false;
     if (unsent.current === token) unsent.current = null;
     setShared((rows) =>
       rows.some((row) => row.token === token)
         ? rows
         : [{ token, number: rows.length + 1 }, ...rows],
     );
+    return true;
   }
 
   return {

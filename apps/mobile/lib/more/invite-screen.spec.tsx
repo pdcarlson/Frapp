@@ -234,6 +234,29 @@ describe("Invite members", () => {
     await act(async () => sendButton(tree).props.onPress());
     expect(emailField(tree).props.value).toBe("b@x.edu");
     expect(screenText(tree)).toContain("Couldn't email this address.");
+    // And says what did go out, so no one sends a@x.edu again.
+    expect(screenText(tree)).toContain("Invite sent to a@x.edu");
+    tree.unmount();
+  });
+
+  it("sends once when Send is pressed twice before the first answers", async () => {
+    let finish!: (value: unknown) => void;
+    emailInvites.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const tree = render();
+    act(() => emailField(tree).props.onChangeText("a@x.edu"));
+    // The keyboard's Send, then the button, in the same render.
+    const viaKeyboard = emailField(tree).props.onSubmitEditing;
+    const viaButton = sendButton(tree).props.onPress;
+    act(() => {
+      viaKeyboard();
+      viaButton();
+    });
+    await act(async () => finish({ invites: [], failed: [] }));
+    expect(emailInvites).toHaveBeenCalledTimes(1);
     tree.unmount();
   });
 

@@ -150,7 +150,8 @@ export function formatRelativeDayTime(
 
 /**
  * When something was sent, in words: `"Sent today at 4:46 PM"`,
- * `"Sent yesterday at 9:00 AM"`, `"Sent Friday at …"`, `"Sent Nov 3 at …"`.
+ * `"Sent yesterday at 9:00 AM"`, `"Sent Nov 3 at …"` (a past day reads as its
+ * date; only a time ahead of the device clock could read as a weekday).
  * Read by web's and mobile's invite lists.
  */
 export function formatSentLabel(

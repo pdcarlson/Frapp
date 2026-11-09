@@ -197,7 +197,9 @@ function InviteBody({ focused }: { focused: boolean }) {
                   disabled={invite.busy || !shareName}
                   busy={invite.busy}
                   onPress={() => {
-                    void invite.share().then(() => setSentAbove((n) => n + 1));
+                    void invite.share().then((sent) => {
+                      if (sent) setSentAbove((n) => n + 1);
+                    });
                   }}
                 />
                 {error ? (
