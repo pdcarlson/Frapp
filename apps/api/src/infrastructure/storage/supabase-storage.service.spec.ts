@@ -306,7 +306,7 @@ describe('SupabaseStorageService', () => {
       const real = new StorageClient(
         'https://x.supabase.co/storage/v1',
         {},
-        fakeFetch as unknown as typeof fetch,
+        fakeFetch,
       ).from('documents');
       createSignedUrl.mockImplementation(
         (path: string, expiresIn: number, options?: { download?: string }) =>
