@@ -11,65 +11,162 @@ import {
 import {
   nextStatusChangeAt,
   ownStatusAt,
+  type MemberStatusSettings,
   type OwnStatus,
 } from "@/lib/realtime/member-status";
+import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useToast } from "@/lib/hooks/use-toast";
 
 /**
  * Another tab of the same browser saved a status. Each tab holds its own
  * settings cache (and its own presence entry), so without this a second tab
  * would keep publishing the old status: a member who picks Invisible in one
- * tab would still show Online from the other until its cache went stale.
+ * tab would still show Online from the other.
  */
 const STATUS_CHANNEL = "frapp:member-status";
+
+/** Identifies this tab's own posts, which its own listener ignores. */
+const TAB_ID =
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : String(Math.random());
+
+/**
+ * How often an open, visible dashboard re-reads the member's status, so a
+ * change made on another device (which no `BroadcastChannel` reaches) is
+ * picked up within this long. One small `GET /v1/settings` a minute per
+ * visible tab; a hidden tab waits until it is shown, and re-reads then.
+ */
+export const STATUS_RESYNC_MS = 60 * 1000;
 
 /** `setTimeout` takes at most a signed 32-bit delay; past it, it fires at once. */
 const MAX_TIMER_MS = 2_147_483_647;
 
+/** The last settings this browser saw for a member, for a failed read. */
+const lastKnownKey = (userId: string) => `frapp:own-status:${userId}`;
+
+function readLastKnown(userId: string | null): MemberStatusSettings | null {
+  if (!userId) return null;
+  try {
+    const raw = window.localStorage.getItem(lastKnownKey(userId));
+    return raw ? (JSON.parse(raw) as MemberStatusSettings) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeLastKnown(userId: string, settings: MemberStatusSettings) {
+  try {
+    window.localStorage.setItem(
+      lastKnownKey(userId),
+      JSON.stringify({
+        status: settings.status ?? null,
+        status_expires_at: settings.status_expires_at ?? null,
+        custom_status: settings.custom_status ?? null,
+        custom_status_expires_at: settings.custom_status_expires_at ?? null,
+      }),
+    );
+  } catch {
+    // Storage blocked or full: the fallback below is a convenience only.
+  }
+}
+
 /**
- * The viewer's own picked status, expiry applied, or `null` until their
- * settings have loaded. `null` is what holds presence back on load (see
- * `useChapterPresence`'s `own`).
+ * The viewer's own picked status, expiry applied, or `null` until it is known.
+ * `null` is what holds presence back on load (see `useChapterPresence`'s
+ * `own`), so a saved Invisible never flashes Online.
+ *
+ * **A failed settings read does not hide the member.** Presence must not
+ * depend on API health (the provider gates on the link for the same reason).
+ * So once the read has failed, the answer is the status this browser last saw
+ * for the member, and with none, automatic (Online). The cost: a member who
+ * went Invisible on another device, on a browser that never saw it, shows
+ * Online until the read recovers, which the periodic re-read retries.
  *
  * Re-renders at the next end time, so a DND for 1 hour ends on screen and on
  * the wire an hour later even if nothing refetches.
  */
 export function useOwnStatus(): OwnStatus | null {
   const settings = useUserSettings();
-  const queryClient = useQueryClient();
+  const { userId } = useFrappUser();
   const [now, setNow] = useState(() => Date.now());
 
   const data = settings.data;
+  const failed = data === undefined && settings.isError;
+  const source = useMemo<MemberStatusSettings | null>(() => {
+    if (data !== undefined) return data;
+    if (failed) return readLastKnown(userId ?? null) ?? {};
+    return null;
+  }, [data, failed, userId]);
+
+  useEffect(() => {
+    if (data !== undefined && userId) writeLastKnown(userId, data);
+  }, [data, userId]);
+
   const own = useMemo(
-    () => (data === undefined ? null : ownStatusAt(data, now)),
-    [data, now],
+    () => (source === null ? null : ownStatusAt(source, now)),
+    [source, now],
   );
   const nextChange = own ? nextStatusChangeAt(own) : null;
 
   // The delay is measured from the real clock, not from `now`, so an end time
-  // that has already passed (a tab woken from sleep) fires at once.
+  // that has already passed (a tab woken from sleep) fires at once. `now` is a
+  // dependency so a timer cut short by the 32-bit cap re-arms for the rest.
   useEffect(() => {
     if (nextChange === null) return undefined;
+    const delay = Math.max(nextChange - Date.now(), 0);
+    const capped = delay > MAX_TIMER_MS;
     const timer = setTimeout(
-      // Never earlier than the end itself: a timer that fired a millisecond
-      // early would leave `nextChange` unchanged, and this effect would not
-      // run again to schedule another.
-      () => setNow(Math.max(Date.now(), nextChange)),
-      Math.min(Math.max(nextChange - Date.now(), 0), MAX_TIMER_MS),
+      // Never earlier than the end itself when the timer was not capped: a
+      // timer that fired a millisecond early would otherwise leave the status
+      // live, with nothing scheduled to end it. A capped one moves the clock
+      // only to now, so it can't end a status weeks early.
+      () => setNow(capped ? Date.now() : Math.max(Date.now(), nextChange)),
+      capped ? MAX_TIMER_MS : delay,
     );
     return () => clearTimeout(timer);
-  }, [nextChange]);
-
-  useEffect(() => {
-    if (typeof BroadcastChannel === "undefined") return undefined;
-    const channel = new BroadcastChannel(STATUS_CHANNEL);
-    channel.onmessage = () => {
-      void queryClient.invalidateQueries({ queryKey: userSettingsKey });
-    };
-    return () => channel.close();
-  }, [queryClient]);
+  }, [nextChange, now]);
 
   return own;
+}
+
+/**
+ * Keeps this tab's copy of the member's status current. Mounted once, by
+ * `ChapterPresenceProvider`, since one listener per tab is enough:
+ *
+ *   - another tab of this browser saving a status refetches here at once;
+ *   - a visible tab re-reads every `STATUS_RESYNC_MS`, and a tab coming back
+ *     into view re-reads then, which is how another *device*'s change arrives.
+ */
+export function useOwnStatusSync() {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const refetch = () =>
+      void queryClient.invalidateQueries({ queryKey: userSettingsKey });
+
+    let channel: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== "undefined") {
+      channel = new BroadcastChannel(STATUS_CHANNEL);
+      channel.onmessage = (event: MessageEvent) => {
+        if (event.data !== TAB_ID) refetch();
+      };
+    }
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") refetch();
+    }, STATUS_RESYNC_MS);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refetch();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      channel?.close();
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [queryClient]);
 }
 
 type StatusBody = Pick<
@@ -100,7 +197,7 @@ export function useSaveOwnStatus() {
       }
       if (typeof BroadcastChannel !== "undefined") {
         const channel = new BroadcastChannel(STATUS_CHANNEL);
-        channel.postMessage("saved");
+        channel.postMessage(TAB_ID);
         channel.close();
       }
       return true;

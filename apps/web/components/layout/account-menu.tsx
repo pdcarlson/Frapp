@@ -37,6 +37,7 @@ import {
   tomorrowMorning,
   type DndDuration,
   type MemberStatus,
+  type OwnStatus,
 } from "@/lib/realtime/member-status";
 import { presenceLabel } from "@/lib/realtime/presence-status";
 import { useOwnStatus, useSaveOwnStatus } from "@/lib/realtime/use-own-status";
@@ -203,7 +204,7 @@ export function AccountMenu({
           ) : null}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <StatusRows onEditLine={() => setEditingLine(true)} />
+        <StatusRows own={own} onEditLine={() => setEditingLine(true)} />
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           <Link href="/profile" onClick={onNavigate}>
@@ -253,12 +254,17 @@ export function AccountMenu({
   );
 }
 
-/** DND's durations, in #3845's order; "Until I turn it off" is the default. */
+/**
+ * DND's durations. "Until I turn it off" is the default (#3845), so it comes
+ * first: opening the submenu (a click on the row, or the right arrow) puts
+ * focus on it, and Enter takes it. A submenu row can only open its submenu,
+ * never select, so first is what makes a default reachable in one step.
+ */
 const DND_DURATIONS: { duration: DndDuration; label: string }[] = [
+  { duration: null, label: "Until I turn it off" },
   { duration: "1h", label: "For 1 hour" },
   { duration: "8h", label: "For 8 hours" },
   { duration: "tomorrow", label: "Until tomorrow" },
-  { duration: null, label: "Until I turn it off" },
 ];
 
 const TIME = new Intl.DateTimeFormat(undefined, {
@@ -287,8 +293,13 @@ function untilLabel(endsAt: number, now: Date): string {
  * as the Profile notification switches are (`notifications.md` § Preference
  * sync): a status the server never heard of would show here and nowhere else.
  */
-function StatusRows({ onEditLine }: { onEditLine: () => void }) {
-  const own = useOwnStatus();
+function StatusRows({
+  own,
+  onEditLine,
+}: {
+  own: OwnStatus | null;
+  onEditLine: () => void;
+}) {
   const { save } = useSaveOwnStatus();
   const { isOffline } = useNetwork();
   const current: MemberStatus = own?.status ?? "online";

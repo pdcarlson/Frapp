@@ -104,10 +104,15 @@ export function endOfToday(now: Date): Date {
   return end;
 }
 
-/** Tomorrow at `TOMORROW_HOUR`, local time. */
+/**
+ * The next `TOMORROW_HOUR` in local time: tomorrow's, or this morning's when
+ * it is still before that hour. A member who turns DND on at 12:30 AM means
+ * "until the morning", not "until the morning after", which would silence a
+ * whole day they never asked to lose.
+ */
 export function tomorrowMorning(now: Date): Date {
   const end = new Date(now);
-  end.setDate(end.getDate() + 1);
+  if (now.getHours() >= TOMORROW_HOUR) end.setDate(end.getDate() + 1);
   end.setHours(TOMORROW_HOUR, 0, 0, 0);
   return end;
 }
@@ -136,6 +141,14 @@ export function lineEndsAt(duration: LineDuration, now: Date): string | null {
   return endOfToday(now).toISOString();
 }
 
+/**
+ * Characters a line may not hold: every control character (C0, DEL and C1,
+ * which is what the API's `\p{Cc}` refuses, and which includes U+0085, a line
+ * break) and the Unicode line and paragraph separators.
+ */
+// eslint-disable-next-line no-control-regex
+export const LINE_BREAKERS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
+
 /** A custom line's length the way the API counts it: code points. */
 export function codePointLength(value: string): number {
   return Array.from(value).length;
@@ -146,8 +159,7 @@ export function codePointLength(value: string): number {
  * but a paste can carry a separator) and within the cap once trimmed.
  */
 export function lineProblem(value: string, max: number): string | null {
-  // eslint-disable-next-line no-control-regex
-  if (/[\u0000-\u001f\u007f\u2028\u2029]/.test(value)) {
+  if (LINE_BREAKERS.test(value)) {
     return "Keep it to one line.";
   }
   if (codePointLength(value.trim()) > max) {

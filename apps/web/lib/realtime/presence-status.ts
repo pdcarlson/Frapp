@@ -156,7 +156,7 @@ export function presenceLineFrom(value: unknown): string | null {
   // Control characters and the Unicode line and paragraph separators become
   // spaces, so a crafted payload cannot break the row it renders in.
   // eslint-disable-next-line no-control-regex
-  const flat = value.replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, " ").trim();
+  const flat = value.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ").trim();
   if (flat.length === 0) return null;
   return Array.from(flat).slice(0, CUSTOM_STATUS_MAX).join("");
 }
@@ -179,10 +179,12 @@ function pickedFrom(value: unknown): PickedPresence | null {
  *     may carry anything. Everything is validated before use and anything
  *     unrecognised is skipped rather than trusted — a malformed entry must not
  *     be able to throw inside a React render pass. An unknown `status` reads as
- *     automatic, and a malformed `line` as none.
+ *     automatic, and a malformed `line` as none. A `ts` ahead of `now` is
+ *     clamped to it, which still reads Online (skew is fresh, not Idle).
  */
 export function presenceMapFrom(
   state: RawPresenceState,
+  now: number = Date.now(),
 ): Map<string, PresenceEntry> {
   const byUser = new Map<string, PresenceEntry>();
   for (const entries of Object.values(state ?? {})) {
@@ -197,10 +199,16 @@ export function presenceMapFrom(
       };
       if (typeof userId !== "string" || userId.length === 0) continue;
       if (typeof ts !== "number" || !Number.isFinite(ts)) continue;
+      // Clamped to the reader's clock: an entry stamped in the far future
+      // would otherwise win "newest" forever, so a member publishing an entry
+      // that names someone else (presence is advisory, see the chat spec)
+      // could pin their picked status and line over the real ones. Clamped,
+      // the real member's next activity ties or beats it.
+      const at = Math.min(ts, now);
       const previous = byUser.get(userId);
-      if (previous === undefined || ts > previous.ts) {
+      if (previous === undefined || at > previous.ts) {
         byUser.set(userId, {
-          ts,
+          ts: at,
           picked: pickedFrom(status),
           line: presenceLineFrom(line),
         });

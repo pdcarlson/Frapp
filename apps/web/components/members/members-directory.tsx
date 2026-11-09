@@ -941,8 +941,8 @@ export function MembersDirectory() {
                       `${points} points`,
                       joined ? `joined ${joined}` : null,
                       member.email || null,
-                      status ? presenceLabel(status) : null,
                       customLine,
+                      status ? presenceLabel(status) : null,
                     ]
                       .filter(Boolean)
                       .join(", ")}
