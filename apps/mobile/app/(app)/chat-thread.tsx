@@ -42,7 +42,6 @@ import {
   useAuthorAvatars,
   useChannel,
   useChapterRoster,
-  useCurrentChapter,
   useMentionRoles,
   useChannelNotificationPreferences,
   useCurrentUser,
@@ -53,13 +52,13 @@ import {
   useRequestChatUploadUrl,
   useSetChannelNotificationLevel,
 } from "@repo/hooks";
-import { can, draftWithMention, isModuleEnabled } from "@repo/validation";
-import { pollsGateOf } from "@repo/chat-core/polls";
+import { can, draftWithMention } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { BlockListNotice } from "@/components/chat/block-list-notice";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { NewPollSheet } from "@/components/chat/new-poll-sheet";
 import { canCreatePoll } from "@/lib/chat/new-poll";
+import { usePollsGate } from "@/lib/chat/use-polls-gate";
 import {
   ImageViewer,
   ImageViewerContext,
@@ -340,21 +339,12 @@ export default function ChatThreadScreen() {
   const canManageChannel = can("channels:manage", permissionList);
   // The composer's + offers a poll to a member whose role creates them, in a
   // chapter with Polls on, in a channel they can post in (#3701). The Polls
-  // read is the poll card's (`pollsGateOf`): the member view's
-  // `enabled_modules`, failing closed while it is unread or unreadable.
-  const chapterQuery = useCurrentChapter();
+  // read is the poll card's own (`usePollsGate`), failing closed while the
+  // chapter is unread or unreadable.
+  const { gate: pollsGate } = usePollsGate();
   const pollsAllowed =
     channelCanPost &&
-    canCreatePoll({
-      permissions: permissionList,
-      pollsGate: pollsGateOf({
-        pollsEnabled:
-          chapterQuery.data === undefined
-            ? undefined
-            : isModuleEnabled(chapterQuery.data?.enabled_modules, "polls"),
-        fetchStatus: chapterQuery.fetchStatus,
-      }),
-    });
+    canCreatePoll({ permissions: permissionList, pollsGate });
   const canReplyHere = channelAllowsReplies({
     can_post: channelCanPost,
     is_read_only: channelIsReadOnly,

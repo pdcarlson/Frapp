@@ -688,9 +688,14 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     }
   }, []);
 
-  /** Send (or send again) a message whose photos may still be uploading. */
+  /**
+   * Send (or send again) a message whose photos may still be uploading. The
+   * first send clears the channel's saved draft, since the draft is what it
+   * sends; a Retry keeps it, because whatever is saved by then is a newer
+   * message the member is still writing.
+   */
   const runPendingPhotoSend = useCallback(
-    (clientMessageId: string) => {
+    (clientMessageId: string, options?: { retry?: boolean }) => {
       const pending = pendingPhotoSendsRef.current.get(clientMessageId);
       if (!pending || !ctx) return;
       const attachmentsReady = Promise.all(
@@ -718,6 +723,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         clientMessageId,
         attachmentsReady,
         attachmentCount: pending.keys.length,
+        keepDraft: options?.retry === true,
       })
         .then(() => settlePendingPhotoSend(clientMessageId))
         .catch((error: unknown) => {
@@ -1119,7 +1125,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
           });
           startPhotoJob(key, job.upload);
         }
-        runPendingPhotoSend(clientMessageId);
+        runPendingPhotoSend(clientMessageId, { retry: true });
         return;
       }
       const row = await findOutboxRow(clientMessageId);

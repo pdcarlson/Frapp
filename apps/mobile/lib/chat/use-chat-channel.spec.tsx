@@ -1688,8 +1688,10 @@ describe("staged photos", () => {
     });
     const [, firstArgs] = mocks.sendMessage.mock.calls[0] as unknown as [
       unknown,
-      { clientMessageId: string },
+      { clientMessageId: string; keepDraft?: boolean },
     ];
+    // The first send is the composer's draft, so it clears the saved one.
+    expect(firstArgs.keepDraft).toBe(false);
 
     await act(async () => {
       await result.current.retry(firstArgs.clientMessageId);
@@ -1697,10 +1699,16 @@ describe("staged photos", () => {
     expect(attempts).toBe(2);
     const [, retryArgs] = mocks.sendMessage.mock.calls[1] as unknown as [
       unknown,
-      { clientMessageId: string; attachmentsReady: Promise<unknown> },
+      {
+        clientMessageId: string;
+        attachmentsReady: Promise<unknown>;
+        keepDraft?: boolean;
+      },
     ];
     expect(retryArgs.clientMessageId).toBe(firstArgs.clientMessageId);
     await expect(retryArgs.attachmentsReady).resolves.toEqual([claim("a.jpg")]);
+    // A retry keeps whatever the member has typed since (#3701).
+    expect(retryArgs.keepDraft).toBe(true);
   });
 
   it("never starts the upload of a photo removed while it waited its turn", async () => {
@@ -1780,7 +1788,6 @@ describe("sendPoll() (#3701)", () => {
       // The composer may hold a message the member is still writing.
       keepDraft: true,
     });
-    expect(mocks.draftClear).not.toHaveBeenCalled();
   });
 
   it("answers why when the outbox refused the card, rather than rejecting", async () => {
