@@ -65,6 +65,15 @@ vi.mock("react-virtuoso", async () => {
       React.useImperativeHandle(ref, () => ({
         scrollToIndex: virtuosoProps.scrollToIndex,
       }));
+      // The real list takes new rows in a layout effect and reports the
+      // height they add from inside it, before any passive effect of the
+      // component rendering it has run (#3863).
+      const drawn = React.useRef(data.length);
+      React.useLayoutEffect(() => {
+        if (drawn.current === data.length) return;
+        drawn.current = data.length;
+        totalListHeightChanged?.(data.length * 40);
+      });
       virtuosoProps.current = {
         firstItemIndex,
         followOutput,
@@ -1292,20 +1301,11 @@ describe("MessageTimeline stays on its newest row while rows grow (#3863)", () =
     expect(virtuosoProps.scrollToIndex).not.toHaveBeenCalled();
   });
 
-  it("leaves a new message to followOutput's own animation", () => {
-    const { rerender } = renderTimeline(rows);
-    const element = scroller(1000, 400);
-    act(() => virtuosoProps.current.scrollerRef?.(element));
-    settle(element, 400);
-
-    const more = [
-      ...rows,
-      message({ id: "hello-3", client_message_id: "cm-h3", content: "Hi" }),
-    ];
-    rerender(
+  function view(messages: ChatMessage[], channelId = "chan-1") {
+    return (
       <MessageTimeline
-        channelId="chan-1"
-        messages={more}
+        channelId={channelId}
+        messages={messages}
         viewerId={VIEWER}
         nameFor={nameFor}
         avatarFor={avatarFor}
@@ -1313,12 +1313,64 @@ describe("MessageTimeline stays on its newest row while rows grow (#3863)", () =
         loadError={null}
         onReact={vi.fn()}
         onUnreact={vi.fn()}
-        {...timelineBlockProps(more, VIEWER)}
-      />,
+        {...timelineBlockProps(messages, VIEWER)}
+      />
     );
-    grow(element, 40);
+  }
 
+  it("leaves a new message to followOutput's animation, and follows its growth after", () => {
+    const { rerender } = render(view(rows));
+    const element = scroller(1000, 400);
+    act(() => virtuosoProps.current.scrollerRef?.(element));
+    settle(element, 400);
+
+    // The arrival's height is reported from the list's layout effect, as the
+    // real one does; an instant re-pin there would cut followOutput short.
+    rerender(
+      view([
+        ...rows,
+        message({ id: "hello-3", client_message_id: "cm-h3", content: "Hi" }),
+      ]),
+    );
     expect(virtuosoProps.scrollToIndex).not.toHaveBeenCalled();
+
+    // The new row's own photo loading afterwards is growth, and is followed.
+    grow(element, 256);
+    expect(virtuosoProps.scrollToIndex).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens a freshly mounted list on its newest row, whatever the last one was", () => {
+    renderTimeline(rows);
+    const first = scroller(1000, 400);
+    act(() => virtuosoProps.current.scrollerRef?.(first));
+    settle(first, 100);
+
+    // The skeleton swapped in and a new list mounted. One that fits its
+    // viewport never scrolls, so no scroll event says where it is.
+    const next = scroller(500, 0);
+    act(() => virtuosoProps.current.scrollerRef?.(next));
+    grow(next, 256);
+
+    expect(virtuosoProps.scrollToIndex).toHaveBeenCalledWith({
+      index: "LAST",
+      align: "end",
+      behavior: "auto",
+    });
+  });
+
+  it("re-pins after a channel switch that did not move the list", () => {
+    const { rerender } = render(view(rows));
+    const element = scroller(1000, 400);
+    act(() => virtuosoProps.current.scrollerRef?.(element));
+    settle(element, 100);
+
+    // The switch scrolls to the newest row in code; that may fire no scroll
+    // event, so the switch itself marks the list as pinned.
+    rerender(view(rows, "chan-2"));
+    virtuosoProps.scrollToIndex.mockClear();
+    grow(element, 256);
+
+    expect(virtuosoProps.scrollToIndex).toHaveBeenCalledTimes(1);
   });
 
   it("does not pull the list back down while a jump is on its way", () => {

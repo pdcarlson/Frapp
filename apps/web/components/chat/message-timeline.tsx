@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useInsertionEffect,
   useMemo,
   useRef,
   useState,
@@ -243,32 +244,43 @@ function usePrependAwareFirstIndex(keys: readonly string[]): {
 }
 
 /**
- * How close to the end the member's own scroll has to leave the list for it to
- * count as reading the newest message. A few pixels of slack, so a trackpad
- * that settles a hair short of the end still reads as "at the bottom".
+ * How close to the end the list has to sit to count as on its newest row. A
+ * few pixels of slack, so a trackpad that settles a hair short of the end still
+ * reads as "at the bottom". Also Virtuoso's `atBottomThreshold`, so this hook
+ * and `followOutput` agree on where the bottom is: with Virtuoso's default 4px,
+ * a member 10px short saw a new message not followed, then snapped to by the
+ * next row that grew.
  */
 const STICK_TO_BOTTOM_SLACK_PX = 16;
 
 /**
- * Keeps the list on its newest row while that row's neighbours grow, for as
- * long as the member has left it there (#3863).
+ * Keeps the list on its newest row while rows grow, for as long as the member
+ * has left it there (#3863).
  *
- * Virtuoso re-pins to the bottom only when a row is added (`followOutput`), and
- * after a mount or an addition it watches for growth for just 100ms. A row that
- * grows later is not followed. A photo always grows later, twice: its
- * attachments read (one per message, fired when the row first draws) swaps
- * "Loading attachment…" for the picture, and a photo with no stored size
- * (anything imported from Discord, or sent before 2026-11-07) then grows again
- * when its bytes arrive. Each growth pushed the newest messages below the
- * fold, so opening a channel landed a few messages up.
+ * Virtuoso follows a new row (`followOutput`), and re-pins on growth only in
+ * a short window it opens itself: about 100ms after its props settle or after
+ * `autoscrollToBottom()`. Growth after that is not followed. A photo grows
+ * after that, twice: its attachments read (one per message, fired when the row
+ * first draws) swaps "Loading attachment…" for the picture, and a photo with no
+ * stored size (anything imported from Discord, or sent before 2026-11-07)
+ * grows again when its bytes arrive. Each growth pushed the newest messages
+ * below the fold, so opening a channel landed a few messages up. Reproduced
+ * against the real list in a browser, for sized and unsized photos alike.
  *
- * "Left it there" is read from scroll events only. Growth below the scroll
- * position changes `scrollHeight` without firing a scroll event, so the last
- * scroll the member (or Virtuoso's own open, or a channel switch) made still
- * says where they meant to be. Scrolling up, or a jump to an older message,
- * fires one that clears it. A change in the row count is left to
- * `followOutput`, which already animates a new arrival in; re-pinning that too
- * would cut its animation short.
+ * "Left it there" is read from scroll events. Growth below the scroll
+ * position changes `scrollHeight` without firing one, so the last scroll still
+ * says where the member meant to be. Scrolling up, or a jump to an older
+ * message, fires one that clears it. A fresh scroller (a list mounted after the
+ * skeleton, or after an empty channel) opens on its newest row, and so does a
+ * channel switch (`pinned`), even when neither moves the list far enough to
+ * fire one.
+ *
+ * A change in the row count is left to `followOutput`, which animates a new
+ * arrival in. Virtuoso reports that height change from its own layout effect,
+ * as it takes the new rows, so the count it is compared with is published in an
+ * insertion effect, which runs before every layout effect in the commit. A
+ * passive effect ran after it, so an arrival read as growth and was snapped
+ * to, and the row's next growth read as the arrival and was missed.
  */
 function useStickToBottom({
   virtuoso,
@@ -287,7 +299,7 @@ function useStickToBottom({
   const stuck = useRef(true);
   const countAtLastHeight = useRef(rowCount);
   const latest = useRef({ rowCount, hold });
-  useEffect(() => {
+  useInsertionEffect(() => {
     latest.current = { rowCount, hold };
   });
   const detach = useRef<(() => void) | null>(null);
@@ -296,6 +308,7 @@ function useStickToBottom({
     detach.current?.();
     detach.current = null;
     if (!(element instanceof HTMLElement)) return;
+    stuck.current = true;
     const onScroll = () => {
       stuck.current =
         element.scrollHeight - element.scrollTop - element.clientHeight <=
@@ -976,6 +989,7 @@ export const MessageTimeline = forwardRef<
           // Holds the open on its newest row while rows above it grow: a photo
           // loading after the list settled (#3863).
           scrollerRef={stickToBottom.scrollerRef}
+          atBottomThreshold={STICK_TO_BOTTOM_SLACK_PX}
           totalListHeightChanged={stickToBottom.totalListHeightChanged}
           context={headerContext}
           components={{
