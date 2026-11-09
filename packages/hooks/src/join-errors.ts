@@ -31,7 +31,8 @@ export function joinErrorCopy(error: unknown): string {
   if (isTermsRequiredError(error)) return JOIN_TERMS_REQUIRED_COPY;
   const status = statusOf(error);
   if (status === 410 && serverMessageOf(error) === ACCOUNT_DELETED_MESSAGE) {
-    // Names no control: web `/join` has no sign-out, unlike mobile s02.
+    // Names no control: web `/join` and mobile s02 both show their own
+    // `Signed in as … · Sign out` line beside it.
     return "This account has been deleted, so it can't join a chapter.";
   }
   if (status === 410) {
@@ -44,6 +45,32 @@ export function joinErrorCopy(error: unknown): string {
     serverMessageOf(error) ??
     "Couldn't join that chapter. Check the invite and try again."
   );
+}
+
+/**
+ * The title of an invite offered to the signed-in account (#3776, #3782):
+ * web `/join` and mobile s02 both draw it (`writing.md` § Join chapter).
+ */
+export function pendingInviteTitle(chapterName: string): string {
+  return `You've been invited to ${chapterName}`;
+}
+
+/**
+ * The line under an offered invite's title: the school, who sent it and the
+ * role it grants, whichever are known, joined by ` · `.
+ */
+export function pendingInviteDetail(invite: {
+  university?: string | null;
+  invited_by?: string | null;
+  role?: string | null;
+}): string {
+  return [
+    invite.university,
+    invite.invited_by ? `from ${invite.invited_by}` : null,
+    invite.role,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /**

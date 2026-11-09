@@ -16,6 +16,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync, execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -541,6 +542,10 @@ describe("the build job builds the validated SHA and nothing else", () => {
 
 // Rule 1 at both ends of a build that can take hours: a ship made meanwhile
 // (a rollback) tags another commit, and nothing from this SHA may upload.
+function tagsDigest(tags) {
+  return createHash("sha256").update(`${[...tags].sort().join("\n")}\n`).digest("hex");
+}
+
 describe("the latest-tag check, before the builds and again before the uploads", () => {
   const OLD = "1111111111111111111111111111111111111111";
 
@@ -606,6 +611,8 @@ describe("the latest-tag check, before the builds and again before the uploads",
       const result = run({ tags: { "v0.9.0": OLD, [newest]: SHA } });
       assert.equal(result.status, 0, `${newest}: ${result.stdout}${result.stderr}`);
       assert.match(result.stdout, new RegExp(`is the latest tag \\(${newest.replace(/\./g, "\\.")}\\)`));
+      // What the wait's retry compares the tags it reads against (#3812).
+      assert.equal(result.outputs.tags, tagsDigest(["v0.9.0", newest]));
     }
   });
 
@@ -783,6 +790,13 @@ describe("the eas commands", () => {
       assert.ok(command.includes(flag), `eas build lacks ${flag}`);
     }
     assert.doesNotMatch(command, /--auto-submit|--local|\s--wait/);
+    // The wait's retry starts a build too, and must start it the same way.
+    const retry = scriptOf(stepNamed(CALLED, "build", WAIT))
+      .replace(/\\\n\s*/g, " ")
+      .split("\n")
+      .find((l) => /\beas build --platform\b/.test(l));
+    const normalize = (l) => l.trim().replace(/^timeout "\$START_TIMEOUT_SECONDS" /, "").replace(/"\$PL"/, '"$PLATFORM"').replace(/ \(retry of \$ID\)"/, '"').replace(/ \|\| [A-Z_]*STATUS=\$\?$/, "");
+    assert.equal(normalize(retry), normalize(command));
   });
 
   it("submits each finished build by id without waiting, and submits nothing for review", () => {
@@ -869,9 +883,16 @@ describe("the eas commands", () => {
       EXPO_TOKEN: "${{ secrets.EXPO_TOKEN }}",
       IDS: "${{ steps.start-ios.outputs.id }} ${{ steps.start-android.outputs.id }}",
       DEPLOY_SHA: "${{ inputs.sha }}",
+      RUN_URL: RUN_URL_EXPR,
+      GH_TOKEN: "${{ github.token }}",
+      REPO: "${{ github.repository }}",
+      TAGS_AT_BUILD: "${{ steps.tag-before-build.outputs.tags }}",
       DEADLINE_MINUTES: "230",
       POLL_SECONDS: "60",
       READ_TIMEOUT_SECONDS: "120",
+      START_TIMEOUT_SECONDS: "540",
+      RETRY_MIN_MINUTES: "60",
+      LOG_TAIL_LINES: "100",
     });
     assert.match(scriptOf(wait), /timeout "\$READ_TIMEOUT_SECONDS" eas build:view "\$ID" --json/);
   });
@@ -886,10 +907,22 @@ describe("the eas commands", () => {
      * missing id fails, printing `error` on stderr, and `sleep` makes every
      * read stall that many seconds.
      */
-    function run({ views, ids = "i1 a1", deadline = "0", sleep = 0, readTimeout = "120", error = "" }) {
+    /*
+     * `starts` maps a platform (`ios`, `android`) to what `eas build --platform
+     * <p> … --json` prints, the retry's start; a missing one fails. `logs`
+     * maps a log URL to its text, served by a stand-in curl. Each start's argv
+     * lands in `starts-<p>`, returned as `startArgv`.
+     */
+    /*
+     * `tags` is what the stand-in gh lists as the `v*` tags when the retry
+     * reads them (null: the read fails); `tagsAtBuild` is what the check
+     * before the builds saw, as its digest.
+     */
+    function run({ views, ids = "i1 a1", deadline = "0", sleep = 0, readTimeout = "120", error = "", starts = {}, logs = {}, retryMin = "0", tags = ["v0.17.0"], tagsAtBuild = ["v0.17.0"] }) {
       const { dir, output, path } = withStub(
         "eas",
         [
+          'if [ "$1" = build ] && [ "$2" = --platform ]; then echo "$*" >> "$RUNNER_TEMP/starts-$3"; f="$RUNNER_TEMP/start-$3.json"; [ -f "$f" ] && cat "$f" && exit 0; exit 1; fi',
           sleep ? `sleep ${sleep}` : "",
           'n="$RUNNER_TEMP/reads-$2"; c=$(( $(cat "$n" 2>/dev/null || echo 0) + 1 )); echo "$c" > "$n"',
           'f="$RUNNER_TEMP/view-$2-$c.json"; [ -f "$f" ] || f="$(ls "$RUNNER_TEMP"/view-"$2"-*.json 2>/dev/null | sort -V | tail -n1)"',
@@ -899,6 +932,23 @@ describe("the eas commands", () => {
       for (const [id, view] of Object.entries(views)) {
         (Array.isArray(view) ? view : [view]).forEach((v, i) => writeFileSync(join(dir, `view-${id}-${i + 1}.json`), JSON.stringify(v)));
       }
+      for (const [platform, printed] of Object.entries(starts)) writeFileSync(join(dir, `start-${platform}.json`), JSON.stringify(printed));
+      Object.entries(logs).forEach(([url, text], i) => writeFileSync(join(dir, `log-${i}`), text));
+      // The stand-in curl serves `logs` by URL, its last argument.
+      const curl = join(dir, "bin", "curl");
+      writeFileSync(
+        curl,
+        `#!/usr/bin/env bash\nurl="\${@: -1}"\n${Object.keys(logs).map((url, i) => `[ "$url" = '${url}' ] && cat "$RUNNER_TEMP/log-${i}" && exit 0`).join("\n")}\nexit 22\n`,
+      );
+      chmodSync(curl, 0o755);
+      const gh = join(dir, "bin", "gh");
+      writeFileSync(
+        gh,
+        tags === null
+          ? "#!/usr/bin/env bash\necho 'gh: Failed (HTTP 502)' >&2\nexit 1\n"
+          : `#!/usr/bin/env bash\n[ "$2" = repos/o/r/git/matching-refs/tags/v ] || exit 2\nprintf '%s\\n' ${tags.map((t) => `'${t}'`).join(" ")}\n`,
+      );
+      chmodSync(gh, 0o755);
       const result = runStep(stepNamed(CALLED, "build", WAIT), {
         cwd: dir,
         env: {
@@ -910,12 +960,25 @@ describe("the eas commands", () => {
           DEADLINE_MINUTES: deadline,
           POLL_SECONDS: "0",
           READ_TIMEOUT_SECONDS: readTimeout,
+          START_TIMEOUT_SECONDS: "30",
+          RETRY_MIN_MINUTES: retryMin,
+          LOG_TAIL_LINES: "100",
+          RUN_URL: "https://github.com/o/r/actions/runs/1",
+          REPO: "o/r",
+          GH_TOKEN: "t",
+          TAGS_AT_BUILD: tagsDigest(tagsAtBuild),
           EAS_ERROR: error,
         },
       });
       const outputs = readOutputs(output);
+      const reads = Object.fromEntries(
+        Object.keys(views).filter((id) => existsSync(join(dir, `reads-${id}`))).map((id) => [id, Number(readFileSync(join(dir, `reads-${id}`), "utf8"))]),
+      );
+      const startArgv = Object.fromEntries(
+        ["ios", "android"].filter((p) => existsSync(join(dir, `starts-${p}`))).map((p) => [p, readFileSync(join(dir, `starts-${p}`), "utf8").trim().split("\n")]),
+      );
       rmSync(dir, { recursive: true, force: true });
-      return { status: result.status, stdout: result.stdout, outputs };
+      return { status: result.status, stdout: result.stdout, outputs, startArgv, reads };
     }
 
     it("hands each finished build of the SHA to its upload, keeping only the fields the record job reads", () => {
@@ -942,6 +1005,164 @@ describe("the eas commands", () => {
       assert.equal(status, 1);
       assert.match(stdout, /did not finish: IOS i1 ERRORED/);
       assert.equal(outputs.ios_id, "");
+      assert.equal(outputs.android_id, "a1");
+    });
+
+    // #3812: a failed platform is named the round it is seen, not after the
+    // other platform finishes.
+    it("reports an errored build the round it sees it, while the other still builds", () => {
+      const { status, stdout } = run({
+        views: {
+          i1: ios({ status: "ERRORED", error: { errorCode: "EAS_BUILD_UNKNOWN_FASTLANE_ERROR", message: "Fastlane\nfailed\n" } }),
+          a1: [android({ status: "IN_PROGRESS" }), android({ status: "IN_PROGRESS" }), android()],
+        },
+        deadline: "5",
+      });
+      assert.equal(status, 1);
+      const early = stdout.indexOf("::error::The IOS build i1 ERRORED (EAS_BUILD_UNKNOWN_FASTLANE_ERROR: Fastlane failed)");
+      assert.ok(early >= 0, stdout);
+      assert.equal((stdout.match(/::error::The IOS build i1 ERRORED/g) ?? []).length, 1, "reported once, not every round");
+      const androidDone = stdout.indexOf("ANDROID a1: FINISHED");
+      assert.ok(stdout.indexOf("ANDROID a1: IN_PROGRESS") >= 0 && androidDone > 0, stdout);
+      assert.ok(early < androidDone, "named while Android was still building, not once it finished");
+    });
+
+    const POD_504 = "[!] Invalid `RNSentry.podspec` file: Failed to download https://github.com/getsentry/sentry-cocoa/releases/download/9.32.0/Sentry.xcframework.zip: OpenURI::HTTPError: 504 Gateway Time-out.";
+
+    it("starts an iOS build again once when its logs end on a transient download failure, and hands on the retry", () => {
+      const { status, stdout, outputs, startArgv } = run({
+        views: {
+          i1: ios({ status: "ERRORED", error: { errorCode: "UNKNOWN_ERROR", message: "Unknown error. See logs of the Install pods build phase." }, logFiles: ["https://logs/i1-a", "https://logs/i1-b"] }),
+          i2: [ios({ id: "i2", status: "IN_QUEUE", appBuildVersion: "13" }), ios({ id: "i2", appBuildVersion: "13" })],
+          a1: android(),
+        },
+        logs: { "https://logs/i1-a": '{"msg":"Installing pods"}\n', "https://logs/i1-b": `${JSON.stringify({ msg: POD_504 })}\n{"msg":"Build failed"}\n` },
+        starts: { ios: [{ id: "i2", platform: "IOS" }] },
+        deadline: "5",
+      });
+      assert.equal(status, 0, stdout);
+      assert.match(stdout, /::warning::The IOS build i1 errored on a transient network failure/);
+      assert.equal(startArgv.ios.length, 1);
+      assert.match(startArgv.ios[0], /^build --platform ios --profile production --non-interactive --no-wait --json --message Deploy production [0-9a-f]{40} https:\/\/github\.com\/o\/r\/actions\/runs\/1 \(retry of i1\)$/);
+      assert.equal(outputs.ios_retry, "i2");
+      assert.equal(outputs.ios_id, "i2");
+      assert.equal(outputs.android_id, "a1");
+      assert.deepEqual(JSON.parse(outputs.builds).map((b) => `${b.id} ${b.status}`), ["i2 FINISHED", "a1 FINISHED"], "the retry replaces the errored build");
+      assert.doesNotMatch(stdout, /https:\/\/logs\//, "signed log URLs are never printed");
+    });
+
+    it("retries on a 5xx named in EAS's own error message, without reading the logs", () => {
+      const { status, outputs } = run({
+        views: { a1: android({ status: "ERRORED", error: { message: "Request failed: HTTP error 503 while downloading gradle" } }), a2: android({ id: "a2" }) },
+        ids: " a1",
+        starts: { android: [{ id: "a2", platform: "ANDROID" }] },
+        deadline: "5",
+      });
+      assert.equal(status, 0);
+      assert.equal(outputs.android_retry, "a2");
+      assert.equal(outputs.android_id, "a2");
+    });
+
+    it("retries a platform at most once", () => {
+      const failed = (id) => ios({ id, status: "ERRORED", error: { message: `OpenURI::HTTPError: 504 Gateway Time-out` } });
+      const { status, stdout, outputs, startArgv } = run({
+        views: { i1: failed("i1"), i2: failed("i2") },
+        ids: "i1",
+        starts: { ios: [{ id: "i2", platform: "IOS" }] },
+        deadline: "5",
+      });
+      assert.equal(status, 1);
+      assert.equal(startArgv.ios.length, 1);
+      assert.match(stdout, /::error::The IOS build i2 ERRORED/);
+      assert.match(stdout, /did not finish: IOS i2 ERRORED/);
+      assert.equal(outputs.ios_id, "");
+    });
+
+    it("never retries a failure that isn't a transient network error, nor a cancelled build", () => {
+      for (const view of [
+        ios({ status: "ERRORED", error: { errorCode: "EAS_BUILD_CREDENTIALS", message: "Distribution certificate expired" }, logFiles: ["https://logs/x"] }),
+        ios({ status: "CANCELED", error: { message: "504 Gateway Time-out" } }),
+      ]) {
+        const { status, startArgv, outputs } = run({
+          views: { i1: view },
+          ids: "i1",
+          logs: { "https://logs/x": '{"msg":"No valid code signing certificates"}\n' },
+          starts: { ios: [{ id: "i2", platform: "IOS" }] },
+        });
+        assert.equal(status, 1);
+        assert.deepEqual(startArgv, {}, `${view.status} started a retry`);
+        assert.equal(outputs.ios_retry, undefined);
+      }
+    });
+
+    it("doesn't retry when too little of the deadline is left for a build to finish", () => {
+      const { status, startArgv } = run({
+        views: { i1: ios({ status: "ERRORED", error: { message: "HTTPError: 502 Bad Gateway" } }) },
+        ids: "i1",
+        starts: { ios: [{ id: "i2", platform: "IOS" }] },
+        deadline: "30",
+        retryMin: "60",
+      });
+      assert.equal(status, 1);
+      assert.deepEqual(startArgv, {});
+    });
+
+    it("reports the errored build when the retry fails to start", () => {
+      const { status, stdout, outputs, startArgv } = run({
+        views: { i1: ios({ status: "ERRORED", error: { message: "ECONNRESET" } }) },
+        ids: "i1",
+        deadline: "5",
+      });
+      assert.equal(status, 1);
+      assert.equal(startArgv.ios.length, 1);
+      assert.match(stdout, /::error::Starting the ios retry failed \(exit 1\), so i1 stands as the IOS build/);
+      assert.match(stdout, /did not finish: IOS i1 ERRORED/);
+      assert.equal(outputs.ios_retry, undefined);
+    });
+
+    const transient504 = (over = {}) => ios({ status: "ERRORED", error: { message: "OpenURI::HTTPError: 504 Gateway Time-out" }, ...over });
+
+    // Rule 1 holds for a retry: it is a build start like any other.
+    it("doesn't retry when the v* tags changed since the builds started, or can't be read", () => {
+      for (const [tags, why] of [[["v0.17.0", "v0.17.1"], "a later ship"], [null, "an unreadable tag list"]]) {
+        const { status, stdout, startArgv } = run({ views: { i1: transient504() }, ids: "i1", tags, starts: { ios: [{ id: "i2", platform: "IOS" }] }, deadline: "5" });
+        assert.equal(status, 1, why);
+        assert.deepEqual(startArgv, {}, `${why} started a retry`);
+        assert.match(stdout, /v\* tags changed since the builds started, or couldn't be read, so it is not started again/, why);
+      }
+    });
+
+    it("matches a transient failure early in a large log tail, where a pipe into grep -q would SIGPIPE", () => {
+      const filler = `${JSON.stringify({ msg: "x".repeat(2000) })}\n`;
+      const { outputs, stdout } = run({
+        views: { i1: ios({ status: "ERRORED", logFiles: ["https://logs/big"] }), i2: ios({ id: "i2" }) },
+        ids: "i1",
+        logs: { "https://logs/big": `${JSON.stringify({ msg: "Could not GET 'https://repo1.maven.org/x.pom'. Received status code 502 from server: Bad Gateway" })}\n${filler.repeat(99)}` },
+        starts: { ios: [{ id: "i2", platform: "IOS" }] },
+        deadline: "5",
+      });
+      assert.equal(outputs.ios_retry, "i2", stdout);
+    });
+
+    it("ignores a network error further back than the last LOG_TAIL_LINES lines", () => {
+      const { startArgv } = run({
+        views: { i1: ios({ status: "ERRORED", logFiles: ["https://logs/old"] }) },
+        ids: "i1",
+        logs: { "https://logs/old": `{"msg":"npm WARN ETIMEDOUT, retrying"}\n${'{"msg":"compiling"}\n'.repeat(100)}{"msg":"error: no such module"}\n` },
+        starts: { ios: [{ id: "i2", platform: "IOS" }] },
+        deadline: "5",
+      });
+      assert.deepEqual(startArgv, {});
+    });
+
+    it("never reads a build again once it has ended", () => {
+      const { status, reads, outputs } = run({
+        views: { i1: [ios({ status: "IN_QUEUE" }), ios({ status: "IN_PROGRESS" }), ios({ status: "IN_PROGRESS" }), ios()], a1: android() },
+        deadline: "5",
+      });
+      assert.equal(status, 0);
+      assert.equal(reads.a1, 1, "a finished build was read again, and a failed re-read would make it UNREAD");
+      assert.equal(reads.i1, 4);
       assert.equal(outputs.android_id, "a1");
     });
 
@@ -1113,8 +1334,8 @@ describe("the record job", () => {
     assert.deepEqual(Object.fromEntries(step.stepEnv), expected);
     assert.deepEqual(Object.fromEntries(jobOf(CALLED, "build").keys.get("outputs")), {
       builds: "${{ steps.wait.outputs.builds }}",
-      "ios-started": "${{ steps.start-ios.outputs.id }}",
-      "android-started": "${{ steps.start-android.outputs.id }}",
+      "ios-started": "${{ steps.wait.outputs.ios_retry || steps.start-ios.outputs.id }}",
+      "android-started": "${{ steps.wait.outputs.android_retry || steps.start-android.outputs.id }}",
       "ios-upload": "${{ steps.upload-ios.outcome }}",
       "android-upload": "${{ steps.upload-android.outcome }}",
       "ios-submission": "${{ steps.upload-ios.outputs.submission }}",

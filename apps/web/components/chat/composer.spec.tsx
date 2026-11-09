@@ -96,6 +96,7 @@ import {
   runDispatch,
   slashModuleRefusal,
   uploadFailureDescription,
+  type CommandFormOutcome,
 } from "./composer";
 import { UNAVAILABLE_QUOTE } from "./reply-quote";
 import type { SlashCommand } from "@repo/chat-core/integrations";
@@ -1888,5 +1889,248 @@ describe("slashModuleRefusal for a beta-off module", () => {
       title: "/dues is turned off",
       description: "Dues is off for every chapter during the beta.",
     });
+  });
+});
+
+/**
+ * #3773 — `/event` typed bare, or picked from the palette (which always
+ * dispatched with empty args), answered with the one-liner's usage string.
+ * The composer now offers each command to `onOpenCommandForm` first, after
+ * its own refusals, and dispatches only when that declines.
+ */
+describe("Composer hands a command to onOpenCommandForm before dispatching (#3773)", () => {
+  afterEach(() => {
+    editorDouble.current = null;
+    mockToast.mockClear();
+  });
+
+  it("opens the form for a typed command instead of dispatching", async () => {
+    const editor = fakeEditor("/event Chapter Dinner");
+    editorDouble.current = editor;
+    const onSlashDispatch = vi.fn(async () => ({ ok: true as const }));
+    const onOpenCommandForm = vi.fn((): CommandFormOutcome => "opened");
+    const onSend = vi.fn();
+    render(
+      <Composer
+        {...baseProps({
+          draft: "/event Chapter Dinner",
+          onSlashDispatch,
+          onOpenCommandForm,
+          onSend,
+          isModuleEnabled: () => true,
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    expect(onOpenCommandForm).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "event" }),
+      "Chapter Dinner",
+    );
+    expect(onSlashDispatch).not.toHaveBeenCalled();
+    expect(onSend).not.toHaveBeenCalled();
+    expect(editor.getText()).toBe("");
+  });
+
+  it("dispatches a typed command the form declines", async () => {
+    editorDouble.current = fakeEditor('/poll "Venue?" Lodge Riverside');
+    const onSlashDispatch = vi.fn(async () => ({ ok: true as const }));
+    const onOpenCommandForm = vi.fn((): CommandFormOutcome => null);
+    render(
+      <Composer
+        {...baseProps({
+          draft: '/poll "Venue?" Lodge Riverside',
+          onSlashDispatch,
+          onOpenCommandForm,
+          isModuleEnabled: () => true,
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() => expect(onSlashDispatch).toHaveBeenCalledTimes(1));
+  });
+
+  it("opens the form for a command picked from the palette", async () => {
+    const user = userEvent.setup();
+    const onSlashDispatch = vi.fn(async () => ({ ok: true as const }));
+    const onOpenCommandForm = vi.fn((): CommandFormOutcome => "opened");
+    render(
+      <Composer {...baseProps({ onSlashDispatch, onOpenCommandForm })} />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: /open slash commands/i }),
+    );
+    await user.click(await screen.findByRole("option", { name: /event/i }));
+
+    expect(onOpenCommandForm).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "event" }),
+      "",
+    );
+    expect(onSlashDispatch).not.toHaveBeenCalled();
+  });
+
+  it("still applies its refusals before offering the form", async () => {
+    const user = userEvent.setup();
+    const onOpenCommandForm = vi.fn((): CommandFormOutcome => "opened");
+    render(
+      <Composer
+        {...baseProps({
+          onSlashDispatch: vi.fn(async () => ({ ok: true as const })),
+          onOpenCommandForm,
+          isOffline: true,
+        })}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: /open slash commands/i }),
+    );
+    await user.click(await screen.findByRole("option", { name: /event/i }));
+
+    expect(onOpenCommandForm).not.toHaveBeenCalled();
+  });
+});
+
+describe("Composer passes details typed into the palette's search (#3773)", () => {
+  it("hands `/event Chapter Dinner`, typed into the palette, to the form", async () => {
+    const user = userEvent.setup();
+    const onOpenCommandForm = vi.fn((): CommandFormOutcome => "opened");
+    render(
+      <Composer
+        {...baseProps({
+          onSlashDispatch: vi.fn(async () => ({ ok: true as const })),
+          onOpenCommandForm,
+        })}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: /open slash commands/i }),
+    );
+    await user.type(
+      await screen.findByRole("combobox"),
+      "event Chapter Dinner",
+    );
+    await user.click(await screen.findByRole("option", { name: /event/i }));
+
+    expect(onOpenCommandForm).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "event" }),
+      "Chapter Dinner",
+    );
+  });
+});
+
+describe("Composer form handoff keeps the member's input on a refusal (#3773 review)", () => {
+  afterEach(() => {
+    editorDouble.current = null;
+    mockToast.mockClear();
+  });
+
+  function typed(text: string, overrides: Partial<ComposerProps> = {}) {
+    const editor = fakeEditor(text);
+    editorDouble.current = editor;
+    const onSlashDispatch = vi.fn(async () => ({ ok: true as const }));
+    render(
+      <Composer
+        {...baseProps({
+          draft: text,
+          onSlashDispatch,
+          isModuleEnabled: () => true,
+          ...overrides,
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    return { editor, onSlashDispatch };
+  }
+
+  it("applies the typed path's refusals before offering the form", () => {
+    const onOpenCommandForm = vi.fn((): CommandFormOutcome => "opened");
+    const { editor } = typed("/event Dinner", {
+      onOpenCommandForm,
+      isOffline: true,
+    });
+
+    expect(onOpenCommandForm).not.toHaveBeenCalled();
+    expect(editor.getText()).toBe("/event Dinner");
+  });
+
+  it("keeps the typed text when the form refuses", () => {
+    const onOpenCommandForm = vi.fn((): CommandFormOutcome => "refused");
+    const { editor, onSlashDispatch } = typed("/event Dinner", {
+      onOpenCommandForm,
+    });
+
+    expect(onOpenCommandForm).toHaveBeenCalled();
+    expect(onSlashDispatch).not.toHaveBeenCalled();
+    expect(editor.getText()).toBe("/event Dinner");
+  });
+
+  async function paletteType(query: string, overrides: Partial<ComposerProps>) {
+    const user = userEvent.setup();
+    const onSlashDispatch = vi.fn(async () => ({ ok: true as const }));
+    render(<Composer {...baseProps({ onSlashDispatch, ...overrides })} />);
+    await user.click(
+      screen.getByRole("button", { name: /open slash commands/i }),
+    );
+    const search = await screen.findByRole("combobox");
+    await user.type(search, query);
+    return { user, onSlashDispatch, search };
+  }
+
+  it("dispatches a one-liner typed into the palette with its details", async () => {
+    const { user, onSlashDispatch } = await paletteType(
+      'poll "Venue?" Lodge Riverside',
+      { onOpenCommandForm: vi.fn((): CommandFormOutcome => null) },
+    );
+    await user.click(await screen.findByRole("option", { name: /poll/i }));
+
+    await waitFor(() =>
+      expect(onSlashDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "poll" }),
+        '"Venue?" Lodge Riverside',
+      ),
+    );
+  });
+
+  it("leaves the palette open with its details when a pick is refused", async () => {
+    const onOpenCommandForm = vi.fn((): CommandFormOutcome => "opened");
+    const { user, search } = await paletteType("event Dinner 2026-11-20", {
+      onOpenCommandForm,
+      isOffline: true,
+    });
+    await user.click(await screen.findByRole("option", { name: /event/i }));
+
+    expect(onOpenCommandForm).not.toHaveBeenCalled();
+    expect(search).toHaveValue("event Dinner 2026-11-20");
+  });
+
+  it("leaves the palette open with its details when the form refuses the pick", async () => {
+    const onOpenCommandForm = vi.fn((): CommandFormOutcome => "refused");
+    const { user, onSlashDispatch, search } = await paletteType(
+      "event Dinner 2026-11-20",
+      { onOpenCommandForm },
+    );
+    await user.click(await screen.findByRole("option", { name: /event/i }));
+
+    expect(onOpenCommandForm).toHaveBeenCalled();
+    expect(onSlashDispatch).not.toHaveBeenCalled();
+    expect(search).toHaveValue("event Dinner 2026-11-20");
+  });
+
+  it("prefers the palette's details over a bare command word in the editor", async () => {
+    editorDouble.current = fakeEditor("/event");
+    const onOpenCommandForm = vi.fn((): CommandFormOutcome => "opened");
+    // The editor holds the bare word; the details live in the palette's box.
+    const { user } = await paletteType("event Dinner", {
+      onOpenCommandForm,
+      draft: "/event",
+    });
+    const option = await screen.findByRole("option", { name: /event/i });
+    await user.click(option);
+
+    expect(onOpenCommandForm).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "event" }),
+      expect.stringContaining("Dinner"),
+    );
   });
 });

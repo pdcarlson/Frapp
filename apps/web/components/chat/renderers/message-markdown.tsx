@@ -1,6 +1,6 @@
 "use client";
 
-import { memo } from "react";
+import { createContext, memo, useContext, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import { isSafeHref } from "@repo/chat-core/links";
@@ -12,8 +12,67 @@ import {
   skipsMarkdownParse,
   type HastNode,
 } from "@repo/chat-core/markdown";
-import { MENTION_CHIP } from "../chip";
+import { MENTION_CHIP, MENTION_CHIP_BUTTON } from "../chip";
 import { cn } from "@/lib/utils";
+
+/**
+ * Who an `@` chip opens, given the token it carries (`data-mention`): a click
+ * handler that opens that member's profile, or `null` for a chip that names
+ * no single member (a role mention, or a member the message didn't notify).
+ * `MessageItem` provides it per row, resolving against that message's own
+ * server-resolved `mentions` (`mentionedUserId` in `@repo/chat-core`, #3726).
+ * Outside a row, or with no profile sheet above it, it is `null` and every
+ * chip stays plain text.
+ *
+ * A context rather than a prop so `MessageMarkdown` stays memoized on
+ * `content`: the renderers between the row and this body need not thread it.
+ */
+export const MentionOpenerContext = createContext<
+  ((token: string) => (() => void) | null) | null
+>(null);
+
+/**
+ * One chip: the `<mark>` the plugin built, which paints it. A chip that opens
+ * a profile holds a `<button>` inside the mark, so it is reached by Tab and
+ * pressed by Enter or Space, while the mark keeps painting the same box: a
+ * button is an inline-block whose fill would cover the whole 25px line,
+ * standing taller than the chips beside it (seen in the browser, #3726). The
+ * row's own tap handler already ignores a click inside a button.
+ */
+function MentionChip({
+  className,
+  token,
+  children,
+}: {
+  className?: string;
+  token: string | null;
+  children?: ReactNode;
+}) {
+  const resolve = useContext(MentionOpenerContext);
+  const open = resolve && token ? resolve(token) : null;
+  return (
+    <mark className={className} data-mention={token ?? undefined}>
+      {open ? (
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          className={MENTION_CHIP_BUTTON}
+          onClick={open}
+        >
+          {children}
+        </button>
+      ) : (
+        children
+      )}
+    </mark>
+  );
+}
+
+/** The token a chip element carries, as react-markdown hands it over. */
+function chipToken(props: Record<string, unknown>): string | null {
+  const value = props["data-mention"];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
 
 /** The formatting set plus the mention chip (`MESSAGE_RENDER_ELEMENTS`). */
 const ALLOWED_ELEMENTS = MESSAGE_RENDER_ELEMENTS;
@@ -137,6 +196,14 @@ export const MessageMarkdown = memo(function MessageMarkdown({
             </code>
           );
         },
+        mark: ({ className, children, ...rest }) => (
+          <MentionChip
+            className={className}
+            token={chipToken(rest as Record<string, unknown>)}
+          >
+            {children}
+          </MentionChip>
+        ),
         // The block-code wrapper's own styling lives on `code` above so the
         // inline and block cases share one visual language; `pre` would only
         // double the padding/background around it.

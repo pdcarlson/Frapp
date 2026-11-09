@@ -25,6 +25,7 @@
     "./density": "./src/density.ts",
     "./links": "./src/links.ts",
     "./markdown": "./src/markdown.ts",
+    "./profile-targets": "./src/profile-targets.ts",
     "./test/markdown-parse-budget.fixtures": "./src/test/markdown-parse-budget.fixtures.ts",
     "./attachments": "./src/attachments.ts"
   },

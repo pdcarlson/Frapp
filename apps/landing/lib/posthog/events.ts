@@ -28,6 +28,12 @@ export const LANDING_CTAS = [
  * every surface below still renders at least one tracked control, so no id here
  * is dead. `cta-band` names the closing section, which is no longer a band —
  * the id stays for the same continuity reason `log-in` does.
+ *
+ * `header` and `footer` also fire from `/about` and `/changelog`, which draw
+ * the same chrome (#3817). A surface names where the control sits, not which
+ * page: split by page on `$pathname`, which posthog-js attaches to every event
+ * and the sanitizer keeps as `/`, `/about` or `/changelog`. A homepage-only
+ * funnel filters `$pathname = /`.
  */
 export const LANDING_CTA_SURFACES = [
   "header",

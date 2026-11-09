@@ -161,6 +161,11 @@ export function useRedeemInvite() {
       queryClient.invalidateQueries({ queryKey: ["invites", chapterId] });
       queryClient.invalidateQueries({ queryKey: ["members", chapterId] });
       queryClient.invalidateQueries({ queryKey: ["chapters"] });
+    },
+    // On failure too: an offered invite the redeem finds dead (410) or
+    // already joined (409) must leave the offers, not stay on as a card
+    // that fails again (#3782).
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["pending-invites"] });
     },
   });

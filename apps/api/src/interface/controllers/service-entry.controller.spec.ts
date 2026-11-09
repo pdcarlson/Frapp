@@ -5,13 +5,17 @@ import { ServiceEntryController } from './service-entry.controller';
 import { ServiceEntryService } from '../../application/services/service-entry.service';
 import { RbacService } from '../../application/services/rbac.service';
 import { RequestProofUploadUrlDto } from '../dtos/service-entry.dto';
+import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import { SystemPermissions } from '#domain/constants/permissions';
 
 describe('ServiceEntryController', () => {
   let controller: ServiceEntryController;
-  let service: jest.Mocked<Pick<ServiceEntryService, 'requestProofUploadUrl'>>;
+  let service: jest.Mocked<
+    Pick<ServiceEntryService, 'requestProofUploadUrl' | 'getPointsRate'>
+  >;
 
   beforeEach(async () => {
-    service = { requestProofUploadUrl: jest.fn() };
+    service = { requestProofUploadUrl: jest.fn(), getPointsRate: jest.fn() };
 
     const module: TestingModule = await createUnguardedTestingModule({
       controllers: [ServiceEntryController],
@@ -25,6 +29,29 @@ describe('ServiceEntryController', () => {
     }).compile();
 
     controller = module.get<ServiceEntryController>(ServiceEntryController);
+  });
+
+  // #3862 — the review queue's points preview reads the rate here, because
+  // the chapter config needs `chapter-config:view`, which no stock approver
+  // but the President holds. The gate is the queue's own permission.
+  describe('pointsRate', () => {
+    it('is gated on service:approve, not chapter-config:view', () => {
+      expect(
+        Reflect.getMetadata(
+          PERMISSIONS_KEY,
+          ServiceEntryController.prototype.pointsRate,
+        ),
+      ).toEqual([SystemPermissions.SERVICE_APPROVE]);
+    });
+
+    it("returns the rate the approve path applies for the caller's chapter", async () => {
+      service.getPointsRate.mockResolvedValue({ minutes_per_point: 90 });
+
+      await expect(controller.pointsRate('chapter-123')).resolves.toEqual({
+        minutes_per_point: 90,
+      });
+      expect(service.getPointsRate).toHaveBeenCalledWith('chapter-123');
+    });
   });
 
   // #2130 — this 201 used to pass the camelCase service ticket straight

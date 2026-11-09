@@ -1688,8 +1688,10 @@ describe("staged photos", () => {
     });
     const [, firstArgs] = mocks.sendMessage.mock.calls[0] as unknown as [
       unknown,
-      { clientMessageId: string },
+      { clientMessageId: string; keepDraft?: boolean },
     ];
+    // The first send is the composer's draft, so it clears the saved one.
+    expect(firstArgs.keepDraft).toBe(false);
 
     await act(async () => {
       await result.current.retry(firstArgs.clientMessageId);
@@ -1697,10 +1699,16 @@ describe("staged photos", () => {
     expect(attempts).toBe(2);
     const [, retryArgs] = mocks.sendMessage.mock.calls[1] as unknown as [
       unknown,
-      { clientMessageId: string; attachmentsReady: Promise<unknown> },
+      {
+        clientMessageId: string;
+        attachmentsReady: Promise<unknown>;
+        keepDraft?: boolean;
+      },
     ];
     expect(retryArgs.clientMessageId).toBe(firstArgs.clientMessageId);
     await expect(retryArgs.attachmentsReady).resolves.toEqual([claim("a.jpg")]);
+    // A retry keeps whatever the member has typed since (#3701).
+    expect(retryArgs.keepDraft).toBe(true);
   });
 
   it("never starts the upload of a photo removed while it waited its turn", async () => {
@@ -1744,5 +1752,75 @@ describe("staged photos", () => {
     expect(result.current.photos).toHaveLength(1);
     rerender({ channelId: "channel-2" });
     expect(result.current.photos).toEqual([]);
+  });
+});
+
+describe("sendPoll() (#3701)", () => {
+  const poll = {
+    content: "Who's driving?",
+    payload: {
+      question: "Who's driving?",
+      options: [
+        { id: "a", label: "Me" },
+        { id: "b", label: "Not me" },
+      ],
+      closes_at: "2026-11-10T12:00:00.000Z",
+    },
+  };
+
+  it("queues a poll card in this channel, and leaves the saved draft alone", async () => {
+    mocks.sendMessage.mockImplementation(async () => ({}));
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await result.current.sendPoll(poll);
+    });
+
+    expect(outcome).toEqual({ ok: true });
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.sendMessage.mock.calls[0]![1]).toEqual({
+      channelId: CHANNEL,
+      content: "Who's driving?",
+      kind: "poll",
+      payload: poll.payload,
+      // The composer may hold a message the member is still writing.
+      keepDraft: true,
+    });
+  });
+
+  it("answers why when the outbox refused the card, rather than rejecting", async () => {
+    mocks.sendMessage.mockImplementation(async () => {
+      throw new Error("storage full");
+    });
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await result.current.sendPoll(poll);
+    });
+
+    expect(outcome).toEqual({
+      ok: false,
+      error: expect.any(String),
+    });
+  });
+
+  it("refuses, without sending, before the viewer's runtime resolves", async () => {
+    mocks.runtime.ctx = null;
+    const { result } = renderChannel();
+
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await result.current.sendPoll(poll);
+    });
+
+    expect(outcome).toEqual({
+      ok: false,
+      error: "Couldn't post that poll. Try again.",
+    });
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 });

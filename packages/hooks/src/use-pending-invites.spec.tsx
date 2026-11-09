@@ -76,15 +76,44 @@ describe("redeeming drops the offers (#3776)", () => {
     const GET = vi.fn().mockResolvedValue({ data: PENDING, error: undefined });
     const POST = vi
       .fn()
-      .mockResolvedValue({ data: { chapterId: "ch-1", memberId: "m-1" }, error: undefined });
+      .mockResolvedValue({
+        data: { chapterId: "ch-1", memberId: "m-1" },
+        error: undefined,
+      });
     const { result } = renderHook(
-      () => ({ pending: usePendingInvites("user-1"), redeem: useRedeemInvite() }),
+      () => ({
+        pending: usePendingInvites("user-1"),
+        redeem: useRedeemInvite(),
+      }),
       { wrapper: wrapperFor({ GET, POST }) },
     );
     await waitFor(() => expect(result.current.pending.isSuccess).toBe(true));
     expect(GET).toHaveBeenCalledTimes(1);
 
     await result.current.redeem.mutateAsync({ token: "token-1" });
+
+    await waitFor(() => expect(GET).toHaveBeenCalledTimes(2));
+  });
+
+  it("re-reads the pending list when a join fails, so a dead invite's card goes (#3782)", async () => {
+    const GET = vi.fn().mockResolvedValue({ data: PENDING, error: undefined });
+    const POST = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: { statusCode: 410, message: "Invite expired" },
+    });
+    const { result } = renderHook(
+      () => ({
+        pending: usePendingInvites("user-1"),
+        redeem: useRedeemInvite(),
+      }),
+      { wrapper: wrapperFor({ GET, POST }) },
+    );
+    await waitFor(() => expect(result.current.pending.isSuccess).toBe(true));
+    expect(GET).toHaveBeenCalledTimes(1);
+
+    await expect(
+      result.current.redeem.mutateAsync({ token: "token-1" }),
+    ).rejects.toMatchObject({ statusCode: 410 });
 
     await waitFor(() => expect(GET).toHaveBeenCalledTimes(2));
   });
