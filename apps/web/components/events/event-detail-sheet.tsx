@@ -364,44 +364,10 @@ export function EventDetailSheet({
               </div>
             </div>
 
-            {description ? (
-              <div className="rounded-lg border border-border p-3">
-                <p className="mb-1 text-caption text-muted-foreground">
-                  Description
-                </p>
-                {/* Same fix as the minutes block below: the source is a
-                  multi-line Textarea, so preserve line breaks instead of
-                  collapsing them. */}
-                <p className="whitespace-pre-wrap break-words text-sm">
-                  {description}
-                </p>
-              </div>
-            ) : null}
-
-            {notes ? (
-              <div className="rounded-lg border border-border p-3">
-                <p className="mb-1 text-caption text-muted-foreground">
-                  Meeting minutes
-                </p>
-                {/* Same plain-text convention as chat's TextRenderer (#369 owns
-                  a real markdown renderer if that lands later) — preserve the
-                  line breaks admins typed instead of collapsing them. */}
-                <p className="whitespace-pre-wrap break-words text-sm">
-                  {notes}
-                </p>
-              </div>
-            ) : null}
-
-            {eventId && !usingPreviewData ? (
-              <AttendancePanel
-                eventId={eventId}
-                eventStart={resolvedEvent?.start_time}
-              />
-            ) : null}
-
             {/*
-              The series below the meeting it opened (#3707): the list shows a
-              repeating event once, so this is where its other dates live.
+              The series right under the meeting it opened, ahead of the long
+              attendance roster (#3707): the list shows a repeating event once,
+              so this is where its other dates live.
             */}
             {series && series.length > 1 ? (
               <section
@@ -444,6 +410,42 @@ export function EventDetailSheet({
                 </ul>
               </section>
             ) : null}
+
+            {description ? (
+              <div className="rounded-lg border border-border p-3">
+                <p className="mb-1 text-caption text-muted-foreground">
+                  Description
+                </p>
+                {/* Same fix as the minutes block below: the source is a
+                  multi-line Textarea, so preserve line breaks instead of
+                  collapsing them. */}
+                <p className="whitespace-pre-wrap break-words text-sm">
+                  {description}
+                </p>
+              </div>
+            ) : null}
+
+            {notes ? (
+              <div className="rounded-lg border border-border p-3">
+                <p className="mb-1 text-caption text-muted-foreground">
+                  Meeting minutes
+                </p>
+                {/* Same plain-text convention as chat's TextRenderer (#369 owns
+                  a real markdown renderer if that lands later) — preserve the
+                  line breaks admins typed instead of collapsing them. */}
+                <p className="whitespace-pre-wrap break-words text-sm">
+                  {notes}
+                </p>
+              </div>
+            ) : null}
+
+            {eventId && !usingPreviewData ? (
+              <AttendancePanel
+                eventId={eventId}
+                eventStart={resolvedEvent?.start_time}
+              />
+            ) : null}
+
           </div>
         </PanelBody>
         {confirmDialog}
