@@ -56,7 +56,10 @@
      * NOTE the ShadCN-era name collision, resolved in foundations'
      * favor: `--muted` is muted TEXT (#9E9E9E), not a fill. Subtle
      * fills use the surface ladder (`--surface-1`, `--card`) instead;
-     * the web reskin retargeted every `bg-muted` call site accordingly. */
+     * the web reskin retargeted the `bg-muted` call sites accordingly, and
+     * the 2026-11-09 text lift (#3826) retargeted the five text-bearing ones
+     * it had missed to `--card-hover`: on `#9E9E9E`, foreground text is
+     * 2.46:1. `elevation-call-sites.spec.ts` keeps them out. */
     --foreground: #F5F5F5;
     --muted-foreground: #C4C4C4;
     --muted: #9E9E9E;

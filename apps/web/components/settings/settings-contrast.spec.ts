@@ -31,9 +31,10 @@ import {
  *
  * The near-miss is the reason this file exists rather than a comment. The
  * first fix reached for `--muted`, which reads like the token for absent
- * metadata — and is 3.781:1 on `--card`, under §6, which the chat slice
- * already recorded as "`--muted` is not usable as text anywhere on the
- * ladder". A `✓` and an `—` are characters, so the 4.5:1 text floor applies
+ * metadata — and was 3.781:1 on `--card` then, under §6, which the chat slice
+ * had recorded as "`--muted` is not usable as text anywhere on the ladder".
+ * (The 2026-11-09 text ladder put it at 6.69:1 there; the assertion below
+ * now records that.) A `✓` and an `—` are characters, so the 4.5:1 text floor applies
  * and not the 3:1 glyph one. Caught by measuring rather than by reading the
  * token name, which is this epic's recurring lesson: a number in a comment is
  * not a measurement, and neither is a token name.

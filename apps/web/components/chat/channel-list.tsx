@@ -246,12 +246,13 @@ export interface ChannelListProps {
 /**
  * Left-rail channel list, per `canvas-screens.dc.html` s04.
  *
- * The row carries the read/unread distinction in its **type weight and tone**,
- * which is what foundations.md §5 specifies: an unread row is a bold title in
- * `--foreground`, a read one drops to `--muted-foreground` and carries no badge
- * at all. That is the whole signal here. s04 also draws a message preview and a
- * timestamp per row, which mobile has drawn since 2026-11-06 from
- * `GET /v1/channels/latest` (`useChannelLatestMessages`, worded by
+ * The row carries the read/unread distinction in its **type weight**, which
+ * is what foundations.md §5 specifies: an unread row is a bold title in
+ * `--foreground`, a read one keeps `--foreground` at regular weight (#3777,
+ * matching mobile) and carries no badge at all, and a muted one drops to
+ * `--muted` unless it addresses the member. That is the whole signal here.
+ * s04 also draws a message preview and a timestamp per row, which mobile
+ * has drawn since 2026-11-06 from `GET /v1/channels/latest` (`useChannelLatestMessages`, worded by
  * `channelPreviewLine` in `@repo/chat-core/channel-preview`;
  * spec/behavior/chat/README.md § Channel list previews). The rail doesn't yet:
  * #1191.
@@ -391,6 +392,12 @@ export function ChannelList({
     // disagree — a red badge on a read-styled row is a contradiction
     // on screen.
     const isUnread = countsKnown && (counts.unreadCount > 0 || hasMention);
+    // Mobile's rule (`channel-row.tsx`), so the two clients agree (#3777):
+    // a muted channel reads as unread only when it addresses the member, and
+    // otherwise sits quietly in `--muted`. A read row keeps the primary tone
+    // and drops the weight; unread reads by weight, never by a dimmer colour.
+    const isMuted = !!channel.muted;
+    const looksUnread = isUnread && (!isMuted || hasMention);
     const pinned = preferences.pinnedIds.has(channel.id);
     const offersHide =
       !!onHide && canHideConversation(channel) && !channel.hidden;
@@ -429,15 +436,27 @@ export function ChannelList({
               "flex h-8 w-full items-center gap-2 rounded-xs px-2 text-left text-sm transition-colors",
               isActive
                 ? "bg-accent-subtle font-semibold text-accent-text"
-                : isUnread
+                : looksUnread
                   ? "font-semibold text-foreground hover:bg-card"
-                  : // A read row keeps the primary tone and drops the weight,
-                    // as mobile's `channel-row.tsx` does: unread reads by
-                    // weight, never by a dimmer colour (#3777).
-                    "text-foreground hover:bg-card",
+                  : isMuted
+                    ? "text-muted hover:bg-card hover:text-foreground"
+                    : "text-foreground hover:bg-card",
             )}
           >
-            <ChannelMark channel={channel} title={titleFor(channel)} />
+            <ChannelMark
+              channel={channel}
+              title={titleFor(channel)}
+              // The `#`, lock and audit marks follow mobile's sigil: the
+              // row's own tone when unread or active, one step quieter
+              // when read, and `--muted` with a muted row.
+              tone={
+                isActive || looksUnread
+                  ? undefined
+                  : isMuted
+                    ? "text-muted"
+                    : "text-muted-foreground"
+              }
+            />
             <span className="truncate">{titleFor(channel)}</span>
             <span className="ml-auto flex shrink-0 items-center gap-1.5">
               {/*
@@ -622,12 +641,15 @@ export function ChannelList({
 function ChannelMark({
   channel,
   title,
+  tone,
 }: {
   channel: ChatChannel;
   title: string;
+  /** A text-colour class for the glyph; unset, it inherits the row's tone. */
+  tone?: string;
 }) {
   if (isSystemChannel(channel))
-    return <AuditGlyph className="h-4 w-4 shrink-0" />;
+    return <AuditGlyph className={cn("h-4 w-4 shrink-0", tone)} />;
   if (isDm(channel))
     return (
       // 24px, with the primitive's own caption-role initials — no size
@@ -638,9 +660,12 @@ function ChannelMark({
       </Avatar>
     );
   if (channel.type === "PRIVATE" || channel.type === "ROLE_GATED")
-    return <LockGlyph className="h-4 w-4 shrink-0" />;
+    return <LockGlyph className={cn("h-4 w-4 shrink-0", tone)} />;
   return (
-    <span aria-hidden="true" className="w-4 shrink-0 text-center font-bold">
+    <span
+      aria-hidden="true"
+      className={cn("w-4 shrink-0 text-center font-bold", tone)}
+    >
       #
     </span>
   );

@@ -34,10 +34,11 @@
  * - body → `body` (16) in `--muted-foreground`
  * - footer → `label` (14)
  *
- * Captions the boards draw in `#78716A` take `--muted-foreground`, not
- * `--muted`: `components.md` §1 records that `--muted` "is not usable as text
- * anywhere on the ladder", and `--background` is its most forgiving step at
- * 4.041:1 — still under §6's 4.5:1 gate. Measured in
+ * Captions the boards draw in `#78716A` take `--muted-foreground`, not the
+ * literal: `#78716A` is 4.119:1 on `--background`, under §6's 4.5:1 gate.
+ * `--muted` itself failed the gate too until the 2026-11-09 text ladder
+ * (foundations.md §4) lifted it; the captions keep `--muted-foreground` for
+ * their place in the hierarchy. Measured in
  * `components/profile/profile-contrast.spec.ts`.
  */
 

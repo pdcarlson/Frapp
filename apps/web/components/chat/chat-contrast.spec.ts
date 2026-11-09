@@ -3,6 +3,7 @@ import { applyAlpha } from "@repo/color";
 import {
   AA_NON_TEXT,
   AA_TEXT,
+  BODY_TEXT,
   accentFour,
   accentRolesFor,
   DESTRUCTIVE_TEXT,
@@ -95,6 +96,22 @@ describe("chat message rows", () => {
     // inside a filled Button) is one autocomplete away from returning.
     const fill = accentRolesFor(HOUSE_SEED)["--primary"]!;
     expect(ratio(TEXT.mutedForeground, fill)).toBeLessThan(AA_TEXT);
+  });
+
+  it("keeps the two reading tones at 7:1 on the whole ladder (#3826)", () => {
+    // The owner's "you have to squint" (2026-11-09): body and secondary text
+    // were 6.6-7.9:1 with `--muted-foreground` under 7 on `--popover`. The
+    // lifted text ladder (foundations.md §4) holds both over 7 everywhere.
+    for (const [name, bg] of Object.entries(SURFACE)) {
+      expect(
+        ratio(TEXT.foreground, bg),
+        `--foreground over ${name}`,
+      ).toBeGreaterThanOrEqual(BODY_TEXT);
+      expect(
+        ratio(TEXT.mutedForeground, bg),
+        `--muted-foreground over ${name}`,
+      ).toBeGreaterThanOrEqual(BODY_TEXT);
+    }
   });
 
   it("keeps every caption tone over AA on the whole ladder", () => {
