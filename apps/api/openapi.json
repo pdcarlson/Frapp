@@ -7284,6 +7284,44 @@
         ]
       }
     },
+    "/v1/service-entries/points-rate": {
+      "get": {
+        "description": "Minutes of approved service per SERVICE point, read the way the approve path reads it (chapter rate, default 60). The rate is read again at approval, so this is the current rate, not a promise.",
+        "operationId": "ServiceEntryController_pointsRate_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServicePointsRateResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "SERVICE points rate that approving an entry applies",
+        "tags": [
+          "Service Entries"
+        ]
+      }
+    },
     "/v1/service-entries/{id}": {
       "get": {
         "operationId": "ServiceEntryController_getOne_v1",
@@ -14672,6 +14710,20 @@
             "description": "Professor name"
           }
         }
+      },
+      "ServicePointsRateResponseDto": {
+        "type": "object",
+        "properties": {
+          "minutes_per_point": {
+            "type": "number",
+            "description": "Minutes of approved service per SERVICE point, as the approve path reads it now (default 60). Approving awards floor(duration_minutes / minutes_per_point).",
+            "minimum": 1,
+            "example": 60
+          }
+        },
+        "required": [
+          "minutes_per_point"
+        ]
       },
       "RequestProofUploadUrlDto": {
         "type": "object",
