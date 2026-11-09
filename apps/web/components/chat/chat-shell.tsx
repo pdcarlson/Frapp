@@ -64,6 +64,7 @@ import { ChevronLeft, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
 import { PanelContent, PanelHeader } from "@/components/shared/panel";
+import { MemberDetailSheet } from "@/components/members/member-detail-sheet";
 import {
   persistMembersHidden,
   WIDE_CHAT_QUERY,
@@ -885,6 +886,16 @@ export function ChatShell({
     [activeChapterId, isMember, nameFor, requestBlock],
   );
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
+  // Whose profile is open (#3726): a sender's name or photo, an `@` chip, or a
+  // row of the member list opens the directory's own sheet by `users.id`, as
+  // mobile's thread does. The id outlives the close so the sheet keeps its
+  // member through its exit animation instead of blanking.
+  const [profileUserId, setProfileUserId] = useState<string | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const openProfile = useCallback((memberUserId: string) => {
+    setProfileUserId(memberUserId);
+    setProfileOpen(true);
+  }, []);
   const handleReport = useCallback(
     (message: ChatMessage) => {
       const canBlock = !!userId && canBlockSender(message, userId, isMember);
@@ -2339,6 +2350,7 @@ export function ChatShell({
                   canManageChannel={canManageChannel}
                   onReport={handleReport}
                   onBlock={handleBlock}
+                  onOpenProfile={openProfile}
                   isMember={isMember}
                 />
               </MentionChipTargetsContext.Provider>
@@ -2464,6 +2476,7 @@ export function ChatShell({
           <ChannelMemberList
             channelId={activeChannel?.id ?? null}
             enabled={isWideChat}
+            onOpenProfile={openProfile}
           />
         </aside>
       ) : null}
@@ -2475,10 +2488,31 @@ export function ChatShell({
         <PanelContent>
           <PanelHeader>Members</PanelHeader>
           {activeChannel ? (
-            <ChannelMemberList channelId={activeChannel.id} />
+            <ChannelMemberList
+              channelId={activeChannel.id}
+              onOpenProfile={openProfile}
+            />
           ) : null}
         </PanelContent>
       </Sheet>
+
+      {/*
+        After the Members sheet, so a profile opened from one of its rows
+        stacks over the list and closes back to it, as mobile's does (#3798).
+      */}
+      <MemberDetailSheet
+        open={profileOpen}
+        onOpenChange={setProfileOpen}
+        userId={profileUserId}
+        identity={
+          profileUserId
+            ? {
+                name: nameFor(profileUserId),
+                avatarUrl: avatarFor(profileUserId),
+              }
+            : null
+        }
+      />
 
       {confirmDialog}
       {unblockFlow.confirmDialog}
