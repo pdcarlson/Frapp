@@ -10,10 +10,13 @@ export type SwallowedReport = (
       /** Sent with `captureMessage`. */
       message: string;
       /**
-       * Grouping for a message with no stack to group on. The error form
+       * Grouping for a message, which has no stack to group on
+       * (`attachStacktrace` is off: `sentry-options.ts`). Required, because
+       * without one Sentry groups by the message text, and a message that
+       * embeds a count or an id then opens an issue per value. The error form
        * derives its own from {@link errorFingerprint}.
        */
-      fingerprint?: string[];
+      fingerprint: string[];
     }
   | {
       /**
@@ -88,7 +91,7 @@ export function reportSwallowed(
     }
     return Sentry.captureMessage(report.message, {
       ...context,
-      ...(report.fingerprint ? { fingerprint: report.fingerprint } : {}),
+      fingerprint: report.fingerprint,
     });
   } catch (error) {
     logThrowable(logger, 'warn', `Sentry report failed for ${subject}`, error);
