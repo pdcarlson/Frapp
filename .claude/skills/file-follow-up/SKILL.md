@@ -48,7 +48,9 @@ Body:
 - **Implementation notes:** constraints, helpers to reuse, gotchas.
 - **Definition of done:** "PR linked with `Fixes #N`, criteria met, CI green."
 
-Epic: when an open epic covers the area (an `[Epic]` issue; `list_issues` and search), attach the new
+Epic (chat and `/next` sessions; routines leave epics alone, per
+[`github-pm.md`](../../../docs/ci-cd/github-pm.md#ownership-boundary-organize-broadly-destroy-narrowly)):
+when an open epic covers the area (an `[Epic]` issue; `list_issues` and search), attach the new
 issue to it as a sub-issue (`sub_issue_write`) instead of leaving it loose. When three or more related
 issues have no epic, say so in your report as a candidate epic for Paul; don't create one unasked.
 
