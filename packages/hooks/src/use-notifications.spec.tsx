@@ -228,6 +228,48 @@ describe("a pending read receipt shows its row read (#3788)", () => {
     expect(readAtOf(result.current.list.data, "notif-1")).toBeNull();
   });
 
+  it("holds the row read through a first fetch that read it before the write committed (push-tap cold start)", async () => {
+    const queryClient = makeQueryClient();
+    // The list's first GET is still in flight when the receipt goes out, and
+    // read the row unread; a GET started after the write reads it read.
+    let landFirstFetch!: (rows: Row[]) => void;
+    const get = vi
+      .fn()
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          landFirstFetch = (rows) => resolve({ data: rows, error: undefined });
+        }),
+      )
+      .mockResolvedValue({
+        data: [{ id: "notif-1", title: "A", read_at: "2026-11-09T05:00:00.000Z" }],
+        error: undefined,
+      });
+    const patch = vi.fn().mockResolvedValue({
+      data: { id: "notif-1", read_at: "2026-11-09T05:00:00.000Z" },
+      error: undefined,
+      response: { ok: true, status: 200 },
+    });
+    const { result } = renderHook(
+      () => ({
+        list: useNotifications(),
+        markRead: useMarkNotificationRead({ sentOnOpen: true }),
+      }),
+      { wrapper: createWrapper({ GET: get, PATCH: patch }, queryClient) },
+    );
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+
+    act(() => result.current.markRead.mutate("notif-1"));
+    await waitFor(() => expect(patch).toHaveBeenCalledTimes(1));
+    // The write has succeeded; the stale first read lands after it.
+    await act(async () => landFirstFetch([{ id: "notif-1", title: "A", read_at: null }]));
+
+    await waitFor(() => expect(result.current.markRead.isSuccess).toBe(true));
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(readAtOf(result.current.list.data, "notif-1")).toBe(
+      "2026-11-09T05:00:00.000Z",
+    );
+  });
+
   it("writes the server's stamp into the cache on success, and refetches lists, not preferences", async () => {
     const queryClient = makeQueryClient();
     const prefsKey = notificationKeys.preferences("chapter-1");

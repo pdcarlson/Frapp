@@ -474,8 +474,17 @@ export function useMarkNotificationRead({
     // `useNotifications`' overlay of pending receipts (#3788), not a cache
     // write, so a refetch landing mid-write can't relight it and a failed
     // write simply stops overlaying. On success the server's stamp goes into
-    // the cache before the overlay lifts, and the refetch reconciles: its
-    // invalidation cancels any GET that started before this write committed.
+    // the cache before the overlay lifts, and the refetch reconciles: for a
+    // list that has data, its invalidation cancels any GET that started before
+    // this write committed.
+    //
+    // A list with no data yet is the exception, and a push tap's cold start
+    // is exactly that case: query-core cancels an in-flight fetch only when
+    // the query has data, so the invalidation joins the first GET instead.
+    // That GET may have read the row before this write committed, and nothing
+    // here could stamp into an empty entry. So the mutation stays pending,
+    // keeping the overlay up, until that GET has landed and one started after
+    // the write has replaced it.
     onSuccess: (updated, id) => {
       const stamp =
         updated && typeof updated === "object" && "read_at" in updated
@@ -486,7 +495,17 @@ export function useMarkNotificationRead({
         (row) => row.id === id,
         typeof stamp === "string" ? stamp : new Date().toISOString(),
       );
-      invalidateNotificationLists(queryClient);
+      const firstFetchInFlight = queryClient
+        .getQueryCache()
+        .findAll({ predicate: (query) => isNotificationListKey(query.queryKey) })
+        .some(
+          (query) =>
+            query.state.data === undefined &&
+            query.state.fetchStatus === "fetching",
+        );
+      const refetch = invalidateNotificationLists(queryClient);
+      if (!firstFetchInFlight) return;
+      return refetch.then(() => invalidateNotificationLists(queryClient));
     },
   });
 }
