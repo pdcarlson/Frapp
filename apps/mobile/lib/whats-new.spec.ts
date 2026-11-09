@@ -84,6 +84,16 @@ describe("decideWhatsNew", () => {
     ).toEqual({ show: [], record: null });
   });
 
+  it("leaves out an older entry this phone saw longer, when a newer day ships", () => {
+    const trimmed = { ...NOTES[1]!, changes: [] as string[] };
+    const notes = [NOTES[0]!, { ...trimmed, changes: ["Only one."] }, NOTES[2]!];
+    // The phone saw the 11-07 entry with 3 lines; it now has 1.
+    expect(decide({ notes, seen: "2026-11-07#3" })).toEqual({
+      show: [NOTES[0]],
+      record: ID[0],
+    });
+  });
+
   it("records without showing on a fresh install's first launch", () => {
     expect(decide({ seen: null, existingInstall: false })).toEqual({
       show: [],

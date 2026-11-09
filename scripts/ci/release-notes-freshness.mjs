@@ -32,13 +32,21 @@
 //
 // It reads the notes file at each commit as text (`git show`) and never runs
 // the deployed commit's code, so `date:` and `changes: [...]` stay literal
-// there (its header says so).
+// there (its header says so). What counts as news, a later day or the same day
+// with more lines, is `isNewerReleaseNoteVersion` from that file, imported
+// from this job's own trusted checkout so the phones and this check share one
+// rule. A same-day entry that got shorter also warns: the file's rule is that
+// it only grows, because phones that saw the longer one would show nothing
+// until it is longer again.
+//
+// This header owns what counts as "could notice"; docs link here.
 //
 // Env: DEPLOY_SHA (required). Tags must be fetched first.
 
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 
+import { isNewerReleaseNoteVersion } from "../../packages/validation/src/release-notes.ts";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 import { latestReleaseTag } from "./lib/release-tag.mjs";
 
@@ -57,34 +65,48 @@ export const MEMBER_FACING_DIRS = [
 const TOOLING_PACKAGES = ["packages/eslint-config/", "packages/typescript-config/"];
 /** Config read by test, lint and format tools, never by a build members get. */
 const TOOL_CONFIG =
-  /(^|\/)(vitest|vite|eslint|playwright|jest|prettier|stylelint|knip|lint-staged)\.config\.[cm]?[jt]s$|(^|\/)vitest\.setup\.[cm]?[jt]sx?$/;
+  /(^|\/)(vitest|vite|eslint|playwright|jest|prettier|stylelint|knip|lint-staged)\.config\.[cm]?[jt]s$|(^|\/)vitest\.setup\.[cm]?[jt]sx?$|(^|\/)tsconfig[^/]*\.json$|(^|\/)\.(prettierrc|eslintrc)[^/]*$/;
 
 /**
- * How many string literals the array starting at `source[open]` (a `[`)
- * holds at its own depth, skipping comments, or `null` if it never closes.
- * Formatting (quotes, wrapping, trailing commas) doesn't change the count.
+ * How many elements the array starting at `source[open]` (a `[`) holds,
+ * skipping comments and strings, or `null` if it never closes. An element is
+ * whatever sits between two commas at the array's own depth, so a line split
+ * into `"a" + "b"`, a quote style, wrapping or a trailing comma doesn't change
+ * the count: it matches `changes.length`.
  */
-export function countArrayStrings(source, open) {
+export function countArrayElements(source, open) {
   let depth = 0;
   let count = 0;
+  let inElement = false;
   for (let i = open; i < source.length; i += 1) {
     const ch = source[i];
     if (ch === "/" && source[i + 1] === "/") {
       const end = source.indexOf("\n", i);
       i = end === -1 ? source.length : end;
-    } else if (ch === "/" && source[i + 1] === "*") {
+      continue;
+    }
+    if (ch === "/" && source[i + 1] === "*") {
       const end = source.indexOf("*/", i + 2);
       i = end === -1 ? source.length : end + 1;
-    } else if (ch === '"' || ch === "'" || ch === "`") {
-      if (depth === 1) count += 1;
+      continue;
+    }
+    if (depth === 1 && ch === ",") {
+      inElement = false;
+      continue;
+    }
+    if (ch === "]" && depth === 1) return count;
+    if (depth === 1 && !inElement && !/\s/.test(ch)) {
+      inElement = true;
+      count += 1;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") {
       for (i += 1; i < source.length && source[i] !== ch; i += 1) {
         if (source[i] === "\\") i += 1;
       }
-    } else if (ch === "[") {
+    } else if (ch === "[" || ch === "{" || ch === "(") {
       depth += 1;
-    } else if (ch === "]") {
+    } else if (ch === "]" || ch === "}" || ch === ")") {
       depth -= 1;
-      if (depth === 0) return count;
     }
   }
   return null;
@@ -103,7 +125,7 @@ export function newestReleaseNote(source) {
   if (!date) return null;
   const from = list + date.index;
   const changes = /\bchanges:\s*\[/.exec(source.slice(from));
-  const lines = changes ? countArrayStrings(source, from + changes.index + changes[0].length - 1) : null;
+  const lines = changes ? countArrayElements(source, from + changes.index + changes[0].length - 1) : null;
   return { date: date[1], lines: lines ?? 0 };
 }
 
@@ -127,15 +149,27 @@ export function memberFacingChanges(files) {
  * the newest entry reads exactly as it did in what production already shipped.
  */
 export function releaseNotesVerdict({ tag, floor, ship, changedFiles }) {
+  if (ship && floor && ship.date === floor.date && ship.lines < floor.lines) {
+    return {
+      stale: true,
+      message:
+        `The ${ship.date} entry in What's new has ${ship.lines} line${ship.lines === 1 ? "" : "s"}, fewer than the ${floor.lines} production shipped at ${tag}. ` +
+        `Phones that showed the longer one won't show this entry again until it has more than ${floor.lines}. ` +
+        `A same-day entry only grows: put the lines back in ${RELEASE_NOTES_PATH} and append new ones.`,
+    };
+  }
   const changes = memberFacingChanges(changedFiles);
   if (changes.length === 0) {
     return { stale: false, message: `Nothing members could notice changed since ${tag}, so no new What's new entry is needed.` };
   }
-  if (ship && (!floor || ship.date > floor.date)) {
-    return { stale: false, message: `What's new has a new entry (${ship.date}) since ${tag}.` };
-  }
-  if (ship && floor && ship.date === floor.date && ship.lines > floor.lines) {
-    return { stale: false, message: `What's new has new lines in its ${ship.date} entry since ${tag}.` };
+  if (ship && (!floor || isNewerReleaseNoteVersion(ship, floor))) {
+    return {
+      stale: false,
+      message:
+        floor && ship.date === floor.date
+          ? `What's new has new lines in its ${ship.date} entry since ${tag}.`
+          : `What's new has a new entry (${ship.date}) since ${tag}.`,
+    };
   }
   const sample = changes.slice(0, 5).map((f) => `\`${f}\``).join(", ");
   return {
@@ -143,7 +177,7 @@ export function releaseNotesVerdict({ tag, floor, ship, changedFiles }) {
     message:
       `${changes.length} file${changes.length === 1 ? "" : "s"} members could notice changed since ${tag} (${sample}${changes.length > 5 ? ", …" : ""}), ` +
       `but What's new has no new entry or lines (newest: ${ship?.date ?? "none"}). Members won't see anything new after this update. ` +
-      `If it changes something they'd notice, add an entry to ${RELEASE_NOTES_PATH} (or lines to today's) and deploy that commit instead.`,
+      `If it changes something they'd notice, add an entry to ${RELEASE_NOTES_PATH} (or append lines to today's) and deploy that commit instead.`,
   };
 }
 

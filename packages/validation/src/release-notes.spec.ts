@@ -4,6 +4,8 @@ import {
   formatReleaseNoteDate,
   releaseNoteText,
   releaseNoteVersion,
+  parseReleaseNoteVersion,
+  isNewerReleaseNoteVersion,
 } from "./release-notes";
 
 // Pictographic emoji, the product's "no emojis in the UI" rule.
@@ -68,5 +70,21 @@ describe("releaseNoteVersion", () => {
   it("moves when lines are added, not when one is reworded", () => {
     expect(releaseNoteVersion({ ...note, changes: [...note.changes, "Three."] })).toBe("2026-11-09#3");
     expect(releaseNoteVersion({ ...note, title: "Another", changes: ["Uno.", "Dos."] })).toBe("2026-11-09#2");
+  });
+});
+
+describe("parseReleaseNoteVersion / isNewerReleaseNoteVersion", () => {
+  it("reads a version back, and an unreadable count as 0", () => {
+    expect(parseReleaseNoteVersion("2026-11-09#8")).toEqual({ date: "2026-11-09", lines: 8 });
+    expect(parseReleaseNoteVersion("2026-11-09")).toEqual({ date: "2026-11-09", lines: 0 });
+  });
+
+  it("is news for a later day, or the same day with more lines, and nothing else", () => {
+    const seen = { date: "2026-11-09", lines: 8 };
+    expect(isNewerReleaseNoteVersion({ date: "2026-11-10", lines: 1 }, seen)).toBe(true);
+    expect(isNewerReleaseNoteVersion({ date: "2026-11-09", lines: 9 }, seen)).toBe(true);
+    expect(isNewerReleaseNoteVersion({ date: "2026-11-09", lines: 8 }, seen)).toBe(false);
+    expect(isNewerReleaseNoteVersion({ date: "2026-11-09", lines: 7 }, seen)).toBe(false);
+    expect(isNewerReleaseNoteVersion({ date: "2026-11-08", lines: 20 }, seen)).toBe(false);
   });
 });

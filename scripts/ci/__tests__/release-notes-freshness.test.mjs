@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import {
   RELEASE_NOTES_PATH,
   checkReleaseNotes,
-  countArrayStrings,
+  countArrayElements,
   memberFacingChanges,
   newestReleaseNote,
   releaseNotesVerdict,
@@ -65,11 +65,13 @@ describe("newestReleaseNote", () => {
   });
 });
 
-describe("countArrayStrings", () => {
-  it("counts only strings at the array's own depth, and null if it never closes", () => {
-    const src = '["a", ["b", "c"], "d\\"e"]';
-    assert.equal(countArrayStrings(src, 0), 2);
-    assert.equal(countArrayStrings('["a", "b"', 0), null);
+describe("countArrayElements", () => {
+  it("counts elements, however each is written, and null if it never closes", () => {
+    assert.equal(countArrayElements('["a", ["b", "c"], "d\\"e"]', 0), 3);
+    assert.equal(countArrayElements('["a" +\n "b", "c",]', 0), 2);
+    assert.equal(countArrayElements('[...more, line, "x"]', 0), 3);
+    assert.equal(countArrayElements("[]", 0), 0);
+    assert.equal(countArrayElements('["a", "b"', 0), null);
   });
 });
 
@@ -104,6 +106,9 @@ describe("memberFacingChanges", () => {
         "apps/mobile/vitest.config.ts",
         "apps/web/playwright.config.ts",
         "apps/web/eslint.config.js",
+        "apps/web/tsconfig.json",
+        "packages/hooks/tsconfig.build.json",
+        "apps/api/.prettierrc",
         "packages/eslint-config/base.js",
         "packages/typescript-config/base.json",
         "apps/mobile/README.md",
@@ -148,9 +153,14 @@ describe("releaseNotesVerdict", () => {
     assert.match(verdict.message, /new lines in its 2026-11-07 entry/);
   });
 
-  it("still warns when the newest entry was only reworded or trimmed, which members aren't shown", () => {
+  it("still warns when the newest entry was only reworded, which members aren't shown", () => {
     assert.equal(releaseNotesVerdict({ ...base, ship: entry("2026-11-07", 8), changedFiles: app }).stale, true);
-    assert.equal(releaseNotesVerdict({ ...base, ship: entry("2026-11-07", 7), changedFiles: app }).stale, true);
+  });
+
+  it("warns when the same day's entry got shorter, even with nothing else changed", () => {
+    const verdict = releaseNotesVerdict({ ...base, ship: entry("2026-11-07", 6), changedFiles: [] });
+    assert.equal(verdict.stale, true);
+    assert.match(verdict.message, /fewer than the 8 production shipped/);
   });
 
   it("is quiet when nothing members could notice changed", () => {
@@ -202,6 +212,22 @@ describe("checkReleaseNotes", () => {
     assert.equal(checkReleaseNotes({ sha: SHA, git }).stale, true);
   });
 
+  it("reads the tag's notes and the deployed commit's separately", () => {
+    const files = {
+      [`v1.2.3:${RELEASE_NOTES_PATH}`]: notesFile(["2026-11-07"]),
+      [`${SHA}:${RELEASE_NOTES_PATH}`]: notesFile(["2026-11-09"], ["2026-11-07"]),
+    };
+    const result = checkReleaseNotes({ sha: SHA, git: fakeGit({ files, diff: "apps/mobile/app/index.tsx\n" }) });
+    assert.equal(result.stale, false);
+    assert.match(result.message, /a new entry \(2026-11-09\)/);
+    const longer = {
+      [`v1.2.3:${RELEASE_NOTES_PATH}`]: notesFile(["2026-11-07", "a"]),
+      [`${SHA}:${RELEASE_NOTES_PATH}`]: notesFile(["2026-11-07", "a", "b"]),
+    };
+    const appended = checkReleaseNotes({ sha: SHA, git: fakeGit({ files: longer, diff: "apps/mobile/app/index.tsx\n" }) });
+    assert.match(appended.message, /new lines in its 2026-11-07 entry/);
+  });
+
   it("skips a commit that isn't ahead of the release tag (a rollback)", () => {
     const git = fakeGit({ files: sameNotes, diff: "apps/mobile/app/index.tsx\n", ahead: false });
     const result = checkReleaseNotes({ sha: SHA, git });
@@ -247,7 +273,7 @@ describe("deploy-production.yml wiring", () => {
     assert.ok(names.indexOf(STEP) > names.indexOf("Validate the commit"));
     const step = validate().find((s) => s.name === STEP);
     assert.equal(step.env.get("DEPLOY_SHA"), "${{ steps.sha.outputs.sha }}");
-    assert.match(step.body, /node scripts\/ci\/release-notes-freshness\.mjs/);
+    assert.match(step.body, /node (--\S+ )*scripts\/ci\/release-notes-freshness\.mjs/);
     assert.match(step.body, /refs\/tags\/v\*/, "the release tag must be fetched first");
   });
 

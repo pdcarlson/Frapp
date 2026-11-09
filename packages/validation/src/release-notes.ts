@@ -9,16 +9,19 @@
  * How to write a line: say what a member can now do or will notice, the way
  * you'd tell a friend. No feature codes, issue numbers, version strings,
  * screen ids, or emojis. A bit vague is fine; wrong is not, so only list what
- * is merged and shipped. Five to eight lines an entry, each one sentence.
+ * is merged and shipped. Five to eight lines a new entry, each one sentence.
  *
  * Mobile opens the newest entry by itself once after an update
- * (`apps/mobile/lib/whats-new.ts`). Dates are unique, so a second release on
- * the same day adds lines to that day's entry, and phones that already showed
- * it show it again; rewording or fixing a line doesn't, because that isn't
- * news ({@link releaseNoteVersion}). Deploy production warns when a release
- * ships with neither a new entry nor new lines
- * (`scripts/ci/release-notes-freshness.mjs`, which reads this file as text, so
- * keep `date:` and `changes: [...]` literal).
+ * (`apps/mobile/lib/whats-new.ts`), and a phone remembers how many lines it
+ * showed ({@link releaseNoteVersion}). Dates are unique, so **a second release
+ * on the same day appends lines to that day's entry, even past eight, and
+ * never trims or merges the ones already there**: phones show it again only
+ * when it has more lines than they saw. Rewording a line is fine but isn't
+ * news, so it shows nothing. Deploy production warns when a release ships with
+ * neither a new entry nor new lines, or when the day's entry got shorter
+ * (`scripts/ci/release-notes-freshness.mjs`, which reads this file as text at
+ * the deployed commit, so keep `date:` and `changes: [...]` literal, one
+ * string per line).
  */
 export type ReleaseNote = {
   /** The day it reached members, as `YYYY-MM-DD`. */
@@ -61,11 +64,37 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
 
 /**
  * Which version of an entry a phone has shown: its date and how many lines it
- * had. Lines added later (a second release the same day) make a newer
- * version; rewording one doesn't.
+ * had, as `date#lines`. Lines appended later (a second release the same day)
+ * make a newer version; rewording one doesn't.
  */
 export function releaseNoteVersion(note: ReleaseNote): string {
   return `${note.date}#${note.changes.length}`;
+}
+
+export interface ReleaseNoteVersion {
+  readonly date: string;
+  readonly lines: number;
+}
+
+/** A stored {@link releaseNoteVersion}, read back. An unreadable count is 0. */
+export function parseReleaseNoteVersion(version: string): ReleaseNoteVersion {
+  const [date = "", lines = ""] = version.split("#");
+  const count = Number.parseInt(lines, 10);
+  return { date, lines: Number.isFinite(count) ? count : 0 };
+}
+
+/**
+ * Whether `candidate` is news to someone who has seen `seen`: a later day, or
+ * the same day with more lines.
+ */
+export function isNewerReleaseNoteVersion(
+  candidate: ReleaseNoteVersion,
+  seen: ReleaseNoteVersion,
+): boolean {
+  return (
+    candidate.date > seen.date ||
+    (candidate.date === seen.date && candidate.lines > seen.lines)
+  );
 }
 
 const MONTHS = [

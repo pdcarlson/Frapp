@@ -118,8 +118,8 @@ export default function TabLayout() {
           }}
         />
       </Tabs>
-      {/* What's new opens by itself once after an update brings a new entry,
-          never on a launch the tour is due (`lib/whats-new.ts`). */}
+      {/* What's new opens by itself once after an update brings a new entry
+          or new lines, never on a launch the tour is due (`lib/whats-new.ts`). */}
       <WhatsNewHost />
     </TourHost>
   );

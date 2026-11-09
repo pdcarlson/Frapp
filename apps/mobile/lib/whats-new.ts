@@ -37,7 +37,12 @@
  */
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { releaseNoteVersion, type ReleaseNote } from "@repo/validation";
+import {
+  isNewerReleaseNoteVersion,
+  parseReleaseNoteVersion,
+  releaseNoteVersion,
+  type ReleaseNote,
+} from "@repo/validation";
 import { CHAT_KV_PREFIX } from "@/lib/chat/key-value-store";
 
 /** `releaseNoteVersion` of the newest entry this phone has shown or skipped. */
@@ -99,13 +104,6 @@ export interface WhatsNewDecision {
   record: string | null;
 }
 
-/** A stored marker, read back: `date#lines`. */
-function parseSeen(seen: string): { date: string; lines: number } {
-  const [date = "", lines = ""] = seen.split("#");
-  const count = Number.parseInt(lines, 10);
-  return { date, lines: Number.isFinite(count) ? count : 0 };
-}
-
 /**
  * What this launch does. `notes` is `RELEASE_NOTES` (newest first); dates are
  * `YYYY-MM-DD`, so they compare as strings. `seen` is a stored
@@ -121,15 +119,15 @@ export function decideWhatsNew(input: {
   const newest = notes[0];
   if (!newest) return { show: [], record: null };
   const newestVersion = releaseNoteVersion(newest);
-  const marker = seen === null ? null : parseSeen(seen);
+  const marker = seen === null ? null : parseReleaseNoteVersion(seen);
+  const versionOf = (note: ReleaseNote) => ({
+    date: note.date,
+    lines: note.changes.length,
+  });
   // Shown already, or the marker comes from a newer bundle (an update rolled
   // back, to an earlier day or to a shorter version of the same day's entry):
   // nothing is new.
-  if (
-    marker !== null &&
-    (marker.date > newest.date ||
-      (marker.date === newest.date && marker.lines >= newest.changes.length))
-  ) {
+  if (marker !== null && !isNewerReleaseNoteVersion(versionOf(newest), marker)) {
     return { show: [], record: null };
   }
   if (tourDue || (marker === null && !existingInstall)) {
@@ -140,11 +138,7 @@ export function decideWhatsNew(input: {
       ? [newest]
       : // Every entry after the one last shown, and that day's entry itself
         // when lines were added to it since.
-        notes.filter(
-          (note) =>
-            note.date > marker.date ||
-            (note.date === marker.date && note.changes.length > marker.lines),
-        );
+        notes.filter((note) => isNewerReleaseNoteVersion(versionOf(note), marker));
   return { show, record: newestVersion };
 }
 

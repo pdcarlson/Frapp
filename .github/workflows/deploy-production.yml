@@ -328,7 +328,7 @@ jobs:
           DEPLOY_SHA: ${{ steps.sha.outputs.sha }}
         run: |
           git fetch --no-tags origin '+refs/tags/v*:refs/tags/v*'
-          node scripts/ci/release-notes-freshness.mjs
+          node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/ci/release-notes-freshness.mjs
 
   # The shipping work is `_deploy.yml`'s one job, the job staging runs too,
   # with production's layers switched on by `environment: production`: the
