@@ -35,16 +35,6 @@ describe('reportSwallowed', () => {
     expect(captureException).not.toHaveBeenCalled();
   });
 
-  it('leaves a message ungrouped when no fingerprint is given', () => {
-    reportSwallowed(logger(), 'the spike', () => ({
-      message: 'spike',
-      level: 'warning',
-      tags: {},
-    }));
-
-    expect(captureMessage.mock.calls[0]?.[1]).not.toHaveProperty('fingerprint');
-  });
-
   it('sends a PostgREST object legibly, fingerprinted by its code, never with details', () => {
     const eventId = reportSwallowed(logger(), 'the callback', () => ({
       error: {
@@ -111,6 +101,7 @@ describe('reportSwallowed', () => {
       message: 'x',
       level: 'error',
       tags: {},
+      fingerprint: ['x'],
     }));
 
     expect(eventId).toBeUndefined();
