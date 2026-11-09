@@ -39,8 +39,15 @@ export function ChannelHeaderTitle({
         only bites if this flex item is allowed to shrink below its content.
         With `shrink-0` a long channel name simply overflows and paints under
         the `⋯` trigger beside it.
+
+        `text-label` at its own weight (14/600), no `font-bold`: the same
+        type as the open channel's row in the list beside it, never more
+        (#3824, Paul 2026-11-09: the title read bigger than the channel names,
+        and the issue sets the bar at "smaller than or equal"). Mobile's
+        header steps up one role (title 18 over 16px rows) because it is the
+        whole screen's title; on web the top bar's "Chat" holds that place.
       */}
-      <h2 className="flex min-w-0 items-center gap-2 text-label font-bold text-foreground">
+      <h2 className="flex min-w-0 items-center gap-2 text-label text-foreground">
         {channel ? (
           <>
             <ChannelMark

@@ -1,10 +1,9 @@
-import { errorCopy } from "@repo/hooks/error-copy";
-import { Alert } from "react-native";
 import {
   DELETE_MESSAGE_CONFIRM_BODY,
   DELETE_MESSAGE_CONFIRM_LABEL,
   DELETE_MESSAGE_CONFIRM_TITLE,
 } from "@repo/chat-core/message-actions";
+import { confirmDestructive } from "./confirm-destructive";
 
 /** The alert a failed delete shows; the body is chat-core's classified reason. */
 export const DELETE_MESSAGE_FAILED_TITLE = "Couldn't delete message";
@@ -20,16 +19,13 @@ export const DELETE_MESSAGE_FAILED_TITLE = "Couldn't delete message";
  * cannot sit beside a route module.
  */
 export function confirmDeleteMessage(remove: () => Promise<void>): void {
-  Alert.alert(DELETE_MESSAGE_CONFIRM_TITLE, DELETE_MESSAGE_CONFIRM_BODY, [
-    { text: "Cancel", style: "cancel" },
+  confirmDestructive(
     {
-      text: DELETE_MESSAGE_CONFIRM_LABEL,
-      style: "destructive",
-      onPress: () => {
-        remove().catch((error: unknown) => {
-          Alert.alert(DELETE_MESSAGE_FAILED_TITLE, errorCopy(error));
-        });
-      },
+      title: DELETE_MESSAGE_CONFIRM_TITLE,
+      body: DELETE_MESSAGE_CONFIRM_BODY,
+      confirmLabel: DELETE_MESSAGE_CONFIRM_LABEL,
+      failedTitle: DELETE_MESSAGE_FAILED_TITLE,
     },
-  ]);
+    remove,
+  );
 }

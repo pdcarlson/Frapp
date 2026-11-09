@@ -61,6 +61,7 @@ import {
 } from "@repo/chat-core/realtime-manager";
 import {
   actOnCard,
+  closePoll as closePollAction,
   deleteMessage as deleteMessageAction,
   discardOutboxRow,
   editMessage as editMessageAction,
@@ -80,6 +81,7 @@ import {
 import type { ReplayRequest } from "@repo/chat-core/types";
 import {
   dispatchSlashCommand,
+  postPoll,
   retryPointsDispatch,
   trackEventCard,
   type DispatchResult,
@@ -87,6 +89,8 @@ import {
   type ResolveMember,
 } from "@repo/chat-core/dispatch";
 import type { SlashCommand } from "@repo/chat-core/integrations";
+import type { PollPayload } from "@repo/chat-core/polls";
+import * as Sentry from "@sentry/nextjs";
 import { createDexieOutboxStore } from "./offline-queue";
 import { useChatOutboundScope } from "./chat-scope";
 import { usePersistedChannelTail } from "./use-first-chunk-cache";
@@ -127,6 +131,11 @@ export interface UseChatChannelResult {
   edit: (messageId: string, content: string) => Promise<void>;
   /** Own message, or any message with `channels:manage` (server-enforced). */
   delete: (messageId: string) => Promise<void>;
+  /**
+   * Closes the viewer's own poll card early (#3794); creator-only on the
+   * server. Toasts and rejects on failure.
+   */
+  closePoll: (messageId: string) => Promise<void>;
   draft: string;
   setDraft: (body: string) => void;
   /** The manager's list: the same array until someone starts or stops typing. */
@@ -154,6 +163,20 @@ export interface UseChatChannelResult {
     announcementsChannelId: string | null,
     resolveMember?: ResolveMember,
   ) => Promise<DispatchResult>;
+  /**
+   * Posts a poll card (`kind: "poll"`) built by `buildPollMessage`, from the
+   * composer's New poll dialog (#3865), into `targetChannelId`: the dialog
+   * can outlive a channel switch, so it names the channel it was opened in.
+   * It goes through the outbox like any message, so it is optimistic and
+   * survives going offline, and a server refusal lands on the card's own
+   * failed row with Retry and Discard. It leaves the composer's draft alone.
+   * `postPoll` in `@repo/chat-core/dispatch`: never rejects, and a `warning`
+   * on success is one the caller must show.
+   */
+  sendPoll: (
+    targetChannelId: string,
+    poll: { content: string; payload: PollPayload },
+  ) => ReturnType<typeof postPoll>;
   /** The event form's card bookkeeping in a channel (#3773, `trackEventCard`). */
   trackEventCard: (channelId: string, name: string) => EventCardTrack;
   /** Card action invoker (Vote, RSVP, …). Goes through the NestJS chat actions endpoint (ADR-11). */
@@ -520,6 +543,16 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, ctx],
   );
 
+  // A poll card's Close poll (#3794). Pessimistic like delete; the action
+  // toasts a refusal and rethrows.
+  const closePollCb = useCallback(
+    async (messageId: string) => {
+      if (!channelId) return;
+      await closePollAction(ctx, { channelId, messageId });
+    },
+    [channelId, ctx],
+  );
+
   const emitTyping = useCallback(() => {
     if (!channelId || !userId) return;
     chatRealtime.emitTyping(channelId, userId);
@@ -586,6 +619,24 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, ctx],
   );
 
+  const sendPoll = useCallback(
+    (
+      targetChannelId: string,
+      poll: { content: string; payload: PollPayload },
+    ) =>
+      postPoll(ctx, targetChannelId, poll).then((result) => {
+        // An outbox that refused the row is reported, as the composer's own
+        // send reports it (`chat_send: "composer"`).
+        if (!result.ok && result.cause !== undefined) {
+          Sentry.captureException(result.cause, {
+            tags: { chat_send: "poll_form" },
+          });
+        }
+        return result;
+      }),
+    [ctx],
+  );
+
   // The event form's card bookkeeping, for whichever channel the form posts to
   // (#3773). Takes the channel rather than this hook's, since a form can
   // outlive a channel switch.
@@ -623,6 +674,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     unreact: unreactCb,
     edit: editCb,
     delete: deleteCb,
+    closePoll: closePollCb,
     draft,
     setDraft,
     typingUsers,
@@ -632,6 +684,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     discard,
     retryUnconfirmed,
     dispatchSlash,
+    sendPoll,
     trackEventCard: trackEventCardCb,
     act,
   };
