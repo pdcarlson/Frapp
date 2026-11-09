@@ -518,7 +518,7 @@ Properties are listed without `feature`, which every event carries. "Counts requ
 
 | Event | Recorded when | Properties |
 | --- | --- | --- |
-| `poll-created` | A `/poll` message is sent in chat. Clients set no `choice_mode` and always a close time today, so `single` and `true` until a composer changes | `choice_mode`, `option_count`, `has_expiry` |
+| `poll-created` | A poll card (`kind: 'poll'`) is sent in chat: web's `/poll` or mobile's New poll sheet (#3701). Neither sets a `choice_mode`, and both always set a close time, so `single` and `true` until one changes | `choice_mode`, `option_count`, `has_expiry` |
 | `poll-voted` | A member votes, on the chat card (`surface: card`) or the `/polls` page (`page`). On the card a second vote replaces the first and sets `is_revote`, even for the same option; the page can't tell, so it counts requests. Clearing a multi-choice vote is not a vote | `surface`, `selected_count`, `is_revote` |
 
 **Dues (`dues`)**
