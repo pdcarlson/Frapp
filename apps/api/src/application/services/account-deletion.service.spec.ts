@@ -90,6 +90,7 @@ describe('AccountDeletionService', () => {
     mockStorage = {
       getSignedUploadUrl: jest.fn(),
       getSignedDownloadUrl: jest.fn(),
+      getSignedInlineAndAttachmentUrls: jest.fn(),
       getSignedDownloadUrls: jest.fn().mockResolvedValue({}),
       uploadFile: jest.fn(),
       downloadFile: jest.fn(),

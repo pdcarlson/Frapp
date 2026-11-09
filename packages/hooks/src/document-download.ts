@@ -44,3 +44,14 @@ export function selectDownloadUrl(data: unknown): string | null {
     nonBlankString(record, "downloadUrl") ?? nonBlankString(record, "download_url")
   );
 }
+
+/**
+ * The link that saves a document rather than showing it: `forcedDownloadUrl`
+ * on `GET /v1/documents/{id}` (#3849), signed with `Content-Disposition:
+ * attachment`. Only documents carry it; backwork and older servers don't, so
+ * a caller falls back to `selectDownloadUrl`, which opens the file instead.
+ */
+export function selectForcedDownloadUrl(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  return nonBlankString(data as Record<string, unknown>, "forcedDownloadUrl");
+}
