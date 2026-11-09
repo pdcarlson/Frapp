@@ -30,8 +30,8 @@ type DueDateFieldProps = Omit<
  *
  * The parent holds the date, updated on every keystroke so Enter submits what
  * is typed. While the text differs from the date it was read as, that reading
- * shows under the field ("Sat, Nov 14", with the year when it is not this
- * one); leaving the field writes it into the field.
+ * shows under the field ("Sat, Nov 14", or "Mar 14, 2027" when it is not this
+ * year); leaving the field writes it into the field.
  */
 export const DueDateField = forwardRef<HTMLInputElement, DueDateFieldProps>(
   function DueDateField(

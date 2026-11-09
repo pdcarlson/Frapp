@@ -61,7 +61,7 @@ describe("DueDateField (#3928)", () => {
     type("jan 5");
     expect(onValue).toHaveBeenLastCalledWith("2027-01-05");
     fireEvent.blur(field());
-    expect(field()).toHaveValue("Tue, Jan 5, 2027");
+    expect(field()).toHaveValue("Jan 5, 2027");
   });
 
   it("takes a typed year for a date further out", () => {
@@ -69,7 +69,7 @@ describe("DueDateField (#3928)", () => {
     render(<Harness onValue={onValue} />);
     type("Nov 14 2028");
     expect(onValue).toHaveBeenLastCalledWith("2028-11-14");
-    expect(screen.getByText("Tue, Nov 14, 2028")).toBeInTheDocument();
+    expect(screen.getByText("Nov 14, 2028")).toBeInTheDocument();
   });
 
   it("is not a native date input, which asks for the year", () => {
@@ -99,7 +99,7 @@ describe("DueDateField (#3928)", () => {
     render(<Harness initial="2026-11-12" />);
     expect(field()).toHaveValue("Thu, Nov 12");
     fireEvent.click(screen.getByRole("button", { name: "prefill" }));
-    expect(field()).toHaveValue("Sun, Mar 14, 2027");
+    expect(field()).toHaveValue("Mar 14, 2027");
     fireEvent.click(screen.getByRole("button", { name: "reset" }));
     expect(field()).toHaveValue("");
   });

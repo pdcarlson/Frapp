@@ -202,7 +202,7 @@ export function AddTaskRow({
           <DueDateField
             ref={dueRef}
             aria-label="Due date"
-            placeholder="Due: Nov 14, Friday"
+            placeholder="Due: Nov 14"
             missing={missing.due}
             value={draft.due_date}
             onChange={(value) => {

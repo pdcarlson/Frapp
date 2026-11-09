@@ -1,4 +1,9 @@
-import { formatWeekdayDay, localIsoDate } from "@repo/formatting";
+import {
+  formatDay,
+  formatWeekdayDay,
+  localIsoDate,
+  parseBareDateLocalNoon,
+} from "@repo/formatting";
 
 /**
  * A task's due date as a member types it (#3928). Almost every task is due in
@@ -91,11 +96,19 @@ export function parseDueEntry(raw: string, now: Date): string | null {
 }
 
 /**
- * How the field shows a held date: `"Fri, Nov 14"`, and `"Sun, Mar 14, 2027"`
- * outside the current year, so a far-off date is never ambiguous.
+ * How the field shows a held date: `"Sat, Nov 14"`, and `"Mar 14, 2027"`
+ * outside the current year, so a far-off date is never ambiguous. The year
+ * takes the weekday's place there: the Add a task row's due field is half a
+ * column wide, and `"Sun, Mar 14, 2027"` ran past its edge.
  */
 export function formatDueEntry(isoDate: string, now: Date): string {
-  return formatWeekdayDay(isoDate, now) ?? isoDate;
+  const at = parseBareDateLocalNoon(isoDate);
+  if (!at) return isoDate;
+  const shown =
+    at.getFullYear() === now.getFullYear()
+      ? formatWeekdayDay(isoDate, now)
+      : formatDay(isoDate, now);
+  return shown ?? isoDate;
 }
 
 const MONTHS = [

@@ -72,6 +72,6 @@ describe("parseDueEntry (#3928)", () => {
 describe("formatDueEntry", () => {
   it("leaves the year off inside the current one and shows it outside", () => {
     expect(formatDueEntry("2026-11-14", NOW)).toBe("Sat, Nov 14");
-    expect(formatDueEntry("2027-03-14", NOW)).toBe("Sun, Mar 14, 2027");
+    expect(formatDueEntry("2027-03-14", NOW)).toBe("Mar 14, 2027");
   });
 });
