@@ -132,11 +132,31 @@ export function assignResolvedRedirect(
  * `resolveRedirectPath`, so the guard holds even if this URL is tampered with
  * in transit.
  */
-export function buildAuthCallbackUrl(origin: string, redirectTo: string): string {
+export function buildAuthCallbackUrl(
+  origin: string,
+  redirectTo: string,
+  options: { intent?: AuthCallbackIntent } = {},
+): string {
   const url = new URL(AUTH_CALLBACK_PATH, origin);
   url.searchParams.set("next", resolveRedirectPath(redirectTo));
+  if (options.intent) {
+    url.searchParams.set(AUTH_CALLBACK_INTENT_PARAM, options.intent);
+  }
   return url.toString();
 }
+
+/**
+ * Which screen started the round trip. Only `sign-in` is ever sent: it tells
+ * `/auth/callback` that a brand-new account on return was not what the member
+ * asked for (#3786). The sign-up screen sends none, because creating an
+ * account there is the point. The value only decides whether a notice is
+ * shown, so a tampered one can't do more than show or skip it.
+ */
+export type AuthCallbackIntent = "sign-in";
+export const AUTH_CALLBACK_INTENT_PARAM = "intent";
+
+/** The notice a brand-new OAuth account sees after choosing sign-in (#3786). */
+export const NEW_ACCOUNT_PATH = "/new-account";
 
 /**
  * Member-facing wording for the `authError` `/auth/callback` hands to

@@ -1147,6 +1147,16 @@ The minimum-version gate (#2526, [`../mobile/patterns.md`](../mobile/patterns.md
 |---|---|---|
 | Signed in, no chapter role | `You don't have access yet` | `Your account is signed in, but no chapter role has been assigned. A chapter admin needs to invite you or grant a role before you can use the dashboard.` plus the three recovery paths (ask an officer, reopen the invite link, sign out and back in). |
 
+### New account (pre-auth)
+
+`/new-account`, shown once after a Google or Apple **sign-in** that created a new account ([#3786](https://github.com/pdcarlson/Frapp/issues/3786)). Wording decided by Paul, 2026-11-09.
+
+| State | Title | Description |
+|---|---|---|
+| New account | `New account created` | `This is a new Frapp account for <email>. Already a member? Sign out and use the method you joined with.` (no email on the account: `This is a new Frapp account.` then the same second sentence) |
+| Actions | — | `Sign out` and `Continue with the new account`; Continue is the primary when the destination is an invite |
+| Sign-out failed | — | `Couldn't sign out. Retry in a moment, or close this tab to end the session.` |
+
 ### Onboarding wizard (dashboard overlay)
 
 | State | Title | Description |

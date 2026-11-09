@@ -121,6 +121,30 @@ export class SupabaseNotificationRepository implements INotificationRepository {
     if (error) throw new SupabaseQueryError(error);
     return data;
   }
+
+  async markChatChannelRead(
+    userId: string,
+    chapterId: string,
+    channelId: string,
+    readThrough: string,
+  ): Promise<void> {
+    const patch: TablesUpdate<'notifications'> = { read_at: readThrough };
+    // `read_at is null` keeps an earlier read's timestamp, and lets the
+    // partial index `idx_notifications_unread` serve the scan. An update that
+    // matches nothing sends no realtime ping: the statement trigger loops over
+    // the changed rows.
+    const { error } = await this.supabase
+      .from('notifications')
+      .update(patch)
+      .eq('user_id', userId)
+      .eq('chapter_id', chapterId)
+      .is('read_at', null)
+      .eq('data->target->>screen', 'chat')
+      .eq('data->target->>channelId', channelId)
+      .lte('created_at', readThrough);
+
+    if (error) throw new SupabaseQueryError(error);
+  }
 }
 
 /**
