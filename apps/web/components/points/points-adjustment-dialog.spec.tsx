@@ -274,6 +274,16 @@ describe("PointsAdjustmentDialog posting into a chat channel (#3865)", () => {
     expect(mockAdjustMutate).not.toHaveBeenCalled();
   });
 
+  it("names an amount past the API's bound before anything is sent", async () => {
+    const submitToChannel = vi.fn().mockResolvedValue({ ok: true });
+    renderInChat(submitToChannel);
+    fireEvent.change(amountInput(), { target: { value: "200000" } });
+    fireEvent.change(reasonField(), { target: { value: "Missed chapter" } });
+    fireEvent.click(submit());
+    await waitFor(() => expect(submit()).toBeEnabled());
+    expect(submitToChannel).not.toHaveBeenCalled();
+  });
+
   it("stays open with the draft when chat refuses it", async () => {
     const submitToChannel = vi
       .fn()

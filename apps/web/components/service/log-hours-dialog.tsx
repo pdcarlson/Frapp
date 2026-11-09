@@ -58,6 +58,13 @@ type LogHoursDialogProps = {
   gate: SubscriptionGate;
   /** Rendered as the dialog's trigger (the Service page's Log service button). */
   trigger?: ReactNode;
+  /**
+   * Render the gate's notice inside the dialog. Only for a host that has no
+   * notice of its own on screen (the chat +): the Service page shows one, and
+   * a second, sharing the gate's id and ref, would steal the focus
+   * `useGatedDialog` hands the notice when a block closes the dialog.
+   */
+  showSubscriptionNotice?: boolean;
   /** `useGatedDialog`'s `contentProps.onCloseAutoFocus`, when the host has one. */
   onCloseAutoFocus?: (event: Event) => void;
   /**
@@ -81,6 +88,7 @@ export function LogHoursDialog({
   gate,
   trigger,
   onCloseAutoFocus,
+  showSubscriptionNotice = false,
   submitToChannel,
 }: LogHoursDialogProps) {
   const { toast } = useToast();
@@ -229,11 +237,9 @@ export function LogHoursDialog({
             An admin approves it before points are awarded.
           </DialogDescription>
         </DialogHeader>
-        {/*
-          The Service page gates its trigger, so this only shows when another
-          host (the chat +) opened the form for a chapter that can't write.
-        */}
-        <SubscriptionNotice gate={gate} feature="logging service hours" />
+        {showSubscriptionNotice ? (
+          <SubscriptionNotice gate={gate} feature="logging service hours" />
+        ) : null}
         <form id="service-log-form" onSubmit={submitDraft} className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="grid gap-1">

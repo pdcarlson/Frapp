@@ -246,7 +246,8 @@ export function parsePointsArgs(args: string): ParseResult<PointsArgs> {
   };
 }
 
-const TASK_MAX_TITLE_LENGTH = 255;
+/** `CreateTaskDto.title`'s bound; the task form checks it too. */
+export const TASK_MAX_TITLE_LENGTH = 255;
 const TASK_USAGE = 'Usage: /task "<title>" @assignee <YYYY-MM-DD> [points]';
 
 /**
@@ -442,6 +443,22 @@ export function parseEventArgs(args: string): ParseResult<EventArgs> {
   };
 }
 
+/**
+ * Tokenize text a form prefill reads, never refusing it: an unbalanced quote
+ * loses its last `"` (the unterminated opener, so the rest stays balanced),
+ * and anything still unbalanced falls back to whitespace.
+ */
+function lenientTokens(trimmed: string): string[] {
+  return (
+    tokenizeQuotedArgs(trimmed) ??
+    tokenizeQuotedArgs(
+      trimmed.slice(0, trimmed.lastIndexOf('"')) +
+        trimmed.slice(trimmed.lastIndexOf('"') + 1),
+    ) ??
+    trimmed.split(/\s+/)
+  );
+}
+
 /** What a partly typed `/event` can hand the event form (#3773). */
 export interface EventFormPrefill {
   name?: string;
@@ -469,15 +486,7 @@ export interface EventFormPrefill {
 export function eventFormPrefill(args: string): EventFormPrefill {
   const trimmed = args.trim();
   if (trimmed.length === 0) return {};
-  // Unbalanced quotes: the last one is the unterminated opener, so dropping it
-  // leaves the rest balanced.
-  const tokens =
-    tokenizeQuotedArgs(trimmed) ??
-    tokenizeQuotedArgs(
-      trimmed.slice(0, trimmed.lastIndexOf('"')) +
-        trimmed.slice(trimmed.lastIndexOf('"') + 1),
-    ) ??
-    trimmed.split(/\s+/);
+  const tokens = lenientTokens(trimmed);
 
   const prefill: EventFormPrefill = {};
   const nameParts: string[] = [];
@@ -551,13 +560,7 @@ export interface TaskFormPrefill {
 export function taskFormPrefill(args: string): TaskFormPrefill {
   const trimmed = args.trim();
   if (trimmed.length === 0) return {};
-  const tokens =
-    tokenizeQuotedArgs(trimmed) ??
-    tokenizeQuotedArgs(
-      trimmed.slice(0, trimmed.lastIndexOf('"')) +
-        trimmed.slice(trimmed.lastIndexOf('"') + 1),
-    ) ??
-    trimmed.split(/\s+/);
+  const tokens = lenientTokens(trimmed);
 
   const prefill: TaskFormPrefill = {};
   const titleParts: string[] = [];
@@ -567,7 +570,9 @@ export function taskFormPrefill(args: string): TaskFormPrefill {
     if (token.startsWith("@") || parseIsoDate(token) !== null) break;
     if (token.length > 0) titleParts.push(token);
   }
-  const title = titleParts.join(" ").slice(0, TASK_MAX_TITLE_LENGTH).trim();
+  // Not cut to the title's bound: the form says it's too long, rather than
+  // posting a title with its end silently gone.
+  const title = titleParts.join(" ").trim();
   if (title.length > 0) prefill.title = title;
 
   for (; i < tokens.length; i++) {

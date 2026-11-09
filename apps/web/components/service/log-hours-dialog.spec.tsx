@@ -15,6 +15,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useOrgConfig: () => ({ data: undefined }),
 }));
 
+// The notice has its own spec; here it only shows whether the dialog renders it.
+vi.mock("@/components/shared/subscription-gate", () => ({
+  SubscriptionNotice: () => <p role="status">blocked</p>,
+}));
+
 vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
@@ -82,5 +87,23 @@ describe("LogHoursDialog posting into a chat channel (#3865)", () => {
     );
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
     expect(screen.getByLabelText("What did you do?")).toHaveValue("Food bank");
+  });
+});
+
+describe("LogHoursDialog's subscription notice", () => {
+  it("leaves the notice to the host unless asked, so the Service page shows one", () => {
+    const { rerender } = render(
+      <LogHoursDialog open onOpenChange={vi.fn()} gate={OPEN_GATE} />,
+    );
+    expect(screen.queryByRole("status")).toBeNull();
+    rerender(
+      <LogHoursDialog
+        open
+        onOpenChange={vi.fn()}
+        gate={OPEN_GATE}
+        showSubscriptionNotice
+      />,
+    );
+    expect(screen.getByRole("status")).toBeInTheDocument();
   });
 });

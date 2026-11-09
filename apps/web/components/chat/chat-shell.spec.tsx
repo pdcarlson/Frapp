@@ -295,13 +295,46 @@ vi.mock("@/components/tasks/new-task-dialog", () => ({
   ),
 }));
 vi.mock("@/components/service/log-hours-dialog", () => ({
-  LogHoursDialog: (props: { open: boolean }) => (
-    <div data-testid="hours-form" data-open={String(props.open)} />
+  LogHoursDialog: (props: {
+    open: boolean;
+    submitToChannel?: (input: unknown) => Promise<unknown>;
+  }) => (
+    <div data-testid="hours-form" data-open={String(props.open)}>
+      <button
+        data-testid="hours-form-post"
+        onClick={() =>
+          void props.submitToChannel?.({
+            date: "2026-11-09",
+            duration_minutes: 60,
+            description: "Food bank",
+          })
+        }
+      >
+        post
+      </button>
+    </div>
   ),
 }));
 vi.mock("@/components/points/points-adjustment-dialog", () => ({
-  PointsAdjustmentDialog: (props: { open: boolean }) => (
-    <div data-testid="points-form" data-open={String(props.open)} />
+  PointsAdjustmentDialog: (props: {
+    open: boolean;
+    submitToChannel?: (input: unknown) => Promise<unknown>;
+  }) => (
+    <div data-testid="points-form" data-open={String(props.open)}>
+      <button
+        data-testid="points-form-post"
+        onClick={() =>
+          void props.submitToChannel?.({
+            target_user_id: "u-2",
+            amount: 5,
+            category: "MANUAL",
+            reason: "Ran the table",
+          })
+        }
+      >
+        post
+      </button>
+    </div>
   ),
 }));
 
@@ -464,7 +497,7 @@ vi.mock("@repo/hooks", async () => ({
           fetchStatus: "idle",
           refetch: vi.fn(),
         },
-  useChapterRoster: () => ({ data: [] }),
+  useChapterRoster: () => mockChapterRoster(),
   useMentionRoles: () => ({ data: [] }),
   useMyPermissions: () => mockUseMyPermissions(),
   // Read by `OpsSetupNudge`, which the shell renders above the timeline
@@ -732,6 +765,8 @@ vi.mock("./channel-list", () => ({
 // Keyed off `channelId` rather than `channelName` because this file's
 // `directChannelDisplayName` stub always returns `""`.
 const mockNotifyOutcome = vi.hoisted(() => vi.fn());
+const NO_ROSTER = { data: [] as { user_id: string; display_name: string }[] };
+const mockChapterRoster = vi.hoisted(() => vi.fn());
 
 vi.mock("./composer", () => ({
   notifyDispatchOutcome: mockNotifyOutcome,
@@ -1158,6 +1193,7 @@ beforeEach(() => {
   mockSendReturned.mockClear();
   mockUseMyPermissions.mockReset();
   mockUseMyPermissions.mockReturnValue({ data: { permissions: [] } });
+  mockChapterRoster.mockReturnValue(NO_ROSTER);
   mockBookmarkIsError.mockReturnValue(false);
   mockBookmarkReset.mockClear();
   mockUnbookmarkReset.mockClear();
@@ -4735,7 +4771,14 @@ describe("ChatShell opens the Task, Service hours and Points forms (#3865)", () 
     return button.dataset.took;
   };
 
-  it("opens the task form on what a half-typed /task named", () => {
+  it("opens the task form on what a half-typed /task named, with the @member resolved", () => {
+    const roster = {
+      data: [
+        { user_id: "u-bobby", display_name: "Bobby Member" },
+        { user_id: "u-alex", display_name: "Alex Member" },
+      ],
+    };
+    mockChapterRoster.mockReturnValue(roster);
     render(<ChatShell />);
     expect(click("composer-task:Sweep the porch @bobby 2026-11-12")).toBe(
       "opened",
@@ -4744,6 +4787,7 @@ describe("ChatShell opens the Task, Service hours and Points forms (#3865)", () 
     expect(form.dataset.open).toBe("true");
     expect(form.dataset.title).toBe("Sweep the porch");
     expect(form.dataset.due).toBe("2026-11-12");
+    expect(form.dataset.assignee).toBe("u-bobby");
   });
 
   it("leaves a /task it can read to the dispatcher", () => {
@@ -4776,6 +4820,44 @@ describe("ChatShell opens the Task, Service hours and Points forms (#3865)", () 
     );
   });
 
+  it("posts Service hours and Points into the channel each was opened in", async () => {
+    mockPostHours.mockClear();
+    mockPostPoints.mockClear();
+    render(<ChatShell />);
+    const channelId = screen.getByTestId("composer").textContent?.split(/\s/)[0];
+    click("composer-hours:");
+    fireEvent.click(screen.getByTestId("hours-form-post"));
+    click("composer-points:");
+    fireEvent.click(screen.getByTestId("points-form-post"));
+    await waitFor(() => expect(mockPostPoints).toHaveBeenCalled());
+    expect(mockPostHours).toHaveBeenCalledWith(
+      expect.stringMatching(/.+/),
+      expect.objectContaining({ description: "Food bank" }),
+    );
+    const [hoursChannel] = mockPostHours.mock.calls[0] as unknown as [string];
+    const [pointsChannel] = mockPostPoints.mock.calls[0] as unknown as [string];
+    expect(screen.getByTestId("composer").textContent).toMatch(
+      new RegExp(`^${hoursChannel}`),
+    );
+    expect(pointsChannel).toBe(hoursChannel);
+    expect(channelId).toBeTruthy();
+  });
+
+  it("reads a form write that threw as unconfirmed, never as a refusal to resubmit", async () => {
+    mockPostPoints.mockRejectedValueOnce(new Error("cache write failed"));
+    mockNotifyOutcome.mockClear();
+    render(<ChatShell />);
+    click("composer-points:");
+    fireEvent.click(screen.getByTestId("points-form-post"));
+    await waitFor(() =>
+      expect(mockNotifyOutcome).toHaveBeenCalledWith(
+        expect.any(Function),
+        "points",
+        expect.objectContaining({ ok: true, unconfirmed: true }),
+      ),
+    );
+  });
+
   it("opens Service hours and Points only when picked bare", () => {
     render(<ChatShell />);
     expect(click("composer-hours:log 2h")).toBe("null");
@@ -4793,10 +4875,20 @@ describe("ChatShell opens the Task, Service hours and Points forms (#3865)", () 
     mockToast.mockClear();
     render(<ChatShell />);
     expect(click("composer-points:")).toBe("refused");
+    expect(click("composer-task:")).toBe("refused");
+    expect(click("composer-hours:")).toBe("refused");
     expect(screen.queryByTestId("points-form")).toBeNull();
-    expect(mockToast).toHaveBeenCalledWith(
-      expect.objectContaining({ title: "You can't adjust points" }),
-    );
+    expect(screen.queryByTestId("task-form")).toBeNull();
+    expect(screen.queryByTestId("hours-form")).toBeNull();
+    for (const title of [
+      "You can't adjust points",
+      "You can't create tasks",
+      "You can't log service hours",
+    ]) {
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({ title }),
+      );
+    }
   });
 });
 

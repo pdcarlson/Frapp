@@ -21,6 +21,10 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { getErrorMessage } from "@/lib/utils";
+import {
+  POINTS_ADJUSTMENT_MAX,
+  POINTS_REASON_MAX_LENGTH,
+} from "@repo/validation";
 import type {
   DispatchResult,
   PointsAdjustmentInput,
@@ -142,6 +146,17 @@ export function PointsAdjustmentDialog({
       toast({
         title: "Valid amount required",
         description: "Use a non-zero whole number for point adjustments.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // `AdjustPointsDto`'s bounds, checked here so a refusal names the field:
+    // through chat a 4xx comes back as one generic "nothing was recorded".
+    if (Math.abs(parsedAmount) > POINTS_ADJUSTMENT_MAX) {
+      toast({
+        title: "Amount too large",
+        description: `Adjust by at most ${POINTS_ADJUSTMENT_MAX.toLocaleString()} points at a time.`,
         variant: "destructive",
       });
       return;
@@ -296,6 +311,7 @@ export function PointsAdjustmentDialog({
               value={reason}
               onChange={(event) => setReason(event.target.value)}
               placeholder="Explain why this adjustment is needed and what policy it references."
+              maxLength={POINTS_REASON_MAX_LENGTH}
               {...gate.controlProps()}
             />
           </label>

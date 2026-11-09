@@ -616,6 +616,11 @@ describe("taskFormPrefill (#3865)", () => {
     });
   });
 
+  it("keeps an over-long title whole, for the form to flag", () => {
+    const long = "x".repeat(300);
+    expect(taskFormPrefill(`"${long}" @alex 2026-12-01`).title).toBe(long);
+  });
+
   it("drops points before a date, and tokens that fit no slot", () => {
     expect(taskFormPrefill('"Sweep" @bobby 5 2026-13-40')).toEqual({
       title: "Sweep",

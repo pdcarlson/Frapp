@@ -120,6 +120,18 @@ describe("NewTaskDialog (#3865)", () => {
     expect(screen.getByLabelText("Title")).toHaveValue("Sweep");
   });
 
+  it("says a title is too long rather than posting it cut short", async () => {
+    const { onPost } = renderDialog({
+      prefill: { title: "x".repeat(300), dueDate: "2026-11-12" },
+      initialAssigneeId: "u-1",
+    });
+    fireEvent.click(create());
+    expect(
+      await screen.findByText(/Keep the title to 255 characters/),
+    ).toBeInTheDocument();
+    expect(onPost).not.toHaveBeenCalled();
+  });
+
   it("holds the form shut for a chapter that can't write", () => {
     chapter.incomplete();
     renderDialog({ prefill: { title: "Sweep" } });

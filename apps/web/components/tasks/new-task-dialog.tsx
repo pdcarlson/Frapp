@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import { useMembers } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
 import type { DispatchResult, TaskInput } from "@repo/chat-core/dispatch";
+import { TASK_MAX_TITLE_LENGTH } from "@repo/chat-core/integrations";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -50,7 +51,12 @@ type NewTaskDialogProps = {
   onPost: (input: TaskInput) => Promise<DispatchResult>;
 };
 
-type Missing = { title?: boolean; assignee?: boolean; due?: boolean };
+type Missing = {
+  title?: boolean;
+  titleTooLong?: boolean;
+  assignee?: boolean;
+  due?: boolean;
+};
 
 /**
  * The chat composer's Task form (#3865, #3773 step 3): the fields the task
@@ -94,11 +100,14 @@ export function NewTaskDialog({
     const trimmed = title.trim();
     const nextMissing: Missing = {
       title: !trimmed,
+      titleTooLong: trimmed.length > TASK_MAX_TITLE_LENGTH,
       assignee: !assigneeId,
       due: !dueDate,
     };
     setMissing(nextMissing);
-    if (nextMissing.title) return titleRef.current?.focus();
+    if (nextMissing.title || nextMissing.titleTooLong) {
+      return titleRef.current?.focus();
+    }
     if (nextMissing.assignee) return assigneeRef.current?.focus();
     if (nextMissing.due) return dueRef.current?.focus();
     setPosting(true);
@@ -146,18 +155,27 @@ export function NewTaskDialog({
               id={`${ids}-title`}
               autoFocus
               value={title}
-              aria-invalid={missing.title || undefined}
+              aria-invalid={missing.title || missing.titleTooLong || undefined}
               onChange={(event) => {
-                setTitle(event.target.value);
-                if (event.target.value.trim()) {
-                  setMissing((prev) => ({ ...prev, title: false }));
-                }
+                const next = event.target.value;
+                setTitle(next);
+                setMissing((prev) => ({
+                  ...prev,
+                  title: prev.title && !next.trim(),
+                  titleTooLong:
+                    prev.titleTooLong && next.trim().length > TASK_MAX_TITLE_LENGTH,
+                }));
               }}
               {...gate.controlProps()}
             />
             {missing.title ? (
               <p role="alert" className="text-caption text-destructive-text">
                 Give the task a title.
+              </p>
+            ) : missing.titleTooLong ? (
+              <p role="alert" className="text-caption text-destructive-text">
+                Keep the title to {TASK_MAX_TITLE_LENGTH} characters. It&apos;s{" "}
+                {title.trim().length} now.
               </p>
             ) : null}
           </div>

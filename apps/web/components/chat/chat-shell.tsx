@@ -190,6 +190,13 @@ const TASK_CREATE_PERMISSIONS = ["tasks:manage", "members:view"] as const;
 const HOURS_LOG_PERMISSIONS = ["service:log"] as const;
 const POINTS_ADJUST_PERMISSIONS = ["points:adjust", "members:view"] as const;
 
+/** What a + menu form says when its write threw after the request went out. */
+const FORM_UNCONFIRMED_WARNING = {
+  task: "Couldn't confirm the task was created. Check the task board before you create it again.",
+  hours: "Couldn't confirm the hours were logged. Check the Service page before you log them again.",
+  points: "Couldn't confirm the points were adjusted. Check the points ledger before you adjust them again.",
+} as const;
+
 interface DirectoryMember {
   user_id: string;
   display_name: string;
@@ -1249,8 +1256,27 @@ export function ChatShell({
   // A + menu form's write, read as the typed command's is: a refusal stays
   // in the form (which says so and keeps the draft), and a committed write
   // with a lost card, or an unknown outcome, gets the command's own notice.
-  const reportFormOutcome = useCallback(
-    (commandName: string, result: DispatchResult): DispatchResult => {
+  //
+  // The chat-core calls never reject on a refusal, so a throw here comes from
+  // after the request: the write may well have committed (#1718's class).
+  // That reads as unconfirmed, not failed, so the form closes rather than
+  // inviting a resubmit under a fresh key, which would write it twice.
+  const postFromForm = useCallback(
+    async (
+      commandName: "task" | "hours" | "points",
+      post: () => Promise<DispatchResult>,
+    ): Promise<DispatchResult> => {
+      let result: DispatchResult;
+      try {
+        result = await post();
+      } catch (error) {
+        Sentry.captureException(error, { tags: { plus_menu_form: commandName } });
+        result = {
+          ok: true,
+          unconfirmed: true,
+          warning: FORM_UNCONFIRMED_WARNING[commandName],
+        };
+      }
       if (result.ok && (result.warning || result.unconfirmed || result.resolved)) {
         notifyDispatchOutcome(toast, commandName, result);
       }
@@ -3022,9 +3048,8 @@ export function ChatShell({
           prefill={taskForm.prefill}
           initialAssigneeId={taskForm.assigneeId}
           onPost={async (input) =>
-            reportFormOutcome(
-              "task",
-              await channel.postTask(taskForm.channelId, input),
+            postFromForm("task", () =>
+              channel.postTask(taskForm.channelId, input),
             )
           }
         />
@@ -3039,10 +3064,10 @@ export function ChatShell({
             )
           }
           gate={hoursGate}
+          showSubscriptionNotice
           submitToChannel={async (input) =>
-            reportFormOutcome(
-              "hours",
-              await channel.postHours(hoursForm.channelId, input),
+            postFromForm("hours", () =>
+              channel.postHours(hoursForm.channelId, input),
             )
           }
         />
@@ -3057,9 +3082,8 @@ export function ChatShell({
           }
           onAdjusted={() => undefined}
           submitToChannel={async (input) =>
-            reportFormOutcome(
-              "points",
-              await channel.postPointsAdjustment(pointsForm.channelId, input),
+            postFromForm("points", () =>
+              channel.postPointsAdjustment(pointsForm.channelId, input),
             )
           }
         />
