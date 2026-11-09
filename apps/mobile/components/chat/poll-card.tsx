@@ -50,8 +50,8 @@ import {
  * `chat_messages.type='POLL'` rows they create default to `kind: 'text'`
  * (never set by `PollService.createPoll`) and so never reach this renderer.
  * A `kind: 'poll'` message is created only by web's `/poll` slash command
- * (`packages/chat-core/src/dispatch.ts`) and this app's New poll sheet
- * (`new-poll-sheet.tsx`, #3701), both through `buildPollMessage` in
+ * (`packages/chat-core/src/dispatch.ts`), web's New poll dialog (#3865) and
+ * this app's New poll sheet (`new-poll-sheet.tsx`, #3701), all through `buildPollMessage` in
  * `@repo/chat-core/polls`, and it votes through `chat_message_actions`, not
  * `poll_votes` — confirmed by reading both paths before choosing which one
  * to mirror.
