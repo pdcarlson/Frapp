@@ -87,6 +87,9 @@ describe("both pages", () => {
     ["about", about],
     ["changelog", changelog],
   ])("/%s keeps the landing copy rules: no em dashes", (_route, html) => {
+    // Raw markup too, so attribute text (aria-label, alt, title) is covered:
+    // React writes an em dash through unescaped.
+    expect(html).not.toContain("\u2014");
     expect(text(html)).not.toContain("\u2014");
   });
 

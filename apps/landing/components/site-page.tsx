@@ -8,7 +8,10 @@ import { SHELL } from "./home/styles";
  * still reach Product, Pricing and Get started. The legal routes keep their
  * own narrower shell (`app/components/legal-document.tsx`).
  *
- * The four rules at the top of `app/page.tsx` bind what this draws too.
+ * The four rules at the top of `app/page.tsx` bind this page's own copy. The
+ * changelog entries `/changelog` renders are written to the rules in the header
+ * of `packages/validation/src/release-notes.ts` instead, which is canonical for
+ * them (a shipped product fact such as "10 minutes" is fine there).
  *
  * A document, so the locked six type roles (foundations.md §7), not the
  * storefront's marketing three: `--text-hero` and `--text-lead` are scoped to

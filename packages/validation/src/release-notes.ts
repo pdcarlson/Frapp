@@ -5,8 +5,9 @@
  * Paul pastes to beta testers (`npm run release-notes`).
  *
  * The changelog is public and indexed, so every line is read by people who
- * have never opened the app, and the landing site's copy rules bind it too:
- * no em dashes, and nothing claimed that hasn't shipped.
+ * have never opened the app. These rules are the whole set for an entry,
+ * there and everywhere else; the landing page's own rules bind its page copy,
+ * not these lines (spec/ui/landing/README.md § Section inventory).
  *
  * Newest first. Each entry is one batch of changes that reached members on
  * `date` (a store build or an over-the-air update; members never see which).

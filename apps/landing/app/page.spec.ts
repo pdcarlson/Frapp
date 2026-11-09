@@ -242,6 +242,9 @@ describe("landing page structure", () => {
     // around it, or ahead of it, may animate either.
     // `main` is drawn by SiteChrome, which animates nothing, so the hero must
     // be SiteChrome's first child here.
+    const chrome = withoutComments(homeSource("site-chrome.tsx"));
+    expect(chrome).toMatch(/<main\b[^>]*>\s*\{children\}\s*<\/main>/);
+    expect(chrome).not.toMatch(/RevealOnView|reveal-item|animate-|transition-/);
     const main = renderedPage.slice(renderedPage.indexOf("<SiteChrome"));
     const aboveOfficers = main.slice(0, main.indexOf("<OfficersSection"));
     expect(main.indexOf("<OfficersSection")).toBeGreaterThan(-1);

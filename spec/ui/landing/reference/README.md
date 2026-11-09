@@ -29,10 +29,9 @@
 >   [`../README.md`](../README.md) (#2893).
 > - the About and Changelog links. The boards draw a Product / Pricing nav and an eight-link
 >   footer; the owner added the `/about` and `/changelog` pages on 2026-11-09
->   ([#3817](https://github.com/pdcarlson/Frapp/issues/3817)), so the shipped nav carries About and
->   Changelog after Pricing, and the footer carries them after Sign in, ten links in all. On those
->   two pages the Product and Pricing links point at `/#product` and `/#pricing`; on the homepage
->   they stay bare anchors, as drawn.
+>   ([#3817](https://github.com/pdcarlson/Frapp/issues/3817)), so the shipped nav and footer carry
+>   both links as well. The as-built header and footer, and where their anchors resolve, are
+>   [`../README.md`](../README.md) § Section inventory and § Route facts.
 
 ## What this is
 
