@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { signOutCurrentSession } from "@/lib/auth/session";
+import { useSignOutToSignIn } from "./use-sign-out";
 
 /** Shown when the sign-out itself threw. */
 export const NEW_ACCOUNT_SIGN_OUT_FAILED =
@@ -25,34 +24,15 @@ function isInvite(next: string): boolean {
  * story is a member who picked the wrong provider. With one, it is just as
  * likely a newcomer the invite link sent to `/sign-in`, so Continue leads.
  *
- * **Sign out is local.** The default (global) scope keeps the browser's
- * session when Auth's revoke call fails, and `signOutCurrentSession` doesn't
- * surface that `{ error }` (#2610). `proxy.ts` would then bounce `/sign-in`
- * straight to `next`, dropping the member into the very account they were
- * leaving. The local scope removes this browser's session before it calls
- * Auth, so the next page load is signed out either way. Landing on `/sign-in`
- * keeps `next`, because the proxy sends a signed-in visitor off the auth
- * routes. Continuing is a full navigation so the dashboard mounts fresh on the
- * new session.
+ * Sign out is the shared `useSignOutToSignIn`, local scope, landing on
+ * `/sign-in` with `next` kept (the proxy sends a signed-in visitor off the
+ * auth routes, so it has to end first). Continuing is a full navigation so the
+ * dashboard mounts fresh on the new session.
  */
 export function NewAccountActions({ next }: { next: string }) {
-  const [signingOut, setSigningOut] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const { signOut: handleSignOut, signingOut, failed, confirmDropDialog } =
+    useSignOutToSignIn(next);
   const invite = isInvite(next);
-
-  async function handleSignOut() {
-    setSigningOut(true);
-    setFailed(false);
-    try {
-      await signOutCurrentSession({ scope: "local" });
-      window.location.assign(
-        `/sign-in?${new URLSearchParams({ redirectTo: next })}`,
-      );
-    } catch {
-      setFailed(true);
-      setSigningOut(false);
-    }
-  }
 
   const signOut = (
     <Button
@@ -87,6 +67,7 @@ export function NewAccountActions({ next }: { next: string }) {
           {NEW_ACCOUNT_SIGN_OUT_FAILED}
         </p>
       ) : null}
+      {confirmDropDialog}
     </div>
   );
 }
