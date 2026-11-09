@@ -61,8 +61,10 @@ export function EventsCalendar({
   onSelectDay: (day: Date) => void;
   onOpen: (id: string) => void;
   /**
-   * What the day list says when the chapter has no events at all (the List's
-   * own zero-state line), in place of "Nothing on this day.".
+   * What the day list says when nothing is scheduled by the List's test (no
+   * current or upcoming event, so a chapter whose events are all past gets
+   * it too): the List's own zero-state line, in place of "Nothing on this
+   * day.".
    */
   emptyNote?: string | null;
 }) {
@@ -83,7 +85,8 @@ export function EventsCalendar({
     return map;
   }, [events]);
 
-  // A series' cadence is read off its head row, for every occurrence.
+  // A series' cadence is its head's rule on the day most occurrences share
+  // (`seriesHeads`), the same for every occurrence.
   const heads = useMemo(() => seriesHeads(events), [events]);
 
   const month = startOfMonth(monthAnchor);

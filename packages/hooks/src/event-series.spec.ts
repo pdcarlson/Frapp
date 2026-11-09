@@ -208,6 +208,18 @@ describe("seriesCadence", () => {
     expect(heads.get("head")!.name).toBe("Chapter");
   });
 
+  it("breaks a name tie toward the soonest row's name", () => {
+    // Soonest first: A, B, B, A. B reaches two first, but the tie is A's.
+    const [head, ...children] = weeklySeries(8, 4);
+    const rows = [
+      head!,
+      { ...children[0]!, name: "Chapter: Elections" },
+      { ...children[1]!, name: "Chapter: Elections" },
+      children[2]!,
+    ];
+    expect(seriesHeads(rows).get("head")!.name).toBe("Chapter");
+  });
+
   it("says nothing for a one-time event or a series without its head", () => {
     const heads = seriesHeads([]);
     expect(seriesCadence(heads, oneOff("social", 11, 12))).toBeNull();

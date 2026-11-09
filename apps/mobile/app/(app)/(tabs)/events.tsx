@@ -240,7 +240,15 @@ export default function EventsScreen() {
           now={now}
           monthAnchor={monthAnchor}
           selectedDay={selectedDay}
-          onMonthChange={setPickedMonth}
+          onMonthChange={(month) => {
+            // The list under the grid follows the month on screen: today in
+            // today's month, otherwise that month's 1st.
+            setPickedMonth(month);
+            const thisMonth =
+              month.getFullYear() === now.getFullYear() &&
+              month.getMonth() === now.getMonth();
+            setPickedDay(thisMonth ? null : month);
+          }}
           onSelectDay={(day) => {
             // A picked day holds its month too, so the grid and the list
             // under it never part when the clock moves on.

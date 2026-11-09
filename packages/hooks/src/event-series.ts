@@ -94,13 +94,16 @@ function mostCommon<T>(
 
 /** The name most rows carry; a tie goes to the soonest row's. */
 function mostCommonName(rows: readonly object[]): string | null {
+  // Map keeps first-insertion order, and rows go in soonest first, so the
+  // first name to reach the top count in that order is the soonest row's.
   const counts = new Map<string, number>();
-  let best: string | null = null;
   for (const row of [...rows].sort(byStart)) {
     const name = text(row, "name");
     if (!name) continue;
-    const count = (counts.get(name) ?? 0) + 1;
-    counts.set(name, count);
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  let best: string | null = null;
+  for (const [name, count] of counts) {
     if (best === null || count > (counts.get(best) ?? 0)) best = name;
   }
   return best;
