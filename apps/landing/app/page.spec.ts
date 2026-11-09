@@ -124,12 +124,16 @@ describe("landing marketing copy rules", () => {
     }
   });
 
-  it("names events, check-in and points in the chat sentence, and not dues", () => {
+  it("leads with /about's mission, and claims no dues in the thread", () => {
+    // The hero opens with the mission statement (#3869), and `/about` is the
+    // one draft of it, so the two say the same sentence or neither changes.
+    const mission =
+      "every chapter one place where its members actually talk, and let the work of running the chapter happen in that same conversation";
+    const about = readFileSync(join(landingRoot, "app/about/page.tsx"), "utf8");
+    expect(flatAll).toContain(mission);
+    expect(about.replace(/\s+/g, " ")).toContain(mission);
     // `spec/behavior/chat/integrations.md` lists the dues chat kind as a stub
     // renderer, so no dues artifact may be claimed to land in the thread.
-    expect(flatAll).toContain(
-      "Events, check-in and points land in the conversation",
-    );
     expect(renderedAll).not.toMatch(
       /dues[^.]{0,40}(in|into) (the )?(chat|thread|conversation)/i,
     );
@@ -252,7 +256,7 @@ describe("landing page structure", () => {
     expect(aboveOfficers).not.toContain("RevealOnView");
     expect(aboveOfficers).not.toContain("reveal-item");
     const hero = withoutComments(homeSource("hero-section.tsx"));
-    expect(hero).toContain("Run your chapter where it already talks.");
+    expect(hero).toContain("One place to talk and run your chapter.");
     expect(hero).not.toContain("RevealOnView");
     expect(hero).not.toContain("reveal-item");
   });

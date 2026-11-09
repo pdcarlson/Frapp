@@ -7,7 +7,7 @@
 > § Precedence, rule 1). Drift between them and the page,
 > [`apps/landing/app/page.tsx`](../../../../apps/landing/app/page.tsx) and the sections and frames it
 > composes from [`apps/landing/components/home/`](../../../../apps/landing/components/home/), is a filable bug now rather
-> than an expected gap, with seven standing exceptions, none of them drift:
+> than an expected gap, with eight standing exceptions, none of them drift:
 >
 > - the two decisions below that supersede what the boards draw (D8 and D9);
 > - the signature moment, which is **cut** from the shipped page until brand sign-off clears
@@ -32,6 +32,11 @@
 >   ([#3817](https://github.com/pdcarlson/Frapp/issues/3817)), so the shipped nav and footer carry
 >   both links as well. The as-built header and footer, and where their anchors resolve, are
 >   [`../README.md`](../README.md) § Section inventory and § Route facts.
+> - the hero's words. The boards draw the eyebrow "Chapter operations, chat first", the H1 "Run
+>   your chapter where it already talks." and a chat-first lead; since
+>   [#3869](https://github.com/pdcarlson/Frapp/issues/3869) the hero opens with the mission
+>   statement `/about` carries instead (asked by Winston, accepted by the owner's merge). Only the
+>   three strings changed: `HeroB`'s layout, its frame and both controls still bind.
 
 ## What this is
 
