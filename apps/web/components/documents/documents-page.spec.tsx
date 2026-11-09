@@ -970,6 +970,96 @@ describe("DocumentsPage search, filters and sort (#3852)", () => {
     }
   });
 
+  it("steps the viewer through the list as filtered and sorted, and closes it when a filter drops the file", async () => {
+    documentsQuery.data = [
+      BYLAWS,
+      RUSH,
+      { ...RUSH, id: "doc-3", title: "Rush budget", description: null, created_at: "2026-09-01T00:00:00Z" },
+    ];
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+    await user.click(screen.getByRole("button", { name: "Uploaded by" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Ryan Castellano" }));
+    await user.click(screen.getByRole("button", { name: "Sort: Name A–Z" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Newest first" }));
+    await waitFor(() => expect(rowTitles()).toEqual(["Rush schedule", "Rush budget"]));
+
+    await user.click(screen.getByRole("button", { name: /^Rush schedule/ }));
+    await user.keyboard("{ArrowRight}");
+    expect(screen.getByRole("dialog", { name: "Rush budget" })).toBeInTheDocument();
+    // Wraps within Ryan's two files: Marcus's bylaws are filtered out.
+    await user.keyboard("{ArrowRight}");
+    expect(screen.getByRole("dialog", { name: "Rush schedule" })).toBeInTheDocument();
+
+    // A search typed behind the viewer drops the open file: the viewer closes.
+    fireEvent.change(screen.getByLabelText("Search documents"), { target: { value: "budget" } });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("names the uploader inside the row's open button", () => {
+    render(<DocumentsPage />);
+    expect(
+      screen.getByRole("button", { name: /^Rush schedule.*Uploaded .* by Ryan Castellano/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("filters by a typed custom range, and Clear filters resets every filter", async () => {
+    documentsQuery.data = [BYLAWS, { ...RUSH, created_at: "2026-03-01T00:00:00Z" }];
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+    await user.click(screen.getByRole("button", { name: "Date added" }));
+    await user.click(await screen.findByRole("radio", { name: "Custom range" }));
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-07-01" } });
+    await waitFor(() => expect(rowTitles()).toEqual(["Chapter bylaws"]));
+
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-07-15" } });
+    await user.click(await screen.findByRole("button", { name: "Clear filters" }));
+
+    await waitFor(() => expect(rowTitles()).toEqual(["Chapter bylaws", "Rush schedule"]));
+    expect(screen.getByRole("button", { name: "Date added" })).toBeInTheDocument();
+  });
+
+  it("matches a punctuation-only search literally", async () => {
+    documentsQuery.data = [BYLAWS, { ...RUSH, title: "Budget_2026" }];
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.type(screen.getByLabelText("Search documents"), "_");
+
+    await waitFor(() => expect(rowTitles()).toEqual(["Budget_2026"]));
+  });
+
+  it("holds the date windows still while a file is open", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.setSystemTime(new Date("2026-11-09T12:00:00Z"));
+      // 29 days 23 hours old at the start; past 30 days a day later.
+      documentsQuery.data = [{ ...RUSH, created_at: "2026-10-10T13:00:00Z" }];
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      render(<DocumentsPage />);
+      await user.click(screen.getByRole("button", { name: "Date added" }));
+      await user.click(await screen.findByRole("radio", { name: "Last 30 days" }));
+      await user.keyboard("{Escape}");
+      await user.click(screen.getByRole("button", { name: /^Rush schedule/ }));
+
+      act(() => {
+        vi.setSystemTime(new Date("2026-11-10T12:00:00Z"));
+        vi.advanceTimersByTime(120_000);
+      });
+      expect(screen.getByRole("dialog", { name: "Rush schedule" })).toBeInTheDocument();
+
+      await user.keyboard("{Escape}");
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      // Closing catches the clock up, and the file has aged out.
+      act(() => {
+        vi.advanceTimersByTime(10);
+      });
+      await waitFor(() => expect(rowTitles()).toEqual([]));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("says the list is capped, even when a search finds nothing", async () => {
     documentsQuery.data = Array.from({ length: 1000 }, (_, i) => ({
       ...BYLAWS,

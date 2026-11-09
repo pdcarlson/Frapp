@@ -191,8 +191,12 @@ export function queryDocuments(
   // Words, prefixes and near misses (backwork's matcher), plus any plain
   // substring, which the server's title search matched and members rely on:
   // "laws" in "bylaws", "2026" in "FY2026", or a query that is only "_".
+  // A query of punctuation alone has no words, and the fuzzy matcher returns
+  // every row for that; only the substring match then applies.
   const fuzzy = new Set(
-    fuzzyMatchWords(filtered, needle, (row) => row.words).map((result) => result.item),
+    normalizeWords(needle).length > 0
+      ? fuzzyMatchWords(filtered, needle, (row) => row.words).map((result) => result.item)
+      : [],
   );
   return filtered
     .filter((row) => fuzzy.has(row) || row.text.includes(needle))

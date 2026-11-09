@@ -136,10 +136,6 @@ function ChapterDocumentsPage() {
     [semestersQuery.data],
   );
   const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(timer);
-  }, []);
 
   /*
     From `GET /v1/documents/folders`, not derived over `documents` (#791).
@@ -197,6 +193,18 @@ function ChapterDocumentsPage() {
   // from `visible`, so it steps through the list as shown and closes when the
   // row leaves it.
   const [openId, setOpenId] = useState<string | null>(null);
+  // The clock pauses while a document is open: a window moving past the
+  // open file would drop its row and close the viewer mid-read. It catches up
+  // as soon as the viewer closes.
+  useEffect(() => {
+    if (openId !== null) return;
+    const catchUp = setTimeout(() => setNow(new Date()), 0);
+    const timer = setInterval(() => setNow(new Date()), 60_000);
+    return () => {
+      clearTimeout(catchUp);
+      clearInterval(timer);
+    };
+  }, [openId]);
   const { data: permissionsPayload } = useMyPermissions();
   const canUpload = can(
     "chapter_docs:upload",
