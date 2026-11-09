@@ -27,7 +27,7 @@ report: no unclaimed work, no `gh`, REST, other tracker, or scratch file, no def
 narrow carve-outs
 ([`github-pm.md` → How agents reach the tracker](../../docs/ci-cd/github-pm.md#how-agents-reach-the-tracker))
 never cover listing, searching, filing, labeling, closing, or commenting. Load schemas first:
-`ToolSearch("select:mcp__github__list_issues,mcp__github__issue_read,mcp__github__issue_write,
+`ToolSearch("select:mcp__github__get_me,mcp__github__list_issues,mcp__github__issue_read,mcp__github__issue_write,
 mcp__github__add_issue_comment,mcp__github__search_issues,mcp__github__search_pull_requests")`.
 
 **Ownership is per run, not per turn.** From your `AGENT-CLAIM` until the PR is open, you own every
@@ -51,8 +51,8 @@ batch takes at most one, and one you can't size runs solo. Estimates (the option
 **Nothing discovered is dropped.** A defect, drift, or coverage gap you notice mid-run is fixed now
 or filed. Fix it now when it sits in or next to the surface you're touching, doesn't change the PR's
 revert story, and wouldn't itself trip a §1.3 veto (destructive DDL, auth/RLS, and billing are never
-drive-bys); note it in the PR body. Otherwise file it (`issue_write` create, labels `triage` + a
-priority + one `area:<x>`, `file:line` evidence, an Agent brief when you can). A fixed defect that
+drive-bys); note it in the PR body. Otherwise file it per [`file-follow-up`](../skills/file-follow-up/SKILL.md) (`Asked by:`, labels `triage` + a
+priority + one `area:<x>`, `file:line` evidence, its epic as parent, an Agent brief when you can). A fixed defect that
 deserves its own record (user-visible, security, anything someone would search the tracker for) is
 filed and claimed into the unit: same `CLAIM_ID`, claim comment and all. This record-keeping claim
 sits outside `MAX_BATCH` and the estimate ceiling, which cap planned scope. Apart from a named issue
@@ -440,7 +440,9 @@ goes to him as a question, per [`file-follow-up`](../skills/file-follow-up/SKILL
 when it is a decision and you hold no sibling claims, your end-of-run report otherwise, or whenever
 blocking on a prompt would stall the run. Still write the block; the PR Follow-ups routine harvests
 it into the Human Action List. If Paul is present and the action is small, ask on the spot; file it
-unless he clears it then and there.
+unless he clears it then and there. Paul is present only when `get_me` returns his login
+(`pdcarlson`). In a session that runs as anyone else (Shawn or Winston), whoever answers the prompt
+is not Paul, so a decision only he can make is filed per `file-follow-up`, never cleared there.
 
 ## Phase 4 — ship and sync
 
@@ -455,7 +457,9 @@ keywords in the title, and a prose mention doesn't close. The body follows
 [`.github/pull_request_template.md`](../../.github/pull_request_template.md), which the MCP doesn't
 apply for you. It covers what changed, why, which acceptance criteria each member satisfies, the
 *Flagged for review* list, any step you reduced or skipped, and a link to any artifact page you
-published for Paul while working it (`AGENTS.md` § Operating mindset). Each member's §1.2 drift items get their own fix or an explicit note that none was
+published while working it (`AGENTS.md` § Operating mindset). A page is private to the account
+that published it, so in a session not running as Paul, put the page's substance in the PR body,
+which he can read. Each member's §1.2 drift items get their own fix or an explicit note that none was
 needed; nothing mechanical catches a batch that documents only one of its issues.
 
 **Never `Fixes` a parent with open children.** Before writing each line, `issue_read get` the member.
@@ -519,7 +523,8 @@ the next step, an offer to continue, or a list of decisions you could make yours
 make the call, record it in the PR, and keep going. The valid stops are the rows below, the §1.3
 vetoes, and Phase 2's closed-or-superseded check. When the run ends, your final message is the run
 report: each PR link, each held issue's exit, anything reduced or skipped, and every open question
-for Paul.
+for Paul. In a session not running as Paul, that report reaches only its own user, so each question
+for Paul is also filed (Phase 3).
 
 Act before you respond. Releasing an issue that has committed work is worse than leaving it claimed,
 because the next agent restarts from zero on top of it: work exists → hand off, never release. (A
@@ -561,11 +566,11 @@ Post literally, substituting bracketed values; the sentinel is always the first 
 ```text
 🤖 AGENT-CLAIM `claim:a3f19c2e`
 
-**Claimed by:** `/next` session `a3f19c2e` (acting as Paul Carlson; Claude Code)
+**Claimed by:** `/next` session `a3f19c2e` (acting as `<your GitHub login, from get_me>`; Claude Code)
 **Branch:** `claude/fix-signup-redirect` (local until review passes)
 **Batch:** solo — or: #100 · #101 · #102 (one claim comment per member, same claim id; this lease renews on this issue's own comment stream)
 **Prior art:** none
-**Promoted:** from triage at P2, named by the owner — <one-line reason for the priority> (only for a named `triage` issue; omit the line otherwise)
+**Promoted:** from triage at P2, named by `<your GitHub login>` — <one-line reason for the priority> (only for a named `triage` issue; omit the line otherwise)
 **Heartbeat:** 2026-08-03T14:22:07Z — lease 4h, renewed by AGENT-HEARTBEAT comments
 
 _Other agents: taken while this lease is live. If it has expired AND no open
@@ -602,6 +607,7 @@ PR holds the work AND no branch was pushed within the lease, post an AGENT-RECLA
 **Evidence:** lease expired; no open PR holds the work; no branch pushed; no activity since 2026-06-11
 **Batch:** taking the whole batch #100 · #101 · #102 per §0.7 (this comment posted on every member) — omit when solo
 **Continuing from:** nothing on disk — starting fresh — or: branch `claude/<slug>` @ `9f2a1c0`
+**Claimed by:** `/next` session `c1d90a55` (acting as `<your GitHub login, from get_me>`; Claude Code)
 
 Taking this over. If the original agent is alive, post AGENT-RELEASE — this claim supersedes.
 ```

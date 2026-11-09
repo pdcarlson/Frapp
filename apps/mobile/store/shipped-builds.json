@@ -54,6 +54,20 @@
     },
     {
       "platform": "ios",
+      "version": "0.10.0",
+      "build": "11",
+      "sha": "108b7ac7613d340f9f47dbbafb0903232621803c",
+      "recorded": "2026-11-06"
+    },
+    {
+      "platform": "android",
+      "version": "0.10.0",
+      "build": "6",
+      "sha": "108b7ac7613d340f9f47dbbafb0903232621803c",
+      "recorded": "2026-11-06"
+    },
+    {
+      "platform": "ios",
       "version": "0.10.1",
       "build": "12",
       "sha": "728fb69e40e4beb5e00049fac5e712cbcca2d933",
