@@ -29,6 +29,17 @@ Officers with `chapter_docs:manage` create, rename, reorder, and delete folders;
 
 Document listing accepts an optional case-insensitive substring match on the title, combinable with the folder filter. Search is scoped to the caller's active chapter. `%` and `_` in a query are matched literally, not as wildcards.
 
+**Web searches, filters and sorts on the client** *(2026-11-09, #3852; Shawn's idea)*. `/documents` reads the chapter's whole library once (`GET /v1/documents` with no `search`) and does the rest in memory, as `/backwork` does (`apps/web/components/documents/document-library.ts`, reusing `@/lib/search/fuzzy-match`):
+
+- **Search** matches the title, description, uploader's name, folder and document type, every query word required, with backwork's typo tolerance. It works offline over the library already loaded.
+- **Uploaded by** offers only people the chapter roster can name who have uploaded something. A departed member's files keep showing, just without a name.
+- **Date added** offers any time, this semester (spring January to May, summer June and July, fall August to December), the last 30 days, or a custom from and to range, inclusive and read in the viewer's timezone.
+- **Sort** orders by name A to Z (the default, and the order before #3852), newest first, oldest first, or uploader A to Z. The chosen order applies whether or not a search is typed.
+- **Rows** read "Uploaded Sep 26 by Ryan Castellano · …" when the roster can name the uploader.
+- **Cap.** A response at PostgREST's 1,000-row `max_rows` is treated as truncated, and the page says it is showing only the newest. Backwork hit this cap (#3525); a chapter's documents are far fewer.
+
+The server's `search` parameter stays for mobile's s12, which still searches titles on the server.
+
 ## Metadata
 
 Each document has: a system-generated `id` (UUID, primary key — **not** the `{document_id}` in the storage path below: that is a separate UUID minted by the upload-URL step and returned as `documentId`, so no storage path can be derived from a document's `id`), title, description (optional), folder (optional), storage path, uploaded_by (FK users), and created_at. No academic metadata (no department, professor, assignment type, etc.).
