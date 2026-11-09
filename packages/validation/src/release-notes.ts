@@ -44,6 +44,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Handing over the presidency no longer locks the old president out, and changing roles asks first if it would take away someone's access.",
       "Only officers who can do something about it are pinged when someone new joins, and Add to calendar is gone until calendar sync arrives.",
       "On the web, an invite sent to your email shows up when you sign in, ready to join in one tap, and signing in with Google or Apple tells you if it just made a new account.",
+      "On the web, Chat in the menu lights up as soon as a new message arrives, whatever page you're on, and getting back to your channel list is easier: a bigger back button, Esc, or your browser's Back.",
     ],
   },
   {
