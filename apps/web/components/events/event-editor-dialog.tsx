@@ -44,7 +44,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { dashboardFormSelectClassName } from "@/components/shared/table-controls";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -654,21 +660,26 @@ export function EventEditorDialog({
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="grid gap-1">
                     <Label htmlFor="event-recurrence">Repeat</Label>
-                    <select
-                      id="event-recurrence"
+                    {/*
+                      The app's Select, not a native one: /events carries no
+                      browser select (#3822).
+                    */}
+                    <Select
                       value={recurrenceRule}
-                      onChange={(eventValue) =>
-                        setRecurrenceRule(eventValue.target.value)
-                      }
-                      className={dashboardFormSelectClassName}
+                      onValueChange={setRecurrenceRule}
                     >
-                      <option value="NONE">Doesn&apos;t repeat</option>
-                      {RECURRENCE_RULES.map((rule) => (
-                        <option key={rule} value={rule}>
-                          {RECURRENCE_REPEAT_LABELS[rule]}
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger id="event-recurrence">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="NONE">Doesn&apos;t repeat</SelectItem>
+                        {RECURRENCE_RULES.map((rule) => (
+                          <SelectItem key={rule} value={rule}>
+                            {RECURRENCE_REPEAT_LABELS[rule]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     {repeatNote ? (
                       <p className="text-caption text-muted-foreground">
                         {repeatNote}

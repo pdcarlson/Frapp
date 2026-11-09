@@ -17,9 +17,9 @@ const { autoAbsentMutateAsync, access } = vi.hoisted(() => ({
   },
 }));
 
-// Default `timeFilter` is "upcoming", which drops anything before "now" — a
-// far-future date keeps this fixture upcoming regardless of when the suite
-// actually runs.
+// Dates relative to the suite's clock: Chapter Meeting is tomorrow, inside
+// the default Upcoming window and its two-week horizon; Last Formal was
+// yesterday, so only Past shows it.
 const EVENTS = [
   {
     id: "evt-1",
@@ -30,6 +30,15 @@ const EVENTS = [
     end_time: new Date(Date.now() + 25 * 60 * 60 * 1000).toISOString(),
     is_mandatory: true,
     point_value: 5,
+  },
+  {
+    id: "evt-past",
+    name: "Last Formal",
+    location: null,
+    start_time: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+    end_time: new Date(Date.now() - 23 * 60 * 60 * 1000).toISOString(),
+    is_mandatory: true,
+    point_value: 0,
   },
 ];
 
@@ -179,6 +188,57 @@ describe("EventsPage bulk actions", () => {
     await user.click(within(dialog).getByRole("button", { name: /^cancel$/i }));
 
     expect(autoAbsentMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("marks only the selected rows on screen, never one a filter hid", async () => {
+    autoAbsentMutateAsync.mockResolvedValue({ marked: 1 });
+    const user = userEvent.setup();
+    render(<EventsPage />);
+
+    // Tick a past meeting under Past, then go back to Upcoming, where it's
+    // hidden, and tick the one row there.
+    await user.click(screen.getByRole("button", { name: /^filter events/i }));
+    await user.click(
+      within(screen.getByRole("radiogroup", { name: "Time" })).getByRole(
+        "radio",
+        { name: "Past" },
+      ),
+    );
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "Select" }));
+    await user.click(
+      screen.getByRole("checkbox", { name: /select last formal/i }),
+    );
+    await user.click(screen.getByRole("button", { name: /^filter events/i }));
+    await user.click(
+      within(screen.getByRole("radiogroup", { name: "Time" })).getByRole(
+        "radio",
+        { name: "Upcoming" },
+      ),
+    );
+    await user.keyboard("{Escape}");
+    await user.click(
+      screen.getByRole("checkbox", { name: /select chapter meeting/i }),
+    );
+
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: /mark attendance complete/i }),
+    );
+    const dialog = screen.getByRole("dialog");
+    expect(
+      within(dialog).getByText(/mark attendance complete for 1 event\?/i),
+    ).toBeInTheDocument();
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: /^mark attendance complete$/i,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(autoAbsentMutateAsync).toHaveBeenCalledWith("evt-1"),
+    );
+    expect(autoAbsentMutateAsync).toHaveBeenCalledTimes(1);
   });
 
   it("reports a partial failure without clearing the selection", async () => {

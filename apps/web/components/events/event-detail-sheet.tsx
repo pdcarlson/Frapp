@@ -59,6 +59,11 @@ type EventDetailSheetProps = {
    * for a one-time event, or one opened from the calendar.
    */
   series?: EventRecord[] | null;
+  /**
+   * The series' rule, read off its head by the caller: only the head row
+   * carries one, so a generated meeting's own `recurrence_rule` is `null`.
+   */
+  seriesRule?: unknown;
   /** Opens another meeting of {@link series} in this sheet. */
   onSelectOccurrence?: (event: EventRecord) => void;
   usingPreviewData: boolean;
@@ -71,6 +76,7 @@ export function EventDetailSheet({
   onOpenChange,
   event,
   series = null,
+  seriesRule,
   onSelectOccurrence,
   usingPreviewData,
   onRequestEdit,
@@ -108,7 +114,11 @@ export function EventDetailSheet({
   );
   const isMandatory = attendance.everyone === "required";
   // `null` for a one-time event, which then shows no cadence badge at all.
-  const cadence = recurrenceLabel(resolvedEvent?.recurrence_rule);
+  // The head's rule when the caller knows the series: a generated meeting
+  // carries none of its own, and would otherwise read as one-time.
+  const cadence = recurrenceLabel(
+    seriesRule ?? resolvedEvent?.recurrence_rule,
+  );
   const schedule = formatDayTimeRange(
     resolvedEvent?.start_time,
     resolvedEvent?.end_time,
@@ -441,6 +451,9 @@ export function EventDetailSheet({
 
             {eventId && !usingPreviewData ? (
               <AttendancePanel
+                // Keyed by meeting: opening another one from the series list
+                // starts its roster fresh, filter included.
+                key={eventId}
                 eventId={eventId}
                 eventStart={resolvedEvent?.start_time}
               />

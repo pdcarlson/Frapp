@@ -20,7 +20,7 @@ import {
   eventSeriesKey,
   isSeriesEvent,
   seriesCadenceLabel,
-  seriesRuleOf,
+  seriesHeadOf,
   splitByHorizon,
   type EventListEntry,
 } from "@repo/hooks/event-series";
@@ -211,9 +211,10 @@ export function EventsPage() {
   const editorDialog = useGatedDialog(eventWriteGate);
   const [editorMode, setEditorMode] = useState<"create" | "edit">("create");
   const [activeEvent, setActiveEvent] = useState<EventRow | null>(null);
-  // The upcoming occurrences of the series a list row stands for, shown
-  // under the occurrence it opened. `null` for a one-time event.
-  const [activeSeries, setActiveSeries] = useState<EventRow[] | null>(null);
+  // The series a list row stands for, by key; its upcoming meetings are
+  // derived from the live events below, so a realtime change reaches the
+  // open sheet. `null` for a one-time event.
+  const [activeSeriesKey, setActiveSeriesKey] = useState<string | null>(null);
   // Set only by a calendar day click, so the "New event" button keeps opening
   // a blank form.
   const [calendarCreateDay, setCalendarCreateDay] = useState<Date | null>(null);
@@ -255,6 +256,23 @@ export function EventsPage() {
   }, [eventsQuery.data]);
 
   const nowTick = useNow();
+
+  // The open series' meetings that haven't started, soonest first, read from
+  // the live list (every series row, whatever the filters), and its head,
+  // which holds the rule and the monthly anchor.
+  const activeSeries = useMemo(() => {
+    if (!activeSeriesKey) return null;
+    return events
+      .filter((event) => {
+        if (eventSeriesKey(event) !== activeSeriesKey) return false;
+        const start = startMsOf(event);
+        return start !== null && start >= nowTick;
+      })
+      .sort((a, b) => (startMsOf(a) ?? 0) - (startMsOf(b) ?? 0));
+  }, [activeSeriesKey, events, nowTick]);
+  const activeSeriesHead = activeSeriesKey
+    ? seriesHeadOf(activeSeriesKey, events)
+    : null;
 
   if (view === null && eventsQuery.data !== undefined && !userLoading) {
     setView(
@@ -368,6 +386,13 @@ export function EventsPage() {
     ...soonEntries,
     ...(laterOpen ? laterEntries : []),
   ].map((entry) => eventIdOf(entry.event));
+  // Only what is on screen counts: a row a filter, a search or a closed
+  // Later hides keeps its tick for when it comes back, but the count and the
+  // bulk action never reach it, so nothing is marked that the officer can't
+  // see.
+  const selectedVisibleIds = selectedEventIds.filter((eventId) =>
+    visibleEventIds.includes(eventId),
+  );
   const allVisibleSelected =
     visibleEventIds.length > 0 &&
     visibleEventIds.every((eventId) => selectedEventIds.includes(eventId));
@@ -405,7 +430,7 @@ export function EventsPage() {
   // before an event's check-in grace period ends, so a batch spanning an
   // in-progress event fails that event without blocking the rest.
   async function markSelectedAttendanceComplete() {
-    const ids = [...selectedEventIds];
+    const ids = [...selectedVisibleIds];
     if (ids.length === 0) return;
     const confirmed = await confirm({
       title: `Mark attendance complete for ${ids.length} event${ids.length > 1 ? "s" : ""}?`,
@@ -497,6 +522,13 @@ export function EventsPage() {
     );
   }
 
+  // Events are in but the viewer isn't yet, so the stored view can't be read:
+  // hold the skeleton rather than paint the list and jump to the calendar
+  // when the viewer lands.
+  if (view === null && eventsQuery.data !== undefined) {
+    return <EventsPageSkeleton />;
+  }
+
   const eventWriteControls = eventWriteGate.controlProps();
   const searchText = query.trim();
   const currentView = view ?? "list";
@@ -515,8 +547,16 @@ export function EventsPage() {
   const shownCount = soonEntries.length + (laterOpen ? laterEntries.length : 0);
   const nowDate = new Date(nowTick);
 
+  // The popover's Clear: every filter back to its default.
   function clearFilters() {
     setTimeFilter("upcoming");
+    setAttendanceFilter("all");
+    setRecurrenceFilter("all");
+  }
+
+  // The "No events match these filters" line's Clear filters: only the kind
+  // filters it blames. Time stays, so an officer working in Past stays there.
+  function clearKindFilters() {
     setAttendanceFilter("all");
     setRecurrenceFilter("all");
   }
@@ -524,14 +564,14 @@ export function EventsPage() {
   function openCreate(day: Date | null) {
     setEditorMode("create");
     setActiveEvent(null);
-    setActiveSeries(null);
+    setActiveSeriesKey(null);
     setCalendarCreateDay(day);
     editorDialog.setOpen(true);
   }
 
   function openDetails(event: EventRow, series: EventRow[] | null = null) {
     setActiveEvent(event);
-    setActiveSeries(series);
+    setActiveSeriesKey(series ? eventSeriesKey(event) : null);
     setDetailSheetOpen(true);
   }
 
@@ -547,8 +587,13 @@ export function EventsPage() {
     // A series row says how it repeats where a one-time row says only its
     // time: the day heading above already says which day.
     const seriesKey = series ? eventSeriesKey(event) : null;
-    const cadence = seriesKey
-      ? seriesCadenceLabel(seriesRuleOf(seriesKey, events), event.start_time)
+    const head = seriesKey ? seriesHeadOf(seriesKey, events) : null;
+    const cadence = head
+      ? seriesCadenceLabel(
+          head.recurrence_rule,
+          event.start_time,
+          head.start_time,
+        )
       : null;
     const time = formatTimeOfDay(event.start_time) || null;
     // One derived value: the row fill and the checkbox must never disagree
@@ -802,21 +847,26 @@ export function EventsPage() {
                 id="events-list-label"
                 count={
                   selecting
-                    ? `${selectedEventIds.length} selected`
+                    ? `${selectedVisibleIds.length} selected`
                     : eventsLabel(soonEntries.length)
                 }
               >
                 {TIME_FILTER_LABELS[timeFilter]}
               </SectionLabel>
             </div>
-            {canMarkAttendance && shownCount > 0 ? (
+            {/*
+              Once in Select, its controls stay until Done, even when no row
+              is on screen (Later collapsed, a search emptied the list), so
+              the mode always has a way out.
+            */}
+            {canMarkAttendance && (selecting || shownCount > 0) ? (
               selecting ? (
                 <>
                   <Button
                     size="toolbar"
                     variant="secondary"
                     {...eventWriteGate.controlProps(
-                      autoAbsent.isPending || selectedEventIds.length === 0,
+                      autoAbsent.isPending || selectedVisibleIds.length === 0,
                     )}
                     onClick={() => void markSelectedAttendanceComplete()}
                   >
@@ -836,9 +886,9 @@ export function EventsPage() {
                 </Button>
               )
             ) : null}
-            {canMarkAttendance && shownCount > 0 ? (
+            {canMarkAttendance && (selecting || shownCount > 0) ? (
               <span className="flex w-11 shrink-0 items-center justify-center">
-                {selecting ? (
+                {selecting && shownCount > 0 ? (
                   <label className={dashboardCheckboxHitAreaClassName}>
                     <input
                       type="checkbox"
@@ -865,7 +915,7 @@ export function EventsPage() {
             ) : hasEvents && narrowedByKind ? (
               <InlineNote className="px-2">
                 {stateMicrocopy.events.noFilterMatches}{" "}
-                <InlineNoteAction onClick={clearFilters}>
+                <InlineNoteAction onClick={clearKindFilters}>
                   Clear filters
                 </InlineNoteAction>
               </InlineNote>
@@ -952,6 +1002,7 @@ export function EventsPage() {
         onOpenChange={setDetailSheetOpen}
         event={activeEvent}
         series={activeSeries}
+        seriesRule={activeSeriesHead?.recurrence_rule}
         onSelectOccurrence={(occurrence) => setActiveEvent(occurrence)}
         usingPreviewData={false}
         onRequestEdit={(event) => {

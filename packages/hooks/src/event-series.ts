@@ -1,10 +1,12 @@
 /**
  * Repeating events as an Events list shows them: one row per series, and a
- * two-week horizon (#3707). Shared by web's Events page and mobile's Events
- * tab so both apps collapse a series, and draw the horizon, the same way.
+ * two-week horizon (#3707). Web's Events page reads it; mobile's Events tab
+ * is to adopt it in #3823, so both apps collapse a series, and draw the
+ * horizon, the same way.
  *
- * A series is stored as rows, one per meeting (`spec/behavior/events.md`
- * § Recurring events): the head carries the `recurrence_rule` and is itself
+ * A series is stored as rows, one per meeting (the "Recurring events" rules
+ * under [`spec/behavior/events.md` § Event Creation](../../../spec/behavior/events.md#event-creation)):
+ * the head carries the `recurrence_rule` and is itself
  * the first meeting, and each generated occurrence points at the head through
  * `parent_event_id` with a `null` rule. So the rule says nothing about a
  * generated occurrence; the series key below is what groups them.
@@ -61,19 +63,25 @@ export function isSeriesEvent(event: SeriesEventLike): boolean {
 }
 
 /**
- * The series' rule, read off whichever row carries it (the head). `null` when
- * the head isn't among `events`.
+ * The series' head: the row whose id is the series key, which carries the
+ * rule and the anchor start. `null` when the head isn't among `events`.
+ */
+export function seriesHeadOf<T extends SeriesEventLike>(
+  key: string,
+  events: readonly T[],
+): T | null {
+  return events.find((event) => nonEmptyString(event.id) === key) ?? null;
+}
+
+/**
+ * The series' rule, read off its head. `null` when the head isn't among
+ * `events`.
  */
 export function seriesRuleOf(
   key: string,
   events: readonly SeriesEventLike[],
 ): string | null {
-  for (const event of events) {
-    if (nonEmptyString(event.id) === key) {
-      return nonEmptyString(event.recurrence_rule);
-    }
-  }
-  return null;
+  return nonEmptyString(seriesHeadOf(key, events)?.recurrence_rule);
 }
 
 /**
@@ -164,14 +172,21 @@ function ordinal(day: number): string {
 }
 
 /**
- * How a series row says when it repeats, from its rule and an occurrence's
- * start: `"Every Sunday"`, `"Every other Sunday"`, `"Every month on the 9th"`.
- * `null` for a rule this app doesn't generate or a start it can't read, so
- * the caller leaves the cadence out rather than guessing.
+ * How a series row says when it repeats, from its rule and a meeting's start:
+ * `"Every Sunday"`, `"Every other Sunday"`, `"Every month on the 9th"`.
+ *
+ * A monthly series names its anchor day, so pass the head's start as
+ * `anchorStart`: the API clamps a meeting to a shorter month's last day (a
+ * series on the 31st meets on Feb 28), and that meeting's own date would
+ * misstate the rule. A rule outside the catalog (one a retired rule left on
+ * an old row) reads in sentence case (`"Daily"`), as `recurrenceLabel` does.
+ * `null` for a missing rule or a start it can't read, so the caller leaves
+ * the cadence out rather than guessing.
  */
 export function seriesCadenceLabel(
   rule: unknown,
   start: unknown,
+  anchorStart?: unknown,
 ): string | null {
   if (typeof start !== "string") return null;
   const at = new Date(start);
@@ -182,9 +197,17 @@ export function seriesCadenceLabel(
       return `Every ${weekday}`;
     case "BIWEEKLY":
       return `Every other ${weekday}`;
-    case "MONTHLY":
-      return `Every month on the ${ordinal(at.getDate())}`;
-    default:
-      return null;
+    case "MONTHLY": {
+      const anchor =
+        typeof anchorStart === "string" ? new Date(anchorStart) : at;
+      const day = Number.isNaN(anchor.getTime()) ? at : anchor;
+      return `Every month on the ${ordinal(day.getDate())}`;
+    }
+    default: {
+      const token = nonEmptyString(rule);
+      if (!token) return null;
+      const words = token.trim().replace(/_/g, " ").toLowerCase();
+      return words.charAt(0).toUpperCase() + words.slice(1);
+    }
   }
 }

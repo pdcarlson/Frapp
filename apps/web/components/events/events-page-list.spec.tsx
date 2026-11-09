@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { cardFilledContainers } from "@/tests/card-surfaces";
@@ -92,8 +92,16 @@ vi.mock("@repo/hooks", () => ({
 
 // The viewer whose last view (List or Calendar) the page reads; no stored
 // choice unless a test writes one.
+const { viewerRef } = vi.hoisted(() => ({
+  viewerRef: {
+    current: { userId: "user-1", isLoading: false } as {
+      userId: string | null;
+      isLoading: boolean;
+    },
+  },
+}));
 vi.mock("@/lib/auth/use-frapp-user", () => ({
-  useFrappUser: () => ({ userId: "user-1", isLoading: false }),
+  useFrappUser: () => viewerRef.current,
 }));
 
 vi.mock("@/lib/providers/network-provider", () => ({
@@ -113,6 +121,8 @@ vi.mock("./event-detail-sheet", () => ({
     open: boolean;
     event: unknown;
     series?: unknown;
+    seriesRule?: unknown;
+    onSelectOccurrence?: (event: unknown) => void;
   }) => {
     detailSheetProps(props);
     return null;
@@ -156,6 +166,7 @@ async function pick(
 beforeEach(() => {
   vi.clearAllMocks();
   window.localStorage.clear();
+  viewerRef.current = { userId: "user-1", isLoading: false };
   eventsQuery.data = EVENTS;
   permissionsRef.current = ["events:create", "events:update"];
 });
@@ -374,6 +385,99 @@ describe("EventsPage list", () => {
     );
   });
 
+  it("opens another meeting from the sheet's series list, with the series' rule", async () => {
+    const user = userEvent.setup();
+    // The head has already met, so the row opens a generated meeting, which
+    // carries no rule of its own.
+    eventsQuery.data = weeklySeries("Chapter", 4).map((event, i) => ({
+      ...event,
+      start_time: daysOut(-7 + i * 7, 18),
+    }));
+    render(<EventsPage />);
+
+    await user.click(screen.getByRole("button", { name: /^chapter/i }));
+    const props = detailSheetProps.mock.lastCall![0];
+    expect(props.event).toEqual(expect.objectContaining({ id: "series-1" }));
+    expect(props.seriesRule).toBe("WEEKLY");
+    expect(
+      (props.series as { id: string }[]).map((event) => event.id),
+    ).toEqual(["series-1", "series-2", "series-3"]);
+
+    act(() => props.onSelectOccurrence!({ id: "series-3" }));
+    expect(detailSheetProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        event: expect.objectContaining({ id: "series-3" }),
+      }),
+    );
+  });
+
+  it("counts Time on the Filter button only in the list, the view it applies to", async () => {
+    const user = userEvent.setup();
+    render(<EventsPage />);
+
+    await openFilters(user);
+    await pick(user, "Time", "Past");
+    await user.keyboard("{Escape}");
+    expect(
+      screen.getByRole("button", { name: "Filter events, 1 on" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("radio", { name: "Calendar" }));
+    expect(
+      screen.getByRole("button", { name: "Filter events" }),
+    ).toBeInTheDocument();
+  });
+
+  it("selects only what's on screen: Later's rows only while it's open", async () => {
+    const user = userEvent.setup();
+    eventsQuery.data = [
+      EVENTS[1],
+      { ...EVENTS[0], id: "far", name: "Formal", start_time: daysOut(30) },
+    ];
+    render(<EventsPage />);
+
+    await user.click(screen.getByRole("button", { name: "Select" }));
+    await user.click(
+      screen.getByRole("checkbox", { name: /select all visible events/i }),
+    );
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+
+    const later = screen.getByRole("button", { name: /later/i });
+    await user.click(later);
+    expect(
+      screen.getByRole("checkbox", { name: /select formal/i }),
+    ).not.toBeChecked();
+    await user.click(screen.getByRole("checkbox", { name: /select formal/i }));
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
+
+    // Collapsed, Formal is off screen: the count drops it.
+    await user.click(later);
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+  });
+
+  it("keeps Select's Done when no row is on screen", async () => {
+    const user = userEvent.setup();
+    eventsQuery.data = [{ ...EVENTS[1], start_time: daysOut(30) }];
+    render(<EventsPage />);
+
+    const later = screen.getByRole("button", { name: /later/i });
+    await user.click(later);
+    await user.click(screen.getByRole("button", { name: "Select" }));
+    await user.click(
+      screen.getByRole("checkbox", { name: /select study night/i }),
+    );
+    await user.click(later);
+
+    expect(screen.getByText("0 selected")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /mark attendance complete/i }),
+    ).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    // Out of the mode; with no row on screen there's nothing to Select.
+    expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
+    expect(screen.getByText("0 events")).toBeInTheDocument();
+  });
+
   it("has no checkboxes until Select, and selecting moves nothing", async () => {
     const user = userEvent.setup();
     render(<EventsPage />);
@@ -447,6 +551,29 @@ describe("EventsPage empty states", () => {
     expect(screen.getByText("2 events")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Filter events" }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps Past when the miss's Clear filters clears the kind filters", async () => {
+    const user = userEvent.setup();
+    eventsQuery.data = [
+      ...EVENTS,
+      { ...EVENTS[1], id: "past", name: "Retreat", start_time: daysOut(-3) },
+    ];
+    render(<EventsPage />);
+
+    await openFilters(user);
+    await pick(user, "Time", "Past");
+    await pick(user, "Attendance", "Mandatory");
+    await user.keyboard("{Escape}");
+    expect(
+      screen.getByText(/^No events match these filters\./),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(screen.getByRole("region", { name: "Past" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^retreat/i }),
     ).toBeInTheDocument();
   });
 
@@ -536,6 +663,20 @@ describe("EventsPage view memory", () => {
     first.unmount();
 
     render(<EventsPage />);
+    expect(screen.getByRole("radio", { name: "Calendar" })).toBeChecked();
+  });
+
+  it("waits for the viewer before picking a view, so a stored Calendar never flashes the list", () => {
+    window.localStorage.setItem("frapp.events.view.user-1", "calendar");
+    viewerRef.current = { userId: null, isLoading: true };
+    const { rerender } = render(<EventsPage />);
+
+    // Events are in, the viewer isn't: no list painted to jump away from.
+    expect(screen.queryByRole("radio", { name: "List" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Upcoming" })).toBeNull();
+
+    viewerRef.current = { userId: "user-1", isLoading: false };
+    rerender(<EventsPage />);
     expect(screen.getByRole("radio", { name: "Calendar" })).toBeChecked();
   });
 

@@ -148,9 +148,9 @@ describe("EventEditorDialog form shape and attendance by role", () => {
       screen.getByRole("button", { name: "Set a role differently" }),
     );
     fireEvent.click(await screen.findByText("Exec"));
-    fireEvent.change(screen.getByLabelText("Repeat"), {
-      target: { value: "WEEKLY" },
-    });
+    // The app's Select (Radix), not a native one.
+    fireEvent.click(screen.getByRole("combobox", { name: "Repeat" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Every week" }));
     expect(screen.getByText(/13 meetings, the last on Sep 23\./)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));
 

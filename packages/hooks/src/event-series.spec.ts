@@ -5,6 +5,7 @@ import {
   horizonEnd,
   isSeriesEvent,
   seriesCadenceLabel,
+  seriesHeadOf,
   seriesRuleOf,
   splitByHorizon,
 } from "./event-series";
@@ -45,8 +46,9 @@ describe("eventSeriesKey", () => {
     expect(eventSeriesKey({ id: "x", recurrence_rule: "" })).toBeNull();
   });
 
-  it("finds the rule on the head", () => {
+  it("finds the head and its rule", () => {
     const rows = weekly(3, "2026-11-15T23:48:00Z");
+    expect(seriesHeadOf("head", rows)?.id).toBe("head");
     expect(seriesRuleOf("head", rows)).toBe("WEEKLY");
     expect(seriesRuleOf("missing", rows)).toBeNull();
   });
@@ -152,9 +154,22 @@ describe("seriesCadenceLabel", () => {
     ).toBe("Every month on the 11th");
   });
 
-  it("says nothing for an unknown rule or start", () => {
-    expect(seriesCadenceLabel("DAILY", sunday)).toBeNull();
+  it("names a monthly series' anchor day, not a clamped meeting's", () => {
+    // Anchored on Jan 31; the API puts February's meeting on the 28th.
+    const anchor = new Date(2027, 0, 31, 18).toISOString();
+    const february = new Date(2027, 1, 28, 18).toISOString();
+    expect(seriesCadenceLabel("MONTHLY", february, anchor)).toBe(
+      "Every month on the 31st",
+    );
+  });
+
+  it("reads a rule outside the catalog in sentence case", () => {
+    expect(seriesCadenceLabel("DAILY", sunday)).toBe("Daily");
+  });
+
+  it("says nothing for a missing rule or an unreadable start", () => {
     expect(seriesCadenceLabel(null, sunday)).toBeNull();
+    expect(seriesCadenceLabel("", sunday)).toBeNull();
     expect(seriesCadenceLabel("WEEKLY", "nope")).toBeNull();
   });
 });
