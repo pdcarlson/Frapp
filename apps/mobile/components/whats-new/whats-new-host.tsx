@@ -7,6 +7,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import {
   SheetBackToClose,
   SheetGrabber,
+  SHEET_STACK_BEHAVIOR,
   SheetScrim,
   TallSheetHeader,
   useSheetBackgroundStyle,
@@ -107,6 +108,7 @@ export function WhatsNewHost() {
     <BottomSheetModal
       ref={sheet}
       {...tallSheet}
+      stackBehavior={SHEET_STACK_BEHAVIOR}
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}
       backdropComponent={SheetScrim}

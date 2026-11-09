@@ -37,13 +37,13 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
     title: "Easier check-in, live unread counts, and what's new on your phone",
     changes: [
       "On your phone, what's new now opens on its own once after an update, so you don't have to go looking for it.",
-      "Check-in opens 10 minutes before an event starts, and once you're checked in the event says so, with your points.",
-      "Hosts get Host check-in right on the event, and a second scan just tells you you're already in.",
+      "Check-in opens 10 minutes before an event starts and then shows you're in, with your points, and hosts get Host check-in right on the event.",
       "Unread counts and your Messages list stay in step across your phone and computer, and the app catches up the moment you come back to it.",
       "You can post in the channels your chapter brought over from Discord, unless they were read-only there.",
-      "Edit and Reply open the keyboard straight away, and a long message has room while you edit it.",
+      "Edit and Reply open the keyboard straight away, with room for a long message, and closing a sheet you opened from another sheet takes you back to the first.",
       "Handing over the presidency no longer locks the old president out, and changing roles asks first if it would take away someone's access.",
       "Only officers who can do something about it are pinged when someone new joins, and Add to calendar is gone until calendar sync arrives.",
+      "On the web, an invite sent to your email shows up when you sign in, ready to join in one tap, and every join step lets you sign out.",
     ],
   },
   {
