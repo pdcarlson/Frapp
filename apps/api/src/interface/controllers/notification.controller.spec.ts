@@ -18,6 +18,7 @@ describe('NotificationController', () => {
       | 'removePushToken'
       | 'listNotifications'
       | 'markNotificationRead'
+      | 'markNotificationsRead'
       | 'getPreferences'
       | 'updatePreference'
       | 'getSettings'

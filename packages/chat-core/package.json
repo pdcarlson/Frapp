@@ -5,6 +5,8 @@
   "exports": {
     "./adapters": "./src/adapters.ts",
     "./topic-registry": "./src/topic-registry.ts",
+    "./topic-attach": "./src/topic-attach.ts",
+    "./change-topics": "./src/change-topics.ts",
     "./types": "./src/types.ts",
     "./cache": "./src/cache.ts",
     "./history": "./src/history.ts",

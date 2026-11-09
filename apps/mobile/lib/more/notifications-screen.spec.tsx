@@ -59,6 +59,9 @@ const inbox = vi.hoisted(() => ({ data: null as unknown[] | null }));
 /** The read receipt the screen sends; stable so a spec can assert on a tap. */
 const markRead = vi.hoisted(() => ({ mutate: vi.fn(), mutateAsync: vi.fn() }));
 
+/** `POST /v1/notifications/read`, the one request behind Mark all read. */
+const markAll = vi.hoisted(() => ({ mutate: vi.fn(), isPending: false }));
+
 /** The inbox query's `refetch`, kept stable so a spec can assert on a pull. */
 const refetchInbox = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 
@@ -73,6 +76,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     refetch: refetchInbox,
   }),
   useMarkNotificationRead: () => markRead,
+  useMarkNotificationsRead: () => markAll,
 }));
 
 import { signetDarkTokens } from "@repo/theme/signet";
@@ -402,5 +406,40 @@ describe("Notifications row tap marks read (#3788)", () => {
     const tree = render();
     pressRow(tree, "Dues reminder");
     expect(markRead.mutate).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * #3929. Mark all read is one `POST /v1/notifications/read`, not a receipt per
+ * row, so it also reads rows past the page this screen shows.
+ */
+describe("Mark all read sends one request (#3929)", () => {
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+    inbox.data = null;
+    markAll.mutate.mockClear();
+    markRead.mutate.mockClear();
+    markRead.mutateAsync.mockClear();
+  });
+
+  it("asks the server once, naming no screens", () => {
+    inbox.data = [
+      NOTIFICATIONS[0],
+      { ...NOTIFICATIONS[0], id: "notif-2", title: "Chapter" },
+    ];
+    const tree = render();
+    const button = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Mark all notifications read" &&
+        typeof node.props.onPress === "function",
+    );
+    act(() => button.props.onPress());
+
+    expect(markAll.mutate).toHaveBeenCalledTimes(1);
+    expect(markAll.mutate.mock.calls[0]?.[0]).toBeUndefined();
+    expect(markRead.mutate).not.toHaveBeenCalled();
+    expect(markRead.mutateAsync).not.toHaveBeenCalled();
   });
 });

@@ -7,7 +7,7 @@ import {
   CHANGE_EVENT,
   changeTopic,
   type ChangeTable,
-} from "@/lib/realtime/change-topics";
+} from "@repo/chat-core/change-topics";
 
 type Options = {
   /** Table whose changes should invalidate. Must emit a ping — see `change-topics.ts`. */
