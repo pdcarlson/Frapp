@@ -111,7 +111,7 @@ export default function TasksScreen() {
   ]);
   const updateStatus = useUpdateTaskStatus();
 
-  // `can` from @repo/validation, not a bare `includes` — an owner's grant is the
+  // `canAll` from @repo/validation, not a bare `includes` — an owner's grant is the
   // wildcard `*`, so a membership test would hide the control from exactly the
   // people who assign work. The C2 pattern, verbatim.
   const permissions = usePermissionList();
