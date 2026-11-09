@@ -4,6 +4,7 @@ import {
   choiceIsReadOnly,
   defaultChoice,
   defaultChoices,
+  isChapterChannel,
   isImportTarget,
   mappingIssues,
   mergeTarget,
@@ -123,6 +124,21 @@ describe("mergeTarget and the merge default (#2856)", () => {
     ).toBeNull();
     expect(mergeTarget(open("1", "officers"), officers("PUBLIC"))).toBe(
       "f-officers",
+    );
+  });
+
+  it("never merges into the audit log, where only Frapp posts (#3909)", () => {
+    const audit = [
+      {
+        id: "f-audit",
+        name: "chapter-audit",
+        type: "PUBLIC",
+        is_audit_log: true,
+      },
+    ];
+    expect(mergeTarget(open("1", "📋-chapter-audit"), audit)).toBeNull();
+    expect(defaultChoice(open("1", "chapter-audit"), audit).action).toBe(
+      "create_new",
     );
   });
 
@@ -630,7 +646,7 @@ describe("isImportTarget", () => {
     );
   });
 
-  it("leaves out DMs, group DMs and the audit log", () => {
+  it("leaves out DMs, group DMs and the audit log, though the audit log's name is still taken", () => {
     expect(isImportTarget({ id: "d1", name: "dm", type: "DM" })).toBe(false);
     expect(
       isImportTarget({ id: "g1", name: "officers", type: "GROUP_DM" }),
@@ -643,5 +659,14 @@ describe("isImportTarget", () => {
         is_audit_log: true,
       }),
     ).toBe(false);
+    expect(
+      isChapterChannel({
+        id: "a1",
+        name: "chapter-audit",
+        type: "PUBLIC",
+        is_audit_log: true,
+      }),
+    ).toBe(true);
+    expect(isChapterChannel({ id: "d1", name: "dm", type: "DM" })).toBe(false);
   });
 });

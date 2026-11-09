@@ -44,12 +44,17 @@ from (
 ) audit
 where c.id = audit.id;
 
--- A `#chapter-audit` inserted into a chapter that has no audit log yet is that
--- chapter's audit log: flag it, and keep it read-only. Matches the backfill's
--- rule (a PUBLIC channel with the seeded name), so a chapter created by any
--- API version ends up the same. A second channel of that name, in a chapter
--- whose audit log is already flagged, stays an ordinary channel. The API
--- refuses renaming or deleting the flagged one, so this only runs at seeding.
+-- A `#chapter-audit` seeded into a new chapter that has no audit log yet is
+-- that chapter's audit log: flag it, and keep it read-only. Matches the
+-- backfill's rule (a PUBLIC channel with the seeded name), so a chapter
+-- created by any API version ends up the same.
+--
+-- Only while seeding, which is the onboarding request that creates the
+-- chapter: the chapter is under an hour old. Later, a channel an officer or
+-- a Discord import creates with that name stays an ordinary channel, so it
+-- never turns into one nobody can post in, rename or delete, and an import
+-- never writes member history into the audit log. A chapter that lost its
+-- audit log before this migration (renamed or deleted) gets it back by hand.
 create or replace function public.chat_channels_flag_audit_log()
 returns trigger
 language plpgsql
@@ -60,6 +65,11 @@ begin
   if new.name = 'chapter-audit'
      and new.type = 'PUBLIC'
      and not new.is_audit_log
+     and exists (
+       select 1 from public.chapters
+       where id = new.chapter_id
+         and created_at > now() - interval '1 hour'
+     )
      and not exists (
        select 1 from public.chat_channels
        where chapter_id = new.chapter_id and is_audit_log

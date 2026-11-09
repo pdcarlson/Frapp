@@ -728,6 +728,13 @@ describe("ChatAdminPage — the audit log", () => {
     expect(within(pane).getByLabelText("Name")).toBeDisabled();
     expect(within(pane).getByText(AUDIT_LOG_SETTINGS_NOTE)).toBeInTheDocument();
     expect(within(pane).queryByText(/^Read-only/)).toBeNull();
+    // The server refuses deleting it, so no Delete control is offered.
+    expect(
+      screen.queryByRole("button", { name: "Delete #chapter-audit" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Delete #general" }),
+    ).toBeInTheDocument();
   });
 
   it("keeps the name and the read-only switch open on an ordinary channel", () => {

@@ -136,8 +136,9 @@ export interface ChatChannel {
   is_default: boolean;
   /**
    * The chapter's audit-log channel, `#chapter-audit` (#3909): at most one
-   * per chapter (a partial unique index), set when the chapter is created and
-   * never by an officer. It is system-write only: `canAccessChannel` refuses
+   * per chapter (a partial unique index), set when the chapter is seeded
+   * (`DEFAULT_CHANNELS`, or the `chat_channels_flag_audit_log` trigger for an
+   * API that doesn't send it) and never by an officer. It is system-write only: `canAccessChannel` refuses
    * every member write in it whatever the caller's permissions, and the audit
    * mirror (`ChatBridgeWorkerService`) finds it by this flag, not its name.
    */

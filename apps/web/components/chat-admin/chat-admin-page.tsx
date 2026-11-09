@@ -862,15 +862,18 @@ function ChatAdminBody({
                       </span>
                     ) : null}
                   </button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={compactControlClassName}
-                    aria-label={`Delete #${channel.name}`}
-                    onClick={() => void handleDeleteChannel(channel)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  {/* The server refuses deleting the audit log (#3909). */}
+                  {channel.is_audit_log ? null : (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={compactControlClassName}
+                      aria-label={`Delete #${channel.name}`}
+                      onClick={() => void handleDeleteChannel(channel)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
                 </li>
               ))}
             </ul>

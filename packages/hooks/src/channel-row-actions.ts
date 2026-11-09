@@ -14,9 +14,11 @@ import { canHideConversation } from "./hide-conversation";
  * `DELETE /v1/channels/{id}` check. That part only hides what the server
  * would refuse anyway; it grants nothing.
  *
- * Leaving Delete off DMs and `#chapter-audit` is this menu's own caution, not
- * a server rule: `DELETE /v1/channels/{id}` checks only `channels:manage` and
- * the chapter, so a client that skips this rule has no backstop (#3633).
+ * Leaving Delete off `#chapter-audit` matches the server, which refuses
+ * deleting or renaming the audit log (#3909). Leaving it off DMs is this
+ * menu's own caution, not a server rule: `DELETE /v1/channels/{id}` checks
+ * only `channels:manage` and the chapter there, so a client that skips this
+ * rule has no backstop (#3633).
  */
 
 /** The actions, in menu order. */

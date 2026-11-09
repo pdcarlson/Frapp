@@ -1253,6 +1253,14 @@ export class DiscordImportWorkerService {
       if (categoryId === null || !isForeignKeyViolation(error)) throw error;
       created = await create(null);
     }
+    // The audit log is flagged only while a chapter is seeded
+    // (`chat_channels_flag_audit_log`), so a channel made here should never
+    // be it. If it is, stop before any history lands in it (#3909).
+    if (created.is_audit_log) {
+      throw new DiscordImportStoppedError(
+        `The new channel for #${mapping.discord_channel_name} became the chapter's audit log. Rename it in the mapping, then restart the import.`,
+      );
+    }
     // Recorded before the mapping row learns its target: remapping a failed
     // import rewrites the mapping rows without targets, and this is how the
     // purge still finds a channel the import made (#2905).

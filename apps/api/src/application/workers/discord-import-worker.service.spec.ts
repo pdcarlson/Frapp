@@ -329,10 +329,18 @@ async function buildWorker(
   } = {},
 ) {
   const channelRepo = {
-    create: jest.fn(async (data: { name: string }) => ({
-      id: 'created-channel-1',
-      name: data.name,
-    })),
+    create: jest.fn(
+      async (data: {
+        name: string;
+      }): Promise<{
+        id: string;
+        name: string;
+        is_audit_log?: boolean;
+      }> => ({
+        id: 'created-channel-1',
+        name: data.name,
+      }),
+    ),
     // Merge targets' types decide whether a mention of a merged channel is
     // named (#2875). The harness's target is a whole-chapter channel.
     findByIds: jest.fn(async (chapterId: string, ids: string[]) =>
@@ -759,6 +767,30 @@ describe('DiscordImportWorkerService — importing', () => {
     expect(repoRef.channelUpdates[0]).toMatchObject({
       target_channel_id: 'created-channel-1',
     });
+  });
+
+  it('stops before writing when the channel it created became the audit log (#3909)', async () => {
+    repoRef.channels = [
+      channelMapping({
+        mapping_action: 'create_new',
+        target_channel_id: null,
+        new_channel_name: 'chapter-audit',
+      }),
+    ];
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+    channelRepo.create.mockResolvedValueOnce({
+      id: 'created-channel-1',
+      name: 'chapter-audit',
+      is_audit_log: true,
+    });
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.insertMessages).not.toHaveBeenCalled();
+    expect(repoRef.state().error).toMatch(/became the chapter's audit log/);
   });
 
   // The purge deletes what an import created once it is empty (#2905). It
