@@ -1,8 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { Bell, ChevronsUpDown, LogOut, Sparkles, User } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import {
+  Bell,
+  Check,
+  ChevronsUpDown,
+  LogOut,
+  Smile,
+  Sparkles,
+  User,
+} from "lucide-react";
 import { useCurrentUser } from "@repo/hooks";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -11,8 +19,28 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AvatarPresenceDot,
+  PresenceGlyph,
+} from "@/components/members/presence-dot";
+import { CustomStatusDialog } from "@/components/layout/custom-status-dialog";
+import { useChapterPresenceContext } from "@/lib/providers/chapter-presence-provider";
+import { useFrappUser } from "@/lib/auth/use-frapp-user";
+import { useNetwork } from "@/lib/providers/network-provider";
+import {
+  dndEndsAt,
+  tomorrowMorning,
+  type DndDuration,
+  type MemberStatus,
+  type OwnStatus,
+} from "@/lib/realtime/member-status";
+import { presenceLabel } from "@/lib/realtime/presence-status";
+import { useOwnStatus, useSaveOwnStatus } from "@/lib/realtime/use-own-status";
 import { signOutCurrentSession } from "@/lib/auth/session";
 import { cn, initials } from "@/lib/utils";
 import { FOCUS_RING_SHELL } from "@/components/ui/focus";
@@ -33,9 +61,12 @@ type CurrentUser = {
  * top-bar avatar" — which is what freed the bottom of the nav for the collapse
  * toggle and nothing else.
  *
- * Contents are exactly Profile, Notification settings, What's new, a divider,
- * Sign out (`1i`, plus What's new, 2026-11-07: the changelog members read,
- * the same list as mobile Settings → What's new). **Chapter switching is deliberately not here**: it lives in the nav's
+ * Contents are exactly Status and the custom status line, a divider, Profile,
+ * Notification settings, What's new, a divider, Sign out (`1i`, plus What's
+ * new, 2026-11-07: the changelog members read, the same list as mobile
+ * Settings → What's new; plus Status, 2026-11-09, #3845: the member's own
+ * Online / Idle / Do Not Disturb / Invisible and custom line, first because
+ * it is the row people reach for before practice, as on Discord and Slack). **Chapter switching is deliberately not here**: it lives in the nav's
  * chapter header row, because identity and chapter are separate menus. Putting
  * a chapter action in the account menu is the merge that board note warns
  * against.
@@ -58,6 +89,8 @@ export function AccountMenu({
   onNavigate?: () => void;
 }) {
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [editingLine, setEditingLine] = useState(false);
+  const own = useOwnStatus();
   const { data } = useCurrentUser();
 
   const user = (data ?? {}) as CurrentUser;
@@ -65,6 +98,18 @@ export function AccountMenu({
   const email = user.email ?? null;
 
   const { confirmDrop, confirmDropDialog } = useConfirmDropBulkUploads();
+
+  // Your own dot, on the avatar that opens this menu. Read from presence, so
+  // it is what the chapter sees (the Idle clock included), except that
+  // Invisible shows its grey ring to you alone.
+  const { userId } = useFrappUser();
+  const presence = useChapterPresenceContext();
+  const ownDot =
+    presence.isReady && userId ? presence.statusOf(userId) : null;
+  // The dot is decorative (`AvatarPresenceDot`), so the control names it.
+  const accountLabel = ownDot
+    ? `Account menu for ${name}, ${presenceLabel(ownDot)}`
+    : `Account menu for ${name}`;
 
   async function handleSignOut() {
     if (!(await confirmDrop("sign-out"))) return;
@@ -89,39 +134,45 @@ export function AccountMenu({
            */
           <button
             type="button"
-            aria-label={`Account menu for ${name}`}
+            aria-label={accountLabel}
             className={cn(
               "ml-1 shrink-0 rounded-full transition",
               FOCUS_RING_SHELL,
             )}
           >
-            <Avatar className="h-[30px] w-[30px] border border-border bg-popover">
-              {user.avatar_url ? (
-                <AvatarImage src={user.avatar_url} alt="" />
-              ) : null}
-              <AvatarFallback className="text-[11px] font-semibold">
-                {initials(name)}
-              </AvatarFallback>
-            </Avatar>
+            <span className="relative block">
+              <Avatar className="h-[30px] w-[30px] border border-border bg-popover">
+                {user.avatar_url ? (
+                  <AvatarImage src={user.avatar_url} alt="" />
+                ) : null}
+                <AvatarFallback className="text-[11px] font-semibold">
+                  {initials(name)}
+                </AvatarFallback>
+              </Avatar>
+              <AvatarPresenceDot status={ownDot} />
+            </span>
           </button>
         ) : (
           <button
             type="button"
-            aria-label={`Account menu for ${name}`}
+            aria-label={accountLabel}
             className={cn(
               "flex w-full items-center gap-2 rounded-[10px] px-2 py-2 text-left transition",
               "hover:bg-card",
               FOCUS_RING_SHELL,
             )}
           >
-            <Avatar className="h-8 w-8 shrink-0">
-              {user.avatar_url ? (
-                <AvatarImage src={user.avatar_url} alt="" />
-              ) : null}
-              <AvatarFallback className="text-xs">
-                {initials(name)}
-              </AvatarFallback>
-            </Avatar>
+            <span className="relative shrink-0">
+              <Avatar className="h-8 w-8">
+                {user.avatar_url ? (
+                  <AvatarImage src={user.avatar_url} alt="" />
+                ) : null}
+                <AvatarFallback className="text-xs">
+                  {initials(name)}
+                </AvatarFallback>
+              </Avatar>
+              <AvatarPresenceDot status={ownDot} />
+            </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm text-foreground">
                 {name}
@@ -152,6 +203,8 @@ export function AccountMenu({
             </span>
           ) : null}
         </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <StatusRows own={own} onEditLine={() => setEditingLine(true)} />
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           <Link href="/profile" onClick={onNavigate}>
@@ -191,6 +244,168 @@ export function AccountMenu({
         </DropdownMenuItem>
       </DropdownMenuContent>
       {confirmDropDialog}
+      {editingLine ? (
+        <CustomStatusDialog
+          current={own?.line ?? null}
+          onClose={() => setEditingLine(false)}
+        />
+      ) : null}
     </DropdownMenu>
+  );
+}
+
+/**
+ * DND's durations. "Until I turn it off" is the default (#3845), so it comes
+ * first: opening the submenu (a click on the row, or the right arrow) puts
+ * focus on it, and Enter takes it. A submenu row can only open its submenu,
+ * never select, so first is what makes a default reachable in one step.
+ */
+const DND_DURATIONS: { duration: DndDuration; label: string }[] = [
+  { duration: null, label: "Until I turn it off" },
+  { duration: "1h", label: "For 1 hour" },
+  { duration: "8h", label: "For 8 hours" },
+  { duration: "tomorrow", label: "Until tomorrow" },
+];
+
+const TIME = new Intl.DateTimeFormat(undefined, {
+  hour: "numeric",
+  minute: "2-digit",
+});
+const DAY_TIME = new Intl.DateTimeFormat(undefined, {
+  weekday: "short",
+  hour: "numeric",
+  minute: "2-digit",
+});
+
+/** "Until 3:45 PM" today, "Until Tue 8:00 AM" past today. */
+function untilLabel(endsAt: number, now: Date): string {
+  const end = new Date(endsAt);
+  const sameDay = end.toDateString() === now.toDateString();
+  return `Until ${(sameDay ? TIME : DAY_TIME).format(end)}`;
+}
+
+/**
+ * The Status row (a submenu: Online, Idle, Do Not Disturb with its
+ * durations, Invisible) and the custom status row under it (#3845).
+ *
+ * Writes go through the shared settings mutation, optimistically, so the dot
+ * moves on the click. While the dashboard is offline both rows are disabled,
+ * as the Profile notification switches are (`notifications.md` § Preference
+ * sync): a status the server never heard of would show here and nowhere else.
+ */
+function StatusRows({
+  own,
+  onEditLine,
+}: {
+  own: OwnStatus | null;
+  onEditLine: () => void;
+}) {
+  const { save } = useSaveOwnStatus();
+  const { isOffline } = useNetwork();
+  const current: MemberStatus = own?.status ?? "online";
+  const disabled = isOffline || own === null;
+  const now = new Date();
+
+  function pick(status: MemberStatus, endsAt: string | null = null) {
+    void save({ status, status_expires_at: endsAt });
+  }
+
+  function mark(status: MemberStatus) {
+    return current === status ? (
+      <Check className="ml-auto" aria-label="Current" />
+    ) : null;
+  }
+
+  return (
+    <>
+      <DropdownMenuSub>
+        <DropdownMenuSubTrigger disabled={disabled}>
+          <PresenceGlyph status={current} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate">{presenceLabel(current)}</span>
+            {own?.statusEndsAt ? (
+              <span className="block truncate text-caption text-muted-foreground">
+                {untilLabel(own.statusEndsAt, now)}
+              </span>
+            ) : null}
+          </span>
+        </DropdownMenuSubTrigger>
+        <DropdownMenuSubContent className="w-[240px]">
+          <StatusItem status="online" onSelect={() => pick("online")}>
+            {mark("online")}
+          </StatusItem>
+          <StatusItem status="idle" onSelect={() => pick("idle")}>
+            {mark("idle")}
+          </StatusItem>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <PresenceGlyph status="dnd" />
+              <span className="min-w-0 flex-1">
+                <span className="block">{presenceLabel("dnd")}</span>
+                <span className="block text-caption text-muted-foreground">
+                  Only urgent notifications ring
+                </span>
+              </span>
+              {current === "dnd" ? <Check aria-label="Current" /> : null}
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-[220px]">
+              {DND_DURATIONS.map(({ duration, label }) => (
+                <DropdownMenuItem
+                  key={label}
+                  onSelect={() => pick("dnd", dndEndsAt(duration, new Date()))}
+                >
+                  <span className="flex-1">{label}</span>
+                  {duration === "tomorrow" ? (
+                    <span className="text-caption text-muted-foreground">
+                      {TIME.format(tomorrowMorning(now))}
+                    </span>
+                  ) : null}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+          <StatusItem
+            status="invisible"
+            hint="You'll appear offline"
+            onSelect={() => pick("invisible")}
+          >
+            {mark("invisible")}
+          </StatusItem>
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
+      <DropdownMenuItem disabled={disabled} onSelect={onEditLine}>
+        <Smile aria-hidden="true" />
+        <span className="min-w-0 flex-1 truncate">
+          {own?.line ?? "Set a custom status"}
+        </span>
+      </DropdownMenuItem>
+    </>
+  );
+}
+
+function StatusItem({
+  status,
+  hint,
+  onSelect,
+  children,
+}: {
+  status: MemberStatus;
+  hint?: string;
+  onSelect: () => void;
+  children?: ReactNode;
+}) {
+  return (
+    <DropdownMenuItem onSelect={onSelect}>
+      <PresenceGlyph status={status} />
+      <span className="min-w-0 flex-1">
+        <span className="block">{presenceLabel(status)}</span>
+        {hint ? (
+          <span className="block text-caption text-muted-foreground">
+            {hint}
+          </span>
+        ) : null}
+      </span>
+      {children}
+    </DropdownMenuItem>
   );
 }
