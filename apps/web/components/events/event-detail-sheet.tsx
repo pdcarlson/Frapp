@@ -385,6 +385,7 @@ export function EventDetailSheet({
               <AttendancePanel
                 eventId={eventId}
                 eventStart={resolvedEvent?.start_time}
+                eventEnd={resolvedEvent?.end_time}
               />
             ) : null}
           </div>
