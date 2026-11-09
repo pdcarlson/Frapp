@@ -166,7 +166,7 @@ A controller is subscription-gated only if `ChapterGuard` is in its guard chain 
 | `event` | 3 | `components/events/events-page.tsx` (both create triggers) · `components/events/event-editor-dialog.tsx` · `components/events/event-detail-sheet.tsx` (edit + delete) · `components/chat/chat-shell.tsx` (opens the editor for an `/event` the one-liner can't read, #3773; gated by the editor's own `useSubscriptionGate`) · the `/event` one-liner (`packages/chat-core/src/dispatch.ts`; **not mirrored**, see the slash-command gap above) |
 | `financial-invoice` | 3 (+1 exempt) | `components/billing/invoice-list.tsx` |
 | `points` | 1 | `app/(dashboard)/points/page.tsx` (trigger) · `components/points/points-adjustment-dialog.tsx` · the `/points` slash command (`packages/chat-core/src/dispatch.ts`; **not mirrored**, see the slash-command gap above) |
-| `poll` | 4 | none: `/polls` was retired (#3871) and chat polls post through `chat-message`; the routes go in #3887 |
+| `poll` | 4 | none: `/polls` was retired (#3871) and chat polls post through the `chat` controller (`@FreeTier`); the routes go in #3887 |
 | `discord-connection` | 3 | `components/discord-import/connect-step.tsx` · `components/discord-import/import-wizard.tsx` (both **not mirrored**; `DELETE /discord/connection` has no web client yet and must adopt the gate when one lands) |
 | `discord-import` | 11 | `components/discord-import/*` (**not mirrored**) |
 | `report` | 4 | `components/reports/reports-page.tsx` |

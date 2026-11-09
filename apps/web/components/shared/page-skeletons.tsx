@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
  * - **Same grammar as the page.** No wrapper card, no border box, no fill the
  *   loaded page does not have. Rows sit in `denseListClassName` exactly as the
  *   loaded rows do; a card skeleton only exists where the loaded page draws a
- *   card (tasks, polls, settings).
+ *   card (tasks, settings).
  * - **No title.** The route's title lives in the top bar (`page-title.ts`),
  *   which is already up while the body loads, so a skeleton draws none.
  * - **Action placeholders only where the real actions always render.** The

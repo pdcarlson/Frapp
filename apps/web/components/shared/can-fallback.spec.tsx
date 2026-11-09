@@ -371,6 +371,9 @@ describe("the branches this change did not touch", () => {
  * heuristic: the mistake was in the classification, so the classification is
  * what has to be written down.
  *
+ * **`polls-page` left both lists by ceasing to exist** (#3871): the `/polls`
+ * page and its `polls:view_all` surface gate were retired, not reclassified.
+ *
  * **`invoice-admin-card` has since left this list, by ceasing to exist.** The
  * greenfield Finance lane merged it into `components/billing/invoice-list.tsx`,
  * where there is no longer a gate standing in for the invoice surface: the

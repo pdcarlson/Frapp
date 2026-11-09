@@ -183,7 +183,7 @@ One pill on every screen, web and mobile, says exactly one of these (2026-11-06;
 | Offline (permission check), control slot | — | `Offline — can't check your access.` |
 | Offline (permission check), whole surface | `Can't confirm your access` | `Reconnect to check whether you can <do the thing the surface does>.` |
 
-A paused permission check is **not** the surface being unavailable, and must not borrow that row's copy. "Polls unavailable offline" states a fact about the polls; here we do not know whether this member may see them at all, and saying otherwise promises access on reconnect that may not arrive. Both strings therefore report the *check*, and the second names the surface's verb rather than its noun. The per-surface descriptions are the `Offline (permission check)` rows in the surface tables below.
+A paused permission check is **not** the surface being unavailable, and must not borrow that row's copy. "Study zones unavailable offline" states a fact about the zones; here we do not know whether this member may manage them at all, and saying otherwise promises access on reconnect that may not arrive. Both strings therefore report the *check*, and the second names the surface's verb rather than its noun. The per-surface descriptions are the `Offline (permission check)` rows in the surface tables below.
 
 Implementation: `PermissionsOffline` (`apps/web/components/shared/async-states.tsx`) carries the first string; the second is passed to `<Can offlineFallback>` at each screen-level gate. Behaviour is [README.md](README.md) §4.
 
@@ -546,17 +546,6 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Offline | `Study zones unavailable offline` | `Reconnect to draw a zone or change its reward rate.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can manage study zones.` |
 | Permission denied | — | `Your role can't manage study zones. Ask your chapter president for access.` |
-
-### Polls (dashboard)
-
-| State | Title | Description |
-|---|---|---|
-| Loading | — | `Loading chapter polls...` |
-| Empty | — | `No polls here. Start one in a chat channel.` (one line) |
-| Error | `Couldn't load polls` | the load-failure line (§ copy rules) |
-| Offline | `Polls unavailable offline` | `Reconnect to load the chapter's polls and cast a vote.` |
-| Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can see the chapter's polls.` |
-| Permission denied | `Polls` (the page title) | `Your role can't see every poll. You can still vote in chat.` |
 
 ### Chat (dashboard)
 
