@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { SignetTokens } from "@repo/theme/signet";
@@ -10,19 +10,41 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 /**
  * The one way an account with no chapter signs out of onboarding: forget any
  * remembered invite (it was this account's, not the next one's), sign out, and
- * land on sign-in. s02's Account menu deletion and this line both run it, so
- * the two can't drift.
+ * land on sign-in. s02 (its Sign out line and the sign-out after Delete
+ * account), chapter setup and the chapter picker all run it, so they can't
+ * drift.
+ *
+ * `signingOut` is true for the whole round trip. The screen folds it into
+ * whatever locks its controls, so a Join, a Create or a Delete can't start
+ * under a session that is going away. A second call while one runs does
+ * nothing.
  */
-export function useOnboardingSignOut(): () => Promise<void> {
+export function useOnboardingSignOut(): {
+  signOut: () => Promise<void>;
+  signingOut: boolean;
+} {
   const router = useRouter();
-  const { signOut } = useAuthSession();
-  return useCallback(async () => {
-    consumeRememberedInviteToken();
-    await signOut();
-    // `signOut` drops the query cache itself (`lib/auth-session.tsx`), so
-    // every sign-out path gets it without each screen remembering to.
-    router.replace("/(auth)/sign-in");
-  }, [router, signOut]);
+  const { signOut: endSession } = useAuthSession();
+  const [signingOut, setSigningOut] = useState(false);
+  // A ref as well as the state: two taps in one frame both read the state
+  // before it re-renders.
+  const running = useRef(false);
+  const signOut = useCallback(async () => {
+    if (running.current) return;
+    running.current = true;
+    setSigningOut(true);
+    try {
+      consumeRememberedInviteToken();
+      await endSession();
+      // `signOut` drops the query cache itself (`lib/auth-session.tsx`), so
+      // every sign-out path gets it without each screen remembering to.
+      router.replace("/(auth)/sign-in");
+    } finally {
+      running.current = false;
+      setSigningOut(false);
+    }
+  }, [endSession, router]);
+  return { signOut, signingOut };
 }
 
 /**
@@ -32,27 +54,24 @@ export function useOnboardingSignOut(): () => Promise<void> {
  * Apple account, say) had to find Sign out inside s02's Account menu, and
  * setup had none at all.
  *
- * The line says only `Signed in` when the session has no email. `disabled`
- * holds Sign out while the screen has a join, a deletion or a chapter create
- * in flight; it also holds itself while its own sign-out runs.
+ * The line says only `Signed in` when the session has no email. The screen
+ * owns the sign-out (`useOnboardingSignOut`) and passes it in, so the rest of
+ * the screen can lock while it runs. `disabled` holds Sign out while the
+ * screen has a join, a deletion or a chapter create in flight.
  */
-export function SignedInAs({ disabled = false }: { disabled?: boolean }) {
+export function SignedInAs({
+  signOut,
+  signingOut,
+  disabled = false,
+}: {
+  signOut: () => Promise<void>;
+  signingOut: boolean;
+  disabled?: boolean;
+}) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const { email } = useAuthSession();
-  const signOutToSignIn = useOnboardingSignOut();
-  const [signingOut, setSigningOut] = useState(false);
   const blocked = disabled || signingOut;
-
-  async function handleSignOut() {
-    if (blocked) return;
-    setSigningOut(true);
-    try {
-      await signOutToSignIn();
-    } finally {
-      setSigningOut(false);
-    }
-  }
 
   return (
     <View style={styles.row}>
@@ -87,7 +106,7 @@ export function SignedInAs({ disabled = false }: { disabled?: boolean }) {
         disabled={blocked}
         hitSlop={8}
         onPress={() => {
-          void handleSignOut();
+          if (!blocked) void signOut();
         }}
         quiet
         style={[styles.signOut, blocked ? styles.disabled : null]}

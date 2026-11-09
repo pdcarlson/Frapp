@@ -614,9 +614,11 @@ export function AuthSessionProvider({
     // all (`["settings"]`, `["user","me"]`), so they would never re-key their
     // way out of it.
     //
-    // This lives here rather than in the screens because there are three
-    // sign-out paths (`(app)/preferences.tsx`, `(auth)/chapter-picker.tsx`,
-    // `(auth)/join.tsx`) and each had to remember the clear for itself; the
+    // This lives here rather than in the screens because sign-out has several
+    // callers (`(app)/preferences.tsx`, `(auth)/terms.tsx`, and the onboarding
+    // screens through `useOnboardingSignOut` in
+    // `components/onboarding/signed-in-as.tsx`: join, chapter setup and the
+    // chapter picker) and each had to remember the clear for itself; the
     // picker's landed only after the leak was noticed a second time. Owning it
     // at the single point every path already funnels through is what stops a
     // fourth path from reintroducing it. An in-place uid swap uses the same

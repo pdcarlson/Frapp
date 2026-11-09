@@ -52,7 +52,10 @@ import {
   PushAskBody,
 } from "@/components/notifications/push-ask";
 import { BackRow } from "@/components/back-row";
-import { SignedInAs } from "@/components/onboarding/signed-in-as";
+import {
+  SignedInAs,
+  useOnboardingSignOut,
+} from "@/components/onboarding/signed-in-as";
 import { ChapterMarkTile } from "@/components/onboarding/chapter-mark-tile";
 import {
   OnboardingFieldLabel,
@@ -186,6 +189,7 @@ export default function CreateChapter() {
   const requestLogoUrl = useRequestChapterLogoUploadUrl();
   const confirmLogo = useConfirmChapterLogo();
   const primer = usePushPrimer();
+  const { signOut, signingOut } = useOnboardingSignOut();
 
   const [step, setStep] = useState<Step>("find");
   const [rawQuery, setRawQuery] = useState("");
@@ -215,6 +219,10 @@ export default function CreateChapter() {
   const [logoBusy, setLogoBusy] = useState(false);
   const [logoNote, setLogoNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The whole create, not just the API call: `selectChapter` runs after the
+  // mutation settles and before the step moves on, and a sign-out in that
+  // window would leave the new chapter half opened under no session.
+  const [createRunning, setCreateRunning] = useState(false);
 
   const searchQuery = useChapterDirectorySearch(debouncedQuery, {
     enabled: step === "find",
@@ -223,7 +231,9 @@ export default function CreateChapter() {
   const current = useCurrentChapter({ enabled: activated });
   const logoUrl = activated ? current.data?.logo_url || null : null;
 
-  const submitting = onboardChapter.isPending;
+  const submitting = onboardChapter.isPending || createRunning;
+  // What locks the screen's controls: a create, or a sign-out on its way.
+  const locked = submitting || signingOut;
   const isManual = directoryId === null;
   const created = step === "live" || step === "primer" || step === "invite";
   const displayName =
@@ -283,7 +293,7 @@ export default function CreateChapter() {
   }
 
   function goBack() {
-    if (submitting) return;
+    if (locked) return;
     setError(null);
     if (step === "confirm") {
       setStep("find");
@@ -317,8 +327,9 @@ export default function CreateChapter() {
       setAccentSubmitTried(true);
       return;
     }
-    if (!canSubmit || submitting || archetype === null) return;
+    if (!canSubmit || locked || archetype === null) return;
     setError(null);
+    setCreateRunning(true);
     try {
       const chapter = await onboardChapter.mutateAsync({
         name: identity.name.trim(),
@@ -344,6 +355,8 @@ export default function CreateChapter() {
           "Couldn't create that chapter. Check the details and try again.",
         ),
       );
+    } finally {
+      setCreateRunning(false);
     }
   }
 
@@ -438,7 +451,7 @@ export default function CreateChapter() {
                 house
                 label="Back"
                 accessibilityLabel="Back"
-                disabled={submitting}
+                disabled={locked}
                 onPress={goBack}
                 trailing={
                   setupIndex >= 0 ? (
@@ -478,7 +491,11 @@ export default function CreateChapter() {
               (#3782), as web's setup wizard shows it (#3776). At the top of
               the column, so the pinned footer never covers it.
             */}
-            <SignedInAs disabled={submitting} />
+            <SignedInAs
+              signOut={signOut}
+              signingOut={signingOut}
+              disabled={submitting}
+            />
 
             {step === "live" ? (
               <Animated.View
@@ -679,6 +696,7 @@ export default function CreateChapter() {
             canConfirm={canConfirm}
             canSubmit={canSubmit}
             submitting={submitting}
+            signingOut={signingOut}
             logoBusy={logoBusy}
             displayName={displayName}
             hasShared={invite.shared.length > 0}
@@ -731,6 +749,7 @@ function Footer({
   canConfirm,
   canSubmit,
   submitting,
+  signingOut,
   logoBusy,
   displayName,
   hasShared,
@@ -747,6 +766,8 @@ function Footer({
   canConfirm: boolean;
   canSubmit: boolean;
   submitting: boolean;
+  /** A sign-out on its way: every step's primary holds for it. */
+  signingOut: boolean;
   logoBusy: boolean;
   displayName: string;
   hasShared: boolean;
@@ -773,7 +794,7 @@ function Footer({
           label="Share invite"
           icon={(color) => <ShareGlyph color={color} />}
           onPress={onShare}
-          disabled={shareBusy}
+          disabled={shareBusy || signingOut}
           busy={shareBusy}
         />
         <OnboardingPressable
@@ -797,18 +818,18 @@ function Footer({
     case "confirm":
       label = "Continue";
       onPress = onConfirm;
-      disabled = !canConfirm;
+      disabled = !canConfirm || signingOut;
       break;
     case "color":
       label = `Create ${displayName}`;
       onPress = onSubmit;
-      disabled = !canSubmit || submitting;
+      disabled = !canSubmit || submitting || signingOut;
       busy = submitting;
       break;
     case "live":
       label = "Continue";
       onPress = onLeaveLive;
-      disabled = logoBusy;
+      disabled = logoBusy || signingOut;
       break;
     default:
       return null;

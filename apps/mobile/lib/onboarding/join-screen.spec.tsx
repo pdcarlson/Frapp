@@ -95,10 +95,6 @@ const previewPost = vi.fn(() =>
 );
 
 /**
- * Answers `GET /v1/users/me/legal-acceptance`, where `undefined` never
- * answers, and the invite preview above.
- */
-/**
  * What `GET /v1/invites/mine` answers (#3782): the invites emailed to this
  * account. Empty unless a spec offers some.
  */
@@ -107,6 +103,10 @@ const pendingGet = vi.fn(() =>
   Promise.resolve({ data: pendingInvites, error: undefined }),
 );
 
+/**
+ * Answers `GET /v1/users/me/legal-acceptance`, where `undefined` never
+ * answers, and the invite preview above.
+ */
 const statusClient = {
   POST: previewPost,
   GET: (path: string) =>
@@ -124,7 +124,10 @@ vi.mock("expo-web-browser", () => ({ openBrowserAsync: vi.fn() }));
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps } from "react";
-import { FrappClientProvider } from "@repo/hooks";
+import {
+  FrappClientProvider,
+  pendingInviteTitle as offerTitle,
+} from "@repo/hooks";
 import { LEGAL_ACCEPTANCE_REQUIRED_MESSAGE } from "@repo/validation";
 import { OAUTH_MEMBERSHIP_HINT } from "@/lib/auth-providers";
 import {
@@ -137,7 +140,6 @@ import JoinChapter, {
   JOIN_CONFIRM_TITLE,
   JOIN_INVITE_TITLE,
   confirmTitle,
-  offerTitle,
 } from "@/app/(auth)/join";
 
 type Node = ReactTestRenderer["root"];
@@ -223,7 +225,10 @@ function control(root: Node, label: string) {
     );
 }
 
-/** Opens the Account menu in the corner, where Sign out and Delete live. */
+/**
+ * Opens the Account menu in the corner, where Delete account lives (Sign out
+ * is on the screen's face, #3782).
+ */
 function openAccount(root: Node): void {
   act(() => {
     control(root, "Account")?.props.onPress();
@@ -303,10 +308,18 @@ describe("join screen — account deletion (5.1.1(v))", () => {
     // The trap itself: the same account cannot reach Settings, so this control
     // being reachable here is the whole of the 5.1.1(v) compliance. It lives
     // in the Account menu in the corner (#3350), one tap away on every view.
+    // Sign out sits on the screen's face, outside the menu (#3782).
+    expect(control(tree.root, "Sign out")).toBeDefined();
+    expect(control(tree.root, "Delete account")).toBeUndefined();
     openAccount(tree.root);
     expect(control(tree.root, "Delete account")).toBeDefined();
-    expect(control(tree.root, "Sign out")).toBeDefined();
-    expect(allText(tree.root)).toContain("brother@westfield.edu");
+    // The menu names the account it would delete.
+    const menuTitle = tree.root
+      .findAllByType("Text" as never, { deep: true })
+      .find((t) => t.props.accessibilityRole === "header");
+    expect(textOf(menuTitle?.props.children)).toBe(
+      "Signed in as brother@westfield.edu",
+    );
 
     // Still one tap away from the invite step.
     openAccount(tree.root);
@@ -1331,13 +1344,6 @@ describe("join screen — the confirm card's chapter (#3352)", () => {
 });
 
 /**
- * The onboarding polish pass: s02 draws the board's `‹ Back` row in house
- * gold (the shared `BackRow`, not a bare chevron), the question carries no
- * line narrating its own two choices, each view fades in (but not for a
- * member who reduces motion), and a join that lands marks it with the same
- * success tap a chapter going live gets.
- */
-/**
  * #3782. Signed in and not opened by an invite link, the question offers each
  * invite emailed to the account, as web `/join` does (#3776). An offer opens
  * the same confirm step a pasted invite does, so Terms and Join run unchanged.
@@ -1414,6 +1420,9 @@ describe("join screen — invites for this account (#3782)", () => {
     await settle();
     expect(allText(tree.root)).toContain(JOIN_CHOICE_TITLE);
     expect(allText(tree.root)).not.toContain("You've been invited");
+    // Not fetched and then hidden: never asked for at all, not even on the
+    // first render, before the link was applied.
+    expect(pendingGet).not.toHaveBeenCalled();
   });
 
   it("opens the confirm step on the offer's invite, and Join redeems that invite", async () => {
@@ -1453,6 +1462,29 @@ describe("join screen — invites for this account (#3782)", () => {
 
     openInvite(tree.root);
     expect(tree.root.findByType("TextInput" as never).props.value).toBe("");
+  });
+
+  it("puts back an invite the member had pasted when they back out of an offer", async () => {
+    const tree = render();
+    await settle();
+    openInvite(tree.root);
+    typeToken(tree.root, "pasted-token-50");
+    act(() => {
+      labelled(tree.root, "Back to the choices")?.props.onPress();
+    });
+
+    act(() => {
+      control(tree.root, offerTitle("FIJI Tau Nu"))?.props.onPress();
+    });
+    expect(hasConfirmButton(tree.root)).toBe(true);
+    act(() => {
+      labelled(tree.root, "Back to the choices")?.props.onPress();
+    });
+
+    openInvite(tree.root);
+    expect(tree.root.findByType("TextInput" as never).props.value).toBe(
+      "pasted-token-50",
+    );
   });
 
   /** Whether the confirm step's Join is on screen. */
@@ -1541,6 +1573,27 @@ describe("join screen — signed in as (#3782)", () => {
     expect(control(tree.root, "Sign out")).toBeDefined();
   });
 
+  it("locks Join, Account and Back while the sign-out is on its way", async () => {
+    // A sign-out that hasn't come back yet.
+    signOut.mockReturnValueOnce(new Promise<void>(() => {}));
+    const tree = render();
+    openInvite(tree.root);
+    typeToken(tree.root, "invite-token-42");
+    continueToConfirm(tree.root);
+    expect(control(tree.root, "Join chapter")?.props.disabled).toBe(false);
+
+    await act(async () => {
+      control(tree.root, "Sign out")?.props.onPress();
+    });
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(control(tree.root, "Join chapter")?.props.disabled).toBe(true);
+    expect(control(tree.root, "Account")?.props.disabled).toBe(true);
+    expect(control(tree.root, "Sign out")?.props.disabled).toBe(true);
+    expect(labelled(tree.root, "Back to the invite")?.props.disabled).toBe(
+      true,
+    );
+  });
+
   it("holds Sign out while a join is running", () => {
     redeemPending = true;
     const tree = render();
@@ -1548,6 +1601,13 @@ describe("join screen — signed in as (#3782)", () => {
   });
 });
 
+/**
+ * The onboarding polish pass: s02 draws the board's `‹ Back` row in house
+ * gold (the shared `BackRow`, not a bare chevron), the question carries no
+ * line narrating its own two choices, each view fades in (but not for a
+ * member who reduces motion), and a join that lands marks it with the same
+ * success tap a chapter going live gets.
+ */
 describe("join screen — polish", () => {
   beforeEach(() => {
     vi.clearAllMocks();

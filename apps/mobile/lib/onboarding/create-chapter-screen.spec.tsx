@@ -443,6 +443,50 @@ describe("chapter setup — signed in as (#3782)", () => {
     expectAccountLine(root);
   });
 
+  it("holds Sign out through the whole create, until the live step", async () => {
+    // The create lands, but opening the new chapter hasn't come back yet.
+    let opened!: (active: boolean) => void;
+    selectChapter.mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        opened = resolve;
+      }),
+    );
+    const { root } = await render();
+    await pickRow(root, "Phi Gamma Delta");
+    await press(root, "Continue");
+    await press(root, "agree");
+    expect(control(root, "Sign out")?.props.disabled).toBe(false);
+
+    await act(async () => {
+      primary(root).props.onPress();
+    });
+    await settle();
+    expect(onboard).toHaveBeenCalledTimes(1);
+    expect(title(root)).toBe(SETUP_TITLES.color);
+    expect(control(root, "Sign out")?.props.disabled).toBe(true);
+
+    await act(async () => {
+      opened(true);
+    });
+    await settle();
+    expect(title(root)).toBe("FIJI is live");
+    expect(control(root, "Sign out")?.props.disabled).toBe(false);
+  });
+
+  it("holds Create and Back while the sign-out is on its way", async () => {
+    signOut.mockReturnValueOnce(new Promise<void>(() => {}));
+    const { root } = await render();
+    await pickRow(root, "Phi Gamma Delta");
+    await press(root, "Continue");
+    await press(root, "agree");
+    expect(primary(root).props.disabled).toBe(false);
+
+    await press(root, "Sign out");
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(primary(root).props.disabled).toBe(true);
+    expect(control(root, "Back")?.props.disabled).toBe(true);
+  });
+
   it("signs out to sign-in", async () => {
     const { root } = await render();
     await pickRow(root, "Phi Gamma Delta");

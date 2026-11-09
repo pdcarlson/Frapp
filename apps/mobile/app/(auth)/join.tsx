@@ -25,6 +25,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import {
   isDeadInviteError,
   joinErrorCopy,
+  pendingInviteDetail,
+  pendingInviteTitle,
   redeemChapterId,
   useDeleteAccount,
   useInvitePreview,
@@ -59,6 +61,8 @@ import {
   consumeRememberedInviteToken,
   extractInviteToken,
   extractInviteTokenFromQuery,
+  peekInviteTokenFromLink,
+  peekRememberedInviteToken,
   rememberInviteToken,
   takeInviteTokenFromLink,
 } from "@/lib/onboarding/invite-token";
@@ -112,32 +116,38 @@ export function confirmTitle(chapterName: string): string {
   return `Join ${chapterName}?`;
 }
 
-/** A pending-invite offer's title on the question (#3782). */
-export function offerTitle(chapterName: string): string {
-  return `You've been invited to ${chapterName}`;
-}
-
-/**
- * The line under an offer's title: the school, who sent it and the role it
- * grants, joined by ` · ` as web `/join` joins them.
- */
-export function offerDetail(offer: {
-  university: string | null;
-  invited_by: string | null;
-  role: string | null;
-}): string {
-  return [
-    offer.university,
-    offer.invited_by ? `from ${offer.invited_by}` : null,
-    offer.role,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-}
-
 /** How the confirm card names an invite it can't read: its last four characters. */
 export function inviteTail(token: string): string {
   return token.slice(-4);
+}
+
+type InviteParams = {
+  token?: string | string[];
+  invite?: string | string[];
+  code?: string | string[];
+};
+
+/** The invite a route param carries (`?token=`, `?invite=`, `?code=`), or null. */
+function inviteFromParams(params: InviteParams): string | null {
+  const paramValue = (value: string | string[] | undefined): string | null => {
+    if (typeof value === "string") return value;
+    if (Array.isArray(value) && typeof value[0] === "string") {
+      return value[0];
+    }
+    return null;
+  };
+  return extractInviteToken(
+    extractInviteTokenFromQuery((key) => {
+      switch (key) {
+        case "token":
+          return paramValue(params.token);
+        case "invite":
+          return paramValue(params.invite);
+        case "code":
+          return paramValue(params.code);
+      }
+    }),
+  );
 }
 
 export default function JoinChapter() {
@@ -145,18 +155,14 @@ export default function JoinChapter() {
   const styles = createStyles(tokens);
   const router = useRouter();
   const { status, email, userId } = useAuthSession();
-  const signOutToSignIn = useOnboardingSignOut();
+  const { signOut: signOutToSignIn, signingOut } = useOnboardingSignOut();
   const redeemInvite = useRedeemInvite();
   const deleteAccount = useDeleteAccount();
   // When to show the Terms checkbox, and what a refused join means for it,
   // is shared with web `/join` (#2302).
   const terms = useJoinTermsCheckbox({ enabled: status === "authenticated" });
   const selectChapter = useSelectChapter();
-  const params = useLocalSearchParams<{
-    token?: string | string[];
-    invite?: string | string[];
-    code?: string | string[];
-  }>();
+  const params = useLocalSearchParams<InviteParams>();
   const deepLinkUrl = Linking.useURL();
 
   const [view, setView] = useState<JoinView>("choose");
@@ -166,10 +172,16 @@ export default function JoinChapter() {
   // brought the member here. A link carries one invite, and that is the one
   // the member came for, so the question offers no others, as web `/join`
   // offers none when opened with a token.
-  const [arrivedWithInvite, setArrivedWithInvite] = useState(false);
+  // Set once the effect below applies one; until then `inviteIncoming`
+  // (below) reads the same answer at render, so the first render already
+  // knows and the offers are never fetched for a link-opened visit.
+  const [appliedLinkInvite, setAppliedLinkInvite] = useState(false);
   // Whether the confirm step was opened from a pending-invite offer: its back
   // goes to the question, since the field never held that invite.
   const [fromOffer, setFromOffer] = useState(false);
+  // What the field held when an offer was picked, put back on Back from the
+  // offer's confirm step, so a pasted invite isn't lost to a look at an offer.
+  const [tokenBeforeOffer, setTokenBeforeOffer] = useState("");
   const [error, setError] = useState<string | null>(null);
   /**
    * An invite the redeem itself found dead (410), with the sentence to show:
@@ -208,27 +220,11 @@ export default function JoinChapter() {
     ]);
     if (inputs === handledInputs.current) return;
     handledInputs.current = inputs;
-    const paramValue = (
-      value: string | string[] | undefined,
-    ): string | null => {
-      if (typeof value === "string") return value;
-      if (Array.isArray(value) && typeof value[0] === "string") {
-        return value[0];
-      }
-      return null;
-    };
-    const fromParams = extractInviteToken(
-      extractInviteTokenFromQuery((key) => {
-        switch (key) {
-          case "token":
-            return paramValue(params.token);
-          case "invite":
-            return paramValue(params.invite);
-          case "code":
-            return paramValue(params.code);
-        }
-      }),
-    );
+    const fromParams = inviteFromParams({
+      token: params.token,
+      invite: params.invite,
+      code: params.code,
+    });
     // Once per link: `useURL` keeps returning the launch URL for the life of
     // the process, so an invite already redeemed would otherwise fill the
     // field, and skip the question, on every later visit.
@@ -255,7 +251,7 @@ export default function JoinChapter() {
       // remembered invite only fills an empty field.
       setToken((current) => (fresh || current.length === 0 ? next : current));
       setError(null);
-      setArrivedWithInvite(true);
+      setAppliedLinkInvite(true);
       setFromOffer(false);
       // An opened invite link has already answered the question and filled
       // the field, so it goes straight to the confirm step.
@@ -291,8 +287,10 @@ export default function JoinChapter() {
   // `consumeRememberedInviteToken` / `redeemChapterId` are pure. If any of
   // those grows a throw path, the catch would leave `isSuccess` true on a
   // mounted screen and lock every control — including this one.
+  // A sign-out in flight locks it too: nothing should start under a session
+  // that is going away.
   const submitting =
-    redeemInvite.isPending || redeemInvite.isSuccess || deleting;
+    redeemInvite.isPending || redeemInvite.isSuccess || deleting || signingOut;
   // The primary button's spinner stays tied to redemption alone. `submitting`
   // disables it during a deletion too, but showing its spinner then would tell
   // the user a join is running when what is running is the deletion of their
@@ -333,7 +331,7 @@ export default function JoinChapter() {
       // The offer's invite never went through the field, so backing out
       // returns to the question with the field empty.
       setFromOffer(false);
-      setToken("");
+      setToken(tokenBeforeOffer);
       setView("choose");
       return;
     }
@@ -344,7 +342,7 @@ export default function JoinChapter() {
     // Backing out declines an opened invite: the next visit asks again.
     consumeRememberedInviteToken();
     setView("choose");
-  }, [fromOffer, submitting, view]);
+  }, [fromOffer, submitting, tokenBeforeOffer, view]);
 
   // Android's back button steps back inside this screen before leaving it:
   // it closes the Account menu, then steps back a view, as `‹ Back` does.
@@ -376,6 +374,18 @@ export default function JoinChapter() {
         : null;
   const deadInvite = deadCopy !== null;
   const stepBlocked = submitting || (view === "confirm" && deadInvite);
+  // Whether an invite link (or a param, or one remembered across the sign-in
+  // bounce) is about to be applied by the effect above, read at render
+  // without taking it, so the very first render of a link-opened visit
+  // already knows. Once applied, `appliedLinkInvite` keeps the answer.
+  const fromParamsNow = inviteFromParams(params);
+  // A route param stays set for the life of the screen, like web's
+  // `initialToken`, so any param counts.
+  const inviteIncoming =
+    fromParamsNow !== null ||
+    peekInviteTokenFromLink(deepLinkUrl) !== null ||
+    peekRememberedInviteToken() !== null;
+  const arrivedWithInvite = appliedLinkInvite || inviteIncoming;
   // Invites emailed to this account, offered on the question (#3782). Not
   // read while signed out, nor when a link brought one.
   const pendingInvites = usePendingInvites(
@@ -438,6 +448,7 @@ export default function JoinChapter() {
   function handlePickOffer(offerToken: string) {
     if (submitting) return;
     setAccountOpen(false);
+    setTokenBeforeOffer(token);
     setToken(offerToken);
     setError(null);
     setFromOffer(true);
@@ -570,7 +581,11 @@ export default function JoinChapter() {
               pinned button never covers it.
             */}
             <View style={styles.accountLine}>
-              <SignedInAs disabled={submitting} />
+              <SignedInAs
+                signOut={signOutToSignIn}
+                signingOut={signingOut}
+                disabled={submitting}
+              />
             </View>
 
             {view === "choose" ? (
@@ -591,8 +606,8 @@ export default function JoinChapter() {
                     {offers.map((offer) => (
                       <ChoiceRow
                         key={offer.token}
-                        title={offerTitle(offer.chapter_name)}
-                        body={offerDetail(offer)}
+                        title={pendingInviteTitle(offer.chapter_name)}
+                        body={pendingInviteDetail(offer)}
                         accessibilityHint="Opens the invite to join."
                         disabled={submitting}
                         dimmed={submitting}
