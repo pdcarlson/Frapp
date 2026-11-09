@@ -885,7 +885,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Update user settings (quiet hours, theme) */
+        /** Update user settings (quiet hours, theme, status) */
         patch: operations["NotificationController_updateSettings_v1"];
         trace?: never;
     };
@@ -3983,6 +3983,26 @@ export interface components {
              * @enum {string}
              */
             theme: "light" | "dark" | "system";
+            /**
+             * @description The status in force now (#3845). `online` until the member picks another, and once a picked status reaches its end time.
+             * @enum {string}
+             */
+            status: "online" | "idle" | "dnd" | "invisible";
+            /**
+             * Format: date-time
+             * @description When `status` reverts to `online`. Null: until the member changes it.
+             */
+            status_expires_at: string | null;
+            /**
+             * @description The custom status line in force now, or null for none (also once it has reached its end time).
+             * @example At practice till 6
+             */
+            custom_status: string | null;
+            /**
+             * Format: date-time
+             * @description When the custom status line clears. Null: until the member clears it.
+             */
+            custom_status_expires_at: string | null;
         };
         UpdateUserSettingsDto: {
             /** @description Quiet hours start (HH:mm format, e.g. 22:00). Pass null or an empty string to clear. */
@@ -3996,6 +4016,23 @@ export interface components {
              * @enum {string}
              */
             theme?: "light" | "dark" | "system";
+            /**
+             * @description The status the member picks (#3845). Sending it replaces `status_expires_at` with the value sent alongside it (absent: no end time). `online` never carries an end time.
+             * @enum {string}
+             */
+            status?: "online" | "idle" | "dnd" | "invisible";
+            /**
+             * Format: date-time
+             * @description When `status` reverts to `online`, as an ISO 8601 instant in the future. Accepted only together with `status`; null, blank or absent means no end time (and alone is ignored).
+             */
+            status_expires_at?: string | null;
+            /** @description One short custom status line (at most 80 characters, no line breaks). Trimmed; null or an empty string clears it, and its end time with it. Sending it replaces `custom_status_expires_at` with the value sent alongside it. */
+            custom_status?: string | null;
+            /**
+             * Format: date-time
+             * @description When the custom status line clears, as an ISO 8601 instant in the future. Accepted only together with `custom_status`; null, blank or absent means no end time (and alone is ignored).
+             */
+            custom_status_expires_at?: string | null;
         };
         ChannelUnreadCountDto: {
             /** Format: uuid */
