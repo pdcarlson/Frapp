@@ -47,7 +47,7 @@ import {
   setPollOption,
   type PollCloseChoice,
   type PollDraft,
-} from "@/lib/chat/new-poll";
+} from "@repo/chat-core/poll-draft";
 
 /**
  * s05's New poll sheet (#3701): an officer on their phone in the group chat
@@ -58,8 +58,8 @@ import {
  *
  * The form: a question, two to ten options (add, remove, and move up or
  * down), and **More options** for when voting stops, a day by default as on
- * web. A chat-card poll is single-choice and has no early close yet, on any
- * client; both are their own work.
+ * web. A chat-card poll is single-choice (multi-choice is #3793); its creator
+ * closes it early from the card itself (`poll-card.tsx`, #3794).
  *
  * Posting goes through the outbox like any message, so it is optimistic and
  * survives a lost connection, and a server refusal (Polls switched off since
@@ -229,7 +229,7 @@ export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
             <OptionRow
               // The row's own key, not its position: a moved row takes its
               // field with it, so a member typing in it keeps typing in it
-              // (`PollOptionRow` in `lib/chat/new-poll.ts`).
+              // (`PollOptionRow` in `@repo/chat-core/poll-draft`).
               key={option.key}
               index={index}
               count={draft.options.length}

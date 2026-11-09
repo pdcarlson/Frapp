@@ -17,7 +17,7 @@ const {
   mockDeleteDoc,
   mockRefetch,
   mockFolderRefetch,
-  mockDocumentRefetch,
+  mockSignedLinks,
   mockRequestUpload,
   mockConfirmUpload,
   mockToast,
@@ -35,7 +35,7 @@ const {
   mockDeleteDoc: vi.fn().mockResolvedValue({}),
   mockRefetch: vi.fn(),
   mockFolderRefetch: vi.fn(),
-  mockDocumentRefetch: vi.fn(),
+  mockSignedLinks: vi.fn(),
   mockRequestUpload: vi.fn(),
   mockConfirmUpload: vi.fn(),
   mockToast: vi.fn(),
@@ -97,7 +97,15 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useDocumentFolders: () => foldersQuery,
   useSemesters: () => ({ data: [{ end_date: "2026-07-31" }] }),
   useMemberDisplayNames: () => ({ byId: roster.names }),
-  useDocument: () => ({ refetch: mockDocumentRefetch }),
+  useDocumentDownloadUrl: () => ({ mutateAsync: mockSignedLinks }),
+  // The viewer's read of the signed links; never settles here, so an open
+  // viewer shows its loading page. `document-viewer.spec.tsx` covers the rest.
+  useDocument: () => ({
+    data: undefined,
+    isError: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
   useRequestDocumentUploadUrl: () => ({ mutateAsync: mockRequestUpload }),
   useConfirmDocumentUpload: () => ({ mutateAsync: mockConfirmUpload }),
   useDeleteDocument: () => ({ mutateAsync: mockDeleteDoc }),
@@ -210,11 +218,16 @@ describe("DocumentsPage subscription gating", () => {
   // `downloadUrl`, so this opened `undefined`. Nothing typed catches it — the
   // endpoint has no OpenAPI response schema, so the SDK types the body as
   // `never` and any property access compiles.
+  //
+  // A server from before #3849 sends no `forcedDownloadUrl`, so Download falls
+  // back to opening the inline link. `document-viewer.spec.tsx` covers the
+  // forced link.
   it("opens the signed URL the API actually returns", async () => {
     const user = userEvent.setup();
     const open = vi.spyOn(window, "open").mockReturnValue(null);
-    mockDocumentRefetch.mockResolvedValue({
-      data: { ...BYLAWS, downloadUrl: "https://signed/bylaws.pdf" },
+    mockSignedLinks.mockResolvedValue({
+      ...BYLAWS,
+      downloadUrl: "https://signed/bylaws.pdf",
     });
     chapter.active();
     render(<DocumentsPage />);
@@ -247,6 +260,25 @@ describe("DocumentsPage subscription gating", () => {
       expect(button).toHaveAttribute("title", name);
       expect(button.textContent).toBe("");
     }
+  });
+
+  // #3849: the row's name opens the document full screen, without a request
+  // for the download link.
+  it("opens a document in the viewer when its row is clicked", async () => {
+    const user = userEvent.setup();
+    chapter.active();
+    render(<DocumentsPage />);
+
+    await user.click(screen.getByRole("button", { name: /^Chapter bylaws/ }));
+
+    const viewer = await screen.findByRole("dialog", { name: "Chapter bylaws" });
+    expect(within(viewer).getByRole("button", { name: "Download" })).toBeVisible();
+    expect(mockSignedLinks).not.toHaveBeenCalled();
+
+    await user.click(within(viewer).getByRole("button", { name: "Close" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
   });
 
   it("never gates reading the library", () => {

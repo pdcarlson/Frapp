@@ -256,6 +256,7 @@ vi.mock("./report-message-dialog", () => ({
 // The member list owns its own reads and has its own spec; here it is only a
 // column the shell decides to show.
 const mockTrackEventCard = vi.fn();
+const mockSendPoll = vi.fn(async () => ({ ok: true as const }));
 
 vi.mock("@/components/events/event-editor-dialog", () => ({
   EventEditorDialog: (props: {
@@ -696,8 +697,10 @@ vi.mock("./composer", () => ({
     slashCommandsStatus,
     recruitmentVocab,
     onOpenCommandForm,
+    commandForms,
   }: {
     channelId: string;
+    commandForms?: readonly { command: string; roleAllows: unknown }[];
     onOpenCommandForm?: (
       command: { name: string; implemented: boolean },
       args: string,
@@ -740,6 +743,9 @@ vi.mock("./composer", () => ({
         data-slash-status={slashCommandsStatus ?? ""}
         data-polls-enabled={String(isModuleEnabled?.("polls"))}
         data-recruitment={recruitmentVocab ?? ""}
+        data-command-forms={(commandForms ?? [])
+          .map((form) => `${form.command}:${String(form.roleAllows)}`)
+          .join(",")}
       >
         {channelId}
         {/* The staged-reply seam (#489). The real Composer cannot be driven
@@ -788,6 +794,21 @@ vi.mock("./composer", () => ({
             </button>
           ),
         )}
+        {["", '"Who drives?" Sam', '"Who drives?" Sam Alex'].map((args) => (
+          <button
+            key={`poll:${args}`}
+            data-testid={`composer-poll:${args}`}
+            onClick={(event) => {
+              const took = onOpenCommandForm?.(
+                { name: "poll", implemented: true },
+                args,
+              );
+              event.currentTarget.dataset.took = String(took);
+            }}
+          >
+            /poll {args}
+          </button>
+        ))}
         <button data-testid="composer-cancel-reply" onClick={onCancelReply}>
           cancel reply
         </button>
@@ -898,6 +919,7 @@ vi.mock("./message-timeline", async () => {
     {
       messages?: Array<{ id: string; reply_to_id?: string | null }>;
       onDelete?: (messageId: string) => void;
+      onClosePoll?: (messageId: string) => void;
       onReply?: (message: { id: string; reply_to_id?: string | null }) => void;
       onEdit?: (messageId: string, content: string) => Promise<void>;
       canManageChannel?: boolean;
@@ -910,6 +932,7 @@ vi.mock("./message-timeline", async () => {
       onOpenProfile,
       messages,
       onDelete,
+      onClosePoll,
       onReply,
       onEdit,
       canManageChannel,
@@ -946,6 +969,9 @@ vi.mock("./message-timeline", async () => {
         {/* Edit is withheld the same way where the member can't post (#2775). */}
         <span data-testid="edit-offered">{String(!!onEdit)}</span>
         <button onClick={() => onDelete?.("msg-1")}>trigger-delete</button>
+        <button onClick={() => onClosePoll?.("poll-1")}>
+          trigger-close-poll
+        </button>
         <button onClick={() => onOpenProfile?.("u-author")}>
           open-author-profile
         </button>
@@ -1010,6 +1036,7 @@ function chatChannelResult(
     unreact: vi.fn(),
     edit: vi.fn(),
     delete: vi.fn(),
+    closePoll: vi.fn(),
     draft: overrides.draft ?? "",
     setDraft: overrides.setDraft ?? vi.fn(),
     typingUsers: overrides.typingUsers ?? [],
@@ -1019,6 +1046,7 @@ function chatChannelResult(
     discard: vi.fn(),
     dispatchSlash: vi.fn(),
     trackEventCard: mockTrackEventCard,
+    sendPoll: mockSendPoll,
     act: vi.fn(),
     hasOlder: overrides.hasOlder ?? false,
     isLoadingOlder: overrides.isLoadingOlder ?? false,
@@ -2115,6 +2143,61 @@ describe("ChatShell channel description and start", () => {
   });
 });
 
+describe("ChatShell Close poll wiring (#3794)", () => {
+  it("closes nothing when the confirmation is cancelled", async () => {
+    const channel = chatChannelResult();
+    mockUseChatChannel.mockReturnValue(channel);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByText("trigger-close-poll"));
+    await waitFor(() => {
+      expect(screen.getByText("Close this poll?")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Close this poll?")).not.toBeInTheDocument();
+    });
+    expect(channel.closePoll).not.toHaveBeenCalled();
+  });
+
+  it("closes the confirmed poll's id once the dialog is confirmed", async () => {
+    const channel = chatChannelResult();
+    mockUseChatChannel.mockReturnValue(channel);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByText("trigger-close-poll"));
+    await waitFor(() => {
+      expect(screen.getByText("Close this poll?")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Close poll" }));
+
+    await waitFor(() => {
+      expect(channel.closePoll).toHaveBeenCalledWith("poll-1");
+    });
+  });
+
+  it("swallows a refused close: the close action already toasted", async () => {
+    const channel = chatChannelResult();
+    channel.closePoll = vi.fn().mockRejectedValue(new Error("refused"));
+    mockUseChatChannel.mockReturnValue(channel);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByText("trigger-close-poll"));
+    await waitFor(() => {
+      expect(screen.getByText("Close this poll?")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Close poll" }));
+
+    await waitFor(() => {
+      expect(channel.closePoll).toHaveBeenCalledWith("poll-1");
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("Close this poll?")).not.toBeInTheDocument();
+    });
+  });
+});
+
 describe("ChatShell delete-message wiring", () => {
   it("derives canManageChannel from the channels:manage permission", async () => {
     mockUseMyPermissions.mockReturnValue({
@@ -3096,6 +3179,199 @@ describe("ChatShell narrow viewports (#2142)", () => {
       expect(columns().thread.className).not.toContain("max-lg:hidden");
     });
   });
+
+  it("gives the way back a 40px target, not the 32px compact control (#3824)", () => {
+    render(<ChatShell />);
+    const back = screen.getByRole("button", { name: "Back to channels" });
+    expect(back).toHaveClass("h-10", "w-10");
+  });
+
+  it("leaves an Esc that closes an open overlay to the overlay (#3824)", () => {
+    render(<ChatShell />);
+    const overlay = document.createElement("div");
+    overlay.setAttribute("role", "dialog");
+    document.body.appendChild(overlay);
+    try {
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      expect(columns().thread.className).not.toContain("max-lg:hidden");
+    } finally {
+      overlay.remove();
+    }
+    // A handled Esc (Radix prevents its default) is the overlay's too.
+    const handled = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    handled.preventDefault();
+    act(() => {
+      document.body.dispatchEvent(handled);
+    });
+    expect(columns().thread.className).not.toContain("max-lg:hidden");
+  });
+
+  it("returns to the list on Esc, and leaves an Esc typed in a field alone (#3824)", async () => {
+    render(<ChatShell />);
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    try {
+      fireEvent.keyDown(input, { key: "Escape" });
+      expect(columns().thread.className).not.toContain("max-lg:hidden");
+
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      await waitFor(() => {
+        expect(columns().channels.className).not.toContain("max-lg:hidden");
+      });
+    } finally {
+      input.remove();
+    }
+  });
+
+  it("returns from a picked channel on the browser's Back (#3824)", async () => {
+    // jsdom keeps one history across the file; start off a plain entry.
+    window.history.replaceState(null, "");
+    render(<ChatShell />);
+    fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+    await waitFor(() => {
+      expect(columns().channels.className).not.toContain("max-lg:hidden");
+    });
+
+    // The pick is a step Back can undo: it pushes a marked same-URL entry.
+    fireEvent.click(screen.getByTestId("pick-random"));
+    await waitFor(() => {
+      expect(columns().thread.className).not.toContain("max-lg:hidden");
+    });
+    expect(window.history.state).toMatchObject({
+      frappChatThreadPane: expect.any(String),
+    });
+
+    // jsdom's `history.back()` fires `popstate` asynchronously.
+    window.history.back();
+    await waitFor(() => {
+      expect(columns().channels.className).not.toContain("max-lg:hidden");
+    });
+  });
+
+  it("goes back one entry however fast the arrow is pressed twice (#3824)", async () => {
+    window.history.replaceState(null, "");
+    render(<ChatShell />);
+    fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+    fireEvent.click(screen.getByTestId("pick-random"));
+    await waitFor(() => {
+      expect(columns().thread.className).not.toContain("max-lg:hidden");
+    });
+
+    const back = vi.spyOn(window.history, "back");
+    try {
+      // Both before the first `popstate` lands: the list shows at once, and
+      // the second press must not go back a second entry, out of /chat.
+      const arrow = screen.getByRole("button", { name: "Back to channels" });
+      fireEvent.click(arrow);
+      fireEvent.click(arrow);
+      expect(back).toHaveBeenCalledTimes(1);
+      expect(columns().channels.className).not.toContain("max-lg:hidden");
+    } finally {
+      back.mockRestore();
+    }
+    await waitFor(() => {
+      expect(window.history.state).not.toMatchObject({
+        frappChatThreadPane: expect.anything(),
+      });
+    });
+  });
+
+  it("still goes back through its own entry after Next rewrites it on a same-URL navigation (#3824)", async () => {
+    window.history.replaceState(null, "");
+    render(<ChatShell />);
+    fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+    fireEvent.click(screen.getByTestId("pick-random"));
+    await waitFor(() => {
+      expect(columns().thread.className).not.toContain("max-lg:hidden");
+    });
+
+    // The nav's Chat link while on /chat: Next replaces the entry's state
+    // with its own, and our marker is gone (`preserveCustomHistoryState`).
+    window.history.replaceState({ __NA: true }, "");
+
+    // The arrow still goes back through it, pushing nothing new.
+    const push = vi.spyOn(window.history, "pushState");
+    const back = vi.spyOn(window.history, "back");
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+      expect(back).toHaveBeenCalledTimes(1);
+      expect(push).not.toHaveBeenCalled();
+    } finally {
+      push.mockRestore();
+      back.mockRestore();
+    }
+    await waitFor(() => {
+      expect(columns().channels.className).not.toContain("max-lg:hidden");
+    });
+  });
+
+  it("shows the list without going back from a thread a link opened after a pick (#3824)", async () => {
+    window.history.replaceState(null, "");
+    const { rerender } = render(<ChatShell />);
+    fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+    fireEvent.click(screen.getByTestId("pick-random"));
+    await waitFor(() => {
+      expect(columns().thread.className).not.toContain("max-lg:hidden");
+    });
+
+    // A Find result or a notification: Next pushes its own unmarked entry
+    // and the shell sees a new URL target, without remounting.
+    window.history.pushState({}, "");
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    const back = vi.spyOn(window.history, "back");
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+      expect(back).not.toHaveBeenCalled();
+      expect(columns().channels.className).not.toContain("max-lg:hidden");
+    } finally {
+      back.mockRestore();
+    }
+  });
+
+  it("opens a channel picked while its own Back is still traversing, with its own entry (#3824)", async () => {
+    window.history.replaceState(null, "");
+    render(<ChatShell />);
+    fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+    fireEvent.click(screen.getByTestId("pick-random"));
+    await waitFor(() => {
+      expect(columns().thread.className).not.toContain("max-lg:hidden");
+    });
+
+    // Back to the list, and a pick before the `popstate` lands.
+    fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+    fireEvent.click(screen.getByTestId("pick-general"));
+
+    await waitFor(() => {
+      expect(window.history.state).toMatchObject({
+        frappChatThreadPane: expect.any(String),
+      });
+    });
+    expect(columns().thread.className).not.toContain("max-lg:hidden");
+  });
+
+  it("never goes back through a marker another document left, as after a reload (#3824)", () => {
+    // History state outlives a reload; the entry under it does not belong to
+    // this document, so going back would reload the page into the thread.
+    window.history.replaceState(
+      { frappChatThreadPane: "another-document" },
+      "",
+    );
+    const back = vi.spyOn(window.history, "back");
+    try {
+      render(<ChatShell />);
+      fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+      expect(back).not.toHaveBeenCalled();
+      expect(columns().channels.className).not.toContain("max-lg:hidden");
+    } finally {
+      back.mockRestore();
+      window.history.replaceState(null, "");
+    }
+  });
 });
 
 /**
@@ -3137,6 +3413,35 @@ describe("ChatShell inside the shell's left column", () => {
   afterEach(() => {
     slot.remove();
     window.matchMedia = realMatchMedia;
+  });
+
+  it("brings the channels back on Esc while the column shows the module nav (#3824)", () => {
+    stubDesktop(true);
+    const value = navFace({ face: "modules" });
+    render(
+      <NavFaceContext.Provider value={value}>
+        <ChatShell />
+      </NavFaceContext.Provider>,
+    );
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(value.showChannels).toHaveBeenCalled();
+  });
+
+  it("pushes no history for a pick from lg up, where the list is already on screen (#3824)", () => {
+    stubDesktop(true);
+    window.history.replaceState(null, "");
+    const push = vi.spyOn(window.history, "pushState");
+    try {
+      render(
+        <NavFaceContext.Provider value={navFace()}>
+          <ChatShell />
+        </NavFaceContext.Provider>,
+      );
+      fireEvent.click(screen.getByTestId("pick-random"));
+      expect(push).not.toHaveBeenCalled();
+    } finally {
+      push.mockRestore();
+    }
   });
 
   it("renders the channels pane into the shell's column, with a back arrow to the menu", () => {
@@ -4145,7 +4450,8 @@ describe("ChatShell reports its transport to the connection pill", () => {
 
 /*
  * The open channel is the one the member is looking at (#3698): the activity
- * handler `ChatProvider` wires re-stamps it read when a message lands in it,
+ * handler the shell's `useChatRealtimeBinding` wires re-stamps it read when a
+ * message lands in it,
  * so the rail never lights up the channel being read. The claim is what tells
  * it which one that is.
  */
@@ -4158,6 +4464,21 @@ describe("ChatShell claims the open channel as viewed (#3698)", () => {
 
     unmount();
     expect(viewedChannelId()).toBeNull();
+  });
+
+  it("releases it below lg while the list is on screen, and claims it again on the way back in (#3824)", async () => {
+    // Still claimed on the list, a message landing in the channel was stamped
+    // read before the member saw it: no lit nav, nothing unread on return.
+    const { viewedChannelId } =
+      await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(viewedChannelId()).toBe("chan-general");
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+    await waitFor(() => expect(viewedChannelId()).toBeNull());
+
+    fireEvent.click(screen.getByTestId("pick-general"));
+    await waitFor(() => expect(viewedChannelId()).toBe("chan-general"));
   });
 });
 
@@ -4252,6 +4573,107 @@ describe("ChatShell opens the event form for an /event it can't read (#3773)", (
     expect(screen.queryByTestId("event-form")).toBeNull();
     expect(mockToast).toHaveBeenCalledWith(
       expect.objectContaining({ title: "You can't create events" }),
+    );
+  });
+});
+
+describe("ChatShell opens the New poll form for a /poll it can't read (#3865)", () => {
+  function pollButton(args: string) {
+    return screen.getByTestId(`composer-poll:${args}`);
+  }
+
+  it("opens it on what was typed, and posts the card into the channel it came from", async () => {
+    mockSendPoll.mockClear();
+    render(<ChatShell />);
+    fireEvent.click(pollButton('"Who drives?" Sam'));
+
+    expect(pollButton('"Who drives?" Sam').dataset.took).toBe("opened");
+    expect(await screen.findByText("New poll")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Ask a question")).toHaveValue(
+      "Who drives?",
+    );
+    fireEvent.change(screen.getByLabelText("Option 2"), {
+      target: { value: "Alex" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Post poll" }));
+
+    await waitFor(() =>
+      expect(mockSendPoll).toHaveBeenCalledWith(
+        expect.stringMatching(/.+/),
+        expect.objectContaining({ content: "Who drives?" }),
+      ),
+    );
+    // The composer stub prints its `channelId` first: the card goes there.
+    const [channelId] = mockSendPoll.mock.calls[0] as unknown as [string];
+    expect(screen.getByTestId("composer").textContent).toMatch(
+      new RegExp(`^${channelId}`),
+    );
+  });
+
+  it("shows the posted-but-not-saved warning, so nobody posts it twice", async () => {
+    mockSendPoll.mockResolvedValueOnce({
+      ok: true,
+      warning: "Don't send it again",
+    } as unknown as { ok: true });
+    mockToast.mockClear();
+    render(<ChatShell />);
+    fireEvent.click(pollButton('"Who drives?" Sam'));
+    fireEvent.change(await screen.findByLabelText("Option 2"), {
+      target: { value: "Alex" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Post poll" }));
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Poll posted",
+          description: "Don't send it again",
+        }),
+      ),
+    );
+  });
+
+  it("leaves a one-liner it can read to the dispatcher", () => {
+    render(<ChatShell />);
+    fireEvent.click(pollButton('"Who drives?" Sam Alex'));
+    expect(pollButton('"Who drives?" Sam Alex').dataset.took).toBe("null");
+    expect(screen.queryByText("New poll")).toBeNull();
+  });
+});
+
+describe("ChatShell tells the composer's + which forms the role may use (#3865)", () => {
+  function formsFor(payload: unknown) {
+    mockUseMyPermissions.mockReturnValue(
+      payload as { data: { permissions: string[] } },
+    );
+    const { unmount } = render(<ChatShell />);
+    const forms = screen
+      .getByTestId("composer")
+      .getAttribute("data-command-forms");
+    unmount();
+    return forms;
+  }
+
+  it("maps polls:create and the event grants", () => {
+    expect(formsFor({ data: { permissions: ["polls:create"] } })).toBe(
+      "poll:true,event:false",
+    );
+    expect(
+      formsFor({ data: { permissions: ["events:create", "members:view"] } }),
+    ).toBe("poll:false,event:true");
+    // Both event grants, not `events:create` alone: the form needs the roster.
+    expect(formsFor({ data: { permissions: ["events:create"] } })).toBe(
+      "poll:false,event:false",
+    );
+  });
+
+  it("blames nothing on the role while permissions load, and says when they couldn't be read", () => {
+    expect(formsFor({ data: undefined })).toBe("poll:loading,event:loading");
+    expect(formsFor({ data: undefined, isError: true })).toBe(
+      "poll:unknown,event:unknown",
+    );
+    // Paused offline before it ever landed: it can't answer either.
+    expect(formsFor({ data: undefined, fetchStatus: "paused" })).toBe(
+      "poll:unknown,event:unknown",
     );
   });
 });

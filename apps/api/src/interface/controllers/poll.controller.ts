@@ -8,7 +8,12 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { PollService } from '../../application/services/poll.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -25,6 +30,7 @@ import {
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { CreatePollDto, ListPollsQueryDto, VoteDto } from '../dtos/poll.dto';
+import { ChatMessageDto } from '../dtos/chat.dto';
 import { parseBooleanQueryParam } from '../utils/query-boolean';
 
 @ApiTags('Polls')
@@ -59,7 +65,8 @@ export class PollController {
   @Post('polls/:messageId/vote')
   @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @ApiOperation({ summary: 'Cast vote on a poll' })
-  // The `/polls` page's vote (`usePolls` in `@repo/hooks`). The service
+  // No client calls this since web's `/polls` page and its hooks were retired
+  // (#3871); the route goes in #3887. The service
   // replaces any earlier vote without saying whether there was one, so there
   // is no `is_revote`, and a repeat counts again. A multi-choice vote with
   // nothing selected clears the vote, which is not a vote cast.
@@ -100,8 +107,12 @@ export class PollController {
   @Post('polls/:messageId/close')
   @RequirePermissions(SystemPermissions.POLLS_CREATE)
   @ApiOperation({
-    summary: 'Manually close a poll early (creator only)',
+    summary:
+      'Manually close a poll early (creator only): a REST poll or a chat-card poll',
   })
+  // The closed row, so a client can draw the close before its Realtime echo
+  // (`closePoll` in `@repo/chat-core/chat-client`, #3794).
+  @ApiCreatedResponse({ type: ChatMessageDto })
   async close(
     @Param('messageId') messageId: string,
     @CurrentChapterId() chapterId: string,

@@ -31,7 +31,6 @@ export * from "./use-rush";
 export * from "./use-tasks";
 export * from "./use-study";
 export * from "./use-documents";
-export * from "./use-polls";
 export * from "./use-semesters";
 export * from "./use-reports";
 export * from "./use-search";

@@ -36,7 +36,8 @@ function ChatPageContent({
 
 /**
  * Entry component for the `/chat` route. Mounts the chat hot-path provider
- * (realtime manager + chapter theme + outbox flush) and renders the 3-pane
+ * (outbox flush + persisted first chunk; the realtime manager is the
+ * dashboard shell's, `use-chat-realtime-binding.ts`) and renders the chat
  * shell. The provider lives inside the dashboard tree so it sees the existing
  * QueryClient, api-sdk client, and active chapter id.
  */

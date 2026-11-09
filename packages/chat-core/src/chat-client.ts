@@ -1069,6 +1069,40 @@ export async function unreact(
   }
 }
 
+/**
+ * The shared body of the pessimistic row writes (edit, delete, close poll):
+ * run the request, merge the row the server returns into a cache that holds
+ * it (`mergeHeldServerRow`, so a write to a row the window no longer holds
+ * never splices it back in, #2775, #2871), and on any failure toast it,
+ * report it through `onError` with `title`, and rethrow. The merge is the
+ * confirmation; a Realtime echo of the same row is a no-op. A context with no
+ * viewer does nothing.
+ */
+async function writeHeldRow(
+  ctx: ChatActionContext,
+  channelId: string,
+  title: string,
+  request: () => Promise<{
+    data?: unknown;
+    error?: unknown;
+    response?: { status: number };
+  }>,
+): Promise<void> {
+  if (!ctx.userId) return;
+  try {
+    const { data, error, response } = await request();
+    if (error || !data) throwApiError(error, response, title);
+    patchCache(ctx.queryClient, channelId, (cache) =>
+      mergeHeldServerRow(cache, data as RawChatMessage),
+    );
+  } catch (err) {
+    const { message } = classifyChatError(err);
+    ctx.toast?.({ title, description: message, variant: "destructive" });
+    ctx.onError?.({ title, description: message });
+    throw err;
+  }
+}
+
 export interface EditMessageArgs {
   channelId: string;
   messageId: string;
@@ -1091,31 +1125,12 @@ export async function editMessage(
   ctx: ChatActionContext,
   args: EditMessageArgs,
 ): Promise<void> {
-  if (!ctx.userId) return;
-  try {
-    const { data, error, response } = await ctx.apiClient.PATCH(
-      "/v1/channels/messages/{messageId}",
-      {
-        params: { path: { messageId: args.messageId } },
-        body: { content: args.content },
-      },
-    );
-    if (error || !data) {
-      throwApiError(error, response, "Couldn't edit message");
-    }
-    patchCache(ctx.queryClient, args.channelId, (cache) =>
-      mergeHeldServerRow(cache, data as unknown as RawChatMessage),
-    );
-  } catch (err) {
-    const { message } = classifyChatError(err);
-    ctx.toast?.({
-      title: "Couldn't edit message",
-      description: message,
-      variant: "destructive",
-    });
-    ctx.onError?.({ title: "Couldn't edit message", description: message });
-    throw err;
-  }
+  await writeHeldRow(ctx, args.channelId, "Couldn't edit message", () =>
+    ctx.apiClient.PATCH("/v1/channels/messages/{messageId}", {
+      params: { path: { messageId: args.messageId } },
+      body: { content: args.content },
+    }),
+  );
 }
 
 export interface DeleteMessageArgs {
@@ -1137,28 +1152,38 @@ export async function deleteMessage(
   ctx: ChatActionContext,
   args: DeleteMessageArgs,
 ): Promise<void> {
-  if (!ctx.userId) return;
-  try {
-    const { data, error, response } = await ctx.apiClient.DELETE(
-      "/v1/channels/messages/{messageId}",
-      { params: { path: { messageId: args.messageId } } },
-    );
-    if (error || !data) {
-      throwApiError(error, response, "Couldn't delete message");
-    }
-    patchCache(ctx.queryClient, args.channelId, (cache) =>
-      mergeHeldServerRow(cache, data as unknown as RawChatMessage),
-    );
-  } catch (err) {
-    const { message } = classifyChatError(err);
-    ctx.toast?.({
-      title: "Couldn't delete message",
-      description: message,
-      variant: "destructive",
-    });
-    ctx.onError?.({ title: "Couldn't delete message", description: message });
-    throw err;
-  }
+  await writeHeldRow(ctx, args.channelId, "Couldn't delete message", () =>
+    ctx.apiClient.DELETE("/v1/channels/messages/{messageId}", {
+      params: { path: { messageId: args.messageId } },
+    }),
+  );
+}
+
+export interface ClosePollArgs {
+  channelId: string;
+  messageId: string;
+}
+
+/**
+ * Close a chat-card poll early (#3794). Creator only, and refused on a poll
+ * that is already closed or past its deadline: the API enforces both
+ * (`PollService.close`), the card only offers the control when it should work
+ * (`canClosePoll` in `./polls`).
+ *
+ * Not optimistic, like `deleteMessage`: the server stamps `payload.closed_at`,
+ * and the row it returns is merged as the confirmation, so the closer's card
+ * draws closed even before the Realtime UPDATE every other client draws it
+ * from. A duplicate echo of the same row is a no-op merge.
+ */
+export async function closePoll(
+  ctx: ChatActionContext,
+  args: ClosePollArgs,
+): Promise<void> {
+  await writeHeldRow(ctx, args.channelId, "Couldn't close poll", () =>
+    ctx.apiClient.POST("/v1/polls/{messageId}/close", {
+      params: { path: { messageId: args.messageId } },
+    }),
+  );
 }
 
 export interface CardActionArgs {

@@ -13,6 +13,7 @@
     "./chat-client": "./src/chat-client.ts",
     "./realtime-manager": "./src/realtime-manager.ts",
     "./polls": "./src/polls.ts",
+    "./poll-draft": "./src/poll-draft.ts",
     "./cards": "./src/cards.ts",
     "./reply-preview": "./src/reply-preview.ts",
     "./channel-preview": "./src/channel-preview.ts",

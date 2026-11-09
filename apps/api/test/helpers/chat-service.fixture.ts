@@ -158,6 +158,7 @@ export async function createChatServiceFixture() {
   const mockStorageProvider: jest.Mocked<IStorageProvider> = {
     getSignedUploadUrl: jest.fn(),
     getSignedDownloadUrl: jest.fn(),
+    getSignedInlineAndAttachmentUrls: jest.fn(),
     getSignedDownloadUrls: jest.fn().mockResolvedValue({}),
     uploadFile: jest.fn(),
     downloadFile: jest.fn(),

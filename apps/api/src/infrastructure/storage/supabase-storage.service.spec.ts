@@ -260,6 +260,77 @@ describe('SupabaseStorageService', () => {
     });
   });
 
+  describe('getSignedInlineAndAttachmentUrls', () => {
+    it('signs once and adds the download parameter createSignedUrl would', async () => {
+      createSignedUrl.mockResolvedValueOnce({
+        data: {
+          signedUrl:
+            'https://x.supabase.co/storage/v1/object/sign/documents/a/b.pdf?token=t',
+        },
+        error: null,
+      });
+
+      const urls = await service.getSignedInlineAndAttachmentUrls(
+        'documents',
+        'a/b.pdf',
+        'Risk plan.pdf',
+      );
+
+      expect(createSignedUrl).toHaveBeenCalledTimes(1);
+      expect(createSignedUrl).toHaveBeenCalledWith('a/b.pdf', 3600, undefined);
+      expect(urls).toEqual({
+        inline:
+          'https://x.supabase.co/storage/v1/object/sign/documents/a/b.pdf?token=t',
+        attachment:
+          'https://x.supabase.co/storage/v1/object/sign/documents/a/b.pdf?token=t&download=Risk+plan.pdf',
+      });
+    });
+  });
+
+  describe('getSignedInlineAndAttachmentUrls against the real storage client', () => {
+    // The attachment link is built here rather than by a second signing call,
+    // so it has to stay what storage-js's own `{ download }` option builds. A
+    // storage-js bump that changes that fails this, not production.
+    it('matches createSignedUrl({ download }) byte for byte', async () => {
+      const { StorageClient } = await import('@supabase/storage-js');
+      const fakeFetch = jest.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              signedURL: '/object/sign/documents/a/b%20c.pdf?token=t.k',
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        ),
+      );
+      const real = new StorageClient(
+        'https://x.supabase.co/storage/v1',
+        {},
+        fakeFetch,
+      ).from('documents');
+      createSignedUrl.mockImplementation(
+        (path: string, expiresIn: number, options?: { download?: string }) =>
+          real.createSignedUrl(path, expiresIn, options),
+      );
+
+      for (const name of [
+        'Risk plan.pdf',
+        'minutes_week-7.pdf',
+        'Q&A (draft).docx',
+      ]) {
+        const urls = await service.getSignedInlineAndAttachmentUrls(
+          'documents',
+          'a/b c.pdf',
+          name,
+        );
+        const expected = await real.createSignedUrl('a/b c.pdf', 3600, {
+          download: name,
+        });
+        expect(urls.attachment).toBe(expected.data?.signedUrl);
+      }
+    });
+  });
+
   describe('getSignedDownloadUrls', () => {
     it('returns a path → signedUrl map from the batch response', async () => {
       createSignedUrls.mockResolvedValueOnce({
