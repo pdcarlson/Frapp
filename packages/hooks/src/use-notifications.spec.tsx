@@ -11,6 +11,8 @@ import {
   markNotificationReadOnOpenMutationKey,
   notificationKeys,
   useMarkNotificationRead,
+  useMarkNotificationScreensSeen,
+  useMarkNotificationsRead,
   useNotifications,
   useUpdateNotificationPreference,
   useUpdateUserSettings,
@@ -295,6 +297,170 @@ describe("a pending read receipt shows its row read (#3788)", () => {
     ).toBe("2026-11-09T05:00:00.000Z");
     expect(get).toHaveBeenCalledTimes(2);
     expect(queryClient.getQueryState(prefsKey)?.isInvalidated).toBe(false);
+  });
+});
+
+describe("marking many notifications read in one request (#3929)", () => {
+  const READ_AT = "2026-11-09T22:00:00.000Z";
+  const rows = [
+    {
+      id: "event",
+      read_at: null,
+      created_at: "2026-11-09T10:00:00.000Z",
+      data: { target: { screen: "events", eventId: "e-1" } },
+    },
+    {
+      id: "task",
+      read_at: null,
+      created_at: "2026-11-09T10:00:00.000Z",
+      data: { target: { screen: "tasks", taskId: "t-1" } },
+    },
+    {
+      id: "chat",
+      read_at: null,
+      created_at: "2026-11-09T10:00:00.000Z",
+      data: { target: { screen: "chat", channelId: "c-1" } },
+    },
+    // Arrived after the server stamped its read: still unread there.
+    {
+      id: "late",
+      read_at: null,
+      created_at: "2026-11-09T22:00:01.000Z",
+      data: { target: { screen: "events", eventId: "e-2" } },
+    },
+  ];
+  const ok = (data: unknown) => ({
+    data,
+    error: undefined,
+    response: { ok: true, status: 200 },
+  });
+  const readIds = (queryClient: QueryClient) =>
+    (
+      queryClient.getQueryData(notificationKeys.list("chapter-1", undefined)) as {
+        id: string;
+        read_at: string | null;
+      }[]
+    )
+      .filter((row) => row.read_at !== null)
+      .map((row) => row.id);
+
+  it("Mark all read sends one request with no screens and clears every row the stamp covers", async () => {
+    const queryClient = makeQueryClient();
+    queryClient.setQueryData(notificationKeys.list("chapter-1", undefined), rows);
+    const post = vi.fn().mockResolvedValue(ok({ read_at: READ_AT, updated: 3 }));
+    const { result } = renderHook(() => useMarkNotificationsRead(), {
+      wrapper: createWrapper({ POST: post }, queryClient),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync(undefined);
+    });
+
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledWith("/v1/notifications/read", { body: {} });
+    expect(readIds(queryClient)).toEqual(["event", "task", "chat"]);
+  });
+
+  it("with screens, clears only the rows that point at them", async () => {
+    const queryClient = makeQueryClient();
+    queryClient.setQueryData(notificationKeys.list("chapter-1", undefined), rows);
+    const post = vi.fn().mockResolvedValue(ok({ read_at: READ_AT, updated: 1 }));
+    const { result } = renderHook(() => useMarkNotificationsRead(), {
+      wrapper: createWrapper({ POST: post }, queryClient),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync(["events"]);
+    });
+
+    expect(post).toHaveBeenCalledWith("/v1/notifications/read", {
+      body: { screens: ["events"] },
+    });
+    expect(readIds(queryClient)).toEqual(["event"]);
+  });
+
+  it("a refused request leaves every dot where it was", async () => {
+    const queryClient = makeQueryClient();
+    queryClient.setQueryData(notificationKeys.list("chapter-1", undefined), rows);
+    const post = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: { message: "Too many requests" },
+      response: { ok: false, status: 429 },
+    });
+    const { result } = renderHook(() => useMarkNotificationsRead(), {
+      wrapper: createWrapper({ POST: post }, queryClient),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync(undefined).catch(() => undefined);
+    });
+
+    expect(readIds(queryClient)).toEqual([]);
+  });
+
+  describe("useMarkNotificationScreensSeen", () => {
+    const get = (data: unknown) => vi.fn().mockResolvedValue(ok(data));
+
+    it("reads the rows that point at the open screen, once", async () => {
+      const queryClient = makeQueryClient();
+      const post = vi
+        .fn()
+        .mockResolvedValue(ok({ read_at: READ_AT, updated: 1 }));
+      const { rerender } = renderHook(
+        () => useMarkNotificationScreensSeen(["events"]),
+        { wrapper: createWrapper({ GET: get(rows), POST: post }, queryClient) },
+      );
+
+      await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+      expect(post).toHaveBeenCalledWith("/v1/notifications/read", {
+        body: { screens: ["events"] },
+      });
+      rerender();
+      await waitFor(() => expect(queryClient.isFetching()).toBe(0));
+      // "late" is still unread and points at Events, so it is a new set and
+      // is tried once more; nothing loops after that.
+      expect(post.mock.calls.length).toBeLessThanOrEqual(2);
+    });
+
+    it("sends nothing when no unread row points at the screen", async () => {
+      const queryClient = makeQueryClient();
+      const post = vi.fn();
+      const fetchList = get(rows);
+      renderHook(() => useMarkNotificationScreensSeen(["billing"]), {
+        wrapper: createWrapper({ GET: fetchList, POST: post }, queryClient),
+      });
+
+      await waitFor(() => expect(fetchList).toHaveBeenCalled());
+      await waitFor(() => expect(queryClient.isFetching()).toBe(0));
+      expect(post).not.toHaveBeenCalled();
+    });
+
+    it("sends nothing while disabled, and does not retry a failed write for the same rows", async () => {
+      const queryClient = makeQueryClient();
+      const post = vi.fn().mockResolvedValue({
+        data: undefined,
+        error: { message: "nope" },
+        response: { ok: false, status: 500 },
+      });
+      const fetchList = get(rows);
+      const { rerender } = renderHook(
+        ({ enabled }: { enabled: boolean }) =>
+          useMarkNotificationScreensSeen(["tasks"], { enabled }),
+        {
+          wrapper: createWrapper({ GET: fetchList, POST: post }, queryClient),
+          initialProps: { enabled: false },
+        },
+      );
+      await waitFor(() => expect(fetchList).toHaveBeenCalled());
+      await waitFor(() => expect(queryClient.isFetching()).toBe(0));
+      expect(post).not.toHaveBeenCalled();
+
+      rerender({ enabled: true });
+      await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+      rerender({ enabled: true });
+      rerender({ enabled: true });
+      expect(post).toHaveBeenCalledTimes(1);
+    });
   });
 });
 

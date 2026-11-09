@@ -836,6 +836,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/notifications/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark all unread notifications read, or only those pointing at the named screens */
+        post: operations["NotificationController_markAllRead_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/notifications/{id}/read": {
         parameters: {
             query?: never;
@@ -3953,6 +3970,24 @@ export interface components {
             token: string;
             /** @description Device name for display */
             device_name?: string;
+        };
+        MarkNotificationsReadDto: {
+            /**
+             * @description Mark read only the notifications that point at one of these screens (`data.target.screen`). Omit to mark every unread notification read.
+             * @example [
+             *       "events"
+             *     ]
+             */
+            screens?: string[];
+        };
+        MarkNotificationsReadResultDto: {
+            /**
+             * Format: date-time
+             * @description The instant written to `read_at` on every row this call read
+             */
+            read_at: string;
+            /** @description How many notifications this call marked read */
+            updated: number;
         };
         UpdateNotificationPreferenceDto: {
             /** @description Chapter ID */
@@ -7331,6 +7366,38 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    NotificationController_markAllRead_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkNotificationsReadDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarkNotificationsReadResultDto"];
+                };
             };
             /** @description Error */
             default: {
