@@ -888,11 +888,14 @@ export type { SidebarFixedSectionKey, SidebarSectionKey } from "./chat-sidebar";
 export {
   ROLE_COLOR_HEXES,
   ROLE_COLOR_PALETTE,
+  resolveCustomRoleNames,
+  resolveRoleChips,
   roleColor,
   roleColorOrNull,
   topRoleColor,
 } from "./role-colors";
 export type {
+  MemberRoleChip,
   RoleColorHex,
   RoleColorKey,
   RoleColorSource,

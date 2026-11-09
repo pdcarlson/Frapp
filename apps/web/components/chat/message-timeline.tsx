@@ -394,6 +394,8 @@ export interface MessageTimelineProps {
   /** A row's Report and Block (#2687); see `MessageItemProps`. */
   onReport?: (message: ChatMessage) => void;
   onBlock?: (message: ChatMessage) => void;
+  /** Opens a member's profile by `users.id` (#3726); see `MessageItemProps`. */
+  onOpenProfile?: (userId: string) => void;
   isMember?: MemberLookup;
   /**
    * Older history (#1571). The timeline asks for the next page when the member
@@ -460,6 +462,7 @@ export const MessageTimeline = forwardRef<
     canManageChannel,
     onReport,
     onBlock,
+    onOpenProfile,
     isMember,
     hasOlder = false,
     isLoadingOlder = false,
@@ -968,6 +971,7 @@ export const MessageTimeline = forwardRef<
                   canManageChannel={canManageChannel}
                   onReport={onReport}
                   onBlock={onBlock}
+                  onOpenProfile={onOpenProfile}
                   isMember={isMember}
                   isTapRevealed={tapRevealed.isRevealed(entry.message)}
                   onToggleTapReveal={() => tapRevealed.toggle(entry.message)}

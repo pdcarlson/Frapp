@@ -195,27 +195,11 @@ export function useMemberDisplayNames(): MemberDisplayNames {
   };
 }
 
-export function useMember(id: string) {
-  const client = useFrappClient();
-  const chapterId = useActiveChapterId();
-  return useQuery({
-    queryKey: ["members", chapterId, id],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/members/{id}", {
-        params: { path: { id } },
-      });
-      if (error) throw error;
-      return data;
-    },
-    staleTime: 60_000,
-    enabled: !!chapterId && !!id,
-  });
-}
-
 /**
  * One member's full profile, by their `users.id` — the id chat carries on a
- * message's sender and its mentions. Same response as {@link useMember}, so it
- * also hands back the membership `id` a role edit needs. Keyed under
+ * message's sender and its mentions — and the one profile read both clients'
+ * member sheets use (web's since #3726, which retired the by-membership-id
+ * hook). It also hands back the membership `id` a role edit needs. Keyed under
  * `["members", chapterId, …]` so a role edit's invalidation reaches it.
  */
 export function useMemberByUserId(userId: string) {
