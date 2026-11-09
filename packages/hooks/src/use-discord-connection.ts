@@ -85,6 +85,7 @@ export function useBeginDiscordConnect() {
   const chapterId = useActiveChapterId();
 
   return useMutation({
+    mutationKey: ["discord-connection", "begin-discord-connect"],
     mutationFn: async (vars: { return_path?: string }) => {
       const { data, error } = await client.POST("/v1/discord/connect", {
         body: { return_path: vars.return_path },
@@ -116,6 +117,7 @@ export function useConfirmDiscordConnect() {
   const chapterId = useActiveChapterId();
 
   return useMutation({
+    mutationKey: ["discord-connection", "confirm-discord-connect"],
     mutationFn: async (vars: { handshake: string }) => {
       const { data, error } = await client.POST("/v1/discord/connect/confirm", {
         body: { handshake: vars.handshake },
@@ -187,6 +189,7 @@ export function useDiscoverDiscordChannels() {
   const chapterId = useActiveChapterId();
 
   return useMutation({
+    mutationKey: ["discord-connection", "discover-discord-channels"],
     mutationFn: async (vars: { id: string }) => {
       const { data, error } = await client.POST(
         "/v1/discord-imports/{id}/discover",
@@ -216,6 +219,7 @@ export function useSetDiscoveredChannelMapping() {
   const chapterId = useActiveChapterId();
 
   return useMutation({
+    mutationKey: ["discord-connection", "set-discovered-channel-mapping"],
     mutationFn: async (vars: {
       id: string;
       channels: {

@@ -35,6 +35,7 @@ export function useSemesterRollover() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["semesters", "semester-rollover"],
     mutationFn: async (body: {
       label: string;
       start_date: string;

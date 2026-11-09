@@ -21,6 +21,7 @@ export function useBillingStatus() {
 export function useCreateCheckout() {
   const client = useFrappClient();
   return useMutation({
+    mutationKey: ["billing", "create-checkout"],
     mutationFn: async (body: {
       customer_email: string;
       success_url: string;
@@ -38,6 +39,7 @@ export function useCreateCheckout() {
 export function useCreatePortal() {
   const client = useFrappClient();
   return useMutation({
+    mutationKey: ["billing", "create-portal"],
     mutationFn: async (body: { return_url: string }) => {
       const { data, error } = await client.POST("/v1/billing/portal", {
         body,

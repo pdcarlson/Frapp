@@ -12,6 +12,8 @@ import {
   WORKER_REOPEN_MAX_DELAY_MS,
   WORKER_SUBSCRIPTION_DOWN_AFTER_MS,
   WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS,
+  WORKER_SUBSCRIPTION_UNSTABLE_DROPS,
+  WORKER_SUBSCRIPTION_UNSTABLE_WINDOW_MS,
   WorkerSubscription,
 } from './worker-subscription';
 
@@ -287,79 +289,192 @@ describe('WorkerSubscription', () => {
         expect(first.insert('things', { id: 'r1' })).toBe(1);
       });
 
-      it('logs it with the error, and reports it as a warning', () => {
+      it('logs it with the error, and reports nothing', () => {
         sub.start();
 
-        latest().status(status, new Error('join refused'));
+        latest().status(status, new Error('socket closed: 1006'));
 
         expect(logger.warn).toHaveBeenCalledWith(
-          `test-worker: ${TOPIC} ${status} (join refused); test rows stop until realtime-js rejoins it, and inserts meanwhile are not replayed (1 failed in a row)`,
+          `test-worker: ${TOPIC} ${status} (socket closed: 1006); test rows stop until realtime-js rejoins it, and inserts meanwhile are not replayed (1 failed in a row)`,
         );
-        expect(captured()).toEqual([
-          [
-            `test-worker realtime subscription ${status}`,
-            {
-              level: 'warning',
-              tags: {
-                worker: 'test-worker',
-                realtime_status: status,
-                failures: '1',
-              },
-              fingerprint: [
-                'worker-subscription-status',
-                'test-worker',
-                status,
-              ],
-            },
-          ],
-        ]);
+        expect(captured()).toHaveLength(0);
       });
     },
   );
 
   describe('reporting', () => {
-    it('reports a CLOSED as a warning', async () => {
-      sub.start();
-      latest().status('CLOSED');
-      await settle();
-
-      expect(captured()).toEqual([
-        [
-          'test-worker realtime subscription CLOSED',
-          expect.objectContaining({
-            level: 'warning',
-            fingerprint: [
-              'worker-subscription-status',
-              'test-worker',
-              'CLOSED',
-            ],
-          }),
-        ],
-      ]);
-    });
-
-    it('reports each status at most once per window', async () => {
+    // #3906: each one-second socket blip used to send a warning per worker.
+    it('reports nothing for a drop that recovers', async () => {
       sub.start();
       const ch = latest();
+      ch.status('SUBSCRIBED');
 
       ch.status('CHANNEL_ERROR');
+      await jest.advanceTimersByTimeAsync(1000);
       ch.status('SUBSCRIBED');
-      ch.status('CHANNEL_ERROR');
-      ch.status('TIMED_OUT');
-      ch.status('SUBSCRIBED');
-      expect(captured().map(([message]) => message)).toEqual([
-        'test-worker realtime subscription CHANNEL_ERROR',
-        'test-worker realtime subscription TIMED_OUT',
-      ]);
-
       await jest.advanceTimersByTimeAsync(
         WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS,
       );
-      ch.status('CHANNEL_ERROR');
 
-      expect(captured()).toHaveLength(3);
-      // Every one is still logged.
-      expect(logger.warn).toHaveBeenCalledTimes(4);
+      expect(captured()).toHaveLength(0);
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports nothing for a CLOSED that reopens', async () => {
+      sub.start();
+      latest().status('SUBSCRIBED');
+
+      latest().status('CLOSED');
+      await settle();
+      await jest.advanceTimersByTimeAsync(reopenDelayMs(0));
+      latest().status('SUBSCRIBED');
+
+      expect(captured()).toHaveLength(0);
+    });
+
+    describe('a subscription that keeps dropping', () => {
+      const UNSTABLE = [
+        'test-worker realtime subscription keeps dropping; test rows are lost each time',
+        {
+          level: 'warning',
+          tags: {
+            worker: 'test-worker',
+            realtime_status: 'CHANNEL_ERROR',
+            drops: String(WORKER_SUBSCRIPTION_UNSTABLE_DROPS),
+          },
+          fingerprint: ['worker-subscription-unstable', 'test-worker'],
+        },
+      ];
+      /** One drop that recovers a second later, then `gapMs` of quiet. */
+      const blip = async (ch: FakeChannel, gapMs: number) => {
+        ch.status('CHANNEL_ERROR');
+        await jest.advanceTimersByTimeAsync(1000);
+        ch.status('SUBSCRIBED');
+        await jest.advanceTimersByTimeAsync(gapMs);
+      };
+
+      // Literals on purpose: `render.md` § 5.5 states these two numbers, and a
+      // test written in terms of the constants would follow them anywhere.
+      it('means three drops inside 30 minutes', async () => {
+        expect(WORKER_SUBSCRIPTION_UNSTABLE_DROPS).toBe(3);
+        expect(WORKER_SUBSCRIPTION_UNSTABLE_WINDOW_MS).toBe(30 * 60 * 1000);
+        sub.start();
+        const ch = latest();
+        ch.status('SUBSCRIBED');
+
+        await blip(ch, 14 * 60 * 1000);
+        await blip(ch, 14 * 60 * 1000);
+        expect(captured()).toHaveLength(0);
+        await blip(ch, 0);
+
+        expect(captured()).toEqual([UNSTABLE]);
+      });
+
+      it(`is reported as a warning on drop ${WORKER_SUBSCRIPTION_UNSTABLE_DROPS} inside one window`, async () => {
+        sub.start();
+        const ch = latest();
+        ch.status('SUBSCRIBED');
+
+        for (let n = 1; n < WORKER_SUBSCRIPTION_UNSTABLE_DROPS; n += 1) {
+          await blip(ch, 60_000);
+        }
+        expect(captured()).toHaveLength(0);
+        await blip(ch, 0);
+
+        expect(captured()).toEqual([UNSTABLE]);
+      });
+
+      it('is reported for a CLOSED loop whose reopens each subscribe', async () => {
+        sub.start();
+        latest().status('SUBSCRIBED');
+
+        for (let n = 0; n < WORKER_SUBSCRIPTION_UNSTABLE_DROPS; n += 1) {
+          latest().status('CLOSED');
+          await settle();
+          await jest.advanceTimersByTimeAsync(reopenDelayMs(0));
+          latest().status('SUBSCRIBED');
+        }
+
+        expect(captured()).toEqual([
+          [
+            UNSTABLE[0],
+            expect.objectContaining({
+              tags: expect.objectContaining({ realtime_status: 'CLOSED' }),
+            }),
+          ],
+        ]);
+      });
+
+      it('is not reported for drops spread wider than the window', async () => {
+        sub.start();
+        const ch = latest();
+        ch.status('SUBSCRIBED');
+
+        for (let n = 0; n < WORKER_SUBSCRIPTION_UNSTABLE_DROPS * 2; n += 1) {
+          await blip(
+            ch,
+            WORKER_SUBSCRIPTION_UNSTABLE_WINDOW_MS /
+              (WORKER_SUBSCRIPTION_UNSTABLE_DROPS - 1),
+          );
+        }
+
+        expect(captured()).toHaveLength(0);
+      });
+
+      it('counts drops, not the failed statuses of one spell down', async () => {
+        sub.start();
+        const ch = latest();
+        ch.status('SUBSCRIBED');
+
+        for (let n = 0; n < WORKER_SUBSCRIPTION_UNSTABLE_DROPS * 2; n += 1) {
+          ch.status('TIMED_OUT');
+        }
+
+        expect(captured()).toHaveLength(0);
+      });
+
+      // An outage is not a subscription that keeps dropping: these reach
+      // Sentry through the outage report, and only that.
+      it('does not count a channel that never subscribed, whatever fails', async () => {
+        realtime.channel.mockImplementationOnce(() => {
+          throw new Error('no socket');
+        });
+        sub.start();
+        await settle();
+
+        for (let n = 0; n < WORKER_SUBSCRIPTION_UNSTABLE_DROPS * 2; n += 1) {
+          await jest.advanceTimersByTimeAsync(reopenDelayMs(n));
+          latest().status('CLOSED');
+          await settle();
+        }
+
+        expect(logger.warn.mock.calls.length).toBeGreaterThan(
+          WORKER_SUBSCRIPTION_UNSTABLE_DROPS,
+        );
+        expect(
+          captured().filter(([, context]) => levelOf(context) === 'warning'),
+        ).toHaveLength(0);
+      });
+
+      it('is reported at most once per window', async () => {
+        sub.start();
+        const ch = latest();
+        ch.status('SUBSCRIBED');
+
+        for (let n = 0; n < WORKER_SUBSCRIPTION_UNSTABLE_DROPS * 3; n += 1) {
+          await blip(ch, 10_000);
+        }
+        expect(captured()).toHaveLength(1);
+
+        await jest.advanceTimersByTimeAsync(
+          WORKER_SUBSCRIPTION_UNSTABLE_WINDOW_MS,
+        );
+        for (let n = 0; n < WORKER_SUBSCRIPTION_UNSTABLE_DROPS; n += 1) {
+          await blip(ch, 10_000);
+        }
+
+        expect(captured()).toHaveLength(2);
+      });
     });
 
     describe('an outage', () => {
@@ -513,13 +628,14 @@ describe('WorkerSubscription', () => {
       });
       sub.start();
 
-      expect(() => latest().status('CLOSED')).not.toThrow();
-      await settle();
-      await jest.advanceTimersByTimeAsync(reopenDelayMs(0));
-
+      await jest.advanceTimersByTimeAsync(WORKER_SUBSCRIPTION_DOWN_AFTER_MS);
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringContaining('sentry unreachable'),
       );
+
+      expect(() => latest().status('CLOSED')).not.toThrow();
+      await settle();
+      await jest.advanceTimersByTimeAsync(reopenDelayMs(0));
       expect(channels()).toHaveLength(2);
     });
   });
@@ -544,15 +660,8 @@ describe('WorkerSubscription', () => {
       );
       expect(leftover.unsubscribe).toHaveBeenCalledTimes(1);
       expect(leftover.teardown).toHaveBeenCalledTimes(1);
-      expect(captured()).toEqual([
-        [
-          'test-worker realtime subscription OPEN_FAILED',
-          expect.objectContaining({
-            level: 'warning',
-            tags: expect.objectContaining({ realtime_status: 'OPEN_FAILED' }),
-          }),
-        ],
-      ]);
+      // Reported only if it keeps failing ("counts toward an outage" below).
+      expect(captured()).toHaveLength(0);
 
       await jest.advanceTimersByTimeAsync(reopenDelayMs(0));
 

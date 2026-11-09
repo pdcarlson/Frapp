@@ -312,7 +312,7 @@ The row is `frapp-api` rule `6297123`, *Frapp prod alert: checkout paid, chapter
 
 ### Chat worker subscriptions
 
-Source: the `error`-level Sentry event a chat worker sends when its Realtime subscription has gone 60 s without `SUBSCRIBED` (#3365), message `<worker> realtime subscription is down; <what stopped> are not being sent`, fingerprint `['worker-subscription-down', <worker>]`, tags `worker` and `realtime_status`. It repeats every 10 minutes while the outage lasts. What the workers do around it, and the per-status warnings that precede it: [`render.md` § 5.5](deployment/render.md#55-in-process-chat-workers-chunk-05).
+Source: the `error`-level Sentry event a chat worker sends when its Realtime subscription has gone 60 s without `SUBSCRIBED` (#3365), message `<worker> realtime subscription is down; <what stopped> are not being sent`, fingerprint `['worker-subscription-down', <worker>]`, tags `worker` and `realtime_status`. It repeats every 10 minutes while the outage lasts. A drop that recovers inside those 60 s is logged and not reported, and a subscription that keeps dropping sends a `warning` that no rule emails (#3906). What the workers do around both: [`render.md` § 5.5](deployment/render.md#55-in-process-chat-workers-chunk-05).
 
 | Alert | Condition | Routing |
 | ------------------------------ | ------------------------------------------------------------------------------------------- | ------------ |

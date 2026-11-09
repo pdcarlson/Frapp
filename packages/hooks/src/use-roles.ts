@@ -47,6 +47,7 @@ export function useCreateRole() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["roles", "create-role"],
     mutationFn: async (body: CreateRoleBody) => {
       const { data, error } = await client.POST("/v1/roles", { body });
       if (error) throw error;
@@ -63,6 +64,7 @@ export function useUpdateRole() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["roles", "update-role"],
     mutationFn: async ({ id, body }: { id: string; body: UpdateRoleBody }) => {
       const { data, error } = await client.PATCH("/v1/roles/{id}", {
         params: { path: { id } },
@@ -93,6 +95,7 @@ export function useDeleteRole() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["roles", "delete-role"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.DELETE("/v1/roles/{id}", {
         params: { path: { id } },
@@ -130,6 +133,7 @@ export function useTransferPresidency() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["roles", "transfer-presidency"],
     mutationFn: async (body: { target_member_id: string }) => {
       const { data, error } = await client.POST(
         "/v1/roles/transfer-presidency",
@@ -175,6 +179,7 @@ export function useClaimPresidency() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["roles", "claim-presidency"],
     mutationFn: async () => {
       const { data, error } = await client.POST(
         "/v1/roles/claim-presidency",
