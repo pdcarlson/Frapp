@@ -301,6 +301,7 @@ export function useSetChannelNotificationLevel() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["channels", "set-channel-notification-level"],
     mutationFn: async ({
       channelId,
       level,
@@ -337,6 +338,7 @@ export function useCreateChannel() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["channels", "create-channel"],
     mutationFn: async (body: {
       name: string;
       description?: string;
@@ -369,6 +371,7 @@ export function useUpdateChannel() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["channels", "update-channel"],
     mutationFn: async ({
       id,
       body,
@@ -423,6 +426,7 @@ export function useDeleteChannel() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["channels", "delete-channel"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.DELETE("/v1/channels/{id}", {
         params: { path: { id } },
@@ -463,6 +467,7 @@ export function useGetOrCreateDm({
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["channels", "get-or-create-dm"],
     mutationFn: async (body: { member_id: string }) => {
       const { data, error } = await client.POST("/v1/channels/dm", { body });
       if (error) throw error;
@@ -506,6 +511,7 @@ export function useLeaveChannel() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["channels", "leave-channel"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.POST("/v1/channels/{id}/leave", {
         params: { path: { id } },
@@ -527,6 +533,7 @@ export function useUnpinMessage() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["channels", "unpin-message"],
     mutationFn: async (messageId: string) => {
       const { data, error } = await client.DELETE(
         "/v1/channels/messages/{messageId}/pin",
@@ -598,6 +605,7 @@ export function useMarkChannelRead() {
 export function useRequestChatUploadUrl() {
   const client = useFrappClient();
   return useMutation({
+    mutationKey: ["channels", "request-chat-upload-url"],
     mutationFn: async ({
       id,
       body,
@@ -787,6 +795,9 @@ export function useAuthorAvatars(
  */
 export function useUploadSignedUrl() {
   return useMutation({
+    // Rooted at `storage`, not `channels`: the PUT goes to Supabase Storage,
+    // not our API, so its 5xx is Storage's (Beta Watch reads it that way).
+    mutationKey: ["storage", "upload-signed-url"],
     mutationFn: async ({
       signedUrl,
       file,
@@ -806,6 +817,7 @@ export function useCreateCategory() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["channels", "create-category"],
     mutationFn: async (body: { name: string; display_order: number }) => {
       const { data, error } = await client.POST("/v1/channels/categories", {
         body,
@@ -825,6 +837,7 @@ export function useUpdateCategory() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["channels", "update-category"],
     mutationFn: async ({
       id,
       body,
@@ -851,6 +864,7 @@ export function useDeleteCategory() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["channels", "delete-category"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.DELETE(
         "/v1/channels/categories/{id}",
@@ -934,6 +948,7 @@ export function useBookmarkMessage() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["bookmarks", "bookmark-message"],
     mutationFn: async (messageId: string) => {
       const { data, error } = await client.POST(
         "/v1/bookmarks/messages/{messageId}",
@@ -955,6 +970,7 @@ export function useUnbookmarkMessage() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["bookmarks", "unbookmark-message"],
     mutationFn: async (messageId: string) => {
       const { error } = await client.DELETE(
         "/v1/bookmarks/messages/{messageId}",

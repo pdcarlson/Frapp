@@ -44,6 +44,7 @@ export function useCreateCustomField() {
   const chapterId = useActiveChapterId();
 
   return useMutation({
+    mutationKey: ["custom-fields", "create-custom-field"],
     mutationFn: async (body: CreateCustomFieldInput) => {
       const { data, error } = await client.POST("/v1/custom-fields", {
         body: body as never,
@@ -65,6 +66,7 @@ export function useUpdateCustomField() {
   const chapterId = useActiveChapterId();
 
   return useMutation({
+    mutationKey: ["custom-fields", "update-custom-field"],
     mutationFn: async ({
       id,
       body,
@@ -93,6 +95,7 @@ export function useDeleteCustomField() {
   const chapterId = useActiveChapterId();
 
   return useMutation({
+    mutationKey: ["custom-fields", "delete-custom-field"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.DELETE("/v1/custom-fields/{id}", {
         params: { path: { id } },

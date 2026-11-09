@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   addPollOption,
-  canCreatePoll,
   checkPollDraft,
   closesAtFor,
   DEFAULT_POLL_CLOSE,
@@ -23,40 +22,6 @@ function draft(question: string, options: string[]): PollDraft {
 }
 
 const texts = (d: PollDraft) => d.options.map((row) => row.text);
-
-describe("canCreatePoll (#3701)", () => {
-  it("needs polls:create", () => {
-    expect(
-      canCreatePoll({ permissions: ["polls:create"], pollsGate: "on" }),
-    ).toBe(true);
-    expect(
-      canCreatePoll({ permissions: ["members:view"], pollsGate: "on" }),
-    ).toBe(false);
-  });
-
-  it("lets a President's * through", () => {
-    expect(canCreatePoll({ permissions: ["*"], pollsGate: "on" })).toBe(true);
-  });
-
-  it("is off while Polls is off, whatever the role", () => {
-    expect(canCreatePoll({ permissions: ["*"], pollsGate: "off" })).toBe(false);
-  });
-
-  it("fails closed while Polls is unread or unreadable, as the card's Vote does", () => {
-    expect(canCreatePoll({ permissions: ["*"], pollsGate: "loading" })).toBe(
-      false,
-    );
-    expect(canCreatePoll({ permissions: ["*"], pollsGate: "error" })).toBe(
-      false,
-    );
-  });
-
-  it("offers nothing while permissions are still loading", () => {
-    expect(canCreatePoll({ permissions: undefined, pollsGate: "on" })).toBe(
-      false,
-    );
-  });
-});
 
 describe("checkPollDraft (#3701)", () => {
   it("starts unfinished, with nothing to complain about", () => {

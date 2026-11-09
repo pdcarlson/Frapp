@@ -285,6 +285,7 @@ export function useUserSettings() {
 export function useRegisterPushToken() {
   const client = useFrappClient();
   return useMutation({
+    mutationKey: ["notifications", "register-push-token"],
     mutationFn: async (body: { token: string; device_name?: string }) => {
       const { data, error } = await client.POST("/v1/push-tokens", { body });
       if (error) throw error;
@@ -296,6 +297,7 @@ export function useRegisterPushToken() {
 export function useRemovePushToken() {
   const client = useFrappClient();
   return useMutation({
+    mutationKey: ["notifications", "remove-push-token"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.DELETE("/v1/push-tokens/{id}", {
         params: { path: { id } },
@@ -545,6 +547,7 @@ export function useUpdateNotificationPreference() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["notifications", "update-notification-preference"],
     mutationFn: async (body: UpdateNotificationPreferenceBody) => {
       const { data, error } = await client.PATCH(
         "/v1/notifications/preferences",
@@ -597,6 +600,7 @@ export function useUpdateUserSettings() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["settings", "update-user-settings"],
     mutationFn: async (body: UpdateUserSettingsBody) => {
       const { data, error } = await client.PATCH("/v1/settings", { body });
       if (error) throw error;
