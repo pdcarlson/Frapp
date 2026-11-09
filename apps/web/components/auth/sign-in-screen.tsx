@@ -14,12 +14,11 @@ import { FloatingField } from "@/components/auth/floating-field";
 import { OAuthButtons } from "@/components/auth/oauth-buttons";
 import { Button } from "@/components/ui/button";
 import { SkeletonText } from "@/components/shared/async-states";
-import { CheckEmail } from "@/components/auth/check-email";
+import { CheckEmail, confirmationRedirectUrl } from "@/components/auth/check-email";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useToast } from "@/lib/hooks/use-toast";
 import {
   EMAIL_CONFIRMED_AUTH_ERROR,
-  buildAuthCallbackUrl,
   describeAuthError,
   resolveRedirectPath,
 } from "@/lib/auth/redirect";
@@ -176,9 +175,7 @@ function SignInPageContent() {
           // `intent=confirm`: for an address that isn't confirmed yet, GoTrue
           // answers this with the Confirm signup email, whose `?code=` link is
           // the one that can confirm and still fail to sign this browser in.
-          emailRedirectTo: buildAuthCallbackUrl(window.location.origin, redirectTo, {
-            intent: "confirm",
-          }),
+          emailRedirectTo: confirmationRedirectUrl(window.location.origin, redirectTo),
         },
       });
       if (error) throw error;

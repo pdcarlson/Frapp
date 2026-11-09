@@ -132,6 +132,22 @@ describe("sign-up on a project that confirms email", () => {
     expect(toast).not.toHaveBeenCalledWith(expect.objectContaining({ variant: "destructive" }));
   });
 
+  it("holds Resend for at least a second when GoTrue says 'after 0 seconds'", async () => {
+    auth.signUp.mockResolvedValue({
+      data: { session: null, user: null },
+      error: new AuthApiError(
+        "For security purposes, you can only request this after 0 seconds.",
+        429,
+        "over_email_send_rate_limit",
+      ),
+    });
+    render(<SignUpPage />);
+    fill(/email/i, EMAIL);
+    fill(/password/i, "correct horse");
+    await submit(/create account/i);
+    expect(screen.getByRole("button", { name: /resend email in 1s/i })).toBeDisabled();
+  });
+
   it("names a breached password through the page, not GoTrue's sentence", async () => {
     auth.signUp.mockResolvedValue({
       data: { session: null, user: null },

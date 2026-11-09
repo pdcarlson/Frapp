@@ -298,9 +298,9 @@ server-side confirm route (`token_hash={{ .TokenHash }}&type=email`, per Supabas
 
 Subject: `Confirm your Frapp account`
 
-`{{ .RedirectTo }}` already carries a `?` everywhere this email is sent from: web sign-up
-and Resend pass `/auth/callback?next=…&intent=confirm`, the web magic link passes
-`/auth/callback?next=…`, and mobile passes `frapp:///?`. GoTrue sends this template, not
+`{{ .RedirectTo }}` already carries a `?` everywhere this email is sent from: web sign-up,
+Resend and the web magic link pass `/auth/callback?next=…&intent=confirm`, and mobile
+passes `frapp:///?`. GoTrue sends this template, not
 Magic Link, to an address that isn't confirmed yet. `/auth/callback` (web) and
 `createSessionFromUrl` (mobile, `apps/mobile/lib/auth-session.tsx`) already verify a
 `token_hash` with `type=email` through `verifyOtp`, which needs no verifier. So the paste

@@ -125,7 +125,8 @@ export function describeSignUpError(error: unknown): string {
 
 /**
  * The same sentence an OAuth identity collision reads (`oauth.ts`,
- * `writing.md` § Identity collision): one fact, one wording.
+ * `writing.md` § Sign in (pre-auth), the Identity collision row): one fact,
+ * one wording.
  */
 export const EXISTING_ACCOUNT_COPY = IDENTITY_COLLISION_COPY;
 

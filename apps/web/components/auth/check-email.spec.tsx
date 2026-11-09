@@ -117,6 +117,22 @@ describe("CheckEmail", () => {
     expect(screen.getByRole("button", { name: /resend email in 23s/i })).toBeDisabled();
   });
 
+  it("never offers Resend while GoTrue says 'after 0 seconds'", async () => {
+    resend.mockResolvedValue({
+      data: {},
+      error: new AuthApiError(
+        "For security purposes, you can only request this after 0 seconds.",
+        429,
+        "over_email_send_rate_limit",
+      ),
+    });
+    renderPanel();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^resend email$/i }));
+    });
+    expect(screen.getByRole("button", { name: /resend email in 1s/i })).toBeDisabled();
+  });
+
   it("carries on to `redirectTo` when the member comes back signed in", async () => {
     renderPanel();
     getSession.mockResolvedValue({ data: { session: { access_token: "t" } } });

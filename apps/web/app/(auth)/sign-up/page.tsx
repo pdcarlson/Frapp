@@ -50,15 +50,17 @@ import {
  * and whose supporting card listed four internal milestones ("Activate billing
  * in test mode to unlock invite workflows").
  *
- * After submit, three branches. A session in the response means Supabase is
+ * After submit, four branches. A session in the response means Supabase is
  * not confirming email (the local stack), so the member goes straight to
  * `redirectTo`. A user with no identities is GoTrue's stand-in for an address
  * that already has an account: no email goes out, so the member is told to
  * sign in instead. Otherwise the form gives way to "Check your email"
  * (`check-email.tsx`) for that address, which is what every hosted sign-up
- * sees (#3776). Until 2026-11-09 that last branch was a toast and a bounce to
+ * sees (#3776). Until 2026-11-09 that branch was a toast and a bounce to
  * `/sign-in`, where the member typed the new password into a form that could
- * only refuse it.
+ * only refuse it. A refusal inside GoTrue's email minute (the same address
+ * resubmitted) returns to "Check your email" too, counting down GoTrue's
+ * seconds.
  *
  * The confirmation email's link lands on
  * `/auth/callback?next=<redirectTo>&intent=confirm`

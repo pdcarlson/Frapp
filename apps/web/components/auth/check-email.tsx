@@ -69,7 +69,11 @@ export function CheckEmail({
 }: {
   email: string;
   redirectTo: string;
-  /** `RESEND_COOLDOWN_SECONDS` right after an email went out, else 0. */
+  /**
+   * Seconds before Resend is offered: `RESEND_COOLDOWN_SECONDS` right after an
+   * email went out, GoTrue's own remaining seconds (at least 1) when it
+   * refused a send inside the minute, else 0.
+   */
   initialCooldownSeconds: number;
   backLabel: string;
   onBack: () => void;

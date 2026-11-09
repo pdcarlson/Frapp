@@ -198,9 +198,11 @@ export function describeAuthError(code: string): string {
     case "missing_code":
       return "The link was incomplete. Request a new one below.";
     case EMAIL_CONFIRMED_AUTH_ERROR:
-      // Under the toast title "Email confirmed". Not "with your password"
-      // alone: a magic-link account has none.
-      return "Sign in to continue, with your password or a new magic link.";
+      // Under the toast title "Email confirmed". Says the link didn't sign
+      // this browser in, because the same lands for an address confirmed long
+      // ago (a magic link on a `ConfirmationURL` template opened elsewhere).
+      // Not "with your password" alone: a magic-link account has none.
+      return "This link couldn't sign this browser in. Sign in with your password, or ask for a new magic link.";
     case "identity_already_exists":
     case "user_already_exists":
     case "email_exists":
