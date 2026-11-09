@@ -1,14 +1,15 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { documentQuery, mockSignedLinks, mockToast, pdf, assign } = vi.hoisted(() => ({
+const { documentQuery, mockSignedLinks, mockToast, pdf, assign, useDocumentSpy } = vi.hoisted(() => ({
   documentQuery: {
     data: undefined as unknown,
+    dataUpdatedAt: 0,
     isError: false,
     error: null as unknown,
-    refetch: vi.fn(),
+    refetch: vi.fn().mockResolvedValue(undefined),
   },
   mockSignedLinks: vi.fn(),
   mockToast: vi.fn(),
@@ -18,11 +19,15 @@ const { documentQuery, mockSignedLinks, mockToast, pdf, assign } = vi.hoisted(()
     destroyPdf: vi.fn().mockResolvedValue(undefined),
   },
   assign: vi.fn(),
+  useDocumentSpy: vi.fn(),
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useDocument: () => documentQuery,
+  useDocument: (...args: unknown[]) => {
+    useDocumentSpy(...args);
+    return documentQuery;
+  },
   useDocumentDownloadUrl: () => ({ mutateAsync: mockSignedLinks }),
 }));
 vi.mock("@/lib/backwork-bulk/pdf", () => pdf);
@@ -39,7 +44,9 @@ afterAll(() => {
   Object.defineProperty(window, "location", { value: realLocation, configurable: true });
 });
 
-const { DocumentViewer, previewKind, MAX_PREVIEW_PAGES } = await import("./document-viewer");
+const { DocumentViewer, previewKind, MAX_PREVIEW_PAGES, OPEN_DOCUMENT_ATTRIBUTE } =
+  await import("./document-viewer");
+const { VIEWER_BACKDROP_ATTRIBUTE } = await import("@/components/shared/media-viewer");
 
 type Doc = Parameters<typeof previewKind>[0] & Record<string, unknown>;
 
@@ -69,15 +76,26 @@ const BUDGET = doc(
 );
 const LIST = [BYLAWS, PHOTO, BUDGET] as never[];
 
-function Harness({ initial }: { initial: string }) {
-  // A tiny host, as the page is: the viewer holds no state of its own.
+function Harness({ initial, documents = LIST }: { initial: string; documents?: never[] }) {
+  // A tiny host, as the page is: the viewer holds no state of its own. The
+  // row buttons stand in for the list, for focus to return to.
   const [openId, setOpenId] = useState<string | null>(initial);
-  return <DocumentViewer documents={LIST} openId={openId} onOpenChange={setOpenId} />;
+  return (
+    <>
+      {documents.map((d: { id: string; title: string }) => (
+        <button key={d.id} type="button" {...{ [OPEN_DOCUMENT_ATTRIBUTE]: d.id }}>
+          Row {d.title}
+        </button>
+      ))}
+      <DocumentViewer documents={documents} openId={openId} onOpenChange={setOpenId} />
+    </>
+  );
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   documentQuery.data = undefined;
+  documentQuery.dataUpdatedAt = 0;
   documentQuery.isError = false;
   documentQuery.error = null;
   globalThis.fetch = vi.fn().mockResolvedValue({
@@ -173,6 +191,8 @@ describe("DocumentViewer", () => {
 
     await waitFor(() => expect(assign).toHaveBeenCalledWith("https://signed/attachment"));
     expect(mockSignedLinks).toHaveBeenCalledWith("d-3");
+    // Nothing to draw, so no links were fetched until Download asked.
+    expect(useDocumentSpy).toHaveBeenCalledWith("d-3", { enabled: false });
   });
 
   it("steps through the list in order with the arrow keys, wrapping at the ends", async () => {
@@ -194,5 +214,117 @@ describe("DocumentViewer", () => {
     render(<Harness initial="d-1" />);
 
     expect(screen.getByText("Couldn't load this preview.")).toBeInTheDocument();
+  });
+
+  it("keeps one dialog while stepping, so the backdrop doesn't flash", async () => {
+    const user = userEvent.setup();
+    render(<Harness initial="d-1" />);
+    const dialog = screen.getByRole("dialog");
+
+    await user.keyboard("{ArrowRight}");
+
+    expect(screen.getByRole("dialog", { name: "House photo" })).toBe(dialog);
+  });
+
+  it("returns focus to the row of the document it was showing", async () => {
+    const user = userEvent.setup();
+    render(<Harness initial="d-1" />);
+
+    await user.keyboard("{ArrowRight}{Escape}");
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Row House photo" })).toHaveFocus(),
+    );
+  });
+
+  it("closes when its row leaves the list", () => {
+    const { rerender } = render(<Harness initial="d-3" />);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    rerender(<Harness initial="d-3" documents={[BYLAWS, PHOTO] as never[]} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // And stays closed when the row comes back: the open id was cleared.
+    rerender(<Harness initial="d-3" />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("closes on a press beside a PDF's pages, but not on its scrollbar", async () => {
+    documentQuery.data = { ...BYLAWS, downloadUrl: "https://signed/inline" };
+    render(<Harness initial="d-1" />);
+    await screen.findByRole("img", { name: /page 2 of 2/ });
+    const column = screen
+      .getByRole("dialog")
+      .querySelector<HTMLElement>(`[${VIEWER_BACKDROP_ATTRIBUTE}]`)!;
+    // jsdom lays nothing out: a 600px column whose scrollbar starts at 590.
+    Object.defineProperty(column, "clientWidth", { value: 590 });
+    Object.defineProperty(column, "clientHeight", { value: 800 });
+    column.getBoundingClientRect = () => ({ left: 0, top: 0 }) as DOMRect;
+
+    fireEvent.pointerDown(column, { button: 0, clientX: 595, clientY: 10 });
+    fireEvent.pointerUp(column, { button: 0, clientX: 595, clientY: 10 });
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    fireEvent.pointerDown(column, { button: 0, clientX: 20, clientY: 10 });
+    fireEvent.pointerUp(column, { button: 0, clientX: 20, clientY: 10 });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("keeps the pages it drew when a refetch mints a new link", async () => {
+    documentQuery.data = { ...BYLAWS, downloadUrl: "https://signed/first" };
+    const { rerender } = render(<Harness initial="d-1" />);
+    await screen.findByRole("img", { name: /page 2 of 2/ });
+
+    documentQuery.data = { ...BYLAWS, downloadUrl: "https://signed/second" };
+    rerender(<Harness initial="d-1" />);
+
+    expect(screen.getByRole("img", { name: /page 1 of 2/ })).toHaveAttribute(
+      "src",
+      "blob:page-1",
+    );
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("tears down a PDF that finishes loading after the viewer moved on", async () => {
+    documentQuery.data = { ...BYLAWS, downloadUrl: "https://signed/inline" };
+    let finish!: (doc: unknown) => void;
+    pdf.loadPdf.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+    const user = userEvent.setup();
+    render(<Harness initial="d-1" />);
+    await waitFor(() => expect(pdf.loadPdf).toHaveBeenCalled());
+
+    await user.keyboard("{Escape}");
+    const late = { numPages: 1 };
+    finish(late);
+
+    await waitFor(() => expect(pdf.destroyPdf).toHaveBeenCalledWith(late));
+    expect(pdf.renderPagePreview).not.toHaveBeenCalled();
+  });
+
+  it("says so when a photo doesn't load, and tries again with fresh links", async () => {
+    const user = userEvent.setup();
+    documentQuery.data = { ...PHOTO, downloadUrl: "https://signed/photo" };
+    render(<Harness initial="d-2" />);
+
+    fireEvent.error(screen.getByRole("img", { name: "House photo" }));
+    await user.click(await screen.findByRole("button", { name: "Try again" }));
+
+    expect(documentQuery.refetch).toHaveBeenCalled();
+    expect(await screen.findByRole("img", { name: "House photo" })).toBeInTheDocument();
+  });
+
+  it("saves through the links in hand while they're fresh", async () => {
+    const user = userEvent.setup();
+    documentQuery.data = {
+      ...PHOTO,
+      downloadUrl: "https://signed/photo",
+      forcedDownloadUrl: "https://signed/photo-attachment",
+    };
+    documentQuery.dataUpdatedAt = Date.now();
+    render(<Harness initial="d-2" />);
+
+    await user.click(screen.getByRole("button", { name: "Download" }));
+
+    expect(assign).toHaveBeenCalledWith("https://signed/photo-attachment");
+    expect(mockSignedLinks).not.toHaveBeenCalled();
   });
 });

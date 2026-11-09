@@ -236,18 +236,12 @@ export class ChapterDocumentService {
       throw new NotFoundException('Document not found');
     }
 
-    const [downloadUrl, forcedDownloadUrl] = await Promise.all([
-      this.storageProvider.getSignedDownloadUrl(
+    const { inline: downloadUrl, attachment: forcedDownloadUrl } =
+      await this.storageProvider.getSignedInlineAndAttachmentUrls(
         DOCUMENTS_BUCKET,
         document.storage_path,
-      ),
-      this.storageProvider.getSignedDownloadUrl(
-        DOCUMENTS_BUCKET,
-        document.storage_path,
-        undefined,
         storedFilename(document.storage_path),
-      ),
-    ]);
+      );
 
     return { ...document, downloadUrl, forcedDownloadUrl };
   }

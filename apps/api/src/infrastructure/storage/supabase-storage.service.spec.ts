@@ -260,6 +260,33 @@ describe('SupabaseStorageService', () => {
     });
   });
 
+  describe('getSignedInlineAndAttachmentUrls', () => {
+    it('signs once and adds the download parameter createSignedUrl would', async () => {
+      createSignedUrl.mockResolvedValueOnce({
+        data: {
+          signedUrl:
+            'https://x.supabase.co/storage/v1/object/sign/documents/a/b.pdf?token=t',
+        },
+        error: null,
+      });
+
+      const urls = await service.getSignedInlineAndAttachmentUrls(
+        'documents',
+        'a/b.pdf',
+        'Risk plan.pdf',
+      );
+
+      expect(createSignedUrl).toHaveBeenCalledTimes(1);
+      expect(createSignedUrl).toHaveBeenCalledWith('a/b.pdf', 3600, undefined);
+      expect(urls).toEqual({
+        inline:
+          'https://x.supabase.co/storage/v1/object/sign/documents/a/b.pdf?token=t',
+        attachment:
+          'https://x.supabase.co/storage/v1/object/sign/documents/a/b.pdf?token=t&download=Risk+plan.pdf',
+      });
+    });
+  });
+
   describe('getSignedDownloadUrls', () => {
     it('returns a path → signedUrl map from the batch response', async () => {
       createSignedUrls.mockResolvedValueOnce({

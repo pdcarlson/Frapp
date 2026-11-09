@@ -43,22 +43,22 @@ There is no separate download endpoint: `GET /v1/documents/{id}` returns the doc
 
 ### Two links: inline and saved
 
-`GET /v1/documents/{id}` returns two signed links to the file, each good for an hour (#3849):
+`GET /v1/documents/{id}` returns two signed links to the file from one signing call, each good for an hour (#3849):
 
 - **`downloadUrl`** serves the file inline, with no `Content-Disposition`, so a browser shows a PDF or image in place. Mobile's s12 opens it in the in-app browser, and the web viewer (§ Preview) reads the file through it. Whether it should stay inline for every client is [#3867](https://github.com/pdcarlson/Frapp/issues/3867); Backwork's `GET /v1/backwork/{id}` link is inline too.
 - **`forcedDownloadUrl`** is the same object signed with `Content-Disposition: attachment` under the stored filename (the storage key's last segment), so following it saves the file. Web's Download controls follow it (`selectForcedDownloadUrl`), and fall back to opening `downloadUrl` in a new tab when a server predates it.
 
 ## Preview
 
-*(Added 2026-11-09, #3849; Shawn's idea, his pick of the full-screen option.)* On web `/documents`, clicking a row's name opens the document full screen, in the viewer chat's images open in (`apps/web/components/shared/media-viewer.tsx`, [chat § File and image uploads](chat/README.md)): a dim backdrop over the whole window, icon-only Download and Close in the top-right corner, step arrows at the sides that walk the list as it is shown (folder and search applied), wrapping at the ends, and Esc, the backdrop or Close to dismiss. Unlike chat's, it draws the document's title and a meta line (type, upload date, folder) top-left, because a document's title is the one its uploader typed. Closing returns focus to the row that opened it.
+*(Added 2026-11-09, #3849; Shawn's idea, his pick of the full-screen option.)* On web `/documents`, clicking a row's name opens the document full screen, in the viewer chat's images open in (`apps/web/components/shared/media-viewer.tsx`, [chat § File and image uploads](chat/README.md)): a dim backdrop over the whole window, icon-only Download and Close in the top-right corner, step arrows at the sides that walk the list as it is shown (folder and search applied), wrapping at the ends, and Esc, the backdrop or Close to dismiss. Unlike chat's, it draws the document's title and a meta line (type, upload date, folder) top-left, because a document's title is the one its uploader typed. Stepping keeps one dialog open and swaps the file inside it. Closing returns focus to the row of the document it was showing, which may not be the one that opened it, as chat's viewer returns to the image it was showing.
 
-What previews (`previewKind` in `apps/web/components/documents/document-viewer.tsx`), decided by the declared `content_type`, with the stored extension used only when none was recorded:
+What previews (`previewKind` in `apps/web/components/documents/document-viewer.tsx`), decided by the declared `content_type`. When no type was recorded, a stored `.pdf` extension still counts as a PDF; nothing else is guessed from a name:
 
 - **PDFs** are drawn page by page with pdf.js in the member's own browser (`apps/web/lib/backwork-bulk/pdf.ts`, the loader Backwork's bulk upload uses), into images in a column that scrolls. The first page is readable while the rest draw; at most 50 pages are drawn, and a longer file says so and offers the download.
 - **Images** on chat's viewable list (JPEG, PNG, GIF, WebP, BMP) draw in an `<img>`.
 - **Everything else**, Office files, text and CSV included, shows a card naming the type ("Excel spreadsheets can't be previewed yet") with a Download button. Previewing Office files needs a converter or an outside viewer; which one is a privacy decision for the owner, tracked in [#3889](https://github.com/pdcarlson/Frapp/issues/3889).
 
-Neither path loads the member's file as a document, which keeps the trust rule chat states for member uploads: pdf.js parses the bytes and paints a canvas, and an `<img>` decodes or fails. The file is fetched from our own storage only. A load that fails says so with Try again; Download stays in the corner throughout.
+Neither path loads the member's file as a document, which keeps the trust rule chat states for member uploads: pdf.js parses the bytes and paints a canvas, and an `<img>` decodes or fails. The file is fetched from our own storage only. A load that fails (the link, the bytes, or an image that doesn't decode) says so with Try again, which fetches fresh links first; Download stays in the corner throughout. A file that doesn't preview fetches no links until Download is pressed, and Download reuses the links the viewer already holds while they're fresh.
 
 Mobile is unchanged: s12 still opens `downloadUrl` in the in-app browser.
 

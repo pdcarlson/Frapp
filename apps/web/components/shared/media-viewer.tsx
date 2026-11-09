@@ -94,11 +94,23 @@ export function MediaViewer({
   const pressedBackdrop = useRef(false);
   const many = step !== undefined && step.total > 1;
 
-  function isBackdrop(event: { target: EventTarget; currentTarget: EventTarget }) {
+  function isBackdrop(event: {
+    target: EventTarget;
+    currentTarget: EventTarget;
+    clientX: number;
+    clientY: number;
+  }) {
+    if (event.target === event.currentTarget) return true;
+    const el = event.target;
+    if (!(el instanceof HTMLElement) || !el.hasAttribute(VIEWER_BACKDROP_ATTRIBUTE)) {
+      return false;
+    }
+    // Not its scrollbar: a press there targets the scrolling element too, and
+    // dragging it must scroll, not close.
+    const box = el.getBoundingClientRect();
     return (
-      event.target === event.currentTarget ||
-      (event.target instanceof HTMLElement &&
-        event.target.hasAttribute(VIEWER_BACKDROP_ATTRIBUTE))
+      event.clientX - box.left < el.clientWidth &&
+      event.clientY - box.top < el.clientHeight
     );
   }
 

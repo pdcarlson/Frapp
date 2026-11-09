@@ -2,7 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { Download, FileText, Loader2 } from "lucide-react";
-import { selectDownloadUrl, useDocument } from "@repo/hooks";
+import {
+  selectDownloadUrl,
+  selectForcedDownloadUrl,
+  useDocument,
+} from "@repo/hooks";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { isViewableImage } from "@repo/chat-core/attachments";
 import { formatDay } from "@repo/formatting";
@@ -99,9 +103,6 @@ export function DocumentViewer({
   if (!doc) return null;
   return (
     <OpenDocumentViewer
-      // A fresh viewer per document: its pages, its retries and its pinned
-      // link belong to the file being shown.
-      key={doc.id}
       doc={doc}
       index={index}
       total={documents.length}
@@ -113,6 +114,12 @@ export function DocumentViewer({
   );
 }
 
+/**
+ * One dialog for the whole visit: stepping swaps what it shows, never the
+ * dialog, so the backdrop doesn't fade in again, focus stays inside, and the
+ * close-focus hook runs once, when the member actually closes it. Only the
+ * per-file part (`DocumentPreview`) is keyed by document.
+ */
 function OpenDocumentViewer({
   doc,
   index,
@@ -127,18 +134,23 @@ function OpenDocumentViewer({
   onClose: () => void;
 }) {
   const kind = previewKind(doc);
-  // `GET /v1/documents/{id}` for the signed links. It refetches on focus once
-  // stale, which mints a new link; an image follows it, and the PDF keeps the
-  // bytes it already loaded.
-  const query = useDocument(doc.id);
-  const url = selectDownloadUrl(query.data);
+  // The signed links, for a file that previews. A file that doesn't is never
+  // fetched or shown, so it asks for nothing until Download is pressed.
+  // `GET /v1/documents/{id}` refetches on focus once stale, minting a new
+  // link; an image follows it, and a PDF keeps the pages it already drew.
+  const query = useDocument(doc.id, { enabled: kind !== "none" });
   const { download, fetchingId } = useDocumentDownload();
-  const [attempt, setAttempt] = useState(0);
   const fetching = fetchingId === doc.id;
-
-  function retry() {
-    setAttempt((n) => n + 1);
-    void query.refetch();
+  // The links in hand save without another request; near the end of their
+  // hour, or for a file whose links were never fetched, `download` asks for
+  // fresh ones.
+  function save() {
+    const cached =
+      query.dataUpdatedAt > Date.now() - SAVE_LINK_REUSE_MS
+        ? selectForcedDownloadUrl(query.data)
+        : null;
+    if (cached) window.location.assign(cached);
+    else void download(doc.id);
   }
 
   const label = kindLabel(doc);
@@ -160,6 +172,9 @@ function OpenDocumentViewer({
           <p className="truncate text-caption text-white/60">{meta}</p>
         </>
       }
+      // Back to the row of the document it was showing, which may not be the
+      // one that opened it (the arrows step), as chat's viewer returns to the
+      // image it was showing.
       onCloseAutoFocus={(event) => {
         const opener = document.querySelector<HTMLElement>(
           `[${OPEN_DOCUMENT_ATTRIBUTE}="${CSS.escape(doc.id)}"]`,
@@ -173,7 +188,7 @@ function OpenDocumentViewer({
           type="button"
           aria-label="Download"
           title="Download"
-          onClick={() => void download(doc.id)}
+          onClick={save}
           disabled={fetching}
           aria-busy={fetching}
           className={cn(VIEWER_CONTROL, VIEWER_CONTROL_SIZE)}
@@ -186,43 +201,101 @@ function OpenDocumentViewer({
         </button>
       }
     >
-      {kind === "none" ? (
-        <Notice
-          title={
-            label === "File"
-              ? "This file can't be previewed yet."
-              : `${label}s can't be previewed yet.`
-          }
-          detail="Download it to open it on your device."
-          action={{ label: "Download", onClick: () => void download(doc.id), busy: fetching }}
-        />
-      ) : query.isError && !url ? (
-        <Notice
-          title="Couldn't load this preview."
-          detail={describeLoadFailure(query.error)}
-          action={{ label: "Try again", onClick: retry }}
-        />
-      ) : !url ? (
-        <PageSkeleton />
-      ) : kind === "image" ? (
-        /* A plain <img>, as chat's viewer draws one: the signed URL's query
-           string is the signature, and the Next image loader would strip it. */
-        /* eslint-disable-next-line @next/next/no-img-element */
-        <img
-          src={url}
-          alt={doc.title}
-          className="max-h-full max-w-full rounded-sm object-contain"
-        />
-      ) : (
-        <PdfPages
-          key={attempt}
-          url={url}
-          title={doc.title}
-          onRetry={retry}
-          onDownload={() => void download(doc.id)}
-        />
-      )}
+      <DocumentPreview
+        key={doc.id}
+        doc={doc}
+        kind={kind}
+        label={label}
+        query={query}
+        onSave={save}
+        saving={fetching}
+      />
     </MediaViewer>
+  );
+}
+
+/** Reuse the save link in hand while it's this fresh; links last an hour. */
+const SAVE_LINK_REUSE_MS = 50 * 60 * 1000;
+
+function DocumentPreview({
+  doc,
+  kind,
+  label,
+  query,
+  onSave,
+  saving,
+}: {
+  doc: ChapterDocument;
+  kind: PreviewKind;
+  label: string;
+  query: ReturnType<typeof useDocument>;
+  onSave: () => void;
+  saving: boolean;
+}) {
+  const url = selectDownloadUrl(query.data);
+  // Bumped once a retry's refetch has landed, so the remounted preview reads
+  // the fresh link rather than the one that failed.
+  const [attempt, setAttempt] = useState(0);
+  const [imageFailed, setImageFailed] = useState(false);
+  const { refetch } = query;
+  async function retry() {
+    await refetch();
+    setImageFailed(false);
+    setAttempt((n) => n + 1);
+  }
+
+  if (kind === "none") {
+    return (
+      <Notice
+        title={
+          label === "File"
+            ? "This file can't be previewed yet."
+            : `${label}s can't be previewed yet.`
+        }
+        detail="Download it to open it on your device."
+        action={{ label: "Download", onClick: onSave, busy: saving }}
+      />
+    );
+  }
+  if (query.isError && !url) {
+    return (
+      <Notice
+        title="Couldn't load this preview."
+        detail={describeLoadFailure(query.error)}
+        action={{ label: "Try again", onClick: () => void retry() }}
+      />
+    );
+  }
+  if (!url) return <PageSkeleton />;
+  if (kind === "image") {
+    return imageFailed ? (
+      <Notice
+        title="Couldn't load this preview."
+        detail="Check your connection and try again, or download the file."
+        action={{ label: "Try again", onClick: () => void retry() }}
+      />
+    ) : (
+      /* A plain <img>, as chat's viewer draws one: the signed URL's query
+         string is the signature, and the Next image loader would strip it. An
+         image whose bytes don't decode (the bucket gates the declared type,
+         not the bytes) or whose link failed lands on the notice above. */
+      /* eslint-disable-next-line @next/next/no-img-element */
+      <img
+        src={url}
+        alt={doc.title}
+        onError={() => setImageFailed(true)}
+        className="max-h-full max-w-full rounded-sm object-contain"
+      />
+    );
+  }
+  return (
+    <PdfPages
+      key={attempt}
+      url={url}
+      title={doc.title}
+      onRetry={() => void retry()}
+      onDownload={onSave}
+    />
   );
 }
 
@@ -262,8 +335,14 @@ function PdfPages({
         if (!response.ok) throw new Error(`The file didn't load (${response.status}).`);
         const bytes = new Uint8Array(await response.arrayBuffer());
         if (cancelled) return;
-        pdf = await loadPdf(bytes);
-        if (cancelled) return;
+        const loaded = await loadPdf(bytes);
+        // Torn down here when the viewer moved on while pdf.js parsed: the
+        // cleanup below ran before there was anything to destroy.
+        if (cancelled) {
+          void destroyPdf(loaded);
+          return;
+        }
+        pdf = loaded;
         const total = pdf.numPages;
         const count = Math.min(total, MAX_PREVIEW_PAGES);
         for (let number = 1; number <= count; number += 1) {

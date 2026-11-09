@@ -70,6 +70,7 @@ describe('ChapterDocumentService', () => {
     mockStorageProvider = {
       getSignedUploadUrl: jest.fn(),
       getSignedDownloadUrl: jest.fn(),
+      getSignedInlineAndAttachmentUrls: jest.fn(),
       getSignedDownloadUrls: jest.fn().mockResolvedValue({}),
       uploadFile: jest.fn(),
       downloadFile: jest.fn(),
@@ -607,36 +608,31 @@ describe('ChapterDocumentService', () => {
   });
 
   describe('findById', () => {
-    it('returns an inline link and a forced-download link', async () => {
+    it('returns an inline link and a forced-download link from one signature', async () => {
       mockDocumentRepo.findById.mockResolvedValue(baseDocument);
-      mockStorageProvider.getSignedDownloadUrl.mockImplementation(
-        (_bucket: string, _path: string, _expires?: number, as?: string) =>
-          Promise.resolve(
-            as
-              ? `https://storage.supabase.co/signed?download=${as}`
-              : 'https://storage.supabase.co/signed',
-          ),
-      );
+      mockStorageProvider.getSignedInlineAndAttachmentUrls.mockResolvedValue({
+        inline: 'https://storage.supabase.co/signed?token=t',
+        attachment:
+          'https://storage.supabase.co/signed?token=t&download=bylaws.pdf',
+      });
 
       const result = await service.findById('doc-1', 'ch-1');
 
       expect(result.id).toBe('doc-1');
       // Inline, as before: the viewer and mobile's in-app browser read it.
-      expect(result.downloadUrl).toBe('https://storage.supabase.co/signed');
-      expect(mockStorageProvider.getSignedDownloadUrl).toHaveBeenCalledWith(
-        'documents',
-        baseDocument.storage_path,
-      );
-      // Saved under the stored key's last segment.
-      const filename = baseDocument.storage_path.split('/').pop();
-      expect(mockStorageProvider.getSignedDownloadUrl).toHaveBeenCalledWith(
-        'documents',
-        baseDocument.storage_path,
-        undefined,
-        filename,
+      expect(result.downloadUrl).toBe(
+        'https://storage.supabase.co/signed?token=t',
       );
       expect(result.forcedDownloadUrl).toBe(
-        `https://storage.supabase.co/signed?download=${filename}`,
+        'https://storage.supabase.co/signed?token=t&download=bylaws.pdf',
+      );
+      // Saved under the stored key's last segment.
+      expect(
+        mockStorageProvider.getSignedInlineAndAttachmentUrls,
+      ).toHaveBeenCalledWith(
+        'documents',
+        baseDocument.storage_path,
+        'bylaws.pdf',
       );
     });
 
