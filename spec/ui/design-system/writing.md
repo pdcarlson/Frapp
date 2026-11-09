@@ -368,24 +368,24 @@ Mobile's Tasks tab (s08) is a personal board for everyone, so with nothing assig
 |---|---|---|
 | Loading | — | `Loading chapter documents...` |
 | Empty | — | `No documents yet.`, `Nothing in {folder} yet.`, or on No folder `Every document is in a folder.`; for a viewer with `chapter_docs:upload` then **Upload a file** `or drop one anywhere on this page.` (one line) |
-| Empty (search, all files) | — | `No documents match “{query}”.` then a **Clear search** link (one line) |
-| Empty (search, inside a folder) | — | `Nothing in {folder} matches “{query}”.` (on No folder, `No documents outside a folder match “{query}”.`) then a **Search all files** link, which keeps the search (one line) |
+| Empty (search or filter, all files) | — | `No documents match “{query}”.`, or with no search typed `No documents match these filters.`, then a **Clear filters** link that clears the search and both filters (one line) |
+| Empty (search or filter, inside a folder) | — | `Nothing in {folder} matches.` (on No folder, `No documents outside a folder match.`) then a **Search all files** link, which keeps the search and filters (one line) |
+| Capped list (status line above the rows) | — | `Showing the newest 1,000 documents. Search and filters look only at these for now.` |
 | Empty, mobile s12 | — | `No documents yet.` or `Nothing in {folder} yet.`; for a viewer with `chapter_docs:upload` then `Tap + to upload one.`, the screen's own + (one line) |
-| Empty (search), mobile s12 | — | The web lines and links: `No documents match “{query}”.` with **Clear search**, or inside a folder chip `Nothing in {folder} matches “{query}”.` with **Search all files** (one line) |
+| Empty (search), mobile s12 | — | `No documents match “{query}”.` with **Clear search**, or inside a folder chip `Nothing in {folder} matches “{query}”.` with **Search all files** (one line). Web's lines differ since #3852, which added filters there |
 | Error | `Couldn't load documents` | the load-failure line (§ copy rules) |
 | Offline | `Documents unavailable offline` | `Reconnect to browse the chapter library and download files.` |
-| Offline (search active) | `Search needs a connection` | `Clear the search to browse the documents already on this device.` |
 | Folder list failed (inline, under the rail) | — | `Couldn't load the folder list, so these are read from the documents shown. Empty folders and folder management are unavailable until it loads.` |
 
-Three of these exist to keep one state from impersonating another:
+Why the states are split this way:
 
 - A search that matched nothing is not an empty library. The default empty copy
   invites an upload, which is the wrong instruction for a member who mistyped a
   title.
-- Search is served by the API, so each query is a cache key that an offline
-  member has never fetched. Falling to the plain offline card would replace a
-  library they still have cached; naming the search as the thing that needs a
-  connection keeps the recovery in the member's hands.
+- Web search runs over the library already loaded (#3852), so an offline
+  member keeps searching what they have; there is no offline-search state.
+  (Before #3852 search went to the API, and an offline query landed on a cache
+  key never fetched, which needed its own "Search needs a connection" state.)
 - The folder rail is its own request and can fail while the documents load
   fine. It degrades to names derived from the loaded documents rather than
   rendering as a chapter with no folders — so the notice reports what is
@@ -1196,14 +1196,14 @@ Mobile's first-officer setup, `(auth)/create-chapter.tsx` (#3351). Titles are `S
 
 ### Invite members (mobile)
 
-`(app)/invite.tsx`, setup's invite step inside the chapter (2026-11-06; [`navigation.md` § Inviting members](../mobile/navigation.md#inviting-members)). The body, the card, the `Shared` list and both failure sentences are the setup Invite rows' above, word for word; the share message reads `Join <chapter name> on Frapp`, and Share waits until the chapter's name has loaded rather than send a placeholder.
+`(app)/invite.tsx`, inside the chapter (2026-11-06, invite by email added 2026-11-09; [`navigation.md` § Inviting members](../mobile/navigation.md#inviting-members)). The card and both share-failure sentences are the setup Invite rows' above, word for word; the share message, and an iOS mail target's subject, read `Join <chapter name> on Frapp`, and Share waits until the chapter's name has loaded rather than send a placeholder. The screen draws no `Shared` list: its `Invited` list holds every link.
 
 | State | Title | Copy |
 |---|---|---|
-| Can invite | `Invite members` | Setup's line, card and list. The primary is `Share invite` with the platform's share mark, in the chapter accent. Its screen-reader hint: `Makes a new link and opens the share sheet.` |
+| Can invite | `Invite members` | Web's panel, on the phone (#3828). Top: the label `Invite by email` over a field (placeholder `name@school.edu`, screen-reader label `Email addresses to invite`), the caption `Separate addresses with commas. Each person gets their own link by email.`, and the chapter-accent primary `Send invite` (`Send <n> invites` for several; hint `Emails each address a link to join.`). Under it, `Invite sent to <address>` or `<n> invites sent`, or a problem in the destructive hue: `<address> isn't an email address. Fix or remove it.`, `<n> of these aren't email addresses. Fix or remove them.`, `Up to 50 addresses at a time. Remove some, then send.`, `Couldn't email this address. Send again, or share a link for them.` (`Couldn't email these <n> addresses. Send again, or share links for them.` for several), and on a failed send `Couldn't send invites. Try again in a moment.` Then `Or share a link` over `Paste it in a group chat, or send it from your mail app. A link lets one person in and lasts 24 hours.`, setup's card, and the secondary `Share invite` with the platform's share mark (hint `Makes a new link and opens the share sheet.`). Last, the `Invited` caption over the chapter's invites: the address or `Invite link`, `Sent today at 4:46 PM`, and `Pending`, `Joined` or `Expired`. A row's hint is `Opens what you can do with this invite.`, and its menu reads `Share link`, `Send again`, `Revoke invite`; their results read `Invite sent again to <address>` (`Couldn't email <address>. Its new invite is listed, so you can share its link.` when it didn't go) and `Invite revoked. <address> can't join with it now.` (`That link can't be used to join now.` for a link), and their failures `Couldn't send it again. Try again in a moment.` and `Couldn't revoke the invite. Try again in a moment.` A list that didn't load reads `Couldn't load your invites.` over a `Try again` row. |
 | Can't invite | `Invite members` | One line: `Your role can't send invites. Ask an officer to send each person their own link.` No button. |
 | Role didn't load | `Invite members` | Error state `Couldn't load your role` + `Whether you can send invites depends on it, so it has to load first.`, with `Try again`. |
-| Doors | — | More's row and the Directory's + read `Invite members`; the quick action reads `Invite`; Chat home's checklist line keeps its own `Invite members`. The first three carry the hint `Opens invite links to share with new members.`; the checklist line, like its other in-app lines, carries none. |
+| Doors | — | More's row and the Directory's + read `Invite members`; the quick action reads `Invite`; Chat home's checklist line keeps its own `Invite members`. The first three carry the hint `Opens invites to email or share with new members.`; the checklist line, like its other in-app lines, carries none. |
 
 ### Chapter picker (mobile)
 
