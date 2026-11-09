@@ -3,6 +3,7 @@
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -239,6 +240,89 @@ function usePrependAwareFirstIndex(keys: readonly string[]): {
   }
   setTracked({ keys, firstItemIndex, prependedAt });
   return { firstItemIndex, prepended: prependedAt === keys };
+}
+
+/**
+ * How close to the end the member's own scroll has to leave the list for it to
+ * count as reading the newest message. A few pixels of slack, so a trackpad
+ * that settles a hair short of the end still reads as "at the bottom".
+ */
+const STICK_TO_BOTTOM_SLACK_PX = 16;
+
+/**
+ * Keeps the list on its newest row while that row's neighbours grow, for as
+ * long as the member has left it there (#3863).
+ *
+ * Virtuoso re-pins to the bottom only when a row is added (`followOutput`), and
+ * after a mount or an addition it watches for growth for just 100ms. A row that
+ * grows later is not followed. A photo always grows later, twice: its
+ * attachments read (one per message, fired when the row first draws) swaps
+ * "Loading attachment…" for the picture, and a photo with no stored size
+ * (anything imported from Discord, or sent before 2026-11-07) then grows again
+ * when its bytes arrive. Each growth pushed the newest messages below the
+ * fold, so opening a channel landed a few messages up.
+ *
+ * "Left it there" is read from scroll events only. Growth below the scroll
+ * position changes `scrollHeight` without firing a scroll event, so the last
+ * scroll the member (or Virtuoso's own open, or a channel switch) made still
+ * says where they meant to be. Scrolling up, or a jump to an older message,
+ * fires one that clears it. A change in the row count is left to
+ * `followOutput`, which already animates a new arrival in; re-pinning that too
+ * would cut its animation short.
+ */
+function useStickToBottom({
+  virtuoso,
+  rowCount,
+  hold,
+}: {
+  virtuoso: React.RefObject<VirtuosoHandle | null>;
+  rowCount: number;
+  hold: boolean;
+}): {
+  scrollerRef: (element: HTMLElement | Window | null) => void;
+  totalListHeightChanged: () => void;
+  /** Marks the list as on its newest row, for a scroll made there in code. */
+  pinned: () => void;
+} {
+  const stuck = useRef(true);
+  const countAtLastHeight = useRef(rowCount);
+  const latest = useRef({ rowCount, hold });
+  useEffect(() => {
+    latest.current = { rowCount, hold };
+  });
+  const detach = useRef<(() => void) | null>(null);
+
+  const scrollerRef = useCallback((element: HTMLElement | Window | null) => {
+    detach.current?.();
+    detach.current = null;
+    if (!(element instanceof HTMLElement)) return;
+    const onScroll = () => {
+      stuck.current =
+        element.scrollHeight - element.scrollTop - element.clientHeight <=
+        STICK_TO_BOTTOM_SLACK_PX;
+    };
+    element.addEventListener("scroll", onScroll, { passive: true });
+    detach.current = () => element.removeEventListener("scroll", onScroll);
+  }, []);
+  useEffect(() => () => detach.current?.(), []);
+
+  const totalListHeightChanged = useCallback(() => {
+    const { rowCount: count, hold: held } = latest.current;
+    const added = count !== countAtLastHeight.current;
+    countAtLastHeight.current = count;
+    if (added || held || !stuck.current || !virtuoso.current) return;
+    virtuoso.current.scrollToIndex({
+      index: "LAST",
+      align: "end",
+      behavior: "auto",
+    });
+  }, [virtuoso]);
+
+  const pinned = useCallback(() => {
+    stuck.current = true;
+  }, []);
+
+  return { scrollerRef, totalListHeightChanged, pinned };
 }
 
 /** What the row above the oldest loaded message says, if anything. */
@@ -596,6 +680,11 @@ export const MessageTimeline = forwardRef<
     [decorated],
   );
   const { firstItemIndex, prepended } = usePrependAwareFirstIndex(rowKeys);
+  const stickToBottom = useStickToBottom({
+    virtuoso,
+    rowCount: decorated.length,
+    hold: holdFollow,
+  });
 
   /*
     Load the next older page while the member sits at the top of what is
@@ -657,6 +746,9 @@ export const MessageTimeline = forwardRef<
       align: "end",
       behavior: "auto",
     });
+    // The scroll above may not move the list (the new channel ends where the
+    // last one did), and then no scroll event says it is on its newest row.
+    stickToBottom.pinned();
     // eslint-disable-next-line react-hooks/set-state-in-effect -- arms the channel the list was just switched to, after the imperative scroll above; the list's own at-top report cannot, because it never leaves a top it is not at
     if (!atTop) setArmedFor(channelId);
     // `atTop` is read as of the switch on purpose; a change in it alone is
@@ -881,6 +973,10 @@ export const MessageTimeline = forwardRef<
           followOutput={holdFollow || (prepended && armed) ? false : "smooth"}
           initialTopMostItemIndex={Math.max(decorated.length - 1, 0)}
           atTopStateChange={handleAtTop}
+          // Holds the open on its newest row while rows above it grow: a photo
+          // loading after the list settled (#3863).
+          scrollerRef={stickToBottom.scrollerRef}
+          totalListHeightChanged={stickToBottom.totalListHeightChanged}
           context={headerContext}
           components={{
             List: TimelineList,
