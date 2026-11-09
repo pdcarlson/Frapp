@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   ActionSheetIOS,
   Alert,
@@ -68,8 +68,9 @@ export function inviteActions(
  * the address a fresh link through the same `POST /v1/invites/email` (the
  * server retires the older invite once the new one is delivered), and Revoke
  * invite (`DELETE /v1/invites/:id`) stops it working at once, as web's does.
- * One action runs at a time: while one is out, the rows take no press, so
- * nothing is sent or revoked twice.
+ * One send or revoke runs at a time: while one is out, the rows take no
+ * press, so nothing is sent or revoked twice. Share link is outside that
+ * lock, because iOS doesn't always say when its sheet closes.
  */
 export function InvitedList({
   invites,
@@ -78,6 +79,7 @@ export function InvitedList({
   onRetry,
   chapterName,
   onLinkUsed,
+  resetKey,
 }: {
   /** `GET /v1/invites`, or undefined while it hasn't loaded. */
   invites: readonly InviteListItem[] | undefined;
@@ -89,6 +91,8 @@ export function InvitedList({
   chapterName: string | null;
   /** A link was revoked or shared from its row, so it is spent. */
   onLinkUsed?: (token: string) => void;
+  /** Changes when an invite goes out from above the list. */
+  resetKey?: number;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -103,13 +107,14 @@ export function InvitedList({
   } | null>(null);
 
   const rows = invites ? listedInvites(invites) : [];
-  // A result line belongs to the list it was about. Once a new invite joins
-  // the list, an old "Invite revoked" would read as news about it.
-  const shown = useRef(rows.length);
-  useEffect(() => {
-    if (rows.length > shown.current) setMessage(null);
-    shown.current = rows.length;
-  }, [rows.length]);
+  // A result line belongs to the list it was about. Once an invite goes out
+  // from above the list, an old "Invite revoked" would read as news about
+  // the new one. A row's own action (a resend that adds a row) keeps it.
+  const [seenKey, setSeenKey] = useState(resetKey);
+  if (seenKey !== resetKey) {
+    setSeenKey(resetKey);
+    setMessage(null);
+  }
 
   if (!invites) {
     if (!isError) return null;
@@ -132,19 +137,34 @@ export function InvitedList({
   }
   if (rows.length === 0 && !message) return null;
 
+  async function shareLink(invite: InviteListItem) {
+    if (!chapterName) return;
+    setMessage(null);
+    // Not under the one-action lock: iOS never answers a sheet whose target
+    // was cancelled inside it (`useInviteShares`), and a lock waiting on it
+    // would hold every row until the screen closed.
+    try {
+      const result = await Share.share(
+        inviteShareContent(webJoinUrl(invite.token), chapterName),
+        inviteShareOptions(chapterName),
+      );
+      if (result?.action !== "dismissedAction") onLinkUsed?.(invite.token);
+    } catch {
+      setMessage({ text: SHARE_FAILED_MESSAGE, tone: "problem" });
+    }
+  }
+
   async function run(invite: InviteListItem, action: string) {
+    if (action === SHARE_LINK) {
+      void shareLink(invite);
+      return;
+    }
     if (running.current) return;
     running.current = true;
     setMessage(null);
     setBusyId(invite.id);
     try {
-      if (action === SHARE_LINK && chapterName) {
-        const result = await Share.share(
-          inviteShareContent(webJoinUrl(invite.token), chapterName),
-          inviteShareOptions(chapterName),
-        );
-        if (result?.action !== "dismissedAction") onLinkUsed?.(invite.token);
-      } else if (action === SEND_AGAIN && invite.email) {
+      if (action === SEND_AGAIN && invite.email) {
         const result = await emailInvites.mutateAsync({
           role: invite.role,
           emails: [invite.email],
@@ -169,15 +189,12 @@ export function InvitedList({
       }
     } catch (caught) {
       setMessage({
-        text:
-          action === SHARE_LINK
-            ? SHARE_FAILED_MESSAGE
-            : errorCopy(
-                caught,
-                action === REVOKE_INVITE
-                  ? "Couldn't revoke the invite. Try again in a moment."
-                  : "Couldn't send it again. Try again in a moment.",
-              ),
+        text: errorCopy(
+          caught,
+          action === REVOKE_INVITE
+            ? "Couldn't revoke the invite. Try again in a moment."
+            : "Couldn't send it again. Try again in a moment.",
+        ),
         tone: "problem",
       });
     } finally {

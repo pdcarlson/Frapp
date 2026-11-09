@@ -7,7 +7,7 @@ import { inviteTokenOf, webJoinUrl } from "./invite-link";
 /**
  * Share-first invite links: setup's invite step (`spec/behavior/onboarding.md`,
  * owner pick 2026-11-06 "Share first") and, inside a chapter, the Invite
- * members screen (`app/(tabs)/invite.tsx`) draw the same flow from here.
+ * members screen (`app/(app)/invite.tsx`) draw the same flow from here.
  *
  * An invite lets one person in and lapses after a day, so every press of
  * Share invite mints a fresh link and opens the share sheet with it. The
@@ -19,8 +19,10 @@ import { inviteTokenOf, webJoinUrl } from "./invite-link";
  * platform says so: iOS reports the dismissal, Android's chooser can't tell
  * and always reports shared, so there a backed-out sheet lists its link too.
  *
- * Shared links are listed newest first and watched while the step is open,
- * so a link that someone redeems reads Joined.
+ * Setup's step lists the shared links newest first and watches them while it
+ * is open, so a link that someone redeems reads Joined. The Invite members
+ * screen draws no such list (`active: false`): its Invited list shows every
+ * invite, and tells this hook which kept link has stopped working (`isDead`).
  */
 
 /**
@@ -94,6 +96,7 @@ export function useInviteShares({
   chapterName,
   role,
   onError,
+  isDead,
 }: {
   /** True while the invite step is on screen. */
   active: boolean;
@@ -106,6 +109,11 @@ export function useInviteShares({
    */
   role?: string;
   onError: (message: string | null) => void;
+  /**
+   * Whether a link no longer lets anyone in (revoked, by this officer or
+   * another, or expired), so a kept link is dropped rather than sent.
+   */
+  isDead?: (token: string) => boolean;
 }) {
   const createInvite = useCreateInvite();
   const [minting, setMinting] = useState(false);
@@ -157,6 +165,7 @@ export function useInviteShares({
 
   async function share() {
     onError(null);
+    if (unsent.current && isDead?.(unsent.current)) unsent.current = null;
     const token = unsent.current ?? (await mint());
     if (!token) return;
     unsent.current = token;

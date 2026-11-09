@@ -441,6 +441,7 @@ function InviteRow({
 }) {
   const name = invite.email ?? "Invite link";
   const Icon = invite.email ? Mail : Link2;
+  const sent = formatSentLabel(invite.created_at);
   const row = (menuButton: React.ReactNode) => (
     <li className="group flex min-h-12 items-center gap-3 rounded-md px-2 py-1.5 hover:bg-card-hover">
       <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-card text-muted-foreground">
@@ -449,7 +450,7 @@ function InviteRow({
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold">{name}</p>
         <p className="truncate text-caption text-muted-foreground">
-          {invite.role} · {formatSentLabel(invite.created_at)}
+          {[invite.role, sent].filter(Boolean).join(" · ")}
         </p>
       </div>
       <span
@@ -469,7 +470,7 @@ function InviteRow({
     // Share links all read "Invite link", so their menus also name when.
     <RowMenu
       entries={entries}
-      label={`More for ${name}${invite.email ? "" : `, ${formatSentLabel(invite.created_at).replace(/^Sent/, "sent")}`}`}
+      label={`More for ${name}${invite.email || !sent ? "" : `, ${sent.replace(/^Sent/, "sent")}`}`}
     >
       {row}
     </RowMenu>

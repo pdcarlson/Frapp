@@ -156,9 +156,9 @@ export function formatRelativeDayTime(
 export function formatSentLabel(
   value: unknown,
   now: Date = new Date(),
-): string {
+): string | null {
   const when = formatRelativeDayTime(value, now);
-  if (!when) return "Sent";
+  if (!when) return null;
   const [day = when, clock] = when.split(" · ");
   const spoken = /^(Today|Yesterday|Tomorrow)$/.test(day)
     ? day.toLowerCase()

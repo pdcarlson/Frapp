@@ -100,18 +100,26 @@ function InviteBody({ focused }: { focused: boolean }) {
   const canInvite = can("members:invite", permissions);
 
   const [error, setError] = useState<string | null>(null);
-  const invite = useInviteShares({
-    // The Invited list below watches the chapter's invites itself.
-    active: false,
-    chapterName: shareName ?? "",
-    onError: setError,
-  });
   // Every invite, re-read while the screen is in front, so a link someone
   // redeems reads Joined and one another officer revoked drops off. A send,
   // a mint or a revoke re-reads it too: each mutation invalidates the query.
   const invites = useInvites({
     enabled: focused && canInvite,
     refetchInterval: focused ? INVITE_WATCH_INTERVAL_MS : false,
+  });
+  // Bumped when an invite goes out from above the list, which retires the
+  // list's last result line: it was about the list as it stood.
+  const [sentAbove, setSentAbove] = useState(0);
+  const invite = useInviteShares({
+    // The Invited list below watches the chapter's invites itself.
+    active: false,
+    chapterName: shareName ?? "",
+    onError: setError,
+    // A kept link that was revoked, here or elsewhere, or that expired.
+    isDead: (token) =>
+      (invites.data ?? []).some(
+        (row) => row.token === token && row.status !== "pending",
+      ),
   });
 
   if (!chapterId) {
@@ -165,6 +173,7 @@ function InviteBody({ focused }: { focused: boolean }) {
         <InviteByEmail
           accent={branding.accentPrimary}
           onAccent={branding.accentOnPrimary}
+          onSent={() => setSentAbove((n) => n + 1)}
         />
         <View style={styles.section}>
           <Text style={styles.label}>Or share a link</Text>
@@ -188,7 +197,7 @@ function InviteBody({ focused }: { focused: boolean }) {
                   disabled={invite.busy || !shareName}
                   busy={invite.busy}
                   onPress={() => {
-                    void invite.share();
+                    void invite.share().then(() => setSentAbove((n) => n + 1));
                   }}
                 />
                 {error ? (
@@ -212,6 +221,7 @@ function InviteBody({ focused }: { focused: boolean }) {
           }}
           chapterName={shareName}
           onLinkUsed={invite.forget}
+          resetKey={sentAbove}
         />
       </View>
     </ScreenShell>

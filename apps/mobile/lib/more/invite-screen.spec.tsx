@@ -400,6 +400,14 @@ describe("Invite members", () => {
     await act(async () => pick(0));
     expect(screenText(tree)).toContain("Couldn't email pledge@school.edu.");
     expect(screenText(tree)).not.toContain("Invite sent again");
+    // The failed send still made an invite, so the refetched list grows;
+    // the line saying so stays.
+    inviteRows = [
+      ...inviteRows,
+      { ...ROW, id: "i-new", email: "pledge@school.edu", status: "pending" },
+    ];
+    rerender(tree);
+    expect(screenText(tree)).toContain("Couldn't email pledge@school.edu.");
     sheet.mockRestore();
     tree.unmount();
   });
@@ -445,12 +453,9 @@ describe("Invite members", () => {
     inviteRows = [{ ...inviteRows[0], status: "revoked" }];
     rerender(tree);
     expect(screenText(tree)).toContain("Invite revoked.");
-    // A new invite in the list retires the old line.
-    inviteRows = [
-      ...inviteRows,
-      { ...ROW, id: "i-9", email: "next@school.edu", status: "pending" },
-    ];
-    rerender(tree);
+    // An invite sent from above the list retires the old line.
+    act(() => emailField(tree).props.onChangeText("next@school.edu"));
+    await act(async () => sendButton(tree).props.onPress());
     expect(screenText(tree)).not.toContain("Invite revoked.");
     sheet.mockRestore();
     tree.unmount();
@@ -478,6 +483,70 @@ describe("Invite members", () => {
     expect(createInvite).toHaveBeenCalledTimes(2);
     const [content] = vi.mocked(Share.share).mock.calls[1];
     expect(content.message).toContain("tok-fresh");
+    sheet.mockRestore();
+    tree.unmount();
+  });
+
+  it("never sends a kept link again once its row has shared it", async () => {
+    vi.mocked(Share.share).mockResolvedValueOnce({
+      action: "dismissedAction",
+    });
+    const sheet = vi
+      .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
+      .mockImplementation(() => undefined);
+    const tree = render();
+    await act(async () => shareButton(tree)[0].props.onPress());
+    inviteRows = [
+      { ...ROW, id: "i-k", token: "tok123", email: null, status: "pending" },
+    ];
+    rerender(tree);
+    act(() => rowFor(tree, "Invite link").props.onPress());
+    // Share link, to the first person.
+    await act(async () => sheet.mock.calls[0][1](0));
+    expect(vi.mocked(Share.share).mock.calls[1][0].message).toContain("tok123");
+    createInvite.mockResolvedValueOnce({ token: "tok-fresh" });
+    await act(async () => shareButton(tree)[0].props.onPress());
+    expect(vi.mocked(Share.share).mock.calls[2][0].message).toContain(
+      "tok-fresh",
+    );
+    sheet.mockRestore();
+    tree.unmount();
+  });
+
+  it("never sends a kept link revoked from somewhere else", async () => {
+    vi.mocked(Share.share).mockResolvedValueOnce({
+      action: "dismissedAction",
+    });
+    const tree = render();
+    await act(async () => shareButton(tree)[0].props.onPress());
+    // Another officer revokes it on web; the next read shows it so.
+    inviteRows = [
+      { ...ROW, id: "i-k", token: "tok123", email: null, status: "revoked" },
+    ];
+    rerender(tree);
+    createInvite.mockResolvedValueOnce({ token: "tok-fresh" });
+    await act(async () => shareButton(tree)[0].props.onPress());
+    expect(createInvite).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(Share.share).mock.calls[1][0].message).toContain(
+      "tok-fresh",
+    );
+    tree.unmount();
+  });
+
+  it("keeps the rows usable while a row's share sheet never answers", async () => {
+    inviteRows = [
+      { ...ROW, id: "i-1", email: "a@school.edu", status: "pending" },
+    ];
+    // iOS: a target cancelled inside the sheet never resolves it.
+    vi.mocked(Share.share).mockReturnValueOnce(new Promise(() => undefined));
+    const sheet = vi
+      .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
+      .mockImplementation(() => undefined);
+    const tree = render();
+    act(() => rowFor(tree, "a@school.edu").props.onPress());
+    await act(async () => sheet.mock.calls[0][1](0));
+    act(() => rowFor(tree, "a@school.edu").props.onPress());
+    expect(sheet).toHaveBeenCalledTimes(2);
     sheet.mockRestore();
     tree.unmount();
   });

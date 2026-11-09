@@ -95,7 +95,7 @@ describe("formatSentLabel", () => {
     );
   });
 
-  it("falls back to a bare Sent for an unreadable time", () => {
-    expect(formatSentLabel("not a date", NOW)).toBe("Sent");
+  it("leaves an unreadable time out", () => {
+    expect(formatSentLabel("not a date", NOW)).toBeNull();
   });
 });
