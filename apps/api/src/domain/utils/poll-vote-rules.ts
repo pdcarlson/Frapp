@@ -45,17 +45,14 @@ export interface CardPollPayload {
 }
 
 /**
- * The card's effective deadline for the vote rules: the early close once
- * there is one, else `closes_at`. `closed_at` is stamped with the time of the
- * close, so it is always already past, and `isPollClosed` reads it as closed
- * with the same single check — the trick `PollService.vote` uses for the REST
- * shape's `metadata.closed_at`.
+ * Whether the creator closed the card early (#3794). By presence, never by
+ * comparing the stamp to a clock: `closed_at` is stamped by whichever API
+ * process ran the close, so a vote checked on a process whose clock runs
+ * behind would otherwise see the close as still in the future. Both clients
+ * read it by presence too (`isPollCardClosed`).
  */
-export function cardPollDeadline(card: CardPollPayload): string | null {
-  if (typeof card.closed_at === 'string' && card.closed_at !== '') {
-    return card.closed_at;
-  }
-  return card.closes_at ?? null;
+export function cardPollClosedEarly(card: CardPollPayload): boolean {
+  return typeof card.closed_at === 'string' && card.closed_at !== '';
 }
 
 /**
@@ -139,6 +136,8 @@ function evaluatePollVote(input: {
 /** Validates a vote addressed by option INDEX (`poll_votes`, the polls surface). */
 export function validateIndexedPollVote(input: {
   expiresAt: string | null | undefined;
+  /** Closed early by its creator (`metadata.closed_at` set): closed whatever the clock says. */
+  closedEarly?: boolean;
   optionCount: number;
   optionIndexes: readonly number[];
   choiceMode: 'single' | 'multi' | undefined;
@@ -150,7 +149,7 @@ export function validateIndexedPollVote(input: {
   );
 
   return evaluatePollVote({
-    closed: isPollClosed(input.expiresAt, input.now),
+    closed: !!input.closedEarly || isPollClosed(input.expiresAt, input.now),
     unknownOption: unknown === undefined ? null : unknown,
     selectedCount: input.optionIndexes.length,
     choiceMode: input.choiceMode,
@@ -160,6 +159,8 @@ export function validateIndexedPollVote(input: {
 /** Validates a vote addressed by option ID (`chat_message_actions`, the chat card). */
 export function validateCardPollVote(input: {
   closesAt: string | null | undefined;
+  /** Closed early by its creator (`cardPollClosedEarly`): closed whatever the clock says. */
+  closedEarly?: boolean;
   optionIds: readonly string[];
   selected: readonly string[];
   choiceMode: 'single' | 'multi' | undefined;
@@ -168,7 +169,7 @@ export function validateCardPollVote(input: {
   const unknown = input.selected.find((id) => !input.optionIds.includes(id));
 
   return evaluatePollVote({
-    closed: isPollClosed(input.closesAt, input.now),
+    closed: !!input.closedEarly || isPollClosed(input.closesAt, input.now),
     unknownOption: unknown === undefined ? null : unknown,
     selectedCount: input.selected.length,
     choiceMode: input.choiceMode,

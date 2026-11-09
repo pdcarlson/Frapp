@@ -22,7 +22,8 @@ import {
   tallyPollVotes,
   type PollOption,
 } from "@repo/chat-core/polls";
-import { useNow } from "@repo/hooks";
+import { useMyPermissions, useNow } from "@repo/hooks";
+import { can } from "@repo/validation";
 
 interface PollCardProps {
   message: ChatMessage;
@@ -72,6 +73,12 @@ export function PollCard({
     fetchStatus: moduleGate.fetchStatus,
   });
   const gateReasonId = useId();
+  // The close route requires `polls:create`, which posting a card doesn't
+  // (#3007). Unknown until the read lands, which withholds Close poll.
+  const canCreatePolls = can(
+    "polls:create",
+    useMyPermissions().data?.permissions,
+  );
 
   const {
     byOption,
@@ -95,7 +102,11 @@ export function PollCard({
   // redraws closed the moment the creator closes it.
   const isClosed = isPollCardClosed(payload, now);
   const showClose =
-    !!onClosePoll && canClosePoll(message, payload, viewerId, now);
+    !!onClosePoll &&
+    canClosePoll(message, payload, viewerId, now, {
+      pollsGate,
+      canCreatePolls,
+    });
   /*
     `!viewerId`, not `!== null`. The prop says `string` now, but a JSX spread of
     a loosely-typed object is not prop-checked, so `undefined` can still arrive

@@ -1,5 +1,6 @@
 import { parseInstant } from "@repo/formatting";
 import { moduleRefusalFromServerMessage } from "@repo/validation";
+import { canActOnMessage, isOwnMessage } from "./message-actions";
 import type { ChatMessage } from "./types";
 import {
   POLL_VOTE_ACTION_TYPE,
@@ -187,23 +188,28 @@ export function isPollCardClosed(payload: PollPayload, now: number): boolean {
 
 /**
  * Whether the viewer is offered Close poll on this card (#3794): it is their
- * own poll, the server has it (a pending or failed row has no id the API
- * knows), it isn't deleted, and it is still open. The API enforces the same
- * rules (`PollService.close`); this only keeps a card from offering a control
- * that would be refused.
+ * own poll (`isOwnMessage`), the server has it and it isn't deleted
+ * (`canActOnMessage`), it is still open, and the close route would take it.
+ * That route (`POST /v1/polls/{messageId}/close`) also requires `polls:create`
+ * and the Polls module, which posting a card does not (#3007), so a creator
+ * without the permission, or any creator while Polls is off or not yet
+ * known to be on, isn't offered a control the API would refuse every time.
+ * The API enforces all of it (`PollService.close`); this only keeps the card
+ * honest.
  */
 export function canClosePoll(
   message: Pick<ChatMessage, "sender_id" | "_status" | "is_deleted">,
   payload: PollPayload,
   viewerId: string | null,
   now: number,
+  gates: { pollsGate: PollsGate; canCreatePolls: boolean },
 ): boolean {
   return (
-    !!viewerId &&
-    message.sender_id === viewerId &&
-    message._status === "confirmed" &&
-    !message.is_deleted &&
-    !isPollCardClosed(payload, now)
+    isOwnMessage(message, viewerId) &&
+    canActOnMessage(message) &&
+    !isPollCardClosed(payload, now) &&
+    gates.pollsGate === "on" &&
+    gates.canCreatePolls
   );
 }
 

@@ -145,21 +145,44 @@ describe("a poll card closed early (#3794)", () => {
     expect(isPollCardClosed({ ...open, closes_at: "soon" }, NOW)).toBe(false);
   });
 
+  const ON = { pollsGate: "on" as const, canCreatePolls: true };
+
   it("offers Close poll to the creator of an open, confirmed card only", () => {
-    expect(canClosePoll(asMessage(open), open, "creator", NOW)).toBe(true);
+    expect(canClosePoll(asMessage(open), open, "creator", NOW, ON)).toBe(true);
     // Anyone else, or an unresolved viewer.
-    expect(canClosePoll(asMessage(open), open, "member", NOW)).toBe(false);
-    expect(canClosePoll(asMessage(open), open, null, NOW)).toBe(false);
+    expect(canClosePoll(asMessage(open), open, "member", NOW, ON)).toBe(false);
+    expect(canClosePoll(asMessage(open), open, null, NOW, ON)).toBe(false);
     // Already closed, early or by its deadline.
-    expect(canClosePoll(asMessage(closed), closed, "creator", NOW)).toBe(false);
+    expect(canClosePoll(asMessage(closed), closed, "creator", NOW, ON)).toBe(
+      false,
+    );
     const lapsed = { ...open, closes_at: "2026-01-01T00:00:00.000Z" };
-    expect(canClosePoll(asMessage(lapsed), lapsed, "creator", NOW)).toBe(false);
+    expect(canClosePoll(asMessage(lapsed), lapsed, "creator", NOW, ON)).toBe(
+      false,
+    );
     // A row the server doesn't have yet, or a deleted one.
+    const pending = asMessage(open, { _status: "pending" });
+    expect(canClosePoll(pending, open, "creator", NOW, ON)).toBe(false);
+    const deleted = asMessage(open, { is_deleted: true });
+    expect(canClosePoll(deleted, open, "creator", NOW, ON)).toBe(false);
+  });
+
+  it("withholds it where the close route would refuse the creator", () => {
+    // No polls:create: a New Member can post a card (#3007) but not close it.
     expect(
-      canClosePoll(asMessage(open, { _status: "pending" }), open, "creator", NOW),
+      canClosePoll(asMessage(open), open, "creator", NOW, {
+        ...ON,
+        canCreatePolls: false,
+      }),
     ).toBe(false);
-    expect(
-      canClosePoll(asMessage(open, { is_deleted: true }), open, "creator", NOW),
-    ).toBe(false);
+    // Polls off, or not yet known to be on.
+    for (const pollsGate of ["off", "loading", "error"] as const) {
+      expect(
+        canClosePoll(asMessage(open), open, "creator", NOW, {
+          ...ON,
+          pollsGate,
+        }),
+      ).toBe(false);
+    }
   });
 });

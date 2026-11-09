@@ -813,6 +813,7 @@ vi.mock("./message-timeline", async () => {
     {
       messages?: Array<{ id: string; reply_to_id?: string | null }>;
       onDelete?: (messageId: string) => void;
+      onClosePoll?: (messageId: string) => void;
       onReply?: (message: { id: string; reply_to_id?: string | null }) => void;
       onEdit?: (messageId: string, content: string) => Promise<void>;
       canManageChannel?: boolean;
@@ -823,6 +824,7 @@ vi.mock("./message-timeline", async () => {
     {
       messages,
       onDelete,
+      onClosePoll,
       onReply,
       onEdit,
       canManageChannel,
@@ -859,6 +861,9 @@ vi.mock("./message-timeline", async () => {
         {/* Edit is withheld the same way where the member can't post (#2775). */}
         <span data-testid="edit-offered">{String(!!onEdit)}</span>
         <button onClick={() => onDelete?.("msg-1")}>trigger-delete</button>
+        <button onClick={() => onClosePoll?.("poll-1")}>
+          trigger-close-poll
+        </button>
         {/* One Reply control per message, so a test can stage a reply against
             a top-level message and against a reply — the two cases AC 3's
             root-normalization rule distinguishes. */}
@@ -920,6 +925,7 @@ function chatChannelResult(
     unreact: vi.fn(),
     edit: vi.fn(),
     delete: vi.fn(),
+    closePoll: vi.fn(),
     draft: overrides.draft ?? "",
     setDraft: overrides.setDraft ?? vi.fn(),
     typingUsers: overrides.typingUsers ?? [],
@@ -2021,6 +2027,61 @@ describe("ChatShell channel description and start", () => {
         hidden: true,
       }),
     ).toBeNull();
+  });
+});
+
+describe("ChatShell Close poll wiring (#3794)", () => {
+  it("closes nothing when the confirmation is cancelled", async () => {
+    const channel = chatChannelResult();
+    mockUseChatChannel.mockReturnValue(channel);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByText("trigger-close-poll"));
+    await waitFor(() => {
+      expect(screen.getByText("Close this poll?")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Close this poll?")).not.toBeInTheDocument();
+    });
+    expect(channel.closePoll).not.toHaveBeenCalled();
+  });
+
+  it("closes the confirmed poll's id once the dialog is confirmed", async () => {
+    const channel = chatChannelResult();
+    mockUseChatChannel.mockReturnValue(channel);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByText("trigger-close-poll"));
+    await waitFor(() => {
+      expect(screen.getByText("Close this poll?")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Close poll" }));
+
+    await waitFor(() => {
+      expect(channel.closePoll).toHaveBeenCalledWith("poll-1");
+    });
+  });
+
+  it("swallows a refused close: the close action already toasted", async () => {
+    const channel = chatChannelResult();
+    channel.closePoll = vi.fn().mockRejectedValue(new Error("refused"));
+    mockUseChatChannel.mockReturnValue(channel);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByText("trigger-close-poll"));
+    await waitFor(() => {
+      expect(screen.getByText("Close this poll?")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Close poll" }));
+
+    await waitFor(() => {
+      expect(channel.closePoll).toHaveBeenCalledWith("poll-1");
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("Close this poll?")).not.toBeInTheDocument();
+    });
   });
 });
 

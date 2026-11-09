@@ -31,6 +31,27 @@ const virtuosoProps = vi.hoisted(() => ({
   scrollToIndex: vi.fn(),
 }));
 
+// A stand-in poll card that only echoes the Close poll handler it was handed,
+// so the wiring test below proves the timeline carries `onClosePoll` through
+// MessageItem and MessageRenderer to the card (#3794). The real card's own
+// rules are `renderers/poll-card.spec.tsx`'s.
+vi.mock("./renderers/poll-card", () => ({
+  PollCard: ({
+    message,
+    onClosePoll,
+  }: {
+    message: { id: string };
+    onClosePoll?: (messageId: string) => void;
+  }) =>
+    onClosePoll ? (
+      <button type="button" onClick={() => onClosePoll(message.id)}>
+        stub-close-poll
+      </button>
+    ) : (
+      <span>stub-poll-without-close</span>
+    ),
+}));
+
 vi.mock("react-virtuoso", async () => {
   const React = await import("react");
   return {
@@ -1571,5 +1592,36 @@ describe("MessageTimeline channel start", () => {
     });
 
     expect(screen.queryByText("Welcome to #general")).toBeNull();
+  });
+});
+
+describe("MessageTimeline Close poll wiring (#3794)", () => {
+  const ownPoll = () =>
+    message({
+      id: "poll-1",
+      sender_id: VIEWER,
+      kind: "poll",
+      content: "Who is driving?",
+      payload: {
+        question: "Who is driving?",
+        options: [
+          { id: "a", label: "Me" },
+          { id: "b", label: "Not me" },
+        ],
+        closes_at: "2999-01-01T00:00:00.000Z",
+      },
+    });
+
+  it("hands the shell's onClosePoll to the poll card, which calls it with the poll's id", async () => {
+    const onClosePoll = vi.fn();
+    renderTimeline([ownPoll()], { onClosePoll });
+
+    await userEvent.click(screen.getByText("stub-close-poll"));
+    expect(onClosePoll).toHaveBeenCalledWith("poll-1");
+  });
+
+  it("gives the card no Close poll handler when the shell offers none", () => {
+    renderTimeline([ownPoll()]);
+    expect(screen.getByText("stub-poll-without-close")).toBeInTheDocument();
   });
 });

@@ -117,17 +117,13 @@ export class PollService {
     // are unchanged so this service's existing tests keep passing untouched —
     // that they do is the proof the extraction preserved behaviour.
     //
-    // `validateIndexedPollVote` only knows about one deadline field
-    // (`expiresAt`), but this service has two independent "closed" signals —
-    // `expires_at` and the manual `closed_at` (#379). Rather than running a
-    // second, separate expiry check before this one (redundant, and it would
-    // make the switch's `'closed'` case below permanently unreachable), feed
-    // it whichever deadline is earlier: `closed_at`, once set, is always a
-    // timestamp already in the past (`close()` stamps it with the current
-    // time), so passing it in place of `expires_at` makes `isPollClosed`
-    // report closed immediately, with the same single check either way.
+    // Two independent "closed" signals: the deadline, and the creator's early
+    // close (#379). The early close is read by presence, never by comparing
+    // its stamp to this process's clock, which may run behind the one that
+    // stamped it (#3794).
     const rejection = validateIndexedPollVote({
-      expiresAt: metadata.closed_at ?? metadata.expires_at,
+      expiresAt: metadata.expires_at,
+      closedEarly: !!metadata.closed_at,
       optionCount: options.length,
       optionIndexes,
       choiceMode: metadata.choice_mode,

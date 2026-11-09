@@ -13,7 +13,8 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { useChapterBranding, type ChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import { useNow } from "@repo/hooks";
+import { useMyPermissions, useNow } from "@repo/hooks";
+import { can } from "@repo/validation";
 import { usePollsGate } from "@/lib/chat/use-polls-gate";
 import {
   CardEyebrow,
@@ -93,6 +94,12 @@ export function PollCard(props: PollCardProps) {
   // it is still running or needs a Retry (`usePollsGate`, which the
   // composer's Poll offer reads too).
   const { gate: pollsGate, recheck: recheckPolls } = usePollsGate();
+  // The close route requires `polls:create`, which posting a card doesn't
+  // (#3007). Unknown until the read lands, which withholds Close poll.
+  const canCreatePolls = can(
+    "polls:create",
+    useMyPermissions().data?.permissions,
+  );
 
   const {
     byOption,
@@ -121,7 +128,11 @@ export function PollCard(props: PollCardProps) {
   // redraws closed the moment the creator closes it.
   const isClosed = isPollCardClosed(payload, now);
   const showClose =
-    !!onClosePoll && canClosePoll(message, payload, viewerId, now);
+    !!onClosePoll &&
+    canClosePoll(message, payload, viewerId, now, {
+      pollsGate,
+      canCreatePolls,
+    });
   const canVote = isConfirmed && !isClosed && pollsGate === "on";
   const gateReason = pollsGateReason(pollsGate, { isClosed, isConfirmed });
 

@@ -17,6 +17,12 @@ import {
  * these also pin that it is the member view and not the officer-only config.
  */
 
+// The viewer's permissions, for the Close poll gate (#3794): the seeded Member
+// role's `polls:create` unless a case says otherwise.
+const myPermissions = vi.hoisted(() => ({
+  current: ["members:view", "polls:create"] as string[],
+}));
+
 const chapterRead = vi.hoisted(() => ({
   current: {} as {
     data?: unknown;
@@ -36,6 +42,9 @@ vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
+    useMyPermissions: () => ({
+      data: { permissions: myPermissions.current },
+    }),
     useCurrentChapter: (options: unknown) => {
       chapterRead.options = options;
       return chapterRead.current;
@@ -282,6 +291,7 @@ describe("PollCard module gate (#3012)", () => {
 
 describe("PollCard closed early by its creator (#3794)", () => {
   beforeEach(() => {
+    myPermissions.current = ["members:view", "polls:create"];
     chapterStore.activeChapterId = "chapter-1";
     chapterRead.current = {
       data: { enabled_modules: { polls: true } },
@@ -327,6 +337,35 @@ describe("PollCard closed early by its creator (#3794)", () => {
   it("offers it to nobody else", () => {
     renderWithClose(poll({ sender_id: OTHER, payload: card }));
 
+    expect(
+      screen.queryByRole("button", { name: "Close poll" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("withholds it from a creator the close route would refuse", () => {
+    // No polls:create: a New Member can post a card (#3007) but not close it.
+    myPermissions.current = ["members:view"];
+    const { unmount } = render(
+      <PollCard
+        message={poll({ sender_id: VIEWER, payload: card })}
+        viewerId={VIEWER}
+        isConfirmed
+        onVote={vi.fn()}
+        onClosePoll={vi.fn()}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Close poll" }),
+    ).not.toBeInTheDocument();
+    unmount();
+
+    // Polls off: the module guard refuses the close too.
+    myPermissions.current = ["members:view", "polls:create"];
+    chapterRead.current = {
+      ...chapterRead.current,
+      data: { enabled_modules: { polls: false } },
+    };
+    renderWithClose(poll({ sender_id: VIEWER, payload: card }));
     expect(
       screen.queryByRole("button", { name: "Close poll" }),
     ).not.toBeInTheDocument();

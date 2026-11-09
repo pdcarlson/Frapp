@@ -1,5 +1,5 @@
 import {
-  cardPollDeadline,
+  cardPollClosedEarly,
   cardPollChoiceMode,
   cardPollOptionIds,
   cardVoteSelection,
@@ -218,34 +218,40 @@ describe('reading a chat poll card and its vote', () => {
   });
 });
 
-describe('cardPollDeadline (#3794)', () => {
-  it('is the early close once the creator closed the card', () => {
-    expect(
-      cardPollDeadline({
-        closes_at: '2999-01-01T00:00:00.000Z',
-        closed_at: '2026-01-01T00:00:00.000Z',
-      }),
-    ).toBe('2026-01-01T00:00:00.000Z');
-  });
-
-  it('is closes_at while the card is open, and null with neither', () => {
-    expect(cardPollDeadline({ closes_at: '2999-01-01T00:00:00.000Z' })).toBe(
-      '2999-01-01T00:00:00.000Z',
+describe('closed early (#3794)', () => {
+  it('reads a card closed early by presence of closed_at', () => {
+    expect(cardPollClosedEarly({ closed_at: '2026-01-01T00:00:00.000Z' })).toBe(
+      true,
     );
-    expect(cardPollDeadline({ closed_at: '', closes_at: null })).toBeNull();
-    expect(cardPollDeadline({})).toBeNull();
+    expect(cardPollClosedEarly({ closed_at: '' })).toBe(false);
+    expect(cardPollClosedEarly({ closed_at: null })).toBe(false);
+    expect(cardPollClosedEarly({})).toBe(false);
   });
 
-  it('reads a closed card as closed whatever its deadline says', () => {
+  it("refuses a vote on a poll closed early even when the close is stamped in this clock's future", () => {
+    // The close ran on a process whose clock is ahead of this one.
     const now = new Date('2026-06-01T00:00:00.000Z');
     expect(
-      isPollClosed(
-        cardPollDeadline({
-          closes_at: '2999-01-01T00:00:00.000Z',
-          closed_at: '2026-05-31T00:00:00.000Z',
+      validateCardPollVote({
+        closesAt: '2999-01-01T00:00:00.000Z',
+        closedEarly: cardPollClosedEarly({
+          closed_at: '2026-06-01T00:00:05.000Z',
         }),
+        optionIds: ['a', 'b'],
+        selected: ['a'],
+        choiceMode: 'single',
         now,
-      ),
-    ).toBe(true);
+      }),
+    ).toEqual({ reason: 'closed' });
+    expect(
+      validateIndexedPollVote({
+        expiresAt: '2999-01-01T00:00:00.000Z',
+        closedEarly: true,
+        optionCount: 2,
+        optionIndexes: [0],
+        choiceMode: 'single',
+        now,
+      }),
+    ).toEqual({ reason: 'closed' });
   });
 });

@@ -1,10 +1,9 @@
-import { errorCopy } from "@repo/hooks/error-copy";
-import { Alert } from "react-native";
 import {
   CLOSE_POLL_CONFIRM_BODY,
   CLOSE_POLL_CONFIRM_LABEL,
   CLOSE_POLL_CONFIRM_TITLE,
 } from "@repo/chat-core/polls";
+import { confirmDestructive } from "./confirm-destructive";
 
 /** The alert a failed close shows; the body is chat-core's classified reason. */
 export const CLOSE_POLL_FAILED_TITLE = "Couldn't close poll";
@@ -21,16 +20,13 @@ export const CLOSE_POLL_FAILED_TITLE = "Couldn't close poll";
  * cannot sit beside a route module.
  */
 export function confirmClosePoll(close: () => Promise<void>): void {
-  Alert.alert(CLOSE_POLL_CONFIRM_TITLE, CLOSE_POLL_CONFIRM_BODY, [
-    { text: "Cancel", style: "cancel" },
+  confirmDestructive(
     {
-      text: CLOSE_POLL_CONFIRM_LABEL,
-      style: "destructive",
-      onPress: () => {
-        close().catch((error: unknown) => {
-          Alert.alert(CLOSE_POLL_FAILED_TITLE, errorCopy(error));
-        });
-      },
+      title: CLOSE_POLL_CONFIRM_TITLE,
+      body: CLOSE_POLL_CONFIRM_BODY,
+      confirmLabel: CLOSE_POLL_CONFIRM_LABEL,
+      failedTitle: CLOSE_POLL_FAILED_TITLE,
     },
-  ]);
+    close,
+  );
 }
