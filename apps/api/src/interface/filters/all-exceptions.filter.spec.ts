@@ -233,9 +233,14 @@ describe('AllExceptionsFilter', () => {
 
     expect(Sentry.captureMessage).toHaveBeenCalledTimes(1);
     const [text, context] = jest.mocked(Sentry.captureMessage).mock
-      .calls[0] as [string, { level?: string; tags?: Record<string, string> }];
+      .calls[0] as [
+      string,
+      { level?: string; tags?: Record<string, string>; fingerprint?: string[] },
+    ];
     expect(text).toContain('Auth failure spike');
     expect(context.level).toBe('warning');
+    // The message embeds the count, so without this each count is an issue.
+    expect(context.fingerprint).toEqual(['auth-failure-spike']);
     expect(context.tags).toEqual({
       security_event: 'auth_failure_spike',
       origin: expect.stringMatching(/^[0-9a-f]{64}$/),
