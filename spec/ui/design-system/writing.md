@@ -969,7 +969,8 @@ member who turns on Hide muted and still sees a muted channel knows why.
 Reply, Edit and Delete on a message (#2775). Who is offered which is owned by
 [`../../behavior/chat/README.md`](../../behavior/chat/README.md) § Edit and delete and
 § Reply threads. The delete confirmation is one wording for both clients, so it lives in
-`packages/chat-core/src/message-actions.ts`; the rest name controls only mobile has.
+`packages/chat-core/src/message-actions.ts`, and a poll card's Close poll confirmation (#3794)
+likewise lives in `packages/chat-core/src/polls.ts`; the rest name controls only mobile has.
 
 | State | Title | Description | Home |
 |---|---|---|---|
@@ -977,6 +978,8 @@ Reply, Edit and Delete on a message (#2775). Who is offered which is owned by
 | Add-reaction chip | — | `+` after a message's reactions, read `Add reaction`; it opens the actions sheet | mobile `components/chat/message-item.tsx` (`ADD_REACTION_A11Y_LABEL`) |
 | Delete confirmation | `Delete this message?` | `This can't be undone. Everyone in the channel will see "[message deleted]" in its place.` · confirm `Delete message`. A native alert on mobile, the shell's confirm dialog on web | `message-actions` (`DELETE_MESSAGE_CONFIRM_TITLE`, `_BODY`, `_LABEL`) |
 | Delete failed | `Couldn't delete message` | The reason chat-core classified from the response (an alert) | mobile `lib/chat/confirm-delete-message.ts` |
+| Close poll confirmation | `Close this poll?` | `No one can vote after it closes, and it can't be reopened. The results stay on the card.` · confirm `Close poll`. Offered as `Close poll` under the tally, on the creator's own open card while they hold `polls:create` and Polls is on ([#3794](https://github.com/pdcarlson/Frapp/issues/3794)). A native alert on mobile, the shell's confirm dialog on web | `polls` (`CLOSE_POLL_LABEL`, `CLOSE_POLL_CONFIRM_TITLE`, `_BODY`, `_LABEL`) |
+| Close poll failed | `Couldn't close poll` | The reason chat-core classified from the response (an alert on mobile, a toast on web). A card closed early then reads `Poll · Closed`, as one past its deadline does | mobile `lib/chat/confirm-close-poll.ts`, chat-core `chat-client.ts` |
 | Reply strip | `Replying to <name>` | One line of the parent, as its quote will show it. A parent the block list hides, or one not loaded: `Replying to a message` over the quote's placeholder. Cancel reads `Cancel reply` | mobile `lib/chat/use-composer-staging.ts`; the cancel label in `components/chat/chat-composer.tsx` (`composerCancelLabel`) |
 | Edit strip | `Editing message` | — · cancel `Cancel edit`; the send control reads `Save edit` to a screen reader | mobile `lib/chat/use-composer-staging.ts`, `components/chat/chat-composer.tsx` (`composerCancelLabel`) |
 | Edit left empty | — | `A message can't be empty. Delete it instead, or cancel the edit.` (the composer hint, error tone, shown while the text is empty, beside the greyed-out Save) | mobile `lib/chat/use-composer-staging.ts` (`EDIT_EMPTY_HINT`) |
