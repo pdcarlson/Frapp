@@ -1920,6 +1920,59 @@ describe('ChatService', () => {
       expect(mockMessageRepo.create).not.toHaveBeenCalled();
     });
 
+    // `payload.closed_at` / `closed_by` are written only by `PollService.close`
+    // (#3794), which checks the caller is the poll's creator.
+    describe('a poll card cannot arrive closed (#3794)', () => {
+      beforeEach(() => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+      });
+
+      const card = {
+        question: 'Formal venue?',
+        options: [
+          { id: 'a', label: 'The Lodge' },
+          { id: 'b', label: 'Riverside' },
+        ],
+        closes_at: '2999-01-01T00:00:00.000Z',
+      };
+
+      it('drops closed_at and closed_by from a poll card a client posts, keeping the rest', async () => {
+        await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'Formal venue?',
+          kind: 'poll',
+          payload: {
+            ...card,
+            closed_at: '2026-01-01T00:00:00.000Z',
+            closed_by: 'user-2',
+          },
+        });
+
+        expect(mockMessageRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ kind: 'poll', payload: card }),
+        );
+      });
+
+      it('leaves another kind payload exactly as sent', async () => {
+        const payload = { body: 'Hi', closed_at: 'kept' };
+        await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'Hi',
+          kind: 'announcement',
+          payload,
+        });
+
+        expect(mockMessageRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ payload }),
+        );
+      });
+    });
+
     describe('module gate on card kinds (#2993)', () => {
       const sendPoll = (enabled_modules?: Record<string, boolean> | null) =>
         service.sendMessage({

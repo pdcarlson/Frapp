@@ -243,6 +243,7 @@ function channelState(
     sendPoll: vi.fn(async () => ({ ok: true as const })),
     edit: vi.fn(async () => {}),
     remove: vi.fn(async () => {}),
+    closePoll: vi.fn(async () => {}),
     react: vi.fn(async () => {}),
     unreact: vi.fn(async () => {}),
     act: vi.fn(async () => {}),
