@@ -97,6 +97,47 @@ export function memberFacingRefusal(message: string): string {
     : message;
 }
 
+/**
+ * A poll option's id. It only has to be unique within one poll's option list,
+ * so it stays a short readable token rather than a full UUID
+ * (`randomClientId()` is the right call for anything the server dedupes on).
+ * A vote names its option by this id (`payload.option_id`, ADR-07).
+ */
+export function makePollOptionId(): string {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+/** What a client asks for: the poll as the member wrote it. */
+export interface PollMessageInput {
+  question: string;
+  /** Option labels, in the order the card lists them. */
+  options: readonly string[];
+  /** When voting stops. */
+  closesAt: Date;
+}
+
+/**
+ * The `kind: "poll"` message a client posts: `content` is the question, which
+ * is what a notification, the channel preview and search read, and `payload`
+ * is the card. Both posting paths build it here, web's `/poll` command
+ * (`dispatch.ts`) and mobile's New poll sheet (#3701), so the card a member
+ * votes on can't differ by which client made it. The caller has already
+ * validated the text; this only shapes it.
+ */
+export function buildPollMessage(
+  input: PollMessageInput,
+  makeOptionId: () => string = makePollOptionId,
+): { content: string; payload: PollPayload } {
+  return {
+    content: input.question,
+    payload: {
+      question: input.question,
+      options: input.options.map((label) => ({ id: makeOptionId(), label })),
+      closes_at: input.closesAt.toISOString(),
+    },
+  };
+}
+
 export function readPollPayload(message: ChatMessage): PollPayload | null {
   const raw = message.payload;
   if (!raw || typeof raw !== "object") return null;
