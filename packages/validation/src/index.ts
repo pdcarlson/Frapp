@@ -141,6 +141,18 @@ export function isInviteEmail(value: string): boolean {
 }
 
 /**
+ * Splits pasted or typed text into addresses (a pasted column, a CSV row, a
+ * mail client's `Name <a@b.edu>` copy loses its brackets). Web's chip field
+ * and mobile's Invite by email field read a draft the same way.
+ */
+export function splitAddresses(text: string): string[] {
+  return text
+    .split(/[\s,;]+/)
+    .map((part) => part.trim().replace(/^<|>$/g, ""))
+    .filter(Boolean);
+}
+
+/**
  * Case-insensitively de-dupes email addresses, preserving the first-seen
  * casing to send to. Shared between the API (`InviteService.createWithEmails`)
  * and the web onboarding wizard so the two runtimes' notion of "how many

@@ -65,7 +65,7 @@ export const QUICK_ACTION_LABELS: Record<QuickActionKey, string> = {
 export const QUICK_ACTION_HINTS: Record<QuickActionKey, string> = {
   newEvent: "Opens the new event sheet.",
   newTask: "Opens the new task sheet.",
-  invite: "Opens invite links to share with new members.",
+  invite: "Opens invites to email or share with new members.",
   message: "Opens the directory to pick who to message.",
   checkIn: "Opens check-in for the event happening now.",
   hostCheckIn: "Opens the host check-in display for the next event.",

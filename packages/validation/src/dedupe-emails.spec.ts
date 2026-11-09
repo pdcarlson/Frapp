@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { dedupeEmails, isInviteEmail } from "./index";
+import { dedupeEmails, isInviteEmail, splitAddresses } from "./index";
 
 describe("dedupeEmails", () => {
   it("removes case-insensitive duplicates, keeping the first-seen casing", () => {
@@ -42,5 +42,18 @@ describe("isInviteEmail", () => {
     expect(isInviteEmail("pledge@")).toBe(false);
     expect(isInviteEmail("not an email")).toBe(false);
     expect(isInviteEmail("")).toBe(false);
+  });
+});
+
+describe("splitAddresses", () => {
+  it("splits on spaces, commas, semicolons and newlines", () => {
+    expect(
+      splitAddresses("a@x.edu, b@x.edu;c@x.edu\nd@x.edu  e@x.edu"),
+    ).toEqual(["a@x.edu", "b@x.edu", "c@x.edu", "d@x.edu", "e@x.edu"]);
+  });
+
+  it("drops a mail client's angle brackets and empty parts", () => {
+    expect(splitAddresses(" <a@x.edu> ,, ")).toEqual(["a@x.edu"]);
+    expect(splitAddresses("")).toEqual([]);
   });
 });
