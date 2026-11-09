@@ -59,6 +59,40 @@ describe("GET /auth/callback", () => {
     expect(url.searchParams.get("authError")).toBe("exchange_failed");
   });
 
+  describe("the sign-up confirmation link (intent=confirm)", () => {
+    it("signs the member in and sends them on to `next` when the code exchanges", async () => {
+      exchangeCodeForSession.mockResolvedValue({ error: null });
+      const { url } = await callback(
+        "code=abc123&intent=confirm&next=%2Fjoin%3Ftoken%3Dinv-1",
+      );
+      expect(url.pathname).toBe("/join");
+      expect(url.searchParams.get("token")).toBe("inv-1");
+    });
+
+    it("reads a code that won't exchange as a confirmed address, not a broken link", async () => {
+      // GoTrue only hands out a code after it verified the link, so the
+      // address is confirmed; what failed is the PKCE verifier, which lives in
+      // the browser that signed up and is replaced by any later email flow.
+      exchangeCodeForSession.mockResolvedValue({
+        error: { name: "AuthPKCECodeVerifierMissingError", message: "verifier missing" },
+      });
+      const { url } = await callback(
+        "code=abc123&intent=confirm&next=%2Fjoin%3Ftoken%3Dinv-1",
+      );
+      expect(url.pathname).toBe("/sign-in");
+      expect(url.searchParams.get("redirectTo")).toBe("/join?token=inv-1");
+      expect(url.searchParams.get("authError")).toBe("email_confirmed");
+    });
+
+    it("still reports a dead confirmation link as GoTrue's own error", async () => {
+      const { url } = await callback(
+        "error=access_denied&error_code=otp_expired&intent=confirm&next=%2Fchat",
+      );
+      expect(exchangeCodeForSession).not.toHaveBeenCalled();
+      expect(url.searchParams.get("authError")).toBe("otp_expired");
+    });
+  });
+
   it("passes GoTrue's own error code through without attempting an exchange", async () => {
     const { url } = await callback(
       "error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired&next=%2Fchat",
