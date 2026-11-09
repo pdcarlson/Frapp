@@ -9,8 +9,8 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
  * `options.enabled` exists because the route is guarded twice over —
  * `members:view` plus `@RequireModule('geofences')` — so a surface that only
  * shows zones to some members should not fire a request the rest will get a
- * 403 for. Same shape as `usePolls`, and the same reasoning
- * `host-check-in.tsx` records for its officer-gated reads.
+ * 403 for. The same reasoning `host-check-in.tsx` records for its
+ * officer-gated reads.
  */
 export function useGeofences(options?: { enabled?: boolean }) {
   const client = useFrappClient();
