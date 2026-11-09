@@ -41,6 +41,7 @@ import { useSelectChapter } from "@/lib/auth/select-chapter";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confirm-drop-bulk-uploads";
 import { asArray } from "@/lib/utils";
+import { isLockedOutOfChapter } from "@/lib/auth/no-access";
 import {
   isJoinSkipCandidate,
   shouldSkipJoinForMember,
@@ -140,9 +141,13 @@ function JoinPageContent() {
   const permissionsQuery = useMyPermissions({
     enabled: sessionState === "ready",
   });
-  // Access in the active chapter, the same test `NoAccessRedirect` applies:
-  // without it, `/chat` would send this member straight to `/no-access`.
-  const hasAccess = (permissionsQuery.data?.permissions?.length ?? 0) > 0;
+  // `NoAccessRedirect`'s own rule: a member it would send to `/no-access` gets
+  // no Open chat and no skip, since `/chat` would send them straight back.
+  // An unanswered or disabled read counts as access, as it does there.
+  const hasAccess = !isLockedOutOfChapter(
+    permissionsQuery.data?.permissions,
+    memberships.length,
+  );
   const openChatMembership = hasAccess ? currentMembership : null;
 
   const visitFrom = searchParams.get("from");
@@ -498,7 +503,10 @@ function JoinPageContent() {
 const JOIN_FOOTER = (
   <p>
     Starting a chapter?{" "}
-    <Link href="/chat" className="font-semibold text-accent-text hover:underline">
+    <Link
+      href="/chat"
+      className="font-semibold text-accent-text hover:underline"
+    >
       Create a chapter
     </Link>
   </p>

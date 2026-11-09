@@ -15,44 +15,66 @@ const {
   replace,
   selectChapter,
   signOut,
-} = vi.hoisted(
-  () => ({
-    redeemMutate: vi.fn(),
-    legal: { data: { required: false } as { required: boolean } | undefined },
-    pending: { data: [] as unknown[] | undefined, userIds: [] as unknown[] },
-    sessionUser: vi.fn(),
-    replace: vi.fn(),
-    selectChapter: vi.fn(),
-    signOut: vi.fn(),
-  }),
-);
+} = vi.hoisted(() => ({
+  redeemMutate: vi.fn(),
+  legal: { data: { required: false } as { required: boolean } | undefined },
+  pending: {
+    data: [] as unknown[] | undefined,
+    userIds: [] as unknown[],
+    isLoading: false,
+  },
+  sessionUser: vi.fn(),
+  replace: vi.fn(),
+  selectChapter: vi.fn(),
+  signOut: vi.fn(),
+}));
 /** `useAccessibleChapters`' answer; `isLoading` holds the skip decision open. */
 const chapters = vi.hoisted(() => ({
   data: [] as unknown[] | undefined,
   isLoading: false,
+  // A read paused offline is pending but not loading.
+  isPending: false,
 }));
 /** `useMyPermissions`' answer for the active chapter. */
 const perms = vi.hoisted(() => ({
   data: { permissions: [] as string[] } as
-    | { permissions: string[] }
-    | undefined,
+    { permissions: string[] } | undefined,
+  isLoading: false,
 }));
 
 // The Terms checkbox runs the real `useJoinTermsCheckbox` against a mock API
 // client (`statusClient`), so this pins the page and the shared rule together.
-vi.mock("@repo/hooks", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useRedeemInvite: () => ({ mutateAsync: redeemMutate, isPending: false }),
-  useAccessibleChapters: () => ({
-    data: chapters.data,
-    isLoading: chapters.isLoading,
-  }),
-  useMyPermissions: () => ({ data: perms.data, isLoading: false }),
-  usePendingInvites: (userId: string | null) => {
-    pending.userIds.push(userId);
-    return { data: userId ? pending.data : undefined };
-  },
-}));
+const actualHooks = vi.hoisted(() => ({}) as typeof import("@repo/hooks"));
+vi.mock("@repo/hooks", async (importOriginal) => {
+  Object.assign(
+    actualHooks,
+    await importOriginal<typeof import("@repo/hooks")>(),
+  );
+  return {
+    ...actualHooks,
+    useRedeemInvite: () => ({ mutateAsync: redeemMutate, isPending: false }),
+    useAccessibleChapters: () => ({
+      data: chapters.data,
+      isLoading: chapters.isLoading,
+      isPending: chapters.isPending,
+    }),
+    // Faithful to the real hook: no active chapter, no read.
+    useMyPermissions: () => {
+      const active = actualHooks.useActiveChapterId();
+      return {
+        data: active ? perms.data : undefined,
+        isLoading: active ? perms.isLoading : false,
+      };
+    },
+    usePendingInvites: (userId: string | null) => {
+      pending.userIds.push(userId);
+      return {
+        data: userId ? pending.data : undefined,
+        isLoading: userId ? pending.isLoading : false,
+      };
+    },
+  };
+});
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace, refresh: vi.fn() }),
   useSearchParams: () => searchParams.current,
@@ -69,7 +91,9 @@ vi.mock("@/lib/auth/rejected-session", () => ({
 vi.mock("@/lib/auth/select-chapter", () => ({
   useSelectChapter: () => selectChapter,
 }));
-vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({
+  useToast: () => ({ toast: vi.fn() }),
+}));
 vi.mock("@/lib/providers/network-provider", () => ({
   useNetwork: () => ({ isOffline: false }),
 }));
@@ -124,7 +148,10 @@ beforeEach(() => {
   pending.userIds = [];
   chapters.data = [];
   chapters.isLoading = false;
+  chapters.isPending = false;
   perms.data = { permissions: [] };
+  perms.isLoading = false;
+  pending.isLoading = false;
   searchParams.current = new URLSearchParams();
 });
 
@@ -159,7 +186,7 @@ describe("web join — a member already in a chapter (#3850)", () => {
     );
   }
 
-  function renderPage(activeChapterId: string | null = null) {
+  function renderPage(activeChapterId: string | null = "ch-north") {
     legal.data = { required: false };
     return render(tree(activeChapterId));
   }
@@ -201,6 +228,23 @@ describe("web join — a member already in a chapter (#3850)", () => {
     expect(screen.queryByRole("link", { name: "Open chat" })).toBeNull();
   });
 
+  it("still leads with a way back before the active chapter is known (several chapters, fresh browser)", async () => {
+    chapters.data = [northfield, southfield];
+    renderPage(null);
+
+    expect(
+      await screen.findByText("You're already in Northfield"),
+    ).toBeTruthy();
+  });
+
+  it("offers Open chat to a member of several chapters with no role in the active one, whom /chat won't send to /no-access", async () => {
+    chapters.data = [northfield, southfield];
+    perms.data = { permissions: [] };
+    renderPage("ch-north");
+
+    expect(await screen.findByRole("link", { name: "Open chat" })).toBeTruthy();
+  });
+
   it("sends a member who came from the sign-in footer, with no invite, to chat", async () => {
     chapters.data = [northfield];
     searchParams.current = new URLSearchParams("from=sign-in");
@@ -216,8 +260,8 @@ describe("web join — a member already in a chapter (#3850)", () => {
     searchParams.current = new URLSearchParams("from=sign-in");
     renderPage();
 
-    await waitFor(() => expect(sessionUser).toHaveBeenCalled());
-    expect(await screen.findByText("Verifying your session…")).toBeTruthy();
+    await waitFor(() => expect(pending.userIds).toContain("auth-1"));
+    expect(screen.getByText("Verifying your session…")).toBeTruthy();
     expect(screen.queryByLabelText("Invite")).toBeNull();
     expect(replace).not.toHaveBeenCalledWith("/chat");
   });
@@ -244,6 +288,49 @@ describe("web join — a member already in a chapter (#3850)", () => {
     expect(replace).not.toHaveBeenCalledWith("/chat");
   });
 
+  it("doesn't skip a member with no role from the footer, whom /chat would send to /no-access", async () => {
+    chapters.data = [northfield];
+    perms.data = { permissions: [] };
+    searchParams.current = new URLSearchParams("from=sign-in");
+    renderPage();
+
+    expect(await screen.findByLabelText("Invite")).toBeTruthy();
+    expect(replace).not.toHaveBeenCalledWith("/chat");
+  });
+
+  it.each([
+    ["the emailed invites", () => (pending.isLoading = true)],
+    [
+      "the permissions",
+      () => {
+        perms.isLoading = true;
+        perms.data = undefined;
+      },
+    ],
+  ])("holds the skip decision while %s are loading", async (_, setLoading) => {
+    chapters.data = [northfield];
+    setLoading();
+    searchParams.current = new URLSearchParams("from=sign-in");
+    renderPage();
+
+    // Past the session check: the page asks for invites once it has a user.
+    await waitFor(() => expect(pending.userIds).toContain("auth-1"));
+    expect(screen.getByText("Verifying your session…")).toBeTruthy();
+    expect(screen.queryByLabelText("Invite")).toBeNull();
+    expect(replace).not.toHaveBeenCalledWith("/chat");
+  });
+
+  it("shows the form, not an endless skeleton, when the membership read is paused offline", async () => {
+    chapters.data = undefined;
+    chapters.isPending = true;
+    chapters.isLoading = false;
+    searchParams.current = new URLSearchParams("from=sign-in");
+    renderPage();
+
+    expect(await screen.findByLabelText("Invite")).toBeTruthy();
+    expect(replace).not.toHaveBeenCalledWith("/chat");
+  });
+
   it("keeps the page when that visit carries an invite, which may be for another chapter", async () => {
     chapters.data = [northfield];
     searchParams.current = new URLSearchParams("from=sign-in&token=abc");
@@ -261,9 +348,11 @@ describe("web join — a member already in a chapter (#3850)", () => {
 
     // A redeem refetches the chapter list: the count goes 0 to 1.
     chapters.data = [northfield];
-    rerender(tree(null));
+    rerender(tree("ch-north"));
 
-    expect(await screen.findByText("You're already in Northfield")).toBeTruthy();
+    expect(
+      await screen.findByText("You're already in Northfield"),
+    ).toBeTruthy();
     expect(replace).not.toHaveBeenCalledWith("/chat");
   });
 
@@ -422,7 +511,9 @@ describe("web join — invites for the verified address (#3776)", () => {
     // The Terms status is read first; until then the box is asked for.
     await waitFor(() => expect(screen.queryByRole("checkbox")).toBeNull());
 
-    fireEvent.click(screen.getByRole("button", { name: "Join Sigma Chi Alpha" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Join Sigma Chi Alpha" }),
+    );
 
     await waitFor(() =>
       expect(redeemMutate).toHaveBeenCalledWith({ token: "emailed-token" }),
@@ -436,7 +527,9 @@ describe("web join — invites for the verified address (#3776)", () => {
     renderPage();
     await screen.findByText("You've been invited to Sigma Chi Alpha");
 
-    fireEvent.click(screen.getByRole("button", { name: "Join Sigma Chi Alpha" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Join Sigma Chi Alpha" }),
+    );
 
     await screen.findByRole("alert");
     expect(redeemMutate).not.toHaveBeenCalled();
@@ -509,7 +602,9 @@ describe("web join — one join at a time (#3776)", () => {
     await screen.findByText("You've been invited to Theta Chi Beta");
     await waitFor(() => expect(screen.queryByRole("checkbox")).toBeNull());
 
-    fireEvent.click(screen.getByRole("button", { name: "Join Sigma Chi Alpha" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Join Sigma Chi Alpha" }),
+    );
     await waitFor(() => expect(redeemMutate).toHaveBeenCalledTimes(1));
     const second = screen.getByRole("button", { name: "Join Theta Chi Beta" });
     expect(second).toHaveProperty("disabled", true);
@@ -518,10 +613,14 @@ describe("web join — one join at a time (#3776)", () => {
 
     // The API answers, but the chapter switch is still running.
     let switched: (value: unknown) => void = () => {};
-    selectChapter.mockReturnValue(new Promise((resolve) => (switched = resolve)));
+    selectChapter.mockReturnValue(
+      new Promise((resolve) => (switched = resolve)),
+    );
     finish({ chapterId: "ch-1", memberId: "m-1" });
     await waitFor(() => expect(selectChapter).toHaveBeenCalledWith("ch-1"));
-    fireEvent.click(screen.getByRole("button", { name: "Join Theta Chi Beta" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Join Theta Chi Beta" }),
+    );
     expect(redeemMutate).toHaveBeenCalledTimes(1);
 
     // And it stays locked once the navigation to chat has started.
