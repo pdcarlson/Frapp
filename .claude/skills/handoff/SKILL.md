@@ -3,8 +3,9 @@ name: handoff
 description: >
   Draft the prompt that hands work to a fresh Claude Code session — queued as a suggested task where
   the session has that tool, otherwise a copy-pasteable block — for when this session's context is
-  filling up, when a task is finishing and the next one should start clean, or when a parallel
-  workstream should run in its own chat. Offer this proactively; do not wait to be asked.
+  filling up, when a task is finishing and the next one should start clean, when a parallel
+  workstream should run in its own chat, or when an idea or bug needs researching and defining before
+  anyone builds it. Offer this proactively; do not wait to be asked.
 argument-hint: "[continue|next|parallel|walkthrough|research] [<what the new session should pick up>]"
 allowed-tools: Read, Grep, Glob, Bash(git status *), Bash(git log *), Bash(git branch *), Bash(git rev-parse *), Bash(git diff *)
 ---
@@ -41,6 +42,8 @@ Offer it in one sentence, without stopping work, when:
 - Work has split into two tracks that don't share state.
 - A blocker needs a different environment or fresh tool state.
 - The user asks something whose research this session's context would bias.
+- The user raises an idea or a bug nobody can scope yet: a `research` card defines it, instead of
+  this chat investigating inline or letting it drop. Don't file it first; the research session files.
 
 For example: *"This is a good handoff point — want me to draft a prompt for a fresh session?"* Run
 the skill if they say yes, and don't repeat the offer.
