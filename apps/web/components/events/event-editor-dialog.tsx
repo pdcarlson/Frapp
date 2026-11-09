@@ -672,7 +672,9 @@ export function EventEditorDialog({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="NONE">Doesn&apos;t repeat</SelectItem>
+                        <SelectItem value="NONE">
+                          Doesn&apos;t repeat
+                        </SelectItem>
                         {RECURRENCE_RULES.map((rule) => (
                           <SelectItem key={rule} value={rule}>
                             {RECURRENCE_REPEAT_LABELS[rule]}

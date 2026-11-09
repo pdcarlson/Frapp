@@ -5,8 +5,8 @@ import {
   horizonEnd,
   isSeriesEvent,
   seriesCadenceLabel,
+  ruleTokenLabel,
   seriesHeadOf,
-  seriesRuleOf,
   splitByHorizon,
 } from "./event-series";
 
@@ -48,9 +48,8 @@ describe("eventSeriesKey", () => {
 
   it("finds the head and its rule", () => {
     const rows = weekly(3, "2026-11-15T23:48:00Z");
-    expect(seriesHeadOf("head", rows)?.id).toBe("head");
-    expect(seriesRuleOf("head", rows)).toBe("WEEKLY");
-    expect(seriesRuleOf("missing", rows)).toBeNull();
+    expect(seriesHeadOf("head", rows)?.recurrence_rule).toBe("WEEKLY");
+    expect(seriesHeadOf("missing", rows)).toBeNull();
   });
 });
 
@@ -109,9 +108,7 @@ describe("splitByHorizon", () => {
     expect(end.getHours()).toBe(0);
     const today = new Date(NOW);
     today.setHours(0, 0, 0, 0);
-    expect(Math.round((end.getTime() - today.getTime()) / 86_400_000)).toBe(
-      15,
-    );
+    expect(Math.round((end.getTime() - today.getTime()) / 86_400_000)).toBe(15);
   });
 
   it("puts what starts past the horizon behind Later", () => {
@@ -154,17 +151,30 @@ describe("seriesCadenceLabel", () => {
     ).toBe("Every month on the 11th");
   });
 
-  it("names a monthly series' anchor day, not a clamped meeting's", () => {
-    // Anchored on Jan 31; the API puts February's meeting on the 28th.
-    const anchor = new Date(2027, 0, 31, 18).toISOString();
-    const february = new Date(2027, 1, 28, 18).toISOString();
-    expect(seriesCadenceLabel("MONTHLY", february, anchor)).toBe(
+  it("names the day a monthly series meets on, not a clamped or moved meeting's", () => {
+    const on = (month: number, day: number) =>
+      new Date(2027, month, day, 18).toISOString();
+    // On the 31st; the API puts February's meeting on the 28th, and April's
+    // on the 30th. A promoted head on Feb 28 doesn't move the rule either.
+    const clamped = [on(1, 28), on(2, 31), on(3, 30), on(4, 31)];
+    expect(seriesCadenceLabel("MONTHLY", on(1, 28), clamped)).toBe(
       "Every month on the 31st",
+    );
+    // On the 15th, with the head alone moved to the 16th.
+    const moved = [on(0, 16), on(1, 15), on(2, 15)];
+    expect(seriesCadenceLabel("MONTHLY", on(0, 16), moved)).toBe(
+      "Every month on the 15th",
+    );
+    // Without the series, the meeting's own day.
+    expect(seriesCadenceLabel("MONTHLY", on(0, 9))).toBe(
+      "Every month on the 9th",
     );
   });
 
   it("reads a rule outside the catalog in sentence case", () => {
     expect(seriesCadenceLabel("DAILY", sunday)).toBe("Daily");
+    expect(ruleTokenLabel("TWICE_WEEKLY")).toBe("Twice weekly");
+    expect(ruleTokenLabel(null)).toBeNull();
   });
 
   it("says nothing for a missing rule or an unreadable start", () => {

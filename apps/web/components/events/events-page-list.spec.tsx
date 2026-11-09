@@ -156,10 +156,9 @@ async function pick(
   option: string,
 ) {
   await user.click(
-    within(screen.getByRole("radiogroup", { name: group })).getByRole(
-      "radio",
-      { name: option },
-    ),
+    within(screen.getByRole("radiogroup", { name: group })).getByRole("radio", {
+      name: option,
+    }),
   );
 }
 
@@ -319,7 +318,9 @@ describe("EventsPage list", () => {
 
     await user.click(later);
     expect(later).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("button", { name: /^formal/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^formal/i }),
+    ).toBeInTheDocument();
   });
 
   it("says the next two weeks are clear when only Later holds events", () => {
@@ -387,11 +388,12 @@ describe("EventsPage list", () => {
 
   it("opens another meeting from the sheet's series list, with the series' rule", async () => {
     const user = userEvent.setup();
-    // The head has already met, so the row opens a generated meeting, which
-    // carries no rule of its own.
+    // The head met six days ago, so the row opens a generated meeting (a
+    // day out, whatever the hour the suite runs), which carries no rule of
+    // its own.
     eventsQuery.data = weeklySeries("Chapter", 4).map((event, i) => ({
       ...event,
-      start_time: daysOut(-7 + i * 7, 18),
+      start_time: daysOut(-6 + i * 7, 18),
     }));
     render(<EventsPage />);
 
@@ -399,14 +401,55 @@ describe("EventsPage list", () => {
     const props = detailSheetProps.mock.lastCall![0];
     expect(props.event).toEqual(expect.objectContaining({ id: "series-1" }));
     expect(props.seriesRule).toBe("WEEKLY");
-    expect(
-      (props.series as { id: string }[]).map((event) => event.id),
-    ).toEqual(["series-1", "series-2", "series-3"]);
+    expect((props.series as { id: string }[]).map((event) => event.id)).toEqual(
+      ["series-1", "series-2", "series-3"],
+    );
 
     act(() => props.onSelectOccurrence!({ id: "series-3" }));
     expect(detailSheetProps).toHaveBeenLastCalledWith(
       expect.objectContaining({
         event: expect.objectContaining({ id: "series-3" }),
+      }),
+    );
+  });
+
+  it("keeps the open sheet's series live as the events change", async () => {
+    const user = userEvent.setup();
+    const series = weeklySeries("Chapter", 4);
+    eventsQuery.data = series;
+    const { rerender } = render(<EventsPage />);
+
+    await user.click(screen.getByRole("button", { name: /^chapter/i }));
+    expect(
+      (detailSheetProps.mock.lastCall![0].series as unknown[]).length,
+    ).toBe(4);
+
+    // Another officer cancels a meeting; realtime refetches the list.
+    eventsQuery.data = series.filter((event) => event.id !== "series-2");
+    rerender(<EventsPage />);
+    expect(
+      (detailSheetProps.mock.lastCall![0].series as { id: string }[]).map(
+        (event) => event.id,
+      ),
+    ).toEqual(["series-head", "series-1", "series-3"]);
+  });
+
+  it("opens a past generated meeting with its series' rule", async () => {
+    const user = userEvent.setup();
+    eventsQuery.data = weeklySeries("Chapter", 3).map((event, i) => ({
+      ...event,
+      start_time: daysOut(-15 + i * 7, 18),
+    }));
+    render(<EventsPage />);
+
+    await openFilters(user);
+    await pick(user, "Time", "Past");
+    await user.keyboard("{Escape}");
+    await user.click(screen.getAllByRole("button", { name: /^chapter/i })[0]!);
+    expect(detailSheetProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        event: expect.objectContaining({ id: "series-2" }),
+        seriesRule: "WEEKLY",
       }),
     );
   });

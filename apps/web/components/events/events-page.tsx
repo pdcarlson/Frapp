@@ -274,7 +274,13 @@ export function EventsPage() {
     ? seriesHeadOf(activeSeriesKey, events)
     : null;
 
-  if (view === null && eventsQuery.data !== undefined && !userLoading) {
+  // Offline, a viewer that isn't cached never loads (its query pauses), so
+  // the page picks without it rather than hold the skeleton until reconnect.
+  if (
+    view === null &&
+    eventsQuery.data !== undefined &&
+    (!userLoading || isOffline)
+  ) {
     setView(
       readEventsView(userId) ?? (events.length === 0 ? "calendar" : "list"),
     );
@@ -463,7 +469,11 @@ export function EventsPage() {
         title: "Attendance finalized",
         description: `${succeeded} event${succeeded > 1 ? "s" : ""} processed, ${totalMarked} member${totalMarked === 1 ? "" : "s"} marked absent.`,
       });
-      setSelectedEventIds([]);
+      // Only the posted ticks clear: one a filter hid stays for when it
+      // comes back.
+      setSelectedEventIds((previous) =>
+        previous.filter((eventId) => !ids.includes(eventId)),
+      );
     } else {
       const eventName = (eventId: string) =>
         String(
@@ -569,9 +579,12 @@ export function EventsPage() {
     editorDialog.setOpen(true);
   }
 
-  function openDetails(event: EventRow, series: EventRow[] | null = null) {
+  // Any meeting of a series opens with its series, from a list row, a past
+  // row or the calendar: the sheet then has the head's rule (a generated
+  // meeting carries none) and the series' upcoming meetings.
+  function openDetails(event: EventRow) {
     setActiveEvent(event);
-    setActiveSeriesKey(series ? eventSeriesKey(event) : null);
+    setActiveSeriesKey(eventSeriesKey(event));
     setDetailSheetOpen(true);
   }
 
@@ -592,7 +605,9 @@ export function EventsPage() {
       ? seriesCadenceLabel(
           head.recurrence_rule,
           event.start_time,
-          head.start_time,
+          events
+            .filter((candidate) => eventSeriesKey(candidate) === seriesKey)
+            .map((candidate) => candidate.start_time),
         )
       : null;
     const time = formatTimeOfDay(event.start_time) || null;
@@ -626,7 +641,7 @@ export function EventsPage() {
         */}
         <button
           type="button"
-          onClick={() => openDetails(event, series)}
+          onClick={() => openDetails(event)}
           className={cn(
             "flex min-h-11 min-w-0 flex-1 flex-col items-start gap-1 rounded-md px-2 py-1.5 text-left transition-colors sm:flex-row sm:items-center sm:gap-3",
             !isSelected && "hover:bg-card-hover hover:text-foreground",
@@ -872,7 +887,11 @@ export function EventsPage() {
                   >
                     Mark attendance complete
                   </Button>
-                  <Button size="toolbar" variant="ghost" onClick={stopSelecting}>
+                  <Button
+                    size="toolbar"
+                    variant="ghost"
+                    onClick={stopSelecting}
+                  >
                     Done
                   </Button>
                 </>

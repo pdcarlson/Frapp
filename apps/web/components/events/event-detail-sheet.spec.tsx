@@ -149,6 +149,25 @@ describe("EventDetailSheet series", () => {
     );
   });
 
+  it("badges a generated meeting with the series' rule it was handed", () => {
+    render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        // A generated meeting: no rule of its own.
+        event={{ ...baseEvent, recurrence_rule: null, parent_event_id: "h" }}
+        series={series}
+        seriesRule="WEEKLY"
+        onSelectOccurrence={() => {}}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Weekly")).toBeInTheDocument();
+  });
+
   it("shows no series block for a one-time event", () => {
     render(
       <EventDetailSheet

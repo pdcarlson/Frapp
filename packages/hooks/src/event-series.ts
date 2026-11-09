@@ -64,24 +64,13 @@ export function isSeriesEvent(event: SeriesEventLike): boolean {
 
 /**
  * The series' head: the row whose id is the series key, which carries the
- * rule and the anchor start. `null` when the head isn't among `events`.
+ * rule. `null` when the head isn't among `events`.
  */
 export function seriesHeadOf<T extends SeriesEventLike>(
   key: string,
   events: readonly T[],
 ): T | null {
   return events.find((event) => nonEmptyString(event.id) === key) ?? null;
-}
-
-/**
- * The series' rule, read off its head. `null` when the head isn't among
- * `events`.
- */
-export function seriesRuleOf(
-  key: string,
-  events: readonly SeriesEventLike[],
-): string | null {
-  return nonEmptyString(seriesHeadOf(key, events)?.recurrence_rule);
 }
 
 /**
@@ -172,21 +161,60 @@ function ordinal(day: number): string {
 }
 
 /**
+ * A rule token in sentence case (`DAILY` → `"Daily"`): how a rule outside the
+ * catalog (one a retired rule left on an old row) reads, on the list row and
+ * in web's `recurrenceLabel` alike. `null` for no rule.
+ */
+export function ruleTokenLabel(rule: unknown): string | null {
+  const token = nonEmptyString(rule);
+  if (!token) return null;
+  const words = token.trim().replace(/_/g, " ").toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * The day of the month a monthly series meets on: the day most of its
+ * meetings fall on, the later day on a tie. Not the head's own date, which an
+ * instance edit can move or a promotion can replace with a clamped meeting
+ * (a series on the 31st meets on Feb 28), and not one meeting's date, for the
+ * same clamp. `null` with no readable start.
+ */
+function monthlyAnchorDay(starts: readonly unknown[]): number | null {
+  const counts = new Map<number, number>();
+  for (const start of starts) {
+    if (typeof start !== "string") continue;
+    const at = new Date(start);
+    if (Number.isNaN(at.getTime())) continue;
+    counts.set(at.getDate(), (counts.get(at.getDate()) ?? 0) + 1);
+  }
+  let best: number | null = null;
+  let bestCount = 0;
+  for (const [day, count] of counts) {
+    if (
+      count > bestCount ||
+      (count === bestCount && best !== null && day > best)
+    ) {
+      best = day;
+      bestCount = count;
+    }
+  }
+  return best;
+}
+
+/**
  * How a series row says when it repeats, from its rule and a meeting's start:
  * `"Every Sunday"`, `"Every other Sunday"`, `"Every month on the 9th"`.
  *
- * A monthly series names its anchor day, so pass the head's start as
- * `anchorStart`: the API clamps a meeting to a shorter month's last day (a
- * series on the 31st meets on Feb 28), and that meeting's own date would
- * misstate the rule. A rule outside the catalog (one a retired rule left on
- * an old row) reads in sentence case (`"Daily"`), as `recurrenceLabel` does.
- * `null` for a missing rule or a start it can't read, so the caller leaves
- * the cadence out rather than guessing.
+ * A monthly series names the day it meets on, read from `seriesStarts` (every
+ * meeting of the series the caller holds; see `monthlyAnchorDay`), falling
+ * back to `start` without them. A rule outside the catalog reads in sentence
+ * case (`ruleTokenLabel`). `null` for a missing rule or a start it can't
+ * read, so the caller leaves the cadence out rather than guessing.
  */
 export function seriesCadenceLabel(
   rule: unknown,
   start: unknown,
-  anchorStart?: unknown,
+  seriesStarts: readonly unknown[] = [],
 ): string | null {
   if (typeof start !== "string") return null;
   const at = new Date(start);
@@ -198,16 +226,10 @@ export function seriesCadenceLabel(
     case "BIWEEKLY":
       return `Every other ${weekday}`;
     case "MONTHLY": {
-      const anchor =
-        typeof anchorStart === "string" ? new Date(anchorStart) : at;
-      const day = Number.isNaN(anchor.getTime()) ? at : anchor;
-      return `Every month on the ${ordinal(day.getDate())}`;
+      const day = monthlyAnchorDay(seriesStarts) ?? at.getDate();
+      return `Every month on the ${ordinal(day)}`;
     }
-    default: {
-      const token = nonEmptyString(rule);
-      if (!token) return null;
-      const words = token.trim().replace(/_/g, " ").toLowerCase();
-      return words.charAt(0).toUpperCase() + words.slice(1);
-    }
+    default:
+      return ruleTokenLabel(rule);
   }
 }
