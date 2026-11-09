@@ -36,11 +36,10 @@
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseRegistry } from "../check-api-breaking-changes.mjs";
 import { APP_JSON, GUARD_PATH, LOCKFILE, compareNativeInputs, gitIn, installProblems, isNativePackage } from "../eas-update.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 import { latestReleaseTag } from "./lib/release-tag.mjs";
-import { REGISTRY_PATH } from "./record-shipped-builds.mjs";
+import { REGISTRY_PATH, parseRegistry } from "./lib/shipped-builds-registry.mjs";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 export const PLATFORMS = ["ios", "android"];
