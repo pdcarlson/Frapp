@@ -974,7 +974,14 @@ function describeCreateCardPosted(
       });
       const ctx = buildCtx(post);
       const result = await dispatch(ctx);
-      expect(result).toEqual({ ok: false, error: copy.fourXxMessage });
+      // `postTask` and `postHours` (the ones a lost answer leaves
+      // unconfirmed) also hand the body back as `cause`, for a form's
+      // gate-refusal readers.
+      expect(result).toEqual({
+        ok: false,
+        error: copy.fourXxMessage,
+        ...(copy.lostResponse ? { cause: { message: copy.fourXxMessage } } : {}),
+      });
       expect(placeholderCount(ctx)).toBe(0);
     });
 

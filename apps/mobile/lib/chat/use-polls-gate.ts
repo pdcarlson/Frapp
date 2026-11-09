@@ -5,10 +5,11 @@ import { isModuleEnabled } from "@repo/validation";
 /**
  * The Polls gate on mobile (#3012): the member view's `enabled_modules.polls`,
  * read the way `pollsGateOf` reads it, failing closed while the chapter is
- * unread or unreadable. One read for both places that ask: the poll card's
- * Vote (`components/chat/poll-card.tsx`) and the composer's Poll offer
- * (`app/(app)/chat-thread.tsx`, #3701), so the two can't disagree about
- * whether Polls is on. It reads the member view, as `app/(app)/study.tsx`
+ * unread or unreadable, for the poll card's Vote
+ * (`components/chat/poll-card.tsx`). The composer's + reads the same member
+ * view through `plusMenuModel` (`components/chat/use-composer-plus.tsx`,
+ * #3865), which greys its Poll row while that read hasn't answered rather
+ * than hiding it. It reads the member view, as `app/(app)/study.tsx`
  * does, never the officer-only config. A missing `polls` key is on.
  */
 export function usePollsGate(): {

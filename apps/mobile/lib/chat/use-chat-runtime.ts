@@ -59,9 +59,11 @@ import { getOutboxStore } from "./outbox-store";
  * exactly the shared-device authorship bug that issue fixes. The key-value
  * mirror stays process-wide because what it serves on mobile is the
  * `chat:lastSeen:` backfill cursor, where a stale read costs a re-read
- * rather than misattributing a message; heavy-command notices also pass
- * through it, but mobile never writes one (`spec/ui/mobile/patterns.md`
- * § Chat).
+ * rather than misattributing a message. Heavy-command notices also pass
+ * through it: since the chat + sheet's forms (#3865), mobile writes one when
+ * a record lands but its card doesn't post. Each is keyed by the member who
+ * sent it (`chat:heavy:v1:<userId>:<channelId>`), so another member on the
+ * same phone never reads it (`spec/ui/mobile/patterns.md` § Chat).
  */
 export const chatKeyValueStore = createAsyncStorageKeyValueStore();
 export const chatNetworkState = createMonitorNetworkState(connectionMonitor);

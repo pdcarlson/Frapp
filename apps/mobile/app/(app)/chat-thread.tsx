@@ -56,9 +56,7 @@ import { can, draftWithMention } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { BlockListNotice } from "@/components/chat/block-list-notice";
 import { ChatComposer } from "@/components/chat/chat-composer";
-import { NewPollSheet } from "@/components/chat/new-poll-sheet";
-import { canCreatePoll } from "@repo/chat-core/poll-draft";
-import { usePollsGate } from "@/lib/chat/use-polls-gate";
+import { useComposerPlus } from "@/components/chat/use-composer-plus";
 import {
   ImageViewer,
   ImageViewerContext,
@@ -237,6 +235,9 @@ export default function ChatThreadScreen() {
     send,
     sendInFlight,
     sendPoll,
+    postTask,
+    postHours,
+    trackEventCard,
     edit,
     remove,
     closePoll,
@@ -340,14 +341,6 @@ export default function ChatThreadScreen() {
   // row is likely to succeed, as web's `canManageChannel` does.
   const permissionList = usePermissionList();
   const canManageChannel = can("channels:manage", permissionList);
-  // The composer's + offers a poll to a member whose role creates them, in a
-  // chapter with Polls on, in a channel they can post in (#3701). The Polls
-  // read is the poll card's own (`usePollsGate`), failing closed while the
-  // chapter is unread or unreadable.
-  const { gate: pollsGate } = usePollsGate();
-  const pollsAllowed =
-    channelCanPost &&
-    canCreatePoll({ permissions: permissionList, pollsGate });
   const canReplyHere = channelAllowsReplies({
     can_post: channelCanPost,
     is_read_only: channelIsReadOnly,
@@ -752,20 +745,6 @@ export default function ChatThreadScreen() {
   // the directory's sheet, so a profile reads the same from every door. It
   // closes on blur for the same reason the member list does.
   const profileSheetRef = useRef<BottomSheetModal>(null);
-  // The New poll sheet (#3701). Mounted per channel (keyed below), so a draft
-  // kept by a swipe never posts into another channel, and closed on blur like
-  // the member list.
-  const pollSheetRef = useRef<BottomSheetModal>(null);
-  const openPollSheet = useCallback(() => {
-    Keyboard.dismiss();
-    pollSheetRef.current?.present();
-  }, []);
-  useFocusEffect(
-    useCallback(() => {
-      if (!channelId) return;
-      return () => pollSheetRef.current?.dismiss();
-    }, [channelId]),
-  );
   const [profileTarget, setProfileTarget] = useState<{ userId: string } | null>(
     null,
   );
@@ -938,6 +917,14 @@ export default function ChatThreadScreen() {
   );
 
   const { isOffline: appOffline, writeBlockedReason } = useConnection();
+
+  const composerPlus = useComposerPlus({
+    channelId,
+    channel: { sendPoll, postTask, postHours, trackEventCard, photos },
+    replying: staging.context?.kind === "reply",
+    offline: appOffline,
+    onPhoto: handleAttach,
+  });
 
   const notificationPrefsQuery = useChannelNotificationPreferences();
   const setNotificationLevel = useSetChannelNotificationLevel();
@@ -1365,35 +1352,17 @@ export default function ChatThreadScreen() {
                   ? "error"
                   : "muted"
               }
-              // An edit changes text only, so the staged photos and the attach
-              // control stand aside until it is saved or cancelled.
+              // An edit changes text only, so the staged photos and the + stand
+              // aside until it is saved or cancelled.
               photos={staging.isEditing ? undefined : photos}
-              onAttach={staging.isEditing ? undefined : handleAttach}
-              // A poll is its own card, so it can't ride a reply or an edit:
-              // the + offers it only with nothing staged.
-              onCreatePoll={
-                pollsAllowed && !staging.context ? openPollSheet : undefined
-              }
-              attachFull={photoRoom < 1}
+              // The + (#3865): Photo, Poll, Event, Task and Service hours, in
+              // a sheet that greys what can't work this second and says why
+              // (offline Photo among them: an upload has no outbox).
+              onOpenPlus={staging.isEditing ? undefined : composerPlus.openPlus}
+              plusDisabled={!channelCanPost}
               onRemovePhoto={removePhoto}
               onRetryPhoto={retryPhoto}
               isPicking={isPicking}
-              // An upload is a live PUT with no outbox behind it, unlike a send —
-              // so unlike the composer itself, the attach control does have to go
-              // dark offline. It stays visible and states why rather than
-              // disappearing.
-              // Gates the control only. Offline, the member-facing reason is the
-              // connection pill's sentence ("Photos and files need a
-              // connection."), not a composer line, so the screen says offline
-              // once (`connection-state.md` § One indicator). Other reasons ride
-              // the single `disabledHint` above.
-              attachDisabledReason={
-                !channelCanPost
-                  ? "You can't post in this channel."
-                  : appOffline
-                    ? "offline"
-                    : null
-              }
             />
           )}
         </View>
@@ -1428,11 +1397,7 @@ export default function ChatThreadScreen() {
         onDismiss={() => setProfileTarget(null)}
         openChannelId={channelId ?? null}
       />
-      <NewPollSheet
-        key={channelId ?? "none"}
-        ref={pollSheetRef}
-        onPost={sendPoll}
-      />
+      {composerPlus.sheets}
       <MessageActionsSheet
         ref={actionsSheetRef}
         target={sheetTarget}

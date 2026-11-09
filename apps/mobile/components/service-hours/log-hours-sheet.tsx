@@ -11,6 +11,7 @@ import {
   useRequestServiceProofUploadUrl,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import type { DispatchResult, HoursInput } from "@repo/chat-core/dispatch";
 import { SERVICE_DESCRIPTION_MAX_LENGTH } from "@repo/validation";
 import { FilterChips } from "@/components/filter-chips";
 import { CameraGlyph } from "@/components/service-hours/camera-glyph";
@@ -147,16 +148,28 @@ export interface LogHoursSheetProps {
    * been opened over a screen that shows no entries.
    */
   onLogged?: () => void;
+  /**
+   * Set when the sheet was opened from a chat's + (#3865): the entry goes
+   * through chat-core's `postHours` into that channel, the call web's
+   * `/hours log` makes, with the proof the one-liner can't attach. A refusal
+   * keeps the entry, as a log from elsewhere does; anything else is an entry
+   * that may exist (the route doesn't dedupe), so the sheet closes and hands
+   * the result to `onPosted` to say what it carries.
+   */
+  postToChannel?: (input: HoursInput) => Promise<DispatchResult>;
+  onPosted?: (result: DispatchResult) => void;
 }
 
 export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
-  function LogHoursSheet({ now, onLogged }, ref) {
+  function LogHoursSheet({ now, onLogged, postToChannel, onPosted }, ref) {
     const closeSheet = useSheetClose(ref);
     const { tokens } = useFrappTheme();
     const { accent } = useChapterBranding();
     const styles = createStyles(tokens, accent);
     const backgroundStyle = useSheetBackgroundStyle();
     const createEntry = useCreateServiceEntry();
+    // `postToChannel` isn't a mutation, so its flight is held here.
+    const [posting, setPosting] = useState(false);
     const requestProofUploadUrl = useRequestServiceProofUploadUrl();
     const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
       useSheetVisit(ref);
@@ -229,7 +242,7 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
      */
     const [receiptRequired, setReceiptRequired] = useState(false);
 
-    const pending = createEntry.isPending || uploading;
+    const pending = createEntry.isPending || uploading || posting;
     const canSubmit =
       description.trim().length > 0 &&
       writeBlockedReason === null &&
@@ -344,19 +357,21 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
       },
       sentFrom: number,
     ) => {
-      createEntry.mutate(body, {
-        onSuccess: () => {
+      const handlers = {
+        onSuccess: (posted?: DispatchResult) => {
           sending.current = false;
           // The confirming action (`spec/ui/mobile/README.md` § Native-feel
-          // rules), felt once the entry is filed.
-          successHaptic();
+          // rules), felt once the entry is filed; not for a lost answer,
+          // whose entry may not exist.
+          if (!posted?.unconfirmed) successHaptic();
           clearEntry();
           onLogged?.();
           // A sheet closed and reopened since is the member's new visit,
           // and the save doesn't close it under them.
           if (isSameVisit(sentFrom)) dismiss();
+          if (posted) onPosted?.(posted);
         },
-        onError: (error) => {
+        onError: (error: unknown) => {
           sending.current = false;
           // The API turned the held path down (another chapter's, or no
           // object behind it): drop it, so the next Submit uploads the photo
@@ -390,7 +405,29 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
           }
           setSubmitFailed(true);
         },
-      });
+      };
+      if (!postToChannel) {
+        createEntry.mutate(body, {
+          onSuccess: () => handlers.onSuccess(),
+          onError: handlers.onError,
+        });
+        return;
+      }
+      setPosting(true);
+      void postToChannel(body)
+        .catch((cause: unknown): DispatchResult => ({
+          ok: false,
+          error: "Couldn't log hours",
+          cause,
+        }))
+        .then((result) => {
+          setPosting(false);
+          if (!result.ok) {
+            handlers.onError(result.cause ?? new Error(result.error));
+            return;
+          }
+          handlers.onSuccess(result);
+        });
     };
 
     const hours = formatHours(minutes);
