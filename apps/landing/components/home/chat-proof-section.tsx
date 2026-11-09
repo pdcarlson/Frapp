@@ -32,7 +32,7 @@ const chatProof = [
 /* 3 · Proof, chat. */
 export function ChatProofSection() {
   return (
-    <section id="product" className={`${SHELL} ${SECTION_GAP}`}>
+    <section id="product" data-nav-section="product" className={`${SHELL} ${SECTION_GAP}`}>
       <div className="grid gap-10 lg:grid-cols-12 lg:gap-x-6">
         <RevealOnView className="flex flex-col gap-6 lg:col-span-4">
           <p className={`${EYEBROW} reveal-item`}>Chat is the spine</p>

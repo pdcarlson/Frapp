@@ -32,7 +32,10 @@ const eventsProof = [
 /* 4 · Proof, events. */
 export function EventsProofSection() {
   return (
-    <section aria-labelledby="events" className={`${SHELL} ${SECTION_GAP}`}>
+    <section
+      aria-labelledby="events"
+      data-nav-section="product"
+      className={`${SHELL} ${SECTION_GAP}`}>
       {/*
         The copy leads in the DOM and the frame follows, which is the phone
         board's order and the sensible one for a screen reader: the heading

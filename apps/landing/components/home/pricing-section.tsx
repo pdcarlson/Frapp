@@ -36,7 +36,7 @@ const proPlan = [
 /* 5 · Pricing (D3). */
 export function PricingSection({ signupUrl }: { signupUrl: string }) {
   return (
-    <section id="pricing" className={`${SHELL} ${SECTION_GAP}`}>
+    <section id="pricing" data-nav-section="pricing" className={`${SHELL} ${SECTION_GAP}`}>
       <div className="grid gap-10 lg:grid-cols-12 lg:gap-x-6">
         <div className="flex flex-col gap-6 lg:col-span-4">
           <p className={EYEBROW}>Pricing</p>

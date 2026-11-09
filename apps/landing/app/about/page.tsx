@@ -76,6 +76,20 @@ export default function AboutPage() {
           <Link href="mailto:team@frapp.live" className={LINK_ACCENT}>
             team@frapp.live
           </Link>
+          {/*
+            Contact on About (#3869). Help with an account lives on /support,
+            which answers the questions a member actually has (sign-in,
+            invites, deleting an account) and is the address both app stores
+            list, so About points there rather than restating it.
+          */}
+          <p className="text-body text-muted-foreground">
+            Need help with your account or the app? Support covers signing
+            in, invites, notifications and deleting an account, and the same
+            address reaches a person.
+          </p>
+          <Link href="/support" className={LINK_ACCENT}>
+            Get support
+          </Link>
         </section>
       </div>
     </SitePage>
