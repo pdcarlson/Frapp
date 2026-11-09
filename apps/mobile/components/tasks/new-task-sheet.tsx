@@ -37,6 +37,7 @@ import {
   useTallSheetProps,
   SheetBackToClose,
   useSheetClose,
+  SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import { DueDateField } from "@/components/tasks/due-date-field";
 import { localIsoDate } from "@repo/formatting";
@@ -351,6 +352,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       <>
         <BottomSheetModal
           ref={ref}
+          stackBehavior={SHEET_STACK_BEHAVIOR}
           enableDynamicSizing
           keyboardBehavior="interactive"
           backgroundStyle={backgroundStyle}
@@ -494,6 +496,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           keystroke. */}
         <BottomSheetModal
           ref={pickerRef}
+          stackBehavior={SHEET_STACK_BEHAVIOR}
           // A tall sheet (`components.md` § Surface size): the whole roster,
           // and a search the keyboard would otherwise squeeze into a sliver of
           // the old 70% box.

@@ -30,9 +30,9 @@ import {
  * reason: the two are one page, and the mode toggle above the title
  * (`auth-mode-toggle.tsx`) is the way across. Compressed with sign-in on
  * 2026-11-05 (floating labels, no subtitle, side-by-side providers) so the
- * column fits a laptop screen. It has no footer: the toggle covers sign-in,
- * and sign-in's "Join your chapter" link would drop the `redirectTo` an
- * invited member arrives with (`/join` is gated and bounces to sign-in).
+ * column fits a laptop screen. It has no footer: the toggle covers sign-in
+ * and carries `redirectTo`, so an invited member who crosses over keeps the
+ * `/join` they arrived for.
  *
  * The #920 Profile & pre-auth slice replaced a two-card grid whose eyebrow read
  * "Frapp account setup", whose heading promised "live staging walkthroughs",

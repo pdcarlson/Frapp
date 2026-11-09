@@ -29,6 +29,7 @@ import {
   InviteService,
   inviteStatus,
   MEMBER_JOINED_AUDIENCE,
+  verifiedEmailOf,
 } from './invite.service';
 import { INVITE_REPOSITORY } from '#domain/repositories/invite.repository.interface';
 import type { IInviteRepository } from '#domain/repositories/invite.repository.interface';
@@ -99,6 +100,7 @@ describe('InviteService', () => {
       createMany: jest.fn(),
       markRevoked: jest.fn().mockResolvedValue(undefined),
       revokePending: jest.fn().mockResolvedValue(undefined),
+      findPendingByEmail: jest.fn().mockResolvedValue([]),
       markUsedAtomically: jest.fn(),
       releaseClaim: jest.fn().mockResolvedValue(true),
     };
@@ -794,6 +796,138 @@ describe('InviteService', () => {
       await expect(service.preview('preview-token')).rejects.toBeInstanceOf(
         GoneException,
       );
+    });
+  });
+
+  describe('verifiedEmailOf (#3776)', () => {
+    it('is the address only once Auth has confirmed it', () => {
+      expect(
+        verifiedEmailOf({
+          email: 'a@school.edu',
+          email_confirmed_at: '2026-11-01T00:00:00Z',
+        }),
+      ).toBe('a@school.edu');
+      expect(
+        verifiedEmailOf({ email: 'a@school.edu', email_confirmed_at: null }),
+      ).toBeNull();
+      expect(verifiedEmailOf({ email: 'a@school.edu' })).toBeNull();
+      expect(
+        verifiedEmailOf({ email: '', email_confirmed_at: '2026-11-01' }),
+      ).toBeNull();
+      expect(verifiedEmailOf(undefined)).toBeNull();
+    });
+  });
+
+  describe('findPendingForVerifiedEmail (#3776)', () => {
+    const LIVE_UNTIL = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const invite = (overrides: Partial<Invite> = {}): Invite => ({
+      id: 'inv-m',
+      token: 'mine-token',
+      chapter_id: 'ch-1',
+      role: 'Member',
+      expires_at: LIVE_UNTIL,
+      created_by: 'user-1',
+      used_at: null,
+      created_at: '2026-11-08T00:00:00Z',
+      email: 'Alice@School.edu',
+      revoked_at: null,
+      ...overrides,
+    });
+
+    beforeEach(() => {
+      mockChapterRepo.findById.mockImplementation((id: string) =>
+        Promise.resolve({
+          id,
+          name: id === 'ch-1' ? 'Sigma Chi Alpha' : 'Theta Chi Beta',
+          university: 'State',
+          accent_color: null,
+          branding: {},
+        } as unknown as Chapter),
+      );
+      mockUserRepo.findById.mockResolvedValue(
+        userFixture({ id: 'user-1', display_name: 'Paul Carlson' }),
+      );
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        roleFixture({
+          id: 'r-member',
+          name: 'Member',
+          system_key: SystemRoleKeys.MEMBER,
+        }),
+      ]);
+      mockMemberRepo.findByUser.mockResolvedValue([]);
+    });
+
+    it('reads nothing without a verified address', async () => {
+      await expect(
+        service.findPendingForVerifiedEmail(null, 'joiner'),
+      ).resolves.toEqual([]);
+      await expect(
+        service.findPendingForVerifiedEmail('  ', 'joiner'),
+      ).resolves.toEqual([]);
+      expect(mockInviteRepo.findPendingByEmail).not.toHaveBeenCalled();
+    });
+
+    it("asks only for the caller's verified address, and returns the card with its token", async () => {
+      mockInviteRepo.findPendingByEmail.mockResolvedValue([invite()]);
+      const rows = await service.findPendingForVerifiedEmail(
+        'alice@school.edu',
+        'joiner',
+      );
+      expect(mockInviteRepo.findPendingByEmail).toHaveBeenCalledWith(
+        'alice@school.edu',
+        expect.any(Date),
+      );
+      expect(rows).toEqual([
+        {
+          chapter_name: 'Sigma Chi Alpha',
+          university: 'State',
+          mark_text: null,
+          accent_color: null,
+          invited_by: 'Paul Carlson',
+          role: 'Member',
+          expires_at: LIVE_UNTIL,
+          token: 'mine-token',
+        },
+      ]);
+      // A read: nothing is claimed, joined or accepted.
+      expect(mockInviteRepo.markUsedAtomically).not.toHaveBeenCalled();
+      expect(mockMemberRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('leaves out chapters the caller already belongs to', async () => {
+      mockInviteRepo.findPendingByEmail.mockResolvedValue([
+        invite({ chapter_id: 'ch-1', token: 't1' }),
+        invite({ chapter_id: 'ch-2', token: 't2' }),
+      ]);
+      mockMemberRepo.findByUser.mockResolvedValue([
+        memberFixture({ user_id: 'joiner', chapter_id: 'ch-1' }),
+      ]);
+      const rows = await service.findPendingForVerifiedEmail(
+        'alice@school.edu',
+        'joiner',
+      );
+      expect(rows.map((r) => r.token)).toEqual(['t2']);
+    });
+
+    it('offers one invite per chapter, the newest', async () => {
+      // The repository answers newest first.
+      mockInviteRepo.findPendingByEmail.mockResolvedValue([
+        invite({ id: 'newer', token: 'newer-token' }),
+        invite({ id: 'older', token: 'older-token' }),
+      ]);
+      const rows = await service.findPendingForVerifiedEmail(
+        'alice@school.edu',
+        'joiner',
+      );
+      expect(rows.map((r) => r.token)).toEqual(['newer-token']);
+    });
+
+    it('drops an invite whose chapter is gone', async () => {
+      mockInviteRepo.findPendingByEmail.mockResolvedValue([invite()]);
+      mockChapterRepo.findById.mockResolvedValue(null);
+      await expect(
+        service.findPendingForVerifiedEmail('alice@school.edu', 'joiner'),
+      ).resolves.toEqual([]);
     });
   });
 

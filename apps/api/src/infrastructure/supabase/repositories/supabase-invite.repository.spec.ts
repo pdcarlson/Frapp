@@ -186,6 +186,165 @@ describe('SupabaseInviteRepository — tenant scope', () => {
       expect(row?.revoked_at).toBe(row?.used_at);
     });
 
+    it('findPendingByEmail spans chapters by address, and only pending invites (#3776)', async () => {
+      // `GET /v1/invites/mine` runs without `ChapterGuard`: the caller may be
+      // in no chapter yet. The address is the boundary, and the service only
+      // ever passes the one Auth verified for the caller.
+      const NOW = new Date('2026-11-09T00:00:00.000Z');
+      const pending = (id: string, extra: Record<string, unknown>) => ({
+        id,
+        token: `token-${id}`,
+        role: 'MEMBER',
+        created_by: USER_SHARED,
+        used_at: null,
+        revoked_at: null,
+        expires_at: '2099-01-01T00:00:00.000Z',
+        created_at: '2026-11-08T00:00:00.000Z',
+        ...extra,
+      });
+      harness = createTenantHarness({
+        tables: {
+          invites: [
+            inA(
+              pending('0a000000-0000-4000-8000-000000000020', {
+                email: 'Alice@School.edu',
+              }),
+            ),
+            inB(
+              pending('0b000000-0000-4000-8000-000000000020', {
+                email: 'alice@school.edu',
+                created_at: '2026-11-08T01:00:00.000Z',
+              }),
+            ),
+            inA(
+              pending('0a000000-0000-4000-8000-000000000021', {
+                email: 'alice@school.edu',
+                used_at: '2026-11-08T02:00:00.000Z',
+              }),
+            ),
+            inA(
+              pending('0a000000-0000-4000-8000-000000000022', {
+                email: 'alice@school.edu',
+                used_at: '2026-11-08T02:00:00.000Z',
+                revoked_at: '2026-11-08T02:00:00.000Z',
+              }),
+            ),
+            inB(
+              pending('0b000000-0000-4000-8000-000000000021', {
+                email: 'alice@school.edu',
+                expires_at: '2026-11-08T12:00:00.000Z',
+              }),
+            ),
+            inB(
+              pending('0b000000-0000-4000-8000-000000000022', {
+                email: 'bob@school.edu',
+              }),
+            ),
+            inB(
+              pending('0b000000-0000-4000-8000-000000000023', {
+                email: 'xalice@school.edu',
+              }),
+            ),
+            inA(
+              pending('0a000000-0000-4000-8000-000000000023', {
+                email: 'carol@school.edu',
+              }),
+            ),
+          ],
+        },
+        // Not a tenant-scope check: this read spans chapters on purpose, so
+        // the twins differ on what the query filters by.
+        collisionExempt: {
+          invites: [
+            'token',
+            'email',
+            'used_at',
+            'revoked_at',
+            'expires_at',
+            'created_at',
+          ],
+        },
+      });
+      repo = new SupabaseInviteRepository(harness.client);
+
+      const found = await repo.findPendingByEmail('ALICE@school.edu', NOW);
+
+      expect(found.map((i) => i.id)).toEqual([
+        '0b000000-0000-4000-8000-000000000020',
+        '0a000000-0000-4000-8000-000000000020',
+      ]);
+      expect(harness.ops[0].filters.map((f) => f.column)).toEqual([
+        'email',
+        'used_at',
+        'revoked_at',
+        'expires_at',
+      ]);
+      expect(harness.ops[0].filters[0].op).toBe('ilike');
+    });
+
+    it('findPendingByEmail matches the address exactly, so `*` and `%` match nothing else (#3776)', async () => {
+      // PostgREST reads `*` in a like pattern as `%`: an `ilike` here handed
+      // `*@school.edu` every pending invite at that domain.
+      const live = (id: string, email: string) => ({
+        id,
+        token: `token-${id}`,
+        role: 'MEMBER',
+        created_by: USER_SHARED,
+        used_at: null,
+        revoked_at: null,
+        expires_at: '2099-01-01T00:00:00.000Z',
+        created_at: '2026-11-08T00:00:00.000Z',
+        email,
+      });
+      harness = createTenantHarness({
+        tables: {
+          invites: [
+            inA(
+              live('0a000000-0000-4000-8000-000000000030', 'alice@school.edu'),
+            ),
+            inA(live('0a000000-0000-4000-8000-000000000031', 'a_b@school.edu')),
+            inB(live('0b000000-0000-4000-8000-000000000030', 'bob@school.edu')),
+            inB(live('0b000000-0000-4000-8000-000000000031', 'axb@school.edu')),
+          ],
+        },
+        collisionExempt: { invites: ['token', 'email'] },
+      });
+      repo = new SupabaseInviteRepository(harness.client);
+
+      for (const pattern of ['*@school.edu', '%@school.edu', 'a*@school.edu']) {
+        await expect(
+          repo.findPendingByEmail(pattern, new Date()),
+        ).resolves.toEqual([]);
+      }
+      // An escaped `_` matching itself is Postgres's to prove, not this
+      // harness's, whose LIKE emulation doesn't read `\_` as a literal.
+      const own = await repo.findPendingByEmail('alice@school.edu', new Date());
+      expect(own.map((i) => i.email)).toEqual(['alice@school.edu']);
+    });
+
+    it('findPendingByEmail drops rows a `*` widened the read to (#3776)', async () => {
+      // The harness treats `*` literally, so stand in for PostgREST, which
+      // answers `ilike.*@school.edu` with everyone at the domain.
+      const rows = [
+        { id: 'x', email: 'alice@school.edu' },
+        { id: 'y', email: 'bob@school.edu' },
+        { id: 'z', email: '*@school.edu' },
+      ];
+      const chain: Record<string, unknown> = {};
+      for (const m of ['from', 'select', 'ilike', 'is', 'gt']) {
+        chain[m] = () => chain;
+      }
+      chain.order = () => Promise.resolve({ data: rows, error: null });
+      const widened = new SupabaseInviteRepository(chain as never);
+
+      const found = await widened.findPendingByEmail(
+        '*@School.edu',
+        new Date(),
+      );
+
+      expect(found.map((i) => i.id)).toEqual(['z']);
+    });
+
     it('revokePending skips an invite already redeemed', async () => {
       const claimedAt = await repo.markUsedAtomically(INVITE_B);
 

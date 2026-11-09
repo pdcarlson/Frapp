@@ -80,7 +80,8 @@ The board is an artifact page built from [`hub.html`](hub.html): a live list of 
 - **Comments.** A comment sent to Claude arrives as a new turn. Read it with `ArtifactComments`,
   answer in its thread briefly and plainly, then route it like anything said here.
 - **Ledger.** The board holds everything a successor needs. Park work that won't happen now as a
-  `parked` row with its reason. File a GitHub issue only when Paul asks for one.
+  `parked` row with its reason. Each row links its GitHub issue, filed per `file-follow-up`: the
+  issues are the record ([`AGENTS.md` § Work tracking](../../../AGENTS.md#work-tracking)).
 
 ## Context: hand off at 50%
 

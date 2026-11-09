@@ -4,6 +4,7 @@ import {
   type AppUserContext,
   type RequestContext,
 } from '../types/request-context.types';
+import { verifiedEmailOf } from '../../application/services/invite.service';
 
 export const CurrentUser = createParamDecorator(
   (field: string | undefined, ctx: ExecutionContext) => {
@@ -51,6 +52,19 @@ export const CurrentEnabledModules = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): Record<string, boolean> | null => {
     return (
       ctx.switchToHttp().getRequest<RequestContext>().enabledModules ?? null
+    );
+  },
+);
+
+/**
+ * The caller's address as Supabase Auth verified it (`verifiedEmailOf`), or
+ * null. Read from the user `SupabaseAuthGuard` fetched from Auth with the
+ * caller's token, never from the request body or the token's own claims.
+ */
+export const CurrentVerifiedEmail = createParamDecorator(
+  (_data: unknown, ctx: ExecutionContext): string | null => {
+    return verifiedEmailOf(
+      ctx.switchToHttp().getRequest<RequestContext>().supabaseUser,
     );
   },
 );

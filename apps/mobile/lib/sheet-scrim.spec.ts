@@ -20,6 +20,9 @@ import { describe, expect, it } from "vitest";
  * button-press way out at all. And the same close is VoiceOver's escape:
  * `onAccessibilityEscape={close}` inside the sheet, or on a body component the
  * sheet hands `close` to, since gorhom wires that gesture to nothing either.
+ *
+ * And every sheet declares how it stacks (`SHEET_STACK_BEHAVIOR`, or
+ * `"replace"`), so a sheet opened from a sheet closes back to it (#3790).
  */
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -148,6 +151,64 @@ describe("every bottom sheet closes on Android back", () => {
       expect(after.trimStart()).toMatch(/^<SheetBackToClose\s/);
     },
   );
+});
+
+/**
+ * A stack behavior the app may use: the shared `SHEET_STACK_BEHAVIOR` (`push`),
+ * or `"replace"`, for a sheet that takes an action menu's place on purpose
+ * (the message menu's emoji picker and report form). gorhom's default `switch`,
+ * or `"switch"` spelled out, dismisses the sheet underneath instead of lowering
+ * it in 5.2.14, so closing a sheet opened from a sheet dropped the member on
+ * the page (#3790; why: `SHEET_STACK_BEHAVIOR` in
+ * `components/sheet-scaffold.tsx`).
+ */
+const STACKS = /\bstackBehavior=\{SHEET_STACK_BEHAVIOR\}/;
+const REPLACES = /\bstackBehavior="replace"/;
+
+/**
+ * The sheets that may replace the one under them, by file and count. Only
+ * the message menu's emoji picker and report form: `"replace"` dismisses the
+ * sheet underneath, so on any other sheet it brings #3790 back. A new entry
+ * here is a product call that closing that sheet should show the screen.
+ */
+const REPLACING: Record<string, number> = {
+  "components/chat/emoji-picker-sheet.tsx": 1,
+  "components/chat/message-actions-sheet.tsx": 1,
+};
+
+describe("no bottom sheet stacks on gorhom's default switch", () => {
+  const tags = sheetTags();
+
+  it.each(tags.map(({ at, tag }) => [at, tag]))(
+    "%s passes SHEET_STACK_BEHAVIOR or replace",
+    (_at, tag) => {
+      expect(STACKS.test(tag) || REPLACES.test(tag)).toBe(true);
+    },
+  );
+
+  it("replaces only where an action menu is consumed", () => {
+    const counts: Record<string, number> = {};
+    for (const { at, tag } of tags) {
+      if (!REPLACES.test(tag)) continue;
+      const file = at.slice(0, at.lastIndexOf(":"));
+      counts[file] = (counts[file] ?? 0) + 1;
+    }
+    expect(counts).toEqual(REPLACING);
+  });
+
+  it("fails a sheet that leaves stackBehavior out, or spells out switch", () => {
+    expect(
+      "<BottomSheetModal ref={a} backdropComponent={SheetScrim}>",
+    ).not.toMatch(STACKS);
+    const spelled = '<BottomSheetModal ref={a} stackBehavior="switch">';
+    expect(STACKS.test(spelled) || REPLACES.test(spelled)).toBe(false);
+  });
+
+  it("holds the shared behavior at push", async () => {
+    const { SHEET_STACK_BEHAVIOR } =
+      await import("@/components/sheet-scaffold");
+    expect(SHEET_STACK_BEHAVIOR).toBe("push");
+  });
 });
 
 /**

@@ -13,6 +13,7 @@ import {
   SheetScrim,
   useSheetBackgroundStyle,
   useSheetClose,
+  SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import {
   useChapterBranding,
@@ -38,6 +39,7 @@ export const ChatDensitySheet = forwardRef<BottomSheetModal>(
     return (
       <BottomSheetModal
         ref={ref}
+        stackBehavior={SHEET_STACK_BEHAVIOR}
         enableDynamicSizing
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}

@@ -20,6 +20,11 @@ export function escapeFilterValue(value: string): string {
  *
  * This is orthogonal to {@link escapeFilterValue}, which handles PostgREST's
  * own quoting for `.or()` filter strings — a value can need both.
+ *
+ * Not `*`: PostgREST reads `*` in a `like`/`ilike` value as `%` before
+ * Postgres sees it, and no escape here turns it back into a literal. A value
+ * that may hold one still over-matches, so a caller that needs an exact
+ * answer re-checks the rows (`SupabaseInviteRepository.findPendingByEmail`).
  */
 export function escapeLikePattern(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');

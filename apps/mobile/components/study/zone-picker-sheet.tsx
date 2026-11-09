@@ -11,6 +11,7 @@ import {
   useSheetBackgroundStyle,
   SheetBackToClose,
   useSheetClose,
+  SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import type { StudyZoneModel } from "@/lib/study/zones";
 import { zoneRewardCopy } from "@/lib/study/zones";
@@ -42,6 +43,7 @@ export const ZonePickerSheet = forwardRef<BottomSheetModal, ZonePickerSheetProps
     return (
       <BottomSheetModal
         ref={ref}
+        stackBehavior={SHEET_STACK_BEHAVIOR}
         snapPoints={SNAP_POINTS}
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}

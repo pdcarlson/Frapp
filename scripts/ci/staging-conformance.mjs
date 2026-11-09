@@ -722,6 +722,56 @@ export async function checkAuthMagicLink({
 }
 
 /**
+ * Email confirmations are required: GoTrue sets `email_confirmed_at` only once
+ * the address's owner follows the confirmation link.
+ *
+ * `GET /v1/invites/mine` (#3776) hands a pending invite's token to any account
+ * whose `email_confirmed_at` is set for the address the invite was emailed to,
+ * and the token is the whole credential at redeem. With autoconfirm on, GoTrue
+ * stamps `email_confirmed_at` at sign-up, so anyone who signs up as an
+ * invitee's address would be handed that invite. It is a dashboard toggle
+ * (Authentication → Sign In / Providers → Email → "Confirm email"), and before
+ * this check nothing would have noticed it change.
+ *
+ * `mailer_autoconfirm` is the field's name in the Management API's
+ * `GET /v1/projects/{ref}/config/auth` response. Only `false` passes. A
+ * response without the field FAILs, for the reason given on
+ * {@link checkAuthLeakedPassword}.
+ *
+ * Read-only: the same GET the other Auth checks make ({@link readAuthConfig}).
+ */
+export async function checkAuthEmailConfirm({ accessToken, projectRef, fetchImpl = fetch }) {
+  const id = "auth-email-confirm";
+  const label = "Email confirmations are required";
+  const read = await readAuthConfig({ id, label, accessToken, projectRef, fetchImpl });
+  if (read.result) return read.result;
+  const { data } = read;
+  if (!data || typeof data !== "object" || !Object.hasOwn(data, "mailer_autoconfirm")) {
+    return result(
+      id,
+      label,
+      FAIL,
+      "the Management API's auth config has no mailer_autoconfirm field, so this check can't " +
+        "tell whether email confirmations are required. Find the field's new name in the " +
+        "config/auth response and update checkAuthEmailConfirm.",
+    );
+  }
+  const autoconfirm = data.mailer_autoconfirm;
+  if (autoconfirm !== false) {
+    return result(
+      id,
+      label,
+      FAIL,
+      `mailer_autoconfirm is ${JSON.stringify(autoconfirm)}, so Supabase Auth marks an address ` +
+        "confirmed without its owner, and GET /v1/invites/mine would hand that account the " +
+        "invites emailed to the address (#3776). Turn on Authentication → Sign In / Providers → " +
+        'Email → "Confirm email".',
+    );
+  }
+  return result(id, label, PASS, "mailer_autoconfirm=false");
+}
+
+/**
  * Leaked-password protection is on: GoTrue rejects a password that appears in
  * HaveIBeenPwned's Pwned Passwords list.
  *
@@ -1299,6 +1349,12 @@ export async function runStagingConformance({
       }) },
     { id: "auth-magic-link", label: "Magic Link template uses token_hash on the app host", run: () =>
       checkAuthMagicLink({
+        accessToken: env.SUPABASE_ACCESS_TOKEN,
+        projectRef: env.SUPABASE_PROJECT_REF,
+        fetchImpl,
+      }) },
+    { id: "auth-email-confirm", label: "Email confirmations are required", run: () =>
+      checkAuthEmailConfirm({
         accessToken: env.SUPABASE_ACCESS_TOKEN,
         projectRef: env.SUPABASE_PROJECT_REF,
         fetchImpl,
