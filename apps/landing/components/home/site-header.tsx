@@ -18,12 +18,23 @@ export function SiteHeader({
         <FrappLockup />
 
         {/* The phone board draws no menu: lockup, Sign in, Get started. */}
+        {/*
+          The anchors are rooted at `/` because this header also draws on
+          `/about` and `/changelog` (components/site-page.tsx), where a bare
+          `#pricing` would resolve against the wrong page.
+        */}
         <nav aria-label="Primary" className="hidden items-center gap-8 md:flex">
-          <Link href="#product" className={LINK_QUIET}>
+          <Link href="/#product" className={LINK_QUIET}>
             Product
           </Link>
-          <Link href="#pricing" className={LINK_QUIET}>
+          <Link href="/#pricing" className={LINK_QUIET}>
             Pricing
+          </Link>
+          <Link href="/about" className={LINK_QUIET}>
+            About
+          </Link>
+          <Link href="/changelog" className={LINK_QUIET}>
+            Changelog
           </Link>
         </nav>
 
