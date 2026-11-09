@@ -4776,7 +4776,7 @@ export interface components {
             description: string;
             /** @description Storage path to proof file (e.g. from upload) */
             proof_path?: string;
-            /** @description When set with `client_message_id`, posts a read-only hours card to this chat channel after the entry is created (the `/hours log` slash command). Omit for dashboard creates. Chat cannot attach proof — when `wf_hours_receipt` is on, this route still 400s without `proof_path`. */
+            /** @description When set with `client_message_id`, posts a read-only hours card to this chat channel after the entry is created (the `/hours log` slash command). Omit for dashboard creates. The one-liner cannot attach proof (the Service hours form in the chat composer can) — when `wf_hours_receipt` is on, this route still 400s without `proof_path`. */
             channel_id?: string;
             /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Not a server-side dedupe key — a replay creates a duplicate entry. */
             client_message_id?: string;

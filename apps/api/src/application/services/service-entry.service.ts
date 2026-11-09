@@ -408,9 +408,9 @@ export class ServiceEntryService {
     // reported as an ABSENT field rather than a `false` that would claim a
     // card failed when none was ever due.
     //
-    // Chat cannot attach proof. The receipt-policy 400 above still fires for
-    // a slash create — that is the correct UX, not a bypass of
-    // `wf_hours_receipt`.
+    // The one-liner cannot attach proof (the chat composer's Service hours
+    // form can). The receipt-policy 400 above still fires for a slash create:
+    // that is the correct UX, not a bypass of `wf_hours_receipt`.
     const cardPosted = await this.tryPostHoursCard(input, entry);
 
     return cardPosted === undefined
