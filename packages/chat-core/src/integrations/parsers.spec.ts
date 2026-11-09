@@ -228,9 +228,29 @@ describe("parseTaskArgs", () => {
     expect(r.error).toMatch(/due date/i);
   });
 
-  it("rejects a malformed date", () => {
-    expect(parseTaskArgs('"Task" @alice 06/15/2026').ok).toBe(false);
-    expect(parseTaskArgs('"Task" @alice 2026-6-15').ok).toBe(false);
+  // Monday, 9 November 2026.
+  const NOW = new Date(2026, 10, 9, 12);
+
+  it("reads a due date with no year, as the task forms do (#3928)", () => {
+    const due = (args: string) => {
+      const r = parseTaskArgs(args, NOW);
+      return r.ok ? [r.value.dueDate, r.value.pointReward] : r.error;
+    };
+    expect(due('"Task" @alice 11/14')).toEqual(["2026-11-14", null]);
+    expect(due('"Task" @alice 11/8 5')).toEqual(["2027-11-08", 5]);
+    expect(due('"Task" @alice friday')).toEqual(["2026-11-13", null]);
+    expect(due('"Task" @alice tomorrow 10')).toEqual(["2026-11-10", 10]);
+    expect(due('"Task" @alice "Nov 14" 5')).toEqual(["2026-11-14", 5]);
+    expect(due('"Task" @alice Nov 14 5')).toEqual(["2026-11-14", 5]);
+    expect(due('"Task" @alice 06/15/2027')).toEqual(["2027-06-15", null]);
+  });
+
+  it("rejects text that is not a date", () => {
+    const r = parseTaskArgs('"Task" @alice soon', NOW);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error).toBe("Add a due date, like 11/14 or Friday");
+    expect(parseTaskArgs('"Task" @alice 14', NOW).ok).toBe(false);
   });
 
   it("rejects an impossible calendar date", () => {
@@ -619,6 +639,30 @@ describe("taskFormPrefill (#3865)", () => {
   it("keeps an over-long title whole, for the form to flag", () => {
     const long = "x".repeat(300);
     expect(taskFormPrefill(`"${long}" @alex 2026-12-01`).title).toBe(long);
+  });
+
+  it("reads a due date with no year after the @member (#3928)", () => {
+    const now = new Date(2026, 10, 9, 12);
+    expect(taskFormPrefill("Sweep @bobby 11/14 5", now)).toEqual({
+      title: "Sweep",
+      assigneeToken: "bobby",
+      dueDate: "2026-11-14",
+      pointReward: 5,
+    });
+    expect(taskFormPrefill("Sweep @bobby Nov 14 5", now)).toEqual({
+      title: "Sweep",
+      assigneeToken: "bobby",
+      dueDate: "2026-11-14",
+      pointReward: 5,
+    });
+    expect(taskFormPrefill("Sweep @bobby friday", now).dueDate).toBe(
+      "2026-11-13",
+    );
+    // Ahead of the @member a loose date is a word of the title.
+    expect(taskFormPrefill("Room 3/4 cleanup Friday @bobby", now)).toEqual({
+      title: "Room 3/4 cleanup Friday",
+      assigneeToken: "bobby",
+    });
   });
 
   it("drops points before a date, and tokens that fit no slot", () => {

@@ -1,9 +1,5 @@
-import {
-  formatDay,
-  formatWeekdayDay,
-  localIsoDate,
-  parseBareDateLocalNoon,
-} from "@repo/formatting";
+import { parseBareDateLocalNoon } from "./bare-date";
+import { localIsoDate } from "./local-date";
 
 /**
  * A task's due date as a member types it (#3928). Almost every task is due in
@@ -21,7 +17,8 @@ import {
  * - numbers, month first, `11/14`, `11-14`, `11.14`, with an optional two- or
  *   four-digit year, `11/14/27`;
  * - `2027-11-14`, what the API takes and what a prefill carries;
- * - its own output ({@link formatDueEntry}), so a shown value reads back.
+ * - its own output ({@link formatDueEntry}), so a shown value reads back to
+ *   the date it shows.
  *
  * Month-first is the one locale assumption: the product is for US chapters.
  * A date that names its year is taken as written, past or not, as the date
@@ -96,19 +93,35 @@ export function parseDueEntry(raw: string, now: Date): string | null {
 }
 
 /**
- * How the field shows a held date: `"Sat, Nov 14"`, and `"Mar 14, 2027"`
- * outside the current year, so a far-off date is never ambiguous. The year
- * takes the weekday's place there: the Add a task row's due field is half a
- * column wide, and `"Sun, Mar 14, 2027"` ran past its edge.
+ * How a due field shows a held date: `"Sat, Nov 14"` for a day still to come
+ * this year, and `"Mar 14, 2027"` for any other, so a far-off date is never
+ * ambiguous. The year takes the weekday's place: web's Add a task row gives
+ * the field half a column, and `"Sun, Mar 14, 2027"` ran past its edge.
+ *
+ * A day already past shows its year even inside the current one, because
+ * {@link parseDueEntry} reads a date with no year as the next time it comes
+ * round: `"Mon, Nov 2"` shown for last week would read back as next year's.
+ *
+ * English, in every locale, like the names the parser reads. Formatting in
+ * the browser's locale would write `"sáb, 14 de nov"` into a field that could
+ * not read it back.
  */
 export function formatDueEntry(isoDate: string, now: Date): string {
   const at = parseBareDateLocalNoon(isoDate);
   if (!at) return isoDate;
-  const shown =
-    at.getFullYear() === now.getFullYear()
-      ? formatWeekdayDay(isoDate, now)
-      : formatDay(isoDate, now);
-  return shown ?? isoDate;
+  const month = capitalized(MONTHS[at.getMonth()]!.slice(0, 3));
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const upcomingThisYear =
+    at.getFullYear() === now.getFullYear() && at.getTime() >= today.getTime();
+  if (!upcomingThisYear) {
+    return `${month} ${at.getDate()}, ${at.getFullYear()}`;
+  }
+  const weekday = capitalized(WEEKDAYS[at.getDay()]!.slice(0, 3));
+  return `${weekday}, ${month} ${at.getDate()}`;
+}
+
+function capitalized(word: string): string {
+  return word.charAt(0).toUpperCase() + word.slice(1);
 }
 
 const MONTHS = [

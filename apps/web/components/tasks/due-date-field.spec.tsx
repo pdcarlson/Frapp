@@ -77,22 +77,48 @@ describe("DueDateField (#3928)", () => {
     expect(field()).toHaveAttribute("type", "text");
   });
 
-  it("holds no date while the text is not one, and says so on leaving", () => {
+  it("holds no date while the text is not one, and says nothing until a submit", () => {
     const onValue = vi.fn();
     render(<Harness onValue={onValue} />);
     type("soon");
     expect(onValue).toHaveBeenLastCalledWith("");
-    // Never while typing.
-    expect(screen.queryByRole("alert")).toBeNull();
     fireEvent.blur(field());
-    expect(screen.getByRole("alert")).toHaveTextContent(/Nov 14 or 11\/14/);
-    expect(field()).toHaveAttribute("aria-invalid", "true");
+    // Nothing under the field comes or goes on blur: a line that did would
+    // move the form's buttons out from under a click.
+    expect(screen.queryByRole("alert")).toBeNull();
     expect(field()).toHaveValue("soon");
   });
 
   it("asks for a date when the form was submitted without one", () => {
     render(<Harness missing />);
     expect(screen.getByRole("alert")).toHaveTextContent("Pick a due date.");
+    expect(field()).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("says how to write one when the form was submitted with unreadable text", () => {
+    render(<Harness missing />);
+    type("soon");
+    expect(screen.getByRole("alert")).toHaveTextContent(/Nov 14 or 11\/14/);
+    type("11/14");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("lays the reading over the form, so blur changes no height", () => {
+    const { container } = render(<Harness />);
+    type("11/14");
+    const reading = screen.getByText("Sat, Nov 14");
+    expect(reading.tagName).toBe("SPAN");
+    expect(reading).toHaveClass("absolute");
+    // Out of the flow: no line under the field for a blur to remove.
+    expect(container.querySelectorAll("p")).toHaveLength(0);
+  });
+
+  it("keeps a past date's year, so editing it doesn't move it a year on", () => {
+    const onValue = vi.fn();
+    render(<Harness initial="2026-11-02" onValue={onValue} />);
+    expect(field()).toHaveValue("Nov 2, 2026");
+    type("Nov 2, 2026 ");
+    expect(onValue).toHaveBeenLastCalledWith("2026-11-02");
   });
 
   it("follows a date the parent sets, and clears with it", () => {

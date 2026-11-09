@@ -8,6 +8,7 @@
  * rule (no NaN propagation) holds.
  */
 
+import { parseDueEntry } from "@repo/formatting";
 import {
   POINTS_ADJUSTMENT_MAX,
   POINTS_REASON_MAX_LENGTH,
@@ -248,7 +249,7 @@ export function parsePointsArgs(args: string): ParseResult<PointsArgs> {
 }
 
 const TASK_MAX_TITLE_LENGTH = TASK_TITLE_MAX_LENGTH;
-const TASK_USAGE = 'Usage: /task "<title>" @assignee <YYYY-MM-DD> [points]';
+const TASK_USAGE = 'Usage: /task "<title>" @assignee <due date> [points]';
 
 /**
  * Validates a `YYYY-MM-DD` token as a real calendar date (rejects `2026-02-30`,
@@ -270,15 +271,29 @@ function parseIsoDate(token: string | undefined): string | null {
 }
 
 /**
- * Parse `/task "<title>" @assignee <YYYY-MM-DD> [points]`. The title is quoted
+ * A `/task` due date: what web's task forms read (#3928, `parseDueEntry`), so
+ * `11/14`, `Friday` and `tomorrow` work with no year typed, the year being the
+ * next time the date comes round. `YYYY-MM-DD` still reads as before.
+ */
+function parseTaskDue(token: string | undefined, now: Date): string | null {
+  if (!token) return null;
+  return parseIsoDate(token) ?? parseDueEntry(token, now);
+}
+
+/**
+ * Parse `/task "<title>" @assignee <due date> [points]`. The title is quoted
  * because chapter task titles routinely contain spaces (same rationale as
  * `/poll`). The assignee token (leading `@` stripped) is resolved to a user id
  * at dispatch — the parser is grammar-only and never touches the directory. The
- * due date is required (the backend `due_date` is non-null) and validated as a
- * real calendar date. Points are optional and, when present, a non-negative
+ * due date is required (the backend `due_date` is non-null) and read as the
+ * task forms read it ({@link parseTaskDue}): one token, or a quoted one for a
+ * date with a space in it (`"Nov 14"`). Points are optional and, when present, a non-negative
  * whole number.
  */
-export function parseTaskArgs(args: string): ParseResult<TaskArgs> {
+export function parseTaskArgs(
+  args: string,
+  now: Date = new Date(),
+): ParseResult<TaskArgs> {
   const tokens = tokenizeQuotedArgs(args.trim());
   if (tokens === null) {
     return { ok: false, error: "Unterminated quote in /task arguments" };
@@ -304,14 +319,21 @@ export function parseTaskArgs(args: string): ParseResult<TaskArgs> {
   }
   const assigneeToken = assigneeRaw.slice(1);
 
-  const dueDate = parseIsoDate(tokens[2]);
+  // "Nov 14" unquoted is two tokens; the points, if any, follow it.
+  let pointsAt = 3;
+  let dueDate = parseTaskDue(tokens[2], now);
+  if (dueDate === null && tokens[2] && tokens[3]) {
+    dueDate = parseTaskDue(`${tokens[2]} ${tokens[3]}`, now);
+    pointsAt = 4;
+  }
   if (dueDate === null) {
-    return { ok: false, error: "Add a due date as YYYY-MM-DD" };
+    return { ok: false, error: "Add a due date, like 11/14 or Friday" };
   }
 
   let pointReward: number | null = null;
-  if (tokens[3] != null && tokens[3].trim().length > 0) {
-    const parsed = parseNumericArg(tokens[3]);
+  const pointsToken = tokens[pointsAt];
+  if (pointsToken != null && pointsToken.trim().length > 0) {
+    const parsed = parseNumericArg(pointsToken);
     if (parsed === null || !Number.isInteger(parsed) || parsed < 0) {
       return {
         ok: false,
@@ -557,7 +579,10 @@ export interface TaskFormPrefill {
  * the first `@member` or date joins it), an unterminated quote is dropped,
  * and a token that doesn't fit its slot is dropped rather than refused.
  */
-export function taskFormPrefill(args: string): TaskFormPrefill {
+export function taskFormPrefill(
+  args: string,
+  now: Date = new Date(),
+): TaskFormPrefill {
   const trimmed = args.trim();
   if (trimmed.length === 0) return {};
   const tokens = lenientTokens(trimmed);
@@ -567,6 +592,9 @@ export function taskFormPrefill(args: string): TaskFormPrefill {
   let i = 0;
   for (; i < tokens.length; i++) {
     const token = tokens[i]!.trim();
+    // Only `YYYY-MM-DD` ends the title, as before #3928: ahead of the
+    // `@member` a looser date is a word of the title ("Room 3/4 cleanup",
+    // "Clean up Friday's mess").
     if (token.startsWith("@") || parseIsoDate(token) !== null) break;
     if (token.length > 0) titleParts.push(token);
   }
@@ -581,9 +609,20 @@ export function taskFormPrefill(args: string): TaskFormPrefill {
       prefill.assigneeToken ??= token.slice(1);
       continue;
     }
-    const date = parseIsoDate(token);
+    const date = parseTaskDue(token, now);
     if (date !== null) {
       prefill.dueDate ??= date;
+      continue;
+    }
+    // "Nov 14" unquoted is two tokens.
+    const next = tokens[i + 1]?.trim();
+    const spaced =
+      prefill.dueDate === undefined && next
+        ? parseTaskDue(`${token} ${next}`, now)
+        : null;
+    if (spaced !== null) {
+      prefill.dueDate = spaced;
+      i++;
       continue;
     }
     // Points only after the date, as the one-liner orders them, and only

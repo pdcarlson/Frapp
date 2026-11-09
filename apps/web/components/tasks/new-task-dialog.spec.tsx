@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { formatDueEntry } from "./due-entry";
+import { formatDueEntry } from "@repo/formatting";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
@@ -160,6 +160,7 @@ describe("NewTaskDialog (#3865)", () => {
     renderDialog({ prefill: { title: "Sweep" } });
     expect(create()).toBeDisabled();
     expect(screen.getByLabelText("Title")).toBeDisabled();
+    expect(screen.getByLabelText("Due date")).toBeDisabled();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
   });
 });

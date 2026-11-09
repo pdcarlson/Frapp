@@ -55,8 +55,18 @@ describe("parseDueEntry (#3928)", () => {
     expect(parseDueEntry("monday", NOW)).toBe("2026-11-16");
   });
 
-  it("reads back what the field shows", () => {
-    for (const iso of ["2026-11-14", "2026-12-31", "2027-03-14", "2028-02-29"]) {
+  it("reads back what the field shows, past dates included", () => {
+    for (const iso of [
+      "2026-11-09",
+      "2026-11-14",
+      "2026-12-31",
+      "2027-03-14",
+      "2028-02-29",
+      // Earlier this year: shown with its year, or it would read as 2027.
+      "2026-11-08",
+      "2026-01-05",
+      "2025-06-01",
+    ]) {
       expect(parseDueEntry(formatDueEntry(iso, NOW), NOW)).toBe(iso);
     }
   });
@@ -72,6 +82,24 @@ describe("parseDueEntry (#3928)", () => {
 describe("formatDueEntry", () => {
   it("leaves the year off inside the current one and shows it outside", () => {
     expect(formatDueEntry("2026-11-14", NOW)).toBe("Sat, Nov 14");
+    expect(formatDueEntry("2026-11-09", NOW)).toBe("Mon, Nov 9");
     expect(formatDueEntry("2027-03-14", NOW)).toBe("Mar 14, 2027");
+  });
+
+  it("shows the year on a day already past, even this year", () => {
+    expect(formatDueEntry("2026-11-02", NOW)).toBe("Nov 2, 2026");
+  });
+
+  it("is English in every locale, so the parser can read it back", () => {
+    const real = Date.prototype.toLocaleDateString;
+    Date.prototype.toLocaleDateString = function (_locale, options) {
+      return real.call(this, "es-US", options);
+    };
+    try {
+      expect(formatDueEntry("2026-11-14", NOW)).toBe("Sat, Nov 14");
+      expect(formatDueEntry("2027-03-14", NOW)).toBe("Mar 14, 2027");
+    } finally {
+      Date.prototype.toLocaleDateString = real;
+    }
   });
 });
