@@ -149,6 +149,20 @@ export class SupabaseStorageService implements IStorageProvider {
     return data.signedUrl;
   }
 
+  async getSignedInlineAndAttachmentUrls(
+    bucket: string,
+    path: string,
+    downloadAs: string,
+    expiresIn = 3600,
+  ): Promise<{ inline: string; attachment: string }> {
+    const inline = await this.getSignedDownloadUrl(bucket, path, expiresIn);
+    // What `createSignedUrl` does with `{ download }`: the token covers the
+    // path, and `download` is a query parameter beside it, set the same way
+    // (`URLSearchParams`, then `encodeURI` over the whole URL).
+    const query = new URLSearchParams({ download: downloadAs }).toString();
+    return { inline, attachment: `${inline}&${encodeURI(query)}` };
+  }
+
   async getSignedDownloadUrls(
     bucket: string,
     paths: string[],
