@@ -41,8 +41,9 @@ export function ChatProofSection() {
           </h2>
           <p className={`${PROOF_BODY} reveal-item`} style={{ "--i": 2 } as StaggerStyle}>
             Members open chat. So that is where the event lands, where the
-            check-in happens, and where an officer&apos;s change is posted for
-            everyone to read. Nothing sits behind a tab nobody opens.
+            check-in happens, where a poll gets answered, and where an
+            officer&apos;s change is posted for everyone to read. Nothing sits
+            behind a tab nobody opens.
           </p>
           <div className="reveal-rule mt-2 border-t border-border" />
           <div className="flex flex-col border-t-0">
