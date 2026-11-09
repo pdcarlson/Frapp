@@ -202,12 +202,45 @@ function monthlyAnchorDay(starts: readonly unknown[]): number | null {
 }
 
 /**
+ * A date on the weekday most of `starts` fall on (local time), or `null`
+ * when none can be read. A tie goes to the earliest start among the tied
+ * weekdays, so the answer doesn't depend on input order.
+ */
+function majorityWeekday(starts: readonly unknown[]): Date | null {
+  const byDay = new Map<number, { count: number; first: Date }>();
+  for (const start of starts) {
+    if (typeof start !== "string") continue;
+    const at = new Date(start);
+    if (Number.isNaN(at.getTime())) continue;
+    const entry = byDay.get(at.getDay());
+    if (!entry) byDay.set(at.getDay(), { count: 1, first: at });
+    else {
+      entry.count += 1;
+      if (at < entry.first) entry.first = at;
+    }
+  }
+  let best: { count: number; first: Date } | null = null;
+  for (const entry of byDay.values()) {
+    if (
+      !best ||
+      entry.count > best.count ||
+      (entry.count === best.count && entry.first < best.first)
+    ) {
+      best = entry;
+    }
+  }
+  return best?.first ?? null;
+}
+
+/**
  * How a series row says when it repeats, from its rule and a meeting's start:
  * `"Every Sunday"`, `"Every other Sunday"`, `"Every month on the 9th"`.
  *
- * A monthly series names the day it meets on, read from `seriesStarts` (every
- * meeting of the series the caller holds; see `monthlyAnchorDay`), falling
- * back to `start` without them. A rule outside the catalog reads in sentence
+ * The day it names is read from `seriesStarts` (every meeting of the series
+ * the caller holds), so one meeting moved on its own doesn't rename the
+ * series: the weekday most of them fall on for a weekly series, the day of the
+ * month for a monthly one (`monthlyAnchorDay`). Without them it falls back to
+ * `start`. A rule outside the catalog reads in sentence
  * case (`ruleTokenLabel`). `null` for a missing rule or a start it can't
  * read, so the caller leaves the cadence out rather than guessing.
  */
@@ -219,7 +252,9 @@ export function seriesCadenceLabel(
   if (typeof start !== "string") return null;
   const at = new Date(start);
   if (Number.isNaN(at.getTime())) return null;
-  const weekday = at.toLocaleDateString("en-US", { weekday: "long" });
+  const weekday = (
+    majorityWeekday(seriesStarts) ?? at
+  ).toLocaleDateString("en-US", { weekday: "long" });
   switch (rule) {
     case "WEEKLY":
       return `Every ${weekday}`;

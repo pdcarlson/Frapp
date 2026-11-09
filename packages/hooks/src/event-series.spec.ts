@@ -137,6 +137,23 @@ describe("splitByHorizon", () => {
 describe("seriesCadenceLabel", () => {
   // Built from local parts so the weekday holds in any test zone.
   const sunday = new Date(2026, 10, 15, 18, 48).toISOString();
+  it("names the weekday most meetings fall on, not one moved meeting's", () => {
+    // The next meeting was moved to Saturday on its own; the series meets Sundays.
+    const movedSaturday = new Date(2026, 10, 14, 18, 48).toISOString();
+    const starts = [
+      movedSaturday,
+      new Date(2026, 10, 22, 18, 48).toISOString(),
+      new Date(2026, 10, 29, 18, 48).toISOString(),
+    ];
+    expect(seriesCadenceLabel("WEEKLY", movedSaturday, starts)).toBe(
+      "Every Sunday",
+    );
+    expect(seriesCadenceLabel("BIWEEKLY", movedSaturday, starts)).toBe(
+      "Every other Sunday",
+    );
+    expect(seriesCadenceLabel("WEEKLY", movedSaturday)).toBe("Every Saturday");
+  });
+
   it("says how the series repeats", () => {
     expect(seriesCadenceLabel("WEEKLY", sunday)).toBe("Every Sunday");
     expect(seriesCadenceLabel("BIWEEKLY", sunday)).toBe("Every other Sunday");

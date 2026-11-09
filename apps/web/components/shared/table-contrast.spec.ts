@@ -142,7 +142,7 @@ describe("the call sites", () => {
 
 describe("the bulk-action bar", () => {
   it("keeps its text legible on its neutral fill", () => {
-    // The "N selected" bars on /members, /events, /billing and /points are
+    // The "N selected" bars on /members, /billing and /points are
     // `bg-popover` with `--foreground` and `--muted-foreground` text. They were
     // the accent tint until 2026-11-05.
     expect(ratio(TEXT.foreground, SURFACE.popover)).toBeGreaterThanOrEqual(

@@ -55,8 +55,9 @@ type EventDetailSheetProps = {
   event: EventRecord | null;
   /**
    * The upcoming meetings of the series this occurrence belongs to, soonest
-   * first and this one included, listed under it (#3707). `null` or absent
-   * for a one-time event, or one opened from the calendar.
+   * first and this one included, listed under it (#3707), whether the sheet
+   * was opened from the list or the calendar. `null` or absent for a one-time
+   * event.
    */
   series?: EventRecord[] | null;
   /**

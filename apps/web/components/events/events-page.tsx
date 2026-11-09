@@ -402,12 +402,14 @@ export function EventsPage() {
   // Later hides keeps its tick for when it comes back, but the count and the
   // bulk action never reach it, so nothing is marked that the officer can't
   // see.
+  const visibleIdSet = new Set(visibleEventIds);
+  const selectedIdSet = new Set(selectedEventIds);
   const selectedVisibleIds = selectedEventIds.filter((eventId) =>
-    visibleEventIds.includes(eventId),
+    visibleIdSet.has(eventId),
   );
   const allVisibleSelected =
     visibleEventIds.length > 0 &&
-    visibleEventIds.every((eventId) => selectedEventIds.includes(eventId));
+    visibleEventIds.every((eventId) => selectedIdSet.has(eventId));
 
   function toggleAllVisibleEvents(checked: boolean) {
     if (checked) {
@@ -619,7 +621,7 @@ export function EventsPage() {
     const time = formatTimeOfDay(event.start_time) || null;
     // One derived value: the row fill and the checkbox must never disagree
     // about whether the row is selected.
-    const isSelected = selecting && selectedEventIds.includes(eventId);
+    const isSelected = selecting && selectedIdSet.has(eventId);
     const location =
       typeof event.location === "string" && event.location.trim()
         ? event.location.trim()
