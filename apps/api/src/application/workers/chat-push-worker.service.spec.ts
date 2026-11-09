@@ -4,7 +4,10 @@ import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import { NotificationService } from '../services/notification.service';
-import { ChatPushWorkerService } from './chat-push-worker.service';
+import {
+  ChatPushWorkerService,
+  chatPushPreview,
+} from './chat-push-worker.service';
 import {
   CHAT_NOTIFICATION_PREFERENCE_REPOSITORY,
   type ChatNotificationPreferenceRow,
@@ -571,6 +574,67 @@ describe('ChatPushWorkerService', () => {
     );
     expect(notifyUser).toHaveBeenCalledTimes(1);
     expect(notifyUser).toHaveBeenCalledWith('a', 'chap-1', expect.any(Object));
+  });
+
+  // #3846: a photo or file sent with no text used to push an empty body, which
+  // an iPhone shows as the bare word "Notification". The body has to say what
+  // was sent, and the title still names the sender.
+  it('says what was sent when a message is only a file', async () => {
+    service.__setChannelForTest(CHANNEL);
+    setMembers(['sender', 'a']);
+    await service.handleMessage({
+      id: 'm1',
+      channel_id: CHANNEL.id,
+      sender_id: 'sender',
+      content: '',
+      kind: 'text',
+      mentions: ['a'],
+      metadata: { attachment_count: 1 },
+      created_at: '',
+    });
+    expect(notifyUser).toHaveBeenCalledWith(
+      'a',
+      'chap-1',
+      expect.objectContaining({
+        title: expect.stringMatching(/\S/),
+        body: 'Sent an attachment',
+      }),
+    );
+  });
+
+  describe('chatPushPreview', () => {
+    it('is the first 200 characters of the text', () => {
+      expect(chatPushPreview({ content: 'x'.repeat(250) })).toBe(
+        'x'.repeat(200),
+      );
+      expect(chatPushPreview({ content: '  hi  ' })).toBe('hi');
+    });
+
+    it('never splits an emoji at the cut', () => {
+      const preview = chatPushPreview({ content: `${'a'.repeat(199)}😀x` });
+      expect(preview).toBe(`${'a'.repeat(199)}😀`);
+      expect(preview).not.toMatch(/[\uD800-\uDBFF]$/);
+    });
+
+    it('ignores an attachment count that is not a whole number', () => {
+      expect(
+        chatPushPreview({ content: '', metadata: { attachment_count: 2.5 } }),
+      ).toBe('Sent a message');
+    });
+
+    it('never comes back blank', () => {
+      expect(
+        chatPushPreview({ content: '', metadata: { attachment_count: 3 } }),
+      ).toBe('Sent 3 attachments');
+      expect(
+        chatPushPreview({ content: '   ', metadata: { attachment_count: 1 } }),
+      ).toBe('Sent an attachment');
+      for (const content of [null, '', '  \n ']) {
+        expect(chatPushPreview({ content, metadata: null }).trim()).not.toBe(
+          '',
+        );
+      }
+    });
   });
 
   it('suppresses system_audit unless the user opted in', async () => {
