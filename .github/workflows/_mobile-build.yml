@@ -152,8 +152,9 @@ jobs:
     # job needs no more, and a job output carrying a masked value is dropped.
     outputs:
       builds: ${{ steps.wait.outputs.builds }}
-      ios-started: ${{ steps.start-ios.outputs.id }}
-      android-started: ${{ steps.start-android.outputs.id }}
+      # A retried build's id, once started, names the platform's build.
+      ios-started: ${{ steps.wait.outputs.ios_retry || steps.start-ios.outputs.id }}
+      android-started: ${{ steps.wait.outputs.android_retry || steps.start-android.outputs.id }}
       ios-upload: ${{ steps.upload-ios.outcome }}
       android-upload: ${{ steps.upload-android.outcome }}
       ios-submission: ${{ steps.upload-ios.outputs.submission }}
@@ -404,8 +405,23 @@ jobs:
       # round, and a build still unread at the deadline is reported by id,
       # with what its last read said. The deadline is this
       # script's, under the step's timeout with room for a last stalled read,
-      # so the list always goes out. A build is handed to its upload only when
-      # EAS reports it FINISHED from the shipped commit.
+      # so the list always goes out. A build is handed to
+      # its upload only when EAS reports it FINISHED from the shipped commit.
+      #
+      # A build that errors or is cancelled is reported in the round that sees
+      # it, within POLL_SECONDS, while the other platform builds on (#3812).
+      # One that ERRORED on a transient network failure is started again,
+      # once per platform: a 5xx, timeout or reset while fetching
+      # dependencies (TRANSIENT, matched against EAS's error message and the
+      # last LOG_TAIL_LINES of the build's logs, the signed `logFiles` URLs
+      # `build:view` returns). The 504 that sank iOS 0.10.3 came from GitHub's
+      # release download behind `RNSentry.podspec`, and the next one can come
+      # from any pod or package host, so retrying the build covers what
+      # pinning that one fetch wouldn't. EAS meters every build, so nothing
+      # else is retried, a cancelled build never is, and no retry starts with
+      # under RETRY_MIN_MINUTES left before the deadline. The retry's id goes
+      # out at once as `<platform>_retry`, which the job's `*-started` outputs
+      # prefer, and it replaces the errored build in `builds`.
       - name: Wait for the EAS builds
         id: wait
         if: ${{ !cancelled() && (steps.start-ios.outputs.id != '' || steps.start-android.outputs.id != '') }}
@@ -415,9 +431,13 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           IDS: ${{ steps.start-ios.outputs.id }} ${{ steps.start-android.outputs.id }}
           DEPLOY_SHA: ${{ inputs.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           DEADLINE_MINUTES: "230"
           POLL_SECONDS: "60"
           READ_TIMEOUT_SECONDS: "120"
+          START_TIMEOUT_SECONDS: "540"
+          RETRY_MIN_MINUTES: "60"
+          LOG_TAIL_LINES: "400"
         run: |
           set -uo pipefail
           if [ -z "${IDS// /}" ]; then
@@ -427,9 +447,26 @@ jobs:
           DEADLINE=$(( $(date +%s) + DEADLINE_MINUTES * 60 ))
           TERMINAL='(.status == "FINISHED" or .status == "ERRORED" or .status == "CANCELED")'
           READ_ERR="$RUNNER_TEMP/eas-build-view-stderr.txt"
+          TRANSIENT='HTTPError: 5[0-9]{2}|HTTP error 5[0-9]{2}|5[0-9]{2} (Bad Gateway|Service Unavailable|Gateway Time-?out)|ECONNRESET|ETIMEDOUT|EAI_AGAIN|Connection reset by peer|Could not resolve host|Empty reply from server|SSL_ERROR_SYSCALL'
           # Why each build's latest read failed. Logged, never put in an
           # output: a job output carrying a masked value is dropped.
           declare -A WHY=()
+          # Builds already reported as ended, and platforms already retried.
+          declare -A REPORTED=() RETRIED=()
+
+          # Whether an errored build's error message, or the end of its logs,
+          # names a transient network failure. The log URLs are signed, so
+          # they are fetched, never printed.
+          transient() {
+            local view="$1" logs="$RUNNER_TEMP/eas-build-logs.txt" url
+            if jq -r '.error.message // ""' <<< "$view" | grep -Eiq "$TRANSIENT"; then return 0; fi
+            : > "$logs"
+            while IFS= read -r url; do
+              [ -n "$url" ] && curl -fsSL --compressed --max-time 60 "$url" >> "$logs" 2>/dev/null
+            done < <(jq -r '.logFiles // [] | .[]' <<< "$view" 2>/dev/null)
+            tail -n "$LOG_TAIL_LINES" "$logs" | grep -Eiq "$TRANSIENT"
+          }
+
           while :; do
             BUILDS='[]'
             for ID in $IDS; do
@@ -451,6 +488,33 @@ jobs:
                 fi
                 echo "Couldn't read $ID this round (${WHY[$ID]}); trying again next round."
                 ONE="$(jq -cn --arg id "$ID" '{id: $id, status: "UNREAD"}')"
+              fi
+
+              STATE="$(jq -r '.status' <<< "$ONE")"
+              if { [ "$STATE" = ERRORED ] || [ "$STATE" = CANCELED ]; } && [ -z "${REPORTED[$ID]:-}" ]; then
+                REPORTED[$ID]=1
+                P="$(jq -r '.platform // "UNKNOWN"' <<< "$ONE")"
+                CAUSE="$(jq -r '[.error.errorCode, .error.message] | map(select(. != null and . != "")) | join(": ") | gsub("\\s+"; " ") | ltrimstr(" ") | rtrimstr(" ")' <<< "$VIEW" 2>/dev/null || true)"
+                LEFT=$(( DEADLINE - $(date +%s) ))
+                if [ "$STATE" = ERRORED ] && [ -z "${RETRIED[$P]:-}" ] && [ "$LEFT" -ge $(( RETRY_MIN_MINUTES * 60 )) ] && transient "$VIEW"; then
+                  RETRIED[$P]=1
+                  PL="$(tr '[:upper:]' '[:lower:]' <<< "$P")"
+                  echo "::warning::The $P build $ID errored on a transient network failure (${CAUSE:-no error message}). Starting it again, once."
+                  OUT="$RUNNER_TEMP/eas-retry-$PL.json"
+                  RETRY_STATUS=0
+                  timeout "$START_TIMEOUT_SECONDS" eas build --platform "$PL" --profile production --non-interactive --no-wait --json \
+                    --message "Deploy production $DEPLOY_SHA $RUN_URL (retry of $ID)" > "$OUT" || RETRY_STATUS=$?
+                  NEW="$(jq -r --arg p "$P" 'map(select(.platform == $p)) | if length == 1 then .[0].id else "" end' "$OUT" 2>/dev/null || true)"
+                  if [ -n "$NEW" ]; then
+                    echo "${PL}_retry=$NEW" >> "$GITHUB_OUTPUT"
+                    echo "Started the $PL retry $NEW in place of $ID."
+                    IDS="${IDS/$ID/$NEW}"
+                    BUILDS="$(jq -c --arg id "$NEW" --arg p "$P" '. + [{id: $id, platform: $p, status: "STARTED"}]' <<< "$BUILDS")"
+                    continue
+                  fi
+                  echo "::error::Starting the $PL retry failed (exit $RETRY_STATUS), so $ID stands as the $P build. The log above says why."
+                fi
+                echo "::error::The $P build $ID $STATE (${CAUSE:-no error message}). Any other build keeps going; this step reports it at the end too."
               fi
               BUILDS="$(jq -c --argjson one "$ONE" '. + [$one]' <<< "$BUILDS")"
             done

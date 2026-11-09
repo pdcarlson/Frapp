@@ -54,7 +54,8 @@
 //                       (`{ id, status: "UNREAD" }` for one it couldn't read);
 //                       empty when the wait didn't run or report
 //   EAS_STARTED_IOS, EAS_STARTED_ANDROID
-//                     — the build id each start step reported, empty when that
+//                     — the build id each start step reported, or the wait's
+//                       retry of it once started (#3812), empty when that
 //                       platform never started: names a build the wait didn't
 //   TAG_MOVED         — `true` when a tag check found production on another
 //                       commit: nothing from this run may be uploaded, by hand
