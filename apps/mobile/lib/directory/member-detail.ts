@@ -15,7 +15,6 @@
  */
 import { parseInstant } from "@repo/formatting";
 import { memberLabel } from "@repo/hooks";
-import { roleColorOrNull } from "@repo/validation";
 import { formatGraduationYear } from "../more/profile";
 import {
   initialsFor,
@@ -121,65 +120,4 @@ function formatCustomFieldValue(row: Record<string, unknown>): string {
   const raw = str(row, "value");
   if (raw === null) return "—";
   return str(row, "type") === "boolean" ? (raw === "true" ? "Yes" : "No") : raw;
-}
-
-/** One role as the profile draws it: a chip with its color dot. */
-export interface MemberRoleChip {
-  id: string;
-  name: string;
-  /** The role's palette color, or `null` for a plain chip. */
-  color: string | null;
-}
-
-/**
- * `role_ids` → role chips, resolved off `GET /v1/roles` and ordered the way
- * the chapter ranks its roles (`display_order`, then name), so the member's
- * top role leads, the same rank that picks their name color (#3485, #3710).
- *
- * That endpoint declares no response schema (`openapi-typescript` infers
- * `never`), so it is read defensively like every other undeclared read in
- * this app rather than cast. A role id with no match (a since-deleted role,
- * or the list still loading) is dropped rather than rendered as a raw id,
- * and a duplicate id (the API does not dedupe `role_ids` — see
- * `member.service.spec.ts`) contributes its chip only once.
- */
-export function resolveRoleChips(
-  rolesData: unknown,
-  roleIds: string[],
-): MemberRoleChip[] {
-  if (roleIds.length === 0) return [];
-  const held = new Set(roleIds);
-  const chips: Array<MemberRoleChip & { order: number }> = [];
-  for (const row of records(rolesData)) {
-    const id = str(row, "id");
-    const name = str(row, "name");
-    if (!id || !name || !held.has(id)) continue;
-    held.delete(id);
-    chips.push({
-      id,
-      name,
-      color: roleColorOrNull(str(row, "color")),
-      order: num(row, "display_order") ?? Number.MAX_SAFE_INTEGER,
-    });
-  }
-  return chips
-    .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
-    .map(({ id, name, color }) => ({ id, name, color }));
-}
-
-/**
- * `custom_role_ids` → custom role labels, resolved off `GET /v1/custom-roles`
- * — a `chapter-config:view`-gated read, unlike `GET /v1/roles`. The caller is
- * expected to pass `undefined` when the viewer cannot resolve it (rather than
- * fetching a 403), so this degrades to nothing shown, never a raw id.
- */
-export function resolveCustomRoleNames(
-  customRolesData: readonly { id: string; label: string }[] | undefined,
-  customRoleIds: string[],
-): string[] {
-  if (customRoleIds.length === 0 || !customRolesData) return [];
-  const byId = new Map(customRolesData.map((role) => [role.id, role.label]));
-  return [...new Set(customRoleIds)]
-    .map((id) => byId.get(id))
-    .filter((label): label is string => !!label);
 }

@@ -118,13 +118,17 @@ vi.mock("@/components/members/invite-member-dialog", () => ({
 vi.mock("@/components/members/member-detail-sheet", () => ({
   MemberDetailSheet: ({
     open,
-    member,
+    userId,
+    initialMember,
   }: {
     open: boolean;
-    member: { display_name?: string } | null;
+    userId: string | null;
+    initialMember?: { display_name?: string } | null;
   }) =>
     open ? (
-      <div data-testid="detail-sheet">{member?.display_name ?? "none"}</div>
+      <div data-testid="detail-sheet" data-user-id={userId ?? ""}>
+        {initialMember?.display_name ?? "none"}
+      </div>
     ) : null,
 }));
 
@@ -188,6 +192,11 @@ describe("Directory on the greenfield shell", () => {
     await user.click(screen.getByRole("button", { name: /^Ada Lovelace,/ }));
     expect(screen.getByTestId("detail-sheet")).toHaveTextContent(
       "Ada Lovelace",
+    );
+    // The sheet reads the profile by user id itself (#3726).
+    expect(screen.getByTestId("detail-sheet")).toHaveAttribute(
+      "data-user-id",
+      "u-1",
     );
   });
 
