@@ -27,7 +27,7 @@ report: no unclaimed work, no `gh`, REST, other tracker, or scratch file, no def
 narrow carve-outs
 ([`github-pm.md` → How agents reach the tracker](../../docs/ci-cd/github-pm.md#how-agents-reach-the-tracker))
 never cover listing, searching, filing, labeling, closing, or commenting. Load schemas first:
-`ToolSearch("select:mcp__github__list_issues,mcp__github__issue_read,mcp__github__issue_write,
+`ToolSearch("select:mcp__github__get_me,mcp__github__list_issues,mcp__github__issue_read,mcp__github__issue_write,
 mcp__github__add_issue_comment,mcp__github__search_issues,mcp__github__search_pull_requests")`.
 
 **Ownership is per run, not per turn.** From your `AGENT-CLAIM` until the PR is open, you own every
@@ -561,7 +561,7 @@ Post literally, substituting bracketed values; the sentinel is always the first 
 ```text
 🤖 AGENT-CLAIM `claim:a3f19c2e`
 
-**Claimed by:** `/next` session `a3f19c2e` (acting as Paul Carlson; Claude Code)
+**Claimed by:** `/next` session `a3f19c2e` (acting as `<your GitHub login, from get_me>`; Claude Code)
 **Branch:** `claude/fix-signup-redirect` (local until review passes)
 **Batch:** solo — or: #100 · #101 · #102 (one claim comment per member, same claim id; this lease renews on this issue's own comment stream)
 **Prior art:** none
