@@ -26,6 +26,7 @@ import { withPostHogSentryCorrelation } from "@repo/observability/identified-pos
 import { initMobilePostHog } from "@/lib/posthog/client";
 import { buildMobileSentryOptions, mobileSentryDsn } from "@/lib/sentry/options";
 import { readMobileSentryReleaseExtras } from "@/lib/sentry/release.runtime";
+import { startWhatsNewBootRead } from "@/lib/whats-new";
 
 /**
  * Error reporting for the mobile app (issue #1299), reporting to the
@@ -48,6 +49,14 @@ import { readMobileSentryReleaseExtras } from "@/lib/sentry/release.runtime";
  * ids. No key means `initMobilePostHog` is a no-op, matching web.
  */
 initMobilePostHog();
+
+/**
+ * What the phone held at launch, read before any screen can write: it tells an
+ * install from before What's new opened by itself from a fresh one
+ * (`lib/whats-new.ts`). Read later, a fresh install's first chat would look
+ * like an old install's.
+ */
+void startWhatsNewBootRead();
 
 const sentryDsn = mobileSentryDsn();
 if (sentryDsn) {
