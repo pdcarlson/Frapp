@@ -47,8 +47,16 @@ vi.mock("@/lib/notifications/push", () => ({
   requestPushPermission: (...args: unknown[]) => requestPushPermission(...args),
 }));
 
+const signOut = vi.fn().mockResolvedValue(undefined);
+/** The session's email; `null` for an account with none. */
+let sessionEmail: string | null = "founder@rpi.edu";
 vi.mock("@/lib/auth-session", () => ({
-  useAuthSession: () => ({ status: "authenticated", chapterId: null }),
+  useAuthSession: () => ({
+    status: "authenticated",
+    chapterId: null,
+    email: sessionEmail,
+    signOut,
+  }),
 }));
 
 const selectChapter = vi.fn();
@@ -379,6 +387,78 @@ describe("chapter setup — step order", () => {
     );
     expect(allText(root)).not.toContain("That chapter already exists.");
     expect(successHaptic).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * #3782. Setup had no way to sign out: the account it runs as, with Sign out,
+ * now shows on every step, as web's setup wizard shows it (#3776).
+ */
+describe("chapter setup — signed in as (#3782)", () => {
+  beforeEach(() => {
+    signOut.mockClear();
+    sessionEmail = "founder@rpi.edu";
+  });
+
+  afterEach(() => {
+    sessionEmail = "founder@rpi.edu";
+  });
+
+  function expectAccountLine(root: Node): void {
+    const text = allText(root);
+    expect(text).toContain("Signed in as");
+    expect(text).toContain("founder@rpi.edu");
+    expect(control(root, "Sign out")).toBeDefined();
+  }
+
+  it("shows the account and Sign out on every step, find to invite", async () => {
+    pushAvailable = true;
+    permission = { granted: false };
+    const { root } = await render();
+    expect(title(root)).toBe(SETUP_TITLES.find);
+    expectAccountLine(root);
+
+    await pickRow(root, "Phi Gamma Delta");
+    expect(title(root)).toBe(SETUP_TITLES.confirmMatch);
+    expectAccountLine(root);
+
+    await press(root, "Continue");
+    expect(title(root)).toBe(SETUP_TITLES.color);
+    expectAccountLine(root);
+
+    await press(root, "agree");
+    await act(async () => {
+      primary(root).props.onPress();
+    });
+    await settle();
+    expect(title(root)).toBe("FIJI is live");
+    expectAccountLine(root);
+
+    await press(root, "Continue");
+    expect(title(root)).toBe(SETUP_TITLES.primer);
+    expectAccountLine(root);
+
+    await press(root, "Not now");
+    expect(title(root)).toBe(SETUP_TITLES.invite);
+    expectAccountLine(root);
+  });
+
+  it("signs out to sign-in", async () => {
+    const { root } = await render();
+    await pickRow(root, "Phi Gamma Delta");
+
+    await press(root, "Sign out");
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(useRouter().replace).toHaveBeenCalledWith("/(auth)/sign-in");
+  });
+
+  it("says only Signed in when the session has no email", async () => {
+    sessionEmail = null;
+    const { root } = await render();
+    const text = allText(root);
+    expect(text).toContain("Signed in");
+    expect(text).not.toContain("Signed in as");
+    expect(control(root, "Sign out")).toBeDefined();
   });
 });
 

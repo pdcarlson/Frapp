@@ -29,6 +29,7 @@ import {
   useDeleteAccount,
   useInvitePreview,
   useJoinTermsCheckbox,
+  usePendingInvites,
   useRedeemInvite,
 } from "@repo/hooks";
 import { normalizeAccentInput } from "@repo/hooks/chapter-identity";
@@ -47,6 +48,10 @@ import {
   OnboardingPrimaryButton,
 } from "@/components/onboarding/onboarding-primary-button";
 import { OnboardingPressable } from "@/components/onboarding/onboarding-pressable";
+import {
+  SignedInAs,
+  useOnboardingSignOut,
+} from "@/components/onboarding/signed-in-as";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
 import { OAUTH_MEMBERSHIP_HINT } from "@/lib/auth-providers";
 import { useAuthSession } from "@/lib/auth-session";
@@ -73,9 +78,15 @@ import { MONO_FONT_FAMILY, tint, typeRole, useFrappTheme } from "@/lib/theme";
  * the question and lands on the confirm step.
  *
  * One surface, like s01 (#3349), with a card only for the one object on the
- * confirm step. Sign out and Delete account sit in the Account menu in the top
- * corner, on every view, because this is the only
- * screen a zero-membership account can reach (Apple 5.1.1(v), #2295).
+ * confirm step. Every view shows the account it is signed in as, with Sign
+ * out beside it (#3782), and Delete account sits in the Account menu in the
+ * top corner, because this is the only screen a zero-membership account can
+ * reach (Apple 5.1.1(v), #2295).
+ *
+ * Signed in and not opened by an invite link, the question also offers each
+ * pending invite emailed to the account's verified address (`GET
+ * /v1/invites/mine`, #3782), as web `/join` does (#3776). Tapping one opens
+ * the confirm step on that invite, so Terms and Join run as for any other.
  *
  * The invite step is one field that also accepts a pasted URL; the canvas draws
  * six cells for a shared code, but joining is single-use invite tokens
@@ -101,6 +112,29 @@ export function confirmTitle(chapterName: string): string {
   return `Join ${chapterName}?`;
 }
 
+/** A pending-invite offer's title on the question (#3782). */
+export function offerTitle(chapterName: string): string {
+  return `You've been invited to ${chapterName}`;
+}
+
+/**
+ * The line under an offer's title: the school, who sent it and the role it
+ * grants, joined by ` · ` as web `/join` joins them.
+ */
+export function offerDetail(offer: {
+  university: string | null;
+  invited_by: string | null;
+  role: string | null;
+}): string {
+  return [
+    offer.university,
+    offer.invited_by ? `from ${offer.invited_by}` : null,
+    offer.role,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 /** How the confirm card names an invite it can't read: its last four characters. */
 export function inviteTail(token: string): string {
   return token.slice(-4);
@@ -110,7 +144,8 @@ export default function JoinChapter() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const router = useRouter();
-  const { status, email, signOut } = useAuthSession();
+  const { status, email, userId } = useAuthSession();
+  const signOutToSignIn = useOnboardingSignOut();
   const redeemInvite = useRedeemInvite();
   const deleteAccount = useDeleteAccount();
   // When to show the Terms checkbox, and what a refused join means for it,
@@ -127,6 +162,14 @@ export default function JoinChapter() {
   const [view, setView] = useState<JoinView>("choose");
   const [accountOpen, setAccountOpen] = useState(false);
   const [token, setToken] = useState("");
+  // Whether an invite link (or one remembered across the sign-in bounce)
+  // brought the member here. A link carries one invite, and that is the one
+  // the member came for, so the question offers no others, as web `/join`
+  // offers none when opened with a token.
+  const [arrivedWithInvite, setArrivedWithInvite] = useState(false);
+  // Whether the confirm step was opened from a pending-invite offer: its back
+  // goes to the question, since the field never held that invite.
+  const [fromOffer, setFromOffer] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /**
    * An invite the redeem itself found dead (410), with the sentence to show:
@@ -212,6 +255,8 @@ export default function JoinChapter() {
       // remembered invite only fills an empty field.
       setToken((current) => (fresh || current.length === 0 ? next : current));
       setError(null);
+      setArrivedWithInvite(true);
+      setFromOffer(false);
       // An opened invite link has already answered the question and filled
       // the field, so it goes straight to the confirm step.
       setView("confirm");
@@ -284,6 +329,14 @@ export default function JoinChapter() {
     // that started it.
     if (submitting) return;
     setError(null);
+    if (view === "confirm" && fromOffer) {
+      // The offer's invite never went through the field, so backing out
+      // returns to the question with the field empty.
+      setFromOffer(false);
+      setToken("");
+      setView("choose");
+      return;
+    }
     if (view === "confirm") {
       setView("invite");
       return;
@@ -291,7 +344,7 @@ export default function JoinChapter() {
     // Backing out declines an opened invite: the next visit asks again.
     consumeRememberedInviteToken();
     setView("choose");
-  }, [submitting, view]);
+  }, [fromOffer, submitting, view]);
 
   // Android's back button steps back inside this screen before leaving it:
   // it closes the Account menu, then steps back a view, as `‹ Back` does.
@@ -323,18 +376,21 @@ export default function JoinChapter() {
         : null;
   const deadInvite = deadCopy !== null;
   const stepBlocked = submitting || (view === "confirm" && deadInvite);
+  // Invites emailed to this account, offered on the question (#3782). Not
+  // read while signed out, nor when a link brought one.
+  const pendingInvites = usePendingInvites(
+    status === "authenticated" && !arrivedWithInvite ? userId : null,
+  );
+  const offers = Array.isArray(pendingInvites.data) ? pendingInvites.data : [];
 
   if (status === "unauthenticated") {
     return <Redirect href="/(auth)/sign-in" />;
   }
 
   async function handleSignOut() {
-    // An invite remembered for this account is not the next account's.
-    consumeRememberedInviteToken();
-    await signOut();
-    // `signOut` drops the query cache itself (`lib/auth-session.tsx`), so every
-    // sign-out path gets it without each screen remembering to.
-    router.replace("/(auth)/sign-in");
+    // The same path the Sign out line runs (`useOnboardingSignOut`): forget a
+    // remembered invite, sign out, land on sign-in.
+    await signOutToSignIn();
   }
 
   /**
@@ -374,6 +430,17 @@ export default function JoinChapter() {
       return;
     }
     setError(null);
+    setFromOffer(false);
+    setView("confirm");
+  }
+
+  /** A pending-invite offer: on to the confirm step with its invite. */
+  function handlePickOffer(offerToken: string) {
+    if (submitting) return;
+    setAccountOpen(false);
+    setToken(offerToken);
+    setError(null);
+    setFromOffer(true);
     setView("confirm");
   }
 
@@ -422,7 +489,7 @@ export default function JoinChapter() {
     <OnboardingPressable
       accessibilityRole="button"
       accessibilityLabel="Account"
-      accessibilityHint="Sign out or delete your account."
+      accessibilityHint="Delete your account."
       accessibilityState={{ expanded: menuVisible, disabled: submitting }}
       disabled={submitting}
       hitSlop={8}
@@ -446,7 +513,9 @@ export default function JoinChapter() {
           house
           label="Back"
           accessibilityLabel={
-            view === "confirm" ? "Back to the invite" : "Back to the choices"
+            view === "confirm" && !fromOffer
+              ? "Back to the invite"
+              : "Back to the choices"
           }
           disabled={submitting}
           onPress={stepBack}
@@ -495,6 +564,15 @@ export default function JoinChapter() {
           >
             {header}
 
+            {/*
+              The account this screen is signed in as, with Sign out, on
+              every view (#3782). In the column, under the header, so the
+              pinned button never covers it.
+            */}
+            <View style={styles.accountLine}>
+              <SignedInAs disabled={submitting} />
+            </View>
+
             {view === "choose" ? (
               // At the top, like the other two views, so the title doesn't
               // jump from mid-screen to the top on the first tap. No line
@@ -505,6 +583,43 @@ export default function JoinChapter() {
                 style={styles.stepBody}
               >
                 <Text style={styles.title}>{JOIN_CHOICE_TITLE}</Text>
+
+                {offers.length > 0 ? (
+                  // Invites emailed to this account, above the two answers
+                  // (#3782). Each opens the confirm step on its invite.
+                  <View style={styles.choices}>
+                    {offers.map((offer) => (
+                      <ChoiceRow
+                        key={offer.token}
+                        title={offerTitle(offer.chapter_name)}
+                        body={offerDetail(offer)}
+                        accessibilityHint="Opens the invite to join."
+                        disabled={submitting}
+                        dimmed={submitting}
+                        leading={
+                          // The title names the chapter, so a screen reader
+                          // skips the mark.
+                          <View
+                            accessibilityElementsHidden
+                            importantForAccessibility="no-hide-descendants"
+                          >
+                            <ChapterMarkTile
+                              text={
+                                offer.mark_text ??
+                                chapterInitials(offer.chapter_name)
+                              }
+                              accent={normalizeAccentInput(offer.accent_color)}
+                              size={44}
+                            />
+                          </View>
+                        }
+                        onPress={() => {
+                          handlePickOffer(offer.token);
+                        }}
+                      />
+                    ))}
+                  </View>
+                ) : null}
 
                 <View style={styles.choices}>
                   <ChoiceRow
@@ -716,23 +831,10 @@ export default function JoinChapter() {
               {/*
                 The onboarding press (`OnboardingPressable`), lifting a rung
                 while held as `ListRow` does. A disabled row dims as a whole;
-                it has no fill of its own, so that dims just its label.
+                it has no fill of its own, so that dims just its label. Sign
+                out is on the face of the screen (`SignedInAs`), so the menu
+                holds only what is rare and destructive.
               */}
-              <OnboardingPressable
-                accessibilityRole="button"
-                accessibilityState={{ disabled: submitting }}
-                disabled={submitting}
-                onPress={() => {
-                  setAccountOpen(false);
-                  void handleSignOut();
-                }}
-                rippleColor={styles.menuRipple.color}
-                heldStyle={styles.menuRowPressed}
-                disabledStyle={styles.disabled}
-                style={styles.menuRow}
-              >
-                <Text style={styles.menuRowText}>Sign out</Text>
-              </OnboardingPressable>
               <OnboardingPressable
                 accessibilityRole="button"
                 accessibilityHint="Permanently deletes your account. You'll be asked to confirm."
@@ -819,6 +921,12 @@ function createStyles(tokens: SignetTokens) {
     },
     choices: {
       gap: tokens.spacing.md,
+    },
+    // The Sign out line, in the step column's width under the header.
+    accountLine: {
+      width: "100%",
+      maxWidth: ONBOARDING_COLUMN_WIDTH,
+      alignSelf: "center",
     },
     inviteCard: {
       borderRadius: tokens.radius.card,
@@ -923,10 +1031,6 @@ function createStyles(tokens: SignetTokens) {
     },
     menuRipple: {
       color: tint(tokens.color.text.foreground, 0.12),
-    },
-    menuRowText: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
     },
     // Same hue `ListRow` gives a destructive row in Settings
     // (`components/list-section.tsx`), so the delete control reads the same

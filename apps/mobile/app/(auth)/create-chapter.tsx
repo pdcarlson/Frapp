@@ -52,6 +52,7 @@ import {
   PushAskBody,
 } from "@/components/notifications/push-ask";
 import { BackRow } from "@/components/back-row";
+import { SignedInAs } from "@/components/onboarding/signed-in-as";
 import { ChapterMarkTile } from "@/components/onboarding/chapter-mark-tile";
 import {
   OnboardingFieldLabel,
@@ -472,6 +473,13 @@ export default function CreateChapter() {
             contentContainerStyle={styles.scroll}
             keyboardShouldPersistTaps="handled"
           >
+            {/*
+              The account setup runs as, with Sign out, on every step
+              (#3782), as web's setup wizard shows it (#3776). At the top of
+              the column, so the pinned footer never covers it.
+            */}
+            <SignedInAs disabled={submitting} />
+
             {step === "live" ? (
               <Animated.View
                 entering={ZoomIn.duration(420).reduceMotion(
