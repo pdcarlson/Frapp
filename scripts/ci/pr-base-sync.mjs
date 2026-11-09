@@ -14,7 +14,10 @@
 //      has no hand-renewed expiry and is not tied to one person's account.
 //   2. When the failure is PER-PR (conflicts, a fork head, a one-off update
 //      error) one wake comment on that PR tells the watching agent session what
-//      to do — merge origin/main itself, resolving conflicts if needed.
+//      to do — merge origin/main itself, resolving conflicts if needed. The
+//      exception is a conflict only in the shipped-builds registry from a PR
+//      that only adds entries: its merge is mechanical, so the sweep pushes it
+//      itself with the app token (resolve-registry-conflict.mjs, #3783).
 //      Comments are webhook events (same wake path as ci-wake.mjs), and the
 //      agent's own push triggers CI normally.
 //   3. When the failure is REPO-WIDE — no app token, or a token the API rejects
@@ -52,7 +55,9 @@
 //                         wake comments and the alert issue, never update-branch
 //   PR_BASE_SYNC_TOKEN  — optional GitHub App installation token (contents +
 //                         pull-requests write), minted in the workflow by
-//                         actions/create-github-app-token; update-branch only
+//                         actions/create-github-app-token; writes only: update-branch,
+//                         and the registry merge's tree, commit and non-forced ref
+//                         update on a PR's head branch (#3783)
 //   GITHUB_REPOSITORY   — required, owner/repo
 //   GITHUB_REF_NAME     — required, the base branch that moved (main)
 //   GITHUB_SHA          — required, the new base tip
@@ -78,6 +83,8 @@ import {
   resolveAlert as resolveAlertIssue,
 } from "./lib/alert-issue.mjs";
 import { requireEnv } from "./lib/env.mjs";
+import { REGISTRY_PATH } from "./lib/shipped-builds-registry.mjs";
+import { planRegistryConflict, pushRegistryMerge } from "./resolve-registry-conflict.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 import { ALL_REQUIRED_CHECKS } from "./lib/required-checks.mjs";
 import { ACCEPTED_CONCLUSIONS, fetchCheckRuns, latestRunsByName } from "./lib/check-runs.mjs";
@@ -643,6 +650,9 @@ export function isHeadMoved({ status, error }) {
  * wake. A `tryUpdate` result with `stopSlot` ends the sweep's attempts instead
  * (the slot sweep's rejected token, rate limit or stall).
  */
+/** A result that pushed to its PR (or lost the race to a push): it holds the slot. */
+const TAKES_SLOT = new Set(["updated", "raced", "registry-merged"]);
+
 async function runSlot({ queue, logger, tryUpdate, onHeld = async () => {}, fallback = async () => null }) {
   const results = [];
   let holder = queue.inFlight;
@@ -652,7 +662,7 @@ async function runSlot({ queue, logger, tryUpdate, onHeld = async () => {}, fall
     tried.add(number);
     const result = await tryUpdate(number);
     results.push(result);
-    if (result.action === "updated" || result.action === "raced") {
+    if (TAKES_SLOT.has(result.action)) {
       holder = number;
       break;
     }
@@ -675,7 +685,7 @@ async function runSlot({ queue, logger, tryUpdate, onHeld = async () => {}, fall
     const result = await fallback(number);
     if (!result) continue;
     results.push(result);
-    if (result.action === "updated" || result.action === "raced") holder = number;
+    if (TAKES_SLOT.has(result.action)) holder = number;
     if (result.stopSlot) stopped = true;
   }
   return results;
@@ -1085,7 +1095,8 @@ async function reconcileTokenAlert({
   // that genuinely proves nothing, and it must not close a live alert. Nor does
   // a sweep whose behind PRs were all held behind the update slot (#3599): it
   // called update-branch on none of them, so "hit no failure" would be vacuous.
-  const untested = results.some((r) => r.action === "held" || r.action === "raced");
+  // Nor one whose only app-token write was a registry merge GitHub refused (#3783).
+  const untested = results.some((r) => r.action === "held" || r.action === "raced" || r.registryRefused);
   if (!updated && (!updateToken || untested)) return;
 
   const recovery = await resolveAutoUpdateAlert({
@@ -1172,6 +1183,37 @@ async function processOnePr({
   }
 
   const postConflictComment = async () => {
+    let registryRefused = false;
+    // A PR whose only change is new shipped-builds entries conflicts with every
+    // other one that merges first, and its merge is mechanical (#3783). Only the
+    // app token may push it: a push with GITHUB_TOKEN would start no CI.
+    if (updateToken) {
+      const plan = await planRegistryConflict({ token, repo, pr, baseSha, fetchImpl });
+      if (plan.ok) {
+        // Not held behind the auto-merge update slot (#3599), deliberately: a
+        // conflicted PR is outside the slot's queue, and a slot sweep never
+        // reaches it, so a hold would leave a record PR (its builds unprotected
+        // until it merges) conflicted until some unrelated push to main. The
+        // cost of pushing now is one CI run racing the holder at most; after
+        // that the PR is clean and queues for the slot like any other.
+        const fix = await pushRegistryMerge({ token, pushToken: updateToken, repo, plan, baseRef, baseSha, fetchImpl });
+        if (fix.resolved) {
+          const cleared = await clearWakeComments({ token, repo, prNumber: number, fetchImpl });
+          logger.log?.(
+            `[pr-base-sync] #${number}: conflicts only in ${REGISTRY_PATH}, resolved with merge commit ${fix.sha.slice(0, 12)}` +
+              `${cleared ? `, cleared ${cleared} stale wake comment(s)` : ""}`,
+          );
+          // Not "updated": that is update-branch's proof for the token alert,
+          // and this never called update-branch.
+          return { number, verdict: "conflict", action: "registry-merged" };
+        }
+        logger.log?.(`[pr-base-sync] #${number}: registry merge refused, so it gets the wake: ${fix.reason}`);
+        // An app-token write failed: this sweep proves nothing about the token.
+        registryRefused = true;
+      } else {
+        logger.log?.(`[pr-base-sync] #${number}: conflict not resolved automatically: ${plan.reason}`);
+      }
+    }
     const wake = await postWakeComment({
       token,
       repo,
@@ -1181,7 +1223,7 @@ async function processOnePr({
       fetchImpl,
       logger,
     });
-    return { number, verdict: "conflict", ...wake };
+    return { number, verdict: "conflict", ...wake, ...(registryRefused ? { registryRefused } : {}) };
   };
 
   if (pr.mergeable === false) return postConflictComment();
