@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import React from "react";
 import { act } from "react";
+import { Alert } from "react-native";
 import * as expoRouter from "expo-router";
 import {
   create,
@@ -157,6 +158,62 @@ vi.mock("@/components/chat/new-poll-sheet", async () => {
   };
 });
 
+const presentPlusSheet = vi.fn();
+vi.mock("@/components/chat/composer-plus-sheet", async () => {
+  const { createElement, forwardRef, useImperativeHandle } =
+    await import("react");
+  return {
+    ComposerPlusSheet: forwardRef(function ComposerPlusSheet(
+      props: Record<string, unknown>,
+      ref,
+    ) {
+      useImperativeHandle(ref, () => ({
+        present: presentPlusSheet,
+        dismiss: vi.fn(),
+      }));
+      return createElement("ComposerPlusSheet", props);
+    }),
+  };
+});
+
+const presentTaskSheet = vi.fn();
+vi.mock("@/components/tasks/new-task-sheet", async () => {
+  const { createElement, forwardRef, useImperativeHandle } =
+    await import("react");
+  return {
+    NewTaskSheet: forwardRef(function NewTaskSheet(
+      props: Record<string, unknown>,
+      ref,
+    ) {
+      useImperativeHandle(ref, () => ({
+        present: presentTaskSheet,
+        dismiss: vi.fn(),
+      }));
+      return createElement("NewTaskSheet", props);
+    }),
+  };
+});
+vi.mock("@/components/events/new-event-sheet", async () => {
+  const { createElement, forwardRef } = await import("react");
+  return {
+    NewEventSheet: forwardRef(function NewEventSheet(
+      props: Record<string, unknown>,
+    ) {
+      return createElement("NewEventSheet", props);
+    }),
+  };
+});
+vi.mock("@/components/service-hours/log-hours-sheet", async () => {
+  const { createElement, forwardRef } = await import("react");
+  return {
+    LogHoursSheet: forwardRef(function LogHoursSheet(
+      props: Record<string, unknown>,
+    ) {
+      return createElement("LogHoursSheet", props);
+    }),
+  };
+});
+
 const presentMemberSheet = vi.fn();
 const dismissMemberSheet = vi.fn();
 vi.mock("@/components/chat/channel-member-sheet", async () => {
@@ -242,6 +299,13 @@ function channelState(
     send: vi.fn(async () => true),
     sendInFlight: () => false,
     sendPoll: vi.fn(async () => ({ ok: true as const })),
+    postTask: vi.fn(async () => ({ ok: true })),
+    postHours: vi.fn(async () => ({ ok: true })),
+    trackEventCard: vi.fn(() => ({
+      clientMessageId: "c1",
+      failed: vi.fn(),
+      lost: vi.fn(),
+    })),
     edit: vi.fn(async () => {}),
     remove: vi.fn(async () => {}),
     closePoll: vi.fn(async () => {}),
@@ -352,6 +416,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   // No imported authors with avatars in these fixtures.
   useAuthorAvatars: () => ({ data: undefined }),
   usePermissionList: () => permissionList,
+  useMyPermissions: () => ({
+    data: { permissions: permissionList },
+    isError: false,
+    fetchStatus: "idle",
+  }),
   useCurrentChapter: () =>
     chapterUnread
       ? { data: undefined, fetchStatus: "fetching" }
@@ -1929,53 +1998,89 @@ describe("chat thread claims the viewed channel while focused (#3698)", () => {
   });
 });
 
-describe("chat thread new poll (#3701)", () => {
+describe("chat thread + sheet (#3865)", () => {
   const composer = (tree: ReactTestRenderer) =>
     tree.root.findByType(ChatComposer);
+  const plusSheet = (tree: ReactTestRenderer) =>
+    tree.root.findByType("ComposerPlusSheet" as never);
+  const rowsOf = (tree: ReactTestRenderer) =>
+    (
+      plusSheet(tree).props.model as {
+        rows: { command: string; disabledReason: string | null }[];
+      }
+    ).rows;
+  const footerOf = (tree: ReactTestRenderer) =>
+    (plusSheet(tree).props.model as { footer: string[] }).footer;
 
-  it("offers no poll to a member without polls:create", () => {
+  it("opens the sheet from the + even for a member who can only add photos", () => {
     const tree = render();
-    expect(composer(tree).props.onCreatePoll).toBeUndefined();
-    act(() => tree.unmount());
-  });
-
-  it("offers a poll to a member with polls:create, and opens the sheet", () => {
-    permissionList = ["members:view", "polls:create"];
-    const tree = render();
-    const open = composer(tree).props.onCreatePoll as () => void;
-    expect(open).toBeTypeOf("function");
+    const open = composer(tree).props.onOpenPlus as () => void;
     act(() => open());
-    expect(presentPollSheet).toHaveBeenCalledTimes(1);
+    expect(presentPlusSheet).toHaveBeenCalledTimes(1);
+    expect(rowsOf(tree)).toEqual([]);
+    expect(footerOf(tree)).toEqual([
+      "Your role can't create polls, events, tasks or service hours.",
+    ]);
     act(() => tree.unmount());
   });
 
-  it("offers none while Polls is off for the chapter", () => {
+  it("offers each form the role allows, in web's order, and never Points", () => {
+    permissionList = ["*"];
+    const tree = render();
+    expect(rowsOf(tree).map((row) => row.command)).toEqual([
+      "poll",
+      "event",
+      "task",
+      "hours",
+    ]);
+    act(() => tree.unmount());
+  });
+
+  it("says when the chapter turned a module off", () => {
     permissionList = ["*"];
     enabledModules = { polls: false };
     const tree = render();
-    expect(composer(tree).props.onCreatePoll).toBeUndefined();
+    expect(rowsOf(tree).map((row) => row.command)).not.toContain("poll");
+    expect(footerOf(tree)).toEqual([
+      "Polls are turned off in this chapter's Settings.",
+    ]);
     act(() => tree.unmount());
   });
 
-  it("offers none until the chapter's modules are read, as the card's Vote waits", () => {
+  it("greys rather than guesses until the chapter's modules are read", () => {
     permissionList = ["polls:create"];
     chapterUnread = true;
     const tree = render();
-    expect(composer(tree).props.onCreatePoll).toBeUndefined();
+    expect(rowsOf(tree)).toEqual([
+      { command: "poll", label: "Poll", disabledReason: "Still loading" },
+    ]);
     act(() => tree.unmount());
   });
 
-  it("offers none while a reply is staged: a poll can't be a reply", () => {
+  it("greys the forms while a reply is staged: a card can't be a reply", () => {
     permissionList = ["polls:create"];
     const tree = render();
-    expect(composer(tree).props.onCreatePoll).toBeTypeOf("function");
+    expect(rowsOf(tree)[0]!.disabledReason).toBeNull();
     const sheet = tree.root.findByType("MessageActionsSheet" as never);
     act(() => (sheet.props.onReply as (id: string) => void)("m1"));
-    expect(composer(tree).props.onCreatePoll).toBeUndefined();
+    expect(rowsOf(tree)[0]!.disabledReason).toBe("Not while replying");
     act(() => tree.unmount());
   });
 
-  it("mounts a new sheet per channel, so a kept draft never posts elsewhere", () => {
+  it("offers no + while editing", () => {
+    channel = channelState({
+      messages: [message("m1", { sender_id: VIEWER, content: "first" })],
+    });
+    const tree = render();
+    expect(composer(tree).props.onOpenPlus).toBeTypeOf("function");
+    const sheet = tree.root.findByType("MessageActionsSheet" as never);
+    act(() => (sheet.props.onEdit as (id: string) => void)("m1"));
+    expect(composer(tree).props.context?.kind).toBe("edit");
+    expect(composer(tree).props.onOpenPlus).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  it("mounts a new poll sheet per channel, so a kept draft never posts elsewhere", () => {
     permissionList = ["polls:create"];
     const tree = render();
     const first = tree.root.findByType("NewPollSheet" as never);
@@ -1986,16 +2091,111 @@ describe("chat thread new poll (#3701)", () => {
     act(() => tree.unmount());
   });
 
-  it("posts through the channel's sendPoll, so the card goes through the outbox", () => {
+  it("posts a poll through the channel's sendPoll, so the card goes through the outbox", async () => {
     permissionList = ["polls:create"];
     const tree = render();
-    expect(tree.root.findByType("NewPollSheet" as never).props.onPost).toBe(
-      channel.sendPoll,
-    );
+    const onPost = tree.root.findByType("NewPollSheet" as never).props
+      .onPost as (poll: unknown) => Promise<unknown>;
+    const poll = { content: "Q", payload: {} };
+    await act(async () => {
+      await onPost(poll);
+    });
+    expect(channel.sendPoll).toHaveBeenCalledWith(poll);
     act(() => tree.unmount());
   });
 
-  it("closes the sheet when the screen blurs", () => {
+  it("opens the Task form on first use, posting into this channel", () => {
+    permissionList = ["*"];
+    const tree = render();
+    expect(tree.root.findAllByType("NewTaskSheet" as never)).toHaveLength(0);
+    const openForm = plusSheet(tree).props.onOpenForm as (c: string) => void;
+    act(() => openForm("task"));
+    const task = tree.root.findByType("NewTaskSheet" as never);
+    expect(task.props.postToChannel).toBe(channel.postTask);
+    expect(presentTaskSheet).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("opens Event and Service hours posting into this channel", () => {
+    permissionList = ["*"];
+    const tree = render();
+    const openForm = plusSheet(tree).props.onOpenForm as (c: string) => void;
+    act(() => openForm("event"));
+    act(() => openForm("hours"));
+    const event = tree.root.findByType("NewEventSheet" as never);
+    expect(event.props.chat).toEqual({
+      channelId: CHANNEL,
+      trackCard: channel.trackEventCard,
+    });
+    const hours = tree.root.findByType("LogHoursSheet" as never);
+    expect(hours.props.postToChannel).toBe(channel.postHours);
+    act(() => tree.unmount());
+  });
+
+  it("says what a post carries: a lost task, a poll not saved, an event's missing card", async () => {
+    permissionList = ["*"];
+    const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+    channel = channelState({
+      sendPoll: vi.fn(async () => ({
+        ok: true as const,
+        warning: "Posted, but not saved on this phone.",
+      })),
+    });
+    const tree = render();
+    const openForm = plusSheet(tree).props.onOpenForm as (c: string) => void;
+    act(() => openForm("task"));
+    act(() => openForm("event"));
+    const task = tree.root.findByType("NewTaskSheet" as never);
+    act(() =>
+      (task.props.onPosted as (r: unknown) => void)({
+        ok: true,
+        unconfirmed: true,
+        warning: "Check the task board.",
+      }),
+    );
+    expect(alert).toHaveBeenLastCalledWith(
+      "Couldn't confirm the task",
+      "Check the task board.",
+    );
+    act(() => openForm("hours"));
+    const hours = tree.root.findByType("LogHoursSheet" as never);
+    act(() =>
+      (hours.props.onPosted as (r: unknown) => void)({
+        ok: true,
+        unconfirmed: true,
+        warning: "Check the Service page.",
+      }),
+    );
+    expect(alert).toHaveBeenLastCalledWith(
+      "Couldn't confirm the hours",
+      "Check the Service page.",
+    );
+    const onPost = tree.root.findByType("NewPollSheet" as never).props
+      .onPost as (poll: unknown) => Promise<unknown>;
+    await act(async () => {
+      await onPost({ content: "Q", payload: {} });
+    });
+    expect(alert).toHaveBeenLastCalledWith(
+      "Poll posted",
+      "Posted, but not saved on this phone.",
+    );
+    const event = tree.root.findByType("NewEventSheet" as never);
+    act(() =>
+      (event.props.onCreated as (o: unknown) => void)({
+        name: "Formal",
+        cardKeptOut: false,
+        cardLost: true,
+      }),
+    );
+    expect(alert).toHaveBeenLastCalledWith(
+      "Event created",
+      "Formal is on the calendar, but its card couldn't be posted in chat.",
+    );
+    alert.mockRestore();
+    act(() => tree.unmount());
+  });
+
+  it("closes the sheets when the screen blurs", () => {
     permissionList = ["polls:create"];
     const tree = render();
     act(() => refocus());
