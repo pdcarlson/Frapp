@@ -14,14 +14,26 @@ export interface ExistingChannel {
   /** `PUBLIC`, `ROLE_GATED`, `PRIVATE`, `DM` or `GROUP_DM`. */
   type?: string;
   archived_at?: string | null;
+  /** The chapter's audit log, `#chapter-audit`, where only Frapp posts. */
+  is_audit_log?: boolean;
 }
 
 /**
  * Whether a channel can take an import at all. The admin's own DMs and group
  * DMs are in the channel list, and a group DM has a name its members chose,
- * so "Officers" could be one; chapter history never belongs in one.
+ * so "Officers" could be one; chapter history never belongs in one. Nor does
+ * the audit log, where only Frapp posts (#3909); the server refuses both.
  */
 export function isImportTarget(channel: ExistingChannel): boolean {
+  return isChapterChannel(channel) && channel.is_audit_log !== true;
+}
+
+/**
+ * A chapter channel rather than a DM or group DM: what a new channel's name
+ * can clash with. Wider than {@link isImportTarget}, since the audit log's
+ * name is taken even though nothing imports into it.
+ */
+export function isChapterChannel(channel: ExistingChannel): boolean {
   return channel.type !== "DM" && channel.type !== "GROUP_DM";
 }
 
@@ -113,9 +125,11 @@ export function mergeTarget(
   if (!key) return null;
   // Only a live, whole-chapter channel is merged into by default: a public
   // channel into a public one. A narrower one (gated, private) is the
-  // admin's call, and a DM or group DM is never a target (`isImportTarget`).
+  // admin's call, and a DM, group DM or the audit log is never a target
+  // (`isImportTarget`).
   const matches = existing.filter(
     (candidate) =>
+      isImportTarget(candidate) &&
       candidate.type === "PUBLIC" &&
       !candidate.archived_at &&
       nameKey(candidate.name) === key,
