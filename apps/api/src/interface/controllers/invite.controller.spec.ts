@@ -1,5 +1,8 @@
 import { TimeZoneSyncService } from '../../application/services/time-zone-sync.service';
 import { TestingModule } from '@nestjs/testing';
+import { ExecutionContext } from '@nestjs/common';
+import { GUARDS_METADATA, ROUTE_ARGS_METADATA } from '@nestjs/common/constants';
+import { ChapterGuard } from '../guards/chapter.guard';
 import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { InviteController } from './invite.controller';
 import { InviteService } from '../../application/services/invite.service';
@@ -22,6 +25,7 @@ describe('InviteController', () => {
       createWithEmails: jest.fn(),
       redeem: jest.fn(),
       findByChapter: jest.fn(),
+      findPendingForVerifiedEmail: jest.fn(),
       revoke: jest.fn(),
     };
 
@@ -182,6 +186,71 @@ describe('InviteController', () => {
 
       expect(inviteService.findByChapter).toHaveBeenCalledWith(chapterId);
       expect(result).toEqual(expectedResult);
+    });
+  });
+
+  describe('listMine (#3776)', () => {
+    /** The route's own params, resolved against a request the way Nest does. */
+    const resolveParams = (request: unknown) => {
+      const ctx = {
+        switchToHttp: () => ({ getRequest: () => request }),
+      } as unknown as ExecutionContext;
+      const args = Reflect.getMetadata(
+        ROUTE_ARGS_METADATA,
+        InviteController,
+        'listMine',
+      ) as Record<
+        string,
+        {
+          index: number;
+          data?: unknown;
+          factory?: (data: unknown, ctx: ExecutionContext) => unknown;
+        }
+      >;
+      return Object.values(args)
+        .sort((a, b) => a.index - b.index)
+        .map((arg) => arg.factory!(arg.data, ctx));
+    };
+
+    it('passes the caller and their verified address to the service', async () => {
+      jest
+        .spyOn(inviteService, 'findPendingForVerifiedEmail')
+        .mockResolvedValue([]);
+      await controller.listMine('user-1', 'a@school.edu');
+      expect(inviteService.findPendingForVerifiedEmail).toHaveBeenCalledWith(
+        'a@school.edu',
+        'user-1',
+      );
+    });
+
+    it("reads the address Auth verified, never the request's own", () => {
+      const params = resolveParams({
+        appUser: { id: 'user-1' },
+        supabaseUser: {
+          email: 'a@school.edu',
+          email_confirmed_at: '2026-11-01T00:00:00Z',
+        },
+        body: { email: 'victim@school.edu' },
+        query: { email: 'victim@school.edu' },
+      });
+      expect(params).toEqual(['user-1', 'a@school.edu']);
+    });
+
+    it('reads no address while the account is unconfirmed', () => {
+      const params = resolveParams({
+        appUser: { id: 'user-1' },
+        supabaseUser: { email: 'a@school.edu', email_confirmed_at: null },
+      });
+      expect(params).toEqual(['user-1', null]);
+    });
+
+    it('needs no chapter: a member of none can read it', () => {
+      const guards =
+        (Reflect.getMetadata(
+          GUARDS_METADATA,
+          InviteController.prototype.listMine,
+        ) as unknown[] | undefined) ?? [];
+      expect(guards).not.toContain(ChapterGuard);
     });
   });
 

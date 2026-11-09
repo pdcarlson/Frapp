@@ -8,6 +8,7 @@ import type {
 import { IInviteRepository } from '#domain/repositories/invite.repository.interface';
 import { Invite } from '#domain/entities/invite.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
+import { escapeLikePattern } from '../supabase.utils';
 
 @Injectable()
 export class SupabaseInviteRepository implements IInviteRepository {
@@ -50,6 +51,22 @@ export class SupabaseInviteRepository implements IInviteRepository {
       .from('invites')
       .select('*')
       .eq('chapter_id', chapterId)
+      .order('created_at', { ascending: false });
+    if (error) throw new SupabaseQueryError(error);
+    return data || [];
+  }
+
+  async findPendingByEmail(email: string, now: Date): Promise<Invite[]> {
+    // `ilike` with no wildcard is a case-insensitive equality: addresses are
+    // stored as typed (`dedupeEmails` keeps the case). Escaped, so an `_` in
+    // the address can't match any character.
+    const { data, error } = await this.supabase
+      .from('invites')
+      .select('*')
+      .ilike('email', escapeLikePattern(email))
+      .is('used_at', null)
+      .is('revoked_at', null)
+      .gt('expires_at', now.toISOString())
       .order('created_at', { ascending: false });
     if (error) throw new SupabaseQueryError(error);
     return data || [];

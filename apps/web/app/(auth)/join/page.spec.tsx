@@ -7,23 +7,35 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
  * `lib/onboarding/join-screen.spec.tsx` pins the same rules.
  */
 
-const { redeemMutate, legal } = vi.hoisted(() => ({
-  redeemMutate: vi.fn(),
-  legal: { data: { required: false } as { required: boolean } | undefined },
-}));
+const { redeemMutate, legal, pending, sessionUser, replace } = vi.hoisted(
+  () => ({
+    redeemMutate: vi.fn(),
+    legal: { data: { required: false } as { required: boolean } | undefined },
+    pending: { data: [] as unknown[] | undefined, userIds: [] as unknown[] },
+    sessionUser: vi.fn(),
+    replace: vi.fn(),
+  }),
+);
 
 // The Terms checkbox runs the real `useJoinTermsCheckbox` against a mock API
 // client (`statusClient`), so this pins the page and the shared rule together.
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useRedeemInvite: () => ({ mutateAsync: redeemMutate, isPending: false }),
+  usePendingInvites: (userId: string | null) => {
+    pending.userIds.push(userId);
+    return { data: userId ? pending.data : undefined };
+  },
 }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: vi.fn(), refresh: vi.fn() }),
-  useSearchParams: () => new URLSearchParams(),
+  useRouter: () => ({ replace, refresh: vi.fn() }),
+  useSearchParams: () => searchParams.current,
 }));
-vi.mock("@/lib/auth/session", () => ({
-  getSessionUser: () => Promise.resolve({ id: "auth-1" }),
+const searchParams = vi.hoisted(() => ({
+  current: new URLSearchParams(),
+}));
+vi.mock("@/lib/auth/rejected-session", () => ({
+  getLiveSessionUser: sessionUser,
 }));
 vi.mock("@/lib/auth/select-chapter", () => ({
   useSelectChapter: () => vi.fn().mockResolvedValue(true),
@@ -70,6 +82,15 @@ async function renderReady() {
     target: { value: "invite-token-1" },
   });
 }
+
+beforeEach(() => {
+  sessionUser.mockReset();
+  sessionUser.mockResolvedValue({ id: "auth-1" });
+  replace.mockReset();
+  pending.data = [];
+  pending.userIds = [];
+  searchParams.current = new URLSearchParams();
+});
 
 describe("web join — the Terms checkbox (#2302)", () => {
   beforeEach(() => {
@@ -135,5 +156,117 @@ describe("web join — the Terms checkbox (#2302)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Join chapter" }));
 
     await screen.findByRole("checkbox");
+  });
+});
+
+function renderPage() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <FrappClientProvider
+        client={
+          statusClient as unknown as ComponentProps<
+            typeof FrappClientProvider
+          >["client"]
+        }
+        chapterId={null}
+      >
+        <JoinPage />
+      </FrappClientProvider>
+    </QueryClientProvider>,
+  );
+}
+
+const OFFER = {
+  chapter_name: "Sigma Chi Alpha",
+  university: "State University",
+  mark_text: "SXA",
+  accent_color: null,
+  invited_by: "Paul Carlson",
+  role: "Member",
+  expires_at: "2026-11-10T00:00:00.000Z",
+  token: "emailed-token",
+};
+
+describe("web join — signed out (#3776)", () => {
+  it("sends a visitor with no live session to sign in, keeping the invite", async () => {
+    sessionUser.mockResolvedValue(null);
+    searchParams.current = new URLSearchParams("token=abc");
+    window.history.replaceState(null, "", "/join?token=abc");
+    renderPage();
+    await waitFor(() =>
+      expect(replace).toHaveBeenCalledWith(
+        "/sign-in?redirectTo=%2Fjoin%3Ftoken%3Dabc",
+      ),
+    );
+    window.history.replaceState(null, "", "/");
+  });
+
+  it("offers a retry, not a bounce, when Auth can't be asked", async () => {
+    sessionUser.mockRejectedValue(new Error("fetch failed"));
+    renderPage();
+    await screen.findByText("Couldn't check your session");
+    expect(replace).not.toHaveBeenCalled();
+  });
+});
+
+describe("web join — invites for the verified address (#3776)", () => {
+  beforeEach(() => {
+    legal.data = { required: false };
+    redeemMutate.mockReset();
+    redeemMutate.mockResolvedValue({ chapterId: "ch-1", memberId: "m-1" });
+  });
+
+  it("asks for them only once signed in, as this account", async () => {
+    renderPage();
+    await screen.findByLabelText("Invite");
+    expect(pending.userIds[0]).toBeNull();
+    expect(pending.userIds.at(-1)).toBe("auth-1");
+  });
+
+  it("offers a pending invite with a one-tap Join that redeems its token", async () => {
+    pending.data = [OFFER];
+    renderPage();
+    await screen.findByText("You've been invited to Sigma Chi Alpha");
+    expect(
+      screen.getByText("State University · from Paul Carlson · Member"),
+    ).toBeTruthy();
+    // The Terms status is read first; until then the box is asked for.
+    await waitFor(() => expect(screen.queryByRole("checkbox")).toBeNull());
+
+    fireEvent.click(screen.getByRole("button", { name: "Join Sigma Chi Alpha" }));
+
+    await waitFor(() =>
+      expect(redeemMutate).toHaveBeenCalledWith({ token: "emailed-token" }),
+    );
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/chat"));
+  });
+
+  it("asks for the Terms before an offered Join, too", async () => {
+    legal.data = { required: true };
+    pending.data = [OFFER];
+    renderPage();
+    await screen.findByText("You've been invited to Sigma Chi Alpha");
+
+    fireEvent.click(screen.getByRole("button", { name: "Join Sigma Chi Alpha" }));
+
+    await screen.findByRole("alert");
+    expect(redeemMutate).not.toHaveBeenCalled();
+  });
+
+  it("shows only the invite a link brought", async () => {
+    pending.data = [OFFER];
+    searchParams.current = new URLSearchParams("token=link-token");
+    renderPage();
+    await screen.findByLabelText("Invite");
+    expect(screen.queryByText(/You've been invited to/)).toBeNull();
+  });
+
+  it("offers nothing when none is pending, and the form is the primary", async () => {
+    renderPage();
+    await screen.findByLabelText("Invite");
+    expect(screen.queryByRole("region", { name: "Your invites" })).toBeNull();
   });
 });

@@ -186,6 +186,109 @@ describe('SupabaseInviteRepository — tenant scope', () => {
       expect(row?.revoked_at).toBe(row?.used_at);
     });
 
+    it('findPendingByEmail spans chapters by address, and only pending invites (#3776)', async () => {
+      // `GET /v1/invites/mine` runs without `ChapterGuard`: the caller may be
+      // in no chapter yet. The address is the boundary, and the service only
+      // ever passes the one Auth verified for the caller.
+      const NOW = new Date('2026-11-09T00:00:00.000Z');
+      const pending = (id: string, extra: Record<string, unknown>) => ({
+        id,
+        token: `token-${id}`,
+        role: 'MEMBER',
+        created_by: USER_SHARED,
+        used_at: null,
+        revoked_at: null,
+        expires_at: '2099-01-01T00:00:00.000Z',
+        created_at: '2026-11-08T00:00:00.000Z',
+        ...extra,
+      });
+      harness = createTenantHarness({
+        tables: {
+          invites: [
+            inA(
+              pending('0a000000-0000-4000-8000-000000000020', {
+                email: 'Alice@School.edu',
+              }),
+            ),
+            inB(
+              pending('0b000000-0000-4000-8000-000000000020', {
+                email: 'alice@school.edu',
+                created_at: '2026-11-08T01:00:00.000Z',
+              }),
+            ),
+            inA(
+              pending('0a000000-0000-4000-8000-000000000021', {
+                email: 'alice@school.edu',
+                used_at: '2026-11-08T02:00:00.000Z',
+              }),
+            ),
+            inA(
+              pending('0a000000-0000-4000-8000-000000000022', {
+                email: 'alice@school.edu',
+                used_at: '2026-11-08T02:00:00.000Z',
+                revoked_at: '2026-11-08T02:00:00.000Z',
+              }),
+            ),
+            inB(
+              pending('0b000000-0000-4000-8000-000000000021', {
+                email: 'alice@school.edu',
+                expires_at: '2026-11-08T12:00:00.000Z',
+              }),
+            ),
+            inB(
+              pending('0b000000-0000-4000-8000-000000000022', {
+                email: 'bob@school.edu',
+              }),
+            ),
+            inB(
+              pending('0b000000-0000-4000-8000-000000000023', {
+                email: 'xalice@school.edu',
+              }),
+            ),
+            inA(
+              pending('0a000000-0000-4000-8000-000000000023', {
+                email: 'carol@school.edu',
+              }),
+            ),
+          ],
+        },
+        // Not a tenant-scope check: this read spans chapters on purpose, so
+        // the twins differ on what the query filters by.
+        collisionExempt: {
+          invites: [
+            'token',
+            'email',
+            'used_at',
+            'revoked_at',
+            'expires_at',
+            'created_at',
+          ],
+        },
+      });
+      repo = new SupabaseInviteRepository(harness.client);
+
+      const found = await repo.findPendingByEmail('ALICE@school.edu', NOW);
+
+      expect(found.map((i) => i.id)).toEqual([
+        '0b000000-0000-4000-8000-000000000020',
+        '0a000000-0000-4000-8000-000000000020',
+      ]);
+      expect(harness.ops[0].filters.map((f) => f.column)).toEqual([
+        'email',
+        'used_at',
+        'revoked_at',
+        'expires_at',
+      ]);
+    });
+
+    it('findPendingByEmail escapes LIKE wildcards in the address (#3776)', async () => {
+      await repo.findPendingByEmail('a_b%c@school.edu', new Date());
+      const emailFilter = harness.ops[0].filters.find(
+        (f) => f.column === 'email',
+      );
+      expect(emailFilter?.value).toBe('a\\_b\\%c@school.edu');
+    });
+
     it('revokePending skips an invite already redeemed', async () => {
       const claimedAt = await repo.markUsedAtomically(INVITE_B);
 

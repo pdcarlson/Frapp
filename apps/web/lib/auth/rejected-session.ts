@@ -1,6 +1,10 @@
 "use client";
 
-import { isAuthApiError } from "@supabase/supabase-js";
+import {
+  isAuthApiError,
+  isAuthSessionMissingError,
+  type User,
+} from "@supabase/supabase-js";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { signOutCurrentSession } from "@/lib/auth/session";
 
@@ -110,4 +114,31 @@ export async function handleRejectedSession(): Promise<void> {
     // second sign-out while the page navigates away.
     if (!leaving) checking = false;
   }
+}
+
+/**
+ * The signed-in user, for a page that sends a signed-out visitor to sign in
+ * itself (`/join`). Null when there is no live session, and once Auth judges
+ * the browser's session over (`isSessionOver`) the local one is cleared first.
+ *
+ * Clearing it is the point (#3776). `proxy.ts` decides with `getSession()`,
+ * which trusts the cookie, while this asks Auth. With a cookie Auth no longer
+ * accepts (an account deleted elsewhere, a session revoked by a sign-out on
+ * another device), the page sent the visitor to `/sign-in`, the proxy saw the
+ * cookie and sent them straight back to `/join`, and the page sat on its
+ * skeleton in that loop for good.
+ *
+ * Throws when Auth could not be asked (an outage is not a verdict, as in
+ * `isSessionOver`), so the page shows its retryable error instead of signing
+ * the visitor out or bouncing them into the same loop.
+ */
+export async function getLiveSessionUser(): Promise<User | null> {
+  const supabase = createSupabaseBrowserClient();
+  const result = await supabase.auth.getUser();
+  if (result.data.user) return result.data.user;
+  // No session in this browser at all: nothing to clear.
+  if (isAuthSessionMissingError(result.error)) return null;
+  if (!isSessionOver(result)) throw result.error;
+  await signOutCurrentSession({ scope: "local" });
+  return null;
 }

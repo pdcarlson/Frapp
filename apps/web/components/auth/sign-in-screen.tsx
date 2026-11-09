@@ -196,7 +196,7 @@ function SignInPageContent() {
     <AuthScreen
       title={SIGN_IN_TITLE}
       toggle={<AuthModeToggle current="sign-in" redirectTo={redirectTo} />}
-      footer={<SignInFooter />}
+      footer={<SignInFooter redirectTo={redirectTo} />}
     >
       <form className="flex flex-col gap-3" onSubmit={handlePasswordSignIn}>
         <FloatingField
@@ -255,16 +255,32 @@ function SignInPageContent() {
 /**
  * The form's one other exit (the toggle covers sign-up). A component so the
  * Suspense fallback draws the same footer and nothing shifts on hydration.
+ *
+ * It goes to sign-up, not `/join` (#3776). `/join` is gated, so a visitor here
+ * is signed out by definition and the link only bounced them back to this
+ * form, dropping the invite they arrived with on the way. Sign-up carries
+ * `redirectTo`, so the new account lands on `/join` with its invite intact;
+ * someone who already has an account signs in above, or crosses back with the
+ * toggle, which carries it too.
  */
-function SignInFooter() {
+function SignInFooter({ redirectTo }: { redirectTo: string }) {
+  const joinPath = isJoinPath(redirectTo) ? redirectTo : "/join";
   return (
     <p>
       Have an invite?{" "}
-      <Link href="/join" className="font-semibold text-accent-text hover:underline">
+      <Link
+        href={`/sign-up?redirectTo=${encodeURIComponent(joinPath)}`}
+        className="font-semibold text-accent-text hover:underline"
+      >
         Join your chapter
       </Link>
     </p>
   );
+}
+
+function isJoinPath(path: string): boolean {
+  const pathname = path.split(/[?#]/, 1)[0];
+  return pathname === "/join";
 }
 
 /**
@@ -284,7 +300,7 @@ export function SignInScreen() {
           toggle={
             <AuthModeToggle current="sign-in" redirectTo={resolveRedirectPath(null)} />
           }
-          footer={<SignInFooter />}
+          footer={<SignInFooter redirectTo={resolveRedirectPath(null)} />}
         >
           <div role="status" aria-busy="true" aria-live="polite">
             <span className="sr-only">Loading the sign-in form…</span>

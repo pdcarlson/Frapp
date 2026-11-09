@@ -78,6 +78,32 @@ export interface InvitePreview {
 }
 
 /**
+ * One invite waiting for the caller's verified address
+ * (`GET /v1/invites/mine`, #3776): the preview card's facts plus the token the
+ * join screen redeems.
+ */
+export interface PendingInvite extends InvitePreview {
+  token: string;
+}
+
+/**
+ * The address Supabase Auth has verified for this account, or null.
+ * `email_confirmed_at` is set by a confirmed sign-up or magic link, or by an
+ * OAuth provider that reports the address verified; hosted projects require
+ * confirmation (`docs/ops/deployment/supabase.md` § Auth settings). A pending
+ * email change sits in `new_email`, not `email`, until it is confirmed too.
+ */
+export function verifiedEmailOf(
+  user:
+    | { email?: string | null; email_confirmed_at?: string | null }
+    | null
+    | undefined,
+): string | null {
+  if (!user?.email || !user.email_confirmed_at) return null;
+  return user.email;
+}
+
+/**
  * Where an invite stands, for the inviter's list (`GET /v1/invites`).
  * `revoked` before `joined` because a revoke also sets `used_at`; `expired`
  * only for one nobody used.
@@ -490,13 +516,23 @@ export class InviteService {
    */
   async preview(token: string): Promise<InvitePreview> {
     const invite = await this.findLiveInvite(token);
+    const preview = await this.describe(invite);
+    // A chapter deleted under a live invite: as dead as the link gets.
+    if (!preview) throw new GoneException('Invite not found');
+    return preview;
+  }
+
+  /**
+   * The confirm card's facts for one live invite, or null when its chapter is
+   * gone. Shared by `preview` and `findPendingForVerifiedEmail`.
+   */
+  private async describe(invite: Invite): Promise<InvitePreview | null> {
     const [chapter, inviter, role] = await Promise.all([
       this.chapterRepo.findById(invite.chapter_id),
       this.userRepo.findById(invite.created_by),
       this.resolveRedeemRole(invite),
     ]);
-    // A chapter deleted under a live invite: as dead as the link gets.
-    if (!chapter) throw new GoneException('Invite not found');
+    if (!chapter) return null;
     // An organization that never displays its letters (FIJI) keeps them off
     // the card even when the chapter's stored switch was never turned off, as
     // for one created before its org profile knew to (#3421). The match reads
@@ -515,6 +551,47 @@ export class InviteService {
       role: role?.name ?? null,
       expires_at: invite.expires_at,
     };
+  }
+
+  /**
+   * The invites waiting for the caller, found by their address rather than by
+   * a link (#3776): every pending invite (not used, revoked or expired) that
+   * was emailed to `verifiedEmail`, minus chapters the caller already belongs
+   * to, newest first, each with its token so the join screen can redeem it.
+   *
+   * `verifiedEmail` must be the address Supabase Auth has verified for the
+   * caller (`verifiedEmailOf`), never one the client names: the token is the
+   * whole credential at redeem, so handing it out is safe only to whoever
+   * already proved they read that inbox, the one place the invite email went.
+   * With no verified address the answer is empty.
+   */
+  async findPendingForVerifiedEmail(
+    verifiedEmail: string | null,
+    userId: string,
+  ): Promise<PendingInvite[]> {
+    const email = verifiedEmail?.trim();
+    if (!email) return [];
+    const invites = await this.inviteRepo.findPendingByEmail(email, new Date());
+    if (invites.length === 0) return [];
+    const memberships = await this.memberRepo.findByUser(userId);
+    const joined = new Set(memberships.map((m) => m.chapter_id));
+    // One card per chapter: the newest invite wins. Sending again revokes the
+    // older one (`replaceOlderInvites`), but two officers can each send one.
+    const seen = new Set<string>();
+    const live = invites.filter((invite) => {
+      if (joined.has(invite.chapter_id) || seen.has(invite.chapter_id)) {
+        return false;
+      }
+      seen.add(invite.chapter_id);
+      return true;
+    });
+    const described = await Promise.all(
+      live.map(async (invite) => {
+        const preview = await this.describe(invite);
+        return preview ? { ...preview, token: invite.token } : null;
+      }),
+    );
+    return described.filter((row): row is PendingInvite => row !== null);
   }
 
   /**
