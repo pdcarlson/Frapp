@@ -49,10 +49,10 @@ track.
 
 Start each one with `create_session`: `source_url` `https://github.com/pdcarlson/Frapp`, `model`
 `claude-fable-5-2` (Paul, 2026-11-09), a title naming the work, tags `frapp:coordinator`, and a brief
-that stands alone. `create_session` takes no effort level: a worker runs at `medium` because the
-repo's `effortLevel` setting says so (measured 2026-11-09,
-[`agent-infra.md`](../../../docs/ci-cd/agent-infra.md#claude-code-project-settings)). The brief
-carries:
+that stands alone. `create_session` takes no effort level. Fable workers ran at `medium` with and
+without the repo's `effortLevel` key (measured 2026-11-09,
+[`agent-infra.md`](../../../docs/ci-cd/agent-infra.md#claude-code-project-settings)), so the key
+pins that level; check a worker with `echo "$CLAUDE_EFFORT"` if usage looks high. The brief carries:
 
 - the goal and what done looks like;
 - what you already know: the asker's words, issues, PRs, files, the board row;
