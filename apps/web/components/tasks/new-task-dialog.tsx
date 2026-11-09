@@ -156,7 +156,7 @@ export function NewTaskDialog({
               {...gate.controlProps()}
             />
             {missing.title ? (
-              <p className="text-caption text-destructive-text">
+              <p role="alert" className="text-caption text-destructive-text">
                 Give the task a title.
               </p>
             ) : null}
@@ -193,7 +193,7 @@ export function NewTaskDialog({
                 </SelectContent>
               </Select>
               {missing.assignee ? (
-                <p className="text-caption text-destructive-text">
+                <p role="alert" className="text-caption text-destructive-text">
                   Pick an assignee.
                 </p>
               ) : null}
@@ -215,7 +215,7 @@ export function NewTaskDialog({
                 {...gate.controlProps()}
               />
               {missing.due ? (
-                <p className="text-caption text-destructive-text">
+                <p role="alert" className="text-caption text-destructive-text">
                   Pick a due date.
                 </p>
               ) : null}
