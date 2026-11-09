@@ -1,21 +1,25 @@
 import Link from "next/link";
 import { SignetCrest } from "../signet-crest";
 import { TrackedCta } from "../tracked-cta";
+import type { AnchorBase } from "./site-header";
 import { LINK_QUIET, SHELL } from "./styles";
 
 /* The four rules at the top of `app/page.tsx` bind everything this file draws. */
 
 /*
- * Eight links in the board's order, with the one tracked control sitting third
- * where the board puts it. Split around it rather than hoisted to the front: on
+ * Ten links: the board's eight in its order, with the one tracked control
+ * sitting third where the board puts it, and About and Changelog right after it
+ * (#3817). Split around it rather than hoisted to the front: on
  * a surface whose footer is a single row, the order IS the design.
  */
-const footerLinksBeforeSignIn = [
-  { label: "Product", href: "#product" },
-  { label: "Pricing", href: "#pricing" },
+const footerLinksBeforeSignIn = (anchorBase: AnchorBase) => [
+  { label: "Product", href: `${anchorBase}#product` },
+  { label: "Pricing", href: `${anchorBase}#pricing` },
 ];
 
 const footerLinksAfterSignIn = [
+  { label: "About", href: "/about" },
+  { label: "Changelog", href: "/changelog" },
   { label: "Support", href: "/support" },
   { label: "Privacy", href: "/privacy" },
   { label: "Terms", href: "/terms" },
@@ -26,10 +30,16 @@ const footerLinksAfterSignIn = [
 /*
  * 7 · Footer.
  *
- * One row, eight links. The "Documentation" link is gone (D7): it pointed
+ * One row, ten links. The "Documentation" link is gone (D7): it pointed
  * at the GitHub `docs/guides` tree, which is contributor documentation.
  */
-export function SiteFooter({ loginUrl }: { loginUrl: string }) {
+export function SiteFooter({
+  loginUrl,
+  anchorBase,
+}: {
+  loginUrl: string;
+  anchorBase: AnchorBase;
+}) {
   return (
     <footer className="border-t border-border">
       <div
@@ -46,7 +56,7 @@ export function SiteFooter({ loginUrl }: { loginUrl: string }) {
         </p>
 
         <nav aria-label="Footer" className="flex flex-wrap items-center gap-x-6">
-          {footerLinksBeforeSignIn.map((link) => (
+          {footerLinksBeforeSignIn(anchorBase).map((link) => (
             <Link key={link.label} href={link.href} className={LINK_QUIET}>
               {link.label}
             </Link>

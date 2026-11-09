@@ -90,11 +90,14 @@ export function PushAskBody() {
 export function PushAskActions({
   action,
   busy,
+  disabled = false,
   onTurnOn,
   onNotNow,
 }: {
   action: PushAskAction;
   busy: boolean;
+  /** Holds both answers without the spinner, as while the host signs out. */
+  disabled?: boolean;
   onTurnOn: () => void;
   onNotNow: () => void;
 }) {
@@ -105,13 +108,13 @@ export function PushAskActions({
       <OnboardingPrimaryButton
         label={action === "settings" ? "Open Settings" : PUSH_ASK_TITLE}
         onPress={onTurnOn}
-        disabled={busy}
+        disabled={busy || disabled}
         busy={busy}
       />
       <OnboardingPressable
         accessibilityRole="button"
         onPress={onNotNow}
-        disabled={busy}
+        disabled={busy || disabled}
         quiet
         style={styles.quietButton}
       >

@@ -1,6 +1,13 @@
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  /*
+   * The tsconfig keeps `jsx: "preserve"` for Next, which leaves JSX for the
+   * transformer to handle. `app/subpages.spec.ts` renders `/about` and
+   * `/changelog` to markup in node, so vitest has to compile it itself: the
+   * automatic runtime, the same one Next's compiler uses.
+   */
+  oxc: { jsx: { runtime: "automatic" } },
   test: {
     environment: "node",
     include: ["**/*.spec.{ts,tsx}"],

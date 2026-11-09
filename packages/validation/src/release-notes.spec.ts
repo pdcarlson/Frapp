@@ -29,6 +29,9 @@ describe("RELEASE_NOTES", () => {
       for (const line of [note.title, ...note.changes]) {
         expect(line).not.toMatch(EMOJI);
         expect(line).not.toMatch(INTERNALS);
+        // frapp.live/changelog renders these, and landing copy takes no em
+        // dashes (spec/ui/landing/README.md § Marketing copy rules).
+        expect(line).not.toContain("\u2014");
       }
     },
   );

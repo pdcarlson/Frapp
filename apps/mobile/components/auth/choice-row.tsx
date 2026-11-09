@@ -20,6 +20,7 @@ export function ChoiceRow({
   disabled = false,
   dimmed = false,
   busy = false,
+  leading,
   trailing,
   accessibilityHint,
 }: {
@@ -30,6 +31,8 @@ export function ChoiceRow({
   /** Drawn at half strength: disabled, or a sibling of the row in flight. */
   dimmed?: boolean;
   busy?: boolean;
+  /** Drawn before the copy, as s02's invite offers draw the chapter's mark. */
+  leading?: ReactNode;
   trailing?: ReactNode;
   accessibilityHint?: string;
 }) {
@@ -49,6 +52,7 @@ export function ChoiceRow({
         dimmed ? styles.dimmed : null,
       ]}
     >
+      {leading}
       <View style={styles.copy}>
         <Text style={styles.title}>{title}</Text>
         {body ? <Text style={styles.body}>{body}</Text> : null}

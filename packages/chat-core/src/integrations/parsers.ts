@@ -442,6 +442,95 @@ export function parseEventArgs(args: string): ParseResult<EventArgs> {
   };
 }
 
+/** What a partly typed `/event` can hand the event form (#3773). */
+export interface EventFormPrefill {
+  name?: string;
+  date?: string;
+  startTime?: string;
+  endTime?: string;
+  location?: string;
+  pointValue?: number;
+}
+
+/**
+ * Pull whatever `/event` arguments are usable out of text that
+ * {@link parseEventArgs} refuses, so web chat can open the event form with it
+ * filled in rather than answer with the usage string (#3773).
+ *
+ * Lenient where the parser is strict: the name needn't be quoted (every token
+ * before the first date joins it, so `/event Chapter Dinner` names the event
+ * "Chapter Dinner"), an unterminated quote is dropped rather than read as
+ * running to the end (so the date and times after a forgotten closing quote
+ * still land in their own fields), and a token
+ * that doesn't fit its slot is dropped rather than refused. A date or time
+ * range only lands when valid, and the location only after both, so nothing
+ * a member typed lands in the wrong field.
+ */
+export function eventFormPrefill(args: string): EventFormPrefill {
+  const trimmed = args.trim();
+  if (trimmed.length === 0) return {};
+  // Unbalanced quotes: the last one is the unterminated opener, so dropping it
+  // leaves the rest balanced.
+  const tokens =
+    tokenizeQuotedArgs(trimmed) ??
+    tokenizeQuotedArgs(
+      trimmed.slice(0, trimmed.lastIndexOf('"')) +
+        trimmed.slice(trimmed.lastIndexOf('"') + 1),
+    ) ??
+    trimmed.split(/\s+/);
+
+  const prefill: EventFormPrefill = {};
+  const nameParts: string[] = [];
+  const locationParts: string[] = [];
+  let i = 0;
+
+  const takePoints = (token: string): boolean => {
+    if (!token.toLowerCase().startsWith("points=")) return false;
+    const parsed = parseNumericArg(token.slice("points=".length));
+    if (parsed !== null && Number.isInteger(parsed) && parsed >= 0) {
+      prefill.pointValue = parsed;
+    }
+    return true;
+  };
+
+  for (; i < tokens.length; i++) {
+    const token = tokens[i]!;
+    if (parseIsoDate(token) !== null) break;
+    if (takePoints(token)) continue;
+    const part = token.trim();
+    if (part.length > 0) nameParts.push(part);
+  }
+
+  const name = nameParts.join(" ").slice(0, EVENT_MAX_NAME_LENGTH).trim();
+  if (name.length > 0) prefill.name = name;
+
+  const date = parseIsoDate(tokens[i]);
+  if (date === null) return prefill;
+  prefill.date = date;
+  i++;
+
+  // Past a date, only a valid range opens the location slot: `7pm` or a
+  // backwards range would otherwise land there as a place.
+  const range = parseTimeRange(tokens[i]);
+  if (range === null) {
+    for (; i < tokens.length; i++) takePoints(tokens[i]!);
+    return prefill;
+  }
+  prefill.startTime = range.startTime;
+  prefill.endTime = range.endTime;
+  i++;
+
+  for (; i < tokens.length; i++) {
+    const token = tokens[i]!;
+    if (takePoints(token)) continue;
+    const part = token.trim();
+    if (part.length > 0) locationParts.push(part);
+  }
+  if (locationParts.length > 0) prefill.location = locationParts.join(" ");
+
+  return prefill;
+}
+
 const HOURS_DESCRIPTION_MAX = 2000;
 const HOURS_USAGE = "Usage: /hours log <duration> <description>";
 

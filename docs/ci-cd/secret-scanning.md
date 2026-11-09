@@ -42,7 +42,10 @@ there an undo lasts only until the next session; laptop sessions are left alone
 
 The pinned gitleaks binary is the source of truth: `scripts/scan-secrets.mjs` ensures it on every run
 (idempotent, checksum-verified) in the gitignored `.cache/gitleaks/`. A compatible `gitleaks` on PATH is
-used only as a fallback when that installer can't run (e.g. offline). To pre-install:
+used only as a fallback when that installer can't run (e.g. offline). The CI job restores
+`.cache/gitleaks/` from the Actions cache, keyed on the installer's contents, so a GitHub-releases
+outage doesn't fail the scan while the cache is warm (#3812); a miss that can't download still fails
+the job. To pre-install:
 
 ```bash
 bash scripts/install-gitleaks.sh   # pinned version → .cache/gitleaks/

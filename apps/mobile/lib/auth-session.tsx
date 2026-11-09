@@ -614,12 +614,11 @@ export function AuthSessionProvider({
     // all (`["settings"]`, `["user","me"]`), so they would never re-key their
     // way out of it.
     //
-    // This lives here rather than in the screens because there are three
-    // sign-out paths (`(app)/preferences.tsx`, `(auth)/chapter-picker.tsx`,
-    // `(auth)/join.tsx`) and each had to remember the clear for itself; the
-    // picker's landed only after the leak was noticed a second time. Owning it
-    // at the single point every path already funnels through is what stops a
-    // fourth path from reintroducing it. An in-place uid swap uses the same
+    // This lives here rather than in the screens because every screen that
+    // signs out calls this `signOut`, and when each had to remember the clear
+    // for itself the picker's landed only after the leak was noticed a second
+    // time. Owning it at this single funnel is what stops the next screen that
+    // signs out from reintroducing it. An in-place uid swap uses the same
     // helper from `applySession` so it cannot forget the drop either.
     clearProductQueryCache();
     previousAuthUserIdRef.current = null;

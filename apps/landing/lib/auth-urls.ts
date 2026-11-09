@@ -116,6 +116,17 @@ export function buildAuthUrls(
 }
 
 /**
+ * The auth URLs for this deploy, read from its own environment. Every landing
+ * page that draws the storefront header calls this, so the env it reads and
+ * the runtime it passes are written once (#3817).
+ */
+export function landingAuthUrls(): AuthUrls {
+  return buildAuthUrls(process.env.NEXT_PUBLIC_APP_URL, {
+    vercelEnv: process.env.VERCEL_ENV,
+  });
+}
+
+/**
  * Marketing `/join` is not a landing page. Officers mint
  * `app.frapp.live/join?token=…`; people still type or paste the apex host.
  * Forward to the web app origin with the query intact so a still-valid

@@ -55,6 +55,8 @@ import {
 } from "@repo/hooks";
 import {
   can,
+  canAll,
+  EVENT_CREATE_PERMISSIONS,
   isAnnouncementChannel,
   type MentionCandidate,
   type MentionChipTargets,
@@ -64,6 +66,7 @@ import { ChevronLeft, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
 import { PanelContent, PanelHeader } from "@/components/shared/panel";
+import { MemberDetailSheet } from "@/components/members/member-detail-sheet";
 import {
   persistMembersHidden,
   WIDE_CHAT_QUERY,
@@ -110,7 +113,12 @@ import {
   MessageTimelineSkeleton,
   type MessageTimelineHandle,
 } from "./message-timeline";
-import { Composer, ComposerShell, notifyDispatchOutcome } from "./composer";
+import {
+  Composer,
+  ComposerShell,
+  notifyDispatchOutcome,
+  type CommandFormOutcome,
+} from "./composer";
 import {
   canBlockSender,
   channelAllowsReplies,
@@ -145,7 +153,13 @@ import {
   useIsDesktopShell,
   useNavFace,
 } from "@/components/layout/nav-face";
-import type { SlashCommand } from "@repo/chat-core/integrations";
+import {
+  eventFormPrefill,
+  parseEventArgs,
+  type EventFormPrefill,
+  type SlashCommand,
+} from "@repo/chat-core/integrations";
+import { EventEditorDialog } from "@/components/events/event-editor-dialog";
 import type { ChatNotificationLevel } from "@repo/hooks";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 
@@ -264,6 +278,19 @@ function escapeBelongsElsewhere(target: EventTarget | null): boolean {
 }
 
 /**
+ * A typed `/event` date and clock time as a `datetime-local` value, or
+ * `undefined` unless both are there (the form's field takes neither alone).
+ */
+export function prefillLocalInput(
+  date: string | undefined,
+  time: string | undefined,
+): string | undefined {
+  if (!date || !time) return undefined;
+  const [hours = "", minutes = ""] = time.split(":");
+  return `${date}T${hours.padStart(2, "0")}:${minutes}`;
+}
+
+/**
  * The chat surface: channels column, then thread and composer.
  *
  * **Two columns, flush, full height** (`1b`). It was three, the third being a
@@ -288,6 +315,7 @@ function escapeBelongsElsewhere(target: EventTarget | null): boolean {
  * is what the board's first-paint contract asks for. The no-chapter branch was
  * the last exception and is one too, as of #2145.
  */
+
 export function ChatShell({
   initialChannelId = null,
   initialMessageId = null,
@@ -1028,6 +1056,16 @@ export function ChatShell({
     [activeChapterId, isMember, nameFor, requestBlock],
   );
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
+  // Whose profile is open (#3726): a sender's name or photo, an `@` chip, or a
+  // row of the member list opens the directory's own sheet by `users.id`, as
+  // mobile's thread does. The id outlives the close so the sheet keeps its
+  // member through its exit animation instead of blanking.
+  const [profileUserId, setProfileUserId] = useState<string | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const openProfile = useCallback((memberUserId: string) => {
+    setProfileUserId(memberUserId);
+    setProfileOpen(true);
+  }, []);
   const handleReport = useCallback(
     (message: ChatMessage) => {
       const canBlock = !!userId && canBlockSender(message, userId, isMember);
@@ -1049,6 +1087,42 @@ export function ChatShell({
   const canManageChannel = can(
     "channels:manage",
     permissionsPayload?.permissions,
+  );
+
+  // `/event` typed bare, with details the one-liner can't read, or picked
+  // from the palette opens the Events page's own form, filled in with what
+  // was typed, and the card posts in the channel it came from (#3773).
+  const [eventForm, setEventForm] = useState<{
+    open: boolean;
+    channelId: string;
+    prefill: EventFormPrefill;
+  } | null>(null);
+  const openCommandForm = useCallback(
+    (command: SlashCommand, args: string): CommandFormOutcome => {
+      if (command.name !== "event" || !activeChannelId) return null;
+      if (parseEventArgs(args).ok) return null;
+      // Unknown until the read lands, and the server enforces it either way,
+      // so only a loaded grant without it refuses before the form opens.
+      if (
+        permissionsPayload &&
+        !canAll(EVENT_CREATE_PERMISSIONS, permissionsPayload.permissions)
+      ) {
+        toast({
+          title: "You can't create events",
+          description:
+            "Your role doesn't include creating events. An officer can add it in Settings.",
+          variant: "destructive",
+        });
+        return "refused";
+      }
+      setEventForm({
+        open: true,
+        channelId: activeChannelId,
+        prefill: eventFormPrefill(args),
+      });
+      return "opened";
+    },
+    [activeChannelId, permissionsPayload, toast],
   );
 
   // Memoised because the timeline hands it to the virtualizer's header
@@ -2521,6 +2595,7 @@ export function ChatShell({
                   canManageChannel={canManageChannel}
                   onReport={handleReport}
                   onBlock={handleBlock}
+                  onOpenProfile={openProfile}
                   isMember={isMember}
                 />
               </MentionChipTargetsContext.Provider>
@@ -2606,6 +2681,7 @@ export function ChatShell({
                 resolveMember,
               )
             }
+            onOpenCommandForm={openCommandForm}
             onTyping={channel.emitTyping}
             isModuleEnabled={isModuleEnabled}
             recruitmentVocab={recruitmentVocab}
@@ -2646,6 +2722,7 @@ export function ChatShell({
           <ChannelMemberList
             channelId={activeChannel?.id ?? null}
             enabled={isWideChat}
+            onOpenProfile={openProfile}
           />
         </aside>
       ) : null}
@@ -2657,14 +2734,63 @@ export function ChatShell({
         <PanelContent>
           <PanelHeader>Members</PanelHeader>
           {activeChannel ? (
-            <ChannelMemberList channelId={activeChannel.id} />
+            <ChannelMemberList
+              channelId={activeChannel.id}
+              onOpenProfile={openProfile}
+            />
           ) : null}
         </PanelContent>
       </Sheet>
 
+      {/*
+        After the Members sheet, so a profile opened from one of its rows
+        stacks over the list and closes back to it, as mobile's does (#3798).
+      */}
+      <MemberDetailSheet
+        open={profileOpen}
+        onOpenChange={setProfileOpen}
+        userId={profileUserId}
+        identity={
+          profileUserId
+            ? {
+                name: nameFor(profileUserId),
+                avatarUrl: avatarFor(profileUserId),
+              }
+            : null
+        }
+      />
+
       {confirmDialog}
       {unblockFlow.confirmDialog}
       {blockFlow.confirmDialog}
+      {/* Mounted from the first `/event` on, so it can animate closed. */}
+      {eventForm ? (
+        <EventEditorDialog
+          open={eventForm.open}
+          onOpenChange={(open) =>
+            setEventForm((previous) =>
+              previous ? { ...previous, open } : previous,
+            )
+          }
+          mode="create"
+          event={null}
+          usingPreviewData={false}
+          onSaved={() => undefined}
+          initialName={eventForm.prefill.name}
+          initialLocation={eventForm.prefill.location}
+          initialPointValue={eventForm.prefill.pointValue}
+          initialStartAt={prefillLocalInput(
+            eventForm.prefill.date,
+            eventForm.prefill.startTime,
+          )}
+          initialEndAt={prefillLocalInput(
+            eventForm.prefill.date,
+            eventForm.prefill.endTime,
+          )}
+          postToChannelId={eventForm.channelId}
+          trackChatCard={channel.trackEventCard}
+        />
+      ) : null}
       <ReportMessageDialog
         key={reportTarget?.messageId ?? "closed"}
         target={reportTarget}

@@ -133,6 +133,23 @@ export const CHAPTER_PROFILE_PERMISSIONS = [
 ] as const;
 
 /**
+ * What it takes to create an event: `POST /v1/events` carries `events:create`,
+ * and `EventController` adds `members:view` at class level, which
+ * `PermissionsGuard` requires alongside it (AND, not override). Offering a
+ * create control on `events:create` alone hands a custom role a form whose
+ * every save is refused.
+ *
+ * **The one spelling.** Code that reads it: mobile's `useCanCreateEvents`
+ * (`new-event-sheet.tsx`) and quick actions (`quick-actions.ts`), the setup
+ * checklist's event step (`packages/hooks/src/setup-checklist.ts`), and web's
+ * Events page create controls and chat's `/event` form (`chat-shell.tsx`).
+ */
+export const EVENT_CREATE_PERMISSIONS = [
+  "events:create",
+  "members:view",
+] as const;
+
+/**
  * The ids, live and custom, whose holder can open chat, the roster and events
  * (#3670): a live role whose permissions grant `members:view` (so `*` counts),
  * or a custom role whose capabilities carry `members:view` itself, since the
