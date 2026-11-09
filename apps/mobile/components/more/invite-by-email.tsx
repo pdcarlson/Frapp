@@ -75,13 +75,10 @@ export function undeliveredProblem(count: number): string {
 export function InviteByEmail({
   accent,
   onAccent,
-  onSent,
 }: {
   /** The chapter accent: the field's focus border and the Send fill. */
   accent: string;
   onAccent: string;
-  /** Called after invites go out, with how many went. */
-  onSent?: (count: number) => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens, accent);
@@ -123,7 +120,6 @@ export function InviteByEmail({
             ? `Invite sent to ${sent[0]}`
             : `${sent.length} invites sent`,
         );
-        onSent?.(sent.length);
       }
     } catch (caught) {
       setProblem(

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { listedInvites, type InviteListItem } from "./use-invites";
+import {
+  inviteMenuActions,
+  listedInvites,
+  type InviteListItem,
+} from "./use-invites";
 
 describe("listedInvites", () => {
   const now = new Date("2026-11-20T12:00:00Z");
@@ -27,5 +31,29 @@ describe("listedInvites", () => {
       "joined-2026-11-19T00:00:00Z",
       "expired-2026-11-18T00:00:00Z",
     ]);
+  });
+});
+
+describe("inviteMenuActions", () => {
+  it("offers link and revoke on a pending link, and Send again only with an address", () => {
+    expect(inviteMenuActions({ status: "pending", email: null })).toEqual([
+      "link",
+      "revoke",
+    ]);
+    expect(inviteMenuActions({ status: "pending", email: "a@x.edu" })).toEqual([
+      "link",
+      "again",
+      "revoke",
+    ]);
+  });
+
+  it("offers only Send again on an expired emailed invite, and nothing once joined", () => {
+    expect(inviteMenuActions({ status: "expired", email: "a@x.edu" })).toEqual([
+      "again",
+    ]);
+    expect(inviteMenuActions({ status: "expired", email: null })).toEqual([]);
+    expect(inviteMenuActions({ status: "joined", email: "a@x.edu" })).toEqual(
+      [],
+    );
   });
 });

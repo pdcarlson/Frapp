@@ -10,6 +10,7 @@ import {
   useRevokeInvite,
   useRoles,
   INVITE_STATUS_LABEL,
+  inviteMenuActions,
   listedInvites,
   type InviteListItem,
 } from "@repo/hooks";
@@ -288,41 +289,39 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     const revokeDisabled = revokeGate.controlProps(
       revokeInviteMutation.isPending || hasLiveDataError,
     ).disabled;
-    if (invite.status === "pending") {
-      entries.push({
-        type: "item",
-        key: "copy",
-        label: "Copy link",
-        icon: Link2,
-        onSelect: () => void copyInviteLink(invite),
-      });
-    }
-    if (
-      invite.email &&
-      (invite.status === "pending" || invite.status === "expired")
-    ) {
-      entries.push({
-        type: "item",
-        key: "again",
-        label: "Send again",
-        icon: RotateCw,
-        onSelect: () => void sendAgain(invite),
-        disabled: mintDisabled || emailInvites.isPending,
-      });
-    }
-    if (invite.status === "pending") {
-      entries.push(
-        { type: "separator", key: "sep" },
-        {
+    // Which actions a row offers is shared with mobile (`inviteMenuActions`).
+    for (const action of inviteMenuActions(invite)) {
+      if (action === "link") {
+        entries.push({
           type: "item",
-          key: "revoke",
-          label: "Revoke invite",
-          icon: Trash2,
-          destructive: true,
-          onSelect: () => void revoke(invite),
-          disabled: revokeDisabled,
-        },
-      );
+          key: "copy",
+          label: "Copy link",
+          icon: Link2,
+          onSelect: () => void copyInviteLink(invite),
+        });
+      } else if (action === "again") {
+        entries.push({
+          type: "item",
+          key: "again",
+          label: "Send again",
+          icon: RotateCw,
+          onSelect: () => void sendAgain(invite),
+          disabled: mintDisabled || emailInvites.isPending,
+        });
+      } else {
+        entries.push(
+          { type: "separator", key: "sep" },
+          {
+            type: "item",
+            key: "revoke",
+            label: "Revoke invite",
+            icon: Trash2,
+            destructive: true,
+            onSelect: () => void revoke(invite),
+            disabled: revokeDisabled,
+          },
+        );
+      }
     }
     return entries;
   }

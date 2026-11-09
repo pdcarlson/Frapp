@@ -190,5 +190,14 @@ export function useInviteShares({
     shared,
     isJoined: (token: string) => used.has(token),
     share,
+    /**
+     * Drops a link kept from a backed-out sheet once it has gone elsewhere:
+     * the Invite members screen's list revoked it, or shared it from its
+     * row. The next press then mints a fresh one rather than sending a dead
+     * link, or one person's link to a second person.
+     */
+    forget: (token: string) => {
+      if (unsent.current === token) unsent.current = null;
+    },
   };
 }

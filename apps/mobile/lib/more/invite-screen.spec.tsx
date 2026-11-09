@@ -2,7 +2,7 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { ActionSheetIOS, Share } from "react-native";
+import { ActionSheetIOS, Alert, Platform, Share } from "react-native";
 import * as expoRouter from "expo-router";
 import { useLocalSearchParams } from "expo-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -33,6 +33,7 @@ const refetchInvites = vi.fn();
 let invitesOptions:
   { enabled?: boolean; refetchInterval?: number | false } | undefined;
 let inviteRows: Record<string, unknown>[] = [];
+let invitesFailed = false;
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -57,7 +58,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
       invitesOptions = options;
     }
     return {
-      data: options?.enabled ? inviteRows : undefined,
+      data: options?.enabled && !invitesFailed ? inviteRows : undefined,
+      isError: !!options?.enabled && invitesFailed,
+      isFetching: false,
       refetch: refetchInvites,
     };
   },
@@ -81,6 +84,7 @@ vi.mock("@/lib/chapter-branding", async (importOriginal) => {
 });
 
 import InviteScreen, { backTargetFor } from "@/app/(app)/invite";
+import { inviteActions } from "@/components/more/invited-list";
 
 function render(): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -123,6 +127,24 @@ const ROW = {
   created_at: new Date().toISOString(),
 };
 
+function rowFor(tree: ReactTestRenderer, label: string) {
+  return tree.root.find(
+    (node) =>
+      (node.type as unknown) === "Pressable" &&
+      node.props.accessibilityLabel === label,
+  );
+}
+
+function rerender(tree: ReactTestRenderer) {
+  act(() =>
+    tree.update(
+      <FrappThemeProvider>
+        <InviteScreen />
+      </FrappThemeProvider>,
+    ),
+  );
+}
+
 function shareButton(tree: ReactTestRenderer) {
   return tree.root.findAll(
     (node) =>
@@ -143,6 +165,7 @@ beforeEach(() => {
   refetchInvites.mockReset().mockResolvedValue({});
   invitesOptions = undefined;
   inviteRows = [];
+  invitesFailed = false;
   vi.mocked(Share.share)
     .mockReset()
     .mockResolvedValue({ action: "sharedAction" });
@@ -162,8 +185,8 @@ describe("Invite members", () => {
     expect(content.message).toContain("tok123");
     // A mail target gets a subject line (iOS).
     expect(options).toEqual({ subject: "Join FIJI Tau Nu on Frapp" });
-    // The Invited list re-reads, and is watched while the screen is up.
-    expect(refetchInvites).toHaveBeenCalled();
+    // The Invited list is watched while the screen is up (the mint's own
+    // invalidation re-reads it).
     expect(invitesOptions?.enabled).toBe(true);
     expect(invitesOptions?.refetchInterval).toBeGreaterThan(0);
     tree.unmount();
@@ -178,7 +201,6 @@ describe("Invite members", () => {
     });
     expect(screenText(tree)).toContain("Invite sent to Pledge@School.edu");
     expect(emailField(tree).props.value).toBe("");
-    expect(refetchInvites).toHaveBeenCalled();
     tree.unmount();
   });
 
@@ -298,6 +320,174 @@ describe("Invite members", () => {
     state.chapter = undefined;
     const tree = render();
     expect(shareButton(tree)[0].props.disabled).toBe(true);
+    tree.unmount();
+  });
+
+  it("refuses more than one send's worth of addresses before sending", async () => {
+    const tree = render();
+    const many = Array.from({ length: 51 }, (_, i) => `p${i}@x.edu`).join(",");
+    act(() => emailField(tree).props.onChangeText(many));
+    await act(async () => sendButton(tree).props.onPress());
+    expect(emailInvites).not.toHaveBeenCalled();
+    expect(screenText(tree)).toContain("Up to 50 addresses at a time.");
+    tree.unmount();
+  });
+
+  it("offers each kind of row web's actions, and none on a joined one", () => {
+    expect(inviteActions({ status: "pending", email: null })).toEqual([
+      "Share link",
+      "Revoke invite",
+    ]);
+    expect(inviteActions({ status: "expired", email: "a@x.edu" })).toEqual([
+      "Send again",
+    ]);
+    // Share link waits for the chapter's name.
+    expect(
+      inviteActions({ status: "pending", email: "a@x.edu" }, false),
+    ).toEqual(["Send again", "Revoke invite"]);
+
+    inviteRows = [{ ...ROW, id: "i-2", email: null, status: "joined" }];
+    const tree = render();
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityLabel === "Invite link",
+      ),
+    ).toHaveLength(0);
+    tree.unmount();
+  });
+
+  it("keeps Revoke on Android, whose dialog draws at most three buttons", () => {
+    inviteRows = [
+      { ...ROW, id: "i-1", email: "pledge@school.edu", status: "pending" },
+    ];
+    const alert = vi.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    const os = Platform.OS;
+    (Platform as { OS: string }).OS = "android";
+    try {
+      const tree = render();
+      act(() => rowFor(tree, "pledge@school.edu").props.onPress());
+      const buttons = alert.mock.calls[0][2] as { text: string }[];
+      expect(buttons.map((b) => b.text)).toEqual([
+        "Share link",
+        "Send again",
+        "Revoke invite",
+      ]);
+      expect(alert.mock.calls[0][3]).toEqual({ cancelable: true });
+      tree.unmount();
+    } finally {
+      (Platform as { OS: string }).OS = os;
+      alert.mockRestore();
+    }
+  });
+
+  it("says when Send again couldn't email the address", async () => {
+    inviteRows = [
+      { ...ROW, id: "i-1", email: "pledge@school.edu", status: "expired" },
+    ];
+    emailInvites.mockResolvedValueOnce({
+      invites: [],
+      failed: ["pledge@school.edu"],
+    });
+    const sheet = vi
+      .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
+      .mockImplementation(() => undefined);
+    const tree = render();
+    act(() => rowFor(tree, "pledge@school.edu").props.onPress());
+    const [options, pick] = sheet.mock.calls[0];
+    expect(options.options).toEqual(["Send again", "Cancel"]);
+    await act(async () => pick(0));
+    expect(screenText(tree)).toContain("Couldn't email pledge@school.edu.");
+    expect(screenText(tree)).not.toContain("Invite sent again");
+    sheet.mockRestore();
+    tree.unmount();
+  });
+
+  it("runs one row action at a time", async () => {
+    inviteRows = [
+      { ...ROW, id: "i-1", email: "a@school.edu", status: "pending" },
+      { ...ROW, id: "i-2", email: "b@school.edu", status: "pending" },
+    ];
+    let finish!: (value: unknown) => void;
+    emailInvites.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const sheet = vi
+      .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
+      .mockImplementation(() => undefined);
+    const tree = render();
+    act(() => rowFor(tree, "a@school.edu").props.onPress());
+    act(() => sheet.mock.calls[0][1](1));
+    // Row A is still sending: no other menu opens, so nothing goes twice.
+    act(() => rowFor(tree, "b@school.edu").props.onPress());
+    expect(sheet).toHaveBeenCalledTimes(1);
+    await act(async () => finish({ invites: [], failed: [] }));
+    act(() => rowFor(tree, "b@school.edu").props.onPress());
+    expect(sheet).toHaveBeenCalledTimes(2);
+    expect(emailInvites).toHaveBeenCalledTimes(1);
+    sheet.mockRestore();
+    tree.unmount();
+  });
+
+  it("still confirms a revoke that empties the list", async () => {
+    inviteRows = [
+      { ...ROW, id: "i-1", email: "pledge@school.edu", status: "pending" },
+    ];
+    const sheet = vi
+      .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
+      .mockImplementation(() => undefined);
+    const tree = render();
+    act(() => rowFor(tree, "pledge@school.edu").props.onPress());
+    await act(async () => sheet.mock.calls[0][1](2));
+    inviteRows = [{ ...inviteRows[0], status: "revoked" }];
+    rerender(tree);
+    expect(screenText(tree)).toContain("Invite revoked.");
+    // A new invite in the list retires the old line.
+    inviteRows = [
+      ...inviteRows,
+      { ...ROW, id: "i-9", email: "next@school.edu", status: "pending" },
+    ];
+    rerender(tree);
+    expect(screenText(tree)).not.toContain("Invite revoked.");
+    sheet.mockRestore();
+    tree.unmount();
+  });
+
+  it("never sends a kept link the list has revoked", async () => {
+    // iOS: the sheet is closed without sending, so the link is kept.
+    vi.mocked(Share.share).mockResolvedValueOnce({
+      action: "dismissedAction",
+    });
+    const sheet = vi
+      .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
+      .mockImplementation(() => undefined);
+    const tree = render();
+    await act(async () => shareButton(tree)[0].props.onPress());
+    inviteRows = [
+      { ...ROW, id: "i-k", token: "tok123", email: null, status: "pending" },
+    ];
+    rerender(tree);
+    act(() => rowFor(tree, "Invite link").props.onPress());
+    await act(async () => sheet.mock.calls[0][1](1));
+    expect(revokeInvite).toHaveBeenCalledWith("i-k");
+    createInvite.mockResolvedValueOnce({ token: "tok-fresh" });
+    await act(async () => shareButton(tree)[0].props.onPress());
+    expect(createInvite).toHaveBeenCalledTimes(2);
+    const [content] = vi.mocked(Share.share).mock.calls[1];
+    expect(content.message).toContain("tok-fresh");
+    sheet.mockRestore();
+    tree.unmount();
+  });
+
+  it("says when the invites couldn't load, and offers a retry", () => {
+    invitesFailed = true;
+    const tree = render();
+    expect(screenText(tree)).toContain("Couldn't load your invites.");
+    act(() => rowFor(tree, "Try again").props.onPress());
+    expect(refetchInvites).toHaveBeenCalled();
     tree.unmount();
   });
 

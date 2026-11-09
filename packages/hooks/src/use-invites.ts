@@ -42,6 +42,35 @@ export function listedInvites(
 }
 
 /**
+ * What can be done with a listed invite, in menu order (#3828):
+ *
+ * - `link`: copy or share its join link, while it is pending.
+ * - `again`: email the address a fresh link, for an emailed invite nobody
+ *   has joined with (pending or expired). The server retires the older
+ *   invite once the new one is delivered.
+ * - `revoke`: stop it working, while it is pending.
+ *
+ * Web's Invited menu and mobile's row menu both draw from this, so the two
+ * apps offer the same actions on the same rows.
+ */
+export type InviteMenuAction = "link" | "again" | "revoke";
+
+export function inviteMenuActions(
+  invite: Pick<InviteListItem, "status" | "email">,
+): InviteMenuAction[] {
+  const actions: InviteMenuAction[] = [];
+  if (invite.status === "pending") actions.push("link");
+  if (
+    invite.email &&
+    (invite.status === "pending" || invite.status === "expired")
+  ) {
+    actions.push("again");
+  }
+  if (invite.status === "pending") actions.push("revoke");
+  return actions;
+}
+
+/**
  * `refetchInterval` is for a screen that watches its invites get used while
  * it is open, such as mobile setup's invite step, which marks a shared link
  * Joined. Off by default.

@@ -107,7 +107,8 @@ function InviteBody({ focused }: { focused: boolean }) {
     onError: setError,
   });
   // Every invite, re-read while the screen is in front, so a link someone
-  // redeems reads Joined and one another officer revoked drops off.
+  // redeems reads Joined and one another officer revoked drops off. A send,
+  // a mint or a revoke re-reads it too: each mutation invalidates the query.
   const invites = useInvites({
     enabled: focused && canInvite,
     refetchInterval: focused ? INVITE_WATCH_INTERVAL_MS : false,
@@ -164,9 +165,6 @@ function InviteBody({ focused }: { focused: boolean }) {
         <InviteByEmail
           accent={branding.accentPrimary}
           onAccent={branding.accentOnPrimary}
-          onSent={() => {
-            void invites.refetch();
-          }}
         />
         <View style={styles.section}>
           <Text style={styles.label}>Or share a link</Text>
@@ -190,7 +188,7 @@ function InviteBody({ focused }: { focused: boolean }) {
                   disabled={invite.busy || !shareName}
                   busy={invite.busy}
                   onPress={() => {
-                    void invite.share().then(() => invites.refetch());
+                    void invite.share();
                   }}
                 />
                 {error ? (
@@ -205,9 +203,16 @@ function InviteBody({ focused }: { focused: boolean }) {
             }
           />
         </View>
-        {invites.data ? (
-          <InvitedList invites={invites.data} chapterName={shareName ?? ""} />
-        ) : null}
+        <InvitedList
+          invites={invites.data}
+          isError={invites.isError}
+          isRetrying={invites.isFetching}
+          onRetry={() => {
+            void invites.refetch();
+          }}
+          chapterName={shareName}
+          onLinkUsed={invite.forget}
+        />
       </View>
     </ScreenShell>
   );
