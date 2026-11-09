@@ -363,7 +363,7 @@ One pick worth pinning meanwhile:
 Since the #920 chat slice the chat family draws the duotone recipe (§1). The
 glyphs live in
 [`apps/web/components/chat/chat-glyphs.tsx`](../../../apps/web/components/chat/chat-glyphs.tsx),
-which composes the shared recipe module and re-exports the six silhouettes the
+which composes the shared recipe module and re-exports the seven silhouettes the
 shell already draws rather than redrawing them. Rendered at 20px in headers and
 composer controls, 16px in card eyebrows and inline metadata (§2).
 
@@ -374,7 +374,8 @@ composer controls, 16px in card eyebrows and inline metadata (§2).
 | Bookmarked message (personal) | `BookmarkGlyph` |
 | Attach a file | `AttachGlyph` |
 | Add a reaction | `ReactionGlyph` |
-| Slash commands | `SlashCommandGlyph` |
+| The composer's **+**, which opens Attach a file and every command's form (#3865): stroke only at 2, a plus has no area to fill | `PlusGlyph` |
+| Poll, in the composer's **+** menu | `PollsGlyph` (shared with the nav intent) |
 | Send a message: an up arrow, stroke only at 2.4 on the accent-filled round button, the web face of mobile's `↑` (2026-11-06) | `SendArrowGlyph` |
 | Announcement | `AnnouncementGlyph` |
 | `#chapter-audit` / audit row | `AuditGlyph` |
@@ -400,7 +401,8 @@ Three things this table deliberately does not contain:
 - **The ✦ Ask mark.** It is a text glyph claimed by the Ask/AI affordance
   ([components.md](components.md) §11) and MUST NOT mark anything else — which
   is why chat's slash-command trigger, which used to draw Lucide's `Sparkles`,
-  now takes `SlashCommandGlyph`.
+  took a command silhouette instead, and why the **+** that replaced that
+  trigger (#3865) is a plain plus.
 - **Control furniture**, which stays Lucide on this surface exactly as it does
   in the shell: `Loader2` and `RefreshCw` (spinners), `X` (close), `Trash2`
   (discard), and the three glyphs that sit *inside* an action button and name

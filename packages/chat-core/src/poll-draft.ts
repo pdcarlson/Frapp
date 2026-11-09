@@ -1,12 +1,14 @@
-import { type PollsGate } from "@repo/chat-core/polls";
 import { can, POLL_OPTIONS_MAX, POLL_OPTIONS_MIN } from "@repo/validation";
+import { tokenizeQuotedArgs } from "./integrations/parsers";
+import { type PollsGate } from "./polls";
 
 /**
- * The model behind s05's New poll sheet (`components/chat/new-poll-sheet.tsx`,
- * #3701): who may open it, the draft it edits, and what makes a draft
- * postable. The card it posts is built by `buildPollMessage` in
- * `@repo/chat-core/polls`, the same builder web's `/poll` uses, so a poll made
- * on the phone is the card web members already vote on.
+ * The model behind the New poll form on both clients: mobile's New poll sheet
+ * (`apps/mobile/components/chat/new-poll-sheet.tsx`, #3701) and web's New poll
+ * dialog (`apps/web/components/chat/new-poll-dialog.tsx`, #3865): who may open
+ * it, the draft it edits, and what makes a draft postable. The card it posts
+ * is built by `buildPollMessage` in `./polls`, the same builder `/poll` uses,
+ * so a poll made in either form is the card every client already votes on.
  */
 
 /** When voting stops, as More options offers it. */
@@ -124,7 +126,8 @@ export function checkPollDraft(draft: PollDraft): PollDraftCheck {
   if (question.length === 0 || options.length < POLL_OPTIONS_MIN) {
     return { ok: false, problem: null };
   }
-  // The rows stop at the maximum, so only a draft built elsewhere gets here.
+  // Adding stops at the maximum, but a `/poll` prefill keeps every option
+  // typed (`pollDraftFromArgs`), so the member is told and trims one.
   if (options.length > POLL_OPTIONS_MAX) {
     return {
       ok: false,
@@ -183,4 +186,59 @@ export function movePollOption(
   const options = [...draft.options];
   [options[index], options[target]] = [options[target]!, options[index]!];
   return { ...draft, options };
+}
+
+/**
+ * A draft filled in from what was typed after a bare or unfinished `/poll`
+ * (#3773 step 2), so the form opens on the member's own words: the first
+ * token is the question and the rest are options, as the one-liner reads them.
+ *
+ * - An unclosed quote is closed at the end of the line, so a forgotten
+ *   closing quote costs nothing: `"Who is driving` is the question, and
+ *   `"Who drives?" Sam "Alex Smith` reads Sam and Alex Smith.
+ * - `closes=<minutes>` picks the form's choice nearest to it.
+ * - Every typed option gets a row, past the maximum too: the form then says a
+ *   poll can have up to ten, and the member chooses which to remove, rather
+ *   than losing the last ones unseen.
+ */
+export function pollDraftFromArgs(args: string): PollDraft {
+  const draft = emptyPollDraft();
+  const trimmed = args.trim();
+  if (trimmed.length === 0) return draft;
+  // An unclosed quote is the member still typing inside it: close it.
+  const tokens = tokenizeQuotedArgs(trimmed) ??
+    tokenizeQuotedArgs(`${trimmed}"`) ?? [trimmed.replace(/"/g, "")];
+  const [question = "", ...rest] = tokens;
+  let closes = draft.closes;
+  const typed: string[] = [];
+  for (const token of rest) {
+    if (token.startsWith("closes=")) {
+      const minutes = Number(token.slice("closes=".length));
+      if (Number.isFinite(minutes) && minutes > 0) {
+        closes = nearestCloseChoice(minutes);
+      }
+      continue;
+    }
+    const text = token.trim();
+    if (text.length > 0) typed.push(text);
+  }
+  const options = draft.options.map((row, index) => ({
+    ...row,
+    text: typed[index] ?? "",
+  }));
+  for (const text of typed.slice(options.length)) {
+    nextRowKey += 1;
+    options.push({ key: `option-${nextRowKey}`, text });
+  }
+  return { question: question.trim(), options, closes };
+}
+
+function nearestCloseChoice(minutes: number): PollCloseChoice {
+  let best = POLL_CLOSE_CHOICES[0]!;
+  for (const choice of POLL_CLOSE_CHOICES) {
+    if (Math.abs(choice.minutes - minutes) < Math.abs(best.minutes - minutes)) {
+      best = choice;
+    }
+  }
+  return best.id;
 }
