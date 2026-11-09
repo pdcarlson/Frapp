@@ -484,6 +484,21 @@ export class ServiceEntryService {
     });
   }
 
+  /**
+   * The SERVICE points rate approval applies right now, for the review queue's
+   * preview of what Approve will award (#3862). Same lookup as `approve`, so
+   * the preview and the award can only differ if the rate changes between the
+   * read and the click.
+   */
+  async getPointsRate(
+    chapterId: string,
+  ): Promise<{ minutes_per_point: number }> {
+    return {
+      minutes_per_point:
+        await this.chapterServiceConfig.getMinutesPerPoint(chapterId),
+    };
+  }
+
   async approve(
     id: string,
     chapterId: string,

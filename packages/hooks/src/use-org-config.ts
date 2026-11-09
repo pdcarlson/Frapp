@@ -66,12 +66,6 @@ export interface OrgConfig {
   workflows?: OrgWorkflow[];
   dues?: OrgDues;
   points?: OrgPoints;
-  /**
-   * Service-hours policy (`chapter_service_config`): minutes of approved
-   * service per SERVICE point. The API fills the default (60) for a chapter
-   * with no row, so a loaded config always carries a rate.
-   */
-  service?: { minutes_per_point?: number };
   /** When true, this chapter has opted out of pseudonymous product analytics. */
   analytics_opt_out?: boolean;
   /**

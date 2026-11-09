@@ -13,6 +13,7 @@ import {
   useReviewServiceEntry,
   useMyPermissions,
   useServiceEntries,
+  useServicePointsRate,
   putSignedUpload,
 } from "@repo/hooks";
 import { can } from "@repo/validation";
@@ -133,10 +134,7 @@ export function ServiceHoursPage() {
     (wf) => wf.key === "wf_hours_receipt",
   );
   const receiptRequired = receiptWorkflow?.enabled === true;
-  // The rate Approve will apply, for each queue row's points preview (#3862).
-  // Same permission caveat as the receipt policy above: without the config,
-  // the preview stays off rather than guessing the default.
-  const minutesPerPoint = orgConfig.data?.service?.minutes_per_point;
+
   const proofLabel = receiptRequired
     ? "Proof file (required by chapter policy)"
     : receiptWorkflow
@@ -197,6 +195,16 @@ export function ServiceHoursPage() {
   const logDialog = useGatedDialog(gate);
   const { data: permissionsPayload } = useMyPermissions();
   const canLog = can("service:log", permissionsPayload?.permissions ?? []);
+  // The rate Approve will apply, for each queue row's points preview (#3862).
+  // Read from its own `service:approve` route, not the chapter config, which
+  // needs `chapter-config:view` that no stock approver but the President holds.
+  // Unknown (loading, failed) leaves the preview off rather than guessing.
+  const canApprove = can(
+    "service:approve",
+    permissionsPayload?.permissions ?? [],
+  );
+  const pointsRate = useServicePointsRate({ enabled: canApprove });
+  const minutesPerPoint = pointsRate.data?.minutes_per_point;
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [draft, setDraft] = useState({
     date: localIsoDate(new Date()),

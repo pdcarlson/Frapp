@@ -59,9 +59,9 @@ const APPROVED_ENTRY = {
 
 const entriesPending = vi.hoisted(() => ({ current: false }));
 const entriesEmpty = vi.hoisted(() => ({ current: false }));
-// The loaded chapter config, or undefined for the unloaded/unreadable branch.
-const orgConfig = vi.hoisted(() => ({
-  current: undefined as Record<string, unknown> | undefined,
+// `GET /v1/service-entries/points-rate`, or undefined while unread/failed.
+const pointsRate = vi.hoisted(() => ({
+  current: undefined as { minutes_per_point: number } | undefined,
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
@@ -88,10 +88,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     mutateAsync: mockRequestProofUpload,
   }),
   useGetServiceProofUrl: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  // Chapter policy decides whether the proof input is `required` and the rate
-  // the queue's points preview uses; neither bears on the gate, so most specs
-  // run the neutral (unloaded) branch.
-  useOrgConfig: () => ({ data: orgConfig.current }),
+  // Chapter policy only decides whether the proof input is `required`; it has
+  // no bearing on the gate, so the neutral (unloaded) branch is enough here.
+  useOrgConfig: () => ({ data: undefined }),
+  useServicePointsRate: () => ({ data: pointsRate.current }),
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -458,13 +458,13 @@ describe("ServiceHoursPage approve points preview", () => {
     mockFrappUser.mockReturnValue({ userId: "admin-9", isLoading: false });
   });
   afterEach(() => {
-    orgConfig.current = undefined;
+    pointsRate.current = undefined;
   });
 
   const queue = () => screen.getByRole("region", { name: /review queue/i });
 
   it("says how many points Approve awards at the chapter's rate", () => {
-    orgConfig.current = { service: { minutes_per_point: 60 } };
+    pointsRate.current = { minutes_per_point: 60 };
     render(<ServiceHoursPage />);
 
     expect(queue()).toHaveTextContent(
@@ -473,11 +473,11 @@ describe("ServiceHoursPage approve points preview", () => {
   });
 
   it("says plainly when the entry is under the rate", () => {
-    orgConfig.current = { service: { minutes_per_point: 180 } };
+    pointsRate.current = { minutes_per_point: 180 };
     render(<ServiceHoursPage />);
 
     expect(queue()).toHaveTextContent(
-      "Approving awards no points: 2h is under the chapter's rate of 1 point per 3h.",
+      "Approving awards no points: 2h is under the chapter's current rate of 1 point per 3h.",
     );
   });
 

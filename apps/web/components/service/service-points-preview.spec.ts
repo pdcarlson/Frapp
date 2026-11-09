@@ -16,7 +16,7 @@ describe("approvePointsPreview", () => {
 
   it("says plainly when the entry is under the rate", () => {
     expect(approvePointsPreview(45, 60)).toBe(
-      "Approving awards no points: 45m is under the chapter's rate of 1 point per hour.",
+      "Approving awards no points: 45m is under the chapter's current rate of 1 point per hour.",
     );
   });
 
@@ -25,7 +25,7 @@ describe("approvePointsPreview", () => {
       "Approving awards 3 service points, at the chapter's current rate of 1 per 30m.",
     );
     expect(approvePointsPreview(60, 90)).toBe(
-      "Approving awards no points: 1h is under the chapter's rate of 1 point per 1h 30m.",
+      "Approving awards no points: 1h is under the chapter's current rate of 1 point per 1h 30m.",
     );
   });
 
