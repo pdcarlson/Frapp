@@ -119,3 +119,11 @@ export const SERVICE_DESCRIPTION_MAX_LENGTH = 2_000;
 /** Options on one poll, and the fewest a poll may have. */
 export const POLL_OPTIONS_MAX = 10;
 export const POLL_OPTIONS_MIN = 2;
+
+/**
+ * A poll's question and each option's label, as `CreatePollDto` bounds them.
+ * Mobile's New poll sheet stops its fields at the same lengths, so a phone
+ * poll can't carry text the REST route would refuse.
+ */
+export const POLL_QUESTION_MAX_LENGTH = 500;
+export const POLL_OPTION_MAX_LENGTH = 200;

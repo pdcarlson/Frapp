@@ -49,6 +49,7 @@ import {
   useSheetVisit,
 } from "@/components/sheet-scaffold";
 import { FilterChips } from "@/components/filter-chips";
+import { MoreOptionsRow } from "@/components/more-options-row";
 import { DisclosureGlyph } from "@/components/control-glyphs";
 import { AttendanceSheet } from "@/components/events/attendance-sheet";
 import { roleOptionsFrom } from "@/lib/events/attendance-roles";
@@ -802,49 +803,6 @@ const REPEAT_CHIPS = [
 ];
 
 /**
- * The row that opens and closes the sheet's further options. Closed, it says
- * what they are set to, so nothing hidden is a surprise on Create.
- */
-function MoreOptionsRow({
-  open,
-  summary,
-  onToggle,
-}: {
-  open: boolean;
-  summary: string;
-  onToggle: () => void;
-}) {
-  const { tokens } = useFrappTheme();
-  const brand = useChapterBranding();
-  const styles = createStyles(tokens, brand);
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={open ? "Fewer options" : `More options: ${summary}`}
-      accessibilityState={{ expanded: open }}
-      onPress={onToggle}
-      style={styles.moreRow}
-    >
-      <View style={styles.moreText}>
-        <Text style={styles.moreLabel}>
-          {open ? "Fewer options" : "More options"}
-        </Text>
-        {open ? null : (
-          <Text style={styles.caption} numberOfLines={1}>
-            {summary}
-          </Text>
-        )}
-      </View>
-      <DisclosureGlyph
-        color={tokens.color.text.mutedForeground}
-        size={18}
-        direction={open ? "up" : "down"}
-      />
-    </Pressable>
-  );
-}
-
-/**
  * One row of the When group: its label, then the day and the time. On iOS
  * each is the system's compact picker; elsewhere each is a pill that opens
  * the platform's dialog. `platform` is a prop so a spec can draw either.
@@ -1023,21 +981,6 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       backgroundColor: tokens.color.surface.popover,
     },
     pillText: rowText,
-    moreRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.sm,
-      minHeight: tokens.touch.minimum,
-      paddingVertical: tokens.spacing.xs,
-    },
-    moreText: {
-      flex: 1,
-      gap: 2,
-    },
-    moreLabel: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.mutedForeground,
-    },
     more: {
       gap: tokens.spacing.sm,
     },

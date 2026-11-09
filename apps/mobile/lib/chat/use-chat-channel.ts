@@ -97,6 +97,7 @@ import {
   type ChatMessage,
 } from "@repo/chat-core/types";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
+import type { PollPayload } from "@repo/chat-core/polls";
 import { randomClientId } from "@repo/api-sdk";
 import type { AttachmentPickResult } from "./attachment-upload";
 import {
@@ -240,6 +241,19 @@ export interface UseChatChannelResult {
    * is already true for a second tap landing inside the same render.
    */
   sendInFlight: () => boolean;
+  /**
+   * Posts a poll card (`kind: "poll"`) built by `buildPollMessage`, from s05's
+   * New poll sheet (#3701). It goes through the outbox like any message, so
+   * it is optimistic, survives going offline, and a refusal lands as a failed
+   * row in the thread with Retry and Discard. It touches neither the draft nor
+   * the photo tray. Resolves once the card is queued, or with the reason it
+   * couldn't be (no identity yet, or an outbox that refused the row). Never
+   * rejects.
+   */
+  sendPoll: (poll: {
+    content: string;
+    payload: PollPayload;
+  }) => Promise<{ ok: true } | { ok: false; error: string }>;
   /**
    * Saves an edit of the viewer's own message. Not optimistic: the server row
    * is merged on success, and the Realtime echo of the same edit is a no-op.
@@ -872,6 +886,34 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   );
   const sendInFlight = useCallback(() => sendingRef.current, []);
 
+  const sendPoll = useCallback(
+    async (poll: {
+      content: string;
+      payload: PollPayload;
+    }): Promise<{ ok: true } | { ok: false; error: string }> => {
+      if (!channelId || !ctx) {
+        return { ok: false, error: "Couldn't post that poll. Try again." };
+      }
+      try {
+        await sendMessage(ctx, {
+          channelId,
+          content: poll.content,
+          kind: "poll",
+          payload: poll.payload as unknown as Record<string, unknown>,
+        });
+        return { ok: true };
+      } catch (error) {
+        // As in `send`: the outbox refused the row and `sendMessage` took the
+        // optimistic card back out, so nothing is queued or on screen.
+        return {
+          ok: false,
+          error: errorCopy(error, "Couldn't post that poll. Try again."),
+        };
+      }
+    },
+    [channelId, ctx],
+  );
+
   const edit = useCallback(
     async (messageId: string, content: string) => {
       if (!channelId || !ctx) {
@@ -1125,6 +1167,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     canSend: !!ctx && !!channelId,
     send,
     sendInFlight,
+    sendPoll,
     edit,
     remove,
     react,
