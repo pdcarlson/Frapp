@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { isFirstOAuthSignIn } from "@/lib/auth/oauth";
 import {
   AUTH_CALLBACK_INTENT_PARAM,
+  EMAIL_CONFIRMED_AUTH_ERROR,
   NEW_ACCOUNT_PATH,
   isEmailOtpType,
   resolveRedirectPath,
@@ -30,7 +31,11 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
  * Failure — an expired link (`?error=access_denied&error_code=otp_expired`),
  * a bad hash, a code whose verifier cookie is gone, a replay — lands on
  * `/sign-in` with `next` preserved as `redirectTo` and `authError` set so
- * the page can say what happened. Nothing is signed in on failure.
+ * the page can say what happened. Nothing is signed in on failure. The one
+ * failure that is good news is an email link (`intent=confirm`) whose code
+ * won't exchange: GoTrue verified it before handing out the code, which
+ * confirms the address, so it lands with `authError=email_confirmed` and the
+ * page says to sign in.
  *
  * `next` is re-validated with the same open-redirect guard the proxy applies
  * (a same-origin path or `/chat`), so tampering with the link cannot send a
@@ -86,6 +91,16 @@ export async function GET(request: Request): Promise<NextResponse> {
         return NextResponse.redirect(notice);
       }
       return NextResponse.redirect(new URL(next, url.origin));
+    }
+    // An email link that reached here with a code already confirmed the
+    // address (GoTrue verifies before it hands out a code), so the only thing
+    // that failed is signing *this* browser in. Say so, and let a sign-in do
+    // it, rather than call a working link broken.
+    if (url.searchParams.get(AUTH_CALLBACK_INTENT_PARAM) === "confirm") {
+      const signIn = new URL("/sign-in", url.origin);
+      signIn.searchParams.set("redirectTo", next);
+      signIn.searchParams.set("authError", EMAIL_CONFIRMED_AUTH_ERROR);
+      return NextResponse.redirect(signIn);
     }
   }
 
