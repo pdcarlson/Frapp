@@ -31,25 +31,31 @@ const virtuosoProps = vi.hoisted(() => ({
   scrollToIndex: vi.fn(),
 }));
 
-// A stand-in poll card that only echoes the Close poll handler it was handed,
-// so the wiring test below proves the timeline carries `onClosePoll` through
-// MessageItem and MessageRenderer to the card (#3794). The real card's own
-// rules are `renderers/poll-card.spec.tsx`'s.
+// A stand-in poll card, so the wiring test below proves the timeline carries
+// `onClosePoll` through MessageItem and MessageRenderer to the card (#3794).
+// It still draws the question and a Vote control, as the real card does, so
+// the block-mask test above keeps meaning "no card was drawn". The real card's
+// own rules are `renderers/poll-card.spec.tsx`'s.
 vi.mock("./renderers/poll-card", () => ({
   PollCard: ({
     message,
     onClosePoll,
   }: {
-    message: { id: string };
+    message: { id: string; payload?: { question?: string } | null };
     onClosePoll?: (messageId: string) => void;
-  }) =>
-    onClosePoll ? (
-      <button type="button" onClick={() => onClosePoll(message.id)}>
-        stub-close-poll
-      </button>
-    ) : (
-      <span>stub-poll-without-close</span>
-    ),
+  }) => (
+    <div>
+      <p>{message.payload?.question}</p>
+      <button type="button">Vote</button>
+      {onClosePoll ? (
+        <button type="button" onClick={() => onClosePoll(message.id)}>
+          stub-close-poll
+        </button>
+      ) : (
+        <span>stub-poll-without-close</span>
+      )}
+    </div>
+  ),
 }));
 
 vi.mock("react-virtuoso", async () => {

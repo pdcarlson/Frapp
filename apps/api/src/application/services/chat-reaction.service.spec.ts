@@ -317,6 +317,24 @@ describe('ChatReactionService', () => {
         expect(mockActionRepo.updateForVote).not.toHaveBeenCalled();
       });
 
+      it('reads the early close by presence, even when its stamp is ahead of this clock (#3794)', async () => {
+        // The close ran on a process whose clock runs ahead of this one.
+        mockMessageRepo.findById.mockResolvedValue({
+          ...pollMessage,
+          payload: {
+            ...pollMessage.payload,
+            closes_at: '2999-01-01T00:00:00.000Z',
+            closed_at: new Date(Date.now() + 60_000).toISOString(),
+            closed_by: 'user-9',
+          },
+        });
+
+        await expect(vote({ option_id: 'opt-a' })).rejects.toThrow(
+          'Poll has expired',
+        );
+        expect(mockActionRepo.create).not.toHaveBeenCalled();
+      });
+
       it('rejects an option that is not on the card', async () => {
         mockMessageRepo.findById.mockResolvedValue(pollMessage);
 

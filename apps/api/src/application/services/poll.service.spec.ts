@@ -441,6 +441,25 @@ describe('PollService', () => {
   });
 
   describe('vote on a manually closed poll', () => {
+    it('reads the close by presence, even when its stamp is ahead of this clock (#3794)', async () => {
+      // The close ran on a process whose clock runs ahead of this one.
+      mockMessageRepo.findById.mockResolvedValue({
+        ...basePollMessage,
+        metadata: {
+          ...basePollMessage.metadata,
+          expires_at: '2099-01-01T00:00:00Z',
+          closed_at: new Date(Date.now() + 60_000).toISOString(),
+          closed_by: 'user-1',
+        },
+      });
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+
+      await expect(
+        service.vote('msg-1', 'user-2', 'ch-1', [0]),
+      ).rejects.toThrow('Poll has expired');
+      expect(mockVoteRepo.create).not.toHaveBeenCalled();
+    });
+
     it('rejects with the same message an expired poll would, even with time left before expires_at', async () => {
       const closedPoll = {
         ...basePollMessage,
