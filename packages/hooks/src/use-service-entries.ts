@@ -125,6 +125,7 @@ export function useCreateServiceEntry() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["service-entries", "create-service-entry"],
     mutationFn: async (body: {
       date: string;
       duration_minutes: number;
@@ -146,6 +147,7 @@ export function useCreateServiceEntry() {
 export function useRequestServiceProofUploadUrl() {
   const client = useFrappClient();
   return useMutation({
+    mutationKey: ["service-entries", "request-service-proof-upload-url"],
     mutationFn: async (body: {
       filename: string;
       content_type: string;
@@ -165,6 +167,7 @@ export function useRequestServiceProofUploadUrl() {
 export function useGetServiceProofUrl() {
   const client = useFrappClient();
   return useMutation({
+    mutationKey: ["service-entries", "get-service-proof-url"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.GET(
         "/v1/service-entries/{id}/proof-url",
@@ -180,6 +183,7 @@ export function useReviewServiceEntry() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["service-entries", "review-service-entry"],
     mutationFn: async ({
       id,
       body,
@@ -207,6 +211,7 @@ export function useDeleteServiceEntry() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["service-entries", "delete-service-entry"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.DELETE("/v1/service-entries/{id}", {
         params: { path: { id } },
