@@ -34,7 +34,7 @@ import {
   smokeFetch,
   withoutSecret,
 } from "../smoke-deployed-api.mjs";
-import { parseRegistry } from "../../check-api-breaking-changes.mjs";
+import { parseRegistry } from "../lib/shipped-builds-registry.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const SCRIPT = join(REPO_ROOT, "scripts", "ci", "smoke-deployed-api.mjs");
@@ -352,7 +352,7 @@ describe("runSmokeChecks: the minimum app version", () => {
     const readTrustedFile = trusted({ [SHIPPED_BUILDS]: JSON.stringify({ builds: [{ platform: "ios", version: "0.9" }] }) });
     const { results } = await run({ readTrustedFile });
     assert.deepEqual(verdicts(results).filter((v) => v.startsWith("fail")), ["fail client policy"]);
-    assert.match(results.find((r) => r.verdict === "fail").message, /builds\[0\] needs a platform/);
+    assert.match(results.find((r) => r.verdict === "fail").message, /shipped-builds\.json is invalid: builds\[0\]\.version must be/);
   });
 });
 
@@ -497,7 +497,9 @@ describe("runSmokeChecks: inputs", () => {
     assert.doesNotThrow(() => parseRegistry(wide));
     assert.deepEqual(newestShippedBuilds(wide), { ios: { version: "0.09.0", build: "3" }, android: { version: "0.9.0", build: "2026100101" } });
     assert.throws(() => newestShippedBuilds("{"), /not valid JSON/);
-    assert.throws(() => newestShippedBuilds("{}"), /no `builds` array/);
+    assert.throws(() => newestShippedBuilds("{}"), /`builds` must be an array/);
+    // A bad merge's splice (#3783): valid JSON, refused rather than half-read.
+    assert.throws(() => newestShippedBuilds(registry(["ios", "0.9.0", "9"]).replace('"build":"9",', '"build":"9","build":"10",')), /repeats the key `build`/);
   });
 
   it("reads expo.version strictly", () => {
