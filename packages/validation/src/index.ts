@@ -923,3 +923,8 @@ export {
   copyForServerMessage,
   refusalCopy,
 } from "./error-copy";
+export {
+  SERVICE_MINUTES_PER_POINT_DEFAULT,
+  effectiveMinutesPerPoint,
+  servicePointsForDuration,
+} from "./service-points";

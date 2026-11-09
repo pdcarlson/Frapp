@@ -222,6 +222,21 @@ export class ServiceLeaderboardQueryDto {
   end_date?: string;
 }
 
+/**
+ * The rate `ServiceEntryService.approve` applies, so the review queue can say
+ * what Approve will award (#3862). Read through the same lookup the approve
+ * path uses, default and invalid-row fallback included.
+ */
+export class ServicePointsRateResponseDto {
+  @ApiProperty({
+    description:
+      'Minutes of approved service per SERVICE point, as the approve path reads it now (default 60). Approving awards floor(duration_minutes / minutes_per_point).',
+    minimum: 1,
+    example: 60,
+  })
+  minutes_per_point: number;
+}
+
 export class ReviewServiceEntryDto {
   @ApiProperty({ enum: ['APPROVED', 'REJECTED'] })
   @IsIn(['APPROVED', 'REJECTED'])
