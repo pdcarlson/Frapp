@@ -130,6 +130,15 @@ describe("buildAuthCallbackUrl", () => {
     );
     expect(url.searchParams.get("next")).toBe("/chat");
   });
+
+  it("adds the sign-in intent only when asked", () => {
+    const plain = new URL(buildAuthCallbackUrl("https://app.frapp.live", "/chat"));
+    expect(plain.searchParams.has("intent")).toBe(false);
+    const signIn = new URL(
+      buildAuthCallbackUrl("https://app.frapp.live", "/chat", { intent: "sign-in" }),
+    );
+    expect(signIn.searchParams.get("intent")).toBe("sign-in");
+  });
 });
 
 describe("describeAuthError", () => {

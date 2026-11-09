@@ -153,6 +153,48 @@ describe("useMarkChannelRead", () => {
     expect(invalidateSpy).not.toHaveBeenCalled();
   });
 
+  it("clears the channel's cached chat notifications and refetches the inbox only when it showed one (#3788)", async () => {
+    // Seeded entries no component observes need a gc window to survive.
+    queryClient.setDefaultOptions({ queries: { retry: false, gcTime: Infinity } });
+    const mockPost = vi.fn().mockResolvedValue({
+      data: { success: true },
+      error: undefined,
+      response: { ok: true, status: 200 },
+    });
+    const listKey = ["notifications", "chapter-1", undefined];
+    queryClient.setQueryData(listKey, [
+      { id: "n-1", read_at: null, data: { target: { screen: "chat", channelId: "chan-1" } } },
+    ]);
+    // Shares the `notifications` prefix, but a read can't change it.
+    const prefsKey = ["notifications", "preferences", "chapter-1"];
+    queryClient.setQueryData(prefsKey, []);
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHook(() => useMarkChannelRead(), {
+      wrapper: createWrapper(queryClient, { POST: mockPost }),
+    });
+
+    result.current.mutate("chan-1");
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(
+      (queryClient.getQueryData(listKey) as { read_at: string | null }[])[0]
+        ?.read_at,
+    ).toEqual(expect.any(String));
+    // The inbox list is refetched; preferences, which share the prefix, aren't.
+    expect(queryClient.getQueryState(listKey)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(prefsKey)?.isInvalidated).toBe(false);
+
+    invalidateSpy.mockClear();
+    result.current.mutate("chan-1");
+    // The second success is the one that just invalidated `["channels"]`.
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["channels"] }),
+    );
+    // Nothing left to clear: one invalidation (channels), no list refetch.
+    expect(invalidateSpy).toHaveBeenCalledTimes(1);
+    expect(queryClient.getQueryState(prefsKey)?.isInvalidated).toBe(false);
+  });
+
   // openapi-fetch gives an empty-bodied 5xx no `error` at all. Read off
   // `error`, the stamp that never landed looked like one that did, and mobile's
   // retry (#3747) never ran.
@@ -237,6 +279,27 @@ describe("useLeaveChannel", () => {
     resolveRefetch();
     await done;
     expect(settled).toBe(true);
+  });
+
+  it("refetches the inbox when it shows an unread chat row for the hidden DM (#3788)", async () => {
+    queryClient.setDefaultOptions({ queries: { retry: false, gcTime: Infinity } });
+    const mockPost = vi
+      .fn()
+      .mockResolvedValue({ data: { success: true }, error: null });
+    const listKey = ["notifications", "chapter-1", undefined];
+    const rows = [
+      { id: "n-1", read_at: null, data: { target: { screen: "chat", channelId: "dm-1" } } },
+    ];
+    queryClient.setQueryData(listKey, rows);
+    const { result } = renderHook(() => useLeaveChannel(), {
+      wrapper: createWrapper(queryClient, { POST: mockPost }),
+    });
+
+    await result.current.mutateAsync("dm-1");
+
+    // Refetched, not rewritten: the server decides what a leave clears.
+    expect(queryClient.getQueryState(listKey)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryData(listKey)).toBe(rows);
   });
 
   it("surfaces an error without invalidating anything", async () => {
