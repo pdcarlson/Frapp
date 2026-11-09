@@ -776,6 +776,17 @@ export type {
   ChapterTextMarkSource,
 } from "./chapter-mark";
 
+// ── Backwork course names and nicknames (#3848) ──
+export {
+  MAX_COURSE_NAME_LENGTH,
+  MAX_COURSE_NICKNAMES,
+  MAX_COURSE_NICKNAME_LENGTH,
+  collapseCourseText,
+  courseTextLength,
+  courseTextTooLong,
+  normalizeCourseNicknames,
+} from "./backwork-courses";
+
 // ── Upload MIME / extension allowlists + size caps (25 MB; backwork 100 MB) ──
 export {
   MAX_UPLOAD_BYTES,
