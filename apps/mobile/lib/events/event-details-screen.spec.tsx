@@ -597,8 +597,14 @@ describe("Event details series (#3823)", () => {
   it("reads a generated occurrence's cadence off its series head", () => {
     chapterEvents = [0, 1, 2, 3].map(weekly);
     // The common path: the list's series row opens a child, whose own
-    // recurrence_rule is null.
-    event = chapterEvents[1] as Record<string, unknown>;
+    // recurrence_rule is null. This one was moved a day later on its own, so
+    // its own weekday is not the series'.
+    const moved = chapterEvents[1] as Record<string, unknown>;
+    const shift = (iso: unknown) =>
+      new Date(new Date(String(iso)).getTime() + 86_400_000).toISOString();
+    moved.start_time = shift(moved.start_time);
+    moved.end_time = shift(moved.end_time);
+    event = moved;
     const tree = render();
     const weekday = START.toLocaleDateString(undefined, { weekday: "long" });
     expect(screenText(tree)).toContain(`Every ${weekday}`);
@@ -619,6 +625,21 @@ describe("Event details series (#3823)", () => {
         ),
     );
     expect(renamed).toHaveLength(1);
+  });
+
+  it("doesn't name the ordinary dates when the renamed occurrence is open", () => {
+    chapterEvents = [0, 1, 2].map(weekly);
+    (chapterEvents[2] as Record<string, unknown>).name = "Chapter: Elections";
+    event = chapterEvents[2] as Record<string, unknown>;
+    const tree = render();
+    const rows = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        String(node.props.accessibilityLabel).startsWith("Open Chapter meeting, "),
+    );
+    // The two other dates carry the series' name, so neither says it.
+    expect(rows).toHaveLength(2);
+    expect(screenText(tree)).not.toMatch(/^Chapter meeting · /m);
   });
 
   it("draws no series section for a one-time event", () => {

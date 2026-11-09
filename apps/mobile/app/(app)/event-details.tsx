@@ -506,11 +506,18 @@ function SeriesSection({ event, now }: { event: EventDetail; now: Date }) {
     () => selectSeriesOccurrences(rows, event, now),
     [rows, event, now],
   );
-  // The cadence is read off the series head, which may be this event.
-  const cadence = useMemo(
-    () => seriesCadence(seriesHeads([event, ...rows]), event),
-    [rows, event],
-  );
+  // The series as a whole (`seriesHeads`): its cadence, and the name most of
+  // its occurrences carry, which a renamed one is told apart from.
+  const series = useMemo(() => {
+    const heads = seriesHeads(
+      rows.some((row) => row.id === event.id) ? rows : [event, ...rows],
+    );
+    return {
+      cadence: seriesCadence(heads, event),
+      name: (key ? heads.get(key)?.name : null) ?? event.name,
+    };
+  }, [rows, event, key]);
+  const { cadence } = series;
   if (!key || occurrences.length === 0) return null;
 
   return (
@@ -541,7 +548,7 @@ function SeriesSection({ event, now }: { event: EventDetail; now: Date }) {
             >
               <Text style={styles.sectionBody}>
                 {/* An occurrence renamed on its own says so. */}
-                {occurrence.name === event.name
+                {occurrence.name === series.name
                   ? when
                   : `${occurrence.name} · ${when}`}
               </Text>

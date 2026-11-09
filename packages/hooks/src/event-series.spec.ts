@@ -65,11 +65,11 @@ describe("collapseSeries", () => {
     // The started head stands alone; the upcoming twelve collapse to one.
     expect(chapter).toHaveLength(2);
     expect(chapter[0]).toMatchObject({ event: { id: "head" }, series: null });
-    expect(chapter[0]!.rule).toBe("WEEKLY");
+    expect(chapter[0]!.cadence).toBe("Every Sunday");
     expect(chapter[1]!.event.id).toBe("child-1");
     expect(chapter[1]!.series).toHaveLength(12);
     expect(chapter[1]!.series![0]!.id).toBe("child-1");
-    expect(chapter[1]!.rule).toBe("WEEKLY");
+    expect(chapter[1]!.cadence).toBe("Every Sunday");
 
     // Soonest first, the one-off in its place.
     expect(collapsed.map((entry) => entry.event.id)).toEqual([
@@ -86,7 +86,9 @@ describe("collapseSeries", () => {
     );
     expect(collapsed.map((entry) => entry.event.id)).toEqual(["a", "b"]);
     expect(
-      collapsed.every((entry) => entry.series === null && entry.rule === null),
+      collapsed.every(
+        (entry) => entry.series === null && entry.cadence === null,
+      ),
     ).toBe(true);
   });
 
@@ -94,7 +96,7 @@ describe("collapseSeries", () => {
     const children = weeklySeries(8, 4).slice(1);
     const [entry] = collapseSeries(children, NOW);
     expect(entry!.series).toHaveLength(3);
-    expect(entry!.rule).toBeNull();
+    expect(entry!.cadence).toBeNull();
   });
 
   it("puts an unreadable start last rather than throwing", () => {
@@ -188,6 +190,22 @@ describe("seriesCadence", () => {
     expect(collapseSeries([head!, moved], NOW).at(-1)!.cadence).toBe(
       "Every Sunday",
     );
+  });
+
+  it("keeps the series' weekday when the head alone is moved", () => {
+    // "This event only" on an unstarted head: only that row moves.
+    const [head, ...children] = weeklySeries(8, 4);
+    const moved = { ...head!, start_time: iso(11, 9) }; // a Monday
+    const heads = seriesHeads([moved, ...children]);
+    expect(seriesCadence(heads, children[0]!)).toBe("Every Sunday");
+    expect(seriesCadence(heads, moved)).toBe("Every Sunday");
+  });
+
+  it("names the series by what most of its occurrences are called", () => {
+    const [head, ...children] = weeklySeries(8, 4);
+    const renamedHead = { ...head!, name: "Chapter: Elections" };
+    const heads = seriesHeads([renamedHead, ...children]);
+    expect(heads.get("head")!.name).toBe("Chapter");
   });
 
   it("says nothing for a one-time event or a series without its head", () => {

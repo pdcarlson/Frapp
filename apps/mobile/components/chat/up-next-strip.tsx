@@ -160,7 +160,8 @@ export function selectNextTask(
 /**
  * The day in words, never abbreviated (owner, 2026-11-07): "Today",
  * "Tomorrow", a weekday inside the coming week ("Sunday"), else the full date
- * ("November 14"). `@repo/formatting`'s `formatDayHeading`, which the Events
+ * ("November 14", or "January 5, 2027" outside this year). `@repo/formatting`'s
+ * `formatDayHeading`, which the Events
  * tab heads its days with, so the strip and the list say a day the same way.
  * Exported for the strip's due line too.
  */

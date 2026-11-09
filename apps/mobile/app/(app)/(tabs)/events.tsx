@@ -241,11 +241,20 @@ export default function EventsScreen() {
           monthAnchor={monthAnchor}
           selectedDay={selectedDay}
           onMonthChange={setPickedMonth}
-          onSelectDay={setPickedDay}
+          onSelectDay={(day) => {
+            // A picked day holds its month too, so the grid and the list
+            // under it never part when the clock moves on.
+            setPickedDay(day);
+            setPickedMonth(startOfMonth(day));
+          }}
           onOpen={openEvent}
-          // A chapter with nothing at all says so, and points a creator at
-          // the +, whichever view it opens on.
-          emptyNote={allEvents.length === 0 ? nothingScheduled : null}
+          // With nothing scheduled, Calendar says what the List says (by the
+          // List's own test), and points a creator at the +.
+          emptyNote={
+            list.soon.length === 0 && list.later.length === 0
+              ? nothingScheduled
+              : null
+          }
         />
       );
     }

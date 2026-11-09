@@ -57,6 +57,7 @@ export function EventsCalendar({
   /** The day whose events list under the grid, local midnight. */
   selectedDay: Date;
   onMonthChange: (anchor: Date) => void;
+  /** A tapped day; the screen moves the month to it as well. */
   onSelectDay: (day: Date) => void;
   onOpen: (id: string) => void;
   /**
@@ -167,10 +168,7 @@ export function EventsCalendar({
                         : `${label}, ${count} ${count === 1 ? "event" : "events"}`
                     }
                     accessibilityState={{ selected: isSelected }}
-                    onPress={() => {
-                      onSelectDay(day);
-                      if (!inMonth) onMonthChange(day);
-                    }}
+                    onPress={() => onSelectDay(day)}
                     style={styles.cell}
                   >
                     <View

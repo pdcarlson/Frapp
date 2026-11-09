@@ -50,39 +50,120 @@ export function eventSeriesKey(event: object): string | null {
   return text(event, "recurrence_rule") ? text(event, "id") : null;
 }
 
-/** What a series' label reads off its head row: the rule and the anchor date. */
+/** What a series' row says about the series as a whole. */
 export interface SeriesHead {
+  /** The rule, from the head row (the only row that carries it). */
   rule: RecurrenceRule;
-  /** The head's start, which the generated occurrences step from. */
+  /**
+   * A start that shows the day the series meets on: one from the weekday (or,
+   * for a monthly series, the day of the month) most of its occurrences share.
+   */
   start_time: string;
+  /** The name most of its occurrences carry. */
+  name: string | null;
 }
 
 /**
- * Each series' head, by series key ({@link eventSeriesKey}): the one place the
- * apps read a series' rule. Heads carrying a rule this app doesn't know are
- * left out.
+ * The item whose key most items share. A tie goes to the larger key when
+ * `largerWins`, otherwise to the key seen first.
+ */
+function mostCommon<T>(
+  items: readonly T[],
+  keyOf: (item: T) => number,
+  largerWins: boolean,
+): T {
+  const counts = new Map<number, { item: T; count: number }>();
+  for (const item of items) {
+    const key = keyOf(item);
+    const seen = counts.get(key);
+    if (seen) seen.count += 1;
+    else counts.set(key, { item, count: 1 });
+  }
+  let best: { key: number; item: T; count: number } | null = null;
+  for (const [key, { item, count }] of counts) {
+    if (
+      !best ||
+      count > best.count ||
+      (largerWins && count === best.count && key > best.key)
+    ) {
+      best = { key, item, count };
+    }
+  }
+  return best!.item;
+}
+
+/** The name most rows carry; a tie goes to the soonest row's. */
+function mostCommonName(rows: readonly object[]): string | null {
+  const counts = new Map<string, number>();
+  let best: string | null = null;
+  for (const row of [...rows].sort(byStart)) {
+    const name = text(row, "name");
+    if (!name) continue;
+    const count = (counts.get(name) ?? 0) + 1;
+    counts.set(name, count);
+    if (best === null || count > (counts.get(best) ?? 0)) best = name;
+  }
+  return best;
+}
+
+/**
+ * Each series, by series key ({@link eventSeriesKey}), for its cadence and
+ * name. The rule is the head's; the day and the name are what most of the
+ * series' occurrences agree on, never one row's alone. A single "This event
+ * only" edit moves or renames one row, the head included, and must not
+ * relabel the series: a head moved to a Monday leaves a series that still
+ * meets on Sundays, and a monthly series on the 31st whose shorter months the
+ * API clamps to the 30th still meets on the 31st (a monthly tie goes to the
+ * later day; a weekly one to the head's).
+ * A series whose head carries a rule this app doesn't know is left out.
  */
 export function seriesHeads(
   events: readonly object[],
 ): Map<string, SeriesHead> {
-  const heads = new Map<string, SeriesHead>();
+  const rules = new Map<string, RecurrenceRule>();
+  const members = new Map<string, object[]>();
   for (const event of events) {
     const id = text(event, "id");
     const rule = field(event, "recurrence_rule");
-    const start = text(event, "start_time");
-    if (id && start && isRecurrenceRule(rule)) {
-      heads.set(id, { rule, start_time: start });
+    if (id && isRecurrenceRule(rule)) rules.set(id, rule);
+    const key = eventSeriesKey(event);
+    if (key && startOf(event)) {
+      const list = members.get(key);
+      if (list) list.push(event);
+      else members.set(key, [event]);
     }
+  }
+
+  const heads = new Map<string, SeriesHead>();
+  for (const [key, rule] of rules) {
+    const rows = members.get(key);
+    if (!rows) continue;
+    // The head first, so a weekday tie keeps the head's day; a monthly tie
+    // takes the later day, since the API only ever clamps a day earlier.
+    const ordered = [...rows].sort((a, b) =>
+      text(a, "id") === key ? -1 : text(b, "id") === key ? 1 : 0,
+    );
+    const monthly = rule === "MONTHLY";
+    const anchor = mostCommon(
+      ordered,
+      (row) => (monthly ? startOf(row)!.getDate() : startOf(row)!.getDay()),
+      monthly,
+    );
+    heads.set(key, {
+      rule,
+      start_time: text(anchor, "start_time")!,
+      name: mostCommonName(rows),
+    });
   }
   return heads;
 }
 
 /**
- * How often `event`'s series meets ("Every Sunday"), read off its head, never
- * off `event` itself: a monthly occurrence the API clamped to the 30th, or one
- * an officer moved to a Monday, belongs to a series that still meets on the
- * 31st or on Sundays. `null` for a one-time event or a series whose head isn't
- * in `heads`.
+ * How often `event`'s series meets ("Every Sunday"), from {@link seriesHeads},
+ * never from `event`'s own start: an occurrence the API clamped to the 30th,
+ * or one an officer moved to a Monday, belongs to a series that still meets on
+ * the 31st or on Sundays. `null` for a one-time event or a series without its
+ * head in `heads`.
  */
 export function seriesCadence(
   heads: ReadonlyMap<string, SeriesHead>,
@@ -102,12 +183,6 @@ export interface CollapsedEvent<T> {
    * started occurrence, which stands as its own row.
    */
   series: T[] | null;
-  /**
-   * The series' rule, read off its head row, for {@link seriesCadenceLabel}.
-   * `null` for a one-time event, or when the head isn't among `events` or
-   * carries a rule this app doesn't know.
-   */
-  rule: RecurrenceRule | null;
   /** {@link seriesCadence} for the row: "Every Sunday", or `null`. */
   cadence: string | null;
 }
@@ -126,13 +201,7 @@ export function collapseSeries<T extends object>(
 ): CollapsedEvent<T>[] {
   const heads = seriesHeads(events);
   const entry = (event: T, series: T[] | null): CollapsedEvent<T> => {
-    const key = eventSeriesKey(event);
-    return {
-      event,
-      series,
-      rule: key ? (heads.get(key)?.rule ?? null) : null,
-      cadence: seriesCadence(heads, event),
-    };
+    return { event, series, cadence: seriesCadence(heads, event) };
   };
 
   const out: CollapsedEvent<T>[] = [];

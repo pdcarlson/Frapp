@@ -504,6 +504,46 @@ describe("Events view switch", () => {
     permissions = [];
   });
 
+  it("says nothing is scheduled in Calendar for a chapter with only past events", () => {
+    permissions = ["*"];
+    events = [
+      {
+        ...EVENT,
+        id: "past",
+        start_time: new Date(START.getTime() - 30 * 86_400_000).toISOString(),
+        end_time: new Date(START.getTime() - 30 * 86_400_000 + 3_600_000).toISOString(),
+      },
+    ];
+    const tree = render();
+    expect(screenText(tree)).toContain("Nothing scheduled yet.");
+    act(() => viewSwitch(tree, "Calendar").props.onPress());
+    expect(screenText(tree)).toContain(
+      "Nothing scheduled yet. Tap + to add the first event.",
+    );
+    permissions = [];
+  });
+
+  it("keeps a picked day and its month together as the clock moves on", () => {
+    const tree = render();
+    act(() => viewSwitch(tree, "Calendar").props.onPress());
+    const month = START.toLocaleDateString(undefined, {
+      month: "long",
+      year: "numeric",
+    });
+    const day = tree.root.find(
+      (node) =>
+        typeof node.props.onPress === "function" &&
+        String(node.props.accessibilityLabel).endsWith(", 1 event"),
+    );
+    act(() => day.props.onPress());
+    // Six weeks on, the tab still mounted.
+    act(() => {
+      vi.advanceTimersByTime(42 * 86_400_000);
+    });
+    expect(screenText(tree)).toContain(month);
+    expect(screenText(tree)).toContain("Chapter meeting");
+  });
+
   it("follows the clock to a new day until the member picks one", () => {
     const tree = render();
     act(() => viewSwitch(tree, "Calendar").props.onPress());
