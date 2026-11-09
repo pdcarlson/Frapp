@@ -2504,6 +2504,14 @@ export function ChatShell({
         open={profileOpen}
         onOpenChange={setProfileOpen}
         userId={profileUserId}
+        identity={
+          profileUserId
+            ? {
+                name: nameFor(profileUserId),
+                avatarUrl: avatarFor(profileUserId),
+              }
+            : null
+        }
       />
 
       {confirmDialog}

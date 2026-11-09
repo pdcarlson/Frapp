@@ -15,6 +15,7 @@ const {
   mockRoles,
   refetchMember,
   removeMutateAsync,
+  rolesState,
 } = vi.hoisted(() => ({
   // What `useMemberByUserId` answers, per test.
   memberQueryState: {
@@ -34,6 +35,7 @@ const {
   mockCurrentUserLoading: { current: false },
   mockPermissions: { current: ["*"] as string[] },
   mockRoles: { current: [] as unknown[] | undefined },
+  rolesState: { isError: false, refetch: vi.fn() },
 }));
 
 // Custom-role assignment (bridge model): the list read is stubbed per-test via
@@ -56,9 +58,10 @@ vi.mock("@repo/hooks", () => ({
   },
   useRoles: () => ({
     data: mockRoles.current,
-    isError: false,
-    isPending: mockRoles.current === undefined,
+    isError: rolesState.isError,
+    isPending: mockRoles.current === undefined && !rolesState.isError,
     isSuccess: mockRoles.current !== undefined,
+    refetch: rolesState.refetch,
   }),
   useRemoveMember: () => ({ mutateAsync: removeMutateAsync, isPending: false }),
   useUpdateMemberRoles: () => ({ mutateAsync: updateRolesMutateAsync, isPending: false }),
@@ -124,6 +127,8 @@ beforeEach(() => {
   updateRolesMutateAsync.mockClear();
   mockPermissions.current = ["*"];
   mockRoles.current = [];
+  rolesState.isError = false;
+  rolesState.refetch.mockReset();
   mockCurrentUserId.current = "viewer-1";
   mockCurrentUserLoading.current = false;
   customRolesState.data = [];
@@ -151,6 +156,19 @@ describe("MemberDetailSheet loads by user id (#3726)", () => {
     );
     expect(screen.getByRole("heading", { name: "Jane Smith" })).toBeInTheDocument();
     expect(screen.getByText("jane@example.com")).toBeInTheDocument();
+  });
+
+  it("names the member from the opener's roster while the read is in flight, not by their id", () => {
+    memberQueryState.isPending = true;
+    render(
+      <MemberDetailSheet
+        open
+        onOpenChange={() => {}}
+        userId="u1"
+        identity={{ name: "Jane Smith", avatarUrl: null }}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "Jane Smith" })).toBeInTheDocument();
   });
 
   it("ignores a seed row that belongs to someone else", () => {
@@ -242,6 +260,16 @@ describe("MemberDetailSheet layout follows mobile's order", () => {
     ]);
     const dot = chips[0]!.querySelector("span");
     expect(dot).toHaveStyle({ backgroundColor: "#F2994A" });
+  });
+
+  it("says the roles failed to load, with a retry, rather than claiming none", () => {
+    mockRoles.current = undefined;
+    rolesState.isError = true;
+    renderProfile({ ...baseMember, role_ids: ["r-pres"] });
+    expect(screen.queryByText("No roles yet")).not.toBeInTheDocument();
+    expect(screen.getByText("Couldn't load roles.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(rolesState.refetch).toHaveBeenCalled();
   });
 
   it("says so when the member holds no role", () => {
@@ -366,6 +394,27 @@ describe("MemberDetailSheet role editor", () => {
     expect(
       screen.getByRole("button", { name: "Edit Jane Smith's roles" }),
     ).toBeInTheDocument();
+  });
+
+  it("drops the editor and its unsaved picks when the sheet closes", () => {
+    mockRoles.current = [{ id: "r-member", name: "Member", permissions: [] }];
+    memberQueryState.data = { ...baseMember, role_ids: ["r-member"] };
+    const { rerender } = render(
+      <MemberDetailSheet open onOpenChange={() => {}} userId="u1" />,
+    );
+    openRoleEditor();
+    fireEvent.click(
+      screen.getByText("Member", { selector: "p" }).closest("label")!.querySelector("input")!,
+    );
+
+    rerender(<MemberDetailSheet open={false} onOpenChange={() => {}} userId="u1" />);
+    rerender(<MemberDetailSheet open onOpenChange={() => {}} userId="u1" />);
+
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    openRoleEditor();
+    expect(
+      screen.getByText("Member", { selector: "p" }).closest("label")!.querySelector("input")!.checked,
+    ).toBe(true);
   });
 
   it("omits the custom-roles checklist when the list cannot load (no config access)", () => {

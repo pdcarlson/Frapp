@@ -137,6 +137,13 @@ type MemberDetailSheetProps = {
    */
   initialMember?: MemberRecord | null;
   /**
+   * The name and photo the opener already holds (chat's roster), drawn in the
+   * identity block until the profile read lands, so the sheet never opens
+   * titled "Member 3f9a1c" for someone chat just named, and keeps their name
+   * if the read fails.
+   */
+  identity?: { name: string | null; avatarUrl: string | null } | null;
+  /**
    * The member's point balance, which only the directory has (from the
    * leaderboard it already reads). Omitted elsewhere rather than faked: the
    * per-member read needs `points:view_all`, which most viewers lack.
@@ -248,6 +255,7 @@ export function MemberDetailSheet({
   onOpenChange,
   userId,
   initialMember,
+  identity,
   points,
 }: MemberDetailSheetProps) {
   const memberQuery = useMemberByUserId(userId ?? "");
@@ -276,9 +284,14 @@ export function MemberDetailSheet({
     [],
   );
   // Whose roles are being edited. Keyed by member rather than a boolean, so
-  // the editor never carries over to the next member the sheet opens on, or
-  // reopens on the same one after a close.
+  // the editor never carries over to the next member the sheet opens on.
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  // Closing drops the editor and its unsaved picks, however the sheet closed
+  // (Escape, the overlay, the X, or the parent). Reopening the same member
+  // shows the chips again, never a checklist seeded from roles that may have
+  // changed since. Adjusted during render, not in an effect, so no frame draws
+  // the stale editor.
+  if (!open && editingUserId !== null) setEditingUserId(null);
   const editingRoles = open && userId !== null && editingUserId === userId;
 
   const fetched =
@@ -321,6 +334,12 @@ export function MemberDetailSheet({
   // would flash a wrong "No roles yet".
   const rolesLoading =
     rolesQuery.isPending || (canViewCustomRoles && customRolesQuery.isPending);
+  // A failed roles read resolves no chip, which must not read as a member
+  // with no roles: say it failed and offer the read again.
+  const rolesFailed =
+    rolesQuery.isError &&
+    rolesQuery.data === undefined &&
+    memberRoleIds.length > 0;
 
   const roleOptions = useMemo(
     () => normalizeRoleOptions(rolesQuery.data),
@@ -334,11 +353,13 @@ export function MemberDetailSheet({
 
   // `memberLabel`, the helper the directory row uses: this sheet opens from
   // that row, so the two must not name an unnamed member two different ways.
+  const seedIdentity = !member && userId ? identity : null;
   const displayName = memberLabel(
-    member?.display_name,
+    member?.display_name ?? seedIdentity?.name,
     member?.user_id ?? userId,
   );
-  const avatarUrl = stringField(member, "avatar_url");
+  const avatarUrl =
+    stringField(member, "avatar_url") ?? seedIdentity?.avatarUrl ?? null;
   const meta = metaLine(member);
   const email = stringField(member, "email");
   const joined = formatDay(member?.created_at);
@@ -668,6 +689,20 @@ export function MemberDetailSheet({
                   <p className="text-caption text-muted-foreground">
                     Loading roles
                   </p>
+                ) : rolesFailed ? (
+                  <div className="flex items-center gap-2 text-caption text-muted-foreground">
+                    <span>Couldn&apos;t load roles.</span>
+                    <button
+                      type="button"
+                      onClick={() => void rolesQuery.refetch()}
+                      className={cn(
+                        "rounded-sm font-semibold text-foreground underline-offset-2 hover:underline",
+                        FOCUS_RING_OFFSET,
+                      )}
+                    >
+                      Retry
+                    </button>
+                  </div>
                 ) : roleChips.length > 0 ? (
                   <ul className="flex flex-wrap gap-1.5">
                     {roleChips.map((chip) => (
