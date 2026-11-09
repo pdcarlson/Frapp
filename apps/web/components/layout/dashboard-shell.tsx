@@ -34,7 +34,7 @@ import { TermsPromptGate } from "@/components/auth/terms-prompt";
 import { OnboardingTutorial } from "@/components/onboarding/onboarding-tutorial";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useChatRealtimeBinding } from "@/lib/chat/use-chat-realtime-binding";
-import { useChatHasUnread } from "@/components/layout/use-chat-has-unread";
+import { useNavHighlights } from "@/components/layout/use-chat-has-unread";
 import { cn } from "@/lib/utils";
 
 /**
@@ -66,7 +66,27 @@ import { cn } from "@/lib/utils";
  * list that can drift.
  */
 
-const NO_HIGHLIGHTS: ReadonlySet<string> = new Set();
+/**
+ * The drawer's nav, with the rows that have something new lit (#3824). Its
+ * own component so the unread reads redraw the drawer, not the shell; the
+ * sheet mounts it only while open.
+ */
+function DrawerNav(
+  props: Pick<
+    React.ComponentProps<typeof AppNav>,
+    "permissions" | "isModuleEnabled" | "pathname" | "onNavigate"
+  >,
+) {
+  const highlighted = useNavHighlights();
+  return (
+    <AppNav
+      variant="drawer"
+      collapsed={false}
+      highlighted={highlighted}
+      {...props}
+    />
+  );
+}
 
 type DashboardShellProps = {
   children: React.ReactNode;
@@ -91,13 +111,6 @@ export function DashboardShell({
   // Chat's inbox, joined on every page, so a message arriving while the member
   // is on Events lights the nav's Chat row within seconds (#3745).
   useChatRealtimeBinding();
-  // Rows with something new, lit on every route and in the drawer until seen
-  // (#3824). Chat is the only row the app counts today.
-  const chatHasUnread = useChatHasUnread();
-  const highlightedNav = useMemo<ReadonlySet<string>>(
-    () => (chatHasUnread ? new Set(["chat"]) : NO_HIGHLIGHTS),
-    [chatHasUnread],
-  );
 
   const [navCollapsed, setNavCollapsed] = useState(defaultNavCollapsed);
   const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false);
@@ -217,13 +230,10 @@ export function DashboardShell({
               Open dashboard routes and chapter tools.
             </SheetDescription>
           </SheetHeader>
-          <AppNav
-            variant="drawer"
-            collapsed={false}
+          <DrawerNav
             permissions={permissions}
             isModuleEnabled={isModuleEnabled}
             pathname={pathname}
-            highlighted={highlightedNav}
             onNavigate={() => setMobileNavOpen(false)}
           />
           <div className="mt-2 shrink-0 border-t border-border pt-2">
@@ -255,7 +265,6 @@ export function DashboardShell({
           permissions={permissions}
           isModuleEnabled={isModuleEnabled}
           pathname={pathname}
-          highlighted={highlightedNav}
         />
       </div>
 

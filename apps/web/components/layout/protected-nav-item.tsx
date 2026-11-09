@@ -42,7 +42,7 @@ type Props = {
    * opened, so it renders as a button with the same geometry.
    */
   onSelect?: () => void;
-  /** Trailing marks after the label (an unread dot, a chevron). Expanded rows only. */
+  /** Trailing marks after the label (a chevron). Expanded rows only. */
   trailing?: ReactNode;
   /**
    * Something new behind this row (#3824), named for a screen reader ("unread

@@ -3012,6 +3012,28 @@ describe("ChatShell narrow viewports (#2142)", () => {
     expect(back).toHaveClass("h-10", "w-10");
   });
 
+  it("leaves an Esc that closes an open overlay to the overlay (#3824)", () => {
+    render(<ChatShell />);
+    const overlay = document.createElement("div");
+    overlay.setAttribute("role", "dialog");
+    document.body.appendChild(overlay);
+    try {
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      expect(columns().thread.className).not.toContain("max-lg:hidden");
+    } finally {
+      overlay.remove();
+    }
+    // A handled Esc (Radix prevents its default) is the overlay's too.
+    const handled = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    handled.preventDefault();
+    document.body.dispatchEvent(handled);
+    expect(columns().thread.className).not.toContain("max-lg:hidden");
+  });
+
   it("returns to the list on Esc, and leaves an Esc typed in a field alone (#3824)", async () => {
     render(<ChatShell />);
     const input = document.createElement("input");
@@ -3043,13 +3065,62 @@ describe("ChatShell narrow viewports (#2142)", () => {
     await waitFor(() => {
       expect(columns().thread.className).not.toContain("max-lg:hidden");
     });
-    expect(window.history.state).toMatchObject({ frappChatThreadPane: true });
+    expect(window.history.state).toMatchObject({
+      frappChatThreadPane: expect.any(String),
+    });
 
     // jsdom's `history.back()` fires `popstate` asynchronously.
     window.history.back();
     await waitFor(() => {
       expect(columns().channels.className).not.toContain("max-lg:hidden");
     });
+  });
+
+  it("goes back one entry however fast the arrow is pressed twice (#3824)", async () => {
+    window.history.replaceState(null, "");
+    render(<ChatShell />);
+    fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+    fireEvent.click(screen.getByTestId("pick-random"));
+    await waitFor(() => {
+      expect(columns().thread.className).not.toContain("max-lg:hidden");
+    });
+
+    const back = vi.spyOn(window.history, "back");
+    try {
+      // Both before the first `popstate` lands: the list shows at once, and
+      // the second press must not go back a second entry, out of /chat.
+      const arrow = screen.getByRole("button", { name: "Back to channels" });
+      fireEvent.click(arrow);
+      fireEvent.click(arrow);
+      expect(back).toHaveBeenCalledTimes(1);
+      expect(columns().channels.className).not.toContain("max-lg:hidden");
+    } finally {
+      back.mockRestore();
+    }
+    await waitFor(() => {
+      expect(window.history.state).not.toMatchObject({
+        frappChatThreadPane: expect.anything(),
+      });
+    });
+  });
+
+  it("never goes back through a marker another document left, as after a reload (#3824)", () => {
+    // History state outlives a reload; the entry under it does not belong to
+    // this document, so going back would reload the page into the thread.
+    window.history.replaceState(
+      { frappChatThreadPane: "another-document" },
+      "",
+    );
+    const back = vi.spyOn(window.history, "back");
+    try {
+      render(<ChatShell />);
+      fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+      expect(back).not.toHaveBeenCalled();
+      expect(columns().channels.className).not.toContain("max-lg:hidden");
+    } finally {
+      back.mockRestore();
+      window.history.replaceState(null, "");
+    }
   });
 });
 
@@ -3092,6 +3163,35 @@ describe("ChatShell inside the shell's left column", () => {
   afterEach(() => {
     slot.remove();
     window.matchMedia = realMatchMedia;
+  });
+
+  it("brings the channels back on Esc while the column shows the module nav (#3824)", () => {
+    stubDesktop(true);
+    const value = navFace({ face: "modules" });
+    render(
+      <NavFaceContext.Provider value={value}>
+        <ChatShell />
+      </NavFaceContext.Provider>,
+    );
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(value.showChannels).toHaveBeenCalled();
+  });
+
+  it("pushes no history for a pick from lg up, where the list is already on screen (#3824)", () => {
+    stubDesktop(true);
+    window.history.replaceState(null, "");
+    const push = vi.spyOn(window.history, "pushState");
+    try {
+      render(
+        <NavFaceContext.Provider value={navFace()}>
+          <ChatShell />
+        </NavFaceContext.Provider>,
+      );
+      fireEvent.click(screen.getByTestId("pick-random"));
+      expect(push).not.toHaveBeenCalled();
+    } finally {
+      push.mockRestore();
+    }
   });
 
   it("renders the channels pane into the shell's column, with a back arrow to the menu", () => {
@@ -4073,7 +4173,8 @@ describe("ChatShell reports its transport to the connection pill", () => {
 
 /*
  * The open channel is the one the member is looking at (#3698): the activity
- * handler `ChatProvider` wires re-stamps it read when a message lands in it,
+ * handler the shell's `useChatRealtimeBinding` wires re-stamps it read when a
+ * message lands in it,
  * so the rail never lights up the channel being read. The claim is what tells
  * it which one that is.
  */
@@ -4086,5 +4187,20 @@ describe("ChatShell claims the open channel as viewed (#3698)", () => {
 
     unmount();
     expect(viewedChannelId()).toBeNull();
+  });
+
+  it("releases it below lg while the list is on screen, and claims it again on the way back in (#3824)", async () => {
+    // Still claimed on the list, a message landing in the channel was stamped
+    // read before the member saw it: no bold row, no lit nav.
+    const { viewedChannelId } =
+      await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(viewedChannelId()).toBe("chan-general");
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+    await waitFor(() => expect(viewedChannelId()).toBeNull());
+
+    fireEvent.click(screen.getByTestId("pick-general"));
+    await waitFor(() => expect(viewedChannelId()).toBe("chan-general"));
   });
 });

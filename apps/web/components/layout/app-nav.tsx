@@ -56,7 +56,7 @@ type AppNavProps = {
   /**
    * `/chat`'s modules face (`nav-face.tsx`): the Chat row slides the channel
    * list back instead of linking to the open route, and trails what the column
-   * gives it (the unread dot and a chevron).
+   * gives it (a chevron; the unread dot is the row's `highlighted` state).
    */
   chatRow?: { onSelect: () => void; trailing: ReactNode };
   /**

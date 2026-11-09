@@ -7,7 +7,7 @@
  * The manager's inbox (`chat:inbox:global`) reports every new message the
  * member may read, and `useChatActivityHandler` re-reads the unread counts
  * from it (#3698). The nav's Chat row lights from those counts on every page
- * (`nav-column.tsx`), so the inbox has to be joined on every page: bound inside
+ * (`use-chat-has-unread.ts`), so the inbox has to be joined on every page: bound inside
  * `ChatProvider`, which mounts only on `/chat`, a message arriving while the
  * member was on Events lit nothing until the counts went stale (15 s) or the
  * tab regained focus. Mobile binds app-wide the same way

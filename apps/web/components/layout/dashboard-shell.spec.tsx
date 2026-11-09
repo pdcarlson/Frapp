@@ -775,6 +775,30 @@ describe("DashboardShell", () => {
       ).not.toBeInTheDocument();
     });
 
+    it("lights the Chat row in the collapsed rail and in the drawer too (#3824)", () => {
+      mockPathname.value = "/events";
+      mockLevels.value = [];
+      mockChannels.value = [{ id: "d1", type: "DM" }];
+      mockUnread.value = [
+        { channel_id: "d1", unread_count: 2, mention_count: 0 },
+      ];
+      render(<DashboardShell defaultNavCollapsed>content</DashboardShell>);
+
+      // The rail's `aria-label` replaces the row's words, so it carries them.
+      const rail = screen.getByRole("navigation", { name: "Primary" });
+      expect(
+        within(rail).getByRole("link", { name: "Chat, unread messages" }),
+      ).toBeInTheDocument();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Open navigation menu" }),
+      );
+      const drawer = screen.getByRole("dialog");
+      expect(
+        within(drawer).getByRole("link", { name: /^Chat.*unread messages/ }),
+      ).toBeInTheDocument();
+    });
+
     it("arriving at Chat with focus in the nav keeps it in the column, not on a placeholder", () => {
       mockPathname.value = "/events";
       const { container, rerender } = render(

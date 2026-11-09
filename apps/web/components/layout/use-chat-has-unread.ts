@@ -61,3 +61,19 @@ export function useChatHasUnread(): boolean {
     channelsQuery.data,
   ]);
 }
+
+const NO_HIGHLIGHTS: ReadonlySet<string> = new Set();
+const CHAT_HIGHLIGHTED: ReadonlySet<string> = new Set(["chat"]);
+
+/**
+ * The nav rows with something new (`AppNav`'s `highlighted`), lit on every
+ * route and in the drawer until seen (#3824). Chat is the only row the app
+ * counts today.
+ *
+ * Read by the nav itself (`NavColumn`, the shell's drawer), never by
+ * `DashboardShell`'s body: the counts change with every message the inbox
+ * reports, on every route, and only the nav has to redraw for it.
+ */
+export function useNavHighlights(): ReadonlySet<string> {
+  return useChatHasUnread() ? CHAT_HIGHLIGHTED : NO_HIGHLIGHTS;
+}

@@ -8,6 +8,7 @@ import { ChapterNavHeader } from "@/components/layout/chapter-nav-header";
 import { NavChannelsTitle, type NavFace } from "@/components/layout/nav-face";
 import { ChannelListSkeleton } from "@/components/chat/channel-list-skeleton";
 import { cn } from "@/lib/utils";
+import { useNavHighlights } from "@/components/layout/use-chat-has-unread";
 
 /**
  * The desktop shell's left column, on every route from `lg` up: one column, one
@@ -64,11 +65,6 @@ type NavColumnProps = {
   permissions: readonly string[] | null | undefined;
   isModuleEnabled?: (moduleKey: string) => boolean;
   pathname: string;
-  /**
-   * Nav rows with something new for the member (`AppNav`'s `highlighted`),
-   * lit on every route until it has been seen.
-   */
-  highlighted?: ReadonlySet<string>;
 };
 
 const SLIDE =
@@ -97,8 +93,10 @@ export function NavColumn({
   permissions,
   isModuleEnabled,
   pathname,
-  highlighted,
 }: NavColumnProps) {
+  // Rows with something new, lit on every route until seen (#3824). Read here,
+  // not by the shell, so a count changing redraws the nav and nothing else.
+  const highlighted = useNavHighlights();
   const onChat = chatFace !== null;
   const face: NavFace = chatFace ?? "modules";
   const isCollapsed = collapsed && !onChat;
