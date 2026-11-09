@@ -19,6 +19,7 @@ import {
   useSheetBackgroundStyle,
   SheetBackToClose,
   useSheetClose,
+  SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -64,6 +65,7 @@ export const AccentSheet = forwardRef<BottomSheetModal>(function AccentSheet(
   return (
     <BottomSheetModal
       ref={ref}
+      stackBehavior={SHEET_STACK_BEHAVIOR}
       enableDynamicSizing
       keyboardBehavior="interactive"
       backgroundStyle={backgroundStyle}

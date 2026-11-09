@@ -47,6 +47,7 @@ import {
   useSheetBackgroundStyle,
   useSheetClose,
   useSheetVisit,
+  SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import { FilterChips } from "@/components/filter-chips";
 import { DisclosureGlyph } from "@/components/control-glyphs";
@@ -497,6 +498,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       <>
         <BottomSheetModal
           ref={ref}
+          stackBehavior={SHEET_STACK_BEHAVIOR}
           enableDynamicSizing
           keyboardBehavior="interactive"
           backgroundStyle={backgroundStyle}

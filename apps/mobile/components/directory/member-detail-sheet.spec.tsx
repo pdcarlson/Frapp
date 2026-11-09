@@ -625,4 +625,29 @@ describe("MemberDetailSheet roles", () => {
     act(() => tree.unmount());
     state.permissions = [];
   });
+
+  // The editor stacks over the profile (#3790), so a DM landing under it
+  // would close the profile and open the thread with the editor still on top.
+  it("holds Edit while a DM with this member opens", async () => {
+    state.permissions = ["members:view", "roles:manage"];
+    const pending = deferred<unknown>();
+    state.mutateAsync.mockReturnValueOnce(pending.promise);
+    const tree = render(ADA);
+    expect(editButton(tree)?.props.disabled).toBe(false);
+
+    await act(async () => {
+      messageRows(tree)[0].props.onPress();
+    });
+    expect(editButton(tree)?.props.disabled).toBe(true);
+    expect(editButton(tree)?.props.accessibilityState).toEqual({
+      disabled: true,
+    });
+
+    await act(async () => {
+      pending.resolve({ id: "dm-ada" });
+    });
+    expect(editButton(tree)?.props.disabled).toBe(false);
+    act(() => tree.unmount());
+    state.permissions = [];
+  });
 });
