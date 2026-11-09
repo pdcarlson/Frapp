@@ -1,6 +1,7 @@
 // Pins `release-notes-freshness.mjs` (#3804): Deploy production warns, before
-// the approval, when the apps changed since production's release tag but What's
-// new has no new entry. A warning only; it never fails the run.
+// the approval, when something members could notice changed since
+// production's release tag but What's new gained neither a new entry nor new
+// lines. A warning only; it never fails the run, and a rollback is skipped.
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -11,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import {
   RELEASE_NOTES_PATH,
   checkReleaseNotes,
+  countArrayStrings,
   memberFacingChanges,
   newestReleaseNote,
   releaseNotesVerdict,
@@ -31,27 +33,43 @@ const notesFile = (...entries) =>
 describe("newestReleaseNote", () => {
   it("reads the real file's newest entry, which the apps show first", () => {
     const source = readFileSync(join(ROOT, RELEASE_NOTES_PATH), "utf8");
-    const newest = newestReleaseNote(source);
-    assert.equal(newest.date, RELEASE_NOTES[0].date);
-    for (const change of RELEASE_NOTES[0].changes) assert.ok(newest.text.includes(change));
-    if (RELEASE_NOTES[1]) assert.ok(!newest.text.includes(RELEASE_NOTES[1].changes[0]), "stops at the next entry");
+    assert.deepEqual(newestReleaseNote(source), {
+      date: RELEASE_NOTES[0].date,
+      lines: RELEASE_NOTES[0].changes.length,
+    });
   });
 
   it("reads the first entry inside the list, not a date in a comment above it", () => {
-    const source = `// date: "1999-01-01"\n${notesFile(["2026-11-09", "a"], ["2026-11-07", "b"])}`;
-    const newest = newestReleaseNote(source);
-    assert.equal(newest.date, "2026-11-09");
-    assert.match(newest.text, /"a"/);
-    assert.doesNotMatch(newest.text, /"b"/);
+    const source = `// date: "1999-01-01"\n${notesFile(["2026-11-09", "a", "b"], ["2026-11-07", "c"])}`;
+    assert.deepEqual(newestReleaseNote(source), { date: "2026-11-09", lines: 2 });
   });
 
-  it("reads a lone entry up to the list's end", () => {
-    assert.match(newestReleaseNote(notesFile(["2026-11-09", "a"])).text, /"a"/);
+  it("counts the same lines however they're formatted", () => {
+    const wrapped = `export const RELEASE_NOTES = [
+  {
+    date: '2026-11-09',
+    title: "t",
+    changes: [
+      // a comment, with "quotes" and [brackets]
+      "It's here, with a ] inside.",
+      \`Two\`,
+    ],
+  },
+];`;
+    assert.deepEqual(newestReleaseNote(wrapped), { date: "2026-11-09", lines: 2 });
   });
 
   it("is null for a file that isn't there or has no list", () => {
     assert.equal(newestReleaseNote(null), null);
     assert.equal(newestReleaseNote("export const X = 1;"), null);
+  });
+});
+
+describe("countArrayStrings", () => {
+  it("counts only strings at the array's own depth, and null if it never closes", () => {
+    const src = '["a", ["b", "c"], "d\\"e"]';
+    assert.equal(countArrayStrings(src, 0), 2);
+    assert.equal(countArrayStrings('["a", "b"', 0), null);
   });
 });
 
@@ -65,6 +83,10 @@ describe("memberFacingChanges", () => {
       "packages/validation/src/notification-categories.ts",
       "supabase/migrations/20261109000000_x.sql",
       "supabase/data-fixes/20261108_fix.sql",
+      "supabase/functions/copy-attachment/index.ts",
+      "apps/mobile/app.config.js",
+      "apps/web/next.config.js",
+      "apps/web/tailwind.config.ts",
     ];
     assert.deepEqual(memberFacingChanges(shipped), shipped);
   });
@@ -88,6 +110,10 @@ describe("memberFacingChanges", () => {
         "apps/mobile/store/shipped-builds.json",
         "docs/ci-cd/routines.md",
         "scripts/ci/x.mjs",
+        "supabase/config.toml",
+        "supabase/seed.sql",
+        "supabase/seed/chapter_directory.csv",
+        RELEASE_NOTES_PATH,
       ]),
       [],
     );
@@ -95,35 +121,36 @@ describe("memberFacingChanges", () => {
 });
 
 describe("releaseNotesVerdict", () => {
-  const entry = (date, text = `${date} text`) => ({ date, text });
+  const entry = (date, lines = 8) => ({ date, lines });
   const base = { tag: "v1.2.3", floor: entry("2026-11-07") };
+  const app = ["apps/mobile/app/index.tsx"];
 
-  it("warns when members could notice a change and the newest entry is unchanged", () => {
-    const verdict = releaseNotesVerdict({ ...base, ship: entry("2026-11-07"), changedFiles: ["apps/mobile/app/index.tsx"] });
+  it("warns when members could notice a change and What's new gained nothing", () => {
+    const verdict = releaseNotesVerdict({ ...base, ship: entry("2026-11-07"), changedFiles: app });
     assert.equal(verdict.stale, true);
     assert.match(verdict.message, /1 file members could notice changed since v1\.2\.3/);
-    assert.match(verdict.message, /\(2026-11-07\) is unchanged/);
+    assert.match(verdict.message, /no new entry or lines \(newest: 2026-11-07\)/);
   });
 
-  it("warns for a change shipped only through the API or a package", () => {
+  it("warns for a change shipped only through the API, a package or a data fix", () => {
     for (const file of ["apps/api/src/x.ts", "packages/chat-core/src/y.ts", "supabase/data-fixes/z.sql"]) {
       assert.equal(releaseNotesVerdict({ ...base, ship: entry("2026-11-07"), changedFiles: [file] }).stale, true, file);
     }
   });
 
   it("is quiet when a new entry was added", () => {
-    const verdict = releaseNotesVerdict({ ...base, ship: entry("2026-11-09"), changedFiles: ["apps/mobile/app/index.tsx"] });
-    assert.equal(verdict.stale, false);
+    assert.equal(releaseNotesVerdict({ ...base, ship: entry("2026-11-09"), changedFiles: app }).stale, false);
   });
 
   it("is quiet when the same day's entry gained lines, since dates are unique", () => {
-    const verdict = releaseNotesVerdict({
-      ...base,
-      ship: entry("2026-11-07", "2026-11-07 text, and more"),
-      changedFiles: ["apps/mobile/app/index.tsx"],
-    });
+    const verdict = releaseNotesVerdict({ ...base, ship: entry("2026-11-07", 9), changedFiles: app });
     assert.equal(verdict.stale, false);
-    assert.match(verdict.message, /new lines in its entry/);
+    assert.match(verdict.message, /new lines in its 2026-11-07 entry/);
+  });
+
+  it("still warns when the newest entry was only reworded or trimmed, which members aren't shown", () => {
+    assert.equal(releaseNotesVerdict({ ...base, ship: entry("2026-11-07", 8), changedFiles: app }).stale, true);
+    assert.equal(releaseNotesVerdict({ ...base, ship: entry("2026-11-07", 7), changedFiles: app }).stale, true);
   });
 
   it("is quiet when nothing members could notice changed", () => {
@@ -137,11 +164,16 @@ describe("releaseNotesVerdict", () => {
   });
 });
 
+function gitError(status) {
+  return Object.assign(new Error(`git exited ${status}`), { status });
+}
+
 function fakeGit({ tags = "v1.2.3\nv1.2.2\n", files = {}, diff = "", diffThrows = false, ahead = true } = {}) {
   return (args) => {
     if (args[0] === "tag") return tags;
     if (args[0] === "merge-base") {
-      if (!ahead) throw new Error("not an ancestor");
+      if (ahead === "error") throw gitError(128);
+      if (!ahead) throw gitError(1);
       return "";
     }
     if (args[0] === "show") {
@@ -175,6 +207,12 @@ describe("checkReleaseNotes", () => {
     const result = checkReleaseNotes({ sha: SHA, git });
     assert.equal(result.stale, false);
     assert.match(result.skipped, /not ahead of production's v1\.2\.3/);
+  });
+
+  it("says it couldn't compare, not that it's a rollback, when git can't tell", () => {
+    const result = checkReleaseNotes({ sha: SHA, git: fakeGit({ ahead: "error" }) });
+    assert.equal(result.stale, false);
+    assert.match(result.skipped, /could not compare/);
   });
 
   it("skips, never throws, when there is no release tag or git fails", () => {

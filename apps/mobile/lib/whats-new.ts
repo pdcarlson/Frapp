@@ -4,15 +4,17 @@
  * memory of it; `components/whats-new/whats-new-host.tsx` shows the sheet.
  *
  * The phone remembers which version of the newest entry it has shown
- * ({@link WHATS_NEW_SEEN_STORAGE_KEY}, holding {@link releaseNoteId}: the
- * entry's date plus a fingerprint of its text). When the app carries a newer
- * entry, or the same day's entry with lines added since (a second release on
- * one day extends that day's entry, because dates are unique), the sheet opens
- * over whatever is on screen and the marker moves up, so each version shows
- * once. The notes ship in the JS bundle, so a new entry only ever arrives with
- * a new process (an over-the-air update reloads the bundle; a store update
- * relaunches the app). One check per process is therefore "on launch, and on
- * return after an update" both.
+ * ({@link WHATS_NEW_SEEN_STORAGE_KEY}, holding `releaseNoteVersion` from
+ * `@repo/validation`: the entry's date and how many lines it had). When the
+ * app carries a newer entry, or the same day's entry with lines added since (a
+ * second release on one day extends that day's entry, because dates are
+ * unique), the sheet opens over whatever is on screen and the marker moves up,
+ * so each version shows once. Rewording a line isn't news and shows nothing,
+ * and neither does a rollback to a shorter version of the same entry. The
+ * notes ship in the JS bundle, so a new entry only ever arrives with a new
+ * process (an over-the-air update reloads the bundle; a store update relaunches
+ * the app). One check per process is therefore "on launch, and on return after
+ * an update" both.
  *
  * Two cases record the newest entry without showing it:
  *
@@ -35,10 +37,10 @@
  */
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import type { ReleaseNote } from "@repo/validation";
+import { releaseNoteVersion, type ReleaseNote } from "@repo/validation";
 import { CHAT_KV_PREFIX } from "@/lib/chat/key-value-store";
 
-/** {@link releaseNoteId} of the newest entry this phone has shown or skipped. */
+/** `releaseNoteVersion` of the newest entry this phone has shown or skipped. */
 export const WHATS_NEW_SEEN_STORAGE_KEY = "frapp.mobile.whats-new-seen";
 
 /**
@@ -90,19 +92,6 @@ export function resetWhatsNewBootReadForTests(): void {
   bootRead = null;
 }
 
-/**
- * Which version of an entry this is: its date, plus a short fingerprint of
- * its title and lines, so lines added to the same day's entry read as new.
- */
-export function releaseNoteId(note: ReleaseNote): string {
-  const text = [note.title, ...note.changes].join("\n");
-  let hash = 5381;
-  for (let i = 0; i < text.length; i += 1) {
-    hash = ((hash * 33) ^ text.charCodeAt(i)) >>> 0;
-  }
-  return `${note.date}#${hash.toString(36)}`;
-}
-
 export interface WhatsNewDecision {
   /** The entries to show, newest first; empty shows nothing. */
   show: readonly ReleaseNote[];
@@ -110,10 +99,17 @@ export interface WhatsNewDecision {
   record: string | null;
 }
 
+/** A stored marker, read back: `date#lines`. */
+function parseSeen(seen: string): { date: string; lines: number } {
+  const [date = "", lines = ""] = seen.split("#");
+  const count = Number.parseInt(lines, 10);
+  return { date, lines: Number.isFinite(count) ? count : 0 };
+}
+
 /**
  * What this launch does. `notes` is `RELEASE_NOTES` (newest first); dates are
  * `YYYY-MM-DD`, so they compare as strings. `seen` is a stored
- * {@link releaseNoteId}.
+ * `releaseNoteVersion`.
  */
 export function decideWhatsNew(input: {
   notes: readonly ReleaseNote[];
@@ -124,27 +120,32 @@ export function decideWhatsNew(input: {
   const { notes, seen, tourDue, existingInstall } = input;
   const newest = notes[0];
   if (!newest) return { show: [], record: null };
-  const newestId = releaseNoteId(newest);
-  const seenDate = seen === null ? null : seen.split("#")[0]!;
+  const newestVersion = releaseNoteVersion(newest);
+  const marker = seen === null ? null : parseSeen(seen);
   // Shown already, or the marker comes from a newer bundle (an update rolled
-  // back): nothing is new.
-  if (seen === newestId || (seenDate !== null && seenDate > newest.date)) {
+  // back, to an earlier day or to a shorter version of the same day's entry):
+  // nothing is new.
+  if (
+    marker !== null &&
+    (marker.date > newest.date ||
+      (marker.date === newest.date && marker.lines >= newest.changes.length))
+  ) {
     return { show: [], record: null };
   }
-  if (tourDue || (seen === null && !existingInstall)) {
-    return { show: [], record: newestId };
+  if (tourDue || (marker === null && !existingInstall)) {
+    return { show: [], record: newestVersion };
   }
   const show =
-    seenDate === null
+    marker === null
       ? [newest]
       : // Every entry after the one last shown, and that day's entry itself
         // when lines were added to it since.
         notes.filter(
           (note) =>
-            note.date > seenDate ||
-            (note.date === seenDate && releaseNoteId(note) !== seen),
+            note.date > marker.date ||
+            (note.date === marker.date && note.changes.length > marker.lines),
         );
-  return { show, record: newestId };
+  return { show, record: newestVersion };
 }
 
 export async function readWhatsNewSeen(

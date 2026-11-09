@@ -6,12 +6,11 @@ import React, { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { RELEASE_NOTES } from "@repo/validation";
+import { RELEASE_NOTES, releaseNoteVersion } from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
 import { TOUR_DUE_STORAGE_KEY } from "@/lib/onboarding/tour";
 import {
   WHATS_NEW_SEEN_STORAGE_KEY,
-  releaseNoteId,
   resetWhatsNewBootReadForTests,
 } from "@/lib/whats-new";
 import { ReleaseNoteCard } from "./release-note-card";
@@ -50,9 +49,9 @@ afterEach(() => {
 });
 
 const NEWEST = RELEASE_NOTES[0]!;
-const NEWEST_ID = releaseNoteId(NEWEST);
+const NEWEST_ID = releaseNoteVersion(NEWEST);
 
-async function mount(): Promise<ReactTestRenderer> {
+async function mount({ sheet = true } = {}): Promise<ReactTestRenderer> {
   let tree!: ReactTestRenderer;
   await act(async () => {
     tree = create(
@@ -60,8 +59,14 @@ async function mount(): Promise<ReactTestRenderer> {
         <WhatsNewHost />
       </FrappThemeProvider>,
       {
+        // With `sheet: false` the modal's ref stays null: a sheet that never
+        // got to present.
         createNodeMock: (element) =>
-          (element.type as unknown) === "BottomSheetModal" ? { present } : {},
+          (element.type as unknown) === "BottomSheetModal"
+            ? sheet
+              ? { present }
+              : null
+            : {},
       },
     );
   });
@@ -75,8 +80,12 @@ const shown = (tree: ReactTestRenderer) =>
   tree.root.findAllByType(ReleaseNoteCard).map((card) => card.props.note);
 
 describe("WhatsNewHost", () => {
-  it("shows the new entry once to a phone that saw an older one, and records it", async () => {
-    values.set(WHATS_NEW_SEEN_STORAGE_KEY, "2000-01-01#old");
+  it("shows the new entry once to a phone that saw an older one, and records it once presented", async () => {
+    values.set(WHATS_NEW_SEEN_STORAGE_KEY, "2000-01-01#1");
+    // The marker is still the old one when the sheet is asked to present.
+    present.mockImplementation(() => {
+      expect(values.get(WHATS_NEW_SEEN_STORAGE_KEY)).toBe("2000-01-01#1");
+    });
     const tree = await mount();
     expect(present).toHaveBeenCalledTimes(1);
     expect(shown(tree)[0]).toEqual(NEWEST);
@@ -106,7 +115,7 @@ describe("WhatsNewHost", () => {
 
   it("never shows on a launch the first-run tour is due", async () => {
     bootKeys = ["chat:lastSeen:channel-1"];
-    values.set(WHATS_NEW_SEEN_STORAGE_KEY, "2000-01-01#old");
+    values.set(WHATS_NEW_SEEN_STORAGE_KEY, "2000-01-01#1");
     values.set(TOUR_DUE_STORAGE_KEY, USER);
     const tree = await mount();
     expect(present).not.toHaveBeenCalled();
@@ -115,7 +124,13 @@ describe("WhatsNewHost", () => {
   });
 
   it("records nothing when the sheet never got to open", async () => {
-    values.set(WHATS_NEW_SEEN_STORAGE_KEY, "2000-01-01#old");
+    values.set(WHATS_NEW_SEEN_STORAGE_KEY, "2000-01-01#1");
+    await mount({ sheet: false });
+    expect(values.get(WHATS_NEW_SEEN_STORAGE_KEY)).toBe("2000-01-01#1");
+  });
+
+  it("records nothing when unmounted before the open delay ran out", async () => {
+    values.set(WHATS_NEW_SEEN_STORAGE_KEY, "2000-01-01#1");
     let tree!: ReactTestRenderer;
     await act(async () => {
       tree = create(
@@ -124,12 +139,12 @@ describe("WhatsNewHost", () => {
         </FrappThemeProvider>,
       );
     });
-    // Unmounted before the open delay ran out (a sign-out, say).
+    // A sign-out, say.
     await act(async () => tree.unmount());
     await act(async () => {
       await vi.advanceTimersByTimeAsync(WHATS_NEW_OPEN_DELAY_MS + 10);
     });
-    expect(values.get(WHATS_NEW_SEEN_STORAGE_KEY)).toBe("2000-01-01#old");
+    expect(values.get(WHATS_NEW_SEEN_STORAGE_KEY)).toBe("2000-01-01#1");
   });
 });
 

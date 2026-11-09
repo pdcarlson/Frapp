@@ -1,12 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { RELEASE_NOTES, type ReleaseNote } from "@repo/validation";
+import {
+  RELEASE_NOTES,
+  releaseNoteVersion,
+  type ReleaseNote,
+} from "@repo/validation";
 import {
   WHATS_NEW_SEEN_STORAGE_KEY,
   decideWhatsNew,
   hasExistingInstallKey,
   readWhatsNewSeen,
   recordWhatsNewSeen,
-  releaseNoteId,
   resetWhatsNewBootReadForTests,
   startWhatsNewBootRead,
 } from "./whats-new";
@@ -31,16 +34,7 @@ const decide = (
     ...overrides,
   });
 
-const ID = NOTES.map(releaseNoteId);
-
-describe("releaseNoteId", () => {
-  it("is the date plus a fingerprint that changes when a line is added", () => {
-    expect(ID[0]).toMatch(/^2026-11-09#[0-9a-z]+$/);
-    const extended = { ...NOTES[0]!, changes: [...NOTES[0]!.changes, "More."] };
-    expect(releaseNoteId(extended)).not.toBe(ID[0]);
-    expect(releaseNoteId({ ...NOTES[0]! })).toBe(ID[0]);
-  });
-});
+const ID = NOTES.map(releaseNoteVersion);
 
 describe("decideWhatsNew", () => {
   it("shows an entry newer than the one this phone last saw, and records the newest", () => {
@@ -60,7 +54,7 @@ describe("decideWhatsNew", () => {
   it("never shows an entry again once it is recorded", () => {
     expect(decide({ seen: ID[0]! })).toEqual({ show: [], record: null });
     // A marker from a newer bundle (an update rolled back) is still up to date.
-    expect(decide({ seen: "2026-12-01#abc" })).toEqual({
+    expect(decide({ seen: "2026-12-01#1" })).toEqual({
       show: [],
       record: null,
     });
@@ -71,8 +65,23 @@ describe("decideWhatsNew", () => {
     const notes = [extended, NOTES[1]!, NOTES[2]!];
     expect(decide({ notes, seen: ID[0]! })).toEqual({
       show: [extended],
-      record: releaseNoteId(extended),
+      record: releaseNoteVersion(extended),
     });
+  });
+
+  it("shows nothing for a reworded entry, which isn't news", () => {
+    const reworded = { ...NOTES[0]!, title: "Reworded", changes: ["Fixed a typo."] };
+    expect(decide({ notes: [reworded, NOTES[1]!], seen: ID[0]! })).toEqual({
+      show: [],
+      record: null,
+    });
+  });
+
+  it("shows nothing after a rollback to a shorter version of the same day's entry", () => {
+    const extended = { ...NOTES[0]!, changes: [...NOTES[0]!.changes, "More."] };
+    expect(
+      decide({ seen: releaseNoteVersion(extended) }),
+    ).toEqual({ show: [], record: null });
   });
 
   it("records without showing on a fresh install's first launch", () => {

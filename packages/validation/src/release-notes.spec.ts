@@ -3,6 +3,7 @@ import {
   RELEASE_NOTES,
   formatReleaseNoteDate,
   releaseNoteText,
+  releaseNoteVersion,
 } from "./release-notes";
 
 // Pictographic emoji, the product's "no emojis in the UI" rule.
@@ -54,5 +55,18 @@ describe("releaseNoteText", () => {
     ).toBe(
       "What's new in Frapp (November 7, 2026)\n\nA title\n\n- One.\n- Two.",
     );
+  });
+});
+
+describe("releaseNoteVersion", () => {
+  const note = { date: "2026-11-09", title: "A title", changes: ["One.", "Two."] };
+
+  it("is the date and the number of lines", () => {
+    expect(releaseNoteVersion(note)).toBe("2026-11-09#2");
+  });
+
+  it("moves when lines are added, not when one is reworded", () => {
+    expect(releaseNoteVersion({ ...note, changes: [...note.changes, "Three."] })).toBe("2026-11-09#3");
+    expect(releaseNoteVersion({ ...note, title: "Another", changes: ["Uno.", "Dos."] })).toBe("2026-11-09#2");
   });
 });

@@ -14,6 +14,7 @@ export {
   RELEASE_NOTES,
   formatReleaseNoteDate,
   releaseNoteText,
+  releaseNoteVersion,
   type ReleaseNote,
 } from "./release-notes";
 

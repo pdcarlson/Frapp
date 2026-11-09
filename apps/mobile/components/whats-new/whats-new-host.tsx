@@ -24,10 +24,11 @@ import {
 } from "@/lib/whats-new";
 
 /**
- * Opens What's new by itself, once, after an update brings a new or changed
- * entry (`lib/whats-new.ts` has the rule). Mounted in the tab layout beside
- * the first-run tour's host, so it never runs during onboarding, which lives
- * in the auth group, and it sits out any launch the tour is due on.
+ * Opens What's new by itself, once, after an update brings a new entry or new
+ * lines in the newest one (`lib/whats-new.ts` has the rule). Mounted in the
+ * tab layout beside the first-run tour's host, so it never runs during
+ * onboarding, which lives in the auth group, and it sits out any launch the
+ * tour is due on.
  *
  * A tall sheet over whatever is on screen (the chat home, or the channel the
  * launch jumped into): its body scrolls and grows with every update a member

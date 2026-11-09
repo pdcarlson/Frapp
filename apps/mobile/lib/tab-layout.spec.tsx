@@ -131,13 +131,6 @@ describe("tab layout (#2485)", () => {
  * the navigator's own bar, so no tab style is set here: its placement and the
  * #3344 inset are held in `components/glass-tab-bar.spec.tsx`.
  */
-describe("What's new", () => {
-  // Opens by itself after an update; dropping the host turns that off.
-  it("mounts its host beside the navigator", () => {
-    expect(hosts(render().root, "WhatsNewHost")).toHaveLength(1);
-  });
-});
-
 describe("tab bar", () => {
   it("draws in the bar exactly the tabs the layout leaves visible", () => {
     // GlassTabBar draws `TAB_ROUTES`, so the two lists have to agree.
@@ -153,6 +146,13 @@ describe("tab bar", () => {
     expect(resolved(tabs.props.screenOptions)).not.toHaveProperty(
       "tabBarStyle",
     );
+  });
+});
+
+describe("What's new", () => {
+  // Opens by itself after an update; dropping the host turns that off.
+  it("mounts its host beside the navigator", () => {
+    expect(hosts(render().root, "WhatsNewHost")).toHaveLength(1);
   });
 });
 

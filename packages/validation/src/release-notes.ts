@@ -10,6 +10,15 @@
  * you'd tell a friend. No feature codes, issue numbers, version strings,
  * screen ids, or emojis. A bit vague is fine; wrong is not, so only list what
  * is merged and shipped. Five to eight lines an entry, each one sentence.
+ *
+ * Mobile opens the newest entry by itself once after an update
+ * (`apps/mobile/lib/whats-new.ts`). Dates are unique, so a second release on
+ * the same day adds lines to that day's entry, and phones that already showed
+ * it show it again; rewording or fixing a line doesn't, because that isn't
+ * news ({@link releaseNoteVersion}). Deploy production warns when a release
+ * ships with neither a new entry nor new lines
+ * (`scripts/ci/release-notes-freshness.mjs`, which reads this file as text, so
+ * keep `date:` and `changes: [...]` literal).
  */
 export type ReleaseNote = {
   /** The day it reached members, as `YYYY-MM-DD`. */
@@ -49,6 +58,15 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
     ],
   },
 ]);
+
+/**
+ * Which version of an entry a phone has shown: its date and how many lines it
+ * had. Lines added later (a second release the same day) make a newer
+ * version; rewording one doesn't.
+ */
+export function releaseNoteVersion(note: ReleaseNote): string {
+  return `${note.date}#${note.changes.length}`;
+}
 
 const MONTHS = [
   "January",
