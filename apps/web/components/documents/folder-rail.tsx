@@ -66,7 +66,6 @@ export function FolderRail({
   gate,
   management,
   loadFailed,
-  searching,
   onRetryLoad,
 }: {
   railFolders: FolderRow[];
@@ -76,7 +75,6 @@ export function FolderRail({
   management: FolderManagement;
   /** The folder endpoint failed, so `railFolders` is the derived fallback. */
   loadFailed: boolean;
-  searching: boolean;
   onRetryLoad: () => void;
 }) {
   const { folderBusy, openFolderDialog, handleMoveFolder, handleDeleteFolder } =
@@ -237,9 +235,9 @@ export function FolderRail({
         */}
         {loadFailed ? (
           <p className="px-2 pt-2 text-xs text-muted-foreground">
-            {searching
-              ? "Couldn't load the folder list, so folder filters are unavailable while searching. Clear the search to get them back."
-              : "Couldn't load the folder list, so these are read from the documents shown. Empty folders and folder management are unavailable until it loads."}{" "}
+            Couldn&apos;t load the folder list, so these are read from the
+            documents shown. Empty folders and folder management are
+            unavailable until it loads.{" "}
             <button
               type="button"
               className={`underline ${FOCUS_RING_OFFSET}`}
