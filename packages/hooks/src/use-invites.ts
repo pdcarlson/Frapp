@@ -106,6 +106,7 @@ export function useCreateInvite() {
   const chapterId = useActiveChapterId();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["invites", "create-invite"],
     mutationFn: async (body: { role?: string }) => {
       const { data, error } = await client.POST("/v1/invites", { body });
       if (error) throw error;
@@ -122,6 +123,7 @@ export function useEmailInvites() {
   const chapterId = useActiveChapterId();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["invites", "email-invites"],
     mutationFn: async (body: { role?: string; emails: string[] }) => {
       const { data, error } = await client.POST("/v1/invites/email", { body });
       if (error) throw error;
@@ -146,6 +148,7 @@ export function useRedeemInvite() {
   const chapterId = useActiveChapterId();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["invites", "redeem-invite"],
     mutationFn: async (body: {
       token: string;
       accept_terms_privacy?: true;
@@ -230,6 +233,7 @@ export function useRevokeInvite() {
   const chapterId = useActiveChapterId();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["invites", "revoke-invite"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.DELETE("/v1/invites/{id}", {
         params: { path: { id } },
