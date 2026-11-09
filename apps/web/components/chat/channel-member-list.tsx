@@ -17,6 +17,7 @@ import { Skeleton } from "@/components/shared/async-states";
 import { AvatarPresenceDot } from "@/components/members/presence-dot";
 import { useChapterPresenceContext } from "@/lib/providers/chapter-presence-provider";
 import type { PresenceStatus } from "@/lib/realtime/presence-status";
+import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { cn, initials } from "@/lib/utils";
 
 /** One row of the list, joined from the channel read, the roster and presence. */
@@ -49,8 +50,10 @@ const STATUS_LABELS: Record<PresenceStatus, string> = {
  * holds still when presence arrives (principles.md P4.4). Past
  * {@link MEMBER_SEARCH_THRESHOLD} readers a search field filters by name.
  *
- * Read-only rows. Nothing here is a control yet, so the rows are list items
- * rather than buttons, and the list is announced by its heading.
+ * A row opens that member's profile (#3726), the same sheet a click on a
+ * sender's name or an `@` chip opens, so each row is a button inside its list
+ * item and the list is announced by its heading. Without `onOpenProfile` the
+ * rows are plain list items.
  *
  * `channelId: null` draws the skeleton: the shell mounts the column before the
  * channel list resolves, so the timeline does not lose 240px a beat after
@@ -60,9 +63,12 @@ const STATUS_LABELS: Record<PresenceStatus, string> = {
 export function ChannelMemberList({
   channelId,
   enabled = true,
+  onOpenProfile,
 }: {
   channelId: string | null;
   enabled?: boolean;
+  /** Opens a member's profile by `users.id`. */
+  onOpenProfile?: (userId: string) => void;
 }) {
   const headingId = useId();
   const membersQuery = useChannelMembers(channelId, { enabled });
@@ -167,14 +173,26 @@ export function ChannelMemberList({
             No one named &ldquo;{trimmed}&rdquo;
           </p>
         ) : (
-          groups.map((group) => <MemberGroup key={group.key} group={group} />)
+          groups.map((group) => (
+            <MemberGroup
+              key={group.key}
+              group={group}
+              onOpenProfile={onOpenProfile}
+            />
+          ))
         )}
       </div>
     </section>
   );
 }
 
-function MemberGroup({ group }: { group: ChannelMemberGroup }) {
+function MemberGroup({
+  group,
+  onOpenProfile,
+}: {
+  group: ChannelMemberGroup;
+  onOpenProfile?: (userId: string) => void;
+}) {
   const labelId = useId();
   return (
     <div className="pb-3">
@@ -187,7 +205,11 @@ function MemberGroup({ group }: { group: ChannelMemberGroup }) {
       </p>
       <ul aria-labelledby={labelId}>
         {group.rows.map((row) => (
-          <MemberRow key={row.userId} row={row} />
+          <MemberRow
+            key={row.userId}
+            row={row}
+            onOpen={onOpenProfile ? () => onOpenProfile(row.userId) : undefined}
+          />
         ))}
       </ul>
     </div>
@@ -195,19 +217,24 @@ function MemberGroup({ group }: { group: ChannelMemberGroup }) {
 }
 
 /**
- * 32px, the size scale's list row (foundations §9). An offline member is
- * dimmed as Discord dims them, but only where contrast is not at stake: the
- * avatar fades, and a name without a role color drops to the muted text step.
- * A role-colored name keeps its full color, because the palette was
- * contrast-checked at full strength and an opacity would undo that.
+ * 32px on a mouse, the size scale's list row (foundations §9), and 44px on a
+ * coarse pointer now that a row is a control (§2's touch floor). An offline
+ * member is dimmed as Discord dims them, but only where contrast is not at
+ * stake: the avatar fades, and a name without a role color drops to the muted
+ * text step. A role-colored name keeps its full color, because the palette
+ * was contrast-checked at full strength and an opacity would undo that.
+ * `FOCUS_RING_OFFSET`: the row carries no border for `FOCUS_RING` to swap.
  */
-function MemberRow({ row }: { row: ChannelMemberRow }) {
+function MemberRow({
+  row,
+  onOpen,
+}: {
+  row: ChannelMemberRow;
+  onOpen?: () => void;
+}) {
   const offline = row.status === "offline";
-  return (
-    <li
-      data-presence={row.status ?? undefined}
-      className="flex h-8 items-center gap-2 rounded-md px-2"
-    >
+  const content = (
+    <>
       <span className="relative shrink-0">
         <Avatar
           className={cn("h-6 w-6", offline && "opacity-50")}
@@ -233,6 +260,27 @@ function MemberRow({ row }: { row: ChannelMemberRow }) {
       {row.status ? (
         <span className="sr-only">, {STATUS_LABELS[row.status]}</span>
       ) : null}
+    </>
+  );
+  const rowClass = "flex h-8 w-full items-center gap-2 rounded-md px-2";
+  return (
+    <li data-presence={row.status ?? undefined}>
+      {onOpen ? (
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          onClick={onOpen}
+          className={cn(
+            rowClass,
+            "text-left transition-colors hover:bg-card-hover pointer-coarse:h-11",
+            FOCUS_RING_OFFSET,
+          )}
+        >
+          {content}
+        </button>
+      ) : (
+        <div className={rowClass}>{content}</div>
+      )}
     </li>
   );
 }

@@ -19,9 +19,9 @@ import {
   parseRushArgs,
   parseTaskArgs,
   type AnnouncementPayload,
-  type PollPayload,
   type SlashCommand,
 } from "./integrations";
+import { buildPollMessage } from "./polls";
 import {
   sendMessage,
   insertLocalPlaceholder,
@@ -93,13 +93,6 @@ interface DispatchArgs {
   announcementsChannelId: string | null;
   /** Resolves the `@member` token for member-targeted commands (/points). */
   resolveMember?: ResolveMember;
-}
-
-function makeOptionId(): string {
-  // A poll option id only has to be unique within one message's option list, so
-  // it stays a short readable token rather than a full UUID. (`randomClientId()`
-  // is the right call for anything the server dedupes on.)
-  return Math.random().toString(36).slice(2, 10);
 }
 
 /**
@@ -174,21 +167,15 @@ async function dispatchPoll(
   const parsed = parsePollArgs(args);
   if (!parsed.ok) return { ok: false, error: parsed.error };
 
-  const closesAt = new Date(
-    Date.now() + parsed.value.closesInMinutes * 60 * 1000,
-  ).toISOString();
-  const payload: PollPayload = {
+  const { content, payload } = buildPollMessage({
     question: parsed.value.question,
-    options: parsed.value.options.map((label) => ({
-      id: makeOptionId(),
-      label,
-    })),
-    closes_at: closesAt,
-  };
+    options: parsed.value.options,
+    closesAt: new Date(Date.now() + parsed.value.closesInMinutes * 60 * 1000),
+  });
 
   return sendSimpleCommand(ctx, {
     channelId,
-    content: parsed.value.question,
+    content,
     kind: "poll",
     payload: payload as unknown as Record<string, unknown>,
   });
@@ -821,15 +808,9 @@ async function dispatchEvent(
     return { ok: false, error: "Couldn't read the event date or time" };
   }
 
-  const clientMessageId = randomClientId();
-
-  const placeholderContent = `Creating event "${parsed.value.name}"…`;
-
-  insertLocalPlaceholder(ctx, {
-    channelId,
-    clientMessageId,
-    content: placeholderContent,
-  });
+  // The same placeholder and recorded-row bookkeeping the event form uses
+  // from chat (#3773), so the two paths can't drift apart.
+  const card = trackEventCard(ctx, channelId, parsed.value.name);
 
   try {
     const result = await ctx.apiClient.POST("/v1/events", {
@@ -840,12 +821,13 @@ async function dispatchEvent(
         location: parsed.value.location ?? undefined,
         // point_value and is_mandatory are required in the generated SDK type
         // (their DTO `@default` makes them non-optional); send the spec defaults
-        // (10 points, not mandatory) when the command omits them — slash-created
-        // events are non-mandatory by design (mandatory is dashboard-only).
+        // (10 points, not mandatory) when the command omits them — the
+        // one-liner creates non-mandatory events by design (a required event
+        // goes through the event form).
         point_value: parsed.value.pointValue ?? 10,
         is_mandatory: false,
         channel_id: channelId,
-        client_message_id: clientMessageId,
+        client_message_id: card.clientMessageId,
       },
     });
     // Same status-without-`error` narrowing as `/task` / `/points`. Empty-body
@@ -856,29 +838,62 @@ async function dispatchEvent(
     if (result.error) status ??= 0;
     const ok = typeof status === "number" && status >= 200 && status < 300;
     if (!ok) {
-      removeLocalPlaceholder(ctx, channelId, clientMessageId);
+      card.failed();
       return {
         ok: false,
         error: apiErrorMessage(result.error, "Couldn't create event"),
       };
     }
     if (data?.card_posted === false) {
-      markLocalRecorded(ctx, {
-        channelId,
-        clientMessageId,
-        note: EVENT_RECORDED_ROW_NOTE,
-        content: placeholderContent,
-      });
+      card.lost();
       return { ok: true, warning: EVENT_CARD_LOST_WARNING };
     }
   } catch {
-    removeLocalPlaceholder(ctx, channelId, clientMessageId);
+    card.failed();
     return { ok: false, error: "Couldn't reach the events service" };
   }
 
   // Success: the server posts the `event` card (same client_message_id); the
   // Realtime echo reconciles the placeholder via mergeServerRow.
   return { ok: true };
+}
+
+/**
+ * The chat side of an event created from the event form rather than the
+ * one-liner (web chat's `/event` with details it can't read, #3773). The form
+ * makes its own `POST /v1/events`; this gives it the one-liner's timeline
+ * bookkeeping for the card: a `loading` placeholder under the request's
+ * `client_message_id`, which the server's card reconciles by Realtime echo;
+ * `failed()` drops it when the create is refused; `lost()` turns it into the
+ * durable `recorded` row when the event committed but its card didn't post
+ * (`card_posted: false`), since `POST /v1/events` has no dedupe and the toast
+ * alone is evictable.
+ */
+export interface EventCardTrack {
+  clientMessageId: string;
+  failed: () => void;
+  lost: () => void;
+}
+
+export function trackEventCard(
+  ctx: ChatActionContext,
+  channelId: string,
+  name: string,
+): EventCardTrack {
+  const clientMessageId = randomClientId();
+  const content = `Creating event "${name}"…`;
+  insertLocalPlaceholder(ctx, { channelId, clientMessageId, content });
+  return {
+    clientMessageId,
+    failed: () => removeLocalPlaceholder(ctx, channelId, clientMessageId),
+    lost: () =>
+      markLocalRecorded(ctx, {
+        channelId,
+        clientMessageId,
+        note: EVENT_RECORDED_ROW_NOTE,
+        content,
+      }),
+  };
 }
 
 /**

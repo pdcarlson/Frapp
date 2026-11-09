@@ -25,9 +25,9 @@ came with #2302 (PR #2611).
 | Sign in (`/(auth)/sign-in`) | Email me a link (Magic link mode) | Confirms "Link sent to …"; tapping the emailed link on this device signs in and the auth gate picks join / Terms / welcome / tabs |
 | Sign in (`/(auth)/sign-in`) | Tap an already-used or expired magic link | Opens the app and shows the reason inline — never a silent return to a blank sign-in form |
 | Settings (`/(app)/preferences`) | Sign out | Clears the session + routes to sign-in; relaunching the app does not restore it |
-| Join (`/(auth)/join`) | First view | Asks "How are you getting in?" with I have an invite and I'm starting our chapter; no invite field, and no Sign out or Delete account until Account is tapped |
+| Join (`/(auth)/join`) | First view | Asks "How are you getting in?" with I have an invite and I'm starting our chapter; no invite field; `Signed in as <email> · Sign out` under the header, and no Delete account until Account is tapped |
 | Join (`/(auth)/join`) | Open an invite link while signed in with no chapter | Skips the question and the field: "Join <chapter>?" opens with the chapter's mark, name and school, who invited you and the role |
-| Join (`/(auth)/join`) | Account (top corner) | Shows the signed-in email, Sign out and Delete account; tapping outside, or Android back, closes it |
+| Join (`/(auth)/join`) | Account (top corner) | Shows the signed-in email and Delete account (Sign out is on the screen's face); tapping outside, or Android back, closes it |
 | Join (`/(auth)/join`) | I have an invite, then back | Opens "Join with an invite"; the gold ‹ Back row and Android back return to the question without leaving the app |
 | Join (`/(auth)/join`) | Paste an invite, Continue, then back | Continue opens the "Join <chapter>?" card without using the invite; back returns to the field with the invite still in it |
 | Join (`/(auth)/join`) | Join chapter with a valid invite, box unticked | For a user who hasn't accepted the current Terms, shows the checkbox and `Agree to the Terms of Service and Privacy Policy to join.`; redeems nothing |

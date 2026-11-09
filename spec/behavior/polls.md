@@ -39,7 +39,7 @@ rg -n 'poll_votes' --type ts apps packages
 
 ### There are two poll systems, and they fail anonymity in opposite ways
 
-The split is not a discovery of this section — `apps/mobile/components/chat/poll-card.tsx` already records it in its header, including the detail that keeps the two disjoint: `PollService.createPoll` leaves `kind` at its `'text'` default, so a REST-created poll never reaches the card renderer, and the `/poll` slash command is the only thing that writes a `kind: 'poll'` message.
+The split is not a discovery of this section — `apps/mobile/components/chat/poll-card.tsx` already records it in its header, including the detail that keeps the two disjoint: `PollService.createPoll` leaves `kind` at its `'text'` default, so a REST-created poll never reaches the card renderer. Only two things write a `kind: 'poll'` message, web's `/poll` slash command and mobile's New poll sheet (#3701), and both build it with `buildPollMessage` in `packages/chat-core/src/polls.ts`.
 
 | | `/v1/polls` (REST) | Chat card (ADR-07) |
 | --- | --- | --- |

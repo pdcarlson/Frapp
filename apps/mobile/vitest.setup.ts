@@ -241,6 +241,8 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
 
 vi.mock("expo-linking", () => ({
   useURL: vi.fn(() => null),
+  // The launch URL, read synchronously (s02 peeks it on its first render).
+  getLinkingURL: vi.fn(() => null),
   createURL: vi.fn((path: string) => `frapp://${path}`),
   parse: vi.fn(),
   // The update gate (#2526) hands the store link to the OS rather than an

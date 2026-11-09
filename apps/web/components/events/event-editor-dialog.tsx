@@ -17,7 +17,12 @@ import {
 } from "@/components/events/chapter-ops-glyphs";
 import { AttendanceEditor } from "@/components/events/attendance-editor";
 import { MoreOptionsToggle } from "@/components/ui/more-options-toggle";
-import { useCreateEvent, useRoles, useUpdateEvent } from "@repo/hooks";
+import {
+  EVENT_CREATE_UNCONFIRMED,
+  useCreateEvent,
+  useRoles,
+  useUpdateEvent,
+} from "@repo/hooks";
 import {
   RECURRENCE_REPEAT_LABELS,
   RECURRENCE_RULES,
@@ -28,6 +33,7 @@ import {
   othersInvitedForCreate,
   describeAttendance,
   emptyAttendanceDraft,
+  eventLimitsAudience,
   isRecurrenceRule,
   describeSeriesLength,
   type EventAttendanceDraft,
@@ -57,6 +63,8 @@ import {
   parseGuardedInt,
 } from "@/lib/utils";
 import { parseInstant } from "@repo/formatting";
+import { randomClientId } from "@repo/api-sdk";
+import type { EventCardTrack } from "@repo/chat-core/dispatch";
 
 type EventRecord = Record<string, unknown>;
 
@@ -177,6 +185,33 @@ function parseZoneDrafts(drafts: ZoneVertexDraft[]): ZoneParseResult {
   return { ok: true, zone };
 }
 
+/**
+ * The toast after a create. From chat (#3773) the card is the point, so a
+ * create that couldn't post one says why rather than leaving the member to
+ * wonder where it went. Neither case is a failure: the event exists.
+ */
+export function createdToast(
+  name: string,
+  card: { cardKeptOut: boolean; cardLost: boolean },
+): { title: string; description: string } {
+  if (card.cardKeptOut) {
+    return {
+      title: "Event created",
+      description: `${name} is on the calendar. It isn't posted in chat because it's only for some roles.`,
+    };
+  }
+  if (card.cardLost) {
+    return {
+      title: "Event created",
+      description: `${name} is on the calendar, but its card couldn't be posted in chat.`,
+    };
+  }
+  return {
+    title: "Event created",
+    description: `${name} was added to the chapter calendar.`,
+  };
+}
+
 type EventEditorDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -199,6 +234,28 @@ type EventEditorDialogProps = {
    */
   initialStartAt?: string;
   initialEndAt?: string;
+  /**
+   * More create-only prefill, from what a member typed after `/event` in chat
+   * (#3773). Ignored in edit mode.
+   */
+  initialName?: string;
+  initialLocation?: string;
+  initialPointValue?: number;
+  /**
+   * The chat channel a create came from. The event's card posts there, as the
+   * `/event` one-liner's does, unless the event keeps anyone out: the API
+   * refuses a card for those, so they are created without one and the toast
+   * says so. Ignored in edit mode.
+   */
+  postToChannelId?: string;
+  /**
+   * The chat's card bookkeeping for `postToChannelId` (`trackEventCard`): a
+   * `loading` placeholder in the channel while the create runs, dropped on a
+   * refusal, and kept as a durable "card didn't post" row when the event
+   * committed without its card, as the one-liner does. Without it the create
+   * still posts its card, with no placeholder.
+   */
+  trackChatCard?: (channelId: string, name: string) => EventCardTrack;
 };
 
 export function EventEditorDialog({
@@ -211,6 +268,11 @@ export function EventEditorDialog({
   onSaved,
   initialStartAt,
   initialEndAt,
+  initialName,
+  initialLocation,
+  initialPointValue,
+  postToChannelId,
+  trackChatCard,
 }: EventEditorDialogProps) {
   const createEventMutation = useCreateEvent();
   const updateEventMutation = useUpdateEvent();
@@ -294,12 +356,12 @@ export function EventEditorDialog({
       return;
     }
 
-    setName("");
+    setName(initialName ?? "");
     setDescription("");
-    setLocation("");
+    setLocation(initialLocation ?? "");
     setStartAt(initialStartAt ?? "");
     setEndAt(initialEndAt ?? "");
-    setPointValue("10");
+    setPointValue(String(initialPointValue ?? 10));
     setAttendance(emptyAttendanceDraft());
     setRecurrenceRule("NONE");
     setNotes("");
@@ -307,7 +369,16 @@ export function EventEditorDialog({
     setCheckInZoneName("");
     setShowMore(false);
     setShowZone(false);
-  }, [event, mode, open, initialStartAt, initialEndAt]);
+  }, [
+    event,
+    mode,
+    open,
+    initialStartAt,
+    initialEndAt,
+    initialName,
+    initialLocation,
+    initialPointValue,
+  ]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const submitLabel = useMemo(() => {
@@ -444,31 +515,54 @@ export function EventEditorDialog({
         // reason: CreateEventDto carries @ArrayMinSize(3), so sending [] here is
         // a 400 rather than "no zone". Update deliberately omits that decorator
         // so [] can clear — see the update branch below.
-        await createEventMutation.mutateAsync({
-          ...payload,
-          ...(wire.required_role_ids.length > 0
-            ? { required_role_ids: wire.required_role_ids }
-            : {}),
-          ...(othersInvitedForCreate(wire) !== undefined
-            ? { others_invited: othersInvitedForCreate(wire) }
-            : {}),
-          ...(wire.optional_role_ids.length > 0
-            ? { optional_role_ids: wire.optional_role_ids }
-            : {}),
-          ...(wire.excluded_role_ids.length > 0
-            ? { excluded_role_ids: wire.excluded_role_ids }
-            : {}),
-          ...(zone.length > 0
-            ? {
-                check_in_zone: zone,
-                ...(zoneName ? { check_in_zone_name: zoneName } : {}),
-              }
-            : {}),
-        });
-        toast({
-          title: "Event created",
-          description: `${payload.name} was added to the chapter calendar.`,
-        });
+        // A card is broadcast to everyone in the channel, so the API refuses
+        // one for an event that keeps anyone out (`EventService.create`).
+        const cardKeptOut =
+          postToChannelId !== undefined && eventLimitsAudience(wire);
+        const card =
+          postToChannelId !== undefined && !cardKeptOut
+            ? (trackChatCard?.(postToChannelId, payload.name) ?? {
+                clientMessageId: randomClientId(),
+                failed: () => undefined,
+                lost: () => undefined,
+              })
+            : null;
+        let created: { card_posted?: boolean } | undefined;
+        try {
+          created = await createEventMutation.mutateAsync({
+            ...payload,
+            ...(card
+              ? {
+                  channel_id: postToChannelId,
+                  client_message_id: card.clientMessageId,
+                }
+              : {}),
+            ...(wire.required_role_ids.length > 0
+              ? { required_role_ids: wire.required_role_ids }
+              : {}),
+            ...(othersInvitedForCreate(wire) !== undefined
+              ? { others_invited: othersInvitedForCreate(wire) }
+              : {}),
+            ...(wire.optional_role_ids.length > 0
+              ? { optional_role_ids: wire.optional_role_ids }
+              : {}),
+            ...(wire.excluded_role_ids.length > 0
+              ? { excluded_role_ids: wire.excluded_role_ids }
+              : {}),
+            ...(zone.length > 0
+              ? {
+                  check_in_zone: zone,
+                  ...(zoneName ? { check_in_zone_name: zoneName } : {}),
+                }
+              : {}),
+          });
+        } catch (error) {
+          card?.failed();
+          throw error;
+        }
+        const cardLost = card !== null && created?.card_posted === false;
+        if (cardLost) card.lost();
+        toast(createdToast(payload.name, { cardKeptOut, cardLost }));
       } else {
         if (!eventId) return;
         await updateEventMutation.mutateAsync({
@@ -495,9 +589,13 @@ export function EventEditorDialog({
         });
       }
     } catch (error) {
+      // A lost answer isn't a refusal: the event may exist (#1717).
+      const unconfirmed =
+        error instanceof Error && error.message === EVENT_CREATE_UNCONFIRMED;
       toast({
-        title:
-          mode === "create"
+        title: unconfirmed
+          ? "Couldn't confirm the event"
+          : mode === "create"
             ? "Could not create event"
             : "Could not update event",
         description: getErrorMessage(

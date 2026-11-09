@@ -6,11 +6,17 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import {
   joinErrorCopy,
+  pendingInviteDetail,
+  pendingInviteTitle,
   redeemChapterId,
+  useAccessibleChapters,
+  useActiveChapterId,
   useJoinTermsCheckbox,
+  useMyPermissions,
   usePendingInvites,
   useRedeemInvite,
 } from "@repo/hooks";
+import type { ChapterMembershipSummary } from "@repo/hooks";
 import {
   chapterInitials,
   extractInviteToken,
@@ -34,6 +40,12 @@ import { getLiveSessionUser } from "@/lib/auth/rejected-session";
 import { useSelectChapter } from "@/lib/auth/select-chapter";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confirm-drop-bulk-uploads";
+import { asArray } from "@/lib/utils";
+import { isLockedOutOfChapter } from "@/lib/auth/no-access";
+import {
+  isJoinSkipCandidate,
+  shouldSkipJoinForMember,
+} from "@/lib/auth/join-visit";
 
 /**
  * s02 — Join chapter (`spec/ui/design-system/reference/canvas-screens.dc.html`).
@@ -73,6 +85,17 @@ import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confir
  * (`GET /v1/invites/mine`) are offered above the field, each a one-tap Join,
  * so a member who signs in with that address needn't go back for the link.
  * A visitor who arrived with an invite link sees only that invite.
+ *
+ * **#3850.** A member already in a chapter reaches this page too: from an
+ * invite link (an old one for their own chapter, or one for a second), the
+ * chapter switcher's Join another chapter, `/no-access`, or the sign-in
+ * footer's Join your chapter. The page used to give them no way back, so it
+ * read as a failed sign-in. Now it leads with "You're already in <chapter>"
+ * and Open chat, but only for a member with access there: `/no-access` sends
+ * a member with no role here, and Open chat would loop them back to it. Only
+ * the sign-in footer's visit can skip the page outright, decided once on
+ * arrival (`shouldSkipJoinForMember`), so a join made on this page never
+ * re-triggers it mid-redeem. The other entries are deliberate.
  */
 function JoinPageContent() {
   const router = useRouter();
@@ -106,6 +129,47 @@ function JoinPageContent() {
   );
   // A link carries one invite, and that is the one the visitor came for.
   const offers = initialToken ? [] : (pendingInvites.data ?? []);
+  const chaptersQuery = useAccessibleChapters({
+    enabled: sessionState === "ready",
+  });
+  const activeChapterId = useActiveChapterId();
+  const memberships = asArray<ChapterMembershipSummary>(chaptersQuery.data);
+  const currentMembership =
+    memberships.find((m) => m.chapter_id === activeChapterId) ??
+    memberships[0] ??
+    null;
+  const permissionsQuery = useMyPermissions({
+    enabled: sessionState === "ready",
+  });
+  // `NoAccessRedirect`'s own rule: a member it would send to `/no-access` gets
+  // no Open chat and no skip, since `/chat` would send them straight back.
+  // An unanswered or disabled read counts as access, as it does there.
+  const hasAccess = !isLockedOutOfChapter(
+    permissionsQuery.data?.permissions,
+    memberships.length,
+  );
+  const openChatMembership = hasAccess ? currentMembership : null;
+
+  const visitFrom = searchParams.get("from");
+  const visitHasInvite = initialToken !== "";
+  const skipCandidate = isJoinSkipCandidate({
+    from: visitFrom,
+    hasInvite: visitHasInvite,
+  });
+  // Decided once, on arrival. Re-deciding on every render would fire mid-join:
+  // a redeem refetches the chapter list, which turns 0 memberships into 1
+  // while `selectChapter` is still running.
+  const [skipDecision, setSkipDecision] = useState<
+    "undecided" | "skip" | "stay"
+  >("undecided");
+  // `isLoading`, not `isPending`: a read paused offline isn't loading, so the
+  // decision falls to "stay" and the form shows instead of a skeleton for good.
+  const skipReadsLoading =
+    chaptersQuery.isLoading ||
+    pendingInvites.isLoading ||
+    permissionsQuery.isLoading;
+  const awaitingSkipDecision =
+    skipCandidate && sessionState === "ready" && skipDecision === "undecided";
   const [joiningToken, setJoiningToken] = useState<string | null>(null);
   const [offerError, setOfferError] = useState<string | null>(null);
   // Held for the whole join, not just the API call: `selectChapter` and the
@@ -150,6 +214,26 @@ function JoinPageContent() {
       isMounted = false;
     };
   }, [router, attempt]);
+
+  // Decided while rendering (React's "adjusting state when a prop changes"),
+  // once the reads it needs have settled; the effect below only navigates.
+  if (awaitingSkipDecision && !skipReadsLoading) {
+    setSkipDecision(
+      shouldSkipJoinForMember({
+        from: visitFrom,
+        hasInvite: visitHasInvite,
+        membershipCount: memberships.length,
+        offerCount: pendingInvites.data?.length ?? 0,
+        hasAccess,
+      })
+        ? "skip"
+        : "stay",
+    );
+  }
+
+  useEffect(() => {
+    if (skipDecision === "skip") router.replace("/chat");
+  }, [skipDecision, router]);
 
   const retrySessionCheck = useCallback(() => {
     setSessionState("checking");
@@ -232,7 +316,11 @@ function JoinPageContent() {
     }
   }
 
-  if (sessionState === "checking") {
+  if (
+    sessionState === "checking" ||
+    awaitingSkipDecision ||
+    skipDecision === "skip"
+  ) {
     return (
       <AuthScreen
         title="Join your chapter"
@@ -283,6 +371,28 @@ function JoinPageContent() {
       subtitle="Enter the invite your officer sent. Invites expire after 24 hours and work once."
       footer={JOIN_FOOTER}
     >
+      {openChatMembership ? (
+        <section
+          aria-label="Your chapter"
+          className="mb-6 flex items-center gap-3 rounded-lg border border-border bg-card p-4"
+        >
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-foreground">
+              {`You're already in ${openChatMembership.chapter?.name ?? "a chapter"}`}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Have an invite to another chapter? Use it below.
+            </p>
+          </div>
+          <Button
+            asChild
+            // One primary per screen: an offered invite's Join outranks it.
+            variant={offers.length > 0 ? "secondary" : "default"}
+          >
+            <Link href="/chat">Open chat</Link>
+          </Button>
+        </section>
+      ) : null}
       {offers.length > 0 ? (
         <section aria-label="Your invites" className="mb-6 flex flex-col gap-3">
           {offers.map((offer) => (
@@ -299,16 +409,10 @@ function JoinPageContent() {
               />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-foreground">
-                  You&apos;ve been invited to {offer.chapter_name}
+                  {pendingInviteTitle(offer.chapter_name)}
                 </p>
                 <p className="truncate text-xs text-muted-foreground">
-                  {[
-                    offer.university,
-                    offer.invited_by ? `from ${offer.invited_by}` : null,
-                    offer.role,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
+                  {pendingInviteDetail(offer)}
                 </p>
               </div>
               <Button
@@ -370,8 +474,11 @@ function JoinPageContent() {
         <Button
           type="submit"
           className="w-full"
-          // One primary per screen: an offered invite's Join is it.
-          variant={offers.length > 0 ? "secondary" : "default"}
+          // One primary per screen: an offered invite's Join, else the
+          // member's Open chat, outranks it.
+          variant={
+            offers.length > 0 || openChatMembership ? "secondary" : "default"
+          }
           disabled={busy}
         >
           {busy && joiningToken === null ? (
@@ -396,7 +503,10 @@ function JoinPageContent() {
 const JOIN_FOOTER = (
   <p>
     Starting a chapter?{" "}
-    <Link href="/chat" className="font-semibold text-accent-text hover:underline">
+    <Link
+      href="/chat"
+      className="font-semibold text-accent-text hover:underline"
+    >
       Create a chapter
     </Link>
   </p>

@@ -178,6 +178,11 @@ constraints web habits most often break:
 
 ## Proposing a UI change
 
+Propose only when the person asked to see options first, or a coordinator brief asks for a design
+pass. Otherwise build the change, name in the PR the comparable apps it borrows from, and show the
+before and after as [`AGENTS.md` § Operating mindset](../../../AGENTS.md#operating-mindset) says.
+The rules below hold for that before/after too.
+
 Owner rule, 2026-11-08, after a proposal page drew its screens from memory: placeholder phones and
 an invented Profile left nothing to judge. A proposal is a mock, but a mock of the real app.
 

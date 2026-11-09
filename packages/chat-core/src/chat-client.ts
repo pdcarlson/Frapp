@@ -359,6 +359,15 @@ export interface SendMessageArgs {
   /** Reuse a previously-generated id (outbox flush, idempotent retry). */
   clientMessageId?: string;
   /**
+   * Leave the channel's saved composer draft alone. A send clears it because
+   * the draft is normally what is being sent; these sends aren't: an outbox
+   * retry or flush (the draft was cleared when the message was first sent,
+   * and whatever is saved now is something newer the member is typing), and
+   * a card posted from a sheet beside the composer, such as mobile's New poll
+   * (#3701), which a typed-but-unsent message must outlive.
+   */
+  keepDraft?: boolean;
+  /**
    * How many prior attempts have already failed for this message — for
    * analytics only. `ctx.outbox.enqueue`'s return value always reports
    * `attempts: 0` (every enqueue is a fresh `put`, including a retry's
@@ -458,14 +467,15 @@ export async function sendMessage(
   );
 
   // Draft clear is a Dexie drafts-table op that happens to sit on this
-  // path. Failing it must not fail a send that can still enqueue — a flush
-  // of an already-queued row would otherwise abandon a message that was
-  // never this attempt's to drop. Before any wait for uploads below, so a
+  // path, for a compose send only (`keepDraft`). Failing it must not fail a
+  // send that can still enqueue. Before any wait for uploads below, so a
   // draft the member types meanwhile is never the one cleared.
-  try {
-    await ctx.outbox.clearDraft(args.channelId);
-  } catch {
-    // Best-effort.
+  if (!args.keepDraft) {
+    try {
+      await ctx.outbox.clearDraft(args.channelId);
+    } catch {
+      // Best-effort.
+    }
   }
 
   let attachments = args.attachments ?? null;
@@ -870,6 +880,7 @@ function sendArgsFromOutbox(row: OutboxRow): SendMessageArgs {
     attachments: row.attachments ?? null,
     clientMessageId: row.clientId,
     priorAttempts: row.attempts,
+    keepDraft: true,
   };
 }
 

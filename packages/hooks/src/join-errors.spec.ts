@@ -5,7 +5,12 @@ import {
   LEGAL_ACCEPTANCE_REQUIRED_MESSAGE,
 } from "@repo/validation";
 import * as joinErrors from "./join-errors";
-import { joinErrorCopy, redeemChapterId } from "./join-errors";
+import {
+  joinErrorCopy,
+  pendingInviteDetail,
+  pendingInviteTitle,
+  redeemChapterId,
+} from "./join-errors";
 
 /**
  * Web `/join` and mobile s02 both render these, and `writing.md` § 7's "Join
@@ -32,8 +37,8 @@ describe("joinErrorCopy", () => {
 
   it("doesn't blame the invite when the account itself was deleted", () => {
     // Also a 410, from the Terms check, for a session that outlived its
-    // account. A new invite wouldn't help, and web `/join` has no sign-out
-    // to point at, so the copy names no control.
+    // account. A new invite wouldn't help, and both surfaces already show a
+    // `Signed in as … · Sign out` line, so the copy names no control.
     expect(
       joinErrorCopy({ statusCode: 410, message: ACCOUNT_DELETED_MESSAGE }),
     ).toBe("This account has been deleted, so it can't join a chapter.");
@@ -112,10 +117,13 @@ describe("this module is error copy, not a status vocabulary", () => {
     // Written down so the absence reads as a decision: 410 and 409 are never
     // persisted, badged or coloured, so there is no kind to be wrong about.
     // `isDeadInviteError` is a yes/no for whether to offer Join (#3352), not
-    // a kind.
+    // a kind, and the two `pendingInvite*` exports are an offer's copy
+    // (#3782).
     expect(Object.keys(joinErrors).sort()).toEqual([
       "isDeadInviteError",
       "joinErrorCopy",
+      "pendingInviteDetail",
+      "pendingInviteTitle",
       "redeemChapterId",
     ]);
   });
@@ -130,5 +138,26 @@ describe("isDeadInviteError (#3352)", () => {
       joinErrors.isDeadInviteError({ statusCode: 409, message: "x" }),
     ).toBe(false);
     expect(joinErrors.isDeadInviteError(new Error("offline"))).toBe(false);
+  });
+});
+
+describe("pending invite offer copy (#3782)", () => {
+  it("names the chapter in the title", () => {
+    expect(pendingInviteTitle("FIJI Tau Nu")).toBe(
+      "You've been invited to FIJI Tau Nu",
+    );
+  });
+
+  it("joins the school, sender and role, leaving out what isn't known", () => {
+    expect(
+      pendingInviteDetail({
+        university: "RPI",
+        invited_by: "Paul Carlson",
+        role: "Member",
+      }),
+    ).toBe("RPI · from Paul Carlson · Member");
+    expect(
+      pendingInviteDetail({ university: "RPI", invited_by: null, role: null }),
+    ).toBe("RPI");
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   filterSlashCommands,
+  paletteCommandArgs,
   getSlashCommand,
   parseNumericArg,
   parseSlashInput,
@@ -69,6 +70,14 @@ describe("filterSlashCommands", () => {
 
   it("is case-insensitive and trims the query", () => {
     const result = filterSlashCommands("  EVENT  ", allEnabled);
+    expect(result.map((command) => command.name)).toEqual(["event"]);
+  });
+
+  it("keeps a command listed when its word is followed by details (#3773)", () => {
+    const result = filterSlashCommands(
+      "event Chapter Dinner 2026-11-20",
+      allEnabled,
+    );
     expect(result.map((command) => command.name)).toEqual(["event"]);
   });
 
@@ -197,5 +206,29 @@ describe("parseNumericArg", () => {
   it("returns null for non-finite numeric strings", () => {
     expect(parseNumericArg("Infinity")).toBeNull();
     expect(parseNumericArg("NaN")).toBeNull();
+  });
+});
+
+describe("paletteCommandArgs (#3773)", () => {
+  const event = SLASH_COMMANDS.find((command) => command.name === "event")!;
+  const rush = SLASH_COMMANDS.find((command) => command.name === "rush")!;
+
+  it("hands over what follows the command's word", () => {
+    expect(paletteCommandArgs("event  Chapter Dinner ", event)).toBe(
+      "Chapter Dinner",
+    );
+    expect(paletteCommandArgs("EVENT Formal", event)).toBe("Formal");
+  });
+
+  it("is null for the bare word, another word, or a description search", () => {
+    expect(paletteCommandArgs("event", event)).toBeNull();
+    expect(paletteCommandArgs("eve Formal", event)).toBeNull();
+    expect(paletteCommandArgs("interactive card", event)).toBeNull();
+  });
+
+  it("takes the chapter's recruitment word for rush", () => {
+    expect(
+      paletteCommandArgs("intake add Jordan", rush, { recruitment: "Intake" }),
+    ).toBe("add Jordan");
   });
 });
