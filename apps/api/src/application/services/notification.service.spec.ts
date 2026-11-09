@@ -63,6 +63,7 @@ describe('NotificationService', () => {
       findByUser: jest.fn(),
       findById: jest.fn(),
       markRead: jest.fn(),
+      markChatChannelRead: jest.fn(),
     };
     mockPushTokenRepo = {
       create: jest.fn(),
@@ -1391,6 +1392,26 @@ describe('NotificationService', () => {
         'ch-other',
       );
       expect(mockNotificationRepo.markRead).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('markChatChannelNotificationsRead (#3788)', () => {
+    it('clears the channel rows the read covers, for this member in this chapter', async () => {
+      mockNotificationRepo.markChatChannelRead.mockResolvedValue(undefined);
+
+      await service.markChatChannelNotificationsRead(
+        'user-1',
+        'chapter-1',
+        'channel-1',
+        '2026-11-09T05:00:00.000Z',
+      );
+
+      expect(mockNotificationRepo.markChatChannelRead).toHaveBeenCalledWith(
+        'user-1',
+        'chapter-1',
+        'channel-1',
+        '2026-11-09T05:00:00.000Z',
+      );
     });
   });
 

@@ -19,9 +19,9 @@ import {
   parseRushArgs,
   parseTaskArgs,
   type AnnouncementPayload,
-  type PollPayload,
   type SlashCommand,
 } from "./integrations";
+import { buildPollMessage, type PollPayload } from "./polls";
 import {
   sendMessage,
   insertLocalPlaceholder,
@@ -93,13 +93,6 @@ interface DispatchArgs {
   announcementsChannelId: string | null;
   /** Resolves the `@member` token for member-targeted commands (/points). */
   resolveMember?: ResolveMember;
-}
-
-function makeOptionId(): string {
-  // A poll option id only has to be unique within one message's option list, so
-  // it stays a short readable token rather than a full UUID. (`randomClientId()`
-  // is the right call for anything the server dedupes on.)
-  return Math.random().toString(36).slice(2, 10);
 }
 
 /**
@@ -174,24 +167,59 @@ async function dispatchPoll(
   const parsed = parsePollArgs(args);
   if (!parsed.ok) return { ok: false, error: parsed.error };
 
-  const closesAt = new Date(
-    Date.now() + parsed.value.closesInMinutes * 60 * 1000,
-  ).toISOString();
-  const payload: PollPayload = {
+  const { content, payload } = buildPollMessage({
     question: parsed.value.question,
-    options: parsed.value.options.map((label) => ({
-      id: makeOptionId(),
-      label,
-    })),
-    closes_at: closesAt,
-  };
+    options: parsed.value.options,
+    closesAt: new Date(Date.now() + parsed.value.closesInMinutes * 60 * 1000),
+  });
 
   return sendSimpleCommand(ctx, {
     channelId,
-    content: parsed.value.question,
+    content,
     kind: "poll",
     payload: payload as unknown as Record<string, unknown>,
   });
+}
+
+/**
+ * Posts a poll card a New poll form built (`buildPollMessage`): web's dialog
+ * (#3865) and, in time, mobile's sheet. Through the outbox like a message, so
+ * it is optimistic and survives going offline. Unlike `/poll` it leaves the
+ * channel's saved draft alone: the composer may hold a message the member is
+ * still writing beside the form.
+ *
+ * Never rejects. `{ ok: false }` means nothing was queued and the form's
+ * draft is all the member has: signed out (`sendMessage` toasts that itself
+ * and resolves without queuing), or an outbox that refused the row.
+ * `{ ok: true, warning }` is `sendMessage`'s posted-but-not-saved warning,
+ * which the caller must show, as `notifyDispatchOutcome` does for `/poll`.
+ */
+export async function postPoll(
+  ctx: ChatActionContext,
+  channelId: string,
+  poll: { content: string; payload: PollPayload },
+): Promise<
+  | { ok: true; warning?: string }
+  | { ok: false; error: string; cause?: unknown }
+> {
+  if (!ctx.userId) {
+    return { ok: false, error: "You're signed out. Sign in, then post it again." };
+  }
+  try {
+    const sent = await sendMessage(ctx, {
+      channelId,
+      content: poll.content,
+      kind: "poll",
+      payload: poll.payload as unknown as Record<string, unknown>,
+      keepDraft: true,
+    });
+    return sent.warning ? { ok: true, warning: sent.warning } : { ok: true };
+  } catch (cause) {
+    // The outbox refused the row and `sendMessage` took the optimistic card
+    // back out, so nothing is queued or on screen. `cause` is for the
+    // caller's error reporting, which chat-core has no port for.
+    return { ok: false, error: "Couldn't post that poll. Try again.", cause };
+  }
 }
 
 async function dispatchAnnounce(
@@ -257,14 +285,41 @@ async function dispatchPoints(
       error: `No member matches @${parsed.value.memberToken}`,
     };
   }
-  if (ctx.userId && member.user_id === ctx.userId) {
+  return postPointsAdjustment(ctx, channelId, {
+    target_user_id: member.user_id,
+    amount:
+      parsed.value.action === "grant"
+        ? parsed.value.amount
+        : -parsed.value.amount,
+    category: parsed.value.category,
+    reason: parsed.value.reason,
+  });
+}
+
+/** What a points adjustment posted into a channel carries (`/points` or the + menu's form). */
+export interface PointsAdjustmentInput {
+  target_user_id: string;
+  /** Signed: negative deducts. */
+  amount: number;
+  category: ReplayRequest["body"]["category"];
+  reason: string;
+}
+
+/**
+ * Adjust a member's points and post the points card in `channelId`: the
+ * `/points` one-liner, and the composer's + menu's Points form (#3865). Mints
+ * the idempotency key and shows the `loading` placeholder;
+ * {@link submitPointsAdjustment} owns everything after it, so the command,
+ * the form and an explicit retry cannot drift.
+ */
+export async function postPointsAdjustment(
+  ctx: ChatActionContext,
+  channelId: string,
+  input: PointsAdjustmentInput,
+): Promise<DispatchResult> {
+  if (ctx.userId && input.target_user_id === ctx.userId) {
     return { ok: false, error: "You can't adjust your own points" };
   }
-
-  const signedAmount =
-    parsed.value.action === "grant"
-      ? parsed.value.amount
-      : -parsed.value.amount;
   const clientMessageId = randomClientId();
 
   const replay: ReplayRequest = {
@@ -272,21 +327,19 @@ async function dispatchPoints(
     channelId,
     clientMessageId,
     body: {
-      target_user_id: member.user_id,
-      amount: signedAmount,
-      category: parsed.value.category,
-      reason: parsed.value.reason,
+      target_user_id: input.target_user_id,
+      amount: input.amount,
+      category: input.category,
+      reason: input.reason,
       channel_id: channelId,
       client_message_id: clientMessageId,
     },
   };
 
-  const placeholderContent = pointsPlaceholderContent(replay);
-
   insertLocalPlaceholder(ctx, {
     channelId,
     clientMessageId,
-    content: placeholderContent,
+    content: pointsPlaceholderContent(replay),
   });
 
   return submitPointsAdjustment(ctx, replay, false);
@@ -559,6 +612,31 @@ const EVENT_RECORDED_ROW_NOTE =
 const HOURS_RECORDED_ROW_NOTE =
   "Hours logged — the chat card didn't post. Don't run this command again.";
 
+const TASK_UNCONFIRMED_WARNING =
+  "Couldn't confirm the task was created. Check the task board before you create it again.";
+
+const HOURS_UNCONFIRMED_WARNING =
+  "Couldn't confirm the hours were logged. Check the service hours page before you log them again.";
+
+/**
+ * A `/task` or `/hours` write whose answer never arrived: a transport failure,
+ * a 5xx, or a status an intermediary emits after the origin may have
+ * committed. Neither route dedupes, so this must not read as a refusal: a
+ * red "failed" invites the resubmit (one click on the + menu's form, which
+ * keeps the draft) that writes it twice. It reads as unconfirmed instead, and
+ * the placeholder goes; if the write did commit, its card still arrives by
+ * Realtime echo as a fresh row.
+ */
+function lostResponse(
+  ctx: ChatActionContext,
+  channelId: string,
+  clientMessageId: string,
+  warning: string,
+): DispatchResult {
+  removeLocalPlaceholder(ctx, channelId, clientMessageId);
+  return { ok: true, unconfirmed: true, warning };
+}
+
 const RUSH_CARD_LOST_WARNING =
   "Candidate was added, but the chat card couldn't be posted. Don't run the command again.";
 
@@ -707,9 +785,39 @@ async function dispatchTask(
     };
   }
 
+  return postTask(ctx, channelId, {
+    title: parsed.value.title,
+    assignee_id: member.user_id,
+    due_date: parsed.value.dueDate,
+    point_reward: parsed.value.pointReward ?? undefined,
+  });
+}
+
+/** What a task posted into a channel carries (`/task` or the + menu's form). */
+export interface TaskInput {
+  title: string;
+  description?: string;
+  assignee_id: string;
+  /** `YYYY-MM-DD`. */
+  due_date: string;
+  point_reward?: number;
+}
+
+/**
+ * Create a task and post its card in `channelId`: the `/task` one-liner, and
+ * the composer's + menu's Task form (#3865). A `loading` placeholder until
+ * the server's card reconciles it by Realtime echo; dropped on a refusal;
+ * kept as the durable `recorded` row when the task committed without its
+ * card. No server-side dedupe, so no retry path.
+ */
+export async function postTask(
+  ctx: ChatActionContext,
+  channelId: string,
+  input: TaskInput,
+): Promise<DispatchResult> {
   const clientMessageId = randomClientId();
 
-  const placeholderContent = `Creating task "${parsed.value.title}"…`;
+  const placeholderContent = `Creating task "${input.title}"…`;
 
   insertLocalPlaceholder(ctx, {
     channelId,
@@ -720,10 +828,11 @@ async function dispatchTask(
   try {
     const result = await ctx.apiClient.POST("/v1/tasks", {
       body: {
-        title: parsed.value.title,
-        assignee_id: member.user_id,
-        due_date: parsed.value.dueDate,
-        point_reward: parsed.value.pointReward ?? undefined,
+        title: input.title,
+        description: input.description,
+        assignee_id: input.assignee_id,
+        due_date: input.due_date,
+        point_reward: input.point_reward,
         channel_id: channelId,
         client_message_id: clientMessageId,
       },
@@ -739,6 +848,9 @@ async function dispatchTask(
     if (result.error) status ??= 0;
     const ok = typeof status === "number" && status >= 200 && status < 300;
     if (!ok) {
+      if (!isTerminalStatus(status)) {
+        return lostResponse(ctx, channelId, clientMessageId, TASK_UNCONFIRMED_WARNING);
+      }
       removeLocalPlaceholder(ctx, channelId, clientMessageId);
       return {
         ok: false,
@@ -755,8 +867,7 @@ async function dispatchTask(
       return { ok: true, warning: TASK_CARD_LOST_WARNING };
     }
   } catch {
-    removeLocalPlaceholder(ctx, channelId, clientMessageId);
-    return { ok: false, error: "Couldn't reach the tasks service" };
+    return lostResponse(ctx, channelId, clientMessageId, TASK_UNCONFIRMED_WARNING);
   }
 
   // Success: the server posts the `task` card (same client_message_id); the
@@ -821,15 +932,9 @@ async function dispatchEvent(
     return { ok: false, error: "Couldn't read the event date or time" };
   }
 
-  const clientMessageId = randomClientId();
-
-  const placeholderContent = `Creating event "${parsed.value.name}"…`;
-
-  insertLocalPlaceholder(ctx, {
-    channelId,
-    clientMessageId,
-    content: placeholderContent,
-  });
+  // The same placeholder and recorded-row bookkeeping the event form uses
+  // from chat (#3773), so the two paths can't drift apart.
+  const card = trackEventCard(ctx, channelId, parsed.value.name);
 
   try {
     const result = await ctx.apiClient.POST("/v1/events", {
@@ -840,12 +945,13 @@ async function dispatchEvent(
         location: parsed.value.location ?? undefined,
         // point_value and is_mandatory are required in the generated SDK type
         // (their DTO `@default` makes them non-optional); send the spec defaults
-        // (10 points, not mandatory) when the command omits them — slash-created
-        // events are non-mandatory by design (mandatory is dashboard-only).
+        // (10 points, not mandatory) when the command omits them — the
+        // one-liner creates non-mandatory events by design (a required event
+        // goes through the event form).
         point_value: parsed.value.pointValue ?? 10,
         is_mandatory: false,
         channel_id: channelId,
-        client_message_id: clientMessageId,
+        client_message_id: card.clientMessageId,
       },
     });
     // Same status-without-`error` narrowing as `/task` / `/points`. Empty-body
@@ -856,29 +962,62 @@ async function dispatchEvent(
     if (result.error) status ??= 0;
     const ok = typeof status === "number" && status >= 200 && status < 300;
     if (!ok) {
-      removeLocalPlaceholder(ctx, channelId, clientMessageId);
+      card.failed();
       return {
         ok: false,
         error: apiErrorMessage(result.error, "Couldn't create event"),
       };
     }
     if (data?.card_posted === false) {
-      markLocalRecorded(ctx, {
-        channelId,
-        clientMessageId,
-        note: EVENT_RECORDED_ROW_NOTE,
-        content: placeholderContent,
-      });
+      card.lost();
       return { ok: true, warning: EVENT_CARD_LOST_WARNING };
     }
   } catch {
-    removeLocalPlaceholder(ctx, channelId, clientMessageId);
+    card.failed();
     return { ok: false, error: "Couldn't reach the events service" };
   }
 
   // Success: the server posts the `event` card (same client_message_id); the
   // Realtime echo reconciles the placeholder via mergeServerRow.
   return { ok: true };
+}
+
+/**
+ * The chat side of an event created from the event form rather than the
+ * one-liner (web chat's `/event` with details it can't read, #3773). The form
+ * makes its own `POST /v1/events`; this gives it the one-liner's timeline
+ * bookkeeping for the card: a `loading` placeholder under the request's
+ * `client_message_id`, which the server's card reconciles by Realtime echo;
+ * `failed()` drops it when the create is refused; `lost()` turns it into the
+ * durable `recorded` row when the event committed but its card didn't post
+ * (`card_posted: false`), since `POST /v1/events` has no dedupe and the toast
+ * alone is evictable.
+ */
+export interface EventCardTrack {
+  clientMessageId: string;
+  failed: () => void;
+  lost: () => void;
+}
+
+export function trackEventCard(
+  ctx: ChatActionContext,
+  channelId: string,
+  name: string,
+): EventCardTrack {
+  const clientMessageId = randomClientId();
+  const content = `Creating event "${name}"…`;
+  insertLocalPlaceholder(ctx, { channelId, clientMessageId, content });
+  return {
+    clientMessageId,
+    failed: () => removeLocalPlaceholder(ctx, channelId, clientMessageId),
+    lost: () =>
+      markLocalRecorded(ctx, {
+        channelId,
+        clientMessageId,
+        note: EVENT_RECORDED_ROW_NOTE,
+        content,
+      }),
+  };
 }
 
 /**
@@ -891,9 +1030,9 @@ async function dispatchEvent(
  * placeholder and surface the server's message. No server-side dedupe — a
  * replay would duplicate the entry, so there is no retry path.
  *
- * Chat cannot attach proof. When the chapter's `wf_hours_receipt` workflow is
- * on, the API 400s with its existing receipt message; that is the correct UX,
- * not a bypass.
+ * The one-liner cannot attach proof (the + menu's form can). When the
+ * chapter's `wf_hours_receipt` workflow is on, the API 400s with its existing
+ * receipt message; that is the correct UX, not a bypass.
  */
 async function dispatchHours(
   ctx: ChatActionContext,
@@ -903,9 +1042,37 @@ async function dispatchHours(
   const parsed = parseHoursArgs(args);
   if (!parsed.ok) return { ok: false, error: parsed.error };
 
+  return postHours(ctx, channelId, {
+    // `/hours log` has no date token: the entry is for the local today.
+    date: localIsoDate(new Date()),
+    duration_minutes: parsed.value.durationMinutes,
+    description: parsed.value.description,
+  });
+}
+
+/** What a service entry posted into a channel carries (`/hours log` or the + menu's form). */
+export interface HoursInput {
+  /** `YYYY-MM-DD`. */
+  date: string;
+  duration_minutes: number;
+  description: string;
+  /** From `POST /v1/service-entries/proof-upload-url`; only the form can attach one. */
+  proof_path?: string;
+}
+
+/**
+ * Log a service entry and post its hours card in `channelId`: `/hours log`,
+ * and the composer's + menu's Service hours form (#3865), which can also
+ * attach proof. Same placeholder bookkeeping as {@link postTask}.
+ */
+export async function postHours(
+  ctx: ChatActionContext,
+  channelId: string,
+  input: HoursInput,
+): Promise<DispatchResult> {
   const clientMessageId = randomClientId();
 
-  const placeholderContent = `Logging ${parsed.value.durationMinutes} minutes of service…`;
+  const placeholderContent = `Logging ${input.duration_minutes} minutes of service…`;
 
   insertLocalPlaceholder(ctx, {
     channelId,
@@ -916,10 +1083,10 @@ async function dispatchHours(
   try {
     const result = await ctx.apiClient.POST("/v1/service-entries", {
       body: {
-        // `/hours log` has no date token: the entry is for the local today.
-        date: localIsoDate(new Date()),
-        duration_minutes: parsed.value.durationMinutes,
-        description: parsed.value.description,
+        date: input.date,
+        duration_minutes: input.duration_minutes,
+        description: input.description,
+        proof_path: input.proof_path,
         channel_id: channelId,
         client_message_id: clientMessageId,
       },
@@ -932,6 +1099,9 @@ async function dispatchHours(
     if (result.error) status ??= 0;
     const ok = typeof status === "number" && status >= 200 && status < 300;
     if (!ok) {
+      if (!isTerminalStatus(status)) {
+        return lostResponse(ctx, channelId, clientMessageId, HOURS_UNCONFIRMED_WARNING);
+      }
       removeLocalPlaceholder(ctx, channelId, clientMessageId);
       return {
         ok: false,
@@ -948,8 +1118,7 @@ async function dispatchHours(
       return { ok: true, warning: HOURS_CARD_LOST_WARNING };
     }
   } catch {
-    removeLocalPlaceholder(ctx, channelId, clientMessageId);
-    return { ok: false, error: "Couldn't reach the hours service" };
+    return lostResponse(ctx, channelId, clientMessageId, HOURS_UNCONFIRMED_WARNING);
   }
 
   return { ok: true };

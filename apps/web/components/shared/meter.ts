@@ -83,7 +83,7 @@
  */
 const TRACK = "w-full overflow-hidden rounded-full bg-background";
 
-/** Standalone card — `/polls`. */
+/** Standalone, outside a message card — Discord import's progress bars. */
 export const meterTrackClassName = `h-1.5 ${TRACK}`;
 
 /** In-flow inside a message card, where the row is already dense — chat. */

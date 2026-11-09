@@ -49,6 +49,7 @@ describe('ChannelAccessService', () => {
     archived_at: null,
     default_notification_level: null,
     is_default: false,
+    is_audit_log: false,
   };
 
   const privateChannel: ChatChannel = {
@@ -84,6 +85,7 @@ describe('ChannelAccessService', () => {
       findPushRouting: jest.fn(),
       createDm: jest.fn(),
       findByName: jest.fn(),
+      findAuditLog: jest.fn(),
       createMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),

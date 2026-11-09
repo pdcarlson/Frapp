@@ -41,6 +41,7 @@ describe('ChatService', () => {
   let mockRbac: ChatServiceFixture['mockRbac'];
   let mockChatBlocks: ChatServiceFixture['mockChatBlocks'];
   let mockReportRepo: ChatServiceFixture['mockReportRepo'];
+  let mockNotificationService: ChatServiceFixture['mockNotificationService'];
   beforeEach(async () => {
     ({
       service,
@@ -56,6 +57,7 @@ describe('ChatService', () => {
       mockRbac,
       mockChatBlocks,
       mockReportRepo,
+      mockNotificationService,
     } = await createChatServiceFixture());
   });
 
@@ -266,6 +268,50 @@ describe('ChatService', () => {
 
       expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
         name: 'renamed',
+      });
+    });
+
+    describe('the audit log channel (#3909)', () => {
+      const auditLog = {
+        ...baseChannel,
+        name: 'chapter-audit',
+        is_read_only: true,
+        is_audit_log: true,
+      };
+
+      it('refuses switching read-only off', async () => {
+        mockChannelRepo.findById.mockResolvedValue(auditLog);
+
+        await expect(
+          service.updateChannel('chan-1', 'ch-1', { is_read_only: false }),
+        ).rejects.toThrow('The audit log channel is always read-only');
+        expect(mockChannelRepo.update).not.toHaveBeenCalled();
+      });
+
+      it('refuses a rename', async () => {
+        mockChannelRepo.findById.mockResolvedValue(auditLog);
+
+        await expect(
+          service.updateChannel('chan-1', 'ch-1', { name: 'officer-log' }),
+        ).rejects.toThrow("The audit log channel can't be renamed");
+        expect(mockChannelRepo.update).not.toHaveBeenCalled();
+      });
+
+      it('still saves its description, and a save that repeats its name and read-only', async () => {
+        mockChannelRepo.findById.mockResolvedValue(auditLog);
+        mockChannelRepo.update.mockResolvedValue(auditLog);
+
+        await service.updateChannel('chan-1', 'ch-1', {
+          name: 'chapter-audit',
+          is_read_only: true,
+          description: 'Every officer change, posted by Frapp.',
+        });
+
+        expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
+          name: 'chapter-audit',
+          is_read_only: true,
+          description: 'Every officer change, posted by Frapp.',
+        });
       });
     });
 
@@ -1220,6 +1266,29 @@ describe('ChatService', () => {
         );
       });
 
+      it('clears the chat notifications the hide marked read (#3788)', async () => {
+        mockChannelRepo.findById.mockResolvedValue(dm);
+        mockReadReceiptRepo.hideDirectMessage.mockResolvedValue({
+          id: 'r-1',
+          channel_id: 'ch-dm',
+          user_id: 'user-1',
+          last_read_at: '2026-09-25T20:00:00.000Z',
+          hidden_at: '2026-09-25T20:00:00.000Z',
+          updated_at: '2026-09-25T20:00:00.000Z',
+        });
+
+        await service.leaveChannel('ch-dm', 'ch-1', 'user-1');
+
+        expect(
+          mockNotificationService.markChatChannelNotificationsRead,
+        ).toHaveBeenCalledWith(
+          'user-1',
+          'ch-1',
+          'ch-dm',
+          '2026-09-25T20:00:00.000Z',
+        );
+      });
+
       it('changes nothing the other member sees, and deletes nothing', async () => {
         mockChannelRepo.findById.mockResolvedValue(dm);
         mockReadReceiptRepo.hideDirectMessage.mockResolvedValue({
@@ -1286,6 +1355,20 @@ describe('ChatService', () => {
 
       await service.deleteChannel('ch-chan-1', 'ch-1');
       expect(mockChannelRepo.delete).toHaveBeenCalledWith('ch-chan-1', 'ch-1');
+    });
+
+    it('refuses deleting the audit log (#3909)', async () => {
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        name: 'chapter-audit',
+        is_read_only: true,
+        is_audit_log: true,
+      });
+
+      await expect(service.deleteChannel('ch-chan-1', 'ch-1')).rejects.toThrow(
+        "The audit log channel can't be deleted",
+      );
+      expect(mockChannelRepo.delete).not.toHaveBeenCalled();
     });
 
     it('should throw if channel not found', async () => {
@@ -1895,6 +1978,59 @@ describe('ChatService', () => {
       expect(mockMessageRepo.create).not.toHaveBeenCalled();
     });
 
+    // `payload.closed_at` / `closed_by` are written only by `PollService.close`
+    // (#3794), which checks the caller is the poll's creator.
+    describe('a poll card cannot arrive closed (#3794)', () => {
+      beforeEach(() => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+      });
+
+      const card = {
+        question: 'Formal venue?',
+        options: [
+          { id: 'a', label: 'The Lodge' },
+          { id: 'b', label: 'Riverside' },
+        ],
+        closes_at: '2999-01-01T00:00:00.000Z',
+      };
+
+      it('drops closed_at and closed_by from a poll card a client posts, keeping the rest', async () => {
+        await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'Formal venue?',
+          kind: 'poll',
+          payload: {
+            ...card,
+            closed_at: '2026-01-01T00:00:00.000Z',
+            closed_by: 'user-2',
+          },
+        });
+
+        expect(mockMessageRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ kind: 'poll', payload: card }),
+        );
+      });
+
+      it('leaves another kind payload exactly as sent', async () => {
+        const payload = { body: 'Hi', closed_at: 'kept' };
+        await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'Hi',
+          kind: 'announcement',
+          payload,
+        });
+
+        expect(mockMessageRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ payload }),
+        );
+      });
+    });
+
     describe('module gate on card kinds (#2993)', () => {
       const sendPoll = (enabled_modules?: Record<string, boolean> | null) =>
         service.sendMessage({
@@ -2195,6 +2331,55 @@ describe('ChatService', () => {
       });
       expect(result).toEqual({ message: baseMessage, deduplicated: false });
       expect(mockMessageRepo.create).toHaveBeenCalled();
+    });
+
+    // #3909: `#chapter-audit` is system-write only. The audit mirror inserts
+    // its rows through the message repository directly (covered in
+    // chat-bridge-worker.service.spec.ts), so this path is refused for every
+    // member, the President included.
+    describe('in the audit log channel', () => {
+      const auditLog: ChatChannel = {
+        ...baseChannel,
+        name: 'chapter-audit',
+        is_read_only: true,
+        is_audit_log: true,
+      };
+
+      it.each([['*'], ['announcements:post']])(
+        'refuses a top-level message from a member holding %s',
+        async (permission) => {
+          mockChannelRepo.findById.mockResolvedValue(auditLog);
+          mockRbac.getEffectivePermissions.mockResolvedValue([permission]);
+
+          await expect(
+            service.sendMessage({
+              chapter_id: 'ch-1',
+              channel_id: 'ch-chan-1',
+              sender_id: 'user-1',
+              content: 'Posting in the audit log',
+            }),
+          ).rejects.toThrow(ForbiddenException);
+          expect(mockMessageRepo.create).not.toHaveBeenCalled();
+        },
+      );
+
+      it('refuses it even with read-only switched off on the row', async () => {
+        mockChannelRepo.findById.mockResolvedValue({
+          ...auditLog,
+          is_read_only: false,
+        });
+        mockRbac.getEffectivePermissions.mockResolvedValue(['*']);
+
+        await expect(
+          service.sendMessage({
+            chapter_id: 'ch-1',
+            channel_id: 'ch-chan-1',
+            sender_id: 'user-1',
+            content: 'Posting in the audit log',
+          }),
+        ).rejects.toThrow(ForbiddenException);
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
     });
 
     // #734: a read-only channel is a broadcast surface. `canAccessChannel`
@@ -3110,6 +3295,56 @@ describe('ChatService', () => {
         'ch-1',
         'user-1',
       );
+      expect(result.channel_id).toBe('ch-chan-1');
+    });
+
+    it('clears the chat notifications the read covers, through the receipt instant (#3788)', async () => {
+      mockReadReceiptRepo.upsert.mockImplementation(
+        async (channelId, userId, lastReadAt) => ({
+          id: 'rr-1',
+          channel_id: channelId,
+          user_id: userId,
+          last_read_at: lastReadAt,
+          hidden_at: null,
+          updated_at: lastReadAt,
+        }),
+      );
+
+      const result = await service.markChannelRead(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+      );
+
+      expect(
+        mockNotificationService.markChatChannelNotificationsRead,
+      ).toHaveBeenCalledWith(
+        'user-1',
+        'ch-1',
+        'ch-chan-1',
+        result.last_read_at,
+      );
+    });
+
+    it('still returns the receipt when clearing the notifications fails', async () => {
+      mockReadReceiptRepo.upsert.mockResolvedValue({
+        id: 'rr-1',
+        channel_id: 'ch-chan-1',
+        user_id: 'user-1',
+        last_read_at: '2026-01-01T12:00:00.000Z',
+        hidden_at: null,
+        updated_at: '2026-01-01T12:00:00.000Z',
+      });
+      mockNotificationService.markChatChannelNotificationsRead.mockRejectedValueOnce(
+        new Error('db down'),
+      );
+
+      const result = await service.markChannelRead(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+      );
+
       expect(result.channel_id).toBe('ch-chan-1');
     });
   });

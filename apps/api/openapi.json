@@ -2401,6 +2401,46 @@
         ]
       }
     },
+    "/v1/invites/mine": {
+      "get": {
+        "operationId": "InviteController_listMine_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PendingInviteDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Pending invites emailed to the caller's verified address, with their tokens",
+        "tags": [
+          "Invites"
+        ]
+      }
+    },
     "/v1/invites/{id}": {
       "delete": {
         "operationId": "InviteController_revoke_v1",
@@ -7244,6 +7284,44 @@
         ]
       }
     },
+    "/v1/service-entries/points-rate": {
+      "get": {
+        "description": "Minutes of approved service per SERVICE point, read the way the approve path reads it (chapter rate, default 60). The rate is read again at approval, so this is the current rate, not a promise.",
+        "operationId": "ServiceEntryController_pointsRate_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServicePointsRateResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "SERVICE points rate that approving an entry applies",
+        "tags": [
+          "Service Entries"
+        ]
+      }
+    },
     "/v1/service-entries/{id}": {
       "get": {
         "operationId": "ServiceEntryController_getOne_v1",
@@ -8852,7 +8930,14 @@
         ],
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatMessageDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -8870,7 +8955,7 @@
             "bearer": []
           }
         ],
-        "summary": "Manually close a poll early (creator only)",
+        "summary": "Manually close a poll early (creator only): a REST poll or a chat-card poll",
         "tags": [
           "Polls"
         ]
@@ -12394,6 +12479,53 @@
           "token"
         ]
       },
+      "PendingInviteDto": {
+        "type": "object",
+        "properties": {
+          "chapter_name": {
+            "type": "string"
+          },
+          "university": {
+            "type": "string"
+          },
+          "mark_text": {
+            "type": "string",
+            "nullable": true,
+            "description": "The chapter's text mark: its short name, else its Greek letters if it shows them, else null. Never letters the chapter hides, nor those of an organization that never displays them (such as Phi Gamma Delta), whatever the chapter's stored switch says (#3421)."
+          },
+          "accent_color": {
+            "type": "string",
+            "nullable": true
+          },
+          "invited_by": {
+            "type": "string",
+            "nullable": true,
+            "description": "The inviter's display name, or null when it can't be read."
+          },
+          "role": {
+            "type": "string",
+            "nullable": true,
+            "description": "The role name joining grants, or null when it would grant none (the invite role is gone and the chapter has no Member role)"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string",
+            "description": "The single-use token, for redeem. Returned only because the invite was emailed to the address Auth verified for the caller."
+          }
+        },
+        "required": [
+          "chapter_name",
+          "university",
+          "mark_text",
+          "accent_color",
+          "invited_by",
+          "role",
+          "expires_at",
+          "token"
+        ]
+      },
       "RegisterPushTokenDto": {
         "type": "object",
         "properties": {
@@ -14648,6 +14780,20 @@
           }
         }
       },
+      "ServicePointsRateResponseDto": {
+        "type": "object",
+        "properties": {
+          "minutes_per_point": {
+            "type": "number",
+            "description": "Minutes of approved service per SERVICE point, as the approve path reads it now (default 60). Approving awards floor(duration_minutes / minutes_per_point).",
+            "minimum": 1,
+            "example": 60
+          }
+        },
+        "required": [
+          "minutes_per_point"
+        ]
+      },
       "RequestProofUploadUrlDto": {
         "type": "object",
         "properties": {
@@ -14714,7 +14860,7 @@
           },
           "channel_id": {
             "type": "string",
-            "description": "When set with `client_message_id`, posts a read-only hours card to this chat channel after the entry is created (the `/hours log` slash command). Omit for dashboard creates. Chat cannot attach proof — when `wf_hours_receipt` is on, this route still 400s without `proof_path`."
+            "description": "When set with `client_message_id`, posts a read-only hours card to this chat channel after the entry is created (the `/hours log` slash command). Omit for dashboard creates. The one-liner cannot attach proof (the Service hours form in the chat composer can) — when `wf_hours_receipt` is on, this route still 400s without `proof_path`."
           },
           "client_message_id": {
             "type": "string",

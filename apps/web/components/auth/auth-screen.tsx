@@ -1,6 +1,6 @@
 /**
  * The form column of the signed-out frame — `/sign-in`, `/sign-up`, `/join`,
- * `/no-access`.
+ * `/no-access`, `/new-account`.
  *
  * `AuthFrame` (`auth-frame.tsx`, mounted by `app/(auth)/layout.tsx`) owns the
  * page: the `<main>`, the lockup and the live product panel. This component is

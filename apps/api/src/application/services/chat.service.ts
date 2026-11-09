@@ -57,6 +57,8 @@ import { ActivationService } from './activation.service';
 import { ChannelCacheService } from './channel-cache.service';
 import { ChatMentionService } from './chat-mention.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
+import { NotificationService } from './notification.service';
 
 const MAX_PINNED_MESSAGES = 50;
 const MAX_GROUP_DM_MEMBERS = 10;
@@ -152,6 +154,25 @@ const MODULE_GATED_KINDS: Readonly<Partial<Record<ChatMessageKind, string>>> = {
   dues: 'dues',
 };
 
+/**
+ * A poll card's early close (`payload.closed_at` / `closed_by`, #3794) is
+ * written only by `PollService.close`, which checks the caller is the poll's
+ * creator. A client composes the rest of the card, so the pair is dropped from
+ * what it posts: a card can't arrive already closed, or "closed by" someone
+ * else.
+ */
+function withoutServerPollFields(
+  kind: ChatMessageKind,
+  payload: Record<string, any> | null | undefined,
+): Record<string, any> | null {
+  if (!payload) return null;
+  if (kind !== 'poll') return payload;
+  const card = { ...payload };
+  delete card.closed_at;
+  delete card.closed_by;
+  return card;
+}
+
 /** What {@link ChatService.deleteReportedMessage} did, and where. */
 export interface ReportedMessageRemoval {
   /** True when the message was already soft-deleted and nothing was written. */
@@ -190,6 +211,8 @@ export class ChatService {
     private readonly attachments: ChatAttachmentService,
     // `@`-mention resolution, members and roles (2026-11-06).
     private readonly mentions: ChatMentionService,
+    // A channel read also clears the chat notifications about it (#3788).
+    private readonly notifications: NotificationService,
   ) {}
 
   // ── Channels ─────────────────────────────────────────────────────────
@@ -392,6 +415,22 @@ export class ChatService {
   ): Promise<ChatChannel> {
     const existing = await this.requireChannelInChapter(id, chapterId);
 
+    // The audit log (#3909) is the chapter's record of officer changes, so
+    // its two defining settings are locked: it stays read-only, and it keeps
+    // its name, which members know it by. The flag (not the name) is what
+    // the server keys on, so this is about members finding it, not about the
+    // mirror. Description, group and push default stay editable.
+    if (existing.is_audit_log) {
+      if (data.is_read_only === false) {
+        throw new BadRequestException(
+          'The audit log channel is always read-only',
+        );
+      }
+      if (data.name !== undefined && data.name !== existing.name) {
+        throw new BadRequestException("The audit log channel can't be renamed");
+      }
+    }
+
     // Chat opens on the chapter default for everyone who can see it; a DM is
     // two members' conversation, not somewhere to send the whole chapter.
     if (isDirectChannel(existing) && data.is_default === true) {
@@ -443,7 +482,13 @@ export class ChatService {
   }
 
   async deleteChannel(id: string, chapterId: string): Promise<void> {
-    await this.requireChannelInChapter(id, chapterId);
+    const existing = await this.requireChannelInChapter(id, chapterId);
+    // The audit log (#3909) is the chapter's record of officer changes, and
+    // the mirror has nowhere else to post. Refused like a rename; DMs and
+    // group DMs are #3633's half.
+    if (existing.is_audit_log) {
+      throw new BadRequestException("The audit log channel can't be deleted");
+    }
     await this.channelRepo.delete(id, chapterId);
     // A deleted channel's stale row must not outlive it in the push worker's
     // cache — see `updateChannel`'s note on `ChannelCacheService`.
@@ -566,6 +611,14 @@ export class ChatService {
         // this row existed and was a DM a moment ago, and a type never changes.
         throw new NotFoundException('Channel not found');
       }
+      // Hiding marks the DM read, so it clears the notifications about it as
+      // a read does (#3788).
+      await this.clearChannelNotifications(
+        channelId,
+        chapterId,
+        userId,
+        receipt.last_read_at,
+      );
       // No cache eviction: the push worker's cached row is unchanged, and a
       // hidden DM still notifies — a new message is what brings it back.
       return;
@@ -764,8 +817,9 @@ export class ChatService {
    * Hot-path send. Mirrors the retired `chat-send` Edge Function:
    *
    * - Authorizes via the shared `canAccessChannel` predicate with
-   *   `operation: "post"` so read-only channels (#announcements,
-   *   #chapter-audit) gate on the `announcements:post` permission.
+   *   `operation: "post"` so read-only channels (#announcements) gate on the
+   *   `announcements:post` permission, and the audit log (`is_audit_log`,
+   *   #chapter-audit) refuses every member, the President included (#3909).
    * - Cross-channel reply links are rejected before the insert, as are
    *   in-thread replies in a read-only channel — a broadcast is not a thread,
    *   regardless of the sender's permissions.
@@ -880,7 +934,7 @@ export class ChatService {
         content: input.content,
         type: 'TEXT',
         kind,
-        payload: input.payload ?? null,
+        payload: withoutServerPollFields(kind, input.payload),
         client_message_id: input.client_message_id ?? null,
         reply_to_id: input.reply_to_id ?? null,
         // `attachment_count` is a COUNT, not a copy — `chat_message_attachments`
@@ -1304,13 +1358,51 @@ export class ChatService {
 
   // ── Read Receipts ────────────────────────────────────────────────────
 
+  /**
+   * Stamp the caller's read receipt, then clear the chat notifications the
+   * read covers (#3788): the inbox row for a message is "viewed" once its
+   * channel is, however the member got there.
+   */
   async markChannelRead(channelId: string, chapterId: string, userId: string) {
     await this.assertChannelAccess(channelId, chapterId, userId);
-    return this.readReceiptRepo.upsert(
+    const readAt = new Date().toISOString();
+    const receipt = await this.readReceiptRepo.upsert(
       channelId,
       userId,
-      new Date().toISOString(),
+      readAt,
     );
+    await this.clearChannelNotifications(channelId, chapterId, userId, readAt);
+    return receipt;
+  }
+
+  /**
+   * Mark the caller's chat notifications for a channel read, through the
+   * instant its receipt now reads (#3788). Awaited, so a client's refetch
+   * after the request sees the rows cleared, but best-effort: a failed clear
+   * leaves a stale dot in the inbox, which must not fail the read receipt
+   * that drives every unread badge.
+   */
+  private async clearChannelNotifications(
+    channelId: string,
+    chapterId: string,
+    userId: string,
+    readThrough: string,
+  ): Promise<void> {
+    try {
+      await this.notifications.markChatChannelNotificationsRead(
+        userId,
+        chapterId,
+        channelId,
+        readThrough,
+      );
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'chat-read-clears-notifications',
+        message: `Could not clear chat notifications for channel ${channelId}`,
+        error,
+      });
+    }
   }
 
   /**

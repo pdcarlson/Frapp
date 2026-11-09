@@ -30,6 +30,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { ThreadRow } from "@repo/chat-core/blocks";
 import { ChatComposer } from "@/components/chat/chat-composer";
+import { AUDIT_LOG_COMPOSER_NOTE } from "@repo/chat-core/audit-log-copy";
 import { ImageViewer } from "@/components/chat/image-viewer";
 import {
   NotificationLevelControl,
@@ -137,6 +138,25 @@ vi.mock("@/components/directory/member-detail-sheet", async () => {
   };
 });
 
+const presentPollSheet = vi.fn();
+const dismissPollSheet = vi.fn();
+vi.mock("@/components/chat/new-poll-sheet", async () => {
+  const { createElement, forwardRef, useImperativeHandle } =
+    await import("react");
+  return {
+    NewPollSheet: forwardRef(function NewPollSheet(
+      props: Record<string, unknown>,
+      ref,
+    ) {
+      useImperativeHandle(ref, () => ({
+        present: presentPollSheet,
+        dismiss: dismissPollSheet,
+      }));
+      return createElement("NewPollSheet", props);
+    }),
+  };
+});
+
 const presentMemberSheet = vi.fn();
 const dismissMemberSheet = vi.fn();
 vi.mock("@/components/chat/channel-member-sheet", async () => {
@@ -221,8 +241,10 @@ function channelState(
     canSend: true,
     send: vi.fn(async () => true),
     sendInFlight: () => false,
+    sendPoll: vi.fn(async () => ({ ok: true as const })),
     edit: vi.fn(async () => {}),
     remove: vi.fn(async () => {}),
+    closePoll: vi.fn(async () => {}),
     react: vi.fn(async () => {}),
     unreact: vi.fn(async () => {}),
     act: vi.fn(async () => {}),
@@ -257,6 +279,13 @@ let viewerQuery = { isError: false, isFetching: false, refetch: vi.fn() };
 let channelRow: "found" | "reading" | "missing" = "found";
 /** The open channel's type, for the member list's 1:1 DM rule (#3536). */
 let channelType = "PUBLIC";
+/** The open channel is the chapter's audit log (#3909). */
+let channelIsAuditLog = false;
+/** The viewer's permissions, and the chapter's modules, for the + (#3701). */
+let permissionList: string[] = [];
+let enabledModules: Record<string, boolean> = {};
+/** The member view of the chapter hasn't answered yet. */
+let chapterUnread = false;
 
 /** A ready list with one member on it, stable across renders as the hook's is. */
 const BLOCK_LIST = {
@@ -307,8 +336,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
             name: "general",
             type: channelType,
             description: "The whole chapter.",
-            can_post: true,
-            is_read_only: false,
+            can_post: !channelIsAuditLog,
+            is_read_only: channelIsAuditLog,
+            is_audit_log: channelIsAuditLog,
           },
           isFetching: false,
         }
@@ -321,7 +351,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useMentionRoles: () => ({ data: MENTION_ROLES }),
   // No imported authors with avatars in these fixtures.
   useAuthorAvatars: () => ({ data: undefined }),
-  usePermissionList: () => [],
+  usePermissionList: () => permissionList,
+  useCurrentChapter: () =>
+    chapterUnread
+      ? { data: undefined, fetchStatus: "fetching" }
+      : { data: { enabled_modules: enabledModules }, fetchStatus: "idle" },
   useMarkChannelRead: () => markRead,
   useRequestChatUploadUrl: () => requestUploadUrl,
   useChannelNotificationPreferences: () => ({ data: NOTIFICATION_PREFS }),
@@ -452,6 +486,10 @@ beforeEach(() => {
   params = { channelId: CHANNEL };
   channelRow = "found";
   channelType = "PUBLIC";
+  channelIsAuditLog = false;
+  permissionList = [];
+  enabledModules = {};
+  chapterUnread = false;
   queryClient = new QueryClient();
 });
 
@@ -479,6 +517,27 @@ describe("chat thread way back", () => {
     expect(vi.mocked(expoRouter.useRouter)().dismissTo).toHaveBeenCalledWith(
       "/",
     );
+    act(() => tree.unmount());
+  });
+});
+
+// #3909: only Frapp posts in the audit log, so there is no composer there.
+describe("chat thread in the audit log", () => {
+  it("shows the audit log line in place of the composer", () => {
+    channelIsAuditLog = true;
+    const tree = render();
+    expect(tree.root.findAllByType(ChatComposer)).toHaveLength(0);
+    const note = tree.root.findByProps({ testID: "chat-audit-log-note" });
+    expect(note.props.children).toBe(AUDIT_LOG_COMPOSER_NOTE);
+    act(() => tree.unmount());
+  });
+
+  it("keeps the composer in an ordinary channel", () => {
+    const tree = render();
+    expect(tree.root.findAllByType(ChatComposer)).toHaveLength(1);
+    expect(
+      tree.root.findAllByProps({ testID: "chat-audit-log-note" }),
+    ).toHaveLength(0);
     act(() => tree.unmount());
   });
 });
@@ -1867,5 +1926,80 @@ describe("chat thread claims the viewed channel while focused (#3698)", () => {
 
     act(() => tree.unmount());
     expect(viewedChannelId()).toBeNull();
+  });
+});
+
+describe("chat thread new poll (#3701)", () => {
+  const composer = (tree: ReactTestRenderer) =>
+    tree.root.findByType(ChatComposer);
+
+  it("offers no poll to a member without polls:create", () => {
+    const tree = render();
+    expect(composer(tree).props.onCreatePoll).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  it("offers a poll to a member with polls:create, and opens the sheet", () => {
+    permissionList = ["members:view", "polls:create"];
+    const tree = render();
+    const open = composer(tree).props.onCreatePoll as () => void;
+    expect(open).toBeTypeOf("function");
+    act(() => open());
+    expect(presentPollSheet).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("offers none while Polls is off for the chapter", () => {
+    permissionList = ["*"];
+    enabledModules = { polls: false };
+    const tree = render();
+    expect(composer(tree).props.onCreatePoll).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  it("offers none until the chapter's modules are read, as the card's Vote waits", () => {
+    permissionList = ["polls:create"];
+    chapterUnread = true;
+    const tree = render();
+    expect(composer(tree).props.onCreatePoll).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  it("offers none while a reply is staged: a poll can't be a reply", () => {
+    permissionList = ["polls:create"];
+    const tree = render();
+    expect(composer(tree).props.onCreatePoll).toBeTypeOf("function");
+    const sheet = tree.root.findByType("MessageActionsSheet" as never);
+    act(() => (sheet.props.onReply as (id: string) => void)("m1"));
+    expect(composer(tree).props.onCreatePoll).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  it("mounts a new sheet per channel, so a kept draft never posts elsewhere", () => {
+    permissionList = ["polls:create"];
+    const tree = render();
+    const first = tree.root.findByType("NewPollSheet" as never);
+    params = { channelId: OTHER_CHANNEL };
+    rerender(tree);
+    const second = tree.root.findByType("NewPollSheet" as never);
+    expect(second).not.toBe(first);
+    act(() => tree.unmount());
+  });
+
+  it("posts through the channel's sendPoll, so the card goes through the outbox", () => {
+    permissionList = ["polls:create"];
+    const tree = render();
+    expect(tree.root.findByType("NewPollSheet" as never).props.onPost).toBe(
+      channel.sendPoll,
+    );
+    act(() => tree.unmount());
+  });
+
+  it("closes the sheet when the screen blurs", () => {
+    permissionList = ["polls:create"];
+    const tree = render();
+    act(() => refocus());
+    expect(dismissPollSheet).toHaveBeenCalled();
+    act(() => tree.unmount());
   });
 });

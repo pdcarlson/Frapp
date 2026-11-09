@@ -391,6 +391,49 @@ describe('SupabaseChatChannelRepository — a failed read throws', () => {
   });
 });
 
+// #3909: the audit mirror and the post gate key on `is_audit_log`, so the
+// lookup must find a renamed audit log and pass over a channel that only
+// carries its old name.
+describe('SupabaseChatChannelRepository — findAuditLog', () => {
+  const AUDIT_A = '0a000000-0000-4000-8000-000000000091';
+  const AUDIT_B = '0b000000-0000-4000-8000-000000000091';
+  const DECOY_A = '0a000000-0000-4000-8000-000000000092';
+  const DECOY_B = '0b000000-0000-4000-8000-000000000092';
+
+  const channel = (id: string, name: string, flagged: boolean) => ({
+    id,
+    name,
+    description: null,
+    type: 'PUBLIC',
+    required_permissions: [],
+    member_ids: [],
+    category_id: null,
+    is_read_only: flagged,
+    is_audit_log: flagged,
+    created_at: '2026-01-01T00:00:00.000Z',
+  });
+
+  it('finds the caller chapter audit log by its flag, not its name', async () => {
+    const harness = createTenantHarness({
+      tables: {
+        chat_channels: [
+          inA(channel(AUDIT_A, 'officer-log', true)),
+          inA(channel(DECOY_A, 'chapter-audit', false)),
+          inB(channel(AUDIT_B, 'officer-log', true)),
+          inB(channel(DECOY_B, 'chapter-audit', false)),
+        ],
+      },
+    });
+    const repo = new SupabaseChatChannelRepository(harness.client);
+
+    const found = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findAuditLog(CHAPTER_B),
+    );
+
+    expect(found?.id).toBe(AUDIT_B);
+  });
+});
+
 describe('SupabaseChatChannelRepository — setDefault', () => {
   function clientWithRpc(answer: { data: unknown; error: unknown }) {
     const rpc = jest.fn(() => Promise.resolve(answer));

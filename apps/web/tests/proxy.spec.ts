@@ -65,14 +65,16 @@ describe("apps/web/proxy.ts", () => {
     // Static routes: Next reuses their prefetch as the navigation, so the
     // proxy must run on the prefetch too.
     const staticRoutes = ["/", ...AUTH_ROUTES, "/join", "/no-access", "/dashboard"];
-    for (const path of staticRoutes) {
+    // Not static, but outside `(dashboard)` and kept on prefetches the same way.
+    const alwaysProxied = [...staticRoutes, "/new-account"];
+    for (const path of alwaysProxied) {
       expect(onNavigation(path), path).toBe(true);
       expect(onPrefetch(path), path).toBe(true);
     }
     expect(onNavigation("/index.rsc"), "/index.rsc").toBe(true);
 
     const dynamicPrefixes = PROTECTED_ROUTE_PREFIXES.filter(
-      (prefix) => !staticRoutes.includes(prefix),
+      (prefix) => !alwaysProxied.includes(prefix),
     );
     expect(dynamicPrefixes.length).toBeGreaterThan(15);
     for (const prefix of dynamicPrefixes) {
@@ -82,6 +84,21 @@ describe("apps/web/proxy.ts", () => {
       }
       expect(onNavigation(`${prefix}x`), `${prefix}x`).toBe(false);
     }
+
+    // And the other direction: every route the regex spells out is still a
+    // protected prefix. A route deleted from the array but left in the regex
+    // keeps a billed proxy run on a path that now 404s, which is how `polls`
+    // outlived the `/polls` page (#3871) with every check above green.
+    const spelled = config.matcher.flatMap((entry) =>
+      typeof entry === "string" ? [] : [entry.source],
+    );
+    const alternatives = spelled.flatMap(
+      (source) => /\(\?:([^)]*)\)/.exec(source)?.[1]?.split("|") ?? [],
+    );
+    expect(alternatives.length).toBeGreaterThan(0);
+    expect(alternatives.map((name) => `/${name}`).sort()).toEqual(
+      [...dynamicPrefixes].sort(),
+    );
 
     for (const path of ["/robots.txt", "/auth/callback", "/_next/static/a.js"]) {
       expect(onNavigation(path), path).toBe(false);

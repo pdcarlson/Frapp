@@ -243,6 +243,9 @@ export const DEFAULT_CHANNELS = [
       'Officer changes to dues, roles and settings, posted automatically.',
     type: 'PUBLIC',
     is_read_only: true,
+    // System-write only (#3909): no member posts here, whatever their
+    // permissions, and the audit mirror finds the channel by this flag.
+    is_audit_log: true,
     required_permissions: null,
   },
   {

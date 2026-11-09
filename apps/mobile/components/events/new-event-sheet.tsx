@@ -19,6 +19,7 @@ import DateTimePicker, {
 import { formatWeekdayDay } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import {
+  EVENT_CREATE_UNCONFIRMED,
   useCreateEvent,
   useDeleteEvent,
   usePermissionList,
@@ -29,6 +30,7 @@ import {
   RECURRENCE_REPEAT_LABELS,
   RECURRENCE_RULES,
   canAll,
+  EVENT_CREATE_PERMISSIONS,
   describeAttendance,
   isRecurrenceRule,
 } from "@repo/validation";
@@ -47,8 +49,10 @@ import {
   useSheetBackgroundStyle,
   useSheetClose,
   useSheetVisit,
+  SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import { FilterChips } from "@/components/filter-chips";
+import { MoreOptionsRow } from "@/components/more-options-row";
 import { DisclosureGlyph } from "@/components/control-glyphs";
 import { AttendanceSheet } from "@/components/events/attendance-sheet";
 import { roleOptionsFrom } from "@/lib/events/attendance-roles";
@@ -143,18 +147,12 @@ export interface NewEventSheetProps {
   onDeleted?: () => void;
 }
 
-/**
- * The permissions `POST /v1/events` needs: the route's `events:create`, plus
- * the controller's class-level `members:view`, which `PermissionsGuard`
- * requires alongside it. Offering the button on `events:create` alone would
- * hand a custom role a sheet whose every save is refused.
- */
-const CREATE_EVENT_PERMISSIONS = ["events:create", "members:view"] as const;
-
 /** Whether the viewer may create events. */
 export function useCanCreateEvents(): boolean {
   // `canAll`, not `includes`: an owner's grant is the wildcard `*`.
-  return canAll(CREATE_EVENT_PERMISSIONS, usePermissionList());
+  // `EVENT_CREATE_PERMISSIONS`: the route's `events:create` and the
+  // controller's class-level `members:view`, which the API requires together.
+  return canAll(EVENT_CREATE_PERMISSIONS, usePermissionList());
 }
 
 /** Whether the viewer may edit, and delete, any event in the chapter. */
@@ -241,6 +239,10 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     // Written by Create; a field's line goes when that field is edited.
     const [errors, setErrors] = useState<NewEventErrors>({});
     const [submitFailed, setSubmitFailed] = useState(false);
+    // The server's answer was lost (an empty-bodied or gateway 5xx): the
+    // event may exist, and `POST /v1/events` has no dedupe, so this says
+    // check first rather than "try again" (#1717).
+    const [unconfirmed, setUnconfirmed] = useState(false);
     /** A gate refusal's member copy: retrying can't win, so Create goes. */
     const [refusal, setRefusal] = useState<string | null>(null);
     /**
@@ -289,6 +291,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       setFocused(null);
       setErrors({});
       setSubmitFailed(false);
+      setUnconfirmed(false);
       setRefusal(null);
       setRejected(null);
     }, [freshDraft]);
@@ -298,6 +301,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       markClosed();
       setFocused(null);
       setSubmitFailed(false);
+      setUnconfirmed(false);
       setRefusal(null);
       setRejected(null);
     }, [markClosed]);
@@ -349,6 +353,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       sending.current = true;
       setRejected(null);
       setSubmitFailed(false);
+      setUnconfirmed(false);
       setRefusal(null);
       const sentFrom = visit();
       updateEvent.mutate(
@@ -415,6 +420,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       if (!scope) return;
       sending.current = true;
       setSubmitFailed(false);
+      setUnconfirmed(false);
       setRefusal(null);
       const sentFrom = visit();
       deleteEvent.mutate(
@@ -462,6 +468,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       sending.current = true;
       setErrors({});
       setSubmitFailed(false);
+      setUnconfirmed(false);
       setRefusal(null);
       Keyboard.dismiss();
       const sentFrom = visit();
@@ -479,7 +486,12 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
           if (!isSameVisit(sentFrom)) return;
           const gated = gateRefusalOf(error, GATE_COPY);
           if (gated) setRefusal(gated);
-          else setSubmitFailed(true);
+          else if (
+            error instanceof Error &&
+            error.message === EVENT_CREATE_UNCONFIRMED
+          ) {
+            setUnconfirmed(true);
+          } else setSubmitFailed(true);
         },
       });
     }
@@ -497,6 +509,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       <>
         <BottomSheetModal
           ref={ref}
+          stackBehavior={SHEET_STACK_BEHAVIOR}
           enableDynamicSizing
           keyboardBehavior="interactive"
           backgroundStyle={backgroundStyle}
@@ -739,6 +752,12 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
 
             {refusal ? <Text style={styles.error}>{refusal}</Text> : null}
             {rejected ? <Text style={styles.error}>{rejected}</Text> : null}
+            {unconfirmed ? (
+              <Text style={styles.error}>
+                We couldn&apos;t confirm it saved. Check Events before you
+                create it again: it may already be there.
+              </Text>
+            ) : null}
             {submitFailed ? (
               <Text style={styles.error}>
                 That didn&apos;t save. Your{" "}
@@ -800,49 +819,6 @@ const REPEAT_CHIPS = [
     label: RECURRENCE_REPEAT_LABELS[rule],
   })),
 ];
-
-/**
- * The row that opens and closes the sheet's further options. Closed, it says
- * what they are set to, so nothing hidden is a surprise on Create.
- */
-function MoreOptionsRow({
-  open,
-  summary,
-  onToggle,
-}: {
-  open: boolean;
-  summary: string;
-  onToggle: () => void;
-}) {
-  const { tokens } = useFrappTheme();
-  const brand = useChapterBranding();
-  const styles = createStyles(tokens, brand);
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={open ? "Fewer options" : `More options: ${summary}`}
-      accessibilityState={{ expanded: open }}
-      onPress={onToggle}
-      style={styles.moreRow}
-    >
-      <View style={styles.moreText}>
-        <Text style={styles.moreLabel}>
-          {open ? "Fewer options" : "More options"}
-        </Text>
-        {open ? null : (
-          <Text style={styles.caption} numberOfLines={1}>
-            {summary}
-          </Text>
-        )}
-      </View>
-      <DisclosureGlyph
-        color={tokens.color.text.mutedForeground}
-        size={18}
-        direction={open ? "up" : "down"}
-      />
-    </Pressable>
-  );
-}
 
 /**
  * One row of the When group: its label, then the day and the time. On iOS
@@ -1023,21 +999,6 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       backgroundColor: tokens.color.surface.popover,
     },
     pillText: rowText,
-    moreRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.sm,
-      minHeight: tokens.touch.minimum,
-      paddingVertical: tokens.spacing.xs,
-    },
-    moreText: {
-      flex: 1,
-      gap: 2,
-    },
-    moreLabel: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.mutedForeground,
-    },
     more: {
       gap: tokens.spacing.sm,
     },

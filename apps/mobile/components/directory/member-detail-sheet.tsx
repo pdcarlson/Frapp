@@ -19,7 +19,12 @@ import {
   useRoles,
   useViewerUserId,
 } from "@repo/hooks";
-import { can } from "@repo/validation";
+import {
+  can,
+  resolveCustomRoleNames,
+  resolveRoleChips,
+  type MemberRoleChip,
+} from "@repo/validation";
 import { MemberAvatar } from "@/components/member-avatar";
 import {
   confirmBlockMember,
@@ -39,13 +44,9 @@ import {
   useTallSheetProps,
   SheetBackToClose,
   useSheetClose,
+  SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
-import {
-  resolveCustomRoleNames,
-  resolveRoleChips,
-  selectMemberDetail,
-  type MemberRoleChip,
-} from "@/lib/directory/member-detail";
+import { selectMemberDetail } from "@/lib/directory/member-detail";
 import { parseRoleOptions } from "@/lib/directory/role-editor";
 import {
   MemberRolesSheet,
@@ -264,6 +265,7 @@ export const MemberDetailSheet = forwardRef<
     <>
       <BottomSheetModal
         ref={ref}
+        stackBehavior={SHEET_STACK_BEHAVIOR}
         {...tallSheet}
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}
@@ -368,6 +370,16 @@ export const MemberDetailSheet = forwardRef<
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel={`Edit ${detail.displayName}'s roles`}
+                      // Held while a DM with this member opens. The roles
+                      // editor stacks over the profile (`SHEET_STACK_BEHAVIOR`),
+                      // so a DM landing under it would close the profile, open
+                      // the thread and leave the editor drawn over it (#3790).
+                      accessibilityState={
+                        dmPending.has(detail.userId)
+                          ? { disabled: true }
+                          : undefined
+                      }
+                      disabled={dmPending.has(detail.userId)}
                       hitSlop={12}
                       onPress={() => {
                         setRolesSession({
@@ -380,7 +392,15 @@ export const MemberDetailSheet = forwardRef<
                         rolesSheetRef.current?.present();
                       }}
                     >
-                      <Text style={[styles.editLink, { color: accent }]}>
+                      <Text
+                        style={[
+                          styles.editLink,
+                          { color: accent },
+                          dmPending.has(detail.userId)
+                            ? styles.editLinkDisabled
+                            : null,
+                        ]}
+                      >
                         Edit
                       </Text>
                     </Pressable>
@@ -564,6 +584,9 @@ function createStyles(tokens: SignetTokens) {
     },
     editLink: {
       ...typeRole(tokens.typography.role.label),
+    },
+    editLinkDisabled: {
+      opacity: 0.5,
     },
     chips: {
       flexDirection: "row",

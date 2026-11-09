@@ -1,40 +1,25 @@
 "use client";
 
 import { describeLoadFailure } from "@repo/hooks/error-copy";
-import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Loader2, Plus, XCircle } from "lucide-react";
+import { useMemo } from "react";
+import { CheckCircle2, Plus, XCircle } from "lucide-react";
 import {
-  useCreateServiceEntry,
   useDeleteServiceEntry,
   useGetServiceProofUrl,
   useMembers,
-  useOrgConfig,
-  useRequestServiceProofUploadUrl,
   useReviewServiceEntry,
   useMyPermissions,
   useServiceEntries,
-  putSignedUpload,
+  useServicePointsRate,
 } from "@repo/hooks";
 import { can } from "@repo/validation";
 import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { serviceStatusKind } from "@/components/service/service-status";
 import type { ServiceStatus } from "@/components/service/service-status";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 import { SectionLabel } from "@/components/shared/section-label";
 import { denseListClassName } from "@/components/shared/table-controls";
@@ -53,27 +38,12 @@ import {
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/lib/hooks/use-toast";
 import { useNetwork } from "@/lib/providers/network-provider";
-import {
-  asArray,
-  getErrorMessage,
-  guardDecimalDraft,
-  guardIntDraft,
-  parseGuardedDecimal,
-  parseGuardedInt,
-} from "@/lib/utils";
-import {
-  MAX_UPLOAD_LABEL,
-  acceptAttribute,
-  inspectUploadFile,
-  readSignedUpload,
-  statusLabel,
-} from "@repo/validation";
-import {
-  formatDay,
-  formatMinutesRounded,
-  localIsoDate,
-} from "@repo/formatting";
+import { asArray, getErrorMessage } from "@/lib/utils";
+import { statusLabel } from "@repo/validation";
+import { formatDay, formatMinutesRounded } from "@repo/formatting";
 import { ServicePageSkeleton } from "@/components/service/service-skeleton";
+import { approvePointsPreview } from "@/components/service/service-points-preview";
+import { LogHoursDialog } from "@/components/service/log-hours-dialog";
 
 type ServiceEntry = {
   id: string;
@@ -113,30 +83,14 @@ export function ServiceHoursPage() {
   const { confirm, confirmDialog } = useConfirmDialog();
   const entriesQuery = useServiceEntries();
   const membersQuery = useMembers();
-  const createEntry = useCreateServiceEntry();
   const reviewEntry = useReviewServiceEntry();
   const deleteEntry = useDeleteServiceEntry();
-  const orgConfig = useOrgConfig();
   // The viewer's `users.id` — the id space `service_entries.user_id` references
   // (`users(id)`, not the Supabase auth uid). `null` until it resolves, which
   // the approval gate below treats as "might be me".
   const { userId: viewerUserId, isLoading: viewerLoading } = useFrappUser();
   const viewerUnknown = viewerUserId === null;
 
-  // Chapter policy (Settings → Workflows): when wf_hours_receipt is enabled
-  // the API rejects proof-less submissions. GET /chapters/:id/config needs
-  // chapter-config:view, which regular members don't hold — so only claim
-  // "required"/"optional" when the config actually loaded, and stay neutral
-  // otherwise. The server is the enforcement point either way.
-  const receiptWorkflow = orgConfig.data?.workflows?.find(
-    (wf) => wf.key === "wf_hours_receipt",
-  );
-  const receiptRequired = receiptWorkflow?.enabled === true;
-  const proofLabel = receiptRequired
-    ? "Proof file (required by chapter policy)"
-    : receiptWorkflow
-      ? "Proof file (optional)"
-      : "Proof file";
 
   const entries = useMemo(
     () => asArray<ServiceEntry>(entriesQuery.data),
@@ -192,118 +146,16 @@ export function ServiceHoursPage() {
   const logDialog = useGatedDialog(gate);
   const { data: permissionsPayload } = useMyPermissions();
   const canLog = can("service:log", permissionsPayload?.permissions ?? []);
-  const [proofFile, setProofFile] = useState<File | null>(null);
-  const [draft, setDraft] = useState({
-    date: localIsoDate(new Date()),
-    hours: "1",
-    minutes: "0",
-    description: "",
-  });
-
-  const requestProofUpload = useRequestServiceProofUploadUrl();
-  // Explicit flag (not derived from the mutations' isPending) so the guard
-  // also spans the storage PUT between them — otherwise Submit re-enables
-  // mid-upload and a second click creates a duplicate entry.
-  const [submitting, setSubmitting] = useState(false);
-
-  // The file input unmounts (and so renders empty) on close, so a kept
-  // proofFile would silently attach a stale file to the next entry. Keyed off
-  // the dialog's open flag rather than a close handler: `useGatedDialog` also
-  // closes the dialog when the subscription is revoked mid-flight, and that
-  // path never runs through `setOpen`.
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- drop a leftover proof file when the log dialog closes (including gated auto-close)
-    if (!logDialog.open) setProofFile(null);
-  }, [logDialog.open]);
-
-  async function submitDraft(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (submitting) return;
-    // Both drafts are "" or a nonnegative number (guarded on every
-    // keystroke), so an empty or invalid duration sums to 0 and is refused
-    // below rather than reaching the API as NaN. Hours take a decimal, as on
-    // mobile (`1.5` is 90 minutes), and round to the whole minute the API
-    // stores.
-    const totalMinutes =
-      Math.round((parseGuardedDecimal(draft.hours) ?? 0) * 60) +
-      (parseGuardedInt(draft.minutes) ?? 0);
-    if (totalMinutes === 0) {
-      toast({
-        title: "Enter a duration",
-        description: "Service entries need at least one minute of time.",
-        variant: "destructive",
-      });
-      return;
-    }
-    const proofInspected = proofFile
-      ? inspectUploadFile("proof", proofFile)
-      : undefined;
-    if (proofFile && proofInspected && !proofInspected.ok) {
-      toast({
-        title:
-          proofInspected.reason === "size"
-            ? "File too large"
-            : "File type not allowed",
-        description:
-          proofInspected.reason === "size"
-            ? `Proof accepts photos or a PDF up to ${MAX_UPLOAD_LABEL}.`
-            : "Proof accepts photos (JPG, PNG, GIF, WebP) or a PDF.",
-        variant: "destructive",
-      });
-      return;
-    }
-    const proofContentType =
-      proofInspected && proofInspected.ok
-        ? proofInspected.contentType
-        : undefined;
-    setSubmitting(true);
-    try {
-      let proofPath: string | undefined;
-      if (proofFile && proofContentType) {
-        const contentType = proofContentType;
-        const signed = await requestProofUpload.mutateAsync({
-          filename: proofFile.name,
-          content_type: contentType,
-        });
-        const { signedUrl, storagePath } = readSignedUpload(signed);
-        await putSignedUpload({
-          signedUrl,
-          body: proofFile,
-          contentType,
-          upsert: true,
-          describeRejection: () =>
-            `The proof didn't upload. Use a photo or PDF up to ${MAX_UPLOAD_LABEL}.`,
-        });
-        proofPath = storagePath;
-      }
-      await createEntry.mutateAsync({
-        date: draft.date,
-        duration_minutes: totalMinutes,
-        description: draft.description.trim(),
-        proof_path: proofPath,
-      });
-      toast({
-        title: "Service entry submitted",
-        description: "An admin will review and approve it for points.",
-      });
-      logDialog.setOpen(false);
-      setDraft({
-        date: localIsoDate(new Date()),
-        hours: "1",
-        minutes: "0",
-        description: "",
-      });
-    } catch (error) {
-      toast({
-        title: "Couldn't log service entry",
-        description: getErrorMessage(error, "Try again in a moment."),
-        variant: "destructive",
-      });
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
+  // The rate Approve will apply, for each queue row's points preview (#3862).
+  // Read from its own `service:approve` route, not the chapter config, which
+  // needs `chapter-config:view` that no stock approver but the President holds.
+  // Unknown (loading, failed) leaves the preview off rather than guessing.
+  const canApprove = can(
+    "service:approve",
+    permissionsPayload?.permissions ?? [],
+  );
+  const pointsRate = useServicePointsRate({ enabled: canApprove });
+  const minutesPerPoint = pointsRate.data?.minutes_per_point;
   async function approve(entry: ServiceEntry) {
     try {
       await reviewEntry.mutateAsync({
@@ -459,125 +311,17 @@ export function ServiceHoursPage() {
     <div className="space-y-6">
       <PageActions>
         <Can permission="service:log">
-          <Dialog {...logDialog.dialogProps}>
-            <DialogTrigger asChild>
+          <LogHoursDialog
+            open={logDialog.open}
+            onOpenChange={logDialog.setOpen}
+            onCloseAutoFocus={logDialog.contentProps.onCloseAutoFocus}
+            gate={gate}
+            trigger={
               <Button size="toolbar" className="gap-2" {...gate.controlProps()}>
                 <Plus className="h-4 w-4" /> Log service
               </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-lg" {...logDialog.contentProps}>
-              <DialogHeader>
-                <DialogTitle>Log service hours</DialogTitle>
-                <DialogDescription>
-                  An admin approves it before points are awarded.
-                </DialogDescription>
-              </DialogHeader>
-              <form
-                id="service-log-form"
-                onSubmit={submitDraft}
-                className="space-y-4"
-              >
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div className="grid gap-1">
-                    <Label htmlFor="service-date">Date</Label>
-                    <Input
-                      id="service-date"
-                      type="date"
-                      value={draft.date}
-                      onChange={(event) =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          date: event.target.value,
-                        }))
-                      }
-                      required
-                    />
-                  </div>
-                  <div className="grid gap-1">
-                    <Label htmlFor="service-hours">Hours</Label>
-                    <Input
-                      id="service-hours"
-                      type="number"
-                      min={0}
-                      step="any"
-                      value={draft.hours}
-                      onChange={(event) => {
-                        const next = guardDecimalDraft(event.target.value);
-                        if (next === undefined) return;
-                        setDraft((prev) => ({ ...prev, hours: next }));
-                      }}
-                    />
-                  </div>
-                  <div className="grid gap-1">
-                    <Label htmlFor="service-minutes">Minutes</Label>
-                    <Input
-                      id="service-minutes"
-                      type="number"
-                      min={0}
-                      max={59}
-                      value={draft.minutes}
-                      onChange={(event) => {
-                        const next = guardIntDraft(event.target.value);
-                        if (next === undefined) return;
-                        setDraft((prev) => ({ ...prev, minutes: next }));
-                      }}
-                    />
-                  </div>
-                </div>
-                <div className="grid gap-1">
-                  <Label htmlFor="service-description">What did you do?</Label>
-                  <Textarea
-                    id="service-description"
-                    rows={3}
-                    value={draft.description}
-                    onChange={(event) =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        description: event.target.value,
-                      }))
-                    }
-                    required
-                  />
-                </div>
-                <div className="grid gap-1">
-                  <Label htmlFor="service-proof">{proofLabel}</Label>
-                  <Input
-                    id="service-proof"
-                    type="file"
-                    accept={acceptAttribute("proof")}
-                    onChange={(event) =>
-                      setProofFile(event.target.files?.[0] ?? null)
-                    }
-                    required={receiptRequired}
-                  />
-                  <p className="text-caption text-muted-foreground">
-                    Photo or PDF, up to {MAX_UPLOAD_LABEL}.
-                  </p>
-                </div>
-              </form>
-              <DialogFooter>
-                {/* Cancel only closes the dialog — gating the way out of a
-                    surface the gate just blocked would be a trap. */}
-                <Button
-                  variant="secondary"
-                  onClick={() => logDialog.setOpen(false)}
-                  disabled={submitting}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  form="service-log-form"
-                  type="submit"
-                  {...gate.controlProps(submitting)}
-                >
-                  {submitting ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : null}
-                  Submit for approval
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+            }
+          />
         </Can>
       </PageActions>
       {/*
@@ -629,6 +373,10 @@ export function ServiceHoursPage() {
                 const showApproveReason =
                   cannotApprove && gate.state.allowed && !gate.isPending;
                 const approveReasonId = `svc-approve-reason-${entry.id}`;
+                const pointsPreview = approvePointsPreview(
+                  entry.duration_minutes,
+                  minutesPerPoint,
+                );
                 const approveBlockedReason = isOwnEntry
                   ? "You can't approve your own hours. Another admin has to review them."
                   : viewerLoading
@@ -647,6 +395,11 @@ export function ServiceHoursPage() {
                       <p className="mt-0.5 text-sm text-muted-foreground">
                         {entry.description}
                       </p>
+                      {pointsPreview ? (
+                        <p className="mt-0.5 text-caption text-muted-foreground">
+                          {pointsPreview}
+                        </p>
+                      ) : null}
                       {/* Deliberately ungated: the signed link comes from
                             `GET /v1/service-entries/:id/proof-url`, and
                             `enforceSubscription` returns early for GET — a

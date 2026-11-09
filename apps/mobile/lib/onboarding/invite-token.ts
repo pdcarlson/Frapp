@@ -26,6 +26,11 @@ export function rememberInviteToken(token: string | null): void {
   rememberedToken = token && token.length > 0 ? token : rememberedToken;
 }
 
+/** The remembered invite, left in place (`consumeRememberedInviteToken` takes it). */
+export function peekRememberedInviteToken(): string | null {
+  return rememberedToken;
+}
+
 export function consumeRememberedInviteToken(): string | null {
   const token = rememberedToken;
   rememberedToken = null;
@@ -48,4 +53,14 @@ export function takeInviteTokenFromLink(url: string | null): string | null {
   const token = extractInviteToken(url);
   if (token) handledLinkUrl = url;
   return token;
+}
+
+/**
+ * The invite token `takeInviteTokenFromLink` would return for `url`, without
+ * marking the link handled: for a render that has to know an invite is on its
+ * way before the effect that applies it runs.
+ */
+export function peekInviteTokenFromLink(url: string | null): string | null {
+  if (!url || url === handledLinkUrl) return null;
+  return extractInviteToken(url);
 }

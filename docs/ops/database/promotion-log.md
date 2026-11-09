@@ -39,6 +39,26 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 **Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-user-settings-member-status-20261109230000) § Rollback user settings member status.
 
+## 2026-11-09: #chapter-audit is system-write only (#3909)
+
+### 20261109210000_chat_channels_is_audit_log.sql
+
+- **Purpose**: Adds `chat_channels.is_audit_log` (not null, default false) and the partial unique index `chat_channels_one_audit_log_per_chapter`, then backfills the flag, with `is_read_only = true`, onto each chapter's seeded `#chapter-audit` (PUBLIC, named `chapter-audit`; the oldest if a chapter has two). A `before insert` trigger, `chat_channels_flag_audit_log`, does the same for a `#chapter-audit` seeded into a chapter under an hour old that has no flagged channel, so a chapter the older API onboards between this migration and the deploy still gets the flag. The API refuses every member write in a flagged channel whatever the caller's permissions, the audit mirror finds the channel by the flag instead of its name, and Chat settings can no longer rename it or switch read-only off.
+- **Checks**: After `db push`, `select count(*) from chat_channels where is_audit_log;` equals the number of chapters that have a `#chapter-audit`, `select count(*) from chat_channels where is_audit_log and not is_read_only;` is 0, and `select tgname from pg_trigger where tgname = 'chat_channels_flag_audit_log';` returns one row.
+- **Promoter notes**: Apply before the API from the same PR deploys. That API writes the column when it seeds a new chapter's channels and filters on it to find the audit log, so without it chapter onboarding fails (`POST /v1/chapters/onboard` 500s on the channel insert), every audit mirror is skipped (the lookup errors, `chat-bridge-audit-channel-lookup-failed`), and the post gate quietly falls back to plain read-only gating, letting `*` and `announcements:post` holders post in `#chapter-audit` again. Channel reads keep working, so they are not the signal. The backfill rewrites `is_read_only` to true on any audit channel an officer had switched off; that is the intended repair. A chapter that renamed or deleted its audit channel before this change gets no flag, and the mirror (already cut off by the rename) stays cut off until it is set by hand. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-chapter-audit-system-write-20261109210000) § Rollback chapter-audit system-write.
+
+## 2026-11-09: A partial index for invites waiting on an address
+
+### 20261109050000_invites_pending_by_email_index.sql
+
+- **Purpose**: Adds `idx_invites_pending_emailed` on `invites (expires_at) where used_at is null and email is not null`. `GET /v1/invites/mine` (#3776) reads the live invites emailed to the caller's verified address across chapters (an `ilike` on `email`, then an exact comparison in the API); used and revoked invites are never pruned, so without the index that read scans every invite ever made. Index only: no data or behaviour changes.
+- **Checks**: After `db push`, `select indexdef from pg_indexes where indexname = 'idx_invites_pending_emailed';` returns one row naming the partial predicate.
+- **Promoter notes**: Order-free against the API: the API from the same PR works without it, only slower. Plain `create index` (Supabase applies each migration in a transaction, where `concurrently` is refused); `invites` is small, so the write lock is brief. `if not exists`, so re-applying is idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-invites-pending-emailed-index-20261109050000) § Rollback invites pending-emailed index.
+
 ## 2026-11-08: Event check-in opens before the start
 
 ### 20261108210000_event_check_in_opens_minutes.sql

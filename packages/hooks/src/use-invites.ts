@@ -13,6 +13,63 @@ import type { components } from "@repo/api-sdk";
 export type InviteListItem = components["schemas"]["InviteListItemDto"];
 export type InviteStatus = components["schemas"]["InviteStatus"];
 
+/** What each invite status reads as in a list: web's Invited and mobile's. */
+export const INVITE_STATUS_LABEL: Record<InviteStatus, string> = {
+  pending: "Pending",
+  joined: "Joined",
+  expired: "Expired",
+  revoked: "Revoked",
+};
+
+/** Joined and expired invites stay listed this long, then drop off. */
+const SETTLED_LIST_DAYS = 14;
+
+/**
+ * The invites worth listing: every pending one, and joined or expired ones
+ * from the last two weeks. Revoked ones go: the officer chose to forget them.
+ * Web's Invited list and mobile's Invite members screen both read this.
+ */
+export function listedInvites(
+  rows: readonly InviteListItem[],
+  now: Date = new Date(),
+): InviteListItem[] {
+  const cutoff = now.getTime() - SETTLED_LIST_DAYS * 24 * 60 * 60 * 1000;
+  return rows.filter((row) => {
+    if (row.status === "revoked") return false;
+    if (row.status === "pending") return true;
+    return new Date(row.created_at).getTime() >= cutoff;
+  });
+}
+
+/**
+ * What can be done with a listed invite, in menu order (#3828):
+ *
+ * - `link`: copy or share its join link, while it is pending.
+ * - `again`: email the address a fresh link, for an emailed invite nobody
+ *   has joined with (pending or expired). The server retires the older
+ *   invite once the new one is delivered.
+ * - `revoke`: stop it working, while it is pending.
+ *
+ * Web's Invited menu and mobile's row menu both draw from this, so the two
+ * apps offer the same actions on the same rows.
+ */
+export type InviteMenuAction = "link" | "again" | "revoke";
+
+export function inviteMenuActions(
+  invite: Pick<InviteListItem, "status" | "email">,
+): InviteMenuAction[] {
+  const actions: InviteMenuAction[] = [];
+  if (invite.status === "pending") actions.push("link");
+  if (
+    invite.email &&
+    (invite.status === "pending" || invite.status === "expired")
+  ) {
+    actions.push("again");
+  }
+  if (invite.status === "pending") actions.push("revoke");
+  return actions;
+}
+
 /**
  * `refetchInterval` is for a screen that watches its invites get used while
  * it is open, such as mobile setup's invite step, which marks a shared link
@@ -105,6 +162,39 @@ export function useRedeemInvite() {
       queryClient.invalidateQueries({ queryKey: ["members", chapterId] });
       queryClient.invalidateQueries({ queryKey: ["chapters"] });
     },
+    // On failure too: an offered invite the redeem finds dead (410) or
+    // already joined (409) must leave the offers, not stay on as a card
+    // that fails again (#3782).
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["pending-invites"] });
+    },
+  });
+}
+
+/**
+ * The invites waiting for the signed-in account (#3776): every pending invite
+ * emailed to the address Auth verified for it, minus chapters it already
+ * belongs to, each with the preview card's facts and the token to redeem.
+ * The API reads the address from the account, never from the client, so an
+ * unverified account gets an empty list.
+ *
+ * Pass the signed-in user's id, or `null` before the session is known. Keyed
+ * by it, so a second account in the same tab never sees the first one's
+ * invites from the cache. Not retried: no answer just means no offer, and the
+ * pasted-invite form still works.
+ */
+export function usePendingInvites(userId: string | null) {
+  const client = useFrappClient();
+  return useQuery({
+    queryKey: ["pending-invites", userId],
+    queryFn: async () => {
+      const { data, error } = await client.GET("/v1/invites/mine");
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!userId,
+    retry: false,
+    staleTime: 30_000,
   });
 }
 

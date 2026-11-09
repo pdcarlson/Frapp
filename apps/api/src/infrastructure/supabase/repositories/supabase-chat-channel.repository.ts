@@ -180,6 +180,17 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
     return data;
   }
 
+  async findAuditLog(chapterId: string): Promise<ChatChannel | null> {
+    const { data, error } = await this.supabase
+      .from('chat_channels')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .eq('is_audit_log', true)
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
   async createMany(rows: TablesInsert<'chat_channels'>[]): Promise<void> {
     const { error } = await this.supabase.from('chat_channels').insert(rows);
     if (error) throw new SupabaseQueryError(error);

@@ -47,8 +47,16 @@ vi.mock("@/lib/notifications/push", () => ({
   requestPushPermission: (...args: unknown[]) => requestPushPermission(...args),
 }));
 
+const signOut = vi.fn().mockResolvedValue(undefined);
+/** The session's email; `null` for an account with none. */
+let sessionEmail: string | null = "founder@rpi.edu";
 vi.mock("@/lib/auth-session", () => ({
-  useAuthSession: () => ({ status: "authenticated", chapterId: null }),
+  useAuthSession: () => ({
+    status: "authenticated",
+    chapterId: null,
+    email: sessionEmail,
+    signOut,
+  }),
 }));
 
 const selectChapter = vi.fn();
@@ -379,6 +387,194 @@ describe("chapter setup — step order", () => {
     );
     expect(allText(root)).not.toContain("That chapter already exists.");
     expect(successHaptic).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * #3782. Setup had no way to sign out: the account it runs as, with Sign out,
+ * now shows on every step, as web's setup wizard shows it (#3776).
+ */
+describe("chapter setup — signed in as (#3782)", () => {
+  beforeEach(() => {
+    signOut.mockClear();
+    sessionEmail = "founder@rpi.edu";
+  });
+
+  afterEach(() => {
+    sessionEmail = "founder@rpi.edu";
+  });
+
+  function expectAccountLine(root: Node): void {
+    const text = allText(root);
+    expect(text).toContain("Signed in as");
+    expect(text).toContain("founder@rpi.edu");
+    expect(control(root, "Sign out")).toBeDefined();
+  }
+
+  it("shows the account and Sign out on every step, find to invite", async () => {
+    pushAvailable = true;
+    permission = { granted: false };
+    const { root } = await render();
+    expect(title(root)).toBe(SETUP_TITLES.find);
+    expectAccountLine(root);
+
+    await pickRow(root, "Phi Gamma Delta");
+    expect(title(root)).toBe(SETUP_TITLES.confirmMatch);
+    expectAccountLine(root);
+
+    await press(root, "Continue");
+    expect(title(root)).toBe(SETUP_TITLES.color);
+    expectAccountLine(root);
+
+    await press(root, "agree");
+    await act(async () => {
+      primary(root).props.onPress();
+    });
+    await settle();
+    expect(title(root)).toBe("FIJI is live");
+    expectAccountLine(root);
+
+    await press(root, "Continue");
+    expect(title(root)).toBe(SETUP_TITLES.primer);
+    expectAccountLine(root);
+
+    await press(root, "Not now");
+    expect(title(root)).toBe(SETUP_TITLES.invite);
+    expectAccountLine(root);
+  });
+
+  it("holds Sign out through the whole create, until the live step", async () => {
+    // The create lands, but opening the new chapter hasn't come back yet.
+    let opened!: (active: boolean) => void;
+    selectChapter.mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        opened = resolve;
+      }),
+    );
+    const { root } = await render();
+    await pickRow(root, "Phi Gamma Delta");
+    await press(root, "Continue");
+    await press(root, "agree");
+    expect(control(root, "Sign out")?.props.disabled).toBe(false);
+
+    await act(async () => {
+      primary(root).props.onPress();
+    });
+    await settle();
+    expect(onboard).toHaveBeenCalledTimes(1);
+    expect(title(root)).toBe(SETUP_TITLES.color);
+    expect(control(root, "Sign out")?.props.disabled).toBe(true);
+
+    await act(async () => {
+      opened(true);
+    });
+    await settle();
+    expect(title(root)).toBe("FIJI is live");
+    expect(control(root, "Sign out")?.props.disabled).toBe(false);
+  });
+
+  it("holds Create and Back while the sign-out is on its way", async () => {
+    signOut.mockReturnValueOnce(new Promise<void>(() => {}));
+    const { root } = await render();
+    await pickRow(root, "Phi Gamma Delta");
+    await press(root, "Continue");
+    await press(root, "agree");
+    expect(primary(root).props.disabled).toBe(false);
+
+    await press(root, "Sign out");
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(primary(root).props.disabled).toBe(true);
+    expect(control(root, "Back")?.props.disabled).toBe(true);
+  });
+
+  /** Starts a sign-out that doesn't come back, from wherever setup is. */
+  async function startSigningOut(root: Node): Promise<void> {
+    signOut.mockReturnValueOnce(new Promise<void>(() => {}));
+    await press(root, "Sign out");
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(control(root, "Sign out")?.props.disabled).toBe(true);
+  }
+
+  it("holds the confirm step's Continue while the sign-out is on its way", async () => {
+    const { root } = await render();
+    await pickRow(root, "Phi Gamma Delta");
+    expect(control(root, "Continue")?.props.disabled).toBe(false);
+    await startSigningOut(root);
+    expect(control(root, "Continue")?.props.disabled).toBe(true);
+  });
+
+  it("holds the live step's Continue and logo while the sign-out is on its way", async () => {
+    const { root } = await render();
+    await createFromMatch(root);
+    expect(title(root)).toBe("FIJI is live");
+    expect(control(root, "Add your chapter's logo")?.props.disabled).toBe(
+      false,
+    );
+    await startSigningOut(root);
+    expect(control(root, "Continue")?.props.disabled).toBe(true);
+    expect(control(root, "Add your chapter's logo")?.props.disabled).toBe(true);
+  });
+
+  it("holds both push answers while the sign-out is on its way", async () => {
+    pushAvailable = true;
+    permission = { granted: false };
+    const { root } = await render();
+    await createFromMatch(root);
+    await press(root, "Continue");
+    expect(title(root)).toBe(SETUP_TITLES.primer);
+    expect(control(root, "Not now")?.props.disabled).toBe(false);
+    await startSigningOut(root);
+    for (const label of ["Turn on notifications", "Not now"]) {
+      expect(control(root, label)?.props.disabled).toBe(true);
+    }
+  });
+
+  it("holds Share invite and the way to chat while the sign-out is on its way", async () => {
+    const { root } = await render();
+    await createFromMatch(root);
+    await press(root, "Continue");
+    expect(title(root)).toBe(SETUP_TITLES.invite);
+    expect(control(root, "Skip for now")?.props.disabled).toBe(false);
+    await startSigningOut(root);
+    expect(control(root, "Share invite")?.props.disabled).toBe(true);
+    expect(control(root, "Skip for now")?.props.disabled).toBe(true);
+  });
+
+  it("holds Sign out while a logo uploads", async () => {
+    pickAndSetChapterLogo.mockReturnValueOnce(new Promise(() => {}));
+    const { root } = await render();
+    await createFromMatch(root);
+    expect(control(root, "Sign out")?.props.disabled).toBe(false);
+    await press(root, "Add your chapter's logo");
+    expect(control(root, "Sign out")?.props.disabled).toBe(true);
+  });
+
+  it("holds Sign out while an invite link is being made", async () => {
+    createInvite.mockReturnValueOnce(new Promise(() => {}));
+    const { root } = await render();
+    await createFromMatch(root);
+    await press(root, "Continue");
+    expect(control(root, "Sign out")?.props.disabled).toBe(false);
+    await press(root, "Share invite");
+    expect(control(root, "Sign out")?.props.disabled).toBe(true);
+  });
+
+  it("signs out to sign-in", async () => {
+    const { root } = await render();
+    await pickRow(root, "Phi Gamma Delta");
+
+    await press(root, "Sign out");
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(useRouter().replace).toHaveBeenCalledWith("/(auth)/sign-in");
+  });
+
+  it("says only Signed in when the session has no email", async () => {
+    sessionEmail = null;
+    const { root } = await render();
+    const text = allText(root);
+    expect(text).toContain("Signed in");
+    expect(text).not.toContain("Signed in as");
+    expect(control(root, "Sign out")).toBeDefined();
   });
 });
 
@@ -900,9 +1096,11 @@ describe("chapter setup — invite", () => {
 
     await press(root, "Share invite");
     expect(createInvite).toHaveBeenCalledTimes(1);
-    expect(Share.share).toHaveBeenLastCalledWith({
-      message: expect.stringContaining("Join FIJI on Frapp"),
-    });
+    expect(Share.share).toHaveBeenLastCalledWith(
+      { message: expect.stringContaining("Join FIJI on Frapp") },
+      // A mail target gets a subject line (iOS).
+      { subject: "Join FIJI on Frapp" },
+    );
     expect(sharedText(0)).toContain("/join?token=tok123");
     expect(allText(root)).not.toContain("tok123");
     expect(allText(root)).toContain("Link 1");

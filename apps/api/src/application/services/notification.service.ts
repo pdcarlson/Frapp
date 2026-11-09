@@ -799,6 +799,30 @@ export class NotificationService {
       : updated;
   }
 
+  /**
+   * Clear the member's chat notifications for a channel they have just read
+   * (#3788).
+   *
+   * A chat push writes a `notifications` row, but the member usually reads
+   * the message by opening the channel, not by tapping that row, so the row
+   * stayed unread in the inbox long after the messages were seen. Rows
+   * created after `readThrough` are left alone: they are about messages the
+   * read did not cover.
+   */
+  async markChatChannelNotificationsRead(
+    userId: string,
+    chapterId: string,
+    channelId: string,
+    readThrough: string,
+  ): Promise<void> {
+    await this.notificationRepo.markChatChannelRead(
+      userId,
+      chapterId,
+      channelId,
+      readThrough,
+    );
+  }
+
   async registerPushToken(
     userId: string,
     token: string,

@@ -10,7 +10,12 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
-import { POLL_OPTIONS_MAX, POLL_OPTIONS_MIN } from '@repo/validation';
+import {
+  POLL_OPTION_MAX_LENGTH,
+  POLL_OPTIONS_MAX,
+  POLL_OPTIONS_MIN,
+  POLL_QUESTION_MAX_LENGTH,
+} from '@repo/validation';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBooleanQueryString } from '../decorators/is-boolean-query-string.decorator';
@@ -20,7 +25,7 @@ export class CreatePollDto {
   @ApiProperty({ description: 'Poll question' })
   @IsString()
   @MinLength(1)
-  @MaxLength(500)
+  @MaxLength(POLL_QUESTION_MAX_LENGTH)
   question: string;
 
   @ApiProperty({
@@ -31,7 +36,7 @@ export class CreatePollDto {
   @IsArray()
   @IsString({ each: true })
   @MinLength(1, { each: true })
-  @MaxLength(200, { each: true })
+  @MaxLength(POLL_OPTION_MAX_LENGTH, { each: true })
   options: string[];
 
   @ApiPropertyOptional({

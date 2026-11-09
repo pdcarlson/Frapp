@@ -1,7 +1,7 @@
 "use client";
 
 import { describeLoadFailure } from "@repo/hooks/error-copy";
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { DirectoryGlyph } from "@/components/events/chapter-ops-glyphs";
 import {
@@ -9,6 +9,7 @@ import {
   useAttendance,
   useAutoAbsent,
   useMembers,
+  useNow,
   useUpdateAttendanceStatus,
 } from "@repo/hooks";
 import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
@@ -36,6 +37,8 @@ import {
 } from "@/components/events/attendance-status";
 import type { AttendanceStatus } from "@/components/events/attendance-status";
 import { checkInLabel } from "@/components/events/event-labels";
+import { formatRelativeDayTime } from "@repo/formatting";
+import { checkInClosesAt } from "@/components/events/check-in-close";
 import { InlineNote } from "@/components/shared/inline-note";
 
 type AttendanceRow = {
@@ -50,6 +53,7 @@ type AttendanceRow = {
 export function AttendancePanel({
   eventId,
   eventStart,
+  eventEnd,
 }: {
   eventId: string;
   /**
@@ -57,6 +61,12 @@ export function AttendancePanel({
    * time alone ("Checked in 5:03 PM") and one on another day names the day.
    */
   eventStart?: unknown;
+  /**
+   * The event's `end_time`. Auto-absent is refused (400) until check-in
+   * closes, so the button waits for the same instant. Without it the button
+   * is offered and the server's answer stands.
+   */
+  eventEnd?: unknown;
 }) {
   const chapterId = useActiveChapterId();
   const { toast } = useToast();
@@ -69,6 +79,23 @@ export function AttendancePanel({
   // Reading attendance stays live — `enforceSubscription` returns early for
   // GET, so a lapsed chapter can still see who showed up.
   const gate = useSubscriptionGate();
+  const now = useNow();
+  const closesAt = checkInClosesAt(eventEnd, now);
+  const autoAbsentGateProps = gate.controlProps(
+    autoAbsent.isPending || closesAt !== null,
+  );
+  /*
+    Why the button waits, said in visible text: a disabled Button takes no
+    pointer events, so a `title` alone is never seen. Only when the gate
+    allows writes: a lapsed chapter's button stays disabled past the close,
+    and its own notice says why, so a promise about the close would be false.
+  */
+  const waitingNoticeId = useId();
+  const waitingForClose = closesAt !== null && gate.allowed;
+  const autoAbsentControlProps = {
+    ...autoAbsentGateProps,
+    ...(waitingForClose ? { "aria-describedby": waitingNoticeId } : {}),
+  };
 
   const [statusFilter, setStatusFilter] = useState<
     "ALL" | AttendanceStatus | "UNRECORDED"
@@ -318,7 +345,7 @@ export function AttendancePanel({
             <Button
               variant="secondary"
               size="sm"
-              {...gate.controlProps(autoAbsent.isPending)}
+              {...autoAbsentControlProps}
               onClick={runAutoAbsent}
             >
               {autoAbsent.isPending ? (
@@ -331,6 +358,17 @@ export function AttendancePanel({
           </Can>
         </div>
       </div>
+      {waitingForClose ? (
+        <Can permission="events:update">
+          <p
+            id={waitingNoticeId}
+            className="mt-2 text-caption text-muted-foreground"
+          >
+            Auto-absent can run once check-in closes (
+            {formatRelativeDayTime(closesAt.toISOString(), new Date(now))}).
+          </p>
+        </Can>
+      ) : null}
       <div className="mt-4 space-y-3">
         {/*
           Disable, don't hide (§5 rule 4): the roster, the counts, and the

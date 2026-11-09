@@ -15,6 +15,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useListChapters } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import { useOnboardingSignOut } from "@/components/onboarding/signed-in-as";
 import { useAuthSession } from "@/lib/auth-session";
 import { ChoiceRow, ChoiceRowSkeleton } from "@/components/auth/choice-row";
 import { SkeletonRegion } from "@/components/state-block";
@@ -47,7 +48,10 @@ export default function ChapterPicker() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const router = useRouter();
-  const { status, signOut, chapterId: currentChapterId } = useAuthSession();
+  const { status, chapterId: currentChapterId } = useAuthSession();
+  // The onboarding sign-out (#3782): it also forgets a remembered invite,
+  // which was this account's, not the next one's.
+  const { signOut: signOutToSignIn } = useOnboardingSignOut();
   const selectChapter = useSelectChapter();
   // More's Switch chapter row says it opened the picker (`from: "more"`), and
   // only then is the More tab underneath to go back to, so only then does the
@@ -101,13 +105,11 @@ export default function ChapterPicker() {
   const serverMovedTo = useRef<string | null>(null);
 
   async function handleSignOut() {
-    await signOut();
-    // `signOut` drops the query cache itself (`lib/auth-session.tsx`), so every
-    // sign-out path gets it without each screen remembering to.
-    // Navigate explicitly rather than waiting for the gate: the gate only ever
-    // redirects *out* of this group, so signing out here would otherwise leave
-    // the member staring at a chapter list whose every action now 401s.
-    router.replace("/(auth)/sign-in");
+    // `useOnboardingSignOut` navigates explicitly rather than waiting for the
+    // gate: the gate only ever redirects *out* of this group, so signing out
+    // here would otherwise leave the member staring at a chapter list whose
+    // every action now 401s.
+    await signOutToSignIn();
   }
 
   // A stale `frapp://chapter-picker` opened while signed out would otherwise

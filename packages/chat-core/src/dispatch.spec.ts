@@ -1,7 +1,15 @@
 import { describe, it, expect, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import type { SlashCommand } from "./integrations";
-import { dispatchSlashCommand, retryPointsDispatch } from "./dispatch";
+import {
+  dispatchSlashCommand,
+  postHours,
+  postPointsAdjustment,
+  postPoll,
+  postTask,
+  retryPointsDispatch,
+  trackEventCard,
+} from "./dispatch";
 import { RATE_LIMITED_COPY, type ChatActionContext } from "./chat-client";
 import type { KeyValueStore, OutboxStore } from "./adapters";
 import { chatMessagesKey, type ChannelCache, type ChatMessage } from "./types";
@@ -911,6 +919,12 @@ function describeCreateCardPosted(
     fourXxMessage: string;
     gatewayError: RegExp;
     transportError: string;
+    /**
+     * Set for a command whose lost answer reads as unconfirmed rather than
+     * failed (`/task`, `/hours`, #3865): the + menu's form keeps its draft,
+     * so a "failed" there is one click from a duplicate write.
+     */
+    lostResponse?: RegExp;
     onPosted?: (post: ReturnType<typeof vi.fn>) => void;
   },
 ) {
@@ -972,9 +986,17 @@ function describeCreateCardPosted(
       });
       const ctx = buildCtx(post);
       const result = await dispatch(ctx);
-      expect(result.ok).toBe(false);
-      expect(result.unconfirmed).toBeUndefined();
-      expect(result.error).toMatch(copy.gatewayError);
+      if (copy.lostResponse) {
+        expect(result).toEqual({
+          ok: true,
+          unconfirmed: true,
+          warning: expect.stringMatching(copy.lostResponse),
+        });
+      } else {
+        expect(result.ok).toBe(false);
+        expect(result.unconfirmed).toBeUndefined();
+        expect(result.error).toMatch(copy.gatewayError);
+      }
       expect(placeholderCount(ctx)).toBe(0);
     });
 
@@ -982,10 +1004,15 @@ function describeCreateCardPosted(
       const post = vi.fn().mockRejectedValue(new Error("network down"));
       const ctx = buildCtx(post);
       const result = await dispatch(ctx);
-      expect(result).toEqual({
-        ok: false,
-        error: copy.transportError,
-      });
+      expect(result).toEqual(
+        copy.lostResponse
+          ? {
+              ok: true,
+              unconfirmed: true,
+              warning: expect.stringMatching(copy.lostResponse),
+            }
+          : { ok: false, error: copy.transportError },
+      );
       expect(placeholderCount(ctx)).toBe(0);
     });
   });
@@ -996,6 +1023,7 @@ describeCreateCardPosted("dispatchTask — card_posted (#1717)", dispatchTaskCmd
   fourXxMessage: "nope",
   gatewayError: /Couldn't create task/i,
   transportError: "Couldn't reach the tasks service",
+  lostResponse: /Couldn't confirm the task was created/,
 });
 
 describeCreateCardPosted(
@@ -1014,6 +1042,7 @@ describeCreateCardPosted("dispatchHours — card_posted", dispatchHoursCmd, {
   fourXxMessage: "This chapter requires a receipt",
   gatewayError: /Couldn't log hours/i,
   transportError: "Couldn't reach the hours service",
+  lostResponse: /Couldn't confirm the hours were logged/,
   onPosted: (post) => {
     expect(post).toHaveBeenCalledWith(
       "/v1/service-entries",
@@ -1211,6 +1240,66 @@ describe("dispatchPoll / dispatchAnnounce — sendMessage faults (#1718)", () =>
   );
 });
 
+describe("postPoll — the New poll form's send (#3865)", () => {
+  const POLL = {
+    content: "Who's in?",
+    payload: {
+      question: "Who's in?",
+      options: [
+        { id: "a", label: "Yes" },
+        { id: "b", label: "No" },
+      ],
+      closes_at: "2026-11-10T12:00:00.000Z",
+    },
+  };
+
+  it("posts a poll card and leaves the composer's saved draft alone", async () => {
+    const post = postingApi();
+    const clearDraft = vi.fn();
+    const ctx = buildSimpleCtx(post, stubOutbox({ clearDraft }));
+
+    expect(await postPoll(ctx, CHANNEL_ID, POLL)).toEqual({ ok: true });
+    expect(onlyRow(ctx).kind).toBe("poll");
+    expect(clearDraft).not.toHaveBeenCalled();
+  });
+
+  it("says nothing was queued when the member is signed out", async () => {
+    const post = postingApi();
+    const ctx = { ...buildSimpleCtx(post, stubOutbox()), userId: null };
+
+    const result = await postPoll(ctx, CHANNEL_ID, POLL);
+
+    expect(result.ok).toBe(false);
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("returns a failure instead of throwing when enqueue rejects", async () => {
+    const ctx = buildSimpleCtx(
+      postingApi(),
+      stubOutbox({
+        enqueue: vi.fn().mockRejectedValue(new Error("QuotaExceededError")),
+      }),
+    );
+    expect(await postPoll(ctx, CHANNEL_ID, POLL)).toEqual({
+      ok: false,
+      error: "Couldn't post that poll. Try again.",
+      cause: expect.any(Error),
+    });
+  });
+
+  it("passes on the posted-but-not-saved warning", async () => {
+    const ctx = buildSimpleCtx(
+      postingApi(),
+      stubOutbox({
+        dequeue: vi.fn().mockRejectedValue(new Error("DatabaseClosedError")),
+      }),
+    );
+    const result = await postPoll(ctx, CHANNEL_ID, POLL);
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.warning).toMatch(/don't send it again/i);
+  });
+});
+
 describe("dispatchRush — vote and bid", () => {
   it("votes by UUID without a placeholder", async () => {
     const id = "11111111-1111-4111-8111-111111111111";
@@ -1321,5 +1410,180 @@ describe("dispatchRush — vote and bid", () => {
       "/v1/rush/candidates/{id}/bid",
       expect.objectContaining({ params: { path: { id: "cand-1" } } }),
     );
+  });
+});
+
+/**
+ * #3773 — the web event form's card bookkeeping in chat. `dispatchEvent` uses
+ * the same helper, so these also pin the one-liner's placeholder and row.
+ */
+describe("trackEventCard", () => {
+  function rows(ctx: ChatActionContext) {
+    return selectMessages(
+      ctx.queryClient.getQueryData<ChannelCache>(chatMessagesKey(CHANNEL_ID)),
+    );
+  }
+
+  it("puts a loading placeholder under the id the create sends", () => {
+    const ctx = buildCtx(vi.fn());
+    const card = trackEventCard(ctx, CHANNEL_ID, "Formal");
+
+    expect(rows(ctx)).toEqual([
+      expect.objectContaining({
+        kind: "loading",
+        client_message_id: card.clientMessageId,
+        content: 'Creating event "Formal"…',
+      }),
+    ]);
+  });
+
+  it("drops the placeholder when the create is refused", () => {
+    const ctx = buildCtx(vi.fn());
+    trackEventCard(ctx, CHANNEL_ID, "Formal").failed();
+
+    expect(placeholderCount(ctx)).toBe(0);
+    expect(rows(ctx)).toEqual([]);
+  });
+
+  it("keeps a durable recorded row, which survives a reload, when the card didn't post", () => {
+    const ctx = buildCtx(vi.fn());
+    const card = trackEventCard(ctx, CHANNEL_ID, "Formal");
+    card.lost();
+
+    expect(rows(ctx)).toEqual([
+      expect.objectContaining({
+        client_message_id: card.clientMessageId,
+        _status: "recorded",
+      }),
+    ]);
+    expect(readNotices(CHANNEL_ID, "user-1", ctx.kv)).toEqual([
+      expect.objectContaining({
+        status: "recorded",
+        content: 'Creating event "Formal"…',
+        note: expect.stringMatching(/Event created.*didn't post/),
+      }),
+    ]);
+  });
+});
+
+describe("the + menu's Task, Service hours and Points forms post as their commands do (#3865)", () => {
+  function okPost(body: Record<string, unknown> = { card_posted: true }) {
+    return vi.fn().mockResolvedValue({
+      data: body,
+      error: undefined,
+      response: { status: 201 },
+    });
+  }
+
+  it("postTask sends the form's description and leaves a placeholder for the card", async () => {
+    const post = okPost();
+    const ctx = buildCtx(post);
+    const result = await postTask(ctx, CHANNEL_ID, {
+      title: "Sweep the porch",
+      description: "Front and back",
+      assignee_id: "user-2",
+      due_date: "2026-11-12",
+      point_reward: 5,
+    });
+    expect(result).toEqual({ ok: true });
+    const [path, { body }] = post.mock.calls[0]!;
+    expect(path).toBe("/v1/tasks");
+    expect(body).toMatchObject({
+      title: "Sweep the porch",
+      description: "Front and back",
+      assignee_id: "user-2",
+      due_date: "2026-11-12",
+      point_reward: 5,
+      channel_id: CHANNEL_ID,
+    });
+    expect(body.client_message_id).toEqual(expect.any(String));
+    expect(placeholderCount(ctx)).toBe(1);
+  });
+
+  it("postTask drops the placeholder and names the refusal", async () => {
+    const post = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: { message: "Assignee is not a member" },
+      response: { status: 400 },
+    });
+    const ctx = buildCtx(post);
+    const result = await postTask(ctx, CHANNEL_ID, {
+      title: "Sweep",
+      assignee_id: "user-9",
+      due_date: "2026-11-12",
+    });
+    expect(result.ok).toBe(false);
+    expect(placeholderCount(ctx)).toBe(0);
+  });
+
+  it("postHours carries the form's date and proof", async () => {
+    const post = okPost();
+    const ctx = buildCtx(post);
+    expect(
+      await postHours(ctx, CHANNEL_ID, {
+        date: "2026-11-08",
+        duration_minutes: 90,
+        description: "Food bank",
+        proof_path: "chapter/proof.pdf",
+      }),
+    ).toEqual({ ok: true });
+    const [path, { body }] = post.mock.calls[0]!;
+    expect(path).toBe("/v1/service-entries");
+    expect(body).toMatchObject({
+      date: "2026-11-08",
+      duration_minutes: 90,
+      description: "Food bank",
+      proof_path: "chapter/proof.pdf",
+      channel_id: CHANNEL_ID,
+    });
+  });
+
+  it("postHours keeps the durable row when the entry landed without its card", async () => {
+    const ctx = buildCtx(okPost({ card_posted: false }));
+    const result = await postHours(ctx, CHANNEL_ID, {
+      date: "2026-11-08",
+      duration_minutes: 30,
+      description: "Cleanup",
+    });
+    expect(result.ok).toBe(true);
+    expect(result.warning).toMatch(/Hours were logged/);
+  });
+
+  it("postPointsAdjustment refuses the officer's own row before any write", async () => {
+    const post = okPost();
+    const ctx = buildCtx(post);
+    const result = await postPointsAdjustment(ctx, CHANNEL_ID, {
+      target_user_id: "user-1",
+      amount: 5,
+      category: "MANUAL",
+      reason: "Testing the form",
+    });
+    expect(result).toEqual({
+      ok: false,
+      error: "You can't adjust your own points",
+    });
+    expect(post).not.toHaveBeenCalled();
+    expect(placeholderCount(ctx)).toBe(0);
+  });
+
+  it("postPointsAdjustment sends a signed amount with its key and placeholder", async () => {
+    const post = okPost();
+    const ctx = buildCtx(post);
+    await postPointsAdjustment(ctx, CHANNEL_ID, {
+      target_user_id: "user-2",
+      amount: -10,
+      category: "FINE",
+      reason: "Missed chapter",
+    });
+    const [path, { body }] = post.mock.calls[0]!;
+    expect(path).toBe("/v1/points/adjust");
+    expect(body).toMatchObject({
+      target_user_id: "user-2",
+      amount: -10,
+      category: "FINE",
+      reason: "Missed chapter",
+      channel_id: CHANNEL_ID,
+    });
+    expect(placeholderCount(ctx)).toBe(1);
   });
 });

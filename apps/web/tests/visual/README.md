@@ -24,7 +24,7 @@ carry a per-route expected URL instead.
 leaving to be discovered.
 
 `/join` is the first. It sits in `proxy.ts`'s
-protected prefixes *and* calls `getSessionUser()` itself, redirecting a
+protected prefixes *and* calls `getLiveSessionUser()` itself, redirecting a
 sessionless harness to `/sign-in?redirectTo=/join` — so nothing here can
 measure it. That needs a seeded session, which is the same piece of work the
 last section of this file scopes. Measured by hand at 375px meanwhile: the

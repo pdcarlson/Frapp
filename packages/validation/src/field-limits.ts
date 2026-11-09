@@ -109,6 +109,13 @@ export const MAJOR_MAX_LENGTH = 100;
 export const DOCUMENT_TITLE_MAX_LENGTH = 255;
 
 /**
+ * A task's title (`CreateTaskDto.title`), from the task board, the `/task`
+ * one-liner and the chat composer's Task form (#3865). The API refuses a
+ * longer one; the form and the one-liner say so first.
+ */
+export const TASK_TITLE_MAX_LENGTH = 255;
+
+/**
  * What a member says they did on a service entry
  * (`service_entries.description`), on web and mobile s20. The API's
  * `CreateServiceEntryDto` refuses a longer one, and s20's field stops at it.
@@ -119,3 +126,14 @@ export const SERVICE_DESCRIPTION_MAX_LENGTH = 2_000;
 /** Options on one poll, and the fewest a poll may have. */
 export const POLL_OPTIONS_MAX = 10;
 export const POLL_OPTIONS_MIN = 2;
+
+/**
+ * A poll's question and each option's label, as `CreatePollDto` bounds them
+ * on the REST route (`POST /v1/channels/:id/polls`). Mobile's New poll sheet
+ * stops its fields at the same lengths. That is a client-side cap only: a
+ * phone poll posts a `kind: 'poll'` card through the chat send route, which
+ * bounds `content` (`CHAT_MESSAGE_CONTENT_MAX_LENGTH`) but not the card's
+ * option labels, and web's `/poll` applies no length limit.
+ */
+export const POLL_QUESTION_MAX_LENGTH = 500;
+export const POLL_OPTION_MAX_LENGTH = 200;

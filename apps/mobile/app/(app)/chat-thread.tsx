@@ -56,6 +56,9 @@ import { can, draftWithMention } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { BlockListNotice } from "@/components/chat/block-list-notice";
 import { ChatComposer } from "@/components/chat/chat-composer";
+import { NewPollSheet } from "@/components/chat/new-poll-sheet";
+import { canCreatePoll } from "@repo/chat-core/poll-draft";
+import { usePollsGate } from "@/lib/chat/use-polls-gate";
 import {
   ImageViewer,
   ImageViewerContext,
@@ -100,6 +103,7 @@ import {
   withDeparted,
   type DepartedMembers,
 } from "@repo/chat-core/message-actions";
+import { AUDIT_LOG_COMPOSER_NOTE } from "@repo/chat-core/audit-log-copy";
 import { useMaskedRefresh } from "@/lib/chat/masked-refresh";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
 import { writeLastChannel } from "@/lib/chat/last-channel";
@@ -118,6 +122,7 @@ import {
   ChannelMembersButton,
 } from "@/components/chat/channel-member-sheet";
 import { MemberDetailSheet } from "@/components/directory/member-detail-sheet";
+import { confirmClosePoll } from "@/lib/chat/confirm-close-poll";
 import { confirmDeleteMessage } from "@/lib/chat/confirm-delete-message";
 import { useComposerStaging } from "@/lib/chat/use-composer-staging";
 import {
@@ -231,8 +236,10 @@ export default function ChatThreadScreen() {
     canSend,
     send,
     sendInFlight,
+    sendPoll,
     edit,
     remove,
+    closePoll,
     react,
     unreact,
     act,
@@ -331,7 +338,16 @@ export default function ChatThreadScreen() {
   // Delete on someone else's message (#2775). The server resolves the
   // permission in the message's own chapter; this only decides whether the
   // row is likely to succeed, as web's `canManageChannel` does.
-  const canManageChannel = can("channels:manage", usePermissionList());
+  const permissionList = usePermissionList();
+  const canManageChannel = can("channels:manage", permissionList);
+  // The composer's + offers a poll to a member whose role creates them, in a
+  // chapter with Polls on, in a channel they can post in (#3701). The Polls
+  // read is the poll card's own (`usePollsGate`), failing closed while the
+  // chapter is unread or unreadable.
+  const { gate: pollsGate } = usePollsGate();
+  const pollsAllowed =
+    channelCanPost &&
+    canCreatePoll({ permissions: permissionList, pollsGate });
   const canReplyHere = channelAllowsReplies({
     can_post: channelCanPost,
     is_read_only: channelIsReadOnly,
@@ -648,6 +664,12 @@ export default function ChatThreadScreen() {
     [remove],
   );
 
+  // A poll card's Close poll (#3794), asked first like Delete.
+  const handleClosePoll = useCallback(
+    (messageId: string) => confirmClosePoll(() => closePoll(messageId)),
+    [closePoll],
+  );
+
   // The menu's Mention: `@Name ` at the end of the draft, the body the `@`
   // picker would have written.
   const handleMention = useCallback(
@@ -730,6 +752,20 @@ export default function ChatThreadScreen() {
   // the directory's sheet, so a profile reads the same from every door. It
   // closes on blur for the same reason the member list does.
   const profileSheetRef = useRef<BottomSheetModal>(null);
+  // The New poll sheet (#3701). Mounted per channel (keyed below), so a draft
+  // kept by a swipe never posts into another channel, and closed on blur like
+  // the member list.
+  const pollSheetRef = useRef<BottomSheetModal>(null);
+  const openPollSheet = useCallback(() => {
+    Keyboard.dismiss();
+    pollSheetRef.current?.present();
+  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      if (!channelId) return;
+      return () => pollSheetRef.current?.dismiss();
+    }, [channelId]),
+  );
   const [profileTarget, setProfileTarget] = useState<{ userId: string } | null>(
     null,
   );
@@ -861,6 +897,7 @@ export default function ChatThreadScreen() {
           onVote={(id, actionType, payload) =>
             void act(id, actionType, payload)
           }
+          onClosePoll={handleClosePoll}
           onRetry={(id) => void retry(id)}
           onDiscard={(id) => void discard(id)}
           onReact={handleReact}
@@ -887,6 +924,7 @@ export default function ChatThreadScreen() {
       handleReact,
       handleUnreact,
       act,
+      handleClosePoll,
       byId,
       layout,
       blockState,
@@ -1280,65 +1318,84 @@ export default function ChatThreadScreen() {
           impossible, which is the whole failure the outbox exists to prevent,
           and would contradict the banner directly above it.
         */}
-          <ChatComposer
-            value={staging.value}
-            onChangeText={staging.onChangeText}
-            onSend={handleSend}
-            canSend={canSend && channelCanPost && !staging.isSavingEdit}
-            context={staging.context}
-            mentionCandidates={mentionRoster.data}
-            avatarFor={memberAvatarFor}
-            mentionRoles={mentionRoles.data}
-            placeholder={composerPlaceholder}
-            // A send that never reached the outbox has no failed row to show
-            // (nothing was queued), so this line is the only report of it.
-            //
-            // Offline is not said here: #501's "clearly labeled" half is the
-            // app-wide pill, whose sentence carries the queue's promise while
-            // a chat is open (`spec/ui/resilience/connection-state.md` § One
-            // indicator). `lib/connection/state.ts` holds the rule for the
-            // surfaces that have to block instead.
-            disabledHint={
-              attachError ??
-              staging.editError ??
-              sendError ??
-              // `canSend` first. It is false until `ctx` resolves, and
-              // `ChatComposer` keys `editable` on it. The channel-level
-              // `can_post` gate (#704) comes next.
-              (!canSend
-                ? "Connecting to chat…"
-                : !channelCanPost
-                  ? postRefusalHint(postCapability)
-                  : null)
-            }
-            hintTone={
-              sendError || attachError || staging.editError ? "error" : "muted"
-            }
-            // An edit changes text only, so the staged photos and the attach
-            // control stand aside until it is saved or cancelled.
-            photos={staging.isEditing ? undefined : photos}
-            onAttach={staging.isEditing ? undefined : handleAttach}
-            attachFull={photoRoom < 1}
-            onRemovePhoto={removePhoto}
-            onRetryPhoto={retryPhoto}
-            isPicking={isPicking}
-            // An upload is a live PUT with no outbox behind it, unlike a send —
-            // so unlike the composer itself, the attach control does have to go
-            // dark offline. It stays visible and states why rather than
-            // disappearing.
-            // Gates the control only. Offline, the member-facing reason is the
-            // connection pill's sentence ("Photos and files need a
-            // connection."), not a composer line, so the screen says offline
-            // once (`connection-state.md` § One indicator). Other reasons ride
-            // the single `disabledHint` above.
-            attachDisabledReason={
-              !channelCanPost
-                ? "You can't post in this channel."
-                : appOffline
-                  ? "offline"
-                  : null
-            }
-          />
+          {/* The audit log (#3909): only Frapp posts there, so there is no
+              composer at all, just the line that says so. */}
+          {postCapability.isAuditLog ? (
+            <Text
+              style={styles.auditLogNote}
+              accessibilityRole="text"
+              testID="chat-audit-log-note"
+            >
+              {AUDIT_LOG_COMPOSER_NOTE}
+            </Text>
+          ) : (
+            <ChatComposer
+              value={staging.value}
+              onChangeText={staging.onChangeText}
+              onSend={handleSend}
+              canSend={canSend && channelCanPost && !staging.isSavingEdit}
+              context={staging.context}
+              mentionCandidates={mentionRoster.data}
+              avatarFor={memberAvatarFor}
+              mentionRoles={mentionRoles.data}
+              placeholder={composerPlaceholder}
+              // A send that never reached the outbox has no failed row to show
+              // (nothing was queued), so this line is the only report of it.
+              //
+              // Offline is not said here: #501's "clearly labeled" half is the
+              // app-wide pill, whose sentence carries the queue's promise while
+              // a chat is open (`spec/ui/resilience/connection-state.md` § One
+              // indicator). `lib/connection/state.ts` holds the rule for the
+              // surfaces that have to block instead.
+              disabledHint={
+                attachError ??
+                staging.editError ??
+                sendError ??
+                // `canSend` first. It is false until `ctx` resolves, and
+                // `ChatComposer` keys `editable` on it. The channel-level
+                // `can_post` gate (#704) comes next.
+                (!canSend
+                  ? "Connecting to chat…"
+                  : !channelCanPost
+                    ? postRefusalHint(postCapability)
+                    : null)
+              }
+              hintTone={
+                sendError || attachError || staging.editError
+                  ? "error"
+                  : "muted"
+              }
+              // An edit changes text only, so the staged photos and the attach
+              // control stand aside until it is saved or cancelled.
+              photos={staging.isEditing ? undefined : photos}
+              onAttach={staging.isEditing ? undefined : handleAttach}
+              // A poll is its own card, so it can't ride a reply or an edit:
+              // the + offers it only with nothing staged.
+              onCreatePoll={
+                pollsAllowed && !staging.context ? openPollSheet : undefined
+              }
+              attachFull={photoRoom < 1}
+              onRemovePhoto={removePhoto}
+              onRetryPhoto={retryPhoto}
+              isPicking={isPicking}
+              // An upload is a live PUT with no outbox behind it, unlike a send —
+              // so unlike the composer itself, the attach control does have to go
+              // dark offline. It stays visible and states why rather than
+              // disappearing.
+              // Gates the control only. Offline, the member-facing reason is the
+              // connection pill's sentence ("Photos and files need a
+              // connection."), not a composer line, so the screen says offline
+              // once (`connection-state.md` § One indicator). Other reasons ride
+              // the single `disabledHint` above.
+              attachDisabledReason={
+                !channelCanPost
+                  ? "You can't post in this channel."
+                  : appOffline
+                    ? "offline"
+                    : null
+              }
+            />
+          )}
         </View>
         {/*
           Last, so it is above the header, the inverted list and the composer
@@ -1370,6 +1427,11 @@ export default function ChatThreadScreen() {
         // that the member backed out (the sheet's stale-DM guard).
         onDismiss={() => setProfileTarget(null)}
         openChannelId={channelId ?? null}
+      />
+      <NewPollSheet
+        key={channelId ?? "none"}
+        ref={pollSheetRef}
+        onPost={sendPoll}
       />
       <MessageActionsSheet
         ref={actionsSheetRef}
@@ -1463,6 +1525,16 @@ function createStyles(tokens: SignetTokens) {
       backgroundColor: tokens.color.surface.surface1,
       borderTopWidth: 1,
       borderTopColor: tokens.color.border.hairline,
+    },
+    // Sits where the composer would, with its hairline and padding.
+    auditLogNote: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+      borderTopWidth: 1,
+      borderTopColor: tokens.color.border.hairline,
+      paddingHorizontal: tokens.spacing.lg,
+      paddingVertical: tokens.spacing.md,
+      backgroundColor: tokens.color.surface.background,
     },
     reactionErrorText: {
       ...typeRole(tokens.typography.role.caption),
