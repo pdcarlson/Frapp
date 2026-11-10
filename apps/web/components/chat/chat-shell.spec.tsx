@@ -3390,6 +3390,19 @@ describe("ChatShell narrow viewports (#2142)", () => {
     expect(back).toHaveClass("h-10", "w-10");
   });
 
+  it("keeps the channel rail's gutter inside its scroller, so pinned headings sit flush (#4051)", () => {
+    render(<ChatShell />);
+    // Padding on the scroller itself would sit outside the box a sticky
+    // category heading pins to: the heading would stop 8px short of the top
+    // and rows would scroll through that band above it.
+    const scroller = screen
+      .getByTestId("pick-random")
+      .closest(".overflow-y-auto") as HTMLElement;
+    expect(scroller).not.toBeNull();
+    expect(scroller.className).not.toMatch(/(^|\s)p[ty]?-/);
+    expect(scroller.firstElementChild).toHaveClass("p-2");
+  });
+
   it("leaves an Esc that closes an open overlay to the overlay (#3824)", () => {
     render(<ChatShell />);
     const overlay = document.createElement("div");
