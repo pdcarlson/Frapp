@@ -6,9 +6,9 @@
  * framework board draws as "three flush columns, 100vh, independent scroll"
  * (`1b`): its columns sit flush against the left column with no gutter between
  * them, and the composer has to be pinned to the bottom of the viewport rather
- * than to the bottom of a document that scrolls. (From `lg` up the channel
- * list is the shell's left column itself since 2026-11-05,
- * `nav-column.tsx`; below it, the list is in `<main>` with the thread.)
+ * than to the bottom of a document that scrolls. (Since #3779 chat itself is a
+ * shell panel and `/chat`'s `<main>` holds only the home view, which wants the
+ * same frameless box.)
  *
  * A full-bleed route therefore gets a `<main>` with no padding and no scroll of
  * its own, and takes responsibility for both. It is still the same `<main>`

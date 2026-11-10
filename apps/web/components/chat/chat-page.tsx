@@ -16,8 +16,10 @@ import { CHAT_CHANNEL_PARAM, CHAT_MESSAGE_PARAM } from "@/lib/chat/chat-links";
  */
 function ChatPageContent({
   defaultMembersHidden,
+  toolBeside,
 }: {
   defaultMembersHidden: boolean;
+  toolBeside: boolean;
 }) {
   const searchParams = useSearchParams();
   const channelParam = searchParams.get(CHAT_CHANNEL_PARAM);
@@ -29,13 +31,15 @@ function ChatPageContent({
         initialChannelId={channelParam}
         initialMessageId={messageParam}
         defaultMembersHidden={defaultMembersHidden}
+        toolBeside={toolBeside}
       />
     </ChatProvider>
   );
 }
 
 /**
- * Entry component for the `/chat` route. Mounts the chat hot-path provider
+ * The chat panel's contents, which the dashboard shell hosts beside the open
+ * tool page or alone on `/chat` (`dashboard-shell.tsx`, #3779). Mounts the chat hot-path provider
  * (outbox flush + persisted first chunk; the realtime manager is the
  * dashboard shell's, `use-chat-realtime-binding.ts`) and renders the chat
  * shell. The provider lives inside the dashboard tree so it sees the existing
@@ -43,9 +47,12 @@ function ChatPageContent({
  */
 export function ChatPage({
   defaultMembersHidden = false,
+  toolBeside = false,
 }: {
-  /** The member list's remembered state, read by the route on the server. */
+  /** The member list's remembered state, read by the layout on the server. */
   defaultMembersHidden?: boolean;
+  /** Open beside a tool page (`ChatShell`'s prop of the same name). */
+  toolBeside?: boolean;
 } = {}) {
   /*
     This boundary's fallback must never be what the server sends.
@@ -59,7 +66,7 @@ export function ChatPage({
     with every test still green.
 
     It does not, because `app/(dashboard)/layout.tsx` awaits `cookies()` for the
-    nav-collapse preference, which opts this whole segment into dynamic
+    nav-collapse and chat preferences, which opts this whole segment into dynamic
     rendering. That is a real dependency between two files that never mention
     each other, and nothing enforces it: if that `cookies()` read ever moves or
     is memoized away, check the `/chat` SSR payload still contains the
@@ -67,7 +74,10 @@ export function ChatPage({
   */
   return (
     <Suspense fallback={<ChatRouteSkeleton />}>
-      <ChatPageContent defaultMembersHidden={defaultMembersHidden} />
+      <ChatPageContent
+        defaultMembersHidden={defaultMembersHidden}
+        toolBeside={toolBeside}
+      />
     </Suspense>
   );
 }

@@ -1,7 +1,8 @@
 "use client";
 
-import { usePathname } from "next/navigation";
-import { useCallback, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { signetDarkTokens } from "@repo/theme/signet";
 import { useMyPermissions, useNotifications } from "@repo/hooks";
 import {
   Sheet,
@@ -14,11 +15,21 @@ import { SKIP_LINK_CLASSES } from "@/components/ui/focus";
 import { AppNav } from "@/components/layout/app-nav";
 import { NavColumn } from "@/components/layout/nav-column";
 import {
-  isChannelsNavRoute,
-  NavFaceContext,
-  type NavFace,
-  type NavFaceContextValue,
-} from "@/components/layout/nav-face";
+  FULL_NAV_SPLIT_QUERY,
+  isChatRoute,
+  PANE_FLOOR,
+  CHANNELS_WIDTH,
+  SPLIT_QUERY,
+  useMediaQueryState,
+} from "@/components/layout/shell-layout";
+import {
+  persistChatOpen,
+  persistToolShare,
+} from "@/components/layout/shell-prefs";
+import { SplitDivider } from "@/components/layout/split-divider";
+import { ChapterHome } from "@/components/layout/chapter-home";
+import { ChatPanelBoundary } from "@/components/layout/chat-panel-boundary";
+import { ChatPage } from "@/components/chat/chat-page";
 import { TopBar } from "@/components/layout/top-bar";
 import { DashboardNotificationDrawer } from "@/components/layout/dashboard-notification-drawer";
 import { AccountMenu } from "@/components/layout/account-menu";
@@ -61,10 +72,18 @@ import { cn } from "@/lib/utils";
  * - **No account menu in the nav, no subscription card, no BETA row.** Identity
  *   moved to the top-bar avatar; the other two are deleted outright (`1t`).
  *
- * The responsive contract is unchanged: two states, switching once at `lg`.
- * Below it the nav lives in a drawer and the rail never appears; the drawer
- * renders the same `AppNav`, so navigation is never duplicated into a second
- * list that can drift.
+ * **Chat is a panel of the shell, not a page** (#3779, Paul 2026-11-10). The
+ * nav column always stays; its Chat row opens and closes the chat panel, and
+ * a tool row opens its page beside chat, on the right, with a divider between
+ * them. Chat and one tool can be open; with neither, the home view
+ * (`chapter-home.tsx`). `shell-layout.ts` owns the state model: the open tool
+ * is the URL, chat open or closed and the divider are cookies.
+ *
+ * The responsive contract: below `lg` the nav lives in a drawer and the rail
+ * never appears; the drawer renders the same `AppNav`, so navigation is never
+ * duplicated into a second list that can drift. Below the side-by-side width
+ * (`SPLIT_MIN_WIDTH`) the shell is a single page: `/chat` is chat, a tool
+ * route is its tool, and the Chat row is a link.
  */
 
 /**
@@ -97,13 +116,28 @@ type DashboardShellProps = {
    * 240px and then snap to 56px after hydration, on every route.
    */
   defaultNavCollapsed?: boolean;
+  /** Chat open or closed, from its cookie (`shell-layout.ts`). */
+  defaultChatOpen?: boolean;
+  /** The divider's tool-page share, from its cookie. */
+  defaultToolShare?: number;
+  /** Chat's member column preference (`lib/chat/members-panel.ts`). */
+  defaultMembersHidden?: boolean;
 };
+
+/** Chat's panel enters and leaves with the standard Signet tokens. */
+const PANEL_ENTER_MS = signetDarkTokens.motion.duration.context;
+const PANEL_EXIT_MS = signetDarkTokens.motion.duration.standard;
 
 export function DashboardShell({
   children,
   defaultNavCollapsed = false,
+  defaultChatOpen = true,
+  defaultToolShare = 0.5,
+  defaultMembersHidden = false,
 }: DashboardShellProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const fullBleed = isFullBleedRoute(pathname);
   // Chapter accent, shell-wide: maps the persisted engine roles onto the
   // semantic tokens signet.css defines. Mounted here (not in ChatProvider) so
@@ -117,35 +151,71 @@ export function DashboardShell({
   const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
-  // `/chat`'s left column is the channel list, with the module nav one back
-  // arrow away (`nav-face.tsx`). Every arrival at Chat opens on the channels:
-  // the face resets whenever the pathname changes, during render (React's
-  // "adjust state when a prop changes"), so there is no frame of the old face
-  // after navigating. Leaving Chat by a module row and coming back is the
-  // common path, and it must not land on the modules.
-  const channelsNav = isChannelsNavRoute(pathname);
-  const [face, setFace] = useState<NavFace>("channels");
-  const [facePath, setFacePath] = useState(pathname);
-  if (facePath !== pathname) {
-    setFacePath(pathname);
-    setFace("channels");
+  // Side by side: `null` until the client knows its width, so a hydration
+  // render never unmounts chat beside a tool page.
+  const split = useMediaQueryState(SPLIT_QUERY);
+  const fullNavRoom = useMediaQueryState(FULL_NAV_SPLIT_QUERY);
+  const onChatRoute = isChatRoute(pathname);
+  const hasTool = !onChatRoute;
+
+  const [chatOpen, setChatOpen] = useState(defaultChatOpen);
+  const [toolShare, setToolShare] = useState(defaultToolShare);
+  const splitRowRef = useRef<HTMLDivElement>(null);
+
+  /*
+    Arriving at a chat URL opens chat: a `/chat` link, a notification, a Find
+    result, the directory's Message action. The one arrival that must not is
+    the shell's own, closing a tool (`closeTool`), which goes to `/chat`
+    meaning "no tool" and leaves chat as it was. Adjusted during render, keyed
+    on the URL, so there is no frame of the home view first.
+  */
+  const url = `${pathname}?${searchParams?.toString() ?? ""}`;
+  const [seenUrl, setSeenUrl] = useState(url);
+  const [closingTool, setClosingTool] = useState(false);
+  if (seenUrl !== url) {
+    setSeenUrl(url);
+    if (closingTool) setClosingTool(false);
+    else if (onChatRoute && !chatOpen) setChatOpen(true);
   }
-  // Stable, so chat can call them from an effect without re-running it.
-  const showModules = useCallback(() => setFace("modules"), []);
-  const showChannels = useCallback(() => setFace("channels"), []);
-  const [channelsSlot, setChannelsSlot] = useState<HTMLElement | null>(null);
-  const navFace = useMemo<NavFaceContextValue | null>(
-    () =>
-      channelsNav
-        ? {
-            face,
-            showModules,
-            showChannels,
-            channelsSlot,
-          }
-        : null,
-    [channelsNav, face, showModules, showChannels, channelsSlot],
-  );
+  // The cookie follows the state, whichever way it changed.
+  useEffect(() => {
+    persistChatOpen(chatOpen);
+  }, [chatOpen]);
+
+  /*
+    Closing plays the exit before the panel unmounts. `leaving` is the panel
+    still on screen while it fades and slides out.
+  */
+  const [leaving, setLeaving] = useState(false);
+  useEffect(() => {
+    if (!leaving) return;
+    const timer = window.setTimeout(() => setLeaving(false), PANEL_EXIT_MS);
+    return () => window.clearTimeout(timer);
+  }, [leaving]);
+
+  // Only an open the member asked for plays the entrance; a page load or a
+  // link that opens chat paints it in place.
+  const [animateOpen, setAnimateOpen] = useState(false);
+  const toggleChat = useCallback(() => {
+    if (chatOpen) setLeaving(true);
+    else setAnimateOpen(true);
+    setChatOpen(!chatOpen);
+  }, [chatOpen]);
+  const closeTool = useCallback(() => {
+    setClosingTool(true);
+    router.push("/chat");
+  }, [router]);
+
+  const chatShown = chatOpen || leaving;
+  // Mounted: alone on `/chat` below the side-by-side width whatever the
+  // cookie says (the single page), and beside a tool only when open there.
+  const chatMounted = onChatRoute
+    ? chatShown || split !== true
+    : chatShown && split !== false;
+  // The rail, forced while chat and a tool share a window too narrow for the
+  // full nav beside both 375px floors.
+  const forceRail =
+    hasTool && chatOpen && split === true && fullNavRoom === false;
 
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
   const { data: permissionsPayload } = useMyPermissions({
@@ -186,6 +256,38 @@ export function DashboardShell({
     setNavCollapsed((prev) => !prev);
     persistNavCollapsed(!navCollapsed);
   }, [navCollapsed]);
+
+  const chatPanelClassName = cn(
+    "flex min-h-0 min-w-0 flex-col overflow-hidden bg-background",
+    onChatRoute
+      ? // Alone: the whole row. Closed, it still shows below the
+        // side-by-side width, where `/chat` is the chat page.
+        cn("flex-1", !chatShown && "min-[1056px]:hidden")
+      : // Beside a tool: from the side-by-side width up only.
+        "hidden shrink min-[1056px]:flex",
+  );
+  const chatPanelStyle: React.CSSProperties = {
+    // Keyframes in `app/globals.css`, off under reduced motion.
+    animation: leaving
+      ? `shell-panel-out ${PANEL_EXIT_MS}ms ${signetDarkTokens.motion.easing.exit} forwards`
+      : animateOpen
+        ? `shell-panel-in ${PANEL_ENTER_MS}ms ${signetDarkTokens.motion.easing.entrance}`
+        : undefined,
+    ...(hasTool
+      ? {
+          // The channels column, then the messages' part of what is left.
+          // CSS holds both floors: chat never below channels + 375, and the
+          // tool page (`min-w-[375px]`) never below 375, whatever the share.
+          flexBasis: `calc(${CHANNELS_WIDTH}px + (100% - ${CHANNELS_WIDTH + 1}px) * ${(1 - toolShare).toFixed(4)})`,
+          minWidth: CHANNELS_WIDTH + PANE_FLOOR,
+        }
+      : {}),
+  };
+  const showDivider = hasTool && chatShown && split !== false;
+  const skipTarget =
+    onChatRoute && (chatShown || split !== true)
+      ? "#chat-panel"
+      : "#main-content";
 
   return (
     /*
@@ -248,26 +350,27 @@ export function DashboardShell({
         </SheetContent>
       </Sheet>
 
-      <a href="#main-content" className={SKIP_LINK_CLASSES}>
+      <a href={skipTarget} className={SKIP_LINK_CLASSES}>
         Skip to main content
       </a>
 
       {/*
-        One column on every route, never a different component per route:
-        swapping a nav for a chat column is what made the column jump on every
-        trip in and out of Chat (`nav-column.tsx` says how).
+        The nav column always stays (#3779): one column on every route, so
+        nothing in it jumps going in and out of Chat.
       */}
       <div className="hidden lg:flex">
         <NavColumn
-          chatFace={navFace ? navFace.face : null}
-          onShowModules={showModules}
-          onShowChannels={showChannels}
-          channelsSlotRef={setChannelsSlot}
-          collapsed={navCollapsed}
-          onToggleCollapsed={toggleNavCollapsed}
+          collapsed={navCollapsed || forceRail}
+          onToggleCollapsed={forceRail ? undefined : toggleNavCollapsed}
           permissions={permissions}
           isModuleEnabled={isModuleEnabled}
           pathname={pathname}
+          chatRow={
+            split === true
+              ? { onSelect: toggleChat, open: chatOpen }
+              : undefined
+          }
+          onCloseTool={split === true && hasTool ? closeTool : undefined}
         />
       </div>
 
@@ -280,38 +383,72 @@ export function DashboardShell({
       */}
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar
-          pageTitle={pageTitle}
+          // The home view is no page: "Chat" over it would name what's closed.
+          pageTitle={
+            onChatRoute && !chatShown && split === true ? null : pageTitle
+          }
           unreadNotifications={unreadNotifications}
           onOpenNotifications={() => setNotificationDrawerOpen(true)}
           onOpenMobileNav={() => setMobileNavOpen(true)}
         />
-        {/*
-          The content column scrolls independently of the nav, which is what
-          makes the nav's own scroll position survive navigation. `min-h-0` is
-          the flex-child counterpart of `min-w-0` and is what actually lets this
-          element scroll instead of growing the page.
+        <div ref={splitRowRef} className="flex min-h-0 flex-1">
+          {chatMounted ? (
+            <section
+              id="chat-panel"
+              aria-label="Chat"
+              data-chat-panel=""
+              inert={leaving}
+              className={chatPanelClassName}
+              style={chatPanelStyle}
+            >
+              <ChatPanelBoundary>
+                <ChatPage
+                  defaultMembersHidden={defaultMembersHidden}
+                  toolBeside={hasTool}
+                />
+              </ChatPanelBoundary>
+            </section>
+          ) : null}
+          {showDivider ? (
+            <div className="hidden min-[1056px]:flex">
+              <SplitDivider
+                share={toolShare}
+                onChange={setToolShare}
+                onCommit={persistToolShare}
+                rowRef={splitRowRef}
+              />
+            </div>
+          ) : null}
+          {/*
+            The tool page. It scrolls independently of the nav, which is what
+            makes the nav's own scroll position survive navigation. `min-w-0`
+            and `min-h-0` are load-bearing: as flex items, without them this
+            refuses to shrink below its widest unbreakable content and the
+            whole page scrolls sideways (six of the seven routes in #1142).
+            Beside chat it keeps the 375px floor.
 
-          A full-bleed route (`full-bleed-routes.ts`) gets the same landmark
-          with no inset and no scroll: it is handed the frame and owns what
-          happens inside it. That is how chat's thread sits flush against the
-          left column and its composer pins to the bottom of the viewport
-          instead of the bottom of a scrolling document. (Below `lg` chat's
-          channel list is inline here too; from `lg` up it is the left column
-          itself, `nav-column.tsx`.)
-        */}
-        <main
-          id="main-content"
-          className={cn(
-            "flex min-h-0 flex-1 flex-col",
-            fullBleed
-              ? "overflow-hidden"
-              : "gap-3 overflow-y-auto px-4 py-4 sm:px-6",
-          )}
-        >
-          <NavFaceContext.Provider value={navFace}>
-            {children}
-          </NavFaceContext.Provider>
-        </main>
+            On `/chat` there is no tool page: `<main>` holds the home view when
+            chat is closed, from the side-by-side width up, and is hidden
+            otherwise (the page itself renders nothing; chat is the panel).
+          */}
+          <main
+            id="main-content"
+            className={cn(
+              "flex min-h-0 min-w-0 flex-1 flex-col",
+              hasTool && chatShown && "min-[1056px]:min-w-[375px]",
+              onChatRoute
+                ? cn(
+                    "overflow-hidden",
+                    chatShown ? "hidden" : "hidden min-[1056px]:flex",
+                  )
+                : fullBleed
+                  ? "overflow-hidden"
+                  : "gap-3 overflow-y-auto px-4 py-4 sm:px-6",
+            )}
+          >
+            {onChatRoute ? (chatShown ? null : <ChapterHome />) : children}
+          </main>
+        </div>
       </div>
     </div>
   );

@@ -4,7 +4,7 @@ import { useCallback, useSyncExternalStore } from "react";
  * Whether a CSS media query matches, kept live. `false` on the server and
  * through hydration, so a caller must never let it decide first-paint layout:
  * draw that with CSS breakpoints and use this only for what a control does.
- * Shared by the shell's desktop column (`nav-face.tsx`) and Chat's member
+ * Shared by the shell's layout (`components/layout/shell-layout.ts`) and Chat's member
  * list (`components/chat/chat-shell.tsx`).
  *
  * `subscribe` is memoized on the query: a fresh function each render would
