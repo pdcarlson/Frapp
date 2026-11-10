@@ -809,6 +809,29 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     expect(menu(tree).props.target).toBeNull();
   });
 
+  it("pins this channel to a display on this phone from the menu (#3787)", () => {
+    channelsData.value = [general];
+    const tree = render();
+
+    longPress(tree, "general");
+    pressItem(tree, "Display, Default");
+    expect(menuLabels(tree)).toEqual([
+      "Your default (Cozy)",
+      "Cozy here",
+      "Compact here",
+      "Bubbles here",
+    ]);
+    pressItem(tree, "Bubbles here");
+    expect(menu(tree).props.target).toBeNull();
+
+    longPress(tree, "general");
+    expect(menuLabels(tree)).toContain("Display, Bubbles");
+    pressItem(tree, "Display, Bubbles");
+    pressItem(tree, "Your default (Cozy)");
+    longPress(tree, "general");
+    expect(menuLabels(tree)).toContain("Display, Default");
+  });
+
   it("says Unpin from top on a pinned row", () => {
     channelsData.value = [general];
     sidebarPrefs.value = {

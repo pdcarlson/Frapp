@@ -150,6 +150,7 @@ function ThreadMessageRowBody({
     const senderId = cached.sender_id;
     return (
       <BlockedMessageTombstone
+        channelId={cached.channel_id}
         senderName={senderId ? nameFor(senderId) : null}
         canUnblock={tombstoneCanUnblock(cached, blockState)}
         onUnblock={() => {

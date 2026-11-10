@@ -430,6 +430,8 @@ Alternatives weighed and rejected:
 #### Density
 
 > **Owner decision, 2026-11-06 (Paul, [#2252](https://github.com/pdcarlson/Frapp/issues/2252)): "can we let users change their chat density in their settings?"** Two densities, named as Discord names them, on web and mobile alike. The vocabulary lives once, in `@repo/chat-core/density`.
+>
+> Changed in #3787 by `whewitt-frapp`, 2026-11-10: a third density, bubbles (§ [Bubbles](#bubbles)), on Paul's opt-in OK.
 
 | | Cozy (default) | Compact |
 |---|---|---|
@@ -465,7 +467,7 @@ The third density, `bubbles` in `@repo/chat-core/density`, on web and mobile ali
 | No bubble | A card frames itself and an attachment-only message draws its photo bare, as in cozy; their markers take a line of their own. The open editor fills the column unbubbled. Audit lines keep their one quiet line. |
 | Spacing | A run starts 12 below the row above; a stacked bubble 2. |
 
-Not yet built: a read receipt under the viewer's latest message ([#3787](https://github.com/pdcarlson/Frapp/issues/3787) follow-up), and the per-channel "Always formal" lock.
+Not yet built: a read receipt under the viewer's latest message, which needs an endpoint that returns other members' read positions first (today `POST /v1/channels/:id/read` only records the caller's own; [#4040](https://github.com/pdcarlson/Frapp/issues/4040)), and the per-channel "Always formal" lock (#3787, slice 2).
 
 **Per channel.** A member can pin one channel to any density on this device from the channel's menu ([chat README § Chat density](../../behavior/chat/README.md#chat-density)).
 

@@ -1154,7 +1154,7 @@ export default function ChatThreadScreen() {
             // member's own messages as incoming, then flip them when identity
             // lands; messages can arrive from cache well before `/users/me`.
             // Message-shaped, at the bottom where the rows will land (§10).
-            <ThreadSkeleton />
+            <ThreadSkeleton channelId={channelId} />
           ) : thread.rows.length === 0 && thread.heldCount === 0 ? (
             // Counted after the block list, held rows included: a channel whose
             // only messages are being held is not an empty channel, and the

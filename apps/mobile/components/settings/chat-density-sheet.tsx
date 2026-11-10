@@ -23,7 +23,7 @@ import { setChatDensity, useChatDensity } from "@/lib/chat/chat-density";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * Settings → Chat density, on the phone (`components.md` §11 § Density): two
+ * Settings → Chat density, on the phone (`components.md` §11 § Density): three
  * cards, each a small drawing of the thread in that density, so the choice is
  * made by looking. A tap saves and closes; the thread redraws at once.
  */

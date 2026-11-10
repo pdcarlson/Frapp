@@ -13,6 +13,8 @@ import { CHIP, CHIP_HIT_AREA } from "./chip";
 export interface BlockedMessageTombstoneProps {
   /** Only in the controls' accessible names; never drawn. */
   senderName: string | null;
+  /** The row's channel, so a display pinned to it on this browser applies (#3787). */
+  channelId?: string;
   /**
    * `false` only when this client confirmed unblocking the sender and this row
    * is still the server's masked copy (older than the page the unblock
@@ -59,10 +61,11 @@ export function BlockedMessageTombstone({
   reload,
   onReload,
   showHeader,
+  channelId,
 }: BlockedMessageTombstoneProps) {
   // The row's gutter and run gap follow the member's density (§11 § Density),
   // so the line stays in the body column beside the rows around it.
-  const compact = useChatDensity() === "compact";
+  const compact = useChatDensity(channelId) === "compact";
   const hiddenFrom = senderName
     ? `hidden messages from ${senderName}`
     : "hidden messages";

@@ -91,10 +91,13 @@ const SKELETON_ROWS: readonly (readonly [boolean, string])[] = [
  * use to a screen reader. The audible half of the cold load is announced once,
  * by the `role="status"` region `chat-shell.tsx` owns for exactly this reason.
  */
-export function MessageTimelineSkeleton() {
+export function MessageTimelineSkeleton({
+  channelId,
+}: { channelId?: string | null } = {}) {
   // Compact rows (§11 § Density) have no avatar or author line: a 56px time
   // gutter, the name leading a 25px body line, and runs 4 apart.
-  const compact = useChatDensity() === "compact";
+  // The channel's display on this browser, when it has one pinned (#3787).
+  const compact = useChatDensity(channelId) === "compact";
   return (
     <div
       aria-hidden="true"
@@ -956,7 +959,7 @@ export const MessageTimeline = forwardRef<
         <div role="status" aria-live="polite" className="sr-only">
           Loading messages
         </div>
-        <MessageTimelineSkeleton />
+        <MessageTimelineSkeleton channelId={channelId} />
       </>
     );
   }
@@ -1018,6 +1021,7 @@ export const MessageTimeline = forwardRef<
               ) : null}
               {entry.visibility === "tombstone" ? (
                 <BlockedMessageTombstone
+                  channelId={entry.message.channel_id}
                   senderName={
                     entry.message.sender_id
                       ? nameFor(entry.message.sender_id)

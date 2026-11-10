@@ -2433,7 +2433,15 @@ describe("MessageItem bubbles", () => {
     ).toBe("self");
     const bubble = container.querySelector('[data-slot="message-bubble"]');
     expect(bubble?.className).toContain("bg-primary");
-    expect(bubble?.className).toContain("text-primary-foreground");
+    // The body sets its own text color, so only these descendant overrides
+    // put the contrast color on it; the bubble's own class never reaches it.
+    expect(bubble?.className).toContain(
+      "[&_[data-slot=message-body]]:text-primary-foreground",
+    );
+    expect(bubble?.className).toContain(
+      "[&_[data-slot=message-trailing]]:text-primary-foreground",
+    );
+    expect(bubble?.className).toContain("[&_code]:text-foreground");
     expect(
       container.querySelector('[data-slot="author-line"]')?.textContent,
     ).not.toContain("You");
@@ -2450,6 +2458,16 @@ describe("MessageItem bubbles", () => {
     expect(bubble?.className).toContain("rounded-bl-[6px]");
     expect(container.querySelector('[data-slot="author-line"]')).toBeNull();
     expect(screen.queryByText("AC")).toBeNull();
+    // Its own time waits beside it, revealed with the row.
+    const time = container.querySelector('[data-slot="gutter-time"]');
+    expect(time?.className).toContain("opacity-0");
+  });
+
+  it("caps the bubble's width on the extent, not inside it", () => {
+    act(() => setChatDensity("bubbles"));
+    const { container } = renderItemWithProps();
+    const extent = container.querySelector('[data-slot="message-extent"]');
+    expect(extent?.className).toContain("max-w-[min(36rem,85%)]");
   });
 
   it("puts reactions on the bubble's corner", () => {

@@ -30,7 +30,13 @@ let chosen = false;
 /** Per-channel overrides on this phone (#3787); a channel absent follows `density`. */
 const NO_OVERRIDES: ChannelDensityMap = {};
 let overrides: ChannelDensityMap = NO_OVERRIDES;
-let channelsChosen = false;
+/**
+ * Picks made in this process before the stored map was read. The read merges
+ * them over what it finds, so an early pick never drops another channel's.
+ */
+let pendingPicks: Record<string, ChatDensity | null> = {};
+/** Whether the stored map was read; until then a write would overwrite it. */
+let channelsHydrated = false;
 const listeners = new Set<() => void>();
 
 function notify() {
@@ -54,15 +60,20 @@ export function hydrateChatDensity(): Promise<void> {
       });
     const channels = AsyncStorage.getItem(CHAT_CHANNEL_DENSITY_STORAGE_KEY)
       .then((raw) => {
-        if (channelsChosen) return;
-        const stored = parseChannelDensityMap(raw);
-        if (Object.keys(stored).length > 0) {
-          overrides = stored;
-          notify();
+        let merged = parseChannelDensityMap(raw);
+        for (const [channelId, pick] of Object.entries(pendingPicks)) {
+          merged = withChannelDensity(merged, channelId, pick);
         }
+        const hadPicks = Object.keys(pendingPicks).length > 0;
+        pendingPicks = {};
+        channelsHydrated = true;
+        overrides = merged;
+        notify();
+        if (hadPicks) persistOverrides();
       })
       .catch(() => {
-        /* No overrides: every channel follows the default. */
+        // Unreadable: picks hold for this process but are never written,
+        // since a write would replace a map we couldn't see.
       });
     hydration = Promise.all([hydration, channels]).then(() => undefined);
   }
@@ -110,9 +121,17 @@ export function setChannelDensity(
   channelId: string,
   next: ChatDensity | null,
 ): void {
-  channelsChosen = true;
   overrides = withChannelDensity(overrides, channelId, next);
   notify();
+  if (channelsHydrated) {
+    persistOverrides();
+  } else {
+    pendingPicks[channelId] = next;
+    void hydrateChatDensity();
+  }
+}
+
+function persistOverrides(): void {
   AsyncStorage.setItem(
     CHAT_CHANNEL_DENSITY_STORAGE_KEY,
     JSON.stringify(overrides),
@@ -136,6 +155,7 @@ export function resetChatDensityForTests(): void {
   hydration = null;
   chosen = false;
   overrides = NO_OVERRIDES;
-  channelsChosen = false;
+  pendingPicks = {};
+  channelsHydrated = false;
   listeners.clear();
 }

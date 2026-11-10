@@ -35,6 +35,7 @@ import {
   canDeleteMessage,
   canReportMessage,
   canEditMessage,
+  isOwnMessage,
   EDITED_MARKER,
   isCardMessage,
   showsEditedMarker,
@@ -426,7 +427,7 @@ export function MessageItem({
   // Bubbles (§11 § Bubbles, #3787). An audit line keeps its one quiet line.
   const bubbled = density === "bubbles" && !auditLine;
   // The viewer's own message sits on the right in the chapter accent.
-  const mine = !!viewerId && message.sender_id === viewerId;
+  const mine = isOwnMessage(message, viewerId);
   const avatarSrc = isSystemPost ? SYSTEM_AVATAR_SRC : avatarUrl;
   // The initials take the author's own color (#3860): their name's role color
   // when it has one, so the two always match, otherwise their hashed hue. An
@@ -1145,6 +1146,60 @@ export function MessageItem({
       </div>
     ) : null;
 
+  /*
+   * The delivery state, under the body. Only this line is a live region, and
+   * it is mounted empty until it has something to say: a region mounted
+   * populated would read every row's status aloud on each virtualized scroll.
+   * One element for every density, so a fix to the failed-send flow reaches
+   * Bubbles too.
+   */
+  const deliveryStatus = (
+    <div role="status" aria-live="polite" aria-atomic="true">
+      {/*
+        Pending draws nothing here: the body is already gray, which is the
+        whole pending state on screen, so a send never adds a line and takes
+        it away again (§11 § What rides the row, owner decision 2026-11-06).
+        A screen reader still hears it.
+      */}
+      {isPending ? <span className="sr-only">Sending</span> : null}
+      {isUnconfirmed ? (
+        <p className="mt-0.5 text-caption text-muted-foreground">
+          {message._error ?? "Not confirmed"}
+        </p>
+      ) : null}
+      {isRecorded ? (
+        <p className="mt-0.5 text-caption text-muted-foreground">
+          {message._error ??
+            "Recorded, but the chat card didn't post. Don't run this command again."}
+        </p>
+      ) : null}
+      {isFailed ? (
+        <div className="mt-0.5 flex flex-wrap items-center gap-2 text-caption text-destructive-text">
+          <span>{message._error ?? "Send failed"}</span>
+          {onRetry ? (
+            <button
+              type="button"
+              className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA)}
+              onClick={() => onRetry(message.client_message_id)}
+            >
+              Retry
+            </button>
+          ) : null}
+          {onDiscard ? (
+            <button
+              type="button"
+              className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
+              onClick={() => onDiscard(message.client_message_id)}
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              Discard
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+
   if (bubbled) {
     /*
      * Bubbles (§11 § Bubbles; owner OK 2026-11-10 on #3787, an opt-in beside
@@ -1201,6 +1256,24 @@ export function MessageItem({
     ) : (
       body
     );
+    /*
+     * A follow-on bubble's own time, beside it on the side away from the
+     * speaker, revealed with the row as cozy's gutter time is. Opacity, not
+     * `visibility`, so a screen reader still hears when each was sent.
+     */
+    const followOnTime = drawsHeader ? null : (
+      <time
+        dateTime={message.created_at}
+        data-slot="gutter-time"
+        className={cn(
+          "shrink-0 self-center whitespace-nowrap text-caption text-muted-foreground",
+          "opacity-0 group-hover/message:opacity-100 group-has-[:focus-visible]/message:opacity-100",
+          isTapRevealed && "opacity-100",
+        )}
+      >
+        {formatTimeOfDayShort(message.created_at, runStartedAt)}
+      </time>
+    );
     return (
       <div
         role="listitem"
@@ -1231,12 +1304,20 @@ export function MessageItem({
             ref={extentRef}
             data-slot="message-extent"
             className={cn(
-              "col-start-1 row-start-1 min-w-0 max-w-full",
+              "col-start-1 row-start-1 min-w-0",
               mine ? "justify-self-end" : "justify-self-start",
-              isEditing ? "w-full" : "w-fit",
+              // A bubble never runs the full width of a wide pane: 75% of the
+              // row (85% on a phone), the messenger convention. Capped here,
+              // on the extent, whose parent has a definite width; a
+              // percentage inside the fit-content extent would resolve
+              // against the text's own width and wrap it.
+              isEditing
+                ? "w-full max-w-full"
+                : "w-fit max-w-[min(36rem,85%)] sm:max-w-[min(36rem,75%)]",
             )}
           >
             <div className="flex min-w-0 items-end gap-2">
+              {mine ? followOnTime : null}
               {mine ? null : (
                 // The avatar, once, beside the stack's last bubble. The gutter
                 // stays open on every row so the stack's left edge holds.
@@ -1261,11 +1342,9 @@ export function MessageItem({
               )}
               <div
                 className={cn(
-                  // A bubble never runs the full width of a wide pane: 75% of
-                  // the row, the messenger convention, and never past it.
-                  "flex min-w-0 max-w-[min(36rem,85%)] flex-col sm:max-w-[min(36rem,75%)]",
-                  mine ? "ml-auto items-end" : "items-start",
-                  isEditing && "w-full max-w-full sm:max-w-full",
+                  "flex min-w-0 max-w-full flex-col",
+                  mine ? "items-end" : "items-start",
+                  isEditing && "w-full",
                 )}
               >
                 {drawsHeader ? (
@@ -1317,51 +1396,10 @@ export function MessageItem({
                     {reactions}
                   </div>
                 ) : null}
-                <div role="status" aria-live="polite" aria-atomic="true">
-                  {isPending ? <span className="sr-only">Sending</span> : null}
-                  {isUnconfirmed ? (
-                    <p className="mt-0.5 text-caption text-muted-foreground">
-                      {message._error ?? "Not confirmed"}
-                    </p>
-                  ) : null}
-                  {isRecorded ? (
-                    <p className="mt-0.5 text-caption text-muted-foreground">
-                      {message._error ??
-                        "Recorded, but the chat card didn't post. Don't run this command again."}
-                    </p>
-                  ) : null}
-                  {isFailed ? (
-                    <div className="mt-0.5 flex flex-wrap items-center gap-2 text-caption text-destructive-text">
-                      <span>{message._error ?? "Send failed"}</span>
-                      {onRetry ? (
-                        <button
-                          type="button"
-                          className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA)}
-                          onClick={() => onRetry(message.client_message_id)}
-                        >
-                          Retry
-                        </button>
-                      ) : null}
-                      {onDiscard ? (
-                        <button
-                          type="button"
-                          className={cn(
-                            CHIP.base,
-                            CHIP.neutral,
-                            CHIP_HIT_AREA,
-                            "gap-1",
-                          )}
-                          onClick={() => onDiscard(message.client_message_id)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                          Discard
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
+                {deliveryStatus}
                 {unconfirmedFooter}
               </div>
+              {mine ? null : followOnTime}
             </div>
           </div>
           {actions ? (
@@ -1591,61 +1629,7 @@ export function MessageItem({
                 <div className="mt-1 leading-5 [&>span]:ml-0">{trailing}</div>
               ) : null}
               {reactions}
-              {/*
-            The delivery state, under the body. Only this line is a live region,
-            and it is mounted empty until it has something to say: a region
-            mounted populated would read every row's status aloud on each
-            virtualized scroll.
-          */}
-              <div role="status" aria-live="polite" aria-atomic="true">
-                {/*
-              Pending draws nothing here: the body is already gray, which is
-              the whole pending state on screen, so a send never adds a line
-              and takes it away again (§11 § What rides the row, owner
-              decision 2026-11-06). A screen reader still hears it.
-            */}
-                {isPending ? <span className="sr-only">Sending</span> : null}
-                {isUnconfirmed ? (
-                  <p className="mt-0.5 text-caption text-muted-foreground">
-                    {message._error ?? "Not confirmed"}
-                  </p>
-                ) : null}
-                {isRecorded ? (
-                  <p className="mt-0.5 text-caption text-muted-foreground">
-                    {message._error ??
-                      "Recorded, but the chat card didn't post. Don't run this command again."}
-                  </p>
-                ) : null}
-                {isFailed ? (
-                  <div className="mt-0.5 flex flex-wrap items-center gap-2 text-caption text-destructive-text">
-                    <span>{message._error ?? "Send failed"}</span>
-                    {onRetry ? (
-                      <button
-                        type="button"
-                        className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA)}
-                        onClick={() => onRetry(message.client_message_id)}
-                      >
-                        Retry
-                      </button>
-                    ) : null}
-                    {onDiscard ? (
-                      <button
-                        type="button"
-                        className={cn(
-                          CHIP.base,
-                          CHIP.neutral,
-                          CHIP_HIT_AREA,
-                          "gap-1",
-                        )}
-                        onClick={() => onDiscard(message.client_message_id)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                        Discard
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
+              {deliveryStatus}
               {unconfirmedFooter}
             </div>
           </div>

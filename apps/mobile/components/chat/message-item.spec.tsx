@@ -11,8 +11,9 @@ import { MemberAvatar } from "@/components/member-avatar";
 import {
   Keyboard,
   StyleSheet,
+  Text,
   type StyleProp,
-  type ViewStyle,
+  type TextStyle,
 } from "react-native";
 import { drawnText, screenText } from "@/test/screen-text";
 import {
@@ -68,6 +69,7 @@ import {
   ADD_REACTION_A11Y_LABEL,
   groupReactions,
   MessageItem,
+  MessageRowFrame,
   authorProfileOpener,
 } from "./message-item";
 
@@ -1276,8 +1278,8 @@ describe("bubbles", () => {
 
   const byTestId = (tree: ReactTestRenderer, id: string) =>
     tree.root.findAll((node) => node.props.testID === id);
-  const flat = (style: unknown): ViewStyle =>
-    StyleSheet.flatten(style as StyleProp<ViewStyle>) ?? {};
+  const flat = (style: unknown): TextStyle =>
+    StyleSheet.flatten(style as StyleProp<TextStyle>) ?? {};
 
   it("puts others on the left in a card bubble, avatar under the last", () => {
     act(() => setChatDensity("bubbles"));
@@ -1315,5 +1317,90 @@ describe("bubbles", () => {
     expect(byTestId(pinned, "bubble-row-other").length).toBeGreaterThan(0);
     const other = renderItem(message({ channel_id: "chan-2" }));
     expect(byTestId(other, "bubble-row-other")).toHaveLength(0);
+  });
+
+  type Node = ReactTestRenderer["root"];
+  const textOf = (n: Node): string =>
+    n.children
+      .map((c) => (typeof c === "string" ? c : textOf(c as Node)))
+      .join("");
+  const colorOf = (tree: ReactTestRenderer, text: string) => {
+    const node = tree.root.find(
+      (n) =>
+        (n.type as unknown) === "Text" &&
+        (n.props.children === text ||
+          (Array.isArray(n.props.children) && n.props.children.includes(text))),
+    );
+    return flat(node.props.style).color as string | undefined;
+  };
+
+  it("draws the viewer's text, markers and deleted line in the contrast color", () => {
+    act(() => setChatDensity("bubbles"));
+    const edited = renderItem(
+      message({
+        content: "hi",
+        sender_id: VIEWER,
+        edited_at: "2026-11-06T20:30:00.000Z",
+        is_pinned: true,
+      }),
+    );
+    // The body's outermost Text: the first whose content holds the words.
+    const body = edited.root.findAll(
+      (n) => (n.type as unknown) === "Text" && textOf(n).includes("hi"),
+    )[0]!;
+    expect(flat(body.props.style).color).toBe("#2B2009");
+    const markers = edited.root.findAll(
+      (n) => (n.type as unknown) === "Text" && textOf(n).includes("Pinned"),
+    );
+    // The innermost: the marker's own Text, whose color is the one drawn.
+    const marker = markers[markers.length - 1]!;
+    expect(flat(marker.props.style).color).toBe("#2B2009");
+
+    const deleted = renderItem(
+      message({ sender_id: VIEWER, is_deleted: true }),
+    );
+    expect(colorOf(deleted, DELETED_MESSAGE_PLACEHOLDER)).toBe("#2B2009");
+  });
+
+  it("gives a follow-on bubble a screen-reader handle with who and when", () => {
+    act(() => setChatDensity("bubbles"));
+    const tree = renderItem(message({ content: "hello" }), undefined, {
+      startsRun: false,
+      onOpenActions: vi.fn(),
+    });
+    const handle = byTestId(tree, "bubble-follow-on-handle")[0]!;
+    expect(handle.props.accessible).toBe(true);
+    expect(handle.props.accessibilityLabel).toMatch(/^Casey, /);
+  });
+});
+
+describe("bubbles: cards through the row frame", () => {
+  beforeEach(() => {
+    resetChatDensityForTests();
+  });
+
+  it("sides the viewer's own card on the right with no avatar", () => {
+    act(() => setChatDensity("bubbles"));
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <MessageRowFrame
+            message={message({ sender_id: VIEWER, kind: "poll" })}
+            viewerId={VIEWER}
+            nameFor={() => null}
+            startsRun
+          >
+            <Text>card</Text>
+          </MessageRowFrame>
+        </FrappThemeProvider>,
+      );
+    });
+    expect(
+      tree.root.findAll((n) => n.props.testID === "bubble-row-self").length,
+    ).toBeGreaterThan(0);
+    expect(
+      tree.root.findAll((n) => n.props.testID === "message-avatar"),
+    ).toHaveLength(0);
   });
 });

@@ -17,6 +17,7 @@ import { emojiFromActionType } from "@repo/chat-core/types";
 import { DELETED_MESSAGE_PLACEHOLDER } from "@repo/chat-core/reply-preview";
 import {
   EDITED_MARKER,
+  isOwnMessage,
   showsEditedMarker,
 } from "@repo/chat-core/message-actions";
 import { formatTimeOfDay } from "@repo/formatting";
@@ -325,6 +326,7 @@ export function MessageRowFrame({
   roleColorFor,
   avatarFor,
   startsRun,
+  endsRun = true,
   quote,
   onOpenActions,
   onJumpToParent,
@@ -340,6 +342,8 @@ export function MessageRowFrame({
   /** The author's photo for the run's avatar; see `MessageItemProps`. */
   avatarFor?: (message: ChatMessage) => string | null;
   startsRun: boolean;
+  /** The run's last row; Bubbles draws the avatar beside it. Defaults to `true`. */
+  endsRun?: boolean;
   /**
    * Compact only: the body leads with the time and name itself
    * (`CompactLead`), so the frame draws no author line.
@@ -371,7 +375,9 @@ export function MessageRowFrame({
     // unread badge skips it, the push is gone), so its tombstone stays plain.
     !message.is_deleted &&
     message.mentions.includes(viewerId);
-  const compact = useChatDensity() === "compact";
+  // The channel's display on this phone: its pin, else the default (#3787).
+  const density = useChatDensity(message.channel_id);
+  const compact = density === "compact";
   // Resolved once and used for both the author line and the avatar initials —
   // two lookups would be two chances for them to drift apart. Both come from
   // `@repo/hooks`: `sender_id` is nullable, so an imported archive message has
@@ -391,6 +397,30 @@ export function MessageRowFrame({
     onJumpToParent: quote ? onJumpToParent : undefined,
     onOpenProfile: openAuthor,
   });
+
+  // A card row reaches the frame directly, not through `MessageItem`, so
+  // Bubbles sides it here: the viewer's own card on the right, unbubbled.
+  if (density === "bubbles") {
+    return (
+      <BubbleRowFrame
+        message={message}
+        viewerId={viewerId}
+        nameFor={nameFor}
+        roleColorFor={roleColorFor}
+        avatarFor={avatarFor}
+        startsRun={startsRun}
+        endsRun={endsRun}
+        mine={isOwnMessage(message, viewerId)}
+        quote={quote}
+        onOpenActions={onOpenActions}
+        onJumpToParent={onJumpToParent}
+        onOpenProfile={onOpenProfile}
+        styles={styles}
+      >
+        {children}
+      </BubbleRowFrame>
+    );
+  }
 
   return (
     <Pressable
@@ -464,53 +494,15 @@ export function MessageRowFrame({
       ) : (
         <View style={styles.main}>
           {startsRun ? (
-            message.sender_id === SYSTEM_SENDER_ID ? (
-              // Frapp's own posts (the welcome, the audit bridge, a poll's
-              // closing notice, an invite-accept DM) wear the crest, not
-              // initials: the sender is the product, not a member (#3347).
-              <View
-                style={[styles.avatar, styles.systemAvatar]}
-                testID="system-avatar"
-              >
-                <Image
-                  // Metro asset id; a static import fails `tsc` (no `*.png`
-                  // module declaration), as in `(auth)/sign-in.tsx`.
-                  // eslint-disable-next-line @typescript-eslint/no-require-imports
-                  source={require("../../assets/images/system-avatar.png")}
-                  style={styles.systemAvatarImage}
-                  accessibilityElementsHidden
-                  importantForAccessibility="no-hide-descendants"
-                />
-              </View>
-            ) : (
-              <Pressable
-                onPress={openAuthor}
-                onLongPress={openAuthor ? onOpenActions : undefined}
-                disabled={!openAuthor}
-                // The author line carries the same tap as a named action.
-                accessible={false}
-              >
-                <MemberAvatar
-                  uri={avatarFor?.(message) ?? null}
-                  initials={
-                    authorName
-                      ? initialsFor(authorName)
-                      : authorInitialsFallback(message)
-                  }
-                  size={MESSAGE_AVATAR_SIZE}
-                  tint={
-                    message.sender_id
-                      ? memberAvatarTint(
-                          memberAvatarHue(message.sender_id, roleColor),
-                        )
-                      : null
-                  }
-                  style={styles.avatar}
-                  textStyle={styles.avatarText}
-                  testID="message-avatar"
-                />
-              </Pressable>
-            )
+            <RowAvatar
+              message={message}
+              avatarFor={avatarFor}
+              authorName={authorName}
+              roleColor={roleColor}
+              openAuthor={openAuthor}
+              onOpenActions={onOpenActions}
+              styles={styles}
+            />
           ) : (
             // A follow-on row draws no author or time, so its gutter is where a
             // screen reader hears them — and where the long-press action rides
@@ -815,7 +807,7 @@ export function MessageItem({
   ) : null;
 
   if (bubbles) {
-    const mine = !!viewerId && message.sender_id === viewerId;
+    const mine = isOwnMessage(message, viewerId);
     return (
       <BubbleRowFrame
         message={message}
@@ -828,6 +820,7 @@ export function MessageItem({
         mine={mine}
         quote={quote}
         onOpenActions={onOpenActions}
+        onJumpToParent={text ? undefined : quoteJump(message, onJumpToParent)}
         onOpenProfile={onOpenProfile}
         styles={styles}
       >
@@ -844,13 +837,24 @@ export function MessageItem({
               dimmed={mine && muted}
               styles={styles}
             >
-              {mine && !message.is_deleted && hasText ? (
+              {mine && message.is_deleted ? (
+                <SelfText style={styles.deleted}>
+                  {DELETED_MESSAGE_PLACEHOLDER}
+                </SelfText>
+              ) : mine && hasText ? (
                 <SelfMarkdown
                   parsed={parsed}
                   style={styles.body}
                   trailing={
-                    trailing ? (
-                      <SelfTrailing>{trailing}</SelfTrailing>
+                    edited || pinned ? (
+                      <SelfText style={styles.trailing}>
+                        {edited ? `${ownLine ? "" : " "}${EDITED_MARKER}` : ""}
+                        {pinned
+                          ? edited || !ownLine
+                            ? " · Pinned"
+                            : "Pinned"
+                          : ""}
+                      </SelfText>
                     ) : undefined
                   }
                   onLongPress={onOpenActions}
@@ -960,6 +964,71 @@ export function MessageItem({
 }
 
 /**
+ * The run's 32pt avatar, shared by every layout that draws one: Frapp's own
+ * posts wear the crest (#3347), a member their photo over tinted initials
+ * (#3860), and a press opens their profile while a long-press still opens
+ * the row's actions.
+ */
+function RowAvatar({
+  message,
+  avatarFor,
+  authorName,
+  roleColor,
+  openAuthor,
+  onOpenActions,
+  styles,
+}: {
+  message: ChatMessage;
+  avatarFor?: (message: ChatMessage) => string | null;
+  authorName: string | null;
+  roleColor: string | null;
+  openAuthor: (() => void) | undefined;
+  onOpenActions?: () => void;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  if (message.sender_id === SYSTEM_SENDER_ID) {
+    return (
+      <View style={[styles.avatar, styles.systemAvatar]} testID="system-avatar">
+        <Image
+          // Metro asset id; a static import fails `tsc` (no `*.png`
+          // module declaration), as in `(auth)/sign-in.tsx`.
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          source={require("../../assets/images/system-avatar.png")}
+          style={styles.systemAvatarImage}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        />
+      </View>
+    );
+  }
+  return (
+    <Pressable
+      onPress={openAuthor}
+      onLongPress={openAuthor ? onOpenActions : undefined}
+      disabled={!openAuthor}
+      // The author line carries the same tap as a named action.
+      accessible={false}
+    >
+      <MemberAvatar
+        uri={avatarFor?.(message) ?? null}
+        initials={
+          authorName ? initialsFor(authorName) : authorInitialsFallback(message)
+        }
+        size={MESSAGE_AVATAR_SIZE}
+        tint={
+          message.sender_id
+            ? memberAvatarTint(memberAvatarHue(message.sender_id, roleColor))
+            : null
+        }
+        style={styles.avatar}
+        textStyle={styles.avatarText}
+        testID="message-avatar"
+      />
+    </Pressable>
+  );
+}
+
+/**
  * Bubbles' row (§11 § Bubbles; owner OK 2026-11-10 on #3787, an opt-in beside
  * cozy and compact). Others on the left with the name and time once above the
  * stack and the avatar once below it; the viewer's own on the right, time
@@ -976,6 +1045,7 @@ function BubbleRowFrame({
   mine,
   quote,
   onOpenActions,
+  onJumpToParent,
   onOpenProfile,
   styles,
   children,
@@ -990,6 +1060,8 @@ function BubbleRowFrame({
   mine: boolean;
   quote?: ReactNode;
   onOpenActions?: () => void;
+  /** As `MessageRowFrame`'s: the quote's jump, for a row with no text to carry it. */
+  onJumpToParent?: () => void;
   onOpenProfile?: (userId: string) => void;
   styles: ReturnType<typeof createStyles>;
   children: ReactNode;
@@ -1008,6 +1080,7 @@ function BubbleRowFrame({
   const time = formatTimeOfDay(message.created_at);
   const openAuthor = authorProfileOpener(message, onOpenProfile, nameFor);
   const headerA11y = messageActionsA11yProps(onOpenActions, {
+    onJumpToParent: quote ? onJumpToParent : undefined,
     onOpenProfile: openAuthor,
   });
   return (
@@ -1025,51 +1098,31 @@ function BubbleRowFrame({
       {mentionsViewer ? (
         <MentionHighlight style={styles.mentionHighlight} />
       ) : null}
+      {startsRun ? null : (
+        // A follow-on's handle, as cozy's gutter is: who sent it and when,
+        // and the long-press as an action, for a row with no text to carry
+        // it (a photo-only follow-on).
+        <View
+          style={styles.gutterInset}
+          accessible
+          accessibilityLabel={`${authorLabel}, ${time}`}
+          testID="bubble-follow-on-handle"
+          {...headerA11y}
+        />
+      )}
       <View style={[styles.bubbleMain, mine ? styles.bubbleMainSelf : null]}>
         {mine ? null : (
           <View style={styles.bubbleGutter}>
             {endsRun ? (
-              message.sender_id === SYSTEM_SENDER_ID ? (
-                <View
-                  style={[styles.avatar, styles.systemAvatar]}
-                  testID="system-avatar"
-                >
-                  <Image
-                    // eslint-disable-next-line @typescript-eslint/no-require-imports
-                    source={require("../../assets/images/system-avatar.png")}
-                    style={styles.systemAvatarImage}
-                    accessibilityElementsHidden
-                    importantForAccessibility="no-hide-descendants"
-                  />
-                </View>
-              ) : (
-                <Pressable
-                  onPress={openAuthor}
-                  onLongPress={openAuthor ? onOpenActions : undefined}
-                  disabled={!openAuthor}
-                  accessible={false}
-                >
-                  <MemberAvatar
-                    uri={avatarFor?.(message) ?? null}
-                    initials={
-                      authorName
-                        ? initialsFor(authorName)
-                        : authorInitialsFallback(message)
-                    }
-                    size={MESSAGE_AVATAR_SIZE}
-                    tint={
-                      message.sender_id
-                        ? memberAvatarTint(
-                            memberAvatarHue(message.sender_id, roleColor),
-                          )
-                        : null
-                    }
-                    style={styles.avatar}
-                    textStyle={styles.avatarText}
-                    testID="message-avatar"
-                  />
-                </Pressable>
-              )
+              <RowAvatar
+                message={message}
+                avatarFor={avatarFor}
+                authorName={authorName}
+                roleColor={roleColor}
+                openAuthor={openAuthor}
+                onOpenActions={onOpenActions}
+                styles={styles}
+              />
             ) : null}
           </View>
         )}
@@ -1194,14 +1247,28 @@ function SelfMarkdown({
 }: ComponentProps<typeof MessageMarkdown>) {
   const { accentOnPrimary } = useChapterBranding();
   return (
-    <MessageMarkdown {...props} style={[style, { color: accentOnPrimary }]} />
+    <MessageMarkdown
+      {...props}
+      opaqueCode
+      style={[style, { color: accentOnPrimary }]}
+    />
   );
 }
 
-/** `(edited)` and Pinned on the accent fill take the contrast color. */
-function SelfTrailing({ children }: { children: ReactNode }) {
+/**
+ * Text on the accent fill in `accent-on-primary`, set on the Text itself: a
+ * nested Text keeps its own color over the one it would inherit, so a
+ * wrapper can't recolor `styles.trailing` or `styles.deleted`.
+ */
+function SelfText({
+  style,
+  children,
+}: {
+  style: StyleProp<TextStyle>;
+  children: ReactNode;
+}) {
   const { accentOnPrimary } = useChapterBranding();
-  return <Text style={{ color: accentOnPrimary }}>{children}</Text>;
+  return <Text style={[style, { color: accentOnPrimary }]}>{children}</Text>;
 }
 
 /** The quote's jump, when the row draws a quote at all. */
