@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, MoreHorizontal } from "lucide-react";
+import { ChevronLeft, Image as ImageIcon, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -26,6 +26,14 @@ import {
 import { PinsPanel, pinnedMessages, type HiddenPins } from "./pins-popover";
 import { BookmarksPanel, type BookmarkEntry } from "./bookmarks-popover";
 import { NotificationLevelPanel } from "./notification-level-popover";
+import {
+  ChatBackgroundPicker,
+  type ChatBackgroundPick,
+} from "./chat-background-picker";
+import {
+  CHAT_BACKGROUND_LABELS,
+  type ChatBackgroundKey,
+} from "@repo/validation";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   CHANNEL_LEVEL_DETAIL,
@@ -79,7 +87,14 @@ import {
  * which a touch screen never has.
  */
 
-type View = "menu" | "search" | "pins" | "saved" | "notifications" | "hide";
+type View =
+  | "menu"
+  | "search"
+  | "pins"
+  | "saved"
+  | "notifications"
+  | "hide"
+  | "background";
 
 type ChannelMenuProps = {
   /** The channel currently open, or `null` when none is selected yet. */
@@ -128,6 +143,18 @@ type ChannelMenuProps = {
     pinned: boolean;
     onToggle: () => void;
   };
+  /**
+   * The channel's background (#3973). Present only for someone who can manage
+   * channels, on a channel that isn't a DM; absent, no row.
+   */
+  background?: {
+    /** The channel's own choice; null when it follows the chapter default. */
+    value: ChatBackgroundKey | null;
+    letters: string;
+    saving: boolean;
+    error: string | null;
+    onPick: (pick: ChatBackgroundPick) => void;
+  };
 };
 
 type MenuRow = {
@@ -146,12 +173,17 @@ type MenuRow = {
   count?: number;
 };
 
+function BackgroundGlyph({ className }: { className?: string }) {
+  return <ImageIcon className={className} aria-hidden="true" />;
+}
+
 const VIEW_TITLES: Record<Exclude<View, "menu">, string> = {
   search: "Search messages",
   pins: "Pinned",
   saved: "Saved",
   notifications: "Notifications",
   hide: HIDE_CONVERSATION_LABEL,
+  background: "Background",
 };
 
 export function ChannelMenu({
@@ -174,6 +206,7 @@ export function ChannelMenu({
   onChangeNotificationLevel,
   hideConversation,
   pinToTop,
+  background,
 }: ChannelMenuProps) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<View>("menu");
@@ -236,6 +269,18 @@ export function ChannelMenu({
         ? CHANNEL_LEVEL_DETAIL[notificationLevel]
         : undefined,
     },
+    ...(background
+      ? [
+          {
+            view: "background" as const,
+            label: "Background",
+            Glyph: BackgroundGlyph,
+            detail: background.value
+              ? CHAT_BACKGROUND_LABELS[background.value]
+              : "Chapter default",
+          },
+        ]
+      : []),
     ...(hideConversation
       ? [
           {
@@ -442,6 +487,18 @@ export function ChannelMenu({
                   </Button>
                 </div>
               </div>
+            ) : null}
+            {view === "background" && background ? (
+              // Stays open while saving: the swatches show the pending state,
+              // and a refused photo needs its error read here.
+              <ChatBackgroundPicker
+                value={background.value}
+                allowInherit
+                letters={background.letters}
+                saving={background.saving}
+                error={background.error}
+                onPick={background.onPick}
+              />
             ) : null}
             {view === "notifications" ? (
               <NotificationLevelPanel

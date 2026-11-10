@@ -452,6 +452,14 @@ vi.mock("@repo/hooks", async () => ({
       }),
     )),
   useBlockedUserIds: () => blockListState.value,
+  // Chat backgrounds (#3973): decoration, read and written elsewhere's specs.
+  useChatBackground: () => ({ data: undefined }),
+  useSetChannelBackground: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+    error: null,
+  }),
+  errorCopy: () => "Something went wrong.",
   useChannels: () => ({
     data: CHANNELS,
     isFetching: false,

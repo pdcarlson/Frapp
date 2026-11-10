@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-10: Chat backgrounds (#3973)
+
+### 20261110200000_chat_backgrounds.sql
+
+- **Purpose**: Adds the chapter's default chat background and a channel's own. On `chapters`: `chat_background` (text, not null, default `'plain'`), `chat_background_photo_path` (text, null) and `chat_background_message_id` (uuid, null, FK to `chat_messages` `on delete set null`). On `chat_channels`: `background` (text, null, meaning "follow the chapter default"), `background_photo_path` and `background_message_id` (same as on chapters). Checks: each key is one of `plain`, `gold-glow`, `midnight`, `game-day`, `letters`, `photo` (`CHAT_BACKGROUND_KEYS` in `@repo/validation`); a photo path is set exactly when the key is `photo`; a DM or group DM has no background. No existing row changes. The rule is [`spec/behavior/chat/README.md` § Chat backgrounds](../../../spec/behavior/chat/README.md#chat-backgrounds).
+- **Checks**: After `db push`, `select column_name from information_schema.columns where table_name = 'chat_channels' and column_name like 'background%';` returns three rows, and `select count(*) from chapters where chat_background <> 'plain';` returns `0`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never writes the columns. Its channel reads are `select('*')`, so once this is applied they carry `background`, `background_photo_path` and `background_message_id` (all null). The newer API against an unmigrated database fails every `/v1/chat-backgrounds` route; nothing else reads the columns. `alter table` takes a brief exclusive lock on each table to add nullable or constant-default columns and validate checks that hold for every existing row, with no rewrite. `add column if not exists` and the `drop constraint if exists` / `add constraint` pairs make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-chat-backgrounds-20261110200000) § Rollback chat backgrounds.
+
 ## 2026-11-10: Pledge classes and a member's order number (#3939)
 
 ### 20261110170000_chapter_pledge_classes.sql

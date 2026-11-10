@@ -66,6 +66,19 @@ Added 2026-11-06, owner request ([#2252](https://github.com/pdcarlson/Frapp/issu
 - **A member picks cozy (the default) or compact**, on web in Profile and on mobile in Settings. What each draws is [`components.md` §11 § Density](../../ui/design-system/components.md#density).
 - **It is device state, not a server preference**, like the last channel above: kept per browser or phone (`localStorage`, AsyncStorage, key in `@repo/chat-core/density`), so a phone can stay cozy while a laptop is compact. It is not keyed by member, so a shared device keeps one density across sign-ins, and sign-out leaves it. Syncing it to the account would need a stored setting and an endpoint; revisit if members ask for it to follow them.
 
+### Chat backgrounds
+
+Each channel can have its own background behind its messages (#3973; design picks recorded on that issue, Winston, 2026-11-10). It covers the messages column only, never the chapter tools beside it (#3779).
+
+- **Chapter default.** The chapter has one default background, set in Chat settings by whoever edits the chapter profile (`CHAPTER_PROFILE_PERMISSIONS`, the same people who set the logo). Every chapter starts on Plain.
+- **Channel override.** A channel can have its own background, set from the channel menu by `channels:manage` (web; the mobile picker is #4031). "Chapter default" clears it. There is no per-member override.
+- **DMs and group DMs** are always plain.
+- **Choices:** the built-ins Plain, Gold glow, Midnight, Game day and Letters (the chapter's letters, else its initials, as a faint tile), or an uploaded photo. Their looks live in `@repo/theme/chat-backgrounds`; the keys are `CHAT_BACKGROUND_KEYS` in `@repo/validation`.
+- **Photos** use the `image` upload allowlist and the private `branding` bucket, as the logo does. They are not plan-gated: photo upload is a candidate "Frat Max" feature, and `ChatBackgroundService.assertPhotoBackgroundAllowed` is the one hook to gate it once Paul defines that plan.
+- **Reporting is quiet.** Setting a photo posts an ordinary chat line from the person who set it ("Set this channel's background to a photo.", or for the chapter default, in the default channel or `#general`). Members report it through that line's tap-and-hold menu like any message; no report button is added. The photo shows only while that line exists, so an officer removing the reported line withdraws the photo, and the channel falls back to the chapter default (or plain).
+- **Readability is a hard constraint.** Every thread text token stays AA over every background. Built-ins are measured at their brightest pixel; a photo is blurred and sits under the thread's `--background` at a fixed opacity, chosen for the worst pixel a photo can hold (pure white), so no upload can drop text below AA. The guard is `apps/web/components/chat/chat-background-contrast.spec.ts`.
+- **Always formal** channels (#3787) get no exception: a channel shows its own background or the chapter default either way.
+
 ## Direct Messages
 
 - **1-on-1:** Initiated by selecting a member. Creates (or reuses) a DM-type channel between exactly two users. Chapter-scoped.

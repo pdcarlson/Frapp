@@ -963,3 +963,14 @@ export {
   effectiveMinutesPerPoint,
   servicePointsForDuration,
 } from "./service-points";
+export {
+  CHAT_BACKGROUND_BUILT_INS,
+  CHAT_BACKGROUND_KEYS,
+  CHAT_BACKGROUND_LABELS,
+  CHAT_BACKGROUND_PHOTO,
+  isChatBackgroundKey,
+} from "./chat-backgrounds";
+export type {
+  ChatBackgroundBuiltIn,
+  ChatBackgroundKey,
+} from "./chat-backgrounds";

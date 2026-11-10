@@ -25,6 +25,7 @@ import {
   type ChatNotificationLevel,
 } from "@repo/validation";
 import { Can } from "@/components/shared/can";
+import { ChatBackgroundDefaultCard } from "./chat-background-default-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -203,6 +204,7 @@ export function ChatAdminPage({
         <div className="space-y-6">
           <ChatReportsCard />
           <ChatAdminBody initialChannelId={initialChannelId} />
+          <ChatBackgroundDefaultCard />
         </div>
       </Can>
     </>

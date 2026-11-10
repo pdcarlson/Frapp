@@ -31,6 +31,9 @@ import {
   useChannelUnreadCounts,
   useChannels,
   useSetChannelNotificationLevel,
+  useChatBackground,
+  useSetChannelBackground,
+  errorCopy,
   useMarkChannelRead,
   useCategories,
   useChapterRoster,
@@ -107,6 +110,7 @@ import {
   type ChatChannel,
 } from "./channel-list";
 import { ChannelListSkeleton } from "./channel-list-skeleton";
+import { ChatBackground, useChapterLetters } from "./chat-background";
 import {
   MessageTimeline,
   MessageTimelineSkeleton,
@@ -163,7 +167,10 @@ import {
   type SlashCommand,
 } from "@repo/chat-core/integrations";
 import type { DispatchResult } from "@repo/chat-core/dispatch";
-import { NewTaskDialog, type NewTaskPrefill } from "@/components/tasks/new-task-dialog";
+import {
+  NewTaskDialog,
+  type NewTaskPrefill,
+} from "@/components/tasks/new-task-dialog";
 import { LogHoursDialog } from "@/components/service/log-hours-dialog";
 import { PointsAdjustmentDialog } from "@/components/points/points-adjustment-dialog";
 import { useSubscriptionGate } from "@/components/shared/subscription-gate";
@@ -182,8 +189,10 @@ import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 /** What a + menu form says when its write threw after the request went out. */
 const FORM_UNCONFIRMED_WARNING = {
   task: "Couldn't confirm the task was created. Check the task board before you create it again.",
-  hours: "Couldn't confirm the hours were logged. Check the Service page before you log them again.",
-  points: "Couldn't confirm the points were adjusted. Check the points ledger before you adjust them again.",
+  hours:
+    "Couldn't confirm the hours were logged. Check the Service page before you log them again.",
+  points:
+    "Couldn't confirm the points were adjusted. Check the points ledger before you adjust them again.",
 } as const;
 
 interface DirectoryMember {
@@ -1133,6 +1142,11 @@ export function ChatShell({
     permissionsPayload?.permissions,
   );
 
+  // Chat backgrounds (#3973): the open channel's, for the menu's picker.
+  const channelBackground = useChatBackground(activeChannel?.id ?? null);
+  const setChannelBackground = useSetChannelBackground();
+  const chapterLetters = useChapterLetters();
+
   // `/event` typed bare, with details the one-liner can't read, or picked
   // from the palette or the composer's + menu, opens the Events page's own
   // form, filled in with what was typed, and the card posts in the channel it
@@ -1197,7 +1211,13 @@ export function ChatShell({
       };
       if (command.name === "task") {
         if (parseTaskArgs(args).ok) return null;
-        if (roleRefuses(PLUS_MENU_PERMISSIONS.task, "create tasks", "creating tasks")) {
+        if (
+          roleRefuses(
+            PLUS_MENU_PERMISSIONS.task,
+            "create tasks",
+            "creating tasks",
+          )
+        ) {
           return "refused";
         }
         const { assigneeToken, ...prefill } = taskFormPrefill(args);
@@ -1216,7 +1236,13 @@ export function ChatShell({
       // neither form has a field for what the member got wrong.
       if (command.name === "hours") {
         if (args.trim().length > 0) return null;
-        if (roleRefuses(PLUS_MENU_PERMISSIONS.hours, "log service hours", "logging service hours")) {
+        if (
+          roleRefuses(
+            PLUS_MENU_PERMISSIONS.hours,
+            "log service hours",
+            "logging service hours",
+          )
+        ) {
           return "refused";
         }
         setHoursForm((previous) => ({
@@ -1228,7 +1254,13 @@ export function ChatShell({
       }
       if (command.name === "points") {
         if (args.trim().length > 0) return null;
-        if (roleRefuses(PLUS_MENU_PERMISSIONS.points, "adjust points", "adjusting points")) {
+        if (
+          roleRefuses(
+            PLUS_MENU_PERMISSIONS.points,
+            "adjust points",
+            "adjusting points",
+          )
+        ) {
           return "refused";
         }
         setPointsForm({ open: true, channelId: activeChannelId });
@@ -1249,7 +1281,13 @@ export function ChatShell({
       }
       if (command.name !== "event") return null;
       if (parseEventArgs(args).ok) return null;
-      if (roleRefuses(PLUS_MENU_PERMISSIONS.event, "create events", "creating events")) {
+      if (
+        roleRefuses(
+          PLUS_MENU_PERMISSIONS.event,
+          "create events",
+          "creating events",
+        )
+      ) {
         return "refused";
       }
       setEventForm({
@@ -1280,14 +1318,19 @@ export function ChatShell({
       try {
         result = await post();
       } catch (error) {
-        Sentry.captureException(error, { tags: { plus_menu_form: commandName } });
+        Sentry.captureException(error, {
+          tags: { plus_menu_form: commandName },
+        });
         result = {
           ok: true,
           unconfirmed: true,
           warning: FORM_UNCONFIRMED_WARNING[commandName],
         };
       }
-      if (result.ok && (result.warning || result.unconfirmed || result.resolved)) {
+      if (
+        result.ok &&
+        (result.warning || result.unconfirmed || result.resolved)
+      ) {
         notifyDispatchOutcome(toast, commandName, result);
       }
       return result;
@@ -2155,12 +2198,7 @@ export function ChatShell({
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [
-    isDesktopShell,
-    narrowPane,
-    channelsPaneState,
-    backToChannels,
-  ]);
+  }, [isDesktopShell, narrowPane, channelsPaneState, backToChannels]);
 
   const timelineReady =
     channelsPaneState === "ready" && !requestedChannelMissing;
@@ -2341,10 +2379,13 @@ export function ChatShell({
       */}
       <section
         className={cn(
-          "flex min-w-0 flex-1 flex-col bg-background",
+          // `isolate` + `relative`: the chat background (#3973) sits at
+          // `-z-10` inside this column, and only this column (#3779).
+          "relative isolate flex min-w-0 flex-1 flex-col bg-background",
           narrowPane === "channels" && "max-lg:hidden",
         )}
       >
+        <ChatBackground channelId={activeChannel?.id ?? null} />
         {/*
           48px, one row (`1b` pin 11). The name, its description and the one
           overflow control share the row; anything that cannot fit in 48px and
@@ -2426,6 +2467,36 @@ export function ChatShell({
                   level,
                 });
               }}
+              background={
+                activeChannel &&
+                canManageChannel &&
+                activeChannel.type !== "DM" &&
+                activeChannel.type !== "GROUP_DM"
+                  ? {
+                      value:
+                        channelBackground.data?.source === "channel"
+                          ? channelBackground.data.background
+                          : null,
+                      letters: chapterLetters,
+                      saving: setChannelBackground.isPending,
+                      error: setChannelBackground.error
+                        ? errorCopy(setChannelBackground.error)
+                        : null,
+                      onPick: (pick) =>
+                        setChannelBackground.mutate({
+                          channelId: activeChannel.id,
+                          background: pick.background,
+                          photo: pick.photo
+                            ? {
+                                body: pick.photo,
+                                filename: pick.photo.name,
+                                contentType: pick.photo.type,
+                              }
+                            : undefined,
+                        }),
+                    }
+                  : undefined
+              }
               pinToTop={
                 activeChannel && !activeChannel.hidden
                   ? {
