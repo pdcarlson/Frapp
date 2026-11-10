@@ -60,11 +60,7 @@ export function emojiFromActionType(actionType: string): string | null {
  * `points.md` § Anti-Fraud exists to prevent.
  */
 export type MessageStatus =
-  | "pending"
-  | "confirmed"
-  | "failed"
-  | "unconfirmed"
-  | "recorded";
+  "pending" | "confirmed" | "failed" | "unconfirmed" | "recorded";
 
 export const CHAT_MESSAGE_KINDS = [
   "text",
@@ -112,6 +108,11 @@ export interface RawChatMessage {
    * row, whose mentions the server withholds with its body.
    */
   mentions?: string[] | null;
+  /** The parent when this row is a thread reply (#3785); see `ChatMessage.thread`. */
+  thread_root_id?: string | null;
+  thread_reply_count?: number | null;
+  thread_last_reply_at?: string | null;
+  thread_recent_sender_ids?: string[] | null;
   /**
    * Whether the server evaluated the viewer's block list and found this row's
    * sender on it (#2257, `spec/behavior/chat/README.md` § The masking contract).
@@ -202,6 +203,20 @@ export interface ChatMessage {
    * until the server's row arrives, so an optimistic send highlights nobody.
    */
   mentions: string[];
+  /**
+   * The parent message when this row is a reply inside a message thread
+   * (#3785, `spec/behavior/chat/README.md` § Message threads); `null` for a
+   * timeline message. A thread reply never belongs in a channel's timeline
+   * cache. Optional so an optimistic row built before threads still types.
+   */
+  thread_root_id?: string | null;
+  /**
+   * On a thread's parent, its summary for the chip ("3 replies · last reply
+   * 5m ago", up to three avatars); `null` on a message nobody has replied to
+   * in a thread. The server's trigger keeps it, and the parent's UPDATE echo
+   * carries it.
+   */
+  thread?: ThreadSummary | null;
   /**
    * Whether the **server** masked this row for the viewer, set on every row
    * rather than only the masked ones (#2257).
@@ -345,10 +360,39 @@ function coerceKind(kind: string | null | undefined): ChatMessageKind {
   return found ?? "text";
 }
 
+/** A thread parent's summary, as `normalizeRow` reads it off the row. */
+export interface ThreadSummary {
+  reply_count: number;
+  last_reply_at: string | null;
+  /** Up to three, newest first. */
+  recent_sender_ids: string[];
+}
+
+/**
+ * The parent's thread summary, or `null` when it has no replies. Defensive
+ * like `attachmentCount`: an absent or malformed count is no thread.
+ */
+export function threadSummaryOf(row: RawChatMessage): ThreadSummary | null {
+  const count = row.thread_reply_count;
+  if (typeof count !== "number" || !Number.isFinite(count) || count < 1) {
+    return null;
+  }
+  return {
+    reply_count: Math.floor(count),
+    last_reply_at: row.thread_last_reply_at ?? null,
+    recent_sender_ids: Array.isArray(row.thread_recent_sender_ids)
+      ? row.thread_recent_sender_ids
+          .filter((id): id is string => typeof id === "string")
+          .slice(0, 3)
+      : [],
+  };
+}
+
 /** Normalizes a raw row into a confirmed cache message. */
 export function normalizeRow(row: RawChatMessage): ChatMessage {
   const clientId =
-    typeof row.client_message_id === "string" && row.client_message_id.length > 0
+    typeof row.client_message_id === "string" &&
+    row.client_message_id.length > 0
       ? row.client_message_id
       : row.id;
   return {
@@ -370,6 +414,8 @@ export function normalizeRow(row: RawChatMessage): ChatMessage {
     client_message_id: clientId,
     attachment_count: attachmentCount(row.metadata),
     mentions: mentionIds(row.mentions),
+    thread_root_id: row.thread_root_id ?? null,
+    thread: threadSummaryOf(row),
     // Absent means the row reached us by a path with no viewer to mask against
     // (the Postgres Changes echo), never "the sender is fine" — see
     // `RawChatMessage.sender_blocked`.
@@ -428,6 +474,10 @@ export function toRawRow(message: ChatMessage): RawChatMessage {
     is_deleted: message.is_deleted,
     client_message_id: message.client_message_id,
     mentions: message.mentions,
+    thread_root_id: message.thread_root_id ?? null,
+    thread_reply_count: message.thread?.reply_count ?? 0,
+    thread_last_reply_at: message.thread?.last_reply_at ?? null,
+    thread_recent_sender_ids: message.thread?.recent_sender_ids ?? [],
     ...(message._blockEvaluated
       ? { sender_blocked: message.sender_blocked }
       : {}),

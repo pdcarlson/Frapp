@@ -10,7 +10,7 @@ import {
 import Svg, { Path } from "react-native-svg";
 import { useFocusEffect, useRouter } from "expo-router";
 import { onlineManager } from "@tanstack/react-query";
-import { useNotifications } from "@repo/hooks";
+import { useNotifications, type MemberAvatarTint } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { MEMBER_STATUS_LABEL, untilLabel } from "@repo/hooks/member-status";
 import { StatusDot } from "@/components/account/status-dot";
@@ -126,8 +126,8 @@ export function useAccountMenu(): AccountMenuState {
 }
 
 /**
- * The member's own avatar: their photo, or their initials on a neutral fill
- * (a person's avatar never takes the chapter accent, foundations.md §6). A
+ * The member's own avatar: their photo, or their initials in their member
+ * tint (#3860; never the chapter accent, foundations.md §6). A
  * dot in the inbox's house gold says the notification inbox has something
  * unread, the dot the bell's badge used to be.
  *
@@ -141,11 +141,14 @@ export function AccountButton({
   initials,
   photoUrl,
   fetchedAt,
+  tint = null,
 }: {
   menu: AccountMenuState;
   initials: string;
   photoUrl: string | null;
   fetchedAt: number;
+  /** The viewer's initials paint (#3860); `null` keeps the neutral fill. */
+  tint?: MemberAvatarTint | null;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -189,7 +192,11 @@ export function AccountButton({
           menu.open(y + height + tokens.spacing.xs),
         );
       }}
-      style={({ pressed }) => [styles.avatar, pressed ? styles.dim : null]}
+      style={({ pressed }) => [
+        styles.avatar,
+        tint ? { backgroundColor: tint.fill } : null,
+        pressed ? styles.dim : null,
+      ]}
     >
       {showPhoto ? (
         <Image
@@ -200,7 +207,9 @@ export function AccountButton({
           importantForAccessibility="no-hide-descendants"
         />
       ) : (
-        <Text style={styles.initials}>{initials}</Text>
+        <Text style={[styles.initials, tint ? { color: tint.text } : null]}>
+          {initials}
+        </Text>
       )}
       {inboxUnread > 0 ? (
         <View

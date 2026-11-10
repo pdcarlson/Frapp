@@ -65,7 +65,7 @@ export function useChatScope(): ChatScope | null {
  * look identical to a caller and are not:
  *
  * 1. It has not resolved yet. Its state starts `null` on **every mount**, and
- *    `ChatProvider` remounts on an in-app navigation to `/chat` while
+ *    `ChatProvider` remounts each time the chat panel opens (#3779) while
  *    `["user","me"]` and the channel list are still warm in the QueryClient —
  *    so the composer is fully usable before the uid lands.
  * 2. The access token expired and the refresh could not reach the network.

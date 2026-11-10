@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { memberAvatarHue } from "@repo/hooks";
 import { ChannelMemberList } from "./channel-member-list";
 
 const membersQuery = vi.hoisted(() => ({
@@ -151,6 +152,27 @@ describe("ChannelMemberList", () => {
     row.focus();
     await userEvent.keyboard("{Enter}");
     expect(onOpenProfile).toHaveBeenCalledWith("u-member");
+  });
+
+  it("tints each row's initials the way that member's name resolves (#3860)", () => {
+    const { container } = render(<ChannelMemberList channelId="chan-1" />);
+    const tints = [...container.querySelectorAll("[data-avatar-tint]")].map(
+      (node) => node.getAttribute("data-avatar-tint"),
+    );
+    const ids = (membersQuery.value.data ?? []).map(
+      (member: { user_id: string }) => member.user_id,
+    );
+    expect(tints).toHaveLength(ids.length);
+    expect(new Set(tints)).toEqual(
+      new Set(
+        ids.map((id: string) =>
+          memberAvatarHue(
+            id,
+            id === "u-officer" || id === "u-member" ? "#5865F2" : null,
+          ),
+        ),
+      ),
+    );
   });
 
   it("draws plain rows where no profile can open", () => {

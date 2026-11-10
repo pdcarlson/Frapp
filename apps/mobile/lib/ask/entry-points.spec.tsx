@@ -61,7 +61,9 @@ vi.mock("@repo/hooks", () => {
     useCurrentUser: () => empty,
     useTasks: () => empty,
     useViewerUserId: () => "viewer-1",
-    useMemberDisplayNames: () => ({ byId: {}, nameFor: () => null }),
+    useOwnAvatarTint: () => null,
+    useMemberDisplayNames: () => ({
+      avatarTintFor: () => null, byId: {}, nameFor: () => null }),
     useChapterRoster: () => empty,
     useMentionRoles: () => empty,
     useChapterSetupChecklist: () => ({

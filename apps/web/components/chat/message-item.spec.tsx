@@ -2,8 +2,10 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { CHAT_DENSITY_STORAGE_KEY } from "@repo/chat-core/density";
+import { memberHashHue } from "@repo/hooks";
 import {
   resetChatDensityForTests,
+  setChannelDensity,
   setChatDensity,
 } from "@/lib/chat/chat-density";
 import { MessageItem, type MessageItemProps } from "./message-item";
@@ -276,6 +278,26 @@ describe("MessageItem compact layout (#2873)", () => {
       authorColor: "#6FD08C",
     });
     expect(screen.getByText("You")).toHaveStyle({ color: "#6FD08C" });
+  });
+
+  it("tints the author's initials in their name's color, else their hashed hue (#3860)", () => {
+    const officer = renderItemWithProps({
+      message: message({ sender_id: OTHER }),
+      authorColor: "#6FD08C",
+    });
+    expect(
+      officer.container
+        .querySelector("[data-avatar-tint]")
+        ?.getAttribute("data-avatar-tint"),
+    ).toBe("#6FD08C");
+    officer.unmount();
+
+    const { container } = renderItem(message({ sender_id: OTHER }));
+    expect(
+      container
+        .querySelector("[data-avatar-tint]")
+        ?.getAttribute("data-avatar-tint"),
+    ).toBe(memberHashHue(OTHER));
   });
 
   it("puts the time of day on the author line, never the date", () => {
@@ -2371,5 +2393,102 @@ describe("MessageItem opens profiles", () => {
     expect(
       screen.queryByRole("button", { name: "@Morgan" }),
     ).not.toBeInTheDocument();
+  });
+});
+
+// Bubbles (§11 § Bubbles, #3787): an opt-in, per browser or per channel.
+describe("MessageItem bubbles", () => {
+  afterEach(() => {
+    act(() => {
+      setChatDensity("cozy");
+      setChannelDensity("chan-1", null);
+    });
+    window.localStorage.clear();
+    resetChatDensityForTests();
+  });
+
+  it("puts others on the left in a card bubble, with the name above", () => {
+    act(() => setChatDensity("bubbles"));
+    const { container } = renderItemWithProps({ endsRun: true });
+    const row = container.querySelector('[data-density="bubbles"]');
+    expect(row?.getAttribute("data-side")).toBe("other");
+    const bubble = container.querySelector('[data-slot="message-bubble"]');
+    expect(bubble?.className).toContain("bg-card");
+    expect(
+      container.querySelector('[data-slot="author-line"]')?.textContent,
+    ).toContain("Alice Chen");
+    // The avatar sits under the stack's last bubble.
+    expect(screen.getByText("AC")).toBeInTheDocument();
+  });
+
+  it("puts the viewer's own on the right in the accent, with no name", () => {
+    act(() => setChatDensity("bubbles"));
+    const { container } = renderItemWithProps({
+      message: message({ sender_id: VIEWER }),
+    });
+    expect(
+      container
+        .querySelector('[data-density="bubbles"]')
+        ?.getAttribute("data-side"),
+    ).toBe("self");
+    const bubble = container.querySelector('[data-slot="message-bubble"]');
+    expect(bubble?.className).toContain("bg-primary");
+    // The body sets its own text color, so only these descendant overrides
+    // put the contrast color on it; the bubble's own class never reaches it.
+    expect(bubble?.className).toContain(
+      "[&_[data-slot=message-body]]:text-primary-foreground",
+    );
+    expect(bubble?.className).toContain(
+      "[&_[data-slot=message-trailing]]:text-primary-foreground",
+    );
+    expect(bubble?.className).toContain("[&_code]:text-foreground");
+    expect(
+      container.querySelector('[data-slot="author-line"]')?.textContent,
+    ).not.toContain("You");
+  });
+
+  it("tucks a stacked bubble's corners and holds the avatar for the last", () => {
+    act(() => setChatDensity("bubbles"));
+    const { container } = renderItemWithProps({
+      showHeader: false,
+      endsRun: false,
+    });
+    const bubble = container.querySelector('[data-slot="message-bubble"]');
+    expect(bubble?.className).toContain("rounded-tl-[6px]");
+    expect(bubble?.className).toContain("rounded-bl-[6px]");
+    expect(container.querySelector('[data-slot="author-line"]')).toBeNull();
+    expect(screen.queryByText("AC")).toBeNull();
+    // Its own time waits beside it, revealed with the row.
+    const time = container.querySelector('[data-slot="gutter-time"]');
+    expect(time?.className).toContain("opacity-0");
+  });
+
+  it("caps the bubble's width on the extent, not inside it", () => {
+    act(() => setChatDensity("bubbles"));
+    const { container } = renderItemWithProps();
+    const extent = container.querySelector('[data-slot="message-extent"]');
+    expect(extent?.className).toContain("max-w-[min(36rem,85%)]");
+  });
+
+  it("puts reactions on the bubble's corner", () => {
+    act(() => setChatDensity("bubbles"));
+    const { container } = renderItemWithProps({
+      message: message({ reactions: { "👍": [OTHER] } }),
+    });
+    const corner = container.querySelector('[data-slot="bubble-reactions"]');
+    expect(corner).not.toBeNull();
+    expect(corner?.className).toContain("-mt-3.5");
+  });
+
+  it("draws bubbles in one channel the member pinned, and only there", () => {
+    act(() => setChannelDensity("chan-1", "bubbles"));
+    const { container } = renderItemWithProps();
+    expect(container.querySelector('[data-density="bubbles"]')).not.toBeNull();
+    const other = renderItemWithProps({
+      message: message({ id: "msg-2", channel_id: "chan-2" }),
+    });
+    expect(
+      other.container.querySelector('[data-density="bubbles"]'),
+    ).toBeNull();
   });
 });

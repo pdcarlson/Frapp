@@ -361,7 +361,9 @@ export default function PointsPage() {
   const selectedCount = selectedTransactionIds.length;
 
   return (
-    <div className="space-y-6">
+    // A container (#4022): beside chat (#3779) the page is narrow while the
+    // window is wide, so the two panes count the page's own width.
+    <div className="@container space-y-6">
       {/*
         One toolbar row: the window choice, the archive picker and the route's
         action, rather than a summary card. `PageActions` wraps them once the
@@ -445,7 +447,7 @@ export default function PointsPage() {
         </dd>
       </dl>
 
-      <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr]">
+      <div className="grid gap-8 @3xl:grid-cols-[0.9fr_1.1fr]">
         <section
           aria-labelledby="points-leaderboard-label"
           className="min-w-0 space-y-3"
@@ -461,7 +463,7 @@ export default function PointsPage() {
             >
               Leaderboard
             </SectionLabel>
-            <div className="relative w-full sm:w-56">
+            <div className="relative w-full @xl:w-56">
               <Label htmlFor="points-leaderboard-search" className="sr-only">
                 Search the leaderboard
               </Label>
@@ -552,7 +554,7 @@ export default function PointsPage() {
               My transactions
             </SectionLabel>
             <div className="flex flex-wrap items-center gap-2">
-              <div className="relative w-full sm:w-48">
+              <div className="relative w-full @xl:w-48">
                 <Label htmlFor="points-transaction-search" className="sr-only">
                   Search transactions
                 </Label>
@@ -613,7 +615,7 @@ export default function PointsPage() {
                 filenamePrefix="points"
                 getRows={selectedTransactionRows}
                 size="toolbar"
-                className="sm:ml-auto"
+                className="@xl:ml-auto"
               />
             </div>
           ) : null}

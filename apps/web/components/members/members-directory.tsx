@@ -8,6 +8,7 @@ import {
 } from "@/components/members/directory-glyphs";
 import {
   useLeaderboard,
+  useMemberDisplayNames,
   useMemberSearch,
   useMembers,
   useRoles,
@@ -175,6 +176,9 @@ function formatJoined(value: string): string | null {
  */
 export function MembersDirectory() {
   const { isOffline } = useNetwork();
+  // The roster's role-color resolution, so a row's initials match the color
+  // that member's name takes in chat (#3860).
+  const { avatarTintFor } = useMemberDisplayNames();
   const { toast } = useToast();
   const [query, setQuery] = useState("");
   // `null` is "any", the shape `FilterChip` speaks.
@@ -964,7 +968,14 @@ export function MembersDirectory() {
                         {member.avatar_url ? (
                           <AvatarImage src={member.avatar_url} alt="" />
                         ) : null}
-                        <AvatarFallback className="text-[9px]">
+                        <AvatarFallback
+                          className="text-[9px]"
+                          tint={
+                            typeof member.user_id === "string"
+                              ? avatarTintFor(member.user_id)
+                              : null
+                          }
+                        >
                           {initials(name)}
                         </AvatarFallback>
                       </Avatar>

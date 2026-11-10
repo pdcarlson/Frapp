@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -12,8 +12,10 @@ import {
 } from "react-native";
 import { MemberAvatar } from "@/components/member-avatar";
 import type { StagedPhoto } from "@/lib/chat/use-chat-channel";
+import type { MemberAvatarTint } from "@repo/hooks";
 import {
   activeMentionQuery,
+  spacedMentionNames,
   mentionPickerEntries,
   type MentionCandidate,
   type MentionPickerEntry,
@@ -80,8 +82,8 @@ import {
  * **`@` opens a member picker** above the input, as web's composer does: the
  * members whose name holds what follows the `@`, from `mentionCandidates`,
  * then the roles this member may ping, from `mentionRoles` (2026-11-06).
- * Picking one writes `@` and their label (`mentionLabelFor` in
- * `@repo/validation`) in place of what was typed, so the body is the plain text
+ * Picking one writes `@` and their label (`mentionPickLabel` in
+ * `@repo/validation`: the name as written, "Jane Doe", when it reads back whole) in place of what was typed, so the body is the plain text
  * a typed handle would be and the server resolves it as one. A space, or moving
  * the caret out of the handle, closes it; with no member matching it says so,
  * as web's does.
@@ -144,6 +146,8 @@ export interface ChatComposerProps {
   mentionCandidates?: readonly MentionCandidate[];
   /** A member's photo for their picker row; without it, initials. */
   avatarFor?: (userId: string) => string | null;
+  /** A member's initials paint for their picker row (#3860). */
+  avatarTintFor?: (userId: string) => MemberAvatarTint;
   /**
    * The roles `@` offers after the members (`GET /v1/channels/mention-roles`),
    * each saying whether this member may ping it. `undefined` while it loads,
@@ -178,6 +182,7 @@ export function ChatComposer({
   context = null,
   mentionCandidates,
   avatarFor,
+  avatarTintFor,
   mentionRoles,
 }: ChatComposerProps) {
   const { tokens } = useFrappTheme();
@@ -317,6 +322,7 @@ export function ChatComposer({
       {mention.open ? (
         <MentionPicker
           avatarFor={avatarFor}
+          avatarTintFor={avatarTintFor}
           suggestions={mention.suggestions}
           onPick={mention.pick}
           styles={styles}
@@ -430,7 +436,18 @@ function useMentionPicker(
 
   // No selection event yet (a restored draft) reads as a caret at the end.
   const at = Math.min(caret ?? value.length, value.length);
-  const active = focused && candidates ? activeMentionQuery(value, at) : null;
+  // The names that hold a space, so a pick inside "@Jane Doe" replaces all of
+  // it, not "@Jane" with " Doe" left behind (#3825).
+  const spacedNames = useMemo(
+    () =>
+      spacedMentionNames(
+        candidates ?? [],
+        (roles ?? []).map((role) => role.name),
+      ),
+    [candidates, roles],
+  );
+  const active =
+    focused && candidates ? activeMentionQuery(value, at, spacedNames) : null;
   // A filter over one chapter's roster, cheap enough to run every render.
   const suggestions: PickerEntry[] =
     active && candidates
@@ -486,10 +503,12 @@ function MentionPicker({
   suggestions,
   onPick,
   avatarFor,
+  avatarTintFor,
   styles,
 }: {
   suggestions: readonly PickerEntry[];
   avatarFor?: (userId: string) => string | null;
+  avatarTintFor?: (userId: string) => MemberAvatarTint;
   onPick: (label: string) => void;
   styles: ReturnType<typeof createStyles>;
 }) {
@@ -533,6 +552,7 @@ function MentionPicker({
                 uri={avatarFor?.(entry.member.user_id) ?? null}
                 initials={initialsFor(name)}
                 size={MENTION_AVATAR_SIZE}
+                tint={avatarTintFor?.(entry.member.user_id) ?? null}
                 style={styles.mentionAvatar}
                 textStyle={styles.mentionAvatarText}
               />

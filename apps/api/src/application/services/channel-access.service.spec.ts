@@ -438,6 +438,15 @@ describe('ChannelAccessService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
+    it('denies an alumni member replying in a thread in an operational channel (#3785)', async () => {
+      mockChannelRepo.findById.mockResolvedValue(publicChannel);
+
+      await expect(
+        service.assertChannelAccess('ch-1', 'chap-1', 'user-1', 'thread'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockRbac.hasAlumniRole).toHaveBeenCalled();
+    });
+
     it('denies an alumni member posting in a PRIVATE channel they belong to', async () => {
       mockChannelRepo.findById.mockResolvedValue({
         ...privateChannel,

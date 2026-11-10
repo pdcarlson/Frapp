@@ -232,7 +232,11 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
   }, [snapshot.items]);
 
   return (
-    <div className="space-y-4">
+    // A container (#4022): beside chat (#3779) the page is narrow while the
+    // window is wide, so the three columns count the page's own width
+    // (`@4xl`, 896px). The back link stays on the viewport's `sm`: it pairs
+    // with the top bar, which is the window's.
+    <div className="@container space-y-4">
       {/*
         From `sm` the top bar titles this "Backwork › Bulk upload" and its
         crumb links back. Below `sm` the bar hides the crumb, so the way back
@@ -248,8 +252,8 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
       {snapshot.items.length === 0 ? (
         <BulkDropZone onFiles={addCollected} variant="large" />
       ) : (
-        <div className="grid min-w-0 gap-4 lg:grid-cols-[240px_minmax(0,1fr)_320px]">
-          <aside className="order-3 min-w-0 space-y-3 lg:order-1">
+        <div className="grid min-w-0 gap-4 @4xl:grid-cols-[240px_minmax(0,1fr)_320px]">
+          <aside className="order-3 min-w-0 space-y-3 @4xl:order-1">
             <p className="text-caption font-semibold text-muted-foreground tabular-nums" aria-live="polite">
               {counts.done} of {counts.total} uploaded
               {counts.failed > 0 ? `, ${counts.failed} need attention` : ""}
@@ -269,7 +273,7 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
             ) : null}
           </aside>
 
-          <section className="order-1 min-w-0 lg:order-2" aria-label="Redact">
+          <section className="order-1 min-w-0 @4xl:order-2" aria-label="Redact">
             {current ? (
               <CurrentDocument item={current} boxes={boxes} onBoxes={setBoxes} loadPreview={loadPreview} onRetry={() => queue.retry(current.id)} onRemove={() => queue.remove(current.id)} />
             ) : (
@@ -277,7 +281,7 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
             )}
           </section>
 
-          <section className="order-2 min-w-0 space-y-4 lg:order-3" aria-label="Details">
+          <section className="order-2 min-w-0 space-y-4 @4xl:order-3" aria-label="Details">
             <form
               className="space-y-4"
               onSubmit={(event) => {

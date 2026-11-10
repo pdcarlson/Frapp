@@ -54,6 +54,12 @@
 >   - **unread.** A plain unread channel is a bold name with no count
 >     ([`foundations.md`](../../design-system/foundations.md), 2026-11-07), so the rail draws no
 >     neutral badge.
+>   - **the Pro card's button.** The boards draw one button, on Free (D3), and the Spec sheet's
+>     §5 gives the Pro card no control and drops `start-free-trial` from the CTA allowlist. Since
+>     2026-11-10 the Chapter Pro card carries an outlined "Start 14-day trial" that reports
+>     `start-free-trial` on the `pricing` surface; D3's changed row and § Route facts in
+>     [`../README.md`](../README.md) record it, and `apps/landing/app/page.spec.ts`'s routes test
+>     carries the row.
 >   - **the nav's lit state.** Product and Pricing light while their section is on screen; no
 >     board draws it. The as-built header is [`../README.md`](../README.md) § Section inventory.
 
