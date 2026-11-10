@@ -3,7 +3,7 @@ import Constants from "expo-constants";
 import { isWebOrExpoGo } from "../expo-go";
 import { createIsolatedModule } from "../isolated-module";
 import { requireNotifications } from "./push-module";
-import { chatChannelIdFrom } from "./targets";
+import { chatChannelIdFrom, isThreadChatPush } from "./targets";
 import type {
   NotificationsModule,
   PushNotificationResponse,
@@ -324,8 +324,15 @@ export async function clearReadChatNotifications(
     await Promise.allSettled(
       presented
         .filter((n) => {
-          const channelId = chatChannelIdFrom(n.request.content.data);
-          return channelId !== null && readChannelIds.has(channelId);
+          const data = n.request.content.data;
+          const channelId = chatChannelIdFrom(data);
+          // A thread reply's push stays: a channel at zero unread says
+          // nothing about its threads (#3785).
+          return (
+            channelId !== null &&
+            readChannelIds.has(channelId) &&
+            !isThreadChatPush(data)
+          );
         })
         .map((n) => mod.dismissNotificationAsync(n.request.identifier)),
     );

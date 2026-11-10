@@ -38,20 +38,16 @@ function fakeModule() {
     getNotificationChannelAsync: vi
       .fn<(channelId: string) => Promise<{ importance: number } | null>>()
       .mockResolvedValue({ importance: 5 }),
-    getPermissionsAsync: vi
-      .fn()
-      .mockResolvedValue({
-        granted: false,
-        canAskAgain: true,
-        status: "undetermined",
-      }),
-    requestPermissionsAsync: vi
-      .fn()
-      .mockResolvedValue({
-        granted: true,
-        canAskAgain: false,
-        status: "granted",
-      }),
+    getPermissionsAsync: vi.fn().mockResolvedValue({
+      granted: false,
+      canAskAgain: true,
+      status: "undetermined",
+    }),
+    requestPermissionsAsync: vi.fn().mockResolvedValue({
+      granted: true,
+      canAskAgain: false,
+      status: "granted",
+    }),
     getExpoPushTokenAsync: vi
       .fn()
       .mockResolvedValue({ type: "expo", data: "ExponentPushToken[abc]" }),
@@ -60,9 +56,9 @@ function fakeModule() {
     ),
     clearLastNotificationResponse: vi.fn(),
     addNotificationResponseReceivedListener: vi.fn(() => ({ remove: vi.fn() })),
-    addPushTokenListener: vi.fn<(listener: (token: unknown) => void) => { remove: () => void }>(
-      () => ({ remove: vi.fn() }),
-    ),
+    addPushTokenListener: vi.fn<
+      (listener: (token: unknown) => void) => { remove: () => void }
+    >(() => ({ remove: vi.fn() })),
     scheduleNotificationAsync: vi.fn().mockResolvedValue("local-1"),
     cancelScheduledNotificationAsync: vi.fn().mockResolvedValue(undefined),
     dismissNotificationAsync: vi.fn().mockResolvedValue(undefined),
@@ -428,7 +424,9 @@ describe("presentedChatChannelIds", () => {
     const push = await importPush();
     const mod = fakeModule();
     push.setPushLoaderForTests(() => mod);
-    mod.getPresentedNotificationsAsync.mockRejectedValue(new Error("old build"));
+    mod.getPresentedNotificationsAsync.mockRejectedValue(
+      new Error("old build"),
+    );
 
     expect((await push.presentedChatChannelIds()).size).toBe(0);
   });
@@ -451,6 +449,10 @@ describe("clearReadChatNotifications", () => {
       presented("b", { target: { screen: "chat", channelId: "unread" } }),
       presented("c", { target: { screen: "events", eventId: "read" } }),
       presented("d", null),
+      // A thread reply's push stays: the channel's count excludes threads (#3785).
+      presented("t", {
+        target: { screen: "chat", channelId: "read", threadRootId: "root-1" },
+      }),
     ]);
 
     await push.clearReadChatNotifications(new Set(["read"]));
@@ -468,7 +470,9 @@ describe("clearReadChatNotifications", () => {
     await push.clearReadChatNotifications(new Set());
     expect(mod.getPresentedNotificationsAsync).not.toHaveBeenCalled();
 
-    mod.getPresentedNotificationsAsync.mockRejectedValue(new Error("old build"));
+    mod.getPresentedNotificationsAsync.mockRejectedValue(
+      new Error("old build"),
+    );
     await expect(
       push.clearReadChatNotifications(new Set(["read"])),
     ).resolves.toBeUndefined();

@@ -814,12 +814,14 @@ export class NotificationService {
     chapterId: string,
     channelId: string,
     readThrough: string,
+    threadRootId?: string,
   ): Promise<void> {
     await this.notificationRepo.markChatChannelRead(
       userId,
       chapterId,
       channelId,
       readThrough,
+      threadRootId,
     );
   }
 
