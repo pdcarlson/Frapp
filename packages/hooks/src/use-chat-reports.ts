@@ -1,5 +1,6 @@
 "use client";
 
+import { chatBackgroundKeys } from "./use-chat-background";
 import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
@@ -346,6 +347,14 @@ export function useRemoveReportedMessage(timeline: ReportedMessageTimeline) {
           },
           Boolean(removal),
         );
+      }
+      // The removed line may be a chat background's announcement (#3973),
+      // whose removal withdraws the photo: refetch, so the officer's own view
+      // drops it now rather than when the 5-minute cache goes stale.
+      if (chapterId) {
+        void queryClient.invalidateQueries({
+          queryKey: chatBackgroundKeys.chapter(chapterId),
+        });
       }
       return invalidateReportLists(queryClient, chapterId);
     },

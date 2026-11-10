@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
+import { ChatBackground } from "@/components/chat/chat-background";
 import {
   Alert,
   FlatList,
@@ -415,7 +416,11 @@ export function MessageThreadScreen({
           ) : null}
         </View>
 
-        <View style={styles.flex}>{body}</View>
+        <View style={styles.flex}>
+          {/* The channel's chat background (#3973), as behind its list. */}
+          <ChatBackground channelId={channelId} />
+          {body}
+        </View>
 
         {/* Not a live region, and the blank hidden, as s05's line is: one
             that changes with every pause would talk over the thread. */}
