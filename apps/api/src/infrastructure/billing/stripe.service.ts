@@ -14,7 +14,7 @@ import {
 /**
  * The trial the public site sells (#913). The landing's pricing section
  * (`apps/landing/components/home/pricing-section.tsx`) badges Chapter Pro
- * "14-day trial" and states "The trial starts at checkout inside the app: 14
+ * "14-day trial" and states "The trial starts at checkout in the web app: 14
  * days, card up front, first charge on day 15" — so a checkout session that
  * charges on day zero breaks a commercial promise, not just a spec.
  *

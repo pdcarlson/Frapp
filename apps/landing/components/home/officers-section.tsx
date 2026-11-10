@@ -2,6 +2,11 @@ import { EYEBROW, PROOF_BODY, SECTION_GAP, SHELL } from "./styles";
 
 /* The four rules at the top of `app/page.tsx` bind everything this file draws. */
 
+/*
+ * Dues is off for every chapter in the beta (`BETA_OFF_MODULES` in
+ * `packages/validation/src/beta-off-modules.ts`), so no officer here sells it.
+ * When dues returns, a treasurer's line can come back with it (#3869).
+ */
 const officers = [
   {
     role: "President",
@@ -9,14 +14,14 @@ const officers = [
       "Chapter meeting check-in is a QR on the screen. Attendance and points post themselves.",
   },
   {
-    role: "Treasurer",
+    role: "Vice president",
     outcome:
-      "Dues invoices go out through Stripe. Paid, open and overdue are one list, not a DM thread.",
+      "Points and attendance keep their own books. Nobody totals a spreadsheet at the end of term.",
   },
   {
     role: "Secretary",
     outcome:
-      "Minutes, bylaws and the audit log live where members already look. Nobody asks for the link twice.",
+      "Minutes and bylaws sit in Documents, and officer changes post to their own channel. Nobody asks for the link twice.",
   },
 ];
 
