@@ -52,9 +52,8 @@ Conventions that are easy to get wrong:
   vanish inside a card.
 - Take focus indicators from the recipes in `components/ui/focus.ts` (`FOCUS_RING`,
   `FOCUS_RING_OFFSET`, `FOCUS_RING_SHELL` and the rest) instead of writing focus classes at the call
-  site, because a hand-copied string escapes a grep for the constant. A few call sites still write
-  their own and aren't precedent: the default-role `<select>` in `settings/settings-roles-tab.tsx`
-  and the reload button in `app/global-error.tsx`. `typography.ts` (`EYEBROW`) and `duotone.tsx` are shared recipes too.
+  site, because a hand-copied string escapes a grep for the constant. One call site still writes
+  its own and isn't precedent: the reload button in `app/global-error.tsx`. `typography.ts` (`EYEBROW`) and `duotone.tsx` are shared recipes too.
 
 ## Tailwind and theming
 

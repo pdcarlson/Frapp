@@ -57,6 +57,8 @@ let myAttendance: unknown = { attendance: null };
 // That read's state: settled by default.
 let myAttendancePending = false;
 let myAttendancePaused = false;
+// `GET /v1/events`, which the series section reads: none by default.
+let chapterEvents: unknown[] = [];
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -72,6 +74,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isPaused: myAttendancePaused,
     data: myAttendancePending ? undefined : myAttendance,
   }),
+  useEvents: () => ({ data: chapterEvents }),
   useEvent: () => ({
     isPending: eventPending,
     isError: false,
@@ -536,5 +539,112 @@ describe("Event details editing", () => {
   it("gives an owner's wildcard the pencil too", () => {
     permissions = ["*"];
     expect(editButton(render()).length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * #3707: the Events list draws a series once, so the occurrence's page lists
+ * the series' other upcoming dates under its cadence.
+ */
+describe("Event details series (#3823)", () => {
+  const weekly = (index: number) => {
+    const start = new Date(START.getTime() + index * 7 * 86_400_000);
+    return {
+      ...EVENT,
+      id: index === 0 ? "evt-1" : `evt-${index + 1}`,
+      start_time: start.toISOString(),
+      end_time: new Date(start.getTime() + 3_600_000).toISOString(),
+      recurrence_rule: index === 0 ? "WEEKLY" : null,
+      parent_event_id: index === 0 ? null : "evt-1",
+    };
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(MOUNTED_AT);
+  });
+
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+    vi.useRealTimers();
+    event = EVENT;
+    chapterEvents = [];
+  });
+
+  it("lists the series' other dates under its cadence, each opening its occurrence", () => {
+    chapterEvents = [0, 1, 2, 3].map(weekly);
+    event = chapterEvents[0] as Record<string, unknown>;
+    const tree = render();
+    const weekday = START.toLocaleDateString(undefined, { weekday: "long" });
+    expect(screenText(tree)).toContain(`Every ${weekday}`);
+
+    const dates = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        String(node.props.accessibilityLabel).startsWith("Open Chapter meeting, "),
+    );
+    expect(dates).toHaveLength(3);
+    vi.mocked(expoRouter.useRouter().push).mockClear();
+    act(() => dates[0]!.props.onPress());
+    expect(expoRouter.useRouter().push).toHaveBeenCalledWith({
+      pathname: "/event-details",
+      params: { id: "evt-2" },
+    });
+  });
+
+  it("reads a generated occurrence's cadence off its series head", () => {
+    chapterEvents = [0, 1, 2, 3].map(weekly);
+    // The common path: the list's series row opens a child, whose own
+    // recurrence_rule is null. This one was moved a day later on its own, so
+    // its own weekday is not the series'.
+    const moved = chapterEvents[1] as Record<string, unknown>;
+    const shift = (iso: unknown) =>
+      new Date(new Date(String(iso)).getTime() + 86_400_000).toISOString();
+    moved.start_time = shift(moved.start_time);
+    moved.end_time = shift(moved.end_time);
+    event = moved;
+    const tree = render();
+    const weekday = START.toLocaleDateString(undefined, { weekday: "long" });
+    expect(screenText(tree)).toContain(`Every ${weekday}`);
+    expect(screenText(tree)).not.toContain("Also in this series");
+  });
+
+  it("names an occurrence renamed on its own, on screen and to a screen reader", () => {
+    chapterEvents = [0, 1, 2].map(weekly);
+    (chapterEvents[2] as Record<string, unknown>).name = "Chapter: Elections";
+    event = chapterEvents[0] as Record<string, unknown>;
+    const tree = render();
+    expect(screenText(tree)).toMatch(/^Chapter: Elections · /m);
+    const renamed = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        String(node.props.accessibilityLabel).startsWith(
+          "Open Chapter: Elections, ",
+        ),
+    );
+    expect(renamed).toHaveLength(1);
+  });
+
+  it("doesn't name the ordinary dates when the renamed occurrence is open", () => {
+    chapterEvents = [0, 1, 2].map(weekly);
+    (chapterEvents[2] as Record<string, unknown>).name = "Chapter: Elections";
+    event = chapterEvents[2] as Record<string, unknown>;
+    const tree = render();
+    const rows = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        String(node.props.accessibilityLabel).startsWith("Open Chapter meeting, "),
+    );
+    // The two other dates carry the series' name, so neither says it.
+    expect(rows).toHaveLength(2);
+    expect(screenText(tree)).not.toMatch(/^Chapter meeting · /m);
+  });
+
+  it("draws no series section for a one-time event", () => {
+    chapterEvents = [EVENT];
+    const tree = render();
+    expect(screenText(tree)).not.toMatch(/Every |Also in this series/);
   });
 });

@@ -13,6 +13,7 @@ import {
   type ChannelDensityMap,
   type ChatDensity,
 } from "@repo/chat-core/density";
+import { createStoredPreference } from "@/lib/stored-preference";
 
 /**
  * The member's chat density on this phone (`@repo/chat-core/density`).
@@ -25,10 +26,13 @@ import {
  * the read lands, then redraw compact. Best-effort both ways: a storage error
  * reads as cozy, and a failed write keeps the choice until the app restarts.
  */
-let density: ChatDensity = DEFAULT_CHAT_DENSITY;
+// The default density, on the shared per-device store.
+const preference = createStoredPreference<ChatDensity>({
+  key: CHAT_DENSITY_STORAGE_KEY,
+  parse: parseChatDensity,
+  fallback: DEFAULT_CHAT_DENSITY,
+});
 let hydration: Promise<void> | null = null;
-/** Set by a choice made in this process, which the stored read must not undo. */
-let chosen = false;
 /** Per-channel overrides on this phone (#3787); a channel absent follows `density`. */
 const NO_OVERRIDES: ChannelDensityMap = {};
 let overrides: ChannelDensityMap = NO_OVERRIDES;
@@ -48,18 +52,6 @@ function notify() {
 /** Reads the stored choice once; a choice made before the read lands wins. */
 export function hydrateChatDensity(): Promise<void> {
   if (!hydration) {
-    hydration = AsyncStorage.getItem(CHAT_DENSITY_STORAGE_KEY)
-      .then((raw) => {
-        if (chosen) return;
-        const stored = parseChatDensity(raw);
-        if (stored !== density) {
-          density = stored;
-          notify();
-        }
-      })
-      .catch(() => {
-        /* Cozy, the default, stands. */
-      });
     const channels = AsyncStorage.getItem(CHAT_CHANNEL_DENSITY_STORAGE_KEY)
       .then((raw) => {
         let merged = parseChannelDensityMap(raw);
@@ -77,7 +69,9 @@ export function hydrateChatDensity(): Promise<void> {
         // Unreadable: picks hold for this process but are never written,
         // since a write would replace a map we couldn't see.
       });
-    hydration = Promise.all([hydration, channels]).then(() => undefined);
+    hydration = Promise.all([preference.hydrate(), channels]).then(
+      () => undefined,
+    );
   }
   return hydration;
 }
@@ -92,10 +86,6 @@ function subscribe(listener: () => void): () => void {
   };
 }
 
-function getSnapshot(): ChatDensity {
-  return density;
-}
-
 function getOverrides(): ChannelDensityMap {
   return overrides;
 }
@@ -106,7 +96,7 @@ function getOverrides(): ChannelDensityMap {
  * (#3787), else its override if the member set one, else the default.
  */
 export function useChatDensity(channelId?: string | null): ChatDensity {
-  const fallback = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const fallback = preference.use();
   const map = useSyncExternalStore(subscribe, getOverrides, getOverrides);
   const locked = useSyncExternalStore(
     subscribeLockedChannels,
@@ -168,20 +158,12 @@ function persistOverrides(): void {
   });
 }
 
-export function setChatDensity(next: ChatDensity): void {
-  chosen = true;
-  density = next;
-  notify();
-  AsyncStorage.setItem(CHAT_DENSITY_STORAGE_KEY, next).catch(() => {
-    /* Best-effort: the choice holds until the app restarts. */
-  });
-}
+export const setChatDensity = preference.set;
 
 /** Test seam: back to a fresh process. */
 export function resetChatDensityForTests(): void {
-  density = DEFAULT_CHAT_DENSITY;
+  preference.resetForTests();
   hydration = null;
-  chosen = false;
   overrides = NO_OVERRIDES;
   pendingPicks = {};
   channelsHydrated = false;

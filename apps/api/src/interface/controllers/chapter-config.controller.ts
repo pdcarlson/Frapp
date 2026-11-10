@@ -13,10 +13,7 @@ import { ChapterConfigService } from '../../application/services/chapter-config.
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
-import {
-  RequireAnyOfPermissions,
-  RequirePermissions,
-} from '../decorators/permissions.decorator';
+import { RequirePermissions } from '../decorators/permissions.decorator';
 import { FreeTier } from '../decorators/subscription.decorator';
 import {
   CurrentChapterId,
@@ -85,10 +82,7 @@ export class ChapterConfigController {
   }
 
   @Patch(':id/config')
-  @RequireAnyOfPermissions(
-    SystemPermissions.CHAPTER_CONFIG_MANAGE,
-    SystemPermissions.WILDCARD,
-  )
+  @RequirePermissions(SystemPermissions.CHAPTER_CONFIG_MANAGE)
   @ApiOperation({
     summary:
       'Update chapter config (writes audit log + posts to #chapter-audit)',
@@ -113,10 +107,7 @@ export class ChapterConfigController {
   }
 
   @Post(':id/theme-palette')
-  @RequireAnyOfPermissions(
-    SystemPermissions.CHAPTER_CONFIG_MANAGE,
-    SystemPermissions.WILDCARD,
-  )
+  @RequirePermissions(SystemPermissions.CHAPTER_CONFIG_MANAGE)
   @ApiOperation({
     summary: 'Recompute and persist derived theme palette from branding.colors',
   })

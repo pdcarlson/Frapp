@@ -1,7 +1,7 @@
 /**
  * Repeating events as an Events list shows them: one row per series, and a
- * two-week horizon (#3707). Web's Events page reads it; mobile's Events tab
- * is to adopt it in #3823, so both apps collapse a series, and draw the
+ * two-week horizon (#3707). Web's Events page and mobile's Events tab
+ * (#3823) both read it, so both apps collapse a series, and draw the
  * horizon, the same way.
  *
  * A series is stored as rows, one per meeting (the "Recurring events" rules

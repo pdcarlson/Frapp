@@ -278,7 +278,7 @@ describe("Screen skeletons sit on their screen's frames", () => {
   const views = (tree: ReactTestRenderer) =>
     tree.root.findAllByType("View" as never).map((v) => flatten(v.props.style));
 
-  it("Events: the next-event card, then a caption and flat rows", () => {
+  it("Events: a day caption over the next-event card, then a caption and flat rows", () => {
     const tree = render(<EventListSkeleton rows={3} />);
     const cards = views(tree).filter(
       (style) => style.borderRadius === tokens.radius.cardLarge,
@@ -292,8 +292,8 @@ describe("Screen skeletons sit on their screen's frames", () => {
       borderWidth: 1,
       backgroundColor: tokens.color.surface.card,
     });
-    // The 52pt date column on the card and on every flat row.
-    expect(views(tree).filter((style) => style.width === 52)).toHaveLength(4);
+    // No date column: the day is the caption over the rows (#3707).
+    expect(views(tree).filter((style) => style.width === 52)).toHaveLength(0);
     const flat = views(tree).filter(
       (style) =>
         style.minHeight === tokens.touch.minimum &&

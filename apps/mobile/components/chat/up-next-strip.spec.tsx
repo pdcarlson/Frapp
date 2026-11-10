@@ -26,7 +26,9 @@ vi.mock("@/lib/chapter-branding", () => ({
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectRoundedRipple } from "@/test/pressable-row";
+import { formatDayHeading } from "@repo/formatting";
 import {
+  formatDayWord,
   formatDueDate,
   formatEventTime,
   isDueUrgent,
@@ -438,5 +440,24 @@ describe("UpNextStrip rows", () => {
       expect(clip.marginHorizontal).toBe(-signetDarkTokens.spacing.sm);
       expect(resting).not.toHaveProperty("marginHorizontal");
     }
+  });
+});
+
+describe("formatDayWord", () => {
+  // The strip and the Events tab's day headings say a day the same way.
+  it("is the Events tab's day heading, the year included outside this one", () => {
+    for (const day of [
+      at(2026, 7, 16),
+      at(2026, 7, 17),
+      at(2026, 7, 20),
+      at(2026, 8, 3),
+    ]) {
+      expect(formatDayWord(new Date(day), NOW)).toBe(
+        formatDayHeading(day, NOW),
+      );
+    }
+    expect(formatDayWord(new Date(at(2027, 0, 5)), NOW)).toBe(
+      "January 5, 2027",
+    );
   });
 });
