@@ -43,7 +43,8 @@ export interface SearchMessageFilters {
 
 /**
  * The reads behind global search (spec/behavior/search.md). Each source
- * matches through an indexed full-text query and returns at most `limit` rows;
+ * matches through an indexed full-text query, except a message search with
+ * filters and no text, and returns at most `limit` rows;
  * deciding what the caller may see from them stays with `SearchService`.
  */
 export interface ISearchRepository {

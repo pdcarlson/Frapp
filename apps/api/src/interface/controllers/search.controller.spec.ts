@@ -153,20 +153,21 @@ describe('SearchController', () => {
       return searchService.searchWithinBudget.mock.calls[0][3] as unknown;
     };
 
-    it('passes sender, dates and has through, dates as instants', async () => {
+    it('passes sender, dates and has through', async () => {
       expect(
         await run(
           'chan-9',
           ' user-7 ',
-          '2026-11-01',
-          '2026-11-08T05:00:00.000Z',
+          '2026-11-01T04:00:00.000Z',
+          '2026-11-08T00:00:00-05:00',
           'file, image,file',
         ),
       ).toEqual({
         channelId: 'chan-9',
         fromUserId: 'user-7',
-        after: '2026-11-01T00:00:00.000Z',
-        before: '2026-11-08T05:00:00.000Z',
+        // As written: re-serializing would move the caller's bound.
+        after: '2026-11-01T04:00:00.000Z',
+        before: '2026-11-08T00:00:00-05:00',
         has: ['file', 'image'],
       });
     });
@@ -182,10 +183,19 @@ describe('SearchController', () => {
       ['a non-string has', [undefined, undefined, undefined, undefined, 42]],
       ['an unreadable after', [undefined, undefined, 'yesterday']],
       ['a bare number as before', [undefined, undefined, undefined, '7']],
+      ['a bare date', [undefined, undefined, '2026-11-01']],
+      [
+        'a day that does not exist',
+        [undefined, undefined, '2026-02-30T00:00:00Z'],
+      ],
+      ['a time with no offset', [undefined, undefined, '2026-11-10T10:00']],
+      ['a date with trailing text', [undefined, undefined, '2026-11-01 junk']],
       [
         'a repeated after',
         [undefined, undefined, ['2026-11-01', '2026-11-02']],
       ],
+      ['a repeated fromUserId', [undefined, ['user-1', 'user-2']]],
+      ['a bracketed fromUserId', [undefined, { k: 'v' }]],
     ] as const)(
       'rejects %s with a 400 rather than dropping the filter',
       async (_, filters) => {

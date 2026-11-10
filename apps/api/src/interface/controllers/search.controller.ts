@@ -29,6 +29,10 @@ import {
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
+  ISO_INSTANT_MESSAGE,
+  parseIsoInstant,
+} from '#domain/constants/iso-instant';
+import {
   SEARCH_MESSAGE_HAS,
   type SearchMessageHas,
 } from '#domain/repositories/search.repository.interface';
@@ -46,28 +50,38 @@ import {
  * rather than being rejected, because a duplicated query param is a client bug
  * that should degrade, not an attack that needs an error.
  */
-function normalizeId(raw: unknown): string | undefined {
+function normalizeChannelId(raw: unknown): string | undefined {
   return typeof raw === 'string' ? raw.trim() || undefined : undefined;
 }
 
 /**
- * A date filter as an ISO instant, `undefined` when absent.
+ * A filter value that must be one string: `undefined` when absent or blank,
+ * the trimmed string otherwise, and a 400 for anything else.
  *
- * Unlike a malformed `channelId`, a filter that cannot be read is a 400, not a
- * silent drop: dropping `after=yesterdy` would answer a narrower question with
- * a wider result and no sign that it had.
+ * Unlike a malformed `channelId`, a filter that cannot be read is rejected, not
+ * dropped: dropping a repeated `fromUserId` or `after=yesterdy` would answer a
+ * narrower question with a wider result and no sign that it had.
+ */
+function singleFilterValue(name: string, raw: unknown): string | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== 'string') {
+    throw new BadRequestException(`${name} must be given once`);
+  }
+  return raw.trim() || undefined;
+}
+
+/**
+ * A date filter, as the caller wrote it. The rule is `iso-instant.ts`'s: an
+ * instant with an explicit offset, so a day that does not exist, a bare date
+ * and an offset-less time are all a 400 rather than a guess.
  */
 function parseInstant(name: string, raw: unknown): string | undefined {
-  const value = normalizeId(raw);
-  if (value === undefined) {
-    if (raw === undefined || typeof raw === 'string') return undefined;
-    throw new BadRequestException(`${name} must be a single ISO 8601 date`);
+  const value = singleFilterValue(name, raw);
+  if (value === undefined) return undefined;
+  if (parseIsoInstant(value) === null) {
+    throw new BadRequestException(`${name} ${ISO_INSTANT_MESSAGE}`);
   }
-  const ms = Date.parse(value);
-  if (!/^\d{4}-\d{2}-\d{2}/.test(value) || Number.isNaN(ms)) {
-    throw new BadRequestException(`${name} must be an ISO 8601 date`);
-  }
-  return new Date(ms).toISOString();
+  return value;
 }
 
 /** `has` as a de-duplicated list; accepts `has=a,b` and `has=a&has=b`. */
@@ -89,6 +103,12 @@ function parseHas(raw: unknown): SearchMessageHas[] | undefined {
   }
   return values.size ? [...values] : undefined;
 }
+
+/** Stated on each filter: the contract does not keep declaration order. */
+const MESSAGE_FILTER_NOTE =
+  'A message filter: it narrows the messages source inside the caller’s ' +
+  'accessible-channel set, makes the search messages-only, and lets `q` ' +
+  'be empty.';
 
 @ApiTags('Search')
 @ApiBearerAuth()
@@ -125,22 +145,25 @@ export class SearchController {
     name: 'fromUserId',
     required: false,
     type: String,
-    description:
-      'Message hits from this sender only. Like every filter below it narrows ' +
-      'the messages source inside the caller’s accessible-channel set, makes ' +
-      'the search messages-only, and lets `q` be empty.',
+    description: 'Message hits from this sender only. ' + MESSAGE_FILTER_NOTE,
   })
   @ApiQuery({
     name: 'after',
     required: false,
     type: String,
-    description: 'Message hits sent at or after this ISO 8601 date or instant.',
+    description:
+      'Message hits sent at or after this instant: ISO 8601 with an explicit ' +
+      'offset. ' +
+      MESSAGE_FILTER_NOTE,
   })
   @ApiQuery({
     name: 'before',
     required: false,
     type: String,
-    description: 'Message hits sent before this ISO 8601 date or instant.',
+    description:
+      'Message hits sent before this instant: ISO 8601 with an explicit ' +
+      'offset. ' +
+      MESSAGE_FILTER_NOTE,
   })
   @ApiQuery({
     name: 'has',
@@ -148,7 +171,8 @@ export class SearchController {
     type: String,
     description:
       'Message hits that carry all of these, comma-separated: `file` (any ' +
-      'attachment), `image`, `link`, `poll`.',
+      'attachment), `image`, `link`, `poll`. ' +
+      MESSAGE_FILTER_NOTE,
   })
   async search(
     @CurrentChapterId() chapterId: string,
@@ -162,8 +186,8 @@ export class SearchController {
     @Query('has') has?: unknown,
   ) {
     const filters: SearchFilters = {
-      channelId: normalizeId(channelId),
-      fromUserId: normalizeId(fromUserId),
+      channelId: normalizeChannelId(channelId),
+      fromUserId: singleFilterValue('fromUserId', fromUserId),
       after: parseInstant('after', after),
       before: parseInstant('before', before),
       has: parseHas(has),

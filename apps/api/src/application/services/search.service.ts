@@ -200,8 +200,11 @@ export class SearchService {
    * stopped looking here". This is still an application-level budget — it does
    * not abort the in-flight Supabase queries, since supabase-js does not cleanly
    * expose a per-query `statement_timeout` — but every scan is capped at
-   * {@link SEARCH_LIMIT} and the message scan is now index-backed rather than a
-   * sequential `ILIKE`, so tripping it should be rare rather than routine.
+   * {@link SEARCH_LIMIT} and a message search with text is index-backed rather
+   * than a sequential `ILIKE`, so tripping it should be rare rather than
+   * routine. A filter with no text (#3958) is the exception: it has no text
+   * match to narrow by, and its cost is spec/behavior/search.md § Message
+   * filters'.
    */
   async searchWithinBudget(
     chapterId: string,
@@ -438,7 +441,7 @@ export class SearchService {
     // contract).
     //
     // Read AFTER the match rather than concurrently with it, and that is the
-    // cheap half of a deliberate trade: `searchMessages` returns early in three
+    // cheap half of a deliberate trade: `searchMessages` returns early in several
     // places above (short channel list, no accessible channels), and a
     // `Promise.all` would issue the block read on every one of them. The rows
     // are already in hand and capped at `SEARCH_LIMIT`, so the extra round trip

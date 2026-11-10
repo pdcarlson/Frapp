@@ -62,10 +62,10 @@ that apart from a channel with no matches. Narrowing has to reach SQL.
 
 | Parameter | Matches | Notes |
 | --- | --- | --- |
-| `fromUserId` | messages whose `sender_id` is this user | An id that is not a uuid returns no matches, not an error. An imported archive message has no `sender_id` and never matches. |
-| `after` | sent at or after this instant | ISO 8601 date or instant. A bare date is UTC midnight, so a client sends the instant for its own local midnight. |
+| `fromUserId` | messages whose `sender_id` is this user | An id that is not a uuid returns no matches, not an error; a repeated one is a 400. An imported archive message matches only once its author has linked their Discord account, which is what gives it a `sender_id` ([`chat/README.md`](chat/README.md), Discord import). |
+| `after` | sent at or after this instant | An ISO 8601 instant with an explicit offset (`2026-11-01T00:00:00-05:00`), the rule of `apps/api/src/domain/constants/iso-instant.ts`. A bare date is rejected: the client sends the instant of its own local midnight. |
 | `before` | sent strictly before this instant | Same form as `after`. |
-| `has` | carries every listed trait | Comma-separated or repeated: `file` (any attachment, images included), `image` (an attachment whose content type is `image/*`), `link` (the text contains `http…://`), `poll` (`kind = 'poll'`). |
+| `has` | carries every listed trait | Comma-separated or repeated: `file` (any attachment, images included), `image` (an attachment whose content type is `image/*`), `link` (the text contains `http…://`), `poll` (`kind = 'poll'`, the chat-card poll every client creates; a row from the legacy `POST /v1/channels/:id/polls` is not one, [`polls.md`](polls.md), and #3887 retires that route). |
 
 - **A filter never widens access.** The filters are passed to the message query beside the
   caller's accessible-channel ids, never in place of them, so the rule of
@@ -81,10 +81,15 @@ that apart from a channel with no matches. Narrowing has to reach SQL.
   ("everything Ryan posted this week"), newest first, under the same cap. One or two characters
   are still refused. An empty `q` with only `channelId` is refused: that is the channel's timeline.
 - **An unreadable filter value is a 400**, unlike a malformed `channelId`: an `after` that is not
-  a date, or a `has` outside the four, is rejected, because dropping it would answer a narrower
+  an instant (a bare date, a day that does not exist, a time with no offset), a `has` outside the
+  four, or any filter given twice is rejected, because dropping it would answer a narrower
   question with a wider result.
-- `has=link` is not index-backed. It filters the rows the channel, text, sender and date
-  conditions select; alone across a large archive it is the slow case the 500 ms budget degrades.
+- **A filter with no text is not index-backed** (#3965). The text match is what the GIN index
+  serves, so without it `has=poll`, `has=link`, an attachment filter or a wide date range reads
+  every message in the caller's channels, one query per 100 channels, then sorts. Measured locally
+  at 600,000 messages across 300 channels: 50 ms for `poll`, 68 ms for a wide `after`, 253 ms for
+  `link`, per 100-channel query. A narrow date range (3 ms) and a sender use existing indexes.
+  This is the case the 500 ms budget degrades on a large archive.
 
 ## MVP defaults
 
@@ -102,7 +107,7 @@ v1 ships with the following defaults. Chapter admins cannot override them; tunin
 - **Stopwords:** Postgres default English stopword list.
 - **Server-side timeout:** 500 ms budget, applied **per source, not to the search as a whole**. A source that exceeds it contributes an empty array and nothing else changes, so a slow chat-message scan no longer discards member, event and backwork hits that had already come back. `x-search-timeout: 1` is still set when *any* source is short, and `x-search-timeout-sources` names which ones (comma-separated, from `backwork | events | members | messages`) — the difference between "we found nothing" and "we stopped looking here", which the client must render differently.
 
-  This remains an application-level budget (`SearchService.searchWithinBudget`) rather than a Postgres `statement_timeout`, since supabase-js does not cleanly expose per-query `statement_timeout`; it discards a slow result rather than cancelling the query. It should now be rare rather than routine for chat, which is index-backed. A source that *errors* still fails the whole request as a 500 — only slowness degrades.
+  This remains an application-level budget (`SearchService.searchWithinBudget`) rather than a Postgres `statement_timeout`, since supabase-js does not cleanly expose per-query `statement_timeout`; it discards a slow result rather than cancelling the query. It should now be rare rather than routine for a chat search with text, which is index-backed; a [filter with no text](#message-filters) is not. A source that *errors* still fails the whole request as a 500 — only slowness degrades.
 
 ## Acceptance criteria
 

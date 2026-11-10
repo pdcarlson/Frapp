@@ -238,6 +238,11 @@ export class SupabaseSearchRepository implements ISearchRepository {
    * which needs `pg_trgm` — not installed, and not registered in the PGlite CI
    * gate. That is a separate decision with its own index cost.
    *
+   * FILTERS WITHOUT TEXT (#3958). An empty `query` skips the text match, so
+   * nothing here is index-backed beyond the channel list: `has` and a wide
+   * date range read every message in the batch's channels. What that costs,
+   * and the issue that owns it, is spec/behavior/search.md § Message filters.
+   *
    * CHUNKED CHANNEL FILTER (#3265). A chapter-wide search hands this every
    * channel the caller may read, and a Discord-imported chapter has hundreds.
    * One `.in()` list of them overflows the request line: the local gateway
@@ -293,9 +298,12 @@ export class SupabaseSearchRepository implements ISearchRepository {
             'image/%',
           );
         }
+        // The chat-card poll, the only shape a client creates. A row from the
+        // legacy `POST /v1/channels/:id/polls` (`type: 'POLL'`) is not one
+        // (spec/behavior/polls.md; that route is retired by #3887).
         if (has.has('poll')) request = request.eq('kind', 'poll');
-        // A link is a URL scheme in the text. Not index-backed: it filters the
-        // rows the channel and text conditions already selected.
+        // A link is a URL scheme in the text. The pattern is a constant, never
+        // the caller's query, so there is still no filter string to inject into.
         if (has.has('link')) request = request.ilike('content', '%http%://%');
 
         const { data, error } = (await request
