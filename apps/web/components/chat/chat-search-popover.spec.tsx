@@ -372,6 +372,26 @@ describe("ChatSearchPanel", () => {
       expect(screen.getAllByRole("option")).toHaveLength(2);
     });
 
+    it("scrolls the highlighted option into view as the arrows move it", async () => {
+      // Focus stays in the box, so the browser does not scroll the list.
+      const scrollIntoView = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoView;
+      try {
+        const user = await typeQuery("from:");
+        scrollIntoView.mockClear();
+
+        await user.keyboard("{ArrowDown}");
+
+        expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
+        expect(scrollIntoView.mock.contexts.at(-1)).toBe(
+          screen.getByRole("option", { name: "Grace Hopper" }),
+        );
+      } finally {
+        delete (Element.prototype as { scrollIntoView?: unknown })
+          .scrollIntoView;
+      }
+    });
+
     it("says so when no member matches", async () => {
       await typeQuery("from:zed");
 

@@ -203,6 +203,8 @@ const sidebarState = {
   unreadError: false,
   pinnedIds: new Set<string>(),
   levels: [] as { channel_id: string; level: string }[],
+  /** `users.id` → display name, as the roster read serves it. */
+  memberNames: {} as Record<string, string>,
 };
 
 /**
@@ -462,7 +464,7 @@ vi.mock("@repo/hooks", async () => ({
   // pass-through from a re-sort.
   useCategories: () => ({ data: CATEGORIES, isPending: false }),
   useMemberDisplayNames: () => ({
-    byId: new Map(),
+    byId: sidebarState.memberNames,
     nameFor: () => null,
     avatarFor: () => null,
   }),
@@ -1302,6 +1304,24 @@ describe("ChatShell channel categories", () => {
 });
 
 describe("ChatShell search pickers (#3958)", () => {
+  afterEach(() => {
+    sidebarState.memberNames = {};
+  });
+
+  it("offers search the roster, with a label for a member who never set a name", () => {
+    // `display_name` defaults to '', which would be a blank first row that
+    // Enter picks.
+    sidebarState.memberNames = { "user-ada": "Ada Lovelace", "2f4a1c00": "" };
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    const offered = (
+      screen.getByTestId("menu-search-members").textContent ?? ""
+    ).split(",");
+    expect(offered).toHaveLength(2);
+    expect(offered).toContain("Ada Lovelace");
+    expect(offered.every((label) => label.trim() !== "")).toBe(true);
+  });
+
   it("offers search every readable channel, not only the open one", () => {
     // The panel's own spec builds its lists by hand, so without this the shell
     // could hand search the open channel alone and every test would pass.

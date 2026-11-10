@@ -13,22 +13,43 @@ import type { ChatMessage } from "@repo/chat-core/types";
  * and the real `ChatSearchPanel` would pull `useSearch` and a debounce into a
  * file that is not about searching.
  */
+// Whether the stub panel's picker is open; a test sets it before rendering.
+const pickerState = vi.hoisted(() => ({ open: false }));
 vi.mock("./chat-search-popover", () => ({
   // `autoFocus` stands in for the real panel's autofocused search input, which
   // is the thing the host must not steal focus from.
   ChatSearchPanel: ({
     onJump,
+    channels,
+    members,
   }: {
     onJump: (hit: { message: { id: string }; channelId: string }) => void;
+    channels: Array<{ id: string }>;
+    members: Array<{ id: string }>;
   }) => (
-    <button
-      type="button"
-      autoFocus
-      data-testid="search-panel"
-      onClick={() => onJump({ message: { id: "msg-1" }, channelId: "chan-1" })}
-    >
-      search panel
-    </button>
+    <>
+      <button
+        type="button"
+        autoFocus
+        data-testid="search-panel"
+        onClick={() =>
+          onJump({ message: { id: "msg-1" }, channelId: "chan-1" })
+        }
+      >
+        search panel
+      </button>
+      {/* What the pickers would list, and the real panel's open `from:` list. */}
+      <span data-testid="search-panel-lists">
+        {`${channels.map((c) => c.id).join(",")}|${members.map((m) => m.id).join(",")}`}
+      </span>
+      <input
+        role="combobox"
+        aria-label="stub picker"
+        aria-expanded={pickerState.open}
+        aria-controls="stub-list"
+        readOnly
+      />
+    </>
   ),
 }));
 vi.mock("./pins-popover", () => ({
@@ -109,7 +130,9 @@ function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
   } as ChatMessage;
 }
 
-function renderMenu(overrides: Partial<Parameters<typeof ChannelMenu>[0]> = {}) {
+function renderMenu(
+  overrides: Partial<Parameters<typeof ChannelMenu>[0]> = {},
+) {
   const props = {
     activeChannelId: "chan-1",
     messages: [] as ChatMessage[],
@@ -283,7 +306,9 @@ describe("ChannelMenu (#2142)", () => {
     await openMenu(user);
     await user.click(screen.getByRole("button", { name: /Pinned/ }));
 
-    expect(screen.getByRole("button", { name: "Back to channel menu" })).toHaveFocus();
+    expect(
+      screen.getByRole("button", { name: "Back to channel menu" }),
+    ).toHaveFocus();
   });
 
   it("closes when a notification level is picked", async () => {
@@ -422,5 +447,48 @@ describe("ChannelMenu pin to top (#2877)", () => {
     expect(
       screen.getByRole("button", { name: "Unpin from top" }),
     ).toBeInTheDocument();
+  });
+
+  describe("search pickers (#3958)", () => {
+    it("hands the search panel the channels and members it was given", async () => {
+      // The shell's spec stubs this menu and the panel's spec builds its own
+      // lists, so this hop is tested here or nowhere.
+      const user = userEvent.setup();
+      renderMenu({
+        searchChannels: [
+          { id: "chan-1", label: "general" },
+          { id: "chan-2", label: "random" },
+        ],
+        searchMembers: [{ id: "u-1", label: "Ada" }],
+      });
+      await openMenu(user);
+      await user.click(screen.getByRole("button", { name: /Search messages/ }));
+
+      expect(screen.getByTestId("search-panel-lists").textContent).toBe(
+        "chan-1,chan-2|u-1",
+      );
+    });
+
+    it("stays open on Escape while a picker is open in the panel", async () => {
+      // Radix hears Escape on the document before the panel does. Without the
+      // guard it closes the menu and the search with it.
+      pickerState.open = true;
+      const user = userEvent.setup();
+      renderMenu();
+      await openMenu(user);
+      await user.click(screen.getByRole("button", { name: /Search messages/ }));
+
+      await user.keyboard("{Escape}");
+      expect(screen.getByTestId("search-panel")).toBeInTheDocument();
+
+      // With no picker open, Escape closes the menu as it always did.
+      pickerState.open = false;
+      await user.click(
+        screen.getByRole("button", { name: "Back to channel menu" }),
+      );
+      await user.click(screen.getByRole("button", { name: /Search messages/ }));
+      await user.keyboard("{Escape}");
+      expect(screen.queryByTestId("search-panel")).not.toBeInTheDocument();
+    });
   });
 });
