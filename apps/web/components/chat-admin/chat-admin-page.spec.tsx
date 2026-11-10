@@ -44,6 +44,15 @@ vi.mock("@repo/hooks", async (importOriginal) => {
   const mutation = () => ({ mutateAsync: vi.fn(), isPending: false });
   return {
     resolveAuthorLabel: actual.resolveAuthorLabel,
+    // Chat backgrounds (#3973): the default card is decoration on this page.
+    errorCopy: actual.errorCopy,
+    useChapterChatBackground: () => ({ data: undefined }),
+    useSetChapterChatBackground: () => ({
+      mutate: vi.fn(),
+      isPending: false,
+      error: null,
+    }),
+    useCurrentChapter: () => ({ data: undefined }),
     useChannels: () => reads.channels,
     useCategories: () => reads.categories,
     usePinnedMessages: () => reads.pins,
@@ -281,7 +290,9 @@ describe("ChatAdminPage — the channel structure's states", () => {
     reads.categories = settled([]);
     const { container } = render(<ChatAdminPage />);
 
-    expect(screen.getByText("No channels yet. Create the first one above.")).toBeInTheDocument();
+    expect(
+      screen.getByText("No channels yet. Create the first one above."),
+    ).toBeInTheDocument();
     expect(screen.getByText(/^No categories yet\./)).toBeInTheDocument();
     expect(cardFilledContainers(container)).toEqual([]);
   });
@@ -363,7 +374,9 @@ describe("ChatAdminPage — the channel structure's states", () => {
       screen.getByRole("heading", { name: "Couldn't load channels" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("Couldn't reach Frapp. Check your connection and try again."),
+      screen.getByText(
+        "Couldn't reach Frapp. Check your connection and try again.",
+      ),
     ).toBeInTheDocument();
     expect(cardFilledContainers(container)).toEqual([]);
   });
@@ -483,7 +496,9 @@ describe("ChatAdminPage — a channel's pins", () => {
     selectExec();
     expect(cardFilledContainers(container)).toEqual([]);
 
-    expect(screen.getByText("Nothing pinned. Pin a message from the channel.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Nothing pinned. Pin a message from the channel."),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { level: 4, name: "Pinned messages (0)" }),
     ).toBeInTheDocument();

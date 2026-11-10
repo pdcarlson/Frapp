@@ -16,6 +16,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // mount. A purple chapter's values, deliberately not house gold, so a control
 // that slips back to a `gold.*` token shows up in an assertion; the hook
 // itself has its own spec.
+// Chat backgrounds (#3973) read their own query; decoration, not under test here.
+vi.mock("@/components/chat/chat-background", () => ({
+  ChatBackground: () => null,
+}));
+
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({
     accent: "#CB9FFF",
