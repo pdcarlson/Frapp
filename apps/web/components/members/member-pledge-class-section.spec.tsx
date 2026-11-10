@@ -70,7 +70,9 @@ describe("MemberPledgeClassSection", () => {
   it("names both in the chapter's own words", () => {
     words.current = { vocabulary: { class: "Line", order: "Line number" } };
     renderSection();
-    expect(screen.getByRole("heading", { name: "Line" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Line and line number" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Line number")).toBeInTheDocument();
   });
 

@@ -129,7 +129,8 @@ export function MemberPledgeClassSection({
           id={headingId}
           className="text-label font-semibold text-muted-foreground"
         >
-          {classTerm}
+          {/* Both words, so the heading never repeats the first row's label. */}
+          {classTerm} and {lowerTerm(orderTerm)}
         </h3>
         {canEdit && !editing ? (
           <button

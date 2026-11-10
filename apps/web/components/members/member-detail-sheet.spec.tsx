@@ -326,14 +326,14 @@ describe("MemberDetailSheet pledge class (#3939)", () => {
 
   it("shows the member's class and order number under the roles", () => {
     renderProfile({ ...baseMember, pledge_class_id: "alpha", order_number: 12 });
-    const section = screen.getByRole("region", { name: "Pledge class" });
+    const section = screen.getByRole("region", { name: "Pledge class and fraternal order" });
     expect(within(section).getByText("Alpha")).toBeInTheDocument();
     expect(within(section).getByText("12")).toBeInTheDocument();
   });
 
   it("draws no section for a member with neither", () => {
     renderProfile();
-    expect(screen.queryByRole("region", { name: "Pledge class" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Pledge class and fraternal order" })).toBeNull();
   });
 });
 
