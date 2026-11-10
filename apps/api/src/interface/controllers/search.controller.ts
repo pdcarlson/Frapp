@@ -1,4 +1,11 @@
-import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  Query,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import {
   ApiBearerAuth,
@@ -6,7 +13,10 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
-import { SearchService } from '../../application/services/search.service';
+import {
+  SearchService,
+  type SearchFilters,
+} from '../../application/services/search.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -18,6 +28,14 @@ import {
   CurrentUser,
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
+import {
+  ISO_INSTANT_MESSAGE,
+  parseIsoInstant,
+} from '#domain/constants/iso-instant';
+import {
+  SEARCH_MESSAGE_HAS,
+  type SearchMessageHas,
+} from '#domain/repositories/search.repository.interface';
 
 /**
  * Coerce the raw `channelId` query value to a single trimmed id, or `undefined`
@@ -35,6 +53,62 @@ import { SystemPermissions } from '#domain/constants/permissions';
 function normalizeChannelId(raw: unknown): string | undefined {
   return typeof raw === 'string' ? raw.trim() || undefined : undefined;
 }
+
+/**
+ * A filter value that must be one string: `undefined` when absent or blank,
+ * the trimmed string otherwise, and a 400 for anything else.
+ *
+ * Unlike a malformed `channelId`, a filter that cannot be read is rejected, not
+ * dropped: dropping a repeated `fromUserId` or `after=yesterdy` would answer a
+ * narrower question with a wider result and no sign that it had.
+ */
+function singleFilterValue(name: string, raw: unknown): string | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== 'string') {
+    throw new BadRequestException(`${name} must be given once`);
+  }
+  return raw.trim() || undefined;
+}
+
+/**
+ * A date filter, as the caller wrote it. The rule is `iso-instant.ts`'s: an
+ * instant with an explicit offset, so a day that does not exist, a bare date
+ * and an offset-less time are all a 400 rather than a guess.
+ */
+function parseInstant(name: string, raw: unknown): string | undefined {
+  const value = singleFilterValue(name, raw);
+  if (value === undefined) return undefined;
+  if (parseIsoInstant(value) === null) {
+    throw new BadRequestException(`${name} ${ISO_INSTANT_MESSAGE}`);
+  }
+  return value;
+}
+
+/** `has` as a de-duplicated list; accepts `has=a,b` and `has=a&has=b`. */
+function parseHas(raw: unknown): SearchMessageHas[] | undefined {
+  if (raw === undefined) return undefined;
+  const parts = (Array.isArray(raw) ? raw : [raw]).flatMap((part: unknown) =>
+    typeof part === 'string' ? part.split(',') : [null],
+  );
+  const values = new Set<SearchMessageHas>();
+  for (const part of parts) {
+    const value = part?.trim();
+    if (value === '') continue;
+    if (!(SEARCH_MESSAGE_HAS as readonly unknown[]).includes(value)) {
+      throw new BadRequestException(
+        `has must be one or more of: ${SEARCH_MESSAGE_HAS.join(', ')}`,
+      );
+    }
+    values.add(value as SearchMessageHas);
+  }
+  return values.size ? [...values] : undefined;
+}
+
+/** Stated on each filter: the contract does not keep declaration order. */
+const MESSAGE_FILTER_NOTE =
+  'A message filter: it narrows the messages source inside the caller’s ' +
+  'accessible-channel set, makes the search messages-only, and lets `q` ' +
+  'be empty.';
 
 @ApiTags('Search')
 @ApiBearerAuth()
@@ -67,19 +141,63 @@ export class SearchController {
       'channel is still resolved through the caller’s accessible-channel set, ' +
       'so an unreadable or unknown id returns no matches rather than an error.',
   })
+  @ApiQuery({
+    name: 'fromUserId',
+    required: false,
+    type: String,
+    description: 'Message hits from this sender only. ' + MESSAGE_FILTER_NOTE,
+  })
+  @ApiQuery({
+    name: 'after',
+    required: false,
+    type: String,
+    description:
+      'Message hits sent at or after this instant: ISO 8601 with an explicit ' +
+      'offset. ' +
+      MESSAGE_FILTER_NOTE,
+  })
+  @ApiQuery({
+    name: 'before',
+    required: false,
+    type: String,
+    description:
+      'Message hits sent before this instant: ISO 8601 with an explicit ' +
+      'offset. ' +
+      MESSAGE_FILTER_NOTE,
+  })
+  @ApiQuery({
+    name: 'has',
+    required: false,
+    type: String,
+    description:
+      'Message hits that carry all of these, comma-separated: `file` (any ' +
+      'attachment), `image`, `link`, `poll`. ' +
+      MESSAGE_FILTER_NOTE,
+  })
   async search(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Query('q') query: string,
     @Res({ passthrough: true }) res: Response,
     @Query('channelId') channelId?: unknown,
+    @Query('fromUserId') fromUserId?: unknown,
+    @Query('after') after?: unknown,
+    @Query('before') before?: unknown,
+    @Query('has') has?: unknown,
   ) {
+    const filters: SearchFilters = {
+      channelId: normalizeChannelId(channelId),
+      fromUserId: singleFilterValue('fromUserId', fromUserId),
+      after: parseInstant('after', after),
+      before: parseInstant('before', before),
+      has: parseHas(has),
+    };
     const { results, timedOut, timedOutSources } =
       await this.searchService.searchWithinBudget(
         chapterId,
         userId,
-        query ?? '',
-        normalizeChannelId(channelId),
+        typeof query === 'string' ? query : '',
+        filters,
       );
     if (timedOut) {
       res.setHeader('x-search-timeout', '1');

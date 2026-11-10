@@ -16,6 +16,7 @@ import {
   SEARCH_REPOSITORY,
   type ISearchRepository,
   type SearchMemberHit,
+  type SearchMessageFilters,
 } from '#domain/repositories/search.repository.interface';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
@@ -37,7 +38,43 @@ export interface SearchResult {
 /** Which of the four result arrays a search hit belongs to. */
 export type SearchSource = keyof SearchResult;
 
+/**
+ * What a caller may narrow a search by. `channelId` scopes the message source
+ * to one channel (#469); the rest are the message filters of #3958. All of
+ * them are applied inside the caller's accessible-channel set.
+ */
+export interface SearchFilters extends SearchMessageFilters {
+  channelId?: string;
+}
+
 const SEARCH_LIMIT = 10;
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The message filters alone, or `undefined` when none is set. */
+function messageFiltersOf(
+  filters: SearchFilters,
+): SearchMessageFilters | undefined {
+  const { fromUserId, after, before } = filters;
+  const has = filters.has?.length ? filters.has : undefined;
+  if (!fromUserId && !after && !before && !has) return undefined;
+  return { fromUserId, after, before, has };
+}
+
+/**
+ * The query to run, or `null` when the request is refused before the database.
+ * Text needs {@link MIN_QUERY_LENGTH} characters (spec/behavior/search.md).
+ * No text at all is allowed only beside a message filter ("everything Ryan
+ * posted this week", #3958); a channel alone is not one, since that is the
+ * channel's own timeline.
+ */
+function runnableQuery(query: string, filters: SearchFilters): string | null {
+  const q = query.trim();
+  if (q.length >= MIN_QUERY_LENGTH) return q;
+  if (q.length === 0 && messageFiltersOf(filters)) return '';
+  return null;
+}
 
 const MIN_QUERY_LENGTH = 3;
 const SEARCH_TIMEOUT_MS = 500;
@@ -142,21 +179,15 @@ export class SearchService {
     chapterId: string,
     userId: string,
     query: string,
-    channelId?: string,
+    filters: SearchFilters = {},
   ): Promise<SearchResult> {
-    const q = query.trim();
     // Spec default: queries shorter than 3 characters return an empty result
     // without touching the database (spec/behavior/search.md).
-    if (q.length < MIN_QUERY_LENGTH) {
+    const q = runnableQuery(query, filters);
+    if (q === null) {
       return emptyResult();
     }
-    return this.collect(
-      chapterId,
-      userId,
-      q,
-      (_source, work) => work,
-      channelId,
-    );
+    return this.collect(chapterId, userId, q, (_source, work) => work, filters);
   }
 
   /**
@@ -169,21 +200,24 @@ export class SearchService {
    * stopped looking here". This is still an application-level budget — it does
    * not abort the in-flight Supabase queries, since supabase-js does not cleanly
    * expose a per-query `statement_timeout` — but every scan is capped at
-   * {@link SEARCH_LIMIT} and the message scan is now index-backed rather than a
-   * sequential `ILIKE`, so tripping it should be rare rather than routine.
+   * {@link SEARCH_LIMIT} and a message search with text is index-backed rather
+   * than a sequential `ILIKE`, so tripping it should be rare rather than
+   * routine. A filter with no text (#3958) is the exception: it has no text
+   * match to narrow by, and its cost is spec/behavior/search.md § Message
+   * filters'.
    */
   async searchWithinBudget(
     chapterId: string,
     userId: string,
     query: string,
-    channelId?: string,
+    filters: SearchFilters = {},
   ): Promise<{
     results: SearchResult;
     timedOut: boolean;
     timedOutSources: SearchSource[];
   }> {
-    const q = query.trim();
-    if (q.length < MIN_QUERY_LENGTH) {
+    const q = runnableQuery(query, filters);
+    if (q === null) {
       return { results: emptyResult(), timedOut: false, timedOutSources: [] };
     }
 
@@ -194,7 +228,7 @@ export class SearchService {
       q,
       (source, work, fallback) =>
         withinBudget(source, work, fallback, timedOutSources, this.logger),
-      channelId,
+      filters,
     );
     return {
       results,
@@ -215,7 +249,9 @@ export class SearchService {
    * channel or across all channels the user can access"). When it is present
    * only the message source runs and the other three return empty, because a
    * channel-scoped query is definitionally a chat search. The response shape is
-   * unchanged either way.
+   * unchanged either way. A message filter (`fromUserId`, `after`, `before`,
+   * `has`, #3958) does the same for the same reason: it describes messages, so
+   * the other three sources have nothing to answer it with.
    *
    * **This is not a general "chat search is cheap" guarantee, and it would be
    * dishonest to describe it as one.** It skips three sources only for the
@@ -230,12 +266,12 @@ export class SearchService {
     userId: string,
     q: string,
     wrap: SourceWrapper,
-    channelId?: string,
+    filters: SearchFilters = {},
   ): Promise<SearchResult> {
-    if (channelId) {
+    if (filters.channelId || messageFiltersOf(filters)) {
       const messages = await wrap(
         'messages',
-        this.searchMessages(chapterId, userId, q, channelId),
+        this.searchMessages(chapterId, userId, q, filters),
         [],
       );
       return { backwork: [], events: [], members: [], messages };
@@ -341,8 +377,18 @@ export class SearchService {
     chapterId: string,
     userId: string,
     query: string,
-    channelId?: string,
+    filters: SearchFilters = {},
   ): Promise<MaskedChatMessage[]> {
+    const { channelId } = filters;
+    const messageFilters = messageFiltersOf(filters);
+    // `sender_id` is a uuid column, so a malformed id would be a 22P02 and a
+    // 500. No message has a sender that is not a uuid: the answer is empty.
+    if (
+      messageFilters?.fromUserId &&
+      !UUID_PATTERN.test(messageFilters.fromUserId)
+    ) {
+      return [];
+    }
     // A channel-scoped search is still resolved through `accessibleChannelIds`
     // rather than trusting the caller's id — that is what keeps the single
     // access path this method's comment below insists on. The id is pushed down
@@ -376,11 +422,18 @@ export class SearchService {
       : accessible;
     if (!channelIds.length) return [];
 
-    const messages = await this.repo.searchMessages(
-      channelIds,
-      query,
-      SEARCH_LIMIT,
-    );
+    // The filters (#3958) go to the repository beside `channelIds`, never
+    // instead of it: sender, date and content narrow the rows of channels this
+    // caller has already been cleared to read, so no filter value can reach a
+    // message outside that set.
+    const messages = await (messageFilters
+      ? this.repo.searchMessages(
+          channelIds,
+          query,
+          SEARCH_LIMIT,
+          messageFilters,
+        )
+      : this.repo.searchMessages(channelIds, query, SEARCH_LIMIT));
 
     // The caller's block list, applied to what search serves — the same rule
     // `ChatService.getMessages` applies, through the same pure function, so the
@@ -388,7 +441,7 @@ export class SearchService {
     // contract).
     //
     // Read AFTER the match rather than concurrently with it, and that is the
-    // cheap half of a deliberate trade: `searchMessages` returns early in three
+    // cheap half of a deliberate trade: `searchMessages` returns early in several
     // places above (short channel list, no accessible channels), and a
     // `Promise.all` would issue the block read on every one of them. The rows
     // are already in hand and capped at `SEARCH_LIMIT`, so the extra round trip

@@ -326,7 +326,9 @@ Presence is ephemeral per ADR-02: it lives on the Realtime socket and is never p
 - Search respects permissions: only messages from channels the user can see are returned.
 
 Both scopes are served by `GET /v1/search`; the single-channel form passes an optional
-`channelId` ([`../search.md`](../search.md#single-channel-scope)). On web the surface is
+`channelId` ([`../search.md`](../search.md#single-channel-scope)). Message hits can also be
+filtered by sender, date and content (`fromUserId`, `after`, `before`, `has`), always inside the
+channels the caller can read ([`../search.md`](../search.md#message-filters), #3958). On web the surface is
 `ChatSearchPanel`, reached from the channel header's `⋯` menu
 (`apps/web/components/chat/channel-menu.tsx`, #2142 — it was a popover of its own, alongside
 three more, until that lane merged the four), defaulting to the active channel with an
