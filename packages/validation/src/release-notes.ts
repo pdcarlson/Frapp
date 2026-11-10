@@ -41,7 +41,7 @@ export type ReleaseNote = {
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
   {
     date: "2026-11-10",
-    title: "Status on your phone, easier ways to find a document, and search that narrows down",
+    title: "Status on your phone, better Documents, and narrower search",
     changes: [
       "You can now set your status from your phone too, not only on the web.",
       "On your phone, Documents search finds more and forgives typos, you can sort the list, and you can delete a file if your role allows it.",
