@@ -18,7 +18,9 @@ vi.mock("@repo/hooks", () => ({
 vi.mock("@/lib/auth/select-chapter", () => ({
   useSelectChapter: () => vi.fn(),
 }));
-vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({
+  useToast: () => ({ toast: vi.fn() }),
+}));
 vi.mock("@/lib/stores/chapter-store", () => ({
   useChapterStore: (
     selector: (s: { activeChapterId: string | null }) => unknown,
@@ -40,9 +42,7 @@ const OFFICER: readonly string[] = [
   "chapter-config:view",
 ];
 
-function renderNav(
-  props: Partial<React.ComponentProps<typeof AppNav>> = {},
-) {
+function renderNav(props: Partial<React.ComponentProps<typeof AppNav>> = {}) {
   return render(
     <AppNav
       collapsed={false}
@@ -92,7 +92,13 @@ describe("AppNav", () => {
       (el) => el.textContent,
     );
     expect(rows.at(-1)).toBe("Settings");
-    for (const gone of ["Roles", "Study Zones", "Reports", "Chat Admin", "Discord Import"]) {
+    for (const gone of [
+      "Roles",
+      "Study Zones",
+      "Reports",
+      "Chat Admin",
+      "Discord Import",
+    ]) {
       expect(rows).not.toContain(gone);
     }
   });

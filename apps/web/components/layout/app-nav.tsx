@@ -226,8 +226,8 @@ export function AppNav({
       </nav>
       {isDrawer || !onToggleCollapsed ? null : (
         /*
-         * The collapse toggle (#4044). It keeps the bottom of the column that
-         * board `1t` freed for it, but reads as a nav row now: a hairline
+         * The collapse toggle (#4044). It stays pinned to the bottom of the
+         * column (board `1c` pin 2, `1b` pin 4), but reads as a nav row: a hairline
          * above it, the row's 34px geometry and colors, and in the expanded
          * column its action as a visible label ("Collapse sidebar"), the way
          * WordPress's "Collapse menu" row does. It was a lone 34px
