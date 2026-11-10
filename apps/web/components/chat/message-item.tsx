@@ -932,7 +932,11 @@ export function MessageItem({
             <ThreadGlyph className="h-4 w-4" />
           </button>
         ) : null}
-        {onOpenThread && !message.thread_root_id && !message.thread ? (
+        {onOpenThread &&
+        !message.thread_root_id &&
+        !message.thread &&
+        !message.is_deleted &&
+        message.kind !== "imported" ? (
           <button
             type="button"
             className={ACTION_BAR_BUTTON}
