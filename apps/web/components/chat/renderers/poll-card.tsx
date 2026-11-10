@@ -16,6 +16,7 @@ import {
   POLL_VOTE_ACTION_TYPE,
   canClosePoll,
   isPollCardClosed,
+  pollCardEyebrow,
   pollsGateOf,
   pollsGateReason,
   readPollPayload,
@@ -127,7 +128,7 @@ export function PollCard({
   return (
     <Card className={cn(MESSAGE_CARD)}>
       <p className={cn(EYEBROW, "text-muted-foreground")}>
-        Poll{isClosed ? " · Closed" : ""}
+        {pollCardEyebrow(payload, now)}
       </p>
       <div className="mt-2 text-base font-bold">{payload.question}</div>
       <ul className="mt-3 space-y-2">

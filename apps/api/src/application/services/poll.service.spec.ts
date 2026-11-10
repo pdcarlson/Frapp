@@ -633,6 +633,25 @@ describe('PollService', () => {
         expect(patch).not.toHaveProperty('metadata');
       });
 
+      it('lets the creator close a card with no deadline (#3896)', async () => {
+        const openEnded = {
+          ...cardPoll,
+          payload: { ...cardPoll.payload, closes_at: null },
+        };
+        mockMessageRepo.findById.mockResolvedValue(openEnded);
+        mockMessageRepo.update.mockResolvedValue(openEnded);
+
+        await service.close('msg-1', 'user-1', 'ch-1');
+
+        expect(mockMessageRepo.update.mock.calls[0][1]).toEqual({
+          payload: {
+            ...openEnded.payload,
+            closed_at: expect.any(String),
+            closed_by: 'user-1',
+          },
+        });
+      });
+
       it('refuses anyone but the creator with 403', async () => {
         mockMessageRepo.findById.mockResolvedValue(cardPoll);
 
