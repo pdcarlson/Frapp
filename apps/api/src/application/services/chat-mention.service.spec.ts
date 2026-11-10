@@ -151,7 +151,7 @@ describe('ChatMentionService.resolveForSend', () => {
       ).resolves.toEqual([]);
     });
 
-    it('reads the sender\'s permissions for a switched-off role named with its space', async () => {
+    it("reads the sender's permissions for a switched-off role named with its space", async () => {
       const vp = role('vp', 'Vice President', { mentionable: false });
       const member = service(spaced, [...roles, vp]);
       await expect(
