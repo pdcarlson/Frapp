@@ -145,6 +145,34 @@ export class SupabaseNotificationRepository implements INotificationRepository {
 
     if (error) throw new SupabaseQueryError(error);
   }
+
+  async markAllRead(
+    userId: string,
+    chapterId: string,
+    readThrough: string,
+    screens?: readonly string[],
+  ): Promise<number> {
+    const patch: TablesUpdate<'notifications'> = { read_at: readThrough };
+    // `read_at is null` and the `created_at` bound, as in `markChatChannelRead`:
+    // an earlier read keeps its own timestamp, and a row that lands after the
+    // request began is one the member has not seen.
+    let query = this.supabase
+      .from('notifications')
+      .update(patch)
+      .eq('user_id', userId)
+      .eq('chapter_id', chapterId)
+      .is('read_at', null)
+      .lte('created_at', readThrough);
+    if (screens && screens.length > 0) {
+      // The DTO admits only lowercase screen names, so nothing here needs
+      // quoting inside the `in (...)` list.
+      query = query.in('data->target->>screen', [...screens]);
+    }
+    const { data, error } = await query.select('id');
+
+    if (error) throw new SupabaseQueryError(error);
+    return data?.length ?? 0;
+  }
 }
 
 /**

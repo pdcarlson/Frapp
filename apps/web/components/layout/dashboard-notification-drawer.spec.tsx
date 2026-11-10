@@ -39,8 +39,14 @@ const {
   queryFetching,
   mockInvalidateReports,
   mockMarkRead,
+  mockMarkManyRead,
+  mockScreensSeen,
   mockRefetch,
+  pathname,
 } = vi.hoisted(() => ({
+  mockMarkManyRead: vi.fn(),
+  mockScreensSeen: vi.fn(),
+  pathname: { value: "/chat" },
   notifications: { value: [] as unknown[] },
   queryFailed: { value: false },
   queryFetching: { value: false },
@@ -66,9 +72,18 @@ vi.mock("@repo/hooks", async (importOriginal) => {
       mutateAsync: mockMarkRead,
       isPending: false,
     }),
+    useMarkNotificationsRead: () => ({
+      mutate: mockMarkManyRead,
+      isPending: false,
+    }),
+    useMarkNotificationScreensSeen: mockScreensSeen,
     useInvalidateChatReports: () => mockInvalidateReports,
   };
 });
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => pathname.value,
+}));
 
 vi.mock("@/lib/realtime/use-realtime-table", () => ({
   useRealtimeTable: () => undefined,
@@ -116,6 +131,7 @@ beforeEach(() => {
   notifications.value = [EVENT];
   queryFailed.value = false;
   queryFetching.value = false;
+  pathname.value = "/chat";
 });
 
 describe("DashboardNotificationDrawer — report queue freshness", () => {
@@ -175,15 +191,14 @@ describe("DashboardNotificationDrawer — report queue freshness", () => {
 });
 
 describe("DashboardNotificationDrawer — chrome (components.md § Chrome weight)", () => {
-  it("draws a bare title with Mark all read as its one icon control", () => {
+  it("draws a bare title with a worded Mark all read as its one control (#3929)", () => {
     renderDrawer();
 
     expect(
       screen.getByRole("heading", { name: "Notifications" }),
     ).toBeInTheDocument();
     const markAll = screen.getByRole("button", { name: "Mark all read" });
-    expect(markAll).toHaveAttribute("title", "Mark all read");
-    expect(markAll.textContent).toBe("");
+    expect(markAll.textContent).toBe("Mark all read");
     // The realtime ping refetches; there is no manual Refresh, no count and
     // no "N total" line.
     expect(screen.queryByRole("button", { name: /refresh/i })).toBeNull();
@@ -304,5 +319,54 @@ describe("DashboardNotificationDrawer — opening a notification marks it read",
     await user.click(screen.getByRole("link", { name: /Notice/ }));
 
     expect(mockMarkRead).not.toHaveBeenCalled();
+  });
+});
+
+describe("DashboardNotificationDrawer: reading notifications (#3929)", () => {
+  it("Mark all read sends one request, not one per row", async () => {
+    const user = userEvent.setup();
+    notifications.value = [EVENT, REPORT];
+    renderDrawer();
+
+    await user.click(screen.getByRole("button", { name: "Mark all read" }));
+
+    expect(mockMarkManyRead).toHaveBeenCalledTimes(1);
+    expect(mockMarkManyRead).toHaveBeenCalledWith(undefined);
+    expect(mockMarkRead).not.toHaveBeenCalled();
+  });
+
+  it("draws no Mark all read once nothing is unread", () => {
+    notifications.value = [{ ...EVENT, read_at: "2026-09-22T10:05:00Z" }];
+    renderDrawer();
+
+    expect(screen.queryByRole("button", { name: "Mark all read" })).toBeNull();
+  });
+
+  it("reads the notices about the page the member is on, while the tab shows", () => {
+    pathname.value = "/events";
+    renderDrawer();
+
+    expect(mockScreensSeen).toHaveBeenLastCalledWith(["events"], {
+      enabled: true,
+    });
+  });
+
+  it("reads nothing by page on a chat page: the channel read clears those", () => {
+    pathname.value = "/chat";
+    renderDrawer();
+
+    expect(mockScreensSeen).toHaveBeenLastCalledWith([], { enabled: true });
+  });
+
+  it("sends a member-joined notice to Members, not Chat", () => {
+    notifications.value = [
+      notification("n-join", "members", "2026-09-22T11:00:00Z", "Alex joined"),
+    ];
+    renderDrawer();
+
+    expect(screen.getByRole("link", { name: /Alex joined/ })).toHaveAttribute(
+      "href",
+      "/members",
+    );
   });
 });
