@@ -11,13 +11,11 @@ import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 import { SearchGlyph } from "@/components/documents/resources-glyphs";
 import { DocumentRow } from "@/components/documents/document-row";
 import type { ChapterDocument } from "@/components/documents/document-types";
-import { FilterChip } from "@/components/shared/filter-chip";
-import {
-  DateFilterChip,
-  SortChip,
-} from "@/components/documents/document-filters";
+import { FilterChip, SortChip } from "@/components/shared/filter-chip";
+import { DateFilterChip } from "@/components/documents/document-filters";
 import {
   DOCUMENT_CAP_NOTICE,
+  SORT_OPTIONS,
   type DocumentFilters,
   type DocumentSort,
   type FileKind,
@@ -182,7 +180,7 @@ export function DocumentList({
               setFilters({ ...filters, kind: kind as FileKind | null })
             }
           />
-          <SortChip value={sort} onChange={setSort} />
+          <SortChip options={SORT_OPTIONS} value={sort} onChange={setSort} />
         </div>
       </div>
       {/*

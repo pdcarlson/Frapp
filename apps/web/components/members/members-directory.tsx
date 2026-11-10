@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FilterChip, SortChip } from "@/components/shared/filter-chip";
 import { SectionLabel } from "@/components/shared/section-label";
 import { anyReadUncached } from "@/components/shared/async-states";
 /*
@@ -46,7 +47,6 @@ import {
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 import {
   dashboardCheckboxHitAreaClassName,
-  dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
   dashboardToolbarSearchClassName,
   dashboardToolbarSearchGlyphClassName,
@@ -92,7 +92,7 @@ type SortDir = "asc" | "desc";
  * home at all in a flat list — the board's list rows (`4a`) have no header row
  * to hang one on, and `1f` pin 2 gives a route one toolbar row holding "filter
  * menu, view toggle, primary action". So the eight reachable (key, direction)
- * pairs become eight options on one select that sits with the filters, and no
+ * pairs become eight options on one sort chip that sits with the filters, and no
  * direction state has to be inferred from a second click on the same header.
  *
  * All eight pairs are listed rather than the four keys plus a direction toggle:
@@ -113,6 +113,11 @@ const SORT_OPTIONS = [
 type SortValue = (typeof SORT_OPTIONS)[number]["value"];
 
 const DEFAULT_SORT: SortValue = "name:asc";
+
+const STATUS_OPTIONS = [
+  { value: "active", label: "Active" },
+  { value: "pending", label: "Pending" },
+] as const;
 
 function parseSort(value: SortValue): { key: SortKey; dir: SortDir } {
   const [key, dir] = value.split(":");
@@ -172,15 +177,16 @@ export function MembersDirectory() {
   const { isOffline } = useNetwork();
   const { toast } = useToast();
   const [query, setQuery] = useState("");
-  const [roleFilter, setRoleFilter] = useState<string>("all");
-  const [cohortFilter, setCohortFilter] = useState<string>("all");
+  // `null` is "any", the shape `FilterChip` speaks.
+  const [roleFilter, setRoleFilter] = useState<string | null>(null);
+  const [cohortFilter, setCohortFilter] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<
-    "all" | "active" | "pending"
-  >("all");
+    "active" | "pending" | null
+  >(null);
   const [sort, setSort] = useState<SortValue>(DEFAULT_SORT);
   const [page, setPage] = useState(1);
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
-  const [bulkRoleId, setBulkRoleId] = useState<string>("");
+  const [bulkRoleId, setBulkRoleId] = useState<string | null>(null);
   const [activeMemberId, setActiveMemberId] = useState<string | null>(null);
   // The sheet reads the profile by `users.id` itself (#3726), so it keeps its
   // member even once a role save moves them off this tab's list.
@@ -267,13 +273,22 @@ export function MembersDirectory() {
     [roleOptions, usingSearch],
   );
   // A choice whose option has gone (Alumni picked during a search that has
-  // since been cleared) reads as "all" rather than filtering on something the
-  // select no longer shows.
+  // since been cleared) reads as "any" rather than filtering on something the
+  // chip no longer lists.
+  const filterRoleChipOptions = useMemo(
+    () => filterRoleOptions.map((role) => ({ value: role.id, label: role.name })),
+    [filterRoleOptions],
+  );
+  const assignableRoleChipOptions = useMemo(
+    () =>
+      assignableRoleOptions.map((role) => ({ value: role.id, label: role.name })),
+    [assignableRoleOptions],
+  );
   const effectiveRoleFilter =
-    roleFilter === "all" ||
+    roleFilter !== null &&
     filterRoleOptions.some((role) => role.id === roleFilter)
       ? roleFilter
-      : "all";
+      : null;
 
   const pointsByUserId = useMemo(() => {
     const map = new Map<string, number>();
@@ -294,7 +309,7 @@ export function MembersDirectory() {
   // each member's graduation year, and one pledge class can span several
   // graduation years (#3941). The `class` term is for real pledge classes.
   // Cohort options come from the full roster (not the search-narrowed list) so a
-  // selected cohort never silently loses its <option> mid-search. Alumni class
+  // selected cohort never silently loses its option mid-search. Alumni class
   // years join them only while a search spans both tabs, as the role filter's
   // Alumni option does.
   const cohortOptions = useMemo(() => {
@@ -306,11 +321,15 @@ export function MembersDirectory() {
     }
     return [...years].sort((a, b) => b - a);
   }, [membersQuery.data, usingSearch]);
+  const cohortChipOptions = useMemo(
+    () => cohortOptions.map((year) => ({ value: String(year), label: String(year) })),
+    [cohortOptions],
+  );
   const effectiveCohortFilter =
-    cohortFilter === "all" ||
+    cohortFilter !== null &&
     cohortOptions.some((y) => String(y) === cohortFilter)
       ? cohortFilter
-      : "all";
+      : null;
 
   const pointsOf = (member: MemberProfile) =>
     pointsByUserId.get(member.user_id) ?? 0;
@@ -335,13 +354,13 @@ export function MembersDirectory() {
   const filteredMembers = useMemo(() => {
     return members.filter((member) => {
       if (
-        effectiveRoleFilter !== "all" &&
+        effectiveRoleFilter !== null &&
         !member.role_ids.includes(effectiveRoleFilter)
       ) {
         return false;
       }
       if (
-        effectiveCohortFilter !== "all" &&
+        effectiveCohortFilter !== null &&
         String(member.graduation_year ?? "") !== effectiveCohortFilter
       ) {
         return false;
@@ -422,7 +441,7 @@ export function MembersDirectory() {
   useEffect(() => {
     setPage(1);
     setSelectedMemberIds([]);
-    setBulkRoleId("");
+    setBulkRoleId(null);
   }, [trimmedQuery, effectiveRoleFilter, effectiveCohortFilter, statusFilter]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -465,9 +484,9 @@ export function MembersDirectory() {
   // that guessed at both.
   const narrowed =
     usingSearch ||
-    effectiveRoleFilter !== "all" ||
-    effectiveCohortFilter !== "all" ||
-    statusFilter !== "all";
+    effectiveRoleFilter !== null ||
+    effectiveCohortFilter !== null ||
+    statusFilter !== null;
 
   function toggleMember(id: string, isSelected: boolean) {
     setSelectedMemberIds((prev) =>
@@ -514,7 +533,7 @@ export function MembersDirectory() {
         description: `Added ${roleName} to ${succeeded} member${succeeded === 1 ? "" : "s"}.`,
       });
       setSelectedMemberIds([]);
-      setBulkRoleId("");
+      setBulkRoleId(null);
     } else {
       toast({
         title: "Some assignments failed",
@@ -666,58 +685,37 @@ export function MembersDirectory() {
               className={dashboardToolbarSearchClassName}
             />
           </div>
-          <select
-            aria-label="Filter members by role"
+          {/*
+          The shared filter chips, as `/backwork` and `/documents` use them
+          (#3970; native selects until then). Role is the long one: past
+          `FILTER_SEARCH_THRESHOLD` options its list opens with a
+          type-to-filter field, so a chapter with 100+ imported roles can
+          type for one instead of scrolling.
+        */}
+          <FilterChip
+            label="Role"
+            anyLabel="Any role"
+            options={filterRoleChipOptions}
             value={effectiveRoleFilter}
-            onChange={(event) => setRoleFilter(event.target.value)}
-            className={dashboardFilterSelectClassName}
-          >
-            <option value="all">Role: All</option>
-            {filterRoleOptions.map((role) => (
-              <option key={role.id} value={role.id}>
-                Role: {role.name}
-              </option>
-            ))}
-          </select>
-          <select
-            aria-label="Filter members by graduation year"
+            onChange={setRoleFilter}
+          />
+          <FilterChip
+            label="Graduation year"
+            anyLabel="Any year"
+            options={cohortChipOptions}
             value={effectiveCohortFilter}
-            onChange={(event) => setCohortFilter(event.target.value)}
-            className={dashboardFilterSelectClassName}
-          >
-            <option value="all">Graduation year: All</option>
-            {cohortOptions.map((year) => (
-              <option key={year} value={String(year)}>
-                Graduation year: {year}
-              </option>
-            ))}
-          </select>
-          <select
-            aria-label="Filter members by status"
+            onChange={setCohortFilter}
+          />
+          <FilterChip
+            label="Status"
+            anyLabel="Any status"
+            options={STATUS_OPTIONS}
             value={statusFilter}
-            onChange={(event) =>
-              setStatusFilter(
-                event.target.value as "all" | "active" | "pending",
-              )
+            onChange={(value) =>
+              setStatusFilter(value as "active" | "pending" | null)
             }
-            className={dashboardFilterSelectClassName}
-          >
-            <option value="all">Status: All</option>
-            <option value="active">Status: Active</option>
-            <option value="pending">Status: Pending</option>
-          </select>
-          <select
-            aria-label="Sort members"
-            value={sort}
-            onChange={(event) => setSort(event.target.value as SortValue)}
-            className={dashboardFilterSelectClassName}
-          >
-            {SORT_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                Sort: {option.label}
-              </option>
-            ))}
-          </select>
+          />
+          <SortChip options={SORT_OPTIONS} value={sort} onChange={setSort} />
           {/*
           The route's primary action, at the trailing edge of the one toolbar
           row `1f` pin 2 describes. It renders above the empty state as well
@@ -761,19 +759,12 @@ export function MembersDirectory() {
             {selectedCount} selected
           </p>
           <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
-            <select
-              aria-label="Select role to assign"
+            <FilterChip
+              label="Assign role"
+              options={assignableRoleChipOptions}
               value={bulkRoleId}
-              onChange={(event) => setBulkRoleId(event.target.value)}
-              className={dashboardFilterSelectClassName}
-            >
-              <option value="">Assign role</option>
-              {assignableRoleOptions.map((role) => (
-                <option key={role.id} value={role.id}>
-                  {role.name}
-                </option>
-              ))}
-            </select>
+              onChange={setBulkRoleId}
+            />
             <Button
               size="sm"
               onClick={() => void applyBulkRole()}
@@ -786,7 +777,7 @@ export function MembersDirectory() {
               variant="secondary"
               onClick={() => {
                 setSelectedMemberIds([]);
-                setBulkRoleId("");
+                setBulkRoleId(null);
               }}
             >
               Clear
@@ -817,9 +808,9 @@ export function MembersDirectory() {
             {stateMicrocopy.members.noFilterMatches}{" "}
             <InlineNoteAction
               onClick={() => {
-                setRoleFilter("all");
-                setCohortFilter("all");
-                setStatusFilter("all");
+                setRoleFilter(null);
+                setCohortFilter(null);
+                setStatusFilter(null);
               }}
             >
               Clear filters
@@ -842,7 +833,7 @@ export function MembersDirectory() {
           {/*
             The list header, which is all that survives of the deleted
             `<thead>`: no column labels (a flush list has no columns to label)
-            and no sort buttons (one sort select in the toolbar replaced four),
+            and no sort buttons (one sort chip in the toolbar replaced four),
             but the select-all stays, permanently rendered.
 
             It is here rather than in the selection bar because a control must
