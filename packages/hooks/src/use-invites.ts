@@ -13,6 +13,63 @@ import type { components } from "@repo/api-sdk";
 export type InviteListItem = components["schemas"]["InviteListItemDto"];
 export type InviteStatus = components["schemas"]["InviteStatus"];
 
+/** What each invite status reads as in a list: web's Invited and mobile's. */
+export const INVITE_STATUS_LABEL: Record<InviteStatus, string> = {
+  pending: "Pending",
+  joined: "Joined",
+  expired: "Expired",
+  revoked: "Revoked",
+};
+
+/** Joined and expired invites stay listed this long, then drop off. */
+const SETTLED_LIST_DAYS = 14;
+
+/**
+ * The invites worth listing: every pending one, and joined or expired ones
+ * from the last two weeks. Revoked ones go: the officer chose to forget them.
+ * Web's Invited list and mobile's Invite members screen both read this.
+ */
+export function listedInvites(
+  rows: readonly InviteListItem[],
+  now: Date = new Date(),
+): InviteListItem[] {
+  const cutoff = now.getTime() - SETTLED_LIST_DAYS * 24 * 60 * 60 * 1000;
+  return rows.filter((row) => {
+    if (row.status === "revoked") return false;
+    if (row.status === "pending") return true;
+    return new Date(row.created_at).getTime() >= cutoff;
+  });
+}
+
+/**
+ * What can be done with a listed invite, in menu order (#3828):
+ *
+ * - `link`: copy or share its join link, while it is pending.
+ * - `again`: email the address a fresh link, for an emailed invite nobody
+ *   has joined with (pending or expired). The server retires the older
+ *   invite once the new one is delivered.
+ * - `revoke`: stop it working, while it is pending.
+ *
+ * Web's Invited menu and mobile's row menu both draw from this, so the two
+ * apps offer the same actions on the same rows.
+ */
+export type InviteMenuAction = "link" | "again" | "revoke";
+
+export function inviteMenuActions(
+  invite: Pick<InviteListItem, "status" | "email">,
+): InviteMenuAction[] {
+  const actions: InviteMenuAction[] = [];
+  if (invite.status === "pending") actions.push("link");
+  if (
+    invite.email &&
+    (invite.status === "pending" || invite.status === "expired")
+  ) {
+    actions.push("again");
+  }
+  if (invite.status === "pending") actions.push("revoke");
+  return actions;
+}
+
 /**
  * `refetchInterval` is for a screen that watches its invites get used while
  * it is open, such as mobile setup's invite step, which marks a shared link
@@ -49,6 +106,7 @@ export function useCreateInvite() {
   const chapterId = useActiveChapterId();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["invites", "create-invite"],
     mutationFn: async (body: { role?: string }) => {
       const { data, error } = await client.POST("/v1/invites", { body });
       if (error) throw error;
@@ -65,6 +123,7 @@ export function useEmailInvites() {
   const chapterId = useActiveChapterId();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["invites", "email-invites"],
     mutationFn: async (body: { role?: string; emails: string[] }) => {
       const { data, error } = await client.POST("/v1/invites/email", { body });
       if (error) throw error;
@@ -89,6 +148,7 @@ export function useRedeemInvite() {
   const chapterId = useActiveChapterId();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["invites", "redeem-invite"],
     mutationFn: async (body: {
       token: string;
       accept_terms_privacy?: true;
@@ -173,6 +233,7 @@ export function useRevokeInvite() {
   const chapterId = useActiveChapterId();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["invites", "revoke-invite"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.DELETE("/v1/invites/{id}", {
         params: { path: { id } },

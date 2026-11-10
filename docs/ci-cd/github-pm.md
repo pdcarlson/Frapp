@@ -24,7 +24,8 @@ GitHub Issues (canonical: planning, status, Triage intake)
 - **GitHub Issues is canonical** for what to work on and its status. There is **no fallback
   tracker** — if the GitHub MCP is down, `/next` and the routines stop rather than guessing.
 - **All issues are opened on GitHub with the `triage` label.** Never in Linear (retired), never in
-  a scratch file. Two carve-outs, neither of them work:
+  a scratch file. A person's own ask can skip it, as § Triage is the intake (below) says. Two other carve-outs,
+  neither of them work:
   - **`routine-state`** infrastructure issues (e.g. the "PR Follow-ups — Human Action List"
     tracking issue) carry `routine-state` instead, and `/next` and the routines skip them as work.
   - **`incident`** issues are the watchdogs' live alerts (`scripts/ci/lib/alert-issue.mjs`), filed
@@ -57,7 +58,10 @@ GitHub Issues (canonical: planning, status, Triage intake)
   on its own branch may file the issue and claim it in the same breath — record-keeping for work
   already underway, not auto-starting inbox work. And a human naming an issue (`/next <N>`) is the
   triage decision, so that run promotes it as it claims it; ranked `/next` still never picks a
-  `triage` item.
+  `triage` item. Likewise, an issue filed for what a person asked for in their own chat can skip
+  Triage and go straight to the Backlog with its priority, set by that chat's session; the
+  conditions are in [`AGENTS.md` § Work tracking](../../AGENTS.md#work-tracking) (Paul,
+  2026-11-09).
 
 ### How agents reach the tracker
 
@@ -161,6 +165,10 @@ Unchanged from the Linear era. An issue's description may carry a machine-readab
   architectural, security-sensitive, or subtle-correctness work). Advisory, read at spin-up.
   Sessions default to Opus 5.5, which does about 95% of the work here (owner decision 2026-09-22),
   so `any` means that default and `fable` marks the minority of issues that warrant Fable.
+  *Changed 2026-11-09 (Paul):* agents start on Fable 5.2, so the coordinator starts every worker on
+  it whatever this field says ([`coordinator` § Workers](../../.claude/skills/coordinator/SKILL.md#workers)).
+  The field still tells a session someone starts by hand which issues warranted Fable under the
+  2026-09-22 default.
 - **`ultracode`** — whether multi-agent orchestration likely pays for itself.
 
 **Who writes it:** the curator files every suggestion with a brief; the triage routine backfills
@@ -207,7 +215,7 @@ document wins** and `next.md` is the bug — fix the command, don't fork policy 
 
 Everything an agent files (follow-ups from `/next`, curator suggestions, PR-followup harvest):
 
-- Born **open + `triage`** with a **priority label** proposed (the triage routine confirms),
+- Born **open + `triage`** (unless it is a person's own ask, § Triage is the intake) with a **priority label** proposed (the triage routine confirms),
   **`suggestion`** when routine-owned, exactly one **`area:<x>`**.
 - Body: summary · meta block (`Asked by:` naming whose request it is, then `Blocked by #N` / `Estimate:` as applicable) · problem/context with
   exact `file:line` refs · acceptance criteria (objectively verifiable checkboxes) · an
@@ -576,7 +584,8 @@ Unchanged in substance from the Linear era. The backlog routines split writes in
   routine.
 - **Organizational writes** — priority labels, `area:*`, `Blocked by #N` lines, promoting
   Triage → Backlog — are the triage routine's job **on any `triage` item**, whoever filed it, and
-  `/next`'s on an issue a human named, which it promotes as it claims it.
+  `/next`'s on an issue a human named, which it promotes as it claims it, and a chat session's on
+  the issue it files for its own person's ask (§ Triage is the intake).
   **Exception:** human-action holds (`[human]`/`[pr-followup][human]` titles or the
   `**Human action required — hold in triage` body opener) are never promoted — they get
   priority/estimate only and stay in Triage (see "Filing an issue" above). A

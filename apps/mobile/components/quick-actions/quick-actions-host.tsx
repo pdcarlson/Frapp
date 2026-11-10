@@ -158,7 +158,8 @@ export function useQuickActionsHost({
           openSheet(key);
           return;
         case "invite":
-          // The Invite members screen, whose one button shares a fresh link.
+          // The Invite members screen: invite by email, share a link, and
+          // the Invited list with resend and revoke.
           router.push("/invite");
           return;
         case "message":
@@ -282,7 +283,7 @@ export function useQuickActionsHost({
 }
 
 /** Catches a sheet's render error, reports it, and lets the host drop it. */
-class SheetBoundary extends Component<
+export class SheetBoundary extends Component<
   { onError: () => void; children: ReactNode },
   { failed: boolean }
 > {

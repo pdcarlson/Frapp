@@ -316,7 +316,7 @@ export default function DirectoryScreen() {
       {canInvite && chapterId ? (
         <FloatingCreateButton
           label="Invite members"
-          hint="Opens invite links to share with new members."
+          hint="Opens invites to email or share with new members."
           onPress={() =>
             router.push({ pathname: "/invite", params: { from: "directory" } })
           }

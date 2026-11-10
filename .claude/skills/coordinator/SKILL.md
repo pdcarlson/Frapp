@@ -47,8 +47,13 @@ track.
 
 ## Workers
 
-Start each one with `create_session`: `source_url` `https://github.com/pdcarlson/Frapp`, a title
-naming the work, tags `frapp:coordinator`, and a brief that stands alone. The brief carries:
+Start each one with `create_session`: `source_url` `https://github.com/pdcarlson/Frapp`, `model`
+`claude-fable-5-2` (Paul, 2026-11-09), a title naming the work, tags `frapp:coordinator`, and a brief
+that stands alone. `create_session` takes no effort level. Fresh Fable workers ran at `medium`
+with and without the repo's `effortLevel` key (measured 2026-11-09,
+[`agent-infra.md`](../../../docs/ci-cd/agent-infra.md#claude-code-project-settings)), for a reason
+not yet known, so don't assume a worker's level: a person can change it in the worker's effort
+picker, and `echo "$CLAUDE_EFFORT"` in the worker reads it. The brief carries:
 
 - the goal and what done looks like;
 - what you already know: the asker's words, issues, PRs, files, the board row;
@@ -102,7 +107,10 @@ The session can't run `/compact` on itself, so it hands off instead. After each 
 ## Limits
 
 - **Budget.** Each worker carries about 90,000 tokens of fixed setup before it does anything
-  (measured 2026-11-08). Don't start one for what a lookup answers. Usage credits are off for the
+  (measured 2026-11-08). Don't start one for what a lookup answers. Group related asks (same screen,
+  same subsystem) into one worker rather than one per issue (Paul, 2026-11-09). Archive a worker
+  once its PR is green with auto-merge on, or merged: six workers cost $10 to $61 each on
+  2026-11-09, and most of the $61 one came after its PR was done, re-reading 600k tokens per wake. Usage credits are off for the
   organization, so heavy use pauses at the seat limit rather than billing.
 - **Identity.** Workers run on the coordinator owner's account, GitHub and environment, so anything
   Shawn sends runs as Paul. That is why Shawn's ideas stop at research and design until Paul approves.

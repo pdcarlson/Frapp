@@ -16,7 +16,6 @@ export const PROTECTED_ROUTE_PREFIXES = [
   "/discord-import",
   "/geofences",
   "/study",
-  "/polls",
   "/chat",
   "/chat-admin",
   "/points",
@@ -229,7 +228,7 @@ export const config = {
     "/dashboard/:path*",
     {
       source:
-        "/((?:members|alumni|roles|events|tasks|service|documents|backwork|discord-import|geofences|study|polls|chat|chat-admin|points|billing|reports|profile|settings)(?:/.*)?)",
+        "/((?:members|alumni|roles|events|tasks|service|documents|backwork|discord-import|geofences|study|chat|chat-admin|points|billing|reports|profile|settings)(?:/.*)?)",
       missing: [{ type: "header", key: "next-router-prefetch" }],
     },
   ],

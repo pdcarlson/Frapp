@@ -13,10 +13,6 @@ import {
 import { MemberAvatar } from "@/components/member-avatar";
 import type { StagedPhoto } from "@/lib/chat/use-chat-channel";
 import {
-  attachChoices,
-  presentAttachChoices,
-} from "@/lib/chat/attach-choices";
-import {
   activeMentionQuery,
   mentionPickerEntries,
   type MentionCandidate,
@@ -124,32 +120,21 @@ export interface ChatComposerProps {
   hintTone?: "muted" | "error";
   /** Photos staged for the next send, each uploading, ready or failed. */
   photos?: StagedPhoto[];
-  /** Omit to render no attach affordance at all, rather than an inert one. */
-  onAttach?: () => void;
   /**
-   * Opens the New poll sheet (#3701). Set only for a member who may create a
-   * poll here, and not while editing or replying. With it, the + offers Photo
-   * and Poll (`lib/chat/attach-choices.ts`), and stays live while photos
-   * can't be attached (the tray is full, or offline), because a poll still can.
+   * Opens the + sheet (#3865: Photo, Poll, Event, Task, Service hours), which
+   * says itself what can't be used and why. Omit to render no + at all, as
+   * while editing, rather than an inert one.
    */
-  onCreatePoll?: () => void;
+  onOpenPlus?: () => void;
+  /**
+   * Holds the + dark, still visible, where nothing it offers can work: a
+   * channel the member can't post in. The reason rides `disabledHint`.
+   */
+  plusDisabled?: boolean;
   onRemovePhoto?: (key: string) => void;
   onRetryPhoto?: (key: string) => void;
   /** The system photo sheet is up; the attach control shows a spinner and locks. */
   isPicking?: boolean;
-  /** No room for another photo; the attach control stays, disabled. */
-  attachFull?: boolean;
-  /**
-   * Set when attaching is unavailable right now — offline, or no post
-   * permission. It **gates the control and nothing else**: the member-facing
-   * explanation belongs in `disabledHint`, which is the composer's one hint
-   * slot, so the caller folds the reason in there. Offline is the exception:
-   * the app-wide connection pill says it, so the caller passes no hint. Rendering it here as well
-   * produced two hints for one composer, and the offline pair contradicted
-   * each other. The control stays visible and disabled rather than vanishing —
-   * a control that disappears reads as a missing feature.
-   */
-  attachDisabledReason?: string | null;
   /** A staged reply or an edit in progress; `null` for an ordinary send. */
   context?: ComposerContext | null;
   /**
@@ -185,13 +170,11 @@ export function ChatComposer({
   disabledHint,
   hintTone = "muted",
   photos = [],
-  onAttach,
-  onCreatePoll,
+  onOpenPlus,
+  plusDisabled = false,
   onRemovePhoto,
   onRetryPhoto,
   isPicking = false,
-  attachFull = false,
-  attachDisabledReason,
   context = null,
   mentionCandidates,
   avatarFor,
@@ -223,19 +206,9 @@ export function ChatComposer({
   // button greyed out and no way to explain why.
   const isSendable = canSend && (value.trim().length > 0 || photos.length > 0);
 
-  const canAttachPhoto =
-    !!onAttach && !isPicking && !attachFull && !attachDisabledReason && canSend;
-  // A poll goes through the outbox like a message, so offline doesn't stop it;
-  // only a photo sheet that is up does, which owns the control while it is.
-  const canStartPoll = !!onCreatePoll && !isPicking && canSend;
-  const canAttach = canAttachPhoto || canStartPoll;
-  const openAttach = () =>
-    presentAttachChoices(
-      attachChoices({
-        photo: canAttachPhoto ? onAttach : undefined,
-        poll: canStartPoll ? onCreatePoll : undefined,
-      }),
-    );
+  // The sheet greys what can't work this second and says why, so the + itself
+  // only waits for the photo library it opened and for the chat runtime.
+  const canOpenPlus = !!onOpenPlus && !plusDisabled && !isPicking && canSend;
 
   return (
     <View style={styles.wrapper}>
@@ -351,16 +324,16 @@ export function ChatComposer({
       ) : null}
 
       <View style={styles.row}>
-        {onAttach || onCreatePoll ? (
+        {onOpenPlus ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={onCreatePoll ? "Add photo or poll" : "Attach photo"}
-            accessibilityState={{ disabled: !canAttach, busy: isPicking }}
-            disabled={!canAttach}
-            onPress={openAttach}
+            accessibilityLabel="Add a photo, poll, event and more"
+            accessibilityState={{ disabled: !canOpenPlus, busy: isPicking }}
+            disabled={!canOpenPlus}
+            onPress={onOpenPlus}
             style={({ pressed }) => [
               styles.attach,
-              !canAttach ? styles.attachDisabled : null,
+              !canOpenPlus ? styles.attachDisabled : null,
               pressed ? styles.pressed : null,
             ]}
           >

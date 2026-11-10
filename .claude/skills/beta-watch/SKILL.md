@@ -72,7 +72,9 @@ File (or update) an issue for:
   - Several of these in one window are one outage: one issue, or a comment on the watchdog's
     open `/health/ready` `incident` when there is one.
   - A single event is noise, as above. So is a 5xx that came from a host other than our API, such
-    as Supabase Storage on an upload (`mutation "unkeyed"`): check the event's breadcrumbs.
+    as Supabase Storage on an upload: the chat file PUT reports as `mutation "storage"`, and the
+    chapter logo upload, whose PUT is one step of `mutation "chapters"`, carries no `request_id`
+    when Storage refused it. Check the event's breadcrumbs.
   - Other client warnings (4xx, network drops, `query_failure:exception`) stay unfiled.
 
   Owner decision, 2026-11-08: under the error-only bar, the apps' warnings were never filed,

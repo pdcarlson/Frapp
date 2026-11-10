@@ -216,6 +216,10 @@ describe('NotificationController', () => {
         quiet_hours_end: null,
         quiet_hours_tz: null,
         theme: 'system' as const,
+        status: 'online' as const,
+        status_expires_at: null,
+        custom_status: null,
+        custom_status_expires_at: null,
       };
 
       notificationService.getSettings.mockResolvedValue(expectedResult);
@@ -238,6 +242,10 @@ describe('NotificationController', () => {
         quiet_hours_end: null,
         quiet_hours_tz: null,
         theme: 'dark' as const,
+        status: 'online' as const,
+        status_expires_at: null,
+        custom_status: null,
+        custom_status_expires_at: null,
       };
 
       notificationService.updateSettings.mockResolvedValue(expectedResult);

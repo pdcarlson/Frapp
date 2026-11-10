@@ -13,12 +13,15 @@
     "./chat-client": "./src/chat-client.ts",
     "./realtime-manager": "./src/realtime-manager.ts",
     "./polls": "./src/polls.ts",
+    "./poll-draft": "./src/poll-draft.ts",
+    "./plus-menu": "./src/plus-menu.ts",
     "./cards": "./src/cards.ts",
     "./reply-preview": "./src/reply-preview.ts",
     "./channel-preview": "./src/channel-preview.ts",
     "./blocks": "./src/blocks.ts",
     "./block-copy": "./src/block-copy.ts",
     "./channels-refused-copy": "./src/channels-refused-copy.ts",
+    "./audit-log-copy": "./src/audit-log-copy.ts",
     "./message-actions": "./src/message-actions.ts",
     "./report-copy": "./src/report-copy.ts",
     "./grouping": "./src/grouping.ts",
@@ -38,6 +41,7 @@
   "dependencies": {
     "@repo/api-sdk": "*",
     "@repo/formatting": "*",
+    "@repo/org-archetypes": "*",
     "@repo/validation": "*",
     "@supabase/supabase-js": "^2.119.0",
     "@tanstack/react-query": "^5.105.0"

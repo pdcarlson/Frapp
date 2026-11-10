@@ -158,6 +158,10 @@ export function useCheckIn() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    // Rooted at `attendance`, the root `useAttendance` reads, so a failed
+    // write reports to Sentry under its feature, not `unkeyed` (#3393). The
+    // other attendance writes below follow it.
+    mutationKey: ["attendance", "check-in"],
     mutationFn: async ({ eventId, ...payload }: CheckInVariables) => {
       const result = await client.POST(
         "/v1/events/{eventId}/attendance/check-in",
@@ -390,6 +394,7 @@ export function useUpdateAttendanceStatus() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["attendance", "update-status"],
     mutationFn: async ({
       eventId,
       userId,
@@ -422,6 +427,7 @@ export function useAutoAbsent() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["attendance", "auto-absent"],
     mutationFn: async (eventId: string) => {
       const result = await client.POST(
         "/v1/events/{eventId}/attendance/auto-absent",

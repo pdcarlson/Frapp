@@ -56,7 +56,6 @@ import {
 import {
   can,
   canAll,
-  EVENT_CREATE_PERMISSIONS,
   isAnnouncementChannel,
   type MentionCandidate,
   type MentionChipTargets,
@@ -133,6 +132,11 @@ import {
   type DepartedMembers,
 } from "@repo/chat-core/message-actions";
 import { blockActionLabel } from "@repo/chat-core/block-copy";
+import {
+  CLOSE_POLL_CONFIRM_BODY,
+  CLOSE_POLL_CONFIRM_LABEL,
+  CLOSE_POLL_CONFIRM_TITLE,
+} from "@repo/chat-core/polls";
 import { replyPreviewText } from "./reply-quote";
 import { OpsSetupNudge } from "./ops-setup-nudge";
 import { SetupChecklistSection } from "./setup-checklist";
@@ -149,19 +153,42 @@ import {
 } from "./report-message-dialog";
 import { compactControlClassName } from "@/components/shared/table-controls";
 import {
-  NavBackButton,
+  NavChannelsTitle,
   useIsDesktopShell,
   useNavFace,
 } from "@/components/layout/nav-face";
 import {
   eventFormPrefill,
   parseEventArgs,
+  parsePollArgs,
+  parseTaskArgs,
+  taskFormPrefill,
   type EventFormPrefill,
   type SlashCommand,
 } from "@repo/chat-core/integrations";
+import type { DispatchResult } from "@repo/chat-core/dispatch";
+import { NewTaskDialog, type NewTaskPrefill } from "@/components/tasks/new-task-dialog";
+import { LogHoursDialog } from "@/components/service/log-hours-dialog";
+import { PointsAdjustmentDialog } from "@/components/points/points-adjustment-dialog";
+import { useSubscriptionGate } from "@/components/shared/subscription-gate";
 import { EventEditorDialog } from "@/components/events/event-editor-dialog";
+import { pollDraftFromArgs, type PollDraft } from "@repo/chat-core/poll-draft";
+import { NewPollDialog } from "./new-poll-dialog";
+import {
+  PLUS_MENU_COMMANDS,
+  PLUS_MENU_PERMISSIONS,
+  plusMenuForms,
+  type PlusMenuForm,
+} from "@repo/chat-core/plus-menu";
 import type { ChatNotificationLevel } from "@repo/hooks";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
+
+/** What a + menu form says when its write threw after the request went out. */
+const FORM_UNCONFIRMED_WARNING = {
+  task: "Couldn't confirm the task was created. Check the task board before you create it again.",
+  hours: "Couldn't confirm the hours were logged. Check the Service page before you log them again.",
+  points: "Couldn't confirm the points were adjusted. Check the points ledger before you adjust them again.",
+} as const;
 
 interface DirectoryMember {
   user_id: string;
@@ -220,6 +247,62 @@ const UNREACHABLE_COPY: Record<UnreachableReason, string> = {
   error: "Couldn't load the messages needed to reach that message.",
   unloaded: "Couldn't load this channel's messages to reach that message.",
 };
+
+/**
+ * Marks the history entry a channel pick pushes below `lg`, so Back returns
+ * from the thread to the channel list (#3824).
+ *
+ * The value is this document's own token, not `true`. History state outlives
+ * a reload, but the entry under a marked one then belongs to the document the
+ * reload discarded, and going back to it is a full page load, not a
+ * `popstate`. A marker from another document is not ours to go back through.
+ */
+const THREAD_PANE_HISTORY_KEY = "frappChatThreadPane";
+const THREAD_PANE_DOCUMENT_TOKEN = `${Date.now().toString(36)}-${Math.random()
+  .toString(36)
+  .slice(2)}`;
+
+function isThreadPaneEntry(state: unknown): boolean {
+  return (
+    typeof state === "object" &&
+    state !== null &&
+    (state as Record<string, unknown>)[THREAD_PANE_HISTORY_KEY] ===
+      THREAD_PANE_DOCUMENT_TOKEN
+  );
+}
+
+/** Pushes this document's marked, same-URL entry for an opened thread. */
+function pushThreadPaneEntry(): void {
+  // The spread keeps Next's own `__NA` state, so its patched `pushState`
+  // passes the entry straight through.
+  window.history.pushState(
+    {
+      ...(window.history.state as object | null),
+      [THREAD_PANE_HISTORY_KEY]: THREAD_PANE_DOCUMENT_TOKEN,
+    },
+    "",
+  );
+}
+
+/**
+ * Overlays that own `Esc` while open. Radix closes them on the same keydown,
+ * before this listener runs but while they are still in the DOM.
+ */
+const ESCAPE_OWNERS =
+  '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-radix-popper-content-wrapper]';
+
+/**
+ * Whether an `Esc` is someone else's: typed in a field or the composer (which
+ * cancel a reply or an edit with it), or closing an open overlay. Chat only
+ * takes the key when nothing else would have (#3824).
+ */
+function escapeBelongsElsewhere(target: EventTarget | null): boolean {
+  if (target instanceof HTMLElement) {
+    if (target.isContentEditable) return true;
+    if (target.closest("input, textarea, select")) return true;
+  }
+  return document.querySelector(ESCAPE_OWNERS) !== null;
+}
 
 /**
  * A typed `/event` date and clock time as a `datetime-local` value, or
@@ -400,6 +483,12 @@ export function ChatShell({
     [categoriesQuery.data],
   );
 
+  // The pane-history refs (#3824), described with `openThreadPane` below.
+  // Declared here because the URL-target effect clears `onThreadEntry`.
+  const onThreadEntry = useRef(false);
+  const backPending = useRef(false);
+  const openAfterBack = useRef(false);
+
   // Seeded from the `?channel=` query param a caller (e.g. the member
   // directory's Message action, a chat notification, a command-palette
   // search hit) may navigate here with — see `activeChannelId` below for what
@@ -548,6 +637,10 @@ export function ChatShell({
       channelId: initialChannelId,
       messageId: initialMessageId,
     };
+    // A new URL target (a Find result, a notification) is a new history entry
+    // Next pushed, not the one this mount marked (#3824), so the arrow must
+    // not go back through it and the next pick pushes its own.
+    onThreadEntry.current = false;
     setSelectedChannelId(initialChannelId);
     setChannelTargetDismissed(false);
     setPendingMessageId(initialMessageId);
@@ -568,6 +661,83 @@ export function ChatShell({
     // is on screen in the list too.
     if (initialChannelId) showChannelsInNav?.();
   }, [initialChannelId, initialMessageId, showChannelsInNav]);
+
+  /*
+    Getting back from a channel without hunting for the arrow (#3824): the
+    browser's Back and `Esc` return to the channel list.
+
+    Below `lg` the thread and the list are one screen each, so opening a
+    channel from the list is a step the member expects Back to undo. Picking a
+    row pushes a same-URL history entry marked `THREAD_PANE_HISTORY_KEY`, and a
+    `popstate` that lands off a marked entry shows the list. The arrow and
+    `Esc` show the list at once and go back through that entry when we are on
+    it, so the list is never one Back press away while also being on screen. A
+    thread that opened without a pick (the landing channel, a deep link) has
+    no entry of its own, and going back from it just shows the list, as the
+    arrow always did.
+
+    "On it" is the marker or `onThreadEntry`. The ref covers a later soft
+    navigation to the same URL (the nav's Chat link, a notification for
+    `/chat`): Next then rewrites the entry's state without our marker
+    (`preserveCustomHistoryState: false`), and only this mount still knows the
+    entry is the one it pushed. A new URL target (a Find result, a
+    notification) is an entry Next pushed, so it clears the ref.
+    `backPending` keeps a quick second press from going back a second entry,
+    out of `/chat`, before the first `popstate` lands, and a pick made in that
+    window pushes its entry once the `popstate` has.
+
+    The spread keeps Next's own `__NA` state on the entry, which its patched
+    `pushState` then passes straight through, and its `popstate` handler
+    restores the same route for the same URL.
+
+    From `lg` up the list is on screen beside the thread, so a pick pushes
+    nothing; `Esc` there brings the channels back when the column shows the
+    module nav. An entry pushed below `lg` that outlives a widening past it
+    costs one Back press that changes nothing on screen.
+  */
+  const openThreadPane = useCallback(() => {
+    setNarrowPane("thread");
+    if (isDesktopShell) return;
+    // A pick while our own Back is still traversing: `history.state` is the
+    // entry being left, so push only once the `popstate` lands.
+    if (backPending.current) {
+      openAfterBack.current = true;
+      return;
+    }
+    if (onThreadEntry.current) return;
+    if (isThreadPaneEntry(window.history.state)) {
+      onThreadEntry.current = true;
+      return;
+    }
+    pushThreadPaneEntry();
+    onThreadEntry.current = true;
+  }, [isDesktopShell]);
+  const backToChannels = useCallback(() => {
+    setNarrowPane("channels");
+    if (backPending.current) return;
+    if (onThreadEntry.current || isThreadPaneEntry(window.history.state)) {
+      backPending.current = true;
+      onThreadEntry.current = false;
+      window.history.back();
+    }
+  }, []);
+  useEffect(() => {
+    const onPopState = (event: PopStateEvent) => {
+      backPending.current = false;
+      if (openAfterBack.current) {
+        openAfterBack.current = false;
+        pushThreadPaneEntry();
+        onThreadEntry.current = true;
+        setNarrowPane("thread");
+        return;
+      }
+      const thread = isThreadPaneEntry(event.state);
+      onThreadEntry.current = thread;
+      setNarrowPane(thread ? "thread" : "channels");
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
   // `useChannels()` can serve a read up to its `staleTime` old. A channel
   // created moments ago (a fresh DM, a newly shared private channel) can
@@ -940,36 +1110,130 @@ export function ChatShell({
   // admin — same gate `chat-admin-page.tsx` computes for its own page-level
   // `<Can>`, done inline here since this is a per-row boolean, not a whole
   // surface to hide.
-  const { data: permissionsPayload } = useMyPermissions();
+  const permissionsQuery = useMyPermissions();
+  const permissionsPayload = permissionsQuery.data;
   const canManageChannel = can(
     "channels:manage",
     permissionsPayload?.permissions,
   );
 
   // `/event` typed bare, with details the one-liner can't read, or picked
-  // from the palette opens the Events page's own form, filled in with what
-  // was typed, and the card posts in the channel it came from (#3773).
+  // from the palette or the composer's + menu, opens the Events page's own
+  // form, filled in with what was typed, and the card posts in the channel it
+  // came from (#3773, #3865).
   const [eventForm, setEventForm] = useState<{
     open: boolean;
     channelId: string;
     prefill: EventFormPrefill;
   } | null>(null);
+  // `/poll` the same way: the New poll dialog (#3773 step 2). Keyed per open,
+  // so each visit starts from what was typed and posts where it was opened.
+  const [pollForm, setPollForm] = useState<{
+    open: boolean;
+    key: number;
+    channelId: string;
+    draft: PollDraft;
+  } | null>(null);
+  // `/task`, `/hours` and `/points` the same way (#3865): the + menu's Task,
+  // Service hours and Points rows, `/task` with details the one-liner can't
+  // read, and `/hours` or `/points` picked bare. Keyed per open, like the poll.
+  const [taskForm, setTaskForm] = useState<{
+    open: boolean;
+    key: number;
+    channelId: string;
+    prefill: NewTaskPrefill;
+    assigneeId?: string;
+  } | null>(null);
+  const [hoursForm, setHoursForm] = useState<{
+    open: boolean;
+    key: number;
+    channelId: string;
+  } | null>(null);
+  const [pointsForm, setPointsForm] = useState<{
+    open: boolean;
+    channelId: string;
+  } | null>(null);
+  // The Service hours form's writes are paid-ops (#841); the dialog takes its
+  // host's gate, as on the Service page.
+  const hoursGate = useSubscriptionGate();
   const openCommandForm = useCallback(
     (command: SlashCommand, args: string): CommandFormOutcome => {
-      if (command.name !== "event" || !activeChannelId) return null;
-      if (parseEventArgs(args).ok) return null;
+      if (!activeChannelId) return null;
       // Unknown until the read lands, and the server enforces it either way,
-      // so only a loaded grant without it refuses before the form opens.
-      if (
-        permissionsPayload &&
-        !canAll(EVENT_CREATE_PERMISSIONS, permissionsPayload.permissions)
-      ) {
+      // so only a loaded grant without it refuses before a form opens.
+      const roleRefuses = (
+        permissions: readonly string[],
+        verb: string,
+        gerund: string,
+      ) => {
+        if (
+          !permissionsPayload ||
+          canAll([...permissions], permissionsPayload.permissions)
+        ) {
+          return false;
+        }
         toast({
-          title: "You can't create events",
-          description:
-            "Your role doesn't include creating events. An officer can add it in Settings.",
+          title: `You can't ${verb}`,
+          description: `Your role doesn't include ${gerund}. An officer can add it in Settings.`,
           variant: "destructive",
         });
+        return true;
+      };
+      if (command.name === "task") {
+        if (parseTaskArgs(args).ok) return null;
+        if (roleRefuses(PLUS_MENU_PERMISSIONS.task, "create tasks", "creating tasks")) {
+          return "refused";
+        }
+        const { assigneeToken, ...prefill } = taskFormPrefill(args);
+        const assignee = assigneeToken ? resolveMember(assigneeToken) : null;
+        setTaskForm((previous) => ({
+          open: true,
+          key: (previous?.key ?? 0) + 1,
+          channelId: activeChannelId,
+          prefill,
+          assigneeId: assignee?.user_id,
+        }));
+        return "opened";
+      }
+      // `/hours` and `/points` open their forms only when picked or typed
+      // bare: a half-typed one-liner keeps the parser's precise refusal, since
+      // neither form has a field for what the member got wrong.
+      if (command.name === "hours") {
+        if (args.trim().length > 0) return null;
+        if (roleRefuses(PLUS_MENU_PERMISSIONS.hours, "log service hours", "logging service hours")) {
+          return "refused";
+        }
+        setHoursForm((previous) => ({
+          open: true,
+          key: (previous?.key ?? 0) + 1,
+          channelId: activeChannelId,
+        }));
+        return "opened";
+      }
+      if (command.name === "points") {
+        if (args.trim().length > 0) return null;
+        if (roleRefuses(PLUS_MENU_PERMISSIONS.points, "adjust points", "adjusting points")) {
+          return "refused";
+        }
+        setPointsForm({ open: true, channelId: activeChannelId });
+        return "opened";
+      }
+      if (command.name === "poll") {
+        if (parsePollArgs(args).ok) return null;
+        // No role check: `/poll` lets any member post a poll today, and
+        // whether it should is #3007's open call. The + menu offers Poll
+        // only to `polls:create`, as the phone's + does.
+        setPollForm((previous) => ({
+          open: true,
+          key: (previous?.key ?? 0) + 1,
+          channelId: activeChannelId,
+          draft: pollDraftFromArgs(args),
+        }));
+        return "opened";
+      }
+      if (command.name !== "event") return null;
+      if (parseEventArgs(args).ok) return null;
+      if (roleRefuses(PLUS_MENU_PERMISSIONS.event, "create events", "creating events")) {
         return "refused";
       }
       setEventForm({
@@ -979,7 +1243,58 @@ export function ChatShell({
       });
       return "opened";
     },
-    [activeChannelId, permissionsPayload, toast],
+    [activeChannelId, permissionsPayload, resolveMember, toast],
+  );
+
+  // A + menu form's write, read as the typed command's is: a refusal stays
+  // in the form (which says so and keeps the draft), and a committed write
+  // with a lost card, or an unknown outcome, gets the command's own notice.
+  //
+  // The chat-core calls report a lost answer themselves, as unconfirmed. A
+  // throw here comes from their cache bookkeeping, usually after the request
+  // went out, so the write may have committed (#1718's class). It reads as
+  // unconfirmed too, never as failed: the form closes rather than inviting a
+  // resubmit under a fresh key, which would write it twice.
+  const postFromForm = useCallback(
+    async (
+      commandName: "task" | "hours" | "points",
+      post: () => Promise<DispatchResult>,
+    ): Promise<DispatchResult> => {
+      let result: DispatchResult;
+      try {
+        result = await post();
+      } catch (error) {
+        Sentry.captureException(error, { tags: { plus_menu_form: commandName } });
+        result = {
+          ok: true,
+          unconfirmed: true,
+          warning: FORM_UNCONFIRMED_WARNING[commandName],
+        };
+      }
+      if (result.ok && (result.warning || result.unconfirmed || result.resolved)) {
+        notifyDispatchOutcome(toast, commandName, result);
+      }
+      return result;
+    },
+    [toast],
+  );
+
+  // What the composer's + offers beside Attach a file (#3865), and whether
+  // the member's role may use each: `"loading"` until the read lands, so a row
+  // isn't blamed on the role before it does, and `"unknown"` if it failed.
+  // A read paused offline before it ever landed can't answer either, and
+  // stays `pending` rather than erroring, so it counts as failed here.
+  const permissionsFailed =
+    permissionsQuery.isError ||
+    (permissionsQuery.fetchStatus === "paused" && !permissionsPayload);
+  const commandForms = useMemo(
+    (): PlusMenuForm[] =>
+      plusMenuForms(
+        PLUS_MENU_COMMANDS,
+        permissionsPayload?.permissions,
+        permissionsFailed,
+      ),
+    [permissionsPayload, permissionsFailed],
   );
 
   // Memoised because the timeline hands it to the virtualizer's header
@@ -1036,25 +1351,52 @@ export function ChatShell({
   }, [activeChannelId, resetBookmarkMessage, resetUnbookmarkMessage]);
 
   const { confirm, confirmDialog } = useConfirmDialog();
-  const deleteMessage = channel.delete;
-  const handleDeleteMessage = useCallback(
-    (messageId: string) => {
+  // Delete message and Close poll (#3794) are both destructive, so both ask
+  // first through one flow: the copy is the action's, and a failure was
+  // already toasted by the chat-core action, so it is swallowed here.
+  // Mobile's equivalent is `confirmDestructive`.
+  const confirmThen = useCallback(
+    (
+      copy: { title: string; description: string; confirmLabel: string },
+      action: () => Promise<void>,
+    ) => {
       void (async () => {
-        const confirmed = await confirm({
-          title: DELETE_MESSAGE_CONFIRM_TITLE,
-          description: DELETE_MESSAGE_CONFIRM_BODY,
-          confirmLabel: DELETE_MESSAGE_CONFIRM_LABEL,
-          tone: "destructive",
-        });
+        const confirmed = await confirm({ ...copy, tone: "destructive" });
         if (!confirmed) return;
         try {
-          await deleteMessage(messageId);
+          await action();
         } catch {
-          // The delete action already toasted the failure.
+          // The chat-core action already toasted the failure.
         }
       })();
     },
-    [confirm, deleteMessage],
+    [confirm],
+  );
+  const deleteMessage = channel.delete;
+  const handleDeleteMessage = useCallback(
+    (messageId: string) =>
+      confirmThen(
+        {
+          title: DELETE_MESSAGE_CONFIRM_TITLE,
+          description: DELETE_MESSAGE_CONFIRM_BODY,
+          confirmLabel: DELETE_MESSAGE_CONFIRM_LABEL,
+        },
+        () => deleteMessage(messageId),
+      ),
+    [confirmThen, deleteMessage],
+  );
+  const closePoll = channel.closePoll;
+  const handleClosePoll = useCallback(
+    (messageId: string) =>
+      confirmThen(
+        {
+          title: CLOSE_POLL_CONFIRM_TITLE,
+          description: CLOSE_POLL_CONFIRM_BODY,
+          confirmLabel: CLOSE_POLL_CONFIRM_LABEL,
+        },
+        () => closePoll(messageId),
+      ),
+    [confirmThen, closePoll],
   );
 
   const setNotificationLevel = useSetChannelNotificationLevel();
@@ -1131,17 +1473,28 @@ export function ChatShell({
   // a hidden row must leave no badge), and so does the rail's right-click
   // Mark as read. So does a message from someone else landing in the open
   // channel while the tab is visible (#3698: `useChatActivityHandler`, which
-  // `ChatProvider` wires, re-stamps the channel claimed below). Those are the
-  // only things that move it, and the only things that clear the badges
-  // above. Without it the rail lights up on first load and never goes out,
+  // the shell's `useChatRealtimeBinding` wires, re-stamps the channel claimed
+  // below). Those are the only things that move it, and the only things that
+  // clear the badges above. Without it the rail lights up on first load and never goes out,
   // which is worse than the dead badge this slice replaced: it would show
   // every channel as permanently unread.
   // `spec/behavior/chat/README.md` § Read Receipts: opening stamps to server
   // `now()`; there is no mark-read-to-a-message.
   const markRead = useMarkChannelRead();
   const markReadMutate = markRead.mutate;
+  /*
+    Only while the thread is on screen. Below `lg` the list and the thread are
+    one screen each, and a member back on the list (the arrow, `Esc`, the
+    browser's Back, #3824) is not looking at the channel: still claimed, a
+    message landing in it was stamped read before they ever saw it, so the
+    nav's Chat row never lit and the channel came back read. Leaving the
+    thread for the list runs the cleanup, which stamps it read on the way out as leaving
+    a channel always has; coming back claims and stamps it again. From `lg`
+    up both are on screen and `narrowPane` changes nothing.
+  */
+  const threadOnScreen = isDesktopShell || narrowPane === "thread";
   useEffect(() => {
-    if (!activeChannelId) return;
+    if (!activeChannelId || !threadOnScreen) return;
     markReadMutate(activeChannelId);
     const releaseViewed = claimViewedChannel(activeChannelId);
     // Stamp again on the way out, so messages that arrived while the channel
@@ -1150,7 +1503,7 @@ export function ChatShell({
       releaseViewed();
       markReadMutate(activeChannelId);
     };
-  }, [activeChannelId, markReadMutate]);
+  }, [activeChannelId, threadOnScreen, markReadMutate]);
 
   // The rail row's right-click menu (owner, 2026-11-06). Which rows a channel
   // offers is `channelRowActions`' call in `@repo/hooks`, scoped to the
@@ -1774,6 +2127,31 @@ export function ChatShell({
           : !activeChapterId
             ? "no-chapter"
             : "empty";
+  // `Esc`, where nothing else takes it (#3824; the history half is above).
+  const navFaceShowing = navFace?.face;
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (escapeBelongsElsewhere(event.target)) return;
+      if (isDesktopShell) {
+        if (navFaceShowing === "modules") showChannelsInNav?.();
+        return;
+      }
+      if (narrowPane === "thread" && channelsPaneState === "ready") {
+        backToChannels();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [
+    isDesktopShell,
+    navFaceShowing,
+    showChannelsInNav,
+    narrowPane,
+    channelsPaneState,
+    backToChannels,
+  ]);
+
   const timelineReady =
     channelsPaneState === "ready" && !requestedChannelMissing;
   const memberColumnMounted =
@@ -1813,9 +2191,10 @@ export function ChatShell({
           */}
       <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-3">
         {channelsInNav && navFace ? (
-          <NavBackButton onClick={navFace.showModules} />
-        ) : null}
-        <h2 className="text-sm font-semibold text-foreground">Channels</h2>
+          <NavChannelsTitle onBack={navFace.showModules} />
+        ) : (
+          <h2 className="text-sm font-semibold text-foreground">Channels</h2>
+        )}
         <ChannelFilters
           filters={sidebarPreferences.filters}
           onChange={sidebarControls.onSetFilters}
@@ -1859,7 +2238,7 @@ export function ChatShell({
               setSelectedChannelId(ch.id);
               // Below `lg` the list and the thread are never both on screen,
               // so picking has to navigate. Inert at `lg` and up.
-              setNarrowPane("thread");
+              openThreadPane();
               // Deliberately leaves any pending jump target alone - it is
               // gated on its own channel and will resolve if the member
               // returns. Only the notice is channel-scoped for display.
@@ -2005,8 +2384,10 @@ export function ChatShell({
             <Button
               variant="ghost"
               size="icon"
-              className={cn(compactControlClassName, "shrink-0 lg:hidden")}
-              onClick={() => setNarrowPane("channels")}
+              // 40px, never the 32px compact control (#3824): it is the one
+              // way back below `lg`, so it gets a real target.
+              className="-ml-2 h-10 w-10 shrink-0 lg:hidden"
+              onClick={backToChannels}
               aria-label="Back to channels"
             >
               <ChevronLeft className="h-5 w-5" />
@@ -2408,6 +2789,7 @@ export function ChatShell({
                     activeChannel?.can_post !== false ? channel.edit : undefined
                   }
                   onDelete={handleDeleteMessage}
+                  onClosePoll={handleClosePoll}
                   bookmarkedMessageIds={bookmarkedMessageIds}
                   onToggleBookmark={handleToggleBookmark}
                   canManageChannel={canManageChannel}
@@ -2462,6 +2844,7 @@ export function ChatShell({
               activeChannel.type === "DM" || activeChannel.type === "GROUP_DM"
             }
             isReadOnly={!!activeChannel.is_read_only}
+            isAuditLog={activeChannel.is_audit_log === true}
             // Undefined (not yet through the server's capability
             // projection) is left to `Composer`'s own default, which
             // resolves to `!isReadOnly` rather than an unconditional
@@ -2500,6 +2883,7 @@ export function ChatShell({
               )
             }
             onOpenCommandForm={openCommandForm}
+            commandForms={commandForms}
             onTyping={channel.emitTyping}
             isModuleEnabled={isModuleEnabled}
             recruitmentVocab={recruitmentVocab}
@@ -2607,6 +2991,79 @@ export function ChatShell({
           )}
           postToChannelId={eventForm.channelId}
           trackChatCard={channel.trackEventCard}
+        />
+      ) : null}
+      {pollForm ? (
+        <NewPollDialog
+          key={`poll:${pollForm.key}`}
+          open={pollForm.open}
+          onOpenChange={(open) =>
+            setPollForm((previous) =>
+              previous ? { ...previous, open } : previous,
+            )
+          }
+          initialDraft={pollForm.draft}
+          onPost={async (poll) => {
+            const result = await channel.sendPoll(pollForm.channelId, poll);
+            // Posted, but this device couldn't finish saving it: the same
+            // non-destructive notice `/poll` gives, so nobody posts it twice.
+            if (result.ok && result.warning) {
+              toast({ title: "Poll posted", description: result.warning });
+            }
+            return result;
+          }}
+        />
+      ) : null}
+      {taskForm ? (
+        <NewTaskDialog
+          key={`task:${taskForm.key}`}
+          open={taskForm.open}
+          onOpenChange={(open) =>
+            setTaskForm((previous) =>
+              previous ? { ...previous, open } : previous,
+            )
+          }
+          prefill={taskForm.prefill}
+          initialAssigneeId={taskForm.assigneeId}
+          onPost={async (input) =>
+            postFromForm("task", () =>
+              channel.postTask(taskForm.channelId, input),
+            )
+          }
+        />
+      ) : null}
+      {hoursForm ? (
+        <LogHoursDialog
+          key={`hours:${hoursForm.key}`}
+          open={hoursForm.open}
+          onOpenChange={(open) =>
+            setHoursForm((previous) =>
+              previous ? { ...previous, open } : previous,
+            )
+          }
+          gate={hoursGate}
+          showSubscriptionNotice
+          submitToChannel={async (input) =>
+            postFromForm("hours", () =>
+              channel.postHours(hoursForm.channelId, input),
+            )
+          }
+        />
+      ) : null}
+      {pointsForm ? (
+        <PointsAdjustmentDialog
+          open={pointsForm.open}
+          onOpenChange={(open) =>
+            setPointsForm((previous) =>
+              previous ? { ...previous, open } : previous,
+            )
+          }
+          onAdjusted={() => undefined}
+          submitToChannel={async (input) =>
+            postFromForm("points", () =>
+              channel.postPointsAdjustment(pointsForm.channelId, input),
+            )
+          }
         />
       ) : null}
       <ReportMessageDialog

@@ -93,6 +93,7 @@ export function useAcceptLegalTerms() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["user", "accept-legal-terms"],
     mutationFn: async () => {
       const { data, error } = await client.POST(
         "/v1/users/me/legal-acceptance",

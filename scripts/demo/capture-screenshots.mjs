@@ -52,7 +52,6 @@ const ROUTES = [
   ["service", "/service", "Service hours"],
   ["study", "/study", "Study hours"],
   ["documents", "/documents", "Document library"],
-  ["polls", "/polls", "Polls"],
   ["reports", "/reports", "Reports"],
   ["geofences", "/geofences", "Study geofences"],
   ["backwork", "/backwork", "Backwork archive"],

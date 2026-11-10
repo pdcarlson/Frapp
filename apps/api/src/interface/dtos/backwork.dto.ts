@@ -7,13 +7,20 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Max,
   MaxLength,
   Min,
   ValidateIf,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
-import { MAX_BACKWORK_ZIP_FILES, YEAR_MAX } from '@repo/validation';
+import {
+  MAX_BACKWORK_ZIP_FILES,
+  MAX_COURSE_NAME_LENGTH,
+  MAX_COURSE_NICKNAMES,
+  MAX_COURSE_NICKNAME_LENGTH,
+  YEAR_MAX,
+} from '@repo/validation';
 import { INT4_MAX } from '#domain/constants/field-limits';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -99,6 +106,16 @@ export class ConfirmBackworkUploadDto {
   @MaxLength(20)
   course_number?: string;
 
+  @ApiPropertyOptional({
+    description:
+      'The course\'s name ("Calculus I"). Saved only when the course has no name yet; an upload never renames a course.',
+    maxLength: MAX_COURSE_NAME_LENGTH,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(MAX_COURSE_NAME_LENGTH)
+  course_name?: string;
+
   @ApiPropertyOptional({ description: 'Professor name' })
   @IsOptional()
   @IsString()
@@ -152,6 +169,95 @@ export class UpdateDepartmentDto {
   @IsString()
   @MaxLength(255)
   name?: string;
+}
+
+export class BackworkCourseDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ format: 'uuid' })
+  chapter_id: string;
+
+  @ApiProperty({ format: 'uuid' })
+  department_id: string;
+
+  @ApiProperty({ description: 'Course number as first saved, e.g. "1010"' })
+  course_number: string;
+
+  @ApiProperty({
+    description:
+      'The course number trimmed and lowercased; files join a course by department_id and this.',
+  })
+  course_key: string;
+
+  @ApiProperty({ type: String, nullable: true, example: 'Calculus I' })
+  name: string | null;
+
+  @ApiProperty({ type: [String], example: ['Calc 1', 'Calc I'] })
+  nicknames: string[];
+
+  @ApiProperty()
+  created_at: string;
+
+  @ApiProperty()
+  updated_at: string;
+}
+
+/**
+ * A change to a course's name and nicknames, creating its entry on first
+ * write. Nicknames travel as a change (remove, then add) that one SQL
+ * statement applies to the row as it is when it runs, so an edit never drops a
+ * nickname someone else saved and two first writes don't collide. Who
+ * may change what is `courseEditRefusal` (domain/utils/backwork-course-rules).
+ */
+export class UpsertBackworkCourseDto {
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID()
+  department_id: string;
+
+  @ApiProperty({ description: 'Course number (e.g. "1010")', maxLength: 20 })
+  @IsString()
+  @MaxLength(20)
+  @Matches(/\S/, { message: 'course_number must not be blank' })
+  course_number: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    maxLength: MAX_COURSE_NAME_LENGTH,
+    description:
+      'Omit to keep the stored name. A blank or null clears it (backwork:admin).',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(MAX_COURSE_NAME_LENGTH)
+  name?: string | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    maxItems: MAX_COURSE_NICKNAMES,
+    description:
+      'Nicknames to add to the list as stored. Open to backwork:upload; a list past the cap is a 400.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_COURSE_NICKNAMES)
+  @IsString({ each: true })
+  @MaxLength(MAX_COURSE_NICKNAME_LENGTH, { each: true })
+  add_nicknames?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    maxItems: MAX_COURSE_NICKNAMES,
+    description:
+      'Nicknames to remove from the list as stored, matched case-insensitively. Needs backwork:admin.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_COURSE_NICKNAMES)
+  @IsString({ each: true })
+  @MaxLength(MAX_COURSE_NICKNAME_LENGTH, { each: true })
+  remove_nicknames?: string[];
 }
 
 export class UpdateProfessorDto {

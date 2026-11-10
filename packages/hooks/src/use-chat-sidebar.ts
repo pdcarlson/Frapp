@@ -161,6 +161,7 @@ function useSidebarWrite<TVars>(
       exact: true,
     }) === context.entry;
   return useMutation({
+    mutationKey: ["chat-sidebar", "sidebar-preferences"],
     mutationFn: request,
     onMutate: async (vars) => {
       if (!chapterId) return undefined;

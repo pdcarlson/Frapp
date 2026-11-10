@@ -12,15 +12,18 @@ import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
+  CLOSE_POLL_LABEL,
   POLL_VOTE_ACTION_TYPE,
+  canClosePoll,
+  isPollCardClosed,
   pollsGateOf,
   pollsGateReason,
   readPollPayload,
   tallyPollVotes,
   type PollOption,
 } from "@repo/chat-core/polls";
-import { useNow } from "@repo/hooks";
-import { parseInstant } from "@repo/formatting";
+import { useMyPermissions, useNow } from "@repo/hooks";
+import { can } from "@repo/validation";
 
 interface PollCardProps {
   message: ChatMessage;
@@ -33,6 +36,11 @@ interface PollCardProps {
     actionType: string,
     payload: Record<string, unknown>,
   ) => void;
+  /**
+   * Close poll on the viewer's own open poll (#3794). The caller confirms
+   * first (`ChatShell`); the card only offers it (`canClosePoll`).
+   */
+  onClosePoll?: (messageId: string) => void;
 }
 
 /**
@@ -46,6 +54,7 @@ export function PollCard({
   viewerId,
   isConfirmed,
   onVote,
+  onClosePoll,
 }: PollCardProps) {
   const payload = readPollPayload(message);
   const now = useNow();
@@ -64,6 +73,12 @@ export function PollCard({
     fetchStatus: moduleGate.fetchStatus,
   });
   const gateReasonId = useId();
+  // The close route requires `polls:create`, which posting a card doesn't
+  // (#3007). Unknown until the read lands, which withholds Close poll.
+  const canCreatePolls = can(
+    "polls:create",
+    useMyPermissions().data?.permissions,
+  );
 
   const {
     byOption,
@@ -82,8 +97,16 @@ export function PollCard({
     );
   }
 
-  const closesAt = parseInstant(payload.closes_at);
-  const isClosed = closesAt ? closesAt.getTime() < now : false;
+  // Closed by its deadline or, early, by its creator (#3794). The server row's
+  // `payload.closed_at` arrives as a Realtime UPDATE, so every open card
+  // redraws closed the moment the creator closes it.
+  const isClosed = isPollCardClosed(payload, now);
+  const showClose =
+    !!onClosePoll &&
+    canClosePoll(message, payload, viewerId, now, {
+      pollsGate,
+      canCreatePolls,
+    });
   /*
     `!viewerId`, not `!== null`. The prop says `string` now, but a JSX spread of
     a loosely-typed object is not prop-checked, so `undefined` can still arrive
@@ -150,17 +173,30 @@ export function PollCard({
           );
         })}
       </ul>
-      {total === 0 ? (
-        <p className="mt-3 text-caption text-muted-foreground">
-          No votes yet
-          {canVote ? " · be the first to vote" : ""}.
-        </p>
-      ) : (
-        <p className="mt-3 text-caption text-muted-foreground">
-          {total} vote{total === 1 ? "" : "s"}
-          {viewerVote ? " · your vote is highlighted" : ""}
-        </p>
-      )}
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        {total === 0 ? (
+          <p className="text-caption text-muted-foreground">
+            No votes yet
+            {canVote ? " · be the first to vote" : ""}.
+          </p>
+        ) : (
+          <p className="text-caption text-muted-foreground">
+            {total} vote{total === 1 ? "" : "s"}
+            {viewerVote ? " · your vote is highlighted" : ""}
+          </p>
+        )}
+        {showClose ? (
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            className="h-auto px-0"
+            onClick={() => onClosePoll?.(message.id)}
+          >
+            {CLOSE_POLL_LABEL}
+          </Button>
+        ) : null}
+      </div>
       {gateReason ? (
         <div className="mt-1 flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
           <p id={gateReasonId}>{gateReason}</p>

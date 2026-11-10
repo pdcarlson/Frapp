@@ -4,6 +4,7 @@ import { useIsFocused, useLocalSearchParams } from "expo-router";
 import {
   useActiveChapterId,
   useCurrentChapter,
+  useInvites,
   useMyPermissions,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
@@ -15,9 +16,11 @@ import {
   type BackTarget,
 } from "@/components/back-row";
 import { ShareGlyph } from "@/components/control-glyphs";
+import { InviteByEmail } from "@/components/more/invite-by-email";
+import { InvitedList } from "@/components/more/invited-list";
 import { InviteLinksCard } from "@/components/onboarding/invite-links-card";
+import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
 import { ScreenShell } from "@/components/screen-shell";
-import { SheetPrimaryButton } from "@/components/sheet-scaffold";
 import {
   ErrorState,
   NoChapterState,
@@ -25,7 +28,10 @@ import {
   SkeletonRegion,
 } from "@/components/state-block";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { useInviteShares } from "@/lib/onboarding/chapter-wizard/use-invite-shares";
+import {
+  INVITE_WATCH_INTERVAL_MS,
+  useInviteShares,
+} from "@/lib/onboarding/chapter-wizard/use-invite-shares";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { InlineNote } from "@/components/inline-note";
 
@@ -34,17 +40,18 @@ import { InlineNote } from "@/components/inline-note";
  * way to invite new members or get my invite link from mobile";
  * `spec/ui/mobile/navigation.md` § Inviting members).
  *
- * The same share-first flow as setup's last step (owner pick 2026-11-06,
- * `useInviteShares`): one Share invite button mints a fresh single-use link
- * and opens the share sheet with it, and the links shared on this visit are
- * listed, each Not used yet or Joined. The list is this visit's: leaving the
- * screen, or switching chapter, starts it over. No token is ever drawn. Inside a
- * chapter the button and the link tile take the chapter accent, where setup's
- * take house gold (`spec/behavior/branding.md`).
+ * Web's panel, on the phone (Paul, 2026-11-09: "that's the way it should be
+ * for mobile as well", #3828): Invite by email first, which sends web's email
+ * through the same `POST /v1/invites/email`; then Share invite, setup's
+ * share-first link (`useInviteShares`), which mints a fresh single-use link
+ * and opens the share sheet with it, Mail and Gmail among its targets; then
+ * the chapter's invites under Invited, each with web's Share link, Send again
+ * and Revoke. No token is ever drawn. Inside a chapter the Send button, the
+ * field's focus border and the link tile take the chapter accent, where
+ * setup's take house gold (`spec/behavior/branding.md`).
  *
- * The invite grants the chapter's default invite role: the screen names no
- * role, so the server applies `default_invite_role_id` (#422), as web's
- * invite dialog does without a pick.
+ * Neither path names a role, so the server applies the chapter's
+ * `default_invite_role_id` (#422), as web's dialog does without a pick.
  *
  * Reached from four doors, each drawn only for a member who holds
  * `members:invite` (the permission every invite route checks; by default the
@@ -56,10 +63,10 @@ export default function InviteScreen() {
   const chapterId = useActiveChapterId();
   const focused = useIsFocused();
   // The screen stays mounted through a chapter switch, and under any screen
-  // pushed over it, so the body is keyed on both: a link shared, or a sheet
-  // backed out of, in chapter A never goes out under chapter B's name, and
-  // each visit starts its Shared list fresh. A visit ends when the screen
-  // loses focus; popping it unmounts it outright.
+  // pushed over it, so the body is keyed on both: a link kept from a sheet
+  // backed out of in chapter A never goes out under chapter B's name, and a
+  // half-typed address or a sent notice doesn't outlive the visit. A visit
+  // ends when the screen loses focus; popping it unmounts it outright.
   const [visit, setVisit] = useState(0);
   const wasFocused = useRef(focused);
   useEffect(() => {
@@ -93,11 +100,26 @@ function InviteBody({ focused }: { focused: boolean }) {
   const canInvite = can("members:invite", permissions);
 
   const [error, setError] = useState<string | null>(null);
+  // Every invite, re-read while the screen is in front, so a link someone
+  // redeems reads Joined and one another officer revoked drops off. A send,
+  // a mint or a revoke re-reads it too: each mutation invalidates the query.
+  const invites = useInvites({
+    enabled: focused && canInvite,
+    refetchInterval: focused ? INVITE_WATCH_INTERVAL_MS : false,
+  });
+  // Bumped when an invite goes out from above the list, which retires the
+  // list's last result line: it was about the list as it stood.
+  const [sentAbove, setSentAbove] = useState(0);
   const invite = useInviteShares({
-    // Watches shared links for Joined only while the screen is in front.
-    active: focused && canInvite,
+    // The Invited list below watches the chapter's invites itself.
+    active: false,
     chapterName: shareName ?? "",
     onError: setError,
+    // A kept link that was revoked, here or elsewhere, or that expired.
+    isDead: (token) =>
+      (invites.data ?? []).some(
+        (row) => row.token === token && row.status !== "pending",
+      ),
   });
 
   if (!chapterId) {
@@ -137,7 +159,9 @@ function InviteBody({ focused }: { focused: boolean }) {
     return (
       <ScreenShell back={back} title="Invite members">
         <InlineNote>
-          {"Your role can't send invites. Ask an officer to send each person their own link."}
+          {
+            "Your role can't send invites. Ask an officer to send each person their own link."
+          }
         </InlineNote>
       </ScreenShell>
     );
@@ -146,39 +170,60 @@ function InviteBody({ focused }: { focused: boolean }) {
   return (
     <ScreenShell back={back} title="Invite members">
       <View style={styles.stack}>
-        <Text style={styles.body}>
-          Send each person their own link. A link lets one person in and lasts
-          24 hours.
-        </Text>
-        <InviteLinksCard
-          shared={invite.shared}
-          isJoined={invite.isJoined}
-          tile={{
-            fill: branding.accentSubtle,
-            border: branding.accentBorder,
-            ink: branding.accent,
+        <InviteByEmail
+          accent={branding.accentPrimary}
+          onAccent={branding.accentOnPrimary}
+          onSent={() => setSentAbove((n) => n + 1)}
+        />
+        <View style={styles.section}>
+          <Text style={styles.label}>Or share a link</Text>
+          <Text style={styles.body}>
+            Paste it in a group chat, or send it from your mail app. A link lets
+            one person in and lasts 24 hours.
+          </Text>
+          <InviteLinksCard
+            tile={{
+              fill: branding.accentSubtle,
+              border: branding.accentBorder,
+              ink: branding.accent,
+            }}
+            action={
+              <View>
+                <OnboardingSecondaryButton
+                  fill
+                  label="Share invite"
+                  leading={<ShareGlyph color={tokens.color.text.foreground} />}
+                  accessibilityHint="Makes a new link and opens the share sheet."
+                  disabled={invite.busy || !shareName}
+                  busy={invite.busy}
+                  onPress={() => {
+                    void invite.share().then((sent) => {
+                      if (sent) setSentAbove((n) => n + 1);
+                    });
+                  }}
+                />
+                {error ? (
+                  <Text
+                    accessibilityLiveRegion="polite"
+                    style={styles.errorText}
+                  >
+                    {error}
+                  </Text>
+                ) : null}
+              </View>
+            }
+          />
+        </View>
+        <InvitedList
+          invites={invites.data}
+          isError={invites.isError}
+          isRetrying={invites.isFetching}
+          onRetry={() => {
+            void invites.refetch();
           }}
-          action={
-            <View>
-              <SheetPrimaryButton
-                label="Share invite"
-                icon={(color) => <ShareGlyph color={color} />}
-                accent={branding.accentPrimary}
-                onAccent={branding.accentOnPrimary}
-                accessibilityHint="Makes a new link and opens the share sheet."
-                disabled={invite.busy || !shareName}
-                busy={invite.busy}
-                onPress={() => {
-                  void invite.share();
-                }}
-              />
-              {error ? (
-                <Text accessibilityLiveRegion="polite" style={styles.errorText}>
-                  {error}
-                </Text>
-              ) : null}
-            </View>
-          }
+          chapterName={shareName}
+          onLinkUsed={invite.forget}
+          resetKey={sentAbove}
         />
       </View>
     </ScreenShell>
@@ -195,7 +240,14 @@ export function backTargetFor(from: string | undefined): BackTarget {
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     stack: {
-      gap: tokens.spacing.lg,
+      gap: tokens.spacing.xl,
+    },
+    section: {
+      gap: tokens.spacing.sm,
+    },
+    label: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
     },
     body: {
       ...typeRole(tokens.typography.role.body),

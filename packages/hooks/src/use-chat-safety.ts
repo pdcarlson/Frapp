@@ -350,6 +350,7 @@ export function useBlockMember() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["chat-blocks", "block-member"],
     mutationFn: async (userId: string) => {
       const result = await client.POST("/v1/chat/blocks", {
         body: { user_id: userId },
@@ -370,6 +371,7 @@ export function useUnblockMember() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["chat-blocks", "unblock-member"],
     mutationFn: async (userId: string) => {
       const result = await client.DELETE("/v1/chat/blocks/{userId}", {
         params: { path: { userId } },
@@ -455,6 +457,7 @@ function isExistingReport(
 export function useReportMessage() {
   const client = useFrappClient();
   return useMutation({
+    mutationKey: ["chat-reports", "report-message"],
     mutationFn: async ({
       messageId,
       reason,

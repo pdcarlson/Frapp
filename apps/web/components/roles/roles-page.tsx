@@ -369,7 +369,7 @@ export function RolesAndPermissionsPage() {
     reached this route by URL was told the roles were loading, and then that
     they had failed to load, for a surface they were never going to see. The
     order is permission, then network, then data — the one
-    `geofences-admin-page.tsx` spells out and `/polls` follows.
+    `geofences-admin-page.tsx` spells out.
 
     **`isPending` alone is not a spinner.** Both queries are
     `enabled: !!chapterId`, so `isPending` is true for a query that is not

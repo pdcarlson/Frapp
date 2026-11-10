@@ -33,6 +33,8 @@ import { NoAccessRedirect } from "@/components/layout/no-access-redirect";
 import { TermsPromptGate } from "@/components/auth/terms-prompt";
 import { OnboardingTutorial } from "@/components/onboarding/onboarding-tutorial";
 import { useChapterStore } from "@/lib/stores/chapter-store";
+import { useChatRealtimeBinding } from "@/lib/chat/use-chat-realtime-binding";
+import { useNavHighlights } from "@/components/layout/use-chat-has-unread";
 import { cn } from "@/lib/utils";
 
 /**
@@ -64,6 +66,28 @@ import { cn } from "@/lib/utils";
  * list that can drift.
  */
 
+/**
+ * The drawer's nav, with the rows that have something new lit (#3824). Its
+ * own component so the unread reads redraw the drawer, not the shell; the
+ * sheet mounts it only while open.
+ */
+function DrawerNav(
+  props: Pick<
+    React.ComponentProps<typeof AppNav>,
+    "permissions" | "isModuleEnabled" | "pathname" | "onNavigate"
+  >,
+) {
+  const highlighted = useNavHighlights();
+  return (
+    <AppNav
+      variant="drawer"
+      collapsed={false}
+      highlighted={highlighted}
+      {...props}
+    />
+  );
+}
+
 type DashboardShellProps = {
   children: React.ReactNode;
   /**
@@ -84,6 +108,9 @@ export function DashboardShell({
   // semantic tokens signet.css defines. Mounted here (not in ChatProvider) so
   // the nav's active-item tint does not depend on which route is open.
   useChapterTheme();
+  // Chat's inbox, joined on every page, so a message arriving while the member
+  // is on Events lights the nav's Chat row within seconds (#3745).
+  useChatRealtimeBinding();
 
   const [navCollapsed, setNavCollapsed] = useState(defaultNavCollapsed);
   const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false);
@@ -203,9 +230,7 @@ export function DashboardShell({
               Open dashboard routes and chapter tools.
             </SheetDescription>
           </SheetHeader>
-          <AppNav
-            variant="drawer"
-            collapsed={false}
+          <DrawerNav
             permissions={permissions}
             isModuleEnabled={isModuleEnabled}
             pathname={pathname}
