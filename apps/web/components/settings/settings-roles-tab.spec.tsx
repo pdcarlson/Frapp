@@ -519,8 +519,11 @@ describe("the capability matrix's marks, at the call site", () => {
     ];
     for (const mark of marks) {
       const { className } = mark;
-      // `--muted` is 3.568:1 on this card, and the marks are characters, so
-      // §6's 4.5:1 text floor applies rather than the 3:1 glyph one.
+      // The marks take `--muted-foreground`. `--muted` was 3.568:1 on this
+      // card when this guard was written, under §6's 4.5:1 text floor (the
+      // marks are characters, so the glyph floor does not apply). Since the
+      // 2026-11-09 text ladder it clears 4.5:1, so the ban now keeps the
+      // mark's place in the hierarchy rather than its legibility.
       expect(className).not.toMatch(/text-muted(?![-\w])/);
       /*
        * No opacity modifier on the tone, in *either* Tailwind spelling. The

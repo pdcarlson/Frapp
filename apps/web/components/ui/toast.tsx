@@ -91,7 +91,7 @@ const ToastAction = React.forwardRef<
   <ToastPrimitives.Action
     ref={ref}
     className={cn(
-      "inline-flex h-8 shrink-0 items-center justify-center rounded-sm px-3 text-sm font-semibold text-accent-text hover:bg-muted",
+      "inline-flex h-8 shrink-0 items-center justify-center rounded-sm px-3 text-sm font-semibold text-accent-text hover:bg-card-hover",
       FOCUS_RING,
       className
     )}

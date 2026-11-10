@@ -177,7 +177,7 @@ export function PageSettingsRoleChip({
         CHIP.base,
         tone === "role"
           ? CHIP.accent
-          : "border-transparent bg-muted text-foreground",
+          : "border-transparent bg-card-hover text-foreground",
       )}
     >
       {children}

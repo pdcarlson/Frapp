@@ -3,6 +3,7 @@ import { applyAlpha } from "@repo/color";
 import {
   AA_NON_TEXT,
   AA_TEXT,
+  BODY_TEXT,
   accentFour,
   accentRolesFor,
   DESTRUCTIVE_TEXT,
@@ -97,18 +98,35 @@ describe("chat message rows", () => {
     expect(ratio(TEXT.mutedForeground, fill)).toBeLessThan(AA_TEXT);
   });
 
-  it("lifts every caption off `--muted`, which misses AA on the whole ladder", () => {
-    // The reference draws the author line's time in `--muted` (#78716A) and it measures
-    // **4.04:1** on the thread background — under the 4.5:1 floor, and worse on
-    // every step above it. components.md §1 already grants the remedy and names
-    // this exact token: "`--muted` on the surface ladder is 3.3–4.0:1, so tab
-    // labels and input placeholders take `--muted-foreground`". Chat's captions
-    // — the time, the trailing markers, the delivery state, the rail's section
-    // headings — take the same lift.
+  it("keeps the two reading tones at 7:1 on the whole ladder (#3826)", () => {
+    // The owner's "you have to squint" (2026-11-09): body and secondary text
+    // were 6.6-7.9:1 with `--muted-foreground` under 7 on `--popover`. The
+    // lifted text ladder (foundations.md §4) holds both over 7 everywhere.
     for (const [name, bg] of Object.entries(SURFACE)) {
-      expect(ratio(TEXT.muted, bg), `--muted over ${name}`).toBeLessThan(
-        AA_TEXT,
-      );
+      expect(
+        ratio(TEXT.foreground, bg),
+        `--foreground over ${name}`,
+      ).toBeGreaterThanOrEqual(BODY_TEXT);
+      expect(
+        ratio(TEXT.mutedForeground, bg),
+        `--muted-foreground over ${name}`,
+      ).toBeGreaterThanOrEqual(BODY_TEXT);
+    }
+  });
+
+  it("keeps every caption tone over AA on the whole ladder", () => {
+    // The reference draws the author line's time in `--muted` (#78716A), which
+    // measured 4.04:1 on the thread background, so chat's captions (the time,
+    // the trailing markers, the delivery state, the rail's section headings)
+    // took `--muted-foreground` under components.md §1's lift. Since the
+    // 2026-11-09 text ladder (foundations.md §4, #3826) `--muted` itself clears
+    // 4.5:1 on every step, so both tones are held to the gate here: a ladder
+    // change that drops either under it fails.
+    for (const [name, bg] of Object.entries(SURFACE)) {
+      expect(
+        ratio(TEXT.muted, bg),
+        `--muted over ${name}`,
+      ).toBeGreaterThanOrEqual(AA_TEXT);
       expect(
         ratio(TEXT.mutedForeground, bg),
         `--muted-foreground over ${name}`,
