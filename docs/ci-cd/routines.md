@@ -360,7 +360,11 @@ After each routine's first fire, check:
 - **Every routine:** nothing reaches Linear, and a second run (fire one by hand with
   `fire_trigger`) files no duplicates.
 - **Beta Watch:** new issues are titled `[beta] …`, carry `triage` + `suggestion` + one `area:*` +
-  a priority + the visible `fp=beta-watch/…` marker, and name no tester.
+  a priority + the visible `fp=beta-watch/…` marker, and name no tester. The exception is an issue
+  from the team's Development channel: no `[beta]` prefix, no `suggestion`, an `Asked by:` line
+  with a first name, `fp=beta-watch/dev-channel/…` markers, and no quoted message. The run's SQL
+  is the one select in the skill, its report counts the screenshots it couldn't read, and its run
+  record carries `dev-channel-through=`.
 - **Board Sweep:** the report has one section per phase. Follow-up items land titled
   `[pr-followup] …` / `[pr-followup][human] …` with `fp=pr-followup/…`, and the "PR Follow-ups —
   Human Action List" issue is republished; curator issues are `[suggestion] …` with an Agent brief

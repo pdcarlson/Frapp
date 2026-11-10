@@ -47,6 +47,8 @@ and `spec/`. Three groups are different:
   [`pr-followups`](../pr-followups/SKILL.md) phase owns them, and a human action can't be
   proven done from code. Skip `fp=beta-watch/` too: [`beta-watch`](../beta-watch/SKILL.md) owns
   them, and a crash or tester report can't be proven fixed from a code read either.
+  (`fp=beta-watch/dev-channel/` issues carry no `suggestion` label, so they are out of scope here
+  anyway.)
 - `scope:production` issues are held by owner decision (the roster's `scope:production` entry in
   routines.md), not aging. Never mark them `stale`, raise their priority for age, or file
   duplicates of them.
