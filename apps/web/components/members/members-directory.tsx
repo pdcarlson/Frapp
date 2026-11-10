@@ -768,6 +768,7 @@ export function MembersDirectory() {
           <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
             <FilterChip
               label="Assign role"
+              anyLabel="No role"
               options={assignableRoleChipOptions}
               value={effectiveBulkRoleId}
               onChange={setBulkRoleId}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactElement } from "react";
+import { useMemo, useRef, useState, type ReactElement } from "react";
 import { ArrowUpDown, Check, ChevronDown } from "lucide-react";
 import { normalizeWords } from "@repo/hooks/fuzzy-match";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,12 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
-export type FilterOption = { value: string; label: string };
+/**
+ * `short` is what the chip reads while this option is set, when the list's
+ * label is longer than a chip should be: Backwork's "COGS 2120 · Intro to
+ * Cognitive Science" lists whole and reads "COGS 2120" on the chip.
+ */
+export type FilterOption = { value: string; label: string; short?: string };
 
 /**
  * Past this many options the chip's list gets a type-to-filter field above
@@ -51,9 +56,6 @@ const ANY = "\u0000any";
  * A long list (more than `FILTER_SEARCH_THRESHOLD` options) opens with a
  * type-to-filter field above it. The whole list is still there to scroll;
  * typing narrows it and clearing the field brings it back (Shawn, 2026-11-10).
- *
- * Without `anyLabel` the list has no row that clears the value: the bulk
- * "Assign role" picker, which has its own Clear.
  */
 export function FilterChip({
   label,
@@ -63,7 +65,7 @@ export function FilterChip({
   onChange,
 }: {
   label: string;
-  anyLabel?: string;
+  anyLabel: string;
   options: readonly FilterOption[];
   value: string | null;
   onChange: (value: string | null) => void;
@@ -80,7 +82,7 @@ export function FilterChip({
       disabled={options.length === 0 && !active}
     >
       <span className="max-w-[160px] truncate">
-        {active ? (selected?.label.split(" · ")[0] ?? value) : label}
+        {active ? (selected?.short ?? selected?.label ?? value) : label}
       </span>
       <ChevronDown className="h-3.5 w-3.5 opacity-70" aria-hidden="true" />
     </Button>
@@ -103,15 +105,13 @@ export function FilterChip({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="max-h-80 min-w-[200px]">
-        {anyLabel ? (
-          <DropdownMenuItem onSelect={() => onChange(null)}>
-            <Check
-              className={cn("h-4 w-4", active && "invisible")}
-              aria-hidden="true"
-            />
-            {anyLabel}
-          </DropdownMenuItem>
-        ) : null}
+        <DropdownMenuItem onSelect={() => onChange(null)}>
+          <Check
+            className={cn("h-4 w-4", active && "invisible")}
+            aria-hidden="true"
+          />
+          {anyLabel}
+        </DropdownMenuItem>
         {options.map((option) => (
           <DropdownMenuItem
             key={option.value}
@@ -160,22 +160,26 @@ function SearchableOptions({
 }: {
   trigger: ReactElement;
   label: string;
-  anyLabel?: string;
+  anyLabel: string;
   options: readonly FilterOption[];
   value: string | null;
   onChange: (value: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const rows = useMemo(
-    () => [...(anyLabel ? [{ value: ANY, label: anyLabel }] : []), ...options],
-    [anyLabel, options],
-  );
+  const commandRef = useRef<HTMLDivElement>(null);
+  // The "any" row leads the whole list and steps aside while a query is
+  // typed: it is not something to search for, and as the first match it would
+  // be the row Enter picks ("co" for a course would clear the filter through
+  // "Any course").
   const shown = useMemo(
-    () => rows.filter((row) => matchesWordStarts(row.label, query)),
-    [rows, query],
+    () =>
+      normalizeWords(query).length === 0
+        ? [{ value: ANY, label: anyLabel }, ...options]
+        : options.filter((row) => matchesWordStarts(row.label, query)),
+    [anyLabel, options, query],
   );
-  const current = value ?? (anyLabel ? ANY : null);
+  const current = value ?? ANY;
   const close = () => {
     setOpen(false);
     setQuery("");
@@ -189,12 +193,17 @@ function SearchableOptions({
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-64 p-0"
-        // On touch the list opens without the keyboard, so it can be scrolled;
-        // a tap on the field brings the keyboard up.
+        // As wide as its longest label, up to a cap; past that a label wraps
+        // rather than being cut, since two long names can share a prefix.
+        className="w-max min-w-[15rem] max-w-[min(26rem,calc(100vw-2rem))] p-0"
+        // On touch the list opens without the on-screen keyboard, so it can be
+        // scrolled; a tap on the field brings the keyboard up. Focus still
+        // moves into the list, so arrow keys and Enter work from a hardware
+        // keyboard.
         onOpenAutoFocus={(event) => {
           if (window.matchMedia?.("(pointer: coarse)").matches) {
             event.preventDefault();
+            commandRef.current?.focus();
           }
         }}
         // Esc clears a typed query first and closes on the second press.
@@ -205,16 +214,19 @@ function SearchableOptions({
         }}
       >
         {/* Opens with the chosen row highlighted and scrolled into view. */}
+        {/* `label` names the field: cmdk points the input at it itself. */}
         <Command
+          ref={commandRef}
+          tabIndex={-1}
+          className="outline-none"
           shouldFilter={false}
-          defaultValue={current ?? undefined}
-          label={label}
+          defaultValue={current}
+          label={`Filter the ${label} list`}
         >
           <CommandInput
             value={query}
             onValueChange={setQuery}
             placeholder="Type to filter"
-            aria-label={`Filter the ${label} list`}
             className="h-9 py-2 text-sm pointer-coarse:h-11 pointer-coarse:text-base"
           />
           <CommandList className="max-h-72 p-1">
@@ -240,7 +252,7 @@ function SearchableOptions({
                     )}
                     aria-hidden="true"
                   />
-                  <span className="min-w-0 flex-1 truncate">
+                  <span className="min-w-0 flex-1 break-words">
                     {row.label}
                     {row.value === current ? (
                       <span className="sr-only"> (selected)</span>
