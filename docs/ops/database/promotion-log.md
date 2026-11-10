@@ -29,6 +29,29 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+<<<<<<< HEAD
+=======
+## 2026-11-10: Always formal channel lock (#3787)
+
+### 20261111000000_chat_channels_display_locked.sql
+
+- **Purpose**: Adds two columns to `chat_channels`: `display_locked` (boolean, not null, default false), which sets a channel to Always formal so every member sees it in the formal display and can't pick another there, and `created_by` (nullable, FK to `users (id)` on delete set null), the member who created it through `POST /v1/channels`, who may set the lock without `channels:manage` while they can still read the channel. Account deletion tombstones the `users` row rather than deleting it, so a deleted creator's id stays. No existing row changes: every channel reads as unlocked with no recorded creator. The rule is [`spec/behavior/chat/README.md` § Always formal](../../../spec/behavior/chat/README.md#always-formal).
+- **Checks**: After `db push`, `select column_name from information_schema.columns where table_name = 'chat_channels' and column_name in ('display_locked', 'created_by');` returns two rows, `select count(*) from chat_channels where display_locked;` returns `0`, and `select convalidated from pg_constraint where conname = 'chat_channels_created_by_fk';` returns `true`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API reads channels with `select('*')`, so once this is applied it returns both fields (false and null) on every channel and ignores them. The newer API against an unmigrated database fails every channel create (its insert names `created_by`) and `PUT /v1/channels/:id/display-lock`. Adding a NOT NULL column with a constant default and a nullable one is metadata-only on Postgres 11+, under a brief ACCESS EXCLUSIVE lock and no rewrite; the foreign key is added `not valid` and then validated against all-null values. `add column if not exists` and the guarded constraint make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-always-formal-channel-lock-20261111000000) § Rollback Always formal channel lock.
+
+## 2026-11-10: Chat backgrounds (#3973)
+
+### 20261110235500_chat_backgrounds.sql
+
+- **Purpose**: Adds the chapter's default chat background and a channel's own. On `chapters`: `chat_background` (text, not null, default `'plain'`), `chat_background_photo_path` (text, null) and `chat_background_message_id` (uuid, null, FK to `chat_messages` `on delete set null`). On `chat_channels`: `background` (text, null, meaning "follow the chapter default"), `background_photo_path` and `background_message_id` (same as on chapters). Checks: each key is one of `plain`, `gold-glow`, `midnight`, `game-day`, `letters`, `photo` (`CHAT_BACKGROUND_KEYS` in `@repo/validation`); a photo path is set exactly when the key is `photo`; a DM or group DM has no background. No existing row changes. The rule is [`spec/behavior/chat/README.md` § Chat backgrounds](../../../spec/behavior/chat/README.md#chat-backgrounds).
+- **Checks**: After `db push`, `select column_name from information_schema.columns where table_name = 'chat_channels' and column_name like 'background%';` returns three rows, and `select count(*) from chapters where chat_background <> 'plain';` returns `0`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never writes the columns. Its channel reads are `select('*')`, so once this is applied they carry `background`, `background_photo_path` and `background_message_id` (all null). The newer API against an unmigrated database fails the `PUT /v1/chat-backgrounds/...` routes, while its two GETs answer 200 with `plain` (a missing column reads as no background), so a plain GET is no sign the migration landed; nothing else reads the columns. `alter table` takes a brief exclusive lock on each table to add nullable or constant-default columns and validate checks that hold for every existing row, with no rewrite. `add column if not exists` and the `drop constraint if exists` / `add constraint` pairs make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-chat-backgrounds-20261110235500) § Rollback chat backgrounds.
+
+>>>>>>> origin/main
 ## 2026-11-10: An index for the Activity page's poll cards (#3897)
 
 ### 20261110230000_chat_messages_poll_cards_index.sql

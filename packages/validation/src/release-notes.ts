@@ -42,7 +42,7 @@ export type ReleaseNote = {
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
   {
     date: "2026-11-10",
-    title: "Status on your phone, better Documents, and narrower search",
+    title: "Chat beside your tools, threads, and status on your phone",
     changes: [
       "You can now set your status from your phone too, not only on the web.",
       "On your phone, Documents search finds more and forgives typos, you can sort the list, and you can delete a file if your role allows it.",
@@ -52,6 +52,19 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "On the web, Points, Billing, and Reports export as CSV, Excel, or a copy ready to paste into Google Sheets, wherever your role lets you export.",
       "On the web, a task's due date takes just a month and a day with no year to set, and an event shows you your own check-in.",
       "Text across the app is brighter and easier to read, and on the web what's new now opens on its own once after an update.",
+      "On the web, on a wide enough screen, chat now stays open beside Events, Tasks, Points, and your other pages: Chat in the menu opens or closes it, clicking the open page's name again closes that page, and you can drag the line between them to give either side more room.",
+      "With chat and a page open side by side, the menu slims down to icons when space is tight, and Events, Tasks, Points, Documents, and Backwork rearrange to fit, with a simpler Events calendar that lists the day you pick under the month.",
+      "Reply to a message in a thread, on the web and on your phone: Start thread opens one, the message shows how many replies it has, and Follow keeps you posted on new ones.",
+      "Chat can show messages as bubbles, yours on the right and everyone else's on the left, and you can give any channel its own look on this device from its menu under Display.",
+      "People without a profile photo now get colored initials, in their role's color when their role has one, and a color of their own otherwise.",
+      "Mentioning someone whose name has a space, like a first and last name, now mentions and notifies them as written.",
+      "If your role lets you close polls, a new poll can be set to stay open until you close it.",
+      "On the web, Events has one Filter button, remembers whether you last used the list or the calendar, and shows a repeating event as one row.",
+      "On the web, officers who manage roles can set up pledge classes in Settings and give each member a class and an order number.",
+      "On your phone, a channel you have a chat notification for shows as unread as soon as you open the app, before the latest counts arrive.",
+      "Chats can have a background, a built-in look or a photo, which officers with the right role set on the web for one channel or as the chapter's default, and you see it on your phone too.",
+      "Whoever creates a channel, or an officer who manages channels, can make it Always formal when creating it on the web, or later from its menu under Display, and then everyone sees it in the Cozy layout and can't switch that channel to Compact or Bubbles.",
+      "When you join a chapter, you now pick how chat looks, Cozy, Compact, or Bubbles, as part of setting up on the web or your phone, and you can change it anytime.",
     ],
   },
   {

@@ -11,7 +11,7 @@ import { Alert, Keyboard } from "react-native";
 import { useFocusEffect } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { useCurrentChapter, useMyPermissions } from "@repo/hooks";
-import { isModuleEnabled } from "@repo/validation";
+import { can, isModuleEnabled } from "@repo/validation";
 import {
   plusMenuForms,
   plusMenuModel,
@@ -282,7 +282,12 @@ export function useComposerPlus({
         onPhoto={onPhoto}
         onOpenForm={openForm}
       />
-      <NewPollSheet key={`poll-${key}`} ref={pollRef} onPost={postPollHere} />
+      <NewPollSheet
+        key={`poll-${key}`}
+        ref={pollRef}
+        onPost={postPollHere}
+        canCloseEarly={can("polls:create", granted)}
+      />
       {mountedForms.has("event") && eventChat ? (
         <SheetBoundary key={`event-${key}`} onError={() => dropForm("event")}>
           <NewEventSheet

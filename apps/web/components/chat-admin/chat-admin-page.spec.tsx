@@ -44,6 +44,15 @@ vi.mock("@repo/hooks", async (importOriginal) => {
   const mutation = () => ({ mutateAsync: vi.fn(), isPending: false });
   return {
     resolveAuthorLabel: actual.resolveAuthorLabel,
+    // Chat backgrounds (#3973): the default card is decoration on this page.
+    errorCopy: actual.errorCopy,
+    useChapterChatBackground: () => ({ data: undefined }),
+    useSetChapterChatBackground: () => ({
+      mutate: vi.fn(),
+      isPending: false,
+      error: null,
+    }),
+    useCurrentChapter: () => ({ data: undefined }),
     useChannels: () => reads.channels,
     useCategories: () => reads.categories,
     usePinnedMessages: () => reads.pins,
@@ -238,6 +247,46 @@ describe("ChatAdminPage — the create panel", () => {
     );
   });
 
+  it("creates the channel unlocked by default, and Always formal when switched on (#3787)", async () => {
+    mockCreateChannel.mockResolvedValue({});
+    render(<ChatAdminPage />);
+    fireEvent.click(screen.getByRole("button", { name: "New channel" }));
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "announcements-2" },
+    });
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("switch", {
+        name: /Always formal/,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Create channel" }));
+
+    await waitFor(() =>
+      expect(mockCreateChannel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "announcements-2",
+          display_locked: true,
+        }),
+      ),
+    );
+  });
+
+  it("sends Always formal off when the switch is left alone (#3787)", async () => {
+    mockCreateChannel.mockResolvedValue({});
+    render(<ChatAdminPage />);
+    fireEvent.click(screen.getByRole("button", { name: "New channel" }));
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "random-2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create channel" }));
+
+    await waitFor(() =>
+      expect(mockCreateChannel).toHaveBeenCalledWith(
+        expect.objectContaining({ display_locked: false }),
+      ),
+    );
+  });
+
   // Cancel sets state directly, and Radix fires no `onOpenChange` for that, so
   // it has to drop the draft itself the way the X and Escape do.
   it("drops the draft on Cancel, so the next New channel starts empty", () => {
@@ -281,7 +330,9 @@ describe("ChatAdminPage — the channel structure's states", () => {
     reads.categories = settled([]);
     const { container } = render(<ChatAdminPage />);
 
-    expect(screen.getByText("No channels yet. Create the first one above.")).toBeInTheDocument();
+    expect(
+      screen.getByText("No channels yet. Create the first one above."),
+    ).toBeInTheDocument();
     expect(screen.getByText(/^No categories yet\./)).toBeInTheDocument();
     expect(cardFilledContainers(container)).toEqual([]);
   });
@@ -363,7 +414,9 @@ describe("ChatAdminPage — the channel structure's states", () => {
       screen.getByRole("heading", { name: "Couldn't load channels" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("Couldn't reach Frapp. Check your connection and try again."),
+      screen.getByText(
+        "Couldn't reach Frapp. Check your connection and try again.",
+      ),
     ).toBeInTheDocument();
     expect(cardFilledContainers(container)).toEqual([]);
   });
@@ -483,7 +536,9 @@ describe("ChatAdminPage — a channel's pins", () => {
     selectExec();
     expect(cardFilledContainers(container)).toEqual([]);
 
-    expect(screen.getByText("Nothing pinned. Pin a message from the channel.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Nothing pinned. Pin a message from the channel."),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { level: 4, name: "Pinned messages (0)" }),
     ).toBeInTheDocument();

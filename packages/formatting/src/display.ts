@@ -16,9 +16,9 @@
  * value is absent, not a glyph).
  *
  * The relative forms ("Today · 5:00 PM", "Due tomorrow") are worded like
- * mobile's `formatEventRowTime` and `formatDueSubtitle`, so a member reads one
- * product across both apps. Those mobile copies still lack "Yesterday" and the
- * out-of-year year until mobile reads these (#3420).
+ * mobile's `formatDueSubtitle`, so a member reads one product across both
+ * apps. Mobile's Events headings and up-next strip read `formatDayHeading`
+ * here; its other copies move over in #3420.
  */
 
 import { parseInstantOrBareLocalNoon } from "./bare-date";

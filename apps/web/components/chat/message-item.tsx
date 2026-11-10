@@ -27,6 +27,7 @@ import { isAuditLine } from "@repo/chat-core/cards";
 import { ImportedReactionChips } from "./imported-reaction-chips";
 import { selectImportedReactions } from "./imported-reactions";
 import { ReactionChips, ReactionQuickPick } from "./reaction-bar";
+import { ThreadChip, StartThreadGlyph } from "./thread-chip";
 import { MessageAttachments } from "./message-attachments";
 import { QuotedMessage, replyPreviewText } from "./reply-quote";
 import {
@@ -38,6 +39,7 @@ import {
   isOwnMessage,
   EDITED_MARKER,
   isCardMessage,
+  messageCanStartThread,
   showsEditedMarker,
   type MemberLookup,
 } from "@repo/chat-core/message-actions";
@@ -171,6 +173,12 @@ export interface MessageItemProps {
    * jumps into is the real one with a composer under it, not a copy.
    */
   onJumpToParent?: (message: ChatMessage) => void;
+  /**
+   * Opens this message's thread (#3785): the row's **Start thread** control,
+   * and the chip under a parent that has replies. Absent where threads aren't
+   * offered (inside a thread, a 1:1 DM).
+   */
+  onOpenThread?: (message: ChatMessage) => void;
   /**
    * The message this one replies to, when `message.reply_to_id` is set and that
    * parent is inside the loaded window; `null` or absent when it is not.
@@ -351,6 +359,7 @@ export function MessageItem({
   onUnreact,
   onReply,
   onJumpToParent,
+  onOpenThread,
   replyParent,
   onRetry,
   onDiscard,
@@ -693,23 +702,24 @@ export function MessageItem({
     : null;
   const replyQuote =
     message.reply_to_id && !message.is_deleted ? (
-      <div className="mb-0.5 flex min-w-0 items-start gap-1.5">
+      <div className="mb-0.5 flex min-w-0 items-stretch">
         {/*
           The elbow: from the avatar's centre (16px into the 32px gutter) up
           and across to the quote, so the quote reads as belonging to the row
           below it rather than floating between two rows. Compact has no
-          avatar, so it drops from the text column's edge onto the name.
+          avatar, so it drops from the text column's edge onto the name. It
+          stretches to the quote's height, so a two-line quote's elbow still
+          reaches down to the row, and touches the quote's block (#4001).
         */}
         <span
           aria-hidden="true"
           data-slot="reply-elbow"
           className={cn(
-            "mt-2.5 h-2.5 shrink-0 rounded-tl-[6px] border-l-2 border-t-2 border-popover",
-            compact ? "ml-16 w-3" : "ml-4 w-6",
+            "mt-3 shrink-0 rounded-tl-[6px] border-l-2 border-t-2 border-popover",
+            compact ? "ml-16 w-4.5" : "ml-4 w-7.5",
           )}
         />
         <QuotedMessage
-          className="border-l-0 pl-0"
           author={
             replyParent
               ? resolveAuthorLabel(replyParent, nameFor, viewerId)
@@ -945,6 +955,17 @@ export function MessageItem({
             onClick={() => onReply(message)}
           >
             <ThreadGlyph className="h-4 w-4" />
+          </button>
+        ) : null}
+        {onOpenThread && messageCanStartThread(message) ? (
+          <button
+            type="button"
+            className={ACTION_BAR_BUTTON}
+            aria-label="Start thread"
+            title="Start thread"
+            onClick={() => onOpenThread(message)}
+          >
+            <StartThreadGlyph className="h-4 w-4" />
           </button>
         ) : null}
         {onToggleBookmark ? (
@@ -1396,6 +1417,23 @@ export function MessageItem({
                     {reactions}
                   </div>
                 ) : null}
+                {/* The thread chip sits under the bubble, on its side (#3785). */}
+                {message.thread ? (
+                  <div
+                    className={cn(
+                      "flex max-w-full",
+                      mine ? "justify-end" : "justify-start",
+                    )}
+                  >
+                    <ThreadChip
+                      summary={message.thread}
+                      nameFor={nameFor}
+                      onOpen={
+                        onOpenThread ? () => onOpenThread(message) : undefined
+                      }
+                    />
+                  </div>
+                ) : null}
                 {deliveryStatus}
                 {unconfirmedFooter}
               </div>
@@ -1629,6 +1667,15 @@ export function MessageItem({
                 <div className="mt-1 leading-5 [&>span]:ml-0">{trailing}</div>
               ) : null}
               {reactions}
+              {message.thread ? (
+                <ThreadChip
+                  summary={message.thread}
+                  nameFor={nameFor}
+                  onOpen={
+                    onOpenThread ? () => onOpenThread(message) : undefined
+                  }
+                />
+              ) : null}
               {deliveryStatus}
               {unconfirmedFooter}
             </div>

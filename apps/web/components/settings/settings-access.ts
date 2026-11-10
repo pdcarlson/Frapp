@@ -87,6 +87,16 @@ const TAB_EXTRA_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
 };
 
 /**
+ * Tabs that read no chapter config at all, so `chapter-config:view` is not a
+ * way in. The pledge class tab reads `GET /v1/pledge-classes` and writes with
+ * `roles:manage` (`spec/behavior/members.md` § Pledge class and order number);
+ * a config viewer without it could change nothing there.
+ */
+const TAB_ONLY_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
+  classes: ["roles:manage"],
+};
+
+/**
  * Tabs that configure one module. Each hides while its module is off for
  * every chapter in the beta (`BETA_OFF_MODULES`), and stays for a chapter that
  * switched the module off itself, so its officers can still set it up.
@@ -104,6 +114,7 @@ export const SETTINGS_ENTRY_PERMISSIONS: readonly string[] = Array.from(
   new Set([
     CHAPTER_CONFIG_VIEW,
     ...Object.values(TAB_EXTRA_PERMISSIONS).flat(),
+    ...Object.values(TAB_ONLY_PERMISSIONS).flat(),
     ...SETTINGS_TOOLS.map((tool) => tool.permission),
   ]),
 );
@@ -119,7 +130,8 @@ export const SETTINGS_TOOL_ROUTES: readonly string[] = SETTINGS_TOOLS.map(
  * Fails open while `permissions` is unresolved, like the nav: showing a tab one
  * render early is harmless, and hiding one is a visible flash. Every tab reads
  * or writes chapter config and needs `chapter-config:view`, except the ones in
- * `TAB_EXTRA_PERMISSIONS`. Hiding a tab from a viewer who could only have seen
+ * `TAB_EXTRA_PERMISSIONS` (another way in) and `TAB_ONLY_PERMISSIONS` (the
+ * only way in). Hiding a tab from a viewer who could only have seen
  * it fail to load removes nothing they could use.
  */
 export function isSettingsTabVisible(
@@ -129,6 +141,8 @@ export function isSettingsTabVisible(
   const tabModule = TAB_MODULES[tab];
   if (tabModule && isBetaOffModule(tabModule)) return false;
   if (permissions === undefined || permissions === null) return true;
+  const only = TAB_ONLY_PERMISSIONS[tab];
+  if (only) return canAny(only, permissions);
   return canAny(
     [CHAPTER_CONFIG_VIEW, ...(TAB_EXTRA_PERMISSIONS[tab] ?? [])],
     permissions,

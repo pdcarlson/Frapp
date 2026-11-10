@@ -36,7 +36,15 @@ vi.mock("@/components/account/status-sheet", () => ({
   StatusSheet: () => null,
 }));
 
-vi.mock("@repo/hooks", () => {
+vi.mock("@repo/hooks", async (importOriginal) => {
+  // s06's pure series helpers (#3823), which its list runs on any data.
+  const {
+    collapseSeries,
+    eventSeriesKey,
+    seriesCadenceLabel,
+    seriesHeadOf,
+    splitByHorizon,
+  } = await importOriginal<typeof import("@repo/hooks")>();
   const empty = {
     data: [],
     isPending: false,
@@ -46,6 +54,11 @@ vi.mock("@repo/hooks", () => {
   };
   const now = new Date("2026-09-25T18:00:00Z");
   return {
+    collapseSeries,
+    eventSeriesKey,
+    seriesCadenceLabel,
+    seriesHeadOf,
+    splitByHorizon,
     useNowDate: () => now,
     // s06 gates its list on an active chapter (no chapter, no query).
     useActiveChapterId: () => "chapter-1",
@@ -75,6 +88,8 @@ vi.mock("@repo/hooks", () => {
     useLeaveChannel: () => ({ mutateAsync: vi.fn() }),
     useMarkChannelRead: () => ({ mutate: vi.fn() }),
     useSetChannelNotificationLevel: () => ({ mutate: vi.fn() }),
+    useSetChannelDisplayLock: () => ({ mutateAsync: vi.fn() }),
+    canSetChannelDisplayLock: () => false,
     useDeleteChannel: () => ({ mutateAsync: vi.fn() }),
     channelRowActions: () => ({ member: [], officer: [] }),
     useGetOrCreateDm: () => ({ mutate: vi.fn() }),

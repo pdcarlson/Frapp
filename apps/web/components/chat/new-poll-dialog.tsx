@@ -10,7 +10,7 @@ import {
   checkPollDraft,
   closesAtFor,
   movePollOption,
-  POLL_CLOSE_CHOICES,
+  pollCloseChoicesFor,
   removePollOption,
   setPollOption,
   type PollCloseChoice,
@@ -43,7 +43,8 @@ import { dashboardFormSelectClassName } from "@/components/shared/table-controls
  * the phone post.
  *
  * A question, two to ten options (add, remove, move up or down), and when
- * voting closes, a day by default as `/poll` does. Posting goes through the
+ * voting closes, a day by default as `/poll` does, or **Doesn't close**
+ * (#3896) for a poll its creator ends from the card. Posting goes through the
  * outbox like a message, so it works offline and a server refusal lands on
  * the card's own failed row with Retry and Discard. What this dialog reports
  * itself is only an outbox that refused the row, when the draft is all the
@@ -62,6 +63,12 @@ export interface NewPollDialogProps {
     content: string;
     payload: PollPayload;
   }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /**
+   * Whether this member could end the poll from its card (they hold
+   * `polls:create`): only then is **Doesn't close** offered, so nobody posts
+   * a poll they can't close. `false` while that isn't known.
+   */
+  canCloseEarly: boolean;
   /** Injected so the close time is deterministic under test. */
   now?: () => Date;
 }
@@ -71,6 +78,7 @@ export function NewPollDialog({
   onOpenChange,
   initialDraft,
   onPost,
+  canCloseEarly,
   now,
 }: NewPollDialogProps) {
   const [draft, setDraft] = useState<PollDraft>(initialDraft);
@@ -245,7 +253,7 @@ export function NewPollDialog({
               className={`${dashboardFormSelectClassName} w-full`}
               disabled={posting}
             >
-              {POLL_CLOSE_CHOICES.map((choice) => (
+              {pollCloseChoicesFor(canCloseEarly).map((choice) => (
                 <option key={choice.id} value={choice.id}>
                   {choice.label}
                 </option>

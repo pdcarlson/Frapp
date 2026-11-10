@@ -1,4 +1,4 @@
-import { permissionLabel } from "@/lib/permission-labels";
+import { permissionLabel } from "@repo/validation";
 import { describe, it, expect } from "vitest";
 import { formatDay, formatTimestampFull } from "@repo/formatting";
 import { CHAT_REPORT_QUEUE_PERMISSIONS } from "@repo/validation";

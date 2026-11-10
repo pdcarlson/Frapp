@@ -43,6 +43,7 @@ import {
 import * as Sentry from "@sentry/nextjs";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import { describeChatPhoto } from "@/lib/chat/photo-preview";
+import { filesFromClipboard } from "@/lib/chat/clipboard-files";
 import { definitiveRefusalMessage } from "@repo/chat-core/chat-client";
 // Imported, never restated. A structural copy of this shape is assignable even
 // when it is missing a field, so a hand-written `{ ok, error? }` silently erases
@@ -366,7 +367,7 @@ const SlashPalette = dynamic(
 
 /**
  * The message the next send replies to, already resolved to a label and a
- * one-line preview by the shell (#489).
+ * preview by the shell (#489).
  *
  * Resolved rather than a `ChatMessage`, because the shell is the only place
  * that holds the viewer id and the name resolver the label needs, and because
@@ -1072,6 +1073,14 @@ export function Composer({
   const resolvedCanPost = isAuditLog ? false : (canPost ?? !isReadOnly);
   const sendRef = useRef<() => void>(() => {});
   /*
+    The attach path, for the editor's paste handler (#2246). `editorProps` is
+    written where the editor is configured, above `attachFiles`, so the
+    handler reaches the latest `attachFiles` (which closes over how many files
+    are staged) through a ref, the way Enter reaches `submit` through
+    `sendRef`.
+  */
+  const attachFilesRef = useRef<(files: File[]) => void>(() => {});
+  /*
     What is staged as of the last commit, for a refused send to compare
     against when it settles (`submit`). The closure it runs in holds the values
     from the moment of sending, which is exactly what it must not trust.
@@ -1120,6 +1129,20 @@ export function Composer({
         // shared preset, so both classes compiled to no rules.
         class: cn(COMPOSER_INPUT_CLASS, "chat-composer-editor"),
         "aria-label": COMPOSER_LABEL,
+      },
+      /*
+        A pasted image (a screenshot, "Copy image" in a browser) attaches the
+        way a picked file does (#2246). `true` tells ProseMirror the paste is
+        handled; any paste that carries text returns `false` and the editor
+        pastes it exactly as before. See `filesFromClipboard` for the line
+        between the two.
+      */
+      handlePaste(_view, event) {
+        const files = filesFromClipboard(event.clipboardData);
+        if (files.length === 0) return false;
+        event.preventDefault();
+        attachFilesRef.current(files);
+        return true;
       },
     },
     onUpdate({ editor }) {
@@ -1586,10 +1609,10 @@ export function Composer({
     },
     [onOpenCommandForm],
   );
-  const handleAttach = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(event.target.files ?? []);
-      event.target.value = "";
+  // One path for a picked file and a pasted one (#2246): the same type and
+  // size checks, the same per-message limit, the same toasts.
+  const attachFiles = useCallback(
+    (files: File[]) => {
       if (files.length === 0) return;
       const room = Math.max(0, CHAT_FILE_LIMIT - stagedCount);
       let refused: "size" | "type" | null = null;
@@ -1625,6 +1648,17 @@ export function Composer({
       }
     },
     [stagedCount, toast, uploadOne],
+  );
+  useLayoutEffect(() => {
+    attachFilesRef.current = attachFiles;
+  }, [attachFiles]);
+  const handleAttach = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(event.target.files ?? []);
+      event.target.value = "";
+      attachFiles(files);
+    },
+    [attachFiles],
   );
 
   const removePending = useCallback((storagePath: string) => {
@@ -1664,7 +1698,7 @@ export function Composer({
    * `replyTo` from `channel.messages`, so an unrelated edit or reaction lands a
    * fresh object on every render of an already-staged reply, and re-focusing on
    * each of those would fight a member who has clicked away — the same hazard
-   * the deleted `thread-panel.tsx` documented for its own focus effect.
+   * the old `thread-panel.tsx` (deleted in #2142) documented for its own focus effect.
    */
   const replyTargetId = replyTo?.id ?? null;
   useEffect(() => {
@@ -1693,7 +1727,7 @@ export function Composer({
         setPalette({ open: true, query: "" });
         return;
       }
-      // `defaultPrevented` for the same reason the deleted `thread-panel.tsx`
+      // `defaultPrevented` for the same reason the old `thread-panel.tsx` (#2142)
       // checked it:
       // a Radix `DismissableLayer` (the emoji popover mounted from this
       // toolbar) closes itself on Escape by calling `preventDefault()` without
@@ -1836,8 +1870,11 @@ export function Composer({
           what they are about to send.
         */}
         {replyTo ? (
-          <div className="mb-2 flex items-center gap-1.5">
-            <span className="shrink-0 text-caption text-muted-foreground">
+          <div className="mb-2 flex items-start gap-1.5">
+            {/* `py-1` matches the quote block's padding, and the button's
+                `mt-0.5` centres it on the same first line, so both stay on
+                the quote's first line when it wraps to two (#4001). */}
+            <span className="shrink-0 py-1 text-caption text-muted-foreground">
               Replying to
             </span>
             <QuotedMessage
@@ -1850,7 +1887,7 @@ export function Composer({
               type="button"
               variant="ghost"
               size="icon"
-              className="h-5 w-5 shrink-0"
+              className="mt-0.5 h-5 w-5 shrink-0"
               aria-label="Cancel reply"
               onClick={cancelReply}
             >

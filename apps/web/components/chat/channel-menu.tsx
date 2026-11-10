@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, MoreHorizontal } from "lucide-react";
+import { ChevronLeft, Image as ImageIcon, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -26,9 +26,23 @@ import {
 import { PinsPanel, pinnedMessages, type HiddenPins } from "./pins-popover";
 import { BookmarksPanel, type BookmarkEntry } from "./bookmarks-popover";
 import { NotificationLevelPanel } from "./notification-level-popover";
-import { ChannelDisplayPanel } from "./channel-display-panel";
+import {
+  ChannelDisplayPanel,
+  type ChannelDisplayLockControl,
+} from "./channel-display-panel";
+import {
+  ChatBackgroundPicker,
+  type ChatBackgroundPick,
+} from "./chat-background-picker";
+import {
+  CHAT_BACKGROUND_LABELS,
+  type ChatBackgroundKey,
+} from "@repo/validation";
 import { channelDensityDetail } from "@repo/chat-core/density";
-import { useChannelDensityOverride } from "@/lib/chat/chat-density";
+import {
+  useChannelDensityOverride,
+  useChannelDisplayLocked,
+} from "@/lib/chat/chat-density";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   CHANNEL_LEVEL_DETAIL,
@@ -83,7 +97,14 @@ import {
  */
 
 type View =
-  "menu" | "search" | "pins" | "saved" | "notifications" | "display" | "hide";
+  | "menu"
+  | "search"
+  | "pins"
+  | "saved"
+  | "notifications"
+  | "display"
+  | "hide"
+  | "background";
 
 type ChannelMenuProps = {
   /** The channel currently open, or `null` when none is selected yet. */
@@ -132,6 +153,26 @@ type ChannelMenuProps = {
     pinned: boolean;
     onToggle: () => void;
   };
+  /**
+   * The Always formal switch in the Display view (#3787). Pass it only when
+   * the viewer created the open channel or holds `channels:manage`
+   * (`canSetChannelDisplayLock`); absent, the view has no switch.
+   */
+  displayLock?: ChannelDisplayLockControl;
+  /**
+   * The channel's background (#3973). Present only for someone who can manage
+   * channels, on a channel that isn't a DM; absent, no row.
+   */
+  background?: {
+    /** The channel's own choice; null when it follows the chapter default. */
+    value: ChatBackgroundKey | null;
+    /** The chapter default, for the "Chapter default" swatch. */
+    inheritPreview?: ChatBackgroundKey;
+    letters: string;
+    saving: boolean;
+    error: string | null;
+    onPick: (pick: ChatBackgroundPick) => void;
+  };
 };
 
 type MenuRow = {
@@ -150,6 +191,10 @@ type MenuRow = {
   count?: number;
 };
 
+function BackgroundGlyph({ className }: { className?: string }) {
+  return <ImageIcon className={className} aria-hidden="true" />;
+}
+
 const VIEW_TITLES: Record<Exclude<View, "menu">, string> = {
   search: "Search messages",
   pins: "Pinned",
@@ -157,6 +202,7 @@ const VIEW_TITLES: Record<Exclude<View, "menu">, string> = {
   notifications: "Notifications",
   display: "Display",
   hide: HIDE_CONVERSATION_LABEL,
+  background: "Background",
 };
 
 export function ChannelMenu({
@@ -179,10 +225,13 @@ export function ChannelMenu({
   onChangeNotificationLevel,
   hideConversation,
   pinToTop,
+  displayLock,
+  background,
 }: ChannelMenuProps) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<View>("menu");
   const densityOverride = useChannelDensityOverride(activeChannelId);
+  const displayLocked = useChannelDisplayLocked(activeChannelId);
   const backRef = useRef<HTMLButtonElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
 
@@ -249,7 +298,19 @@ export function ChannelMenu({
             view: "display" as const,
             label: "Display",
             Glyph: ChatGlyph,
-            detail: channelDensityDetail(densityOverride),
+            detail: channelDensityDetail(densityOverride, displayLocked),
+          },
+        ]
+      : []),
+    ...(background
+      ? [
+          {
+            view: "background" as const,
+            label: "Background",
+            Glyph: BackgroundGlyph,
+            detail: background.value
+              ? CHAT_BACKGROUND_LABELS[background.value]
+              : "Chapter default",
           },
         ]
       : []),
@@ -464,6 +525,20 @@ export function ChannelMenu({
               <ChannelDisplayPanel
                 channelId={activeChannelId}
                 onChange={close}
+                lockControl={displayLock}
+              />
+            ) : null}
+            {view === "background" && background ? (
+              // Stays open while saving: the swatches show the pending state,
+              // and a refused photo needs its error read here.
+              <ChatBackgroundPicker
+                value={background.value}
+                allowInherit
+                inheritPreview={background.inheritPreview}
+                letters={background.letters}
+                saving={background.saving}
+                error={background.error}
+                onPick={background.onPick}
               />
             ) : null}
             {view === "notifications" ? (

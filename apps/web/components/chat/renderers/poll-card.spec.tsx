@@ -371,6 +371,24 @@ describe("PollCard closed early by its creator (#3794)", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("says an open poll with no deadline has no end date, and still offers its creator Close poll (#3896)", () => {
+    const { onVote } = renderWithClose(
+      poll({ sender_id: VIEWER, payload: { ...card, closes_at: null } }),
+    );
+
+    expect(screen.getByText("Poll · No end date")).toBeInTheDocument();
+    fireEvent.click(optionButton("No"));
+    expect(onVote).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByRole("button", { name: "Close poll" }),
+    ).toBeInTheDocument();
+  });
+
+  it("reads a timed, open poll as plain Poll, as before", () => {
+    renderWithClose(poll({ sender_id: VIEWER, payload: card }));
+    expect(screen.getByText("Poll")).toBeInTheDocument();
+  });
+
   it("draws a card closed early as closed, with its tally and no vote, before its deadline", () => {
     const { onVote } = renderWithClose(
       poll({

@@ -35,12 +35,15 @@ import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { NOTIFICATION_LEVEL_OPTIONS } from "./notification-level-control";
 import {
+  ALWAYS_FORMAL_LABEL,
+  CHANNEL_DISPLAY_LOCKED_NOTE,
   channelDensityChoices,
   channelDensityDetail,
 } from "@repo/chat-core/density";
 import {
   setChannelDensity,
   useChannelDensityOverride,
+  useChannelDisplayLocked,
   useChatDensity,
 } from "@/lib/chat/chat-density";
 
@@ -58,6 +61,12 @@ export interface ChannelActionsMenuTarget {
   level: ChatNotificationLevel | undefined;
   /** From `channelRowActions` in `@repo/hooks`, the rule web's menu reads too. */
   actions: ChannelRowActionGroups;
+  /**
+   * The viewer created the channel or holds `channels:manage`
+   * (`canSetChannelDisplayLock`), so the Display view offers Always formal
+   * (#3787).
+   */
+  canSetDisplayLock?: boolean;
 }
 
 /** The menu's width, and the gap it keeps from the press and the screen edge. */
@@ -85,6 +94,7 @@ export function ChannelActionsMenu({
   onClose,
   onAction,
   onSetLevel,
+  onSetDisplayLock,
   writeBlockedReason,
 }: {
   target: ChannelActionsMenuTarget | null;
@@ -95,6 +105,8 @@ export function ChannelActionsMenu({
     target: ChannelActionsMenuTarget,
   ) => void;
   onSetLevel: (channelId: string, level: ChatNotificationLevel) => void;
+  /** Sets or clears Always formal (#3787); offered only with `canSetDisplayLock`. */
+  onSetDisplayLock?: (channelId: string, locked: boolean) => void;
   /**
    * Why a queueless write is blocked right now (`useConnection`), or `null`.
    * A level pick is one, so Notifications locks with it, as the thread
@@ -118,6 +130,7 @@ export function ChannelActionsMenu({
           onClose={onClose}
           onAction={onAction}
           onSetLevel={onSetLevel}
+          onSetDisplayLock={onSetDisplayLock}
           writeBlockedReason={writeBlockedReason}
         />
       ) : null}
@@ -130,6 +143,7 @@ function MenuBody({
   onClose,
   onAction,
   onSetLevel,
+  onSetDisplayLock,
   writeBlockedReason,
 }: {
   target: ChannelActionsMenuTarget;
@@ -139,6 +153,7 @@ function MenuBody({
     target: ChannelActionsMenuTarget,
   ) => void;
   onSetLevel: (channelId: string, level: ChatNotificationLevel) => void;
+  onSetDisplayLock?: (channelId: string, locked: boolean) => void;
   writeBlockedReason: string | null;
 }) {
   const { tokens } = useFrappTheme();
@@ -150,6 +165,9 @@ function MenuBody({
   const [view, setView] = useState<"menu" | "levels" | "display">("menu");
   const defaultDensity = useChatDensity();
   const densityOverride = useChannelDensityOverride(target.channelId);
+  const displayLocked = useChannelDisplayLocked(target.channelId);
+  const showLockToggle =
+    target.canSetDisplayLock === true && onSetDisplayLock !== undefined;
   const [menuHeight, setMenuHeight] = useState<number | null>(null);
   const titleRef = useRef<React.ComponentRef<typeof Text>>(null);
   useFocusOnOpen(titleRef, true);
@@ -253,7 +271,7 @@ function MenuBody({
                   key === "notifications" && levelsBlockedReason !== null;
                 const detail =
                   key === "display"
-                    ? channelDensityDetail(densityOverride)
+                    ? channelDensityDetail(densityOverride, displayLocked)
                     : key === "notifications" && target.level
                       ? CHANNEL_LEVEL_DETAIL[target.level]
                       : null;
@@ -318,14 +336,49 @@ function MenuBody({
                 />
                 <Text style={styles.backLabel}>Display</Text>
               </Pressable>
+              {showLockToggle ? (
+                <Pressable
+                  accessibilityRole="switch"
+                  accessibilityLabel={ALWAYS_FORMAL_LABEL}
+                  accessibilityState={{ checked: displayLocked }}
+                  onPress={() => {
+                    onClose();
+                    onSetDisplayLock?.(target.channelId, !displayLocked);
+                  }}
+                  style={({ pressed }) => [
+                    styles.row,
+                    styles.divided,
+                    pressed ? styles.pressed : null,
+                  ]}
+                >
+                  <Text style={styles.rowLabel}>{ALWAYS_FORMAL_LABEL}</Text>
+                  <View
+                    style={styles.check}
+                    accessibilityElementsHidden
+                    importantForAccessibility="no-hide-descendants"
+                  >
+                    {displayLocked ? (
+                      <CheckGlyph color={brand.accent} size={16} />
+                    ) : null}
+                  </View>
+                </Pressable>
+              ) : null}
+              {displayLocked ? (
+                <Text style={[styles.caption, styles.divided]}>
+                  {CHANNEL_DISPLAY_LOCKED_NOTE}
+                </Text>
+              ) : null}
               {channelDensityChoices(defaultDensity).map((choice) => {
-                const selected = choice.value === densityOverride;
+                // Locked, the member's own pick doesn't apply here, so none
+                // is marked and none can be picked (#3787).
+                const selected = !displayLocked && choice.value === densityOverride;
                 return (
                   <Pressable
                     key={choice.value ?? "default"}
                     accessibilityRole="menuitem"
                     accessibilityLabel={choice.label}
-                    accessibilityState={{ selected }}
+                    accessibilityState={{ selected, disabled: displayLocked }}
+                    disabled={displayLocked}
                     onPress={() => {
                       onClose();
                       if (!selected) {
@@ -338,7 +391,14 @@ function MenuBody({
                       pressed ? styles.pressed : null,
                     ]}
                   >
-                    <Text style={styles.rowLabel}>{choice.label}</Text>
+                    <Text
+                      style={[
+                        styles.rowLabel,
+                        displayLocked ? styles.disabledLabel : null,
+                      ]}
+                    >
+                      {choice.label}
+                    </Text>
                     <View
                       style={styles.check}
                       accessibilityElementsHidden

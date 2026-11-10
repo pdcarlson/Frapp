@@ -1,8 +1,18 @@
-import { ALUMNI_CHANNEL_PERMISSION, roleColor } from '@repo/validation';
+import {
+  ALUMNI_CHANNEL_PERMISSION,
+  roleColor,
+  type PermissionDefinition,
+} from '@repo/validation';
 import { ANNOUNCEMENTS_POST_PERMISSION } from '../utils/channel-access';
 
 export const WILDCARD = '*';
 
+/**
+ * The permission strings the API's guards enforce. What each one is called,
+ * what it opens and which module it belongs to live in `PERMISSION_REGISTRY`
+ * (`@repo/validation`), which web and mobile read too; `permissions.spec.ts`
+ * fails when an entry is in one list and not the other.
+ */
 export const SystemPermissions = {
   WILDCARD: '*',
 
@@ -53,17 +63,19 @@ export const SystemPermissions = {
   CHAPTER_CONFIG_VIEW: 'chapter-config:view',
   CHAPTER_CONFIG_MANAGE: 'chapter-config:manage',
 
-  // Gates nothing: `GET /v1/chapter-directory/search` checks no permission.
-  // Kept because the catalog feeds the web's permission pickers, so a chapter
-  // may already have stored it. Retiring it is #3231.
-  CHAPTER_DIRECTORY_SEARCH: 'chapter-directory:search',
-
   // Marks a ROLE_GATED channel as one the Alumni lifecycle may author in. Held
   // by the Alumni role, but the posting gate reads it off the *channel's*
   // `required_permissions` — see `ALUMNI_CHANNEL_PERMISSION` in
   // `@repo/validation`, which owns the value.
   ALUMNI_POST: ALUMNI_CHANNEL_PERMISSION,
 } as const;
+
+/** One row of `GET /v1/roles/permissions-catalog`. */
+export interface PermissionCatalogEntry extends PermissionDefinition {
+  /** The `SystemPermissions` constant's name, e.g. `EVENTS_CREATE`. */
+  key: string;
+  module_label: string;
+}
 
 /**
  * Stable, rename-proof identity for the seeded system roles.

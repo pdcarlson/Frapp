@@ -85,6 +85,7 @@ function render(
   onSenderDeparted?: (userId: string) => void,
   handlers: {
     onReply?: (messageId: string) => void;
+    onStartThread?: (messageId: string) => void;
     onEdit?: (messageId: string) => void;
     onDelete?: (messageId: string) => void;
     onMention?: (messageId: string) => void;
@@ -314,6 +315,42 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
     expect(onReply).toHaveBeenCalledWith("m9");
     expect(onEdit).toHaveBeenCalledWith("m9");
     expect(onDelete).toHaveBeenCalledWith("m9");
+  });
+
+  it("offers Start thread under Reply where the target allows it, and hands it off (#3785)", () => {
+    const onReply = vi.fn();
+    const onStartThread = vi.fn();
+    const tree = render({ ...OWN, canStartThread: true }, undefined, {
+      onReply,
+      onStartThread,
+    });
+    const labels = tree.root
+      .findAll(
+        (node) =>
+          typeof node.props.accessibilityLabel === "string" &&
+          typeof node.props.onPress === "function",
+      )
+      .map((node) => node.props.accessibilityLabel as string);
+    expect(labels.indexOf("Reply")).toBeLessThan(
+      labels.indexOf("Start thread"),
+    );
+    expect(labels.indexOf("Start thread")).toBeLessThan(
+      labels.indexOf("Edit message"),
+    );
+    pressByLabel(tree, "Start thread");
+    expect(onStartThread).toHaveBeenCalledWith("m9");
+  });
+
+  it("draws no Start thread without the target's say-so or a handler", () => {
+    expect(
+      hasRow(
+        render(OWN, undefined, { onStartThread: vi.fn() }),
+        "Start thread",
+      ),
+    ).toBe(false);
+    expect(
+      hasRow(render({ ...OWN, canStartThread: true }), "Start thread"),
+    ).toBe(false);
   });
 
   it("closes the menu before handing off, so it never covers the strip or the alert", () => {

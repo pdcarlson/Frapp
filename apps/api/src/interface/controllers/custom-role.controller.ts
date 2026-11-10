@@ -21,10 +21,7 @@ import { CustomRoleService } from '../../application/services/custom-role.servic
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
-import {
-  RequireAnyOfPermissions,
-  RequirePermissions,
-} from '../decorators/permissions.decorator';
+import { RequirePermissions } from '../decorators/permissions.decorator';
 import { FreeTier } from '../decorators/subscription.decorator';
 import {
   CurrentChapterId,
@@ -60,10 +57,7 @@ export class CustomRoleController {
   }
 
   @Post()
-  @RequireAnyOfPermissions(
-    SystemPermissions.CHAPTER_CONFIG_MANAGE,
-    SystemPermissions.WILDCARD,
-  )
+  @RequirePermissions(SystemPermissions.CHAPTER_CONFIG_MANAGE)
   @ApiOperation({ summary: 'Create a custom role (audit-logged)' })
   @ApiCreatedResponse({ type: CustomRoleDto })
   @ApiConflictResponse({
@@ -78,10 +72,7 @@ export class CustomRoleController {
   }
 
   @Patch(':id')
-  @RequireAnyOfPermissions(
-    SystemPermissions.CHAPTER_CONFIG_MANAGE,
-    SystemPermissions.WILDCARD,
-  )
+  @RequirePermissions(SystemPermissions.CHAPTER_CONFIG_MANAGE)
   @ApiOperation({ summary: 'Update a custom role (audit-logged)' })
   @ApiOkResponse({ type: CustomRoleDto })
   async update(
@@ -94,10 +85,7 @@ export class CustomRoleController {
   }
 
   @Delete(':id')
-  @RequireAnyOfPermissions(
-    SystemPermissions.CHAPTER_CONFIG_MANAGE,
-    SystemPermissions.WILDCARD,
-  )
+  @RequirePermissions(SystemPermissions.CHAPTER_CONFIG_MANAGE)
   @ApiOperation({
     summary: 'Delete a non-core custom role (audit-logged)',
   })

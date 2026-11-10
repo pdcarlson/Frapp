@@ -18,9 +18,9 @@
  * about where an import points."
  *
  * **Two defined here, the rest re-exported**, which is the bar §6.2.6 sets for
- * shipping a family file at all. Five of the tutorial's eight slides name
- * intents the sidebar already draws, so migrating those five and leaving the
- * sixth on Lucide would be one intent in two glyph sets — the drift §1 rule 1
+ * shipping a family file at all. Six of the tutorial's nine slides name
+ * intents the sidebar already draws (chat twice, with the display pick), so
+ * migrating those and leaving one on Lucide would be one intent in two glyph sets — the drift §1 rule 1
  * bans. The `LockGlyph` re-export crosses from chat for the same reason.
  *
  * **Control furniture stays Lucide** (§6.2.2): `Loader2`, `ArrowLeft`,

@@ -386,3 +386,50 @@ export function copyableText(
   if (message.is_deleted || isCardMessage(message)) return null;
   return message.content.trim() ? message.content : null;
 }
+
+/**
+ * Whether a channel offers message threads (#3785): channels and group DMs,
+ * read-only ones included; not a 1:1 DM (slice 1) and never the audit log.
+ * The API's `channelAllowsThreads` is the rule; this mirrors it for the UI.
+ */
+export function channelAllowsThreads(channel: {
+  type?: string | null;
+  is_audit_log?: boolean | null;
+}): boolean {
+  return channel.type !== "DM" && channel.is_audit_log !== true;
+}
+
+/**
+ * Whether a message offers **Start thread** (#3785), in a channel that offers
+ * threads at all (`channelAllowsThreads`): not a reply inside a thread (a
+ * thread can't hold one), not a parent that already has replies (its chip
+ * opens that thread), and not a deleted or imported message. One rule for
+ * web's action bar and mobile's long-press sheet.
+ */
+export function messageCanStartThread(message: {
+  thread_root_id?: string | null;
+  thread?: unknown;
+  is_deleted: boolean;
+  kind: string;
+}): boolean {
+  return (
+    !message.thread_root_id &&
+    !message.thread &&
+    !message.is_deleted &&
+    message.kind !== "imported"
+  );
+}
+
+/**
+ * Whether the viewer is offered a composer inside a thread (#3785). A
+ * read-only channel refuses timeline posts but takes thread replies from any
+ * member who can read it (`spec/behavior/chat/README.md` § Message threads),
+ * so its `can_post: false` doesn't close the thread. The server still decides
+ * (an alumnus in a read-only channel is refused there).
+ */
+export function channelAllowsThreadReplies(channel: {
+  can_post?: boolean | null;
+  is_read_only?: boolean | null;
+}): boolean {
+  return channel.can_post !== false || channel.is_read_only === true;
+}

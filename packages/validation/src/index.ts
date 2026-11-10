@@ -699,6 +699,24 @@ export {
   WILDCARD_PERMISSION,
 } from "./permissions";
 
+// What each system permission is called and which module it belongs to. The
+// API serves it at `GET /v1/roles/permissions-catalog`; web and mobile read
+// the same list from here (#4069).
+export {
+  groupPermissionsByModule,
+  PERMISSION_MODULES,
+  PERMISSION_REGISTRY,
+  permissionDefinition,
+  permissionLabel,
+  permissionModuleLabel,
+} from "./permission-registry";
+export type {
+  PermissionDefinition,
+  PermissionGroup,
+  PermissionModuleKey,
+  PermissionScope,
+} from "./permission-registry";
+
 // Client-side subscription write gate. Moved out of `apps/web/lib/subscription.ts`
 // so it sits next to `can` and `isModuleEnabled` as the third shared client gate.
 export {
@@ -963,3 +981,14 @@ export {
   effectiveMinutesPerPoint,
   servicePointsForDuration,
 } from "./service-points";
+export {
+  CHAT_BACKGROUND_BUILT_INS,
+  CHAT_BACKGROUND_KEYS,
+  CHAT_BACKGROUND_LABELS,
+  CHAT_BACKGROUND_PHOTO,
+  isChatBackgroundKey,
+} from "./chat-backgrounds";
+export type {
+  ChatBackgroundBuiltIn,
+  ChatBackgroundKey,
+} from "./chat-backgrounds";

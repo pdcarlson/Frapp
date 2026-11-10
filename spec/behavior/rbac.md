@@ -17,7 +17,7 @@ Frapp publishes a **system permissions catalog** — these are the strings the A
 | `members:view`        | View the full member directory                         |
 | `points:adjust`       | Manually add/remove points                             |
 | `points:view_all`     | View all members' transactions (not just own)          |
-| `roles:manage`        | Create, edit, delete roles; assign roles to members    |
+| `roles:manage`        | Create, edit, delete roles; assign roles to members; edit the chapter's pledge classes and any member's class and order number ([`members.md`](members.md#pledge-class-and-order-number)) |
 | `channels:create`     | Create chat channels                                   |
 | `channels:manage`     | Edit/delete channels, pin messages, manage permissions |
 | `announcements:post`  | Post in the #announcements channel                     |
@@ -38,6 +38,8 @@ Frapp publishes a **system permissions catalog** — these are the strings the A
 | `reports:export`      | Export attendance, points, and roster reports          |
 | `chapter-config:view` | Read chapter config, custom roles and custom fields; with `members:view`, the audit log |
 | `chapter-config:manage` | With `chapter-config:view`, which every one of these routes also requires: change chapter config (including the theme-palette recompute), write custom roles and custom fields, and edit the chapter profile, accent and logo (`PATCH /v1/chapters/current` and the logo routes, #2575). The profile routes need `view` too because the Settings tabs they are edited from need it to show ([`settings/README.md`](settings/README.md#who-sees-what) § Who sees what), so `manage` alone would reach a save the page never shows. The API and the Settings page read that pair from `CHAPTER_PROFILE_PERMISSIONS` in `@repo/validation` |
+
+What each permission is called on screen, its one-line description, the module it is grouped under and its scope live in `PERMISSION_REGISTRY` ([`permission-registry.ts`](../../packages/validation/src/permission-registry.ts), #4069). `GET /v1/roles/permissions-catalog` serves that list, and web and mobile read the same one. Every permission's scope is `chapter` today.
 
 Chapters can define **custom permission strings** beyond this catalog. Custom permissions are used for:
 

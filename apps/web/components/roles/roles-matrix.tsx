@@ -6,7 +6,7 @@ import { cn, getErrorMessage, initials } from "@/lib/utils";
 import { EYEBROW } from "@/components/ui/typography";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { useToast } from "@/lib/hooks/use-toast";
-import { permissionLabel } from "@/lib/permission-labels";
+import { groupPermissionsByModule, permissionLabel } from "@repo/validation";
 
 export type MatrixRole = {
   id: string;
@@ -52,15 +52,12 @@ type Props = {
  * why there is no draft state here at all: the previous editor's draft/save
  * cycle is what made a seven-role sweep feel like seven forms.
  *
- * **Rows group by module** (`4e` pin 3). The group is derived from the
- * permission string's prefix (`events:create` → Events) rather than from
- * `entry.key`, because the catalog's `key` is the API constant's name
- * (`EVENTS_CREATE`) and several modules spell theirs differently from the
- * permission namespace. A permission with no prefix lands under "Chapter",
- * which is where the ungrouped chapter-wide permissions belong anyway. A row
- * reads as `permission-labels.ts` words it ("Create events"), never as the
- * constant or the raw string; the tooltip repeats the words for a label the
- * column truncates.
+ * **Rows group by module** (`4e` pin 3). The groups, their order and each
+ * row's words come from the permission registry in `@repo/validation`
+ * (`groupPermissionsByModule`, `permissionLabel`), the same list the API
+ * serves and mobile reads (#4069). A row reads as the registry words it
+ * ("Create events"), never as the constant or the raw string; the tooltip
+ * repeats the words for a label the column truncates.
  *
  * **The marks take no opacity modifier.** `●` and `○` are characters, so
  * §6's 4.5:1 text floor applies rather than the 3:1 glyph one, and
@@ -145,7 +142,7 @@ export function RolesMatrix({
   // `*` is never a row: it is not a permission a president toggles, it is the
   // marker that says every row is already granted. Rendering it would put a
   // permanently-locked row at the top of a table whose whole job is flipping.
-  const groups = useMemo(() => groupByModule(catalog), [catalog]);
+  const groups = useMemo(() => groupPermissionsByModule(catalog), [catalog]);
 
   async function toggle(role: MatrixRole, permission: string, held: boolean) {
     const current = permissionsOf(role);
@@ -373,50 +370,6 @@ export function RolesMatrix({
       </div>
     </div>
   );
-}
-
-const MODULE_LABELS: Record<string, string> = {
-  billing: "Money",
-  invoices: "Money",
-  dues: "Money",
-  points: "Money",
-  // The product's names for these, not the API namespace's.
-  chapter_docs: "Documents",
-  geofences: "Study zones",
-  "chapter-config": "Settings",
-  "chapter-directory": "Chapter directory",
-  service: "Service hours",
-};
-
-/**
- * Groups catalog rows by the permission namespace, preserving catalog order
- * within a group and ordering groups by first appearance. A few namespaces
- * collapse into one board group (`4e` draws "Money", which this product spells
- * across `billing`, `invoices`, `dues` and `points`).
- */
-function groupByModule(
-  catalog: MatrixCatalogEntry[],
-): Array<{ label: string; entries: MatrixCatalogEntry[] }> {
-  const order: string[] = [];
-  const byLabel = new Map<string, MatrixCatalogEntry[]>();
-
-  for (const entry of catalog) {
-    if (entry.permission === "*") continue;
-    const namespace = entry.permission.includes(":")
-      ? entry.permission.slice(0, entry.permission.indexOf(":"))
-      : "chapter";
-    const label =
-      MODULE_LABELS[namespace] ??
-      namespace.charAt(0).toUpperCase() +
-        namespace.slice(1).replace(/[-_]/g, " ");
-    if (!byLabel.has(label)) {
-      byLabel.set(label, []);
-      order.push(label);
-    }
-    byLabel.get(label)!.push(entry);
-  }
-
-  return order.map((label) => ({ label, entries: byLabel.get(label)! }));
 }
 
 /** Order-insensitive membership equality, for reconciling the overlay. */

@@ -17,6 +17,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const env = vi.hoisted(() => ({ executionEnvironment: "bare" }));
 
+/** The bottom inset the screen's SafeAreaView pads, and the keyboard's height. */
+const device = vi.hoisted(() => ({ bottomInset: 0, keyboardHeight: 0 }));
+
+vi.mock("react-native-safe-area-context", () => ({
+  useSafeAreaInsets: () => ({
+    top: 0,
+    right: 0,
+    left: 0,
+    bottom: device.bottomInset,
+  }),
+}));
+
 vi.mock("expo-constants", () => ({
   default: {
     get executionEnvironment() {
@@ -37,6 +49,10 @@ type KeyboardControllerModule =
 const FAKE_MODULE = {
   KeyboardProvider: "KeyboardProvider",
   KeyboardAvoidingView: "LibraryKeyboardAvoidingView",
+  // The library's shared value runs from 0 to minus the keyboard's height.
+  useReanimatedKeyboardAnimation: () => ({
+    height: { get: () => -device.keyboardHeight },
+  }),
 } as unknown as KeyboardControllerModule;
 
 let originalOS: string;
@@ -56,6 +72,7 @@ async function renderArea(
   os: string,
   path: "native" | "expo-go",
   iosInsetFromScrollView = false,
+  atScreenBottom = false,
 ) {
   const { Platform } = await import("react-native");
   (Platform as { OS: string }).OS = os;
@@ -72,6 +89,7 @@ async function renderArea(
         style={{ flex: 1 }}
         collapsable={false}
         iosInsetFromScrollView={iosInsetFromScrollView}
+        atScreenBottom={atScreenBottom}
       >
         <React.Fragment />
       </keyboard.KeyboardAvoidingArea>,
@@ -135,5 +153,81 @@ describe("KeyboardAvoidingArea (#3346)", () => {
     const [view] = only(tree, "LibraryKeyboardAvoidingView");
     expect(view.props.behavior).toBe("padding");
     expect(view.props.iosInsetFromScrollView).toBeUndefined();
+  });
+});
+
+/**
+ * #4010: on production Android the chat composer stopped short of the keyboard
+ * by about a system bar (Gboard, gesture navigation). The library's view works
+ * its lift out from the window's height and the view's measured position as
+ * well as the keyboard's height; a screen-bottom area uses the keyboard's
+ * height less the bottom inset alone.
+ */
+describe("KeyboardAvoidingArea atScreenBottom (#4010)", () => {
+  afterEach(() => {
+    device.bottomInset = 0;
+    device.keyboardHeight = 0;
+  });
+
+  function paddingBottom(view: ReturnType<typeof only>[number]) {
+    const [, lift] = view.props.style as [unknown, { paddingBottom: number }];
+    return lift.paddingBottom;
+  }
+
+  it("pads by the keyboard's height less the bottom inset on an Android store build", async () => {
+    // Edge to edge with gesture navigation: the keyboard's height counts the
+    // navigation bar, and so does the inset the SafeAreaView pads.
+    device.bottomInset = 24;
+    device.keyboardHeight = 336;
+    const { tree } = await renderArea("android", "native", false, true);
+
+    expect(only(tree, "LibraryKeyboardAvoidingView")).toHaveLength(0);
+    const [view] = only(tree, "Animated.View");
+    expect(paddingBottom(view)).toBe(312);
+    // The screen's own props and style reach the view it renders.
+    expect(view.props.collapsable).toBe(false);
+    expect((view.props.style as unknown[])[0]).toEqual({ flex: 1 });
+  });
+
+  it("follows the keyboard as it resizes (emoji panel, another keyboard)", async () => {
+    device.bottomInset = 24;
+    device.keyboardHeight = 336;
+    const { tree } = await renderArea("android", "native", false, true);
+    const [view] = only(tree, "Animated.View");
+
+    device.keyboardHeight = 420;
+    expect(paddingBottom(view)).toBe(396);
+    device.keyboardHeight = 0;
+    expect(paddingBottom(view)).toBe(0);
+  });
+
+  it("leaves iOS and Expo Go on the views they had", async () => {
+    const ios = await renderArea("ios", "native", false, true);
+    expect(only(ios.tree, "KeyboardAvoidingView")[0].props.behavior).toBe(
+      "padding",
+    );
+    expect(only(ios.tree, "Animated.View")).toHaveLength(0);
+    expect(ios.loader).not.toHaveBeenCalled();
+
+    const go = await renderArea("android", "expo-go", false, true);
+    expect(
+      only(go.tree, "KeyboardAvoidingView")[0].props.behavior,
+    ).toBeUndefined();
+    expect(only(go.tree, "Animated.View")).toHaveLength(0);
+  });
+});
+
+describe("keyboardLift (#4010)", () => {
+  it.each([
+    // [keyboard height, bottom inset, lift]
+    [336, 24, 312], // edge to edge, gesture navigation
+    [336, 48, 288], // edge to edge, three-button navigation
+    [312, 0, 312], // bars not translucent: neither counts the navigation bar
+    [0, 24, 0], // closed
+    [10, 24, 0], // mid-close, below the inset: never negative
+  ])("keyboard %i over inset %i lifts %i", (keyboard, inset, lift) => {
+    return import("./keyboard").then(({ keyboardLift }) => {
+      expect(keyboardLift(keyboard, inset)).toBe(lift);
+    });
   });
 });

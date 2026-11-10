@@ -40,9 +40,7 @@ describe("QuotedMessage", () => {
   it("never becomes a control when the message is unavailable", () => {
     // The parent it would navigate to is the thing that is missing, so offering
     // `onOpen` must not produce a button that opens an empty panel.
-    render(
-      <QuotedMessage author={null} preview={null} onOpen={vi.fn()} />,
-    );
+    render(<QuotedMessage author={null} preview={null} onOpen={vi.fn()} />);
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
@@ -76,9 +74,36 @@ describe("QuotedMessage", () => {
     const { container: missing } = render(
       <QuotedMessage author={null} preview={null} />,
     );
-    for (const cls of ["border-l-2", "border-border", "pl-2", "text-caption"]) {
+    for (const cls of ["bg-popover", "rounded-xs", "px-2", "text-caption"]) {
       expect(loaded.firstElementChild).toHaveClass(cls);
       expect(missing.firstElementChild).toHaveClass(cls);
     }
+  });
+
+  it("wraps a long preview to two lines instead of running past the row (#4001)", () => {
+    // Paul, 2026-11-10: a long parent ran to the edge on one line. The clamp
+    // and the break-anywhere rule are what keep a long sentence or an unbroken
+    // URL inside the quote's own width; jsdom has no layout, so the classes are
+    // the contract.
+    render(<QuotedMessage author="Alice Chen" preview={"word ".repeat(200)} />);
+    const author = screen.getByText("Alice Chen");
+    const clamp = author.parentElement!;
+    expect(clamp).toHaveClass("line-clamp-2", "[overflow-wrap:anywhere]");
+    expect(clamp).not.toHaveClass("truncate");
+    // The name never splits across the two lines, and a name wider than the
+    // quote ends in its own ellipsis rather than being sliced at the edge.
+    expect(author).toHaveClass("inline-block", "truncate", "max-w-full");
+    expect(clamp.parentElement).toHaveClass("max-w-full", "min-w-0");
+  });
+
+  it("draws the same filled block for the composer and the timeline (#4001)", () => {
+    // The block is what makes a quote read as a reply. It lives in the
+    // component, not at one call site, so the staged quote and the sent one
+    // cannot drift: neither caller passes it.
+    const { container } = render(
+      <QuotedMessage author="Alice Chen" preview="hey" onOpen={vi.fn()} />,
+    );
+    expect(container.firstElementChild).toHaveClass("bg-popover");
+    expect(container.firstElementChild).not.toHaveClass("border-l-2");
   });
 });

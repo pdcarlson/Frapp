@@ -59,6 +59,12 @@ describe("isSettingsTabVisible", () => {
     expect(isSettingsTabVisible("org", ["roles:manage"])).toBe(false);
   });
 
+  it("gives the pledge class tab to a roles:manage holder and not to a config viewer", () => {
+    expect(isSettingsTabVisible("classes", ["roles:manage"])).toBe(true);
+    expect(isSettingsTabVisible("classes", ["*"])).toBe(true);
+    expect(isSettingsTabVisible("classes", ["chapter-config:view"])).toBe(false);
+  });
+
   it("gives a treasurer no setup tabs, since each would fail to load", () => {
     expect(isSettingsTabVisible("org", TREASURER)).toBe(false);
     expect(isSettingsTabVisible("roles", TREASURER)).toBe(false);

@@ -122,6 +122,8 @@ const CHANNELS = [
     member_ids: [],
     is_read_only: true,
     is_audit_log: true,
+    // Always formal (#3787): the shell copies this into the lock store.
+    display_locked: true,
     can_post: false,
   },
 ];
@@ -452,6 +454,16 @@ vi.mock("@repo/hooks", async () => ({
       }),
     )),
   useBlockedUserIds: () => blockListState.value,
+  // Chat backgrounds (#3973): decoration, read and written elsewhere's specs.
+  useChatBackground: () => ({ data: undefined }),
+  useChapterChatBackground: () => ({ data: undefined }),
+  useSetChannelBackground: () => ({
+    mutate: vi.fn(),
+    reset: vi.fn(),
+    isPending: false,
+    error: null,
+  }),
+  errorCopy: () => "Something went wrong.",
   useChannels: () => ({
     data: CHANNELS,
     isFetching: false,
@@ -568,6 +580,11 @@ vi.mock("@repo/hooks", async () => ({
   useLeaveChannel: () => ({ mutateAsync: mockLeaveMutateAsync }),
   useGetOrCreateDm: () => ({ mutate: mockReopenMutate }),
   canHideConversation: (channel: { type: string }) => channel.type === "DM",
+  canSetChannelDisplayLock: () => displayLockState.canSet,
+  useSetChannelDisplayLock: () => ({
+    isPending: false,
+    mutate: displayLockState.mutate,
+  }),
   otherMemberId: (
     channel: { member_ids?: string[] | null },
     viewerId: string | null,
@@ -785,6 +802,10 @@ vi.mock("./channel-list", () => ({
 // Keyed off `channelId` rather than `channelName` because this file's
 // `directChannelDisplayName` stub always returns `""`.
 const mockNotifyOutcome = vi.hoisted(() => vi.fn());
+const displayLockState = vi.hoisted(() => ({
+  canSet: false,
+  mutate: vi.fn(),
+}));
 const NO_ROSTER = { data: [] as { user_id: string; display_name: string }[] };
 const mockChapterRoster = vi.hoisted(() => vi.fn());
 
@@ -986,9 +1007,11 @@ vi.mock("./channel-menu", () => ({
     onJumpToBookmark,
     hideConversation,
     pinToTop,
+    displayLock,
     searchChannels,
     searchMembers,
   }: {
+    displayLock?: { saving: boolean; onChange: (locked: boolean) => void };
     searchChannels: Array<{ id: string; label: string }>;
     searchMembers: Array<{ id: string; label: string }>;
     pinToTop?: { pinned: boolean; onToggle: () => void };
@@ -1022,6 +1045,15 @@ vi.mock("./channel-menu", () => ({
           onClick={pinToTop.onToggle}
         >
           {pinToTop.pinned ? "unpin" : "pin"}
+        </button>
+      ) : null}
+      {displayLock ? (
+        <button
+          type="button"
+          data-testid="display-lock"
+          onClick={() => displayLock.onChange(true)}
+        >
+          lock
         </button>
       ) : null}
       {hideConversation ? (
@@ -1135,6 +1167,10 @@ vi.mock("./message-timeline", async () => {
 });
 
 import { blockClearance } from "@repo/chat-core/blocks";
+import {
+  getLockedChannels,
+  resetLockedChannelsForTests,
+} from "@repo/chat-core/density";
 import { useOpenChatTransport } from "@repo/hooks/open-chat-transport";
 import { ChatShell, prefillLocalInput } from "./chat-shell";
 
@@ -2069,6 +2105,44 @@ describe("ChatShell audit log (#3909)", () => {
         "false",
       );
     });
+  });
+});
+
+describe("ChatShell Always formal (#3787)", () => {
+  afterEach(() => {
+    displayLockState.canSet = false;
+    displayLockState.mutate.mockReset();
+    resetLockedChannelsForTests();
+  });
+
+  it("copies the channel list's locks where every row reads its display", async () => {
+    resetLockedChannelsForTests();
+    render(<ChatShell initialChannelId="chan-general" />);
+    await waitFor(() => {
+      expect(getLockedChannels().has("chan-audit")).toBe(true);
+    });
+    expect(getLockedChannels().has("chan-general")).toBe(false);
+  });
+
+  it("offers no switch to a member who may not set it", async () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+    await screen.findByTestId("composer");
+    expect(screen.queryByTestId("display-lock")).toBeNull();
+  });
+
+  it("sets the lock for the creator or an officer, and marks it once saved", async () => {
+    displayLockState.canSet = true;
+    displayLockState.mutate.mockImplementation(
+      (_vars: unknown, opts: { onSuccess?: () => void }) => opts.onSuccess?.(),
+    );
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(await screen.findByTestId("display-lock"));
+
+    expect(displayLockState.mutate).toHaveBeenCalledWith(
+      { id: "chan-general", locked: true },
+      expect.anything(),
+    );
+    expect(getLockedChannels().has("chan-general")).toBe(true);
   });
 });
 
@@ -3378,6 +3452,19 @@ describe("ChatShell narrow viewports (#2142)", () => {
     render(<ChatShell />);
     const back = screen.getByRole("button", { name: "Back to channels" });
     expect(back).toHaveClass("h-10", "w-10");
+  });
+
+  it("keeps the channel rail's gutter inside its scroller, so pinned headings sit flush (#4051)", () => {
+    render(<ChatShell />);
+    // Padding on the scroller itself would sit outside the box a sticky
+    // category heading pins to: the heading would stop 8px short of the top
+    // and rows would scroll through that band above it.
+    const scroller = screen
+      .getByTestId("pick-random")
+      .closest(".overflow-y-auto") as HTMLElement;
+    expect(scroller).not.toBeNull();
+    expect(scroller.className).not.toMatch(/(^|\s)p[ty]?-/);
+    expect(scroller.firstElementChild).toHaveClass("p-2");
   });
 
   it("leaves an Esc that closes an open overlay to the overlay (#3824)", () => {

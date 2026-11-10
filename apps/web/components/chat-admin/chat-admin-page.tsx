@@ -1,5 +1,6 @@
 "use client";
 
+import { ALWAYS_FORMAL_LABEL_WITH_HINT } from "@repo/chat-core/density";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { AUDIT_LOG_SETTINGS_NOTE } from "@repo/chat-core/audit-log-copy";
 import { useCallback, useMemo, useState } from "react";
@@ -25,6 +26,7 @@ import {
   type ChatNotificationLevel,
 } from "@repo/validation";
 import { Can } from "@/components/shared/can";
+import { ChatBackgroundDefaultCard } from "./chat-background-default-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -205,6 +207,14 @@ export function ChatAdminPage({
           <ChatAdminBody initialChannelId={initialChannelId} />
         </div>
       </Can>
+      {/*
+        Outside the channels:manage gate: the chapter default is set by whoever
+        edits the chapter profile (#3973), who may not manage channels. The
+        card carries its own CHAPTER_PROFILE_PERMISSIONS gate.
+      */}
+      <div className="mt-6">
+        <ChatBackgroundDefaultCard />
+      </div>
     </>
   );
 }
@@ -464,6 +474,7 @@ function ChatAdminBody({
     useState<(typeof CREATABLE_TYPES)[number]>("PUBLIC");
   const [createCategoryId, setCreateCategoryId] = useState(NO_CATEGORY);
   const [createReadOnly, setCreateReadOnly] = useState(false);
+  const [createAlwaysFormal, setCreateAlwaysFormal] = useState(false);
   const [createPermissions, setCreatePermissions] = useState<Set<string>>(
     new Set(),
   );
@@ -476,6 +487,7 @@ function ChatAdminBody({
     setCreateType("PUBLIC");
     setCreateCategoryId(NO_CATEGORY);
     setCreateReadOnly(false);
+    setCreateAlwaysFormal(false);
     setCreatePermissions(new Set());
   }
 
@@ -505,6 +517,7 @@ function ChatAdminBody({
         category_id:
           createCategoryId === NO_CATEGORY ? undefined : createCategoryId,
         is_read_only: createReadOnly,
+        display_locked: createAlwaysFormal,
         ...(createType === "ROLE_GATED"
           ? { required_permissions: Array.from(createPermissions) }
           : {}),
@@ -761,6 +774,15 @@ function ChatAdminBody({
                   />
                   <span className="text-sm">
                     Read-only (only officers with permission can post)
+                  </span>
+                </label>
+                <label className="flex items-center gap-3">
+                  <Switch
+                    checked={createAlwaysFormal}
+                    onCheckedChange={setCreateAlwaysFormal}
+                  />
+                  <span className="text-sm">
+                    {ALWAYS_FORMAL_LABEL_WITH_HINT}
                   </span>
                 </label>
                 {createType === "ROLE_GATED" ? (
