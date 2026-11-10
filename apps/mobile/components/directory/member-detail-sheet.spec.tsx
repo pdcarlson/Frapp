@@ -66,6 +66,7 @@ const PROFILES: Record<string, ReturnType<typeof profile>> = Object.fromEntries(
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
   useMemberByUserId: (id: string) => ({
     data: PROFILES[id],
     isPending: false,

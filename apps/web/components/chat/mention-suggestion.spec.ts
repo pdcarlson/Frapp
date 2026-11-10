@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { memberAvatarTint, memberHashHue } from "@repo/hooks";
 import { createMentionSuggestion } from "./mention-suggestion";
 import type { MentionSuggestionItem } from "./mention-list";
 
@@ -30,14 +31,39 @@ describe("createMentionSuggestion — items()", () => {
     expect(result.map((item) => item.id)).toEqual(["u1"]);
   });
 
-  it("computes label as the display name with whitespace stripped, not the raw name", () => {
+  it("labels a member with their name as written, since a name with a space is mentionable (#3825)", () => {
     const result = itemsFor("jane");
     expect(result[0]).toMatchObject({
       id: "u1",
-      label: "JaneDoe",
+      label: "Jane Doe",
       displayName: "Jane Doe",
       avatarUrl: null,
     });
+  });
+
+  it("tints a member row's initials in their name's role color, else their hashed hue (#3860)", () => {
+    const rosterRef = {
+      current: [
+        {
+          user_id: "u1",
+          display_name: "Jane Doe",
+          avatar_url: null,
+          role_color: "#6FD08C",
+        },
+        { user_id: "u2", display_name: "Janet Roe", avatar_url: null },
+      ],
+    };
+    const items = createMentionSuggestion(rosterRef).items!({
+      query: "jan",
+      editor: {} as never,
+      signal: new AbortController().signal,
+    }) as MentionSuggestionItem[];
+    expect(items.find((i) => i.id === "u1")?.avatarTint).toEqual(
+      memberAvatarTint("#6FD08C"),
+    );
+    expect(items.find((i) => i.id === "u2")?.avatarTint).toEqual(
+      memberAvatarTint(memberHashHue("u2")),
+    );
   });
 
   it("returns nothing for a query matching no member", () => {
@@ -133,6 +159,7 @@ describe("createMentionSuggestion — roles", () => {
         label: "Officers",
         displayName: "Officers",
         avatarUrl: null,
+        avatarTint: null,
       },
     ]);
   });

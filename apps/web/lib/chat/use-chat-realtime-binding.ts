@@ -8,19 +8,20 @@
  * member may read, and `useChatActivityHandler` re-reads the unread counts
  * from it (#3698). The nav's Chat row lights from those counts on every page
  * (`use-chat-has-unread.ts`), so the inbox has to be joined on every page: bound inside
- * `ChatProvider`, which mounts only on `/chat`, a message arriving while the
- * member was on Events lit nothing until the counts went stale (15 s) or the
+ * `ChatProvider`, which mounts only while the chat panel is open (#3779; it
+ * was only on `/chat` before), a message arriving while the member was on
+ * Events with chat closed would light nothing until the counts went stale (15 s) or the
  * tab regained focus. Mobile binds app-wide the same way
  * (`useChatRealtimeBinding` in `apps/mobile/lib/chat/use-chat-runtime.ts`).
  *
  * Called once, from `DashboardShell`. `ChatProvider` keeps what is chat's
  * alone (the outbox flush, the first-chunk cache) and never touches the
- * manager's lifecycle, so its remount on every visit to `/chat` cannot tear a
- * shell-owned manager down (`realtime-resilience` rule 1). Threads still
- * subscribe and release their own channels (`use-chat-channel.ts`), so leaving
- * `/chat` releases the open thread's topic. What `configure()` joins stays up
- * on every page: the inbox, and also the global reactions topic and the
- * typing tick, which nothing off `/chat` reads (#3899).
+ * manager's lifecycle, so its remount each time the chat panel opens cannot
+ * tear a shell-owned manager down (`realtime-resilience` rule 1). Threads
+ * still subscribe and release their own channels (`use-chat-channel.ts`), so
+ * closing the chat panel releases the open thread's topic. What `configure()`
+ * joins stays up on every page: the inbox, and also the global reactions topic
+ * and the typing tick, which nothing reads while chat is closed (#3899).
  */
 
 import { useEffect, useMemo } from "react";

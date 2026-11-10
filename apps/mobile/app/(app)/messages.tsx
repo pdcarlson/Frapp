@@ -64,11 +64,21 @@ export default function MessagesScreen() {
   const styles = createStyles(tokens);
   const router = useRouter();
   const viewerId = useViewerUserId();
-  const { byId: memberNames, nameFor, avatarFor } = useMemberDisplayNames();
+  const {
+    byId: memberNames,
+    nameFor,
+    avatarFor,
+    avatarTintFor,
+  } = useMemberDisplayNames();
   // A one-to-one DM wears the other member's photo; a group DM keeps initials.
   const avatarOf = (channel: ChannelSummary) => {
     const memberId = otherMemberId(channel, viewerId);
     return memberId ? avatarFor(memberId) : null;
+  };
+  // Its initials wear that member's tint, as in the thread (#3860).
+  const tintOf = (channel: ChannelSummary) => {
+    const memberId = otherMemberId(channel, viewerId);
+    return memberId ? avatarTintFor(memberId) : null;
   };
   const channelsQuery = useChannels();
   const unread = useShownUnreadCounts();
@@ -194,6 +204,7 @@ export default function MessagesScreen() {
                   name={name}
                   isDirect
                   avatarUrl={avatarOf(channel)}
+                  avatarTint={tintOf(channel)}
                   preview={previewOf(channel)}
                   isMuted={mutedChannelIds?.has(channel.id) ?? false}
                   unreadCount={counts?.unreadCount ?? 0}
@@ -235,6 +246,7 @@ export default function MessagesScreen() {
                       name={titleOf(channel)}
                       isDirect
                       avatarUrl={avatarOf(channel)}
+                      avatarTint={tintOf(channel)}
                       // A hidden DM carries no count (`GET /v1/channels/unread`
                       // leaves it out), so there is no badge to draw.
                       unreadCount={0}

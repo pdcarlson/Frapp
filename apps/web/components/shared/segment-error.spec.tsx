@@ -166,28 +166,14 @@ describe("the (dashboard) segment boundary", () => {
     );
   });
 
-  it("adds a gutter only on a full-bleed route, because padding is additive", () => {
-    // Both halves matter. `<main>` drops its padding entirely when full-bleed,
-    // so /chat needs the gutter; it keeps `px-4 py-4` everywhere else, where a
-    // second `p-4` would double the inset and make the card step in from where
-    // the skeleton it replaces sat.
-    route.pathname = "/chat";
-    const bleed = render(
+  it("adds no gutter of its own, because the tool page already pads it", () => {
+    // CSS padding is additive: a `p-4` here would double the shell's inset
+    // and step the card in from where the skeleton it replaces sat.
+    const { container } = render(
       <DashboardSegmentError error={new Error("boom")} retry={vi.fn()} />,
     );
-    expect(bleed.container.firstElementChild?.className).toMatch(/\bp-4\b/);
-    bleed.unmount();
-
-    route.pathname = "/members";
-    const padded = render(
-      <DashboardSegmentError error={new Error("boom")} retry={vi.fn()} />,
-    );
-    expect(padded.container.firstElementChild?.className).not.toMatch(
-      /\bp-4\b/,
-    );
-    expect(padded.container.firstElementChild?.className).toMatch(
-      /\bmax-w-md\b/,
-    );
+    expect(container.firstElementChild?.className).not.toMatch(/\bp-4\b/);
+    expect(container.firstElementChild?.className).toMatch(/\bmax-w-md\b/);
   });
 
   it("degrades to §10's card rather than a second full-page crest", () => {
