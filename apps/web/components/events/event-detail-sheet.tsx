@@ -23,7 +23,9 @@ import {
   useMyPermissions,
   useRoles,
 } from "@repo/hooks";
+import { statusOf } from "@repo/api-sdk";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
+import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/lib/hooks/use-toast";
 import {
   EVENT_ATTENDANCE_LABELS,
@@ -84,16 +86,21 @@ export function EventDetailSheet({
   const { toast } = useToast();
   // Edit and Delete are `events:update` and `events:delete` on the server, so
   // a member gets neither icon rather than two that 403 (#3855). A boolean,
-  // not a `<Can>`: the header has no room for an offline chip per icon. While
-  // permissions load they read as denied, so the icons never flash for a
-  // member; when they can't be answered at all (no cached answer, and the read
-  // paused or failed) both stay, as before, disabled offline by the
-  // subscription gate, rather than hidden as if the role lacked them. The
+  // not a `<Can>`: the header has no room for an offline chip per icon. It
+  // reads the permissions as `<Can>` does (`components/shared/can.tsx`):
+  // loading, or failed while online, is a denial, so the icons never flash or
+  // linger for a member; unanswerable for want of a connection (paused, or
+  // offline with nothing cached) keeps both, disabled by the subscription
+  // gate while offline, rather than hidden as if the role lacked them. The
   // preview sheet keeps both too.
   const permissionsQuery = useMyPermissions();
+  const { isOffline } = useNetwork();
   const permissionsUnanswerable =
     permissionsQuery.data === undefined &&
-    (permissionsQuery.isError || permissionsQuery.fetchStatus === "paused");
+    (permissionsQuery.fetchStatus === "paused" ||
+      (isOffline &&
+        (permissionsQuery.isError ||
+          permissionsQuery.fetchStatus === "fetching")));
   const permissions = permissionsQuery.data?.permissions;
   const canEditEvent =
     usingPreviewData ||
@@ -121,8 +128,16 @@ export function EventDetailSheet({
       ],
       [chapterId, eventId],
     ),
-    enabled: Boolean(eventId) && !usingPreviewData,
+    // Only while the sheet is open: the page keeps it mounted after a close,
+    // and a closed sheet has nothing to refresh.
+    enabled: open && Boolean(eventId) && !usingPreviewData,
   });
+  // The event is gone (404), or never loaded. Not any failed read: a failed
+  // background refetch keeps its data, and one throttled refetch must not
+  // take Check in away from an event that is fine.
+  const eventUnavailable =
+    eventQuery.isError &&
+    (statusOf(eventQuery.error) === 404 || eventQuery.data === undefined);
 
   const resolvedEvent = useMemo(() => {
     if (!event) return null;
@@ -335,7 +350,7 @@ export function EventDetailSheet({
                 end={resolvedEvent?.end_time}
                 opensMinutes={resolvedEvent?.check_in_opens_minutes}
                 pointValue={resolvedEvent?.point_value}
-                eventUnavailable={eventQuery.isError}
+                eventUnavailable={eventUnavailable}
                 zone={
                   hasCheckInZone
                     ? "zone"

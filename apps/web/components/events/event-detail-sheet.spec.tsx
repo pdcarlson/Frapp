@@ -6,10 +6,17 @@ const {
   mockCurrentChapter,
   mockToast,
   eventQueryState,
+  mockOffline,
   permissionsState,
   realtimeCalls,
 } = vi.hoisted(() => ({
-  eventQueryState: { isLoading: false },
+  eventQueryState: {
+    isLoading: false,
+    isError: false,
+    error: undefined as unknown,
+    data: undefined as unknown,
+  },
+  mockOffline: { value: false },
   mockCurrentChapter: vi.fn(),
   mockToast: vi.fn(),
   // What `useMyPermissions` answers: the viewer's permissions, or `undefined`
@@ -27,9 +34,10 @@ const {
 // stub the live hooks so the sheet renders without a query client / API.
 vi.mock("@repo/hooks", () => ({
   useEvent: () => ({
-    data: undefined,
+    data: eventQueryState.data,
     isLoading: eventQueryState.isLoading,
-    isError: false,
+    isError: eventQueryState.isError,
+    error: eventQueryState.error,
   }),
   useDeleteEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useRoles: () => ({ data: [{ id: "r1", name: "Exec" }], isError: false }),
@@ -51,6 +59,11 @@ vi.mock("@repo/hooks", () => ({
   }),
   useActiveChapterId: () => "chap-1",
 }));
+
+vi.mock("@/lib/providers/network-provider", async () => {
+  const { networkMock } = await import("@/tests/network");
+  return networkMock(mockOffline);
+});
 
 vi.mock("@/lib/realtime/use-realtime-table", () => ({
   useRealtimeTable: (options: {
@@ -76,8 +89,18 @@ vi.mock("@/components/events/attendance-panel", () => ({
 }));
 
 vi.mock("@/components/events/my-check-in", () => ({
-  MyCheckIn: ({ zone }: { zone: string }) => (
-    <div data-testid="my-check-in" data-zone={zone} />
+  MyCheckIn: ({
+    zone,
+    eventUnavailable,
+  }: {
+    zone: string;
+    eventUnavailable?: boolean;
+  }) => (
+    <div
+      data-testid="my-check-in"
+      data-zone={zone}
+      data-unavailable={String(Boolean(eventUnavailable))}
+    />
   ),
 }));
 
@@ -99,6 +122,13 @@ beforeEach(() => {
   permissionsState.fetchStatus = "fetching";
   permissionsState.isError = false;
   realtimeCalls.length = 0;
+  mockOffline.value = false;
+  Object.assign(eventQueryState, {
+    isLoading: false,
+    isError: false,
+    error: undefined,
+    data: undefined,
+  });
 });
 
 describe("EventDetailSheet who's coming", () => {
@@ -523,10 +553,13 @@ describe("EventDetailSheet preview", () => {
 });
 
 describe("EventDetailSheet for a live event, by role (#3855)", () => {
-  function renderLive(event: Record<string, unknown> = baseEvent) {
+  function renderLive(
+    event: Record<string, unknown> = baseEvent,
+    open = true,
+  ) {
     return render(
       <EventDetailSheet
-        open
+        open={open}
         onOpenChange={() => {}}
         usingPreviewData={false}
         event={event}
@@ -570,6 +603,66 @@ describe("EventDetailSheet for a live event, by role (#3855)", () => {
         scopeId: "e1",
         enabled: true,
       }),
+    );
+  });
+
+  it("hides the header actions when the permissions read fails online", () => {
+    // `<Can>`'s rule: a failure while connected is a denial, not a guess.
+    permissionsState.value = undefined;
+    permissionsState.isError = true;
+    permissionsState.fetchStatus = "idle";
+    renderLive();
+
+    expect(screen.queryByRole("button", { name: "Edit event" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete event" })).toBeNull();
+  });
+
+  it("keeps them when the permissions read failed offline", () => {
+    mockOffline.value = true;
+    permissionsState.value = undefined;
+    permissionsState.isError = true;
+    permissionsState.fetchStatus = "idle";
+    renderLive();
+
+    expect(screen.getByRole("button", { name: "Edit event" })).toBeInTheDocument();
+  });
+
+  it("drops the subscription while the sheet is closed", () => {
+    permissionsState.value = ["members:view"];
+    renderLive(baseEvent, false);
+
+    expect(
+      realtimeCalls.some(
+        (call) => call.table === "event_attendance" && call.enabled,
+      ),
+    ).toBe(false);
+  });
+
+  it("tells the check-in block the event is gone on a 404", () => {
+    permissionsState.value = ["members:view"];
+    eventQueryState.isError = true;
+    eventQueryState.error = { statusCode: 404 };
+    eventQueryState.data = { ...baseEvent };
+    renderLive();
+
+    expect(screen.getByTestId("my-check-in")).toHaveAttribute(
+      "data-unavailable",
+      "true",
+    );
+  });
+
+  it("keeps check-in through a failed refetch of an event it still holds", () => {
+    // A throttled background refetch keeps its data; one 429 must not take
+    // Check in away.
+    permissionsState.value = ["members:view"];
+    eventQueryState.isError = true;
+    eventQueryState.error = { statusCode: 429 };
+    eventQueryState.data = { ...baseEvent };
+    renderLive();
+
+    expect(screen.getByTestId("my-check-in")).toHaveAttribute(
+      "data-unavailable",
+      "false",
     );
   });
 

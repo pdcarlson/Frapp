@@ -13,7 +13,11 @@ const { mine, mutateAsync, mockToast, clock, lastCheckIn } = vi.hoisted(() => ({
   mockToast: vi.fn(),
   clock: { now: 0 },
   // `useCheckIn`'s settled state: the event a successful POST was for.
-  lastCheckIn: { eventId: undefined as string | undefined },
+  lastCheckIn: {
+    eventId: undefined as string | undefined,
+    // A refused POST leaves `variables` set with `isSuccess` false.
+    failed: false,
+  },
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
@@ -23,7 +27,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCheckIn: () => ({
     mutateAsync,
     isPending: false,
-    isSuccess: lastCheckIn.eventId !== undefined,
+    isSuccess: lastCheckIn.eventId !== undefined && !lastCheckIn.failed,
     variables:
       lastCheckIn.eventId === undefined
         ? undefined
@@ -135,6 +139,7 @@ describe("<MyCheckIn />", () => {
     };
     clock.now = during.getTime();
     lastCheckIn.eventId = undefined;
+    lastCheckIn.failed = false;
     mutateAsync.mockReset();
     mockToast.mockReset();
   });
@@ -173,6 +178,15 @@ describe("<MyCheckIn />", () => {
 
     expect(screen.getByText("Checked in")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /check in/i })).toBeNull();
+  });
+
+  it("offers it again after a refused check-in", () => {
+    lastCheckIn.eventId = "e1";
+    lastCheckIn.failed = true;
+    renderBlock();
+
+    expect(screen.queryByText("Checked in")).toBeNull();
+    expect(screen.getByRole("button", { name: /check in/i })).toBeInTheDocument();
   });
 
   it("does not hold it back for a check-in to another event", () => {
