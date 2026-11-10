@@ -253,7 +253,7 @@ describe("useRealtimeTable — effect re-run on an unchanged topic (#817)", () =
     const wrapper = ({ children }: { children: ReactNode }) =>
       createElement(QueryClientProvider, { client: queryClient }, children);
 
-    // `attendance-panel.tsx` shape: the topic is derived from `eventId` alone,
+    // `event-detail-sheet.tsx` shape: the topic is derived from `eventId` alone,
     // but `invalidate` also carries `chapterId`, so a chapter switch changes the
     // array without changing the topic.
     //
