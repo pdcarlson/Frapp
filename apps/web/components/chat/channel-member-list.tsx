@@ -5,6 +5,8 @@ import {
   MEMBER_SEARCH_THRESHOLD,
   filterChannelMembers,
   groupChannelMembersByRole,
+  memberAvatarHue,
+  memberAvatarTint,
   memberLabel,
   useChannelMembers,
   useMemberDisplayNames,
@@ -244,7 +246,10 @@ function MemberRow({
           aria-hidden="true"
         >
           {row.avatarUrl ? <AvatarImage src={row.avatarUrl} alt="" /> : null}
-          <AvatarFallback className="text-[10px]">
+          <AvatarFallback
+            className="text-[10px]"
+            tint={memberAvatarTint(memberAvatarHue(row.userId, row.roleColor))}
+          >
             {initials(row.name)}
           </AvatarFallback>
         </Avatar>

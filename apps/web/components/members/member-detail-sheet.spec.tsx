@@ -48,6 +48,7 @@ const customRolesState: {
 } = { data: [], isSuccess: true, isError: false, isPending: false };
 
 vi.mock("@repo/hooks", () => ({
+  useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
   useMemberByUserId: (userId: string) => {
     memberByUserId(userId);
     return {

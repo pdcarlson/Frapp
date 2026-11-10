@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { Image } from "expo-image";
 import { onlineManager } from "@tanstack/react-query";
+import type { MemberAvatarTint } from "@repo/hooks";
 
 /**
  * A member's avatar on every list surface: their profile photo, or their
@@ -31,6 +32,14 @@ import { onlineManager } from "@tanstack/react-query";
  * changed photo is never served stale. The disk cache means a chat of a few
  * hundred messages from a dozen people downloads a dozen small images once,
  * not once per row or per launch.
+ *
+ * ## Color
+ *
+ * A member's initials take their own color (#3860, Paul approved 2026-11-10):
+ * pass `tint` from the roster's `avatarTintFor(userId)` and the circle draws
+ * style A, the hue at 18% over `--popover` with the initials in the full hue,
+ * over whatever fill and initials color the caller's styles carry. A photo
+ * covers it exactly as it covers the initials.
  */
 export function MemberAvatar({
   uri,
@@ -38,6 +47,7 @@ export function MemberAvatar({
   size,
   style,
   textStyle,
+  tint,
   testID,
 }: {
   /** A renderable photo URL, or `null` for initials only. */
@@ -47,6 +57,8 @@ export function MemberAvatar({
   /** The circle: size, radius and fill, as the surface drew it before. */
   style: StyleProp<ViewStyle>;
   textStyle: StyleProp<TextStyle>;
+  /** The member's initials paint; omit for the caller's neutral circle. */
+  tint?: MemberAvatarTint | null;
   testID?: string;
 }) {
   const key = uri ? photoCacheKey(uri) : null;
@@ -64,12 +76,14 @@ export function MemberAvatar({
 
   return (
     <View
-      style={[style, styles.clip]}
+      style={[style, styles.clip, tint ? { backgroundColor: tint.fill } : null]}
       testID={testID}
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
     >
-      <Text style={textStyle}>{initials}</Text>
+      <Text style={[textStyle, tint ? { color: tint.text } : null]}>
+        {initials}
+      </Text>
       {showPhoto ? (
         <Image
           testID={testID ? `${testID}-photo` : undefined}

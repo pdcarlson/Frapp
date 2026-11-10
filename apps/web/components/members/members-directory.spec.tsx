@@ -88,6 +88,7 @@ const rolesRead = read([
 const leaderboardRead = read([{ user_id: "u-1", total: 42 }]);
 
 vi.mock("@repo/hooks", () => ({
+  useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
   useMembers: () => membersRead,
   useMemberSearch: (q: string) => (q ? searchRead : membersRead),
   useRoles: () => rolesRead,
