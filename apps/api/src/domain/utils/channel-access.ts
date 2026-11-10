@@ -57,7 +57,16 @@ export interface ChannelAccessRecord {
  * deliberately **not** subject to the Alumni lifecycle rule — alumni are
  * restricted from posting, not from participating in a poll they can read.
  */
-export type ChannelOperation = 'read' | 'post' | 'vote';
+/**
+ * - `read`: see the channel.
+ * - `post`: write in the timeline (gated in a read-only channel).
+ * - `vote`: take part in something already readable (a poll).
+ * - `thread`: write inside a message thread (#3785). Authored content, so
+ *   archive, the audit log and the alumni rule apply as for `post`, but not the
+ *   read-only gate: any member who can read an announcement may thread under it
+ *   (Winston, 2026-11-10; spec/behavior/chat/README.md § Message threads).
+ */
+export type ChannelOperation = 'read' | 'post' | 'vote' | 'thread';
 
 /** Permission key that grants posting into a read-only channel (e.g. `#announcements`). */
 export const ANNOUNCEMENTS_POST_PERMISSION = 'announcements:post';
@@ -83,7 +92,7 @@ export interface ChannelAccessInput {
    * Whether the caller holds the chapter's Alumni role. Alumni are read-mostly:
    * they keep full read access but may only post in direct conversations and in
    * ROLE_GATED channels that require `alumni:post` (the seeded `#alumni`). Only
-   * consulted when `operation === "post"`; omit (or `false`) for active members.
+   * consulted when `operation` is `"post"` or `"thread"`; omit (or `false`) for active members.
    */
   isAlumni?: boolean;
 }
@@ -160,6 +169,18 @@ export function isAlumniPostableChannel(channel: ChannelAccessRecord): boolean {
  */
 export function allowsInThreadReplies(channel: ChannelAccessRecord): boolean {
   return !channel.is_read_only;
+}
+
+/**
+ * Whether a channel takes message threads (#3785). Channels and group DMs do,
+ * read-only ones included; a 1:1 DM does not in slice 1, and the audit log
+ * (system-write only) never does. `canAccessChannel` with `operation:
+ * 'thread'` still decides whether this caller may write in one.
+ */
+export function channelAllowsThreads(
+  channel: Pick<ChannelAccessRecord, 'type' | 'is_audit_log'>,
+): boolean {
+  return channel.type !== 'DM' && channel.is_audit_log !== true;
 }
 
 /**
@@ -242,13 +263,17 @@ export function canAccessChannel(input: ChannelAccessInput): boolean {
   // Only authored content ("post") is restricted — "vote" is participation in
   // something they can already read, so it stays open.
   if (
-    operation === 'post' &&
+    (operation === 'post' || operation === 'thread') &&
     input.isAlumni &&
     !isPresident &&
     !isAlumniPostableChannel(channel)
   ) {
     return false;
   }
+
+  // A thread reply is open to every reader, read-only channel or not. The
+  // timeline of an announcement stays officer-only; its threads do not.
+  if (operation === 'thread') return true;
 
   // operation === "post": gate read-only channels behind announcements:post / *.
   if (!channel.is_read_only) return true;

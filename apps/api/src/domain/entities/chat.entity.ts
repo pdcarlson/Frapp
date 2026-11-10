@@ -262,7 +262,56 @@ export interface ChatMessage {
    * Optional for rows written before the column existed.
    */
   mentions?: string[] | null;
+  /**
+   * The parent message when this row is a reply inside a message thread
+   * (#3785); `null` for a timeline message. A thread reply never appears in
+   * the channel's timeline, unread count or Chat home preview, and a thread
+   * never nests: the parent of a reply is always a timeline message.
+   *
+   * Optional for rows written before the column existed.
+   */
+  thread_root_id?: string | null;
+  /**
+   * On a thread's parent: how many replies it has, when the latest landed,
+   * and up to three recent repliers, newest first. Kept by the
+   * `chat_messages_thread_summary` trigger, so the parent's Realtime UPDATE
+   * echo carries the chip ("3 replies · last reply 5m ago"). Zero, null and
+   * empty on every other row.
+   */
+  thread_reply_count?: number;
+  thread_last_reply_at?: string | null;
+  thread_recent_sender_ids?: string[];
   created_at: string;
+}
+
+/**
+ * Whether a member follows or muted a message thread (#3785). No row means
+ * not following: a thread reply pushes only to followers, within the
+ * channel's level, and an @mention pushes regardless (`decidePush`).
+ */
+export const CHAT_THREAD_FOLLOW_STATES = ['following', 'muted'] as const;
+export type ChatThreadFollowState = (typeof CHAT_THREAD_FOLLOW_STATES)[number];
+
+/** A row of `chat_thread_follows`. */
+export interface ChatThreadFollow {
+  thread_root_id: string;
+  user_id: string;
+  /** The root's channel, copied from the root row by the API. */
+  channel_id: string;
+  state: ChatThreadFollowState;
+  /** How far the member has read the thread; null when never opened. */
+  last_read_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** `get_followed_thread_unread`: one followed or muted thread in a channel. */
+export interface FollowedThreadUnread {
+  thread_root_id: string;
+  state: ChatThreadFollowState;
+  last_read_at: string | null;
+  /** New replies since `last_read_at`; always 0 for a muted thread. */
+  unread_count: number;
 }
 
 /**

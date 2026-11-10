@@ -545,6 +545,7 @@ export class ChatController {
       kind: dto.kind,
       payload: dto.payload,
       reply_to_id: dto.reply_to_id,
+      thread_root_id: dto.thread_root_id,
       metadata: dto.metadata,
       attachments: dto.attachments,
       enabled_modules: enabledModules,

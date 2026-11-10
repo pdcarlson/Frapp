@@ -12,7 +12,14 @@ import {
   isDirectChannel,
   isModuleEnabled,
 } from '@repo/validation';
-import { allowsInThreadReplies } from '#domain/utils/channel-access';
+import {
+  allowsInThreadReplies,
+  channelAllowsThreads,
+} from '#domain/utils/channel-access';
+import {
+  CHAT_THREAD_REPOSITORY,
+  type IChatThreadRepository,
+} from '#domain/repositories/chat-thread.repository.interface';
 import {
   CHAT_CHANNEL_REPOSITORY,
   CHAT_MESSAGE_REPOSITORY,
@@ -97,6 +104,11 @@ export interface SendMessageInput {
   /** Inline card payload for rich kinds. */
   payload?: Record<string, any> | null;
   reply_to_id?: string | null;
+  /**
+   * Post as a reply inside this message's thread (#3785) instead of the
+   * timeline. The root must be a timeline message in the same channel.
+   */
+  thread_root_id?: string | null;
   metadata?: Record<string, any>;
   /**
    * The chapter's `enabled_modules`, as `ChapterGuard` read it. Required on a
@@ -213,6 +225,9 @@ export class ChatService {
     private readonly mentions: ChatMentionService,
     // A channel read also clears the chat notifications about it (#3788).
     private readonly notifications: NotificationService,
+    // Message threads (#3785): a thread reply's auto-follow and read cursor.
+    @Inject(CHAT_THREAD_REPOSITORY)
+    private readonly threads: IChatThreadRepository,
   ) {}
 
   // ── Channels ─────────────────────────────────────────────────────────
@@ -865,12 +880,19 @@ export class ChatService {
       );
     }
 
+    const threadRootId = input.thread_root_id ?? null;
     const channel = await this.assertChannelAccess(
       input.channel_id,
       input.chapter_id,
       input.sender_id,
-      'post',
+      // A thread reply authorizes as `thread`, which a read-only channel
+      // allows: any reader may thread under an announcement (#3785).
+      threadRootId ? 'thread' : 'post',
     );
+
+    const threadRoot = threadRootId
+      ? await this.assertThreadRoot(channel, threadRootId, input)
+      : null;
 
     if (input.reply_to_id) {
       // A read-only channel is a broadcast surface, so nothing in it is
@@ -887,6 +909,13 @@ export class ChatService {
       if (!replyTo || replyTo.channel_id !== input.channel_id) {
         throw new BadRequestException(
           'reply_to_id must reference a message in the same channel',
+        );
+      }
+      // A quote in the timeline cannot point into a thread, whose replies the
+      // timeline never shows (#3785).
+      if (replyTo.thread_root_id) {
+        throw new BadRequestException(
+          'reply_to_id cannot reference a reply inside a thread',
         );
       }
     }
@@ -925,6 +954,19 @@ export class ChatService {
       input.content,
     );
 
+    // Auto-follow BEFORE the insert, so the push worker, which reacts to the
+    // insert, already finds the follows it decides by: the sender, the root's
+    // author on the first reply, and everyone mentioned. A mute is kept
+    // (`ensureFollowing` adds rows only for members with none). Idempotent, so
+    // a retried send that turns out to be a duplicate costs nothing.
+    if (threadRoot) {
+      await this.threads.ensureFollowing(threadRoot.id, input.channel_id, [
+        input.sender_id,
+        ...(threadRoot.sender_id ? [threadRoot.sender_id] : []),
+        ...mentions,
+      ]);
+    }
+
     let message: ChatMessage;
     const deduplicated = false;
     try {
@@ -937,6 +979,7 @@ export class ChatService {
         payload: withoutServerPollFields(kind, input.payload),
         client_message_id: input.client_message_id ?? null,
         reply_to_id: input.reply_to_id ?? null,
+        thread_root_id: threadRootId,
         // `attachment_count` is a COUNT, not a copy — `chat_message_attachments`
         // stays the source of truth. It rides on the message row because a
         // `postgres_changes` echo cannot carry a join, so it is the only way a
@@ -1001,6 +1044,27 @@ export class ChatService {
       attachments,
     );
 
+    // Your own reply is read: without this the thread you just wrote in would
+    // count your reply's predecessors as new. Best-effort, like the channel
+    // read's notification clear: a stale count must not fail a committed send.
+    if (threadRoot) {
+      await this.threads
+        .markRead(
+          threadRoot.id,
+          input.channel_id,
+          input.sender_id,
+          message.created_at,
+        )
+        .catch((error: unknown) =>
+          reportCaughtFailure(this.logger, {
+            level: 'warning',
+            site: 'chat-thread-send-marks-read',
+            message: `Could not mark thread ${threadRoot.id} read after a send`,
+            error,
+          }),
+        );
+    }
+
     // No push is sent from here. The push worker handles every
     // `chat_messages` insert, this one included, and is the only chat push
     // path (#2771): it applies the member's per-channel level, presence, burst
@@ -1025,6 +1089,39 @@ export class ChatService {
   }
 
   /**
+   * The root of a thread reply: a timeline message in this channel, in a
+   * channel that takes threads (#3785, spec/behavior/chat/README.md § Message
+   * threads). A thread never nests, a 1:1 DM has no threads in slice 1, and a
+   * thread reply is never also a quote-reply.
+   */
+  private async assertThreadRoot(
+    channel: ChatChannel,
+    rootId: string,
+    input: SendMessageInput,
+  ): Promise<ChatMessage> {
+    if (!channelAllowsThreads(channel)) {
+      throw new BadRequestException('This channel does not take threads');
+    }
+    if (input.reply_to_id) {
+      throw new BadRequestException(
+        'A thread reply cannot also quote-reply; send one or the other',
+      );
+    }
+    const root = await this.messageRepo.findById(rootId);
+    if (!root || root.channel_id !== channel.id) {
+      throw new BadRequestException(
+        'thread_root_id must reference a message in the same channel',
+      );
+    }
+    if (root.thread_root_id) {
+      throw new BadRequestException(
+        'A thread cannot be started on a thread reply',
+      );
+    }
+    return root;
+  }
+
+  /**
    * Authorize a caller for a channel from a TRUSTED DB lookup
    * (channel → chapter → membership), never client-supplied chapter fields.
    *
@@ -1036,7 +1133,7 @@ export class ChatService {
     channelId: string,
     chapterId: string,
     userId: string,
-    operation: 'read' | 'post' = 'read',
+    operation: 'read' | 'post' | 'thread' = 'read',
   ): Promise<ChatChannel> {
     return this.channelAccess.assertChannelAccess(
       channelId,

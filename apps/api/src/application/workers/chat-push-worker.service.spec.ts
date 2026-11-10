@@ -3,6 +3,12 @@ import * as Sentry from '@sentry/nestjs';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
+import { CHAT_THREAD_REPOSITORY } from '#domain/repositories/chat-thread.repository.interface';
+
+/** Message threads (#3785): nobody follows anything unless a test says so. */
+const threadRepoStub = {
+  findFollowStates: jest.fn().mockResolvedValue(new Map()),
+};
 import { NotificationService } from '../services/notification.service';
 import {
   ChatPushWorkerService,
@@ -116,6 +122,7 @@ describe('ChatPushWorkerService', () => {
     const mod = await Test.createTestingModule({
       providers: [
         ChatPushWorkerService,
+        { provide: CHAT_THREAD_REPOSITORY, useValue: threadRepoStub },
         { provide: USER_REPOSITORY, useValue: { findDisplayIdentitiesByIds } },
         ChannelCacheService,
         {
@@ -428,6 +435,77 @@ describe('ChatPushWorkerService', () => {
       'chap-1',
       expect.objectContaining({ category: 'chat' }),
     );
+  });
+
+  // Message threads (#3785): a reply pushes its followers only, never more
+  // than the channel allows except an @mention, and never as an announcement,
+  // because any reader may reply in a thread under one.
+  describe('thread replies (#3785)', () => {
+    afterEach(() => {
+      threadRepoStub.findFollowStates.mockResolvedValue(new Map());
+    });
+
+    const threadReply = (mentions: string[] = []) => ({
+      id: 'r1',
+      channel_id: ANNOUNCEMENT_CHANNEL.id,
+      sender_id: 'sender',
+      content: 'Can I bring a friend?',
+      kind: 'text',
+      mentions,
+      thread_root_id: 'root-1',
+      created_at: '',
+    });
+
+    it('pushes a follower, as chat at NORMAL, and skips everyone else', async () => {
+      service.__setChannelForTest(ANNOUNCEMENT_CHANNEL);
+      setMembers(['sender', 'a', 'b', 'c']);
+      threadRepoStub.findFollowStates.mockResolvedValue(
+        new Map([
+          ['a', 'following'],
+          ['b', 'muted'],
+        ]),
+      );
+
+      await service.handleMessage(threadReply());
+
+      expect(threadRepoStub.findFollowStates).toHaveBeenCalledWith(
+        'root-1',
+        expect.arrayContaining(['a', 'b', 'c']),
+      );
+      expect(notifyUser).toHaveBeenCalledTimes(1);
+      expect(notifyUser).toHaveBeenCalledWith(
+        'a',
+        'chap-1',
+        expect.objectContaining({
+          category: 'chat',
+          priority: 'NORMAL',
+          data: expect.objectContaining({
+            target: {
+              screen: 'chat',
+              channelId: ANNOUNCEMENT_CHANNEL.id,
+              threadRootId: 'root-1',
+            },
+          }),
+        }),
+      );
+    });
+
+    it('still pushes an @mention to a member who muted the thread', async () => {
+      service.__setChannelForTest(ANNOUNCEMENT_CHANNEL);
+      setMembers(['sender', 'b']);
+      threadRepoStub.findFollowStates.mockResolvedValue(
+        new Map([['b', 'muted']]),
+      );
+
+      await service.handleMessage(threadReply(['b']));
+
+      expect(notifyUser).toHaveBeenCalledTimes(1);
+      expect(notifyUser).toHaveBeenCalledWith(
+        'b',
+        'chap-1',
+        expect.any(Object),
+      );
+    });
   });
 
   // The positive control for the branch above: an ordinary channel must keep
@@ -1516,6 +1594,7 @@ describe('ChatPushWorkerService', () => {
       const mod = await Test.createTestingModule({
         providers: [
           ChatPushWorkerService,
+          { provide: CHAT_THREAD_REPOSITORY, useValue: threadRepoStub },
           {
             provide: USER_REPOSITORY,
             useValue: { findDisplayIdentitiesByIds },

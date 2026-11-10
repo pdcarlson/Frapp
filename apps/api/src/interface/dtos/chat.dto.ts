@@ -25,9 +25,11 @@ import {
 import { POSITION_MAX } from '#domain/constants/field-limits';
 import {
   CHAT_MESSAGE_KINDS,
+  CHAT_THREAD_FOLLOW_STATES,
   SETTABLE_NOTIFICATION_KINDS,
 } from '#domain/entities/chat.entity';
 import type {
+  ChatThreadFollowState,
   MessageType,
   SettableNotificationKind,
 } from '#domain/entities/chat.entity';
@@ -360,6 +362,17 @@ export class SendMessageDto {
   @IsOptional()
   @IsUUID()
   reply_to_id?: string;
+
+  /**
+   * Post inside this message's thread (#3785) rather than the timeline. The
+   * root must be a timeline message in this channel, and a thread reply cannot
+   * also carry `reply_to_id`. Authorizes as a thread write, which a read-only
+   * channel allows (spec/behavior/chat/README.md § Message threads).
+   */
+  @ApiPropertyOptional({ format: 'uuid' })
+  @IsOptional()
+  @IsUUID()
+  thread_root_id?: string;
 
   /**
    * Free-form client annotations, persisted verbatim onto the message row.
@@ -783,6 +796,35 @@ export class ChatMessageDto {
   })
   mentions?: string[] | null;
 
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    required: false,
+    description:
+      'The parent message when this row is a reply inside a message thread (#3785). Thread replies never appear in the channel timeline; a client that receives one over Realtime must keep it out of the timeline.',
+  })
+  thread_root_id?: string | null;
+
+  @ApiProperty({
+    type: Number,
+    required: false,
+    description:
+      'On a thread parent: its reply count, kept by a trigger so the parent’s Realtime UPDATE echo carries it. 0 on every other row.',
+  })
+  thread_reply_count?: number;
+
+  @ApiProperty({ type: String, nullable: true, required: false })
+  thread_last_reply_at?: string | null;
+
+  @ApiProperty({
+    type: [String],
+    required: false,
+    description:
+      'On a thread parent: up to three recent repliers, newest first.',
+  })
+  thread_recent_sender_ids?: string[];
+
   @ApiProperty()
   created_at: string;
 
@@ -948,4 +990,60 @@ export class GetChannelMessagesQueryDto {
   // Postgres as a 500 rather than here as a 400.
   @IsUUID()
   since?: string;
+}
+
+/** `GET /v1/channels/:id/threads/:rootId`: a thread's parent and the caller's follow. */
+export class ChatThreadDto {
+  @ApiProperty({ type: () => ChatMessageDto })
+  root: ChatMessageDto;
+
+  @ApiProperty({
+    enum: CHAT_THREAD_FOLLOW_STATES,
+    nullable: true,
+    description: 'The caller’s state; null when not following.',
+  })
+  follow_state: ChatThreadFollowState | null;
+
+  @ApiProperty({ type: String, nullable: true })
+  last_read_at: string | null;
+}
+
+/** `PUT /v1/channels/:id/threads/:rootId/follow`. */
+export class SetThreadFollowDto {
+  @ApiProperty({
+    enum: [...CHAT_THREAD_FOLLOW_STATES, 'none'],
+    description:
+      '`following` pushes replies within the channel’s level, `muted` never pushes, `none` unfollows.',
+  })
+  @IsIn([...CHAT_THREAD_FOLLOW_STATES, 'none'])
+  state: ChatThreadFollowState | 'none';
+}
+
+/** What a follow change answers. */
+export class ThreadFollowStateDto {
+  @ApiProperty({ enum: CHAT_THREAD_FOLLOW_STATES, nullable: true })
+  follow_state: ChatThreadFollowState | null;
+}
+
+/** What marking a thread read answers. */
+export class ThreadReadDto {
+  @ApiProperty()
+  last_read_at: string;
+}
+
+/** One followed or muted thread in a channel, for the Threads button and the parent's chip. */
+export class FollowedThreadDto {
+  @ApiProperty({ format: 'uuid' })
+  thread_root_id: string;
+
+  @ApiProperty({ enum: CHAT_THREAD_FOLLOW_STATES })
+  state: ChatThreadFollowState;
+
+  @ApiProperty({ type: String, nullable: true })
+  last_read_at: string | null;
+
+  @ApiProperty({
+    description: 'Replies new to the caller; always 0 when muted.',
+  })
+  unread_count: number;
 }

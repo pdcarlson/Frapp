@@ -48,6 +48,12 @@ export interface PushDecisionInput {
    * silently: no preference turns them back on.
    */
   isAuditMirror?: boolean;
+  /**
+   * Set when the row is a reply inside a message thread (#3785): the
+   * recipient's follow state for that thread, `null` when they do not follow
+   * it. Absent for a timeline message.
+   */
+  thread?: { followState: 'following' | 'muted' | null };
 }
 
 /**
@@ -129,7 +135,8 @@ export function defaultLevelFor(
   return builtInChannelDefault(channel);
 }
 
-export type PushOutcome = 'send' | 'skip-level' | 'skip-presence';
+export type PushOutcome =
+  'send' | 'skip-level' | 'skip-presence' | 'skip-thread';
 
 /**
  * Apply the full chain. Order matters: presence is the cheapest skip and the
@@ -168,6 +175,13 @@ export function decidePush(input: PushDecisionInput): PushOutcome {
     input.preferences,
   );
   if (input.hasMention && input.messageKind !== 'system_audit') return 'send';
+  // A thread reply reaches only the thread's followers, and never more than
+  // the channel's level allows (#3785, spec/behavior/chat/README.md § Message
+  // threads). The mention above is the one exception, as it is for a muted
+  // channel: a muted thread still hears an @mention.
+  if (input.thread && input.thread.followState !== 'following') {
+    return 'skip-thread';
+  }
   if (level === 'off') return 'skip-level';
   if (level === 'mentions' && !input.hasMention) return 'skip-level';
   return 'send';

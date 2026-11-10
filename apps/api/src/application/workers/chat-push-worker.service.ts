@@ -23,6 +23,10 @@ import type { IChatNotificationPreferenceRepository } from '#domain/repositories
 import { CHAT_PUSH_DISPATCH_REPOSITORY } from '#domain/repositories/chat-push-dispatch.repository.interface';
 import type { IChatPushDispatchRepository } from '#domain/repositories/chat-push-dispatch.repository.interface';
 import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import {
+  CHAT_THREAD_REPOSITORY,
+  type IChatThreadRepository,
+} from '#domain/repositories/chat-thread.repository.interface';
 import type { IChatChannelRepository } from '#domain/repositories/chat.repository.interface';
 import { decidePush } from '../services/push-rules';
 import {
@@ -70,6 +74,8 @@ interface ChatMessageRow {
   metadata?: Record<string, unknown> | null;
   /** `audit:<id>` on an audit mirror (`isAuditMirrorRow`); a UUID or null otherwise. */
   client_message_id?: string | null;
+  /** The parent when this row is a thread reply (#3785); pushes only its followers. */
+  thread_root_id?: string | null;
   created_at: string;
 }
 
@@ -269,6 +275,9 @@ export class ChatPushWorkerService
     /** The sender's display name, which every chat push now carries (#2771). */
     @Inject(USER_REPOSITORY)
     private readonly userRepo: IUserRepository,
+    /** Who follows or muted a thread, for a thread reply's audience (#3785). */
+    @Inject(CHAT_THREAD_REPOSITORY)
+    private readonly threads: IChatThreadRepository,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -524,6 +533,15 @@ export class ChatPushWorkerService
       channel.chapter_id,
     );
 
+    // A thread reply pushes its followers only (#3785). One batched read; a
+    // member with no row does not follow. Fails closed like the block read:
+    // an unreadable follow table costs this reply its pushes, it never widens
+    // them to the channel.
+    const threadRootId = row.thread_root_id ?? null;
+    const followStates = threadRootId
+      ? await this.threads.findFollowStates(threadRootId, recipientIds)
+      : null;
+
     // Read once, and only once a recipient is actually getting a push: most
     // messages in a `mentions` channel push nobody.
     let senderName: Promise<string | null> | null = null;
@@ -538,6 +556,13 @@ export class ChatPushWorkerService
         hasMention: mentions.includes(recipientId),
         preferences: prefs,
         isAuditMirror,
+        ...(followStates
+          ? {
+              thread: {
+                followState: followStates.get(recipientId) ?? null,
+              },
+            }
+          : {}),
       });
       if (decision !== 'send') continue;
 
@@ -556,6 +581,7 @@ export class ChatPushWorkerService
         senderPreview,
         burst,
         await senderName,
+        threadRootId,
       );
       try {
         await this.notificationService.notifyUser(
@@ -926,13 +952,18 @@ export class ChatPushWorkerService
     preview: string,
     burst: ReturnType<BurstBundler['record']>,
     senderName: string | null,
+    threadRootId: string | null = null,
   ) {
     // One predicate for the title, the priority and the category, bundled or
     // not. A burst of announcements is still announcements: it used to go out
     // as a NORMAL `chat` push, under the member's Chat switch rather than its
     // own, which only went unnoticed while `ChatService` pushed every
     // announcement a second time.
-    const isAnnouncement = this.isAnnouncementPush(channel);
+    //
+    // A thread reply is never an announcement: under an announcement any
+    // reader may reply in its thread (#3785), so the channel alone would hand
+    // every member an URGENT, quiet-hours-skipping push.
+    const isAnnouncement = !threadRootId && this.isAnnouncementPush(channel);
     const shared = {
       title: this.titleFor(channel, isAnnouncement, senderName),
       category: isAnnouncement ? 'announcements' : 'chat',
@@ -944,7 +975,11 @@ export class ChatPushWorkerService
     // The sender rides on every chat row, bundled or not, so the in-app list
     // can withhold a member's rows from someone who blocks them later (#2715).
     // A bundle is one sender's burst (the bundle key starts with the sender).
-    const target = { screen: 'chat', channelId: channel.id };
+    // A thread reply opens its thread; an app that predates threads reads
+    // `channelId` and opens the channel, which is still the right place.
+    const target = threadRootId
+      ? { screen: 'chat', channelId: channel.id, threadRootId }
+      : { screen: 'chat', channelId: channel.id };
     const sender = senderId ? { senderId } : {};
     if (burst.action === 'bundle') {
       return {
