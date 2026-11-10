@@ -195,6 +195,14 @@ describe('SupabaseChatMessageRepository — tenant scope', () => {
     expect(messages.map((m) => m.id)).toEqual([POLL_B]);
   });
 
+  it('findByChannel reads the timeline only, never a thread reply (#3785)', async () => {
+    await repo.findByChannel(CHANNEL_B);
+
+    expect(
+      harness.ops[0].filters.map((f) => [f.column, f.value]),
+    ).toContainEqual(['thread_root_id', null]);
+  });
+
   it('update stays inside the caller chapter subtree', async () => {
     // `chat_messages` has no chapter, so the guard leans entirely on
     // `parentTenant` resolving through the channel. An edit matched on
@@ -329,7 +337,7 @@ describe('SupabaseChatMessageRepository — findByChannel since, a failed pivot 
   it('throws the query error rather than refusing the cursor as unknown', async () => {
     const pivotError = { message: 'connection reset', code: '08006' };
     const chain: Record<string, jest.Mock> = {};
-    for (const method of ['select', 'eq', 'order', 'limit', 'gt', 'lt']) {
+    for (const method of ['select', 'eq', 'is', 'order', 'limit', 'gt', 'lt']) {
       chain[method] = jest.fn(() => chain);
     }
     chain.maybeSingle = jest.fn(() =>

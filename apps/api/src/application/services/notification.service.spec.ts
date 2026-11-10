@@ -1439,6 +1439,7 @@ describe('NotificationService', () => {
         'chapter-1',
         'channel-1',
         '2026-11-09T05:00:00.000Z',
+        undefined,
       );
     });
   });
