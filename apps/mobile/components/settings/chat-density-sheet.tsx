@@ -34,7 +34,6 @@ export const ChatDensitySheet = forwardRef<BottomSheetModal>(
     const { tokens } = useFrappTheme();
     const brand = useChapterBranding();
     const styles = createStyles(tokens, brand);
-    const density = useChatDensity();
 
     return (
       <BottomSheetModal
@@ -48,39 +47,52 @@ export const ChatDensitySheet = forwardRef<BottomSheetModal>(
         <SheetBackToClose onClose={closeSheet} />
         <BottomSheetView style={styles.body} onAccessibilityEscape={closeSheet}>
           <SheetHeader title="Chat density" />
-          <View style={styles.options} accessibilityRole="radiogroup">
-            {CHAT_DENSITY_OPTIONS.map((option) => {
-              const checked = option.value === density;
-              return (
-                <Pressable
-                  key={option.value}
-                  accessibilityRole="radio"
-                  accessibilityState={{ checked }}
-                  accessibilityLabel={option.label}
-                  accessibilityHint={option.description}
-                  onPress={() => {
-                    setChatDensity(option.value);
-                    closeSheet();
-                  }}
-                  style={[styles.option, checked ? styles.optionChecked : null]}
-                >
-                  <DensityPreview density={option.value} styles={styles} />
-                  <Text
-                    style={[styles.label, checked ? styles.labelChecked : null]}
-                  >
-                    {option.label}
-                  </Text>
-                  <Text style={styles.description}>{option.description}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
+          <ChatDensityOptions onPicked={closeSheet} />
           <Text style={styles.footnote}>Applies on this phone.</Text>
         </BottomSheetView>
       </BottomSheetModal>
     );
   },
 );
+
+/**
+ * The three density cards, saved on the tap. Shared by the Settings sheet and
+ * s03's display beat (#3787), where a new member picks their display while
+ * setting up.
+ */
+export function ChatDensityOptions({ onPicked }: { onPicked?: () => void }) {
+  const { tokens } = useFrappTheme();
+  const brand = useChapterBranding();
+  const styles = createStyles(tokens, brand);
+  const density = useChatDensity();
+  return (
+    <View style={styles.options} accessibilityRole="radiogroup">
+      {CHAT_DENSITY_OPTIONS.map((option) => {
+        const checked = option.value === density;
+        return (
+          <Pressable
+            key={option.value}
+            accessibilityRole="radio"
+            accessibilityState={{ checked }}
+            accessibilityLabel={option.label}
+            accessibilityHint={option.description}
+            onPress={() => {
+              setChatDensity(option.value);
+              onPicked?.();
+            }}
+            style={[styles.option, checked ? styles.optionChecked : null]}
+          >
+            <DensityPreview density={option.value} styles={styles} />
+            <Text style={[styles.label, checked ? styles.labelChecked : null]}>
+              {option.label}
+            </Text>
+            <Text style={styles.description}>{option.description}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
 
 /** Shapes, not words, so the drawing never shows a made-up member or message. */
 const COZY_ROWS = [0.75, 0.5, 0.66];

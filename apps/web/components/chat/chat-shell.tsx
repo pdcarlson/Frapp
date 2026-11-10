@@ -52,7 +52,13 @@ import {
   useSetSidebarSectionCollapsed,
   useSidebarPreferences,
   landingChannelId,
+  canSetChannelDisplayLock,
+  useSetChannelDisplayLock,
 } from "@repo/hooks";
+import {
+  setChannelLocked,
+  syncLockedChannels,
+} from "@repo/chat-core/density";
 import {
   can,
   canAll,
@@ -468,6 +474,16 @@ export function ChatShell({
       })),
     [channelsQuery.data, levelByChannelId],
   );
+
+  // Always formal (#3787): every row asks its channel's density by id, so the
+  // locked ids are copied where those rows read them. Only from a loaded list:
+  // a list still loading must not clear the locks a cached one set.
+  useEffect(() => {
+    if (channelsQuery.data) {
+      syncLockedChannels(asArray<ChatChannel>(channelsQuery.data));
+    }
+  }, [channelsQuery.data]);
+  const setDisplayLock = useSetChannelDisplayLock();
 
   // The rail groups plain channels under these. Passed through in the order the
   // API returned them — `SupabaseChatCategoryRepository.findByChapter` orders by
@@ -2455,6 +2471,33 @@ export function ChatShell({
                   level,
                 });
               }}
+              displayLock={
+                activeChannel &&
+                canSetChannelDisplayLock(
+                  activeChannel,
+                  userId,
+                  permissionsPayload?.permissions,
+                )
+                  ? {
+                      saving: setDisplayLock.isPending,
+                      onChange: (locked) => {
+                        const channelId = activeChannel.id;
+                        setDisplayLock.mutate(
+                          { id: channelId, locked },
+                          {
+                            onSuccess: () => setChannelLocked(channelId, locked),
+                            onError: () =>
+                              toast({
+                                title: "Couldn't change Always formal",
+                                description: "Try again in a moment.",
+                                variant: "destructive",
+                              }),
+                          },
+                        );
+                      },
+                    }
+                  : undefined
+              }
               pinToTop={
                 activeChannel && !activeChannel.hidden
                   ? {

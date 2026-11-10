@@ -143,6 +143,21 @@ export interface ChatChannel {
    * mirror (`ChatBridgeWorkerService`) finds it by this flag, not its name.
    */
   is_audit_log: boolean;
+  /**
+   * Always formal (#3787): every member sees this channel in the formal
+   * (cozy) display, whatever display they picked, and can't override it
+   * here. Set by the channel's creator or a `channels:manage` holder
+   * (`ChatService.setDisplayLock`); never on a DM or group DM.
+   * `spec/behavior/chat/README.md` § Always formal.
+   */
+  display_locked: boolean;
+  /**
+   * Who created the channel through `POST /v1/channels`, the one member
+   * besides `channels:manage` holders who may set `display_locked`. Null for
+   * channels from before it was recorded, seeded defaults, Discord-imported
+   * channels, DMs, and a creator whose account was deleted.
+   */
+  created_by: string | null;
 }
 
 /**

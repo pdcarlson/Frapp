@@ -787,9 +787,34 @@ button, not while typing.
 
 | State | Title | Copy |
 |---|---|---|
-| Step | `How the chapter sees you` | `Your photo and name go on every message you send.` The profile photo control (tap to choose, as on Profile), then the field labelled `Your name`, placeholder `First and last name`. Gold `Continue` when the notifications beat follows, else `Go to chat`. |
+| Step | `How the chapter sees you` | `Your photo and name go on every message you send.` The profile photo control (tap to choose, as on Profile), then the field labelled `Your name`, placeholder `First and last name`. Gold `Continue` (the display beat always follows). |
 | No name | as above | Under the field: `Add your name so the chapter knows who's talking.` |
 | Save failed | as above | Under the field: `Couldn't save your name. Check your connection and try again.` The member stays on the beat with what they typed. |
+
+### Display step (onboarding)
+
+The chat display pick while setting up (#3787): web's tutorial slide and
+mobile s03's beat after the profile one. Copy in
+`apps/mobile/lib/onboarding/display-step.ts` and
+`apps/web/components/onboarding/onboarding-tutorial.tsx`.
+
+| Surface | Title | Copy |
+|---|---|---|
+| Web | `Pick your chat display` | `Choose how messages look on this browser. You can change it anytime in your profile.` Then Profile's three Chat density cards. |
+| Mobile | `Pick your chat display` | `Choose how messages look on this phone. You can change it anytime in Settings.` Then Settings' three cards; gold `Continue` when the notifications beat follows, else `Go to chat`. |
+
+### Always formal
+
+A channel-level lock to the formal display (#3787;
+[`chat/README.md` § Always formal](../../behavior/chat/README.md#always-formal)).
+Strings in `@repo/chat-core/density`.
+
+| Where | Copy |
+|---|---|
+| Display view switch (creator or `channels:manage`) | `Always formal`, with `Show this channel to everyone in the formal display. Members can't change it here.` on web |
+| Display view, when locked | `Always formal: everyone sees this channel in the formal display.` over the disabled choices; the Display row's state reads `Formal` |
+| Chat settings create form (web) | `Always formal (everyone sees it in the formal display)` |
+| Save failed | Web toast `Couldn't change Always formal` / `Try again in a moment.`; mobile alert `Couldn't change Always formal` / `Nothing changed. Check your connection and try again.` |
 
 ### First-run tour (mobile)
 
@@ -947,7 +972,7 @@ and both import it from `@repo/hooks`. The filter note below is web's alone and 
 | State | Title | Description | Where |
 |---|---|---|---|
 | Pin | — | `Pin to top`, and `Unpin from top` on a pinned row: a row in the long-press menu and a named accessibility action (mobile); a row in the rail row's right-click menu and in the channel menu (web) | `PIN_TO_TOP_LABEL`, `UNPIN_FROM_TOP_LABEL` |
-| Row menu (web right-click, mobile long press) | — | `Mark as read`, `Pin to top`, `Notifications` (with the level, `All`, `Mentions` or `Muted`, before the chevron; its choices are the channel menu's `Every message`, `Only @mentions`, `Mute`), `Copy link` (toast `Link copied`), `Hide conversation`; then `Edit channel` (web) and `Delete channel` for `channels:manage`; mobile has no `Copy link` or `Edit channel`, and adds `Display` (with `Default` or the pinned density before the chevron; its choices are `Your default (<density>)`, then `Cozy here`, `Compact here`, `Bubbles here`, the same words as web's `⋯` menu Display view). Delete asks `Delete #<name>?` with `Every message, attachment, and pin in this channel is removed. This cannot be undone.`, the same words as Chat settings | `MARK_AS_READ_LABEL`, `CHANNEL_NOTIFICATIONS_LABEL`, `COPY_CHANNEL_LINK_LABEL`, `DELETE_CHANNEL_LABEL`, `deleteChannelConfirmTitle`, `DELETE_CHANNEL_CONFIRM_BODY` |
+| Row menu (web right-click, mobile long press) | — | `Mark as read`, `Pin to top`, `Notifications` (with the level, `All`, `Mentions` or `Muted`, before the chevron; its choices are the channel menu's `Every message`, `Only @mentions`, `Mute`), `Copy link` (toast `Link copied`), `Hide conversation`; then `Edit channel` (web) and `Delete channel` for `channels:manage`; mobile has no `Copy link` or `Edit channel`, and adds `Display` (with `Default`, the pinned density, or `Formal` in an Always-formal channel before the chevron; its choices are `Your default (<density>)`, then `Cozy here`, `Compact here`, `Bubbles here`, the same words as web's `⋯` menu Display view). Delete asks `Delete #<name>?` with `Every message, attachment, and pin in this channel is removed. This cannot be undone.`, the same words as Chat settings | `MARK_AS_READ_LABEL`, `CHANNEL_NOTIFICATIONS_LABEL`, `COPY_CHANNEL_LINK_LABEL`, `DELETE_CHANNEL_LABEL`, `deleteChannelConfirmTitle`, `DELETE_CHANNEL_CONFIRM_BODY` |
 | Pinned section | `Pinned` | The section header above everything else | `PINNED_SECTION_LABEL` |
 | Filters | — | `Unread only`, `Hide muted`: two switches in a menu behind the first section heading's filter button, named `Filter channels`, or `Filter channels, filters on` while one is on, with `Showing unread only.`, `Muted channels hidden.` or `Showing unread only, muted hidden.` and `Show all` under the heading (mobile, 2026-11-06); two switches behind the Channels header's filter control, named `Filter channels`, or `Filter channels, filters on` while one is on (web) | `UNREAD_ONLY_LABEL`, `HIDE_MUTED_LABEL`, `FILTER_CHANNELS_LABEL`, `FILTER_CHANNELS_ON_LABEL` |
 | Filtered to nothing | — | `No channels match your filters.` with the action `Show all channels`, which turns both filters off | `NO_MATCHING_CHANNELS`, `SHOW_ALL_CHANNELS_LABEL` |

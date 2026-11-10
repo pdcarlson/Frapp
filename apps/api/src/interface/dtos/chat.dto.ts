@@ -76,6 +76,31 @@ export class CreateChannelDto {
   @IsOptional()
   @IsStrictBoolean()
   is_read_only?: boolean;
+
+  // No `default:` in the schema, unlike `is_read_only`: openapi-typescript
+  // reads a default as required, which would make every existing create call
+  // send it. The service still writes false when it is absent.
+  @ApiPropertyOptional({
+    description:
+      'Always formal (#3787): every member sees the channel in the formal display and cannot pick another display there. False when absent. Change it later with PUT /v1/channels/{id}/display-lock.',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  display_locked?: boolean;
+}
+
+/**
+ * `PUT /v1/channels/:id/display-lock`. Its own route rather than a field on
+ * `UpdateChannelDto`, because the channel's creator may set it without
+ * `channels:manage`, which `PATCH /v1/channels/:id` requires.
+ */
+export class SetChannelDisplayLockDto {
+  @ApiProperty({
+    description:
+      'True sets the channel to Always formal for every member; false lets each member pick their own display there again.',
+  })
+  @IsStrictBoolean()
+  display_locked: boolean;
 }
 
 export class UpdateChannelDto {

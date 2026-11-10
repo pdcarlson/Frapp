@@ -30,6 +30,7 @@ import {
   type ThreadRow,
 } from "@repo/chat-core/blocks";
 import { channelAllowsReplies } from "@repo/chat-core/message-actions";
+import { setChannelLocked } from "@repo/chat-core/density";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -219,6 +220,17 @@ export default function ChatThreadScreen() {
   );
   const { isReadOnly: channelIsReadOnly, canPost: channelCanPost } =
     postCapability;
+  // Always formal (#3787): a thread opened from a push or a link may arrive
+  // before chat home has read the list, so the channel's own read keeps its
+  // lock current too.
+  useEffect(() => {
+    const data: unknown = channelQuery.data;
+    if (!channelId || !data || typeof data !== "object") return;
+    setChannelLocked(
+      channelId,
+      (data as { display_locked?: unknown }).display_locked === true,
+    );
+  }, [channelId, channelQuery.data]);
 
   const {
     messages,

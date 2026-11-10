@@ -568,6 +568,8 @@ vi.mock("@repo/hooks", async () => ({
   useLeaveChannel: () => ({ mutateAsync: mockLeaveMutateAsync }),
   useGetOrCreateDm: () => ({ mutate: mockReopenMutate }),
   canHideConversation: (channel: { type: string }) => channel.type === "DM",
+  canSetChannelDisplayLock: () => false,
+  useSetChannelDisplayLock: () => ({ isPending: false, mutate: vi.fn() }),
   otherMemberId: (
     channel: { member_ids?: string[] | null },
     viewerId: string | null,

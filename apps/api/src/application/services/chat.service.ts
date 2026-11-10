@@ -83,6 +83,7 @@ export interface CreateChannelInput {
   required_permissions?: string[] | null;
   category_id?: string | null;
   is_read_only?: boolean;
+  display_locked?: boolean;
 }
 
 export interface CreateDmInput {
@@ -394,6 +395,10 @@ export class ChatService {
       required_permissions: input.required_permissions ?? null,
       category_id: input.category_id ?? null,
       is_read_only: input.is_read_only ?? false,
+      display_locked: input.display_locked ?? false,
+      // Recorded so the creator can set Always formal later without holding
+      // `channels:manage` (#3787, `setDisplayLock`).
+      created_by: userId,
       // Seed the creator so a PRIVATE channel is readable by at least one
       // person. `canAccessChannel` resolves PRIVATE as membership of this list
       // with **no `"*"` wildcard bypass**, so a row landing with `member_ids`
@@ -492,6 +497,42 @@ export class ChatService {
     // than only when that field is present in `data`, so a future field this
     // service starts accepting here can't silently reintroduce the staleness
     // window by omission (#988).
+    this.channelCache.invalidate(id);
+    return updated;
+  }
+
+  /**
+   * Turns Always formal on or off (#3787, `spec/behavior/chat/README.md`
+   * § Always formal). Allowed for the channel's creator and for a
+   * `channels:manage` holder, which the controller resolves (the route itself
+   * needs only chapter membership, so a creator without the permission can
+   * reach it). A DM or group DM has no creator in this sense and no officer,
+   * so it is refused there.
+   */
+  async setDisplayLock(
+    id: string,
+    chapterId: string,
+    userId: string,
+    hasManagePermission: boolean,
+    locked: boolean,
+  ): Promise<ChatChannel> {
+    const existing = await this.requireChannelInChapter(id, chapterId);
+    if (isDirectChannel(existing)) {
+      throw new BadRequestException(
+        "A DM or group DM can't be set to Always formal",
+      );
+    }
+    const isCreator =
+      existing.created_by !== null && existing.created_by === userId;
+    if (!hasManagePermission && !isCreator) {
+      throw new ForbiddenException(
+        "Only the channel's creator or a member with channels:manage can set Always formal",
+      );
+    }
+    if (existing.display_locked === locked) return existing;
+    const updated = await this.channelRepo.update(id, chapterId, {
+      display_locked: locked,
+    });
     this.channelCache.invalidate(id);
     return updated;
   }

@@ -50,6 +50,8 @@ describe('ChannelAccessService', () => {
     default_notification_level: null,
     is_default: false,
     is_audit_log: false,
+    display_locked: false,
+    created_by: null,
   };
 
   const privateChannel: ChatChannel = {

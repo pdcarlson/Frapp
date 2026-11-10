@@ -10,6 +10,10 @@ import {
 } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
+  setChannelLocked,
+  syncLockedChannels,
+} from "@repo/chat-core/density";
+import {
   arrangeChannelSidebar,
   foldedSectionAnnouncement,
   groupChannelsByCategory,
@@ -25,6 +29,8 @@ import {
   lastChannelLandingId,
   useActiveChapterId,
   useChannels,
+  canSetChannelDisplayLock,
+  useSetChannelDisplayLock,
   useChapterSetupChecklist,
   useChapterRoster,
   useCurrentUser,
@@ -161,6 +167,12 @@ export default function ChatHomeScreen() {
   const { chapterName } = useChapterBranding();
 
   const channelsQuery = useChannels();
+  // Always formal (#3787): copied where every thread row reads its density.
+  // Only from a loaded list, so a refetch in flight never clears a lock.
+  useEffect(() => {
+    if (channelsQuery.data) syncLockedChannels(selectChannels(channelsQuery.data));
+  }, [channelsQuery.data]);
+  const setDisplayLock = useSetChannelDisplayLock();
   const channelsError = channelsErrorCopy(channelsQuery.error, chapterName);
   useEffect(() => {
     if (channelsQuery.isError) reportChannelsRefused(channelsQuery.error);
@@ -505,6 +517,11 @@ export default function ChatHomeScreen() {
               permissions,
               surface: { copyLink: false, edit: false },
             }),
+            canSetDisplayLock: canSetChannelDisplayLock(
+              channel,
+              viewerId,
+              permissions,
+            ),
             onTogglePin: togglePin,
           });
         }}
@@ -785,6 +802,17 @@ export default function ChatHomeScreen() {
         onClose={closeMenu}
         onAction={(key) => runMenuAction(key)}
         writeBlockedReason={writeBlockedReason}
+        onSetDisplayLock={(channelId, locked) => {
+          setDisplayLock
+            .mutateAsync({ id: channelId, locked })
+            .then(() => setChannelLocked(channelId, locked))
+            .catch(() =>
+              Alert.alert(
+                "Couldn't change Always formal",
+                "Nothing changed. Check your connection and try again.",
+              ),
+            );
+        }}
         onSetLevel={(channelId, level) => {
           // Per call, not `mutate`'s per-call `onError`: TanStack runs that
           // only for the latest call, so a quick second change would swallow

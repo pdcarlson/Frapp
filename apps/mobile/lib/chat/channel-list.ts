@@ -52,6 +52,13 @@ export interface ChannelSummary {
    * draw no line for it.
    */
   description?: string;
+  /**
+   * Always formal (#3787): everyone sees the channel in the formal display.
+   * `false` unless the row says exactly `true`.
+   */
+  display_locked?: boolean;
+  /** Who created the channel, who may set Always formal; `null` when unrecorded. */
+  created_by?: string | null;
 }
 
 /**
@@ -93,6 +100,8 @@ export function selectChannels(data: unknown): ChannelSummary[] {
           typeof row.description === "string"
             ? (channelDescription(row.description) ?? undefined)
             : undefined,
+        display_locked: row.display_locked === true,
+        created_by: typeof row.created_by === "string" ? row.created_by : null,
       },
     ];
   });

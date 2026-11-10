@@ -3299,3 +3299,19 @@ alter table public.chat_messages
 
 Dropping `chat_thread_follows` loses who followed or muted which thread and every read cursor; nothing else depends on it.
 
+## Rollback Always formal channel lock (20261110233000)
+
+* **Migration**: `20261110233000_chat_channels_display_locked.sql`
+
+Two columns on `chat_channels`, `display_locked` and `created_by`, and the `chat_channels_created_by_fk` foreign key. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API never writes either column and returns both as plain fields (`select('*')`) that older clients ignore. Clients that honor the lock read it from those fields, so a channel locked before the revert stays formal for members on newer clients until the lock is cleared: run `update public.chat_channels set display_locked = false;` if that is not wanted.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. Dropping `created_by` loses who created each channel since this shipped; nothing else depends on it:
+
+```sql
+alter table public.chat_channels
+  drop constraint if exists chat_channels_created_by_fk,
+  drop column if exists created_by,
+  drop column if exists display_locked;
+```

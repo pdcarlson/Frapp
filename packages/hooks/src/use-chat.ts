@@ -1,7 +1,7 @@
 "use client";
 
 import { throwUnlessOk } from "@repo/api-sdk";
-import type { ChatNotificationLevel } from "@repo/validation";
+import { can, type ChatNotificationLevel } from "@repo/validation";
 
 import { useEffect, useMemo, useRef } from "react";
 import {
@@ -346,6 +346,8 @@ export function useCreateChannel() {
       required_permissions?: string[];
       category_id?: string;
       is_read_only: boolean;
+      /** Always formal from the start (#3787); false when absent. */
+      display_locked?: boolean;
     }) => {
       const { data, error } = await client.POST("/v1/channels", { body });
       if (error) throw error;
@@ -420,6 +422,48 @@ export function useUpdateChannel() {
       });
     },
   });
+}
+
+/**
+ * Sets or clears Always formal on a channel (#3787): every member sees it in
+ * the formal display and can't pick another there. The channel's creator or
+ * a `channels:manage` holder may set it; the server refuses anyone else and
+ * any DM. `canSetChannelDisplayLock` is the client's half of that rule.
+ */
+export function useSetChannelDisplayLock() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["channels", "display-lock"],
+    mutationFn: async ({ id, locked }: { id: string; locked: boolean }) => {
+      const { data, error } = await client.PUT(
+        "/v1/channels/{id}/display-lock",
+        { params: { path: { id } }, body: { display_locked: locked } },
+      );
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: CHANNEL_LIST_KEY });
+    },
+  });
+}
+
+/**
+ * Whether the caller may set Always formal on a channel, mirroring
+ * `ChatService.setDisplayLock`: never on a DM or group DM; otherwise the
+ * channel's creator, or anyone holding `channels:manage` (or `*`).
+ */
+export function canSetChannelDisplayLock(
+  channel: { type?: string | null; created_by?: string | null },
+  userId: string | null | undefined,
+  permissions: readonly string[] | null | undefined,
+): boolean {
+  if (channel.type === "DM" || channel.type === "GROUP_DM") return false;
+  if (userId && channel.created_by && channel.created_by === userId) {
+    return true;
+  }
+  return can("channels:manage", permissions);
 }
 
 export function useDeleteChannel() {

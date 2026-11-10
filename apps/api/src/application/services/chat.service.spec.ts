@@ -86,6 +86,40 @@ describe('ChatService', () => {
       );
     });
 
+    it('records the creator and Always formal (#3787)', async () => {
+      mockChannelRepo.create.mockResolvedValue(baseChannel);
+
+      await service.createChannel(
+        {
+          chapter_id: 'ch-1',
+          name: 'announcements-2',
+          type: 'PUBLIC',
+          display_locked: true,
+        },
+        'u-creator',
+      );
+
+      expect(mockChannelRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          created_by: 'u-creator',
+          display_locked: true,
+        }),
+      );
+    });
+
+    it('leaves a new channel unlocked by default', async () => {
+      mockChannelRepo.create.mockResolvedValue(baseChannel);
+
+      await service.createChannel(
+        { chapter_id: 'ch-1', name: 'random', type: 'PUBLIC' },
+        'u-creator',
+      );
+
+      expect(mockChannelRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ display_locked: false }),
+      );
+    });
+
     it('should reject DM/GROUP_DM through createChannel', async () => {
       await expect(
         service.createChannel(
@@ -1345,6 +1379,87 @@ describe('ChatService', () => {
       ).rejects.toThrow(BadRequestException);
       expect(mockChannelRepo.leaveGroupDm).not.toHaveBeenCalled();
       expect(mockReadReceiptRepo.hideDirectMessage).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('setDisplayLock (Always formal, #3787)', () => {
+    const created = { ...baseChannel, created_by: 'u-creator' };
+
+    it('lets the creator lock a channel without channels:manage', async () => {
+      mockChannelRepo.findById.mockResolvedValue(created);
+      mockChannelRepo.update.mockResolvedValue({
+        ...created,
+        display_locked: true,
+      });
+
+      const result = await service.setDisplayLock(
+        'ch-chan-1',
+        'ch-1',
+        'u-creator',
+        false,
+        true,
+      );
+
+      expect(result.display_locked).toBe(true);
+      expect(mockChannelRepo.update).toHaveBeenCalledWith('ch-chan-1', 'ch-1', {
+        display_locked: true,
+      });
+    });
+
+    it('lets a channels:manage holder lock a channel they did not create', async () => {
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockChannelRepo.update.mockResolvedValue({
+        ...baseChannel,
+        display_locked: true,
+      });
+
+      await service.setDisplayLock('ch-chan-1', 'ch-1', 'u-officer', true, true);
+
+      expect(mockChannelRepo.update).toHaveBeenCalled();
+    });
+
+    it('refuses any other member', async () => {
+      mockChannelRepo.findById.mockResolvedValue(created);
+
+      await expect(
+        service.setDisplayLock('ch-chan-1', 'ch-1', 'u-member', false, true),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockChannelRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses everyone but channels:manage on a channel with no recorded creator', async () => {
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+
+      await expect(
+        service.setDisplayLock('ch-chan-1', 'ch-1', 'u-member', false, false),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it.each(['DM', 'GROUP_DM'] as const)('refuses a %s', async (type) => {
+      mockChannelRepo.findById.mockResolvedValue({ ...baseChannel, type });
+
+      await expect(
+        service.setDisplayLock('ch-chan-1', 'ch-1', 'u-officer', true, true),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockChannelRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('writes nothing when the lock is already in that state', async () => {
+      const locked = { ...created, display_locked: true };
+      mockChannelRepo.findById.mockResolvedValue(locked);
+
+      await expect(
+        service.setDisplayLock('ch-chan-1', 'ch-1', 'u-creator', false, true),
+      ).resolves.toEqual(locked);
+      expect(mockChannelRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('answers 404 for a channel outside the chapter', async () => {
+      mockChannelRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.setDisplayLock('ch-chan-1', 'ch-1', 'u-officer', true, true),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
