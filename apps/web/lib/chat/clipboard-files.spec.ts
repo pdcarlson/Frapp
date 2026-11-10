@@ -15,6 +15,8 @@ const clipboard = ({
   }) as unknown as DataTransfer;
 
 const png = (name: string) => new File(["png"], name, { type: "image/png" });
+const pdf = (name: string) =>
+  new File(["%PDF-1.4"], name, { type: "application/pdf" });
 const at = new Date(2026, 10, 10, 9, 5, 7);
 
 describe("filesFromClipboard (#2246)", () => {
@@ -62,6 +64,44 @@ describe("filesFromClipboard (#2246)", () => {
       "diagram.png",
       "Pasted image 2026-11-10 at 09.05.07 (2).jpg",
     ]);
+  });
+
+  it("attaches an image whose text is only its address (Firefox's Copy Image)", () => {
+    const files = filesFromClipboard(
+      clipboard({
+        text: "https://example.com/cat.png",
+        files: [png("cat.png")],
+      }),
+    );
+    expect(files.map((file) => file.name)).toEqual(["cat.png"]);
+  });
+
+  it("attaches a Finder-copied file whose text is only its name", () => {
+    const files = filesFromClipboard(
+      clipboard({ text: "notes.pdf", files: [pdf("notes.pdf")] }),
+    );
+    expect(files.map((file) => file.name)).toEqual(["notes.pdf"]);
+  });
+
+  it("leaves a nameless file of an unknown type as it came, for the attach path to judge", () => {
+    const [tiff] = filesFromClipboard(
+      clipboard({ files: [new File(["x"], "", { type: "image/tiff" })] }),
+      at,
+    );
+    expect(tiff?.name).toBe("");
+    const [blank] = filesFromClipboard(
+      clipboard({ files: [new File(["x"], "", { type: "" })] }),
+      at,
+    );
+    expect(blank?.name).toBe("");
+  });
+
+  it("keeps the name of a real file called image.*", () => {
+    const files = filesFromClipboard(
+      clipboard({ files: [pdf("image.pdf")] }),
+      at,
+    );
+    expect(files.map((file) => file.name)).toEqual(["image.pdf"]);
   });
 
   it("falls back to file items when the browser leaves files empty", () => {

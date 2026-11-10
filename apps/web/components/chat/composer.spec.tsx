@@ -1651,6 +1651,53 @@ describe("Composer paste attaches clipboard images (#2246)", () => {
     expect(mockRequestUploadUrl).not.toHaveBeenCalled();
   });
 
+  it("refuses a pasted image over the size limit as too large", () => {
+    render(<Composer {...baseProps()} />);
+    const huge = new File(["png"], "photo.png", { type: "image/png" });
+    Object.defineProperty(huge, "size", { value: 1024 * 1024 * 1024 });
+    paste(clipboard({ files: [huge] }));
+
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "File too large" }),
+    );
+    expect(mockRequestUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it("counts files already uploading when a paste lands mid-upload", async () => {
+    // Uploads that never finish, so the first batch is still in flight when
+    // the second paste lands. The handler must see the current count, not
+    // the one from when the editor was built.
+    mockUploadSignedUrl.mockImplementation(() => new Promise(() => {}));
+    render(<Composer {...baseProps()} />);
+    const shots = (prefix: string, count: number) =>
+      Array.from(
+        { length: count },
+        (_, i) =>
+          new File(["png"], `${prefix}-${i}.png`, { type: "image/png" }),
+      );
+    paste(clipboard({ files: shots("first", CHAT_FILE_LIMIT - 1) }));
+    await waitFor(() =>
+      expect(mockRequestUploadUrl).toHaveBeenCalledTimes(CHAT_FILE_LIMIT - 1),
+    );
+    expect(
+      screen.getByRole("list", {
+        name: `${CHAT_FILE_LIMIT - 1} files attached`,
+      }),
+    ).toBeInTheDocument();
+
+    paste(clipboard({ files: shots("second", 3) }));
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: `Up to ${CHAT_FILE_LIMIT} files per message`,
+        }),
+      ),
+    );
+    expect(mockRequestUploadUrl).toHaveBeenCalledTimes(CHAT_FILE_LIMIT);
+    mockUploadSignedUrl.mockImplementation(async () => undefined);
+  });
+
   it("counts pasted images against the per-message limit", async () => {
     render(<Composer {...baseProps()} />);
     paste(

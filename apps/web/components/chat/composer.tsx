@@ -1073,10 +1073,11 @@ export function Composer({
   const resolvedCanPost = isAuditLog ? false : (canPost ?? !isReadOnly);
   const sendRef = useRef<() => void>(() => {});
   /*
-    The attach path, for the editor's paste handler (#2246). Tiptap reads
-    `editorProps` once, at construction, so the handler reaches the latest
-    `attachFiles` (which closes over how many files are staged) through a ref,
-    the way Enter reaches `submit` through `sendRef`.
+    The attach path, for the editor's paste handler (#2246). `editorProps` is
+    written where the editor is configured, above `attachFiles`, so the
+    handler reaches the latest `attachFiles` (which closes over how many files
+    are staged) through a ref, the way Enter reaches `submit` through
+    `sendRef`.
   */
   const attachFilesRef = useRef<(files: File[]) => void>(() => {});
   /*
