@@ -62,6 +62,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "On the web, Events has one Filter button, remembers whether you last used the list or the calendar, and shows a repeating event as one row.",
       "On the web, officers who manage roles can set up pledge classes in Settings and give each member a class and an order number.",
       "On your phone, a channel you have a chat notification for shows as unread as soon as you open the app, before the latest counts arrive.",
+      "Chats can have a background, a built-in look or a photo, which officers with the right role set on the web for one channel or as the chapter's default, and you see it on your phone too.",
     ],
   },
   {
