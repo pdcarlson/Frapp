@@ -1,26 +1,14 @@
-import { cookies } from "next/headers";
-import { ChatPage } from "@/components/chat/chat-page";
-import {
-  CHAT_MEMBERS_HIDDEN_COOKIE,
-  parseMembersHidden,
-} from "@/lib/chat/members-panel";
-
 export const metadata = {
   title: "Chat",
 };
 
 /**
- * Reads the member list's remembered state here, on the server, so the column
- * is right on first paint (`lib/chat/members-panel.ts`). The segment is
- * already dynamic: the dashboard layout reads the nav-collapse cookie.
+ * `/chat` is the dashboard with no tool page open (#3779). Chat itself is a
+ * panel the shell hosts on every route (`components/layout/dashboard-shell.tsx`),
+ * so this route renders nothing of its own: the shell shows chat alone here,
+ * or the home view when chat is closed. Its `?channel=` and `?message=` links
+ * still land, because the panel reads them.
  */
-export default async function Chat() {
-  const cookieStore = await cookies();
-  return (
-    <ChatPage
-      defaultMembersHidden={parseMembersHidden(
-        cookieStore.get(CHAT_MEMBERS_HIDDEN_COOKIE)?.value,
-      )}
-    />
-  );
+export default function Chat() {
+  return null;
 }

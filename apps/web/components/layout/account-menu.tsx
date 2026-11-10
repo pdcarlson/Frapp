@@ -11,7 +11,7 @@ import {
   Sparkles,
   User,
 } from "lucide-react";
-import { useCurrentUser } from "@repo/hooks";
+import { useCurrentUser, useMemberDisplayNames } from "@repo/hooks";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -111,6 +111,9 @@ export function AccountMenu({
   // Invisible shows its grey ring to you alone.
   const { userId } = useFrappUser();
   const presence = useChapterPresenceContext();
+  // Your initials wear the color the chapter sees on them (#3860).
+  const { avatarTintFor } = useMemberDisplayNames();
+  const ownTint = userId ? avatarTintFor(userId) : null;
   const ownDot =
     presence.isReady && userId ? presence.statusOf(userId) : null;
   // The dot is decorative (`AvatarPresenceDot`), so the control names it.
@@ -152,7 +155,10 @@ export function AccountMenu({
                 {user.avatar_url ? (
                   <AvatarImage src={user.avatar_url} alt="" />
                 ) : null}
-                <AvatarFallback className="text-[11px] font-semibold">
+                <AvatarFallback
+                  className="text-[11px] font-semibold"
+                  tint={ownTint}
+                >
                   {initials(name)}
                 </AvatarFallback>
               </Avatar>
@@ -174,7 +180,7 @@ export function AccountMenu({
                 {user.avatar_url ? (
                   <AvatarImage src={user.avatar_url} alt="" />
                 ) : null}
-                <AvatarFallback className="text-xs">
+                <AvatarFallback className="text-xs" tint={ownTint}>
                   {initials(name)}
                 </AvatarFallback>
               </Avatar>

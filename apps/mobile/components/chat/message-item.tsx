@@ -40,6 +40,8 @@ import {
 } from "@/lib/theme";
 import {
   authorInitialsFallback,
+  memberAvatarHue,
+  memberAvatarTint,
   resolveAuthorLabel,
   resolveAuthorName,
 } from "@repo/hooks";
@@ -490,6 +492,13 @@ export function MessageRowFrame({
                       : authorInitialsFallback(message)
                   }
                   size={MESSAGE_AVATAR_SIZE}
+                  tint={
+                    message.sender_id
+                      ? memberAvatarTint(
+                          memberAvatarHue(message.sender_id, roleColor),
+                        )
+                      : null
+                  }
                   style={styles.avatar}
                   textStyle={styles.avatarText}
                   testID="message-avatar"

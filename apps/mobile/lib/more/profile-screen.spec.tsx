@@ -42,6 +42,7 @@ const useServiceEntries = vi.fn<(...args: unknown[]) => unknown>(() => ({
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  useOwnAvatarTint: () => null,
   useActiveChapterId: () => "chapter-1",
   useCurrentUser: () => currentUser,
   useViewerUserId: () => viewerUserId,

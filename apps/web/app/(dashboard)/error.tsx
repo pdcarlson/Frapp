@@ -1,9 +1,6 @@
 "use client";
 
-import { usePathname } from "next/navigation";
-import { isFullBleedRoute } from "@/components/layout/full-bleed-routes";
 import { SegmentError } from "@/components/shared/segment-error";
-import { cn } from "@/lib/utils";
 
 /**
  * The `(dashboard)` segment's error boundary — #2175.
@@ -59,23 +56,14 @@ import { cn } from "@/lib/utils";
  * and the reference names it the exception ("In most cases, you should use
  * `retry()` instead").
  *
- * ## The wrapper is not decoration, and its padding is conditional
+ * ## The wrapper adds no padding
  *
- * The first draft rendered the state bare, for parity with
- * `(dashboard)/loading.tsx` in the same slot. That parity argument only holds
- * on the padded routes. `<main>` drops its gutter entirely on a full-bleed
- * route (`dashboard-shell.tsx`: `fullBleed ? "overflow-hidden" : "... px-4 py-4
- * sm:px-6"`), so on `/chat` — the route this whole change is motivated by — the
- * card painted flush against the nav rail, the top bar and the viewport edge.
- *
- * The second draft fixed that with an unconditional `p-4`, on the reasoning
- * that it would be "inert where `<main>` already pads". **CSS padding is
- * additive, so that was simply false**: on `/members` it made a 32px inset
- * where the skeleton it replaces sits at 16px, which is precisely the
- * loading-to-error jump the first draft refused to create. So the gutter is
- * asked for only where there is not one already, from the same helper the shell
- * itself uses — one answer to "is this route full-bleed", not two that can
- * drift.
+ * Every route this boundary stands in for is a tool page, which the shell pads
+ * (`dashboard-shell.tsx`), so a gutter here would double the inset and step
+ * the card in from where the skeleton it replaces sat (CSS padding is
+ * additive). Until #3779 `/chat` was a full-bleed route with no padding and
+ * this added `p-4` there only; chat is a shell panel now, with its own
+ * boundary (`chat-panel-boundary.tsx`), and `/chat`'s page renders nothing.
  *
  * `max-w-md` is unconditional and does differ from the skeleton, deliberately:
  * a skeleton is content-shaped and belongs at content width (§10: "the skeleton
@@ -97,10 +85,8 @@ export default function DashboardSegmentError({
   error: Error & { digest?: string };
   retry: () => void;
 }) {
-  const fullBleed = isFullBleedRoute(usePathname());
-
   return (
-    <div className={cn("w-full max-w-md", fullBleed && "p-4")}>
+    <div className="w-full max-w-md">
       <SegmentError error={error} retry={retry} />
     </div>
   );

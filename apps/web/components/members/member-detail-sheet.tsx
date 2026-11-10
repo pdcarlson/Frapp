@@ -9,6 +9,7 @@ import {
   useCustomRoles,
   useGetOrCreateDm,
   useMemberByUserId,
+  useMemberDisplayNames,
   useMyPermissions,
   useRemoveMember,
   useRoles,
@@ -260,6 +261,8 @@ export function MemberDetailSheet({
 }: MemberDetailSheetProps) {
   const memberQuery = useMemberByUserId(userId ?? "");
   const rolesQuery = useRoles();
+  // The same role-color resolution chat's name uses (#3860).
+  const { avatarTintFor } = useMemberDisplayNames();
   // Custom roles are enforced (bridge model): assignment happens here
   // alongside live roles. The list read needs `chapter-config:view`, so only
   // fire it for viewers who hold that permission, rather than a guaranteed
@@ -556,11 +559,16 @@ export function MemberDetailSheet({
           <div className="flex flex-col items-center gap-2 text-center">
             {/*
               The initials sit on `--card` with a hairline: the fallback's
-              own `--popover` is this sheet's fill, so it drew no circle.
+              own `--popover` is this sheet's fill, so it drew no circle. A
+              member's tint (#3860) replaces the `--card` fill; the hairline
+              stays, so the circle's edge reads the same either way.
             */}
             <Avatar className="h-20 w-20" aria-hidden="true">
               {avatarUrl ? <AvatarImage src={avatarUrl} alt="" /> : null}
-              <AvatarFallback className="border border-border bg-card text-lg font-bold text-muted-foreground">
+              <AvatarFallback
+                tint={userId ? avatarTintFor(userId) : null}
+                className="border border-border bg-card text-lg font-bold text-muted-foreground"
+              >
                 {initials(displayName)}
               </AvatarFallback>
             </Avatar>
