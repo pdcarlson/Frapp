@@ -29,8 +29,6 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
-<<<<<<< HEAD
-=======
 ## 2026-11-10: Always formal channel lock (#3787)
 
 ### 20261111000000_chat_channels_display_locked.sql
@@ -51,7 +49,6 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 **Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-chat-backgrounds-20261110235500) § Rollback chat backgrounds.
 
->>>>>>> origin/main
 ## 2026-11-10: An index for the Activity page's poll cards (#3897)
 
 ### 20261110230000_chat_messages_poll_cards_index.sql
