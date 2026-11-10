@@ -184,3 +184,32 @@ cases), so this amendment removes more machinery than it adds.
 **Trigger to revisit:** a defect that reaches `main` through a commit reviewed inline, and that a
 workflow round would plausibly have caught, or a break that hid in a clean merge of `main` and that
 CI missed. Tracking: #2490.
+
+## Amendment 2 (2026-11-10): one review, before the first push
+
+Paul, 2026-11-10: `/diff-review` runs once per branch, before its first push, which is when its
+pull request is opened. Nothing pushed after that is reviewed again: not a fix commit, not a merge
+of `main`, not a resolved conflict. Those are checked by the tests and by CI.
+
+- **The hook asks for evidence only on a ref the remote doesn't have yet.** `.githooks/pre-push`
+  passes any update to a ref that already exists on the remote without looking for a marker. The
+  first push of a branch still needs `.cache/diff-review/<sha>` on its tip, as before.
+- **Findings from that review are fixed and the branch is marked.** There is no second round over
+  the fixes. `node scripts/diff-review-scope.mjs --mark` after the fix commits is the whole step.
+- **The delta and merge rules above still describe the scope script**, which a session may run by
+  choice on a branch it wants a second look at. Nothing requires it.
+
+**Why.** Amendment 1 made a fix round inline and a clean merge free, and left one case whole: a
+merge that conflicted with the reviewed work got a full workflow round, on the argument that a
+resolution can leave no trace in a diff. With `strict: true` and several PRs open, every merge to
+`main` conflicts some other PR, so already-reviewed PRs were reviewed in full again and again
+(#3884's fourth full round was for one conflicted merge: 5 finders, 17 verifiers). The marker is
+also a file in one container's `.cache/`, so a session that picks up someone else's PR holds no
+marker for it and the script scopes the whole branch as never reviewed. On 2026-11-10 a
+PR-monitoring session started a fifth full round on #3884 for a six-file conflict resolution whose
+tests, types and lint already passed, and the account's weekly usage ran out during it.
+
+**What this gives up.** A fix or a conflict resolution pushed after the PR opens has no reviewer
+but its author, the test suites and CI. That is the cost Paul chose. The trigger to revisit is the
+one above: a defect that reaches `main` through such a push and that a review round would plausibly
+have caught.

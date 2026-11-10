@@ -13,14 +13,17 @@ Review is a **repository-managed Git `pre-push` gate**, not a CI job or an agent
 [`scripts/setup-git-hooks.mjs`](../../scripts/setup-git-hooks.mjs), alongside the existing secret
 scan. Once installed, the same Git hook runs for local Codex, cloud agents, and humans.
 
-Git gives the hook every proposed ref update. Each non-deletion update must have evidence at
+Git gives the hook every proposed ref update. An update to a ref the remote already has passes
+without evidence: the review runs once, before a branch's first push, and a later fix, merge of
+`main` or resolved conflict is not reviewed again (Paul, 2026-11-10;
+[ADR-23](../../spec/architecture/adr/adr-23.md) amendment 2). Each other non-deletion update must have evidence at
 `.cache/diff-review/<PUSHED_COMMIT_SHA>`, or publish nothing unreviewed: a commit already on
 `origin/main`, or one that adds nothing but clean merges of `main` since a reviewed commit. Annotated tags
 are peeled to their commit. This is stronger than checking the currently checked-out HEAD: explicit
 refspecs and multi-ref pushes cannot borrow a marker from another commit. Only each ref's tip is
 checked, because the review covers the branch's net change, not each commit on the way to it.
 `/diff-review` writes the marker for the reviewed HEAD. Address every finding, commit any fixes,
-review the new commit, then push.
+mark the new HEAD (`node scripts/diff-review-scope.mjs --mark`), then push.
 
 **Why not Codex project hooks?** Verified against the installed Codex CLI 0.144.0-alpha.4 on
 2026-09-16: `PreToolUse` hooks can block Codex-issued shell commands when they return a valid block
@@ -142,6 +145,7 @@ trustworthy rather than the agent agreeing with its own work — do not weaken i
 
 - Git invokes `.githooks/pre-push` with proposed updates on standard input. A zero local SHA is a
   deletion and publishes no object, so it is exempt.
+- An update whose remote SHA is not zero, a ref the remote already has, is passed without a check.
 - Every other local object must peel to a commit, and the hook asks
   `node scripts/diff-review-scope.mjs --check <sha>` about it. Every ref in a multi-ref push is
   checked. The commit passes when it has a repository-root `.cache/diff-review/<commit SHA>`
