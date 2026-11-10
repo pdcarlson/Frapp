@@ -1664,7 +1664,7 @@ export function Composer({
    * `replyTo` from `channel.messages`, so an unrelated edit or reaction lands a
    * fresh object on every render of an already-staged reply, and re-focusing on
    * each of those would fight a member who has clicked away — the same hazard
-   * the deleted `thread-panel.tsx` documented for its own focus effect.
+   * the old `thread-panel.tsx` (deleted in #2142) documented for its own focus effect.
    */
   const replyTargetId = replyTo?.id ?? null;
   useEffect(() => {
@@ -1693,7 +1693,7 @@ export function Composer({
         setPalette({ open: true, query: "" });
         return;
       }
-      // `defaultPrevented` for the same reason the deleted `thread-panel.tsx`
+      // `defaultPrevented` for the same reason the old `thread-panel.tsx` (#2142)
       // checked it:
       // a Radix `DismissableLayer` (the emoji popover mounted from this
       // toolbar) closes itself on Escape by calling `preventDefault()` without

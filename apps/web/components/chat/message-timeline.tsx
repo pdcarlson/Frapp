@@ -91,10 +91,13 @@ const SKELETON_ROWS: readonly (readonly [boolean, string])[] = [
  * use to a screen reader. The audible half of the cold load is announced once,
  * by the `role="status"` region `chat-shell.tsx` owns for exactly this reason.
  */
-export function MessageTimelineSkeleton() {
+export function MessageTimelineSkeleton({
+  channelId,
+}: { channelId?: string | null } = {}) {
   // Compact rows (§11 § Density) have no avatar or author line: a 56px time
   // gutter, the name leading a 25px body line, and runs 4 apart.
-  const compact = useChatDensity() === "compact";
+  // The channel's display on this browser, when it has one pinned (#3787).
+  const compact = useChatDensity(channelId) === "compact";
   return (
     <div
       aria-hidden="true"
@@ -463,6 +466,8 @@ export interface MessageTimelineProps {
   onUnreact: (messageId: string, emoji: string) => void;
   /** Stages an inline reply in the composer — the row's Reply control (#489). */
   onReply?: (message: ChatMessage) => void;
+  /** Opens a message's thread (#3785): Start thread, and the parent's chip. */
+  onOpenThread?: (message: ChatMessage) => void;
   /**
    * Scrolls this timeline to the message a reply quotes — what the quote above
    * a reply does. It opened a Details-rail thread panel until #2142 deleted
@@ -549,6 +554,7 @@ export const MessageTimeline = forwardRef<
     onReact,
     onUnreact,
     onReply,
+    onOpenThread,
     onJumpToParent,
     onRetry,
     onDiscard,
@@ -668,15 +674,17 @@ export const MessageTimeline = forwardRef<
       message: ChatMessage;
       visibility: ThreadRow["visibility"];
       showHeader: boolean;
+      endsRun: boolean;
       startsDay: boolean;
       runStartedAt: string;
     }[] = [];
     for (let index = 0; index < rows.length; index++) {
-      const { row, startsDay, startsRun } = rows[index]!;
+      const { row, startsDay, startsRun, endsRun } = rows[index]!;
       out.push({
         message: row.message,
         visibility: row.visibility,
         showHeader: startsRun,
+        endsRun,
         startsDay,
         // The run's first message, whose author line a follow-on's gutter time
         // is read against (it keeps AM/PM once the run has crossed noon).
@@ -954,7 +962,7 @@ export const MessageTimeline = forwardRef<
         <div role="status" aria-live="polite" className="sr-only">
           Loading messages
         </div>
-        <MessageTimelineSkeleton />
+        <MessageTimelineSkeleton channelId={channelId} />
       </>
     );
   }
@@ -1016,6 +1024,7 @@ export const MessageTimeline = forwardRef<
               ) : null}
               {entry.visibility === "tombstone" ? (
                 <BlockedMessageTombstone
+                  channelId={entry.message.channel_id}
                   senderName={
                     entry.message.sender_id
                       ? nameFor(entry.message.sender_id)
@@ -1058,10 +1067,12 @@ export const MessageTimeline = forwardRef<
                   }
                   viewerId={viewerId}
                   showHeader={entry.showHeader}
+                  endsRun={entry.endsRun}
                   runStartedAt={entry.runStartedAt}
                   onReact={onReact}
                   onUnreact={onUnreact}
                   onReply={onReply}
+                  onOpenThread={onOpenThread}
                   onJumpToParent={onJumpToParent}
                   // The parent, or `null` when it is outside the loaded window.
                   // `MessageItem` decides whether to draw a quote from

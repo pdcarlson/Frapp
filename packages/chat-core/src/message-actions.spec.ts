@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import {
+  channelAllowsThreadReplies,
+  channelAllowsThreads,
   canActOnMessage,
   canDeleteMessage,
   canEditMessage,
@@ -147,5 +149,26 @@ describe("copyableText", () => {
     expect(copyableText({ ...base, kind: "poll" as const })).toBeNull();
     expect(copyableText({ ...base, is_deleted: true })).toBeNull();
     expect(copyableText({ ...base, content: "  \n" })).toBeNull();
+  });
+});
+
+describe("message-thread access (#3785)", () => {
+  test("threads are offered in channels and group DMs, not 1:1 DMs or the audit log", () => {
+    expect(channelAllowsThreads({ type: "PUBLIC" })).toBe(true);
+    expect(channelAllowsThreads({ type: "GROUP_DM" })).toBe(true);
+    expect(channelAllowsThreads({ type: "DM" })).toBe(false);
+    expect(channelAllowsThreads({ type: "PUBLIC", is_audit_log: true })).toBe(
+      false,
+    );
+  });
+
+  test("any reader of a read-only channel may reply in its threads", () => {
+    expect(
+      channelAllowsThreadReplies({ can_post: false, is_read_only: true }),
+    ).toBe(true);
+    expect(channelAllowsThreadReplies({ can_post: true })).toBe(true);
+    expect(
+      channelAllowsThreadReplies({ can_post: false, is_read_only: false }),
+    ).toBe(false);
   });
 });

@@ -1,6 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { CHAT_CHANNEL_DENSITY_STORAGE_KEY } from "@repo/chat-core/density";
+import { resetChatDensityForTests } from "@/lib/chat/chat-density";
 import type { ChatMessage } from "@repo/chat-core/types";
 
 /**
@@ -491,5 +493,43 @@ describe("ChannelMenu pin to top (#2877)", () => {
       await user.keyboard("{Escape}");
       expect(screen.queryByTestId("search-panel")).not.toBeInTheDocument();
     });
+  });
+});
+
+describe("ChannelMenu display (#3787)", () => {
+  afterEach(() => {
+    window.localStorage.clear();
+    resetChatDensityForTests();
+  });
+
+  it("pins this channel to a display on this browser, and back to the default", async () => {
+    const user = userEvent.setup();
+    renderMenu();
+    await openMenu(user);
+    await user.click(screen.getByRole("button", { name: "Display, Default" }));
+    await user.click(screen.getByRole("button", { name: "Bubbles here" }));
+    expect(
+      JSON.parse(
+        window.localStorage.getItem(CHAT_CHANNEL_DENSITY_STORAGE_KEY) ?? "{}",
+      ),
+    ).toEqual({ "chan-1": "bubbles" });
+
+    await openMenu(user);
+    await user.click(screen.getByRole("button", { name: "Display, Bubbles" }));
+    await user.click(
+      screen.getByRole("button", { name: "Your default (Cozy)" }),
+    );
+    expect(
+      JSON.parse(
+        window.localStorage.getItem(CHAT_CHANNEL_DENSITY_STORAGE_KEY) ?? "{}",
+      ),
+    ).toEqual({});
+  });
+
+  it("has no Display row without a channel", async () => {
+    const user = userEvent.setup();
+    renderMenu({ activeChannelId: null });
+    await openMenu(user);
+    expect(screen.queryByRole("button", { name: /^Display/ })).toBeNull();
   });
 });
