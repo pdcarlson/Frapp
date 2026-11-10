@@ -3,7 +3,10 @@ import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory'
 import { CustomRoleController } from './custom-role.controller';
 import { CustomRoleService } from '../../application/services/custom-role.service';
 import { SystemPermissions } from '#domain/constants/permissions';
-import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import {
+  PERMISSIONS_ANY_KEY,
+  PERMISSIONS_KEY,
+} from '../decorators/permissions.decorator';
 import {
   CreateCustomRoleDto,
   UpdateCustomRoleDto,
@@ -62,14 +65,25 @@ describe('CustomRoleController', () => {
       expect(service.create).toHaveBeenCalledWith('chapter-1', 'user-1', dto);
       expect(result).toEqual(expected);
     });
-
-    // No wildcard in the list: `PermissionsGuard` lets `*` through before it
-    // reads any requirement, so naming it here would be a second, dead path.
-    it('requires chapter-config:manage to write', () => {
-      const required = Reflect.getMetadata(PERMISSIONS_KEY, controller.create);
-      expect(required).toEqual([SystemPermissions.CHAPTER_CONFIG_MANAGE]);
-    });
   });
+
+  // The class asks for chapter-config:view; each write adds :manage. Without
+  // its own decorator a write would fall back to the class's view-only gate.
+  // No any-of list and no wildcard: `PermissionsGuard` lets `*` through before
+  // it reads any requirement, so naming it would be a second, dead path.
+  describe.each(['create', 'update', 'remove'] as const)(
+    'the %s route',
+    (handler) => {
+      it('requires chapter-config:manage and declares no any-of list', () => {
+        expect(
+          Reflect.getMetadata(PERMISSIONS_KEY, controller[handler]),
+        ).toEqual([SystemPermissions.CHAPTER_CONFIG_MANAGE]);
+        expect(
+          Reflect.getMetadata(PERMISSIONS_ANY_KEY, controller[handler]),
+        ).toBeUndefined();
+      });
+    },
+  );
 
   describe('update', () => {
     it('updates a custom role', async () => {

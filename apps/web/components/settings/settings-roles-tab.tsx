@@ -282,30 +282,28 @@ function normalizeCatalog(data: unknown): MatrixCatalogEntry[] {
 }
 
 /**
+ * The picker's "no default" choice. Radix `Select` reads an empty-string value
+ * as "nothing picked, show the placeholder", so an item cannot carry it: the
+ * choice carries this sentinel and `onValueChange` turns it back into the
+ * `null` the API clears the setting with.
+ */
+const NO_DEFAULT_INVITE_ROLE = "__no-default__";
+const NO_DEFAULT_INVITE_ROLE_LABEL = "No default (falls back to Member)";
+
+/**
  * Settings → Roles → Default invite role (#422).
  *
- * Sits above the sub-tabs rather than inside one: it is a chapter-level
- * setting about roles, not a view of the role pack, the matrix, or the custom
- * catalog.
+ * Its own card rather than part of the matrix: it is a chapter-level setting
+ * about roles, not a view of the roles or the custom catalog.
  *
- * The select carries an explicit "No default" option because clearing is a
- * real operation — it writes `null` and returns invites to the seeded Member
- * fallback — and an empty `<option value="">` is the only way to express that
- * in a native select without a second control.
+ * The picker carries an explicit "No default" option because clearing is a
+ * real operation: it writes `null` and returns invites to the seeded Member
+ * fallback.
  *
  * Saves on change rather than behind a Save button, matching the Privacy
  * tab's switch: it is one scalar, the write is audit-logged, and there is no
  * draft state worth protecting.
  */
-/**
- * The picker's "no default" choice. Radix `Select` refuses an item whose value
- * is the empty string (it reserves that for "nothing picked, show the
- * placeholder"), so the choice carries this sentinel and `onValueChange`
- * turns it back into the `null` the API clears the setting with.
- */
-const NO_DEFAULT_INVITE_ROLE = "__no-default__";
-const NO_DEFAULT_INVITE_ROLE_LABEL = "No default (falls back to Member)";
-
 function DefaultInviteRoleCard({
   canManage,
   defaultInviteRoleId,
@@ -336,6 +334,24 @@ function DefaultInviteRoleCard({
     roleOptions.length > 0 &&
     !roleOptions.some((role) => role.id === defaultInviteRoleId);
 
+  // A configured role with no matching item (roles still loading, failed to
+  // load, or the role is gone) gets the empty value, so the trigger shows the
+  // placeholder. Handing Radix an id it has no item for draws an empty box.
+  const hasConfiguredItem =
+    defaultInviteRoleId !== null &&
+    roleOptions.some((role) => role.id === defaultInviteRoleId);
+  const pickerValue =
+    defaultInviteRoleId === null
+      ? NO_DEFAULT_INVITE_ROLE
+      : hasConfiguredItem
+        ? defaultInviteRoleId
+        : "";
+  const pickerPlaceholder = rolesQuery.isPending
+    ? "Loading roles…"
+    : rolesQuery.isError
+      ? "Roles could not load"
+      : "Pick a role";
+
   return (
     <Card>
       <CardHeader>
@@ -348,16 +364,16 @@ function DefaultInviteRoleCard({
       <CardContent className="space-y-2">
         <Label htmlFor="default-invite-role">Role</Label>
         <Select
-          value={
-            isDangling ? "" : (defaultInviteRoleId ?? NO_DEFAULT_INVITE_ROLE)
+          value={pickerValue}
+          disabled={
+            !canManage || isSaving || rolesQuery.isPending || rolesQuery.isError
           }
-          disabled={!canManage || isSaving || rolesQuery.isPending}
           onValueChange={(next) => {
             void onSave(next === NO_DEFAULT_INVITE_ROLE ? null : next);
           }}
         >
           <SelectTrigger id="default-invite-role" className="max-w-sm">
-            <SelectValue placeholder={NO_DEFAULT_INVITE_ROLE_LABEL} />
+            <SelectValue placeholder={pickerPlaceholder} />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={NO_DEFAULT_INVITE_ROLE}>

@@ -73,52 +73,55 @@ function customRole(over: Partial<ChapterCustomRole> = {}): ChapterCustomRole {
   };
 }
 
-describe("SettingsRolesTab", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockUseCustomRoles.mockReturnValue({
-      data: [],
-      isPending: false,
-      isError: false,
-      isSuccess: true,
-    });
-    mockUseRoles.mockReturnValue({
-      data: [
-        {
-          id: "role-member",
-          name: "Member",
-          permissions: ["members:view"],
-          is_system: true,
-          display_order: 1,
-        },
-        {
-          id: "role-pledge",
-          name: "New Member",
-          permissions: [],
-          is_system: false,
-          display_order: 2,
-        },
-      ],
-      isPending: false,
-      isError: false,
-      isSuccess: true,
-      refetch: vi.fn(),
-    });
-    mockUseCatalog.mockReturnValue({
-      data: CATALOG,
-      isPending: false,
-      isError: false,
-      refetch: vi.fn(),
-    });
-    mockUseMembers.mockReturnValue({
-      data: [],
-      isPending: false,
-      isError: false,
-      isSuccess: true,
-    });
-    mockUpdateRole.mockResolvedValue({});
-    mockPermissions.mockReturnValue(["roles:manage", "chapter-config:manage"]);
+/** The hook mocks every test in this file renders against. */
+function primeMocks() {
+  vi.clearAllMocks();
+  mockUseCustomRoles.mockReturnValue({
+    data: [],
+    isPending: false,
+    isError: false,
+    isSuccess: true,
   });
+  mockUseRoles.mockReturnValue({
+    data: [
+      {
+        id: "role-member",
+        name: "Member",
+        permissions: ["members:view"],
+        is_system: true,
+        display_order: 1,
+      },
+      {
+        id: "role-pledge",
+        name: "New Member",
+        permissions: [],
+        is_system: false,
+        display_order: 2,
+      },
+    ],
+    isPending: false,
+    isError: false,
+    isSuccess: true,
+    refetch: vi.fn(),
+  });
+  mockUseCatalog.mockReturnValue({
+    data: CATALOG,
+    isPending: false,
+    isError: false,
+    refetch: vi.fn(),
+  });
+  mockUseMembers.mockReturnValue({
+    data: [],
+    isPending: false,
+    isError: false,
+    isSuccess: true,
+  });
+  mockUpdateRole.mockResolvedValue({});
+  mockPermissions.mockReturnValue(["roles:manage", "chapter-config:manage"]);
+}
+
+describe("SettingsRolesTab", () => {
+  beforeEach(primeMocks);
 
   it("never shows the role pack, a setup detail, under the Roles title", () => {
     // `4e` drew the pack as a label beside the count ("IFC Fraternity role
@@ -550,6 +553,12 @@ describe("the capability matrix's marks, at the call site", () => {
   // ── Default invite role (#422) ───────────────────────────────────────────
 
   describe("default invite role", () => {
+    // This block sits outside `SettingsRolesTab`'s describe, so it primes the
+    // mocks itself; without this it only passed on state another test left.
+    beforeEach(primeMocks);
+
+    const picker = () => screen.getByRole("combobox", { name: "Role" });
+
     it("selects the configured role and offers an explicit no-default option", async () => {
       const user = userEvent.setup();
       render(
@@ -628,6 +637,73 @@ describe("the capability matrix's marks, at the call site", () => {
       expect(
         screen.getByText(/configured default role no longer exists/i),
       ).toBeInTheDocument();
+      // The placeholder, not an empty box: Radix draws nothing for a value it
+      // has no item for.
+      expect(picker()).toHaveTextContent("Pick a role");
+    });
+
+    /*
+     * With the roles list missing, the only item is "No default". The native
+     * select this replaced showed that item as already selected, so picking
+     * it wrote nothing; a Radix select holding the configured id would treat
+     * the same click as a change and clear a valid default, beside copy that
+     * says the default cannot be changed.
+     */
+    it("locks the picker and keeps the configured default when roles fail to load", async () => {
+      const user = userEvent.setup();
+      mockUseRoles.mockReturnValue({
+        data: undefined,
+        isPending: false,
+        isError: true,
+        isSuccess: false,
+        refetch: vi.fn(),
+      });
+      render(
+        <SettingsRolesTab
+          canManage
+          catalog={CATALOG}
+          defaultInviteRoleId="role-pledge"
+          onSaveDefaultInviteRole={mockSaveDefaultRole}
+        />,
+      );
+      expect(picker()).toBeDisabled();
+      expect(picker()).toHaveTextContent("Roles could not load");
+      await user.click(picker());
+      expect(screen.queryByRole("option")).not.toBeInTheDocument();
+      expect(mockSaveDefaultRole).not.toHaveBeenCalled();
+    });
+
+    it("locks the picker and says so while roles are loading", () => {
+      mockUseRoles.mockReturnValue({
+        data: undefined,
+        isPending: true,
+        isError: false,
+        isSuccess: false,
+        refetch: vi.fn(),
+      });
+      render(
+        <SettingsRolesTab
+          canManage
+          catalog={CATALOG}
+          defaultInviteRoleId="role-pledge"
+          onSaveDefaultInviteRole={mockSaveDefaultRole}
+        />,
+      );
+      expect(picker()).toBeDisabled();
+      expect(picker()).toHaveTextContent("Loading roles…");
+    });
+
+    it("locks the picker while a config save is in flight", () => {
+      render(
+        <SettingsRolesTab
+          canManage
+          catalog={CATALOG}
+          defaultInviteRoleId={null}
+          onSaveDefaultInviteRole={mockSaveDefaultRole}
+          isSavingConfig
+        />,
+      );
+      expect(picker()).toBeDisabled();
     });
   });
 });
