@@ -48,12 +48,15 @@ interface QuotedMessageProps {
  * mode a "quote preview" invites (the reply you are writing must look like the
  * reply you just sent).
  *
- * A left rule plus author and preview as a 12.5px caption: the author at 600 in
- * `--foreground`, the preview in `--muted-foreground` (`components.md` §11 §
- * What rides the row), so a quote reads as chrome around the message rather
- * than as a second message. The preview runs on after the author and wraps to
- * at most two lines before its ellipsis (#4001), breaking inside a long word or
- * URL if it must, so a long parent never pushes the quote past its row.
+ * A `--popover` block holding author and preview as a 12.5px caption: the
+ * author at 600 in `--foreground`, the preview in `--muted-foreground`
+ * (`components.md` §11 § What rides the row), so a quote reads as chrome
+ * around the message rather than as a second message. The block is the
+ * timeline elbow's colour, so the elbow runs into it, and it lives here rather
+ * than at the timeline's call site so the composer's strip draws the same
+ * block. The preview runs on after the author and wraps to at most two lines
+ * before its ellipsis (#4001), breaking inside a long word or URL if it must,
+ * so a long parent never pushes the quote past its row.
  */
 export function QuotedMessage({
   author,
@@ -66,7 +69,7 @@ export function QuotedMessage({
   const placeholder = hidden ?? (unavailable ? UNAVAILABLE_QUOTE : null);
 
   const shared = cn(
-    "block min-w-0 max-w-full border-l-2 border-border pl-2 text-left",
+    "block min-w-0 max-w-full rounded-xs bg-popover px-2 py-1 text-left",
     "text-caption text-muted-foreground",
     placeholder !== null && "italic",
     className,
@@ -80,7 +83,9 @@ export function QuotedMessage({
         placeholder
       ) : (
         <>
-          <span className="me-1.5 whitespace-nowrap font-semibold text-foreground">
+          {/* Never split across the two lines; a name wider than the quote
+              ends in its own ellipsis rather than being sliced at the edge. */}
+          <span className="me-1.5 inline-block max-w-full truncate align-top font-semibold text-foreground">
             {author}
           </span>
           <span>{preview}</span>

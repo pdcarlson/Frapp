@@ -1571,19 +1571,20 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "flex-start",
       marginBottom: 2,
     },
+    // Meets the quote block's first line and runs into the block, and
+    // stretches to the quote's height so a two-line quote's elbow still
+    // reaches down to the row (#4001).
     elbow: {
+      alignSelf: "stretch",
       marginLeft: MESSAGE_AVATAR_SIZE / 2,
-      // Meets the quote block's first line (#4001).
-      marginTop: 14,
-      width: 24,
-      height: 8,
-      marginRight: 6,
+      marginTop: 12,
+      width: 30,
       borderLeftWidth: 2,
       borderTopWidth: 2,
       borderColor: tokens.color.surface.popover,
       borderTopLeftRadius: 6,
     },
-    elbowCompact: { marginLeft: 0, width: tokens.spacing.md },
+    elbowCompact: { marginLeft: 0, width: tokens.spacing.md + 6 },
     quote: { flex: 1, minWidth: 0 },
     main: {
       flexDirection: "row",

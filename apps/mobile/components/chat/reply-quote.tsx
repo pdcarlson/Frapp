@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, Text } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   replyPreviewText,
@@ -72,21 +72,25 @@ export function ReplyQuote({
       disabled={!onPress}
       onPress={onPress}
       onLongPress={onLongPress}
-      style={({ pressed }) => [styles.block, pressed ? styles.pressed : null]}
+      // The Pressable keeps the row's full width, so a tap beside a short
+      // quote still jumps; only the block inside hugs the text.
+      style={({ pressed }) => (pressed ? styles.pressed : null)}
     >
-      {placeholder !== null || !replyParent ? (
-        <Text style={[styles.preview, styles.unavailable]} numberOfLines={2}>
-          {placeholder ?? UNAVAILABLE_QUOTE}
-        </Text>
-      ) : (
-        <Text style={styles.preview} numberOfLines={2}>
-          <Text style={styles.author}>
-            {resolveAuthorLabel(replyParent, nameFor, viewerId)}
+      <View style={styles.block}>
+        {placeholder !== null || !replyParent ? (
+          <Text style={[styles.preview, styles.unavailable]} numberOfLines={2}>
+            {placeholder ?? UNAVAILABLE_QUOTE}
           </Text>
-          {"  "}
-          {replyPreviewText(replyParent)}
-        </Text>
-      )}
+        ) : (
+          <Text style={styles.preview} numberOfLines={2}>
+            <Text style={styles.author}>
+              {resolveAuthorLabel(replyParent, nameFor, viewerId)}
+            </Text>
+            {"  "}
+            {replyPreviewText(replyParent)}
+          </Text>
+        )}
+      </View>
     </Pressable>
   );
 }

@@ -862,6 +862,29 @@ describe("reply quote (#1727)", () => {
     expect(clamped).toHaveLength(1);
   });
 
+  it("sets the quote in a popover block, keeping the full row as the tap target (#4001)", () => {
+    // The block is what makes the quote read as a reply. It sits inside the
+    // Pressable, which keeps the row's width, so a tap beside a short quote
+    // still jumps to the parent.
+    const tree = renderItem(
+      message({ reply_to_id: PARENT_ID, content: "agreed" }),
+      parentRow({ content: "ok" }),
+    );
+    const flat = (style: unknown): Record<string, unknown> =>
+      Object.assign(
+        {},
+        ...([style].flat(Infinity).filter(Boolean) as object[]),
+      );
+    const blocks = tree.root.findAll(
+      (n) =>
+        typeof n.type === "string" &&
+        flat(n.props.style).backgroundColor ===
+          signetDarkTokens.color.surface.popover &&
+        flat(n.props.style).alignSelf === "flex-start",
+    );
+    expect(blocks).toHaveLength(1);
+  });
+
   it("says so when the parent is outside the loaded window", () => {
     // Nothing backfills older history (#1571). Rendering nothing would make
     // this reply indistinguishable from a plain message.

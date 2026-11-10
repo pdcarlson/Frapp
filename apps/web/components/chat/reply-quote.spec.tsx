@@ -74,7 +74,7 @@ describe("QuotedMessage", () => {
     const { container: missing } = render(
       <QuotedMessage author={null} preview={null} />,
     );
-    for (const cls of ["border-l-2", "border-border", "pl-2", "text-caption"]) {
+    for (const cls of ["bg-popover", "rounded-xs", "px-2", "text-caption"]) {
       expect(loaded.firstElementChild).toHaveClass(cls);
       expect(missing.firstElementChild).toHaveClass(cls);
     }
@@ -90,8 +90,20 @@ describe("QuotedMessage", () => {
     const clamp = author.parentElement!;
     expect(clamp).toHaveClass("line-clamp-2", "[overflow-wrap:anywhere]");
     expect(clamp).not.toHaveClass("truncate");
-    // The name never splits across the two lines.
-    expect(author).toHaveClass("whitespace-nowrap");
+    // The name never splits across the two lines, and a name wider than the
+    // quote ends in its own ellipsis rather than being sliced at the edge.
+    expect(author).toHaveClass("inline-block", "truncate", "max-w-full");
     expect(clamp.parentElement).toHaveClass("max-w-full", "min-w-0");
+  });
+
+  it("draws the same filled block for the composer and the timeline (#4001)", () => {
+    // The block is what makes a quote read as a reply. It lives in the
+    // component, not at one call site, so the staged quote and the sent one
+    // cannot drift: neither caller passes it.
+    const { container } = render(
+      <QuotedMessage author="Alice Chen" preview="hey" onOpen={vi.fn()} />,
+    );
+    expect(container.firstElementChild).toHaveClass("bg-popover");
+    expect(container.firstElementChild).not.toHaveClass("border-l-2");
   });
 });
