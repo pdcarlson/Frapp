@@ -329,7 +329,7 @@ describe('SupabaseChatMessageRepository — findByChannel since, a failed pivot 
   it('throws the query error rather than refusing the cursor as unknown', async () => {
     const pivotError = { message: 'connection reset', code: '08006' };
     const chain: Record<string, jest.Mock> = {};
-    for (const method of ['select', 'eq', 'order', 'limit', 'gt', 'lt']) {
+    for (const method of ['select', 'eq', 'is', 'order', 'limit', 'gt', 'lt']) {
       chain[method] = jest.fn(() => chain);
     }
     chain.maybeSingle = jest.fn(() =>

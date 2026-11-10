@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Post,
@@ -122,6 +123,8 @@ export class ChatThreadController {
   }
 
   @Post(':id/threads/:rootId/read')
+  // Moves a cursor; it creates nothing a client would address (#3085).
+  @HttpCode(200)
   @ApiOperation({ summary: 'Mark a thread read through now' })
   @ApiOkResponse({ type: ThreadReadDto })
   markRead(
