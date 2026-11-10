@@ -154,9 +154,9 @@ For example `feat(api): add service hours endpoints`, `refactor: switch api auth
 - Check the "Docs / Spec impact" section; whether your change owes a doc edit, and which doc, is under [Documentation](#documentation).
 - CI checks will run automatically.
 - Code review runs **locally, once, before the branch's first push**, not on the PR: the pre-push
-  review-gate hook requires a `/diff-review` pass for that push, which writes the evidence marker itself. `git push --no-verify` is for
-  emergencies only — never as the routine path after a review you did run, because it leaves that push
-  indistinguishable from one that skipped review. Procedure:
+  review-gate hook requires a `/diff-review` pass for that push, which writes the evidence marker itself. `git push --no-verify` bypasses the gate.
+  Use it on judgment, when a review would buy nothing, and say in the PR that you did and why:
+  [`AGENTS.md` § Claude Code web sandbox](AGENTS.md#claude-code-web-sandbox). Procedure:
   [`ai-code-review-runbook.md`](docs/ci-cd/ai-code-review-runbook.md) § How the gate enforces.
 
 ### 4. Address feedback

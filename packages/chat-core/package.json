@@ -32,7 +32,9 @@
     "./markdown": "./src/markdown.ts",
     "./profile-targets": "./src/profile-targets.ts",
     "./test/markdown-parse-budget.fixtures": "./src/test/markdown-parse-budget.fixtures.ts",
-    "./attachments": "./src/attachments.ts"
+    "./attachments": "./src/attachments.ts",
+    "./threads": "./src/threads.ts",
+    "./typing-label": "./src/typing-label.ts"
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",
