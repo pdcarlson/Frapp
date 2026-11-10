@@ -19,6 +19,8 @@ export interface BackworkResourceFilter {
   assignment_type?: string;
   document_variant?: string;
   search?: string;
+  /** Only resources this member uploaded. Set by the API, never from a query string. */
+  uploader_id?: string;
 }
 
 export interface IBackworkResourceRepository {

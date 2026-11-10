@@ -18,6 +18,10 @@
 > dues) are absent here, and points — an item below — is explicitly excluded from it. Do not build
 > one from the other.
 
+> It is also not the Activity page. That page's read is `GET /v1/activity`
+> ([`activity.md`](activity.md)): what waits on one member and what they made, not a feed of what
+> happened in the chapter.
+
 The activity aggregation for the user's active chapter covers:
 
 - Recent events: new event created, event starting soon.
