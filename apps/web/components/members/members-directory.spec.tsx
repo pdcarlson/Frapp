@@ -105,7 +105,10 @@ vi.mock("@repo/hooks", async (importOriginal) => {
   // every seeded role below President (#2957), so the directory must not
   // depend on it; it reports that refusal here rather than being left out.
   useCurrentChapter: () => ({
-    data: { org_archetype: "ifc", vocabulary: { class: "Line" } },
+    data: {
+      org_archetype: "ifc",
+      vocabulary: { class: "Line", order: "Roll number" },
+    },
   }),
   useOrgConfig: () => ({ data: undefined, isError: true }),
   useUpdateMemberRoles: () => ({ mutateAsync: mutateRoles, isPending: false }),
@@ -462,7 +465,7 @@ describe("Directory on the greenfield shell", () => {
       expect(screen.queryByRole("button", { name: /^Line/ })).toBeNull();
       await user.click(screen.getByRole("button", { name: /^Sort:/ }));
       expect(
-        screen.queryByRole("menuitem", { name: "Fraternal order" }),
+        screen.queryByRole("menuitem", { name: "Roll number" }),
       ).toBeNull();
     });
 
@@ -476,7 +479,7 @@ describe("Directory on the greenfield shell", () => {
       const user = userEvent.setup();
       render(<MembersDirectory />);
       expect(names()).toEqual(["Ada Lovelace", "Grace Hopper"]);
-      await pick(user, /^Sort:/, "Fraternal order");
+      await pick(user, /^Sort:/, "Roll number");
       expect(names()).toEqual(["Grace Hopper", "Ada Lovelace"]);
     });
 
@@ -489,7 +492,7 @@ describe("Directory on the greenfield shell", () => {
       render(<MembersDirectory />);
       // No classes, so no class filter; the number alone earns the sort.
       expect(screen.queryByRole("button", { name: /^Line/ })).toBeNull();
-      await pick(user, /^Sort:/, "Fraternal order");
+      await pick(user, /^Sort:/, "Roll number");
       expect(names()).toEqual(["Grace Hopper", "Ada Lovelace"]);
     });
 
@@ -511,6 +514,56 @@ describe("Directory on the greenfield shell", () => {
       // Graduation year stays its own filter beside it.
       expect(
         screen.getByRole("button", { name: /Graduation year/ }),
+      ).toBeInTheDocument();
+    });
+
+    it("clears the class filter with the others, and says a class with nobody in it matched nothing", async () => {
+      Object.assign(classesRead, read(CLASSES));
+      Object.assign(
+        membersRead,
+        read([withOrder(0, "c-alpha", 1), withOrder(1, null, null)]),
+      );
+      const user = userEvent.setup();
+      render(<MembersDirectory />);
+      await pick(user, /^Line/, "Beta");
+      // An empty class is a filter that matched nothing, not an empty roster.
+      await user.click(screen.getByRole("button", { name: "Clear filters" }));
+      expect(names()).toEqual(["Ada Lovelace", "Grace Hopper"]);
+    });
+
+    it("drops the sort, the filter and the class on rows when the class list can't be read", async () => {
+      // Members point at classes, but the list itself failed to load. Sorting
+      // without it would rank everyone as class-less and look right.
+      Object.assign(classesRead, { data: undefined, isError: true });
+      Object.assign(
+        membersRead,
+        read([withOrder(0, "c-alpha", 1), withOrder(1, "c-beta", 9)]),
+      );
+      const user = userEvent.setup();
+      render(<MembersDirectory />);
+      expect(screen.queryByRole("button", { name: /^Line/ })).toBeNull();
+      await user.click(screen.getByRole("button", { name: /^Sort:/ }));
+      expect(screen.queryByRole("menuitem", { name: "Roll number" })).toBeNull();
+    });
+
+    it("falls back to the default sort and no class filter when the chapter's last class goes", async () => {
+      Object.assign(classesRead, read(CLASSES));
+      Object.assign(
+        membersRead,
+        read([withOrder(0, "c-alpha", 1), withOrder(1, "c-beta", 9)]),
+      );
+      const user = userEvent.setup();
+      const view = render(<MembersDirectory />);
+      await pick(user, /^Sort:/, "Roll number");
+      await pick(user, /^Line/, "Alpha");
+      expect(names()).toEqual(["Ada Lovelace"]);
+      // Another officer deletes every class; the members lose theirs.
+      Object.assign(classesRead, read([]));
+      Object.assign(membersRead, read(MEMBERS));
+      view.rerender(<MembersDirectory />);
+      expect(names()).toEqual(["Ada Lovelace", "Grace Hopper"]);
+      expect(
+        screen.getByRole("button", { name: "Sort: Name A to Z" }),
       ).toBeInTheDocument();
     });
 

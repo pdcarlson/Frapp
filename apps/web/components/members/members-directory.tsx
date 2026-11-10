@@ -97,13 +97,15 @@ type SortDir = "asc" | "desc";
  * `<th>`s, which is the densest place to put sorting *in a table* and has no
  * home at all in a flat list — the board's list rows (`4a`) have no header row
  * to hang one on, and `1f` pin 2 gives a route one toolbar row holding "filter
- * menu, view toggle, primary action". So the eight reachable (key, direction)
- * pairs become eight options on one sort chip that sits with the filters, and no
+ * menu, view toggle, primary action". So every reachable (key, direction)
+ * pair becomes an option on one sort chip that sits with the filters, and no
  * direction state has to be inferred from a second click on the same header.
  *
- * All eight pairs are listed rather than the four keys plus a direction toggle:
- * the toggle would be a ninth control in the row, and "Role Z to A" is cheaper
+ * Each pair is listed rather than the keys plus a direction toggle: the
+ * toggle would be one more control in the row, and "Role Z to A" is cheaper
  * to read than an arrow glyph whose meaning depends on which column is active.
+ * The fraternal-order sort is the exception, with one direction on purpose
+ * (`ORDER_SORT`).
  *
  * "Newest first" and "Oldest first" are gone (#3939). They sorted on when a
  * membership row was created, which is when someone joined the chapter in
@@ -377,10 +379,13 @@ export function MembersDirectory() {
   );
   const effectiveClassFilter =
     classFilter !== null && classNameById.has(classFilter) ? classFilter : null;
-  const offersOrderSort = usesFraternalOrder(
-    pledgeClasses,
-    membersQuery.data,
-  );
+  // Only once the class list has loaded. The sort ranks by the chapter's class
+  // order, so without the list it would rank every member as having no class
+  // and look right while being wrong. A failed or offline class read therefore
+  // costs the sort, the filter and the class on rows, and nothing else.
+  const offersOrderSort =
+    classesQuery.data !== undefined &&
+    usesFraternalOrder(pledgeClasses, membersQuery.data);
   const sortOptions = useMemo(
     () =>
       offersOrderSort
@@ -526,7 +531,7 @@ export function MembersDirectory() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- return to page 1 when sort identity changes
     setPage(1);
-  }, [sort]);
+  }, [effectiveSort]);
 
   const pageMemberIds = pageMembers.map(memberId);
   const allPageSelected =

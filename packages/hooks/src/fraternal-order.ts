@@ -12,11 +12,15 @@
  * members in it.
  */
 
+import { memberLabel } from "./display-names";
+
 /** The fields of a member the sort reads. */
 export type FraternalOrderMember = {
   pledge_class_id?: string | null;
   order_number?: number | null;
   display_name?: string | null;
+  /** For the name a nameless member's row shows (`memberLabel`). */
+  user_id?: string | null;
 };
 
 /** A pledge class as the sort reads it: the list's order is the chapter's. */
@@ -56,9 +60,14 @@ export function fraternalOrderComparator(
       return numberA - numberB;
     }
 
-    return (a.display_name ?? "").localeCompare(b.display_name ?? "", undefined, {
-      sensitivity: "base",
-    });
+    // The name the row shows, not the raw column: `display_name` is
+    // `NOT NULL DEFAULT ''`, so a member who never set one would otherwise
+    // sort as "" and lead their group above "Aaron".
+    return memberLabel(a.display_name, a.user_id).localeCompare(
+      memberLabel(b.display_name, b.user_id),
+      undefined,
+      { sensitivity: "base" },
+    );
   };
 }
 
