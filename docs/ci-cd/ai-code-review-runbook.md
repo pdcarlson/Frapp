@@ -125,8 +125,8 @@ only the `max` recipe (and Sonnet 5 from medium up) spawns finders with one veri
 candidate.
 
 So when a turn carries the token, run `/code-review` as asked, then run `/diff-review` in full; it
-writes the marker. Do **not** use `git push --no-verify` instead of `/diff-review`: that
-deliberately bypasses the repository hook and leaves no review evidence. Whether `/diff-review`'s
+writes the marker. A `/code-review` run is not a reason to push with `--no-verify`: that
+bypasses the repository hook and leaves no review evidence. Whether `/diff-review`'s
 generic angles should retire in favor of the bundled command is
 [#706](https://github.com/pdcarlson/Frapp/issues/706).
 
@@ -163,9 +163,10 @@ trustworthy rather than the agent agreeing with its own work — do not weaken i
 - A new commit that changes anything has a new SHA and therefore needs a new review. Retrying does
   not mutate the marker directory and never changes the verdict; the former four-attempt escape
   was removed.
-- The deliberate emergency bypass is Git's standard `git push --no-verify`. It is auditable in the
-  operator's command but not server-enforced. Never use it in place of `/diff-review`, including
-  after a `/code-review` run.
+- The deliberate bypass is Git's standard `git push --no-verify`. It is auditable in the
+  operator's command but not server-enforced. When it fits is a judgment call, and unattended
+  routines never use it:
+  [`AGENTS.md` § Claude Code web sandbox](../../AGENTS.md#claude-code-web-sandbox).
 - `scripts/setup-git-hooks.mjs` sets `core.hooksPath=.githooks`. Two things run it: the root
   `prepare` script, which `npm install` and `npm ci` run, and, in a Claude Code cloud session
   only, the SessionStart hook (`.claude/hooks/session-start.sh`), at every session start whether
