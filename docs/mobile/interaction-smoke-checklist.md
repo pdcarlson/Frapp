@@ -169,3 +169,20 @@ For UI-touching mobile changes, include:
 - walkthrough artifact (video or screenshot set),
 - checklist pass/fail matrix for touched routes,
 - note any intentionally disabled controls and user-facing reason copy.
+
+## 8) Keyboard over the chat composer — **Android store build only**
+
+The keyboard has covered the composer on Android twice (#3346, #4010), and both times the cause was a lift worked out wrong, which no unit test can see because the numbers only exist on a device. Expo Go takes a different keyboard path entirely (`lib/keyboard.tsx`), so this runs on a Play build or a preview APK. Run it before any change to `lib/keyboard.tsx`, the chat thread's `SafeAreaView`, or the keyboard library ships, on Gboard with its suggestion strip showing, and note the phone, Android version, navigation mode (gesture or three-button) and build in the PR.
+
+In each case the whole message box, its rounded border and what you typed sit **directly above the keyboard's top edge**, with no gap and nothing hidden, and the newest message stays visible above it:
+
+| Where | Check |
+| --- | --- |
+| A channel (#general) | Tap the box: it rises with the keyboard. Type two lines: the box grows upward and stays clear |
+| A DM | The same |
+| A message thread (Start thread) | The same |
+| Any of the above | Open Gboard's emoji panel, then go back to letters: the box follows the keyboard's height each time |
+| Any of the above | Switch keyboards (Gboard's globe or the navigation bar's keyboard button, to another installed keyboard and back) |
+| Any of the above | Rotate to landscape and back with the keyboard up |
+| Any of the above | Drag the thread down: the keyboard goes away and the box returns to the bottom, above the navigation bar |
+| Any of the above | Repeat once with three-button navigation (Settings → System → Navigation mode) |

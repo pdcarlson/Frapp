@@ -5,6 +5,8 @@ import {
   View,
   type ViewProps,
 } from "react-native";
+import Animated, { useAnimatedStyle } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { isExpoGo } from "./expo-go";
 import { createIsolatedModule } from "./isolated-module";
 
@@ -99,18 +101,44 @@ export function KeyboardProviderGuarded({ children }: { children: ReactNode }) {
  * the focused field scrolled into view, on iOS; a padding view around it would
  * count the keyboard twice. With this set the area is a plain `View` on iOS
  * and still avoids on Android, where that prop does nothing (sign-in).
+ *
+ * **`atScreenBottom`** (#4010). For a screen whose area runs to the bottom of
+ * the window, inside a `SafeAreaView` that pads the bottom inset (the chat
+ * thread and a message thread). On Android store builds the area pads by the
+ * keyboard's height less that inset (`keyboardLift`), and nothing else. The
+ * library's view used above instead works its lift out from three numbers
+ * measured apart: the window's height, the view's position on screen (read
+ * once, at layout) and the keyboard's height. When the first two disagree by
+ * a system bar, the composer stops short of the keyboard by that bar, which is
+ * what two Android testers saw on production. iOS and Expo Go are unchanged.
  */
 export function KeyboardAvoidingArea({
   children,
   iosInsetFromScrollView = false,
+  atScreenBottom = false,
   ...viewProps
-}: ViewProps & { children: ReactNode; iosInsetFromScrollView?: boolean }) {
+}: ViewProps & {
+  children: ReactNode;
+  iosInsetFromScrollView?: boolean;
+  atScreenBottom?: boolean;
+}) {
   if (Platform.OS === "ios" && iosInsetFromScrollView) {
     return <View {...viewProps}>{children}</View>;
   }
 
   const keyboardController =
     Platform.OS === "android" ? loadKeyboardController() : null;
+
+  if (keyboardController && atScreenBottom) {
+    return (
+      <ScreenBottomKeyboardArea
+        {...viewProps}
+        keyboardController={keyboardController}
+      >
+        {children}
+      </ScreenBottomKeyboardArea>
+    );
+  }
 
   if (keyboardController) {
     const { KeyboardAvoidingView } = keyboardController;
@@ -131,5 +159,52 @@ export function KeyboardAvoidingArea({
     >
       {children}
     </NativeKeyboardAvoidingView>
+  );
+}
+
+/**
+ * How far a screen-bottom area rises for the keyboard (#4010): the keyboard's
+ * height above the bottom of the window, less the bottom inset the screen's
+ * `SafeAreaView` already pads, never below zero.
+ *
+ * Right whether or not the library treats the navigation bar as translucent.
+ * Edge to edge, the keyboard's height includes the navigation bar and so does
+ * the inset; otherwise the library leaves the bar out of both. Either way the
+ * composer's bottom lands on the keyboard's top. Gboard's suggestion strip,
+ * the emoji panel and a switched keyboard are all part of the height the
+ * library reports, and a resize is reported as it happens.
+ */
+export function keyboardLift(keyboardHeight: number, bottomInset: number) {
+  "worklet";
+  return Math.max(0, keyboardHeight - bottomInset);
+}
+
+/**
+ * `KeyboardAvoidingArea`'s Android `atScreenBottom` view. The module comes in
+ * as a prop because the package may only be reached through the loader above;
+ * this component renders only when the loader returned it, and the loader
+ * caches its answer, so the hook below runs on every render.
+ */
+function ScreenBottomKeyboardArea({
+  children,
+  style,
+  keyboardController,
+  ...viewProps
+}: ViewProps & {
+  children: ReactNode;
+  keyboardController: KeyboardControllerModule;
+}) {
+  // `height` runs from 0 to minus the keyboard's height as it opens, frame by
+  // frame, so the composer tracks the keyboard's top through the animation,
+  // an interactive drag and a resize alike.
+  const { height } = keyboardController.useReanimatedKeyboardAnimation();
+  const { bottom } = useSafeAreaInsets();
+  const lift = useAnimatedStyle(() => ({
+    paddingBottom: keyboardLift(-height.get(), bottom),
+  }));
+  return (
+    <Animated.View {...viewProps} style={[style, lift]}>
+      {children}
+    </Animated.View>
   );
 }
