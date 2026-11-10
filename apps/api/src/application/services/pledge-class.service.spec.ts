@@ -6,7 +6,6 @@ import {
 import { PLEDGE_CLASSES_MAX } from '@repo/validation';
 import { PledgeClassService } from './pledge-class.service';
 import type { IPledgeClassRepository } from '#domain/repositories/pledge-class.repository.interface';
-import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import type { PledgeClass } from '#domain/entities/pledge-class.entity';
 import { memberFixture } from '#test/helpers/entity-fixtures';
 
@@ -25,7 +24,6 @@ function pledgeClass(id: string, position: number, name = id): PledgeClass {
 
 describe('PledgeClassService', () => {
   let repo: jest.Mocked<IPledgeClassRepository>;
-  let memberRepo: jest.Mocked<IMemberRepository>;
   let service: PledgeClassService;
 
   beforeEach(() => {
@@ -38,12 +36,7 @@ describe('PledgeClassService', () => {
       delete: jest.fn(),
       assignMembers: jest.fn().mockResolvedValue([]),
     };
-    memberRepo = {
-      findByChapter: jest.fn().mockResolvedValue([]),
-    } as Partial<
-      jest.Mocked<IMemberRepository>
-    > as jest.Mocked<IMemberRepository>;
-    service = new PledgeClassService(repo, memberRepo);
+    service = new PledgeClassService(repo);
   });
 
   describe('create', () => {
@@ -96,6 +89,16 @@ describe('PledgeClassService', () => {
   });
 
   describe('rename', () => {
+    it('stores the name trimmed and returns the class', async () => {
+      const renamed = pledgeClass('a', 1, 'Beta');
+      repo.rename.mockResolvedValue(renamed);
+
+      await expect(service.rename('a', CHAPTER, '  Beta ')).resolves.toBe(
+        renamed,
+      );
+      expect(repo.rename).toHaveBeenCalledWith('a', CHAPTER, 'Beta');
+    });
+
     it('answers 404 for a class the chapter does not have', async () => {
       repo.rename.mockResolvedValue(undefined);
 
@@ -123,6 +126,19 @@ describe('PledgeClassService', () => {
 
     it("applies a list that is exactly the chapter's classes", async () => {
       await service.reorder(CHAPTER, ['b', 'a']);
+
+      expect(repo.reorder).toHaveBeenCalledWith(CHAPTER, ['b', 'a']);
+    });
+
+    it('answers 400 for a list that names a class twice, and writes nothing', async () => {
+      await expect(service.reorder(CHAPTER, ['a', 'a'])).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(repo.reorder).not.toHaveBeenCalled();
+    });
+
+    it('takes an id in upper case as the same class', async () => {
+      await service.reorder(CHAPTER, ['B', 'A']);
 
       expect(repo.reorder).toHaveBeenCalledWith(CHAPTER, ['b', 'a']);
     });
@@ -159,14 +175,6 @@ describe('PledgeClassService', () => {
   });
 
   describe('assign', () => {
-    beforeEach(() => {
-      memberRepo.findByChapter.mockResolvedValue([
-        memberFixture({ id: 'm1', chapter_id: CHAPTER }),
-        memberFixture({ id: 'm2', chapter_id: CHAPTER }),
-      ]);
-      repo.findByChapter.mockResolvedValue([pledgeClass('a', 1)]);
-    });
-
     it('writes every listed member in one call and returns what was stored', async () => {
       repo.assignMembers.mockResolvedValue([
         memberFixture({ id: 'm1', pledge_class_id: 'a', order_number: 2 }),
@@ -192,33 +200,41 @@ describe('PledgeClassService', () => {
       expect(repo.assignMembers).toHaveBeenCalled();
     });
 
-    it('answers 404 for a member who is not in the chapter, and writes nothing', async () => {
+    it('answers 404 when the write refuses a member who is not in the chapter', async () => {
+      repo.assignMembers.mockResolvedValue('member_not_found');
+
       await expect(
         service.assign(CHAPTER, [
-          { member_id: 'm1', pledge_class_id: 'a', order_number: 1 },
-          { member_id: 'stranger', pledge_class_id: 'a', order_number: 2 },
+          { member_id: 'stranger', pledge_class_id: null, order_number: 2 },
         ]),
       ).rejects.toBeInstanceOf(NotFoundException);
-      expect(repo.assignMembers).not.toHaveBeenCalled();
     });
 
-    it('answers 400 for a class the chapter does not have, and writes nothing', async () => {
+    it('answers 400 when the write refuses a class the chapter does not have', async () => {
+      repo.assignMembers.mockResolvedValue('class_not_found');
+
       await expect(
         service.assign(CHAPTER, [
           { member_id: 'm1', pledge_class_id: 'elsewhere', order_number: 1 },
         ]),
       ).rejects.toBeInstanceOf(BadRequestException);
-      expect(repo.assignMembers).not.toHaveBeenCalled();
     });
 
-    it('answers 400 when a member is listed twice', async () => {
-      await expect(
-        service.assign(CHAPTER, [
-          { member_id: 'm1', pledge_class_id: 'a', order_number: 1 },
-          { member_id: 'm1', pledge_class_id: null, order_number: null },
-        ]),
-      ).rejects.toBeInstanceOf(BadRequestException);
-    });
+    it.each([
+      ['in the same case', 'm1'],
+      ['in a different case', 'M1'],
+    ])(
+      'answers 400 when a member is listed twice %s, and writes nothing',
+      async (_why, second) => {
+        await expect(
+          service.assign(CHAPTER, [
+            { member_id: 'm1', pledge_class_id: 'a', order_number: 1 },
+            { member_id: second, pledge_class_id: null, order_number: null },
+          ]),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(repo.assignMembers).not.toHaveBeenCalled();
+      },
+    );
 
     it('sends the RPC only the three fields, whatever else the request carried', async () => {
       const assignment = {

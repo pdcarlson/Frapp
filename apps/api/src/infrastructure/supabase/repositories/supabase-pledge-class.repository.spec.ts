@@ -53,6 +53,38 @@ describe('SupabasePledgeClassRepository — tenant scope', () => {
     expect(classes.map((c) => c.id)).toEqual([CLASS_B]);
   });
 
+  it('findByChapter returns the list oldest first: by position, then by when it was added', async () => {
+    const row = (id: string, position: number, created_at: string) => ({
+      id,
+      name: id,
+      position,
+      created_at,
+      updated_at: created_at,
+    });
+    // Stored newest first, so only the ordering can put them right; each has
+    // a twin in the other chapter.
+    const classes = [
+      row('third', 2, '2026-03-01T00:00:00.000Z'),
+      row('second', 1, '2026-02-01T00:00:00.000Z'),
+      row('first', 1, '2026-01-01T00:00:00.000Z'),
+    ];
+    harness = createTenantHarness({
+      tables: {
+        chapter_pledge_classes: classes.flatMap((c) => [
+          inA({ ...c, id: `a-${c.id}` }),
+          inB({ ...c, id: `b-${c.id}` }),
+        ]),
+      },
+    });
+    repo = new SupabasePledgeClassRepository(harness.client);
+
+    const listed = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findByChapter(CHAPTER_B),
+    );
+
+    expect(listed.map((c) => c.id)).toEqual(['b-first', 'b-second', 'b-third']);
+  });
+
   it("findById misses another chapter's class", async () => {
     const found = await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.findById(CLASS_A, CHAPTER_B),
@@ -155,6 +187,38 @@ describe('SupabasePledgeClassRepository — a name the chapter already has', () 
         chapter_id: CHAPTER_A,
         name: ' ',
       }),
+    ).rejects.toMatchObject({ name: 'SupabaseQueryError', code: '23514' });
+  });
+});
+
+describe('SupabasePledgeClassRepository — a write the database refuses whole', () => {
+  function repoWhoseRpcFails(code: string) {
+    const client = {
+      rpc: jest
+        .fn()
+        .mockResolvedValue({ data: null, error: { code, message: 'refused' } }),
+    };
+    return new SupabasePledgeClassRepository(client as never);
+  }
+  const assignments = [
+    { member_id: 'm1', pledge_class_id: null, order_number: 1 },
+  ];
+
+  it('reports a listed member who is not in the chapter', async () => {
+    await expect(
+      repoWhoseRpcFails('P0002').assignMembers(CHAPTER_A, assignments),
+    ).resolves.toBe('member_not_found');
+  });
+
+  it("reports a class that is not one of the chapter's", async () => {
+    await expect(
+      repoWhoseRpcFails('23503').assignMembers(CHAPTER_A, assignments),
+    ).resolves.toBe('class_not_found');
+  });
+
+  it('throws anything else wrapped', async () => {
+    await expect(
+      repoWhoseRpcFails('23514').assignMembers(CHAPTER_A, assignments),
     ).rejects.toMatchObject({ name: 'SupabaseQueryError', code: '23514' });
   });
 });

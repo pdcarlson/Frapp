@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { memberViewVocabulary, titleCase, vocab } from "./index";
+import {
+  ARCHETYPES,
+  VOCABULARY_DEFAULTS,
+  memberViewVocabulary,
+  titleCase,
+  vocab,
+} from "./index";
 
 describe("vocab", () => {
   it("falls back to the IFC default when the chapter has no override", () => {
@@ -119,5 +125,39 @@ describe("the recruitment word per archetype", () => {
     expect(
       vocab("recruitment", memberViewVocabulary({ org_archetype: "guild" })),
     ).toBe("Rush");
+  });
+});
+
+// #3939: what a chapter calls a member's order number, by council.
+describe("the order term", () => {
+  it.each([
+    ["ifc", "Fraternal order"],
+    ["npc", "Bond number"],
+    ["nphc", "Line number"],
+  ] as const)("defaults to its council's word for %s", (key, word) => {
+    expect(VOCABULARY_DEFAULTS[key].order).toBe(word);
+  });
+
+  it('is "Roll number" for every other archetype', () => {
+    const others = (
+      Object.keys(ARCHETYPES) as (keyof typeof ARCHETYPES)[]
+    ).filter((key) => !["ifc", "npc", "nphc"].includes(key));
+
+    expect(others.length).toBeGreaterThan(0);
+    for (const key of others) {
+      expect(VOCABULARY_DEFAULTS[key].order).toBe("Roll number");
+    }
+  });
+
+  it("reads the chapter's own word over its archetype's", () => {
+    const stored = memberViewVocabulary({
+      org_archetype: "npc",
+      vocabulary: { order: "Badge number" },
+    });
+
+    expect(vocab("order", stored)).toBe("Badge number");
+    expect(vocab("order", memberViewVocabulary({ org_archetype: "npc" }))).toBe(
+      "Bond number",
+    );
   });
 });

@@ -8,9 +8,11 @@ import {
 } from '#domain/entities/pledge-class.entity';
 import { Member } from '#domain/entities/member.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
-
-/** Postgres `unique_violation`: the chapter already has a class of that name. */
-const UNIQUE_VIOLATION = '23505';
+import {
+  PG_FOREIGN_KEY_VIOLATION,
+  PG_NO_DATA_FOUND,
+  PG_UNIQUE_VIOLATION,
+} from '#domain/constants/postgres-error-codes';
 
 @Injectable()
 export class SupabasePledgeClassRepository implements IPledgeClassRepository {
@@ -50,7 +52,7 @@ export class SupabasePledgeClassRepository implements IPledgeClassRepository {
       .select()
       .single();
     if (error) {
-      if (error.code === UNIQUE_VIOLATION) return null;
+      if (error.code === PG_UNIQUE_VIOLATION) return null;
       throw new SupabaseQueryError(error);
     }
     return created;
@@ -69,7 +71,7 @@ export class SupabasePledgeClassRepository implements IPledgeClassRepository {
       .select()
       .maybeSingle();
     if (error) {
-      if (error.code === UNIQUE_VIOLATION) return null;
+      if (error.code === PG_UNIQUE_VIOLATION) return null;
       throw new SupabaseQueryError(error);
     }
     return data ?? undefined;
@@ -96,12 +98,18 @@ export class SupabasePledgeClassRepository implements IPledgeClassRepository {
   async assignMembers(
     chapterId: string,
     assignments: PledgeClassAssignment[],
-  ): Promise<Member[]> {
+  ): Promise<Member[] | 'member_not_found' | 'class_not_found'> {
     const { data, error } = await this.supabase.rpc(
       'assign_member_pledge_classes',
       { p_chapter_id: chapterId, p_assignments: assignments },
     );
-    if (error) throw new SupabaseQueryError(error);
+    if (error) {
+      // Both are the function refusing the whole write, not a fault: see
+      // 20261110170000_chapter_pledge_classes.sql.
+      if (error.code === PG_NO_DATA_FOUND) return 'member_not_found';
+      if (error.code === PG_FOREIGN_KEY_VIOLATION) return 'class_not_found';
+      throw new SupabaseQueryError(error);
+    }
     return data ?? [];
   }
 }

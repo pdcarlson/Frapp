@@ -32,12 +32,13 @@ export interface IPledgeClassRepository {
   /** Members of the class keep their order number and lose the class. */
   delete(id: string, chapterId: string): Promise<void>;
   /**
-   * Sets class and order number on each listed member of the chapter, in one
-   * statement (`assign_member_pledge_classes`). Returns the rows it changed;
-   * a member of another chapter is not among them.
+   * Sets class and order number on each listed member of the chapter, all or
+   * none (`assign_member_pledge_classes`). Resolves to the rows it changed,
+   * or to which side was wrong when nothing was written: a listed member who
+   * is not in the chapter, or a class that is not one of the chapter's.
    */
   assignMembers(
     chapterId: string,
     assignments: PledgeClassAssignment[],
-  ): Promise<Member[]>;
+  ): Promise<Member[] | 'member_not_found' | 'class_not_found'>;
 }

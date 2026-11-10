@@ -125,37 +125,61 @@ $$;
 comment on function public.reorder_chapter_pledge_classes(uuid, uuid[]) is
   'Sets each listed pledge class''s position to its 1-based place in p_ids, within one chapter (PUT /v1/pledge-classes/order). See 20261110170000_chapter_pledge_classes.sql.';
 
--- ── Assigning members, one statement ──────────────────────────────────────
+-- ── Assigning members, all or none ────────────────────────────────────────
 --
 -- `p_assignments` is a JSON array of
 -- `{ "member_id": uuid, "pledge_class_id": uuid|null, "order_number": int|null }`.
--- Each listed member of `p_chapter_id` gets both values, in one statement, so
--- an officer saving a whole class's order can't leave it half-written. A
--- member of another chapter matches nothing; a class of another chapter fails
--- the composite foreign key and the whole statement with it.
+-- Each listed member of `p_chapter_id` gets both values. The function is the
+-- whole check, so there is no read-then-write gap for another officer's
+-- delete to land in:
+--
+--   a listed member who is not in the chapter (another chapter's, or removed
+--   a moment ago) raises `no_data_found` (P0002) after the update, which
+--   undoes it: nothing is written;
+--   a class of another chapter, or one deleted a moment ago, fails the
+--   composite foreign key (23503), and nothing is written.
+--
+-- The API answers the first as 404 and the second as 400.
 
 create or replace function public.assign_member_pledge_classes(
   p_chapter_id uuid,
   p_assignments jsonb
 )
 returns setof public.members
-language sql
+language plpgsql
 volatile
 security invoker
 set search_path = public, pg_temp
 as $$
-  update public.members m
-     set pledge_class_id = a.pledge_class_id,
-         order_number = a.order_number
-    from jsonb_to_recordset(p_assignments)
-           as a(member_id uuid, pledge_class_id uuid, order_number integer)
-   where m.id = a.member_id
-     and m.chapter_id = p_chapter_id
-  returning m.*;
+declare
+  v_listed integer;
+  v_updated integer;
+begin
+  select count(distinct a.member_id) into v_listed
+    from jsonb_to_recordset(p_assignments) as a(member_id uuid);
+
+  return query
+    update public.members m
+       set pledge_class_id = a.pledge_class_id,
+           order_number = a.order_number
+      from jsonb_to_recordset(p_assignments)
+             as a(member_id uuid, pledge_class_id uuid, order_number integer)
+     where m.id = a.member_id
+       and m.chapter_id = p_chapter_id
+    returning m.*;
+  get diagnostics v_updated = row_count;
+
+  if v_updated <> v_listed then
+    raise exception
+      'assign_member_pledge_classes: % of % listed members are not in the chapter',
+      v_listed - v_updated, v_listed
+      using errcode = 'no_data_found';
+  end if;
+end;
 $$;
 
 comment on function public.assign_member_pledge_classes(uuid, jsonb) is
-  'Sets pledge_class_id and order_number on each listed member of one chapter, atomically (PUT /v1/pledge-classes/assignments). See 20261110170000_chapter_pledge_classes.sql.';
+  'Sets pledge_class_id and order_number on each listed member of one chapter, all or none; raises no_data_found when a listed member is not in it (PUT /v1/pledge-classes/assignments). See 20261110170000_chapter_pledge_classes.sql.';
 
 revoke execute on function public.reorder_chapter_pledge_classes(uuid, uuid[]) from public;
 revoke execute on function public.assign_member_pledge_classes(uuid, jsonb) from public;

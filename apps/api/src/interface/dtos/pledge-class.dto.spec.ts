@@ -5,7 +5,12 @@ import {
   MEMBER_ORDER_NUMBER_MAX,
   PLEDGE_CLASS_NAME_MAX_LENGTH,
 } from '@repo/validation';
-import { AssignPledgeClassesDto, PledgeClassNameDto } from './pledge-class.dto';
+import {
+  AssignPledgeClassesDto,
+  PledgeClassNameDto,
+  ReorderPledgeClassesDto,
+} from './pledge-class.dto';
+import { PLEDGE_CLASSES_MAX } from '@repo/validation';
 
 const MEMBER = '0a000000-0000-4000-8000-000000000001';
 const CLASS = '0a000000-0000-4000-8000-000000000002';
@@ -68,5 +73,34 @@ describe('AssignPledgeClassesDto', () => {
       plainToInstance(AssignPledgeClassesDto, { assignments: [] }),
     );
     expect(errors).toHaveLength(1);
+  });
+});
+
+describe('ReorderPledgeClassesDto', () => {
+  async function idErrors(ids: unknown) {
+    const errors = await validate(
+      plainToInstance(ReorderPledgeClassesDto, { ids }),
+    );
+    return errors.length;
+  }
+
+  it('accepts a list of class ids, and an empty one', async () => {
+    expect(await idErrors([CLASS, MEMBER])).toBe(0);
+    expect(await idErrors([])).toBe(0);
+  });
+
+  it.each([
+    ['an id listed twice', [CLASS, CLASS]],
+    ['an id that is not a uuid', [CLASS, 'x']],
+    ['something that is not a list', CLASS],
+    [
+      'more ids than a chapter can have classes',
+      Array.from(
+        { length: PLEDGE_CLASSES_MAX + 1 },
+        (_, i) => `0a000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+      ),
+    ],
+  ])('rejects %s', async (_why, ids) => {
+    expect(await idErrors(ids)).toBe(1);
   });
 });

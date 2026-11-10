@@ -3256,7 +3256,7 @@ A data-only backfill: it set `read_at` on unread chat notifications the member's
 
 One new table, `chapter_pledge_classes`; two nullable columns on `members`, `pledge_class_id` and `order_number`, with a check and a composite foreign key; and two functions, `reorder_chapter_pledge_classes` and `assign_member_pledge_classes`. No existing row changed.
 
-**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API has no `/v1/pledge-classes` routes and stops returning the two member fields; a client that shows them reads them as absent and shows nothing. Roll back any client that writes them first, or with it.
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API has no `/v1/pledge-classes` routes, so nothing can change a class or a number, and a client that lists classes gets a 404. It still returns `pledge_class_id` and `order_number` on member reads, because those are `select('*')` spread into the response: a client that shows them keeps showing the stored values until the columns are dropped. Roll back any client that writes them first, or with it.
 
 **Keep the table and columns unless they are themselves the problem.** Dropping them loses every chapter's class list and every member's class and number, which officers entered by hand. To remove them, do it in a later forward migration after the code revert has shipped:
 

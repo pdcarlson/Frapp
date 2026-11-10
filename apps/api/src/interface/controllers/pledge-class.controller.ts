@@ -68,8 +68,9 @@ export class PledgeClassController {
     return this.pledgeClassService.create(chapterId, dto.name);
   }
 
-  // The two fixed paths are declared above `:id` so it can never swallow them
-  // (`test/route-declaration-order.e2e-spec.ts`).
+  // The two fixed paths are declared above `:id`, the order every controller
+  // here keeps. Nothing can swallow them today: they are PUT, and the `:id`
+  // routes are PATCH and DELETE.
   @Put('order')
   @ApiOperation({ summary: "Set the order of the chapter's pledge classes" })
   @ApiOkResponse({ type: PledgeClassDto, isArray: true })
