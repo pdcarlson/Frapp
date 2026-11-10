@@ -114,6 +114,58 @@ describe('ChatMentionService.listMentionRoles', () => {
 });
 
 describe('ChatMentionService.resolveForSend', () => {
+  function service(
+    chapterMembers: typeof members,
+    chapterRoles: Role[],
+    permissions: string[] = [],
+  ) {
+    const memberRepo = {
+      findChapterMemberIdentities: jest.fn().mockResolvedValue(chapterMembers),
+    } as unknown as IMemberRepository;
+    const getEffectivePermissions = jest.fn().mockResolvedValue(permissions);
+    const rbac = {
+      findByChapter: jest.fn().mockResolvedValue(chapterRoles),
+      getEffectivePermissions,
+    } as unknown as RbacService;
+    return {
+      mentions: new ChatMentionService(memberRepo, rbac),
+      getEffectivePermissions,
+    };
+  }
+
+  describe('names with spaces (#3825)', () => {
+    const spaced = [
+      ...members,
+      { user_id: 'u5', display_name: 'Winston Hewitt', role_ids: ['vp'] },
+      { user_id: 'u6', display_name: 'Winston Park', role_ids: ['member'] },
+    ];
+
+    it('resolves a two-word name to its member', async () => {
+      const { mentions } = service(spaced, roles);
+      await expect(
+        mentions.resolveForSend('ch-1', 'u2', 'ask @Winston Hewitt, please'),
+      ).resolves.toEqual(['u5']);
+      // The first name alone is two members, so it still reaches nobody.
+      await expect(
+        mentions.resolveForSend('ch-1', 'u2', 'ask @Winston'),
+      ).resolves.toEqual([]);
+    });
+
+    it('reads the sender\'s permissions for a switched-off role named with its space', async () => {
+      const vp = role('vp', 'Vice President', { mentionable: false });
+      const member = service(spaced, [...roles, vp]);
+      await expect(
+        member.mentions.resolveForSend('ch-1', 'u2', '@Vice President'),
+      ).resolves.toEqual([]);
+      expect(member.getEffectivePermissions).toHaveBeenCalledTimes(1);
+
+      const officer = service(spaced, [...roles, vp], ['roles:manage']);
+      await expect(
+        officer.mentions.resolveForSend('ch-1', 'u2', '@Vice President'),
+      ).resolves.toEqual(['u5']);
+    });
+  });
+
   it('still resolves member mentions when the roles read fails', async () => {
     const memberRepo = {
       findChapterMemberIdentities: jest.fn().mockResolvedValue(members),
