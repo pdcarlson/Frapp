@@ -8,6 +8,7 @@ import Svg, { Path } from "react-native-svg";
 import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import { MemberAvatar } from "@/components/member-avatar";
+import type { MemberAvatarTint } from "@repo/hooks";
 import { initialsFor } from "@/lib/chat/display-name";
 import { gutterBleed, PressableRow } from "@/components/list-section";
 import { SkeletonBlock, SkeletonRegion } from "@/components/state-block";
@@ -65,6 +66,11 @@ export interface ChannelRowProps {
    * (a group DM, or no photo) keeps the initials.
    */
   avatarUrl?: string | null;
+  /**
+   * A one-to-one DM's other member's initials paint (#3860). `null` (a group
+   * DM) keeps the neutral circle.
+   */
+  avatarTint?: MemberAvatarTint | null;
   /**
    * The member pinned this row (#2877). Names the pin action "Unpin from top".
    * The sigil stays muted like every row's: a row icon is neutral, never the
@@ -134,6 +140,7 @@ export function ChannelRow({
   name,
   isDirect = false,
   avatarUrl = null,
+  avatarTint = null,
   isPinned = false,
   preview,
   isMuted = false,
@@ -210,6 +217,7 @@ export function ChannelRow({
       {isDirect ? (
         <MemberAvatar
           uri={avatarUrl}
+          tint={avatarTint}
           initials={initialsFor(name)}
           size={DIRECT_AVATAR_SIZE}
           style={styles.avatar}

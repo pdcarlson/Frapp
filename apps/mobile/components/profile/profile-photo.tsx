@@ -16,6 +16,7 @@ import {
   useConfirmAvatar,
   useRemoveAvatar,
   useRequestAvatarUploadUrl,
+  type MemberAvatarTint,
 } from "@repo/hooks";
 import { onlineManager } from "@tanstack/react-query";
 import { SignetTokens } from "@repo/theme/signet";
@@ -76,12 +77,15 @@ export function ProfilePhoto({
   photoUrl,
   fetchedAt = 0,
   initials,
+  avatarTint = null,
 }: {
   /** Signed URL from `GET /v1/users/me`, or `null` for initials. */
   photoUrl: string | null;
   /** When that read last completed (`dataUpdatedAt`); a refetch retries a failed load. */
   fetchedAt?: number;
   initials: string;
+  /** The viewer's initials paint (#3860); `null` keeps the neutral fill. */
+  avatarTint?: MemberAvatarTint | null;
 }) {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
@@ -221,7 +225,14 @@ export function ProfilePhoto({
           pressed && Platform.OS !== "android" ? styles.pressed : null,
         ]}
       >
-        <View style={styles.avatar}>
+        <View
+          style={[
+            styles.avatar,
+            !showPhoto && avatarTint
+              ? { backgroundColor: avatarTint.fill }
+              : null,
+          ]}
+        >
           {showPhoto ? (
             <Image
               source={{ uri: photoUrl }}
@@ -231,7 +242,14 @@ export function ProfilePhoto({
               onError={() => setFailed({ url: photoUrl, at: fetchedAt })}
             />
           ) : (
-            <Text style={styles.initials}>{initials}</Text>
+            <Text
+              style={[
+                styles.initials,
+                avatarTint ? { color: avatarTint.text } : null,
+              ]}
+            >
+              {initials}
+            </Text>
           )}
           {busy ? (
             <View style={styles.busy}>

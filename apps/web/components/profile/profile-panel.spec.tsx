@@ -126,6 +126,7 @@ vi.mock("@/components/profile/profile-photo-control", () => ({
 }));
 
 vi.mock("@repo/hooks", () => ({
+  useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
   useCurrentUser: () => mocks.userQuery,
   useUserSettings: () => mocks.settingsQuery,
   useUpdateUser: () => mocks.updateUser,

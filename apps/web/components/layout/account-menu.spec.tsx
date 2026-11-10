@@ -23,7 +23,10 @@ vi.mock("next/link", () => ({
 }));
 
 const useCurrentUser = vi.fn();
-vi.mock("@repo/hooks", () => ({ useCurrentUser: () => useCurrentUser() }));
+vi.mock("@repo/hooks", () => ({
+  useCurrentUser: () => useCurrentUser(),
+  useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
+}));
 
 const signOutCurrentSession = vi.fn().mockResolvedValue(undefined);
 vi.mock("@/lib/auth/session", () => ({

@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { MemberAvatar } from "@/components/member-avatar";
 import type { StagedPhoto } from "@/lib/chat/use-chat-channel";
+import type { MemberAvatarTint } from "@repo/hooks";
 import {
   activeMentionQuery,
   mentionPickerEntries,
@@ -144,6 +145,8 @@ export interface ChatComposerProps {
   mentionCandidates?: readonly MentionCandidate[];
   /** A member's photo for their picker row; without it, initials. */
   avatarFor?: (userId: string) => string | null;
+  /** A member's initials paint for their picker row (#3860). */
+  avatarTintFor?: (userId: string) => MemberAvatarTint;
   /**
    * The roles `@` offers after the members (`GET /v1/channels/mention-roles`),
    * each saying whether this member may ping it. `undefined` while it loads,
@@ -178,6 +181,7 @@ export function ChatComposer({
   context = null,
   mentionCandidates,
   avatarFor,
+  avatarTintFor,
   mentionRoles,
 }: ChatComposerProps) {
   const { tokens } = useFrappTheme();
@@ -317,6 +321,7 @@ export function ChatComposer({
       {mention.open ? (
         <MentionPicker
           avatarFor={avatarFor}
+          avatarTintFor={avatarTintFor}
           suggestions={mention.suggestions}
           onPick={mention.pick}
           styles={styles}
@@ -486,10 +491,12 @@ function MentionPicker({
   suggestions,
   onPick,
   avatarFor,
+  avatarTintFor,
   styles,
 }: {
   suggestions: readonly PickerEntry[];
   avatarFor?: (userId: string) => string | null;
+  avatarTintFor?: (userId: string) => MemberAvatarTint;
   onPick: (label: string) => void;
   styles: ReturnType<typeof createStyles>;
 }) {
@@ -533,6 +540,7 @@ function MentionPicker({
                 uri={avatarFor?.(entry.member.user_id) ?? null}
                 initials={initialsFor(name)}
                 size={MENTION_AVATAR_SIZE}
+                tint={avatarTintFor?.(entry.member.user_id) ?? null}
                 style={styles.mentionAvatar}
                 textStyle={styles.mentionAvatarText}
               />

@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import type { SuggestionKeyDownProps } from "@tiptap/suggestion";
+import type { MemberAvatarTint } from "@repo/hooks";
 import { RolesGlyph } from "@/components/layout/nav-glyphs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn, initials } from "@/lib/utils";
@@ -27,6 +28,8 @@ export interface MentionSuggestionItem {
   label: string;
   displayName: string;
   avatarUrl: string | null;
+  /** A member row's initials paint (#3860); `null` on a role row. */
+  avatarTint?: MemberAvatarTint | null;
 }
 
 export interface MentionListHandle {
@@ -194,7 +197,10 @@ export const MentionList = forwardRef<MentionListHandle, MentionListProps>(
                 {item.avatarUrl ? (
                   <AvatarImage src={item.avatarUrl} alt="" />
                 ) : null}
-                <AvatarFallback className="text-[10px]">
+                <AvatarFallback
+                  className="text-[10px]"
+                  tint={item.avatarTint}
+                >
                   {initials(item.displayName)}
                 </AvatarFallback>
               </Avatar>
