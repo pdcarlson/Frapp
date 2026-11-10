@@ -227,7 +227,7 @@ Everything an agent files (follow-ups from `/next`, curator suggestions, PR-foll
   blockers (filed by *any* session, see below) embed
   `` `agent-suggestion: v1 fp=human/<slug> source=<...>` `` (namespaces partition lifecycle
   ownership — PR Follow-ups owns both `pr-followup/` and `human/`); Beta Watch embeds
-  `` `agent-suggestion: v1 fp=beta-watch/<source>/<id>` `` and owns `beta-watch/`. The `fp=` grammar is unchanged,
+  `` `agent-suggestion: v1 fp=beta-watch/<source>/<id>` `` and owns `beta-watch/`, except `beta-watch/dev-channel/`, which marks a team member's own ask that no routine re-bodies or closes. The `fp=` grammar is unchanged,
   so existing dedup queries keep working, and **legacy comment-form markers remain valid** — they
   are stored, and readable again as of 2026-09-05 — but a missing marker still means "unknown",
   never "absent", because that reading survives the next flip and a re-file does not. Ad-hoc
