@@ -55,7 +55,15 @@ describe("duePresets", () => {
 
 describe("formatDueFieldLabel", () => {
   it("renders the drawn weekday-and-date label", () => {
-    expect(formatDueFieldLabel("2026-08-21")).toBe("Fri, Aug 21");
+    expect(formatDueFieldLabel("2026-08-21", at(2026, 8, 1))).toBe(
+      "Fri, Aug 21",
+    );
+  });
+
+  it("shows the year on a date outside the current one (#3928)", () => {
+    expect(formatDueFieldLabel("2027-03-14", at(2026, 11, 9))).toBe(
+      "Sun, Mar 14, 2027",
+    );
   });
 
   it("falls back to the raw value rather than showing Invalid Date", () => {

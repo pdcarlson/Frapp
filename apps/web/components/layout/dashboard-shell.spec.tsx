@@ -93,6 +93,15 @@ vi.mock("@/lib/providers/network-provider", async (importOriginal) => ({
     probeOnce: async () => {},
   }),
 }));
+// The account menu's own status (#3845) reads the settings query; its rows
+// are `account-menu.spec.tsx`'s subject, not the shell's.
+vi.mock("@/lib/realtime/use-own-status", () => ({
+  useOwnStatus: () => null,
+  useSaveOwnStatus: () => ({ save: vi.fn(), isSaving: false }),
+}));
+vi.mock("@/lib/auth/use-frapp-user", () => ({
+  useFrappUser: () => ({ userId: "me" }),
+}));
 vi.mock("@/lib/auth/select-chapter", () => ({
   useSelectChapter: () => vi.fn(),
 }));

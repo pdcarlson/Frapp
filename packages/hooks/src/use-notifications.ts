@@ -92,6 +92,24 @@ function mergeDefinedSettings(
   for (const [key, value] of Object.entries(patch)) {
     if (value !== undefined) base[key] = value;
   }
+  // The member-status pairs (#3845), predicted the way the server applies
+  // them (`notifications.md` § Do Not Disturb): sending `status` replaces its
+  // end time, absent meaning none and Online never keeping one; a null or
+  // blank `custom_status` clears the line and its end time, and a line sent
+  // alone has no end time. Without this the picker would show the old end
+  // time until the refetch lands.
+  if (patch.status !== undefined) {
+    base.status_expires_at =
+      patch.status === "online" ? null : (patch.status_expires_at ?? null);
+  }
+  if (patch.custom_status !== undefined) {
+    const line =
+      typeof patch.custom_status === "string" ? patch.custom_status.trim() : "";
+    base.custom_status = line || null;
+    base.custom_status_expires_at = line
+      ? (patch.custom_status_expires_at ?? null)
+      : null;
+  }
   return base;
 }
 

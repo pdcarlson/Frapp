@@ -83,7 +83,7 @@ export function EventFrame() {
             Check-in is open
           </span>
           <span className="text-[12.5px] text-muted-foreground">
-            closes 6:45
+            closes 7:45
           </span>
         </div>
         <span className="flex h-12 items-center justify-center gap-2 rounded-md bg-primary text-[16px] font-bold text-primary-foreground">
@@ -100,17 +100,10 @@ export function EventFrame() {
         window awards the event&apos;s points.
       </p>
 
-      <p className="mt-6 text-[12.5px] font-semibold uppercase leading-[17px] tracking-[0.1em] text-muted-foreground">
-        Host
-      </p>
-      <div className="mt-2 flex items-center gap-2.5">
-        <span className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full bg-popover text-[12px] font-bold text-muted-foreground">
-          JE
-        </span>
-        <span className="text-[16px] leading-[25px] text-foreground">
-          Jordan Ellis <span className="text-muted-foreground">· President</span>
-        </span>
-      </div>
+      {/*
+        No Host block: an event has no host or creator list to show (#3762),
+        so the frame ends on its details (#3869).
+      */}
     </div>
   );
 }

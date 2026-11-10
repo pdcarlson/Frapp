@@ -36,6 +36,7 @@
     ]
   },
   "workflowSizeGuideline": "medium",
+  "effortLevel": "medium",
   "hooks": {
     "SessionStart": [
       {
