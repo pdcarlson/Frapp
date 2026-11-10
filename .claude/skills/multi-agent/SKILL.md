@@ -65,10 +65,7 @@ from the `"effort"` field in subagent transcripts:
   Anthropic's testing; start there, and keep `xhigh` and `max` for work where they have shown a
   gain, because at those levels Opus 5.5 thinks more per turn and runs long turns. To get less
   thinking, lower the level rather than prompting for it. `/effort <level>` can also save the level
-  as the default for new sessions, and its reply says whether it did. In this repo the project
-  `effortLevel` (`medium`, Paul 2026-11-09) outranks a saved level when a session is launched
-  without `--effort` (read from the 2.1.321 bundle, not run), so a session that needs more is
-  raised with `/effort` or `--effort`, not by saving a default.
+  as the default for new sessions, and its reply says whether it did.
 - **To check what ran**, read the transcripts. They live in
   `~/.claude/projects/<cwd-slug>/<session-id>/subagents/`, with workflow agents under
   `workflows/<runId>/`: `grep -o '"effort":"[a-z]*"' agent-*.jsonl | sort | uniq -c`.
