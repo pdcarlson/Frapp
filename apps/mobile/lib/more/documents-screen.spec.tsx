@@ -3,6 +3,7 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import * as WebBrowser from "expo-web-browser";
+import { Alert } from "react-native";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FloatingCreateButton } from "@/components/floating-create-button";
 import { FrappThemeProvider } from "@/lib/theme";
@@ -21,7 +22,11 @@ let permissions: string[] = [];
 let folderRows: unknown[] = [];
 let documentRows: unknown[] = [];
 let chapterId: string | null = "chapter-a";
+let semesterRows: unknown[] | undefined = [];
+const documentsArgs: unknown[][] = [];
+let names: Record<string, string> = {};
 const download = vi.fn();
+const deleteDocument = vi.fn(async () => undefined);
 const refetchFolders = vi.fn(async () => undefined);
 const refetchDocuments = vi.fn(async () => undefined);
 const LOADED = {
@@ -34,17 +39,23 @@ const LOADED = {
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   usePermissionList: () => permissions,
-  useDocuments: () => ({
-    ...LOADED,
-    data: documentRows,
-    refetch: refetchDocuments,
-  }),
+  useDocuments: (...args: unknown[]) => {
+    documentsArgs.push(args);
+    return {
+      ...LOADED,
+      data: documentRows,
+      refetch: refetchDocuments,
+    };
+  },
   useDocumentFolders: () => ({
     ...LOADED,
     data: folderRows,
     refetch: refetchFolders,
   }),
   useActiveChapterId: () => chapterId,
+  useMemberDisplayNames: () => ({ byId: names }),
+  useSemesters: () => ({ data: semesterRows }),
+  useDeleteDocument: () => ({ mutateAsync: deleteDocument }),
   useDocumentDownloadUrl: () => ({ mutateAsync: download }),
   useRequestDocumentUploadUrl: () => ({ mutateAsync: vi.fn() }),
   useConfirmDocumentUpload: () => ({ mutateAsync: vi.fn() }),
@@ -97,6 +108,10 @@ afterEach(() => {
   permissions = [];
   folderRows = [];
   documentRows = [];
+  semesterRows = [];
+  names = {};
+  documentsArgs.length = 0;
+  deleteDocument.mockReset();
   chapterId = "chapter-a";
   present.mockReset();
   download.mockReset();
@@ -291,7 +306,7 @@ describe("Documents states and rows", () => {
     const search = () =>
       tree.root.find(
         (node) =>
-          node.props.accessibilityLabel === "Search documents by title" &&
+          node.props.accessibilityLabel === "Search documents" &&
           typeof node.props.onChangeText === "function",
       );
     const folderChips = () =>
@@ -509,5 +524,228 @@ describe("Documents pull-to-refresh (#3385)", () => {
     });
     expect(refetchFolders).toHaveBeenCalledWith({ cancelRefetch: true });
     expect(refetchDocuments).toHaveBeenCalledWith({ cancelRefetch: true });
+  });
+});
+
+describe("Documents search, filters, sort and delete, as web's (#3938)", () => {
+  const LIBRARY = [
+    {
+      id: "d-1",
+      title: "Chapter bylaws",
+      folder: "Governance",
+      uploaded_by: "u-ryan",
+      created_at: "2026-08-12T14:00:00.000Z",
+    },
+    {
+      id: "d-2",
+      title: "Budget FY2026",
+      folder: "Finance",
+      document_type: "Spreadsheet",
+      uploaded_by: "u-ana",
+      created_at: "2026-10-01T14:00:00.000Z",
+    },
+    {
+      id: "d-3",
+      title: "Alumni mixer flyer",
+      uploaded_by: "u-ana",
+      created_at: "2026-09-01T14:00:00.000Z",
+    },
+  ];
+
+  const rowLabels = (tree: ReactTestRenderer) =>
+    tree.root.findAllByType(ListRow).map((row) => row.props.label as string);
+  const byLabel = (tree: ReactTestRenderer, label: string) =>
+    tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === label &&
+        typeof (
+          node.props.onSelect ??
+          node.props.onChangeText ??
+          node.props.onPress
+        ) === "function",
+    );
+  const openPanel = (tree: ReactTestRenderer) =>
+    act(() => byLabel(tree, "Sort and filter").props.onPress());
+
+  function loaded() {
+    documentRows = LIBRARY;
+    names = { "u-ryan": "Ryan Castellano", "u-ana": "Ana Ruiz" };
+    return render();
+  }
+
+  it("reads the whole library once and orders it Name A–Z, as web does", () => {
+    const tree = loaded();
+    expect(rowLabels(tree)).toEqual([
+      "Alumni mixer flyer",
+      "Budget FY2026",
+      "Chapter bylaws",
+    ]);
+    // The whole library, unnarrowed on the wire: no `search`, no `folder`.
+    expect(documentsArgs.length).toBeGreaterThan(0);
+    expect(documentsArgs.every((args) => args.length === 0)).toBe(true);
+    act(() => byLabel(tree, "Search documents").props.onChangeText("budget"));
+    expect(documentsArgs.every((args) => args.length === 0)).toBe(true);
+    act(() => byLabel(tree, "Search documents").props.onChangeText(""));
+    expect(screenText(tree)).toContain(
+      "Uploaded Oct 1 by Ana Ruiz · Finance · Spreadsheet",
+    );
+  });
+
+  it("forgives a typo and searches the uploader's name, on the device", () => {
+    const tree = loaded();
+    act(() => byLabel(tree, "Search documents").props.onChangeText("bylaw"));
+    expect(rowLabels(tree)).toEqual(["Chapter bylaws"]);
+
+    act(() => byLabel(tree, "Search documents").props.onChangeText("budgte"));
+    expect(rowLabels(tree)).toEqual(["Budget FY2026"]);
+
+    act(() => byLabel(tree, "Search documents").props.onChangeText("ana"));
+    expect(rowLabels(tree)).toEqual(["Alumni mixer flyer", "Budget FY2026"]);
+  });
+
+  it("sorts and filters from the Sort & filter panel, and counts what is set", () => {
+    const tree = loaded();
+    openPanel(tree);
+
+    act(() => byLabel(tree, "Sort documents").props.onSelect("newest"));
+    expect(rowLabels(tree)).toEqual([
+      "Budget FY2026",
+      "Alumni mixer flyer",
+      "Chapter bylaws",
+    ]);
+
+    act(() => byLabel(tree, "Filter by uploader").props.onSelect("u-ryan"));
+    expect(rowLabels(tree)).toEqual(["Chapter bylaws"]);
+    expect(byLabel(tree, "Sort and filter, 2 set")).toBeDefined();
+  });
+
+  it("filters by file type, from the declared type or the stored name", () => {
+    documentRows = [
+      { ...LIBRARY[0], content_type: "application/pdf" },
+      {
+        ...LIBRARY[1],
+        content_type: null,
+        storage_path: "chapters/c/documents/x/budget.xlsx",
+      },
+      LIBRARY[2],
+    ];
+    names = { "u-ryan": "Ryan Castellano", "u-ana": "Ana Ruiz" };
+    const tree = render();
+    openPanel(tree);
+    const types = byLabel(tree, "Filter by file type");
+    expect(
+      (types.props.chips as { label: string }[]).map((chip) => chip.label),
+    ).toEqual(["Any type", "PDF", "Spreadsheet", "Other"]);
+
+    act(() => types.props.onSelect("spreadsheet"));
+    expect(rowLabels(tree)).toEqual(["Budget FY2026"]);
+    expect(byLabel(tree, "Sort and filter, 1 set")).toBeDefined();
+
+    act(() => byLabel(tree, "Filter by file type").props.onSelect(null));
+    act(() => byLabel(tree, "Search documents").props.onChangeText("pdf"));
+    expect(rowLabels(tree)).toEqual(["Chapter bylaws"]);
+  });
+
+  it("offers This semester only once the archives have loaded", () => {
+    semesterRows = undefined;
+    const tree = loaded();
+    openPanel(tree);
+    const dateLabels = () =>
+      (
+        byLabel(tree, "Filter by date added").props.chips as { label: string }[]
+      ).map((chip) => chip.label);
+    expect(dateLabels()).toEqual(["Any time", "Last 30 days"]);
+
+    semesterRows = [
+      { end_date: "2026-08-31", created_at: "2026-09-01T00:00:00Z" },
+    ];
+    const later = loaded();
+    act(() => byLabel(later, "Sort and filter").props.onPress());
+    act(() =>
+      byLabel(later, "Filter by date added").props.onSelect("semester"),
+    );
+    expect(rowLabels(later)).toEqual(["Alumni mixer flyer", "Budget FY2026"]);
+  });
+
+  it("says a filter matched nothing and clears it", () => {
+    const tree = loaded();
+    openPanel(tree);
+    act(() => byLabel(tree, "Filter by uploader").props.onSelect("u-ryan"));
+    act(() => byLabel(tree, "Search documents").props.onChangeText("budget"));
+    const note = tree.root.findByType(InlineNote);
+    expect(screenText(tree)).toContain("No documents match “budget”.");
+    expect(note.props.action.label).toBe("Clear filters");
+    act(() => note.props.action.onPress());
+    expect(rowLabels(tree)).toHaveLength(3);
+  });
+
+  it("says when the library hit the 1,000-row cap", () => {
+    documentRows = Array.from({ length: 1000 }, (_, index) => ({
+      id: `d-${index}`,
+      title: `File ${index}`,
+      created_at: "2026-08-12T14:00:00.000Z",
+    }));
+    expect(screenText(render())).toContain(
+      "Showing the newest 1,000 documents.",
+    );
+  });
+
+  it("deletes on a long press, after a confirm, for chapter_docs:manage only", async () => {
+    const alert = vi.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    const member = loaded();
+    expect(
+      member.root.findAllByType(ListRow).every((row) => !row.props.onLongPress),
+    ).toBe(true);
+
+    permissions = ["chapter_docs:manage"];
+    const officer = loaded();
+    const bylaws = () =>
+      officer.root
+        .findAllByType(ListRow)
+        .find((row) => row.props.label === "Chapter bylaws")!;
+    expect(bylaws().props.longPressLabel).toBe("Delete document");
+
+    act(() => bylaws().props.onLongPress());
+    expect(alert).toHaveBeenCalledTimes(1);
+    const [title, , buttons] = alert.mock.calls[0]!;
+    expect(title).toBe("Delete Chapter bylaws?");
+    expect(deleteDocument).not.toHaveBeenCalled();
+
+    let finish!: () => void;
+    deleteDocument.mockImplementation(
+      () =>
+        new Promise<undefined>(
+          (resolve) => (finish = () => resolve(undefined)),
+        ),
+    );
+    const confirm = buttons!.find((button) => button.style === "destructive")!;
+    act(() => confirm.onPress!());
+    expect(deleteDocument).toHaveBeenCalledWith("d-1");
+    expect(bylaws().props.busy).toBe(true);
+    await act(async () => finish());
+    // Gone at once, not left pressable until the library re-reads.
+    expect(rowLabels(officer)).not.toContain("Chapter bylaws");
+    alert.mockRestore();
+  });
+
+  it("says so when a delete fails", async () => {
+    const alert = vi.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    permissions = ["chapter_docs:manage"];
+    deleteDocument.mockRejectedValue(new Error("nope"));
+    const tree = loaded();
+    act(() =>
+      tree.root
+        .findAllByType(ListRow)
+        .find((row) => row.props.label === "Budget FY2026")!
+        .props.onLongPress(),
+    );
+    const buttons = alert.mock.calls[0]![2]!;
+    await act(async () => {
+      buttons.find((button) => button.style === "destructive")!.onPress!();
+    });
+    expect(screenText(tree)).toContain(
+      "Couldn't delete “Budget FY2026”. Try again in a moment.",
+    );
+    alert.mockRestore();
   });
 });

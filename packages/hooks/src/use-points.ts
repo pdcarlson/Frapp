@@ -204,6 +204,7 @@ export function useAdjustPoints() {
   }
 
   const mutation = useMutation({
+    mutationKey: ["points", "adjust-points"],
     retry: (failureCount, error) => failureCount < 2 && mayHaveCommitted(error),
     mutationFn: async ({
       chapter_id: submittedChapterId,

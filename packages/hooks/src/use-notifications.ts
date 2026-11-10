@@ -92,6 +92,24 @@ function mergeDefinedSettings(
   for (const [key, value] of Object.entries(patch)) {
     if (value !== undefined) base[key] = value;
   }
+  // The member-status pairs (#3845), predicted the way the server applies
+  // them (`notifications.md` § Do Not Disturb): sending `status` replaces its
+  // end time, absent meaning none and Online never keeping one; a null or
+  // blank `custom_status` clears the line and its end time, and a line sent
+  // alone has no end time. Without this the picker would show the old end
+  // time until the refetch lands.
+  if (patch.status !== undefined) {
+    base.status_expires_at =
+      patch.status === "online" ? null : (patch.status_expires_at ?? null);
+  }
+  if (patch.custom_status !== undefined) {
+    const line =
+      typeof patch.custom_status === "string" ? patch.custom_status.trim() : "";
+    base.custom_status = line || null;
+    base.custom_status_expires_at = line
+      ? (patch.custom_status_expires_at ?? null)
+      : null;
+  }
   return base;
 }
 
@@ -267,6 +285,7 @@ export function useUserSettings() {
 export function useRegisterPushToken() {
   const client = useFrappClient();
   return useMutation({
+    mutationKey: ["notifications", "register-push-token"],
     mutationFn: async (body: { token: string; device_name?: string }) => {
       const { data, error } = await client.POST("/v1/push-tokens", { body });
       if (error) throw error;
@@ -278,6 +297,7 @@ export function useRegisterPushToken() {
 export function useRemovePushToken() {
   const client = useFrappClient();
   return useMutation({
+    mutationKey: ["notifications", "remove-push-token"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.DELETE("/v1/push-tokens/{id}", {
         params: { path: { id } },
@@ -640,6 +660,7 @@ export function useUpdateNotificationPreference() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["notifications", "update-notification-preference"],
     mutationFn: async (body: UpdateNotificationPreferenceBody) => {
       const { data, error } = await client.PATCH(
         "/v1/notifications/preferences",
@@ -692,6 +713,7 @@ export function useUpdateUserSettings() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["settings", "update-user-settings"],
     mutationFn: async (body: UpdateUserSettingsBody) => {
       const { data, error } = await client.PATCH("/v1/settings", { body });
       if (error) throw error;

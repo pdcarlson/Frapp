@@ -23,6 +23,19 @@ import { useRouter } from "expo-router";
  * (`lib/routes.spec.ts`, `docs/mobile/testing.md` § Gotchas).
  */
 
+// The member's own status (#3845) has its own spec
+// (`components/chat/home-header.spec.tsx`); here it is simply unknown.
+vi.mock("@/lib/account/own-status", () => ({
+  useOwnStatus: () => null,
+  useOwnStatusSync: () => undefined,
+  useSaveOwnStatus: () => ({ save: vi.fn(), isSaving: false }),
+}));
+// Chat home's status sheet is a second `BottomSheetModal`; this spec counts
+// Ask's alone.
+vi.mock("@/components/account/status-sheet", () => ({
+  StatusSheet: () => null,
+}));
+
 vi.mock("@repo/hooks", () => {
   const empty = {
     data: [],

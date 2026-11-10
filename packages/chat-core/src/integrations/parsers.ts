@@ -8,6 +8,7 @@
  * rule (no NaN propagation) holds.
  */
 
+import { parseDueEntry } from "@repo/formatting";
 import {
   POINTS_ADJUSTMENT_MAX,
   POINTS_REASON_MAX_LENGTH,
@@ -248,7 +249,7 @@ export function parsePointsArgs(args: string): ParseResult<PointsArgs> {
 }
 
 const TASK_MAX_TITLE_LENGTH = TASK_TITLE_MAX_LENGTH;
-const TASK_USAGE = 'Usage: /task "<title>" @assignee <YYYY-MM-DD> [points]';
+const TASK_USAGE = 'Usage: /task "<title>" @assignee <due date> [points]';
 
 /**
  * Validates a `YYYY-MM-DD` token as a real calendar date (rejects `2026-02-30`,
@@ -270,15 +271,52 @@ function parseIsoDate(token: string | undefined): string | null {
 }
 
 /**
- * Parse `/task "<title>" @assignee <YYYY-MM-DD> [points]`. The title is quoted
+ * A `/task` due date: what web's task forms read (#3928, `parseDueEntry`), so
+ * `11/14`, `Friday` and `tomorrow` work with no year typed, the year being the
+ * next time the date comes round. `YYYY-MM-DD` still reads as before.
+ */
+function parseTaskDue(text: string, now: Date): string | null {
+  return parseIsoDate(text) ?? parseDueEntry(text, now);
+}
+
+/**
+ * The due date and the points token in what follows a `/task`'s `@member`.
+ *
+ * The whole of it must be a date, or a date and then one last token for the
+ * points; nothing is picked out of a longer run. Reading token by token is
+ * how `Nov 14 2027` once became November 14th worth 2027 points, and how
+ * "help tom sweep" became a task due tomorrow (review of #3928). The whole
+ * run is tried first, so a year typed after the date belongs to the date.
+ * `null` when it is neither shape.
+ */
+function readTaskDue(
+  rest: readonly string[],
+  now: Date,
+): { date: string; pointsToken: string | null } | null {
+  const tokens = rest.map((token) => token.trim()).filter(Boolean);
+  if (tokens.length === 0) return null;
+  const whole = parseTaskDue(tokens.join(" "), now);
+  if (whole !== null) return { date: whole, pointsToken: null };
+  if (tokens.length < 2) return null;
+  const date = parseTaskDue(tokens.slice(0, -1).join(" "), now);
+  if (date === null) return null;
+  return { date, pointsToken: tokens[tokens.length - 1]! };
+}
+
+/**
+ * Parse `/task "<title>" @assignee <due date> [points]`. The title is quoted
  * because chapter task titles routinely contain spaces (same rationale as
  * `/poll`). The assignee token (leading `@` stripped) is resolved to a user id
  * at dispatch — the parser is grammar-only and never touches the directory. The
- * due date is required (the backend `due_date` is non-null) and validated as a
- * real calendar date. Points are optional and, when present, a non-negative
+ * due date is required (the backend `due_date` is non-null) and read as the
+ * task forms read it ({@link readTaskDue}): everything after the `@member` is
+ * the date, or the date and then the points. Points are optional and, when present, a non-negative
  * whole number.
  */
-export function parseTaskArgs(args: string): ParseResult<TaskArgs> {
+export function parseTaskArgs(
+  args: string,
+  now: Date = new Date(),
+): ParseResult<TaskArgs> {
   const tokens = tokenizeQuotedArgs(args.trim());
   if (tokens === null) {
     return { ok: false, error: "Unterminated quote in /task arguments" };
@@ -304,14 +342,15 @@ export function parseTaskArgs(args: string): ParseResult<TaskArgs> {
   }
   const assigneeToken = assigneeRaw.slice(1);
 
-  const dueDate = parseIsoDate(tokens[2]);
-  if (dueDate === null) {
-    return { ok: false, error: "Add a due date as YYYY-MM-DD" };
+  const due = readTaskDue(tokens.slice(2), now);
+  if (due === null) {
+    return { ok: false, error: "Add a due date, like 11/14 or Friday" };
   }
+  const dueDate = due.date;
 
   let pointReward: number | null = null;
-  if (tokens[3] != null && tokens[3].trim().length > 0) {
-    const parsed = parseNumericArg(tokens[3]);
+  if (due.pointsToken !== null) {
+    const parsed = parseNumericArg(due.pointsToken);
     if (parsed === null || !Number.isInteger(parsed) || parsed < 0) {
       return {
         ok: false,
@@ -557,7 +596,10 @@ export interface TaskFormPrefill {
  * the first `@member` or date joins it), an unterminated quote is dropped,
  * and a token that doesn't fit its slot is dropped rather than refused.
  */
-export function taskFormPrefill(args: string): TaskFormPrefill {
+export function taskFormPrefill(
+  args: string,
+  now: Date = new Date(),
+): TaskFormPrefill {
   const trimmed = args.trim();
   if (trimmed.length === 0) return {};
   const tokens = lenientTokens(trimmed);
@@ -567,6 +609,9 @@ export function taskFormPrefill(args: string): TaskFormPrefill {
   let i = 0;
   for (; i < tokens.length; i++) {
     const token = tokens[i]!.trim();
+    // Only `YYYY-MM-DD` ends the title, as before #3928: ahead of the
+    // `@member` a looser date is a word of the title ("Room 3/4 cleanup",
+    // "Clean up Friday's mess").
     if (token.startsWith("@") || parseIsoDate(token) !== null) break;
     if (token.length > 0) titleParts.push(token);
   }
@@ -575,20 +620,41 @@ export function taskFormPrefill(args: string): TaskFormPrefill {
   const title = titleParts.join(" ").trim();
   if (title.length > 0) prefill.title = title;
 
+  const rest: string[] = [];
   for (; i < tokens.length; i++) {
     const token = tokens[i]!.trim();
     if (token.startsWith("@") && token.length > 1) {
       prefill.assigneeToken ??= token.slice(1);
       continue;
     }
+    if (token.length > 0) rest.push(token);
+  }
+
+  // What follows the `@member` as the one-liner reads it: a date, or a date
+  // and the points. A run that is neither fills nothing, so the form asks for
+  // a due date instead of arriving with one nobody typed.
+  const due = readTaskDue(rest, now);
+  if (due !== null) {
+    prefill.dueDate = due.date;
+    // Only plain digits the form can hold: `1e21` or `0x10` would show one
+    // number and post another.
+    const points =
+      due.pointsToken !== null && /^\d+$/.test(due.pointsToken)
+        ? parseNumericArg(due.pointsToken)
+        : null;
+    if (points !== null && Number.isSafeInteger(points) && points >= 0) {
+      prefill.pointReward = points;
+    }
+    return prefill;
+  }
+  // Before #3928 a `YYYY-MM-DD` was found anywhere in the run, with the
+  // points after it. Kept, so a typed command that worked still fills.
+  for (const token of rest) {
     const date = parseIsoDate(token);
     if (date !== null) {
       prefill.dueDate ??= date;
       continue;
     }
-    // Points only after the date, as the one-liner orders them, and only
-    // plain digits the form can hold: `1e21` or `0x10` would show one number
-    // and post another.
     const points = /^\d+$/.test(token) ? parseNumericArg(token) : null;
     if (
       prefill.dueDate !== undefined &&

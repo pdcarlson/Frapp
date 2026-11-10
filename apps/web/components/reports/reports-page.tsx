@@ -52,7 +52,8 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/lib/hooks/use-toast";
-import { asArray, downloadCsv, getErrorMessage } from "@/lib/utils";
+import { asArray, getErrorMessage, type ExportFormat } from "@/lib/utils";
+import { ExportMenu } from "@/components/shared/export-menu";
 import { ReportsFormSkeleton } from "@/components/reports/reports-skeleton";
 import { InlineNote } from "@/components/shared/inline-note";
 
@@ -226,11 +227,11 @@ function flattenRecord(value: unknown, prefix = ""): Record<string, string> {
 }
 
 /**
- * Flatten any report payload shape into rows ready for `downloadCsv`.
+ * Flatten any report payload shape into rows ready for `exportRows`.
  *
  * Each API handler returns either `{ rows: [...] }`, `{ entries: [...] }`, or
  * a bare array. We normalize to rows and flatten each row's keys — column
- * order, escaping, and BOM/CRLF are the shared `downloadCsv`'s job.
+ * order, escaping, and each file type's encoding are the shared `exportRows`'s job.
  */
 function buildRows(payload: unknown): Record<string, string>[] {
   return extractRows(payload).map((row) => flattenRecord(row));
@@ -270,7 +271,7 @@ export function ReportsPage() {
   // All four report routes are POSTs on `ReportController`, which carries no
   // `@FreeTier`, so generating one is a paid-op even though it reads like a
   // read (#841). Both buttons that reach `invokeReport` mirror the gate; the
-  // filters and the local CSV serialization below do not (§5: never gate a
+  // filters and the local export serialization below do not (§5: never gate a
   // read). The server guard is still the enforcement.
   const gate = useSubscriptionGate();
   const attendance = useAttendanceReport();
@@ -325,7 +326,7 @@ export function ReportsPage() {
     cannot cancel a request already in flight — so a generate started under the
     old filters would resolve afterwards and call `setPreview` with rows that no
     longer match what the form says. The member sees a table scoped to nobody
-    beside a Member ID field naming somebody, and "Download CSV" — which gates
+    beside a Member ID field naming somebody, and "Export" — which gates
     only on `preview` being non-empty — exports those rows under that
     appearance. Each run takes a token and only the newest one is allowed to
     write.
@@ -335,10 +336,10 @@ export function ReportsPage() {
   /**
    * Any filter edit invalidates the preview.
    *
-   * "Download CSV" serializes `preview`, while "Download PDF" re-queries with
+   * "Export" serializes `preview`, while "Download PDF" re-queries with
    * whatever the filters currently say. Without this, editing a date after
    * generating leaves the two buttons exporting different data from the same
-   * screen — and the CSV silently carries rows that no longer match the filters
+   * screen — and the export silently carries rows that no longer match the filters
    * the user is looking at. The kind Select already cleared it; the filter
    * inputs did not.
    */
@@ -448,7 +449,7 @@ export function ReportsPage() {
       }
 
       // A truncated report must not read as a finished one here: this toast is
-      // what an officer sees immediately before clicking "Download CSV" and
+      // what an officer sees immediately before clicking "Export" and
       // sending the file on.
       if (truncation.truncated) {
         toast({
@@ -461,7 +462,7 @@ export function ReportsPage() {
 
       toast({
         title: `${reportLabel[kind]} report ready`,
-        description: `${rows.length} row${rows.length === 1 ? "" : "s"} previewed. Download CSV to share.`,
+        description: `${rows.length} row${rows.length === 1 ? "" : "s"} previewed. Export to share.`,
       });
     } catch (error) {
       if (token !== runToken.current) return;
@@ -482,19 +483,24 @@ export function ReportsPage() {
     }
   }
 
-  function exportCsv() {
-    if (!preview || preview.length === 0) return;
-    downloadCsv(buildRows(preview), kind);
-    // The CSV is serialized from the preview, so it inherits the preview's
-    // truncation. Saying so at download time is the last point before the file
-    // leaves the app and stops carrying any context at all.
-    if (truncation?.truncated) {
-      toast({
-        title: "Downloaded an incomplete CSV",
-        variant: "destructive",
-        description: `${truncationSummary(truncation)} Do not treat this file as a complete record of the chapter.`,
-      });
-    }
+  function onRowsExported(format: ExportFormat) {
+    // The export is serialized from the preview, so it inherits the preview's
+    // truncation. Saying so at export time is the last point before the rows
+    // leave the app and stop carrying any context at all.
+    if (!truncation?.truncated) return false;
+    // One toast shows at a time, so for the clipboard copy this notice also
+    // has to say the rows were copied and where they go.
+    const copied = format === "sheets";
+    toast({
+      title: copied
+        ? "Copied an incomplete report"
+        : "Exported an incomplete report",
+      variant: "destructive",
+      description: `${truncationSummary(truncation)} ${
+        copied ? "Paste into a Google Sheet, but do" : "Do"
+      } not treat this export as a complete record of the chapter.`,
+    });
+    return true;
   }
 
   /**
@@ -766,14 +772,14 @@ export function ReportsPage() {
                   chapter has already been served. The rows behind it came from a
                   generate that was itself gated.
                 */}
-                <Button
-                  variant="secondary"
-                  onClick={exportCsv}
+                <ExportMenu
+                  label="Export"
+                  icon={<Download className="h-4 w-4" />}
+                  filenamePrefix={kind}
+                  getRows={() => (preview ? buildRows(preview) : [])}
+                  onExported={onRowsExported}
                   disabled={!preview || preview.length === 0}
-                >
-                  <Download className="h-4 w-4" />
-                  Download CSV
-                </Button>
+                />
                 <Button
                   variant="secondary"
                   onClick={exportPdf}
@@ -811,7 +817,7 @@ export function ReportsPage() {
                 `spec/behavior/reports.md` caps a report at 5,000 rows and
                 says truncation is never silent — but the only signal was a
                 toast, so once it dismissed a partial table sat on screen
-                claiming to be the whole report, and the CSV built from it
+                claiming to be the whole report, and the export built from it
                 carries the same claim into a file. §5's Semantic warning
                 kind, which needs no §1 lift on its own tint (5.57–7.15:1).
               */}
@@ -826,8 +832,8 @@ export function ReportsPage() {
             */}
             <p className="text-sm text-muted-foreground">
               {truncation?.truncated
-                ? `${truncationSummary(truncation)} This preview and the CSV built from it are not a complete record of the chapter.`
-                : "First 25 rows of the generated report. The CSV has every row."}
+                ? `${truncationSummary(truncation)} This preview and any export built from it are not a complete record of the chapter.`
+                : "First 25 rows of the generated report. An export has every row."}
             </p>
             <div>
               {/*

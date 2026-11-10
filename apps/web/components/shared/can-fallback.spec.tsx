@@ -395,6 +395,7 @@ const SURFACE_GATES: readonly { file: string; match: string }[] = [
   { file: "components/chat-admin/chat-reports-card.tsx", match: "allOf={CHAT_REPORT_QUEUE_PERMISSIONS}" },
   { file: "components/discord-import/discord-import-page.tsx", match: 'permission="channels:manage"' },
   { file: "components/backwork/bulk/bulk-upload-page.tsx", match: 'permission="backwork:upload"' },
+  { file: "components/events/event-detail-sheet.tsx", match: 'permission="events:update"' },
 ];
 
 /**
@@ -416,6 +417,7 @@ const CONSUMERS: readonly string[] = [
   "components/documents/documents-page.tsx",
   "components/documents/folder-rail.tsx",
   "components/events/attendance-panel.tsx",
+  "components/events/event-detail-sheet.tsx",
   "components/events/events-page.tsx",
   "components/geofences/geofences-admin-page.tsx",
   "components/points/points-audit-card.tsx",

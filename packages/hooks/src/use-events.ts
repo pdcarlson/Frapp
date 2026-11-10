@@ -51,6 +51,7 @@ export function useCreateEvent() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["events", "create-event"],
     mutationFn: async (body: {
       name: string;
       description?: string;
@@ -115,6 +116,7 @@ export function useUpdateEvent() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["events", "update-event"],
     mutationFn: async ({
       id,
       body,
@@ -164,6 +166,7 @@ export function useDeleteEvent() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["events", "delete-event"],
     // A bare id deletes one event; `scope: "series"` cancels a repeating
     // series from now forward.
     mutationFn: async (

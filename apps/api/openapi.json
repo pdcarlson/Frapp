@@ -9615,6 +9615,42 @@
             }
           },
           {
+            "name": "has",
+            "required": false,
+            "in": "query",
+            "description": "Message hits that carry all of these, comma-separated: `file` (any attachment), `image`, `link`, `poll`. A message filter: it narrows the messages source inside the caller’s accessible-channel set, makes the search messages-only, and lets `q` be empty.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "before",
+            "required": false,
+            "in": "query",
+            "description": "Message hits sent before this instant: ISO 8601 with an explicit offset. A message filter: it narrows the messages source inside the caller’s accessible-channel set, makes the search messages-only, and lets `q` be empty.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "required": false,
+            "in": "query",
+            "description": "Message hits sent at or after this instant: ISO 8601 with an explicit offset. A message filter: it narrows the messages source inside the caller’s accessible-channel set, makes the search messages-only, and lets `q` be empty.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fromUserId",
+            "required": false,
+            "in": "query",
+            "description": "Message hits from this sender only. A message filter: it narrows the messages source inside the caller’s accessible-channel set, makes the search messages-only, and lets `q` be empty.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "channelId",
             "required": false,
             "in": "query",

@@ -58,6 +58,7 @@ export function useCreateInvoice() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["invoices", "create-invoice"],
     mutationFn: async (body: {
       user_id: string;
       title: string;
@@ -90,6 +91,7 @@ export function useCreateInvoice() {
 export function usePayInvoice() {
   const client = useFrappClient();
   return useMutation({
+    mutationKey: ["invoices", "pay-invoice"],
     mutationFn: async (invoiceId: string) => {
       const { data, error } = await client.POST(
         "/v1/invoices/{id}/payment-intent",
@@ -125,6 +127,7 @@ export function useAwaitInvoicePaid(options?: {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["invoices", "await-invoice-paid"],
     mutationFn: async (invoiceId: string) => {
       for (let attempt = 0; attempt < attempts; attempt += 1) {
         const { data } = await client.GET("/v1/invoices/{id}", {
@@ -150,6 +153,7 @@ export function useTransitionInvoiceStatus() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["invoices", "transition-invoice-status"],
     mutationFn: async ({
       id,
       body,

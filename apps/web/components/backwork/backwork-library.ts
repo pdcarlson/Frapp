@@ -7,7 +7,8 @@ import {
   normalizeWords,
   withNumeralVariants,
   type FuzzyResult,
-} from "@/lib/search/fuzzy-match";
+} from "@repo/hooks/fuzzy-match";
+import { POSTGREST_MAX_ROWS } from "@repo/hooks/document-library";
 
 /**
  * The `/backwork` library's search, filters and ordering, kept free of React
@@ -26,7 +27,7 @@ import {
  * comes back as its newest rows with no signal; a response this long is
  * treated as truncated.
  */
-export const BACKWORK_LIST_CAP = 1000;
+export const BACKWORK_LIST_CAP = POSTGREST_MAX_ROWS;
 
 export type BackworkResource = {
   id: string;
@@ -530,12 +531,14 @@ export function filterOptions(rows: readonly LibraryRow[]): {
     // one, which sorts first among its courses ("COGS · all courses" before
     // "COGS 2120").
     course: [
-      ...[...courses].map(([value, label]) => ({ value, label })),
+      // `short`: the chip reads the course code; the list shows the name too.
+      ...[...courses].map(([value, label]) => ({ value, label, short: value })),
       ...[...departments]
         .filter(([, entry]) => entry.courses.size > 1)
         .map(([id, entry]) => ({
           value: departmentFilterValue(id),
           label: `${entry.code} · all courses`,
+          short: entry.code,
         })),
     ].sort(byLabel),
     professor: [...professors].map(([value, label]) => ({ value, label })).sort(byLabel),

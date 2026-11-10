@@ -702,6 +702,7 @@ export class BillingService {
           stripe_event_id: event.id,
           ...(chapterHash ? { chapter: chapterHash } : {}),
         },
+        fingerprint: ['billing-unknown-chapter', kind],
       };
     });
   }

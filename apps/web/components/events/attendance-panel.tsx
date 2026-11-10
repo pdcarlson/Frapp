@@ -5,7 +5,6 @@ import { useId, useMemo, useState } from "react";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { DirectoryGlyph } from "@/components/events/chapter-ops-glyphs";
 import {
-  useActiveChapterId,
   useAttendance,
   useAutoAbsent,
   useMembers,
@@ -29,7 +28,6 @@ import {
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
-import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import { Can } from "@/components/shared/can";
 import {
   attendanceStatusKind,
@@ -68,7 +66,6 @@ export function AttendancePanel({
    */
   eventEnd?: unknown;
 }) {
-  const chapterId = useActiveChapterId();
   const { toast } = useToast();
   const attendanceQuery = useAttendance(eventId);
   const membersQuery = useMembers();
@@ -101,22 +98,10 @@ export function AttendancePanel({
     "ALL" | AttendanceStatus | "UNRECORDED"
   >("ALL");
 
-  // Live updates: other admins marking attendance or members checking in
-  // appear without a manual refresh. Invalidate the event detail too so
-  // aggregate counts stay consistent.
-  useRealtimeTable({
-    table: "event_attendance",
-    scopeId: eventId,
-    invalidate: useMemo(
-      () => [
-        ["attendance", eventId],
-        // Must match useEvent(id) → ["events", chapterId, id]; ["events", id] never matches.
-        ["events", chapterId, eventId],
-      ],
-      [chapterId, eventId],
-    ),
-    enabled: Boolean(eventId),
-  });
+  // Live updates come from the event sheet, which holds the one
+  // `attendance:<eventId>` subscription for every viewer (a topic takes one
+  // channel, so a second here would release the sheet's), and invalidates
+  // this roster with the member's own row.
 
   const attendance = useMemo(
     () => asArray<AttendanceRow>(attendanceQuery.data),
