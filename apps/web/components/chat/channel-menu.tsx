@@ -27,6 +27,10 @@ import { PinsPanel, pinnedMessages, type HiddenPins } from "./pins-popover";
 import { BookmarksPanel, type BookmarkEntry } from "./bookmarks-popover";
 import { NotificationLevelPanel } from "./notification-level-popover";
 import {
+  ChannelDisplayPanel,
+  type ChannelDisplayLockControl,
+} from "./channel-display-panel";
+import {
   ChatBackgroundPicker,
   type ChatBackgroundPick,
 } from "./chat-background-picker";
@@ -34,9 +38,11 @@ import {
   CHAT_BACKGROUND_LABELS,
   type ChatBackgroundKey,
 } from "@repo/validation";
-import { ChannelDisplayPanel } from "./channel-display-panel";
 import { channelDensityDetail } from "@repo/chat-core/density";
-import { useChannelDensityOverride } from "@/lib/chat/chat-density";
+import {
+  useChannelDensityOverride,
+  useChannelDisplayLocked,
+} from "@/lib/chat/chat-density";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   CHANNEL_LEVEL_DETAIL,
@@ -148,6 +154,12 @@ type ChannelMenuProps = {
     onToggle: () => void;
   };
   /**
+   * The Always formal switch in the Display view (#3787). Pass it only when
+   * the viewer created the open channel or holds `channels:manage`
+   * (`canSetChannelDisplayLock`); absent, the view has no switch.
+   */
+  displayLock?: ChannelDisplayLockControl;
+  /**
    * The channel's background (#3973). Present only for someone who can manage
    * channels, on a channel that isn't a DM; absent, no row.
    */
@@ -213,11 +225,13 @@ export function ChannelMenu({
   onChangeNotificationLevel,
   hideConversation,
   pinToTop,
+  displayLock,
   background,
 }: ChannelMenuProps) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<View>("menu");
   const densityOverride = useChannelDensityOverride(activeChannelId);
+  const displayLocked = useChannelDisplayLocked(activeChannelId);
   const backRef = useRef<HTMLButtonElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
 
@@ -284,7 +298,7 @@ export function ChannelMenu({
             view: "display" as const,
             label: "Display",
             Glyph: ChatGlyph,
-            detail: channelDensityDetail(densityOverride),
+            detail: channelDensityDetail(densityOverride, displayLocked),
           },
         ]
       : []),
@@ -511,6 +525,7 @@ export function ChannelMenu({
               <ChannelDisplayPanel
                 channelId={activeChannelId}
                 onChange={close}
+                lockControl={displayLock}
               />
             ) : null}
             {view === "background" && background ? (

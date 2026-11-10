@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CHAT_CHANNEL_DENSITY_STORAGE_KEY,
   CHAT_DENSITY_STORAGE_KEY,
+  resetLockedChannelsForTests,
+  setChannelLocked,
 } from "@repo/chat-core/density";
 import {
   hydrateChatDensity,
@@ -12,6 +14,7 @@ import {
   setChannelDensity,
   setChatDensity,
   useChannelDensityOverride,
+  useChannelDisplayLocked,
   useChatDensity,
 } from "./chat-density";
 
@@ -145,5 +148,40 @@ describe("a channel's own display on this phone (#3787)", () => {
     act(() => setChannelDensity("c", "bubbles"));
     expect(result.current).toBe("bubbles");
     expect(setItem).not.toHaveBeenCalled();
+  });
+});
+
+describe("an Always-formal channel (#3787)", () => {
+  beforeEach(() => {
+    resetChatDensityForTests();
+    resetLockedChannelsForTests();
+    getItem.mockReset();
+    getItem.mockResolvedValue(null);
+    setItem.mockReset();
+    setItem.mockResolvedValue(undefined);
+  });
+
+  it("draws cozy over the member's default and their own pick, and gives the pick back when cleared", async () => {
+    const { result } = renderHook(() => ({
+      a: useChatDensity("a"),
+      b: useChatDensity("b"),
+      locked: useChannelDisplayLocked("a"),
+    }));
+    await act(async () => {
+      await hydrateChatDensity();
+    });
+    act(() => {
+      setChatDensity("compact");
+      setChannelDensity("a", "bubbles");
+    });
+    act(() => setChannelLocked("a", true));
+    expect(result.current).toEqual({ a: "cozy", b: "compact", locked: true });
+
+    act(() => setChannelLocked("a", false));
+    expect(result.current).toEqual({
+      a: "bubbles",
+      b: "compact",
+      locked: false,
+    });
   });
 });

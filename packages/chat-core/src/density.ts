@@ -117,14 +117,94 @@ export function withChannelDensity(
   return next;
 }
 
-/** What a channel draws: its override on this device, else the default. */
+/**
+ * The display an Always-formal channel draws for everyone (#3787): full-width
+ * posts with the avatar, name and role line, which is cozy.
+ */
+export const FORMAL_CHAT_DENSITY: ChatDensity = "cozy";
+
+/**
+ * What a channel draws: the formal display when the channel is set to Always
+ * formal, else its override on this device, else the default. The lock wins
+ * over the member's own override, which is kept and comes back if the lock
+ * is cleared.
+ */
 export function resolveChannelDensity(
   fallback: ChatDensity,
   map: ChannelDensityMap,
   channelId: string | null | undefined,
+  locked = false,
 ): ChatDensity {
+  if (locked) return FORMAL_CHAT_DENSITY;
   return (channelId ? map[channelId] : undefined) ?? fallback;
 }
+
+/**
+ * Always formal (#3787) is a server fact, `chat_channels.display_locked`,
+ * read off the channel list. Every row of a thread asks for its channel's
+ * density by id alone, so the clients copy the locked ids here when the list
+ * loads (`syncLockedChannels`) and their density hooks read it through
+ * `useSyncExternalStore`, rather than every row reading the channel list.
+ */
+const NO_LOCKED_CHANNELS: ReadonlySet<string> = new Set();
+let lockedChannels: ReadonlySet<string> = NO_LOCKED_CHANNELS;
+const lockListeners = new Set<() => void>();
+
+/** Replaces the locked set from a channel list. A list with the same locks notifies nobody. */
+export function syncLockedChannels(
+  channels: ReadonlyArray<{ id: string; display_locked?: boolean | null }>,
+): void {
+  const next = new Set<string>();
+  for (const channel of channels) {
+    if (channel.display_locked === true) next.add(channel.id);
+  }
+  if (
+    next.size === lockedChannels.size &&
+    [...next].every((id) => lockedChannels.has(id))
+  ) {
+    return;
+  }
+  lockedChannels = next.size === 0 ? NO_LOCKED_CHANNELS : next;
+  for (const listener of lockListeners) listener();
+}
+
+/** Marks one channel locked or not, ahead of the list's refetch after a change. */
+export function setChannelLocked(channelId: string, locked: boolean): void {
+  if (lockedChannels.has(channelId) === locked) return;
+  const next = new Set(lockedChannels);
+  if (locked) next.add(channelId);
+  else next.delete(channelId);
+  lockedChannels = next;
+  for (const listener of lockListeners) listener();
+}
+
+export function subscribeLockedChannels(listener: () => void): () => void {
+  lockListeners.add(listener);
+  return () => {
+    lockListeners.delete(listener);
+  };
+}
+
+export function getLockedChannels(): ReadonlySet<string> {
+  return lockedChannels;
+}
+
+/** Test seam: forget every lock. */
+export function resetLockedChannelsForTests(): void {
+  lockedChannels = NO_LOCKED_CHANNELS;
+}
+
+/** What the Display view says in an Always-formal channel. */
+export const CHANNEL_DISPLAY_LOCKED_NOTE =
+  "Always formal: everyone sees this channel in the formal display.";
+
+/** The switch's label and its detail, for the creator or an officer. */
+export const ALWAYS_FORMAL_LABEL = "Always formal";
+export const ALWAYS_FORMAL_DESCRIPTION =
+  "Show this channel to everyone in the formal display. Members can't change it here.";
+/** The create form's one-line switch label, matching its Read-only line. */
+export const ALWAYS_FORMAL_LABEL_WITH_HINT =
+  "Always formal (everyone sees it in the formal display)";
 
 /**
  * The per-channel picker's choices, shared by both clients' channel menus:
@@ -142,7 +222,11 @@ export function channelDensityChoices(
   ];
 }
 
-/** The channel menu row's state word: the override, or "Default". */
-export function channelDensityDetail(override: ChatDensity | null): string {
+/** The channel menu row's state word: "Formal" when locked, else the override, or "Default". */
+export function channelDensityDetail(
+  override: ChatDensity | null,
+  locked = false,
+): string {
+  if (locked) return "Formal";
   return override ? chatDensityLabel(override) : "Default";
 }

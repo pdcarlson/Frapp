@@ -10,13 +10,13 @@ import { flatStyle } from "@/test/flat-style";
 
 /**
  * s03 is what comes right after joining a chapter, for a new member and for an
- * App Reviewer alike, in up to two beats, each only when it has something to
- * ask: the profile beat (no photo or no real name), then "Turn on
+ * App Reviewer alike, in up to three beats: the profile beat (no photo or no
+ * real name), the chat display pick (always, #3787), then "Turn on
  * notifications" when this build can push and push is off. In a build that
  * cannot push (#2299; `isPushAvailable()` false, `spec/ui/mobile/patterns.md`
  * § Push notifications lists the causes) there is no notifications beat at
- * all, rather than a dead "Turn on" and an apology. With nothing to ask, s03
- * goes straight to chat, where the first-run tour takes over
+ * all, rather than a dead "Turn on" and an apology. After the last beat, s03
+ * goes to chat, where the first-run tour takes over
  * (`lib/onboarding/tour.ts`); the static "You're in." card is gone.
  * `lib/notifications/primer.spec.ts` covers the rules; this covers the screen
  * wiring them.
@@ -91,6 +91,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     ],
   }),
   useChannels: () => ({ isPending: false, isError: false, data: [] }),
+  // The display beat's cards paint in the chapter accent (`useChapterBranding`).
+  useCurrentChapter: () => ({ data: undefined }),
   useUpdateOnboarding: () => ({ mutateAsync: completeOnboarding }),
   useCurrentUser: () => ({ data: currentUser, dataUpdatedAt: 1 }),
   useUpdateUser: () => ({ mutateAsync: updateUser }),
@@ -105,10 +107,18 @@ import {
   PUSH_PRIMER_STORAGE_KEY,
 } from "@/lib/notifications/primer";
 import { TOUR_DUE_STORAGE_KEY } from "@/lib/onboarding/tour";
+import { DISPLAY_STEP_TITLE } from "@/lib/onboarding/display-step";
+import { CHAT_DENSITY_STORAGE_KEY } from "@repo/chat-core/density";
 
 type Node = ReactTestRenderer["root"];
 
-async function render(): Promise<ReactTestRenderer> {
+/**
+ * Renders s03. By default it also answers the display beat (#3787) when that
+ * is the first beat, so a spec about the notifications beat starts on it.
+ */
+async function render({
+  passDisplay = true,
+}: { passDisplay?: boolean } = {}): Promise<ReactTestRenderer> {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -129,7 +139,21 @@ async function render(): Promise<ReactTestRenderer> {
       await new Promise((resolve) => setTimeout(resolve, 10));
     });
   }
+  if (passDisplay) await answerDisplay(tree.root);
   return tree;
+}
+
+const onDisplayBeat = (root: Node) =>
+  root
+    .findAllByType("Text" as never, { deep: true })
+    .some((text) => text.props.children === DISPLAY_STEP_TITLE);
+
+/** Moves on from the display beat, keeping the preselected display. */
+async function answerDisplay(root: Node) {
+  if (!onDisplayBeat(root)) return;
+  const next =
+    button(root, "Continue") ?? button(root, "Go to chat") ?? undefined;
+  await press(next);
 }
 
 const texts = (root: Node) =>
@@ -304,27 +328,36 @@ describe("s03 welcome, notifications step", () => {
     expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
   });
 
-  it("leaves Android back alone when it's the first beat", async () => {
+  it("leaves Android back alone on the first beat, and walks back to it from notifications", async () => {
     const { BackHandler } = await import("react-native");
     const listen = vi.mocked(BackHandler.addEventListener);
     listen.mockClear();
     pushAvailable = true;
     permission = OFF;
-    const { root } = await render();
+    const { root } = await render({ passDisplay: false });
 
-    expect(button(root, "Not now")).toBeDefined();
+    expect(onDisplayBeat(root)).toBe(true);
     expect(
       listen.mock.calls.filter(([event]) => event === "hardwareBackPress"),
     ).toHaveLength(0);
+
+    await answerDisplay(root);
+    expect(button(root, "Not now")).toBeDefined();
+    const calls = listen.mock.calls as unknown as [string, () => boolean][];
+    const handler = calls.filter(([e]) => e === "hardwareBackPress").at(-1);
+    act(() => {
+      handler![1]();
+    });
+    expect(onDisplayBeat(root)).toBe(true);
   });
 });
 
 /**
- * A member with a name, a photo and push on has nothing to answer, so s03
- * draws no beat and hands straight over to chat, marking the first-run tour
- * due for that member on the way out.
+ * A member with a name, a photo and push on is asked only for their chat
+ * display (#3787), then handed over to chat, marking the first-run tour due
+ * for that member on the way out.
  */
-describe("s03 welcome, nothing to ask", () => {
+describe("s03 welcome, only the display to pick", () => {
   beforeEach(() => {
     pushAvailable = false;
     permission = null;
@@ -334,14 +367,17 @@ describe("s03 welcome, nothing to ask", () => {
     vi.mocked(vi.mocked(useRouter)().replace).mockClear();
   });
 
-  it("goes straight to chat and marks the tour due for this member", async () => {
-    const { root } = await render();
+  it("asks for the display, with Cozy picked, then goes to chat and marks the tour due", async () => {
+    const { root } = await render({ passDisplay: false });
 
-    expect(
-      root
-        .findAllByType("Pressable" as never, { deep: true })
-        .filter((p) => p.props.accessibilityRole === "button"),
-    ).toHaveLength(0);
+    expect(onDisplayBeat(root)).toBe(true);
+    const cozy = pressables(root).find(
+      (p) => p.props.accessibilityLabel === "Cozy",
+    );
+    expect(cozy?.props.accessibilityState).toEqual({ checked: true });
+    expect(completeOnboarding).not.toHaveBeenCalled();
+
+    await press(button(root, "Go to chat"));
     expect(completeOnboarding).toHaveBeenCalledWith({
       has_completed_onboarding: true,
     });
@@ -350,6 +386,24 @@ describe("s03 welcome, nothing to ask", () => {
       "u-1",
     );
     expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
+  });
+
+  it("saves a picked display on this phone", async () => {
+    const { root } = await render({ passDisplay: false });
+    vi.mocked(AsyncStorage.setItem).mockClear();
+
+    await press(
+      pressables(root).find((p) => p.props.accessibilityLabel === "Bubbles"),
+    );
+
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
+      CHAT_DENSITY_STORAGE_KEY,
+      "bubbles",
+    );
+    expect(
+      pressables(root).find((p) => p.props.accessibilityLabel === "Bubbles")
+        ?.props.accessibilityState,
+    ).toEqual({ checked: true });
   });
 });
 
@@ -387,6 +441,7 @@ describe("s03 welcome, one gold button", () => {
       signetDarkTokens.color.gold.house,
     );
     await press(button(root, "Continue"));
+    await answerDisplay(root);
 
     expect(fill(button(root, "Turn on notifications"))).toBe(
       signetDarkTokens.color.gold.house,
@@ -398,6 +453,7 @@ describe("s03 welcome, one gold button", () => {
 
   it("makes Go to chat the gold button when there is no primer", async () => {
     const { root } = await render();
+    await press(button(root, "Continue"));
 
     expect(fill(goToChat(root))).toBe(signetDarkTokens.color.gold.house);
   });
@@ -405,14 +461,15 @@ describe("s03 welcome, one gold button", () => {
   it("spins under the same label while it leaves, rather than renaming itself", async () => {
     completeOnboarding.mockReturnValueOnce(new Promise(() => {}));
     const { root } = await render();
+    await press(button(root, "Continue"));
     act(() => {
       void goToChat(root)?.props.onPress();
     });
 
-    const button = root
+    const leaving = root
       .findAllByType("Pressable" as never, { deep: true })
       .find((pressable) => pressable.props.accessibilityLabel === "Go to chat");
-    expect(button?.props.accessibilityState).toEqual({
+    expect(leaving?.props.accessibilityState).toEqual({
       disabled: true,
       busy: true,
     });
@@ -465,8 +522,9 @@ describe("s03 welcome, profile beat", () => {
     expect(root.findAllByType("ProfilePhoto" as never)).toHaveLength(1);
     expect(field(root)?.props.value).toBe("Ada Lovelace");
 
-    await press(button(root, "Go to chat"));
+    await press(button(root, "Continue"));
     expect(updateUser).not.toHaveBeenCalled();
+    await answerDisplay(root);
     expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
     expect(profileEvents()).toEqual([
       ["onboarding-profile-answered", { photo: "none", name_step: "kept" }],
@@ -478,7 +536,7 @@ describe("s03 welcome, profile beat", () => {
     const { root } = await render();
 
     expect(field(root)?.props.value).toBe("");
-    await press(button(root, "Go to chat"));
+    await press(button(root, "Continue"));
     expect(
       texts(root).some((t) => t.includes("so the chapter knows who")),
     ).toBe(true);
@@ -489,13 +547,14 @@ describe("s03 welcome, profile beat", () => {
     expect(
       texts(root).some((t) => t.includes("so the chapter knows who")),
     ).toBe(false);
-    await press(button(root, "Go to chat"));
+    await press(button(root, "Continue"));
 
     expect(updateUser).toHaveBeenCalledWith({ display_name: "Grace Hopper" });
     // Shape only: never the name itself.
     expect(profileEvents()).toEqual([
       ["onboarding-profile-answered", { photo: "had", name_step: "added" }],
     ]);
+    await answerDisplay(root);
     expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
   });
 
@@ -505,7 +564,7 @@ describe("s03 welcome, profile beat", () => {
     const { root } = await render();
     act(() => field(root)?.props.onChangeText("Grace Hopper"));
 
-    await press(button(root, "Go to chat"));
+    await press(button(root, "Continue"));
 
     expect(texts(root).some((t) => t.includes("Couldn't save your name"))).toBe(
       true,
@@ -526,6 +585,8 @@ describe("s03 welcome, profile beat", () => {
 
     expect(field(root)).toBeDefined();
     await press(button(root, "Continue"));
+    expect(onDisplayBeat(root)).toBe(true);
+    await answerDisplay(root);
     expect(button(root, "Not now")).toBeDefined();
 
     const back = () => {
@@ -536,7 +597,9 @@ describe("s03 welcome, profile beat", () => {
       });
     };
     back();
-    expect(field(root)).toBeDefined();
+    expect(onDisplayBeat(root)).toBe(true);
     expect(button(root, "Not now")).toBeUndefined();
+    back();
+    expect(field(root)).toBeDefined();
   });
 });

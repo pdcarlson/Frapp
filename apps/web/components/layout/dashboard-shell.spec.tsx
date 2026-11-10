@@ -467,7 +467,7 @@ describe("DashboardShell", () => {
       </DashboardShell>,
     );
     expect(
-      screen.getByRole("button", { name: /expand navigation/i }),
+      screen.getByRole("button", { name: /expand sidebar/i }),
     ).toBeInTheDocument();
   });
 
@@ -651,7 +651,7 @@ describe("DashboardShell", () => {
       expect(column(container)).toHaveClass("w-14");
       // Forced, not the member's preference: no toggle to undo it.
       expect(
-        screen.queryByRole("button", { name: /expand navigation/i }),
+        screen.queryByRole("button", { name: /expand sidebar/i }),
       ).not.toBeInTheDocument();
 
       // Chat alone has room: the nav comes back.

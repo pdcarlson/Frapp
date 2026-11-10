@@ -79,6 +79,12 @@ const HIGHLIGHT_LABEL: Record<string, string> = {
   chat: "unread messages",
 };
 
+/** The collapse toggle's action, named as the sidebar it folds (#4044). */
+const TOGGLE_LABEL = {
+  collapse: "Collapse sidebar",
+  expand: "Expand sidebar",
+} as const;
+
 /** 18px duotone glyph, per `1b` pin 2. */
 const navIconClassName = "h-[18px] w-[18px]";
 
@@ -219,26 +225,47 @@ export function AppNav({
         {sections}
       </nav>
       {isDrawer || !onToggleCollapsed ? null : (
+        /*
+         * The collapse toggle (#4044). It stays pinned to the bottom of the
+         * column (board `1c` pin 2, `1b` pin 4), but reads as a nav row: a hairline
+         * above it, the row's 34px geometry and colors, and in the expanded
+         * column its action as a visible label ("Collapse sidebar"), the way
+         * WordPress's "Collapse menu" row does. It was a lone 34px
+         * `text-muted` glyph in the corner, which members missed. The rail
+         * has no room for a label, so there the name is the accessible name
+         * and the tooltip.
+         */
         <div
+          data-nav-toggle=""
           className={cn(
-            "mt-auto flex pt-2",
-            isCollapsed ? "justify-center" : "justify-end",
+            "mt-auto flex shrink-0 flex-col pt-2",
+            isCollapsed ? "items-center" : "w-full",
           )}
         >
+          {/* The rail's 24px group hairline; the column's spans the row. */}
+          <span
+            aria-hidden="true"
+            className={cn(
+              "mb-2 h-px shrink-0 bg-border",
+              isCollapsed ? "w-6" : "w-full",
+            )}
+          />
           <button
             type="button"
             onClick={onToggleCollapsed}
-            aria-label={
-              isCollapsed ? "Expand navigation" : "Collapse navigation"
-            }
+            aria-label={isCollapsed ? TOGGLE_LABEL.expand : undefined}
             aria-expanded={!isCollapsed}
-            title={isCollapsed ? "Expand navigation" : "Collapse navigation"}
+            title={isCollapsed ? TOGGLE_LABEL.expand : TOGGLE_LABEL.collapse}
             className={cn(
-              "grid h-[34px] w-[34px] place-items-center rounded-[10px] text-muted transition hover:bg-card hover:text-foreground",
+              "flex h-[34px] shrink-0 items-center rounded-[10px] text-sm text-muted-foreground transition hover:bg-card hover:text-foreground",
+              isCollapsed ? "w-[34px] justify-center" : "w-full gap-2.5 px-2.5",
               FOCUS_RING_SHELL,
             )}
           >
-            <CollapseIcon className="h-[18px] w-[18px]" aria-hidden="true" />
+            <CollapseIcon className={navIconClassName} aria-hidden="true" />
+            {isCollapsed ? null : (
+              <span className="truncate">{TOGGLE_LABEL.collapse}</span>
+            )}
           </button>
         </div>
       )}

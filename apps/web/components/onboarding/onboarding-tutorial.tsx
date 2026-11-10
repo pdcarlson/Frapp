@@ -28,6 +28,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useChapterStore } from "@/lib/stores/chapter-store";
+import { ChatDensityControl } from "@/components/profile/chat-density-control";
 
 type ChapterMembership = {
   chapter_id: string;
@@ -47,6 +48,8 @@ type Step = {
   title: string;
   description: string;
   glyph: React.ReactNode;
+  /** A control the slide carries under its description, such as the display pick. */
+  body?: React.ReactNode;
 };
 
 /** §2's inline size, matching what the shared state family draws. */
@@ -66,6 +69,17 @@ const STEPS: Step[] = [
     description:
       "Chapter channels, DMs, and announcements live here. Realtime updates, no refresh needed.",
     glyph: <ChatGlyph className={GLYPH} />,
+  },
+  {
+    // The member picks their chat display while setting up (#3787, Winston's
+    // decision): the browser's current display is preselected (Cozy on a
+    // fresh browser), so Next keeps it.
+    id: "chat-display",
+    title: "Pick your chat display",
+    description:
+      "Choose how messages look on this browser. You can change it anytime in your profile.",
+    glyph: <ChatGlyph className={GLYPH} />,
+    body: <ChatDensityControl />,
   },
   {
     id: "events",
@@ -247,6 +261,8 @@ function OnboardingTutorialDialog({
           over `--popover` that hairline separates better (1.275:1) than the
           card's own ever did. Pinned in `profile-contrast.spec.ts`.
         */}
+        {step.body ?? null}
+
         <StepDots
           current={stepIndex}
           total={STEPS.length}

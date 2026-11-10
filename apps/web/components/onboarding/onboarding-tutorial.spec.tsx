@@ -49,7 +49,7 @@ describe("the step strip", () => {
     // catches the rendered element, which is the half a conditional could hide
     // from a grep.
     render(<OnboardingTutorial />);
-    const strip = screen.getByRole("group", { name: /step 1 of 8/i });
+    const strip = screen.getByRole("group", { name: /step 1 of 9/i });
     expect(strip.className).not.toMatch(/\bbg-secondary\b/);
     expect(strip.className).not.toMatch(/bg-(?:secondary|card|accent-subtle)\//);
     expect(strip.className).toMatch(/\bborder-border\b/);
@@ -62,12 +62,12 @@ describe("the step strip", () => {
     // wizard's version printed nothing at all. The shared recipe makes the
     // counter part of the indicator and names the group with it.
     render(<OnboardingTutorial />);
-    expect(screen.getByText("Step 1 of 8")).toBeInTheDocument();
+    expect(screen.getByText("Step 1 of 9")).toBeInTheDocument();
   });
 });
 
 describe("the slides", () => {
-  it("matches spec/behavior/onboarding.md's eight web screens, in order", async () => {
+  it("matches spec/behavior/onboarding.md's nine web screens, in order", async () => {
     // The behavior spec said seven and listed seven; the code has shipped
     // eight since it was written (it adds Points). Behavior spec wins on what
     // the product does, and here the code *is* the product — so the doc moved.
@@ -78,6 +78,7 @@ describe("the slides", () => {
     const titles = [
       "Welcome to Frapp",
       "Chat",
+      "Pick your chat display",
       "Events",
       "Backwork",
       "Study hours",
@@ -88,11 +89,28 @@ describe("the slides", () => {
 
     for (const [index, title] of titles.entries()) {
       expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
-      expect(screen.getByText(`Step ${index + 1} of 8`)).toBeInTheDocument();
+      expect(screen.getByText(`Step ${index + 1} of 9`)).toBeInTheDocument();
       if (index < titles.length - 1) {
         await user.click(screen.getByRole("button", { name: "Next" }));
       }
     }
+  });
+
+  it("lets a new member pick their chat display, with Cozy kept unless they change it (#3787)", async () => {
+    const user = userEvent.setup();
+    render(<OnboardingTutorial />);
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(screen.getByRole("button", { name: "Next" }));
+
+    expect(
+      screen.getByRole("heading", { name: "Pick your chat display" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /Cozy/ })).toBeChecked();
+    await user.click(screen.getByRole("radio", { name: /Bubbles/ }));
+    expect(screen.getByRole("radio", { name: /Bubbles/ })).toBeChecked();
+    expect(window.localStorage.getItem("frapp.chat-density.v1")).toBe(
+      "bubbles",
+    );
   });
 
   it("no longer promises a theme control that does not exist", () => {
