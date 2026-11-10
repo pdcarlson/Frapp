@@ -5283,8 +5283,11 @@ export interface components {
             sender_id: string | null;
             question: string;
             option_count: number;
-            /** Format: date-time */
-            closes_at: string;
+            /**
+             * Format: date-time
+             * @description When voting stops. Null for a card posted with no usable deadline, which stays open.
+             */
+            closes_at: string | null;
             /**
              * Format: date-time
              * @description Set when its creator closed it early.
@@ -5314,10 +5317,14 @@ export interface components {
             start_time: string;
             /** Format: date-time */
             end_time: string;
-            is_mandatory: boolean;
+            /**
+             * @description What the event asks of the caller, not the event’s default: a role of theirs the event lists decides it, and an alumnus the default alone would require is optional.
+             * @enum {string}
+             */
+            attendance: "required" | "optional";
             point_value: number;
             check_in_opens_minutes: number;
-            /** @description Whether the check-in window is open right now. */
+            /** @description Whether the caller can check in right now: the window is open and check-in would not refuse them. */
             check_in_open: boolean;
             /** @description Whether the caller has an attendance row for it. Read only while check-in is open; null otherwise, and when that read failed. */
             checked_in: boolean | null;
@@ -5345,10 +5352,10 @@ export interface components {
         };
         ActivityDto: {
             needs_you: components["schemas"]["ActivityNeedsYouDto"];
-            /** @description Events the caller is invited to that start within 14 days or whose check-in is still open, soonest first. At most 10. */
+            /** @description Events that invite the caller and start within 14 days, or whose check-in is still open, soonest first. At most 10. */
             coming_up: components["schemas"]["ActivityEventDto"][];
             made_by_you: components["schemas"]["ActivityMadeByYouDto"];
-            /** @description How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events whose check-in is open and not yet used. */
+            /** @description How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t. */
             needs_you_count: number;
             /** @description Sections that could not be read this time. Each is served empty; the others are unaffected. */
             unavailable: ("tasks" | "hours_approvals" | "polls" | "coming_up" | "files")[];

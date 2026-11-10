@@ -42,7 +42,8 @@ describe('EventService', () => {
 
     const result = await service.findByChapter('ch-1');
 
-    expect(mockEventRepo.findByChapter).toHaveBeenCalledWith('ch-1');
+    // No window: the events list reads the whole calendar, as before.
+    expect(mockEventRepo.findByChapter).toHaveBeenCalledWith('ch-1', undefined);
     expect(result).toEqual([baseEvent]);
   });
 

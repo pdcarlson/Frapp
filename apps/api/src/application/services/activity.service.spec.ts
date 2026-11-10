@@ -64,6 +64,10 @@ const event = (overrides: Partial<Event>): Event =>
     end_time: iso(49 * HOUR),
     point_value: 10,
     is_mandatory: true,
+    required_role_ids: null,
+    optional_role_ids: null,
+    excluded_role_ids: null,
+    others_invited: null,
     check_in_opens_minutes: 10,
     created_at: iso(-72 * HOUR),
     ...overrides,
@@ -75,9 +79,6 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     findByChapterFiltered: jest.fn().mockResolvedValue([]),
   };
   const eventService = { findByChapter: jest.fn().mockResolvedValue([]) };
-  const attendanceService = {
-    getMyAttendance: jest.fn().mockResolvedValue(null),
-  };
   const documentService = { findByChapter: jest.fn().mockResolvedValue([]) };
   const backworkService = { findByChapter: jest.fn().mockResolvedValue([]) };
   const chatService = {
@@ -88,6 +89,7 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
   const chatBlocks = { listBlockedUserIds: jest.fn().mockResolvedValue([]) };
   const rbacService = {
     getEffectivePermissions: jest.fn().mockResolvedValue(permissions),
+    isAlumni: jest.fn().mockResolvedValue(false),
   };
   const messageRepo = {
     findPollCardsByChapter: jest.fn().mockResolvedValue([]),
@@ -99,11 +101,18 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
       { id: OTHER, display_name: 'Other Member', avatar_url: null },
     ]),
   };
+  const memberRepo = {
+    findByUserAndChapter: jest
+      .fn()
+      .mockResolvedValue({ user_id: ME, role_ids: ['role-member'] }),
+  };
+  const attendanceRepo = {
+    findByEventAndUser: jest.fn().mockResolvedValue(null),
+  };
   const service = new ActivityService(
     taskService as never,
     serviceEntryService as never,
     eventService as never,
-    attendanceService as never,
     documentService as never,
     backworkService as never,
     chatService as never,
@@ -112,13 +121,17 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     messageRepo as never,
     actionRepo as never,
     userRepo as never,
+    memberRepo as never,
+    attendanceRepo as never,
   );
   return {
     service,
     taskService,
     serviceEntryService,
     eventService,
-    attendanceService,
+    attendanceRepo,
+    memberRepo,
+    rbacService,
     documentService,
     backworkService,
     chatService,
@@ -137,6 +150,18 @@ function servePolls(
   messageRepo.findPollCardsByChapter.mockImplementation(
     (_chapterId: string, options: { senderId?: string }) =>
       Promise.resolve(options.senderId ? own : recent),
+  );
+}
+
+/** `TaskService.list` answers the caller's own tasks and the chapter-wide list separately. */
+function serveTasks(
+  taskService: { list: jest.Mock },
+  own: TaskView[],
+  all: TaskView[] = [],
+) {
+  taskService.list.mockImplementation(
+    (_chapterId: string, _userId: string, isAdmin: boolean) =>
+      Promise.resolve(isAdmin ? all : own),
   );
 }
 
@@ -303,19 +328,36 @@ describe('ActivityService', () => {
   describe('tasks', () => {
     it('gives a member their open tasks, soonest due first, and nothing chapter-wide', async () => {
       const { service, taskService } = build();
-      taskService.list.mockResolvedValue([
-        task({ id: 'later', due_date: '2026-12-01' }),
-        task({ id: 'sooner', due_date: '2026-11-12' }),
-        task({
-          id: 'done',
-          status: TaskStatus.COMPLETED,
-          stored_status: TaskStatus.COMPLETED,
-          completed_at: iso(-HOUR),
-        }),
-      ]);
+      serveTasks(
+        taskService,
+        [
+          task({ id: 'later', due_date: '2026-12-01' }),
+          task({ id: 'sooner', due_date: '2026-11-12' }),
+          task({
+            id: 'done',
+            status: TaskStatus.COMPLETED,
+            stored_status: TaskStatus.COMPLETED,
+            completed_at: iso(-HOUR),
+          }),
+        ],
+        // What the chapter-wide list would hold: a task this member assigned
+        // before losing `tasks:manage`, and someone's completion. Neither may
+        // surface, because that list is never read for them.
+        [
+          task({ id: 'assigned-by-me', assignee_id: OTHER, created_by: ME }),
+          task({
+            id: 'someone-done',
+            assignee_id: OTHER,
+            status: TaskStatus.COMPLETED,
+            stored_status: TaskStatus.COMPLETED,
+            completed_at: iso(-HOUR),
+          }),
+        ],
+      );
 
       const view = await service.getActivity(CHAPTER, ME, null);
 
+      expect(taskService.list).toHaveBeenCalledTimes(1);
       expect(taskService.list).toHaveBeenCalledWith(CHAPTER, ME, false);
       expect(view.needs_you.tasks.map((row) => row.id)).toEqual([
         'sooner',
@@ -334,7 +376,7 @@ describe('ActivityService', () => {
 
     it('keeps an overdue task under needs you', async () => {
       const { service, taskService } = build();
-      taskService.list.mockResolvedValue([
+      serveTasks(taskService, [
         task({
           id: 'late',
           due_date: '2026-11-01',
@@ -363,25 +405,34 @@ describe('ActivityService', () => {
         status: TaskStatus.COMPLETED,
         stored_status: TaskStatus.COMPLETED,
       };
-      taskService.list.mockResolvedValue([
-        task({
-          id: 'to-confirm',
-          assignee_id: OTHER,
-          created_by: ME,
-          completed_at: iso(-HOUR),
-          ...completed,
-        }),
-        // The caller's own completion: the confirm route refuses it.
-        task({ id: 'own-done', completed_at: iso(-HOUR), ...completed }),
-        task({
-          id: 'confirmed',
-          assignee_id: OTHER,
-          completed_at: iso(-HOUR),
-          confirmed_at: iso(-HOUR / 2),
-          ...completed,
-        }),
-        task({ id: 'someone-elses', assignee_id: OTHER, created_by: OTHER }),
-      ]);
+      const ownDone = task({
+        id: 'own-done',
+        completed_at: iso(-HOUR),
+        ...completed,
+      });
+      serveTasks(
+        taskService,
+        [task({ id: 'own-open' }), ownDone],
+        [
+          task({
+            id: 'to-confirm',
+            assignee_id: OTHER,
+            created_by: ME,
+            completed_at: iso(-HOUR),
+            ...completed,
+          }),
+          // The caller's own completion: the confirm route refuses it.
+          ownDone,
+          task({
+            id: 'confirmed',
+            assignee_id: OTHER,
+            completed_at: iso(-HOUR),
+            confirmed_at: iso(-HOUR / 2),
+            ...completed,
+          }),
+          task({ id: 'someone-elses', assignee_id: OTHER, created_by: OTHER }),
+        ],
+      );
 
       const view = await service.getActivity(CHAPTER, ME, null);
 
@@ -392,7 +443,10 @@ describe('ActivityService', () => {
       expect(view.made_by_you.tasks.map((row) => row.id)).toEqual([
         'to-confirm',
       ]);
-      expect(view.needs_you.tasks).toEqual([]);
+      // The caller's own open task comes from the assignee read, not the
+      // chapter-wide one, and the count holds both kinds.
+      expect(view.needs_you.tasks.map((row) => row.id)).toEqual(['own-open']);
+      expect(view.needs_you_count).toBe(2);
     });
 
     it('reads no tasks while the Tasks module is off', async () => {
@@ -466,11 +520,15 @@ describe('ActivityService', () => {
 
       await service.getActivity(CHAPTER, ME, null);
 
-      expect(eventService.findByChapter).toHaveBeenCalledWith(CHAPTER, ME);
+      // And only the window: a day behind (the check-in grace) to 14 days ahead.
+      expect(eventService.findByChapter).toHaveBeenCalledWith(CHAPTER, ME, {
+        endsAfter: iso(-24 * HOUR),
+        startsBefore: iso(14 * 24 * HOUR),
+      });
     });
 
     it('lists events inside the window, soonest first, and drops past and far-off ones', async () => {
-      const { service, eventService, attendanceService } = build();
+      const { service, eventService, attendanceRepo } = build();
       eventService.findByChapter.mockResolvedValue([
         event({
           id: 'next-week',
@@ -504,12 +562,12 @@ describe('ActivityService', () => {
         expect.objectContaining({ check_in_open: false, checked_in: null }),
       );
       // Attendance is read only for an event whose check-in is open.
-      expect(attendanceService.getMyAttendance).not.toHaveBeenCalled();
+      expect(attendanceRepo.findByEventAndUser).not.toHaveBeenCalled();
       expect(view.needs_you_count).toBe(0);
     });
 
     it('counts an event whose check-in is open until the caller has checked in', async () => {
-      const { service, eventService, attendanceService } = build();
+      const { service, eventService, attendanceRepo } = build();
       eventService.findByChapter.mockResolvedValue([
         // Started half an hour ago, still running.
         event({
@@ -520,7 +578,7 @@ describe('ActivityService', () => {
       ]);
 
       const before = await service.getActivity(CHAPTER, ME, null);
-      attendanceService.getMyAttendance.mockResolvedValue({ id: 'att-1' });
+      attendanceRepo.findByEventAndUser.mockResolvedValue({ id: 'att-1' });
       const after = await service.getActivity(CHAPTER, ME, null);
 
       expect(before.coming_up).toEqual([
@@ -536,7 +594,7 @@ describe('ActivityService', () => {
     });
 
     it('still lists an open event, as needing the caller, when its attendance cannot be read', async () => {
-      const { service, eventService, attendanceService } = build();
+      const { service, eventService, attendanceRepo } = build();
       eventService.findByChapter.mockResolvedValue([
         event({
           id: 'now',
@@ -544,7 +602,7 @@ describe('ActivityService', () => {
           end_time: iso(HOUR / 2),
         }),
       ]);
-      attendanceService.getMyAttendance.mockRejectedValue(new Error('db down'));
+      attendanceRepo.findByEventAndUser.mockRejectedValue(new Error('db down'));
 
       const view = await service.getActivity(CHAPTER, ME, null);
 
@@ -553,6 +611,211 @@ describe('ActivityService', () => {
       );
       expect(view.needs_you_count).toBe(1);
       expect(view.unavailable).toEqual([]);
+    });
+  });
+
+  describe('coming up: the member’s own answer', () => {
+    const openNow = (overrides: Partial<Event> = {}) =>
+      event({
+        id: 'now',
+        start_time: iso(-HOUR / 2),
+        end_time: iso(HOUR / 2),
+        ...overrides,
+      });
+
+    it('reads no events while the Events module is off', async () => {
+      const { service, eventService } = build();
+      eventService.findByChapter.mockResolvedValue([openNow()]);
+
+      const view = await service.getActivity(CHAPTER, ME, { events: false });
+
+      expect(eventService.findByChapter).not.toHaveBeenCalled();
+      expect(view.coming_up).toEqual([]);
+      expect(view.needs_you_count).toBe(0);
+    });
+
+    it('does not offer an alumnus a check-in the event’s default would refuse', async () => {
+      const { service, eventService, rbacService, attendanceRepo } = build();
+      rbacService.isAlumni.mockResolvedValue(true);
+      eventService.findByChapter.mockResolvedValue([openNow()]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.coming_up).toEqual([
+        expect.objectContaining({
+          id: 'now',
+          attendance: 'optional',
+          check_in_open: false,
+          checked_in: null,
+        }),
+      ]);
+      expect(view.needs_you_count).toBe(0);
+      expect(attendanceRepo.findByEventAndUser).not.toHaveBeenCalled();
+    });
+
+    it('holds an alumnus to an event that lists a role of theirs', async () => {
+      const { service, eventService, rbacService } = build();
+      rbacService.isAlumni.mockResolvedValue(true);
+      eventService.findByChapter.mockResolvedValue([
+        openNow({ required_role_ids: ['role-member'] }),
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.coming_up[0]).toEqual(
+        expect.objectContaining({
+          attendance: 'required',
+          check_in_open: true,
+        }),
+      );
+      expect(view.needs_you_count).toBe(1);
+    });
+
+    it('leaves out an event that does not invite the caller, even when the list read returns it', async () => {
+      // `EventService.findByChapter` returns every event to an `events:update`
+      // holder so they can edit it. That is not an invitation.
+      const { service, eventService } = build([
+        SystemPermissions.MEMBERS_VIEW,
+        SystemPermissions.EVENTS_UPDATE,
+      ]);
+      eventService.findByChapter.mockResolvedValue([
+        openNow({
+          id: 'not-mine',
+          required_role_ids: ['role-other'],
+          others_invited: false,
+        }),
+        openNow({ id: 'mine' }),
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.coming_up.map((row) => row.id)).toEqual(['mine']);
+      expect(view.needs_you_count).toBe(1);
+    });
+
+    it('answers with the member’s own attendance, not the event’s default', async () => {
+      const { service, eventService } = build();
+      eventService.findByChapter.mockResolvedValue([
+        event({ id: 'optional-for-me', optional_role_ids: ['role-member'] }),
+        event({
+          id: 'required-for-me',
+          is_mandatory: false,
+          required_role_ids: ['role-member'],
+          start_time: iso(72 * HOUR),
+          end_time: iso(73 * HOUR),
+        }),
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.coming_up.map((row) => [row.id, row.attendance])).toEqual([
+        ['optional-for-me', 'optional'],
+        ['required-for-me', 'required'],
+      ]);
+    });
+
+    it('keeps at most ten events', async () => {
+      const { service, eventService } = build();
+      eventService.findByChapter.mockResolvedValue(
+        Array.from({ length: 12 }, (_, index) =>
+          event({
+            id: `event-${index}`,
+            start_time: iso((index + 1) * HOUR),
+            end_time: iso((index + 2) * HOUR),
+          }),
+        ),
+      );
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.coming_up).toHaveLength(10);
+      expect(view.coming_up[0].id).toBe('event-0');
+    });
+  });
+
+  describe('polls: order, deadlines and caps', () => {
+    const payloadOf = (extra: Record<string, unknown>) => ({
+      ...pollCard({ id: 'x' }).payload,
+      ...extra,
+    });
+
+    it('orders polls soonest closing first, one with no deadline last', async () => {
+      const { service, messageRepo } = build();
+      servePolls(messageRepo, [
+        pollCard({
+          id: 'in-3-days',
+          payload: payloadOf({ closes_at: iso(72 * HOUR) }),
+        }),
+        // No usable deadline: chat draws it open and the API takes votes on it.
+        pollCard({
+          id: 'no-deadline',
+          payload: payloadOf({ closes_at: 'soon' }),
+        }),
+        pollCard({
+          id: 'in-1-hour',
+          payload: payloadOf({ closes_at: iso(HOUR) }),
+        }),
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.needs_you.polls.map((poll) => poll.message_id)).toEqual([
+        'in-1-hour',
+        'in-3-days',
+        'no-deadline',
+      ]);
+      expect(view.needs_you.polls[2]).toEqual(
+        expect.objectContaining({ closes_at: null, is_closed: false }),
+      );
+    });
+
+    it('leaves out a card chat cannot draw: fewer than two options with an id and a label', async () => {
+      const { service, messageRepo } = build();
+      servePolls(messageRepo, [
+        pollCard({ id: 'no-options', payload: payloadOf({ options: [] }) }),
+        pollCard({
+          id: 'one-usable',
+          payload: payloadOf({
+            options: [{ id: 'a', label: 'Only' }, { id: 'b' }],
+          }),
+        }),
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.needs_you.polls).toEqual([]);
+    });
+
+    it('caps the poll and confirmation lists at 25 and counts all of them', async () => {
+      const { service, messageRepo, taskService } = build([
+        SystemPermissions.MEMBERS_VIEW,
+        SystemPermissions.TASKS_MANAGE,
+      ]);
+      servePolls(
+        messageRepo,
+        Array.from({ length: 30 }, (_, index) =>
+          pollCard({ id: `poll-${index}` }),
+        ),
+      );
+      serveTasks(
+        taskService,
+        [],
+        Array.from({ length: 27 }, (_, index) =>
+          task({
+            id: `done-${index}`,
+            assignee_id: OTHER,
+            status: TaskStatus.COMPLETED,
+            stored_status: TaskStatus.COMPLETED,
+            completed_at: iso(-HOUR),
+          }),
+        ),
+      );
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.needs_you.polls).toHaveLength(25);
+      expect(view.needs_you.task_confirmations).toHaveLength(25);
+      expect(view.needs_you_count).toBe(57);
     });
   });
 
@@ -569,12 +832,6 @@ describe('ActivityService', () => {
           uploaded_by: ME,
           created_at: iso(-HOUR),
         },
-        {
-          id: 'doc-theirs',
-          title: 'Budget',
-          uploaded_by: OTHER,
-          created_at: iso(-HOUR),
-        },
       ]);
       backworkService.findByChapter.mockResolvedValue([
         {
@@ -582,12 +839,6 @@ describe('ActivityService', () => {
           title: null,
           uploader_id: ME,
           created_at: iso(-HOUR / 2),
-        },
-        {
-          id: 'bw-theirs',
-          title: 'Exam 1',
-          uploader_id: OTHER,
-          created_at: iso(-HOUR),
         },
       ]);
 
@@ -607,6 +858,13 @@ describe('ActivityService', () => {
           created_at: iso(-HOUR),
         },
       ]);
+      // Narrowed to the uploader in the query, not after a chapter-wide read.
+      expect(documentService.findByChapter).toHaveBeenCalledWith(CHAPTER, {
+        uploaded_by: ME,
+      });
+      expect(backworkService.findByChapter).toHaveBeenCalledWith(CHAPTER, {
+        uploader_id: ME,
+      });
     });
 
     it('does not read backwork for a member who cannot open it, or either module while it is off', async () => {

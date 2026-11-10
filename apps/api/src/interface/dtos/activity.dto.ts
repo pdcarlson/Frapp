@@ -13,6 +13,11 @@ import type {
 } from '../../application/services/activity.service';
 
 /** Every channel type, direct messages included: a poll can be posted in any. */
+const ACTIVITY_EVENT_ATTENDANCE: ActivityEvent['attendance'][] = [
+  'required',
+  'optional',
+];
+
 const ACTIVITY_CHANNEL_TYPES: ChannelType[] = [
   'PUBLIC',
   'PRIVATE',
@@ -124,8 +129,14 @@ export class ActivityPollDto implements ActivityPoll {
   @ApiProperty()
   option_count: number;
 
-  @ApiProperty({ format: 'date-time' })
-  closes_at: string;
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'When voting stops. Null for a card posted with no usable deadline, which stays open.',
+  })
+  closes_at: string | null;
 
   @ApiProperty({
     type: String,
@@ -161,8 +172,12 @@ export class ActivityEventDto implements ActivityEvent {
   @ApiProperty({ format: 'date-time' })
   end_time: string;
 
-  @ApiProperty()
-  is_mandatory: boolean;
+  @ApiProperty({
+    enum: ACTIVITY_EVENT_ATTENDANCE,
+    description:
+      'What the event asks of the caller, not the event’s default: a role of theirs the event lists decides it, and an alumnus the default alone would require is optional.',
+  })
+  attendance: ActivityEvent['attendance'];
 
   @ApiProperty()
   point_value: number;
@@ -171,7 +186,8 @@ export class ActivityEventDto implements ActivityEvent {
   check_in_opens_minutes: number;
 
   @ApiProperty({
-    description: 'Whether the check-in window is open right now.',
+    description:
+      'Whether the caller can check in right now: the window is open and check-in would not refuse them.',
   })
   check_in_open: boolean;
 
@@ -264,7 +280,7 @@ export class ActivityDto implements ActivityView {
   @ApiProperty({
     type: [ActivityEventDto],
     description:
-      'Events the caller is invited to that start within 14 days or whose check-in is still open, soonest first. At most 10.',
+      'Events that invite the caller and start within 14 days, or whose check-in is still open, soonest first. At most 10.',
   })
   coming_up: ActivityEventDto[];
 
@@ -273,7 +289,7 @@ export class ActivityDto implements ActivityView {
 
   @ApiProperty({
     description:
-      'How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events whose check-in is open and not yet used.',
+      'How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t.',
   })
   needs_you_count: number;
 

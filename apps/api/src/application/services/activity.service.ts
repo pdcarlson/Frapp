@@ -1,5 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { can, checkInWindowBounds, isModuleEnabled } from '@repo/validation';
+import { ATTENDANCE_REPOSITORY } from '#domain/repositories/attendance.repository.interface';
+import type { IAttendanceRepository } from '#domain/repositories/attendance.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import {
   CHAT_MESSAGE_ACTION_REPOSITORY,
   CHAT_MESSAGE_REPOSITORY,
@@ -16,13 +20,19 @@ import type { ServiceEntry } from '#domain/entities/service-entry.entity';
 import { TaskStatus } from '#domain/entities/task.entity';
 import type { TaskView } from '#domain/entities/task.entity';
 import { SystemPermissions } from '#domain/constants/permissions';
+import {
+  CARD_VOTE_ACTION_TYPE,
+  cardPollClosedEarly,
+  isPollClosed,
+} from '#domain/utils/poll-vote-rules';
+import type { CardPollPayload } from '#domain/utils/poll-vote-rules';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
-import { AttendanceService } from './attendance.service';
 import { BackworkService } from './backwork.service';
 import { ChapterDocumentService } from './chapter-document.service';
 import { ChatBlockService } from './chat-block.service';
 import { ChatService } from './chat.service';
 import { EventService } from './event.service';
+import { attendanceFor } from './event-role-targeting';
 import type { EnabledModules } from './module-gate';
 import { RbacService } from './rbac.service';
 import { ServiceEntryService } from './service-entry.service';
@@ -90,7 +100,8 @@ export interface ActivityPoll {
   sender_id: string | null;
   question: string;
   option_count: number;
-  closes_at: string;
+  /** When voting stops; `null` for a card posted with no usable deadline, which stays open. */
+  closes_at: string | null;
   /** Set when its creator closed it early. */
   closed_at: string | null;
   is_closed: boolean;
@@ -105,10 +116,19 @@ export interface ActivityEvent {
   location: string | null;
   start_time: string;
   end_time: string;
-  is_mandatory: boolean;
+  /**
+   * What the event asks of this member (`spec/behavior/events.md` §
+   * Attendance by role), not the event's default: a role of theirs the event
+   * lists decides it, and an alumnus the default alone would require is
+   * optional.
+   */
+  attendance: 'required' | 'optional';
   point_value: number;
   check_in_opens_minutes: number;
-  /** Whether the check-in window is open right now. */
+  /**
+   * Whether this member can check in right now: the window is open and
+   * check-in would not refuse them (an alumnus no role of the event names).
+   */
   check_in_open: boolean;
   /**
    * Whether the member has an attendance row for it. Read only while check-in
@@ -159,42 +179,61 @@ const POLL_SCAN_LIMIT = 100;
 /** How far ahead "coming up" looks. */
 const COMING_UP_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 const COMING_UP_LIMIT = 10;
-/** `chat_message_actions.action_type` of a poll-card vote (ADR-07). */
-const POLL_VOTE_ACTION_TYPE = 'vote';
 
 interface PollCardFields {
   question: string;
   option_count: number;
-  closes_at: string;
+  closes_at: string | null;
   closed_at: string | null;
-  closes_at_ms: number;
 }
 
 /**
- * The fields of a poll card's payload this read uses, or `null` for a payload
- * no card can draw (no question, no options, or no parseable deadline). Such
- * a row is left out rather than listed as something to act on.
+ * The fields of a poll card's payload this read uses, or `null` for one chat's
+ * card cannot draw. The rule is the clients' (`readPollPayload` in
+ * `@repo/chat-core/polls`): a question, and two options with an id and a
+ * label. Nothing validates a card on send, so the row a member acts on is
+ * decided the way the card they will see is.
  */
 function readPollCard(message: ChatMessage): PollCardFields | null {
   const payload = message.payload;
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     return null;
   }
-  const { question, options, closes_at, closed_at } = payload as Record<
-    string,
-    unknown
-  >;
-  if (typeof question !== 'string' || !Array.isArray(options)) return null;
-  if (typeof closes_at !== 'string') return null;
-  const closesAtMs = new Date(closes_at).getTime();
-  if (Number.isNaN(closesAtMs)) return null;
+  const card = payload as CardPollPayload & { question?: unknown };
+  const options: unknown = card.options;
+  if (typeof card.question !== 'string' || !Array.isArray(options)) {
+    return null;
+  }
+  const usable = options.filter((option: unknown) => {
+    if (!option || typeof option !== 'object') return false;
+    const { id, label } = option as { id?: unknown; label?: unknown };
+    return typeof id === 'string' && typeof label === 'string';
+  }).length;
+  if (usable < 2) return null;
   return {
-    question,
-    option_count: options.length,
-    closes_at,
-    closed_at: typeof closed_at === 'string' ? closed_at : null,
-    closes_at_ms: closesAtMs,
+    question: card.question,
+    option_count: usable,
+    // Only a deadline that parses: one that does not is no deadline, the way
+    // `isPollClosed` reads it.
+    closes_at:
+      typeof card.closes_at === 'string' &&
+      !Number.isNaN(new Date(card.closes_at).getTime())
+        ? card.closes_at
+        : null,
+    closed_at:
+      cardPollClosedEarly(card) && typeof card.closed_at === 'string'
+        ? card.closed_at
+        : null,
   };
+}
+
+/**
+ * Closed early, or past its deadline by the rule the vote path applies
+ * (`isPollClosed`): a card with no deadline, or one that does not parse,
+ * stays open, as it does for a vote.
+ */
+function pollCardClosed(card: PollCardFields, now: Date): boolean {
+  return card.closed_at !== null || isPollClosed(card.closes_at, now);
 }
 
 function byAscending<T>(keyOf: (row: T) => string): (a: T, b: T) => number {
@@ -240,7 +279,6 @@ export class ActivityService {
     private readonly taskService: TaskService,
     private readonly serviceEntryService: ServiceEntryService,
     private readonly eventService: EventService,
-    private readonly attendanceService: AttendanceService,
     private readonly documentService: ChapterDocumentService,
     private readonly backworkService: BackworkService,
     private readonly chatService: ChatService,
@@ -252,6 +290,10 @@ export class ActivityService {
     private readonly actionRepo: IChatMessageActionRepository,
     @Inject(USER_REPOSITORY)
     private readonly userRepo: IUserRepository,
+    @Inject(MEMBER_REPOSITORY)
+    private readonly memberRepo: IMemberRepository,
+    @Inject(ATTENDANCE_REPOSITORY)
+    private readonly attendanceRepo: IAttendanceRepository,
   ) {}
 
   async getActivity(
@@ -369,16 +411,19 @@ export class ActivityService {
     assigned: ActivityTask[];
   }> {
     const canManage = can(SystemPermissions.TASKS_MANAGE, permissions);
-    // One read either way: a manager's chapter-wide list contains their own
-    // tasks too, so it is not fetched beside the assignee list.
-    const all = await this.taskService.list(chapterId, userId, canManage);
+    // The caller's own tasks come from the assignee-scoped read, never out
+    // of the chapter-wide one: that one is unbounded and cut at the database's
+    // row cap, so in a chapter with a long task history a manager's own open
+    // task could fall outside it.
+    const [own, all] = await Promise.all([
+      this.taskService.list(chapterId, userId, false),
+      canManage
+        ? this.taskService.list(chapterId, userId, true)
+        : Promise.resolve([]),
+    ]);
 
-    const mine = all
-      .filter(
-        (task) =>
-          task.assignee_id === userId &&
-          task.stored_status !== TaskStatus.COMPLETED,
-      )
+    const mine = own
+      .filter((task) => task.stored_status !== TaskStatus.COMPLETED)
       .sort(byAscending((task) => task.due_date));
     // Confirming your own completion is refused (`TaskService.confirmCompletion`,
     // the no-self-award rule), so it is not offered as waiting on you.
@@ -475,6 +520,10 @@ export class ActivityService {
       }),
       this.chatBlocks.listBlockedUserIds(chapterId, userId),
     ]);
+    const nowDate = new Date(now);
+    // No deadline sorts last: it is the least pressing.
+    const closesAtMs = (row: ActivityPoll) =>
+      row.closes_at ? new Date(row.closes_at).getTime() : Number.MAX_VALUE;
     const channelById = new Map(
       channels.map((channel) => [channel.id, channel]),
     );
@@ -486,7 +535,7 @@ export class ActivityService {
       if (!readable(message) || message.sender_id === userId) return false;
       if (message.sender_id && blocked.has(message.sender_id)) return false;
       const card = readPollCard(message);
-      return !!card && !card.closed_at && card.closes_at_ms > now;
+      return !!card && !pollCardClosed(card, nowDate);
     });
     const mine = own.filter(readable);
 
@@ -494,7 +543,7 @@ export class ActivityService {
       await this.actionRepo.findActedMessageIds(
         [...openOthers, ...mine].map((message) => message.id),
         userId,
-        POLL_VOTE_ACTION_TYPE,
+        CARD_VOTE_ACTION_TYPE,
       ),
     );
 
@@ -512,7 +561,7 @@ export class ActivityService {
         option_count: card.option_count,
         closes_at: card.closes_at,
         closed_at: card.closed_at,
-        is_closed: !!card.closed_at || card.closes_at_ms <= now,
+        is_closed: pollCardClosed(card, nowDate),
         has_voted: votedIds.has(message.id),
         created_at: message.created_at,
       };
@@ -523,10 +572,7 @@ export class ActivityService {
     return {
       unvoted: rowsOf(openOthers)
         .filter((row) => !row.has_voted)
-        .sort(
-          (a, b) =>
-            new Date(a.closes_at).getTime() - new Date(b.closes_at).getTime(),
-        ),
+        .sort((a, b) => closesAtMs(a) - closesAtMs(b)),
       mine: rowsOf(mine),
     };
   }
@@ -536,16 +582,35 @@ export class ActivityService {
     userId: string,
     now: number,
   ): Promise<ActivityEvent[]> {
+    const horizon = now + COMING_UP_WINDOW_MS;
     // With the viewer, always: the row carries the event's name and location,
     // so a chapter-wide read would republish an event that leaves this member
-    // out (`spec/behavior/events.md` § Attendance by role).
-    const events = await this.eventService.findByChapter(chapterId, userId);
-    const horizon = now + COMING_UP_WINDOW_MS;
+    // out (`spec/behavior/events.md` § Attendance by role). Bounded to the
+    // window in SQL, with a day's margin behind for the check-in grace, so
+    // the chapter's whole event history is not read to keep ten rows.
+    const [events, member, isAlumni] = await Promise.all([
+      this.eventService.findByChapter(chapterId, userId, {
+        endsAfter: new Date(now - 24 * 60 * 60 * 1000).toISOString(),
+        startsBefore: new Date(horizon).toISOString(),
+      }),
+      this.memberRepo.findByUserAndChapter(userId, chapterId),
+      this.rbacService.isAlumni(chapterId, userId),
+    ]);
+    const roleIds = member?.role_ids ?? [];
 
     const upcoming = events
-      .map((event) => ({ event, window: this.checkInWindowOf(event) }))
+      .map((event) => ({
+        event,
+        window: this.checkInWindowOf(event),
+        // The viewer's own answer. The list read above exempts an
+        // `events:update` holder from the role gate so they can find any
+        // event to edit it; that is not an invitation, so an event that
+        // leaves them out is not "coming up" for them.
+        answer: attendanceFor(event, roleIds),
+      }))
       .filter(
-        ({ event, window }) =>
+        ({ event, window, answer }) =>
+          answer.status !== 'not_invited' &&
           window !== null &&
           window.closesAt > now &&
           new Date(event.start_time).getTime() <= horizon,
@@ -558,25 +623,37 @@ export class ActivityService {
       .slice(0, COMING_UP_LIMIT);
 
     return Promise.all(
-      upcoming.map(async ({ event, window }): Promise<ActivityEvent> => {
-        const checkInOpen = window !== null && window.opensAt <= now;
-        return {
-          id: event.id,
-          name: event.name,
-          location: event.location,
-          start_time: event.start_time,
-          end_time: event.end_time,
-          is_mandatory: event.is_mandatory,
-          point_value: event.point_value,
-          check_in_opens_minutes: event.check_in_opens_minutes,
-          check_in_open: checkInOpen,
-          // Only for an event whose window is open, which is rarely more than
-          // one: the answer is what decides whether it still needs the member.
-          checked_in: checkInOpen
-            ? await this.hasCheckedIn(event.id, userId, chapterId)
-            : null,
-        };
-      }),
+      upcoming.map(
+        async ({ event, window, answer }): Promise<ActivityEvent> => {
+          // `AttendanceService.checkIn` refuses an alumnus unless a role of
+          // theirs is listed on the event (`spec/behavior/alumni.md`), and the
+          // absence sweep never holds them to the default. So for them the
+          // event is optional and is not something to check in to.
+          const alumniByDefault = isAlumni && !answer.byRole;
+          const checkInOpen =
+            window !== null && window.opensAt <= now && !alumniByDefault;
+          return {
+            id: event.id,
+            name: event.name,
+            location: event.location,
+            start_time: event.start_time,
+            end_time: event.end_time,
+            attendance:
+              answer.status === 'required' && !alumniByDefault
+                ? 'required'
+                : 'optional',
+            point_value: event.point_value,
+            check_in_opens_minutes: event.check_in_opens_minutes,
+            check_in_open: checkInOpen,
+            // Only for an event the member can check in to right now, which
+            // is rarely more than one: the answer is what decides whether it
+            // still needs them.
+            checked_in: checkInOpen
+              ? await this.hasCheckedIn(event.id, userId)
+              : null,
+          };
+        },
+      ),
     );
   }
 
@@ -604,13 +681,14 @@ export class ActivityService {
   private async hasCheckedIn(
     eventId: string,
     userId: string,
-    chapterId: string,
   ): Promise<boolean | null> {
     try {
-      const attendance = await this.attendanceService.getMyAttendance(
+      // The row itself, not `AttendanceService.getMyAttendance`: that one
+      // re-reads the event and its visibility, which the list read above has
+      // just settled for this member.
+      const attendance = await this.attendanceRepo.findByEventAndUser(
         eventId,
         userId,
-        chapterId,
       );
       return attendance !== null;
     } catch (error) {
@@ -634,30 +712,32 @@ export class ActivityService {
       can(SystemPermissions.BACKWORK_UPLOAD, permissions) ||
       can(SystemPermissions.BACKWORK_ADMIN, permissions);
     const [documents, backwork] = await Promise.all([
+      // Filtered to the uploader in SQL: a chapter-wide read is cut at the
+      // database's row cap, and the caller's files could fall outside it.
       on('documents')
-        ? this.documentService.findByChapter(chapterId)
+        ? this.documentService.findByChapter(chapterId, {
+            uploaded_by: userId,
+          })
         : Promise.resolve([]),
       on('backwork') && canBackwork
-        ? this.backworkService.findByChapter(chapterId)
+        ? this.backworkService.findByChapter(chapterId, {
+            uploader_id: userId,
+          })
         : Promise.resolve([]),
     ]);
     const files: ActivityFile[] = [
-      ...documents
-        .filter((document) => document.uploaded_by === userId)
-        .map((document) => ({
-          id: document.id,
-          source: 'document' as const,
-          title: document.title,
-          created_at: document.created_at,
-        })),
-      ...backwork
-        .filter((resource) => resource.uploader_id === userId)
-        .map((resource) => ({
-          id: resource.id,
-          source: 'backwork' as const,
-          title: resource.title ?? '',
-          created_at: resource.created_at,
-        })),
+      ...documents.map((document) => ({
+        id: document.id,
+        source: 'document' as const,
+        title: document.title,
+        created_at: document.created_at,
+      })),
+      ...backwork.map((resource) => ({
+        id: resource.id,
+        source: 'backwork' as const,
+        title: resource.title ?? '',
+        created_at: resource.created_at,
+      })),
     ];
     return files.sort(byNewest);
   }

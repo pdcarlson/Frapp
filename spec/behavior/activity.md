@@ -17,7 +17,9 @@ Not to be confused with two other things that use the word:
 
 A read-only aggregation with no table of its own. Every row comes from the module that owns the
 record, through that module's service and under that module's rule for who may see it. The read
-requires `members:view`, the baseline every one of those modules' own reads requires.
+itself requires `members:view`. A section whose module asks for more checks that too: Backwork
+needs `backwork:upload` or `backwork:admin`, and the two officer queues need their own
+permission, as below.
 
 **Needs you**
 
@@ -33,11 +35,20 @@ requires `members:view`, the baseline every one of those modules' own reads requ
 - **Polls:** open poll cards from other members that the caller hasn't voted on, soonest closing
   first. See [Polls and channel access](#polls-and-channel-access).
 
-**Coming up:** events the caller is invited to that start within 14 days, or whose check-in is
-still open, soonest first, at most 10. Each says whether its check-in window is open
-([`events.md`](events.md)) and, while it is, whether the caller has checked in. Events are read
-as the caller, so an event that leaves the member out contributes no row
-([`events.md` § Event creation](events.md#event-creation)).
+**Coming up:** events that invite the caller and start within 14 days, or whose check-in is
+still open, soonest first, at most 10. Events are read as the caller, so an event that leaves the
+member out contributes no row ([`events.md` § Event creation](events.md#event-creation)). That
+holds for an `events:update` holder too: the events list shows them every event so they can edit
+it, but an event that doesn't invite them is not coming up for them. Each row carries the
+member's own answer, not the event's default:
+
+- `attendance` is `required` or `optional` as attendance by role decides it for this member. An
+  alumnus the event's default alone would require is `optional`, since the absence sweep never
+  holds them to it ([`alumni.md`](alumni.md)).
+- `check_in_open` is whether this member can check in right now: the window is open
+  ([`events.md`](events.md)) and check-in would not refuse them. It is false for an alumnus
+  unless the event lists a role of theirs, the rule check-in itself applies.
+- `checked_in` is read only while `check_in_open` is true.
 
 **Made by you**
 
@@ -51,8 +62,8 @@ as the caller, so an event that leaves the member out contributes no row
 Events are not under "Made by you": an event does not record who created it (#3897 tracks adding
 that).
 
-**`needs_you_count`** is every "Needs you" row plus each event whose check-in is open and not yet
-used. It is counted before the list cap, so a badge built from it does not stop at 25.
+**`needs_you_count`** is every "Needs you" row plus each event the member can check in to right
+now and hasn't. It is counted before the list cap, so a badge built from it does not stop at 25.
 
 ## Rules
 
@@ -83,8 +94,12 @@ the same rule search and the poll list follow
   question, the channel, when it closes, whether the caller voted. It carries **no tallies**. A
   client reads the message the way chat does and draws chat's own poll card from it, so the same
   access rule and the same live updates apply, and the card counts the votes.
-- "Hasn't voted" is checked over the chapter's 100 newest poll cards. A poll needs a closing
-  time, so an open poll older than that is rare; if one exists it is not listed here and is
-  still in its channel.
+- A card counts as a poll, and as open, by the rules chat's card and the vote route use: it needs
+  a question and two options with an id and a label (a card without them draws as "Malformed
+  poll" and is not listed), and it is open until its creator closes it or its closing time
+  passes. A card with no closing time, or one that doesn't parse, stays open, since a vote on it
+  is still accepted; it sorts last.
+- "Hasn't voted" is checked over the chapter's 100 newest poll cards. An open poll older than
+  that is rare; if one exists it is not listed here and is still in its channel.
 - Only poll cards (`kind = 'poll'`) are read. The older poll format ([`polls.md`](polls.md)) is
   one no client creates or can draw as a card, so it is not listed.

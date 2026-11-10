@@ -20,9 +20,9 @@ import { SystemPermissions } from '#domain/constants/permissions';
 import { ActivityDto } from '../dtos/activity.dto';
 
 // No `@RequireModule`: the page spans modules, so no one key gates it. Each
-// section checks its own module (and its own permission) in the service, and
-// a module that is off contributes nothing. `MEMBERS_VIEW` is the baseline
-// every module's own read already requires.
+// section checks its own module and its own permission in the service, and a
+// module that is off contributes nothing. `MEMBERS_VIEW` is the page's own
+// gate; a section whose module asks for more (Backwork) checks that too.
 @ApiTags('Activity')
 @ApiBearerAuth()
 @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)

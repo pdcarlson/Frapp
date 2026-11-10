@@ -27,12 +27,22 @@ export class SupabaseEventRepository implements IEventRepository {
     return data;
   }
 
-  async findByChapter(chapterId: string): Promise<Event[]> {
-    const { data, error } = await this.supabase
+  async findByChapter(
+    chapterId: string,
+    window?: { endsAfter: string; startsBefore: string },
+  ): Promise<Event[]> {
+    let query = this.supabase
       .from('events')
       .select('*')
-      .eq('chapter_id', chapterId)
-      .order('start_time', { ascending: true });
+      .eq('chapter_id', chapterId);
+    if (window) {
+      query = query
+        .gte('end_time', window.endsAfter)
+        .lte('start_time', window.startsBefore);
+    }
+    const { data, error } = await query.order('start_time', {
+      ascending: true,
+    });
     if (error) throw new SupabaseQueryError(error);
     return data || [];
   }

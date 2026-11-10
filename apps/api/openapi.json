@@ -16307,7 +16307,9 @@
           },
           "closes_at": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "nullable": true,
+            "description": "When voting stops. Null for a card posted with no usable deadline, which stays open."
           },
           "closed_at": {
             "type": "string",
@@ -16402,8 +16404,13 @@
             "type": "string",
             "format": "date-time"
           },
-          "is_mandatory": {
-            "type": "boolean"
+          "attendance": {
+            "type": "string",
+            "enum": [
+              "required",
+              "optional"
+            ],
+            "description": "What the event asks of the caller, not the event’s default: a role of theirs the event lists decides it, and an alumnus the default alone would require is optional."
           },
           "point_value": {
             "type": "number"
@@ -16413,7 +16420,7 @@
           },
           "check_in_open": {
             "type": "boolean",
-            "description": "Whether the check-in window is open right now."
+            "description": "Whether the caller can check in right now: the window is open and check-in would not refuse them."
           },
           "checked_in": {
             "type": "boolean",
@@ -16427,7 +16434,7 @@
           "location",
           "start_time",
           "end_time",
-          "is_mandatory",
+          "attendance",
           "point_value",
           "check_in_opens_minutes",
           "check_in_open",
@@ -16503,7 +16510,7 @@
             "$ref": "#/components/schemas/ActivityNeedsYouDto"
           },
           "coming_up": {
-            "description": "Events the caller is invited to that start within 14 days or whose check-in is still open, soonest first. At most 10.",
+            "description": "Events that invite the caller and start within 14 days, or whose check-in is still open, soonest first. At most 10.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ActivityEventDto"
@@ -16514,7 +16521,7 @@
           },
           "needs_you_count": {
             "type": "number",
-            "description": "How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events whose check-in is open and not yet used."
+            "description": "How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t."
           },
           "unavailable": {
             "type": "array",
