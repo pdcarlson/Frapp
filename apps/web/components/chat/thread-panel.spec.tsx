@@ -113,6 +113,44 @@ describe("ThreadPanel (#3785)", () => {
     expect(thread.setFollow).toHaveBeenCalledWith("following");
   });
 
+  it("unfollows a followed thread", async () => {
+    thread.followState = "following";
+    renderPanel();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Following" }));
+    expect(thread.setFollow).toHaveBeenCalledWith("none");
+  });
+
+  it("offers no composer where the viewer can't reply", () => {
+    renderPanel({ canReply: false });
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("You can't reply in this channel."),
+    ).toBeInTheDocument();
+  });
+
+  it("tombstones a blocked member's reply", () => {
+    thread.messages = [row("r2", "blocked", "secret words")];
+    renderPanel();
+    expect(screen.queryByText("secret words")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Message from a member you blocked"),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps a half-typed reply on Escape, and closes on Escape otherwise", async () => {
+    const { onClose } = renderPanel();
+    const user = userEvent.setup();
+    const box = screen.getByRole("textbox", { name: "Reply in thread" });
+    await user.type(box, "draft");
+    await user.keyboard("{Escape}");
+    expect(onClose).not.toHaveBeenCalled();
+    await user.clear(box);
+    await user.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it("names who is typing, never the viewer or a blocked member", () => {
     thread.typingUsers = ["paul", "me", "blocked", "shawn"];
     renderPanel();

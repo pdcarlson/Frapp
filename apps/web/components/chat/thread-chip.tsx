@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { MessagesSquare } from "lucide-react";
+import { useNow } from "@repo/hooks";
 import { threadChipLabel } from "@repo/chat-core/threads";
 import type { ThreadSummary } from "@repo/chat-core/types";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -12,9 +12,6 @@ import { cn, initials } from "@/lib/utils";
 export function StartThreadGlyph({ className }: { className?: string }) {
   return <MessagesSquare className={className} aria-hidden="true" />;
 }
-
-/** How often the chip's "last reply 5m ago" is re-read. */
-const CHIP_TICK_MS = 60_000;
 
 /**
  * Under a message that has thread replies (#3785): up to three repliers,
@@ -29,11 +26,8 @@ export function ThreadChip({
   nameFor: (userId: string) => string | null;
   onOpen?: () => void;
 }) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const handle = setInterval(() => setNow(Date.now()), CHIP_TICK_MS);
-    return () => clearInterval(handle);
-  }, []);
+  // The app's one shared clock, so every chip ticks together.
+  const now = useNow();
   const { replies, lastReply } = threadChipLabel(
     summary.reply_count,
     summary.last_reply_at,
@@ -54,7 +48,10 @@ export function ThreadChip({
       ) : null}
       <span className="font-medium text-primary">{replies}</span>
       {lastReply ? (
-        <span className="text-muted-foreground">{lastReply}</span>
+        <span className="text-muted-foreground">
+          <span aria-hidden="true">· </span>
+          {lastReply}
+        </span>
       ) : null}
     </>
   );

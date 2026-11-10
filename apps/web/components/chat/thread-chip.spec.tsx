@@ -18,7 +18,7 @@ describe("ThreadChip (#3785)", () => {
       name: "3 replies, last reply 5m ago. Open thread",
     });
     expect(screen.getByText("3 replies")).toBeInTheDocument();
-    expect(screen.getByText("last reply 5m ago")).toBeInTheDocument();
+    expect(button).toHaveTextContent(/3 replies\s*· last reply 5m ago/);
     await userEvent.setup().click(button);
     expect(onOpen).toHaveBeenCalledTimes(1);
   });

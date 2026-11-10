@@ -190,7 +190,7 @@ export function BookmarksPanel({
                     variant="ghost"
                     size="icon"
                     // The shared primitive, not a hand-rolled button:
-                    // The deleted `thread-panel.tsx` used exactly this for the same
+                    // The old `thread-panel.tsx` (deleted in #2142) used exactly this for the same
                     // dismiss-an-item job, and a bespoke 22px target here
                     // sat under the design system's touch floor — on the one
                     // control that exists so a member can clear a bookmark

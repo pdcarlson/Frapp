@@ -19,7 +19,7 @@ export function messageRevealKey(message: RevealableMessage): string {
  * cluster and dismisses any other's (#1193).
  *
  * It has one caller today, `message-timeline.tsx`; it had two until #2142
- * deleted `thread-panel.tsx`, which is why the toggle logic and the key
+ * old `thread-panel.tsx` (deleted in #2142), which is why the toggle logic and the key
  * derivation above are here rather than inline in the list that uses them. Kept
  * as a hook rather than folded back in: the value of "one reveal id per list"
  * is that a second list cannot get it subtly wrong, and the instant a second

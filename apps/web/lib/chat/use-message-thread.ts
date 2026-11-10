@@ -11,6 +11,7 @@ import {
 } from "@repo/chat-core/realtime-manager";
 import {
   applyThreadRealtimeRow,
+  backfillThreadReplies,
   chatThreadKey,
   chatThreadRepliesKey,
   discardThreadReply,
@@ -64,17 +65,40 @@ export function useMessageThread(
   const meta = useQuery({
     queryKey: metaKey,
     queryFn: () => fetchThread(api, channelId, rootId),
+    // Every open reads afresh: nothing feeds a closed thread's cache.
+    staleTime: 0,
   });
 
+  // The first read of this mount sets "Load earlier replies"; every later one
+  // (a poll, a reconnect, a refocus) only fills the gap since the newest held
+  // reply, and never turns that control back on.
+  const readOnce = useRef(false);
   const replies = useQuery({
     queryKey: repliesKey,
     queryFn: async () => {
-      const page = await loadThreadReplies(queryClient, api, channelId, rootId);
-      setHasOlder(page.hasMore);
+      const held = queryClient.getQueryData<ChannelCache>(repliesKey);
+      const first = !readOnce.current;
+      readOnce.current = true;
+      if (first && !held?.order.length) {
+        const page = await loadThreadReplies(
+          queryClient,
+          api,
+          channelId,
+          rootId,
+        );
+        setHasOlder(page.hasMore);
+      } else {
+        await backfillThreadReplies(queryClient, api, channelId, rootId);
+        // Reopened over a cache this mount didn't page: older replies may
+        // remain, and one read of them settles it.
+        if (first) setHasOlder(true);
+      }
       return queryClient.getQueryData<ChannelCache>(repliesKey) ?? emptyCache();
     },
+    // A closed thread's cache missed whatever was posted meanwhile.
+    staleTime: 0,
     // Polling fallback (rule 5): while the manager polls the channel, this
-    // re-reads the thread's newest page on the same beat.
+    // reads the thread's gap on the same beat.
     refetchInterval: connection === "polling" ? POLL_INTERVAL_MS : false,
   });
 
@@ -87,7 +111,7 @@ export function useMessageThread(
     [channelId, rootId, queryClient],
   );
 
-  // A gap ended: read the newest page again so nothing sent during it is lost.
+  // A gap ended: read everything after the newest held reply.
   const previousConnection = useRef(connection);
   useEffect(() => {
     const before = previousConnection.current;
@@ -116,13 +140,17 @@ export function useMessageThread(
       .filter((message): message is ChatMessage => !!message);
   }, [cache]);
 
-  // Read through the newest reply the panel shows. Best-effort: a failure
-  // leaves the thread unread, which the next open fixes.
-  const newestId = messages.at(-1)?.id;
+  // Read through the newest confirmed reply the panel shows, once per new
+  // reply. Best-effort: a failure leaves the thread unread, which the next
+  // open fixes.
+  const newestId = [...messages]
+    .reverse()
+    .find((m) => m._status === "confirmed")?.id;
+  const metaLoaded = !!meta.data;
   useEffect(() => {
-    if (!meta.data) return;
+    if (!metaLoaded) return;
     void markThreadRead(api, channelId, rootId).catch(() => undefined);
-  }, [api, channelId, rootId, meta.data, newestId]);
+  }, [api, channelId, rootId, metaLoaded, newestId]);
 
   const root = useMemo<ChatMessage | null>(
     () => (meta.data ? normalizeRow(meta.data.root) : null),
@@ -131,8 +159,10 @@ export function useMessageThread(
 
   const loadOlder = useCallback(async () => {
     const oldest = messages.find((message) => message._status === "confirmed");
-    if (!oldest || isLoadingOlder) return;
+    if (!oldest || isLoadingOlder) return { error: null };
     setIsLoadingOlder(true);
+    // Resolves with the failure rather than rejecting, so a click handler
+    // can say so (`void` on a rejection would be an unhandled one).
     try {
       const page = await loadThreadReplies(
         queryClient,
@@ -142,6 +172,11 @@ export function useMessageThread(
         oldest.created_at,
       );
       setHasOlder(page.hasMore);
+      return { error: null as string | null };
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : "Couldn't load replies",
+      };
     } finally {
       setIsLoadingOlder(false);
     }

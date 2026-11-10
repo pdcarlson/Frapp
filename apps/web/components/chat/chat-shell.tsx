@@ -320,11 +320,12 @@ export function prefillLocalInput(
  * The chat surface: channels column, then thread and composer.
  *
  * **Two columns, flush, full height** (`1b`). It was three, the third being a
- * Details rail that hosted `ThreadPanel` over a static placeholder. Both are
- * deleted. Where threads went: the quote above a reply, which was the panel's
- * only remaining entry point, now scrolls this timeline to the message it
- * quotes (`MessageItem`'s `onJumpToParent`). The decision is recorded in
- * `spec/ui/web-dashboard/README.md` § Chat.
+ * Details rail that hosted the old `ThreadPanel` over a static placeholder.
+ * #2142 deleted both: the quote above a reply now scrolls this timeline to the
+ * message it quotes (`MessageItem`'s `onJumpToParent`). Message threads
+ * (#3785) are a different feature: their `ThreadPanel` (`./thread-panel`)
+ * opens over this column, in place of the timeline, never as a third column.
+ * Both are recorded in `spec/ui/web-dashboard/README.md` § Chat.
  *
  * **The panes are not cards, and that is load-bearing.** They used to be
  * `<Card>`s, so the whole surface painted `--card` — and `components.md` §11
@@ -1911,6 +1912,11 @@ export function ChatShell({
     channelId: string;
     rootId: string;
   } | null>(null);
+  // Leaving the channel closes its thread, so coming back shows the timeline
+  // (state adjusted during render, React's pattern for a reset on a prop).
+  if (openThread && activeChannel && openThread.channelId !== activeChannel.id) {
+    setOpenThread(null);
+  }
   const threadRootId =
     openThread && openThread.channelId === activeChannel?.id
       ? openThread.rootId

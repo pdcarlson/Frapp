@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import {
   applyThreadRealtimeRow,
+  backfillThreadReplies,
   chatThreadRepliesKey,
   sendThreadReply,
   threadChipLabel,
@@ -52,12 +53,11 @@ describe("threadChipLabel (#3785)", () => {
 });
 
 describe("applyThreadRealtimeRow (#3785)", () => {
-  test("merges this thread's INSERT once the first read has landed", () => {
+  test("keeps an INSERT that lands before the first read, once", () => {
     const queryClient = new QueryClient();
+    // The first read's snapshot may predate this row; dropping it lost it.
     applyThreadRealtimeRow(queryClient, CH, ROOT, reply("a"), "INSERT");
-    expect(cacheOf(queryClient)).toBeUndefined();
-
-    queryClient.setQueryData(chatThreadRepliesKey(CH, ROOT), emptyCache());
+    expect(cacheOf(queryClient)?.order).toEqual(["a"]);
     applyThreadRealtimeRow(queryClient, CH, ROOT, reply("a"), "INSERT");
     applyThreadRealtimeRow(queryClient, CH, ROOT, reply("a"), "INSERT");
     applyThreadRealtimeRow(
@@ -84,6 +84,50 @@ describe("applyThreadRealtimeRow (#3785)", () => {
     applyThreadRealtimeRow(queryClient, CH, ROOT, reply("z"), "UPDATE");
     expect(cacheOf(queryClient)?.order).toEqual(["a"]);
     expect(cacheOf(queryClient)?.byId.a?.content).toBe("edited");
+  });
+});
+
+describe("backfillThreadReplies (#3785)", () => {
+  test("pages back from the newest until it meets a held reply", async () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(chatThreadRepliesKey(CH, ROOT), emptyCache());
+    applyThreadRealtimeRow(
+      queryClient,
+      CH,
+      ROOT,
+      reply("held", { created_at: "2026-11-10T10:00:00.000Z" }),
+      "INSERT",
+    );
+    // 60 replies after it: one full page of the newest 50, then the 10 older.
+    const after = Array.from({ length: 60 }, (_, i) =>
+      reply(`n${String(i).padStart(2, "0")}`, {
+        created_at: new Date(
+          Date.parse("2026-11-10T11:00:00.000Z") + i * 1000,
+        ).toISOString(),
+      }),
+    ).reverse();
+    const GET = vi.fn(
+      async (
+        _path: string,
+        init: { params: { query: { before?: string } } },
+      ) => {
+        const before = init.params.query.before;
+        const page = before
+          ? after.filter((r) => r.created_at < before).slice(0, 50)
+          : after.slice(0, 50);
+        return { data: page, error: undefined };
+      },
+    );
+    await backfillThreadReplies(
+      queryClient,
+      { GET } as unknown as FrappApiClient,
+      CH,
+      ROOT,
+    );
+    expect(GET.mock.calls[0]?.[1]).toMatchObject({
+      params: { query: { since: "held" } },
+    });
+    expect(cacheOf(queryClient)?.order).toHaveLength(61);
   });
 });
 

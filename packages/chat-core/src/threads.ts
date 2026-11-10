@@ -124,6 +124,65 @@ export async function loadThreadReplies(
   return { hasMore: rows.length >= THREAD_PAGE_LIMIT };
 }
 
+/** How far a gap read pages back before giving up and leaving the rest to scroll. */
+const BACKFILL_MAX_PAGES = 10;
+
+/**
+ * Fills the gap after a reconnect or a poll (`spec/ui/resilience/` rule 5):
+ * reads every reply after the newest one the cache holds, paging back from the
+ * newest until it meets a held row, and merges them. With nothing held it is
+ * the newest page.
+ */
+export async function backfillThreadReplies(
+  queryClient: QueryClient,
+  api: FrappApiClient,
+  channelId: string,
+  rootId: string,
+): Promise<void> {
+  const key = chatThreadRepliesKey(channelId, rootId);
+  const held = queryClient.getQueryData<ChannelCache>(key);
+  const newest = held
+    ? [...held.order]
+        .reverse()
+        .map((k) => held.byId[k])
+        .find((m) => m && m._status === "confirmed")
+    : undefined;
+  if (!newest) {
+    await loadThreadReplies(queryClient, api, channelId, rootId);
+    return;
+  }
+  let before: string | undefined;
+  for (let page = 0; page < BACKFILL_MAX_PAGES; page += 1) {
+    const { data, error } = await api.GET(
+      "/v1/channels/{id}/threads/{rootId}/messages",
+      {
+        params: {
+          path: { id: channelId, rootId },
+          query: {
+            limit: THREAD_PAGE_LIMIT,
+            ...(before ? { before } : { since: newest.id }),
+          },
+        },
+      },
+    );
+    if (error || !data) throw apiError(error, "Couldn't load replies");
+    const rows = data as unknown as RawChatMessage[];
+    queryClient.setQueryData<ChannelCache>(key, (prev) =>
+      mergeServerRows(prev ?? emptyCache(), rows),
+    );
+    const oldest = rows.at(-1);
+    // A short page, or one that reached back to what we held: the gap is closed.
+    if (
+      !oldest ||
+      rows.length < THREAD_PAGE_LIMIT ||
+      oldest.created_at <= newest.created_at
+    ) {
+      return;
+    }
+    before = oldest.created_at;
+  }
+}
+
 /**
  * A realtime thread row for `rootId`'s cache: an INSERT merges, an UPDATE
  * (edit, delete) only touches a row the cache holds, as on the timeline.
@@ -138,10 +197,11 @@ export function applyThreadRealtimeRow(
 ): void {
   if (row.thread_root_id !== rootId) return;
   const key = chatThreadRepliesKey(channelId, rootId);
-  const prev = queryClient.getQueryData<ChannelCache>(key);
-  // Before the first read lands there is nothing to merge into; that read
-  // brings the row.
-  if (!prev) return;
+  // An INSERT lands even before the first read does: that read's snapshot may
+  // predate the row, and the read merges over what this leaves (the timeline's
+  // `patchCache` keeps such rows the same way). An UPDATE of a row the cache
+  // doesn't hold has nothing on screen to change.
+  if (event === "UPDATE" && !queryClient.getQueryData(key)) return;
   queryClient.setQueryData<ChannelCache>(key, (cache) =>
     event === "UPDATE"
       ? mergeHeldServerRow(cache ?? emptyCache(), row)

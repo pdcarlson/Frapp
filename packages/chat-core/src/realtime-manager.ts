@@ -216,6 +216,9 @@ export const RESUME_PROBE_LOOKS = 3;
  */
 export const INBOX_TOPIC = "chat:inbox:global";
 
+/** The broadcast event for typing inside a message thread (#3785). */
+export const THREAD_TYPING_EVENT = "thread_typing";
+
 /**
  * A `postgres_changes` row, stripped of anything that would let it read as
  * server-evaluated for the viewer (#2315).
@@ -603,14 +606,14 @@ class ChatRealtimeManager {
       if (now - state.typingLastEmit < 3000) return;
       state.typingLastEmit = now;
     }
+    // A thread's typing is its own event, so a client that predates threads
+    // (which reads every `typing` frame as the channel's) ignores it.
     void state.channel.send({
       type: "broadcast",
-      event: "typing",
-      payload: {
-        userId,
-        displayName: displayName ?? null,
-        ...(threadRootId ? { threadRootId } : {}),
-      },
+      event: threadRootId ? THREAD_TYPING_EVENT : "typing",
+      payload: threadRootId
+        ? { userId, displayName: displayName ?? null, threadRootId }
+        : { userId, displayName: displayName ?? null },
     });
   }
 
@@ -716,7 +719,13 @@ class ChatRealtimeManager {
               dirty = true;
             }
           }
-          if (thread.users.size === 0 && thread.snapshot.length === 0) {
+          // Kept while its own 3s send throttle is running: the typist never
+          // hears their own broadcast, so their entry has no users.
+          if (
+            thread.users.size === 0 &&
+            thread.snapshot.length === 0 &&
+            now - thread.lastEmit >= 3000
+          ) {
             state.threadTyping.delete(rootId);
           }
         }
@@ -954,22 +963,20 @@ class ChatRealtimeManager {
 
     channel.on("broadcast", { event: "typing" }, (msg) => {
       const payload = msg.payload as
-        | {
-            userId?: string;
-            displayName?: string | null;
-            threadRootId?: string | null;
-          }
-        | undefined;
+        { userId?: string; displayName?: string | null } | undefined;
       if (!payload?.userId) return;
-      const expires = Date.now() + 4000;
-      if (typeof payload.threadRootId === "string" && payload.threadRootId) {
-        this.threadTypingState(state, payload.threadRootId).users.set(
-          payload.userId,
-          expires,
-        );
-      } else {
-        state.typingUsers.set(payload.userId, expires);
-      }
+      state.typingUsers.set(payload.userId, Date.now() + 4000);
+      this.emitStatus();
+    });
+    channel.on("broadcast", { event: THREAD_TYPING_EVENT }, (msg) => {
+      const payload = msg.payload as
+        { userId?: string; threadRootId?: string | null } | undefined;
+      if (!payload?.userId || typeof payload.threadRootId !== "string") return;
+      if (!payload.threadRootId) return;
+      this.threadTypingState(state, payload.threadRootId).users.set(
+        payload.userId,
+        Date.now() + 4000,
+      );
       this.emitStatus();
     });
 
@@ -1206,7 +1213,7 @@ class ChatRealtimeManager {
     }, delay);
   }
 
-  /** Hands activity to the client, never letting its failure into a frame dispatch. */
+  /** Fans a thread row out to the open panels' listeners (`onThreadReply`). */
   private dispatchThreadReply(
     channelId: string,
     row: RawChatMessage,
@@ -1223,6 +1230,7 @@ class ChatRealtimeManager {
     }
   }
 
+  /** Hands activity to the client, never letting its failure into a frame dispatch. */
   private reportActivity(activity: MessageActivity): void {
     try {
       this.ctx?.onMessageActivity?.(activity);

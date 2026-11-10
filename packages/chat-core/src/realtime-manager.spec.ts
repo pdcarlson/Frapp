@@ -708,6 +708,30 @@ describe("ChatRealtimeManager — channel reopen (#783)", () => {
     expect(seen).toEqual(["INSERT:msg-thread-reply"]);
   });
 
+  test("a thread reply's edit reaches the thread listeners too (#3785)", () => {
+    chatRealtime.subscribe("channel-1");
+    const ch = current("channel-1");
+    ch.trigger("SUBSCRIBED");
+    const seen: string[] = [];
+    const stop = chatRealtime.onThreadReply("channel-1", (row, event) =>
+      seen.push(`${event}:${row.id}`),
+    );
+    ch.emitPostgresChange({
+      eventType: "UPDATE",
+      new: {
+        id: "msg-thread-reply",
+        channel_id: "channel-1",
+        sender_id: "user-2",
+        kind: "text",
+        content: "edited",
+        thread_root_id: "msg-root",
+        created_at: "2026-11-10T12:00:00.000Z",
+      },
+    });
+    stop();
+    expect(seen).toEqual(["UPDATE:msg-thread-reply"]);
+  });
+
   test("a live row still enters the cache through the same handler", () => {
     // Pins that the guard above is a `kind` check and not an accidental
     // short-circuit of the whole INSERT path.
@@ -1208,7 +1232,7 @@ describe("ChatRealtimeManager — typing list identity (#1004)", () => {
   test("a thread's typists stay off the channel's line, and theirs (#3785)", () => {
     const ch = joined("c1");
     ch.emitBroadcast("typing", { userId: A, displayName: null });
-    ch.emitBroadcast("typing", {
+    ch.emitBroadcast("thread_typing", {
       userId: B,
       displayName: null,
       threadRootId: "root-1",
@@ -1232,13 +1256,28 @@ describe("ChatRealtimeManager — typing list identity (#1004)", () => {
     chatRealtime.emitTyping("c1", A, undefined, "root-1");
     chatRealtime.emitTyping("c1", A);
     expect(sent).toHaveBeenCalledTimes(2);
+    // Its own event, so a client that predates threads ignores it.
     expect(sent.mock.calls[0]?.[0]).toMatchObject({
-      event: "typing",
+      event: "thread_typing",
       payload: { userId: A, threadRootId: "root-1" },
     });
+    expect(sent.mock.calls[1]?.[0]).toMatchObject({ event: "typing" });
     expect(
       (sent.mock.calls[1]?.[0] as { payload: object }).payload,
     ).not.toHaveProperty("threadRootId");
+  });
+
+  test("the typing sweep keeps a thread typist's throttle running", () => {
+    joined("c1");
+    const ch = channels.get("chat:channel:c1")!;
+    ch.send.mockClear();
+    chatRealtime.emitTyping("c1", A, undefined, "root-1");
+    vi.advanceTimersByTime(1600); // one sweep
+    chatRealtime.emitTyping("c1", A, undefined, "root-1");
+    expect(ch.send).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1500);
+    chatRealtime.emitTyping("c1", A, undefined, "root-1");
+    expect(ch.send).toHaveBeenCalledTimes(2);
   });
 
   test("an unknown channel's empty list is one identity", () => {

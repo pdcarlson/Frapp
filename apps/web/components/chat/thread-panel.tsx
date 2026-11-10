@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { ArrowLeft, BellOff, BellRing } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { formatTimeOfDay } from "@repo/formatting";
 import {
   classifyMessage,
@@ -9,6 +9,7 @@ import {
   type BlockState,
 } from "@repo/chat-core/blocks";
 import { typingLabel } from "@repo/chat-core/typing-label";
+import { TOMBSTONE_TEXT } from "@repo/chat-core/block-copy";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -18,8 +19,6 @@ import { useNetwork } from "@/lib/providers/network-provider";
 import { useMessageThread } from "@/lib/chat/use-message-thread";
 import { cn, initials } from "@/lib/utils";
 import { TextRenderer } from "./renderers/text-renderer";
-
-const BLOCKED_REPLY_COPY = "Message from a member you blocked.";
 
 export interface ThreadPanelProps {
   channelId: string;
@@ -64,14 +63,18 @@ export function ThreadPanel({
     listEnd.current?.scrollIntoView({ block: "end" });
   }, [replyCount]);
 
-  // Escape returns to the channel, like the panel's Back.
-  useEffect(() => {
-    const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape" && !event.defaultPrevented) onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // Escape inside the panel returns to the channel, like Back, and goes no
+  // further: the shell's own Escape (back to the channel list below `lg`)
+  // must not also run. A reply being typed keeps it, as the composer does.
+  function onPanelKey(event: KeyboardEvent<HTMLElement>) {
+    if (event.key !== "Escape" || event.defaultPrevented) return;
+    if (event.nativeEvent.isComposing) return;
+    const inReplyBox = event.target instanceof HTMLTextAreaElement;
+    if (inReplyBox && draft.trim()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onClose();
+  }
 
   const typists = visibleTypingUsers(thread.typingUsers, blockState, viewerId);
   const typing = typingLabel(typists, nameFor);
@@ -121,6 +124,7 @@ export function ThreadPanel({
     <section
       aria-label="Thread"
       className={cn("flex min-h-0 flex-col bg-background", className)}
+      onKeyDown={onPanelKey}
     >
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-2">
         <Button
@@ -148,11 +152,6 @@ export function ThreadPanel({
             disabled={followBusy}
             onClick={() => void toggleFollow()}
           >
-            {following ? (
-              <BellRing className="mr-1.5 h-4 w-4" aria-hidden="true" />
-            ) : (
-              <BellOff className="mr-1.5 h-4 w-4" aria-hidden="true" />
-            )}
             {following ? "Following" : "Follow"}
           </Button>
         ) : null}
@@ -191,7 +190,17 @@ export function ThreadPanel({
                 size="sm"
                 className="mb-2"
                 disabled={thread.isLoadingOlder}
-                onClick={() => void thread.loadOlder()}
+                onClick={() =>
+                  void thread.loadOlder().then(({ error }) => {
+                    if (error) {
+                      toast({
+                        title: "Couldn't load earlier replies",
+                        description: error,
+                        variant: "destructive",
+                      });
+                    }
+                  })
+                }
               >
                 {thread.isLoadingOlder ? "Loading…" : "Load earlier replies"}
               </Button>
@@ -279,6 +288,9 @@ function ThreadRow({
   onDiscard?: () => void;
 }) {
   const visibility = classifyMessage(message, blockState, viewerId);
+  // A row the block list can't vouch for yet is not drawn (`classifyMessage`'s
+  // held contract); it shows once the list answers.
+  if (visibility === "held") return null;
   const name =
     (message.sender_id ? nameFor(message.sender_id) : null) ??
     message.author_name ??
@@ -306,7 +318,7 @@ function ThreadRow({
           <TextRenderer message={message} muted={pending || failed} />
         ) : (
           <p className="text-body italic text-muted-foreground">
-            {BLOCKED_REPLY_COPY}
+            {TOMBSTONE_TEXT}
           </p>
         )}
         {failed ? (
