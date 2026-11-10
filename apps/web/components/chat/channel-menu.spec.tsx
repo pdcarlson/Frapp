@@ -479,10 +479,11 @@ describe("ChannelMenu pin to top (#2877)", () => {
       await user.click(screen.getByRole("button", { name: /Search messages/ }));
 
       await user.keyboard("{Escape}");
+      // Reset before asserting, so a failure here cannot leak into later cases.
+      pickerState.open = false;
       expect(screen.getByTestId("search-panel")).toBeInTheDocument();
 
       // With no picker open, Escape closes the menu as it always did.
-      pickerState.open = false;
       await user.click(
         screen.getByRole("button", { name: "Back to channel menu" }),
       );

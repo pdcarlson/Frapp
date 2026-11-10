@@ -348,8 +348,8 @@ case and accents); channels match anywhere in the name, since a channel name is 
 arrow keys and Enter pick from the box, Escape puts the picker away, and the chip itself works
 by writing that word into the box. What follows the colon may run to several words while it
 still matches something (`from:ada lov`); once it matches nothing, or when a space follows the
-colon, the text is searched as typed, so no typed word is dropped unseen. A set chip names its value and has a clear button
-beside it; a custom range with no finished date is not set.
+colon, the text is searched as typed, so no typed word is dropped unseen. A set chip names its
+value and has a clear button beside it; a custom range with no finished date is not set.
 A From, Date or Has filter searches with no text ("everything Ryan posted this week"); one or
 two characters, or no text with only a channel, do not search, which is the API's own rule
 ([`../search.md`](../search.md#message-filters)). Each row shows the day and time, since hits
