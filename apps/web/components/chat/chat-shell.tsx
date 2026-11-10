@@ -11,6 +11,7 @@ import { createPortal } from "react-dom";
 import { MembersGlyph } from "./chat-glyphs";
 import { ChannelMemberList } from "./channel-member-list";
 import { channelDescription } from "@repo/hooks/channel-start";
+import { memberLabel } from "@repo/hooks/display-names";
 import { useReportOpenChatTransport } from "@repo/hooks/open-chat-transport";
 import { ChannelHeaderTitle } from "./channel-header-title";
 import { ChannelStart } from "./channel-start";
@@ -890,6 +891,25 @@ export function ChatShell({
   const channelNameFor = useCallback(
     (channelId: string) => channelTitles.get(channelId) ?? null,
     [channelTitles],
+  );
+  // Search's In and From pickers (#3958). `channels` is what
+  // `GET /v1/channels` served, so it is exactly what the member can read,
+  // hidden DMs included: they stay searchable, as they stay readable by id.
+  const searchChannels = useMemo(
+    () =>
+      [...channelTitles]
+        .map(([id, label]) => ({ id, label }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [channelTitles],
+  );
+  const searchMembers = useMemo(
+    () =>
+      Object.entries(memberNames)
+        // `memberLabel`, not the raw name: a member who never set one holds
+        // `''`, which would be a blank first row that Enter picks.
+        .map(([id, name]) => ({ id, label: memberLabel(name, id) }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [memberNames],
   );
 
   // The same predicate the push worker uses (#2771). An exact-name match could
@@ -2423,6 +2443,8 @@ export function ChatShell({
               hiddenPins={hiddenPins}
               nameFor={nameFor}
               channelNameFor={channelNameFor}
+              searchChannels={searchChannels}
+              searchMembers={searchMembers}
               onJumpToMessage={jumpToMessage}
               onJumpToSearchHit={jumpToSearchHit}
               onJumpToBookmark={jumpToBookmark}
