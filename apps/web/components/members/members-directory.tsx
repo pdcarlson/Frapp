@@ -65,8 +65,6 @@ import {
   presenceLabel,
   type PresenceStatus,
 } from "@/lib/realtime/presence-status";
-import { vocab } from "@repo/org-archetypes";
-import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
 import { asArray, cn, initials } from "@/lib/utils";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import {
@@ -199,10 +197,6 @@ export function MembersDirectory() {
   const searchQuery = useMemberSearch(deferredQuery);
   const rolesQuery = useRoles();
   const leaderboardQuery = useLeaderboard();
-  // From the member view, not `useOrgConfig()`: every member opens this
-  // screen, and the config read refuses every seeded role below President, so
-  // they saw the IFC default instead of their chapter's word (#2957).
-  const chapterVocabulary = useChapterVocabulary();
   const updateRolesMutation = useUpdateMemberRoles();
   // Presence is chapter-wide and ephemeral (ADR-02) — it rides the Realtime
   // socket and touches no table, so this adds no query and no write. The
@@ -296,7 +290,9 @@ export function MembersDirectory() {
     return map;
   }, [leaderboardQuery.data]);
 
-  const cohortTerm = vocab("class", chapterVocabulary);
+  // Labelled "Graduation year", not the chapter's `class` word: the options are
+  // each member's graduation year, and one pledge class can span several
+  // graduation years (#3941). The `class` term is for real pledge classes.
   // Cohort options come from the full roster (not the search-narrowed list) so a
   // selected cohort never silently loses its <option> mid-search. Alumni class
   // years join them only while a search spans both tabs, as the role filter's
@@ -684,15 +680,15 @@ export function MembersDirectory() {
             ))}
           </select>
           <select
-            aria-label={`Filter members by ${cohortTerm}`}
+            aria-label="Filter members by graduation year"
             value={effectiveCohortFilter}
             onChange={(event) => setCohortFilter(event.target.value)}
             className={dashboardFilterSelectClassName}
           >
-            <option value="all">{cohortTerm}: All</option>
+            <option value="all">Graduation year: All</option>
             {cohortOptions.map((year) => (
               <option key={year} value={String(year)}>
-                {cohortTerm}: {year}
+                Graduation year: {year}
               </option>
             ))}
           </select>
