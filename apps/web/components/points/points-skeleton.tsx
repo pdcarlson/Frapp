@@ -15,6 +15,7 @@ export function PointsPageSkeleton() {
   return (
     <PageSkeleton
       label={stateMicrocopy.points.loading}
+      className="@container space-y-6"
       actions={
         <>
           <SkeletonControl className="w-[208px]" />
@@ -26,13 +27,13 @@ export function PointsPageSkeleton() {
         <Skeleton className="h-[11px] w-16" />
         <Skeleton className="h-7 w-24" />
       </div>
-      <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr]">
+      <div className="grid gap-8 @3xl:grid-cols-[0.9fr_1.1fr]">
         <section className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <div className="mr-auto">
               <SkeletonSectionLabel width="w-24" count />
             </div>
-            <SkeletonControl className="w-full sm:w-56" />
+            <SkeletonControl className="w-full @xl:w-56" />
           </div>
           <SkeletonRows
             rows={10}
@@ -47,7 +48,7 @@ export function PointsPageSkeleton() {
             <div className="mr-auto">
               <SkeletonSectionLabel width="w-28" count />
             </div>
-            <SkeletonControl className="w-full sm:w-48" />
+            <SkeletonControl className="w-full @xl:w-48" />
             <SkeletonControl className="w-[124px]" />
             <SkeletonControl className="w-[132px]" />
           </div>
