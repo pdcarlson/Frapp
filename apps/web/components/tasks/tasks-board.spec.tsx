@@ -733,6 +733,35 @@ describe("TasksBoard add row", () => {
     expect(screen.getByLabelText("Due date")).toHaveValue("");
   });
 
+  it("takes the due date as a typed month and day, with no year to set (#3928)", async () => {
+    render(<TasksBoard />);
+    await userEvent.click(trigger());
+    await userEvent.click(screen.getByRole("combobox", { name: "Assignee" }));
+    await userEvent.click(screen.getByRole("option", { name: "Cole Martin" }));
+    const due = screen.getByLabelText("Due date");
+    // Not the browser's date input, which shows and asks for MM/DD/YYYY.
+    expect(due).toHaveAttribute("type", "text");
+    await userEvent.type(due, "12/31");
+    await userEvent.type(screen.getByLabelText("Task title"), "Order pizza{Enter}");
+
+    await waitFor(() => expect(createTaskMutate).toHaveBeenCalledTimes(1));
+    const sent = createTaskMutate.mock.calls[0]![0] as { due_date: string };
+    // The next December 31st: this year's, whatever year the suite runs in.
+    expect(sent.due_date).toBe(`${new Date().getFullYear()}-12-31`);
+  });
+
+  it("focuses the due field when it is the one thing missing", async () => {
+    render(<TasksBoard />);
+    await userEvent.click(trigger());
+    await userEvent.click(screen.getByRole("combobox", { name: "Assignee" }));
+    await userEvent.click(screen.getByRole("option", { name: "Cole Martin" }));
+    await userEvent.type(screen.getByLabelText("Task title"), "Order pizza{Enter}");
+
+    expect(await screen.findByText("Pick a due date.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Due date")).toHaveFocus();
+    expect(createTaskMutate).not.toHaveBeenCalled();
+  });
+
   it("keeps what was typed when the create fails", async () => {
     createTaskMutate.mockRejectedValueOnce(new Error("nope"));
     await openRowWithEverything();

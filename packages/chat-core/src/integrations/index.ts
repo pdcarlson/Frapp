@@ -64,7 +64,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = Object.freeze([
   {
     name: "task",
     description: "Create a task card and assign it",
-    usage: '"<title>" @assignee <YYYY-MM-DD> [points]',
+    usage: '"<title>" @assignee <due date> [points]',
     requiredModule: "tasks",
     implemented: true,
   },
