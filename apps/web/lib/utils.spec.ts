@@ -1,9 +1,15 @@
 import sharedConfig from "@repo/theme/tailwind";
 import { describe, expect, it, vi, beforeEach } from "vitest";
+const { writeXlsxFileSpy } = vi.hoisted(() => ({
+  writeXlsxFileSpy: vi.fn(() => ({ toBlob: async () => new Blob(["xlsx"]) })),
+}));
+vi.mock("write-excel-file/browser", () => ({ default: writeXlsxFileSpy }));
+
 import {
   cn,
   downloadBlob,
   downloadCsv,
+  downloadXlsx,
   exportRows,
   getErrorMessage,
   guardDecimalDraft,
@@ -303,7 +309,13 @@ describe("rowsToTsv", () => {
         { Amount: "-5", Description: 'Said "late"' },
       ]),
     ).toBe(
-      'Amount\tDescription\n12\tFounders Day, check-in 🎉\n-5\tSaid "late"',
+      'Amount\tDescription\n12\tFounders Day, check-in 🎉\n-5\t"Said ""late"""',
+    );
+  });
+
+  it("quotes a cell that leads with a double quote, so a paste cannot swallow the next cell", () => {
+    expect(rowsToTsv([{ Note: '"unclosed', Amount: "5" }])).toBe(
+      'Note\tAmount\n"""unclosed"\t5',
     );
   });
 
@@ -311,6 +323,8 @@ describe("rowsToTsv", () => {
     expect(rowsToTsv([{ Note: "one\ttwo\r\nthree", Formula: "=1+1" }])).toBe(
       "Note\tFormula\none two three\t'=1+1",
     );
+    // Neutralized before flattening: a leading tab must not hide the formula.
+    expect(rowsToTsv([{ Note: "\t=1+1" }])).toBe("Note\n' =1+1");
   });
 
   it("is empty for no rows", () => {
@@ -362,6 +376,30 @@ describe("rowsToXlsxData", () => {
       { value: "=1+1", type: String },
     ]);
     expect(second![1]).toEqual({ value: "10001", type: String });
+  });
+});
+
+describe("downloadXlsx", () => {
+  it("writes a bold, frozen header row and names the file frapp-<prefix>-<date>.xlsx", async () => {
+    URL.createObjectURL = vi.fn(() => "blob:mock-url");
+    URL.revokeObjectURL = vi.fn();
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        expect(this.download).toMatch(/^frapp-points-\d{4}-\d{2}-\d{2}\.xlsx$/);
+      });
+
+    await downloadXlsx([{ Amount: "12" }], "points");
+
+    expect(writeXlsxFileSpy).toHaveBeenCalledWith(
+      [
+        [{ value: "Amount", type: String, fontWeight: "bold" }],
+        [{ value: 12, type: Number }],
+      ],
+      { stickyRowsCount: 1 },
+    );
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    clickSpy.mockRestore();
   });
 });
 

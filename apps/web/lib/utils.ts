@@ -196,13 +196,19 @@ export function rowsToCsv(rows: Record<string, string>[]): string {
  * Serialize rows as tab-separated text for the clipboard, the shape Google
  * Sheets (and Excel) split into cells on paste. A tab or line break inside a
  * cell would start a new cell or row there, so each becomes a space;
- * formula-shaped cells are made inert the same way the CSV's are.
+ * formula-shaped cells are made inert the same way the CSV's are, and before
+ * the flattening, so a cell that led with a tab still gets its apostrophe. A
+ * cell holding a double quote is quoted the way the CSV's is: a paste reads a
+ * leading `"` as the start of a quoted cell and would otherwise swallow the
+ * cells after it.
  */
 export function rowsToTsv(rows: Record<string, string>[]): string {
   if (rows.length === 0) return "";
   const headers = exportHeaders(rows);
-  const cell = (value: string) =>
-    neutralizeFormulaCell(value.replace(/[\t\r\n]+/g, " "));
+  const cell = (value: string) => {
+    const flat = neutralizeFormulaCell(value).replace(/[\t\r\n]+/g, " ");
+    return flat.includes('"') ? `"${flat.replace(/"/g, '""')}"` : flat;
+  };
   const lines = [headers.map(cell).join("\t")];
   for (const row of rows) {
     lines.push(headers.map((header) => cell(row[header] ?? "")).join("\t"));

@@ -70,7 +70,10 @@ used** in the menu.
 A cell that a spreadsheet would run as a formula (text starting with `=`, `+`,
 `-`, `@`, a tab or a carriage return) is made inert: CSV and the clipboard copy
 prefix it with an apostrophe, and the workbook stores it as a text cell. Plain
-numbers and currency amounts (`-5`, `-$12.00`) are left as values. The workbook
+numbers and currency amounts (`-5`, `-$12.00`) are left as values. In the
+clipboard copy a tab or line break inside a cell becomes a space, and a cell
+holding a double quote is quoted as in CSV, so a paste keeps every cell in its
+own column. The workbook
 writer loads only when Excel is picked. One menu component
 (`apps/web/components/shared/export-menu.tsx`) and one set of helpers
 (`exportRows` and its neighbors in `apps/web/lib/utils.ts`) serve all three
