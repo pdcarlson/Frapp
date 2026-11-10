@@ -17,7 +17,7 @@ Frapp publishes a **system permissions catalog** — these are the strings the A
 | `members:view`        | View the full member directory                         |
 | `points:adjust`       | Manually add/remove points                             |
 | `points:view_all`     | View all members' transactions (not just own)          |
-| `roles:manage`        | Create, edit, delete roles; assign roles to members    |
+| `roles:manage`        | Create, edit, delete roles; assign roles to members; edit the chapter's pledge classes and any member's class and order number ([`members.md`](members.md#pledge-class-and-order-number)) |
 | `channels:create`     | Create chat channels                                   |
 | `channels:manage`     | Edit/delete channels, pin messages, manage permissions |
 | `announcements:post`  | Post in the #announcements channel                     |

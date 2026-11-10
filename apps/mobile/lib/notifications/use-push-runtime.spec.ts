@@ -25,6 +25,7 @@ const mockState = vi.hoisted(() => ({
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => "/",
+  useGlobalSearchParams: () => ({}),
 }));
 
 vi.mock("../auth-session", () => ({

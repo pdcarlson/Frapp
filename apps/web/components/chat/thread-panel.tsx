@@ -59,6 +59,13 @@ export function ThreadPanel({
 
   // Follow the newest reply into view as replies arrive.
   const replyCount = thread.messages.length;
+  // The divider's count: the thread's own while older replies are still
+  // unread here, the confirmed rows once they're all held. Unsent rows never
+  // count (mobile's `message-thread-screen.tsx` reads it the same way).
+  const shownReplies = Math.max(
+    thread.messages.filter((m) => m._status === "confirmed").length,
+    thread.root?.thread?.reply_count ?? 0,
+  );
   useEffect(() => {
     listEnd.current?.scrollIntoView({ block: "end" });
   }, [replyCount]);
@@ -180,7 +187,7 @@ export function ThreadPanel({
               role="separator"
             >
               <span>
-                {replyCount === 1 ? "1 reply" : `${replyCount} replies`}
+                {shownReplies === 1 ? "1 reply" : `${shownReplies} replies`}
               </span>
               <span className="h-px flex-1 bg-border" />
             </div>

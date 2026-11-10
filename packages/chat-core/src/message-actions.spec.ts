@@ -2,6 +2,7 @@ import { describe, expect, it, test } from "vitest";
 import {
   channelAllowsThreadReplies,
   channelAllowsThreads,
+  messageCanStartThread,
   canActOnMessage,
   canDeleteMessage,
   canEditMessage,
@@ -160,6 +161,28 @@ describe("message-thread access (#3785)", () => {
     expect(channelAllowsThreads({ type: "PUBLIC", is_audit_log: true })).toBe(
       false,
     );
+  });
+
+  test("Start thread is offered on a plain message, card included, and nowhere else", () => {
+    const base = {
+      thread_root_id: null,
+      thread: null,
+      is_deleted: false,
+      kind: "text",
+    };
+    expect(messageCanStartThread(base)).toBe(true);
+    expect(messageCanStartThread({ ...base, kind: "poll" })).toBe(true);
+    expect(messageCanStartThread({ ...base, thread_root_id: "root" })).toBe(
+      false,
+    );
+    expect(
+      messageCanStartThread({
+        ...base,
+        thread: { reply_count: 1, last_reply_at: null, recent_sender_ids: [] },
+      }),
+    ).toBe(false);
+    expect(messageCanStartThread({ ...base, is_deleted: true })).toBe(false);
+    expect(messageCanStartThread({ ...base, kind: "imported" })).toBe(false);
   });
 
   test("any reader of a read-only channel may reply in its threads", () => {
