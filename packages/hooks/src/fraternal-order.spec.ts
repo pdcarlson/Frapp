@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { fraternalOrderComparator } from "./fraternal-order";
+import { fraternalOrderComparator, usesFraternalOrder } from "./fraternal-order";
 
 const CLASSES = [{ id: "alpha" }, { id: "beta" }];
 
@@ -74,5 +74,20 @@ describe("fraternalOrderComparator", () => {
         .sort(comparator)
         .map((entry) => entry.display_name),
     ).toEqual(["B", "A"]);
+  });
+});
+
+describe("usesFraternalOrder", () => {
+  test("false for a chapter with no classes and no numbers", () => {
+    expect(usesFraternalOrder([], [member("A", null, null)])).toBe(false);
+    expect(usesFraternalOrder(undefined, undefined)).toBe(false);
+  });
+
+  test("true once the chapter has a class, even with nobody in it", () => {
+    expect(usesFraternalOrder(CLASSES, [member("A", null, null)])).toBe(true);
+  });
+
+  test("true for a chapter that keeps only a chapter-wide number", () => {
+    expect(usesFraternalOrder([], [member("A", null, 12)])).toBe(true);
   });
 });

@@ -1,6 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { afterEach, describe, it, expect, beforeEach, vi } from "vitest";
 import { networkMock } from "@/tests/network";
 
 /**
@@ -87,7 +87,15 @@ const rolesRead = read([
 ]);
 const leaderboardRead = read([{ user_id: "u-1", total: 42 }]);
 
-vi.mock("@repo/hooks", () => ({
+const classesRead = read([]);
+
+vi.mock("@repo/hooks", async (importOriginal) => {
+  // The fraternal-order sort is the real one: it is what this screen promises.
+  const actual = await importOriginal<typeof import("@repo/hooks")>();
+  return {
+  fraternalOrderComparator: actual.fraternalOrderComparator,
+  usesFraternalOrder: actual.usesFraternalOrder,
+  usePledgeClasses: () => classesRead,
   useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
   useMembers: () => membersRead,
   useMemberSearch: (q: string) => (q ? searchRead : membersRead),
@@ -101,7 +109,8 @@ vi.mock("@repo/hooks", () => ({
   }),
   useOrgConfig: () => ({ data: undefined, isError: true }),
   useUpdateMemberRoles: () => ({ mutateAsync: mutateRoles, isPending: false }),
-}));
+  };
+});
 
 vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
 
@@ -402,7 +411,7 @@ describe("Directory on the greenfield shell", () => {
     expect(screen.queryByTestId("detail-sheet")).toBeNull();
   });
 
-  it("sorts members with no role, and with an unparseable join date, last in both directions", async () => {
+  it("sorts members with no role last in both directions", async () => {
     const user = userEvent.setup();
     render(<MembersDirectory />);
     const rows = () =>
@@ -417,12 +426,109 @@ describe("Directory on the greenfield shell", () => {
     await pick(user, /^Sort:/, "Role Z to A");
     expect(rows()).toEqual(["Ada Lovelace", "Grace Hopper"]);
 
-    // Grace's `created_at` is "not-a-date". Subtracting it yields NaN, and a
-    // comparator returning NaN reads as "equal to everything" — not an ordering.
-    await pick(user, /^Sort:/, "Newest first");
-    expect(rows()).toEqual(["Ada Lovelace", "Grace Hopper"]);
-    await pick(user, /^Sort:/, "Oldest first");
-    expect(rows()).toEqual(["Ada Lovelace", "Grace Hopper"]);
+  });
+
+  describe("pledge class and order number (#3939)", () => {
+    const CLASSES = [
+      { id: "c-beta", name: "Beta", position: 0 },
+      { id: "c-alpha", name: "Alpha", position: 1 },
+    ];
+    const withOrder = (
+      index: number,
+      pledge_class_id: string | null,
+      order_number: number | null,
+    ) => ({ ...MEMBERS[index]!, pledge_class_id, order_number });
+    const names = () =>
+      screen
+        .getAllByRole("button", { name: /Lovelace|Hopper/ })
+        .map((el) => el.getAttribute("aria-label")?.split(",")[0]);
+
+    afterEach(() => {
+      Object.assign(membersRead, read(MEMBERS));
+      Object.assign(classesRead, read([]));
+    });
+
+    it("no longer sorts by when a member joined Frapp", async () => {
+      const user = userEvent.setup();
+      render(<MembersDirectory />);
+      await user.click(screen.getByRole("button", { name: /^Sort:/ }));
+      expect(screen.queryByRole("menuitem", { name: "Newest first" })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: "Oldest first" })).toBeNull();
+    });
+
+    it("shows no pledge class or order control to a chapter that uses neither", async () => {
+      const user = userEvent.setup();
+      render(<MembersDirectory />);
+      expect(screen.queryByRole("button", { name: /^Line/ })).toBeNull();
+      await user.click(screen.getByRole("button", { name: /^Sort:/ }));
+      expect(
+        screen.queryByRole("menuitem", { name: "Fraternal order" }),
+      ).toBeNull();
+    });
+
+    it("sorts by the chapter's class order, then number, under the chapter's word", async () => {
+      // Beta is the older class here although Alpha sorts first by name.
+      Object.assign(classesRead, read(CLASSES));
+      Object.assign(
+        membersRead,
+        read([withOrder(0, "c-alpha", 1), withOrder(1, "c-beta", 9)]),
+      );
+      const user = userEvent.setup();
+      render(<MembersDirectory />);
+      expect(names()).toEqual(["Ada Lovelace", "Grace Hopper"]);
+      await pick(user, /^Sort:/, "Fraternal order");
+      expect(names()).toEqual(["Grace Hopper", "Ada Lovelace"]);
+    });
+
+    it("offers the sort to a chapter that keeps only a chapter-wide number", async () => {
+      Object.assign(
+        membersRead,
+        read([withOrder(0, null, 12), withOrder(1, null, 3)]),
+      );
+      const user = userEvent.setup();
+      render(<MembersDirectory />);
+      // No classes, so no class filter; the number alone earns the sort.
+      expect(screen.queryByRole("button", { name: /^Line/ })).toBeNull();
+      await pick(user, /^Sort:/, "Fraternal order");
+      expect(names()).toEqual(["Grace Hopper", "Ada Lovelace"]);
+    });
+
+    it("filters by pledge class, under the chapter's word and in the chapter's order", async () => {
+      Object.assign(classesRead, read(CLASSES));
+      Object.assign(
+        membersRead,
+        read([withOrder(0, "c-alpha", 1), withOrder(1, "c-beta", 1)]),
+      );
+      const user = userEvent.setup();
+      render(<MembersDirectory />);
+      // The mocked chapter calls a class a "Line".
+      await user.click(screen.getByRole("button", { name: /^Line/ }));
+      expect(
+        (await screen.findAllByRole("menuitem")).map((item) => item.textContent),
+      ).toEqual(["Any", "Beta", "Alpha"]);
+      await user.click(screen.getByRole("menuitem", { name: "Alpha" }));
+      expect(names()).toEqual(["Ada Lovelace"]);
+      // Graduation year stays its own filter beside it.
+      expect(
+        screen.getByRole("button", { name: /Graduation year/ }),
+      ).toBeInTheDocument();
+    });
+
+    it("names a member's class on their row, and in the row's label", () => {
+      Object.assign(classesRead, read(CLASSES));
+      Object.assign(
+        membersRead,
+        read([withOrder(0, "c-alpha", 1), withOrder(1, null, null)]),
+      );
+      render(<MembersDirectory />);
+      expect(
+        screen.getByRole("button", { name: /^Ada Lovelace,/ }),
+      ).toHaveAccessibleName(/Treasurer, Alpha, 42 points/);
+      expect(screen.getByText(/Treasurer · Alpha ·/)).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /^Grace Hopper,/ }),
+      ).not.toHaveAccessibleName(/Alpha|Beta/);
+    });
   });
 
   it("draws its async states without repainting the card the lane deleted", () => {
@@ -440,8 +546,9 @@ describe("Directory on the greenfield shell", () => {
     const user = userEvent.setup();
     render(<MembersDirectory />);
     await user.click(screen.getByRole("button", { name: "Sort: Name A to Z" }));
-    // Every (key, direction) pair the deleted headers could reach.
-    expect(await screen.findAllByRole("menuitem")).toHaveLength(8);
+    // Name, role and points in both directions. The join-date pair went with
+    // #3939; the fraternal-order sort joins only a chapter that keeps one.
+    expect(await screen.findAllByRole("menuitem")).toHaveLength(6);
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("button", { name: /sort by name/i })).toBeNull();
   });

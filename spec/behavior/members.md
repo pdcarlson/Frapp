@@ -7,7 +7,9 @@ The `members` module is always-on (free tier). Every chapter has a searchable me
 - The directory is searchable across **name, email, and custom-field values**. Custom-field search is **visibility-scoped** — a viewer can only match on field values they are permitted to see.
 - Filters: role, graduation year, and status. The graduation-year filter is labelled "Graduation year", never the chapter's class/line/cohort term: one pledge class can span several graduation years, and that term is kept for real pledge classes ([#3939](https://github.com/pdcarlson/Frapp/issues/3939)).
   - Changed for [#3941](https://github.com/pdcarlson/Frapp/issues/3941) by shawnatomklein-eng, 2026-11-09 (was: "class/line/cohort (rendered via the chapter vocabulary term)").
-- Search also supports name, role, and join date.
+- A chapter that keeps pledge classes also gets a **pledge class filter** on web, beside graduation year and separate from it, labelled with the chapter's own word and listing its classes in the chapter's order ([#3939](https://github.com/pdcarlson/Frapp/issues/3939)).
+- **Sorts (web):** name, role and points, each in both directions, and **fraternal order** (below), labelled with the chapter's word for a member's order number and offered only to a chapter that has a pledge class or has given a member a number. There is no sort by when a member joined: "Newest first" and "Oldest first" ordered by when the membership was created in Frapp, not when someone joined the chapter, and were removed for #3939 (asked by shawnatomklein-eng; Paul left remove-or-relabel to the builder on the issue, 2026-11-10). This bullet replaces "Search also supports name, role, and join date", which described the sorts.
+- A member's pledge class is named on their Directory row when they have one.
 - The directory paginates at **25 rows per page**; the pager renders only when the filtered set exceeds one page. (Web renders one flush list; the table and card layouts this line used to name were deleted by the greenfield Directory lane, [#2146](https://github.com/pdcarlson/Frapp/issues/2146).)
 
 ## Pledge class and order number
