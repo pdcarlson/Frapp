@@ -1,4 +1,4 @@
-import { localIsoDate, parseBareDateLocalNoon } from "@repo/formatting";
+import { formatWeekdayDay, localIsoDate } from "@repo/formatting";
 
 /**
  * Draft state and validation for the s19 "New task" sheet.
@@ -151,14 +151,14 @@ export function resolveDue(choice: DueChoice, now: Date): ResolvedDue {
  * Parsed at local noon so a bare `YYYY-MM-DD` renders as its own day in every
  * zone, the same fix `lib/more/service-hours.ts` documents.
  */
-export function formatDueFieldLabel(isoDate: string): string {
-  const date = parseBareDateLocalNoon(isoDate);
-  if (!date) return isoDate;
-  return date.toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
+export function formatDueFieldLabel(
+  isoDate: string,
+  now: Date = new Date(),
+): string {
+  // The shared house shape: the year shows on a date in another one (#3928),
+  // since the picker reaches any day and "Sun, Mar 14" a year out would read
+  // as this year's.
+  return formatWeekdayDay(isoDate, now) ?? isoDate;
 }
 
 /**
