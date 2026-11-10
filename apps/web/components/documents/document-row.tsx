@@ -2,6 +2,7 @@
 
 import { Download, Loader2, Trash2 } from "lucide-react";
 import { formatDay } from "@repo/formatting";
+import { uploadedLine } from "@repo/hooks/document-library";
 import { IconButton } from "@/components/ui/icon-button";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { Can } from "@/components/shared/can";
@@ -138,12 +139,4 @@ export function DocumentRow({
       </div>
     </li>
   );
-}
-
-/** "Uploaded Sep 26 by Ryan Castellano", dropping whichever half is unknown. */
-function uploadedLine(day: string | null, uploader: string | null): string | null {
-  if (!day && !uploader) return null;
-  return ["Uploaded", day, uploader ? `by ${uploader}` : null]
-    .filter(Boolean)
-    .join(" ");
 }

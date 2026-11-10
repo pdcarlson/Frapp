@@ -389,3 +389,35 @@ describe("listRowHint", () => {
     expect(listRowHint("", undefined)).toBeUndefined();
   });
 });
+
+describe("ListRow long press (#3938)", () => {
+  it("passes the long press through and names it for a screen reader", () => {
+    const onLongPress = vi.fn();
+    const row = pressable({
+      label: "Bylaws",
+      onPress: vi.fn(),
+      onLongPress,
+      longPressLabel: "Delete document",
+    });
+    expect(row.props.onLongPress).toBe(onLongPress);
+    expect(row.props.accessibilityActions).toEqual([
+      { name: "longpress", label: "Delete document" },
+    ]);
+    row.props.onAccessibilityAction({
+      nativeEvent: { actionName: "longpress" },
+    });
+    expect(onLongPress).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers no action while the row is busy", () => {
+    const row = pressable({
+      label: "Bylaws",
+      onPress: vi.fn(),
+      onLongPress: vi.fn(),
+      longPressLabel: "Delete document",
+      busy: true,
+    });
+    expect(row.props.accessibilityActions).toBeUndefined();
+    expect(row.props.onAccessibilityAction).toBeUndefined();
+  });
+});

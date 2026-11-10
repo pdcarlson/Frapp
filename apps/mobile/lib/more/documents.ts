@@ -7,15 +7,28 @@
  * to fill the slot would dress an arbitrary choice up as a chapter decision.
  * Filed separately.
  */
-import { parseInstant } from "@repo/formatting";
+import { formatDay } from "@repo/formatting";
+import {
+  uploadedLine,
+  type LibraryDocument,
+} from "@repo/hooks/document-library";
 import { metaLine, num, records, str } from "./narrow";
 
-export interface DocumentRow {
+/**
+ * A `GET /v1/documents` row narrowed to what s12 draws and the shared library
+ * (`@repo/hooks/document-library`, #3938) searches, filters and orders.
+ */
+export interface MobileDocument {
   id: string;
   title: string;
-  /** e.g. `"Bylaws · Aug 12"`, or `null` when neither part is known. */
-  meta: string | null;
+  description: string | null;
   folder: string | null;
+  document_type: string | null;
+  uploaded_by: string | null;
+  created_at: string;
+  /** For the File type filter (`fileKind`); null on older rows. */
+  content_type: string | null;
+  storage_path: string | null;
 }
 
 export interface DocumentFolder {
@@ -23,34 +36,48 @@ export interface DocumentFolder {
   name: string;
 }
 
-/** `2026-08-12T…` → `"Aug 12"`. `null` for anything unparseable. */
-function formatUploadedAt(value: string | null): string | null {
-  const date = parseInstant(value);
-  if (!date) return null;
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-function toRow(row: Record<string, unknown>): DocumentRow | null {
-  const id = str(row, "id");
-  const title = str(row, "title");
-  if (!id || !title) return null;
-
-  const folder = str(row, "folder");
-  return {
-    id,
-    title,
-    meta: metaLine([folder, formatUploadedAt(str(row, "created_at"))]),
-    folder,
-  };
-}
-
-/** Newest first — the reference labels this list RECENT. */
-export function selectDocumentRows(data: unknown): DocumentRow[] {
+/**
+ * Every drawable document. A row with no id cannot be opened and a row with
+ * no title has nothing to show, so both are dropped. Order is left to the
+ * library's sort.
+ */
+export function selectDocuments(data: unknown): MobileDocument[] {
   return records(data)
-    .map((row) => ({ row, created: str(row, "created_at") ?? "" }))
-    .sort((a, b) => b.created.localeCompare(a.created))
-    .map(({ row }) => toRow(row))
-    .filter((row): row is DocumentRow => !!row);
+    .map((row): MobileDocument | null => {
+      const id = str(row, "id");
+      const title = str(row, "title");
+      if (!id || !title) return null;
+      return {
+        id,
+        title,
+        description: str(row, "description"),
+        folder: str(row, "folder"),
+        document_type: str(row, "document_type"),
+        uploaded_by: str(row, "uploaded_by"),
+        created_at: str(row, "created_at") ?? "",
+        content_type: str(row, "content_type"),
+        storage_path: str(row, "storage_path"),
+      };
+    })
+    .filter((row): row is MobileDocument => !!row);
+}
+
+/**
+ * The row's second line, web's order without its free-text tail:
+ * `"Uploaded Aug 12 by Jane Doe · Governance · Bylaws"`, dropping whatever is
+ * unknown. An unparseable date is left off rather than drawn as "Invalid Date".
+ * The description is searched but not drawn: a phone row has no room to
+ * truncate it the way web's single line does.
+ */
+export function documentMeta(
+  row: LibraryDocument<MobileDocument>,
+  now: Date = new Date(),
+): string | null {
+  return metaLine([
+    uploadedLine(formatDay(row.doc.created_at || null, now), row.uploader),
+    row.doc.folder,
+    row.doc.document_type,
+  ]);
 }
 
 /**

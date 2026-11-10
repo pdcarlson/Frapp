@@ -1,6 +1,6 @@
 import { File, FileCheck, KeyRound, Lock, type LucideIcon } from "lucide-react";
 import { roleColor, type RoleColorKey } from "@repo/validation";
-import { highlightRuns } from "@/lib/search/fuzzy-match";
+import { highlightRuns } from "@repo/hooks/fuzzy-match";
 
 /*
  * What tells one backwork row from the next at a glance (Paul, 2026-11-05:
