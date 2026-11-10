@@ -1140,7 +1140,6 @@ export function Composer({
         const files = filesFromClipboard(event.clipboardData);
         if (files.length === 0) return false;
         event.preventDefault();
-        // eslint-disable-next-line react-hooks/refs -- paste handler; latest attach path lives in a ref
         attachFilesRef.current(files);
         return true;
       },
