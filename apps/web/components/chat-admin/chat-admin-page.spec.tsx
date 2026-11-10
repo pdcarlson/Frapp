@@ -247,6 +247,46 @@ describe("ChatAdminPage — the create panel", () => {
     );
   });
 
+  it("creates the channel unlocked by default, and Always formal when switched on (#3787)", async () => {
+    mockCreateChannel.mockResolvedValue({});
+    render(<ChatAdminPage />);
+    fireEvent.click(screen.getByRole("button", { name: "New channel" }));
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "announcements-2" },
+    });
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("switch", {
+        name: /Always formal/,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Create channel" }));
+
+    await waitFor(() =>
+      expect(mockCreateChannel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "announcements-2",
+          display_locked: true,
+        }),
+      ),
+    );
+  });
+
+  it("sends Always formal off when the switch is left alone (#3787)", async () => {
+    mockCreateChannel.mockResolvedValue({});
+    render(<ChatAdminPage />);
+    fireEvent.click(screen.getByRole("button", { name: "New channel" }));
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "random-2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create channel" }));
+
+    await waitFor(() =>
+      expect(mockCreateChannel).toHaveBeenCalledWith(
+        expect.objectContaining({ display_locked: false }),
+      ),
+    );
+  });
+
   // Cancel sets state directly, and Radix fires no `onOpenChange` for that, so
   // it has to drop the draft itself the way the X and Escape do.
   it("drops the draft on Cancel, so the next New channel starts empty", () => {
