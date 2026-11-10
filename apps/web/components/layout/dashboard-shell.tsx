@@ -339,10 +339,21 @@ export function DashboardShell({
       `dvh`, not `vh`: on a phone browser whose toolbar can hide, `100vh` is
       the viewport with the toolbar hidden, so a shell that clips its overflow
       would put chat's composer under the toolbar while it shows.
+
+      `relative` and `overflow-clip` keep the document from scrolling (#4000).
+      An `sr-only` label or input is `position: absolute`, so it is laid out
+      against its nearest positioned ancestor, and a scrolling column that
+      isn't one doesn't clip it or carry it along. With no positioned ancestor
+      at all, the ones far down a long column (Profile's density radios, the
+      chat members' ", Offline") counted toward the document's height: the
+      document outgrew the window, and a wheel at the end of a column scrolled
+      the whole app up off the screen. `relative` makes the shell their
+      ancestor so it clips them; `clip`, not `hidden`, because a hidden box
+      still scrolls when focus lands on something clipped inside it.
     */
     <div
       data-dashboard-shell=""
-      className="flex h-dvh overflow-hidden bg-background"
+      className="relative flex h-dvh overflow-clip bg-background"
     >
       <ChapterWizardGate />
       {/* A member whose roles grant nothing (#3236). */}
@@ -501,13 +512,15 @@ export function DashboardShell({
             and `min-h-0` are load-bearing: as flex items, without them this
             refuses to shrink below its widest unbreakable content and the
             whole page scrolls sideways (six of the seven routes in #1142).
-            Beside chat it keeps the 375px floor.
+            Beside chat it keeps the 375px floor. `relative` so an `sr-only`
+            input scrolls with the page instead of staying where the
+            unscrolled layout put it (#4000).
           */}
           {hasTool ? (
             <div
               data-tool-page=""
               className={cn(
-                "flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4 sm:px-6",
+                "relative flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4 sm:px-6",
                 chatShown && "min-[1056px]:min-w-[375px]",
               )}
             >

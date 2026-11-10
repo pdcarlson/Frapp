@@ -416,6 +416,9 @@ describe("DashboardShell", () => {
     // `dvh`: `100vh` on a phone is the viewport with the toolbar hidden, which
     // puts the bottom of a clipped shell under the toolbar while it shows.
     expect(root).toHaveClass("h-dvh");
+    // The shell clips what its columns don't, and can't itself be scrolled
+    // (#4000; `tests/visual/document-scroll.spec.ts` measures it).
+    expect(root).toHaveClass("relative", "overflow-clip");
     expect(root?.className).not.toContain("h-screen");
     expect(root?.className).not.toContain("offline-banner-height");
     expect(root).toHaveAttribute(DASHBOARD_SHELL_ATTR);
