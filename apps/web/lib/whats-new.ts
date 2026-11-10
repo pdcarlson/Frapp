@@ -20,6 +20,8 @@
 import { useSyncExternalStore } from "react";
 import {
   RELEASE_NOTES,
+  isNewerReleaseNoteVersion,
+  parseReleaseNoteVersion,
   releaseNoteVersion,
   type ReleaseNote,
 } from "@repo/validation";
@@ -37,7 +39,22 @@ export function readWhatsNewSeen(): string | null {
   }
 }
 
+/**
+ * Moves the marker up to `version`, never down: a tab still on an older
+ * bundle, or a rolled-back deploy, must not undo what a newer one recorded, or
+ * the newer entry would open a second time.
+ */
 function recordWhatsNewSeen(version: string): void {
+  const stored = readWhatsNewSeen();
+  if (
+    stored !== null &&
+    !isNewerReleaseNoteVersion(
+      parseReleaseNoteVersion(version),
+      parseReleaseNoteVersion(stored),
+    )
+  ) {
+    return;
+  }
   try {
     window.localStorage.setItem(WHATS_NEW_SEEN_STORAGE_KEY, version);
   } catch {

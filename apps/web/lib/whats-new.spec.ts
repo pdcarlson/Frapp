@@ -47,4 +47,11 @@ describe("the seen marker", () => {
     skipWhatsNew("2026-11-09#3");
     expect(readWhatsNewSeen()).toBe("2026-11-09#3");
   });
+
+  it("never moves the marker back, so a newer entry already shown isn't shown again", () => {
+    window.localStorage.setItem(WHATS_NEW_SEEN_STORAGE_KEY, "2099-01-01#4");
+    markWhatsNewSeen();
+    skipWhatsNew("2026-11-09#3");
+    expect(readWhatsNewSeen()).toBe("2099-01-01#4");
+  });
 });

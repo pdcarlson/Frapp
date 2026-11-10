@@ -59,7 +59,8 @@ export const WHATS_NEW_OPEN_DELAY_MS = 800;
 const SUPPRESSED_PREFIXES = ["/billing", "/whats-new"] as const;
 
 /** Anything modal or menu-like already on screen. */
-const BLOCKING_LAYER = '[role="dialog"], [role="alertdialog"], [role="menu"]';
+const BLOCKING_LAYER =
+  '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
 
 type Membership = { chapter_id: string; has_completed_onboarding: boolean };
 

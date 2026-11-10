@@ -8,6 +8,7 @@ import {
   resetWhatsNewForTests,
   useWhatsNewUnread,
 } from "@/lib/whats-new";
+import { WhatsNew } from "@/components/whats-new/whats-new";
 import {
   WHATS_NEW_OPEN_DELAY_MS,
   WhatsNewHost,
@@ -174,26 +175,50 @@ describe("WhatsNewHost", () => {
     expect(seen()).toBeNull();
   });
 
-  it("stands down while another dialog or menu is up, stays unread, and opens after the next navigation", () => {
-    const other = document.createElement("div");
-    other.setAttribute("role", "dialog");
-    document.body.appendChild(other);
+  it.each(["dialog", "alertdialog", "menu", "listbox"])(
+    "stands down while a %s is up, stays unread, and opens after the next navigation",
+    (role) => {
+      const other = document.createElement("div");
+      other.setAttribute("role", role);
+      document.body.appendChild(other);
+      const view = renderHost();
+      wait();
+      expect(screen.queryByRole("dialog", { name: "What's new" })).toBeNull();
+      expect(seen()).toBeNull();
+      expect(unreadMark()).toHaveTextContent("unread");
+
+      other.remove();
+      nav.pathname = "/events";
+      view.rerender(
+        <>
+          <WhatsNewHost />
+          <Unread />
+        </>,
+      );
+      wait();
+      expect(screen.getByRole("dialog", { name: "What's new" })).toBeVisible();
+    },
+  );
+
+  it("closes on a click outside", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderHost();
+    wait();
+    // Radix marks the scrim as the outside; a pointer down there dismisses.
+    await user.click(document.querySelector('[data-state="open"].fixed.inset-0')!);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("clears the mark and records the entry once the What's new page is read", () => {
+    nav.pathname = "/billing";
     const view = renderHost();
     wait();
-    expect(screen.queryByRole("dialog", { name: "What's new" })).toBeNull();
-    expect(seen()).toBeNull();
     expect(unreadMark()).toHaveTextContent("unread");
-
-    other.remove();
-    nav.pathname = "/events";
-    view.rerender(
-      <>
-        <WhatsNewHost />
-        <Unread />
-      </>,
-    );
-    wait();
-    expect(screen.getByRole("dialog", { name: "What's new" })).toBeVisible();
+    const page = render(<WhatsNew />);
+    expect(unreadMark()).toHaveTextContent("read");
+    expect(seen()).toBe(releaseNoteVersion(NEWEST));
+    page.unmount();
+    view.unmount();
   });
 
   it("never opens over checkout or the What's new page itself", () => {

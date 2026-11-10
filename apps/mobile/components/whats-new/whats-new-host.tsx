@@ -29,7 +29,7 @@ import {
 
 /**
  * Opens What's new by itself, once, after an update brings a new entry or new
- * lines in the newest one (`lib/whats-new.ts` has the rule). Mounted in the
+ * lines in the newest one (`decideWhatsNew` in `@repo/validation` is the rule). Mounted in the
  * tab layout beside the first-run tour's host, so it never runs during
  * onboarding, which lives in the auth group, and it sits out any launch the
  * tour is due on.
