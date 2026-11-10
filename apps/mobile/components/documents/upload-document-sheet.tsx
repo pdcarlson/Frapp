@@ -105,8 +105,8 @@ export const RETRY_KEEPS_DRAFT =
  * A phone photo takes seconds to send, and a sheet that sits on "Uploading…"
  * for all of them reads as stuck. So Upload closes the sheet the moment it is
  * tapped and reports the upload through `onPending`, for the screen behind it
- * to draw in its place: s12 a quiet row at the top of the list where the
- * document will land, the quick-action bar a notice. A success then reports
+ * to draw in its place: s12 a quiet row at the top of the list until the
+ * document lands in the list's order, the quick-action bar a notice. A success then reports
  * through `onUploaded`; a failure reports the reason through `onPending`, and
  * the draft (with any bytes already sent) stays here for the member to reopen
  * and try again, or Cancel, which drops the pending report too.

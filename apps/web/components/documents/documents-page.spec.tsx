@@ -868,6 +868,31 @@ describe("DocumentsPage search, filters and sort (#3852)", () => {
     ).toBeInTheDocument();
   });
 
+  it("filters by file type, and searches format words (#3938)", async () => {
+    documentsQuery.data = [
+      BYLAWS,
+      {
+        ...RUSH,
+        content_type:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      },
+    ];
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.click(screen.getByRole("button", { name: "File type" }));
+    expect(
+      (await screen.findAllByRole("menuitem")).map((item) => item.textContent),
+    ).toEqual(["Any type", "PDF", "Spreadsheet"]);
+    await user.click(screen.getByRole("menuitem", { name: "Spreadsheet" }));
+    await waitFor(() => expect(rowTitles()).toEqual(["Rush schedule"]));
+
+    await user.click(screen.getByRole("button", { name: "File type: Spreadsheet" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Any type" }));
+    await user.type(screen.getByLabelText("Search documents"), "pdf");
+    await waitFor(() => expect(rowTitles()).toEqual(["Chapter bylaws"]));
+  });
+
   it("sorts by name by default and newest first on request", async () => {
     const user = userEvent.setup();
     render(<DocumentsPage />);

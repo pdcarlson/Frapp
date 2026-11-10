@@ -7,7 +7,8 @@ import {
   normalizeWords,
   withNumeralVariants,
   type FuzzyResult,
-} from "@/lib/search/fuzzy-match";
+} from "@repo/hooks/fuzzy-match";
+import { POSTGREST_MAX_ROWS } from "@repo/hooks/document-library";
 
 /**
  * The `/backwork` library's search, filters and ordering, kept free of React
@@ -26,7 +27,7 @@ import {
  * comes back as its newest rows with no signal; a response this long is
  * treated as truncated.
  */
-export const BACKWORK_LIST_CAP = 1000;
+export const BACKWORK_LIST_CAP = POSTGREST_MAX_ROWS;
 
 export type BackworkResource = {
   id: string;

@@ -296,12 +296,16 @@ describe("Directory on the greenfield shell", () => {
     expect(screen.getByLabelText("Filter members by role")).toHaveValue("all");
   });
 
-  it("names the cohort filter with the chapter's word from the member view", () => {
+  // #3941: the options are graduation years, so the chapter's `class` word
+  // ("Line" here) must not label them; one pledge class spans several years.
+  it("labels the graduation-year filter as graduation year, not the chapter's class word", () => {
     render(<MembersDirectory />);
-    const cohort = screen.getByLabelText("Filter members by Line");
+    const cohort = screen.getByLabelText("Filter members by graduation year");
     expect(
-      within(cohort).getByRole("option", { name: "Line: All" }),
+      within(cohort).getByRole("option", { name: "Graduation year: All" }),
     ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Filter members by Line")).toBeNull();
+    expect(screen.queryByRole("option", { name: /^Line:/ })).toBeNull();
   });
 
   it("names the query when a search matches nothing", async () => {

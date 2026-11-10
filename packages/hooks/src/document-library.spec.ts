@@ -8,8 +8,25 @@ import {
   queryDocuments,
   toLibraryDocuments,
   uploaderOptions,
+  fileKind,
+  isFiltering,
+  kindOptions,
 } from "./document-library";
-import type { ChapterDocument } from "./document-types";
+
+type ChapterDocument = {
+  id: string;
+  chapter_id: string;
+  title: string;
+  description: string | null;
+  folder: string | null;
+  storage_path: string;
+  uploaded_by: string;
+  created_at: string;
+  content_type: string | null;
+  byte_size: number | null;
+  document_type: string | null;
+  effective_date: string | null;
+};
 
 function doc(id: string, title: string, uploaded_by: string, created_at: string, extra: Partial<ChapterDocument> = {}): ChapterDocument {
   return {
@@ -90,13 +107,13 @@ describe("queryDocuments", () => {
 
   it("filters by uploader and by date", () => {
     expect(
-      titles(queryDocuments(ROWS, "", { uploader: "u2", date: null }, "name", DATES)),
+      titles(queryDocuments(ROWS, "", { uploader: "u2", date: null, kind: null }, "name", DATES)),
     ).toEqual(["FY2026 Operating Budget"]);
     expect(
-      titles(queryDocuments(ROWS, "", { uploader: null, date: { preset: "semester" } }, "name", DATES)),
+      titles(queryDocuments(ROWS, "", { uploader: null, date: { preset: "semester" }, kind: null }, "name", DATES)),
     ).toEqual(["FY2026 Operating Budget", "Recruitment Handbook"]);
     expect(
-      titles(queryDocuments(ROWS, "", { uploader: null, date: { preset: "30d" } }, "name", DATES)),
+      titles(queryDocuments(ROWS, "", { uploader: null, date: { preset: "30d" }, kind: null }, "name", DATES)),
     ).toEqual([]);
   });
 });
@@ -160,7 +177,7 @@ describe("date filters", () => {
     const rows = queryDocuments(
       ROWS,
       "",
-      { uploader: null, date: { preset: "semester" } },
+      { uploader: null, date: { preset: "semester" }, kind: null },
       "name",
       { now: NOW, semesterSince: undefined },
     );
@@ -181,5 +198,85 @@ describe("uploaderOptions", () => {
       { value: "u2", label: "Devin Okafor" },
       { value: "u1", label: "Ryan Castellano" },
     ]);
+  });
+});
+
+describe("file type (#3938)", () => {
+  const typed = (
+    id: string,
+    title: string,
+    content_type: string | null,
+    storage_path = `chapters/c/documents/${id}/file`,
+  ) => ({
+    id,
+    title,
+    uploaded_by: "u1",
+    created_at: "2026-09-01T00:00:00Z",
+    content_type,
+    storage_path,
+  });
+
+  it.each([
+    ["application/pdf", "pdf"],
+    ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", "word"],
+    ["application/msword", "word"],
+    ["application/vnd.openxmlformats-officedocument.presentationml.presentation", "slides"],
+    ["application/vnd.ms-excel", "spreadsheet"],
+    ["text/csv; charset=utf-8", "spreadsheet"],
+    ["image/heic", "image"],
+    ["text/plain", "other"],
+  ] as const)("reads %s as %s", (mime, kind) => {
+    expect(fileKind({ content_type: mime, storage_path: "x/y/z" })).toBe(kind);
+  });
+
+  it("falls back to the stored filename's extension when the type is missing or generic", () => {
+    expect(fileKind({ content_type: null, storage_path: "c/d/1/Minutes.DOCX" })).toBe("word");
+    expect(
+      fileKind({ content_type: "application/octet-stream", storage_path: "c/d/1/deck.key" }),
+    ).toBe("slides");
+    expect(fileKind({ content_type: null, storage_path: "c/d/1/README" })).toBe("other");
+    expect(fileKind({ content_type: null, storage_path: null })).toBe("other");
+  });
+
+  const rows = toLibraryDocuments(
+    [
+      typed("a", "Bylaws", "application/pdf"),
+      typed("b", "Rush deck", null, "c/d/b/rush.pptx"),
+      typed("c", "Dues", "application/vnd.ms-excel"),
+      typed("d", "Workshop notes", "application/msword"),
+    ],
+    () => null,
+  );
+  const ids = (query: string, filters = NO_DOCUMENT_FILTERS) =>
+    queryDocuments(rows, query, filters, "name", { now: new Date(), semesterSince: null }).map(
+      (row) => row.doc.id,
+    );
+
+  it("filters by group, and offers only the groups present, in order", () => {
+    expect(ids("", { ...NO_DOCUMENT_FILTERS, kind: "slides" })).toEqual(["b"]);
+    expect(kindOptions(rows.map((row) => row.kind)).map((o) => o.label)).toEqual([
+      "PDF",
+      "Word",
+      "Slides",
+      "Spreadsheet",
+    ]);
+  });
+
+  it("finds a format by its words, exactly or by their start", () => {
+    expect(ids("pdf")).toEqual(["a"]);
+    expect(ids("powerpoint")).toEqual(["b"]);
+    expect(ids("excel")).toEqual(["c"]);
+    expect(ids("spread")).toEqual(["c"]);
+    expect(ids("word")).toEqual(["d"]);
+    expect(ids("rush slides")).toEqual(["b"]);
+  });
+
+  it("never fuzzes a format word: work is not word", () => {
+    expect(ids("work")).toEqual(["d"]); // "Workshop", by its title
+    expect(ids("sheep")).toEqual([]);
+  });
+
+  it("counts a group as a filter", () => {
+    expect(isFiltering("", { ...NO_DOCUMENT_FILTERS, kind: "pdf" }, true)).toBe(true);
   });
 });
