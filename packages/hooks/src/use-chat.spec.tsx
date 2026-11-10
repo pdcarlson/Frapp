@@ -6,6 +6,8 @@ import {
   useMarkChannelRead,
   markChannelReadMutationKey,
   useLeaveChannel,
+  useSetChannelDisplayLock,
+  canSetChannelDisplayLock,
   useAuthorAvatars,
   useChannelNotificationPreferences,
   useSetChannelNotificationLevel,
@@ -236,6 +238,51 @@ describe("useMarkChannelRead", () => {
 
 // #2303: the hide lands through the list refetch, since a hidden DM stays in
 // `GET /v1/channels` flagged `hidden` rather than being removed from it.
+describe("useSetChannelDisplayLock (#3787)", () => {
+  it("puts the lock and refetches the channel list", async () => {
+    const queryClient = createTestQueryClient();
+    const mockPut = vi
+      .fn()
+      .mockResolvedValue({ data: { id: "c-1", display_locked: true }, error: null });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHook(() => useSetChannelDisplayLock(), {
+      wrapper: createWrapper(queryClient, { PUT: mockPut }),
+    });
+
+    await result.current.mutateAsync({ id: "c-1", locked: true });
+
+    expect(mockPut).toHaveBeenCalledWith("/v1/channels/{id}/display-lock", {
+      params: { path: { id: "c-1" } },
+      body: { display_locked: true },
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["channels"] });
+  });
+});
+
+describe("canSetChannelDisplayLock (#3787)", () => {
+  const channel = { type: "PUBLIC", created_by: "u-creator" };
+
+  it("lets the creator and a channels:manage holder set it", () => {
+    expect(canSetChannelDisplayLock(channel, "u-creator", [])).toBe(true);
+    expect(canSetChannelDisplayLock(channel, "u-x", ["channels:manage"])).toBe(true);
+    expect(canSetChannelDisplayLock(channel, "u-x", ["*"])).toBe(true);
+  });
+
+  it("refuses anyone else, a channel with no creator, and every DM", () => {
+    expect(canSetChannelDisplayLock(channel, "u-x", ["members:view"])).toBe(false);
+    expect(
+      canSetChannelDisplayLock({ type: "PUBLIC", created_by: null }, null, []),
+    ).toBe(false);
+    expect(
+      canSetChannelDisplayLock(
+        { type: "DM", created_by: "u-creator" },
+        "u-creator",
+        ["*"],
+      ),
+    ).toBe(false);
+  });
+});
+
 describe("useLeaveChannel", () => {
   let queryClient: QueryClient;
 

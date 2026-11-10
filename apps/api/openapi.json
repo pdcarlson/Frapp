@@ -3341,6 +3341,55 @@
         ]
       }
     },
+    "/v1/channels/{id}/display-lock": {
+      "put": {
+        "operationId": "ChatController_setChannelDisplayLock_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetChannelDisplayLockDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set or clear Always formal on a channel (the channel's creator, or channels:manage)",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/channels/dm": {
       "post": {
         "operationId": "ChatController_getOrCreateDm_v1",
@@ -14095,6 +14144,10 @@
           "is_read_only": {
             "type": "boolean",
             "default": false
+          },
+          "display_locked": {
+            "type": "boolean",
+            "description": "Always formal (#3787): every member sees the channel in the formal display and cannot pick another display there. False when absent. Change it later with PUT /v1/channels/{id}/display-lock."
           }
         },
         "required": [
@@ -14140,6 +14193,18 @@
             "description": "Make this the chapter's default channel, where Chat opens for a member whose device has no last channel (ahead of #general). Setting it moves the default off any other channel; `false` on the current default leaves the chapter with none. Refused as `true` on a DM or group DM."
           }
         }
+      },
+      "SetChannelDisplayLockDto": {
+        "type": "object",
+        "properties": {
+          "display_locked": {
+            "type": "boolean",
+            "description": "True sets the channel to Always formal for every member; false lets each member pick their own display there again."
+          }
+        },
+        "required": [
+          "display_locked"
+        ]
       },
       "CreateDmDto": {
         "type": "object",

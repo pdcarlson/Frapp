@@ -9,7 +9,12 @@ import {
   type ReactTestRenderer,
 } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  getLockedChannels,
+  resetLockedChannelsForTests,
+  setChannelLocked,
+} from "@repo/chat-core/density";
 
 // These screens paint with the chapter accent (`useChapterBranding`), which
 // reads the current chapter through the client provider these specs don't
@@ -358,6 +363,9 @@ let viewerQuery = { isError: false, isFetching: false, refetch: vi.fn() };
 let channelRow: "found" | "reading" | "missing" = "found";
 /** The open channel's type, for the member list's 1:1 DM rule (#3536). */
 let channelType = "PUBLIC";
+/** The single-channel read's Always formal flag and when it was read (#3787). */
+let channelLocked = false;
+let channelReadAt = 1_000;
 /** A read-only channel (announcements) the viewer can only read. */
 let channelIsReadOnly = false;
 /** The open channel is the chapter's audit log (#3909). */
@@ -420,7 +428,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
             can_post: !channelIsAuditLog && !channelIsReadOnly,
             is_read_only: channelIsAuditLog || channelIsReadOnly,
             is_audit_log: channelIsAuditLog,
+            display_locked: channelLocked,
           },
+          dataUpdatedAt: channelReadAt,
           isFetching: false,
         }
       : // No row and no cached list: a blank title while it is read, then the
@@ -2221,6 +2231,38 @@ describe("chat thread + sheet (#3865)", () => {
     act(() => refocus());
     expect(dismissPollSheet).toHaveBeenCalled();
     act(() => tree.unmount());
+  });
+});
+
+describe("chat thread keeps Always formal current (#3787)", () => {
+  afterEach(() => {
+    channelLocked = false;
+    channelReadAt = 1_000;
+    resetLockedChannelsForTests();
+  });
+
+  it("takes the lock from the channel's own read when no list has loaded", () => {
+    channelLocked = true;
+    render();
+    expect(getLockedChannels().has(CHANNEL)).toBe(true);
+  });
+
+  it("never lets an older cached read undo a lock the list brought in", () => {
+    queryClient.setQueryData(["channels"], [], { updatedAt: 5_000 });
+    setChannelLocked(CHANNEL, true);
+    channelLocked = false;
+    channelReadAt = 1_000;
+    render();
+    expect(getLockedChannels().has(CHANNEL)).toBe(true);
+  });
+
+  it("applies a read newer than the list", () => {
+    queryClient.setQueryData(["channels"], [], { updatedAt: 5_000 });
+    setChannelLocked(CHANNEL, true);
+    channelLocked = false;
+    channelReadAt = 9_000;
+    render();
+    expect(getLockedChannels().has(CHANNEL)).toBe(false);
   });
 });
 

@@ -1046,6 +1046,23 @@ export interface paths {
         patch: operations["ChatController_updateChannel_v1"];
         trace?: never;
     };
+    "/v1/channels/{id}/display-lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set or clear Always formal on a channel (the channel's creator, or channels:manage) */
+        put: operations["ChatController_setChannelDisplayLock_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/channels/dm": {
         parameters: {
             query?: never;
@@ -4408,6 +4425,8 @@ export interface components {
             category_id?: string;
             /** @default false */
             is_read_only: boolean;
+            /** @description Always formal (#3787): every member sees the channel in the formal display and cannot pick another display there. False when absent. Change it later with PUT /v1/channels/{id}/display-lock. */
+            display_locked?: boolean;
         };
         UpdateChannelDto: {
             name?: string;
@@ -4423,6 +4442,10 @@ export interface components {
             default_notification_level?: "all" | "mentions" | "off" | null;
             /** @description Make this the chapter's default channel, where Chat opens for a member whose device has no last channel (ahead of #general). Setting it moves the default off any other channel; `false` on the current default leaves the chapter with none. Refused as `true` on a DM or group DM. */
             is_default?: boolean;
+        };
+        SetChannelDisplayLockDto: {
+            /** @description True sets the channel to Always formal for every member; false lets each member pick their own display there again. */
+            display_locked: boolean;
         };
         CreateDmDto: {
             /** @description The other member user ID */
@@ -8426,6 +8449,38 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["UpdateChannelDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_setChannelDisplayLock_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetChannelDisplayLockDto"];
             };
         };
         responses: {

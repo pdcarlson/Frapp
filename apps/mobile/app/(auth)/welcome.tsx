@@ -20,6 +20,7 @@ import {
   OnboardingTextInput,
 } from "@/components/onboarding/onboarding-field";
 import { ProfilePhoto } from "@/components/profile/profile-photo";
+import { ChatDensityOptions } from "@/components/settings/chat-density-sheet";
 import {
   ONBOARDING_COLUMN_WIDTH,
   OnboardingPrimaryButton,
@@ -39,6 +40,10 @@ import {
   shouldOfferProfileStep,
 } from "@/lib/onboarding/profile-step";
 import { TOUR_DUE_ANYONE, markTourDue } from "@/lib/onboarding/tour";
+import {
+  DISPLAY_STEP_SUBTITLE,
+  DISPLAY_STEP_TITLE,
+} from "@/lib/onboarding/display-step";
 import { usePushPrimer } from "@/lib/notifications/use-push-primer";
 import { useLatestTrack } from "@/lib/use-latest-track";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -46,23 +51,26 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 /**
  * s03, the member's first-run steps (`spec/ui/mobile/screens.md`).
  *
- * The screens right after a member joins, in up to two beats on one route,
- * each shown only when it has something to ask:
+ * The screens right after a member joins, in up to three beats on one route,
+ * the first and last shown only when they have something to ask:
  *
  * 1. **How the chapter sees you**, when the member has no photo or no real
  *    name yet (`lib/onboarding/profile-step.ts`). The photo is optional; the
  *    name is required only when there isn't one, and a real one comes
  *    pre-filled. Every message carries both, so a member who skips this looks
  *    like a stranger in every channel.
- * 2. **Turn on notifications**, when this build can push and push isn't on
+ * 2. **Pick your chat display**, always (#3787, Winston's decision: the
+ *    member decides while setting up). The phone's current display is
+ *    preselected (Cozy on a fresh phone), so Continue keeps it; a tap saves
+ *    the pick on this phone at once.
+ * 3. **Turn on notifications**, when this build can push and push isn't on
  *    yet (`shouldOfferPrimer`, #2299). Either answer goes to chat; a "Not
  *    now" comes back once, days later, on the chat home (`usePushReminder`).
  *
  * Then chat, with the first-run tour over it (`lib/onboarding/tour.ts`). The
  * static "You're in." card that used to open s03 is gone (owner brief
  * 2026-11-07): the tour's first stop says it, pointing at the real channels.
- * A member with a photo, a name and push on sees no beat at all and goes
- * straight to the tour.
+ * A member with a photo, a name and push on sees only the display beat.
  *
  * Which beat comes first waits on the profile and push reads; nothing is drawn
  * until they're back, and a slow read is given up on after
@@ -88,7 +96,7 @@ export default function Welcome() {
   const leavingRef = useRef(false);
   // `deciding` until the profile and push reads are back (or given up on).
   const [step, setStep] = useState<
-    "deciding" | "profile" | "notifications" | "none"
+    "deciding" | "profile" | "display" | "notifications"
   >("deciding");
   const [waitedOut, setWaitedOut] = useState(false);
   const userQuery = useCurrentUser();
@@ -151,15 +159,18 @@ export default function Welcome() {
       setProfileShown(true);
       setStep("profile");
     } else {
-      setStep(primer.showPrimer ? "notifications" : "none");
+      setStep("display");
     }
   }
-  // Nothing to ask: straight on to chat, and the tour.
-  useEffect(() => {
-    if (step === "none") void finish();
-    // `finish` is latched by its own guard; only the step decides.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step]);
+
+  function leaveDisplay() {
+    if (leaving) return;
+    if (primer.showPrimer) {
+      setStep("notifications");
+    } else {
+      void finish();
+    }
+  }
 
   // Validated on Continue, not per keystroke. A name that didn't change isn't
   // sent again; one that did is saved before the member moves on, so a
@@ -192,11 +203,7 @@ export default function Welcome() {
         nameChanged,
       }),
     );
-    if (primer.showPrimer) {
-      setStep("notifications");
-    } else {
-      void finish();
-    }
+    setStep("display");
   }
 
   // Android's back on a later beat returns to the one before it, as a back
@@ -204,9 +211,15 @@ export default function Welcome() {
   // Held while an answer is on its way out.
   // The first beat leaves Android's back alone, as the old first beat did.
   useEffect(() => {
-    if (step !== "notifications" || !profileShown) return;
+    const previous =
+      step === "notifications"
+        ? "display"
+        : step === "display" && profileShown
+          ? "profile"
+          : null;
+    if (previous === null) return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      if (!answering) setStep("profile");
+      if (!answering) setStep(previous);
       return true;
     });
     return () => sub.remove();
@@ -218,7 +231,7 @@ export default function Welcome() {
 
   // Nothing drawn while the first beat is decided (usually a frame or two):
   // no spinner, and no beat that the next read would swap out.
-  if (step === "deciding" || step === "none") {
+  if (step === "deciding") {
     return <View style={styles.container} testID="welcome-deciding" />;
   }
 
@@ -245,6 +258,16 @@ export default function Welcome() {
               </Text>
               <View style={styles.channels}>
                 <PushAskBody />
+              </View>
+            </>
+          ) : step === "display" ? (
+            <>
+              <Text accessibilityRole="header" style={styles.title}>
+                {DISPLAY_STEP_TITLE}
+              </Text>
+              <Text style={styles.subtitle}>{DISPLAY_STEP_SUBTITLE}</Text>
+              <View style={styles.channels}>
+                <ChatDensityOptions />
               </View>
             </>
           ) : (
@@ -310,9 +333,16 @@ export default function Welcome() {
                 });
               }}
             />
-          ) : (
+          ) : step === "display" ? (
             <OnboardingPrimaryButton
               label={primer.showPrimer ? "Continue" : "Go to chat"}
+              disabled={answering}
+              busy={answering}
+              onPress={leaveDisplay}
+            />
+          ) : (
+            <OnboardingPrimaryButton
+              label="Continue"
               disabled={answering}
               busy={answering}
               onPress={() => void leaveProfile()}
