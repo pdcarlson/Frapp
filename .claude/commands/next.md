@@ -196,7 +196,8 @@ shortlist as sizing context; neither is a filter.
 priority label (`P1`→`P4`, no priority label last), tie-broken by lower issue number. Never skip an
 issue for being unestimated, small, or large; prefer the most valuable viable work, including large,
 high-impact issues. The order is deterministic so concurrent agents agree on it and the claim
-resolves collisions.
+resolves collisions. Baseline first ([`AGENTS.md` § Work tracking](../../AGENTS.md#work-tracking))
+reaches this order through the priority labels; don't reorder by hand.
 
 **Walk your lane, not the list.** Every session agrees on the order, so sessions must not walk it in
 step.
@@ -425,7 +426,8 @@ is always refused here.
 Address every finding: fix it, or file a self-contained `triage` follow-up with a reason. Commit the
 fixes, then mark the new HEAD (`node scripts/diff-review-scope.mjs --mark`); the fixes get no second
 round. This is the branch's one review: after the first push, a fix, a merge of `main` or a resolved
-conflict is pushed without one (Paul, 2026-11-10; ADR-23 amendment 2). Never push around the gate (`--no-verify`), and never
+conflict is pushed without one (Paul, 2026-11-10; ADR-23 amendment 2). A `/next` branch is real work about to become a PR, so the
+gate's bypass (`--no-verify`) doesn't fit its first push. Never
 delete, revert, stash, or gitignore a file to make it pass. If the gate objects to a file, review the
 file.
 
@@ -442,7 +444,7 @@ when it is a decision and you hold no sibling claims, your end-of-run report oth
 blocking on a prompt would stall the run. Still write the block; the PR Follow-ups routine harvests
 it into the Human Action List. If Paul is present and the action is small, ask on the spot; file it
 unless he clears it then and there. Paul is present only when `get_me` returns his login
-(`pdcarlson`). In a session that runs as anyone else (Shawn or Winston), whoever answers the prompt
+(`pdcarlson`). In a session that runs as anyone else (Shawn, Winston or Evan), whoever answers the prompt
 is not Paul, so a decision only he can make is filed per `file-follow-up`, never cleared there.
 
 ## Phase 4 — ship and sync

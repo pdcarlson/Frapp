@@ -2,7 +2,7 @@
 name: coordinator
 description: >
   Run a standing coordinator chat that takes Paul's or Shawn's feedback and ideas, refines and
-  classifies them, and spins the real work off into worker sessions that report back, keeping a
+  classifies them, and spins the real work off into worker sessions, keeping a
   shared board page current and handing itself off at 50% context. Use when a session is started
   as a coordinator (for example "Beta Launch"), or when asked to coordinate feedback into parallel
   threads the way a Claude Code project's coordinator does.
@@ -10,8 +10,8 @@ description: >
 
 # Coordinator
 
-> **Since 2026-11-09:** Shawn and Winston work in their own Claude chats under their own GitHub
-> accounts ([`AGENTS.md` § Operating mindset](../../../AGENTS.md#operating-mindset)), not through
+> **Since 2026-11-09:** Shawn and Winston, and since 2026-11-10 Evan, work in their own Claude chats
+> under their own GitHub accounts ([`AGENTS.md` § Operating mindset](../../../AGENTS.md#operating-mindset)), not through
 > this board. The Shawn intake and approval rules below apply only to anything he still brings here.
 
 Claude Code projects, a coordinator chat that spins off threads, aren't offered on Team plans
@@ -53,14 +53,14 @@ naming the work, tags `frapp:coordinator`, and a brief that stands alone. The br
 - the goal and what done looks like;
 - what you already know: the asker's words, issues, PRs, files, the board row;
 - the constraints: AGENTS.md applies, UI work follows `ui-development`, ship fast;
-- this report-back contract, verbatim: "Report to the coordinator with `send_message` to session
-  `<coordinator session id>` at these points only: your plan in two lines when you start; a decision
-  you need (ask it in your own chat too, so Paul or Shawn can answer there); each PR you open; and
-  done or blocked, in one paragraph. If the coordinator moves, it messages you its new id."
+- this reporting line, verbatim: "Report in your own chat only; do not message the coordinator.
+  Ask a decision you need in your own chat, and end with done or blocked in one paragraph."
 
-Add the board row as soon as the worker starts. A report arrives here as a new turn: update the
-row, tell the asker in a line, and act on it. Archive a worker's session (`archive_session`) once
-its PR merged or its work is reported done.
+Workers report in their own chats (Paul, 2026-11-10): each message to the coordinator wakes its
+whole context, which costs more than the report is worth. Add the board row as soon as the worker
+starts. Read a worker's state when you need it, when Paul asks or when you bring the board up to
+date: `get_session` for its status, `list_events` with `kinds` for its last reply, and its issue
+and PR. Archive a worker's session (`archive_session`) once its PR merged or its work is done.
 
 ## The board
 
@@ -92,12 +92,13 @@ The session can't run `/compact` on itself, so it hands off instead. After each 
 1. Bring the board up to date.
 2. Write the handoff per [`handoff`](../handoff/SKILL.md): the board's URL, each open worker's
    session id and state, the decisions and preferences heard so far, and what you were about to do.
+   Keep the coordinator's overall goal, say what was done recently, and carry Paul's latest message
+   over nearly verbatim, not paraphrased (Paul, 2026-11-10).
 3. Start the successor with `create_session`: the same title plus a number, `source_url` the repo,
    and a first message that says to run this skill as the successor of this session, followed by
    the handoff.
 4. The successor watches the board's comments with `ArtifactComments`. It doesn't republish.
-5. Send each open worker the successor's session id with `send_message`.
-6. Tell Paul here, with the successor's link, and take no new work in this chat.
+5. Tell Paul here, with the successor's link, and take no new work in this chat.
 
 ## Limits
 

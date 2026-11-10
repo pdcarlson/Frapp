@@ -19,7 +19,10 @@ another session opened too, where this container has no marker and the scope scr
 whole branch unreviewed. Done means the findings are reported, each one is fixed or filed, and the
 commit you first push carries a marker.
 
-Never get past the gate with `git push --no-verify`: it leaves no review evidence.
+`git push --no-verify` bypasses the gate and leaves no review evidence. Whether a push warrants it
+is a judgment call, described in
+[`AGENTS.md` § Claude Code web sandbox](../../../AGENTS.md#claude-code-web-sandbox); it is not a way
+past findings this skill reported.
 
 **`/code-review` doesn't replace this skill.** A model can invoke it only when the current turn's
 prompt carries the token whitespace-delimited (regex `(?<!\S)/code-review(?=$|\s)`), never inside a

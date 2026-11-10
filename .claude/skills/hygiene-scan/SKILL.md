@@ -36,8 +36,10 @@ It holds only while every run is grounded, whole-pattern, verified, reviewed, an
   `lib/theme.tsx`, `components/screen-shell.tsx`, `lib/href.ts`, `package.json`, `app.json`.
 - Never edit `spec/behavior/**` or `spec/product/**` prose: it is intent, never "corrected" to match
   code. Only a path citation there may change, when a fix moves a file.
-- Never `git push --no-verify`; the pre-push hook is the review gate. If it can't find valid
-  evidence, stop and report the blocker.
+- Never `git push --no-verify`; the pre-push hook is the review gate. The bypass is a judgment
+  call for an attended chat
+  ([`AGENTS.md` § Claude Code web sandbox](../../../AGENTS.md#claude-code-web-sandbox)), and nobody
+  is here to make it. If the hook can't find valid evidence, stop and report the blocker.
 - Never merge. The human merge is what licenses unattended product-code edits.
 - One PR per run, on `claude/hygiene-scan-YYYY-MM-DD` (append `-2` if that exists), and one open
   Hygiene Scan PR at a time: reviewer bandwidth is scarce and stacked hygiene PRs conflict.
