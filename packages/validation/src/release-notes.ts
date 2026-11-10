@@ -59,9 +59,9 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "People without a profile photo now get colored initials, in their role's color when their role has one, and a color of their own otherwise.",
       "Mentioning someone whose name has a space, like a first and last name, now mentions and notifies them as written.",
       "If your role lets you close polls, a new poll can be set to stay open until you close it.",
-      "On the web, Events has one Filter button, remembers whether you last used the list or the calendar, lets you mark attendance for several events at once if your role takes attendance, and shows a repeating event as one row.",
+      "On the web, Events has one Filter button, remembers whether you last used the list or the calendar, and shows a repeating event as one row.",
       "On the web, officers who manage roles can set up pledge classes in Settings and give each member a class and an order number.",
-      "On your phone, a channel with a new message shows as unread as soon as you open the app, without waiting for it to load.",
+      "On your phone, a channel you have a chat notification for shows as unread as soon as you open the app, before the latest counts arrive.",
     ],
   },
   {
