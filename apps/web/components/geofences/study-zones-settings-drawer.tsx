@@ -1,6 +1,6 @@
 "use client";
 
-import { permissionLabel } from "@/lib/permission-labels";
+import { permissionLabel } from "@repo/validation";
 import { useMemo } from "react";
 import Link from "next/link";
 import { usePermissionsCatalog, useRoles } from "@repo/hooks";

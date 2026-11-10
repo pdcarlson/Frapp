@@ -1291,15 +1291,25 @@ describe('RbacService', () => {
   it('should return permissions catalog', () => {
     const result = service.getPermissionsCatalog();
 
-    expect(result).toEqual(
-      Object.entries(SystemPermissions).map(([key, value]) => ({
-        key,
-        permission: value,
-      })),
+    expect(result.map(({ key, permission }) => [key, permission])).toEqual(
+      Object.entries(SystemPermissions),
     );
     expect(
       result.some((r) => r.key === 'WILDCARD' && r.permission === '*'),
     ).toBe(true);
+    // #4069: each row carries the registry's words, module and scope.
+    expect(result.find((r) => r.permission === 'points:adjust')).toEqual({
+      key: 'POINTS_ADJUST',
+      permission: 'points:adjust',
+      module: 'points',
+      module_label: 'Points',
+      label: 'Add or remove points',
+      description: 'Give or take points from a member by hand.',
+      scope: 'chapter',
+    });
+    expect(
+      result.some((r) => r.permission === 'chapter-directory:search'),
+    ).toBe(false);
   });
 
   describe('memberHasAnyPermission', () => {
