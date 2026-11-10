@@ -165,6 +165,8 @@ Unchanged from the Linear era. An issue's description may carry a machine-readab
   architectural, security-sensitive, or subtle-correctness work). Advisory, read at spin-up.
   Sessions default to Opus 5.5, which does about 95% of the work here (owner decision 2026-09-22),
   so `any` means that default and `fable` marks the minority of issues that warrant Fable.
+  *2026-11-10 (Paul):* the repo sets no default model. Whoever starts a chat picks its model and
+  effort, so read `any` as "no preference"; the field stays advisory.
 - **`ultracode`** — whether multi-agent orchestration likely pays for itself.
 
 **Who writes it:** the curator files every suggestion with a brief; the triage routine backfills
