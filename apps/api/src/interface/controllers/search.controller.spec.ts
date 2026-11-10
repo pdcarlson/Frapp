@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { TestingModule } from '@nestjs/testing';
 import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import type { Response } from 'express';
@@ -86,7 +87,7 @@ describe('SearchController', () => {
       'ch-1',
       'user-1',
       '',
-      undefined,
+      {},
     );
   });
 
@@ -104,7 +105,7 @@ describe('SearchController', () => {
       'ch-1',
       'user-1',
       'budget',
-      'chan-9',
+      { channelId: 'chan-9' },
     );
   });
 
@@ -135,7 +136,74 @@ describe('SearchController', () => {
       'ch-1',
       'user-1',
       'budget',
-      undefined,
+      {},
+    );
+  });
+
+  describe('message filters (#3958)', () => {
+    const run = async (
+      ...filters: [unknown?, unknown?, unknown?, unknown?, unknown?]
+    ) => {
+      searchService.searchWithinBudget.mockResolvedValue({
+        results: emptyResult,
+        timedOut: false,
+        timedOutSources: [],
+      });
+      await controller.search('ch-1', 'user-1', '', makeRes(), ...filters);
+      return searchService.searchWithinBudget.mock.calls[0][3] as unknown;
+    };
+
+    it('passes sender, dates and has through', async () => {
+      expect(
+        await run(
+          'chan-9',
+          ' user-7 ',
+          '2026-11-01T04:00:00.000Z',
+          '2026-11-08T00:00:00-05:00',
+          'file, image,file',
+        ),
+      ).toEqual({
+        channelId: 'chan-9',
+        fromUserId: 'user-7',
+        // As written: re-serializing would move the caller's bound.
+        after: '2026-11-01T04:00:00.000Z',
+        before: '2026-11-08T00:00:00-05:00',
+        has: ['file', 'image'],
+      });
+    });
+
+    it('reads a repeated has as a list', async () => {
+      expect(
+        await run(undefined, undefined, undefined, undefined, ['poll', 'link']),
+      ).toEqual({ has: ['poll', 'link'] });
+    });
+
+    it.each([
+      ['an unknown has', [undefined, undefined, undefined, undefined, 'video']],
+      ['a non-string has', [undefined, undefined, undefined, undefined, 42]],
+      ['an unreadable after', [undefined, undefined, 'yesterday']],
+      ['a bare number as before', [undefined, undefined, undefined, '7']],
+      ['a bare date', [undefined, undefined, '2026-11-01']],
+      [
+        'a day that does not exist',
+        [undefined, undefined, '2026-02-30T00:00:00Z'],
+      ],
+      ['a time with no offset', [undefined, undefined, '2026-11-10T10:00']],
+      ['a date with trailing text', [undefined, undefined, '2026-11-01 junk']],
+      [
+        'a repeated after',
+        [undefined, undefined, ['2026-11-01', '2026-11-02']],
+      ],
+      ['a repeated fromUserId', [undefined, ['user-1', 'user-2']]],
+      ['a bracketed fromUserId', [undefined, { k: 'v' }]],
+    ] as const)(
+      'rejects %s with a 400 rather than dropping the filter',
+      async (_, filters) => {
+        await expect(
+          run(...(filters as unknown as [unknown])),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(searchService.searchWithinBudget).not.toHaveBeenCalled();
+      },
     );
   });
 });
