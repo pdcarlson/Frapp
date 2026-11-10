@@ -185,8 +185,8 @@ describe("filterOptions", () => {
   it("offers only values some row has, in a useful order", () => {
     const options = filterOptions(rows);
     expect(options.course).toEqual([
-      { value: "COGS 2120", label: "COGS 2120 · Cognitive Science" },
-      { value: "CSCI 1100", label: "CSCI 1100" },
+      { value: "COGS 2120", label: "COGS 2120 · Cognitive Science", short: "COGS 2120" },
+      { value: "CSCI 1100", label: "CSCI 1100", short: "CSCI 1100" },
     ]);
     expect(options.professor.map((option) => option.label)).toEqual(["Bram", "Thompson"]);
     expect(options.term.map((option) => option.value)).toEqual(["Spring 2026", "Fall 2025"]);
@@ -342,8 +342,8 @@ describe("course names and nicknames (#3848)", () => {
 
   it("labels the Course filter option with the course name when there is one", () => {
     const options = filterOptions(rows).course;
-    expect(options).toContainEqual({ value: "MATH 1010", label: "MATH 1010 · Calculus I" });
-    expect(options).toContainEqual({ value: "MATH 1020", label: "MATH 1020 · Mathematics" });
+    expect(options).toContainEqual({ value: "MATH 1010", label: "MATH 1010 · Calculus I", short: "MATH 1010" });
+    expect(options).toContainEqual({ value: "MATH 1020", label: "MATH 1020 · Mathematics", short: "MATH 1020" });
   });
 });
 
