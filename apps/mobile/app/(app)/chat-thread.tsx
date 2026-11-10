@@ -32,6 +32,7 @@ import {
 import {
   channelAllowsReplies,
   channelAllowsThreads,
+  messageCanStartThread,
 } from "@repo/chat-core/message-actions";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { useQueryClient } from "@tanstack/react-query";
@@ -843,14 +844,8 @@ function ChannelThreadScreen() {
         messageId: message.id,
         copyText: copyableText(message),
         canReply: actions.canReply,
-        // A parent with replies opens from its chip; a reply, a deleted or
-        // an imported message starts none (web's row offers the same).
-        canStartThread:
-          canThreadHere &&
-          !message.thread_root_id &&
-          !message.thread &&
-          !message.is_deleted &&
-          message.kind !== "imported",
+        // The rule web's row uses (`messageCanStartThread`).
+        canStartThread: canThreadHere && messageCanStartThread(message),
         canEdit: actions.canEdit,
         // Someone else's message from a real member, where the viewer can
         // post: the system actor and an imported author have nobody to ping.

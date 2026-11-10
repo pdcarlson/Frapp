@@ -39,6 +39,7 @@ import {
   isOwnMessage,
   EDITED_MARKER,
   isCardMessage,
+  messageCanStartThread,
   showsEditedMarker,
   type MemberLookup,
 } from "@repo/chat-core/message-actions";
@@ -955,11 +956,7 @@ export function MessageItem({
             <ThreadGlyph className="h-4 w-4" />
           </button>
         ) : null}
-        {onOpenThread &&
-        !message.thread_root_id &&
-        !message.thread &&
-        !message.is_deleted &&
-        message.kind !== "imported" ? (
+        {onOpenThread && messageCanStartThread(message) ? (
           <button
             type="button"
             className={ACTION_BAR_BUTTON}

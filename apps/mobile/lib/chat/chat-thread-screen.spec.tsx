@@ -353,6 +353,8 @@ let viewerQuery = { isError: false, isFetching: false, refetch: vi.fn() };
 let channelRow: "found" | "reading" | "missing" = "found";
 /** The open channel's type, for the member list's 1:1 DM rule (#3536). */
 let channelType = "PUBLIC";
+/** A read-only channel (announcements) the viewer can only read. */
+let channelIsReadOnly = false;
 /** The open channel is the chapter's audit log (#3909). */
 let channelIsAuditLog = false;
 /** The viewer's permissions, and the chapter's modules, for the + (#3701). */
@@ -410,8 +412,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
             name: "general",
             type: channelType,
             description: "The whole chapter.",
-            can_post: !channelIsAuditLog,
-            is_read_only: channelIsAuditLog,
+            can_post: !channelIsAuditLog && !channelIsReadOnly,
+            is_read_only: channelIsAuditLog || channelIsReadOnly,
             is_audit_log: channelIsAuditLog,
           },
           isFetching: false,
@@ -567,6 +569,7 @@ beforeEach(() => {
   params = { channelId: CHANNEL };
   channelRow = "found";
   channelType = "PUBLIC";
+  channelIsReadOnly = false;
   channelIsAuditLog = false;
   permissionList = [];
   enabledModules = {};
@@ -2270,6 +2273,35 @@ describe("message threads (#3785)", () => {
             recent_sender_ids: [],
           },
         }),
+      ),
+    );
+    expect(
+      tree.root.findByType("MessageActionsSheet" as never).props.target,
+    ).toMatchObject({ canStartThread: false });
+    act(() => tree.unmount());
+  });
+
+  it("offers threads in a read-only channel (the pending-Paul override)", () => {
+    channelIsReadOnly = true;
+    const tree = render();
+    expect(rows(tree)[0]!.props.onOpenThread).toBeTypeOf("function");
+    act(() =>
+      (rows(tree)[1]!.props.onOpenActions as (m: ChatMessage) => void)(
+        message("m2"),
+      ),
+    );
+    expect(
+      tree.root.findByType("MessageActionsSheet" as never).props.target,
+    ).toMatchObject({ canStartThread: true, canReply: false });
+    act(() => tree.unmount());
+  });
+
+  it("offers no Start thread in a 1:1 DM", () => {
+    channelType = "DM";
+    const tree = render();
+    act(() =>
+      (rows(tree)[1]!.props.onOpenActions as (m: ChatMessage) => void)(
+        message("m2"),
       ),
     );
     expect(

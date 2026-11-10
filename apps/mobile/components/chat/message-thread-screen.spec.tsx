@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { TOMBSTONE_TEXT } from "@repo/chat-core/block-copy";
+import { Chip } from "@/components/filter-chips";
 import { useOpenChatTransport } from "@repo/hooks/open-chat-transport";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { FrappThemeProvider } from "@/lib/theme";
@@ -152,6 +153,12 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
 }));
 
+const unblock = vi.fn(async () => {});
+vi.mock("@/lib/chat/block-actions", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/chat/block-actions")>()),
+  useBlockActions: () => ({ unblock, block: vi.fn() }),
+}));
+
 let writeBlockedReason: string | null = null;
 vi.mock("@/lib/connection/use-connection", () => ({
   useConnection: () => ({
@@ -182,12 +189,7 @@ function render(): ReactTestRenderer {
   return tree;
 }
 
-const pressable = (tree: ReactTestRenderer, label: string) =>
-  tree.root.find(
-    (node) =>
-      node.type === ("Pressable" as never) &&
-      node.props.accessibilityLabel === label,
-  );
+const followChip = (tree: ReactTestRenderer) => tree.root.findByType(Chip);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -237,7 +239,7 @@ describe("MessageThreadScreen (#3785)", () => {
 
   it("follows and unfollows from the header", async () => {
     const tree = render();
-    await act(async () => pressable(tree, "Follow").props.onPress());
+    await act(async () => followChip(tree).props.onPress());
     expect(thread.setFollow).toHaveBeenCalledWith("following");
 
     thread = threadState({ followState: "following" });
@@ -250,7 +252,9 @@ describe("MessageThreadScreen (#3785)", () => {
         </QueryClientProvider>,
       ),
     );
-    await act(async () => pressable(tree, "Following").props.onPress());
+    expect(followChip(tree).props.label).toBe("Following");
+    expect(followChip(tree).props.on).toBe(true);
+    await act(async () => followChip(tree).props.onPress());
     expect(thread.setFollow).toHaveBeenCalledWith("none");
     act(() => tree.unmount());
   });
@@ -263,7 +267,7 @@ describe("MessageThreadScreen (#3785)", () => {
       }),
     });
     const tree = render();
-    await act(async () => pressable(tree, "Follow").props.onPress());
+    await act(async () => followChip(tree).props.onPress());
     expect(alert).toHaveBeenCalledWith(
       "Couldn't change this thread",
       "Network down",
@@ -279,7 +283,7 @@ describe("MessageThreadScreen (#3785)", () => {
     act(() => tree.unmount());
   });
 
-  it("shows a blocked member's reply as a tombstone", () => {
+  it("shows a blocked member's reply as a tombstone, with Unblock", async () => {
     thread = threadState({
       messages: [
         message("r1", {
@@ -291,6 +295,26 @@ describe("MessageThreadScreen (#3785)", () => {
     });
     const tree = render();
     expect(screenText(tree)).toContain(TOMBSTONE_TEXT);
+    const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+    act(() =>
+      tree.root
+        .find(
+          (node) =>
+            node.type === ("Pressable" as never) &&
+            screenText({ root: node } as never).includes("Unblock"),
+        )
+        .props.onPress(),
+    );
+    // The confirmation's destructive button runs the unblock, then a re-read.
+    const buttons = alert.mock.calls[0]![2] as {
+      style?: string;
+      onPress?: () => void;
+    }[];
+    await act(async () =>
+      buttons.find((button) => button.style !== "cancel")!.onPress!(),
+    );
+    expect(unblock).toHaveBeenCalledWith(BLOCKED);
+    expect(thread.retryLoad).toHaveBeenCalled();
     expect(
       tree.root.findAll(
         (node) =>
@@ -384,6 +408,52 @@ describe("MessageThreadScreen (#3785)", () => {
         .props.onPress(),
     );
     expect(thread.loadOlder).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("counts the thread's replies, not just the loaded page or unsent rows", () => {
+    thread = threadState({
+      hasOlder: true,
+      root: message(ROOT, {
+        thread: {
+          reply_count: 120,
+          last_reply_at: null,
+          recent_sender_ids: [],
+        },
+      }),
+    });
+    const many = render();
+    expect(screenText(many)).toContain("120 replies");
+    act(() => many.unmount());
+
+    thread = threadState({
+      messages: [
+        message("r1", { thread_root_id: ROOT }),
+        message("r2", { thread_root_id: ROOT, _status: "failed" }),
+      ],
+      root: message(ROOT, {
+        thread: { reply_count: 1, last_reply_at: null, recent_sender_ids: [] },
+      }),
+    });
+    const one = render();
+    expect(screenText(one)).toContain("1 reply");
+    act(() => one.unmount());
+  });
+
+  it("keeps the empty typing line away from a screen reader", () => {
+    const quiet = render();
+    const slot = () =>
+      quiet.root.find((node) => node.props.testID === "typing-line");
+    expect(slot().props.accessibilityElementsHidden).toBe(true);
+    expect(slot().props.accessibilityLiveRegion).toBeUndefined();
+    act(() => quiet.unmount());
+  });
+
+  it("dismisses the keyboard on a drag, as s05 does", () => {
+    const tree = render();
+    expect(
+      tree.root.findByType("FlatList" as never).props.keyboardDismissMode,
+    ).toBe("on-drag");
     act(() => tree.unmount());
   });
 

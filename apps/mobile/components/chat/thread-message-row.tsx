@@ -28,6 +28,7 @@ import type { ChatCardFrameProps } from "./chat-card";
 import { EventCard } from "./event-card";
 import { HoursCard } from "./hours-card";
 import { MessageItem, MessageRowFrame, OwnLineMarkers } from "./message-item";
+import { ThreadChip } from "./thread-chip";
 import { PointsCard } from "./points-card";
 import { PollCard } from "./poll-card";
 import { ReplyQuote } from "./reply-quote";
@@ -260,6 +261,15 @@ function ThreadMessageRowBody({
       >
         {card}
         <OwnLineMarkers message={message} />
+        {/* A card can be a thread's parent too (#3785), as on web. */}
+        {message.thread ? (
+          <ThreadChip
+            summary={message.thread}
+            nameFor={nameFor}
+            roleColorFor={roleColorFor}
+            onPress={onOpenThread ? () => onOpenThread(cached) : undefined}
+          />
+        ) : null}
       </MessageRowFrame>
     );
   }

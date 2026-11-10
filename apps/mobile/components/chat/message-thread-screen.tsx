@@ -12,11 +12,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useIsFocused, useRouter } from "expo-router";
 import {
   applyBlockList,
+  tombstoneCanUnblock,
   visibleTypingUsers,
   type BlockState,
   type ThreadRow,
 } from "@repo/chat-core/blocks";
-import { TOMBSTONE_TEXT } from "@repo/chat-core/block-copy";
 import { channelAllowsThreadReplies } from "@repo/chat-core/message-actions";
 import { typingLabel } from "@repo/chat-core/typing-label";
 import type { ChatMessage } from "@repo/chat-core/types";
@@ -29,14 +29,20 @@ import {
 } from "@repo/hooks";
 import { useReportOpenChatTransport } from "@repo/hooks/open-chat-transport";
 import { SignetTokens } from "@repo/theme/signet";
+import { BlockedMessageTombstone } from "@/components/chat/blocked-message-tombstone";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { MessageItem } from "@/components/chat/message-item";
 import { ThreadSkeleton } from "@/components/chat/thread-skeleton";
 import { BackGlyph } from "@/components/control-glyphs";
+import { Chip } from "@/components/filter-chips";
 import { ErrorState } from "@/components/state-block";
 import { useScreenBelow } from "@/lib/back-target";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { useBlockClearance } from "@/lib/chat/block-clearance";
+import {
+  confirmUnblockMember,
+  useBlockActions,
+} from "@/lib/chat/block-actions";
 import {
   selectPostCapability,
   threadChannel,
@@ -226,11 +232,37 @@ export function MessageThreadScreen({
     void loadOlder().then(({ error }) => setOlderError(error));
   }, [loadOlder]);
 
+  // Unblock from a tombstone, as s05 offers it; the thread is read again so
+  // the member's replies come back unmasked.
+  const { unblock } = useBlockActions();
+  const { retryLoad } = thread;
+  const onUnblock = useCallback(
+    (userId: string) => {
+      confirmUnblockMember({
+        name: nameFor(userId),
+        run: () => unblock(userId),
+        onDone: retryLoad,
+      });
+    },
+    [nameFor, unblock, retryLoad],
+  );
+
   const renderRow = useCallback(
     (row: ThreadRow, startsRun: boolean, endsRun: boolean) => {
       if (!viewerId) return null;
       if (row.visibility === "tombstone") {
-        return <Text style={styles.tombstone}>{TOMBSTONE_TEXT}</Text>;
+        const senderId = row.message.sender_id;
+        return (
+          <BlockedMessageTombstone
+            channelId={channelId}
+            senderName={senderId ? nameFor(senderId) : null}
+            canUnblock={tombstoneCanUnblock(row.message, blockState)}
+            onUnblock={() => {
+              if (senderId) onUnblock(senderId);
+            }}
+            startsRun={startsRun}
+          />
+        );
       }
       return (
         <MessageItem
@@ -247,10 +279,28 @@ export function MessageThreadScreen({
         />
       );
     },
-    [viewerId, nameFor, roleColorFor, onRetry, thread.discard, styles],
+    [
+      viewerId,
+      nameFor,
+      roleColorFor,
+      onRetry,
+      thread.discard,
+      channelId,
+      blockState,
+      onUnblock,
+    ],
   );
 
-  const replyCount = rows.length;
+  // The thread's own count while older replies are still unread here; the
+  // rows held once they are all loaded (a live reply lands before the
+  // parent's summary is read again). The viewer's unsent rows never count.
+  const confirmedReplies = rows.filter(
+    (row) => row.message._status === "confirmed",
+  ).length;
+  const replyCount = Math.max(
+    confirmedReplies,
+    thread.root?.thread?.reply_count ?? 0,
+  );
   // Drawn at the top of the inverted list: the parent, then the divider.
   const head = rootRow ? (
     <View>
@@ -312,7 +362,9 @@ export function MessageThreadScreen({
         ListFooterComponent={head}
         contentContainerStyle={styles.listContent}
         keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="interactive"
+        // s05's choice and reason (`chat-thread.tsx`): `interactive` does
+        // nothing on Android, and on iOS leaves the composer in mid-air.
+        keyboardDismissMode="on-drag"
       />
     );
 
@@ -346,44 +398,34 @@ export function MessageThreadScreen({
             </Text>
           </View>
           {thread.root ? (
-            <Pressable
+            <Chip
+              label={following ? "Following" : "Follow"}
+              on={following}
+              onPress={() => {
+                if (!followBusy) void toggleFollow();
+              }}
               accessibilityRole="button"
               accessibilityState={{ selected: following, busy: followBusy }}
-              accessibilityLabel={following ? "Following" : "Follow"}
               accessibilityHint={
                 following
                   ? "Stops notifications for this thread"
                   : "Notifies you of new replies"
               }
-              onPress={() => void toggleFollow()}
-              disabled={followBusy}
-              hitSlop={8}
-              style={({ pressed }) => [
-                styles.follow,
-                following
-                  ? {
-                      backgroundColor: brand.accentSubtle,
-                      borderColor: brand.accentSubtle,
-                    }
-                  : null,
-                pressed || followBusy ? styles.pressed : null,
-              ]}
-            >
-              <Text style={[styles.followText, { color: brand.accent }]}>
-                {following ? "Following" : "Follow"}
-              </Text>
-            </Pressable>
+            />
           ) : null}
         </View>
 
         <View style={styles.flex}>{body}</View>
 
-        <View style={styles.typingSlot}>
-          <Text
-            style={styles.typing}
-            accessibilityLiveRegion="polite"
-            numberOfLines={1}
-          >
+        {/* Not a live region, and the blank hidden, as s05's line is: one
+            that changes with every pause would talk over the thread. */}
+        <View
+          testID="typing-line"
+          style={styles.typingSlot}
+          accessibilityElementsHidden={!typing}
+          importantForAccessibility={typing ? "auto" : "no-hide-descendants"}
+        >
+          <Text style={styles.typing} numberOfLines={1}>
             {typing ?? TYPING_LINE_BLANK}
           </Text>
         </View>
@@ -440,17 +482,6 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
     },
-    follow: {
-      minHeight: tokens.touch.minimum - tokens.spacing.md,
-      justifyContent: "center",
-      paddingHorizontal: tokens.spacing.md,
-      borderRadius: tokens.radius.chip,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-    },
-    followText: {
-      ...typeRole(tokens.typography.role.label),
-    },
     listContent: {
       paddingVertical: tokens.spacing.sm,
     },
@@ -480,16 +511,9 @@ function createStyles(tokens: SignetTokens) {
     },
     errorLine: {
       ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.semantic.destructive,
+      color: tokens.color.semantic.destructiveText,
       paddingHorizontal: tokens.spacing.lg,
       paddingBottom: tokens.spacing.sm,
-    },
-    tombstone: {
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.muted,
-      fontStyle: "italic",
-      paddingHorizontal: tokens.spacing.lg,
-      paddingVertical: tokens.spacing.xs,
     },
     state: {
       flex: 1,

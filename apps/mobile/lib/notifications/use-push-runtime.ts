@@ -56,7 +56,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { usePathname, useRouter } from "expo-router";
+import { useGlobalSearchParams, usePathname, useRouter } from "expo-router";
 import {
   useMarkNotificationRead,
   useRegisterPushToken,
@@ -90,6 +90,7 @@ import {
   NOTIFICATION_FALLBACK_PATHNAME,
   notificationHref,
   notificationIdFrom,
+  replaceablePathname,
   resolveNotificationTarget,
 } from "./targets";
 import type { NotificationTarget } from "./targets";
@@ -100,8 +101,12 @@ let handlerConfigured = false;
 export function usePushRuntime(): void {
   const router = useRouter();
   // The focused screen's path, so a tap for a channel while one is open
-  // replaces it rather than stacking a second (`openHref`).
-  const pathname = usePathname();
+  // replaces it rather than stacking a second (`openHref`). Never a message
+  // thread, which shares the channel's path (`replaceablePathname`).
+  const { threadRootId } = useGlobalSearchParams<{
+    threadRootId?: string | string[];
+  }>();
+  const pathname = replaceablePathname(usePathname(), threadRootId);
   const pathnameRef = useRef(pathname);
   useLayoutEffect(() => {
     pathnameRef.current = pathname;
