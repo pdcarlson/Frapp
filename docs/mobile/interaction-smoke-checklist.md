@@ -172,7 +172,7 @@ For UI-touching mobile changes, include:
 
 ## 8) Keyboard over the chat composer — **Android store build only**
 
-The keyboard has covered the composer on Android twice (#3346, #4010), and both times the cause was a lift worked out wrong, which no unit test can see because the numbers only exist on a device. Expo Go takes a different keyboard path entirely (`lib/keyboard.tsx`), so this runs on a Play build or a preview APK. Run it before any change to `lib/keyboard.tsx`, the chat thread's `SafeAreaView`, or the keyboard library ships, on Gboard with its suggestion strip showing, and note the phone, Android version, navigation mode (gesture or three-button) and build in the PR.
+The keyboard has covered the composer on Android twice: #3346, where the thread switched keyboard avoidance off on Android, and #4010, where the lift stopped short of the keyboard. Neither shows in a unit test, because the numbers only exist on a device, and Expo Go takes a different keyboard path entirely (`lib/keyboard.tsx`), so this runs on a Play build or a preview APK. Run it on the first such build after a change to `lib/keyboard.tsx`, to the chat thread's `SafeAreaView`, or to the `react-native-keyboard-controller` version, on Gboard with its suggestion strip showing, and note the phone, Android version, navigation mode (gesture or three-button) and build in the PR or its issue. The app is portrait only (`app.json`), so there is no rotation case.
 
 In each case the whole message box, its rounded border and what you typed sit **directly above the keyboard's top edge**, with no gap and nothing hidden, and the newest message stays visible above it:
 
@@ -183,6 +183,5 @@ In each case the whole message box, its rounded border and what you typed sit **
 | A message thread (Start thread) | The same |
 | Any of the above | Open Gboard's emoji panel, then go back to letters: the box follows the keyboard's height each time |
 | Any of the above | Switch keyboards (Gboard's globe or the navigation bar's keyboard button, to another installed keyboard and back) |
-| Any of the above | Rotate to landscape and back with the keyboard up |
 | Any of the above | Drag the thread down: the keyboard goes away and the box returns to the bottom, above the navigation bar |
 | Any of the above | Repeat once with three-button navigation (Settings → System → Navigation mode) |

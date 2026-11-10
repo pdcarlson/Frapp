@@ -104,13 +104,18 @@ export function KeyboardProviderGuarded({ children }: { children: ReactNode }) {
  *
  * **`atScreenBottom`** (#4010). For a screen whose area runs to the bottom of
  * the window, inside a `SafeAreaView` that pads the bottom inset (the chat
- * thread and a message thread). On Android store builds the area pads by the
- * keyboard's height less that inset (`keyboardLift`), and nothing else. The
- * library's view used above instead works its lift out from three numbers
- * measured apart: the window's height, the view's position on screen (read
- * once, at layout) and the keyboard's height. When the first two disagree by
- * a system bar, the composer stops short of the keyboard by that bar, which is
- * what two Android testers saw on production. iOS and Expo Go are unchanged.
+ * thread and a message thread). On Android store builds the area pads by
+ * `keyboardLift`: the keyboard's current height, as the library last reported
+ * it, less that inset. In steady state that is the same number the library's
+ * view below computes, but the library's view takes the keyboard's height from
+ * the *start* of the open animation (`heightWhenOpened`, set in `onStart`) and
+ * the view's position from a native measurement on each layout, while this
+ * reads the height the library reports at the animation's *end* and after
+ * every resize. The suspected #4010 path, derived from the library's source
+ * (1.21.9) and two testers' screenshots, not reproduced on a device: the
+ * keyboard grows while it is still opening (Gboard's suggestion strip), the
+ * library skips the resize mid-animation, and the library's view stays short
+ * by the growth. iOS and Expo Go are unchanged.
  */
 export function KeyboardAvoidingArea({
   children,
@@ -144,8 +149,8 @@ export function KeyboardAvoidingArea({
     const { KeyboardAvoidingView } = keyboardController;
     return (
       // `automaticOffset` measures the view's position in the window natively,
-      // so the overlap is right wherever the screen nests it (under a safe-area
-      // inset, above the tab bar) without a hand-kept `keyboardVerticalOffset`.
+      // so no hand-kept `keyboardVerticalOffset` is needed. A screen whose area
+      // sits at the bottom inset passes `atScreenBottom` instead (#4010).
       <KeyboardAvoidingView {...viewProps} behavior="padding" automaticOffset>
         {children}
       </KeyboardAvoidingView>
@@ -164,15 +169,20 @@ export function KeyboardAvoidingArea({
 
 /**
  * How far a screen-bottom area rises for the keyboard (#4010): the keyboard's
- * height above the bottom of the window, less the bottom inset the screen's
+ * height as the library reports it, less the bottom inset the screen's
  * `SafeAreaView` already pads, never below zero.
  *
- * Right whether or not the library treats the navigation bar as translucent.
- * Edge to edge, the keyboard's height includes the navigation bar and so does
- * the inset; otherwise the library leaves the bar out of both. Either way the
- * composer's bottom lands on the keyboard's top. Gboard's suggestion strip,
- * the emoji panel and a switched keyboard are all part of the height the
- * library reports, and a resize is reported as it happens.
+ * Derived from the libraries' source, not measured on a device. The two
+ * numbers agree because `KeyboardProviderGuarded` mounts the provider with no
+ * props, so the library treats the navigation bar as translucent exactly when
+ * the app is edge to edge (`src/animated.tsx`). Edge to edge, the reported
+ * height includes the navigation bar (`KeyboardAnimationCallback.kt`
+ * `getCurrentKeyboardHeight`) and so does the safe-area inset. Otherwise the
+ * library leaves the bar out of the height and margins the content above it
+ * (`EdgeToEdgeReactViewGroup.kt`), so the inset is 0. Passing
+ * `navigationBarTranslucent` or `preserveEdgeToEdge` to the provider would
+ * break that agreement. The library reports a resize of an open keyboard
+ * (emoji panel, another keyboard) through `onApplyWindowInsets`.
  */
 export function keyboardLift(keyboardHeight: number, bottomInset: number) {
   "worklet";

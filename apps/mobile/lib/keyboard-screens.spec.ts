@@ -36,14 +36,18 @@ describe("screens with a low text field avoid the keyboard (#3346)", () => {
   });
 
   // #4010: the chat composer sits at the bottom inset, so on Android it
-  // rises by the keyboard less that inset, not by the library view's measured
-  // position, which left it short of the keyboard on production.
+  // rises by the keyboard's reported height less that inset, rather than
+  // through the library's view, which stopped short of the keyboard on
+  // production.
   it.each([
     join(APP_DIR, "(app)/chat-thread.tsx"),
     join(APP_DIR, "..", "components/chat/message-thread-screen.tsx"),
   ])("%s rises from the screen's bottom (#4010)", (path) => {
     const source = readFileSync(path, "utf8");
-    expect(source).toMatch(/<KeyboardAvoidingArea\b[^>]*\batScreenBottom\b/);
+    // Bare, so `atScreenBottom={false}` or a condition can't pass.
+    expect(source).toMatch(
+      /<KeyboardAvoidingArea\b[^>]*\batScreenBottom\b(?!\s*=)/,
+    );
   });
 
   it("sign-in leaves iOS to its scroll view's own keyboard inset", () => {
