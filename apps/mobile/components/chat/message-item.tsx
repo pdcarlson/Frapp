@@ -1573,9 +1573,10 @@ function createStyles(tokens: SignetTokens) {
     },
     elbow: {
       marginLeft: MESSAGE_AVATAR_SIZE / 2,
-      marginTop: 10,
+      // Meets the quote block's first line (#4001).
+      marginTop: 14,
       width: 24,
-      height: 10,
+      height: 8,
       marginRight: 6,
       borderLeftWidth: 2,
       borderTopWidth: 2,

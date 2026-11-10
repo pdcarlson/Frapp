@@ -712,12 +712,18 @@ export function MessageItem({
           aria-hidden="true"
           data-slot="reply-elbow"
           className={cn(
-            "mt-2.5 h-2.5 shrink-0 rounded-tl-[6px] border-l-2 border-t-2 border-popover",
+            "mt-3.5 h-2 shrink-0 rounded-tl-[6px] border-l-2 border-t-2 border-popover",
             compact ? "ml-16 w-3" : "ml-4 w-6",
           )}
         />
+        {/*
+          The quote sits in a `--popover` block, the elbow's own colour, so the
+          elbow runs into it and the two read as one "replying to" mark rather
+          than as a line of grey text above the name (#4001). A filled quote
+          block is what iMessage and WhatsApp draw; Discord's elbow is kept.
+        */}
         <QuotedMessage
-          className="border-l-0 pl-0"
+          className="rounded-xs border-l-0 bg-popover px-2 py-1"
           author={
             replyParent
               ? resolveAuthorLabel(replyParent, nameFor, viewerId)
