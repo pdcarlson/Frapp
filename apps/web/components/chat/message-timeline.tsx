@@ -466,6 +466,8 @@ export interface MessageTimelineProps {
   onUnreact: (messageId: string, emoji: string) => void;
   /** Stages an inline reply in the composer — the row's Reply control (#489). */
   onReply?: (message: ChatMessage) => void;
+  /** Opens a message's thread (#3785): Start thread, and the parent's chip. */
+  onOpenThread?: (message: ChatMessage) => void;
   /**
    * Scrolls this timeline to the message a reply quotes — what the quote above
    * a reply does. It opened a Details-rail thread panel until #2142 deleted
@@ -552,6 +554,7 @@ export const MessageTimeline = forwardRef<
     onReact,
     onUnreact,
     onReply,
+    onOpenThread,
     onJumpToParent,
     onRetry,
     onDiscard,
@@ -1069,6 +1072,7 @@ export const MessageTimeline = forwardRef<
                   onReact={onReact}
                   onUnreact={onUnreact}
                   onReply={onReply}
+                  onOpenThread={onOpenThread}
                   onJumpToParent={onJumpToParent}
                   // The parent, or `null` when it is outside the loaded window.
                   // `MessageItem` decides whether to draw a quote from

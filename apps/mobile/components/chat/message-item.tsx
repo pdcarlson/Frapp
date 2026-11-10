@@ -48,6 +48,7 @@ import {
 } from "@repo/hooks";
 import { useMentionChips } from "@repo/hooks/mention-chips";
 import { MemberAvatar } from "@/components/member-avatar";
+import { ThreadChip } from "./thread-chip";
 import { initialsFor } from "@/lib/chat/display-name";
 import { useChatDensity } from "@/lib/chat/chat-density";
 import { MessageAttachments } from "./message-attachments";
@@ -165,6 +166,12 @@ export interface MessageItemProps {
    * with no profile sheet draws plain names.
    */
   onOpenProfile?: (userId: string) => void;
+  /**
+   * Opens this message's thread (#3785) from the chip under a parent with
+   * replies. Absent where threads aren't offered (a 1:1 DM), which draws the
+   * chip as a plain label.
+   */
+  onOpenThread?: () => void;
 }
 
 /** The author's profile, as a named action beside the message actions. */
@@ -678,6 +685,7 @@ export function MessageItem({
   onOpenActions,
   onJumpToParent,
   onOpenProfile,
+  onOpenThread,
 }: MessageItemProps) {
   const { tokens } = useFrappTheme();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
@@ -689,6 +697,18 @@ export function MessageItem({
   // address. Web gates the same affordance on the same condition.
   const isConfirmed = message._status === "confirmed";
   const reactions = groupReactions(message, viewerId);
+  // The thread chip (#3785): under the reactions, on the speaker's side in
+  // Bubbles. A deleted parent keeps it, so its replies stay reachable.
+  const threadChip = (align: "start" | "end") =>
+    message.thread ? (
+      <ThreadChip
+        summary={message.thread}
+        nameFor={nameFor}
+        roleColorFor={roleColorFor}
+        onPress={onOpenThread}
+        align={align}
+      />
+    ) : null;
   const chrome = deliveryChrome(message);
   // A send still in flight or failed reads as not yet posted.
   const pending = chrome.status === "pending";
@@ -892,6 +912,7 @@ export function MessageItem({
             />
           </View>
         )}
+        {threadChip(mine ? "end" : "start")}
         <DeliveryLine
           chrome={chrome}
           styles={styles}
@@ -959,6 +980,7 @@ export function MessageItem({
           styles={styles}
         />
       )}
+      {threadChip("start")}
     </MessageRowFrame>
   );
 }

@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import {
+  channelAllowsThreadReplies,
+  channelAllowsThreads,
+  messageCanStartThread,
   canActOnMessage,
   canDeleteMessage,
   canEditMessage,
@@ -147,5 +150,48 @@ describe("copyableText", () => {
     expect(copyableText({ ...base, kind: "poll" as const })).toBeNull();
     expect(copyableText({ ...base, is_deleted: true })).toBeNull();
     expect(copyableText({ ...base, content: "  \n" })).toBeNull();
+  });
+});
+
+describe("message-thread access (#3785)", () => {
+  test("threads are offered in channels and group DMs, not 1:1 DMs or the audit log", () => {
+    expect(channelAllowsThreads({ type: "PUBLIC" })).toBe(true);
+    expect(channelAllowsThreads({ type: "GROUP_DM" })).toBe(true);
+    expect(channelAllowsThreads({ type: "DM" })).toBe(false);
+    expect(channelAllowsThreads({ type: "PUBLIC", is_audit_log: true })).toBe(
+      false,
+    );
+  });
+
+  test("Start thread is offered on a plain message, card included, and nowhere else", () => {
+    const base = {
+      thread_root_id: null,
+      thread: null,
+      is_deleted: false,
+      kind: "text",
+    };
+    expect(messageCanStartThread(base)).toBe(true);
+    expect(messageCanStartThread({ ...base, kind: "poll" })).toBe(true);
+    expect(messageCanStartThread({ ...base, thread_root_id: "root" })).toBe(
+      false,
+    );
+    expect(
+      messageCanStartThread({
+        ...base,
+        thread: { reply_count: 1, last_reply_at: null, recent_sender_ids: [] },
+      }),
+    ).toBe(false);
+    expect(messageCanStartThread({ ...base, is_deleted: true })).toBe(false);
+    expect(messageCanStartThread({ ...base, kind: "imported" })).toBe(false);
+  });
+
+  test("any reader of a read-only channel may reply in its threads", () => {
+    expect(
+      channelAllowsThreadReplies({ can_post: false, is_read_only: true }),
+    ).toBe(true);
+    expect(channelAllowsThreadReplies({ can_post: true })).toBe(true);
+    expect(
+      channelAllowsThreadReplies({ can_post: false, is_read_only: false }),
+    ).toBe(false);
   });
 });

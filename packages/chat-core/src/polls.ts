@@ -114,8 +114,8 @@ export interface PollMessageInput {
   question: string;
   /** Option labels, in the order the card lists them. */
   options: readonly string[];
-  /** When voting stops. */
-  closesAt: Date;
+  /** When voting stops, or `null` for a poll that doesn't close (#3896). */
+  closesAt: Date | null;
 }
 
 /**
@@ -136,7 +136,7 @@ export function buildPollMessage(
     payload: {
       question: input.question,
       options: input.options.map((label) => ({ id: makeOptionId(), label })),
-      closes_at: input.closesAt.toISOString(),
+      closes_at: input.closesAt ? input.closesAt.toISOString() : null,
     },
   };
 }
@@ -163,7 +163,7 @@ export function readPollPayload(message: ChatMessage): PollPayload | null {
   return {
     question,
     options: parsed,
-    closes_at: typeof closesAt === "string" ? closesAt : "",
+    closes_at: typeof closesAt === "string" && closesAt !== "" ? closesAt : null,
     // Only on a card closed early (#3794), so an open card reads back exactly
     // as `buildPollMessage` built it.
     ...(typeof closedAt === "string" && closedAt !== ""
@@ -179,12 +179,24 @@ export function readPollPayload(message: ChatMessage): PollPayload | null {
  * Whether a poll card takes no more votes: its creator closed it early
  * (`closed_at`, #3794), or its deadline has passed. The API refuses a vote on
  * either (`ChatReactionService`); this is the same answer for the cards to
- * draw. A deadline that doesn't parse never closes the card, as on the server.
+ * draw. A card with no deadline (#3896), or one that doesn't parse, never
+ * closes on its own, as on the server.
  */
 export function isPollCardClosed(payload: PollPayload, now: number): boolean {
   if (payload.closed_at) return true;
   const deadline = parseInstant(payload.closes_at);
   return deadline ? deadline.getTime() < now : false;
+}
+
+/**
+ * The card's eyebrow on both clients: "Poll", "Poll · Closed", or, for an
+ * open poll with no deadline (#3896), "Poll · No end date", so a member can
+ * tell it won't close by itself. A timed, open poll reads plain "Poll", as it
+ * always has.
+ */
+export function pollCardEyebrow(payload: PollPayload, now: number): string {
+  if (isPollCardClosed(payload, now)) return "Poll · Closed";
+  return parseInstant(payload.closes_at) ? "Poll" : "Poll · No end date";
 }
 
 /**

@@ -5,6 +5,7 @@ import {
   POLL_VOTE_ACTION_TYPE,
   canClosePoll,
   isPollCardClosed,
+  pollCardEyebrow,
   pollsGateReason,
   readPollPayload,
   tallyPollVotes,
@@ -147,7 +148,7 @@ export function PollCard(props: PollCardProps) {
       {...props}
       header={
         <>
-          <CardEyebrow label={`Poll${isClosed ? " · Closed" : ""}`} />
+          <CardEyebrow label={pollCardEyebrow(payload, now)} />
           <CardTitle>{payload.question}</CardTitle>
         </>
       }

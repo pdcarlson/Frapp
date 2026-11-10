@@ -122,4 +122,31 @@ describe('SupabaseChatMessageActionRepository — tenant scope', () => {
         .sort(),
     ).toEqual([ACTION_A, ACTION_B]);
   });
+
+  it('findActedMessageIds names only the messages asked about that this member acted on', async () => {
+    // The same voter has a vote in each chapter. Asking about chapter B's
+    // message must not answer with chapter A's, and a message the member
+    // never voted on is left out rather than guessed.
+    const ids = await repo.findActedMessageIds(
+      [MESSAGE_B, MISSING_MESSAGE],
+      USER_SHARED,
+      'vote',
+    );
+
+    expect(ids).toEqual([MESSAGE_B]);
+  });
+
+  it('findActedMessageIds keys on the action type and the member', async () => {
+    expect(
+      await repo.findActedMessageIds([MESSAGE_B], USER_SHARED, 'rsvp'),
+    ).toEqual([]);
+    expect(
+      await repo.findActedMessageIds([MESSAGE_B], MISSING_MESSAGE, 'vote'),
+    ).toEqual([]);
+  });
+
+  it('findActedMessageIds asks nothing for an empty list', async () => {
+    expect(await repo.findActedMessageIds([], USER_SHARED, 'vote')).toEqual([]);
+    expect(harness.ops).toHaveLength(0);
+  });
 });

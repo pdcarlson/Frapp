@@ -27,6 +27,7 @@ import { isAuditLine } from "@repo/chat-core/cards";
 import { ImportedReactionChips } from "./imported-reaction-chips";
 import { selectImportedReactions } from "./imported-reactions";
 import { ReactionChips, ReactionQuickPick } from "./reaction-bar";
+import { ThreadChip, StartThreadGlyph } from "./thread-chip";
 import { MessageAttachments } from "./message-attachments";
 import { QuotedMessage, replyPreviewText } from "./reply-quote";
 import {
@@ -38,6 +39,7 @@ import {
   isOwnMessage,
   EDITED_MARKER,
   isCardMessage,
+  messageCanStartThread,
   showsEditedMarker,
   type MemberLookup,
 } from "@repo/chat-core/message-actions";
@@ -171,6 +173,12 @@ export interface MessageItemProps {
    * jumps into is the real one with a composer under it, not a copy.
    */
   onJumpToParent?: (message: ChatMessage) => void;
+  /**
+   * Opens this message's thread (#3785): the row's **Start thread** control,
+   * and the chip under a parent that has replies. Absent where threads aren't
+   * offered (inside a thread, a 1:1 DM).
+   */
+  onOpenThread?: (message: ChatMessage) => void;
   /**
    * The message this one replies to, when `message.reply_to_id` is set and that
    * parent is inside the loaded window; `null` or absent when it is not.
@@ -351,6 +359,7 @@ export function MessageItem({
   onUnreact,
   onReply,
   onJumpToParent,
+  onOpenThread,
   replyParent,
   onRetry,
   onDiscard,
@@ -947,6 +956,17 @@ export function MessageItem({
             <ThreadGlyph className="h-4 w-4" />
           </button>
         ) : null}
+        {onOpenThread && messageCanStartThread(message) ? (
+          <button
+            type="button"
+            className={ACTION_BAR_BUTTON}
+            aria-label="Start thread"
+            title="Start thread"
+            onClick={() => onOpenThread(message)}
+          >
+            <StartThreadGlyph className="h-4 w-4" />
+          </button>
+        ) : null}
         {onToggleBookmark ? (
           <button
             type="button"
@@ -1396,6 +1416,23 @@ export function MessageItem({
                     {reactions}
                   </div>
                 ) : null}
+                {/* The thread chip sits under the bubble, on its side (#3785). */}
+                {message.thread ? (
+                  <div
+                    className={cn(
+                      "flex max-w-full",
+                      mine ? "justify-end" : "justify-start",
+                    )}
+                  >
+                    <ThreadChip
+                      summary={message.thread}
+                      nameFor={nameFor}
+                      onOpen={
+                        onOpenThread ? () => onOpenThread(message) : undefined
+                      }
+                    />
+                  </div>
+                ) : null}
                 {deliveryStatus}
                 {unconfirmedFooter}
               </div>
@@ -1629,6 +1666,15 @@ export function MessageItem({
                 <div className="mt-1 leading-5 [&>span]:ml-0">{trailing}</div>
               ) : null}
               {reactions}
+              {message.thread ? (
+                <ThreadChip
+                  summary={message.thread}
+                  nameFor={nameFor}
+                  onOpen={
+                    onOpenThread ? () => onOpenThread(message) : undefined
+                  }
+                />
+              ) : null}
               {deliveryStatus}
               {unconfirmedFooter}
             </div>

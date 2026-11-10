@@ -28,6 +28,7 @@ import type { ChatCardFrameProps } from "./chat-card";
 import { EventCard } from "./event-card";
 import { HoursCard } from "./hours-card";
 import { MessageItem, MessageRowFrame, OwnLineMarkers } from "./message-item";
+import { ThreadChip } from "./thread-chip";
 import { PointsCard } from "./points-card";
 import { PollCard } from "./poll-card";
 import { ReplyQuote } from "./reply-quote";
@@ -101,6 +102,11 @@ export interface ThreadMessageRowProps {
   maskedRefresh: ReadonlyMap<string, MaskedRefreshState>;
   /** A stale tombstone's Reload: re-runs that member's re-read. */
   onReload: (userId: string) => void;
+  /**
+   * Pushes a message's thread (#3785): the chip under a parent with replies.
+   * Absent where the channel offers no threads (a 1:1 DM).
+   */
+  onOpenThread?: (message: ChatMessage) => void;
 }
 
 export function ThreadMessageRow(props: ThreadMessageRowProps) {
@@ -143,6 +149,7 @@ function ThreadMessageRowBody({
   onUnblock,
   maskedRefresh,
   onReload,
+  onOpenThread,
 }: ThreadMessageRowProps) {
   const { message: cached, visibility } = row;
 
@@ -254,6 +261,15 @@ function ThreadMessageRowBody({
       >
         {card}
         <OwnLineMarkers message={message} />
+        {/* A card can be a thread's parent too (#3785), as on web. */}
+        {message.thread ? (
+          <ThreadChip
+            summary={message.thread}
+            nameFor={nameFor}
+            roleColorFor={roleColorFor}
+            onPress={onOpenThread ? () => onOpenThread(cached) : undefined}
+          />
+        ) : null}
       </MessageRowFrame>
     );
   }
@@ -276,6 +292,7 @@ function ThreadMessageRowBody({
       onOpenActions={openActions}
       onJumpToParent={onJumpToParent}
       onOpenProfile={onOpenProfile}
+      onOpenThread={onOpenThread ? () => onOpenThread(cached) : undefined}
     />
   );
 }

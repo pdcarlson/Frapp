@@ -3250,6 +3250,18 @@ A data-only backfill: it set `read_at` on unread chat notifications the member's
 
 **There is normally nothing to roll back.** The rows it read are ones the member had already seen; "unread" for them was the defect. The backfill did not record which rows it touched, so it cannot be reversed exactly. If rows must be reopened, a row it stamped from a receipt has `read_at` equal to that receipt's `last_read_at` at the time, which no API write produces for a row created before #3807 was live; restore those rows from the pre-promotion backup ([§ 2) Full rollback to backup/snapshot](#2-full-rollback-to-backupsnapshot)) rather than guessing.
 
+## Rollback chat messages poll-cards index (20261110230000)
+
+* **Migration**: `20261110230000_chat_messages_poll_cards_index.sql`
+
+One partial index on `chat_messages`, `idx_chat_messages_poll_cards`. Nothing depends on it for correctness: `GET /v1/activity` only gets slower without it, so no API rollback is needed first.
+
+**Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration):
+
+```sql
+drop index if exists public.idx_chat_messages_poll_cards;
+```
+
 ## Rollback pledge classes (20261110170000)
 
 * **Migration**: `20261110170000_chapter_pledge_classes.sql`
@@ -3299,9 +3311,9 @@ alter table public.chat_messages
 
 Dropping `chat_thread_follows` loses who followed or muted which thread and every read cursor; nothing else depends on it.
 
-## Rollback chat backgrounds (20261110230000)
+## Rollback chat backgrounds (20261110235500)
 
-* **Migration**: `20261110230000_chat_backgrounds.sql`
+* **Migration**: `20261110235500_chat_backgrounds.sql`
 
 Six nullable or defaulted columns (three on `chapters`, three on `chat_channels`), with checks and two foreign keys to `chat_messages`. No existing row changed.
 

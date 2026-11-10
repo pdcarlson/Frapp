@@ -685,12 +685,12 @@ export function EventsPage() {
           type="button"
           onClick={() => openDetails(event)}
           className={cn(
-            "flex min-h-11 min-w-0 flex-1 flex-col items-start gap-1 rounded-md px-2 py-1.5 text-left transition-colors sm:flex-row sm:items-center sm:gap-3",
+            "flex min-h-11 min-w-0 flex-1 flex-col items-start gap-1 rounded-md px-2 py-1.5 text-left transition-colors @xl:flex-row @xl:items-center @xl:gap-3",
             !isSelected && "hover:bg-card-hover hover:text-foreground",
             FOCUS_RING_OFFSET,
           )}
         >
-          <span className="flex min-w-0 max-w-full flex-col sm:flex-1">
+          <span className="flex min-w-0 max-w-full flex-col @xl:flex-1">
             <span className="truncate text-sm font-semibold">{eventName}</span>
             {meta ? (
               <span className="truncate text-caption text-muted-foreground">
@@ -765,7 +765,10 @@ export function EventsPage() {
   }
 
   return (
-    <div className="space-y-4">
+    // A container (#4022): beside chat (#3779) the page is narrow while the
+    // window is wide, so its toolbar and rows break on the page's own width
+    // (`@xl`, 576px), not the viewport's.
+    <div className="@container space-y-4">
       {/*
         One toolbar row (board `1f` pin 2): the List/Calendar toggle leads, as
         the page's primary control, then search and the one Filter button
@@ -784,8 +787,8 @@ export function EventsPage() {
           value={currentView}
           onChange={chooseView}
         />
-        <div className="order-last flex w-full min-w-0 items-center gap-2 sm:order-none sm:mr-auto sm:w-auto">
-          <div className="relative min-w-0 flex-1 sm:w-56 sm:flex-none">
+        <div className="order-last flex w-full min-w-0 items-center gap-2 @xl:order-none @xl:mr-auto @xl:w-auto">
+          <div className="relative min-w-0 flex-1 @xl:w-56 @xl:flex-none">
             <SearchGlyph className={dashboardToolbarSearchGlyphClassName} />
             <Input
               type="search"
