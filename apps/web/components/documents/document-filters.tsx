@@ -1,27 +1,20 @@
 "use client";
 
 import { useId } from "react";
-import { ArrowUpDown, Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { FILTER_CHIP_CLASS } from "@/components/shared/filter-chip";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
-  SORT_OPTIONS,
   dateFilterLabel,
   isActiveDateFilter,
   type DateFilter,
-  type DocumentSort,
 } from "@repo/hooks/document-library";
 import { cn } from "@/lib/utils";
 
-const CHIP = "gap-1 rounded-full font-semibold";
+const CHIP = FILTER_CHIP_CLASS;
 
 /**
  * The Date added chip: a few presets and a custom range. A popover rather
@@ -128,43 +121,5 @@ export function DateFilterChip({
         ) : null}
       </PopoverContent>
     </Popover>
-  );
-}
-
-/** The order chip. Never tinted: an order is always set, so it isn't a filter. */
-export function SortChip({
-  value,
-  onChange,
-}: {
-  value: DocumentSort;
-  onChange: (value: DocumentSort) => void;
-}) {
-  const selected = SORT_OPTIONS.find((option) => option.value === value)!;
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="secondary"
-          size="toolbar"
-          className={CHIP}
-          aria-label={`Sort: ${selected.label}`}
-        >
-          <ArrowUpDown className="h-3.5 w-3.5 opacity-70" aria-hidden="true" />
-          <span className="truncate">{selected.label}</span>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-[180px]">
-        {SORT_OPTIONS.map((option) => (
-          <DropdownMenuItem key={option.value} onSelect={() => onChange(option.value)}>
-            <Check
-              className={cn("h-4 w-4", option.value !== value && "invisible")}
-              aria-hidden="true"
-            />
-            {option.label}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }

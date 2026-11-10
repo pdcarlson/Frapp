@@ -70,6 +70,16 @@ const MEMBERS = [
   },
 ];
 
+/** Opens a toolbar chip by its accessible name and picks one of its rows. */
+async function pick(
+  user: ReturnType<typeof userEvent.setup>,
+  chip: string | RegExp,
+  option: string,
+) {
+  await user.click(screen.getByRole("button", { name: chip }));
+  await user.click(await screen.findByRole("menuitem", { name: option }));
+}
+
 const membersRead = read(MEMBERS);
 const searchRead = read([]);
 const rolesRead = read([
@@ -277,14 +287,8 @@ describe("Directory on the greenfield shell", () => {
     // A filter that matches nothing is not a claim about the roster.
     Object.assign(membersRead, read(MEMBERS));
     render(<MembersDirectory />);
-    await user.selectOptions(
-      screen.getByLabelText("Filter members by status"),
-      "pending",
-    );
-    await user.selectOptions(
-      screen.getByLabelText("Filter members by role"),
-      "r-1",
-    );
+    await pick(user, "Status", "Pending");
+    await pick(user, "Role", "Treasurer");
     expect(
       screen.getByText(/No actives match these filters\./),
     ).toBeInTheDocument();
@@ -292,20 +296,66 @@ describe("Directory on the greenfield shell", () => {
     // The line offers the way back, and the way back is every filter.
     await user.click(screen.getByRole("button", { name: "Clear filters" }));
     expect(screen.queryByText(/No actives match/)).toBeNull();
-    expect(screen.getByLabelText("Filter members by status")).toHaveValue("all");
-    expect(screen.getByLabelText("Filter members by role")).toHaveValue("all");
+    // An unset chip is named by its label alone; a set one names its value.
+    expect(screen.getByRole("button", { name: "Status" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Role" })).toBeInTheDocument();
   });
 
   // #3941: the options are graduation years, so the chapter's `class` word
   // ("Line" here) must not label them; one pledge class spans several years.
-  it("labels the graduation-year filter as graduation year, not the chapter's class word", () => {
+  it("labels the graduation-year filter as graduation year, not the chapter's class word", async () => {
+    const user = userEvent.setup();
     render(<MembersDirectory />);
-    const cohort = screen.getByLabelText("Filter members by graduation year");
+    expect(screen.queryByRole("button", { name: /^Line/ })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Graduation year" }));
     expect(
-      within(cohort).getByRole("option", { name: "Graduation year: All" }),
+      await screen.findByRole("menuitem", { name: "Any year" }),
     ).toBeInTheDocument();
-    expect(screen.queryByLabelText("Filter members by Line")).toBeNull();
-    expect(screen.queryByRole("option", { name: /^Line:/ })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "2027" })).toBeInTheDocument();
+  });
+
+  // #3970: the toolbar's controls are the shared chips, not native selects.
+  it("draws its filters and sort as chips, with no native select left", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<MembersDirectory />);
+    expect(container.querySelector("select")).toBeNull();
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: /select all members on this page/i,
+      }),
+    );
+    expect(container.querySelector("select")).toBeNull();
+  });
+
+  // #3970: a long role list opens whole, with a field that narrows it.
+  it("lets a member type to find a role in a long list, or scroll it", async () => {
+    const user = userEvent.setup();
+    Object.assign(
+      rolesRead,
+      read([
+        { id: "r-1", name: "Treasurer", is_system: false, permissions: [] },
+        ...Array.from({ length: 30 }, (_, i) => ({
+          id: `r-x${i}`,
+          name: `Committee ${i + 1}`,
+          is_system: false,
+          permissions: [],
+        })),
+      ]),
+    );
+    render(<MembersDirectory />);
+
+    await user.click(screen.getByRole("button", { name: "Role" }));
+    // Every option is there before anything is typed.
+    expect(await screen.findAllByRole("option")).toHaveLength(32);
+
+    await user.type(screen.getByRole("combobox"), "trea");
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+    await user.keyboard("{Enter}");
+
+    expect(
+      screen.getByRole("button", { name: "Role: Treasurer" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("1 member")).toBeInTheDocument();
   });
 
   it("names the query when a search matches nothing", async () => {
@@ -361,25 +411,16 @@ describe("Directory on the greenfield shell", () => {
 
     // Grace has no role. A sentinel string inside the comparator would put her
     // last ascending and FIRST descending; the partition keeps her last in both.
-    await user.selectOptions(screen.getByLabelText("Sort members"), "role:asc");
+    await pick(user, /^Sort:/, "Role A to Z");
     expect(rows()).toEqual(["Ada Lovelace", "Grace Hopper"]);
-    await user.selectOptions(
-      screen.getByLabelText("Sort members"),
-      "role:desc",
-    );
+    await pick(user, /^Sort:/, "Role Z to A");
     expect(rows()).toEqual(["Ada Lovelace", "Grace Hopper"]);
 
     // Grace's `created_at` is "not-a-date". Subtracting it yields NaN, and a
     // comparator returning NaN reads as "equal to everything" — not an ordering.
-    await user.selectOptions(
-      screen.getByLabelText("Sort members"),
-      "joined:desc",
-    );
+    await pick(user, /^Sort:/, "Newest first");
     expect(rows()).toEqual(["Ada Lovelace", "Grace Hopper"]);
-    await user.selectOptions(
-      screen.getByLabelText("Sort members"),
-      "joined:asc",
-    );
+    await pick(user, /^Sort:/, "Oldest first");
     expect(rows()).toEqual(["Ada Lovelace", "Grace Hopper"]);
   });
 
@@ -394,11 +435,13 @@ describe("Directory on the greenfield shell", () => {
     expect(cardFilledContainers(container)).toHaveLength(0);
   });
 
-  it("replaces the four sortable column headers with one sort control", () => {
+  it("replaces the four sortable column headers with one sort control", async () => {
+    const user = userEvent.setup();
     render(<MembersDirectory />);
-    const sort = screen.getByLabelText("Sort members");
+    await user.click(screen.getByRole("button", { name: "Sort: Name A to Z" }));
     // Every (key, direction) pair the deleted headers could reach.
-    expect(within(sort).getAllByRole("option")).toHaveLength(8);
+    expect(await screen.findAllByRole("menuitem")).toHaveLength(8);
+    await user.keyboard("{Escape}");
     expect(screen.queryByRole("button", { name: /sort by name/i })).toBeNull();
   });
 
@@ -419,7 +462,9 @@ describe("Directory on the greenfield shell", () => {
 
     await user.click(selectAll());
     expect(screen.getByText("2 selected")).toBeInTheDocument();
-    expect(screen.getByLabelText("Select role to assign")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Assign role" }),
+    ).toBeInTheDocument();
 
     // Unticking it empties the selection — and the control survives, so focus
     // is not dropped to <body> mid-interaction.
@@ -498,24 +543,21 @@ describe("Actives on a chapter with alumni", () => {
     );
     render(<MembersDirectory />);
 
-    const filter = screen.getByLabelText("Filter members by role");
+    await user.click(screen.getByRole("button", { name: "Role" }));
     expect(
-      within(filter).queryByRole("option", { name: "Role: Alumni" }),
-    ).toBeNull();
-    expect(
-      within(filter).getByRole("option", { name: "Role: Treasurer" }),
+      await screen.findByRole("menuitem", { name: "Treasurer" }),
     ).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Alumni" })).toBeNull();
+    await user.keyboard("{Escape}");
 
     await user.click(
       screen.getByRole("checkbox", {
         name: /select all members on this page/i,
       }),
     );
+    await user.click(screen.getByRole("button", { name: "Assign role" }));
     expect(
-      within(screen.getByLabelText("Select role to assign")).getByRole(
-        "option",
-        { name: "Alumni" },
-      ),
+      await screen.findByRole("menuitem", { name: "Alumni" }),
     ).toBeInTheDocument();
   });
 
@@ -534,10 +576,7 @@ describe("Actives on a chapter with alumni", () => {
       }),
     );
     expect(screen.getByText("2 selected")).toBeInTheDocument();
-    await user.selectOptions(
-      screen.getByLabelText("Select role to assign"),
-      "r-1",
-    );
+    await pick(user, "Assign role", "Treasurer");
     await user.click(screen.getByRole("button", { name: "Apply" }));
 
     // Only Grace's assignment failed, so only Grace is left to retry.
@@ -601,21 +640,19 @@ describe("Actives on a chapter with alumni", () => {
     await user.type(screen.getByRole("searchbox"), "a");
     await screen.findByText(/2 members matching/);
 
-    await user.selectOptions(
-      screen.getByLabelText("Filter members by role"),
-      "r-alumni",
-    );
+    await pick(user, "Role", "Alumni");
     expect(screen.getByText(/1 member matching/)).toBeInTheDocument();
     expect(screen.getByText("Charles Whitmore III")).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: /2019/ })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Graduation year" }));
+    expect(
+      await screen.findByRole("menuitem", { name: "2019" }),
+    ).toBeInTheDocument();
+    await user.keyboard("{Escape}");
 
     // Clearing the search takes the Alumni option away; the filter falls back
     // to all rather than silently filtering on an option no longer shown.
     await user.clear(screen.getByRole("searchbox"));
-    expect(
-      (screen.getByLabelText("Filter members by role") as HTMLSelectElement)
-        .value,
-    ).toBe("all");
+    expect(screen.getByRole("button", { name: "Role" })).toBeInTheDocument();
     expect(screen.getByText("2 members")).toBeInTheDocument();
   });
 
