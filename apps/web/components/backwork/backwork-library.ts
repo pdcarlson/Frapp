@@ -531,12 +531,14 @@ export function filterOptions(rows: readonly LibraryRow[]): {
     // one, which sorts first among its courses ("COGS · all courses" before
     // "COGS 2120").
     course: [
-      ...[...courses].map(([value, label]) => ({ value, label })),
+      // `short`: the chip reads the course code; the list shows the name too.
+      ...[...courses].map(([value, label]) => ({ value, label, short: value })),
       ...[...departments]
         .filter(([, entry]) => entry.courses.size > 1)
         .map(([id, entry]) => ({
           value: departmentFilterValue(id),
           label: `${entry.code} · all courses`,
+          short: entry.code,
         })),
     ].sort(byLabel),
     professor: [...professors].map(([value, label]) => ({ value, label })).sort(byLabel),
