@@ -177,6 +177,12 @@ export const HAIRLINE_ALPHA = Number(
 export { HOUSE_SEED, signetDarkTokens };
 
 export const AA_TEXT = 4.5;
+/**
+ * The body-text floor #3826 set for the two reading tones (`--foreground`,
+ * `--muted-foreground`): 7:1, WCAG AAA, on every ladder step. `--muted` is held
+ * to `AA_TEXT`.
+ */
+export const BODY_TEXT = 7;
 export const AA_NON_TEXT = 3;
 
 /**

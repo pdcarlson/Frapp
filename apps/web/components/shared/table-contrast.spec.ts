@@ -156,17 +156,19 @@ describe("the bulk-action bar", () => {
 
 describe("table text", () => {
   it("keeps the header tone over every surface a table sits on", () => {
-    // `TableHead` is `--muted-foreground`. `--muted` is one step quieter and
-    // would read as the obvious choice for a column label; components.md §1
-    // records that it clears the gate on nothing.
+    // `TableHead` is `--muted-foreground`. `--muted` is one step quieter; it
+    // cleared the gate on nothing until the 2026-11-09 text ladder
+    // (foundations.md §4, #3826) and now clears it on every step, so both are
+    // held to the gate here.
     for (const [name, bg] of Object.entries(SURFACE)) {
       expect(
         ratio(TEXT.mutedForeground, bg),
         `--muted-foreground over ${name}`,
       ).toBeGreaterThanOrEqual(AA_TEXT);
-      expect(ratio(TEXT.muted, bg), `--muted over ${name}`).toBeLessThan(
-        AA_TEXT,
-      );
+      expect(
+        ratio(TEXT.muted, bg),
+        `--muted over ${name}`,
+      ).toBeGreaterThanOrEqual(AA_TEXT);
     }
   });
 });
