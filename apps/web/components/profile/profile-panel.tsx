@@ -560,8 +560,9 @@ export function ProfilePanel() {
       <div className="max-w-2xl space-y-10">
         {/*
           s15's identity header, as far as the data goes. The avatar is the
-          same neutral circle as everywhere else a member's face appears
-          (`--popover` fill, initials in `--muted-foreground`). s15 drew it in
+          neutral circle (`--popover` fill, initials in `--muted-foreground`);
+          the member tint other surfaces draw since #3860 has not reached this
+          header yet (#4017). s15 drew it in
           the house-gold family and this transcribed that as the chapter accent
           until 2026-11-05, when the accent came off people's avatars
           (`foundations.md` §6). Measured in `profile-contrast.spec.ts`.

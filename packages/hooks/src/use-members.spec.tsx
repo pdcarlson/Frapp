@@ -11,6 +11,7 @@ import {
   useUpdateMemberRoles,
 } from "./use-members";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { memberAvatarTint, memberHashHue } from "./member-avatar-color";
 
 const MEMBERS_ENDPOINT = "/v1/members";
 const CHAPTER_ID = "chapter-abc";
@@ -338,6 +339,18 @@ describe("useChapterRoster / useMemberDisplayNames", () => {
     expect(result.current.roleColorFor("user-2")).toBeNull();
     expect(result.current.roleColorFor("user-3")).toBeNull();
     expect(result.current.roleColorFor("unknown")).toBeNull();
+
+    // The avatar takes the same color the name does (#3860): an officer's
+    // role color, else the stable hashed hue (an off-palette value included).
+    expect(result.current.avatarTintFor("user-1")).toEqual(
+      memberAvatarTint("#6FD08C"),
+    );
+    expect(result.current.avatarTintFor("user-2")).toEqual(
+      memberAvatarTint(memberHashHue("user-2")),
+    );
+    expect(result.current.avatarTintFor("user-3")).toEqual(
+      memberAvatarTint(memberHashHue("user-3")),
+    );
   });
 
   it("re-runs the roster read through refetch", async () => {

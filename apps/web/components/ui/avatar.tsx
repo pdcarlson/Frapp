@@ -20,8 +20,9 @@ import { cn } from "@/lib/utils"
  * A member's initials take their own color (#3860, Paul approved 2026-11-10):
  * pass `tint` from the roster's `avatarTintFor(userId)` and the fallback draws
  * style A, the hue at 18% over `--popover` with the initials in the full hue.
- * Without `tint` it stays the neutral circle (channel glyphs, the account
- * menu, the showcase).
+ * Without `tint` it stays the neutral circle: a group DM's title initials, the
+ * auth showcase, and the member surfaces #3860 has not reached yet (DM rows,
+ * the own-profile header; #4017).
  */
 
 const Avatar = React.forwardRef<
