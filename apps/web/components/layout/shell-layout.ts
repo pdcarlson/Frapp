@@ -2,7 +2,7 @@
 
 import { useMediaQuery } from "@/lib/use-media-query";
 
-export { useMediaQueryState } from "@/lib/use-media-query";
+export { useHydrated, useMediaQueryState } from "@/lib/use-media-query";
 
 /**
  * The desktop shell's layout state: chat as a panel beside the chapter tools
@@ -53,6 +53,28 @@ if (
 
 export const SPLIT_QUERY = `(min-width: ${SPLIT_MIN_WIDTH}px)`;
 export const FULL_NAV_SPLIT_QUERY = `(min-width: ${FULL_NAV_SPLIT_WIDTH}px)`;
+
+/*
+  The band where chat beside a tool forces the rail, as Tailwind variants for
+  the server render (#4024). Tailwind reads class names from source, so these
+  are literals; the check below keeps them on the constants. Tailwind 4's
+  `max-[1240px]` is `width < 1240px`, the exact complement of
+  `FULL_NAV_SPLIT_QUERY`.
+*/
+/** Shown only in the forced-rail band. */
+export const RAIL_BAND_ONLY = "hidden min-[1056px]:max-[1240px]:flex";
+/** Hidden in the forced-rail band. */
+export const OUTSIDE_RAIL_BAND = "min-[1056px]:max-[1240px]:hidden";
+if (
+  !RAIL_BAND_ONLY.includes(
+    `min-[${SPLIT_MIN_WIDTH}px]:max-[${FULL_NAV_SPLIT_WIDTH}px]:`,
+  ) ||
+  !OUTSIDE_RAIL_BAND.includes(
+    `min-[${SPLIT_MIN_WIDTH}px]:max-[${FULL_NAV_SPLIT_WIDTH}px]:`,
+  )
+) {
+  throw new Error("shell-layout: rail band classes drifted from the widths");
+}
 
 /**
  * The shell's lg breakpoint (1024px), where the left column appears and the

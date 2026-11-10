@@ -62,7 +62,9 @@ console.log("\n=== Functional smoke: anonymize_user ===");
     `,
       { onNotice: (n) => notices.push(n) },
     );
-    console.log("OK    change-ping tables accept writes with no `realtime` schema");
+    console.log(
+      "OK    change-ping tables accept writes with no `realtime` schema",
+    );
 
     const warnings = notices.filter((n) => n.severity === "WARNING");
     const pingTables = ["notifications", "events", "event_attendance"];
@@ -73,12 +75,16 @@ console.log("\n=== Functional smoke: anonymize_user ===");
     const counts = Object.fromEntries(
       pingTables.map((t) => [
         t,
-        warnings.filter((n) => new RegExp(`ping trigger failed for ${t}\\b`).test(n.message ?? "")).length,
+        warnings.filter((n) =>
+          new RegExp(`ping trigger failed for ${t}\\b`).test(n.message ?? ""),
+        ).length,
       ]),
     );
     const wrongCount = pingTables.filter((t) => counts[t] !== 1);
     if (wrongCount.length === 0) {
-      console.log("OK    each swallowed realtime.send failure raised exactly one observable WARNING");
+      console.log(
+        "OK    each swallowed realtime.send failure raised exactly one observable WARNING",
+      );
     } else {
       miss();
       console.log(
@@ -148,6 +154,9 @@ console.log("\n=== Functional smoke: anonymize_user ===");
       values ('${U}', '${C}', true, array['direct']);
       insert into chat_sidebar_pins (user_id, chapter_id, channel_id)
       values ('${U}', '${C}', '${CH}');
+      -- #3785: a thread the member follows, on the event card's thread.
+      insert into chat_thread_follows (thread_root_id, user_id, channel_id)
+      values ('${EVCARD}', '${U}', '${CH}');
       -- Rename before deletion: the content rewrite must key on the card's own
       -- payload snapshot ('Doomed User'), not the live display name.
       update users set display_name = 'D' where id = '${U}';
@@ -228,6 +237,12 @@ console.log("\n=== Functional smoke: anonymize_user ===");
         ok: (rows) => rows.length === 1 && rows[0].leftovers === 0,
       },
       {
+        // #3785. The fifth hand copy of the delete block (20261110220000).
+        name: "current-state purged: thread follows",
+        sql: `select count(*)::int as leftovers from chat_thread_follows where user_id = '${U}'`,
+        ok: (rows) => rows.length === 1 && rows[0].leftovers === 0,
+      },
+      {
         // Exact counts, not `>= 0`: an over-purge gives 0 and a spurious
         // duplicate gives 2, so both directions fail. reports_against is the
         // one that matters most -- it is the queue ABOUT the departing member,
@@ -277,7 +292,8 @@ console.log("\n=== Functional smoke: anonymize_user ===");
                 from chat_messages where id = '${EVCARD}'`,
         ok: (rows) =>
           rows.length === 1 &&
-          rows[0].content === 'Deleted User scheduled "BBQ" — Aug 9, 6:00 PM UTC' &&
+          rows[0].content ===
+            'Deleted User scheduled "BBQ" — Aug 9, 6:00 PM UTC' &&
           rows[0].event_name === "BBQ",
       },
       {
@@ -302,7 +318,8 @@ console.log("\n=== Functional smoke: anonymize_user ===");
         name: "member-typed free text is NOT rewritten (only system-generated cards)",
         sql: `select content from chat_messages
                where sender_id = '${U}' and kind = 'text'`,
-        ok: (rows) => rows.length === 1 && rows[0].content === "hi, Doomed User here",
+        ok: (rows) =>
+          rows.length === 1 && rows[0].content === "hi, Doomed User here",
       },
     ];
     for (const lm of FUNCTIONAL) await runOne(lm);

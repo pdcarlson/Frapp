@@ -12,15 +12,17 @@ export const LANDING_CTA_EVENT = "landing-cta-clicked";
  * to justify impossible to run. Label and id are allowed to disagree — the
  * label is copy, the id is a measurement.
  *
- * `start-free-trial` and `explore-the-product` are gone with the sections that
- * fired them (#2367): the single $149 card's CTA and the hero's anchor button.
- * Nothing replaces them. The trial now opens at in-app checkout rather than
- * from this page, and there is no second hero action to anchor-scroll to.
+ * `explore-the-product` is gone with the hero button that fired it (#2367),
+ * and nothing replaces it. `start-free-trial` went with the old single $149
+ * card in the same rebuild and is back on the Chapter Pro card (#3869), which
+ * again offers the trial: same id, same job, so the funnel PostHog already
+ * holds for it continues rather than starting over under a new name.
  */
 export const LANDING_CTAS = [
   "get-started",
   "log-in",
   "join-chapter",
+  "start-free-trial",
 ] as const;
 
 /*

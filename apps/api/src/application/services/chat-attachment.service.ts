@@ -41,6 +41,7 @@ import {
   safeObjectFilename,
 } from '#domain/constants/storage';
 import { isUnsafeStoragePath } from '#domain/utils/storage-path';
+import { channelAllowsThreads } from '#domain/utils/channel-access';
 import { ChannelAccessService } from './channel-access.service';
 import { ChatBlockService } from './chat-block.service';
 import { isFromBlockedSender } from './chat-block-mask';
@@ -146,6 +147,7 @@ export class ChatAttachmentService {
     contentType: string,
     sizeBytes?: number,
     withPreview = false,
+    forThread = false,
   ) {
     // Authorized as a "post", for the same reason `editMessage` is: a signed
     // URL lets the caller put bytes under this channel's storage prefix, so it
@@ -157,12 +159,18 @@ export class ChatAttachmentService {
     // it. The mint is the first step and `sendMessage` is the second, so the
     // two must agree — `chat.service.spec.ts` § "mint and send agree" is the
     // test that keeps them agreeing.
-    await this.channelAccess.assertChannelAccess(
+    //
+    // A file for a thread reply authorizes as `thread`, as its send does
+    // (#3785), and only where the channel takes threads.
+    const channel = await this.channelAccess.assertChannelAccess(
       channelId,
       chapterId,
       userId,
-      'post',
+      forThread ? 'thread' : 'post',
     );
+    if (forThread && !channelAllowsThreads(channel)) {
+      throw new BadRequestException('This channel does not take threads');
+    }
 
     const ext = filename.includes('.')
       ? filename.slice(filename.lastIndexOf('.')).toLowerCase()
