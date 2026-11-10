@@ -2,16 +2,18 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
-import { CheckCheck, Loader2 } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { Loader2 } from "lucide-react";
 import {
   CHAT_REPORTS_NOTIFICATION_SCREEN,
   DISCORD_IMPORT_NOTIFICATION_SCREEN,
   useInvalidateChatReports,
   useMarkNotificationRead,
+  useMarkNotificationScreensSeen,
+  useMarkNotificationsRead,
   useNotifications,
 } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
-import { IconButton } from "@/components/ui/icon-button";
 import { FOCUS_RING } from "@/components/ui/focus";
 import {
   Sheet,
@@ -24,6 +26,8 @@ import { asArray, cn } from "@/lib/utils";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { chatDeepLink } from "@/lib/chat/chat-links";
+import { notificationScreensForPath } from "@/lib/notifications/seen-screens";
+import { usePageVisible } from "@/lib/notifications/use-page-visible";
 
 type DashboardNotificationDrawerProps = {
   open: boolean;
@@ -82,6 +86,10 @@ function deepLinkFor(notification: Notification): string {
       return "/service";
     case "profile":
       return "/profile";
+    // "Alex Smith joined" (`invite.service.ts`). It used to fall through to
+    // Chat, which says nothing about a new member.
+    case "members":
+      return "/members";
     // The officer report queue (#2257): the API's new-report notification
     // targets it with a bare screen, and the queue lives on Chat Admin.
     case CHAT_REPORTS_NOTIFICATION_SCREEN:
@@ -106,7 +114,20 @@ export function DashboardNotificationDrawer({
   const frappUser = useFrappUser();
   const notificationsQuery = useNotifications();
   const markRead = useMarkNotificationRead();
+  const markManyRead = useMarkNotificationsRead();
   const invalidateReports = useInvalidateChatReports();
+
+  // A notification is read once the member has seen what it is about
+  // (notifications.md § How an in-app row is marked read): opening Events
+  // reads the event notices, as opening a channel reads its chat notices.
+  // Only while the tab is showing, so a page left open in the background does
+  // not read what nobody saw. The drawer is mounted with the shell, so this
+  // runs on every dashboard page.
+  const pathname = usePathname();
+  const pageVisible = usePageVisible();
+  useMarkNotificationScreensSeen(notificationScreensForPath(pathname), {
+    enabled: pageVisible,
+  });
 
   // Live updates: any notification INSERT for the current user (and
   // UPDATE when it's marked read elsewhere) refreshes the list.
@@ -151,9 +172,10 @@ export function DashboardNotificationDrawer({
     }
   }
 
-  async function markAllRead() {
-    const unread = notifications.filter((n) => !n.read_at);
-    await Promise.allSettled(unread.map((n) => markRead.mutateAsync(n.id)));
+  // One request (`POST /v1/notifications/read`), so it also reads rows past
+  // the page this drawer shows. Until #3929 it sent one PATCH per row.
+  function markAllRead() {
+    markManyRead.mutate(undefined);
   }
 
   /*
@@ -163,7 +185,9 @@ export function DashboardNotificationDrawer({
     bordered cards, each with its own Read or New badge. The count said what
     the dots already say, the description narrated the drawer to someone
     reading it, and Refresh did by hand what the realtime ping above does on
-    its own. Mark all read stays, as an icon beside the close.
+    its own. Mark all read stayed as an icon beside the close until 2026-11-09
+    (#3929), when the owner asked for one that is obvious: it is worded, as
+    Slack's and GitHub's are, and drawn only while something is unread.
   */
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -172,18 +196,21 @@ export function DashboardNotificationDrawer({
         className="flex w-full flex-col sm:max-w-md"
         aria-describedby={undefined}
       >
-        <SheetHeader className="pr-24">
+        <SheetHeader className="pr-40">
           <SheetTitle>Notifications</SheetTitle>
         </SheetHeader>
-        <div className="absolute right-12 top-2.5 flex items-center">
-          <IconButton
-            label="Mark all read"
-            disabled={unreadCount === 0 || markRead.isPending}
-            onClick={() => void markAllRead()}
-          >
-            <CheckCheck aria-hidden="true" />
-          </IconButton>
-        </div>
+        {unreadCount > 0 ? (
+          <div className="absolute right-12 top-2.5 flex items-center">
+            <Button
+              variant="link"
+              size="sm"
+              disabled={markManyRead.isPending || markRead.isPending}
+              onClick={markAllRead}
+            >
+              Mark all read
+            </Button>
+          </div>
+        ) : null}
 
         <div className="-mx-3 flex-1 overflow-y-auto px-3">
           {notificationsQuery.isPending ? (

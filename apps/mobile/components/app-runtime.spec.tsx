@@ -19,6 +19,9 @@ vi.mock("@/lib/connection/use-connection", () => ({
 vi.mock("@/lib/notifications/use-badge-sync", () => ({
   useBadgeSyncRuntime: () => calls.push("badge"),
 }));
+vi.mock("@/lib/notifications/use-notification-sync", () => ({
+  useNotificationSyncRuntime: () => calls.push("notification-sync"),
+}));
 vi.mock("@/lib/notifications/use-push-runtime", () => ({
   usePushRuntime: () => calls.push("push"),
 }));
@@ -32,5 +35,11 @@ describe("AppRuntime", () => {
   it("binds the chat realtime manager app-wide (#3698)", () => {
     renderHook(() => AppRuntime());
     expect(calls).toContain("chat");
+  });
+
+  it("keeps notifications in step with the member's other devices (#3929)", () => {
+    calls.length = 0;
+    renderHook(() => AppRuntime());
+    expect(calls).toContain("notification-sync");
   });
 });

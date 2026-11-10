@@ -10,6 +10,7 @@ import { useRouter } from "expo-router";
 import {
   useActiveChapterId,
   useMarkNotificationRead,
+  useMarkNotificationsRead,
   useNotifications,
   useNowDate,
 } from "@repo/hooks";
@@ -61,13 +62,12 @@ import { InlineNote } from "@/components/inline-note";
  * provider for delivery telemetry. What the row does carry is the deep-link
  * target, so the label comes from `data.target.screen` — see `lib/more/notifications.ts`.
  *
- * ## "Mark all read" is a capped fan-out
+ * ## "Mark all read" is one request
  *
- * There is no bulk endpoint; `PATCH /v1/notifications/{id}/read` is per row, and
- * the API's write budget is a 60-second **count** — `{ttl: 60_000, limit: 30}`
- * per caller — not a concurrency limit, so serializing the calls would buy
- * nothing. They go out together, capped below that budget, and whatever is left
- * over is reported rather than silently dropped. Filed for a bulk endpoint.
+ * `POST /v1/notifications/read` reads every unread row in the chapter at once
+ * (#3929), rows past this screen's page included. Until then it was one
+ * `PATCH` per row, capped at 25 to stay under the API's 30-writes-a-minute
+ * budget, with a note asking the member to come back for the rest.
  *
  * ## Tapping deep-links
  *
@@ -77,12 +77,6 @@ import { InlineNote } from "@/components/inline-note";
  * target this build does not recognize resolves to this screen, so it marks
  * itself read and stays put rather than navigating somewhere wrong.
  */
-/**
- * Kept under the API's 30-writes-per-60s budget, with headroom for the reads
- * the same member is making elsewhere in the app.
- */
-const MARK_ALL_BATCH = 25;
-
 export default function NotificationsScreen() {
   const router = useRouter();
   const { tokens } = useFrappTheme();
@@ -93,7 +87,8 @@ export default function NotificationsScreen() {
   const notificationsQuery = useNotifications();
   const refresh = useRefetchAll([notificationsQuery]);
   const markRead = useMarkNotificationRead();
-  const [isMarkingAll, setIsMarkingAll] = useState(false);
+  const markAll = useMarkNotificationsRead();
+  const isMarkingAll = markAll.isPending;
   const [markAllNote, setMarkAllNote] = useState<string | null>(null);
 
   // `now` ticks rather than being read once inside the memo below: React
@@ -112,29 +107,13 @@ export default function NotificationsScreen() {
     [notificationsQuery.data],
   );
 
-  async function markAllRead() {
+  function markAllRead() {
     if (unreadIds.length === 0 || isMarkingAll) return;
-    setIsMarkingAll(true);
     setMarkAllNote(null);
-    const batch = unreadIds.slice(0, MARK_ALL_BATCH);
-    try {
-      // Concurrent, capped, and reported. Concurrency is free here — the budget
-      // is a per-minute count, so pacing the calls would not raise the ceiling —
-      // and it lets the per-write cache invalidations coalesce into a couple of
-      // list refetches instead of one per row.
-      const results = await Promise.allSettled(
-        batch.map((id) => markRead.mutateAsync(id)),
-      );
-      const failed = results.filter((r) => r.status === "rejected").length;
-      const skipped = unreadIds.length - batch.length;
-      if (failed + skipped > 0) {
-        setMarkAllNote(
-          `Marked ${batch.length - failed} of ${unreadIds.length}. Try again in a minute for the rest.`,
-        );
-      }
-    } finally {
-      setIsMarkingAll(false);
-    }
+    markAll.mutate(undefined, {
+      onError: () =>
+        setMarkAllNote("Couldn't mark them read. Check your connection and try again."),
+    });
   }
 
   function renderBody() {
@@ -190,7 +169,7 @@ export default function NotificationsScreen() {
           <IconButton
             label="Mark all notifications read"
             disabled={isMarkingAll}
-            onPress={() => void markAllRead()}
+            onPress={markAllRead}
           >
             {isMarkingAll ? (
               <ActivityIndicator size="small" color={brand.accent} />
