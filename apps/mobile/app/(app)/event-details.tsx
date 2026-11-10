@@ -5,7 +5,9 @@ import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
+  eventSeriesKey,
   useEvent,
+  useEvents,
   useMyAttendance,
   useNowDate,
   usePermissionList,
@@ -35,13 +37,20 @@ import {
   formatEventClock,
   formatEventWindow,
   resolveCheckInWindow,
+  sortEventsByStart,
   type CheckInWindow,
 } from "@/lib/events/format";
 import {
+  selectAllEventRows,
   selectEventDetail,
   selectMyAttendance,
+  selectSeriesCadence,
+  selectSeriesName,
+  selectSeriesOccurrences,
   type EventDetail,
 } from "@/lib/events/select";
+import { PressableRow } from "@/components/list-section";
+import { createEventRowStyles } from "@/components/events/event-rows";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { InlineNote } from "@/components/inline-note";
 
@@ -237,6 +246,7 @@ export default function EventDetailsScreen() {
           />
         ) : null}
 
+        <SeriesSection event={event} now={now} />
       </ScreenShell>
       {grants.edit && editTarget ? (
         <NewEventSheet
@@ -470,6 +480,84 @@ export function EventDetailSkeleton() {
         </View>
       </View>
     </SkeletonRegion>
+  );
+}
+
+/**
+ * The rest of a repeating series under the occurrence on screen (#3707): the
+ * Events list draws a series once, so this is where its other dates are. Its
+ * caption is the cadence ("EVERY SUNDAY"), read off the series head, and each
+ * date opens that occurrence; one renamed on its own carries its name. Read from the cached Events list (`useEvents`), which already
+ * holds every occurrence; nothing draws for a one-time event, or until the
+ * list has loaded.
+ */
+function SeriesSection({ event, now }: { event: EventDetail; now: Date }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const rowStyles = createEventRowStyles(tokens);
+  const router = useRouter();
+  const key = eventSeriesKey(event);
+  const eventsQuery = useEvents({ enabled: !!key });
+  // Parsed once per payload; only the upcoming filter follows the clock.
+  const rows = useMemo(
+    () => selectAllEventRows(eventsQuery.data),
+    [eventsQuery.data],
+  );
+  const occurrences = useMemo(
+    () => selectSeriesOccurrences(rows, event, now),
+    [rows, event, now],
+  );
+  // The series as a whole: its cadence, and the name most of its occurrences
+  // carry, which a renamed one is told apart from.
+  const series = useMemo(() => {
+    const all = rows.some((row) => row.id === event.id)
+      ? rows
+      : sortEventsByStart([event, ...rows]);
+    return {
+      cadence: selectSeriesCadence(all, event),
+      name: (key ? selectSeriesName(all, key) : null) ?? event.name,
+    };
+  }, [rows, event, key]);
+  const { cadence } = series;
+  if (!key || occurrences.length === 0) return null;
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionLabel}>{cadence ?? "Also in this series"}</Text>
+      <View>
+        {occurrences.map((occurrence, index) => {
+          const when = formatEventWindow(
+            occurrence.start_time,
+            occurrence.end_time,
+            now,
+          );
+          return (
+            <PressableRow
+              key={occurrence.id}
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${occurrence.name}, ${when}`}
+              onPress={() =>
+                router.push({
+                  pathname: "/event-details",
+                  params: { id: occurrence.id },
+                })
+              }
+              style={[
+                rowStyles.flatRow,
+                index === 0 ? null : rowStyles.flatDivider,
+              ]}
+            >
+              <Text style={styles.sectionBody}>
+                {/* An occurrence renamed on its own says so. */}
+                {occurrence.name === series.name
+                  ? when
+                  : `${occurrence.name} · ${when}`}
+              </Text>
+            </PressableRow>
+          );
+        })}
+      </View>
+    </View>
   );
 }
 

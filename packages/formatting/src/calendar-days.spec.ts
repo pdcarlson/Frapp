@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dayDelta } from "./calendar-days";
+import { dayDelta, monthGrid, startOfMonth } from "./calendar-days";
 
 /** Local wall-clock construction — the suite pins `TZ=America/Los_Angeles`. */
 function at(year: number, month: number, day: number, hour: number): Date {
@@ -58,5 +58,34 @@ describe("dayDelta", () => {
     const before = new Date("2026-08-17T02:00:00.000Z");
     const after = new Date("2026-08-17T20:00:00.000Z");
     expect(dayDelta(before, after)).toBe(1);
+  });
+});
+
+describe("monthGrid", () => {
+  it("draws six weeks from the Sunday on or before the 1st", () => {
+    // November 2026 starts on a Sunday.
+    const nov = monthGrid(at(2026, 11, 18, 12));
+    expect(nov).toHaveLength(42);
+    expect(nov[0]).toEqual(new Date(2026, 10, 1));
+    expect(nov[41]).toEqual(new Date(2026, 11, 12));
+    // December 2026 starts on a Tuesday, so the grid opens on Nov 29.
+    const dec = monthGrid(at(2026, 12, 1, 0));
+    expect(dec[0]).toEqual(new Date(2026, 10, 29));
+    expect(dec[2]).toEqual(new Date(2026, 11, 1));
+  });
+
+  it("keeps every cell on local midnight across a DST change", () => {
+    // Los Angeles springs forward on Mar 8, 2026 and falls back on Nov 1.
+    for (const anchor of [at(2026, 3, 1, 0), at(2026, 11, 1, 0)]) {
+      const grid = monthGrid(anchor);
+      for (const [index, day] of grid.entries()) {
+        expect(day.getHours()).toBe(0);
+        if (index > 0) expect(dayDelta(grid[index - 1]!, day)).toBe(1);
+      }
+    }
+  });
+
+  it("starts a month at its first day", () => {
+    expect(startOfMonth(at(2026, 2, 28, 23))).toEqual(new Date(2026, 1, 1));
   });
 });

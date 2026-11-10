@@ -35,3 +35,33 @@ export function dayDelta(from: Date, to: Date): number {
   const b = Date.UTC(to.getFullYear(), to.getMonth(), to.getDate());
   return Math.round((b - a) / MS_PER_DAY);
 }
+
+/** Midnight on the first of `date`'s month, local time. */
+export function startOfMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+/**
+ * The 42 days (six weeks of seven, Sunday first) a month calendar draws for
+ * `anchor`'s month: from the Sunday on or before the 1st, so every month draws
+ * the same height however many weeks it spans. Each day is local midnight.
+ *
+ * Mobile's Events calendar draws it (#3792); web's still builds the same
+ * days with its own `buildMonthGrid`. Built by
+ * calendar date rather than by adding 24 hours, which a DST change would knock
+ * an hour off and, past enough cells, onto the wrong day.
+ */
+export function monthGrid(anchor: Date): Date[] {
+  const first = startOfMonth(anchor);
+  const days: Date[] = [];
+  for (let index = 0; index < 42; index += 1) {
+    days.push(
+      new Date(
+        first.getFullYear(),
+        first.getMonth(),
+        1 - first.getDay() + index,
+      ),
+    );
+  }
+  return days;
+}

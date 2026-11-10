@@ -93,6 +93,18 @@ describe("house date shapes", () => {
     expect(formatDueLabel("2026-11-03", NOW)).toBe("Overdue by 1 day");
     expect(formatDueLabel("2026-11-01", NOW)).toBe("Overdue by 3 days");
   });
+
+  it("writes a day heading out: Today, Tomorrow, Yesterday, the weekday, then the date", () => {
+    expect(formatDayHeading("2026-11-04T23:00:00-08:00", NOW)).toBe("Today");
+    expect(formatDayHeading("2026-11-05T00:30:00-08:00", NOW)).toBe("Tomorrow");
+    expect(formatDayHeading("2026-11-03T20:00:00-08:00", NOW)).toBe("Yesterday");
+    expect(formatDayHeading(FRI_5PM, NOW)).toBe("Friday");
+    // Six days ahead is still the weekday; seven is the date.
+    expect(formatDayHeading("2026-11-10T18:00:00-08:00", NOW)).toBe("Tuesday");
+    expect(formatDayHeading("2026-11-11T18:00:00-08:00", NOW)).toBe("November 11");
+    expect(formatDayHeading("2027-01-03T18:00:00-08:00", NOW)).toBe("January 3, 2027");
+    expect(formatDayHeading("not a date", NOW)).toBeNull();
+  });
 });
 
 describe("formatSentLabel", () => {

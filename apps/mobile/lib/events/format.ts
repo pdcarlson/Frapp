@@ -5,11 +5,9 @@
  * Pure and `now`-injected so the screens stay presentational and the states are
  * testable without freezing a clock. The window formatters are deliberately
  * separate from the relative labels in `components/chat/up-next-strip.tsx`:
- * that strip answers "how soon" in a one-line pulse ("tmrw 6:00 PM"), while
+ * that strip answers "how soon" in a one-line pulse ("Tomorrow 6:00 PM"), while
  * they answer "when and for how long" in a detail context ("Tonight · 6:00 –
- * 7:00 PM"). The s06 date block is the exception: a 52pt block has room only
- * for the strip's short register ("Tmrw", "THU"), so it takes that register
- * on purpose and its day ladder repeats the strip's.
+ * 7:00 PM"). s06's day headings are `@repo/formatting`'s `formatDayHeading`.
  */
 
 import { dayDelta, formatWeekdayDay, parseInstant } from "@repo/formatting";
@@ -56,61 +54,6 @@ export function formatEventWindow(
 
   const time = end ? `${clock(start)} – ${clock(end)}` : clock(start);
   return `${day} · ${time}`;
-}
-
-export interface EventDateBlock {
-  /**
-   * The small caps line over the day number: "Today", "Tmrw", a weekday inside
-   * the week ("Thu"), or the month beyond it ("Dec").
-   */
-  label: string;
-  /** The day of the month, "14". */
-  day: string;
-  /** The start clock the row's meta line leads with, "6:00 PM". */
-  clock: string;
-  /** Whether the event starts today, which the row draws in the foreground. */
-  isToday: boolean;
-}
-
-/**
- * The s06 row's date block, drawn as a weekday over a day number ("THU / 14"),
- * plus the clock its meta line leads with.
- *
- * The board draws a weekday in every block, which reads true only inside the
- * week: three weeks out, "THU 14" leaves the member to work out which
- * Thursday. So past the week the label turns to the month, the same cut-off
- * `lib/tasks/format.ts` uses when it swaps "Due Friday" for a date. Today and
- * tomorrow say so in words, because that is the first thing the list answers.
- * `null` for an unreadable start, so the row draws no block rather than
- * "Invalid Date".
- */
-export function formatEventDateBlock(
-  startTime: string,
-  now: Date,
-): EventDateBlock | null {
-  const start = parseInstant(startTime);
-  if (!start) return null;
-  const days = dayDelta(now, start);
-  let label: string;
-  if (days === 0) {
-    label = "Today";
-  } else if (days === 1) {
-    label = "Tmrw";
-  } else if (days > -7 && days < 7) {
-    // A negative delta lands here too: an event that started late last night
-    // stays on the list while its check-in window is open, under its weekday.
-    // A week or more back (a multi-day event still running) takes the month,
-    // or "WED 28" would read as a Wednesday still to come.
-    label = start.toLocaleDateString(undefined, { weekday: "short" });
-  } else {
-    label = start.toLocaleDateString(undefined, { month: "short" });
-  }
-  return {
-    label,
-    day: String(start.getDate()),
-    clock: clock(start),
-    isToday: days === 0,
-  };
 }
 
 export type CheckInWindowState =
