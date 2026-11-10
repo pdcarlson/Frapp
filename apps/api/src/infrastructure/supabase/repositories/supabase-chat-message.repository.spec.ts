@@ -87,6 +87,24 @@ const POLL_A_OPEN = '0a000000-0000-4000-8000-000000000171';
 const POLL_A_CLOSED_EARLY = '0a000000-0000-4000-8000-000000000172';
 const POLL_A_EXPIRED = '0a000000-0000-4000-8000-000000000173';
 
+// Poll cards (`kind: 'poll'`), one per chapter, for `findPollCardsByChapter`.
+// `type` is TEXT, as a card's is, so `findPollsByChapter` never sees them.
+const CARD_A = '0a000000-0000-4000-8000-000000000181';
+const CARD_B = '0b000000-0000-4000-8000-000000000181';
+const CARD_B_DELETED = '0b000000-0000-4000-8000-000000000182';
+const CARD_A_DELETED = '0a000000-0000-4000-8000-000000000182';
+const OTHER_SENDER = '0c000000-0000-4000-8000-000000000183';
+const pollCard = (
+  id: string,
+  channelId: string,
+  chapterId: string,
+  overrides: Record<string, unknown> = {},
+) => ({
+  ...message(id, channelId, chapterId, null, 'TEXT'),
+  kind: 'poll',
+  ...overrides,
+});
+
 const seed = () => ({
   chat_channels: [
     inA({ id: CHANNEL_A, name: 'general', type: 'PUBLIC' }),
@@ -125,6 +143,10 @@ const seed = () => ({
     message(POLL_A_EXPIRED, CHANNEL_A2, CHAPTER_A, null, 'POLL', {
       expires_at: '2020-01-01T00:00:00.000Z',
     }),
+    pollCard(CARD_A, CHANNEL_A2, CHAPTER_A),
+    pollCard(CARD_B, CHANNEL_B2, CHAPTER_B),
+    pollCard(CARD_A_DELETED, CHANNEL_A2, CHAPTER_A, { is_deleted: true }),
+    pollCard(CARD_B_DELETED, CHANNEL_B2, CHAPTER_B, { is_deleted: true }),
   ],
 });
 
@@ -184,6 +206,34 @@ describe('SupabaseChatMessageRepository — tenant scope', () => {
     expect(
       harness.ops[0].filters.map((f) => [f.column, f.value]),
     ).toContainEqual(['chat_channels.chapter_id', CHAPTER_B]);
+  });
+
+  it('findPollCardsByChapter returns only live poll cards of the chapter asked about', async () => {
+    const cards = await repo.findPollCardsByChapter(CHAPTER_B, { limit: 10 });
+
+    // Not chapter A's card, not the deleted one, and not the old-format poll
+    // (`type: 'POLL'` with no `kind`), which no card can draw.
+    expect(cards.map((c) => c.id)).toEqual([CARD_B]);
+    // The join that scopes the read is not served with the row.
+    expect(cards[0]).not.toHaveProperty('chat_channels');
+    expect(
+      harness.ops[0].filters.map((f) => [f.column, f.value]),
+    ).toContainEqual(['chat_channels.chapter_id', CHAPTER_B]);
+  });
+
+  it('findPollCardsByChapter keeps the chapter filter when narrowed to a sender', async () => {
+    const mine = await repo.findPollCardsByChapter(CHAPTER_B, {
+      senderId: USER_SHARED,
+      limit: 10,
+    });
+    const theirs = await repo.findPollCardsByChapter(CHAPTER_B, {
+      senderId: OTHER_SENDER,
+      limit: 10,
+    });
+
+    // The same member posted a card in each chapter; only the join separates them.
+    expect(mine.map((c) => c.id)).toEqual([CARD_B]);
+    expect(theirs).toEqual([]);
   });
 
   it('findByChannel narrows to the channel, which is what carries the chapter', async () => {

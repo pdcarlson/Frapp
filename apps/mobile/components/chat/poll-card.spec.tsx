@@ -413,6 +413,20 @@ describe("PollCard closed early by its creator (#3794)", () => {
     ).toHaveLength(0);
   });
 
+  it("says an open poll with no deadline has no end date, and still offers its creator Close poll (#3896)", () => {
+    const { tree } = renderWithClose(
+      poll({ payload: { ...card, closes_at: null } }),
+    );
+    expect(JSON.stringify(tree.toJSON())).toContain("Poll · No end date");
+    expect(closeButton(tree)).toHaveLength(1);
+
+    // A timed, open poll reads plain "Poll", as before.
+    const timed = JSON.stringify(
+      renderWithClose(poll({ payload: card })).tree.toJSON(),
+    );
+    expect(timed).not.toContain("No end date");
+  });
+
   it("draws a card closed early as closed, with no vote, before its deadline", () => {
     const { tree, onVote } = renderWithClose(
       poll({

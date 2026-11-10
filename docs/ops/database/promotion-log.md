@@ -39,6 +39,16 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 **Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-always-formal-channel-lock-20261110233000) § Rollback Always formal channel lock.
 
+## 2026-11-10: An index for the Activity page's poll cards (#3897)
+
+### 20261110230000_chat_messages_poll_cards_index.sql
+
+- **Purpose**: Adds `idx_chat_messages_poll_cards` on `chat_messages (created_at desc) where kind = 'poll' and is_deleted = false`. `GET /v1/activity` (#3897) lists a chapter's newest poll cards across every channel, newest first; the table's other indexes lead with `channel_id` or `sender_id`, so without this that read scans the chapter's whole message history, imported archives included. Index only: no data or behaviour changes.
+- **Checks**: After `db push`, `select indexdef from pg_indexes where indexname = 'idx_chat_messages_poll_cards';` returns one row naming the partial predicate.
+- **Promoter notes**: Order-free against the API: the API from the same PR works without it, only slower. Plain `create index` (Supabase applies each migration in a transaction, where `concurrently` is refused), so it holds a lock that blocks writes to `chat_messages` while it reads the table once; that is the largest table a chapter has, so on a project with a big imported history expect sends to wait for the length of one table scan. `if not exists`, so re-applying is idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-chat-messages-poll-cards-index-20261110230000) § Rollback chat messages poll-cards index.
+
 ## 2026-11-10: Message threads (#3785)
 
 ### 20261110220000_chat_message_threads.sql

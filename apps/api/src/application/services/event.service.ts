@@ -92,8 +92,12 @@ export class EventService {
     return event;
   }
 
-  async findByChapter(chapterId: string, viewerId?: string): Promise<Event[]> {
-    const events = await this.eventRepo.findByChapter(chapterId);
+  async findByChapter(
+    chapterId: string,
+    viewerId?: string,
+    window?: { endsAfter: string; startsBefore: string },
+  ): Promise<Event[]> {
+    const events = await this.eventRepo.findByChapter(chapterId, window);
     if (!viewerId) return events;
     // Skip the permission/member lookups entirely for the common case — a
     // chapter with no role-targeted events — rather than paying for them on

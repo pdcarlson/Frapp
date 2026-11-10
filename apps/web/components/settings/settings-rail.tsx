@@ -57,9 +57,10 @@ const RAIL_DANGER_TRIGGER_CLASS = `${RAIL_ROW_RESET} h-[34px] justify-start roun
 //   note in `billing-page.tsx`, which is why `4d`'s "Members never see this
 //   page" was already refused there. A tab would hide it from the members it
 //   is for. `/billing` stays a route; Danger zone links to the Stripe portal.
-// - **`dues` and `workflows` are ours.** The board draws neither. Both are
-//   live chapter configuration with no other home, so they keep rail entries,
-//   slotted after Fields where the board's own knob tabs sit.
+// - **`dues`, `workflows` and `classes` are ours.** The board draws none of
+//   them. Each is live chapter configuration with no other home, so each
+//   keeps a rail entry: the first two slotted after Fields, where the board's
+//   own knob tabs sit, and `classes` after Roles.
 //
 // `beta` and `audit` are gone rather than reordered. They rendered
 // `SettingsComingSoon` stubs naming "Chunk 08" — generated chrome advertising
@@ -69,6 +70,10 @@ export const SETTINGS_TABS: readonly { value: string; label: string }[] = [
   { value: "theme", label: "Accent" },
   { value: "modules", label: "Modules" },
   { value: "roles", label: "Roles" },
+  // Ours, like `dues` and `workflows`: the chapter's pledge classes (#3939),
+  // beside Roles because `roles:manage` gates both. The page replaces this
+  // label with the chapter's own word for a class, as typed.
+  { value: "classes", label: "Pledge class" },
   { value: "semester", label: "Semester" },
   { value: "fields", label: "Fields" },
   { value: "dues", label: "Dues" },

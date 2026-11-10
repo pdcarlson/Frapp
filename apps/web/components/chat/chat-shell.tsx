@@ -97,6 +97,7 @@ import { vocab } from "@repo/org-archetypes";
 import * as Sentry from "@sentry/nextjs";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useDeleteChannelFlow } from "./use-delete-channel-flow";
+import { ThreadPanel } from "./thread-panel";
 import {
   classifyMessage,
   hiddenQuoteText,
@@ -127,6 +128,8 @@ import {
 import {
   canBlockSender,
   channelAllowsReplies,
+  channelAllowsThreadReplies,
+  channelAllowsThreads,
   DELETE_MESSAGE_CONFIRM_BODY,
   DELETE_MESSAGE_CONFIRM_LABEL,
   DELETE_MESSAGE_CONFIRM_TITLE,
@@ -328,11 +331,12 @@ export function prefillLocalInput(
  * The chat surface: channels column, then thread and composer.
  *
  * **Two columns, flush, full height** (`1b`). It was three, the third being a
- * Details rail that hosted `ThreadPanel` over a static placeholder. Both are
- * deleted. Where threads went: the quote above a reply, which was the panel's
- * only remaining entry point, now scrolls this timeline to the message it
- * quotes (`MessageItem`'s `onJumpToParent`). The decision is recorded in
- * `spec/ui/web-dashboard/README.md` § Chat.
+ * Details rail that hosted the old `ThreadPanel` over a static placeholder.
+ * #2142 deleted both: the quote above a reply now scrolls this timeline to the
+ * message it quotes (`MessageItem`'s `onJumpToParent`). Message threads
+ * (#3785) are a different feature: their `ThreadPanel` (`./thread-panel`)
+ * opens over this column, in place of the timeline, never as a third column.
+ * Both are recorded in `spec/ui/web-dashboard/README.md` § Chat.
  *
  * **The panes are not cards, and that is load-bearing.** They used to be
  * `<Card>`s, so the whole surface painted `--card` — and `components.md` §11
@@ -1952,6 +1956,31 @@ export function ChatShell({
    * `@repo/chat-core/message-actions` says why it is client-side, and why one
    * hop is enough).
    */
+  // The open message thread (#3785), keyed to its channel so switching
+  // channels closes it rather than showing another channel's thread.
+  const [openThread, setOpenThread] = useState<{
+    channelId: string;
+    rootId: string;
+  } | null>(null);
+  // Leaving the channel closes its thread, so coming back shows the timeline
+  // (state adjusted during render, React's pattern for a reset on a prop).
+  if (openThread && activeChannel && openThread.channelId !== activeChannel.id) {
+    setOpenThread(null);
+  }
+  const threadRootId =
+    openThread && openThread.channelId === activeChannel?.id
+      ? openThread.rootId
+      : null;
+  const canThreadHere = !!activeChannel && channelAllowsThreads(activeChannel);
+  const openThreadFor = useCallback(
+    (message: ChatMessage) => {
+      if (!activeChannel) return;
+      setOpenThread({ channelId: activeChannel.id, rootId: message.id });
+    },
+    [activeChannel],
+  );
+  const closeThread = useCallback(() => setOpenThread(null), []);
+
   const startReply = useCallback((message: ChatMessage) => {
     setReplyTarget({
       channelId: message.channel_id,
@@ -2386,7 +2415,7 @@ export function ChatShell({
       */}
       <section
         className={cn(
-          "flex min-w-0 flex-1 flex-col bg-background",
+          "relative flex min-w-0 flex-1 flex-col bg-background",
           narrowPane === "channels" && "max-lg:hidden",
         )}
       >
@@ -2801,6 +2830,7 @@ export function ChatShell({
                   onReact={channel.react}
                   onUnreact={channel.unreact}
                   onReply={canReplyHere ? startReply : undefined}
+                  onOpenThread={canThreadHere ? openThreadFor : undefined}
                   // The quote above a reply scrolls to the message it quotes. It used
                   // to open `ThreadPanel` in the Details rail; #2142 deleted both, and
                   // this is the same machinery pins and saved messages already use.
@@ -2958,6 +2988,25 @@ export function ChatShell({
             onRestoreReply={restoreReply}
           />
         ) : null}
+        {/*
+          A message thread (#3785) replaces the message list inside the chat
+          column, and Back returns to it. Drawn over the column rather than in
+          its place, so the timeline keeps its scroll position underneath.
+        */}
+        {activeChannel && threadRootId ? (
+          <ThreadPanel
+            key={threadRootId}
+            className="absolute inset-0 z-10"
+            channelId={activeChannel.id}
+            channelName={activeChannel.name ?? null}
+            rootId={threadRootId}
+            viewerId={userId}
+            nameFor={nameFor}
+            blockState={blockState}
+            canReply={channelAllowsThreadReplies(activeChannel)}
+            onClose={closeThread}
+          />
+        ) : null}
       </section>
 
       {/*
@@ -3060,6 +3109,7 @@ export function ChatShell({
             )
           }
           initialDraft={pollForm.draft}
+          canCloseEarly={can("polls:create", permissionsPayload?.permissions)}
           onPost={async (poll) => {
             const result = await channel.sendPoll(pollForm.channelId, poll);
             // Posted, but this device couldn't finish saving it: the same

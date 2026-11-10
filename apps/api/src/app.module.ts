@@ -32,6 +32,7 @@ import { SemesterRolloverModule } from './modules/semester-rollover/semester-rol
 import { ReportModule } from './modules/report/report.module';
 import { SearchModule } from './modules/search/search.module';
 import { ActivityFeedModule } from './modules/activity-feed/activity-feed.module';
+import { ActivityModule } from './modules/activity/activity.module';
 import { ChapterConfigModule } from './modules/chapter-config/chapter-config.module';
 import { ChapterDirectoryModule } from './modules/chapter-directory/chapter-directory.module';
 import { ChatBridgeWorkerModule } from './modules/chat-bridge-worker/chat-bridge-worker.module';
@@ -87,6 +88,7 @@ import { validateEnv } from './config/env.validation';
     ReportModule,
     SearchModule,
     ActivityFeedModule,
+    ActivityModule,
     ChapterConfigModule,
     ChapterDirectoryModule,
     ChatBridgeWorkerModule,

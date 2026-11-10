@@ -606,7 +606,7 @@ drawing at least one glyph no nav intent covers; this family has none to draw.
 profile, lives in the shared set in `packages/theme` with the nav glyphs; the
 family files still own the intent and the component.)
 
-**The tab rail stays text-only.** Ten triggers, no icons, and adding them would
+**The tab rail stays text-only.** Its triggers (`SETTINGS_TABS`) carry no icons, and adding them would
 be new design rather than a repaint — the Canvas reference draws Settings
 (**s16**) as titled sections with no per-row glyph either.
 
@@ -670,7 +670,7 @@ a lens-shaped wedge across the break that makes the two halves read as links.
   is a state the shared family already draws, and inventing a "done" intent no
   other surface has would be new design rather than a repaint.
 
-**The wizard's four steps stay text-only**, as Settings' ten tabs do (§6.2.6):
+**The wizard's four steps stay text-only**, as Settings' tabs do (§6.2.6):
 adding per-step icons is new design, and the reference draws neither.
 
 ### 6.3 Maintenance Rule

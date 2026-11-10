@@ -28,6 +28,7 @@ the targets resolve — so add the row in the same change that adds the topic fi
 | Polls and voting                                     | [`polls.md`](polls.md)                     |
 | Member directory and profiles                        | [`members.md`](members.md)                 |
 | Activity feed                                        | [`activity-feed.md`](activity-feed.md)     |
+| Activity page (what needs you, what you made)        | [`activity.md`](activity.md)               |
 | Global search                                        | [`search.md`](search.md)                   |
 | Observability                                        | [`observability.md`](observability.md)     |
 | Service hours (philanthropy)                         | [`service-hours.md`](service-hours.md)     |
