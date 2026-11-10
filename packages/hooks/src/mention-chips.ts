@@ -1,5 +1,9 @@
 import { createContext, useContext, useMemo } from "react";
-import { mentionChipFilter, type MentionChipTargets } from "@repo/validation";
+import {
+  mentionChipFilter,
+  spacedMentionNames,
+  type MentionChipTargets,
+} from "@repo/validation";
 
 /**
  * Who a chat timeline's messages could have addressed: the chapter roster and
@@ -14,19 +18,44 @@ export const MentionChipTargetsContext =
   createContext<MentionChipTargets | null>(null);
 
 /**
- * Which of a message's `@`-tokens to paint as a mention chip, from the
- * message's resolved `mentions` and its kind (`mentionChipFilter`). Stable while neither
- * changes, so a memoized parse keyed on it re-runs only when it must.
+ * A chip test with the spaced names a token may be: `remarkMentionChips`
+ * reads them off the function it is given (`MentionChipTest` in
+ * `@repo/chat-core/markdown-mentions`, declared again here because this
+ * package doesn't depend on that one).
  */
+export type MentionChipTest = ((token: string) => boolean) & {
+  names?: readonly string[];
+};
+
+function withNames(
+  test: (token: string) => boolean,
+  names: readonly string[],
+): MentionChipTest {
+  return Object.assign((token: string) => test(token), { names });
+}
+
 const CHIP_NONE = (): boolean => false;
 const CHIP_ALL = (): boolean => true;
 
+/**
+ * Which of a message's `@`-tokens to paint as a mention chip, from the
+ * message's resolved `mentions` and its kind (`mentionChipFilter`). Stable
+ * while neither changes, so a memoized parse keyed on it re-runs only when it
+ * must.
+ *
+ * The function carries the names that hold a space ("Winston Hewitt", #3825),
+ * from the same roster and roles, so the body chips the whole name.
+ */
 export function useMentionChips(message: {
   mentions?: readonly string[] | null;
   kind?: string | null;
   _status?: string;
-}): (token: string) => boolean {
+}): MentionChipTest {
   const targets = useContext(MentionChipTargetsContext);
+  const names = useMemo(
+    () => spacedMentionNames(targets?.members, targets?.roleNames),
+    [targets],
+  );
   const key = (message.mentions ?? []).join(",");
   // An imported archive row resolves nobody by design, and the sender's own
   // row has no server answer until it is confirmed: both chip by token, as
@@ -34,12 +63,11 @@ export function useMentionChips(message: {
   const byToken =
     message.kind === "imported" ||
     (message._status !== undefined && message._status !== "confirmed");
-  // Rows that pinged nobody share one function, so the roster or roles
-  // landing does not re-parse every body in the channel (#2209).
-  const settled = byToken ? CHIP_ALL : key ? null : CHIP_NONE;
-  const resolved = useMemo(
-    () => (key ? mentionChipFilter(key.split(","), targets) : CHIP_NONE),
-    [key, targets],
-  );
-  return settled ?? resolved;
+  return useMemo(() => {
+    if (byToken) return names.length > 0 ? withNames(CHIP_ALL, names) : CHIP_ALL;
+    // Rows that pinged nobody share one function, so the roster or roles
+    // landing does not re-parse every body in the channel (#2209).
+    if (!key) return CHIP_NONE;
+    return withNames(mentionChipFilter(key.split(","), targets), names);
+  }, [byToken, key, targets, names]);
 }

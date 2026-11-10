@@ -30,11 +30,11 @@ describe("createMentionSuggestion — items()", () => {
     expect(result.map((item) => item.id)).toEqual(["u1"]);
   });
 
-  it("computes label as the display name with whitespace stripped, not the raw name", () => {
+  it("labels a member with their name as written, since a name with a space is mentionable (#3825)", () => {
     const result = itemsFor("jane");
     expect(result[0]).toMatchObject({
       id: "u1",
-      label: "JaneDoe",
+      label: "Jane Doe",
       displayName: "Jane Doe",
       avatarUrl: null,
     });

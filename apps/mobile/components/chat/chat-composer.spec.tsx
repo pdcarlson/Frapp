@@ -501,7 +501,7 @@ describe("ChatComposer @-mention picker", () => {
   it("writes the picked member's label in place of the typed handle", () => {
     const { tree, props } = typed("hi @pa");
     act(() => byLabel(tree, "Mention Paul Carlson")!.props.onPress());
-    expect(props.onChangeText).toHaveBeenCalledWith("hi @PaulCarlson ");
+    expect(props.onChangeText).toHaveBeenCalledWith("hi @Paul Carlson ");
   });
 
   it("closes on blur", () => {
@@ -524,7 +524,7 @@ describe("ChatComposer @-mention picker", () => {
     // `@PaulCarlson tomorrow`, caret after `@Pa`: the tail must go too.
     const { tree, props } = typed("@PaulCarlson tomorrow", 3);
     act(() => byLabel(tree, "Mention Pat O'Brien")!.props.onPress());
-    expect(props.onChangeText).toHaveBeenCalledWith("@PatOBrien tomorrow");
+    expect(props.onChangeText).toHaveBeenCalledWith("@Pat O'Brien tomorrow");
   });
 
   it("keeps text after the caret, reusing a space already there", () => {

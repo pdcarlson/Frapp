@@ -610,6 +610,8 @@ export {
   matchMentionCandidate,
   mentionChipFilter,
   mentionLabelFor,
+  mentionPickLabel,
+  spacedMentionNames,
   mentionPickerEntries,
   mentionSuggestions,
   resolveMentions,
@@ -621,6 +623,7 @@ export type {
   MentionPickerEntry,
   MentionRole,
   MentionRoleOption,
+  MentionSpanOptions,
   MentionSpan,
   MentionSuggestion,
 } from "./mentions";
