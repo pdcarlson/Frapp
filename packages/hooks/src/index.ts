@@ -73,3 +73,4 @@ export * from "./use-discord-author-link";
 export * from "./field-reveal";
 export * from "./open-chat-transport";
 export * from "./use-own-status-at";
+export * from "./use-chat-background";

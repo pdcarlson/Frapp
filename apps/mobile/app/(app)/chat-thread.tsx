@@ -58,6 +58,7 @@ import {
 } from "@repo/hooks";
 import { can, draftWithMention } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
+import { ChatBackground } from "@/components/chat/chat-background";
 import { BlockListNotice } from "@/components/chat/block-list-notice";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { useComposerPlus } from "@/components/chat/use-composer-plus";
@@ -1247,6 +1248,8 @@ function ChannelThreadScreen() {
               <MentionChipTargetsContext.Provider value={mentionChipTargets}>
                 {/* The list and the jump control over its corner. */}
                 <View style={styles.flex}>
+                  {/* Behind the messages only (#3973, #3779). */}
+                  <ChatBackground channelId={channelId ?? null} />
                   <FlatList
                     // One list per channel. The screen stays mounted across a
                     // switch, so a shared list kept the last channel's scroll
