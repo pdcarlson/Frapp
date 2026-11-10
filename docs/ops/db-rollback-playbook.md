@@ -3335,6 +3335,7 @@ alter table public.chapters
   drop column if exists chat_background_message_id,
   drop column if exists chat_background_photo_path,
   drop column if exists chat_background;
+```
 
 ## Rollback Always formal channel lock (20261111000000)
 
