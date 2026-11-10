@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, type CSSProperties } from "react";
+import { parseHex } from "@repo/color";
 import { useChatBackground, useCurrentChapter } from "@repo/hooks";
 import {
   CHAT_BACKGROUND_PAINTS,
@@ -27,7 +28,10 @@ export function ChatBackground({ channelId }: { channelId: string | null }) {
   const { data } = useChatBackground(channelId);
   const letters = useChapterLetters();
 
-  const key = data?.background ?? "plain";
+  // An unknown key (a newer API than this bundle) draws plain, never throws.
+  const stored = data?.background ?? "plain";
+  const key =
+    stored === "photo" || stored in CHAT_BACKGROUND_PAINTS ? stored : "plain";
   if (key === "photo") {
     if (!data?.photo_url) return <Layer style={paintStyle("plain", letters)} />;
     return (
@@ -85,8 +89,7 @@ function Layer({
 }
 
 function rgba(hex: string, alpha: number): string {
-  const h = hex.replace("#", "");
-  const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const { r, g, b } = parseHex(hex) ?? { r: 0, g: 0, b: 0 };
   return `rgba(${r},${g},${b},${alpha})`;
 }
 

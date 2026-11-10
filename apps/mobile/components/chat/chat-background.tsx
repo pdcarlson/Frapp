@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import { StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
 import Svg, {
@@ -10,15 +9,16 @@ import Svg, {
   Stop,
   Text as SvgText,
 } from "react-native-svg";
-import { useChatBackground, useCurrentChapter } from "@repo/hooks";
+import { useChatBackground } from "@repo/hooks";
+import { chapterInitials } from "@repo/validation";
 import {
   CHAT_BACKGROUND_PAINTS,
   CHAT_BACKGROUND_PHOTO_BLUR_PX,
   CHAT_BACKGROUND_PHOTO_SCRIM_ALPHA,
   type ChatBackgroundBuiltInKey,
 } from "@repo/theme/chat-backgrounds";
-import { resolveChapterMark } from "@repo/validation";
 import { useFrappTheme } from "@/lib/theme";
+import { useChapterBranding } from "@/lib/chapter-branding";
 
 /**
  * What sits behind a channel's messages (#3973): its own background, else the
@@ -34,20 +34,18 @@ import { useFrappTheme } from "@/lib/theme";
 export function ChatBackground({ channelId }: { channelId: string | null }) {
   const { data } = useChatBackground(channelId);
   const { tokens } = useFrappTheme();
-  const { data: chapter } = useCurrentChapter();
-  const letters = useMemo(
-    () =>
-      chapter
-        ? resolveChapterMark({
-            logoUrl: null,
-            branding: chapter.branding,
-            name: chapter.name,
-          }).text
-        : "",
-    [chapter],
-  );
+  // The same text mark the rest of the app shows, which hides the letters
+  // of an organization that never displays them (#3421), as web does.
+  // Initials when there is no text mark, as web's `chapterMarkFor` falls back.
+  const branding = useChapterBranding();
+  const letters =
+    branding.textMark ??
+    (branding.chapterName ? chapterInitials(branding.chapterName) : "");
 
-  const key = data?.background ?? "plain";
+  // An unknown key (a newer API than this build) draws plain, never throws.
+  const stored = data?.background ?? "plain";
+  const key =
+    stored === "photo" || stored in CHAT_BACKGROUND_PAINTS ? stored : "plain";
   if (key === "plain") return null;
   if (key === "photo") {
     if (!data?.photo_url) return null;

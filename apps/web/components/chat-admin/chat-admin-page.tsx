@@ -204,9 +204,16 @@ export function ChatAdminPage({
         <div className="space-y-6">
           <ChatReportsCard />
           <ChatAdminBody initialChannelId={initialChannelId} />
-          <ChatBackgroundDefaultCard />
         </div>
       </Can>
+      {/*
+        Outside the channels:manage gate: the chapter default is set by whoever
+        edits the chapter profile (#3973), who may not manage channels. The
+        card carries its own CHAPTER_PROFILE_PERMISSIONS gate.
+      */}
+      <div className="mt-6">
+        <ChatBackgroundDefaultCard />
+      </div>
     </>
   );
 }

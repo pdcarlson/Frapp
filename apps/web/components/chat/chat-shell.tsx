@@ -32,6 +32,7 @@ import {
   useChannels,
   useSetChannelNotificationLevel,
   useChatBackground,
+  useChapterChatBackground,
   useSetChannelBackground,
   errorCopy,
   useMarkChannelRead,
@@ -1145,6 +1146,13 @@ export function ChatShell({
   // Chat backgrounds (#3973): the open channel's, for the menu's picker.
   const channelBackground = useChatBackground(activeChannel?.id ?? null);
   const setChannelBackground = useSetChannelBackground();
+  const chapterBackground = useChapterChatBackground();
+  // One mutation serves whichever channel is open, so a failed save on one
+  // channel must not show its error (or its pending state) on the next.
+  const resetChannelBackground = setChannelBackground.reset;
+  useEffect(() => {
+    resetChannelBackground();
+  }, [activeChannel?.id, resetChannelBackground]);
   const chapterLetters = useChapterLetters();
 
   // `/event` typed bare, with details the one-liner can't read, or picked
@@ -2477,6 +2485,7 @@ export function ChatShell({
                         channelBackground.data?.source === "channel"
                           ? channelBackground.data.background
                           : null,
+                      inheritPreview: chapterBackground.data?.background,
                       letters: chapterLetters,
                       saving: setChannelBackground.isPending,
                       error: setChannelBackground.error

@@ -35,8 +35,11 @@ import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { ChannelAccessService } from './channel-access.service';
 
 const BRANDING_BUCKET = 'branding';
-/** A signed photo URL lives as long as a chat session plausibly stays open. */
-const PHOTO_URL_TTL_SECONDS = 60 * 60 * 6;
+/**
+ * A signed photo URL outlives the clients' 5-minute cache comfortably, and is
+ * short enough that a withdrawn photo stops loading within the hour.
+ */
+const PHOTO_URL_TTL_SECONDS = 60 * 60;
 
 /** Every chat background photo, chapter default or channel, sits directly in here. */
 function photoFolder(chapterId: string): string {
@@ -157,20 +160,35 @@ export class ChatBackgroundService {
     if (isDirectChannel(channel)) {
       throw new BadRequestException('A DM or group DM has no background');
     }
+    // The audit log is system-write only (#3909), and an archived channel
+    // takes no writes; neither gets a background or its announcing line.
+    if (channel.is_audit_log || channel.archived_at) {
+      throw new BadRequestException("This channel can't have a background");
+    }
 
     let updated: ChatChannel;
     if (background === CHAT_BACKGROUND_PHOTO) {
       const photoPath = await this.assertUploadedPhoto(chapterId, storagePath);
+      // The announcing line is the actor's own post, so it needs the actor's
+      // own right to post there (read-only, private, role-gated, alumni).
+      await this.channelAccess.assertChannelAccess(
+        channel.id,
+        chapterId,
+        actorUserId,
+        'post',
+      );
       const line = await this.announce(
         channel.id,
         actorUserId,
         "Set this channel's background to a photo.",
       );
-      updated = await this.channelRepo.update(channel.id, chapterId, {
-        background: CHAT_BACKGROUND_PHOTO,
-        background_photo_path: photoPath,
-        background_message_id: line,
-      });
+      updated = await this.withdrawLineOnFailure(line, () =>
+        this.channelRepo.update(channel.id, chapterId, {
+          background: CHAT_BACKGROUND_PHOTO,
+          background_photo_path: photoPath,
+          background_message_id: line,
+        }),
+      );
     } else {
       updated = await this.channelRepo.update(channel.id, chapterId, {
         background: background ?? null,
@@ -195,16 +213,24 @@ export class ChatBackgroundService {
           'The chapter needs a default or #general channel to announce a photo background in',
         );
       }
+      await this.channelAccess.assertChannelAccess(
+        channel.id,
+        chapterId,
+        actorUserId,
+        'post',
+      );
       const line = await this.announce(
         channel.id,
         actorUserId,
         "Set the chapter's chat background to a photo.",
       );
-      await this.chapterRepo.update(chapterId, {
-        chat_background: CHAT_BACKGROUND_PHOTO,
-        chat_background_photo_path: photoPath,
-        chat_background_message_id: line,
-      });
+      await this.withdrawLineOnFailure(line, () =>
+        this.chapterRepo.update(chapterId, {
+          chat_background: CHAT_BACKGROUND_PHOTO,
+          chat_background_photo_path: photoPath,
+          chat_background_message_id: line,
+        }),
+      );
     } else {
       await this.chapterRepo.update(chapterId, {
         chat_background: background,
@@ -263,9 +289,15 @@ export class ChatBackgroundService {
     if (!isChatBackgroundKey(key)) return null;
     if (key !== CHAT_BACKGROUND_PHOTO)
       return { background: key, photo_url: null };
-    if (!photoPath || !messageId) return null;
-    const line = await this.messageRepo.findById(messageId);
-    if (!line || line.is_deleted) return null;
+    if (!photoPath) return null;
+    // Withdrawn only by a removal of the line itself (a soft delete: the
+    // sender's own, or an officer's on a report). A line that is gone because
+    // its whole channel was deleted (the FK nulled the id) leaves the photo
+    // standing; deleting #general shouldn't silently reset the chapter.
+    if (messageId) {
+      const line = await this.messageRepo.findById(messageId);
+      if (line?.is_deleted) return null;
+    }
     try {
       const url = await this.storageProvider.getSignedDownloadUrl(
         BRANDING_BUCKET,
@@ -315,6 +347,32 @@ export class ChatBackgroundService {
       );
     }
     return storagePath;
+  }
+
+  /**
+   * Run the setting's write; if it fails, soft-delete the line already
+   * posted, so a failed save doesn't leave "Set ... to a photo." behind (and
+   * a retry doesn't post a second one). Best effort: the write's error wins.
+   */
+  private async withdrawLineOnFailure<T>(
+    lineId: string,
+    write: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await write();
+    } catch (error) {
+      await this.messageRepo
+        .update(lineId, { is_deleted: true })
+        .catch((cleanup: unknown) =>
+          logThrowable(
+            this.logger,
+            'warn',
+            `Could not withdraw chat background line ${lineId}`,
+            cleanup,
+          ),
+        );
+      throw error;
+    }
   }
 
   /** Where a chapter-default photo is announced: the default channel, else #general. */

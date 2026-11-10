@@ -150,6 +150,8 @@ type ChannelMenuProps = {
   background?: {
     /** The channel's own choice; null when it follows the chapter default. */
     value: ChatBackgroundKey | null;
+    /** The chapter default, for the "Chapter default" swatch. */
+    inheritPreview?: ChatBackgroundKey;
     letters: string;
     saving: boolean;
     error: string | null;
@@ -494,6 +496,7 @@ export function ChannelMenu({
               <ChatBackgroundPicker
                 value={background.value}
                 allowInherit
+                inheritPreview={background.inheritPreview}
                 letters={background.letters}
                 saving={background.saving}
                 error={background.error}

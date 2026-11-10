@@ -29,12 +29,19 @@ function channel(over: Partial<ChatChannel> = {}): ChatChannel {
   };
 }
 
+interface SetupOptions {
+  chapter?: Record<string, unknown>;
+  stored?: string[];
+  line?: { id: string; is_deleted: boolean } | null;
+  channels?: ChatChannel[];
+}
+
 function setup({
   chapter = { chat_background: 'plain' },
   stored = [PHOTO],
   line = { id: 'msg-1', is_deleted: false },
   channels = [channel()],
-} = {}) {
+}: SetupOptions = {}) {
   const channelRepo = {
     findById: jest.fn(
       async (id: string) => channels.find((c) => c.id === id) ?? null,
@@ -50,6 +57,7 @@ function setup({
   const messageRepo = {
     findById: jest.fn(async () => line),
     create: jest.fn(async () => ({ id: 'msg-new' })),
+    update: jest.fn(async () => ({})),
   };
   const chapterRepo = {
     findById: jest.fn(async () => ({ id: CHAPTER, ...chapter })),
@@ -239,6 +247,97 @@ describe('ChatBackgroundService (#3973)', () => {
           undefined,
         ),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('who and where a line may be posted (#3973 review)', () => {
+    it.each([
+      ['the audit log', { is_audit_log: true }],
+      ['an archived channel', { archived_at: '2026-11-01T00:00:00Z' }],
+    ])('refuses %s', async (_label, over) => {
+      const { service, messageRepo, channelRepo } = setup({
+        channels: [channel(over)],
+      });
+      await expect(
+        service.setChannelBackground('ch-1', CHAPTER, 'actor', 'photo', PHOTO),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(messageRepo.create).not.toHaveBeenCalled();
+      expect(channelRepo.update).not.toHaveBeenCalled();
+    });
+
+    it("checks the actor's own right to post before announcing", async () => {
+      const { service, access, messageRepo } = setup();
+      access.assertChannelAccess.mockRejectedValueOnce(new Error('forbidden'));
+      await expect(
+        service.setChannelBackground('ch-1', CHAPTER, 'actor', 'photo', PHOTO),
+      ).rejects.toThrow('forbidden');
+      expect(access.assertChannelAccess).toHaveBeenCalledWith(
+        'ch-1',
+        CHAPTER,
+        'actor',
+        'post',
+      );
+      expect(messageRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('withdraws the posted line when saving the setting fails', async () => {
+      const { service, channelRepo, messageRepo } = setup();
+      channelRepo.update.mockRejectedValueOnce(new Error('db down'));
+      await expect(
+        service.setChannelBackground('ch-1', CHAPTER, 'actor', 'photo', PHOTO),
+      ).rejects.toThrow('db down');
+      expect(messageRepo.update).toHaveBeenCalledWith('msg-new', {
+        is_deleted: true,
+      });
+    });
+
+    it('keeps a photo whose line went with its deleted channel (the FK nulled the id)', async () => {
+      const { service } = setup({
+        chapter: {
+          chat_background: 'photo',
+          chat_background_photo_path: PHOTO,
+          chat_background_message_id: null,
+        },
+      });
+      await expect(service.getChapterDefault(CHAPTER)).resolves.toEqual({
+        background: 'photo',
+        photo_url: 'https://signed',
+      });
+    });
+
+    it('announces a default photo in #general when no usable default channel exists', async () => {
+      const { service, messageRepo } = setup({
+        channels: [
+          channel({
+            id: 'audit',
+            name: 'chapter-audit',
+            is_audit_log: true,
+            is_default: true,
+          }),
+          channel({
+            id: 'old',
+            name: 'old',
+            is_default: true,
+            archived_at: '2026-01-01T00:00:00Z',
+          }),
+          channel({ id: 'dm', name: 'general', type: 'DM' }),
+          channel({ id: 'gen', name: 'general' }),
+        ],
+      });
+      await service.setChapterDefault(CHAPTER, 'actor', 'photo', PHOTO);
+      expect(messageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ channel_id: 'gen' }),
+      );
+    });
+
+    it('refuses a default photo when there is nowhere to announce it', async () => {
+      const { service, chapterRepo } = setup({
+        channels: [channel({ name: 'house' })],
+      });
+      await expect(
+        service.setChapterDefault(CHAPTER, 'actor', 'photo', PHOTO),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(chapterRepo.update).not.toHaveBeenCalled();
     });
   });
 

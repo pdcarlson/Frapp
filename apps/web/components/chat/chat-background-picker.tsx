@@ -25,6 +25,7 @@ export type ChatBackgroundPick =
 export function ChatBackgroundPicker({
   value,
   allowInherit,
+  inheritPreview = "plain",
   letters,
   saving,
   error,
@@ -33,6 +34,11 @@ export function ChatBackgroundPicker({
   /** The stored choice; null when a channel follows the chapter default. */
   value: ChatBackgroundKey | null;
   allowInherit: boolean;
+  /**
+   * What "Chapter default" would draw, so its swatch shows it. A photo
+   * default previews as plain with the label saying so.
+   */
+  inheritPreview?: ChatBackgroundKey;
   /** The chapter's mark, for the Letters swatch. */
   letters: string;
   saving: boolean;
@@ -78,7 +84,16 @@ export function ChatBackgroundPicker({
         className="grid grid-cols-3 gap-1"
       >
         {allowInherit
-          ? swatch(null, "Chapter default", paintStyle("plain", letters))
+          ? swatch(
+              null,
+              inheritPreview === "photo"
+                ? "Chapter default (photo)"
+                : "Chapter default",
+              paintStyle(
+                inheritPreview === "photo" ? "plain" : inheritPreview,
+                letters,
+              ),
+            )
           : null}
         {CHAT_BACKGROUND_BUILT_INS.map((key) =>
           swatch(key, CHAT_BACKGROUND_LABELS[key], paintStyle(key, letters)),

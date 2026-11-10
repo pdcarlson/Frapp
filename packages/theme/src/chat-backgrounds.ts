@@ -1,7 +1,7 @@
 /**
  * How each built-in chat background looks (#3973), as data both renderers
  * read: web turns it into CSS (`apps/web/components/chat/chat-background.tsx`)
- * and mobile into SVG (`apps/mobile/components/chat/ChatBackground.tsx`). The
+ * and mobile into SVG (`apps/mobile/components/chat/chat-background.tsx`). The
  * values come from the chat concept page's backgrounds (Plain, Gold glow,
  * Midnight, Game day, Letters); the keys are `CHAT_BACKGROUND_BUILT_INS` in
  * `@repo/validation`.
@@ -13,6 +13,7 @@
  * (`chatBackgroundSamples`), so a new or brighter background fails there
  * rather than on a member's screen.
  */
+import { mixHex } from "@repo/color";
 import { signetDarkTokens } from "./signet";
 
 export type ChatBackgroundBuiltInKey =
@@ -151,23 +152,9 @@ export const CHAT_BACKGROUND_PAINTS: Record<
 export const CHAT_BACKGROUND_PHOTO_SCRIM_ALPHA = 0.88;
 export const CHAT_BACKGROUND_PHOTO_BLUR_PX = 24;
 
+/** `b` over `a` at `weightOfB`: what CSS composites. Shared with the AA guards. */
 function mix(a: string, b: string, weightOfB: number): string {
-  const pa = hexToRgb(a);
-  const pb = hexToRgb(b);
-  const ch = (x: number, y: number) =>
-    Math.round(x * (1 - weightOfB) + y * weightOfB)
-      .toString(16)
-      .padStart(2, "0");
-  return `#${ch(pa[0], pb[0])}${ch(pa[1], pb[1])}${ch(pa[2], pb[2])}`.toUpperCase();
-}
-
-function hexToRgb(hex: string): [number, number, number] {
-  const h = hex.replace("#", "");
-  return [
-    parseInt(h.slice(0, 2), 16),
-    parseInt(h.slice(2, 4), 16),
-    parseInt(h.slice(4, 6), 16),
-  ];
+  return mixHex(a, b, weightOfB);
 }
 
 /**
