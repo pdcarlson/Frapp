@@ -340,17 +340,22 @@ export function DashboardShell({
       the viewport with the toolbar hidden, so a shell that clips its overflow
       would put chat's composer under the toolbar while it shows.
 
-      `relative` is load-bearing (#4000). `overflow-hidden` clips only the
-      boxes whose containing block is this element or inside it. Without a
-      position here, every `absolute` box in the shell (each `sr-only` label,
-      a Radix control's hidden input) took `<body>` as its containing block
-      and sat at its unscrolled place in a long page. Nothing clipped it, so
-      the document grew past the viewport and scrolled the whole shell up,
-      leaving a black band below it.
+      `relative overflow-clip` is load-bearing, both halves (#4000). An
+      element's overflow clips only the boxes whose containing block is it or
+      inside it. Without a position here, every `absolute` box in the shell
+      (each `sr-only` label, a Radix control's hidden input) took the initial
+      containing block, the viewport, and sat at its unscrolled place in a
+      long page. Nothing clipped it, so the document grew past the viewport
+      and scrolled the whole shell up, leaving a black band below it.
+      `relative` makes this the containing block. `clip`, not `hidden`,
+      because a `hidden` box is still a scroll container: those same boxes
+      became its scrollable overflow, and the skip link, a focused control or
+      a `scrollIntoView` scrolled the shell instead, with no way for a wheel
+      to scroll it back. A `clip` box cannot be scrolled at all.
     */
     <div
       data-dashboard-shell=""
-      className="relative flex h-dvh overflow-hidden bg-background"
+      className="relative flex h-dvh overflow-clip bg-background"
     >
       <ChapterWizardGate />
       {/* A member whose roles grant nothing (#3236). */}

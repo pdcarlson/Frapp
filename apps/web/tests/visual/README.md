@@ -11,8 +11,8 @@ suites, all in the **required** `web-responsive-floor` job:
 | `pre-auth-fit.spec.ts` | `/sign-in` and `/sign-up` fit a 1280×650 window without scrolling |
 | `document-fit.spec.ts` | no `DASHBOARD_ROUTES` entry scrolls the document at 1280×420 (#4000) |
 
-The two floor suites read `routes.ts`. Add a screen there and the matching spec
-picks it up. `nav-fit.spec.ts` measures one route, because the sidebar is the
+The two floor suites and `document-fit.spec.ts` read `routes.ts`. Add a screen
+there and those specs pick it up. `nav-fit.spec.ts` measures one route, because the sidebar is the
 same on every route.
 
 **Why two floor suites and not one list.** The dashboard suite asserts each route did
