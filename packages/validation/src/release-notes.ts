@@ -41,14 +41,15 @@ export type ReleaseNote = {
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
   {
     date: "2026-11-10",
-    title: "Status and Documents on your phone, and search that narrows down",
+    title: "Status on your phone, easier ways to find a document, and search that narrows down",
     changes: [
       "You can now set your status from your phone too, not only on the web.",
-      "On your phone, Documents can be searched, sorted, and filtered, and you can delete a file if your role allows it. On phone and web alike you can filter by file type.",
+      "On your phone, Documents search finds more and forgives typos, you can sort the list, and you can delete a file if your role allows it.",
+      "Documents can be filtered by file type on your phone and on the web, and on your phone also by who added a file and when.",
       "A notification you read on one device is read on your others, and opening a page clears the notifications that point to it.",
       "On the web, chat search narrows down by who sent a message, where, when, and what it has in it.",
-      "On the web, Points, Billing, and Reports export as CSV, Excel, or a copy ready to paste into Google Sheets.",
-      "A task's due date takes just a month and a day, with no year to set.",
+      "On the web, Points, Billing, and Reports export as CSV, Excel, or a copy ready to paste into Google Sheets, wherever your role lets you export.",
+      "On the web, a task's due date takes just a month and a day, with no year to set.",
       "On the web, an event shows you your own check-in, long filters in the Directory, Backwork, and Documents can be searched, and the Directory's year filter reads Graduation year.",
     ],
   },
