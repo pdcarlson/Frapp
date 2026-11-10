@@ -419,6 +419,9 @@ describe("landing page structure", () => {
       ["get-started", "hero"],
       ["join-chapter", "hero"],
       ["get-started", "pricing"],
+      // Not in the Spec sheet's §5: the Pro card's trial button, added by
+      // #3869 and recorded in `spec/ui/landing/reference/README.md`.
+      ["start-free-trial", "pricing"],
       ["get-started", "cta-band"],
       ["log-in", "cta-band"],
       ["log-in", "footer"],
@@ -446,6 +449,12 @@ describe("landing page structure", () => {
     expect(pricing.indexOf('cta="get-started"')).toBeLessThan(
       pricing.indexOf('cta="start-free-trial"'),
     );
+    // The label names the trial `positioning.md` commits to, and the page
+    // hands the section the trial URL rather than plain sign-up, which ends on
+    // /chat instead of /billing.
+    expect(flatten(pricing)).toMatch(/>\s*Start 14-day trial\s*</);
+    expect(renderedPage).toMatch(/<PricingSection\b[^>]*\btrialUrl=\{trialUrl\}/);
+    expect(renderedPage).toMatch(/\{[^}]*\btrialUrl\b[^}]*\}\s*=\s*landingAuthUrls\(\)/);
   });
 });
 

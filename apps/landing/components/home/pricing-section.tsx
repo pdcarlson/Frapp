@@ -133,8 +133,9 @@ export function PricingSection({
             </ul>
             {/*
               The trial button (#3869): sign-up, then the web app's Billing
-              page, where checkout opens the 14-day trial. Someone already
-              signed in goes straight to Billing. It replaced "Upgrade any time
+              page, where checkout opens the 14-day trial for a chapter that
+              has never subscribed (the line beside the cards says once per
+              chapter). Someone already signed in goes straight to Billing. It replaced "Upgrade any time
               from Billing in the web app.", which named the place and offered
               no way to it.
             */}

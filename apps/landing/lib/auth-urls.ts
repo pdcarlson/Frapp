@@ -23,7 +23,9 @@ const JOIN_PATH = "/join";
 /*
  * Where the Pro card's trial button lands after sign-up (#3869). The web app's
  * `/billing` is the one place checkout starts (it is web-only, a store
- * commitment in `spec/behavior/onboarding.md`). A new visitor meets the
+ * commitment in `spec/behavior/onboarding.md`), and it offers whatever fits the
+ * chapter's status: the trial for a chapter that has never subscribed (Stripe
+ * grants it once per chapter), a restart without one for a chapter that has. A new visitor meets the
  * chapter wizard first, which itself ends on `/billing`; someone already signed
  * in skips sign-up, because the web proxy forwards an authenticated visit to an
  * auth route straight to its `redirectTo`.
