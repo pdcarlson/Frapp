@@ -51,6 +51,23 @@ export class MemberProfileDto {
   email: string;
 
   @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      "The member's pledge class, one of `GET /v1/pledge-classes`, or null.",
+  })
+  pledge_class_id: string | null;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      "The member's order within their pledge class, or chapter-wide (a roll or bond number), set by officers; or null.",
+  })
+  order_number: number | null;
+
+  @ApiProperty({
     description:
       "Whether the member holds the chapter's Alumni system role, resolved " +
       'the same way GET /alumni resolves it — a directory splitting actives ' +

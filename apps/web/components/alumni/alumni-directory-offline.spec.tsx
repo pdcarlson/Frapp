@@ -81,6 +81,7 @@ function isBaseKey(filters: Filters) {
 const committedFilters: Array<Filters> = [];
 
 vi.mock("@repo/hooks", () => ({
+  useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
   useAlumni: (filters: Filters) => {
     committedFilters.push(filters);
     return isBaseKey(filters) ? baseRead : filteredRead;

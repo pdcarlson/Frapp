@@ -81,6 +81,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useAccessibleChapters: () => ({ data: [], isSuccess: true }),
     useCurrentChapter: () => ({ data: mockChapter.value, isError: false }),
     useCurrentUser: () => ({ data: { display_name: "Paul Carlson" } }),
+    useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
     useSearch: () => ({ data: undefined, isFetching: false }),
     useChannels: () => ({ data: mockChannels.value }),
     SEARCH_MIN_QUERY_LENGTH: 3,
