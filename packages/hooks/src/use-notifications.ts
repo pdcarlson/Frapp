@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   type QueryClient,
   useMutation,
@@ -417,13 +417,26 @@ function withPendingReads<T>(data: T, pending: ReadonlyMap<string, string>): T {
   ) as T;
 }
 
-function chatChannelOf(row: CachedNotificationRow): string | null {
+function targetOf(row: CachedNotificationRow): Record<string, unknown> | null {
   const data = row.data;
   if (!data || typeof data !== "object") return null;
   const target = (data as Record<string, unknown>).target;
-  if (!target || typeof target !== "object") return null;
-  const { screen, channelId } = target as Record<string, unknown>;
+  return target && typeof target === "object"
+    ? (target as Record<string, unknown>)
+    : null;
+}
+
+function chatChannelOf(row: CachedNotificationRow): string | null {
+  const target = targetOf(row);
+  if (!target) return null;
+  const { screen, channelId } = target;
   return screen === "chat" && typeof channelId === "string" ? channelId : null;
+}
+
+/** The screen a row points at (`data.target.screen`), or null for none. */
+function targetScreenOf(row: CachedNotificationRow): string | null {
+  const screen = targetOf(row)?.screen;
+  return typeof screen === "string" ? screen : null;
 }
 
 /**
@@ -528,6 +541,106 @@ export function useMarkNotificationRead({
       return refetch.then(() => invalidateNotificationLists(queryClient));
     },
   });
+}
+
+/** Identifies {@link useMarkNotificationsRead}, for Sentry grouping (#3393). */
+export const markNotificationsReadMutationKey = [
+  "notifications",
+  "read-many",
+] as const;
+
+/**
+ * Mark the member's unread notifications read in one request (#3929):
+ * `POST /v1/notifications/read`. Called with no screens it is "Mark all
+ * read"; with screens it reads only the rows that point at them.
+ *
+ * The server answers with the instant it stamped. On success that stamp goes
+ * onto the matching cached rows created at or before it, so the dots clear at
+ * once, and the lists refetch to reconcile. A row that arrived after the
+ * request began keeps its dot, as it does on the server.
+ */
+export function useMarkNotificationsRead() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: markNotificationsReadMutationKey,
+    mutationFn: async (screens?: readonly string[]) => {
+      const result = await client.POST("/v1/notifications/read", {
+        body: screens && screens.length > 0 ? { screens: [...screens] } : {},
+      });
+      throwUnlessOk(result);
+      return result.data;
+    },
+    onSuccess: (result, screens) => {
+      const readAt = result?.read_at;
+      if (typeof readAt === "string") {
+        const through = Date.parse(readAt);
+        markCachedRowsRead(
+          queryClient,
+          (row) => {
+            if (screens && screens.length > 0) {
+              const screen = targetScreenOf(row);
+              if (screen === null || !screens.includes(screen)) return false;
+            }
+            const createdAt =
+              typeof row.created_at === "string"
+                ? Date.parse(row.created_at)
+                : Number.NaN;
+            // A row with no readable date is left to the refetch.
+            return createdAt <= through;
+          },
+          readAt,
+        );
+      }
+      return invalidateNotificationLists(queryClient);
+    },
+  });
+}
+
+/**
+ * Mark read the notifications that point at a screen the member is looking
+ * at (#3929): an event notice is seen once Events is open, on whichever
+ * device, the way a chat notice is seen once its channel is.
+ *
+ * `screens` are `data.target.screen` values (`events`, `tasks`). Nothing is
+ * sent unless the cached list shows an unread row for one of them, and each
+ * distinct set of such rows is tried once, so a failed write is not retried
+ * in a loop and the API's write budget is spent only when there is something
+ * to clear. Chat rows are not handled here: reading the channel clears them.
+ */
+export function useMarkNotificationScreensSeen(
+  screens: readonly string[],
+  { enabled = true }: { enabled?: boolean } = {},
+): void {
+  const { data } = useNotifications();
+  const { mutate } = useMarkNotificationsRead();
+  const screensKey = screens.join(",");
+  const unreadKey = useMemo(() => {
+    if (!screensKey || !Array.isArray(data)) return "";
+    const wanted = screensKey.split(",");
+    return (data as unknown[])
+      .filter((row): row is CachedNotificationRow => {
+        if (!row || typeof row !== "object") return false;
+        const candidate = row as CachedNotificationRow;
+        const screen = targetScreenOf(candidate);
+        return (
+          candidate.read_at === null &&
+          screen !== null &&
+          wanted.includes(screen)
+        );
+      })
+      .map((row) => String(row.id))
+      .sort()
+      .join(",");
+  }, [data, screensKey]);
+  const attempted = useRef("");
+  useEffect(() => {
+    if (!enabled || !unreadKey) return;
+    const attempt = `${screensKey}|${unreadKey}`;
+    if (attempted.current === attempt) return;
+    attempted.current = attempt;
+    mutate(screensKey.split(","));
+  }, [enabled, mutate, screensKey, unreadKey]);
 }
 
 /**
