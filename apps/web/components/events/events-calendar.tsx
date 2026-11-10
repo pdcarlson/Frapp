@@ -10,7 +10,7 @@ import { compactControlClassName } from "@/components/shared/table-controls";
 import { InlineNote } from "@/components/shared/inline-note";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { formatTimeOfDay, localIsoDate, parseInstant } from "@repo/formatting";
-import { useElementWidth } from "@/lib/use-element-width";
+import { useIsNarrow } from "@/lib/use-is-narrow";
 import { attendanceFieldsOf, eventDefaultAttendance } from "@repo/validation";
 
 type EventRow = Record<string, unknown>;
@@ -19,8 +19,8 @@ type EventsCalendarProps = {
   events: EventRow[];
   onSelectEvent: (event: EventRow) => void;
   /**
-   * Fires when an officer clicks a day's date number to create an event on
-   * that day. `disabled` mirrors `SubscriptionGate.controlProps().disabled` —
+   * Fires when an officer clicks a day's date number (the compact month: the
+   * picked day's New event) to create an event on that day. `disabled` mirrors `SubscriptionGate.controlProps().disabled` —
    * the caller is responsible for gating; this component only renders the
    * disabled state it's given so a lapsed chapter still sees the day it
    * clicked, not a silently inert control.
@@ -73,6 +73,36 @@ const MAX_VISIBLE_EVENTS_PER_DAY = 3;
  */
 const COMPACT_BELOW_WIDTH = 600;
 const MAX_DOTS_PER_DAY = 3;
+
+/**
+ * What both months draw for one event, so the wide grid's chip and the
+ * compact month's row name it, mark it and badge its series the same way.
+ */
+function calendarEventFacts(event: EventRow) {
+  const eventName = String(event.name ?? "Untitled event");
+  // Required of everyone by default, as the list's badge.
+  const isMandatory =
+    eventDefaultAttendance(attendanceFieldsOf(event)) === "required";
+  // The time of day only: the day is the cell's (or the day list's) own.
+  const clockLabel = formatTimeOfDay(event.start_time);
+  return {
+    eventId: String(event.id ?? event.name ?? "unknown-event"),
+    eventName,
+    isMandatory,
+    // The series head carries `recurrence_rule`; every generated occurrence
+    // carries `parent_event_id` instead (and a null `recurrence_rule`), see
+    // `event-series.service.ts`. Distinct icons so the two don't read as the
+    // same thing.
+    isSeriesHead:
+      typeof event.recurrence_rule === "string" &&
+      event.recurrence_rule.length > 0,
+    isSeriesInstance:
+      typeof event.parent_event_id === "string" &&
+      event.parent_event_id.length > 0,
+    clockLabel,
+    viewLabel: `View ${eventName}${clockLabel ? `, ${clockLabel}` : ""}${isMandatory ? ", mandatory" : ""}`,
+  };
+}
 
 export function startOfMonth(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), 1);
@@ -129,9 +159,9 @@ export function EventsCalendar({
   // keys, so navigating away and back naturally collapses everything.
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
   // Measured, not a viewport query: beside chat the page is narrow while the
-  // window is wide. Unmeasured (first paint, tests) draws the full month.
-  const [sectionRef, sectionWidth] = useElementWidth<HTMLElement>();
-  const compact = sectionWidth !== null && sectionWidth < COMPACT_BELOW_WIDTH;
+  // window is wide. Unmeasured (the server, tests) draws the full month.
+  const [sectionRef, narrow] = useIsNarrow<HTMLElement>(COMPACT_BELOW_WIDTH);
+  const compact = narrow === true;
   // The compact month's picked day. Kept even when the month changes; a key
   // outside the shown month falls back below, so it needs no reset.
   const [pickedKey, setPickedKey] = useState<string | null>(null);
@@ -183,6 +213,14 @@ export function EventsCalendar({
   function goToToday() {
     onMonthAnchorChange(startOfMonth(new Date()));
     setPickedKey(todayKey);
+  }
+  // A day from the month before or after (the grid's leading and trailing
+  // days carry their dots too) opens its own month, as a phone calendar does.
+  function pickDay(day: Date) {
+    if (day.getMonth() !== monthAnchor.getMonth()) {
+      onMonthAnchorChange(startOfMonth(day));
+    }
+    setPickedKey(localDayKey(day));
   }
 
   // The compact month's day: the one picked if it is in this month, else
@@ -237,7 +275,9 @@ export function EventsCalendar({
             above the toolbar says why the days are off.
           */}
           {canCreate && !createDisabled
-            ? stateMicrocopy.events.calendarFirstEvent
+            ? compact
+              ? stateMicrocopy.events.calendarFirstEventCompact
+              : stateMicrocopy.events.calendarFirstEvent
             : stateMicrocopy.events.calendarNothingYet}
         </InlineNote>
       )}
@@ -249,7 +289,7 @@ export function EventsCalendar({
           todayKey={todayKey}
           eventsByDay={eventsByDay}
           shownDayKey={shownDayKey}
-          onPickDay={setPickedKey}
+          onPickDay={pickDay}
           onSelectEvent={onSelectEvent}
           onCreateOnDay={onCreateOnDay}
           canCreate={canCreate}
@@ -352,34 +392,21 @@ export function EventsCalendar({
 
                   <div className="flex flex-col gap-1">
                     {visibleEvents.map((event) => {
-                      const eventId = String(
-                        event.id ?? event.name ?? "unknown-event",
-                      );
-                      const eventName = String(event.name ?? "Untitled event");
-                      // Required of everyone by default, as the list's badge.
-                      const isMandatory =
-                        eventDefaultAttendance(attendanceFieldsOf(event)) ===
-                        "required";
-                      // The series head carries `recurrence_rule`; every
-                      // generated occurrence carries `parent_event_id` instead
-                      // (and a null `recurrence_rule`) — see
-                      // `event-series.service.ts`. Distinct icons so the two don't
-                      // read as the same thing on the grid.
-                      const isSeriesHead =
-                        typeof event.recurrence_rule === "string" &&
-                        event.recurrence_rule.length > 0;
-                      const isSeriesInstance =
-                        typeof event.parent_event_id === "string" &&
-                        event.parent_event_id.length > 0;
-                      // The time of day only: the day is the cell's own.
-                      const clockLabel = formatTimeOfDay(event.start_time);
+                      const {
+                        eventId,
+                        eventName,
+                        isMandatory,
+                        isSeriesHead,
+                        isSeriesInstance,
+                        viewLabel,
+                      } = calendarEventFacts(event);
 
                       return (
                         <button
                           key={eventId}
                           type="button"
                           title={eventName}
-                          aria-label={`View ${eventName}${clockLabel ? `, ${clockLabel}` : ""}${isMandatory ? ", mandatory" : ""}`}
+                          aria-label={viewLabel}
                           className={cn(
                             "flex items-center gap-1 truncate rounded-xs border-l-2 bg-surface-1 px-1.5 py-1 text-left text-[11px] font-semibold text-foreground transition-colors",
                             FOCUS_RING,
@@ -440,7 +467,7 @@ type CompactMonthProps = {
   todayKey: string;
   eventsByDay: Map<string, EventRow[]>;
   shownDayKey: string;
-  onPickDay: (key: string) => void;
+  onPickDay: (day: Date) => void;
 } & Pick<
   EventsCalendarProps,
   | "onSelectEvent"
@@ -521,7 +548,7 @@ function CompactMonth({
                       ? "bg-background hover:bg-card-hover"
                       : "bg-surface-1 hover:bg-card-hover",
                 )}
-                onClick={() => onPickDay(key)}
+                onClick={() => onPickDay(day)}
               >
                 <span
                   className={cn(
@@ -574,28 +601,26 @@ function CompactMonth({
         </div>
         {shownEvents.length === 0 ? (
           <p className="px-2 text-sm text-muted-foreground">
-            Nothing on this day.
+            {stateMicrocopy.events.calendarDayEmpty}
           </p>
         ) : (
           <ul role="list" className="space-y-1">
             {shownEvents.map((event) => {
-              const eventId = String(event.id ?? event.name ?? "unknown-event");
-              const eventName = String(event.name ?? "Untitled event");
-              const isMandatory =
-                eventDefaultAttendance(attendanceFieldsOf(event)) ===
-                "required";
-              const isSeriesHead =
-                typeof event.recurrence_rule === "string" &&
-                event.recurrence_rule.length > 0;
-              const isSeriesInstance =
-                typeof event.parent_event_id === "string" &&
-                event.parent_event_id.length > 0;
-              const clockLabel = formatTimeOfDay(event.start_time);
+              const {
+                eventId,
+                eventName,
+                isMandatory,
+                isSeriesHead,
+                isSeriesInstance,
+                clockLabel,
+                viewLabel,
+              } = calendarEventFacts(event);
               return (
                 <li key={eventId}>
                   <button
                     type="button"
-                    aria-label={`View ${eventName}${clockLabel ? `, ${clockLabel}` : ""}${isMandatory ? ", mandatory" : ""}`}
+                    title={eventName}
+                    aria-label={viewLabel}
                     className={cn(
                       "flex min-h-11 w-full items-center gap-3 rounded-md border-l-2 px-2 py-1.5 text-left transition-colors",
                       FOCUS_RING,

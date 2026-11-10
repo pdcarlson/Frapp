@@ -240,6 +240,78 @@ describe("EventsCalendar on a narrow page (#4022)", () => {
     expect(created.getMonth()).toBe(10);
   });
 
+  it("opens on today in the current month", () => {
+    stubCalendarWidth(480);
+    const now = new Date();
+    render(
+      <EventsCalendar
+        events={[]}
+        monthAnchor={startOfMonth(now)}
+        onMonthAnchorChange={vi.fn()}
+        onSelectEvent={vi.fn()}
+        onCreateOnDay={vi.fn()}
+        canCreate
+        chapterHasEvents
+        createDisabled={false}
+      />,
+    );
+
+    const pressed = screen
+      .getAllByRole("button", { pressed: true })
+      .map((button) => button.getAttribute("aria-label"));
+    const todayLabel = now.toLocaleDateString(undefined, {
+      month: "long",
+      day: "numeric",
+    });
+    expect(pressed).toEqual([`${todayLabel}, no events`]);
+  });
+
+  it("opens the next month from one of its days on the grid", () => {
+    stubCalendarWidth(480);
+    const onMonthAnchorChange = vi.fn();
+    // November 2026 starts on a Sunday and has 30 days, so the grid ends
+    // with December 1–12.
+    render(
+      <EventsCalendar
+        events={[]}
+        monthAnchor={anchor}
+        onMonthAnchorChange={onMonthAnchorChange}
+        onSelectEvent={vi.fn()}
+        onCreateOnDay={vi.fn()}
+        canCreate
+        chapterHasEvents
+        createDisabled={false}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "December 3, no events" }),
+    );
+    expect(onMonthAnchorChange).toHaveBeenCalledWith(new Date(2026, 11, 1));
+  });
+
+  it("tells a creator with no events to pick a day, then New event", () => {
+    stubCalendarWidth(480);
+    render(
+      <EventsCalendar
+        events={[]}
+        monthAnchor={startOfMonth(new Date())}
+        onMonthAnchorChange={vi.fn()}
+        onSelectEvent={vi.fn()}
+        onCreateOnDay={vi.fn()}
+        canCreate
+        chapterHasEvents={false}
+        createDisabled={false}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "Pick a day, then New event to schedule the first event.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("offers no New event to a viewer who cannot create", () => {
     stubCalendarWidth(480);
     render(
