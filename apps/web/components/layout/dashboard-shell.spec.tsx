@@ -1,5 +1,7 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { renderToString } from "react-dom/server";
+import { hydrateRoot } from "react-dom/client";
 
 /*
  * The assembled shell had no unit coverage at all before this lane — the
@@ -662,6 +664,121 @@ describe("DashboardShell", () => {
       mockPathname.value = "/events";
       rerender(<DashboardShell>events</DashboardShell>);
       expect(column(container)).toHaveClass("w-60");
+    });
+
+    it("paints the forced rail on the server, by CSS, and keeps that column through hydration (#4024)", async () => {
+      // The server knows the route and the chat cookie, not the width. It
+      // used to paint the full nav, which at 1100px clipped ~130px off the
+      // tool page until hydration snapped the nav to its rail.
+      mockPathname.value = "/events";
+      const host = document.createElement("div");
+      host.innerHTML = renderToString(<DashboardShell>events</DashboardShell>);
+      document.body.appendChild(host);
+      try {
+        const served = Array.from(
+          host.querySelectorAll<HTMLElement>("[data-nav-column]"),
+        );
+        expect(served).toHaveLength(2);
+        const [full, rail] = served;
+        // Both answers, the band's CSS picking one: the rail only from 1056
+        // to 1239px, the full nav everywhere else.
+        expect(full).toHaveClass("w-60", "min-[1056px]:max-[1240px]:hidden");
+        expect(rail).toHaveClass(
+          "w-14",
+          "hidden",
+          "min-[1056px]:max-[1240px]:flex",
+        );
+        expect(rail).not.toHaveClass("flex");
+
+        // Hydrated at 1100px: only the rail stays, the same node, so the
+        // frame the server painted is the frame that stays.
+        setWindowWidth(1100);
+        const root = await act(async () =>
+          hydrateRoot(host, <DashboardShell>events</DashboardShell>),
+        );
+        const left = host.querySelectorAll<HTMLElement>("[data-nav-column]");
+        expect(left).toHaveLength(1);
+        expect(left[0]).toBe(rail);
+        expect(left[0]).toHaveClass("w-14", "flex");
+        expect(left[0]).not.toHaveClass("hidden");
+        act(() => root.unmount());
+      } finally {
+        host.remove();
+      }
+    });
+
+    it("hydrates to the full nav, the same node, where the window has room for it", async () => {
+      mockPathname.value = "/events";
+      const host = document.createElement("div");
+      host.innerHTML = renderToString(<DashboardShell>events</DashboardShell>);
+      document.body.appendChild(host);
+      try {
+        const full = host.querySelector<HTMLElement>("[data-nav-column]");
+        setWindowWidth(1440);
+        const root = await act(async () =>
+          hydrateRoot(host, <DashboardShell>events</DashboardShell>),
+        );
+        const left = host.querySelectorAll<HTMLElement>("[data-nav-column]");
+        expect(left).toHaveLength(1);
+        expect(left[0]).toBe(full);
+        expect(left[0]).toHaveClass("w-60");
+        expect(left[0]!.className).not.toContain("max-[1240px]");
+        act(() => root.unmount());
+      } finally {
+        host.remove();
+      }
+    });
+
+    it("draws one column on the server where no rail can be forced", () => {
+      // Chat closed beside a tool, and chat alone on /chat: the full nav at
+      // every width, so no band CSS and no second column.
+      for (const [path, chatOpen] of [
+        ["/events", false],
+        ["/chat", true],
+      ] as const) {
+        mockPathname.value = path;
+        const host = document.createElement("div");
+        host.innerHTML = renderToString(
+          <DashboardShell defaultChatOpen={chatOpen}>{null}</DashboardShell>,
+        );
+        const served = host.querySelectorAll("[data-nav-column]");
+        expect(served, path).toHaveLength(1);
+        expect(served[0]!.className, path).not.toContain("max-[1240px]");
+      }
+    });
+
+    it("keeps the member's own rail through hydration in the band", async () => {
+      mockPathname.value = "/events";
+      const host = document.createElement("div");
+      const shell = <DashboardShell defaultNavCollapsed>events</DashboardShell>;
+      host.innerHTML = renderToString(shell);
+      document.body.appendChild(host);
+      try {
+        const served = host.querySelector<HTMLElement>("[data-nav-column]");
+        setWindowWidth(1100);
+        const root = await act(async () => hydrateRoot(host, shell));
+        const left = host.querySelectorAll<HTMLElement>("[data-nav-column]");
+        expect(left).toHaveLength(1);
+        expect(left[0]).toBe(served);
+        expect(left[0]).toHaveClass("w-14");
+        act(() => root.unmount());
+      } finally {
+        host.remove();
+      }
+    });
+
+    it("narrows the same nav column, without remounting it, when chat opens in the band", () => {
+      // A remount would drop focus from the Chat row the member just pressed.
+      setWindowWidth(1100);
+      mockPathname.value = "/events";
+      const { container } = render(
+        <DashboardShell defaultChatOpen={false}>events</DashboardShell>,
+      );
+      const before = column(container);
+      expect(before).toHaveClass("w-60");
+      fireEvent.click(within(nav()).getByRole("button", { name: "Chat" }));
+      expect(column(container)).toBe(before);
+      expect(before).toHaveClass("w-14");
     });
 
     it("leaves the Settings row a link back to Settings on a Settings tool's page", () => {

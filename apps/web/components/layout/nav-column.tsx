@@ -32,6 +32,8 @@ type NavColumnProps = {
   chatRow?: { onSelect: () => void; open: boolean };
   /** Closes the open tool, from the side-by-side width up. */
   onCloseTool?: () => void;
+  /** Extra classes on the column, merged last (the shell's band visibility). */
+  className?: string;
 };
 
 export function NavColumn({
@@ -42,6 +44,7 @@ export function NavColumn({
   pathname,
   chatRow,
   onCloseTool,
+  className,
 }: NavColumnProps) {
   const highlighted = useNavHighlights();
 
@@ -51,6 +54,7 @@ export function NavColumn({
       className={cn(
         "box-border flex h-full shrink-0 flex-col border-r border-border bg-surface-1",
         collapsed ? "w-14" : "w-60",
+        className,
       )}
     >
       {/*
