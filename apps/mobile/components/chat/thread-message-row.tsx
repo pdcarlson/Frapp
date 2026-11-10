@@ -64,6 +64,8 @@ export interface ThreadMessageRowProps {
    * avatar and author line, and whether a day divider goes above it.
    */
   startsRun: boolean;
+  /** The run's last row (Bubbles draws the avatar under it). Defaults to `true`. */
+  endsRun?: boolean;
   startsDay: boolean;
   /**
    * Resolved before any row mounts (#2250): `chat-thread.tsx` withholds the
@@ -122,6 +124,7 @@ export function ThreadMessageRow(props: ThreadMessageRowProps) {
 function ThreadMessageRowBody({
   row,
   startsRun,
+  endsRun,
   viewerId,
   nameFor,
   roleColorFor,
@@ -147,6 +150,7 @@ function ThreadMessageRowBody({
     const senderId = cached.sender_id;
     return (
       <BlockedMessageTombstone
+        channelId={cached.channel_id}
         senderName={senderId ? nameFor(senderId) : null}
         canUnblock={tombstoneCanUnblock(cached, blockState)}
         onUnblock={() => {
@@ -262,6 +266,7 @@ function ThreadMessageRowBody({
       roleColorFor={roleColorFor}
       avatarFor={avatarFor}
       startsRun={startsRun}
+      endsRun={endsRun}
       replyParent={quotedParent}
       replyParentHidden={replyParentHidden}
       onRetry={onRetry}

@@ -425,9 +425,13 @@ Alternatives weighed and rejected:
 - **Own messages right-aligned without a fill.** A right-aligned run with no fill to anchor it reads as a layout bug. The owner chose the left.
 - **A density toggle.** Per-user density was [#2252](https://github.com/pdcarlson/Frapp/issues/2252), parked; the compact layout was the only one. *(Corrected 2026-11-06: the owner asked for the toggle, so members now pick a density, see [§ Density](#density) below. The layout this section describes is the default, **cozy**. Its name here, "compact layout", predates the choice and means bubble-free, not the `compact` density.)*
 
+> *(Reopened 2026-11-10 as an opt-in: Paul, on [#3787](https://github.com/pdcarlson/Frapp/issues/3787#issuecomment-6771881257), "it's just an opt-in, right? You know, by default it's still Compact … I'm not opposed to that." ("Compact" there means today's bubble-free layout; the default density is cozy.) Bubbles is now a third density beside cozy and compact, see [§ Bubbles](#bubbles). The reasons above stay the record of why it is not the default.)*
+
 #### Density
 
 > **Owner decision, 2026-11-06 (Paul, [#2252](https://github.com/pdcarlson/Frapp/issues/2252)): "can we let users change their chat density in their settings?"** Two densities, named as Discord names them, on web and mobile alike. The vocabulary lives once, in `@repo/chat-core/density`.
+>
+> Changed in #3787 by `whewitt-frapp`, 2026-11-10: a third density, bubbles (§ [Bubbles](#bubbles)), on Paul's opt-in OK.
 
 | | Cozy (default) | Compact |
 |---|---|---|
@@ -442,9 +446,30 @@ A body that opens with a code block, a list or a quote takes mobile's lead on a 
 
 Everything else on the row (body type, reactions, trailing markers, delivery state, day dividers, grouping) is the same in both, and the name keeps its role color in both. The rows drawn beside messages follow the density too: the thread skeletons on both clients (compact's shapes are a time bar and a name bar leading one body bar), the blocked-member tombstone (its line stays in the body column) and audit lines. A web audit line keeps its shield in compact's time gutter; a mobile one has no gutter in compact, so it draws no shield and its words start at the row's inset with the message text.
 
-**Where it is set.** Web: Profile, a **Chat density** section of two radio cards, each a drawing of the thread in shapes (no made-up names or text), saving on the click. Mobile: Settings, a **Chat** section with one **Chat density** row whose value names the current choice and opens a sheet of the same two cards; a tap saves and closes. The thread redraws at once on both.
+**Where it is set.** Web: Profile, a **Chat density** section of three radio cards (cozy, compact, bubbles; added 2026-11-10), each a drawing of the thread in shapes (no made-up names or text), saving on the click. Mobile: Settings, a **Chat** section with one **Chat density** row whose value names the current choice and opens a sheet of the same three cards; a tap saves and closes. The thread redraws at once on both.
 
 **Per device, not per account.** Both controls say so ("Applies on this browser", "Applies on this phone"); the rule and its reason are the [chat README's](../../behavior/chat/README.md#chat-density) § Chat density.
+
+#### Bubbles
+
+> **Owner OK, 2026-11-10 (Paul, [#3787](https://github.com/pdcarlson/Frapp/issues/3787#issuecomment-6771881257)):** bubbles may come back as an opt-in, with the default unchanged. Shape picked by Winston (`whewitt-frapp`) on #3787. Overridden in [#3787](https://github.com/pdcarlson/Frapp/issues/3787) by `whewitt-frapp`, 2026-11-10; this narrows the 2026-09-29 rejection above to "not the default".
+
+The third density, `bubbles` in `@repo/chat-core/density`, on web and mobile alike:
+
+| Part | Spec |
+| ---- | ---- |
+| Sides | Others' messages on the left, the viewer's own on the right. |
+| Fill | Theirs: `--card` with its hairline (load-bearing, § Surfaces). Yours: `accent-primary` with `on-primary` text, the accent engine's AA-by-construction pair ([accent-engine.md](accent-engine.md) §8). Links inherit the text color and keep their underline; the mention chip and inline code paint their own opaque pairs, never an alpha tint over the accent. A send in flight dims the whole bubble (60%) rather than graying its text. |
+| Shape | Radius 18; inside a run, the speaker-side corner toward a neighbor tucks to 6 (top on a follow-on, bottom on all but the last). Padding 12 horizontal, 6 vertical. At most 75% of the row on web (85% under 640px, 36rem cap) and 80% on mobile. |
+| Name and time | Once, above the run's first bubble: the name (role color rule as cozy) then the time, for others; the time alone for yours. |
+| Avatar | Once, beside the run's last bubble (`endsRun` in `@repo/chat-core/grouping`); the 32px gutter is held on every row of theirs. Yours draws none. |
+| Reactions | On the bubble's lower corner, the speaker's side, overlapping it by 8. |
+| No bubble | A card frames itself and an attachment-only message draws its photo bare, as in cozy; their markers take a line of their own. The open editor fills the column unbubbled. Audit lines keep their one quiet line. |
+| Spacing | A run starts 12 below the row above; a stacked bubble 2. |
+
+Not yet built: a read receipt under the viewer's latest message, which needs an endpoint that returns other members' read positions first (today `POST /v1/channels/:id/read` only records the caller's own; [#4040](https://github.com/pdcarlson/Frapp/issues/4040)), and the per-channel "Always formal" lock (#3787, slice 2).
+
+**Per channel.** A member can pin one channel to any density on this device from the channel's menu ([chat README § Chat density](../../behavior/chat/README.md#chat-density)).
 
 #### Row anatomy
 
@@ -530,7 +555,7 @@ Mobile edits through the actions sheet ([screens.md](../mobile/screens.md) s05, 
   - *(Corrected 2026-09-29: the cluster used to attach to the bubble, not the lane. It rode a zero-height `flex-1` track beside a shrink-wrapped bubble, with `rtl` on the incoming side so `justify-end-safe` fell back to the right edge. That existed only because a sided bubble has a variable edge; a full-width row has a fixed corner.)*
 - **Per-message actions reach a coarse pointer by tap, not by drawing a second geometry.** `:hover` never fires on a touch device, and the reference draws no touch affordance for this (#1193). Mobile is not a precedent to follow here: its reactions render always visible, and a new reaction, Reply, Edit and Delete live in the long-press actions sheet (`spec/ui/mobile/screens.md` s05, #2775), a native bottom-sheet pattern with no hover to reveal. The web treatment below is this surface's own answer, not a port.
   - Tapping a row toggles that row's bar, and tapping a second row closes the first's. A mouse press anywhere also closes it, since a mouse never opens it. There is one reveal id per list, never a `useState` per row, or two rows could sit open at once.
-  - The shared hook is `apps/web/lib/hooks/use-tap-revealed-message.ts`. Its one caller today is `apps/web/components/chat/message-timeline.tsx` (it had two until #2142 deleted the Details rail's `thread-panel.tsx`). It stays a hook so a second list cannot get this subtly wrong.
+  - The shared hook is `apps/web/lib/hooks/use-tap-revealed-message.ts`. Its one caller today is `apps/web/components/chat/message-timeline.tsx` (it had two until #2142 deleted the Details rail's `thread-panel.tsx`; the #3785 message-thread panel at that path is a different component and draws no action bars). It stays a hook so a second list cannot get this subtly wrong.
   - The toggle is a plain `onClick`, not a touch or press handler, so a scroll gesture cannot trigger it. A click from a mouse does not toggle it: a mouse has hover, which already shows the bar and hides it again on the way out.
   - It bails out on a click whose target is inside a `button`/`a`/form control. That covers every interactive descendant (the reaction chips, the emoji-picker trigger, a card's own Vote/RSVP/checkbox controls) without each one needing its own `stopPropagation`.
   - It checks `window.getSelection()` scoped to the row's own subtree. Finishing a text selection inside the message does not also flip the bar open, and a stale selection left over from a *different* message does not block this row's tap (`apps/web/components/chat/message-item.tsx`).

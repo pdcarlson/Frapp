@@ -420,7 +420,10 @@ export function TasksBoard() {
   const myUserId = (currentUser.data as { id?: string } | undefined)?.id ?? "";
 
   return (
-    <div className="space-y-6">
+    // A container (#4022): beside chat (#3779) the page is narrow while the
+    // window is wide, so the lanes count the page's own width. One lane per
+    // row below `@2xl` (672px), two to `@4xl` (896px), then all four.
+    <div className="@container space-y-6">
       {/*
         For every viewer, not only `tasks:manage`: the assignee-facing Start /
         Mark complete controls are gated too, so a member with no manage
@@ -446,7 +449,7 @@ export function TasksBoard() {
           named by its label and count; the tiles inside keep a hairline frame,
           because a kanban tile is a block with its own controls, not a row.
         */
-        <div className="grid gap-x-6 gap-y-8 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-x-6 gap-y-8 @2xl:grid-cols-2 @4xl:grid-cols-4">
           {COLUMNS.map((column) => {
             const list = columns.get(column.status) ?? [];
             const labelId = `tasks-column-${column.status.toLowerCase()}`;
@@ -520,7 +523,7 @@ export function TasksBoard() {
           <SectionLabel id="tasks-confirmed" count={confirmed.length}>
             {TASK_CONFIRMED_LABEL}
           </SectionLabel>
-          <ul className="grid gap-x-6 gap-y-2 md:grid-cols-2 xl:grid-cols-4">
+          <ul className="grid gap-x-6 gap-y-2 @2xl:grid-cols-2 @4xl:grid-cols-4">
             {(showAllConfirmed
               ? confirmed
               : confirmed.slice(0, CONFIRMED_PREVIEW)

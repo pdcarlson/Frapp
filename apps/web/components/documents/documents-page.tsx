@@ -292,7 +292,9 @@ function ChapterDocumentsPage() {
             : "ready";
 
   return (
-    <div className="space-y-6">
+    // A container (#4022): beside chat (#3779) the page is narrow while the
+    // window is wide, so the folder rail counts the page's own width.
+    <div className="@container space-y-6">
       <PageActions>
         <Can permission="chapter_docs:upload">
           <UploadDocumentPanel
@@ -362,7 +364,7 @@ function ChapterDocumentsPage() {
         200px rather than the old 240: the rail holds folder names and a four
         control management row, and the width it was giving up was the list's.
       */}
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-x-6 gap-y-4 md:grid-cols-[200px_minmax(0,1fr)]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-x-6 gap-y-4 @2xl:grid-cols-[200px_minmax(0,1fr)]">
         <FolderRail
           railFolders={railFolders}
           activeFolder={activeFolder}

@@ -91,6 +91,7 @@ import { vocab } from "@repo/org-archetypes";
 import * as Sentry from "@sentry/nextjs";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useDeleteChannelFlow } from "./use-delete-channel-flow";
+import { ThreadPanel } from "./thread-panel";
 import {
   classifyMessage,
   hiddenQuoteText,
@@ -121,6 +122,8 @@ import {
 import {
   canBlockSender,
   channelAllowsReplies,
+  channelAllowsThreadReplies,
+  channelAllowsThreads,
   DELETE_MESSAGE_CONFIRM_BODY,
   DELETE_MESSAGE_CONFIRM_LABEL,
   DELETE_MESSAGE_CONFIRM_TITLE,
@@ -163,7 +166,10 @@ import {
   type SlashCommand,
 } from "@repo/chat-core/integrations";
 import type { DispatchResult } from "@repo/chat-core/dispatch";
-import { NewTaskDialog, type NewTaskPrefill } from "@/components/tasks/new-task-dialog";
+import {
+  NewTaskDialog,
+  type NewTaskPrefill,
+} from "@/components/tasks/new-task-dialog";
 import { LogHoursDialog } from "@/components/service/log-hours-dialog";
 import { PointsAdjustmentDialog } from "@/components/points/points-adjustment-dialog";
 import { useSubscriptionGate } from "@/components/shared/subscription-gate";
@@ -182,8 +188,10 @@ import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 /** What a + menu form says when its write threw after the request went out. */
 const FORM_UNCONFIRMED_WARNING = {
   task: "Couldn't confirm the task was created. Check the task board before you create it again.",
-  hours: "Couldn't confirm the hours were logged. Check the Service page before you log them again.",
-  points: "Couldn't confirm the points were adjusted. Check the points ledger before you adjust them again.",
+  hours:
+    "Couldn't confirm the hours were logged. Check the Service page before you log them again.",
+  points:
+    "Couldn't confirm the points were adjusted. Check the points ledger before you adjust them again.",
 } as const;
 
 interface DirectoryMember {
@@ -317,11 +325,12 @@ export function prefillLocalInput(
  * The chat surface: channels column, then thread and composer.
  *
  * **Two columns, flush, full height** (`1b`). It was three, the third being a
- * Details rail that hosted `ThreadPanel` over a static placeholder. Both are
- * deleted. Where threads went: the quote above a reply, which was the panel's
- * only remaining entry point, now scrolls this timeline to the message it
- * quotes (`MessageItem`'s `onJumpToParent`). The decision is recorded in
- * `spec/ui/web-dashboard/README.md` § Chat.
+ * Details rail that hosted the old `ThreadPanel` over a static placeholder.
+ * #2142 deleted both: the quote above a reply now scrolls this timeline to the
+ * message it quotes (`MessageItem`'s `onJumpToParent`). Message threads
+ * (#3785) are a different feature: their `ThreadPanel` (`./thread-panel`)
+ * opens over this column, in place of the timeline, never as a third column.
+ * Both are recorded in `spec/ui/web-dashboard/README.md` § Chat.
  *
  * **The panes are not cards, and that is load-bearing.** They used to be
  * `<Card>`s, so the whole surface painted `--card` — and `components.md` §11
@@ -1197,7 +1206,13 @@ export function ChatShell({
       };
       if (command.name === "task") {
         if (parseTaskArgs(args).ok) return null;
-        if (roleRefuses(PLUS_MENU_PERMISSIONS.task, "create tasks", "creating tasks")) {
+        if (
+          roleRefuses(
+            PLUS_MENU_PERMISSIONS.task,
+            "create tasks",
+            "creating tasks",
+          )
+        ) {
           return "refused";
         }
         const { assigneeToken, ...prefill } = taskFormPrefill(args);
@@ -1216,7 +1231,13 @@ export function ChatShell({
       // neither form has a field for what the member got wrong.
       if (command.name === "hours") {
         if (args.trim().length > 0) return null;
-        if (roleRefuses(PLUS_MENU_PERMISSIONS.hours, "log service hours", "logging service hours")) {
+        if (
+          roleRefuses(
+            PLUS_MENU_PERMISSIONS.hours,
+            "log service hours",
+            "logging service hours",
+          )
+        ) {
           return "refused";
         }
         setHoursForm((previous) => ({
@@ -1228,7 +1249,13 @@ export function ChatShell({
       }
       if (command.name === "points") {
         if (args.trim().length > 0) return null;
-        if (roleRefuses(PLUS_MENU_PERMISSIONS.points, "adjust points", "adjusting points")) {
+        if (
+          roleRefuses(
+            PLUS_MENU_PERMISSIONS.points,
+            "adjust points",
+            "adjusting points",
+          )
+        ) {
           return "refused";
         }
         setPointsForm({ open: true, channelId: activeChannelId });
@@ -1249,7 +1276,13 @@ export function ChatShell({
       }
       if (command.name !== "event") return null;
       if (parseEventArgs(args).ok) return null;
-      if (roleRefuses(PLUS_MENU_PERMISSIONS.event, "create events", "creating events")) {
+      if (
+        roleRefuses(
+          PLUS_MENU_PERMISSIONS.event,
+          "create events",
+          "creating events",
+        )
+      ) {
         return "refused";
       }
       setEventForm({
@@ -1280,14 +1313,19 @@ export function ChatShell({
       try {
         result = await post();
       } catch (error) {
-        Sentry.captureException(error, { tags: { plus_menu_form: commandName } });
+        Sentry.captureException(error, {
+          tags: { plus_menu_form: commandName },
+        });
         result = {
           ok: true,
           unconfirmed: true,
           warning: FORM_UNCONFIRMED_WARNING[commandName],
         };
       }
-      if (result.ok && (result.warning || result.unconfirmed || result.resolved)) {
+      if (
+        result.ok &&
+        (result.warning || result.unconfirmed || result.resolved)
+      ) {
         notifyDispatchOutcome(toast, commandName, result);
       }
       return result;
@@ -1902,6 +1940,31 @@ export function ChatShell({
    * `@repo/chat-core/message-actions` says why it is client-side, and why one
    * hop is enough).
    */
+  // The open message thread (#3785), keyed to its channel so switching
+  // channels closes it rather than showing another channel's thread.
+  const [openThread, setOpenThread] = useState<{
+    channelId: string;
+    rootId: string;
+  } | null>(null);
+  // Leaving the channel closes its thread, so coming back shows the timeline
+  // (state adjusted during render, React's pattern for a reset on a prop).
+  if (openThread && activeChannel && openThread.channelId !== activeChannel.id) {
+    setOpenThread(null);
+  }
+  const threadRootId =
+    openThread && openThread.channelId === activeChannel?.id
+      ? openThread.rootId
+      : null;
+  const canThreadHere = !!activeChannel && channelAllowsThreads(activeChannel);
+  const openThreadFor = useCallback(
+    (message: ChatMessage) => {
+      if (!activeChannel) return;
+      setOpenThread({ channelId: activeChannel.id, rootId: message.id });
+    },
+    [activeChannel],
+  );
+  const closeThread = useCallback(() => setOpenThread(null), []);
+
   const startReply = useCallback((message: ChatMessage) => {
     setReplyTarget({
       channelId: message.channel_id,
@@ -2155,12 +2218,7 @@ export function ChatShell({
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [
-    isDesktopShell,
-    narrowPane,
-    channelsPaneState,
-    backToChannels,
-  ]);
+  }, [isDesktopShell, narrowPane, channelsPaneState, backToChannels]);
 
   const timelineReady =
     channelsPaneState === "ready" && !requestedChannelMissing;
@@ -2341,7 +2399,7 @@ export function ChatShell({
       */}
       <section
         className={cn(
-          "flex min-w-0 flex-1 flex-col bg-background",
+          "relative flex min-w-0 flex-1 flex-col bg-background",
           narrowPane === "channels" && "max-lg:hidden",
         )}
       >
@@ -2620,7 +2678,7 @@ export function ChatShell({
                 is what is loading, and the announcer above already says so —
                 adding a second region would read one event twice.
               */}
-              <MessageTimelineSkeleton />
+              <MessageTimelineSkeleton channelId={activeChannelId} />
             </div>
             {/*
               The composer, before there is a channel to send to.
@@ -2729,6 +2787,7 @@ export function ChatShell({
                   onReact={channel.react}
                   onUnreact={channel.unreact}
                   onReply={canReplyHere ? startReply : undefined}
+                  onOpenThread={canThreadHere ? openThreadFor : undefined}
                   // The quote above a reply scrolls to the message it quotes. It used
                   // to open `ThreadPanel` in the Details rail; #2142 deleted both, and
                   // this is the same machinery pins and saved messages already use.
@@ -2884,6 +2943,25 @@ export function ChatShell({
             replyTo={replyTo}
             onCancelReply={cancelReply}
             onRestoreReply={restoreReply}
+          />
+        ) : null}
+        {/*
+          A message thread (#3785) replaces the message list inside the chat
+          column, and Back returns to it. Drawn over the column rather than in
+          its place, so the timeline keeps its scroll position underneath.
+        */}
+        {activeChannel && threadRootId ? (
+          <ThreadPanel
+            key={threadRootId}
+            className="absolute inset-0 z-10"
+            channelId={activeChannel.id}
+            channelName={activeChannel.name ?? null}
+            rootId={threadRootId}
+            viewerId={userId}
+            nameFor={nameFor}
+            blockState={blockState}
+            canReply={channelAllowsThreadReplies(activeChannel)}
+            onClose={closeThread}
           />
         ) : null}
       </section>
