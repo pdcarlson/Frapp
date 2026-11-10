@@ -171,9 +171,10 @@
      * the dialog's own fill. An opaque literal rather than a white alpha
      * (which composites over the container, so on `--background` it
      * landed on the card rest fill) or a `color-mix()` (which has a
-     * browser floor). It is never a resting surface: elevation is still
-     * the four steps above. `elevation-contrast.spec.ts` derives it from
-     * `--popover`, so a ladder change fails there instead of leaving
+     * browser floor). It is not an elevation step: elevation is still
+     * the four steps above. Since 2026-11-09 it is also the quiet fill
+     * under text where `--muted` used to be one (components.md §1).
+     * `elevation-contrast.spec.ts` derives it from `--popover`, so a ladder change fails there instead of leaving
      * this value behind. */
     --card-hover: #2C2C2C;
 

@@ -99,8 +99,8 @@ describe("chat message rows", () => {
   });
 
   it("keeps the two reading tones at 7:1 on the whole ladder (#3826)", () => {
-    // The owner's "you have to squint" (2026-11-09): body and secondary text
-    // were 6.6-7.9:1 with `--muted-foreground` under 7 on `--popover`. The
+    // The owner's "you have to squint" (2026-11-09): secondary text
+    // (`--muted-foreground`) was 6.6-7.9:1, under 7 on `--popover`. The
     // lifted text ladder (foundations.md §4) holds both over 7 everywhere.
     for (const [name, bg] of Object.entries(SURFACE)) {
       expect(
