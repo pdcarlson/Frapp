@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   FILTER_SEARCH_THRESHOLD,
   FilterChip,
+  matchesWordStarts,
 } from "@/components/shared/filter-chip";
 
 const SHORT = [
@@ -77,6 +78,15 @@ describe("FilterChip", () => {
 
     await user.clear(field);
     expect(screen.getAllByRole("option")).toHaveLength(LONG.length + 1);
+  });
+
+  it("finds a word behind punctuation, which a name matcher would miss", () => {
+    expect(matchesWordStarts("(Exec) Treasurer", "exec")).toBe(true);
+    expect(matchesWordStarts("Rush/Recruitment Chair", "rec")).toBe(true);
+    expect(matchesWordStarts("MATH 2210 · Calc (Honors)", "honors 22")).toBe(true);
+    expect(matchesWordStarts("Vice President", "vi pre")).toBe(true);
+    expect(matchesWordStarts("Vice President", "ice")).toBe(false);
+    expect(matchesWordStarts("Anything", "  ")).toBe(true);
   });
 
   it("picks with the arrow keys and Enter", async () => {

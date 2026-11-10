@@ -3,6 +3,7 @@
 import { useId } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { FILTER_CHIP_CLASS } from "@/components/shared/filter-chip";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -13,7 +14,7 @@ import {
 } from "@repo/hooks/document-library";
 import { cn } from "@/lib/utils";
 
-const CHIP = "gap-1 rounded-full font-semibold";
+const CHIP = FILTER_CHIP_CLASS;
 
 /**
  * The Date added chip: a few presets and a custom range. A popover rather

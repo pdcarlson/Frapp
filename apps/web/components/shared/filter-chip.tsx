@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type ReactElement } from "react";
 import { ArrowUpDown, Check, ChevronDown } from "lucide-react";
-import { filterChannelMembers } from "@repo/hooks/channel-members";
+import { normalizeWords } from "@repo/hooks/fuzzy-match";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -32,7 +32,9 @@ export type FilterOption = { value: string; label: string };
  */
 export const FILTER_SEARCH_THRESHOLD = 8;
 
-const CHIP = "gap-1 rounded-full font-semibold";
+/** The chip's shape, shared with `DateFilterChip` so one toolbar row draws one chip. */
+export const FILTER_CHIP_CLASS = "gap-1 rounded-full font-semibold";
+const CHIP = FILTER_CHIP_CLASS;
 /** A cmdk row drawn at the menu row's size, so both lists read as one menu. */
 const SEARCH_ROW =
   "min-h-8 text-sm pointer-coarse:min-h-11 pointer-coarse:text-base";
@@ -131,10 +133,23 @@ export function FilterChip({
  * The long-list body: a popover holding a search field over the option list.
  * A popover and cmdk rather than the dropdown menu, because a menu's typeahead
  * takes the keys meant for the field (the reason `DateFilterChip` is one too).
- * cmdk gives the combobox roles, arrow keys and Enter; the match is ours, the
- * channel member list's word-start one ("vi pre" finds "Vice President",
- * ignoring case and accents), so both searches behave alike.
+ * cmdk gives the combobox roles, arrow keys and Enter; the match is ours
+ * (`matchesWordStarts`).
  */
+/**
+ * Every word typed must start a word of the label, ignoring case and accents:
+ * "vi pre" finds "Vice President". Words split on anything that isn't a letter
+ * or digit (`normalizeWords`, the page searches' own splitter), because a role
+ * or course label is not a person's name: "exec" must find "(Exec) Treasurer"
+ * and "rec" must find "Rush/Recruitment Chair".
+ */
+export function matchesWordStarts(label: string, query: string): boolean {
+  const terms = normalizeWords(query);
+  if (!terms.length) return true;
+  const words = normalizeWords(label);
+  return terms.every((term) => words.some((word) => word.startsWith(term)));
+}
+
 function SearchableOptions({
   trigger,
   label,
@@ -153,15 +168,11 @@ function SearchableOptions({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const rows = useMemo(
-    () =>
-      [
-        ...(anyLabel ? [{ value: ANY, label: anyLabel }] : []),
-        ...options,
-      ].map((option) => ({ ...option, name: option.label })),
+    () => [...(anyLabel ? [{ value: ANY, label: anyLabel }] : []), ...options],
     [anyLabel, options],
   );
   const shown = useMemo(
-    () => filterChannelMembers(rows, query),
+    () => rows.filter((row) => matchesWordStarts(row.label, query)),
     [rows, query],
   );
   const current = value ?? (anyLabel ? ANY : null);
@@ -179,6 +190,13 @@ function SearchableOptions({
       <PopoverContent
         align="start"
         className="w-64 p-0"
+        // On touch the list opens without the keyboard, so it can be scrolled;
+        // a tap on the field brings the keyboard up.
+        onOpenAutoFocus={(event) => {
+          if (window.matchMedia?.("(pointer: coarse)").matches) {
+            event.preventDefault();
+          }
+        }}
         // Esc clears a typed query first and closes on the second press.
         onEscapeKeyDown={(event) => {
           if (!query) return;

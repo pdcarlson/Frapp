@@ -7,7 +7,6 @@
     "./display-names": "./src/display-names.ts",
     "./chapter-identity": "./src/chapter-identity.ts",
     "./channel-start": "./src/channel-start.ts",
-    "./channel-members": "./src/channel-members.ts",
     "./field-reveal": "./src/field-reveal.ts",
     "./error-copy": "./src/error-copy.ts",
     "./open-chat-transport": "./src/open-chat-transport.ts",

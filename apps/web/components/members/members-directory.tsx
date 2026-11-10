@@ -284,6 +284,13 @@ export function MembersDirectory() {
       assignableRoleOptions.map((role) => ({ value: role.id, label: role.name })),
     [assignableRoleOptions],
   );
+  // A picked role that has since been deleted reads as unpicked, so the chip
+  // never names an id and Apply never sends one.
+  const effectiveBulkRoleId =
+    bulkRoleId !== null &&
+    assignableRoleOptions.some((role) => role.id === bulkRoleId)
+      ? bulkRoleId
+      : null;
   const effectiveRoleFilter =
     roleFilter !== null &&
     filterRoleOptions.some((role) => role.id === roleFilter)
@@ -501,11 +508,11 @@ export function MembersDirectory() {
   }
 
   async function applyBulkRole() {
-    if (!bulkRoleId || selectedCount === 0) return;
+    if (!effectiveBulkRoleId || selectedCount === 0) return;
     const targets = sortedMembers.filter(
       (member) =>
         selectedMemberIds.includes(memberId(member)) &&
-        !member.role_ids.includes(bulkRoleId),
+        !member.role_ids.includes(effectiveBulkRoleId),
     );
     if (targets.length === 0) {
       toast({
@@ -519,13 +526,13 @@ export function MembersDirectory() {
       targets.map((member) =>
         updateRolesMutation.mutateAsync({
           id: memberId(member),
-          role_ids: [...new Set([...member.role_ids, bulkRoleId])],
+          role_ids: [...new Set([...member.role_ids, effectiveBulkRoleId])],
         }),
       ),
     );
     const failed = results.filter((r) => r.status === "rejected").length;
     const succeeded = targets.length - failed;
-    const roleName = roleNameById.get(bulkRoleId) ?? "role";
+    const roleName = roleNameById.get(effectiveBulkRoleId) ?? "role";
 
     if (failed === 0) {
       toast({
@@ -762,13 +769,13 @@ export function MembersDirectory() {
             <FilterChip
               label="Assign role"
               options={assignableRoleChipOptions}
-              value={bulkRoleId}
+              value={effectiveBulkRoleId}
               onChange={setBulkRoleId}
             />
             <Button
               size="sm"
               onClick={() => void applyBulkRole()}
-              disabled={!bulkRoleId || updateRolesMutation.isPending}
+              disabled={!effectiveBulkRoleId || updateRolesMutation.isPending}
             >
               Apply
             </Button>
