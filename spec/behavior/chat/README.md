@@ -342,11 +342,13 @@ asked by Shawn 2026-11-10; Slack, Discord and Teams filter search the same way):
   days ago, and a custom range includes both of its days.
 - **Has**: any of file, image, link and poll; a hit carries every one ticked.
 
-Typing `from:` or `in:` as the last word in the box opens the same picker the chip does,
-narrowed by what follows the colon (matched as the member column matches names: word starts,
-ignoring case and accents); the arrow keys and Enter pick from the box, Escape puts the picker
-away, and the chip itself works by writing that word into the box. Anywhere else in the text,
-`from:` and `in:` are searched as typed. A set chip names its value and has a clear button
+Typing `from:` or `in:` at the end of the box opens the same picker the chip does, narrowed by
+what follows the colon. Members match as the member column matches names (word starts, ignoring
+case and accents); channels match anywhere in the name, since a channel name is free text. The
+arrow keys and Enter pick from the box, Escape puts the picker away, and the chip itself works
+by writing that word into the box. What follows the colon may run to several words while it
+still matches something (`from:ada lov`); once it matches nothing, or when a space follows the
+colon, the text is searched as typed, so no typed word is dropped unseen. A set chip names its value and has a clear button
 beside it; a custom range with no finished date is not set.
 A From, Date or Has filter searches with no text ("everything Ryan posted this week"); one or
 two characters, or no text with only a channel, do not search, which is the API's own rule

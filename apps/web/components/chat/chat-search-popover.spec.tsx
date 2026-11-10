@@ -17,6 +17,7 @@ vi.mock("@repo/hooks", async () => {
   return {
     SEARCH_MIN_QUERY_LENGTH: 3,
     filterChannelMembers: members.filterChannelMembers,
+    memberLabel: (name: string | null, id: string) => name ?? `Member ${id}`,
     hasMessageFilter: actual.hasMessageFilter,
     isSearchRunnable: actual.isSearchRunnable,
     useSearch: (query: string, filters?: unknown) => useSearch(query, filters),
@@ -520,6 +521,49 @@ describe("ChatSearchPanel", () => {
 
       expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
       expect(screen.getByRole("combobox")).toHaveValue("budget");
+    });
+
+    it("puts the picker away on Escape from a chip too", async () => {
+      const user = await typeQuery("budget from:gr");
+      screen.getByRole("button", { name: "In: general" }).focus();
+
+      await user.keyboard("{Escape}");
+
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+      expect(screen.getByRole("combobox")).toHaveValue("budget");
+      expect(screen.getByRole("combobox")).toHaveFocus();
+    });
+
+    it("keeps narrowing through a space in a name", async () => {
+      await typeQuery("from:grace hop");
+
+      expect(
+        screen.getAllByRole("option").map((option) => option.textContent),
+      ).toEqual(["Grace Hopper"]);
+    });
+
+    it("searches the words as typed once they match no member", async () => {
+      await typeQuery("from:grace budget");
+
+      // Not a token any more: nothing typed is dropped from the search.
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+      await waitFor(() => {
+        expect(useSearch).toHaveBeenLastCalledWith("from:grace budget", {
+          channelId: "chan-1",
+        });
+      });
+    });
+
+    it("names an unnamed member on the chip as the picker did", async () => {
+      const user = await typeQuery("from:", {
+        members: [{ id: "u-9", label: "Member u-9" }],
+        nameFor: () => null,
+      });
+      await user.keyboard("{Enter}");
+
+      expect(
+        screen.getByRole("button", { name: "From: Member u-9" }),
+      ).toBeInTheDocument();
     });
 
     it("searches from: and in: as typed when they are not the last word", async () => {

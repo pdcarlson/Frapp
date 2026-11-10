@@ -295,10 +295,12 @@ export function ChannelMenu({
         // Escape first, as a combobox does; the panel puts its list away.
         // Without this Escape would close the menu and drop the search.
         onEscapeKeyDown={(event) => {
-          const target = event.target;
+          // Anywhere in the menu, not only on the box: focus may be on a chip
+          // while the list is open.
           if (
-            target instanceof Element &&
-            target.closest('[role="combobox"][aria-expanded="true"]')
+            contentRef.current?.querySelector(
+              '[role="combobox"][aria-expanded="true"]',
+            )
           ) {
             event.preventDefault();
           }

@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  matchPickerOptions,
+  isSearchToken,
+  matchChannelOptions,
+  matchMemberOptions,
   parseSearchToken,
   searchDateBounds,
   searchDateLabel,
@@ -124,14 +126,22 @@ describe("searchDateLabel", () => {
     expect(searchDateLabel({ preset: "custom", to: "2026-11-05" })).toBe(
       "Until 2026-11-05",
     );
+    // Backwards ends are named in the order they are searched.
+    expect(
+      searchDateLabel({
+        preset: "custom",
+        from: "2026-11-09",
+        to: "2026-11-01",
+      }),
+    ).toBe("2026-11-01 to 2026-11-09");
   });
 });
 
 describe("parseSearchToken", () => {
   it("reads a trailing from: or in: and keeps the words before it", () => {
-    expect(parseSearchToken("budget from:ada")).toEqual({
+    expect(parseSearchToken("budget from:ada lov")).toEqual({
       kind: "from",
-      partial: "ada",
+      partial: "ada lov",
       rest: "budget ",
     });
     expect(parseSearchToken("IN:#gen")).toEqual({
@@ -146,26 +156,63 @@ describe("parseSearchToken", () => {
     });
   });
 
-  it("leaves from: and in: alone anywhere but the last word", () => {
-    // Otherwise the words after it would be dropped from the search unseen.
+  it("is not a token when a space follows the colon, or the word only ends in one", () => {
     expect(parseSearchToken("error in: login page")).toBeNull();
     expect(parseSearchToken("note from: bob")).toBeNull();
-    expect(parseSearchToken("from:ada budget")).toBeNull();
     expect(parseSearchToken("login:")).toBeNull();
     expect(parseSearchToken("budget")).toBeNull();
+    // A URL's colon ends any earlier token.
+    expect(parseSearchToken("from:ada https://x.test")).toBeNull();
   });
 });
 
-describe("matchPickerOptions", () => {
+describe("isSearchToken", () => {
+  const token = (partial: string) => ({
+    kind: "from" as const,
+    partial,
+    rest: "",
+  });
+
+  it("holds while one word is typed, or several still match something", () => {
+    expect(isSearchToken(token(""), 0)).toBe(true);
+    // One word with no match keeps the picker, which says nobody has that name.
+    expect(isSearchToken(token("zed"), 0)).toBe(true);
+    expect(isSearchToken(token("ada lov"), 1)).toBe(true);
+  });
+
+  it("ends once several words match nothing, so they are searched as typed", () => {
+    expect(isSearchToken(token("ada budget"), 0)).toBe(false);
+  });
+});
+
+describe("matchMemberOptions", () => {
   const options = [
     { id: "1", label: "Ada Lovelace" },
     { id: "2", label: "José Ramírez" },
   ];
 
   it("matches word starts, ignoring case and accents, as the member column does", () => {
-    expect(matchPickerOptions(options, "LOVE")).toEqual([options[0]]);
-    expect(matchPickerOptions(options, "jose")).toEqual([options[1]]);
-    expect(matchPickerOptions(options, "")).toEqual(options);
-    expect(matchPickerOptions(options, "zed")).toEqual([]);
+    expect(matchMemberOptions(options, "LOVE")).toEqual([options[0]]);
+    expect(matchMemberOptions(options, "ada lov")).toEqual([options[0]]);
+    expect(matchMemberOptions(options, "jose")).toEqual([options[1]]);
+    expect(matchMemberOptions(options, "")).toEqual(options);
+    expect(matchMemberOptions(options, "zed")).toEqual([]);
+  });
+});
+
+describe("matchChannelOptions", () => {
+  const options = [
+    { id: "1", label: "exec_board" },
+    { id: "2", label: "📢┃announcements" },
+    { id: "3", label: "café-chat" },
+  ];
+
+  it("matches anywhere in a free-form channel name", () => {
+    // Word starts would hide these behind separators nobody types.
+    expect(matchChannelOptions(options, "board")).toEqual([options[0]]);
+    expect(matchChannelOptions(options, "announce")).toEqual([options[1]]);
+    expect(matchChannelOptions(options, "CAFE")).toEqual([options[2]]);
+    expect(matchChannelOptions(options, "")).toEqual(options);
+    expect(matchChannelOptions(options, "zed")).toEqual([]);
   });
 });

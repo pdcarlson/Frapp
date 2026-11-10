@@ -12,6 +12,7 @@ import type { ChatMessage } from "@repo/chat-core/types";
 import {
   hasMessageFilter,
   isSearchRunnable,
+  memberLabel,
   resolveAuthorLabel,
   useSearch,
   SEARCH_MIN_QUERY_LENGTH,
@@ -23,7 +24,9 @@ import { CHIP, CHIP_HIT_AREA } from "./chip";
 import {
   SEARCH_DATE_PRESETS,
   SEARCH_HAS_TRAITS,
-  matchPickerOptions,
+  isSearchToken,
+  matchChannelOptions,
+  matchMemberOptions,
   parseSearchToken,
   searchDateBounds,
   searchDateLabel,
@@ -114,20 +117,26 @@ export function ChatSearchPanel({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listId = useId();
 
-  // A `from:` / `in:` being typed is the picker's filter, not search text.
-  const token = parseSearchToken(query);
-  const text = (token ? token.rest : query).trim();
-  const options = useMemo(() => {
-    if (!token) return [];
-    return token.kind === "from"
-      ? matchPickerOptions(members, token.partial)
+  // A `from:` / `in:` being typed is the picker's filter, not search text,
+  // but only while it could still pick something (`isSearchToken`).
+  const candidate = parseSearchToken(query);
+  const candidateOptions = useMemo(() => {
+    if (!candidate) return [];
+    return candidate.kind === "from"
+      ? matchMemberOptions(members, candidate.partial)
       : [
-          ...matchPickerOptions([ALL_CHANNELS], token.partial),
-          ...matchPickerOptions(channels, token.partial),
+          ...matchChannelOptions([ALL_CHANNELS], candidate.partial),
+          ...matchChannelOptions(channels, candidate.partial),
         ];
-    // `token` is rebuilt every render; its two fields are what matter.
+    // `candidate` is rebuilt every render; its two fields are what matter.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token?.kind, token?.partial, members, channels]);
+  }, [candidate?.kind, candidate?.partial, members, channels]);
+  const token =
+    candidate && isSearchToken(candidate, candidateOptions.length)
+      ? candidate
+      : null;
+  const options = token ? candidateOptions : [];
+  const text = (token ? token.rest : query).trim();
   const activeOption = options[Math.min(activeIndex, options.length - 1)];
 
   // Arrowing moves the highlight, not focus, so the browser will not scroll
@@ -230,16 +239,21 @@ export function ChatSearchPanel({
     focusInput();
   }
 
+  /**
+   * Escape closes the picker, not the menu: `channel-menu.tsx` holds the
+   * popover open while this panel's combobox is expanded, and this puts the
+   * picker away. On the panel's header, not the box, because focus may be on
+   * a chip when the member presses it.
+   */
+  function onHeaderKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Escape" || !token) return;
+    event.preventDefault();
+    setQuery(token.rest.trimEnd());
+    focusInput();
+  }
+
   function onInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
-    if (!token) return;
-    // Escape closes the picker, not the menu: `channel-menu.tsx` holds the
-    // popover open for an expanded combobox, and this puts the picker away.
-    if (event.key === "Escape") {
-      event.preventDefault();
-      setQuery(token.rest.trimEnd());
-      return;
-    }
-    if (options.length === 0) return;
+    if (!token || options.length === 0) return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       const step = event.key === "ArrowDown" ? 1 : -1;
@@ -254,7 +268,10 @@ export function ChatSearchPanel({
     }
   }
 
-  const fromName = fromUserId ? (nameFor(fromUserId) ?? "a member") : null;
+  // `memberLabel`, the spelling the picker row had (#2422).
+  const fromName = fromUserId
+    ? memberLabel(nameFor(fromUserId), fromUserId)
+    : null;
   const inName = channelId ? (channelNameFor(channelId) ?? "a channel") : null;
   const dateLabel = searchDateLabel(date);
   const hasLabel =
@@ -266,7 +283,7 @@ export function ChatSearchPanel({
 
   return (
     <>
-      <div className="border-b border-border p-3">
+      <div className="border-b border-border p-3" onKeyDown={onHeaderKeyDown}>
         <Input
           ref={inputRef}
           type="search"

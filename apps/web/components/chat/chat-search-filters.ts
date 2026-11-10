@@ -105,9 +105,11 @@ export function searchDateLabel(filter: SearchDateFilter): string | null {
         ?.label ?? null
     );
   }
-  const from = customDay(filter.from) ? (filter.from ?? null) : null;
-  const to = customDay(filter.to) ? (filter.to ?? null) : null;
+  let from = customDay(filter.from) ? (filter.from ?? null) : null;
+  let to = customDay(filter.to) ? (filter.to ?? null) : null;
   if (!from && !to) return null;
+  // In order, as `searchDateBounds` reads them: `YYYY-MM-DD` sorts as text.
+  if (from && to && from > to) [from, to] = [to, from];
   return dateFilterLabel({ preset: "custom", from, to });
 }
 
@@ -122,22 +124,34 @@ export interface SearchToken {
 }
 
 /**
- * A `from:` or `in:` the member is typing: the last word in the box, with
- * nothing but the picker's filter after the colon. Only the last word, so
- * text is never dropped from the search without a sign: `error in: login
- * page` and `from:ada budget` are searched as typed, and the words before a
- * trailing token stay the search text.
+ * A `from:` or `in:` the member may be typing: the word, something straight
+ * after its colon (or nothing yet), and whatever follows to the end of the
+ * box, so a name with a space in it (`from:ada lov`) keeps narrowing.
+ *
+ * This is only a candidate. Text is never dropped from the search without a
+ * sign, so the panel treats it as a token only while what follows the colon
+ * is one word or still matches an option (`isSearchToken`): `from:ada budget`
+ * and `note from:bob re dues` are searched as typed, and so is `error in:
+ * login page`, where a space follows the colon.
  */
-const TOKEN = /(^|\s)(from|in):(\S*)$/i;
+const TOKEN = /(^|\s)(from|in):((?:\S[^:]*)?)$/i;
 
 export function parseSearchToken(text: string): SearchToken | null {
   const match = TOKEN.exec(text);
   if (!match) return null;
   return {
     kind: match[2]!.toLowerCase() as SearchTokenKind,
-    partial: match[3]!.replace(/^[@#]/, ""),
+    partial: match[3]!.trim().replace(/^[@#]/, ""),
     rest: text.slice(0, match.index + match[1]!.length),
   };
+}
+
+/**
+ * Whether a candidate is a token: its filter is a single word, or it still
+ * matches something to pick. Past that it is ordinary search text.
+ */
+export function isSearchToken(token: SearchToken, matches: number): boolean {
+  return !/\s/.test(token.partial) || matches > 0;
 }
 
 export interface SearchPickerOption {
@@ -146,11 +160,11 @@ export interface SearchPickerOption {
 }
 
 /**
- * Options matching what was typed, by the member column's own rule
- * (`filterChannelMembers`): every typed word starts a word of the label,
+ * Members matching what was typed, by the member column's own rule
+ * (`filterChannelMembers`): every typed word starts a word of the name,
  * ignoring case and accents, so `jose` finds José here as it does there.
  */
-export function matchPickerOptions(
+export function matchMemberOptions(
   options: readonly SearchPickerOption[],
   partial: string,
 ): SearchPickerOption[] {
@@ -158,4 +172,30 @@ export function matchPickerOptions(
     options.map((option) => ({ name: option.label, option })),
     partial,
   ).map((row) => row.option);
+}
+
+/** Lowercased, accents dropped. */
+function fold(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+/**
+ * Channels whose name holds every typed word anywhere, ignoring case and
+ * accents. Not the member rule: a channel name is free text (`exec_board`,
+ * `📢┃announcements`), and word starts would hide `in:board` and
+ * `in:announcements` behind separators nobody types.
+ */
+export function matchChannelOptions(
+  options: readonly SearchPickerOption[],
+  partial: string,
+): SearchPickerOption[] {
+  const words = fold(partial).split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [...options];
+  return options.filter((option) => {
+    const label = fold(option.label);
+    return words.every((word) => label.includes(word));
+  });
 }
