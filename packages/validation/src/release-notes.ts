@@ -42,7 +42,7 @@ export type ReleaseNote = {
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
   {
     date: "2026-11-10",
-    title: "Status on your phone, better Documents, and narrower search",
+    title: "Chat beside your tools, threads, and status on your phone",
     changes: [
       "You can now set your status from your phone too, not only on the web.",
       "On your phone, Documents search finds more and forgives typos, you can sort the list, and you can delete a file if your role allows it.",
@@ -52,6 +52,16 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "On the web, Points, Billing, and Reports export as CSV, Excel, or a copy ready to paste into Google Sheets, wherever your role lets you export.",
       "On the web, a task's due date takes just a month and a day with no year to set, and an event shows you your own check-in.",
       "Text across the app is brighter and easier to read, and on the web what's new now opens on its own once after an update.",
+      "On the web, on a wide enough screen, chat now stays open beside Events, Tasks, Points, and your other pages: Chat in the menu opens or closes it, clicking the open page's name again closes that page, and you can drag the line between them to give either side more room.",
+      "With chat and a page open side by side, the menu slims down to icons when space is tight, and Events, Tasks, Points, Documents, and Backwork rearrange to fit, with a simpler Events calendar that lists the day you pick under the month.",
+      "Reply to a message in a thread, on the web and on your phone: Start thread opens one, the message shows how many replies it has, and Follow keeps you posted on new ones.",
+      "Chat can show messages as bubbles, yours on the right and everyone else's on the left, and you can give any channel its own look from its menu under Display.",
+      "People without a profile photo now get colored initials, in their role's color for officers and a color of their own for everyone else.",
+      "Mentioning someone whose name has a space, like a first and last name, now mentions and notifies them as written.",
+      "If your role lets you close polls, a new poll can be set to stay open until you close it.",
+      "On the web, Events has one Filter button, remembers whether you last used the list or the calendar, lets you select several events at once, and shows a repeating event as one row.",
+      "On the web, officers can set up pledge classes in Settings and give each member a class and an order number.",
+      "On your phone, a channel with a new message shows as unread as soon as you open the app, without waiting for it to load.",
     ],
   },
   {
