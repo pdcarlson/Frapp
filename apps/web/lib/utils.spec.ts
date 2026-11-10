@@ -1,15 +1,30 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import sharedConfig from "@repo/theme/tailwind";
 import { describe, expect, it, vi, beforeEach } from "vitest";
+const { writeXlsxFileSpy } = vi.hoisted(() => ({
+  writeXlsxFileSpy: vi.fn(() => ({ toBlob: async () => new Blob(["xlsx"]) })),
+}));
+vi.mock("write-excel-file/browser", () => ({ default: writeXlsxFileSpy }));
+
 import {
   cn,
   downloadBlob,
   downloadCsv,
+  downloadXlsx,
+  exportRows,
   getErrorMessage,
   guardDecimalDraft,
   guardIntDraft,
   labelled,
+  neutralizeFormulaCell,
   parseGuardedDecimal,
   parseGuardedInt,
+  readLastExportFormat,
+  rememberExportFormat,
+  rowsToCsv,
+  rowsToTsv,
+  rowsToXlsxData,
 } from "./utils";
 
 describe("labelled", () => {
@@ -246,5 +261,217 @@ describe("cn with the Signet type scale", () => {
         "text-primary",
       ),
     ).toContain("text-caption");
+  });
+});
+
+// #3969: the exports offer CSV, Excel and a clipboard copy for Google Sheets.
+// A member-typed cell must be safe in all three.
+describe("neutralizeFormulaCell", () => {
+  it("prefixes a cell a spreadsheet would run as a formula", () => {
+    for (const cell of [
+      '=HYPERLINK("https://evil.example","Click")',
+      "+1+1",
+      "-1+1",
+      "@SUM(A1:A2)",
+      "\t=1+1",
+      "\r=1+1",
+    ]) {
+      expect(neutralizeFormulaCell(cell)).toBe(`'${cell}`);
+    }
+  });
+
+  it("leaves numbers, currency and ordinary text as they are", () => {
+    for (const cell of ["-5", "+5", "-12.50", "-$12.00", "Late arrival", "", "a=b", "🎉 party"]) {
+      expect(neutralizeFormulaCell(cell)).toBe(cell);
+    }
+  });
+});
+
+describe("rowsToCsv", () => {
+  it("quotes commas, quotes and line breaks, and keeps emoji", () => {
+    const csv = rowsToCsv([
+      { Description: 'Said "hi", twice\nthen left 🎉', Amount: "-5" },
+    ]);
+    expect(csv).toBe(
+      '\uFEFFDescription,Amount\r\n"Said ""hi"", twice\nthen left 🎉",-5',
+    );
+  });
+
+  it("makes a formula-shaped cell inert, header included", () => {
+    const csv = rowsToCsv([{ "=cmd": "=1+1", Note: "@here, now" }]);
+    expect(csv).toBe("\uFEFF'=cmd,Note\r\n'=1+1,\"'@here, now\"");
+  });
+});
+
+describe("rowsToTsv", () => {
+  it("separates cells with tabs and rows with newlines, with no BOM", () => {
+    expect(
+      rowsToTsv([
+        { Amount: "12", Description: "Founders Day, check-in 🎉" },
+        { Amount: "-5", Description: 'Said "late"' },
+      ]),
+    ).toBe(
+      'Amount\tDescription\n12\tFounders Day, check-in 🎉\n-5\t"Said ""late"""',
+    );
+  });
+
+  it("quotes a cell that leads with a double quote, so a paste cannot swallow the next cell", () => {
+    expect(rowsToTsv([{ Note: '"unclosed', Amount: "5" }])).toBe(
+      'Note\tAmount\n"""unclosed"\t5',
+    );
+  });
+
+  it("flattens tabs and line breaks inside a cell, and makes formulas inert", () => {
+    expect(rowsToTsv([{ Note: "one\ttwo\r\nthree", Formula: "=1+1" }])).toBe(
+      "Note\tFormula\none two three\t'=1+1",
+    );
+    // Neutralized before flattening: a leading tab must not hide the formula.
+    expect(rowsToTsv([{ Note: "\t=1+1" }])).toBe("Note\n' =1+1");
+  });
+
+  it("is empty for no rows", () => {
+    expect(rowsToTsv([])).toBe("");
+  });
+});
+
+describe("rowsToXlsxData", () => {
+  it("types a column as numbers, currency, dates or timestamps when every cell is one", () => {
+    const [header, first, second] = rowsToXlsxData([
+      {
+        Amount: "12",
+        Paid: "$1,234.50",
+        Due: "2026-08-01",
+        Time: "2026-08-01T12:00:00Z",
+      },
+      { Amount: "-5", Paid: "-$5.00", Due: "", Time: "2026-08-02T12:00:00+00:00" },
+    ]);
+    expect(header!.map((cell) => cell?.value)).toEqual([
+      "Amount",
+      "Paid",
+      "Due",
+      "Time",
+    ]);
+    expect(first).toEqual([
+      { value: 12, type: Number },
+      { value: 1234.5, type: Number, format: "$#,##0.00" },
+      { value: new Date("2026-08-01"), type: Date, format: "yyyy-mm-dd" },
+      {
+        value: new Date("2026-08-01T12:00:00Z"),
+        type: Date,
+        format: "yyyy-mm-dd hh:mm:ss",
+      },
+    ]);
+    expect(second![0]).toEqual({ value: -5, type: Number });
+    expect(second![1]).toMatchObject({ value: -5 });
+    // An empty cell stays empty rather than becoming a zero or an epoch date.
+    expect(second![2]).toBeNull();
+  });
+
+  it("keeps a mixed column, a leading-zero id and a formula as text", () => {
+    const [, first, second] = rowsToXlsxData([
+      { Mixed: "12", Zip: "02139", Note: "=1+1" },
+      { Mixed: "n/a", Zip: "10001", Note: "plain" },
+    ]);
+    expect(first).toEqual([
+      { value: "12", type: String },
+      { value: "02139", type: String },
+      { value: "=1+1", type: String },
+    ]);
+    expect(second![1]).toEqual({ value: "10001", type: String });
+  });
+});
+
+describe("downloadXlsx", () => {
+  it("writes a bold, frozen header row and names the file frapp-<prefix>-<date>.xlsx", async () => {
+    URL.createObjectURL = vi.fn(() => "blob:mock-url");
+    URL.revokeObjectURL = vi.fn();
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        expect(this.download).toMatch(/^frapp-points-\d{4}-\d{2}-\d{2}\.xlsx$/);
+      });
+
+    await downloadXlsx([{ Amount: "12" }], "points");
+
+    expect(writeXlsxFileSpy).toHaveBeenCalledWith(
+      [
+        [{ value: "Amount", type: String, fontWeight: "bold" }],
+        [{ value: 12, type: Number }],
+      ],
+      // Sized to the longest value, so a date column never opens as ########.
+      { stickyRowsCount: 1, columns: [{ width: 8 }] },
+    );
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    clickSpy.mockRestore();
+  });
+});
+
+describe("exportRows", () => {
+  it("downloads a .csv for CSV and an .xlsx for Excel", async () => {
+    URL.createObjectURL = vi.fn(() => "blob:mock-url");
+    URL.revokeObjectURL = vi.fn();
+    const names: string[] = [];
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        names.push(this.download);
+      });
+    writeXlsxFileSpy.mockClear();
+
+    await exportRows([{ Amount: "12" }], "points", "csv");
+    expect(writeXlsxFileSpy).not.toHaveBeenCalled();
+    await exportRows([{ Amount: "12" }], "points", "xlsx");
+    expect(writeXlsxFileSpy).toHaveBeenCalledTimes(1);
+
+    expect(names.map((name) => name.split(".").pop())).toEqual(["csv", "xlsx"]);
+    clickSpy.mockRestore();
+  });
+
+  it("loads the workbook writer on demand, never with the module", () => {
+    // `lib/utils.ts` is imported by nearly every component (`cn`), so a static
+    // import here would put the writer in every page's first load.
+    const source = readFileSync(join(process.cwd(), "lib/utils.ts"), "utf8");
+    expect(source).toMatch(/await import\("write-excel-file\/browser"\)/);
+    expect(source).not.toMatch(/^import .*write-excel-file/m);
+  });
+
+  it("copies tab-separated rows to the clipboard for Google Sheets", async () => {
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+
+    await exportRows([{ Amount: "12", Note: "hi" }], "points", "sheets");
+
+    expect(writeText).toHaveBeenCalledWith("Amount\tNote\n12\thi");
+  });
+
+  it("rejects when the clipboard is refused, so the menu can say so", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: vi.fn(async () => Promise.reject(new Error("denied"))) },
+      configurable: true,
+    });
+
+    await expect(
+      exportRows([{ Amount: "12" }], "points", "sheets"),
+    ).rejects.toThrow("denied");
+  });
+});
+
+describe("the remembered export format", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("is null until one is used, then the last one used", () => {
+    expect(readLastExportFormat()).toBeNull();
+    rememberExportFormat("xlsx");
+    expect(readLastExportFormat()).toBe("xlsx");
+  });
+
+  it("ignores a stored value that is not a format", () => {
+    window.localStorage.setItem("frapp.export-format", "pdf");
+    expect(readLastExportFormat()).toBeNull();
   });
 });

@@ -60,12 +60,12 @@ const {
   mockCurrentChapter,
   mockTransitionMutate,
   mockPermissions,
-  downloadCsvSpy,
+  exportRowsSpy,
 } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
   mockTransitionMutate: vi.fn().mockResolvedValue({}),
   mockPermissions: vi.fn(),
-  downloadCsvSpy: vi.fn(),
+  exportRowsSpy: vi.fn(async () => {}),
 }));
 
 const OPEN_INVOICE = {
@@ -119,7 +119,7 @@ vi.mock("@/lib/utils", async () => {
   const actual = await vi.importActual<typeof import("@/lib/utils")>(
     "@/lib/utils",
   );
-  return { ...actual, downloadCsv: downloadCsvSpy };
+  return { ...actual, exportRows: exportRowsSpy };
 });
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -377,13 +377,22 @@ describe("bulk selection and CSV export", () => {
     await userEvent.click(
       screen.getByRole("checkbox", { name: "Select Fall 2026 dues" }),
     );
+    // The button opens the file-type menu (#3969); picking one exports.
     await userEvent.click(
-      screen.getByRole("button", { name: /export csv/i }),
+      screen.getByRole("button", { name: /export selected/i }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Excel (.xlsx)" }),
     );
 
-    expect(downloadCsvSpy).toHaveBeenCalledTimes(1);
-    const [rows, prefix] = downloadCsvSpy.mock.calls[0]!;
+    expect(exportRowsSpy).toHaveBeenCalledTimes(1);
+    const [rows, prefix, format] = exportRowsSpy.mock.calls[0] as unknown as [
+      Record<string, string>[],
+      string,
+      string,
+    ];
     expect(prefix).toBe("invoices");
+    expect(format).toBe("xlsx");
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ Title: "Fall 2026 dues" });
   });
