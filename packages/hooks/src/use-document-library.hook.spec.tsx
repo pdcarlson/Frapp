@@ -123,3 +123,26 @@ describe("useDocumentLibrary (#3938)", () => {
     expect(render().result.current.truncated).toBe(false);
   });
 });
+
+describe("useDocumentLibrary file type (#3938)", () => {
+  it("offers the groups present, and keeps a pick whose last file went", () => {
+    const typed = [
+      { ...DOCS[0]!, content_type: "application/pdf" },
+      { ...DOCS[1]!, content_type: null, storage_path: "c/d/x/budget.xlsx" },
+    ];
+    expect(
+      render({ documents: typed }).result.current.kinds.map((k) => k.label),
+    ).toEqual(["PDF", "Spreadsheet"]);
+
+    const { result } = render({
+      documents: [typed[0]!],
+      filters: { uploader: null, date: null, kind: "spreadsheet" },
+    });
+    expect(result.current.kinds.map((k) => k.label)).toEqual([
+      "PDF",
+      "Spreadsheet",
+    ]);
+    expect(result.current.visible).toEqual([]);
+    expect(result.current.filtering).toBe(true);
+  });
+});

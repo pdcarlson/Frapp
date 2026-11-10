@@ -24,7 +24,7 @@ export const POSTGREST_MAX_ROWS = 1000;
 /** A documents response this long is treated as truncated. */
 export const DOCUMENT_LIST_CAP = POSTGREST_MAX_ROWS;
 
-/** The capped-list status line, both apps (`writing.md` § Chapter Documents). */
+/** The capped-list status line, both apps (`writing.md` § Chapter Documents (dashboard)). */
 export const DOCUMENT_CAP_NOTICE = `Showing the newest ${DOCUMENT_LIST_CAP.toLocaleString(
   "en-US",
 )} documents. Search and filters look only at these for now.`;

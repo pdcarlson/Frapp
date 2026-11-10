@@ -69,7 +69,8 @@ function ChapterDocumentsPage() {
   const { confirm, confirmDialog } = useConfirmDialog();
   const [search, setSearch] = useState("");
   /*
-    Search, the uploader and date filters, and the order all run here, over
+    Search, the uploader, date and file type filters, and the order all run
+    here (`useDocumentLibrary`), over
     the library the list endpoint returns in one response (#3852), as
     `/backwork`'s do: a keystroke re-ranks what is in memory, so there is no
     request per character, and it works offline over what is loaded. Deferred
