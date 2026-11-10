@@ -36,6 +36,9 @@ export const stateMicrocopy = {
     empty: "No events yet.",
     noUpcoming: "No upcoming events.",
     noPast: "No past events.",
+    // Upcoming holds the next two weeks (#3707); what's after them waits
+    // behind Later, right under this line.
+    noneSoon: "Nothing in the next two weeks.",
     noSearchMatches: "No events match that search.",
     noFilterMatches: "No events match these filters.",
     // On the calendar of a chapter with no events. Officers who can create

@@ -10,6 +10,7 @@ export * from "./member-avatar-color";
 export * from "./setup-checklist";
 export * from "./unset-features";
 export * from "./use-events";
+export * from "./event-series";
 export * from "./use-activity-feed";
 export * from "./use-attendance";
 export * from "./task-card";

@@ -10,7 +10,6 @@ import {
   sidebarUnreadCounts,
   useChannelLatestMessages,
   useChannelNotificationPreferences,
-  useChannelUnreadCounts,
   useChannels,
   useGetOrCreateDm,
   useLeaveChannel,
@@ -43,6 +42,7 @@ import {
 } from "@/lib/chat/channel-list";
 import { confirmHideConversation } from "@/lib/chat/hide-conversation-prompt";
 import { channelsErrorCopy } from "@/lib/chat/channels-error";
+import { useShownUnreadCounts } from "@/lib/chat/unread-first-paint";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -81,7 +81,8 @@ export default function MessagesScreen() {
     return memberId ? avatarTintFor(memberId) : null;
   };
   const channelsQuery = useChannels();
-  const unreadQuery = useChannelUnreadCounts();
+  const unread = useShownUnreadCounts();
+  const unreadQuery = unread.query;
   const latestQuery = useChannelLatestMessages();
   const notificationPrefsQuery = useChannelNotificationPreferences();
   const leaveChannel = useLeaveChannel();
@@ -105,10 +106,10 @@ export default function MessagesScreen() {
   const unreadByChannelId = useMemo(
     () =>
       sidebarUnreadCounts({
-        data: unreadQuery.data,
-        isError: unreadQuery.isError,
+        data: unread.data,
+        isError: unread.isError,
       }),
-    [unreadQuery.data, unreadQuery.isError],
+    [unread.data, unread.isError],
   );
   const mutedChannelIds = useMemo(
     () =>

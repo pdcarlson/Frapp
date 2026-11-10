@@ -229,6 +229,8 @@ vi.mock("@repo/hooks", async () => {
     useChannelUnreadCounts: () => ({
       ...query(unreadData.value, refetches.unread),
       isError: queryErrors.unread,
+      // As TanStack reports it: 0 until a read has answered.
+      dataUpdatedAt: unreadData.value === undefined ? 0 : 1,
     }),
     useChapterSetupChecklist: (options?: { omit?: readonly string[] }) => {
       setupChecklistOptions.value = options;
@@ -963,6 +965,38 @@ describe("Chat home filters on unknown data (#2877)", () => {
       "general",
       "social",
     ]);
+  });
+
+  it("hides nothing under Unread only on counts the phone saved, and marks from them (#4006)", async () => {
+    const { holdUnreadFirstPaint, resetUnreadFirstPaintForTests } =
+      await import("@/lib/chat/unread-first-paint");
+    channelsData.value = [general, social];
+    // The request hasn't answered; the last launch's answer says social has
+    // nothing unread, and a push for general is in the tray.
+    unreadData.value = undefined as never;
+    holdUnreadFirstPaint({
+      saved: [
+        { channel_id: general.id, unread_count: 0, mention_count: 0 },
+        { channel_id: social.id, unread_count: 0, mention_count: 0 },
+      ],
+      tray: { channelIds: new Set([general.id]), since: Date.now() },
+    });
+    sidebarPrefs.value = {
+      ...sidebarPrefs.value,
+      filters: { unreadOnly: true, hideMuted: false },
+    };
+    try {
+      const tree = render();
+
+      expect(
+        rows(tree).map((row) => [row.props.name, row.props.unreadCount]),
+      ).toEqual([
+        ["general", 1],
+        ["social", 0],
+      ]);
+    } finally {
+      resetUnreadFirstPaintForTests();
+    }
   });
 
   it("hides nothing under Hide muted while the levels' last read failed", () => {

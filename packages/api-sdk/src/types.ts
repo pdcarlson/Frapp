@@ -2399,6 +2399,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/pledge-classes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the chapter's pledge classes, oldest first */
+        get: operations["PledgeClassController_list_v1"];
+        put?: never;
+        /** Add a pledge class at the end of the list */
+        post: operations["PledgeClassController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/pledge-classes/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set the order of the chapter's pledge classes */
+        put: operations["PledgeClassController_reorder_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/pledge-classes/assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set members' pledge class and order number, all or none */
+        put: operations["PledgeClassController_assign_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/pledge-classes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a pledge class; its members keep their order number and lose the class */
+        delete: operations["PledgeClassController_remove_v1"];
+        options?: never;
+        head?: never;
+        /** Rename a pledge class */
+        patch: operations["PledgeClassController_rename_v1"];
+        trace?: never;
+    };
     "/v1/rush/candidates": {
         parameters: {
             query?: never;
@@ -3859,6 +3929,13 @@ export interface components {
             current_city: string | null;
             current_company: string | null;
             email: string;
+            /**
+             * Format: uuid
+             * @description The member's pledge class, one of `GET /v1/pledge-classes`, or null.
+             */
+            pledge_class_id: string | null;
+            /** @description The member's order within their pledge class, or chapter-wide (a roll or bond number), set by officers; or null. */
+            order_number: number | null;
             /** @description Whether the member holds the chapter's Alumni system role, resolved the same way GET /alumni resolves it — a directory splitting actives from alumni filters on this rather than on role ids. */
             is_alumni: boolean;
             /** @description Custom-field values, present only on single-member reads and already filtered to the fields the requesting viewer may see. */
@@ -4929,6 +5006,55 @@ export interface components {
         RejectTaskCompletionDto: {
             /** @description Optional comment for rejection */
             comment?: string;
+        };
+        PledgeClassDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            name: string;
+            /** @description The class's place in the chapter's list, lowest first, which is oldest first. */
+            position: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        PledgeClassNameDto: {
+            /** @description The class name as the chapter writes it ("Alpha", "Fall 2019"). Stored trimmed; unique within the chapter, ignoring case. */
+            name: string;
+        };
+        ReorderPledgeClassesDto: {
+            /** @description Every one of the chapter's class ids, oldest class first. A list that is not exactly the chapter's current classes is refused with 409, so a stale editor can't drop a class out of order. */
+            ids: string[];
+        };
+        PledgeClassAssignmentDto: {
+            /**
+             * Format: uuid
+             * @description The membership id (members.id).
+             */
+            member_id: string;
+            /**
+             * Format: uuid
+             * @description One of the chapter's pledge classes, or null for none.
+             */
+            pledge_class_id: string | null;
+            /** @description The member's order within their class, or chapter-wide (a roll or bond number), or null for none. Not required to be unique. */
+            order_number: number | null;
+        };
+        AssignPledgeClassesDto: {
+            /** @description Each listed member gets both values; members not listed are untouched. All of them are written or none. */
+            assignments: components["schemas"]["PledgeClassAssignmentDto"][];
+        };
+        MemberPledgeClassDto: {
+            /**
+             * Format: uuid
+             * @description The membership id (members.id).
+             */
+            member_id: string;
+            /** Format: uuid */
+            pledge_class_id: string | null;
+            order_number: number | null;
         };
         RushCandidateViewDto: {
             /** Format: uuid */
@@ -10992,6 +11118,192 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PledgeClassController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PledgeClassDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PledgeClassController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PledgeClassNameDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PledgeClassDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PledgeClassController_reorder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderPledgeClassesDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PledgeClassDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PledgeClassController_assign_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignPledgeClassesDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberPledgeClassDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PledgeClassController_remove_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PledgeClassController_rename_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PledgeClassNameDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PledgeClassDto"];
+                };
             };
             /** @description Error */
             default: {

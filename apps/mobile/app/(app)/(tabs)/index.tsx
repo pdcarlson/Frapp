@@ -22,7 +22,6 @@ import {
   sidebarUnreadCounts,
   useCategories,
   useChannelNotificationPreferences,
-  useChannelUnreadCounts,
   lastChannelLandingId,
   useActiveChapterId,
   useChannels,
@@ -106,6 +105,7 @@ import {
   readLastChannel,
   settleChatLaunch,
 } from "@/lib/chat/last-channel";
+import { useShownUnreadCounts } from "@/lib/chat/unread-first-paint";
 import {
   ChannelActionsMenu,
   type ChannelActionsMenuTarget,
@@ -170,7 +170,10 @@ export default function ChatHomeScreen() {
   useTourReady(!channelsQuery.isPending, chapterName);
   const channelsAnchor = useTourAnchor("channels");
   const categoriesQuery = useCategories();
-  const unreadQuery = useChannelUnreadCounts();
+  // The server's counts, with what the phone already holds laid over until
+  // they answer (`lib/chat/unread-first-paint.ts`, #4006).
+  const unread = useShownUnreadCounts();
+  const unreadQuery = unread.query;
   const eventsQuery = useEvents();
   const tasksQuery = useTasks();
   // A DM row's title is the *other* participant, so the list needs the viewer's
@@ -206,10 +209,10 @@ export default function ChatHomeScreen() {
   const unreadByChannelId = useMemo(
     () =>
       sidebarUnreadCounts({
-        data: unreadQuery.data,
-        isError: unreadQuery.isError,
+        data: unread.data,
+        isError: unread.isError,
       }),
-    [unreadQuery.data, unreadQuery.isError],
+    [unread.data, unread.isError],
   );
   const accountMenu = useAccountMenu();
 
@@ -368,7 +371,10 @@ export default function ChatHomeScreen() {
       }),
       pinnedIds: preferences.pinnedIds,
       collapsed: preferences.collapsed,
-      filters: preferences.filters,
+      // Unread only hides nothing on counts that aren't the server's yet.
+      filters: unread.provisional
+        ? { ...preferences.filters, unreadOnly: false }
+        : preferences.filters,
       activeChannelId: null,
       titleOf,
       unreadByChannelId,
@@ -378,6 +384,7 @@ export default function ChatHomeScreen() {
     channels,
     categories,
     preferences,
+    unread.provisional,
     unreadByChannelId,
     mutedChannelIds,
     titleOf,
@@ -627,7 +634,7 @@ export default function ChatHomeScreen() {
         member they have no @-mentions when they do — the precise failure the
         "never re-derive unread" rule exists to prevent. Say it instead.
       */}
-      {unreadQuery.isError ? (
+      {unread.isError ? (
         <Text style={styles.unreadWarning}>
           Unread counts are unavailable right now, so badges may be missing.
         </Text>

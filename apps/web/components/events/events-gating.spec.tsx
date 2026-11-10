@@ -50,6 +50,12 @@ vi.mock("@repo/hooks", () => ({
   useNow: () => Date.now(),
 }));
 
+// The viewer whose last view (List or Calendar) the page reads; no stored
+// choice unless a test writes one.
+vi.mock("@/lib/auth/use-frapp-user", () => ({
+  useFrappUser: () => ({ userId: "user-1", isLoading: false }),
+}));
+
 vi.mock("@/lib/providers/network-provider", () => ({
   useNetwork: () => ({ isOffline: false }),
 }));

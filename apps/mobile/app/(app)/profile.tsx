@@ -56,8 +56,10 @@ import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
  *
  * ## Five detail rows, not four different ones
  *
- * Canvas draws Email, Phone, Pledge class and Big brother. Only Email exists —
- * the `users` table has no phone, pledge class, or big-brother column. The
+ * Canvas draws Email, Phone, Pledge class and Big brother. Of those the
+ * `users` table has only Email: no phone or big-brother column exists, and a
+ * pledge class lives on the membership (`members.pledge_class_id`, #3939),
+ * which this screen does not draw yet. The
  * rows below are Email plus four of the fields the API's `UpdateUserDto`
  * lets a member edit (major, graduation year, city, company); display name heads the
  * screen and bio gets its own card. Filed.

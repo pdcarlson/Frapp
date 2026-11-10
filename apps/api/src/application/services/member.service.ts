@@ -57,6 +57,10 @@ export interface MemberProfile {
   current_city: string | null;
   current_company: string | null;
   email: string;
+  /** `members.pledge_class_id` (#3939): one of the chapter's classes, or null. */
+  pledge_class_id: string | null;
+  /** `members.order_number` (#3939): set by officers, or null. */
+  order_number: number | null;
   /**
    * Whether the member holds the chapter's Alumni system role. Resolved through
    * `RbacService.getAlumniRoleId`, the lookup {@link MemberService.findAlumniByChapter}
