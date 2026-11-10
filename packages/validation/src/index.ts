@@ -709,6 +709,7 @@ export {
   permissionDefinition,
   permissionLabel,
   permissionModuleLabel,
+  RUSH_MEMBER_PERMISSIONS,
 } from "./permission-registry";
 export type {
   PermissionDefinition,

@@ -3353,3 +3353,33 @@ alter table public.chat_channels
   drop column if exists created_by,
   drop column if exists display_locked;
 ```
+
+## Rollback Recruitment permissions backfill (20261111010000)
+
+* **Migration**: `20261111010000_rush_permissions_backfill.sql`
+
+A data backfill: six `rush:*` strings appended to `roles.permissions` and `chapter_custom_roles.capabilities` on roles that held `members:view`. No schema change.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API gates the rush routes on `members:view` alone and ignores the `rush:*` strings, which then read as custom permissions on the roles matrix. Leaving them in place is harmless, and keeps the grant ready for when the API ships again.
+
+**To remove the strings**, in a later forward migration after the code revert has shipped. This also removes a key an officer granted by hand since, which the data cannot tell apart from a backfilled one:
+
+```sql
+update public.roles
+set permissions = array(
+  select p from unnest(permissions) as p where p not like 'rush:%'
+)
+where permissions && array[
+  'rush:view', 'rush:add', 'rush:notes',
+  'rush:vote', 'rush:view_results', 'rush:bid'
+];
+
+update public.chapter_custom_roles
+set capabilities = array(
+  select p from unnest(capabilities) as p where p not like 'rush:%'
+)
+where capabilities && array[
+  'rush:view', 'rush:add', 'rush:notes',
+  'rush:vote', 'rush:view_results', 'rush:bid'
+];
+```
