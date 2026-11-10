@@ -1,7 +1,9 @@
 /**
  * What's new opens by itself, once, after an update (#3804;
- * `spec/ui/mobile/screens.md` s16). This file holds the rule and the phone's
- * memory of it; `components/whats-new/whats-new-host.tsx` shows the sheet.
+ * `spec/ui/mobile/screens.md` s16). This file holds the phone's memory of it
+ * and what the phone feeds the rule, `decideWhatsNew` in `@repo/validation`,
+ * which the web dashboard shares; `components/whats-new/whats-new-host.tsx`
+ * shows the sheet.
  *
  * The phone remembers which version of the newest entry it has shown
  * ({@link WHATS_NEW_SEEN_STORAGE_KEY}, holding `releaseNoteVersion` from
@@ -37,12 +39,6 @@
  */
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import {
-  isNewerReleaseNoteVersion,
-  parseReleaseNoteVersion,
-  releaseNoteVersion,
-  type ReleaseNote,
-} from "@repo/validation";
 import { CHAT_KV_PREFIX } from "@/lib/chat/key-value-store";
 
 /** `releaseNoteVersion` of the newest entry this phone has shown or skipped. */
@@ -95,51 +91,6 @@ export function startWhatsNewBootRead(
 /** Test seam: a fresh process. */
 export function resetWhatsNewBootReadForTests(): void {
   bootRead = null;
-}
-
-export interface WhatsNewDecision {
-  /** The entries to show, newest first; empty shows nothing. */
-  show: readonly ReleaseNote[];
-  /** The id to store as seen, or `null` to leave the marker alone. */
-  record: string | null;
-}
-
-/**
- * What this launch does. `notes` is `RELEASE_NOTES` (newest first); dates are
- * `YYYY-MM-DD`, so they compare as strings. `seen` is a stored
- * `releaseNoteVersion`.
- */
-export function decideWhatsNew(input: {
-  notes: readonly ReleaseNote[];
-  seen: string | null;
-  tourDue: boolean;
-  existingInstall: boolean;
-}): WhatsNewDecision {
-  const { notes, seen, tourDue, existingInstall } = input;
-  const newest = notes[0];
-  if (!newest) return { show: [], record: null };
-  const newestVersion = releaseNoteVersion(newest);
-  const marker = seen === null ? null : parseReleaseNoteVersion(seen);
-  const versionOf = (note: ReleaseNote) => ({
-    date: note.date,
-    lines: note.changes.length,
-  });
-  // Shown already, or the marker comes from a newer bundle (an update rolled
-  // back, to an earlier day or to a shorter version of the same day's entry):
-  // nothing is new.
-  if (marker !== null && !isNewerReleaseNoteVersion(versionOf(newest), marker)) {
-    return { show: [], record: null };
-  }
-  if (tourDue || (marker === null && !existingInstall)) {
-    return { show: [], record: newestVersion };
-  }
-  const show =
-    marker === null
-      ? [newest]
-      : // Every entry after the one last shown, and that day's entry itself
-        // when lines were added to it since.
-        notes.filter((note) => isNewerReleaseNoteVersion(versionOf(note), marker));
-  return { show, record: newestVersion };
 }
 
 export async function readWhatsNewSeen(
