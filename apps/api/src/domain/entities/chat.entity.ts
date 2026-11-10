@@ -292,13 +292,21 @@ export interface ChatMessage {
 export const CHAT_THREAD_FOLLOW_STATES = ['following', 'muted'] as const;
 export type ChatThreadFollowState = (typeof CHAT_THREAD_FOLLOW_STATES)[number];
 
+/**
+ * What `chat_thread_follows.state` stores: the two public states, plus
+ * `unfollowed`, a member who unfollowed or only read the thread. It keeps the
+ * read cursor, is never pushed, and only the member's own reply re-follows
+ * it. The API reports it as "not following" (`null`).
+ */
+export type ChatThreadFollowRowState = ChatThreadFollowState | 'unfollowed';
+
 /** A row of `chat_thread_follows`. */
 export interface ChatThreadFollow {
   thread_root_id: string;
   user_id: string;
   /** The root's channel, copied from the root row by the API. */
   channel_id: string;
-  state: ChatThreadFollowState;
+  state: ChatThreadFollowRowState;
   /** How far the member has read the thread; null when never opened. */
   last_read_at: string | null;
   created_at: string;

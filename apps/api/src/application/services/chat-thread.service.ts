@@ -2,8 +2,11 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
+import { NotificationService } from './notification.service';
 import { CHAT_SINCE_NOT_FOUND_CODE } from '@repo/validation';
 import {
   CHAT_MESSAGE_REPOSITORY,
@@ -57,7 +60,10 @@ export class ChatThreadService {
     private readonly threads: IChatThreadRepository,
     private readonly channelAccess: ChannelAccessService,
     private readonly chatBlocks: ChatBlockService,
+    private readonly notifications: NotificationService,
   ) {}
+
+  private readonly logger = new Logger(ChatThreadService.name);
 
   async getThread(
     channelId: string,
@@ -78,7 +84,8 @@ export class ChatThreadService {
     const [masked] = maskBlockedMessages([root], blocked);
     return {
       root: masked,
-      follow_state: follow?.state ?? null,
+      follow_state:
+        follow && follow.state !== 'unfollowed' ? follow.state : null,
       last_read_at: follow?.last_read_at ?? null,
     };
   }
@@ -152,6 +159,25 @@ export class ChatThreadService {
     this.assertThreadable(channel);
     const readAt = new Date().toISOString();
     await this.threads.markRead(root.id, channel.id, userId, readAt);
+    // The thread's pushes leave the inbox with it, as a channel read clears
+    // the channel's (#3788). Best-effort: a stale inbox dot must not fail the
+    // cursor that drives the counts.
+    await this.notifications
+      .markChatChannelNotificationsRead(
+        userId,
+        chapterId,
+        channel.id,
+        readAt,
+        root.id,
+      )
+      .catch((error: unknown) =>
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'chat-thread-read-clears-notifications',
+          message: `Could not clear thread notifications for ${root.id}`,
+          error,
+        }),
+      );
     return { last_read_at: readAt };
   }
 

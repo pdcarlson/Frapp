@@ -60,6 +60,9 @@ describe('ChatService.sendMessage into a thread', () => {
 
   it('writes the reply with its root and follows the sender and the root’s author first', async () => {
     const order: string[] = [];
+    f.mockThreadRepo.followOnReply.mockImplementation(async () => {
+      order.push('follow-sender');
+    });
     f.mockThreadRepo.ensureFollowing.mockImplementation(async () => {
       order.push('follow');
     });
@@ -73,19 +76,124 @@ describe('ChatService.sendMessage into a thread', () => {
     expect(f.mockMessageRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({ thread_root_id: 'root-1', reply_to_id: null }),
     );
+    expect(f.mockThreadRepo.followOnReply).toHaveBeenCalledWith(
+      'root-1',
+      'ch-chan-1',
+      'user-1',
+    );
     expect(f.mockThreadRepo.ensureFollowing).toHaveBeenCalledWith(
       'root-1',
       'ch-chan-1',
-      ['user-1', 'author-1'],
+      ['author-1'],
     );
     // The push worker reacts to the insert, so the follows must already exist.
-    expect(order).toEqual(['follow', 'insert']);
+    expect(order).toEqual(['follow-sender', 'follow', 'insert']);
     expect(f.mockThreadRepo.markRead).toHaveBeenCalledWith(
       'root-1',
       'ch-chan-1',
       'user-1',
       reply.created_at,
     );
+  });
+
+  it('follows the root’s author on the first reply only, so their unfollow sticks', async () => {
+    f.mockMessageRepo.findById.mockResolvedValue({
+      ...root,
+      thread_reply_count: 2,
+    });
+
+    await send();
+
+    expect(f.mockThreadRepo.ensureFollowing).toHaveBeenCalledWith(
+      'root-1',
+      'ch-chan-1',
+      [],
+    );
+  });
+
+  it('follows everyone the reply mentions', async () => {
+    f.mockMemberRepo.findByChapter.mockResolvedValue([
+      { user_id: 'mentioned-1', display_name: 'Sam' },
+    ]);
+    const mentions = jest
+      .spyOn(
+        (service as unknown as { mentions: { resolveForSend: () => unknown } })
+          .mentions,
+        'resolveForSend',
+      )
+      .mockResolvedValue(['mentioned-1'] as never);
+
+    await send({ content: 'cc @Sam' });
+
+    expect(mentions).toHaveBeenCalled();
+    expect(f.mockThreadRepo.ensureFollowing).toHaveBeenCalledWith(
+      'root-1',
+      'ch-chan-1',
+      ['author-1', 'mentioned-1'],
+    );
+  });
+
+  it('refuses an imported message as a root, which the import purge would delete with its replies', async () => {
+    f.mockMessageRepo.findById.mockResolvedValue({ ...root, kind: 'imported' });
+
+    await expect(send()).rejects.toThrow(
+      'An imported message cannot be threaded',
+    );
+    expect(f.mockMessageRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('lets a member edit their own thread reply under an announcement', async () => {
+    f.mockChannelRepo.findById.mockResolvedValue(announcements);
+    f.mockRbac.getEffectivePermissions.mockResolvedValue([]);
+    f.mockMessageRepo.findById.mockResolvedValue(reply);
+    f.mockMessageRepo.update.mockResolvedValue({ ...reply, content: 'fixed' });
+
+    await expect(
+      service.editMessage('reply-1', 'ch-1', 'user-1', 'fixed'),
+    ).resolves.toEqual(expect.objectContaining({ content: 'fixed' }));
+  });
+
+  it('still refuses a member editing a timeline post in an announcement', async () => {
+    f.mockChannelRepo.findById.mockResolvedValue(announcements);
+    f.mockRbac.getEffectivePermissions.mockResolvedValue([]);
+    f.mockMessageRepo.findById.mockResolvedValue({
+      ...baseMessage,
+      sender_id: 'user-1',
+    });
+
+    await expect(
+      service.editMessage('msg-1', 'ch-1', 'user-1', 'fixed'),
+    ).rejects.toThrow();
+  });
+
+  it('mints an upload URL for a thread reply under an announcement, and not for the timeline', async () => {
+    f.mockChannelRepo.findById.mockResolvedValue(announcements);
+    f.mockRbac.getEffectivePermissions.mockResolvedValue([]);
+
+    await expect(
+      f.attachments.requestChatUploadUrl(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+        'a.png',
+        'image/png',
+        10,
+        false,
+        false,
+      ),
+    ).rejects.toThrow();
+    await expect(
+      f.attachments.requestChatUploadUrl(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+        'a.png',
+        'image/png',
+        10,
+        false,
+        true,
+      ),
+    ).resolves.toBeDefined();
   });
 
   it('lets any reader reply in a thread under an announcement, without announcements:post', async () => {
@@ -186,6 +294,7 @@ describe('ChatThreadService', () => {
   };
   const channelAccess = { assertChannelAccess: jest.fn() };
   const chatBlocks = { listBlockedUserIds: jest.fn() };
+  const notifications = { markChatChannelNotificationsRead: jest.fn() };
   let service: ChatThreadService;
 
   beforeEach(() => {
@@ -195,11 +304,13 @@ describe('ChatThreadService', () => {
     messageRepo.findById.mockResolvedValue(root);
     threads.findReplies.mockResolvedValue([reply]);
     threads.findFollow.mockResolvedValue(null);
+    notifications.markChatChannelNotificationsRead.mockResolvedValue(undefined);
     service = new ChatThreadService(
       messageRepo as never,
       threads as never,
       channelAccess as never,
       chatBlocks as never,
+      notifications as never,
     );
   });
 
@@ -258,6 +369,39 @@ describe('ChatThreadService', () => {
         follow_state: 'muted',
         last_read_at: '2026-01-01T13:00:00.000Z',
       }),
+    );
+  });
+
+  it('reports an unfollowed row as not following, keeping its cursor', async () => {
+    threads.findFollow.mockResolvedValue({
+      state: 'unfollowed',
+      last_read_at: '2026-01-01T13:00:00.000Z',
+    });
+
+    await expect(
+      service.getThread('ch-chan-1', 'root-1', 'ch-1', 'user-1'),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        follow_state: null,
+        last_read_at: '2026-01-01T13:00:00.000Z',
+      }),
+    );
+  });
+
+  it('reading a thread clears that thread’s notifications only, and survives a failed clear', async () => {
+    notifications.markChatChannelNotificationsRead.mockRejectedValue(
+      new Error('down'),
+    );
+
+    await expect(
+      service.markRead('ch-chan-1', 'root-1', 'ch-1', 'user-1'),
+    ).resolves.toEqual({ last_read_at: expect.any(String) });
+    expect(notifications.markChatChannelNotificationsRead).toHaveBeenCalledWith(
+      'user-1',
+      'ch-1',
+      'ch-chan-1',
+      expect.any(String),
+      'root-1',
     );
   });
 

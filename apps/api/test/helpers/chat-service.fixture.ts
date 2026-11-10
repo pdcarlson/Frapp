@@ -232,6 +232,7 @@ export async function createChatServiceFixture() {
     findFollow: jest.fn().mockResolvedValue(null),
     findFollowStates: jest.fn().mockResolvedValue(new Map()),
     ensureFollowing: jest.fn().mockResolvedValue(undefined),
+    followOnReply: jest.fn().mockResolvedValue(undefined),
     setFollowState: jest.fn().mockResolvedValue(undefined),
     markRead: jest.fn().mockResolvedValue(undefined),
     findFollowedUnread: jest.fn().mockResolvedValue([]),

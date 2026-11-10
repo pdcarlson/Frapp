@@ -23,6 +23,7 @@ import type { IChatNotificationPreferenceRepository } from '#domain/repositories
 import { CHAT_PUSH_DISPATCH_REPOSITORY } from '#domain/repositories/chat-push-dispatch.repository.interface';
 import type { IChatPushDispatchRepository } from '#domain/repositories/chat-push-dispatch.repository.interface';
 import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import type { ChatThreadFollowRowState } from '#domain/entities/chat.entity';
 import {
   CHAT_THREAD_REPOSITORY,
   type IChatThreadRepository,
@@ -539,7 +540,7 @@ export class ChatPushWorkerService
     // them to the channel.
     const threadRootId = row.thread_root_id ?? null;
     const followStates = threadRootId
-      ? await this.threads.findFollowStates(threadRootId, recipientIds)
+      ? await this.threads.findFollowStates(threadRootId)
       : null;
 
     // Read once, and only once a recipient is actually getting a push: most
@@ -559,7 +560,7 @@ export class ChatPushWorkerService
         ...(followStates
           ? {
               thread: {
-                followState: followStates.get(recipientId) ?? null,
+                followState: publicFollowState(followStates.get(recipientId)),
               },
             }
           : {}),
@@ -1066,4 +1067,11 @@ export class ChatPushWorkerService
     };
     this.presenceChannels.set(channelId, fake as unknown as RealtimeChannel);
   }
+}
+
+/** An `unfollowed` row is a read cursor, not a follow: it pushes as no row does. */
+function publicFollowState(
+  state: ChatThreadFollowRowState | undefined,
+): 'following' | 'muted' | null {
+  return state === 'following' || state === 'muted' ? state : null;
 }

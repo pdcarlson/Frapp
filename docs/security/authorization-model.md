@@ -176,12 +176,12 @@ select c.relname
  order by c.relname;
 ```
 
-That returns **57** rows. The "API only" row of that table is those 57 plus the three `*`-marked
+That returns **58** rows. The "API only" row of that table is those 58 plus the three `*`-marked
 tables (`members`, `users`, `member_custom_field_values`), which carry
 non-widening policies and are therefore listed there rather than in a row of
-their own — **60**. The count was re-derived 2026-11-10 against a local stack at
-migration `20261110170000`, which added `chapter_pledge_classes` (#3939); the names in
-the row were not re-checked one by one. `20261109230000` added `backwork_courses`
+their own — **61**. The count was re-derived 2026-11-10 against a local stack at
+migration `20261110220000`, which added `chat_thread_follows` (#3785); the names in
+the row were not re-checked one by one. `20261110170000` added `chapter_pledge_classes` (#3939) the same day. `20261109230000` added `backwork_courses`
 (#3848) on 2026-11-09. `20261105220000` added
 `discord_import_created_categories` (RLS on, no policies) on 2026-11-05, added
 to the list by hand. Before that, re-derived 2026-09-30 against a local stack at

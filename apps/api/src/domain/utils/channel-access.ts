@@ -56,8 +56,7 @@ export interface ChannelAccessRecord {
  * clears the same read-only / `announcements:post` gate as `"post"`, but is
  * deliberately **not** subject to the Alumni lifecycle rule — alumni are
  * restricted from posting, not from participating in a poll they can read.
- */
-/**
+ *
  * - `read`: see the channel.
  * - `post`: write in the timeline (gated in a read-only channel).
  * - `vote`: take part in something already readable (a poll).
@@ -198,9 +197,10 @@ export function channelAllowsThreads(
  * pass, the channel must not be the audit log (`is_audit_log`, which no
  * member writes in, #3909), AND the channel must either not be read-only, or
  * the caller must hold `"*"` or `"announcements:post"`. Existing callers default to `"read"`, so the
- * predicate stays backward-compatible.
+ * predicate stays backward-compatible. `"thread"` (#3785) is a write that skips
+ * the read-only gate only: archive and the audit log still refuse it.
  *
- * When `operation === "post"` and `isAlumni` is set, the caller is additionally
+ * When `operation` is `"post"` or `"thread"` and `isAlumni` is set, the caller is additionally
  * limited to direct conversations and ROLE_GATED channels that explicitly
  * require `alumni:post` — alumni read everywhere they can see but do not author
  * content in operational channels.

@@ -456,6 +456,14 @@ export class RequestChatUploadUrlDto {
   @IsOptional()
   @IsStrictBoolean()
   with_preview?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'The file is for a reply inside a message thread (#3785). Authorizes as a thread write, which a read-only channel allows, so mint and send agree for a thread reply under an announcement.',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  for_thread?: boolean;
 }
 
 export class ChatUploadUrlResponseDto {

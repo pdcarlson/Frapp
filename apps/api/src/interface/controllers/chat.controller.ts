@@ -809,6 +809,7 @@ export class ChatController {
       dto.content_type,
       dto.size_bytes,
       dto.with_preview ?? false,
+      dto.for_thread ?? false,
     );
     if (!ticket.signedUrl || !ticket.storagePath) {
       throw new InternalServerErrorException(

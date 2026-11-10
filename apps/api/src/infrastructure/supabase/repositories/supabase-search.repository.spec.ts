@@ -235,6 +235,7 @@ describe('SupabaseSearchRepository — query shape', () => {
       for (const method of [
         'select',
         'eq',
+        'is',
         'in',
         'ilike',
         'like',
@@ -395,6 +396,8 @@ describe('SupabaseSearchRepository — query shape', () => {
     const messages = chains.chat_messages;
     expect(messages.in).toHaveBeenCalledWith('channel_id', ['c-1', 'c-2']);
     expect(messages.eq).toHaveBeenCalledWith('is_deleted', false);
+    // Thread replies are not timeline hits (#3785).
+    expect(messages.is).toHaveBeenCalledWith('thread_root_id', null);
     expect(messages.limit).toHaveBeenCalledWith(10);
     expect(messages.order).toHaveBeenCalledWith('created_at', {
       ascending: false,
@@ -813,6 +816,7 @@ describe('SupabaseSearchRepository — message search over many channels (#3265)
         'in',
         'textSearch',
         'eq',
+        'is',
         'order',
         'limit',
       ]) {

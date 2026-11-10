@@ -360,7 +360,6 @@ function coerceKind(kind: string | null | undefined): ChatMessageKind {
   return found ?? "text";
 }
 
-/** Normalizes a raw row into a confirmed cache message. */
 /** A thread parent's summary, as `normalizeRow` reads it off the row. */
 export interface ThreadSummary {
   reply_count: number;
@@ -389,6 +388,7 @@ export function threadSummaryOf(row: RawChatMessage): ThreadSummary | null {
   };
 }
 
+/** Normalizes a raw row into a confirmed cache message. */
 export function normalizeRow(row: RawChatMessage): ChatMessage {
   const clientId =
     typeof row.client_message_id === "string" &&

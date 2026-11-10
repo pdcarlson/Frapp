@@ -4472,6 +4472,8 @@ export interface components {
             size_bytes?: number;
             /** @description Also mint an upload URL for a smaller JPEG copy of this photo, which readers draw in the timeline. Ignored unless content_type is an image. */
             with_preview?: boolean;
+            /** @description The file is for a reply inside a message thread (#3785). Authorizes as a thread write, which a read-only channel allows, so mint and send agree for a thread reply under an announcement. */
+            for_thread?: boolean;
         };
         ChatUploadUrlResponseDto: {
             /** @description Short-lived signed URL; PUT the bytes to it. */

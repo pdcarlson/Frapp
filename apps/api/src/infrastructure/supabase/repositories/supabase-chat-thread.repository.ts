@@ -6,6 +6,7 @@ import { ChatMessageCursorNotFoundError } from '#domain/repositories/chat.reposi
 import type {
   ChatMessage,
   ChatThreadFollow,
+  ChatThreadFollowRowState,
   ChatThreadFollowState,
   FollowedThreadUnread,
 } from '#domain/entities/chat.entity';
@@ -71,15 +72,12 @@ export class SupabaseChatThreadRepository implements IChatThreadRepository {
 
   async findFollowStates(
     rootId: string,
-    userIds: string[],
-  ): Promise<Map<string, ChatThreadFollowState>> {
-    const states = new Map<string, ChatThreadFollowState>();
-    if (userIds.length === 0) return states;
+  ): Promise<Map<string, ChatThreadFollowRowState>> {
+    const states = new Map<string, ChatThreadFollowRowState>();
     const { data, error } = await this.supabase
       .from('chat_thread_follows')
       .select('user_id, state')
-      .eq('thread_root_id', rootId)
-      .in('user_id', userIds);
+      .eq('thread_root_id', rootId);
     if (error) throw new SupabaseQueryError(error);
     for (const row of data ?? []) states.set(row.user_id, row.state);
     return states;
@@ -104,27 +102,33 @@ export class SupabaseChatThreadRepository implements IChatThreadRepository {
     if (error) throw new SupabaseQueryError(error);
   }
 
+  async followOnReply(
+    rootId: string,
+    channelId: string,
+    userId: string,
+  ): Promise<void> {
+    await this.ensureFollowing(rootId, channelId, [userId]);
+    const { error } = await this.supabase
+      .from('chat_thread_follows')
+      .update({ state: 'following', updated_at: new Date().toISOString() })
+      .eq('thread_root_id', rootId)
+      .eq('user_id', userId)
+      .eq('state', 'unfollowed');
+    if (error) throw new SupabaseQueryError(error);
+  }
+
   async setFollowState(
     rootId: string,
     channelId: string,
     userId: string,
     state: ChatThreadFollowState | null,
   ): Promise<void> {
-    if (state === null) {
-      const { error } = await this.supabase
-        .from('chat_thread_follows')
-        .delete()
-        .eq('thread_root_id', rootId)
-        .eq('user_id', userId);
-      if (error) throw new SupabaseQueryError(error);
-      return;
-    }
     const { error } = await this.supabase.from('chat_thread_follows').upsert(
       {
         thread_root_id: rootId,
         channel_id: channelId,
         user_id: userId,
-        state,
+        state: state ?? 'unfollowed',
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'thread_root_id,user_id' },
@@ -138,10 +142,21 @@ export class SupabaseChatThreadRepository implements IChatThreadRepository {
     userId: string,
     readAt: string,
   ): Promise<void> {
-    // Two writes, both idempotent: create the row if missing (keeping any
-    // existing state), then move the cursor forward only. A single upsert
-    // would overwrite a later cursor from another device.
-    await this.ensureFollowing(rootId, channelId, [userId]);
+    // Two writes, both idempotent: create an `unfollowed` row if missing
+    // (keeping any existing state), then move the cursor forward only. A
+    // single upsert would overwrite a later cursor from another device.
+    const { error: insertError } = await this.supabase
+      .from('chat_thread_follows')
+      .upsert(
+        {
+          thread_root_id: rootId,
+          channel_id: channelId,
+          user_id: userId,
+          state: 'unfollowed' as const,
+        },
+        { onConflict: 'thread_root_id,user_id', ignoreDuplicates: true },
+      );
+    if (insertError) throw new SupabaseQueryError(insertError);
     const { error } = await this.supabase
       .from('chat_thread_follows')
       .update({ last_read_at: readAt, updated_at: readAt })

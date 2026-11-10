@@ -52,12 +52,24 @@ describe('maskBlockedMessages', () => {
     reply_to_id: null,
     metadata: {},
     mentions: [],
+    thread_root_id: null,
+    thread_reply_count: 0,
+    thread_last_reply_at: null,
+    thread_recent_sender_ids: [],
     is_pinned: false,
     pinned_at: null,
     edited_at: null,
     is_deleted: false,
     created_at: '2026-03-01T00:00:00.000Z',
     ...overrides,
+  });
+
+  it('keeps a masked thread reply in its thread (#3785)', () => {
+    const [masked] = maskBlockedMessages(
+      [servedRow({ sender_id: BLOCKED, thread_root_id: 'root-1' })],
+      [BLOCKED],
+    );
+    expect(masked.thread_root_id).toBe('root-1');
   });
 
   it('masks a message from a blocked sender', () => {

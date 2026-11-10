@@ -195,6 +195,14 @@ describe('SupabaseChatMessageRepository — tenant scope', () => {
     expect(messages.map((m) => m.id)).toEqual([POLL_B]);
   });
 
+  it('findByChannel reads the timeline only, never a thread reply (#3785)', async () => {
+    await repo.findByChannel(CHANNEL_B);
+
+    expect(
+      harness.ops[0].filters.map((f) => [f.column, f.value]),
+    ).toContainEqual(['thread_root_id', null]);
+  });
+
   it('update stays inside the caller chapter subtree', async () => {
     // `chat_messages` has no chapter, so the guard leans entirely on
     // `parentTenant` resolving through the channel. An edit matched on

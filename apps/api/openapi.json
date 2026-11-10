@@ -14244,6 +14244,10 @@
           "with_preview": {
             "type": "boolean",
             "description": "Also mint an upload URL for a smaller JPEG copy of this photo, which readers draw in the timeline. Ignored unless content_type is an image."
+          },
+          "for_thread": {
+            "type": "boolean",
+            "description": "The file is for a reply inside a message thread (#3785). Authorizes as a thread write, which a read-only channel allows, so mint and send agree for a thread reply under an announcement."
           }
         },
         "required": [

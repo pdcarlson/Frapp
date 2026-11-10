@@ -955,14 +955,21 @@ export class ChatService {
     );
 
     // Auto-follow BEFORE the insert, so the push worker, which reacts to the
-    // insert, already finds the follows it decides by: the sender, the root's
-    // author on the first reply, and everyone mentioned. A mute is kept
-    // (`ensureFollowing` adds rows only for members with none). Idempotent, so
-    // a retried send that turns out to be a duplicate costs nothing.
+    // insert, already finds the follows it decides by: the sender (whose own
+    // reply re-follows an unfollow, never a mute), the root's author on the
+    // first reply only, and everyone mentioned. `ensureFollowing` adds rows
+    // only for members with none, so it never undoes a mute or an unfollow.
+    // Idempotent, so a retried send that turns out to be a duplicate costs
+    // nothing.
     if (threadRoot) {
-      await this.threads.ensureFollowing(threadRoot.id, input.channel_id, [
+      await this.threads.followOnReply(
+        threadRoot.id,
+        input.channel_id,
         input.sender_id,
-        ...(threadRoot.sender_id ? [threadRoot.sender_id] : []),
+      );
+      const isFirstReply = (threadRoot.thread_reply_count ?? 0) === 0;
+      await this.threads.ensureFollowing(threadRoot.id, input.channel_id, [
+        ...(isFirstReply && threadRoot.sender_id ? [threadRoot.sender_id] : []),
         ...mentions,
       ]);
     }
@@ -1118,6 +1125,12 @@ export class ChatService {
         'A thread cannot be started on a thread reply',
       );
     }
+    // An imported archive row is hard-deleted when its import is purged, and
+    // the purge would take the members' replies with it (the foreign key
+    // cascades). Threading imported history is slice 3 (#3785).
+    if (root.kind === 'imported') {
+      throw new BadRequestException('An imported message cannot be threaded');
+    }
     return root;
   }
 
@@ -1161,7 +1174,7 @@ export class ChatService {
     messageId: string,
     chapterId: string,
     userId: string,
-    operation: 'read' | 'post' = 'read',
+    operation: 'read' | 'post' | 'thread' = 'read',
     grant?: ReportedMessageGrant,
   ): Promise<ChatMessage> {
     return this.channelAccess.assertMessageAccess(
@@ -1185,11 +1198,18 @@ export class ChatService {
     // the channel, so it must clear the same gates as sending. Otherwise an
     // alumnus (or a member in a read-only channel) could rewrite an older
     // message of theirs to arbitrary text and broadcast it.
+    //
+    // A thread reply re-authorizes as `thread`, the operation it was written
+    // under (#3785): a member may reply in a thread under an announcement, so
+    // `post`'s read-only gate would let them write a reply they can never
+    // fix. Read first to learn which; the archive, audit-log and alumni rules
+    // apply to both.
+    const seen = await this.assertMessageAccess(messageId, chapterId, senderId);
     const message = await this.assertMessageAccess(
       messageId,
       chapterId,
       senderId,
-      'post',
+      seen.thread_root_id ? 'thread' : 'post',
     );
 
     if (message.sender_id !== senderId) {

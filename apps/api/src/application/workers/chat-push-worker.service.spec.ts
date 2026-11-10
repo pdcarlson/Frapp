@@ -463,15 +463,13 @@ describe('ChatPushWorkerService', () => {
         new Map([
           ['a', 'following'],
           ['b', 'muted'],
+          ['c', 'unfollowed'],
         ]),
       );
 
       await service.handleMessage(threadReply());
 
-      expect(threadRepoStub.findFollowStates).toHaveBeenCalledWith(
-        'root-1',
-        expect.arrayContaining(['a', 'b', 'c']),
-      );
+      expect(threadRepoStub.findFollowStates).toHaveBeenCalledWith('root-1');
       expect(notifyUser).toHaveBeenCalledTimes(1);
       expect(notifyUser).toHaveBeenCalledWith(
         'a',

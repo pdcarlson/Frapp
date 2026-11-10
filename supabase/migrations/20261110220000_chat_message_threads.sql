@@ -27,11 +27,37 @@
 -- 1. The thread link and the parent's summary ------------------------------
 
 alter table public.chat_messages
-  add column if not exists thread_root_id uuid
-    references public.chat_messages (id) on delete cascade,
+  add column if not exists thread_root_id uuid,
   add column if not exists thread_reply_count integer not null default 0,
   add column if not exists thread_last_reply_at timestamptz,
   add column if not exists thread_recent_sender_ids uuid[] not null default '{}';
+
+-- The foreign key is added `not valid` and validated separately, so the
+-- validating scan of `chat_messages` holds SHARE UPDATE EXCLUSIVE (reads and
+-- writes continue) rather than the ACCESS EXCLUSIVE an inline `references`
+-- would hold for the whole scan. Every existing row is null, so it passes.
+--
+-- `on delete cascade` is deliberate and safe because a hard delete of a
+-- timeline message happens only with its channel (which cascades everything
+-- anyway) or through the Discord import purge, and `ChatService` refuses an
+-- imported row as a thread root, so no member reply ever hangs under a row
+-- the purge removes. A soft delete keeps the parent as a tombstone and its
+-- replies reachable.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'chat_messages_thread_root_fk'
+  ) then
+    alter table public.chat_messages
+      add constraint chat_messages_thread_root_fk
+      foreign key (thread_root_id) references public.chat_messages (id)
+      on delete cascade
+      not valid;
+  end if;
+end
+$$;
+
+alter table public.chat_messages validate constraint chat_messages_thread_root_fk;
 
 do $$
 begin
@@ -105,11 +131,13 @@ create table if not exists public.chat_thread_follows (
   -- Denormalised from the root so the per-channel reads are one indexed probe.
   -- Written from the root's own row by the API, never from a client payload.
   channel_id uuid not null references public.chat_channels (id) on delete cascade,
-  -- `following` pushes replies (within the channel's level); `muted` never
-  -- pushes and stops auto-follow from turning it back on. No row = not
-  -- following.
+  -- `following` pushes replies (within the channel's level). `muted` never
+  -- pushes, and nothing turns it back on but the member. `unfollowed` is a
+  -- member who unfollowed, or who only read the thread: it keeps the read
+  -- cursor, is never pushed, and only the member's own reply re-follows it.
+  -- No row at all means the member never touched the thread.
   state text not null default 'following'
-    check (state in ('following', 'muted')),
+    check (state in ('following', 'muted', 'unfollowed')),
   last_read_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -140,9 +168,11 @@ as $$
     count(m.id) filter (where m.id is not null),
     count(m.id) filter (where p_user_id = any (m.mentions))
       + (
-        -- A thread reply that @mentions you counts until you read the thread,
-        -- whatever the channel's receipt says: reading the channel does not
-        -- open the thread. Same skips as the channel join below.
+        -- A thread reply that @mentions you counts until you read the thread
+        -- or the channel, whichever is later. Reading the channel clears it
+        -- too, so a client without thread UI can never strand a badge, and
+        -- the channel receipt bounds the scan to recent replies (the partial
+        -- index on (channel_id, created_at)). Same skips as the channel join.
         select count(*)
           from chat_messages t
           left join chat_thread_follows f
@@ -161,7 +191,10 @@ as $$
                 and b.blocker_user_id = p_user_id
                 and b.blocked_user_id = t.sender_id
            )
-           and t.created_at > coalesce(f.last_read_at, '-infinity'::timestamptz)
+           and t.created_at > coalesce(
+             greatest(r.last_read_at, f.last_read_at),
+             '-infinity'::timestamptz
+           )
       )
   from chat_channels c
   left join channel_read_receipts r
@@ -196,7 +229,9 @@ as $$
    )
    and m.created_at > coalesce(r.last_read_at, '-infinity'::timestamptz)
   where c.chapter_id = p_chapter_id
-  group by c.id;
+  -- One receipt per (channel, member), so grouping by it changes nothing; it
+  -- lets the thread-mention probe read the receipt's cursor.
+  group by c.id, r.last_read_at;
 $$;
 
 revoke execute on function public.get_channel_unread_counts(uuid, uuid) from public;
@@ -270,9 +305,9 @@ revoke execute on function public.get_channel_latest_messages(uuid, uuid) from p
 
 -- 4. Per-thread unread for the caller's followed threads in one channel ------
 
--- The API authorizes the channel before calling this. Muted threads are
--- returned with their state so the client can show the toggle, but their
--- count is zero: a muted thread asks for nothing.
+-- The API authorizes the channel before calling this. Followed and muted
+-- threads only (an `unfollowed` row is a cursor, not a follow). A muted
+-- thread's count is zero: it asks for nothing.
 create or replace function public.get_followed_thread_unread(
   p_channel_id uuid,
   p_user_id    uuid
@@ -292,11 +327,12 @@ as $$
     f.thread_root_id,
     f.state,
     f.last_read_at,
-    case when f.state = 'muted' then 0 else (
+    case when f.state <> 'following' then 0 else (
       select count(*)
         from chat_messages t
        where t.thread_root_id = f.thread_root_id
          and t.is_deleted = false
+         and t.kind <> 'imported'
          and t.sender_id is distinct from p_user_id
          and not exists (
            select 1
@@ -311,7 +347,8 @@ as $$
     ) end
   from chat_thread_follows f
   where f.channel_id = p_channel_id
-    and f.user_id = p_user_id;
+    and f.user_id = p_user_id
+    and f.state in ('following', 'muted');
 $$;
 
 revoke execute on function public.get_followed_thread_unread(uuid, uuid) from public;
@@ -341,8 +378,8 @@ $$;
 -- 5. Account deletion purges follows ------------------------------------------
 
 -- `anonymize_user` is redefined in full from `20261106200000_users_major.sql`;
--- the only change is the `chat_thread_follows` delete. Same signature, so its
--- grants are kept.
+-- the changes are the `chat_thread_follows` delete and an explicit
+-- `search_path` pin. Same signature, so its grants are kept.
 create or replace function anonymize_user(
   p_user_id uuid,
   p_rescan_cards boolean default false
