@@ -331,8 +331,24 @@ filtered by sender, date and content (`fromUserId`, `after`, `before`, `has`), a
 channels the caller can read ([`../search.md`](../search.md#message-filters), #3958). On web the surface is
 `ChatSearchPanel`, reached from the channel header's `⋯` menu
 (`apps/web/components/chat/channel-menu.tsx`, #2142 — it was a popover of its own, alongside
-three more, until that lane merged the four), defaulting to the active channel with an
-"All channels" toggle. Picking a hit selects its channel if it is not
+three more, until that lane merged the four). Under the box sit four filter chips (#3958,
+asked by Shawn 2026-11-10; Slack, Discord and Teams filter search the same way):
+
+- **From**: one member at a time, picked from the chapter roster.
+- **In**: one channel out of every channel the member can read, or all of them. It starts on
+  the open channel (all channels when none is open), and is the `channelId` above.
+- **Date**: any time, today, last 7 days, last 30 days, or a custom range. Each is sent as
+  instants at the member's own local midnight: "last 7 days" starts at the midnight seven
+  days ago, and a custom range includes both of its days.
+- **Has**: any of file, image, link and poll; a hit carries every one ticked.
+
+Typing `from:` or `in:` at the end of the box opens the same picker the chip does, narrowed by
+what follows the colon; the arrow keys and Enter pick from the box, and the chip itself works by
+writing that word into the box. A set chip names its value and has a clear button beside it.
+A From, Date or Has filter searches with no text ("everything Ryan posted this week"); one or
+two characters, or no text with only a channel, do not search, which is the API's own rule
+([`../search.md`](../search.md#message-filters)). Each row shows the day and time, since hits
+span days. Mobile has no chat search yet; #341 builds it with these filters. Picking a hit selects its channel if it is not
 already open and then jumps, reusing the same in-shell pending-target machinery a
 `/chat?channel=&message=` deep link resolves through. **It does not change the URL** — a
 search jump is not shareable, back-button-recoverable, or reload-surviving; only a real deep

@@ -891,6 +891,23 @@ export function ChatShell({
     (channelId: string) => channelTitles.get(channelId) ?? null,
     [channelTitles],
   );
+  // Search's In and From pickers (#3958). `channels` is what
+  // `GET /v1/channels` served, so it is exactly what the member can read,
+  // hidden DMs included: they stay searchable, as they stay readable by id.
+  const searchChannels = useMemo(
+    () =>
+      [...channelTitles]
+        .map(([id, label]) => ({ id, label }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [channelTitles],
+  );
+  const searchMembers = useMemo(
+    () =>
+      Object.entries(memberNames)
+        .map(([id, label]) => ({ id, label }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [memberNames],
+  );
 
   // The same predicate the push worker uses (#2771). An exact-name match could
   // pick a group DM a member named "announcements" once the real channel is
@@ -2423,6 +2440,8 @@ export function ChatShell({
               hiddenPins={hiddenPins}
               nameFor={nameFor}
               channelNameFor={channelNameFor}
+              searchChannels={searchChannels}
+              searchMembers={searchMembers}
               onJumpToMessage={jumpToMessage}
               onJumpToSearchHit={jumpToSearchHit}
               onJumpToBookmark={jumpToBookmark}

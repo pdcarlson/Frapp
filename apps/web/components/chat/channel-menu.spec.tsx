@@ -116,6 +116,8 @@ function renderMenu(overrides: Partial<Parameters<typeof ChannelMenu>[0]> = {}) 
     hiddenPins: { blocked: 0, held: 0 },
     nameFor: () => "Someone",
     channelNameFor: () => "general",
+    searchChannels: [],
+    searchMembers: [],
     onJumpToMessage: vi.fn(),
     onJumpToSearchHit: vi.fn(),
     onJumpToBookmark: vi.fn(),
