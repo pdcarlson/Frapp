@@ -1,6 +1,5 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
-import { createPortal } from "react-dom";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 
 /*
  * The assembled shell had no unit coverage at all before this lane — the
@@ -44,9 +43,19 @@ const {
   mockChapter: { value: undefined as unknown },
   mockPermissions: { value: [] as string[] },
 }));
+const routerPush = vi.hoisted(() => vi.fn());
+const mockSearch = vi.hoisted(() => ({ value: "" }));
 vi.mock("next/navigation", () => ({
   usePathname: () => mockPathname.value,
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: routerPush }),
+  useSearchParams: () => new URLSearchParams(mockSearch.value),
+}));
+// Chat's panel has its own specs (`chat-shell.spec.tsx`); here it is a stub
+// that reports what the shell hands it.
+vi.mock("@/components/chat/chat-page", () => ({
+  ChatPage: ({ toolBeside }: { toolBeside?: boolean }) => (
+    <p data-testid="chat-stub">{toolBeside ? "beside a tool" : "alone"}</p>
+  ),
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => {
@@ -138,8 +147,8 @@ vi.mock("@/lib/chat/use-chat-realtime-binding", () => ({
   },
 }));
 
+import { signetDarkTokens } from "@repo/theme/signet";
 import { DashboardShell } from "./dashboard-shell";
-import { useNavFace } from "./nav-face";
 import {
   CONNECTION_PILL_ATTR,
   DASHBOARD_SHELL_ATTR,
@@ -153,17 +162,30 @@ afterEach(() => {
   mockChannels.value = [];
   mockChapter.value = undefined;
   unreadReads.count = 0;
+  routerPush.mockClear();
+  mockSearch.value = "";
+  setWindowWidth(null);
+  document.cookie = "frapp_chat_open=; Max-Age=0; Path=/";
+  document.cookie = "frapp_chat_split=; Max-Age=0; Path=/";
 });
 
-/** Stands in for the back arrow ChatShell's own pane puts beside "Channels". */
-function BackToMenu() {
-  const navFace = useNavFace();
-  if (!navFace) return <p>no nav face</p>;
-  return (
-    <button type="button" onClick={navFace.showModules}>
-      Chat pane back arrow
-    </button>
-  );
+/**
+ * jsdom has no `matchMedia`, which the shell reads as "width not known yet"
+ * (the server and hydration case). A number answers every `min-width` query
+ * as a window of that width would.
+ */
+function setWindowWidth(px: number | null) {
+  if (px === null) {
+    // @ts-expect-error -- jsdom ships none; restore that.
+    delete window.matchMedia;
+    return;
+  }
+  window.matchMedia = ((query: string) => ({
+    matches: px >= Number(/min-width:\s*(\d+)px/.exec(query)?.[1] ?? 0),
+    media: query,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  })) as unknown as typeof window.matchMedia;
 }
 
 describe("DashboardShell", () => {
@@ -419,25 +441,18 @@ describe("DashboardShell", () => {
    * of chat itself: the padding just reappears around a layout that still
    * "works".
    */
-  it("insets and scrolls an ordinary route", () => {
+  it("insets and scrolls a tool page, inside the one main landmark", () => {
     mockPathname.value = "/events";
-    render(<DashboardShell>content</DashboardShell>);
+    const { container } = render(<DashboardShell>content</DashboardShell>);
 
+    const page = container.querySelector("[data-tool-page]") as HTMLElement;
+    expect(page.className).toContain("overflow-y-auto");
+    expect(page.className).toContain("px-4");
+    // `<main>` is the whole row (chat, divider, page), flush and unscrolled.
     const main = screen.getByRole("main");
-    expect(main.className).toContain("overflow-y-auto");
-    expect(main.className).toContain("px-4");
-  });
-
-  it("hands a full-bleed route the frame, with no inset and no scroll of its own", () => {
-    mockPathname.value = "/chat";
-    render(<DashboardShell>content</DashboardShell>);
-
-    const main = screen.getByRole("main");
-    expect(main.className).toContain("overflow-hidden");
-    expect(main.className).not.toContain("px-4");
-    expect(main.className).not.toContain("overflow-y-auto");
-    // Still the same landmark, and still the skip link's target.
     expect(main).toHaveAttribute("id", "main-content");
+    expect(main).toContainElement(page);
+    expect(main.className).not.toContain("px-4");
   });
 
   it("honours the server-read collapse preference on first render", () => {
@@ -454,309 +469,336 @@ describe("DashboardShell", () => {
     ).toBeInTheDocument();
   });
 
-  describe("on /chat, the left column is the channel list (owner, 2026-11-05)", () => {
-    it("shows the channels face and keeps the module nav inert behind it", () => {
-      mockPathname.value = "/chat";
-      const { container } = render(<DashboardShell>content</DashboardShell>);
 
-      const slot = container.querySelector("[data-nav-channels-slot]");
-      expect(slot).not.toBeNull();
-      // The face holding the module nav is out of view and out of reach.
-      const nav = screen.getByRole("navigation", { name: "Primary" });
-      expect(nav.closest("[inert]")).not.toBeNull();
-      expect(slot!.closest("[inert]")).toBeNull();
-      // No collapse toggle: in Chat the column is always the 240px list.
+  describe("chat beside the chapter tools (#3779)", () => {
+    const nav = () => screen.getByRole("navigation", { name: "Primary" });
+    const column = (container: HTMLElement) =>
+      container.querySelector("[data-nav-column]") as HTMLElement;
+    const chatPanel = (container: HTMLElement) =>
+      container.querySelector("[data-chat-panel]") as HTMLElement | null;
+
+    it("hosts chat alone on /chat, inside main, so the skip link, focus fallback and floor suite reach it", () => {
+      mockPathname.value = "/chat";
+      const { container } = render(<DashboardShell>{null}</DashboardShell>);
+      expect(chatPanel(container)).not.toBeNull();
+      expect(screen.getByTestId("chat-stub")).toHaveTextContent("alone");
+      const main = screen.getByRole("main");
+      expect(main).toContainElement(chatPanel(container));
+      expect(main.className).not.toMatch(/(^|\s)hidden(\s|$)/);
       expect(
-        screen.queryByRole("button", { name: /collapse navigation/i }),
+        screen.getByRole("link", { name: "Skip to main content" }),
+      ).toHaveAttribute("href", "#main-content");
+      expect(container.querySelector("[data-tool-page]")).toBeNull();
+    });
+
+    it("opens chat on a fresh load of a chat deep link, even with the cookie closed", () => {
+      setWindowWidth(1440);
+      mockPathname.value = "/chat";
+      mockSearch.value = "channel=c1";
+      const { container } = render(
+        <DashboardShell defaultChatOpen={false}>{null}</DashboardShell>,
+      );
+      expect(chatPanel(container)).not.toBeNull();
+      expect(container.querySelector("[data-chapter-home]")).toBeNull();
+    });
+
+    it("keeps /chat the chat page below the side-by-side width, whatever the cookie says", () => {
+      setWindowWidth(1024);
+      mockPathname.value = "/chat";
+      const { container } = render(
+        <DashboardShell defaultChatOpen={false}>{null}</DashboardShell>,
+      );
+      expect(chatPanel(container)).not.toBeNull();
+      // Below the width the Chat row is the link it always was.
+      expect(within(nav()).getByRole("link", { name: "Chat" })).toHaveAttribute(
+        "href",
+        "/chat",
+      );
+    });
+
+    it("opens chat beside a tool, with the divider, and only from the side-by-side width", () => {
+      mockPathname.value = "/events";
+      const { container } = render(
+        <DashboardShell>
+          <p>events page</p>
+        </DashboardShell>,
+      );
+      // Width unknown (server, hydration): the panel holds its place by CSS
+      // with chat's skeleton, and chat itself waits for a known-wide window,
+      // so a phone never builds a chat it cannot show.
+      expect(chatPanel(container)).toHaveClass("hidden", "min-[1056px]:flex");
+      expect(screen.queryByTestId("chat-stub")).not.toBeInTheDocument();
+      expect(screen.getByRole("separator")).toBeInTheDocument();
+      expect(screen.getByText("events page")).toBeInTheDocument();
+      // Both floors: the page keeps 375px, and chat its channels plus 375px.
+      expect(container.querySelector("[data-tool-page]")).toHaveClass(
+        "min-[1056px]:min-w-[375px]",
+      );
+      expect(chatPanel(container)!.style.minWidth).toBe("615px");
+    });
+
+    it("mounts chat beside the tool once the window is known to be wide", () => {
+      setWindowWidth(1440);
+      mockPathname.value = "/events";
+      render(<DashboardShell>events</DashboardShell>);
+      expect(screen.getByTestId("chat-stub")).toHaveTextContent(
+        "beside a tool",
+      );
+    });
+
+    it("drops chat beside a tool once the window is known to be narrow", () => {
+      setWindowWidth(1024);
+      mockPathname.value = "/events";
+      const { container } = render(<DashboardShell>events</DashboardShell>);
+      expect(chatPanel(container)).toBeNull();
+      expect(screen.queryByRole("separator")).not.toBeInTheDocument();
+    });
+
+    it("toggles chat from its nav row, and the open tool's row closes the tool", () => {
+      vi.useFakeTimers();
+      try {
+        setWindowWidth(1440);
+        mockPathname.value = "/events";
+        const { container } = render(<DashboardShell>events</DashboardShell>);
+        const chatRow = within(nav()).getByRole("button", { name: /^Chat/ });
+        expect(chatRow).toHaveAttribute("aria-pressed", "true");
+
+        // A page load paints chat in place: no entrance.
+        expect(chatPanel(container)!.style.animation).toBe("");
+        fireEvent.click(chatRow);
+        // It plays its exit on Signet's exit ease, inert, then goes.
+        expect(chatPanel(container)).toHaveAttribute("inert");
+        expect(chatPanel(container)!.style.animation).toContain(
+          "shell-panel-out",
+        );
+        expect(chatPanel(container)!.style.animation).toContain(
+          signetDarkTokens.motion.easing.exit,
+        );
+        act(() => {
+          vi.runAllTimers();
+        });
+        expect(chatPanel(container)).toBeNull();
+        expect(
+          within(nav()).getByRole("button", { name: /^Chat/ }),
+        ).toHaveAttribute("aria-pressed", "false");
+        expect(document.cookie).toContain("frapp_chat_open=0");
+
+        // Opening from the row plays the entrance: `context` on the entrance
+        // ease, never the `settle` overshoot (that one needs Paul).
+        fireEvent.click(within(nav()).getByRole("button", { name: /^Chat/ }));
+        const anim = chatPanel(container)!.style.animation;
+        expect(anim).toContain("shell-panel-in");
+        expect(anim).toContain(
+          `${signetDarkTokens.motion.duration.context}ms`,
+        );
+        expect(anim).toContain(signetDarkTokens.motion.easing.entrance);
+        expect(anim).not.toContain(signetDarkTokens.motion.easing.settle);
+        // jsdom has no AnimationEvent, so React listens for the prefixed
+        // name; dispatch both.
+        for (const type of ["animationend", "webkitAnimationEnd"]) {
+          fireEvent(chatPanel(container)!, new Event(type, { bubbles: true }));
+        }
+        expect(chatPanel(container)!.style.animation).toBe("");
+        fireEvent.click(within(nav()).getByRole("button", { name: /^Chat/ }));
+        act(() => {
+          vi.runAllTimers();
+        });
+
+        // The open tool's row is a toggle too: it goes to `/chat`, no tool.
+        const events = within(nav()).getByRole("button", { name: "Events" });
+        expect(events).toHaveAttribute("title", "Close Events");
+        fireEvent.click(events);
+        expect(routerPush).toHaveBeenCalledWith("/chat");
+        // Every other tool row still navigates.
+        expect(
+          within(nav()).getByRole("link", { name: "Tasks" }),
+        ).toHaveAttribute("href", "/tasks");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("shows the home view when closing a tool leaves nothing open, and opens chat on any other arrival at /chat", () => {
+      setWindowWidth(1440);
+      mockPathname.value = "/events";
+      const { container, rerender } = render(
+        <DashboardShell defaultChatOpen={false}>events</DashboardShell>,
+      );
+      fireEvent.click(within(nav()).getByRole("button", { name: "Events" }));
+      mockPathname.value = "/chat";
+      rerender(<DashboardShell defaultChatOpen={false}>{null}</DashboardShell>);
+      expect(chatPanel(container)).toBeNull();
+      expect(
+        container.querySelector("[data-chapter-home]"),
+      ).toBeInTheDocument();
+
+      // A link to Chat from anywhere else opens it.
+      mockPathname.value = "/tasks";
+      rerender(<DashboardShell defaultChatOpen={false}>tasks</DashboardShell>);
+      mockPathname.value = "/chat";
+      rerender(<DashboardShell defaultChatOpen={false}>{null}</DashboardShell>);
+      expect(chatPanel(container)).not.toBeNull();
+    });
+
+    it("drops the nav to its rail while chat and a tool share a window without room for it", () => {
+      setWindowWidth(1100);
+      mockPathname.value = "/events";
+      const { container, rerender } = render(
+        <DashboardShell>events</DashboardShell>,
+      );
+      expect(column(container)).toHaveClass("w-14");
+      // Forced, not the member's preference: no toggle to undo it.
+      expect(
+        screen.queryByRole("button", { name: /expand navigation/i }),
+      ).not.toBeInTheDocument();
+
+      // Chat alone has room: the nav comes back.
+      mockPathname.value = "/chat";
+      rerender(<DashboardShell>{null}</DashboardShell>);
+      expect(column(container)).toHaveClass("w-60");
+
+      // And at a wide window it never drops.
+      setWindowWidth(1440);
+      mockPathname.value = "/events";
+      rerender(<DashboardShell>events</DashboardShell>);
+      expect(column(container)).toHaveClass("w-60");
+    });
+
+    it("leaves the Settings row a link back to Settings on a Settings tool's page", () => {
+      setWindowWidth(1440);
+      mockPathname.value = "/reports";
+      mockPermissions.value = ["reports:view", "chapter-config:view"];
+      render(<DashboardShell>reports</DashboardShell>);
+      expect(
+        within(nav()).getByRole("link", { name: "Settings" }),
+      ).toHaveAttribute("href", "/settings");
+      expect(
+        within(nav()).queryByRole("button", { name: "Settings" }),
       ).not.toBeInTheDocument();
     });
 
-    it("slides the modules in from the back arrow, and Chat slides the channels back", () => {
-      mockPathname.value = "/chat";
-      const { container } = render(
-        <DashboardShell>
-          <BackToMenu />
-        </DashboardShell>,
-      );
-      const slot = container.querySelector("[data-nav-channels-slot]")!;
-
-      fireEvent.click(
-        screen.getByRole("button", { name: "Chat pane back arrow" }),
-      );
-      const nav = screen.getByRole("navigation", { name: "Primary" });
-      expect(nav.closest("[inert]")).toBeNull();
-      expect(slot.closest("[inert]")).not.toBeNull();
-      // Every other row still navigates.
-      expect(within(nav).getByRole("link", { name: "Events" })).toHaveAttribute(
-        "href",
-        "/events",
-      );
-
-      // Chat acts in place: a link to /chat would drop a `?channel=` deep link.
-      const chatRow = within(nav).getByRole("button", { name: /^Chat/ });
-      expect(chatRow).toHaveAttribute("aria-current", "page");
-      fireEvent.click(chatRow);
-      expect(slot.closest("[inert]")).toBeNull();
-      expect(nav.closest("[inert]")).not.toBeNull();
+    it("remembers where the divider was left, in its cookie", () => {
+      setWindowWidth(1440);
+      mockPathname.value = "/events";
+      render(<DashboardShell>events</DashboardShell>);
+      fireEvent.keyDown(screen.getByRole("separator"), { key: "Enter" });
+      expect(document.cookie).toContain("frapp_chat_split=0.500");
     });
 
-    it("marks the Chat row unread only for a channel that isn't muted", () => {
+    it("draws the chapter mark on the home view", () => {
+      setWindowWidth(1440);
       mockPathname.value = "/chat";
+      mockChapter.value = {
+        id: "chap-1",
+        name: "Alpha Beta",
+        university: "State University",
+        logo_url: null,
+        branding: {},
+        enabled_modules: [],
+      };
+      const { container } = render(
+        <DashboardShell defaultChatOpen={false}>{null}</DashboardShell>,
+      );
+      const home = container.querySelector("[data-chapter-home]")!;
+      expect(home).toBeInTheDocument();
+      expect(
+        within(home as HTMLElement).getByTestId("chapter-mark-text"),
+      ).toHaveClass("h-28", "bg-accent-subtle", "text-accent-text");
+      expect(home).toHaveTextContent("Alpha Beta");
+      expect(home).toHaveTextContent("State University");
+      // The top bar names no page over it.
+      expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
+    });
+
+    it("keeps one nav column across Chat and every other route (Paul, 2026-11-06)", () => {
+      mockPathname.value = "/events";
+      const { container, rerender } = render(
+        <DashboardShell>content</DashboardShell>,
+      );
+      const switcher = () =>
+        screen.getByRole("button", { name: /chapter menu/i });
+      const before = { column: column(container), switcher: switcher() };
+      for (const path of ["/chat", "/tasks"]) {
+        mockPathname.value = path;
+        rerender(<DashboardShell>content</DashboardShell>);
+        // The same nodes: nothing was unmounted, so nothing can jump.
+        expect(column(container)).toBe(before.column);
+        expect(switcher()).toBe(before.switcher);
+        expect(column(container)).toHaveClass("w-60");
+        const band = switcher().closest(".border-b") as HTMLElement;
+        expect(band.className).toMatch(/\bmin-h-12\b/);
+      }
+    });
+
+    it("keeps the chat panel mounted across tool routes, so the conversation survives", () => {
+      setWindowWidth(1440);
+      mockPathname.value = "/events";
+      const { container, rerender } = render(
+        <DashboardShell>events</DashboardShell>,
+      );
+      const panel = chatPanel(container);
+      mockPathname.value = "/tasks";
+      rerender(<DashboardShell>tasks</DashboardShell>);
+      expect(chatPanel(container)).toBe(panel);
+    });
+  });
+
+  describe("the Chat row's unread highlight (#3824)", () => {
+    const chatRow = () =>
+      within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+        "link",
+        { name: /^Chat/ },
+      );
+
+    it("marks the Chat row unread only for a channel that isn't muted", () => {
       mockUnread.value = [
         { channel_id: "c1", unread_count: 3, mention_count: 0 },
       ];
       mockLevels.value = [{ channel_id: "c1", level: "off" }];
       const { unmount } = render(<DashboardShell>content</DashboardShell>);
-      const nav = screen.getByRole("navigation", { name: "Primary" });
-      expect(
-        within(nav).getByRole("button", { name: /^Chat/ }),
-      ).not.toHaveAccessibleName(/unread/);
+      expect(chatRow()).not.toHaveAccessibleName(/unread/);
       unmount();
 
       mockLevels.value = [];
       render(<DashboardShell>content</DashboardShell>);
-      expect(
-        within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
-          "button",
-          { name: /^Chat/ },
-        ),
-      ).toHaveAccessibleName(/unread messages/);
-    });
-
-    it("opens on the channels again after leaving Chat from the module face", () => {
-      mockPathname.value = "/chat";
-      const { container, rerender } = render(
-        <DashboardShell>
-          <BackToMenu />
-        </DashboardShell>,
-      );
-      fireEvent.click(
-        screen.getByRole("button", { name: "Chat pane back arrow" }),
-      );
-
-      // Leave by a module row, then come back: the common path out and in.
-      mockPathname.value = "/events";
-      rerender(
-        <DashboardShell>
-          <BackToMenu />
-        </DashboardShell>,
-      );
-      mockPathname.value = "/chat";
-      rerender(
-        <DashboardShell>
-          <BackToMenu />
-        </DashboardShell>,
-      );
-      const slot = container.querySelector("[data-nav-channels-slot]")!;
-      expect(slot.closest("[inert]")).toBeNull();
-    });
-
-    it("moves focus with the slide, and keeps a way back while chat is not mounted", () => {
-      mockPathname.value = "/chat";
-      render(<DashboardShell>content</DashboardShell>);
-
-      // No chat pane in the slot (loading, or a failed segment): the column's
-      // own placeholder still offers the back arrow.
-      const back = screen.getByRole("button", { name: "Back to menu" });
-      back.focus();
-      fireEvent.click(back);
-      const nav = screen.getByRole("navigation", { name: "Primary" });
-      const chatRow = within(nav).getByRole("button", { name: /^Chat/ });
-      expect(document.activeElement).toBe(chatRow);
-
-      // With no pane the placeholder's arrow is the only one, and it hides
-      // the moment a pane lands, so the face itself takes focus; the next Tab
-      // reaches whichever arrow is showing.
-      fireEvent.click(chatRow);
-      expect(document.activeElement).toBe(back.closest("[tabindex='-1']"));
-    });
-
-    it("hands focus to chat's own back arrow once its pane is in the slot", () => {
-      mockPathname.value = "/chat";
-      function Pane() {
-        const navFace = useNavFace();
-        if (!navFace?.channelsSlot) return null;
-        return createPortal(
-          <button type="button" data-nav-back="" onClick={navFace.showModules}>
-            Pane back arrow
-          </button>,
-          navFace.channelsSlot,
-        );
-      }
-      render(
-        <DashboardShell>
-          <Pane />
-        </DashboardShell>,
-      );
-      const back = screen.getByRole("button", { name: "Pane back arrow" });
-      back.focus();
-      fireEvent.click(back);
-      const chatRow = within(
-        screen.getByRole("navigation", { name: "Primary" }),
-      ).getByRole("button", { name: /^Chat/ });
-      expect(document.activeElement).toBe(chatRow);
-      fireEvent.click(chatRow);
-      expect(document.activeElement).toBe(back);
-    });
-
-    it("leaves focus alone when the channels come back from outside the column", () => {
-      mockPathname.value = "/chat";
-      // What chat does when a link lands: bring the channels back from the
-      // route, with focus somewhere in the page rather than in the column.
-      function LinkLands() {
-        const navFace = useNavFace();
-        return (
-          <button type="button" onClick={() => navFace?.showChannels()}>
-            Open a link
-          </button>
-        );
-      }
-      render(
-        <DashboardShell>
-          <LinkLands />
-        </DashboardShell>,
-      );
-      const back = screen.getByRole("button", { name: "Back to menu" });
-      back.focus();
-      fireEvent.click(back);
-
-      const outside = screen.getByRole("button", { name: "Open a link" });
-      outside.focus();
-      fireEvent.click(outside);
-      expect(document.activeElement).toBe(outside);
-      expect(back.closest("[inert]")).toBeNull();
-    });
-
-    it("keeps the chapter switcher pinned above the channels", () => {
-      mockPathname.value = "/chat";
-      mockChapter.value = { name: "Alpha Beta Gamma" };
-      const { container } = render(<DashboardShell>content</DashboardShell>);
-      const switcher = screen.getByRole("button", { name: /chapter menu/i });
-      expect(switcher.closest("[inert]")).toBeNull();
-      const slot = container.querySelector("[data-nav-channels-slot]")!;
-      // Before the channels in document order, outside both faces.
-      expect(
-        switcher.compareDocumentPosition(slot) &
-          Node.DOCUMENT_POSITION_FOLLOWING,
-      ).toBeTruthy();
+      expect(chatRow()).toHaveAccessibleName(/unread messages/);
     });
 
     it("lets a mention or a DM through a mute, and lights nothing on unknown levels", () => {
-      mockPathname.value = "/chat";
-      const chatRowName = () =>
-        within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
-          "button",
-          { name: /^Chat/ },
-        );
-
-      // A mention in a muted channel still addresses the member.
       mockUnread.value = [
         { channel_id: "c1", unread_count: 1, mention_count: 1 },
       ];
       mockLevels.value = [{ channel_id: "c1", level: "off" }];
       const first = render(<DashboardShell>content</DashboardShell>);
-      expect(chatRowName()).toHaveAccessibleName(/unread messages/);
+      expect(chatRow()).toHaveAccessibleName(/unread messages/);
       first.unmount();
 
-      // So does anything unread in a DM, muted or not.
       mockUnread.value = [
         { channel_id: "d1", unread_count: 2, mention_count: 0 },
       ];
       mockLevels.value = [{ channel_id: "d1", level: "off" }];
       mockChannels.value = [{ id: "d1", type: "DM" }];
       const second = render(<DashboardShell>content</DashboardShell>);
-      expect(chatRowName()).toHaveAccessibleName(/unread messages/);
+      expect(chatRow()).toHaveAccessibleName(/unread messages/);
       second.unmount();
 
-      // Plain unread with levels never loaded could be a muted channel.
       mockUnread.value = [
         { channel_id: "c2", unread_count: 4, mention_count: 0 },
       ];
       mockLevels.value = undefined;
       mockChannels.value = [];
       render(<DashboardShell>content</DashboardShell>);
-      expect(chatRowName()).not.toHaveAccessibleName(/unread/);
+      expect(chatRow()).not.toHaveAccessibleName(/unread/);
     });
 
-    it("gives every other route the module nav, with no nav face for the page", () => {
-      mockPathname.value = "/events";
-      const { container } = render(
-        <DashboardShell>
-          <BackToMenu />
-        </DashboardShell>,
-      );
-      // The channels face stays mounted, out of view and out of reach, so
-      // arriving at Chat slides it in rather than swapping the column.
-      const slot = container.querySelector("[data-nav-channels-slot]");
-      expect(slot!.closest("[inert]")).not.toBeNull();
-      const nav = screen.getByRole("navigation", { name: "Primary" });
-      expect(nav.closest("[inert]")).toBeNull();
-      expect(screen.getByText("no nav face")).toBeInTheDocument();
-      expect(within(nav).getByRole("link", { name: "Chat" })).toHaveAttribute(
-        "href",
-        "/chat",
-      );
-    });
-
-    it("keeps one column across Chat and every other route (Paul, 2026-11-06)", () => {
-      // The jump: Chat used to swap a 240px column with a hairlined 48px
-      // chapter band for a 220px nav with its chapter row in 8px of padding.
-      mockPathname.value = "/events";
-      const { container, rerender } = render(
-        <DashboardShell>content</DashboardShell>,
-      );
-      const column = () =>
-        container
-          .querySelector("[data-nav-channels-slot]")!
-          .closest(".border-r") as HTMLElement;
-      const switcher = () =>
-        screen.getByRole("button", { name: /chapter menu/i });
-      // The geometry the jump was made of: the 48px hairlined band, and the
-      // modules face with no top padding of its own, so the first row sits
-      // 52px down. Checked on every route, since a per-route class is how it
-      // could come back.
-      const expectGeometry = () => {
-        expect(column().className).toContain("w-60");
-        const band = switcher().closest(".border-b") as HTMLElement;
-        expect(band.className).toMatch(/\bmin-h-12\b/);
-        expect(band.className).toMatch(/\bpt-1\b/);
-        const face = screen.getByRole("navigation", { name: "Primary" })
-          .parentElement!.parentElement!;
-        expect(face.className).toMatch(/\bpt-0\b/);
-      };
-      const before = { column: column(), switcher: switcher() };
-      expectGeometry();
-
-      mockPathname.value = "/chat";
-      rerender(<DashboardShell>content</DashboardShell>);
-      // The same nodes: nothing was unmounted, so nothing can jump.
-      expect(column()).toBe(before.column);
-      expect(switcher()).toBe(before.switcher);
-      expectGeometry();
-
-      mockPathname.value = "/tasks";
-      rerender(<DashboardShell>content</DashboardShell>);
-      expect(column()).toBe(before.column);
-      expect(switcher()).toBe(before.switcher);
-      expectGeometry();
-    });
-
-    it("binds chat's inbox and reads its unread counts on every route, and draws no placeholder off Chat (#3745)", () => {
+    it("binds chat's inbox and reads its unread counts on every route (#3745)", () => {
       realtimeBinding.calls = 0;
-      mockPathname.value = "/events";
       render(<DashboardShell>content</DashboardShell>);
-      // Off `/chat` the inbox is joined and the counts read, so a message
-      // arriving while the member is on Events lights the Chat row.
       expect(realtimeBinding.calls).toBeGreaterThan(0);
       expect(unreadReads.count).toBeGreaterThan(0);
-      // The placeholder's skeleton would shimmer out of view on every route.
-      expect(
-        screen.queryByRole("button", { name: "Back to menu" }),
-      ).not.toBeInTheDocument();
     });
 
-    it("lights the Chat row off /chat, as a link, until the counts clear (#3824)", () => {
-      mockPathname.value = "/events";
+    it("lights the Chat row until the counts clear", () => {
       mockLevels.value = [];
       mockChannels.value = [{ id: "d1", type: "DM" }];
       mockUnread.value = [
@@ -765,41 +807,27 @@ describe("DashboardShell", () => {
       const { container, rerender } = render(
         <DashboardShell>content</DashboardShell>,
       );
-      const chatLink = () =>
-        within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
-          "link",
-          { name: /^Chat/ },
-        );
-      expect(chatLink()).toHaveAccessibleName(/unread messages/);
-      expect(chatLink()).toHaveClass("font-semibold", "text-foreground");
-      expect(
-        chatLink().querySelector("[data-nav-highlight]"),
-      ).toBeInTheDocument();
-
-      // Read elsewhere (the counts are the server's): the row goes quiet.
+      expect(chatRow()).toHaveAccessibleName(/unread messages/);
+      expect(chatRow()).toHaveClass("font-semibold", "text-foreground");
       mockUnread.value = [];
       rerender(<DashboardShell>content</DashboardShell>);
-      expect(chatLink()).not.toHaveAccessibleName(/unread/);
+      expect(chatRow()).not.toHaveAccessibleName(/unread/);
       expect(
         container.querySelector("[data-nav-highlight]"),
       ).not.toBeInTheDocument();
     });
 
-    it("lights the Chat row in the collapsed rail and in the drawer too (#3824)", () => {
-      mockPathname.value = "/events";
+    it("lights the Chat row in the collapsed rail and in the drawer too", () => {
       mockLevels.value = [];
       mockChannels.value = [{ id: "d1", type: "DM" }];
       mockUnread.value = [
         { channel_id: "d1", unread_count: 2, mention_count: 0 },
       ];
       render(<DashboardShell defaultNavCollapsed>content</DashboardShell>);
-
-      // The rail's `aria-label` replaces the row's words, so it carries them.
       const rail = screen.getByRole("navigation", { name: "Primary" });
       expect(
         within(rail).getByRole("link", { name: "Chat, unread messages" }),
       ).toBeInTheDocument();
-
       fireEvent.click(
         screen.getByRole("button", { name: "Open navigation menu" }),
       );
@@ -807,48 +835,6 @@ describe("DashboardShell", () => {
       expect(
         within(drawer).getByRole("link", { name: /^Chat.*unread messages/ }),
       ).toBeInTheDocument();
-    });
-
-    it("arriving at Chat with focus in the nav keeps it in the column, not on a placeholder", () => {
-      mockPathname.value = "/events";
-      const { container, rerender } = render(
-        <DashboardShell>content</DashboardShell>,
-      );
-      // Browser Back to Chat while a row other than Chat's has focus (the
-      // Chat row itself turns from a link into a button on arrival, so its
-      // focus is gone before the face changes).
-      within(screen.getByRole("navigation", { name: "Primary" }))
-        .getByRole("link", { name: "Tasks" })
-        .focus();
-
-      // Chat's route is still loading: the slot is empty and only the
-      // placeholder's arrow exists, which hides once the pane lands.
-      mockPathname.value = "/chat";
-      rerender(<DashboardShell>content</DashboardShell>);
-      const face = container.querySelector(
-        "[data-nav-channels-slot]",
-      )!.parentElement!;
-      expect(document.activeElement).toBe(face);
-      expect(face.closest("[inert]")).toBeNull();
-    });
-
-    it("lets the rail apply off Chat only", () => {
-      mockPathname.value = "/events";
-      const { container, rerender } = render(
-        <DashboardShell defaultNavCollapsed>content</DashboardShell>,
-      );
-      const column = () =>
-        container
-          .querySelector("[data-nav-channels-slot]")!
-          .closest(".border-r") as HTMLElement;
-      expect(column().className).toContain("w-14");
-
-      mockPathname.value = "/chat";
-      rerender(<DashboardShell defaultNavCollapsed>content</DashboardShell>);
-      expect(column().className).toContain("w-60");
-      expect(
-        screen.queryByRole("button", { name: /expand navigation/i }),
-      ).not.toBeInTheDocument();
     });
   });
 });

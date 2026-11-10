@@ -9,18 +9,12 @@ import {
 } from "@/components/chat/composer";
 
 /**
- * `/chat` while the route itself is in flight (navigation from another page).
+ * The chat panel before its `Suspense` boundary resolves (`chat-page.tsx`).
  *
  * The shell already draws its own cold-load skeletons once it mounts; this is
- * the frame around them, on the shell's own geometry, so the route loader and
- * the mounted shell are the same picture: the main column's 48px header,
- * bottom-up message rows and the composer box.
- *
- * No channels column. From `lg` up the channel list is the dashboard shell's
- * left column (`components/layout/nav-column.tsx`), which draws its own
- * placeholder while the route loads; a second one here stood beside it, 480px
- * of skeleton, until chat mounted and the thread jumped left. Below `lg` the
- * route opens on the thread, so there was never a column to draw there.
+ * the frame around them, on the shell's own geometry: the thread's 48px
+ * header, bottom-up message rows and the composer box. No channels column of
+ * its own: the panel's real one paints with the shell.
  *
  * A client module only because the composer's class constants are exported
  * from one: a server component importing them would get a reference, not the

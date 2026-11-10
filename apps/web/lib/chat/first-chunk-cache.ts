@@ -744,7 +744,7 @@ async function evictOldestTails(
  * the next time the surface opens.
  *
  * Two limits worth naming rather than implying away. It only runs where
- * `ChatProvider` mounts — `/chat` — so a member who signs out and whose delete
+ * `ChatProvider` mounts — the shell's chat panel, while it is open — so a member who signs out and whose delete
  * was blocked leaves rows on disk until someone opens chat again. And a second
  * tab still on the outgoing chapter keeps writing that chapter's rows through
  * its own open connection, which this deletes and that tab recreates. Neither

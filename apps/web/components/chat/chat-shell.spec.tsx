@@ -1137,10 +1137,6 @@ vi.mock("./message-timeline", async () => {
 import { blockClearance } from "@repo/chat-core/blocks";
 import { useOpenChatTransport } from "@repo/hooks/open-chat-transport";
 import { ChatShell, prefillLocalInput } from "./chat-shell";
-import {
-  NavFaceContext,
-  type NavFaceContextValue,
-} from "@/components/layout/nav-face";
 
 /**
  * The notice for a jump target the channel's whole history did not hold. The
@@ -3573,17 +3569,16 @@ describe("ChatShell narrow viewports (#2142)", () => {
 });
 
 /**
- * From `lg` up inside the dashboard shell, the channels pane is the shell's
- * left column, in place of the module nav (owner, 2026-11-05;
- * `components/layout/nav-face.tsx`).
+ * Chat is a panel the dashboard shell hosts (#3779): its channels column is
+ * always its own, inline beside the thread from `lg` up, and beside a tool
+ * page the member column closes on its own.
  */
-describe("ChatShell inside the shell's left column", () => {
-  let slot: HTMLDivElement;
+describe("ChatShell as the shell's chat panel (#3779)", () => {
   const realMatchMedia = window.matchMedia;
 
-  function stubDesktop(matches: boolean) {
+  function stubWidth(px: number) {
     window.matchMedia = ((query: string) => ({
-      matches,
+      matches: px >= Number(/min-width:\s*(\d+)px/.exec(query)?.[1] ?? 0),
       media: query,
       onchange: null,
       addEventListener: () => {},
@@ -3594,47 +3589,28 @@ describe("ChatShell inside the shell's left column", () => {
     })) as unknown as typeof window.matchMedia;
   }
 
-  function navFace(overrides: Partial<NavFaceContextValue> = {}) {
-    return {
-      face: "channels" as const,
-      showModules: vi.fn(),
-      showChannels: vi.fn(),
-      channelsSlot: slot,
-      ...overrides,
-    };
-  }
-
-  beforeEach(() => {
-    slot = document.createElement("div");
-    document.body.appendChild(slot);
-  });
   afterEach(() => {
-    slot.remove();
     window.matchMedia = realMatchMedia;
   });
 
-  it("brings the channels back on Esc while the column shows the module nav (#3824)", () => {
-    stubDesktop(true);
-    const value = navFace({ face: "modules" });
-    render(
-      <NavFaceContext.Provider value={value}>
-        <ChatShell />
-      </NavFaceContext.Provider>,
-    );
-    fireEvent.keyDown(document.body, { key: "Escape" });
-    expect(value.showChannels).toHaveBeenCalled();
+  it("draws one channels column, inline, with no way back to a menu", () => {
+    stubWidth(1440);
+    render(<ChatShell />);
+    const channels = screen.getAllByRole("region", { name: "Channels" });
+    expect(channels).toHaveLength(1);
+    expect(channels[0]).toHaveClass("lg:w-60");
+    expect(channels[0]).not.toHaveClass("lg:hidden");
+    expect(
+      screen.queryByRole("button", { name: "Back to menu" }),
+    ).not.toBeInTheDocument();
   });
 
   it("pushes no history for a pick from lg up, where the list is already on screen (#3824)", () => {
-    stubDesktop(true);
+    stubWidth(1440);
     window.history.replaceState(null, "");
     const push = vi.spyOn(window.history, "pushState");
     try {
-      render(
-        <NavFaceContext.Provider value={navFace()}>
-          <ChatShell />
-        </NavFaceContext.Provider>,
-      );
+      render(<ChatShell />);
       fireEvent.click(screen.getByTestId("pick-random"));
       expect(push).not.toHaveBeenCalled();
     } finally {
@@ -3642,66 +3618,19 @@ describe("ChatShell inside the shell's left column", () => {
     }
   });
 
-  it("renders the channels pane into the shell's column, with a back arrow to the menu", () => {
-    stubDesktop(true);
-    const value = navFace();
-    render(
-      <NavFaceContext.Provider value={value}>
-        <ChatShell />
-      </NavFaceContext.Provider>,
-    );
-
-    const channels = screen.getByRole("region", { name: "Channels" });
-    expect(slot.contains(channels)).toBe(true);
-    // Exactly one copy: nothing inline beside the thread.
-    expect(screen.getAllByRole("region", { name: "Channels" })).toHaveLength(1);
-
-    fireEvent.click(
-      within(channels).getByRole("button", { name: "Back to menu" }),
-    );
-    expect(value.showModules).toHaveBeenCalledTimes(1);
-  });
-
-  it("brings the channel list back when a link to a channel lands", () => {
-    stubDesktop(true);
-    const value = navFace({ face: "modules" });
-    const { rerender } = render(
-      <NavFaceContext.Provider value={value}>
-        <ChatShell />
-      </NavFaceContext.Provider>,
-    );
-    expect(value.showChannels).not.toHaveBeenCalled();
-
-    rerender(
-      <NavFaceContext.Provider value={value}>
-        <ChatShell initialChannelId="chan-general" />
-      </NavFaceContext.Provider>,
-    );
-    expect(value.showChannels).toHaveBeenCalledTimes(1);
-  });
-
-  it("stays inline below lg, hidden from lg up until the column takes it", () => {
-    stubDesktop(false);
-    render(
-      <NavFaceContext.Provider value={navFace()}>
-        <ChatShell />
-      </NavFaceContext.Provider>,
-    );
-
-    const channels = screen.getByRole("region", { name: "Channels" });
-    expect(slot.contains(channels)).toBe(false);
-    expect(channels.classList.contains("lg:hidden")).toBe(true);
-    // The drawer is the way to the modules below lg, so no back arrow here.
+  it("closes the member column beside a tool, and opens the list as a Panel instead", () => {
+    stubWidth(1440);
+    render(<ChatShell toolBeside />);
     expect(
-      within(channels).queryByRole("button", { name: "Back to menu" }),
+      screen.queryByRole("complementary", { name: "Members" }),
     ).not.toBeInTheDocument();
-  });
-
-  it("stays inline, and visible from lg up, outside the shell", () => {
-    stubDesktop(true);
-    render(<ChatShell />);
-    const channels = screen.getByRole("region", { name: "Channels" });
-    expect(channels.classList.contains("lg:hidden")).toBe(false);
+    const toggle = screen.getByRole("button", { name: "Show members" });
+    expect(toggle).toHaveAttribute("aria-haspopup", "dialog");
+    fireEvent.click(toggle);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    // The remembered preference is untouched: the column is still "shown"
+    // for when chat is alone again.
+    expect(document.cookie).not.toContain("frapp_chat_members_hidden=1");
   });
 });
 

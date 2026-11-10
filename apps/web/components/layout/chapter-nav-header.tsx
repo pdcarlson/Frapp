@@ -9,9 +9,8 @@ import {
   useMyPermissions,
 } from "@repo/hooks";
 import type { ChapterMembershipSummary } from "@repo/hooks";
-import { orgHidingGreekLettersIn } from "@repo/org-archetypes";
-import { resolveChapterMark, type ChapterMark } from "@repo/validation";
-import { CrestTile } from "@/components/layout/crest-tile";
+import type { ChapterMark } from "@repo/validation";
+import { chapterMarkFor, CrestTile } from "@/components/layout/crest-tile";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -106,28 +105,10 @@ export function ChapterNavHeader({
     (m) => m.chapter_id === activeChapterId,
   );
 
-  // The crest is the chapter mark, resolved from the logo and the
-  // `chapters.branding` jsonb; a chapter that set none of it gets initials.
-  // `branding` goes to `resolveChapterMark` as the contract types it, loose
-  // values in a jsonb object. The resolver skips a malformed value and falls
-  // to the next step, so one bad key costs the mark a step, never the row's
-  // name (#2844). An organization that never displays its letters (FIJI)
-  // keeps them out of the crest even when its stored switch was never turned
-  // off, as for a chapter created before the profile knew to. The match reads
-  // the organization's name inside the chapter's ("Phi Gamma Delta Tau Nu").
+  // The crest is the chapter mark (`chapterMarkFor`, `crest-tile.tsx`).
   const identity = useMemo(() => {
     if (!chapterData) return null;
-    const branding = orgHidingGreekLettersIn(chapterData.name)
-      ? { ...chapterData.branding, show_greek_letters: false }
-      : chapterData.branding;
-    return {
-      mark: resolveChapterMark({
-        logoUrl: chapterData.logo_url,
-        branding,
-        name: chapterData.name,
-      }),
-      name: chapterData.name,
-    };
+    return { mark: chapterMarkFor(chapterData), name: chapterData.name };
   }, [chapterData]);
 
   const { confirmDrop, confirmDropDialog } = useConfirmDropBulkUploads();
