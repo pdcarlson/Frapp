@@ -702,23 +702,24 @@ export function MessageItem({
     : null;
   const replyQuote =
     message.reply_to_id && !message.is_deleted ? (
-      <div className="mb-0.5 flex min-w-0 items-start gap-1.5">
+      <div className="mb-0.5 flex min-w-0 items-stretch">
         {/*
           The elbow: from the avatar's centre (16px into the 32px gutter) up
           and across to the quote, so the quote reads as belonging to the row
           below it rather than floating between two rows. Compact has no
-          avatar, so it drops from the text column's edge onto the name.
+          avatar, so it drops from the text column's edge onto the name. It
+          stretches to the quote's height, so a two-line quote's elbow still
+          reaches down to the row, and touches the quote's block (#4001).
         */}
         <span
           aria-hidden="true"
           data-slot="reply-elbow"
           className={cn(
-            "mt-2.5 h-2.5 shrink-0 rounded-tl-[6px] border-l-2 border-t-2 border-popover",
-            compact ? "ml-16 w-3" : "ml-4 w-6",
+            "mt-3 shrink-0 rounded-tl-[6px] border-l-2 border-t-2 border-popover",
+            compact ? "ml-16 w-4.5" : "ml-4 w-7.5",
           )}
         />
         <QuotedMessage
-          className="border-l-0 pl-0"
           author={
             replyParent
               ? resolveAuthorLabel(replyParent, nameFor, viewerId)

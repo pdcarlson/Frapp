@@ -48,10 +48,15 @@ interface QuotedMessageProps {
  * mode a "quote preview" invites (the reply you are writing must look like the
  * reply you just sent).
  *
- * A left rule plus author and preview on one line, as a 12.5px caption: the
+ * A `--popover` block holding author and preview as a 12.5px caption: the
  * author at 600 in `--foreground`, the preview in `--muted-foreground`
- * (`components.md` §11 § What rides the row), so a quote reads as chrome around
- * the message rather than as a second message.
+ * (`components.md` §11 § What rides the row), so a quote reads as chrome
+ * around the message rather than as a second message. The block is the
+ * timeline elbow's colour, so the elbow runs into it, and it lives here rather
+ * than at the timeline's call site so the composer's strip draws the same
+ * block. The preview runs on after the author and wraps to at most two lines
+ * before its ellipsis (#4001), breaking inside a long word or URL if it must,
+ * so a long parent never pushes the quote past its row.
  */
 export function QuotedMessage({
   author,
@@ -64,21 +69,30 @@ export function QuotedMessage({
   const placeholder = hidden ?? (unavailable ? UNAVAILABLE_QUOTE : null);
 
   const shared = cn(
-    "flex min-w-0 items-baseline gap-1.5 border-l-2 border-border pl-2",
+    "block min-w-0 max-w-full rounded-xs bg-popover px-2 py-1 text-left",
     "text-caption text-muted-foreground",
     placeholder !== null && "italic",
     className,
   );
 
-  const content =
-    placeholder !== null ? (
-      <span className="truncate">{placeholder}</span>
-    ) : (
-      <>
-        <span className="shrink-0 font-semibold text-foreground">{author}</span>
-        <span className="truncate">{preview}</span>
-      </>
-    );
+  // The clamp lives on an inner span rather than on `shared`: `line-clamp`
+  // needs `display: -webkit-box`, which a `<button>` does not reliably take.
+  const content = (
+    <span className="line-clamp-2 [overflow-wrap:anywhere]">
+      {placeholder !== null ? (
+        placeholder
+      ) : (
+        <>
+          {/* Never split across the two lines; a name wider than the quote
+              ends in its own ellipsis rather than being sliced at the edge. */}
+          <span className="me-1.5 inline-block max-w-full truncate align-top font-semibold text-foreground">
+            {author}
+          </span>
+          <span>{preview}</span>
+        </>
+      )}
+    </span>
+  );
 
   // An unavailable quote has nothing to open, so it is never a control even
   // when the caller offers `onOpen` — the parent it would navigate to is the
@@ -91,10 +105,10 @@ export function QuotedMessage({
   return (
     <button
       type="button"
-      // `text-left` because a button centres its text by default, which would
-      // put a short quote in the middle of the row while a long one starts at
-      // the rule — the same quote jumping horizontally with its own length.
-      className={cn(shared, "text-left hover:text-foreground")}
+      // `shared` carries `text-left` because a button centres its text by
+      // default, which would put a short quote in the middle of the row while a
+      // long one starts at the rule.
+      className={cn(shared, "hover:text-foreground")}
       onClick={onOpen}
     >
       {content}

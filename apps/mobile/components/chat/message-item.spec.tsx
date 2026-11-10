@@ -834,6 +834,59 @@ describe("reply quote (#1727)", () => {
     );
   });
 
+  it("wraps a long parent to two lines, author and preview as one sentence (#4001)", () => {
+    // Paul, 2026-11-10: a long quote stopped at one line at the screen's edge.
+    // One Text clamps the author and preview together at two lines.
+    const tree = renderItem(
+      message({ reply_to_id: PARENT_ID, content: "agreed" }),
+      parentRow({ content: "word ".repeat(200).trim() }),
+    );
+    const json = tree.toJSON();
+    const nodes = (Array.isArray(json) ? json : [json]).filter(Boolean);
+    const clamped: unknown[] = [];
+    const walk = (n: unknown): void => {
+      if (!n || typeof n !== "object") return;
+      const node = n as {
+        props?: { numberOfLines?: number };
+        children?: unknown[];
+      };
+      const text = JSON.stringify(node.children ?? []);
+      if (
+        node.props?.numberOfLines === 2 &&
+        text.includes("word word") &&
+        text.includes("Casey")
+      ) {
+        clamped.push(node);
+      }
+      node.children?.forEach(walk);
+    };
+    nodes.forEach(walk);
+    expect(clamped).toHaveLength(1);
+  });
+
+  it("sets the quote in a popover block, keeping the full row as the tap target (#4001)", () => {
+    // The block is what makes the quote read as a reply. It sits inside the
+    // Pressable, which keeps the row's width, so a tap beside a short quote
+    // still jumps to the parent.
+    const tree = renderItem(
+      message({ reply_to_id: PARENT_ID, content: "agreed" }),
+      parentRow({ content: "ok" }),
+    );
+    const flat = (style: unknown): Record<string, unknown> =>
+      Object.assign(
+        {},
+        ...([style].flat(Infinity).filter(Boolean) as object[]),
+      );
+    const blocks = tree.root.findAll(
+      (n) =>
+        typeof n.type === "string" &&
+        flat(n.props.style).backgroundColor ===
+          signetDarkTokens.color.surface.popover &&
+        flat(n.props.style).alignSelf === "flex-start",
+    );
+    expect(blocks).toHaveLength(1);
+  });
+
   it("says so when the parent is outside the loaded window", () => {
     // Nothing backfills older history (#1571). Rendering nothing would make
     // this reply indistinguishable from a plain message.

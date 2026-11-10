@@ -366,7 +366,7 @@ const SlashPalette = dynamic(
 
 /**
  * The message the next send replies to, already resolved to a label and a
- * one-line preview by the shell (#489).
+ * preview by the shell (#489).
  *
  * Resolved rather than a `ChatMessage`, because the shell is the only place
  * that holds the viewer id and the name resolver the label needs, and because
@@ -1836,8 +1836,11 @@ export function Composer({
           what they are about to send.
         */}
         {replyTo ? (
-          <div className="mb-2 flex items-center gap-1.5">
-            <span className="shrink-0 text-caption text-muted-foreground">
+          <div className="mb-2 flex items-start gap-1.5">
+            {/* `py-1` matches the quote block's padding, and the button's
+                `mt-0.5` centres it on the same first line, so both stay on
+                the quote's first line when it wraps to two (#4001). */}
+            <span className="shrink-0 py-1 text-caption text-muted-foreground">
               Replying to
             </span>
             <QuotedMessage
@@ -1850,7 +1853,7 @@ export function Composer({
               type="button"
               variant="ghost"
               size="icon"
-              className="h-5 w-5 shrink-0"
+              className="mt-0.5 h-5 w-5 shrink-0"
               aria-label="Cancel reply"
               onClick={cancelReply}
             >
