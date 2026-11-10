@@ -31,6 +31,10 @@ import {
   useChannelUnreadCounts,
   useChannels,
   useSetChannelNotificationLevel,
+  useChatBackground,
+  useChapterChatBackground,
+  useSetChannelBackground,
+  errorCopy,
   useMarkChannelRead,
   useCategories,
   useChapterRoster,
@@ -108,6 +112,7 @@ import {
   type ChatChannel,
 } from "./channel-list";
 import { ChannelListSkeleton } from "./channel-list-skeleton";
+import { ChatBackground, useChapterLetters } from "./chat-background";
 import {
   MessageTimeline,
   MessageTimelineSkeleton,
@@ -1141,6 +1146,18 @@ export function ChatShell({
     "channels:manage",
     permissionsPayload?.permissions,
   );
+
+  // Chat backgrounds (#3973): the open channel's, for the menu's picker.
+  const channelBackground = useChatBackground(activeChannel?.id ?? null);
+  const setChannelBackground = useSetChannelBackground();
+  const chapterBackground = useChapterChatBackground();
+  // One mutation serves whichever channel is open, so a failed save on one
+  // channel must not show its error (or its pending state) on the next.
+  const resetChannelBackground = setChannelBackground.reset;
+  useEffect(() => {
+    resetChannelBackground();
+  }, [activeChannel?.id, resetChannelBackground]);
+  const chapterLetters = useChapterLetters();
 
   // `/event` typed bare, with details the one-liner can't read, or picked
   // from the palette or the composer's + menu, opens the Events page's own
@@ -2411,10 +2428,13 @@ export function ChatShell({
       */}
       <section
         className={cn(
-          "relative flex min-w-0 flex-1 flex-col bg-background",
+          // `isolate` + `relative`: the chat background (#3973) sits at
+          // `-z-10` inside this column, and only this column (#3779).
+          "relative isolate flex min-w-0 flex-1 flex-col bg-background",
           narrowPane === "channels" && "max-lg:hidden",
         )}
       >
+        <ChatBackground channelId={activeChannel?.id ?? null} />
         {/*
           48px, one row (`1b` pin 11). The name, its description and the one
           overflow control share the row; anything that cannot fit in 48px and
@@ -2496,6 +2516,37 @@ export function ChatShell({
                   level,
                 });
               }}
+              background={
+                activeChannel &&
+                canManageChannel &&
+                activeChannel.type !== "DM" &&
+                activeChannel.type !== "GROUP_DM"
+                  ? {
+                      value:
+                        channelBackground.data?.source === "channel"
+                          ? channelBackground.data.background
+                          : null,
+                      inheritPreview: chapterBackground.data?.background,
+                      letters: chapterLetters,
+                      saving: setChannelBackground.isPending,
+                      error: setChannelBackground.error
+                        ? errorCopy(setChannelBackground.error)
+                        : null,
+                      onPick: (pick) =>
+                        setChannelBackground.mutate({
+                          channelId: activeChannel.id,
+                          background: pick.background,
+                          photo: pick.photo
+                            ? {
+                                body: pick.photo,
+                                filename: pick.photo.name,
+                                contentType: pick.photo.type,
+                              }
+                            : undefined,
+                        }),
+                    }
+                  : undefined
+              }
               pinToTop={
                 activeChannel && !activeChannel.hidden
                   ? {

@@ -18,6 +18,15 @@ export interface Chapter {
   last_stripe_webhook_at: string | null;
   accent_color: string | null;
   logo_path: string | null;
+  /**
+   * The chapter's default chat background (#3973): a `CHAT_BACKGROUND_KEYS`
+   * key from `@repo/validation`. A channel's own `background` overrides it.
+   */
+  chat_background?: string;
+  /** In the `branding` bucket; set exactly when `chat_background` is `photo`. */
+  chat_background_photo_path?: string | null;
+  /** The chat line announcing that photo; a deleted line withdraws it. */
+  chat_background_message_id?: string | null;
   donation_url: string | null;
   created_at: string;
   updated_at: string;
