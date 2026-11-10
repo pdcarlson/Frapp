@@ -26,6 +26,7 @@ import {
 import { statusOf } from "@repo/api-sdk";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import { useNetwork } from "@/lib/providers/network-provider";
+import { useRefetchAfterOutage } from "@/lib/hooks/use-refetch-after-outage";
 import { useToast } from "@/lib/hooks/use-toast";
 import {
   EVENT_ATTENDANCE_LABELS,
@@ -101,6 +102,15 @@ export function EventDetailSheet({
       (isOffline &&
         (permissionsQuery.isError ||
           permissionsQuery.fetchStatus === "fetching")));
+  // As `<Can>` does: a read that failed during an outage is re-run when it
+  // ends, so the icons don't wait on some other gate to recover them.
+  useRefetchAfterOutage({
+    isOffline,
+    enabled: true,
+    isError: permissionsQuery.isError,
+    loaded: permissionsQuery.data !== undefined,
+    refetch: permissionsQuery.refetch,
+  });
   const permissions = permissionsQuery.data?.permissions;
   const canEditEvent =
     usingPreviewData ||

@@ -13,8 +13,10 @@ import { getErrorMessage } from "@/lib/utils";
  * No token and no coordinates: for an event with a check-in geofence the
  * server rejects that, so a caller that knows the event has a zone says to use
  * the mobile app instead of offering it. A repeat is answered 409 by decision
- * (#3703) and toasts "Already checked in", not a failure; `useCheckIn` re-reads
- * the member's own row on it.
+ * (#3703) and toasts "Already on the list", not a failure. Not "checked in":
+ * the server answers 409 for any row, an officer's excused or absent mark
+ * included. `useCheckIn` re-reads the member's own row on it, so the block
+ * then says which.
  */
 export function useSelfCheckIn() {
   const checkIn = useCheckIn();
@@ -33,7 +35,7 @@ export function useSelfCheckIn() {
     } catch (error) {
       const alreadyIn = statusOf(error) === 409;
       toast({
-        title: alreadyIn ? "Already checked in" : "Couldn't check in",
+        title: alreadyIn ? "Already on the list" : "Couldn't check in",
         description: alreadyIn
           ? "You're already on the attendance list for this event."
           : getErrorMessage(error, "Couldn't check in."),

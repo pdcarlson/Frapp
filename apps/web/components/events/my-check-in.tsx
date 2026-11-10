@@ -9,7 +9,7 @@ import {
 } from "@repo/hooks";
 import { checkInWindowBounds } from "@repo/validation";
 import {
-  formatDayTime,
+  formatRelativeDayTime,
   formatTimeOfDay,
   localIsoDate,
   parseInstant,
@@ -102,12 +102,19 @@ export function myCheckInView({
   return { kind: "open", closesAt: bounds.closesAt, zone };
 }
 
-/** `"7:50 PM"` today, `"Fri, Nov 6 · 7:50 PM"` on any other day. */
+/**
+ * `"7:50 PM"` today; otherwise the shared relative day, mid-sentence:
+ * `"tomorrow · 7:50 PM"`, `"Friday · 7:50 PM"`, `"Nov 14 · 7:50 PM"`, as
+ * mobile's card says tomorrow and a weekday within the week.
+ */
 function clockLabel(at: Date, now: Date): string {
   const iso = at.toISOString();
-  return localIsoDate(at) === localIsoDate(now)
-    ? formatTimeOfDay(iso)
-    : (formatDayTime(iso, now) ?? formatTimeOfDay(iso));
+  if (localIsoDate(at) === localIsoDate(now)) return formatTimeOfDay(iso);
+  const relative = formatRelativeDayTime(iso, now);
+  if (!relative) return formatTimeOfDay(iso);
+  return relative.replace(/^(Tomorrow|Yesterday)\b/, (word) =>
+    word.toLowerCase(),
+  );
 }
 
 /**

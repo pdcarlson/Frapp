@@ -27,7 +27,12 @@ const {
     fetchStatus: "fetching" as "fetching" | "paused" | "idle",
     isError: false,
   },
-  realtimeCalls: [] as { table: string; scopeId: string; enabled?: boolean }[],
+  realtimeCalls: [] as {
+    table: string;
+    scopeId: string;
+    enabled?: boolean;
+    invalidate?: readonly (readonly unknown[])[];
+  }[],
 }));
 
 // usingPreviewData renders from the `event` prop and gates out AttendancePanel;
@@ -602,6 +607,12 @@ describe("EventDetailSheet for a live event, by role (#3855)", () => {
         table: "event_attendance",
         scopeId: "e1",
         enabled: true,
+        // The roster and the member's own row both live under
+        // ["attendance", eventId]; the event's own read under its chapter.
+        invalidate: [
+          ["attendance", "e1"],
+          ["events", "chap-1", "e1"],
+        ],
       }),
     );
   });
@@ -643,6 +654,19 @@ describe("EventDetailSheet for a live event, by role (#3855)", () => {
     eventQueryState.isError = true;
     eventQueryState.error = { statusCode: 404 };
     eventQueryState.data = { ...baseEvent };
+    renderLive();
+
+    expect(screen.getByTestId("my-check-in")).toHaveAttribute(
+      "data-unavailable",
+      "true",
+    );
+  });
+
+  it("tells the check-in block the event is unavailable when it never loaded", () => {
+    permissionsState.value = ["members:view"];
+    eventQueryState.isError = true;
+    eventQueryState.error = { statusCode: 500 };
+    eventQueryState.data = undefined;
     renderLive();
 
     expect(screen.getByTestId("my-check-in")).toHaveAttribute(

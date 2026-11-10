@@ -7,6 +7,7 @@ import {
   statusOf,
   throwUnlessOk,
 } from "@repo/api-sdk";
+import type { components } from "@repo/api-sdk";
 import { useFrappClient } from "./use-frapp-client";
 
 export interface AttendanceOptions {
@@ -76,14 +77,22 @@ export function useMyAttendance(
   });
 }
 
-/** The four statuses the server stores on an `event_attendance` row. */
-export const ATTENDANCE_ROW_STATUSES = [
-  "PRESENT",
-  "LATE",
-  "EXCUSED",
-  "ABSENT",
-] as const;
-export type AttendanceRowStatus = (typeof ATTENDANCE_ROW_STATUSES)[number];
+/** The statuses the server stores on an `event_attendance` row, per the SDK. */
+export type AttendanceRowStatus =
+  components["schemas"]["EventAttendanceDto"]["status"];
+
+// A `Record` over the SDK's union, so a status the API adds fails the
+// typecheck here until it is named, rather than parsing to "no row".
+const ATTENDANCE_ROW_STATUS_SET: Record<AttendanceRowStatus, true> = {
+  PRESENT: true,
+  LATE: true,
+  EXCUSED: true,
+  ABSENT: true,
+};
+
+export const ATTENDANCE_ROW_STATUSES = Object.keys(
+  ATTENDANCE_ROW_STATUS_SET,
+) as AttendanceRowStatus[];
 
 /** The viewer's own row, as {@link useMyAttendance} answers it. */
 export interface OwnAttendanceRow {

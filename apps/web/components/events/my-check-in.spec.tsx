@@ -227,7 +227,7 @@ describe("<MyCheckIn />", () => {
     await waitFor(() =>
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
-          title: "Already checked in",
+          title: "Already on the list",
           variant: "default",
         }),
       ),
@@ -279,6 +279,15 @@ describe("<MyCheckIn />", () => {
     renderBlock();
 
     expect(screen.getByText("Check-in is open")).toBeInTheDocument();
+  });
+
+  it("says tomorrow, lower-case, as mobile does, for a window opening tomorrow", () => {
+    clock.now = new Date(2026, 10, 8, 12, 0).getTime();
+    renderBlock();
+
+    expect(
+      screen.getByText(/^Check-in opens tomorrow · 6:50\sPM$/),
+    ).toBeInTheDocument();
   });
 
   it("says when check-in opens before the window", () => {
