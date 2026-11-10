@@ -473,7 +473,7 @@ subscriber differently — see the `†` note under "Enforcing layer per table".
 changed row, so it gets real replication plus the row-level policy #867 pre-authorised; the three
 dashboard subscriptions consume nothing but the fact of a change, so they get a contentless private
 broadcast and their tables stay API-enforced. The topic strings are a cross-substrate contract
-between the SQL and `apps/web/lib/realtime/change-topics.ts`, pinned by `change-topics.spec.ts`
+between the SQL and `packages/chat-core/src/change-topics.ts`, pinned by `apps/web/lib/realtime/change-topics.spec.ts`
 precisely because drift between them is silent. Later migrations re-create the ping functions and
 the `realtime.messages` policy, so the test applies every migration to PGlite (with a stand-in
 `realtime` schema) and checks what they leave in effect, and a contract change is a new migration,

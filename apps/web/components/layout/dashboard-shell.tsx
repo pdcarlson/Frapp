@@ -32,6 +32,7 @@ import { ChapterWizardGate } from "@/components/onboarding/chapter-wizard-gate";
 import { NoAccessRedirect } from "@/components/layout/no-access-redirect";
 import { TermsPromptGate } from "@/components/auth/terms-prompt";
 import { OnboardingTutorial } from "@/components/onboarding/onboarding-tutorial";
+import { WhatsNewHost } from "@/components/whats-new/whats-new-host";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useChatRealtimeBinding } from "@/lib/chat/use-chat-realtime-binding";
 import { useNavHighlights } from "@/components/layout/use-chat-has-unread";
@@ -209,6 +210,8 @@ export function DashboardShell({
       {/* A member who hasn't accepted the current Terms (#2302). */}
       <TermsPromptGate />
       <OnboardingTutorial />
+      {/* What's new, by itself once after an update (#3943). */}
+      <WhatsNewHost />
       <DashboardNotificationDrawer
         open={notificationDrawerOpen}
         onOpenChange={setNotificationDrawerOpen}
