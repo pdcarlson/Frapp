@@ -8,6 +8,7 @@ import type {
   ISearchRepository,
   SearchChannelAccessRow,
   SearchMemberHit,
+  SearchMessageFilters,
 } from '#domain/repositories/search.repository.interface';
 import type { BackworkResource } from '#domain/entities/backwork.entity';
 import type { Event } from '#domain/entities/event.entity';
@@ -256,20 +257,60 @@ export class SupabaseSearchRepository implements ISearchRepository {
     channelIds: string[],
     query: string,
     limit: number,
+    filters: SearchMessageFilters = {},
   ): Promise<ChatMessage[]> {
+    const has = new Set(filters.has ?? []);
+    // `has:file` and `has:image` are an INNER JOIN on the attachment rows, the
+    // same embed-filters-the-parent shape `searchMembers` uses. An image is an
+    // attachment whose content type says so; a file is any attachment at all,
+    // images included (Discord's reading of the two words). A legacy row with a
+    // null content type is therefore a file and never an image.
+    const wantsAttachment = has.has('file') || has.has('image');
+    const columns = wantsAttachment
+      ? `${MESSAGE_SEARCH_COLUMNS}, chat_message_attachments!inner(id)`
+      : MESSAGE_SEARCH_COLUMNS;
+
     const batches = await Promise.all(
       chunkIds(channelIds).map(async (batch) => {
-        const { data, error } = (await this.supabase
+        let request = this.supabase
           .from('chat_messages')
-          .select(MESSAGE_SEARCH_COLUMNS)
+          .select(columns)
           .in('channel_id', batch)
-          .textSearch('content_search', query, TEXT_SEARCH)
-          .eq('is_deleted', false)
+          .eq('is_deleted', false);
+        // An empty query is a filter-only search ("everything Ryan posted this
+        // week"); `SearchService` allows it only when a filter is present.
+        if (query) {
+          request = request.textSearch('content_search', query, TEXT_SEARCH);
+        }
+        if (filters.fromUserId) {
+          request = request.eq('sender_id', filters.fromUserId);
+        }
+        if (filters.after) request = request.gte('created_at', filters.after);
+        if (filters.before) request = request.lt('created_at', filters.before);
+        if (has.has('image')) {
+          request = request.like(
+            'chat_message_attachments.content_type',
+            'image/%',
+          );
+        }
+        if (has.has('poll')) request = request.eq('kind', 'poll');
+        // A link is a URL scheme in the text. Not index-backed: it filters the
+        // rows the channel and text conditions already selected.
+        if (has.has('link')) request = request.ilike('content', '%http%://%');
+
+        const { data, error } = (await request
           .order('created_at', { ascending: false })
           .order('id', { ascending: false })
-          .limit(limit)) as QueryResult<ChatMessage>;
+          .limit(limit)) as QueryResult<
+          ChatMessage & { chat_message_attachments?: unknown }
+        >;
         if (error) throw new SupabaseQueryError(error);
-        return data ?? [];
+        // The embed exists only to filter; it is not part of a message.
+        return (data ?? []).map((row): ChatMessage => {
+          const message = { ...row };
+          delete message.chat_message_attachments;
+          return message;
+        });
       }),
     );
     if (batches.length === 1) return batches[0];

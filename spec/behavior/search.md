@@ -55,13 +55,44 @@ the database across every channel the caller can read, so a client narrowing a g
 one channel gets nothing whenever that channel's matches rank below the cut — and cannot tell
 that apart from a channel with no matches. Narrowing has to reach SQL.
 
+## Message filters
+
+`GET /v1/search` takes four optional filters on the `messages` source (#3958, asked by Shawn
+2026-11-10; the web chips that send them are a follow-up PR on the same issue):
+
+| Parameter | Matches | Notes |
+| --- | --- | --- |
+| `fromUserId` | messages whose `sender_id` is this user | An id that is not a uuid returns no matches, not an error. An imported archive message has no `sender_id` and never matches. |
+| `after` | sent at or after this instant | ISO 8601 date or instant. A bare date is UTC midnight, so a client sends the instant for its own local midnight. |
+| `before` | sent strictly before this instant | Same form as `after`. |
+| `has` | carries every listed trait | Comma-separated or repeated: `file` (any attachment, images included), `image` (an attachment whose content type is `image/*`), `link` (the text contains `http…://`), `poll` (`kind = 'poll'`). |
+
+- **A filter never widens access.** The filters are passed to the message query beside the
+  caller's accessible-channel ids, never in place of them, so the rule of
+  [§ Single-channel scope](#single-channel-scope) is unchanged: every hit is in a channel that
+  passed `canAccessChannel`. Filtering by a sender returns only what that sender wrote in
+  channels the caller can read; it does not reveal their DMs or private channels. A filter
+  combines with `channelId`, and an unreadable `channelId` still returns nothing.
+- **A blocked sender stays masked.** `fromUserId` naming a member the caller has blocked returns
+  rows masked as the timeline masks them ([`chat/README.md`](chat/README.md) § The masking contract).
+- **Any filter makes the search messages-only**, as `channelId` does: `backwork`, `events` and
+  `members` come back empty, because a sender, a date or an attachment describes a message.
+- **Text is optional beside a filter.** An empty `q` with at least one filter runs
+  ("everything Ryan posted this week"), newest first, under the same cap. One or two characters
+  are still refused. An empty `q` with only `channelId` is refused: that is the channel's timeline.
+- **An unreadable filter value is a 400**, unlike a malformed `channelId`: an `after` that is not
+  a date, or a `has` outside the four, is rejected, because dropping it would answer a narrower
+  question with a wider result.
+- `has=link` is not index-backed. It filters the rows the channel, text, sender and date
+  conditions select; alone across a large archive it is the slow case the 500 ms budget degrades.
+
 ## MVP defaults
 
 v1 ships with the following defaults. Chapter admins cannot override them; tuning requires a code change. These numbers exist so implementers don't have to guess — revisit with real usage signal before v2.
 
-- **Minimum query length:** 3 characters. Shorter queries return an empty result with an inline hint.
+- **Minimum query length:** 3 characters. Shorter queries return an empty result with an inline hint. The one exception is an empty query beside a [message filter](#message-filters).
 - **Per-domain cap:** `SEARCH_LIMIT` in `search.service.ts`, currently **10** results per source. Anything past it is silently dropped.
-- **Paging:** none. `GET /v1/search` accepts only `q` and `channelId` — there is no page or offset parameter and no `.range()` in the query path, so the cap above is the whole result set. (The spec previously claimed 20 per domain / 80 per page and a 50-result cap; none of that was ever built.)
+- **Paging:** none. `GET /v1/search` accepts `q`, `channelId` and the [message filters](#message-filters) — there is no page or offset parameter and no `.range()` in the query path, so the cap above is the whole result set. (The spec previously claimed 20 per domain / 80 per page and a 50-result cap; none of that was ever built.)
 - **Ranking:** specified as Postgres `ts_rank_cd` over the `tsvector` columns, with per-domain field weighting (e.g. Backwork title outweighs tags) set via `setweight` at index time rather than at query time. **Implemented for Backwork only** (2026-11-06, #585): `search_backwork_resources` ranks by `ts_rank_cd` over weights it applies at query time, since it builds its document per row. For chat, events and members `supabase-search.repository.ts` applies no `ts_rank`, ordering chat by `created_at`, leaving the other two unordered, and cutting each source at `SEARCH_LIMIT`. Migration `20260829002000` records that gap. Anything that needs relevance scores on those three (hybrid retrieval, rerank) has to add this first.
 - **Snippet highlighting:** specified as `ts_headline` on the primary content field, capped at 160 characters per snippet. Not implemented either, per the same migration note.
 - **Typo tolerance:** Backwork only (2026-11-06, #585), through `pg_trgm`'s `word_similarity`, which also lets a Backwork query match within a word. Chat, events and members have none, so **those three** never match **within** a word — `websearch_to_tsquery` matches lexemes, so `attach` finds `attached` (stemming) but `tach` finds nothing. `pg_trgm` is installed in the `extensions` schema by `20261106190000`, and both PGlite harnesses the `pglite-migrations` CI job runs, `scripts/pglite/harness.mjs` and `apps/web/lib/realtime/change-topics.spec.ts`, register it; a new migration that needs another extension must register it in both, or that job fails.
@@ -77,6 +108,7 @@ v1 ships with the following defaults. Chapter admins cannot override them; tunin
 
 - [ ] Cross-chapter results are impossible by construction: every query is parameterized with the caller's active `chapter_id`.
 - [ ] Chat-message results pass through `canAccessChannel` before being returned to the client; snippets never include content from inaccessible channels.
+- [ ] No message filter (`fromUserId`, `after`, `before`, `has`) returns a message from a channel the caller cannot read, with or without `channelId` (`search.service.spec.ts`, "message filters (#3958)").
 - [ ] Vault content never appears in results.
 - [ ] Members without `members:view` cannot search the member directory.
 - [ ] An adversarial query with 200+ tokens completes within the 500 ms timeout or surfaces the timeout header.
