@@ -118,11 +118,13 @@ vi.mock("@/lib/providers/network-provider", () => ({
   useNetwork: () => networkState,
 }));
 
-const { downloadCsvSpy } = vi.hoisted(() => ({ downloadCsvSpy: vi.fn() }));
+const { exportRowsSpy } = vi.hoisted(() => ({
+  exportRowsSpy: vi.fn(async () => {}),
+}));
 vi.mock("@/lib/utils", async () => {
   const actual =
     await vi.importActual<typeof import("@/lib/utils")>("@/lib/utils");
-  return { ...actual, downloadCsv: downloadCsvSpy };
+  return { ...actual, exportRows: exportRowsSpy };
 });
 
 // Both children own independent queries and error handling; stub them so these
@@ -877,7 +879,7 @@ describe("PointsPage subscription gating", () => {
 // entirely because flags are automatic (±100 points) with no manual override.
 describe("PointsPage transaction bulk actions", () => {
   beforeEach(() => {
-    downloadCsvSpy.mockClear();
+    exportRowsSpy.mockClear();
   });
 
   function selectFirstTransaction() {
@@ -912,7 +914,7 @@ describe("PointsPage transaction bulk actions", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("exports the selected transaction as a downloaded CSV", () => {
+  it("exports the selected transaction as a downloaded CSV", async () => {
     setQueries({
       summary: {
         data: {
@@ -939,14 +941,20 @@ describe("PointsPage transaction bulk actions", () => {
 
     render(<PointsPage />);
     selectFirstTransaction();
-    fireEvent.click(screen.getByRole("button", { name: /export selected/i }));
+    // The button opens the file-type menu (#3969); picking one exports.
+    fireEvent.keyDown(screen.getByRole("button", { name: /export selected/i }), {
+      key: "Enter",
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "CSV" }));
 
-    expect(downloadCsvSpy).toHaveBeenCalledTimes(1);
-    const [rows, prefix] = downloadCsvSpy.mock.calls[0] as [
+    expect(exportRowsSpy).toHaveBeenCalledTimes(1);
+    const [rows, prefix, format] = exportRowsSpy.mock.calls[0] as unknown as [
       Record<string, string>[],
+      string,
       string,
     ];
     expect(prefix).toBe("points");
+    expect(format).toBe("csv");
     // Only the selected row — the unselected fine is not exported.
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ Description: "Founders Day check-in" });

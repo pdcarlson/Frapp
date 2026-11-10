@@ -55,8 +55,17 @@ vi.mock("@/components/shared/can", () => ({
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
+const { toastSpy, exportRowsSpy } = vi.hoisted(() => ({
+  toastSpy: vi.fn(),
+  exportRowsSpy: vi.fn(async () => {}),
+}));
+vi.mock("@/lib/utils", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/lib/utils")>("@/lib/utils");
+  return { ...actual, exportRows: exportRowsSpy };
+});
 vi.mock("@/lib/hooks/use-toast", () => ({
-  useToast: () => ({ toast: vi.fn() }),
+  useToast: () => ({ toast: toastSpy }),
 }));
 
 const { ReportsPage } = await import("./reports-page");
@@ -66,7 +75,7 @@ const chapter = chapterSubscription(mockCurrentChapter);
 const generateButton = () =>
   screen.getByRole("button", { name: /generate report/i });
 const pdfButton = () => screen.getByRole("button", { name: /download pdf/i });
-const csvButton = () => screen.getByRole("button", { name: /download csv/i });
+const csvButton = () => screen.getByRole("button", { name: /^export$/i });
 
 describe("ReportsPage subscription gating", () => {
   beforeEach(() => {
@@ -311,7 +320,7 @@ describe("ReportsPage preview states", () => {
 
   it("says so on screen when the report is truncated, not only in a toast", async () => {
     // `spec/behavior/reports.md`: truncation is never silent. The toast is
-    // transient; the preview and the CSV built from it are not.
+    // transient; the preview and any export built from it are not.
     const user = userEvent.setup();
     mockAttendanceReport.mockReturnValue({
       mutateAsync: vi.fn().mockResolvedValue({
@@ -326,6 +335,45 @@ describe("ReportsPage preview states", () => {
 
     expect(await screen.findByText(/incomplete report/i)).toBeInTheDocument();
     expect(screen.getByText(/not a complete record/i)).toBeInTheDocument();
+  });
+
+  it("exports the previewed rows under the report's name, and warns again when they are truncated", async () => {
+    // #3969: Export is a file-type menu. The truncation warning at export time
+    // now rides the menu's `onExported`, and for the clipboard copy it has to
+    // carry the "copied" notice too, since one toast shows at a time.
+    const user = userEvent.setup();
+    mockAttendanceReport.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({
+        payload: [{ member: "Paul", status: "PRESENT" }],
+        truncation: { truncated: true, rowLimit: 5000, note: null },
+      }),
+      isPending: false,
+    });
+
+    render(<ReportsPage />);
+    await user.click(generateButton());
+    await screen.findByText(/incomplete report/i);
+    toastSpy.mockClear();
+    exportRowsSpy.mockClear();
+
+    await user.click(csvButton());
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Copy for Google Sheets" }),
+    );
+
+    expect(exportRowsSpy).toHaveBeenCalledWith(
+      [{ member: "Paul", status: "PRESENT" }],
+      "attendance",
+      "sheets",
+    );
+    expect(toastSpy).toHaveBeenCalledTimes(1);
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Copied an incomplete report",
+        variant: "destructive",
+        description: expect.stringMatching(/Paste into a Google Sheet/),
+      }),
+    );
   });
 
   it("keeps the preview clean when the report is complete", async () => {
