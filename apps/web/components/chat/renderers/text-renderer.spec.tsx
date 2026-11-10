@@ -221,6 +221,83 @@ describe("TextRenderer mention chips", () => {
     ]);
   });
 
+  describe("names with spaces (#3825)", () => {
+    const roster = {
+      members: [
+        { user_id: "u-winston", display_name: "Winston Hewitt" },
+        { user_id: "u-sam", display_name: "Sam" },
+        { user_id: "u-sam-abe", display_name: "Sam Abernathy" },
+      ],
+      roleNames: ["Vice President"],
+    };
+    function renderIn(m: ChatMessage) {
+      return render(
+        <MentionChipTargetsContext.Provider value={roster}>
+          <TextRenderer message={m} />
+        </MentionChipTargetsContext.Provider>,
+      );
+    }
+
+    it("chips a two-word name as one chip", () => {
+      const { container } = renderIn(
+        message("thanks @Winston Hewitt, see you there", {
+          mentions: ["u-winston"],
+        }),
+      );
+      const [chip, ...rest] = chips(container);
+      expect(rest).toHaveLength(0);
+      expect(chip?.textContent).toBe("@Winston Hewitt");
+      expect(chip?.getAttribute("data-mention")).toBe("Winston Hewitt");
+    });
+
+    it("chips a two-word role as one chip", () => {
+      const { container } = renderIn(
+        message("@Vice President please", { mentions: ["u-sam"] }),
+      );
+      expect(chips(container).map((chip) => chip.textContent)).toEqual([
+        "@Vice President",
+      ]);
+    });
+
+    it("chips the whole name on the sender's own row before the server answers", () => {
+      const { container } = renderIn(
+        message("@Winston Hewitt", { mentions: [], _status: "pending" }),
+      );
+      expect(chips(container).map((chip) => chip.textContent)).toEqual([
+        "@Winston Hewitt",
+      ]);
+    });
+
+    it("keeps the old chip on a body sent before names could hold a space", () => {
+      // `@Sam Abernathy` used to read as `@Sam` and pinged the member "Sam".
+      const { container } = renderIn(
+        message("@Sam Abernathy", { mentions: ["u-sam"] }),
+      );
+      expect(chips(container).map((chip) => chip.textContent)).toEqual(["@Sam"]);
+    });
+
+    it("still chips the reduced label an older client wrote", () => {
+      const { container } = renderIn(
+        message("@WinstonHewitt", { mentions: ["u-winston"] }),
+      );
+      expect(chips(container).map((chip) => chip.textContent)).toEqual([
+        "@WinstonHewitt",
+      ]);
+    });
+
+    it("chips nothing without the roster to say it is a name", () => {
+      // No roster yet: tokens stop at whitespace, as they always did.
+      const { container } = render(
+        <TextRenderer
+          message={message("@Winston Hewitt", { mentions: ["u-winston"] })}
+        />,
+      );
+      expect(chips(container).map((chip) => chip.textContent)).toEqual([
+        "@Winston",
+      ]);
+    });
+  });
+
   it("leaves the body around the chip untinted", () => {
     // "Don't retint the message." A mention is an address inside someone's
     // message; the body keeps the plain foreground.
