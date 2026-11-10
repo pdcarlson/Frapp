@@ -31,6 +31,22 @@ export function useMediaQueryState(query: string): boolean | null {
   );
 }
 
+const noSubscribe = () => () => {};
+
+/**
+ * `false` on the server and through hydration, `true` from the first render
+ * after it (and on any render that is not a hydration). For drawing both
+ * answers to a width question until the client knows its width, and letting
+ * CSS pick between them (`dashboard-shell.tsx`, the forced nav rail, #4024).
+ */
+export function useHydrated(): boolean {
+  return useSyncExternalStore(
+    noSubscribe,
+    () => true,
+    () => false,
+  );
+}
+
 /**
  * Whether a CSS media query matches. `false` on the server and through
  * hydration, so a caller must never let it decide first-paint layout: draw

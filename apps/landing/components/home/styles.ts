@@ -34,6 +34,15 @@ export const FOCUS_RING =
 
 export const BUTTON_PRIMARY = `chrome-motion inline-flex h-12 items-center justify-center rounded-md border border-transparent bg-primary bg-clip-padding px-6 text-body font-bold text-primary-foreground hover:bg-primary-hover ${FOCUS_RING}`;
 
+/*
+ * The secondary control, as the web Button's `secondary` variant draws it
+ * (`border-input`, foreground text, a fill on hover), on the primary's 48 box
+ * and radius. It never takes gold, at rest or on hover, so a section that
+ * carries a primary and a secondary still reads as one gold action. The fill
+ * is `popover`, one step above the `card` it sits on.
+ */
+export const BUTTON_SECONDARY = `chrome-motion inline-flex h-12 items-center justify-center rounded-md border border-input bg-card px-6 text-body font-semibold text-foreground hover:bg-popover ${FOCUS_RING}`;
+
 /* The nav's own primary sits on the 44 touch floor rather than the 48 box. */
 export const BUTTON_PRIMARY_NAV = `chrome-motion inline-flex h-11 items-center justify-center rounded-md border border-transparent bg-primary bg-clip-padding px-[18px] text-label font-bold text-primary-foreground hover:bg-primary-hover ${FOCUS_RING}`;
 
