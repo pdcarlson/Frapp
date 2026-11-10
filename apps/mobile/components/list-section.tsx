@@ -332,6 +332,14 @@ export type ListRowProps = {
   /** Trailing control (a switch, a swatch) instead of, or beside, `value`. */
   trailing?: ReactNode;
   onPress?: () => void;
+  /**
+   * A secondary action behind a long press (Documents' Delete, #3938), as
+   * chat's channel rows put theirs. A screen reader reaches it as a named
+   * action, `longPressLabel`, so it is never press-and-hold only.
+   */
+  onLongPress?: () => void;
+  /** The spoken name of `onLongPress`'s action, e.g. "Delete document". */
+  longPressLabel?: string;
   accessibilityHint?: string;
   /**
    * What a screen reader reads as the row's value when the trailing status is
@@ -379,6 +387,8 @@ export function ListRow({
   descriptionTone = "default",
   trailing,
   onPress,
+  onLongPress,
+  longPressLabel,
   accessibilityHint,
   accessibilityValue,
   destructive = false,
@@ -456,6 +466,21 @@ export function ListRow({
       accessibilityState={{ disabled, busy }}
       disabled={disabled || busy}
       onPress={onPress}
+      onLongPress={onLongPress}
+      // Offered only while the row takes presses: `disabled` doesn't reach a
+      // custom action, so a busy row would otherwise take a second one.
+      accessibilityActions={
+        onLongPress && !disabled && !busy
+          ? [{ name: "longpress", label: longPressLabel ?? "More actions" }]
+          : undefined
+      }
+      onAccessibilityAction={
+        onLongPress && !disabled && !busy
+          ? (event) => {
+              if (event.nativeEvent.actionName === "longpress") onLongPress();
+            }
+          : undefined
+      }
       // `usePressFeedback`: a ripple on Android, bounded by the row because
       // `ListSection` clips its children, and a one-rung lift on iOS.
       android_ripple={disabled || busy ? undefined : feedback.ripple}

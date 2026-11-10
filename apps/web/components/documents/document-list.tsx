@@ -17,11 +17,12 @@ import {
   SortChip,
 } from "@/components/documents/document-filters";
 import {
-  DOCUMENT_LIST_CAP,
+  DOCUMENT_CAP_NOTICE,
   type DocumentFilters,
   type DocumentSort,
+  type FileKind,
   type LibraryDocument,
-} from "@/components/documents/document-library";
+} from "@repo/hooks/document-library";
 import type { FilterOption } from "@/components/shared/filter-chip";
 import { SectionLabel } from "@/components/shared/section-label";
 import {
@@ -50,6 +51,7 @@ export function DocumentList({
   semesterKnown,
   setFilters,
   uploaders,
+  kinds,
   sort,
   setSort,
   onClearFilters,
@@ -65,7 +67,7 @@ export function DocumentList({
   /** The failed read behind `listState === "error"`, for its wording. */
   loadError?: unknown;
   /** The rows to draw: folder, search, filters and order applied. */
-  visible: LibraryDocument[];
+  visible: LibraryDocument<ChapterDocument>[];
   /** Documents in the open folder before search and filters, for "4 of 10". */
   total: number;
   /** The list response hit PostgREST's row cap, so older files may be missing. */
@@ -81,9 +83,11 @@ export function DocumentList({
   semesterKnown: boolean;
   setFilters: (filters: DocumentFilters) => void;
   uploaders: readonly FilterOption[];
+  /** The File type choices: groups some document is in (`kindOptions`). */
+  kinds: readonly FilterOption[];
   sort: DocumentSort;
   setSort: (sort: DocumentSort) => void;
-  /** Clears the search and both filters, leaving the folder and the order. */
+  /** Clears the search and every filter, leaving the folder and the order. */
   onClearFilters: () => void;
   onRetry: () => void;
   gate: SubscriptionGate;
@@ -169,6 +173,15 @@ export function DocumentList({
             value={filters.date}
             onChange={(date) => setFilters({ ...filters, date })}
           />
+          <FilterChip
+            label="File type"
+            anyLabel="Any type"
+            options={kinds}
+            value={filters.kind}
+            onChange={(kind) =>
+              setFilters({ ...filters, kind: kind as FileKind | null })
+            }
+          />
           <SortChip value={sort} onChange={setSort} />
         </div>
       </div>
@@ -178,8 +191,7 @@ export function DocumentList({
       */}
       {truncated && (listState === "ready" || listState === "empty") ? (
         <p className="pt-2 text-caption text-muted-foreground" role="status">
-          Showing the newest {DOCUMENT_LIST_CAP.toLocaleString("en-US")} documents.
-          Search and filters look only at these for now.
+          {DOCUMENT_CAP_NOTICE}
         </p>
       ) : null}
       <div className="pt-2">
