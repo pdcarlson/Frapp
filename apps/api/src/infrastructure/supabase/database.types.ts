@@ -25,6 +25,8 @@ import type {
   ChatMessageAction,
   ChatMessageAttachment,
   ChatMessageBookmark,
+  ChatThreadFollow,
+  FollowedThreadUnread,
   ChatMessageReport,
   ChatNotificationPreference,
   ChatPushDispatch,
@@ -136,6 +138,7 @@ export interface Database {
       message_reactions: TableDefinition<MessageReaction>;
       channel_read_receipts: TableDefinition<ChannelReadReceipt>;
       chat_message_bookmarks: TableDefinition<ChatMessageBookmark>;
+      chat_thread_follows: TableDefinition<ChatThreadFollow>;
       chat_message_reports: TableDefinition<ChatMessageReport>;
       chat_member_blocks: TableDefinition<ChatMemberBlock>;
       poll_votes: TableDefinition<PollVote>;
@@ -214,6 +217,15 @@ export interface Database {
           attachment_count: number;
           created_at: string;
         }[];
+      };
+      /**
+       * `20261110220000` (#3785). The caller's followed and muted threads in
+       * one channel, with how many replies are new to them (0 when muted).
+       * The service authorizes the channel first.
+       */
+      get_followed_thread_unread: {
+        Args: { p_channel_id: string; p_user_id: string };
+        Returns: FollowedThreadUnread[];
       };
       /**
        * `20261107043000`. Onboarding chapter search: word prefixes over

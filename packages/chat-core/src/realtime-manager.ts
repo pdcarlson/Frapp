@@ -785,6 +785,11 @@ class ChatRealtimeManager {
         // thousands of years-old messages into a live timeline one render at a
         // time. History arrives through the ordinary channel read, in order.
         if (next?.kind === "imported") return;
+        // A thread reply (#3785) rides this topic but is not part of the
+        // channel's timeline: merged here it would land in the timeline cache
+        // and move the last-seen cursor to a row the timeline read never
+        // returns. The parent's own UPDATE echo carries the new reply count.
+        if (next?.thread_root_id) return;
         if (next && next.id) {
           // INSERT / UPDATE — full row is present and authoritative about its
           // content, and says nothing about the viewer's block list: this path

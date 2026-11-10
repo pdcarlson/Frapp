@@ -281,7 +281,10 @@ export class SupabaseSearchRepository implements ISearchRepository {
           .from('chat_messages')
           .select(columns)
           .in('channel_id', batch)
-          .eq('is_deleted', false);
+          .eq('is_deleted', false)
+          // A thread reply has no place in the timeline a hit jumps to;
+          // thread results in search are slice 2 of #3785.
+          .is('thread_root_id', null);
         // An empty query is a filter-only search ("everything Ryan posted this
         // week"); `SearchService` allows it only when a filter is present.
         if (query) {

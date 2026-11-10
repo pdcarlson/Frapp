@@ -374,6 +374,7 @@ describe('ChatController', () => {
         dto.content_type,
         undefined,
         false,
+        false,
       );
       expect(result).toEqual({
         upload_url: 'https://storage.example/put',
@@ -407,6 +408,7 @@ describe('ChatController', () => {
         dto.content_type,
         undefined,
         true,
+        false,
       );
       expect(result).toEqual({
         upload_url: 'https://storage.example/put',
