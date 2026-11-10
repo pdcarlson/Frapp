@@ -3353,3 +3353,34 @@ alter table public.chat_channels
   drop column if exists created_by,
   drop column if exists display_locked;
 ```
+
+## Rollback role tiers (20261111010000)
+
+* **Migration**: `20261111010000_role_tiers.sql`
+
+One new table, `role_tiers`; two columns on `roles`, `tier_id` and `permission_overrides`, with a check and a composite foreign key; the function `role_effective_permissions`; and two triggers, `trg_roles_sync_permissions` on `roles` and `trg_role_tiers_sync_roles` on `role_tiers`. The migration wrote no role's `permissions`.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API writes `roles.permissions` directly, as it always did; the trigger keeps each list as given and records it as overrides, so nothing a role can do changes. A chapter created by the reverted API has no tiers and its roles sit outside them, which is how every chapter was before.
+
+**If the triggers are themselves the problem**, drop them alone. `roles.permissions` then stands as last written and is what `PermissionsGuard` reads, so every member keeps exactly what they had; tier and override edits stop reaching it until the triggers are back:
+
+```sql
+drop trigger if exists trg_roles_sync_permissions on public.roles;
+drop trigger if exists trg_role_tiers_sync_roles on public.role_tiers;
+```
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses every chapter's tiers and which role sits in which; `roles.permissions` already holds each role's full list, so no permission is lost:
+
+```sql
+drop trigger if exists trg_roles_sync_permissions on public.roles;
+drop trigger if exists trg_role_tiers_sync_roles on public.role_tiers;
+drop function if exists public.roles_sync_permissions();
+drop function if exists public.role_tiers_sync_roles();
+alter table public.roles
+  drop constraint if exists roles_tier_fk,
+  drop constraint if exists roles_permission_overrides_object,
+  drop column if exists tier_id,
+  drop column if exists permission_overrides;
+drop function if exists public.role_effective_permissions(text[], jsonb);
+drop table if exists public.role_tiers;
+```

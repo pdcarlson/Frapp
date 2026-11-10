@@ -68,15 +68,14 @@ The only lifecycle rule today is the **Alumni** role (see [`alumni.md`](alumni.m
 
 ## Role Lifecycle
 
-- On chapter creation, **default system roles** are seeded: President (`*`), Treasurer, Vice President, Secretary, Member, New Member, Alumni. Each has a sensible default permission set.
-- **Seeded permissions** (the API implementation is the source of truth; the constants below must stay in sync with the seeded role definitions):
-  - **President:** `*` (wildcard).
-  - **Treasurer:** `billing:view`, `billing:manage`, `points:adjust`, `points:view_all`, `polls:view_all`, `members:view`, `reports:export`, `events:create`, `events:update`.
-  - **Vice President:** `members:view`, `polls:view_all` (baseline chapter API access plus `GET /v1/polls`, the chapter-wide poll list, whose web page was retired in #3871; the permission's fate is #3887).
-  - **Secretary:** `members:view`, `polls:view_all` (same as Vice President).
-  - **Member:** `members:view`, `backwork:upload`, `service:log`, `polls:create`.
-  - **New Member:** `members:view`, `backwork:upload`.
-  - **Alumni:** `members:view`, `alumni:post`.
+- On chapter creation, the **starting tiers** and the **default system roles** are seeded: President (`*`), Treasurer, Vice President, Secretary, Member, New Member, Alumni, each in its starting tier ([Tiers and overrides](#tiers-and-overrides)).
+- **Seeded permissions** (`STARTING_ROLE_TIERS` and `DEFAULT_SYSTEM_ROLES` in `apps/api/src/domain/constants/permissions.ts` own the lists; this is what they give a chapter created today, and each role can do what it could before tiers existed):
+  - **Exec board** (tier 1) gives its roles `members:view` and `polls:view_all` (baseline chapter API access plus `GET /v1/polls`, the chapter-wide poll list, whose web page was retired in #3871; the permission's fate is #3887). In it: **President** (also `*`, as an override), **Vice President** and **Secretary** (nothing beyond the tier), and **Treasurer** (also `billing:view`, `billing:manage`, `points:adjust`, `points:view_all`, `reports:export`, `events:create`, `events:update`, as overrides).
+  - **Officers and chairs** (tier 2) gives `members:view`. No role is seeded into it; it is where a chapter puts its chairs.
+  - **Members** (tier 3) gives `members:view`, `backwork:upload`, `service:log`, `polls:create`. In it: **Member**.
+  - **New members** (tier 4) gives `members:view`, `backwork:upload`. In it: **New Member**.
+  - **Alumni** sits outside the tiers and holds `members:view`, `alumni:post` as overrides.
+  - The officer defaults for new chapters (Paul, 2026-11-10, #4068 decision 9: the top two starting tiers approve service hours, post announcements and manage tasks and channels; the top tier also manages roles and chapter settings) are not seeded yet. They land with the rank rules in the next slice of #4071, and will reach new chapters only.
 - System roles can be **renamed** and have their **permissions modified**, but cannot be deleted.
   - **Renaming is safe: system roles carry a stable `system_key`.** Each seeded role is created with a rename-proof identifier (`PRESIDENT`, `TREASURER`, `VICE_PRESIDENT`, `SECRETARY`, `MEMBER`, `NEW_MEMBER`, `ALUMNI`) stored in `roles.system_key`, unique per chapter. Every lookup that asks "is this *the* Alumni/President/Member role?" — the Alumni lifecycle restrictions (see [`alumni.md`](alumni.md)), the President notification target, the invite fallback role — resolves on that key, never on `name`. Renaming a system role is therefore a pure relabel: it changes no authorization or lifecycle outcome, and a custom role that takes the freed name inherits nothing.
   - `system_key` is **not writable through the API**. Role create forces it to `null` (custom roles never carry one) and role update strips it, so `roles:manage` can neither mint a role impersonating a seeded one nor detach a key from one.
@@ -91,6 +90,30 @@ The only lifecycle rule today is the **Alumni** role (see [`alumni.md`](alumni.m
   - Custom roles from `chapter_custom_roles` carry no color.
 - Roles have a **mentionable** switch (2026-11-06, owner direction: "anyone can ping any role by default. officers can change defaults"): on by default for every row of `roles`, seeded, created on the Roles page or imported. Capability roles in `chapter_custom_roles` are not mentionable and have no switch: mention resolution and the picker read only `roles` and `members.role_ids` (#3638). A `roles:manage` holder turns it off on the web Roles page; while it is off, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can `@` the role in chat. The mention rules are in [`chat/README.md`](chat/README.md#role-mentions) § Role mentions.
 - A user with no assigned roles has zero permissions (fail-safe closed).
+
+## Tiers and overrides
+
+Roles are grouped into **tiers** (#4071, Paul 2026-11-10). A tier does two jobs: it is the starting bundle of permissions for every role in it, and it is rank.
+
+- **Tiers are the chapter's own.** How many there are, what each is called and their order are rows in `role_tiers` that the chapter edits ("not all chapters will have the same tier structure and thus there should be heavy customization at the very least in naming conventions"). The four a chapter starts with are seed data. Nothing in the product may read meaning into a tier's name or number beyond "a lower `position` ranks higher", and what a chapter calls a tier at all is its `tier` vocabulary term.
+- **A role sits in one tier or outside them.** `roles.tier_id` is null for a role outside the tiers, as Alumni is. A role outside the tiers gets nothing from any tier and ranks below every tier.
+- **An override switches one permission on or off for one role, and beats the tier.** `roles.permission_overrides` maps a permission key to `true` or `false`. A role's effective permissions are its tier's permissions, plus its overrides that are `true`, minus its overrides that are `false`. An override stays until it is cleared, whatever the tier later does.
+- **A person still holds the union of their roles.** Overrides act on one role. An "off" override on one role does not remove a permission another of the member's roles grants: there is no deny across roles and no per-person override.
+- **The effective list is written back.** `roles.permissions` always holds the role's effective list, so the [Permission Check Algorithm](#permission-check-algorithm) reads exactly the column it always read and `PermissionsGuard` knows nothing about tiers. The database keeps it true inside the writer's own transaction (migration `20261111010000`): a change to a role's tier or overrides rewrites that role's list, and a change to a tier's permissions rewrites the list of every role in it.
+- **A write of `permissions` alone still works.** `PATCH /v1/roles/:id` with a `permissions` list, the Roles page's matrix and a Discord import all write the list and nothing else. The role then holds exactly that list, and the difference from its tier is recorded as overrides, changing as few as possible.
+- **A tier never carries `*`.** The wildcard moves only through [Presidency Transfer](#presidency-transfer); a tier holding it would hand it to every role moved in. The President role holds `*` as an override.
+- **A tier that still has roles cannot be deleted**, and a role can only sit in a tier of its own chapter. Both are database constraints.
+
+### Chapters that existed before tiers
+
+Migration `20261111010000` gave every existing chapter the four starting tier names and placed its roles without changing what any role can do: no role's `permissions` was written, and `scripts/pglite/tiers/role-tiers.mjs` proves the lists are byte-for-byte the same before and after.
+
+- A role holding `*`, and the seeded President, Vice President, Treasurer and Secretary, went to the first tier; the seeded Member to the third; the seeded New Member to the fourth.
+- The seeded Alumni, and any role with no permissions at all (most roles a Discord import made), stayed outside the tiers.
+- Any other role went to the second tier when it held a permission the chapter's Member role lacked, and to the third otherwise. Ranking such a role too high takes nothing from anyone; ranking an officer's role too low would have stopped them editing roles they edit today.
+- Each tier started with the permissions every one of its seeded roles already held, and each role recorded its difference from that as overrides. So an existing chapter's President role carries "off" overrides for the tier's few permissions beside its `*`, which change nothing the wildcard grants.
+
+The endpoints that edit tiers and overrides, the rank rules on who may edit what, and the officer defaults for new chapters are the next slice of #4071 and are not built yet.
 
 ## Default Invite Role
 

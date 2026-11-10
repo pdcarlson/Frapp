@@ -18,6 +18,8 @@ function role(id: string, name: string, extra: Partial<Role> = {}): Role {
     display_order: 1,
     color: null,
     mentionable: true,
+    tier_id: null,
+    permission_overrides: {},
     created_at: '2026-11-06T00:00:00Z',
     ...extra,
   };

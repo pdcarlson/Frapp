@@ -104,15 +104,28 @@ VALUES ('c0ffee00-0000-4000-8000-000000000001', 'Beta Theta Omega', 'Westfield U
 --
 -- `color` is the role palette default `DEFAULT_SYSTEM_ROLES` seeds (#3485), so
 -- officers' chat names show their color in the demo and store screenshots.
-INSERT INTO roles (id, chapter_id, name, permissions, is_system, display_order, system_key, color)
+--
+-- Tiers and roles are what `ChapterService.create` gives a new chapter
+-- (`STARTING_ROLE_TIERS` and `DEFAULT_SYSTEM_ROLES`, #4071): four starting
+-- tiers, each seeded role in its tier with what it holds beyond the tier as
+-- "on" overrides, and Alumni outside the tiers. `roles.permissions` is left
+-- for the database to write from the tier and the overrides.
+INSERT INTO role_tiers (id, chapter_id, position, name, permissions)
 VALUES
- ('c0ffee00-0000-4000-8000-0000000000a1', 'c0ffee00-0000-4000-8000-000000000001', 'President',      ARRAY['*'], true, 1, 'PRESIDENT', '#F2994A'),
- ('c0ffee00-0000-4000-8000-0000000000a2', 'c0ffee00-0000-4000-8000-000000000001', 'Treasurer',      ARRAY['billing:view','billing:manage','points:adjust','points:view_all','polls:view_all','members:view','reports:export','events:create','events:update'], true, 2, 'TREASURER', '#6FD08C'),
- ('c0ffee00-0000-4000-8000-0000000000a3', 'c0ffee00-0000-4000-8000-000000000001', 'Vice President', ARRAY['members:view','polls:view_all'], true, 3, 'VICE_PRESIDENT', '#8FA8FF'),
- ('c0ffee00-0000-4000-8000-0000000000a4', 'c0ffee00-0000-4000-8000-000000000001', 'Secretary',      ARRAY['members:view','polls:view_all'], true, 4, 'SECRETARY', '#F47FA4'),
- ('c0ffee00-0000-4000-8000-0000000000a5', 'c0ffee00-0000-4000-8000-000000000001', 'Member',         ARRAY['members:view','backwork:upload','service:log','polls:create'], true, 5, 'MEMBER', NULL),
- ('c0ffee00-0000-4000-8000-0000000000a6', 'c0ffee00-0000-4000-8000-000000000001', 'New Member',     ARRAY['members:view','backwork:upload'], true, 6, 'NEW_MEMBER', NULL),
- ('c0ffee00-0000-4000-8000-0000000000a7', 'c0ffee00-0000-4000-8000-000000000001', 'Alumni',         ARRAY['members:view'], true, 7, 'ALUMNI', '#A9B4C2');
+ ('c0ffee00-0000-4000-8000-0000000000b1', 'c0ffee00-0000-4000-8000-000000000001', 1, 'Exec board',          ARRAY['members:view','polls:view_all']),
+ ('c0ffee00-0000-4000-8000-0000000000b2', 'c0ffee00-0000-4000-8000-000000000001', 2, 'Officers and chairs', ARRAY['members:view']),
+ ('c0ffee00-0000-4000-8000-0000000000b3', 'c0ffee00-0000-4000-8000-000000000001', 3, 'Members',             ARRAY['members:view','backwork:upload','service:log','polls:create']),
+ ('c0ffee00-0000-4000-8000-0000000000b4', 'c0ffee00-0000-4000-8000-000000000001', 4, 'New members',         ARRAY['members:view','backwork:upload']);
+
+INSERT INTO roles (id, chapter_id, name, tier_id, permission_overrides, is_system, display_order, system_key, color)
+VALUES
+ ('c0ffee00-0000-4000-8000-0000000000a1', 'c0ffee00-0000-4000-8000-000000000001', 'President',      'c0ffee00-0000-4000-8000-0000000000b1', '{"*": true}', true, 1, 'PRESIDENT', '#F2994A'),
+ ('c0ffee00-0000-4000-8000-0000000000a2', 'c0ffee00-0000-4000-8000-000000000001', 'Treasurer',      'c0ffee00-0000-4000-8000-0000000000b1', '{"billing:view": true, "billing:manage": true, "points:adjust": true, "points:view_all": true, "reports:export": true, "events:create": true, "events:update": true}', true, 2, 'TREASURER', '#6FD08C'),
+ ('c0ffee00-0000-4000-8000-0000000000a3', 'c0ffee00-0000-4000-8000-000000000001', 'Vice President', 'c0ffee00-0000-4000-8000-0000000000b1', '{}', true, 3, 'VICE_PRESIDENT', '#8FA8FF'),
+ ('c0ffee00-0000-4000-8000-0000000000a4', 'c0ffee00-0000-4000-8000-000000000001', 'Secretary',      'c0ffee00-0000-4000-8000-0000000000b1', '{}', true, 4, 'SECRETARY', '#F47FA4'),
+ ('c0ffee00-0000-4000-8000-0000000000a5', 'c0ffee00-0000-4000-8000-000000000001', 'Member',         'c0ffee00-0000-4000-8000-0000000000b3', '{}', true, 5, 'MEMBER', NULL),
+ ('c0ffee00-0000-4000-8000-0000000000a6', 'c0ffee00-0000-4000-8000-000000000001', 'New Member',     'c0ffee00-0000-4000-8000-0000000000b4', '{}', true, 6, 'NEW_MEMBER', NULL),
+ ('c0ffee00-0000-4000-8000-0000000000a7', 'c0ffee00-0000-4000-8000-000000000001', 'Alumni',         NULL, '{"members:view": true, "alumni:post": true}', true, 7, 'ALUMNI', '#A9B4C2');
 
 -- ── People ───────────────────────────────────────────────────────────────────
 -- 26 invented members. Roster #1, the president, is the one real login.
