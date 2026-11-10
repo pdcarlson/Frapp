@@ -148,6 +148,7 @@ function renderRow(
     startsRun?: boolean;
     startsDay?: boolean;
     roleColorFor?: (userId: string) => string | null;
+    onOpenThread?: (message: ChatMessage) => void;
   } = {},
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -174,6 +175,7 @@ function renderRow(
           onUnblock={overrides.onUnblock ?? vi.fn()}
           maskedRefresh={overrides.maskedRefresh ?? new Map()}
           onReload={overrides.onReload ?? vi.fn()}
+          onOpenThread={overrides.onOpenThread}
         />
       </FrappThemeProvider>,
     );
@@ -789,7 +791,9 @@ describe("ThreadMessageRow — runs and day dividers (#2873)", () => {
 
   it("draws the author line only on a row that starts a run", () => {
     const row = visible(message({ sender_id: FRIEND, content: "second" }));
-    expect(allDrawnText(renderRow(row, { startsRun: true }))).toContain("Casey");
+    expect(allDrawnText(renderRow(row, { startsRun: true }))).toContain(
+      "Casey",
+    );
     expect(allDrawnText(renderRow(row, { startsRun: false }))).not.toContain(
       "Casey",
     );
@@ -832,7 +836,9 @@ describe("ThreadMessageRow — runs and day dividers (#2873)", () => {
     );
     expect(flat(renderRow(poll))).toContain("Pinned");
     expect(
-      flat(renderRow({ ...poll, message: { ...poll.message, is_pinned: false } })),
+      flat(
+        renderRow({ ...poll, message: { ...poll.message, is_pinned: false } }),
+      ),
     ).not.toContain("Pinned");
   });
 
@@ -909,7 +915,9 @@ describe("ThreadMessageRow — runs and day dividers (#2873)", () => {
       const malformed = visible(
         message({ kind, content: "Something happened", payload: { id: 3 } }),
       );
-      expect(allDrawnText(renderRow(malformed))).toContain("Something happened");
+      expect(allDrawnText(renderRow(malformed))).toContain(
+        "Something happened",
+      );
     }
   });
 
@@ -934,7 +942,11 @@ describe("ThreadMessageRow — runs and day dividers (#2873)", () => {
   });
 
   it("offers a poll reply's jump to a screen reader, as a text reply does", () => {
-    const parent = message({ id: "parent-1", sender_id: FRIEND, content: "which theme?" });
+    const parent = message({
+      id: "parent-1",
+      sender_id: FRIEND,
+      content: "which theme?",
+    });
     const onJumpToMessage = vi.fn();
     const tree = renderRow(
       visible(
@@ -1042,7 +1054,10 @@ describe("ThreadMessageRow — record cards (#3383)", () => {
     },
     points: { payload: POINTS, eyebrow: "Points" },
     hours: { payload: HOURS, eyebrow: "Service hours" },
-    announcement: { payload: { body: "Dues are due Friday" }, eyebrow: "Announcement" },
+    announcement: {
+      payload: { body: "Dues are due Friday" },
+      eyebrow: "Announcement",
+    },
     // An audit line, not a card (components.md §11 § Audit lines): its words
     // stand where the eyebrow would.
     system_audit: { payload: AUDIT, eyebrow: "edited a role" },
@@ -1069,7 +1084,8 @@ describe("ThreadMessageRow — record cards (#3383)", () => {
           visible(
             message({
               kind: kind as ChatMessage["kind"],
-              content: kind === "announcement" ? "Dues are due Friday" : "FALLBACK",
+              content:
+                kind === "announcement" ? "Dues are due Friday" : "FALLBACK",
               payload: payload as ChatMessage["payload"],
             }),
           ),
@@ -1164,8 +1180,12 @@ describe("ThreadMessageRow — record cards (#3383)", () => {
         }),
       ),
     );
-    expect(tree.root.findAll((node) => node.props.testID === "audit-line")).toHaveLength(1);
-    expect(tree.root.findAll((node) => node.props.testID === "system-avatar")).toHaveLength(0);
+    expect(
+      tree.root.findAll((node) => node.props.testID === "audit-line"),
+    ).toHaveLength(1);
+    expect(
+      tree.root.findAll((node) => node.props.testID === "system-avatar"),
+    ).toHaveLength(0);
   });
 
   it("draws the server's own notices, which carry no audit payload, as their sentence", () => {
@@ -1227,7 +1247,11 @@ describe("ThreadMessageRow — record cards (#3383)", () => {
       const text = allDrawnText(
         renderRow(
           visible(
-            message({ kind, content: "Something happened", payload: { id: 3 } }),
+            message({
+              kind,
+              content: "Something happened",
+              payload: { id: 3 },
+            }),
           ),
         ),
       );
@@ -1313,5 +1337,48 @@ describe("ThreadMessageRow Close poll wiring (#3794)", () => {
     expect(close).toBeDefined();
     act(() => close.props.onPress());
     expect(onClosePoll).toHaveBeenCalledWith("poll-1");
+  });
+});
+
+describe("ThreadMessageRow — message thread chip (#3785)", () => {
+  const THREAD = {
+    reply_count: 2,
+    last_reply_at: null,
+    recent_sender_ids: [],
+  };
+  const chip = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        node.props.testID === "thread-chip" &&
+        typeof node.props.style === "function",
+    );
+
+  it("opens a text parent's thread with that message", () => {
+    const onOpenThread = vi.fn();
+    const parent = message({ thread: THREAD });
+    const tree = renderRow(
+      { message: parent, visibility: "visible" },
+      { onOpenThread },
+    );
+    act(() => chip(tree).props.onPress());
+    expect(onOpenThread).toHaveBeenCalledWith(parent);
+  });
+
+  it("draws the chip under a card parent too, as web does", () => {
+    const onOpenThread = vi.fn();
+    const poll = message({
+      kind: "poll",
+      payload: {
+        question: "Formal theme?",
+        options: [{ id: "o1", label: "Masquerade" }],
+      },
+      thread: THREAD,
+    });
+    const tree = renderRow(
+      { message: poll, visibility: "visible" },
+      { onOpenThread },
+    );
+    act(() => chip(tree).props.onPress());
+    expect(onOpenThread).toHaveBeenCalledWith(poll);
   });
 });

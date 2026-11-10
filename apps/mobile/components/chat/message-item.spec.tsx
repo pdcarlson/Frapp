@@ -189,6 +189,7 @@ function renderItem(
     onOpenActions?: () => void;
     roleColorFor?: (userId: string) => string | null;
     onOpenProfile?: (userId: string) => void;
+    onOpenThread?: () => void;
   } = {},
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -209,6 +210,7 @@ function renderItem(
           onUnreact={vi.fn()}
           onOpenActions={extra.onOpenActions}
           onOpenProfile={extra.onOpenProfile}
+          onOpenThread={extra.onOpenThread}
         />
       </FrappThemeProvider>,
     );
@@ -1402,5 +1404,66 @@ describe("bubbles: cards through the row frame", () => {
     expect(
       tree.root.findAll((n) => n.props.testID === "message-avatar"),
     ).toHaveLength(0);
+  });
+});
+
+describe("thread chip (#3785)", () => {
+  beforeEach(() => {
+    resetChatDensityForTests();
+  });
+
+  const THREAD = {
+    reply_count: 3,
+    last_reply_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+    recent_sender_ids: [OTHER, VIEWER],
+  };
+  const chips = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        node.props.testID === "thread-chip" &&
+        typeof node.props.style === "function",
+    );
+
+  it("draws nothing under a message with no thread", () => {
+    const tree = renderItem(message(), undefined, { onOpenThread: vi.fn() });
+    expect(chips(tree)).toHaveLength(0);
+  });
+
+  it("says how many replies and when the last came, and opens the thread", () => {
+    const onOpenThread = vi.fn();
+    const tree = renderItem(message({ thread: THREAD }), undefined, {
+      onOpenThread,
+    });
+    expect(screenText(tree)).toContain("3 replies");
+    expect(screenText(tree)).toContain("· last reply 5m ago");
+    const chip = chips(tree)[0]!;
+    expect(chip.props.accessibilityLabel).toBe(
+      "3 replies, last reply 5m ago. Open thread",
+    );
+    act(() => chip.props.onPress());
+    expect(onOpenThread).toHaveBeenCalledTimes(1);
+  });
+
+  it("is a plain label where threads aren't offered", () => {
+    const tree = renderItem(message({ thread: THREAD }));
+    const chip = chips(tree)[0]!;
+    expect(chip.props.disabled).toBe(true);
+    expect(chip.props.accessibilityRole).toBe("text");
+  });
+
+  it("sits under the viewer's own bubble on the right", () => {
+    act(() => setChatDensity("bubbles"));
+    const tree = renderItem(
+      message({ sender_id: VIEWER, thread: THREAD }),
+      undefined,
+      { onOpenThread: vi.fn() },
+    );
+    const chip = chips(tree)[0]!;
+    const style = StyleSheet.flatten(
+      (chip.props.style as (s: { pressed: boolean }) => unknown)({
+        pressed: false,
+      }) as StyleProp<TextStyle>,
+    );
+    expect(style.alignSelf).toBe("flex-end");
   });
 });

@@ -3,6 +3,7 @@ import {
   chatChannelIdFrom,
   notificationHref,
   notificationIdFrom,
+  replaceablePathname,
   resolveNotificationTarget,
 } from "./targets";
 
@@ -149,5 +150,16 @@ describe("chatChannelIdFrom", () => {
     ).toBeNull();
     expect(chatChannelIdFrom({ target: { screen: "chat" } })).toBeNull();
     expect(chatChannelIdFrom(null)).toBeNull();
+  });
+});
+
+describe("replaceablePathname (#3785)", () => {
+  it("lets a channel on top be replaced by a push for another channel", () => {
+    expect(replaceablePathname("/chat-thread", undefined)).toBe("/chat-thread");
+  });
+
+  it("never replaces a message thread, which shares the channel's path", () => {
+    expect(replaceablePathname("/chat-thread", "root-1")).toBeUndefined();
+    expect(replaceablePathname("/chat-thread", ["root-1"])).toBeUndefined();
   });
 });
