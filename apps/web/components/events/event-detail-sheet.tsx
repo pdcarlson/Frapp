@@ -1,6 +1,6 @@
 "use client";
 
-import { checkInZoneLine } from "@repo/validation";
+import { can, checkInZoneLine } from "@repo/validation";
 import { useMemo } from "react";
 import {
   AlertTriangle,
@@ -17,10 +17,16 @@ import {
   StudyZonesGlyph,
 } from "@/components/events/chapter-ops-glyphs";
 import {
+  useActiveChapterId,
   useDeleteEvent,
   useEvent,
+  useMyPermissions,
   useRoles,
 } from "@repo/hooks";
+import { statusOf } from "@repo/api-sdk";
+import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
+import { useNetwork } from "@/lib/providers/network-provider";
+import { useRefetchAfterOutage } from "@/lib/hooks/use-refetch-after-outage";
 import { useToast } from "@/lib/hooks/use-toast";
 import {
   EVENT_ATTENDANCE_LABELS,
@@ -40,6 +46,9 @@ import {
   PanelHeader,
 } from "@/components/shared/panel";
 import { AttendancePanel } from "@/components/events/attendance-panel";
+import { MyCheckIn } from "@/components/events/my-check-in";
+import { Can } from "@/components/shared/can";
+import { PermissionsOfflineSurface } from "@/components/shared/async-states";
 import { normalizeRoleOptions } from "@/lib/roles";
 import { formatDayTimeRange } from "@repo/formatting";
 import { pointsLabel, recurrenceLabel } from "@/components/events/event-labels";
@@ -76,6 +85,69 @@ export function EventDetailSheet({
   const { confirm, confirmDialog } = useConfirmDialog();
   const rolesQuery = useRoles();
   const { toast } = useToast();
+  // Edit and Delete are `events:update` and `events:delete` on the server, so
+  // a member gets neither icon rather than two that 403 (#3855). A boolean,
+  // not a `<Can>`: the header has no room for an offline chip per icon. It
+  // reads the permissions as `<Can>` does (`components/shared/can.tsx`):
+  // loading, or failed while online, is a denial, so the icons never flash or
+  // linger for a member; unanswerable for want of a connection (paused, or
+  // offline with nothing cached) keeps both, disabled by the subscription
+  // gate while offline, rather than hidden as if the role lacked them. The
+  // preview sheet keeps both too.
+  const permissionsQuery = useMyPermissions();
+  const { isOffline } = useNetwork();
+  const permissionsUnanswerable =
+    permissionsQuery.data === undefined &&
+    (permissionsQuery.fetchStatus === "paused" ||
+      (isOffline &&
+        (permissionsQuery.isError ||
+          permissionsQuery.fetchStatus === "fetching")));
+  // As `<Can>` does: a read that failed during an outage is re-run when it
+  // ends, so the icons don't wait on some other gate to recover them.
+  useRefetchAfterOutage({
+    isOffline,
+    enabled: true,
+    isError: permissionsQuery.isError,
+    loaded: permissionsQuery.data !== undefined,
+    refetch: permissionsQuery.refetch,
+  });
+  const permissions = permissionsQuery.data?.permissions;
+  const canEditEvent =
+    usingPreviewData ||
+    permissionsUnanswerable ||
+    can("events:update", permissions);
+  const canDeleteEvent =
+    usingPreviewData ||
+    permissionsUnanswerable ||
+    can("events:delete", permissions);
+
+  // Live attendance for every viewer: an officer's mark, or a check-in from
+  // another device, refreshes both the roster and the member's own row (both
+  // live under `["attendance", eventId]`). Held here, not in the roster, so a
+  // member gets it too; one subscription per topic, because a second channel
+  // on `attendance:<eventId>` releases the first.
+  const chapterId = useActiveChapterId();
+  useRealtimeTable({
+    table: "event_attendance",
+    scopeId: eventId,
+    invalidate: useMemo(
+      () => [
+        ["attendance", eventId],
+        // Must match useEvent(id) → ["events", chapterId, id]; ["events", id] never matches.
+        ["events", chapterId, eventId],
+      ],
+      [chapterId, eventId],
+    ),
+    // Only while the sheet is open: the page keeps it mounted after a close,
+    // and a closed sheet has nothing to refresh.
+    enabled: open && Boolean(eventId) && !usingPreviewData,
+  });
+  // The event is gone (404), or never loaded. Not any failed read: a failed
+  // background refetch keeps its data, and one throttled refetch must not
+  // take Check in away from an event that is fine.
+  const eventUnavailable =
+    eventQuery.isError &&
+    (statusOf(eventQuery.error) === 404 || eventQuery.data === undefined);
 
   const resolvedEvent = useMemo(() => {
     if (!event) return null;
@@ -221,28 +293,32 @@ export function EventDetailSheet({
         <PanelHeader
           actions={
             <>
-              <IconButton
-                label="Edit event"
-                {...editControl}
-                onClick={() => {
-                  if (!resolvedEvent) return;
-                  onRequestEdit(resolvedEvent);
-                }}
-              >
-                <Pencil aria-hidden="true" />
-              </IconButton>
-              <IconButton
-                label="Delete event"
-                className="hover:text-destructive-text"
-                {...deleteControl}
-                onClick={handleDelete}
-              >
-                {deleteEventMutation.isPending ? (
-                  <Loader2 className="animate-spin" aria-hidden="true" />
-                ) : (
-                  <Trash2 aria-hidden="true" />
-                )}
-              </IconButton>
+              {canEditEvent ? (
+                <IconButton
+                  label="Edit event"
+                  {...editControl}
+                  onClick={() => {
+                    if (!resolvedEvent) return;
+                    onRequestEdit(resolvedEvent);
+                  }}
+                >
+                  <Pencil aria-hidden="true" />
+                </IconButton>
+              ) : null}
+              {canDeleteEvent ? (
+                <IconButton
+                  label="Delete event"
+                  className="hover:text-destructive-text"
+                  {...deleteControl}
+                  onClick={handleDelete}
+                >
+                  {deleteEventMutation.isPending ? (
+                    <Loader2 className="animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Trash2 aria-hidden="true" />
+                  )}
+                </IconButton>
+              ) : null}
             </>
           }
         >
@@ -267,9 +343,33 @@ export function EventDetailSheet({
             </SectionSkeleton>
           ) : null}
 
-          <SubscriptionNotice gate={gate} feature="editing events" />
+          {canEditEvent || canDeleteEvent ? (
+            <SubscriptionNotice gate={gate} feature="editing events" />
+          ) : null}
 
           <div className="mt-5 grid gap-3">
+            {/*
+              Every viewer's own check-in, first because it is the one thing
+              on the sheet a member can act on. Officers check in too, so they
+              get it as well as the roster below.
+            */}
+            {eventId && !usingPreviewData ? (
+              <MyCheckIn
+                eventId={eventId}
+                start={resolvedEvent?.start_time}
+                end={resolvedEvent?.end_time}
+                opensMinutes={resolvedEvent?.check_in_opens_minutes}
+                pointValue={resolvedEvent?.point_value}
+                eventUnavailable={eventUnavailable}
+                zone={
+                  hasCheckInZone
+                    ? "zone"
+                    : checkInZoneIsMalformed
+                      ? "malformed"
+                      : "none"
+                }
+              />
+            ) : null}
             <div className="rounded-lg border border-border p-3">
               <p className="mb-2 flex items-center gap-1 text-caption text-muted-foreground">
                 <RolesGlyph className="h-3.5 w-3.5" />
@@ -381,12 +481,29 @@ export function EventDetailSheet({
               </div>
             ) : null}
 
+            {/*
+              The roster is `events:update` on the server, so it mounts only
+              for a viewer who holds it: mounted for a member, its read 403'd
+              and the sheet said "Your role can't do this" where their own
+              check-in belonged (#3855). `<Can>` holds it back while
+              permissions load, so it never mounts and fires that read first.
+            */}
             {eventId && !usingPreviewData ? (
-              <AttendancePanel
-                eventId={eventId}
-                eventStart={resolvedEvent?.start_time}
-                eventEnd={resolvedEvent?.end_time}
-              />
+              <Can
+                permission="events:update"
+                offlineFallback={(retry) => (
+                  <PermissionsOfflineSurface
+                    description="Reconnect to see who checked in to this event."
+                    onRetry={retry}
+                  />
+                )}
+              >
+                <AttendancePanel
+                  eventId={eventId}
+                  eventStart={resolvedEvent?.start_time}
+                  eventEnd={resolvedEvent?.end_time}
+                />
+              </Can>
             ) : null}
           </div>
         </PanelBody>

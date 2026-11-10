@@ -11,7 +11,11 @@
  * detail selector, and a route file importing another route file would drag a
  * whole screen component into the scanner's bundle.
  */
-import type { DeviceInstant } from "@repo/hooks";
+import {
+  selectOwnAttendance,
+  type AttendanceRowStatus,
+  type DeviceInstant,
+} from "@repo/hooks";
 import {
   attendanceFieldsOf,
   checkInOpensMinutes,
@@ -177,7 +181,7 @@ export function selectMintedToken(data: unknown): MintedCheckInToken | null {
 
 /** The viewer's own attendance row, as the event page reads it. */
 export interface MyAttendance {
-  status: "PRESENT" | "LATE" | "EXCUSED" | "ABSENT";
+  status: AttendanceRowStatus;
   /**
    * When they checked in: set for a PRESENT or LATE row with a time (a LATE
    * row is a check-in, as the roster counts it), `null` for a row an officer
@@ -186,23 +190,19 @@ export interface MyAttendance {
   checkedInAt: Date | null;
 }
 
-const ATTENDANCE_STATUSES = new Set(["PRESENT", "LATE", "EXCUSED", "ABSENT"]);
-
 /**
  * The viewer's row from `useMyAttendance`'s answer
  * (`{ attendance: row | null }`), or `null` when they have none or the answer
- * is unreadable.
+ * is unreadable. Parsed by `selectOwnAttendance` in `@repo/hooks`, which web's
+ * event sheet reads too; this adds the check-in time as a `Date`.
  */
 export function selectMyAttendance(data: unknown): MyAttendance | null {
-  if (!isRecord(data) || !isRecord(data.attendance)) return null;
-  const { status, check_in_time } = data.attendance;
-  if (typeof status !== "string" || !ATTENDANCE_STATUSES.has(status)) {
-    return null;
-  }
-  const checkedIn = status === "PRESENT" || status === "LATE";
+  const row = selectOwnAttendance(data);
+  if (!row) return null;
+  const checkedIn = row.status === "PRESENT" || row.status === "LATE";
   return {
-    status: status as MyAttendance["status"],
-    checkedInAt: checkedIn ? parseInstant(check_in_time) : null,
+    status: row.status,
+    checkedInAt: checkedIn ? parseInstant(row.checkInTime) : null,
   };
 }
 
