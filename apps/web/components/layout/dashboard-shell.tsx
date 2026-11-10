@@ -19,7 +19,10 @@ import {
   isChatRoute,
   PANE_FLOOR,
   CHANNELS_WIDTH,
+  OUTSIDE_RAIL_BAND,
+  RAIL_BAND_ONLY,
   SPLIT_QUERY,
+  useHydrated,
   useMediaQueryState,
 } from "@/components/layout/shell-layout";
 import {
@@ -236,6 +239,16 @@ export function DashboardShell({
   // its exit, so the rail holds until it is gone.
   const forceRail =
     hasTool && chatShown && split === true && fullNavRoom === false;
+  /*
+    The server and hydration know the route and the chat cookie but not the
+    width, so where the rail might be forced they draw both columns and let
+    the band's CSS show one (#4024). Deciding it in JS instead painted the
+    full nav first and clipped ~130px off the tool page until it snapped.
+    From the first client render the shell knows and draws only the one CSS
+    already showed, keyed so it keeps its DOM: nothing moves.
+  */
+  const hydrated = useHydrated();
+  const railByCss = !hydrated && hasTool && chatShown && !navCollapsed;
 
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
   const { data: permissionsPayload } = useMyPermissions({
@@ -375,19 +388,31 @@ export function DashboardShell({
         nothing in it jumps going in and out of Chat.
       */}
       <div className="hidden lg:flex">
-        <NavColumn
-          collapsed={navCollapsed || forceRail}
-          onToggleCollapsed={forceRail ? undefined : toggleNavCollapsed}
-          permissions={permissions}
-          isModuleEnabled={isModuleEnabled}
-          pathname={pathname}
-          chatRow={
-            split === true
-              ? { onSelect: toggleChat, open: chatOpen }
-              : undefined
-          }
-          onCloseTool={split === true && hasTool ? closeTool : undefined}
-        />
+        {(railByCss ? [false, true] : [navCollapsed || forceRail]).map(
+          (rail) => (
+            <NavColumn
+              // The forced rail and the column the member chose are the same
+              // column when they agree; the key keeps it across hydration.
+              key={rail && (forceRail || railByCss) ? "rail" : "column"}
+              className={
+                railByCss ? (rail ? RAIL_BAND_ONLY : OUTSIDE_RAIL_BAND) : undefined
+              }
+              collapsed={rail}
+              onToggleCollapsed={
+                forceRail || (railByCss && rail) ? undefined : toggleNavCollapsed
+              }
+              permissions={permissions}
+              isModuleEnabled={isModuleEnabled}
+              pathname={pathname}
+              chatRow={
+                split === true
+                  ? { onSelect: toggleChat, open: chatOpen }
+                  : undefined
+              }
+              onCloseTool={split === true && hasTool ? closeTool : undefined}
+            />
+          ),
+        )}
       </div>
 
       {/*
