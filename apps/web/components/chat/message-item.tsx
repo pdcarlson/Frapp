@@ -35,6 +35,7 @@ import {
   canDeleteMessage,
   canReportMessage,
   canEditMessage,
+  isOwnMessage,
   EDITED_MARKER,
   isCardMessage,
   showsEditedMarker,
@@ -129,6 +130,12 @@ export interface MessageItemProps {
    * avatar and author line. A follow-on row draws neither.
    */
   showHeader: boolean;
+  /**
+   * Whether this row is the last of its run. Only Bubbles reads it: the
+   * avatar sits under the stack, and the bottom corner on the speaker's side
+   * tucks on every row but the last (§11 § Bubbles). Defaults to `true`.
+   */
+  endsRun?: boolean;
   /**
    * `created_at` of the run's first message, whose author line a follow-on's
    * gutter time is read against: the gutter drops AM/PM only when that line
@@ -337,6 +344,7 @@ export function MessageItem({
   viewerId,
   blockState,
   showHeader,
+  endsRun = true,
   runStartedAt,
   nameFor,
   onReact,
@@ -412,7 +420,14 @@ export function MessageItem({
   // The member's density on this browser (§11 § Density). Compact drops the
   // avatar and the author line: the time takes a fixed gutter and the name
   // leads the body's first line.
-  const compact = useChatDensity() === "compact";
+  // A channel the member pinned to a display on this browser draws in that
+  // one (#3787); every other channel follows the default.
+  const density = useChatDensity(message.channel_id);
+  const compact = density === "compact";
+  // Bubbles (§11 § Bubbles, #3787). An audit line keeps its one quiet line.
+  const bubbled = density === "bubbles" && !auditLine;
+  // The viewer's own message sits on the right in the chapter accent.
+  const mine = isOwnMessage(message, viewerId);
   const avatarSrc = isSystemPost ? SYSTEM_AVATAR_SRC : avatarUrl;
   // The initials take the author's own color (#3860): their name's role color
   // when it has one, so the two always match, otherwise their hashed hue. An
@@ -508,8 +523,16 @@ export function MessageItem({
     const bar = barRef.current;
     const track = bar?.parentElement;
     if (!extent || !bar || !track) return;
-    const beside = extent.offsetWidth + 8;
     const flush = track.clientWidth - bar.offsetWidth;
+    // The viewer's own bubble hugs the right edge, so its bar goes to its
+    // left: 8px short of the bubble's left edge, or flush left.
+    if (bubbled && mine) {
+      const besideLeft =
+        track.clientWidth - extent.offsetWidth - 8 - bar.offsetWidth;
+      bar.style.marginLeft = `${Math.max(0, besideLeft)}px`;
+      return;
+    }
+    const beside = extent.offsetWidth + 8;
     bar.style.marginLeft = `${Math.max(0, Math.min(beside, flush))}px`;
   }
   const editTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -1123,6 +1146,275 @@ export function MessageItem({
       </div>
     ) : null;
 
+  /*
+   * The delivery state, under the body. Only this line is a live region, and
+   * it is mounted empty until it has something to say: a region mounted
+   * populated would read every row's status aloud on each virtualized scroll.
+   * One element for every density, so a fix to the failed-send flow reaches
+   * Bubbles too.
+   */
+  const deliveryStatus = (
+    <div role="status" aria-live="polite" aria-atomic="true">
+      {/*
+        Pending draws nothing here: the body is already gray, which is the
+        whole pending state on screen, so a send never adds a line and takes
+        it away again (§11 § What rides the row, owner decision 2026-11-06).
+        A screen reader still hears it.
+      */}
+      {isPending ? <span className="sr-only">Sending</span> : null}
+      {isUnconfirmed ? (
+        <p className="mt-0.5 text-caption text-muted-foreground">
+          {message._error ?? "Not confirmed"}
+        </p>
+      ) : null}
+      {isRecorded ? (
+        <p className="mt-0.5 text-caption text-muted-foreground">
+          {message._error ??
+            "Recorded, but the chat card didn't post. Don't run this command again."}
+        </p>
+      ) : null}
+      {isFailed ? (
+        <div className="mt-0.5 flex flex-wrap items-center gap-2 text-caption text-destructive-text">
+          <span>{message._error ?? "Send failed"}</span>
+          {onRetry ? (
+            <button
+              type="button"
+              className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA)}
+              onClick={() => onRetry(message.client_message_id)}
+            >
+              Retry
+            </button>
+          ) : null}
+          {onDiscard ? (
+            <button
+              type="button"
+              className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
+              onClick={() => onDiscard(message.client_message_id)}
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              Discard
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+
+  if (bubbled) {
+    /*
+     * Bubbles (§11 § Bubbles; owner OK 2026-11-10 on #3787, an opt-in beside
+     * cozy and compact). Others' messages on the left in a `--card` bubble with
+     * its load-bearing hairline; the viewer's on the right in `--primary` with
+     * `--primary-foreground` text, the accent engine's AA-by-construction pair
+     * (`accent-engine.md` §8). A run stacks with its corners tucked to 6 on the
+     * speaker's side; the name and time sit once above the stack, the avatar
+     * once below it. A card or an attachment-only message draws no bubble:
+     * the card frames itself, and an empty bubble over a photo was one of the
+     * reasons §11 dropped bubbles in 2026-09.
+     */
+    // The open editor fills the column on its own, as in cozy: a textarea
+    // on the accent fill would take its colors.
+    const textBubble = !trailingOnOwnLine && !isEditing;
+    const hasReactions =
+      !message.is_deleted &&
+      (Object.values(shownReactions).some(
+        (userIds) => Array.isArray(userIds) && userIds.length > 0,
+      ) ||
+        importedSummary.length > 0);
+    const bubble = textBubble ? (
+      <div
+        data-slot="message-bubble"
+        className={cn(
+          "min-w-0 max-w-full rounded-[18px] px-3 py-1.5",
+          mine
+            ? [
+                "bg-primary text-primary-foreground",
+                // The body and its trailing markers take the contrast color;
+                // links inherit it and keep their underline. Mention chips
+                // paint their own opaque pair.
+                "[&_[data-slot=message-body]]:text-primary-foreground [&_[data-slot=message-trailing]]:text-primary-foreground",
+                // Inline code's alpha tint would land on the accent, so it
+                // takes the thread's own opaque pair instead.
+                "[&_code]:bg-background [&_code]:text-foreground",
+                !drawsHeader && "rounded-tr-[6px]",
+                !endsRun && "rounded-br-[6px]",
+              ]
+            : [
+                "border border-border bg-card",
+                !drawsHeader && "rounded-tl-[6px]",
+                !endsRun && "rounded-bl-[6px]",
+              ],
+          // In flight: the whole bubble dims rather than graying its text,
+          // which on the accent fill would drop under AA.
+          mine && (isPending || isFailed) && "opacity-60",
+        )}
+      >
+        {body}
+      </div>
+    ) : isEditing ? (
+      editForm
+    ) : (
+      body
+    );
+    /*
+     * A follow-on bubble's own time, beside it on the side away from the
+     * speaker, revealed with the row as cozy's gutter time is. Opacity, not
+     * `visibility`, so a screen reader still hears when each was sent.
+     */
+    const followOnTime = drawsHeader ? null : (
+      <time
+        dateTime={message.created_at}
+        data-slot="gutter-time"
+        className={cn(
+          "shrink-0 self-center whitespace-nowrap text-caption text-muted-foreground",
+          "opacity-0 group-hover/message:opacity-100 group-has-[:focus-visible]/message:opacity-100",
+          isTapRevealed && "opacity-100",
+        )}
+      >
+        {formatTimeOfDayShort(message.created_at, runStartedAt)}
+      </time>
+    );
+    return (
+      <div
+        role="listitem"
+        className={cn(
+          "group/message relative px-5 pt-(--row-pt) pb-0.5",
+          // A new speaker sits 12 below; a stacked bubble 2.
+          showHeader ? "[--row-pt:0.75rem]" : "[--row-pt:0.125rem]",
+          mentionsViewer
+            ? "bg-accent-subtle shadow-[inset_2px_0_0_var(--primary)] hover:bg-accent-subtle-hover has-[:focus-visible]:bg-accent-subtle-hover"
+            : "hover:bg-surface-1 has-[:focus-visible]:bg-surface-1",
+          !mentionsViewer && isTapRevealed && "bg-surface-1",
+          mentionsViewer && isTapRevealed && "bg-accent-subtle-hover",
+        )}
+        data-density="bubbles"
+        data-side={mine ? "self" : "other"}
+        data-mentions-viewer={mentionsViewer || undefined}
+        data-status={message._status}
+        data-run={showHeader ? "start" : "follow"}
+        onPointerDown={(event) => {
+          lastPointerType.current = event.pointerType;
+        }}
+        onPointerEnter={placeActionBar}
+        onFocus={placeActionBar}
+        onClick={handleRowTap}
+      >
+        <div className="grid">
+          <div
+            ref={extentRef}
+            data-slot="message-extent"
+            className={cn(
+              "col-start-1 row-start-1 min-w-0",
+              mine ? "justify-self-end" : "justify-self-start",
+              // A bubble never runs the full width of a wide pane: 75% of the
+              // row (85% on a phone), the messenger convention. Capped here,
+              // on the extent, whose parent has a definite width; a
+              // percentage inside the fit-content extent would resolve
+              // against the text's own width and wrap it.
+              isEditing
+                ? "w-full max-w-full"
+                : "w-fit max-w-[min(36rem,85%)] sm:max-w-[min(36rem,75%)]",
+            )}
+          >
+            <div className="flex min-w-0 items-end gap-2">
+              {mine ? followOnTime : null}
+              {mine ? null : (
+                // The avatar, once, beside the stack's last bubble. The gutter
+                // stays open on every row so the stack's left edge holds.
+                <div className="w-8 shrink-0">
+                  {endsRun ? (
+                    openAuthor ? (
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        aria-hidden="true"
+                        data-slot="author-avatar"
+                        onClick={openAuthor}
+                        className="block rounded-full"
+                      >
+                        {authorAvatar}
+                      </button>
+                    ) : (
+                      authorAvatar
+                    )
+                  ) : null}
+                </div>
+              )}
+              <div
+                className={cn(
+                  "flex min-w-0 max-w-full flex-col",
+                  mine ? "items-end" : "items-start",
+                  isEditing && "w-full",
+                )}
+              >
+                {drawsHeader ? (
+                  <div
+                    data-slot="author-line"
+                    className="flex min-w-0 max-w-full items-baseline gap-2 px-3 pb-0.5 leading-5"
+                  >
+                    {mine ? null : (
+                      <AuthorName
+                        openProfile={openAuthor}
+                        className="min-w-0 truncate text-sm font-semibold text-foreground"
+                        style={authorColor ? { color: authorColor } : undefined}
+                      >
+                        {authorLabel}
+                      </AuthorName>
+                    )}
+                    <time
+                      dateTime={message.created_at}
+                      className="shrink-0 text-caption leading-5 text-muted-foreground"
+                    >
+                      {formatTimeOfDay(message.created_at)}
+                    </time>
+                  </div>
+                ) : null}
+                {replyQuote ? (
+                  <div className="max-w-full [&_[data-slot=reply-elbow]]:hidden">
+                    {replyQuote}
+                  </div>
+                ) : null}
+                {bubble}
+                {attachments}
+                {trailingOnOwnLine && trailing && !isEditing ? (
+                  <div className="mt-1 leading-5 [&>span]:ml-0">{trailing}</div>
+                ) : null}
+                {/*
+                  Reactions ride the bubble's lower corner on the speaker's
+                  side, overlapping it by 8. The chips are opaque, so the
+                  bubble's edge never shows through them.
+                */}
+                {hasReactions ? (
+                  <div
+                    data-slot="bubble-reactions"
+                    className={cn(
+                      "relative z-[1] flex max-w-full px-2",
+                      textBubble && "-mt-3.5",
+                      mine ? "justify-end" : "justify-start",
+                    )}
+                  >
+                    {reactions}
+                  </div>
+                ) : null}
+                {deliveryStatus}
+                {unconfirmedFooter}
+              </div>
+              {mine ? null : followOnTime}
+            </div>
+          </div>
+          {actions ? (
+            <div
+              data-slot="action-track"
+              className="sticky top-[calc(var(--row-pt)+1.5rem)] z-10 col-start-1 row-start-1 flex h-0 min-w-0 items-start self-start pointer-coarse:top-[calc(var(--row-pt)+2rem)]"
+            >
+              {actions}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       role="listitem"
@@ -1337,61 +1629,7 @@ export function MessageItem({
                 <div className="mt-1 leading-5 [&>span]:ml-0">{trailing}</div>
               ) : null}
               {reactions}
-              {/*
-            The delivery state, under the body. Only this line is a live region,
-            and it is mounted empty until it has something to say: a region
-            mounted populated would read every row's status aloud on each
-            virtualized scroll.
-          */}
-              <div role="status" aria-live="polite" aria-atomic="true">
-                {/*
-              Pending draws nothing here: the body is already gray, which is
-              the whole pending state on screen, so a send never adds a line
-              and takes it away again (§11 § What rides the row, owner
-              decision 2026-11-06). A screen reader still hears it.
-            */}
-                {isPending ? <span className="sr-only">Sending</span> : null}
-                {isUnconfirmed ? (
-                  <p className="mt-0.5 text-caption text-muted-foreground">
-                    {message._error ?? "Not confirmed"}
-                  </p>
-                ) : null}
-                {isRecorded ? (
-                  <p className="mt-0.5 text-caption text-muted-foreground">
-                    {message._error ??
-                      "Recorded, but the chat card didn't post. Don't run this command again."}
-                  </p>
-                ) : null}
-                {isFailed ? (
-                  <div className="mt-0.5 flex flex-wrap items-center gap-2 text-caption text-destructive-text">
-                    <span>{message._error ?? "Send failed"}</span>
-                    {onRetry ? (
-                      <button
-                        type="button"
-                        className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA)}
-                        onClick={() => onRetry(message.client_message_id)}
-                      >
-                        Retry
-                      </button>
-                    ) : null}
-                    {onDiscard ? (
-                      <button
-                        type="button"
-                        className={cn(
-                          CHIP.base,
-                          CHIP.neutral,
-                          CHIP_HIT_AREA,
-                          "gap-1",
-                        )}
-                        onClick={() => onDiscard(message.client_message_id)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                        Discard
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
+              {deliveryStatus}
               {unconfirmedFooter}
             </div>
           </div>

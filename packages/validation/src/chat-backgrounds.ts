@@ -1,7 +1,7 @@
 /**
  * Chat backgrounds (#3973): the keys a chapter default or a channel override
  * may hold. The database CHECK constraints in
- * `supabase/migrations/20261110200000_chat_backgrounds.sql` mirror this list.
+ * `supabase/migrations/20261110230000_chat_backgrounds.sql` mirror this list.
  * How each one looks lives in `@repo/theme` (`chat-backgrounds.ts`); this is
  * only the contract the API validates against.
  */

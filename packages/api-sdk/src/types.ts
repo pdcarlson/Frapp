@@ -1568,6 +1568,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/{id}/threads/followed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller’s followed and muted threads in a channel, with new-reply counts */
+        get: operations["ChatThreadController_getFollowedThreads_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/{id}/threads/{rootId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A thread’s parent message and the caller’s follow */
+        get: operations["ChatThreadController_getThread_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/{id}/threads/{rootId}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A thread’s replies, newest first, paged like the channel timeline (before= and since=) */
+        get: operations["ChatThreadController_getReplies_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/{id}/threads/{rootId}/follow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Follow, mute or unfollow a thread */
+        put: operations["ChatThreadController_setFollow_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/{id}/threads/{rootId}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark a thread read through now */
+        post: operations["ChatThreadController_markRead_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/chat-backgrounds/channels/{id}": {
         parameters: {
             query?: never;
@@ -4391,6 +4476,16 @@ export interface components {
             is_deleted: boolean;
             /** @description `users.id` of everyone mentioned, resolved server-side at send time. Null on a masked row: a mention overrides a per-channel mute, so leaving it would let a blocked member keep poking the blocker through a masked row. */
             mentions?: string[] | null;
+            /**
+             * Format: uuid
+             * @description The parent message when this row is a reply inside a message thread (#3785). Thread replies never appear in the channel timeline; a client that receives one over Realtime must keep it out of the timeline.
+             */
+            thread_root_id?: string | null;
+            /** @description On a thread parent: its reply count, kept by a trigger so the parent’s Realtime UPDATE echo carries it. 0 on every other row. */
+            thread_reply_count?: number;
+            thread_last_reply_at?: string | null;
+            /** @description On a thread parent: up to three recent repliers, newest first. */
+            thread_recent_sender_ids?: string[];
             created_at: string;
             /** @description Whether the server masked this row against the caller’s block list. Present on **every** row, not only the masked ones: an absent-means-false flag cannot distinguish “this server does not mask” from “this message is fine”. Not sufficient on its own — rows arriving over the Realtime `postgres_changes` echo carry no viewer, so a client must also apply the list from `GET /v1/chat/blocks`. */
             sender_blocked: boolean;
@@ -4418,6 +4513,8 @@ export interface components {
             kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement";
             payload?: Record<string, never>;
             reply_to_id?: string;
+            /** Format: uuid */
+            thread_root_id?: string;
             metadata?: Record<string, never>;
         };
         ResolveAuthorAvatarsDto: {
@@ -4445,6 +4542,8 @@ export interface components {
             size_bytes?: number;
             /** @description Also mint an upload URL for a smaller JPEG copy of this photo, which readers draw in the timeline. Ignored unless content_type is an image. */
             with_preview?: boolean;
+            /** @description The file is for a reply inside a message thread (#3785). Authorizes as a thread write, which a read-only channel allows, so mint and send agree for a thread reply under an announcement. */
+            for_thread?: boolean;
         };
         ChatUploadUrlResponseDto: {
             /** @description Short-lived signed URL; PUT the bytes to it. */
@@ -4634,6 +4733,38 @@ export interface components {
         UpdateChatSidebarDto: {
             unread_only?: boolean;
             hide_muted?: boolean;
+        };
+        FollowedThreadDto: {
+            /** Format: uuid */
+            thread_root_id: string;
+            /** @enum {string} */
+            state: "following" | "muted";
+            last_read_at: string | null;
+            /** @description Replies new to the caller; always 0 when muted. */
+            unread_count: number;
+        };
+        ChatThreadDto: {
+            root: components["schemas"]["ChatMessageDto"];
+            /**
+             * @description The caller’s state; null when not following.
+             * @enum {string|null}
+             */
+            follow_state: "following" | "muted" | null;
+            last_read_at: string | null;
+        };
+        SetThreadFollowDto: {
+            /**
+             * @description `following` pushes replies within the channel’s level, `muted` never pushes, `none` unfollows.
+             * @enum {string}
+             */
+            state: "following" | "muted" | "none";
+        };
+        ThreadFollowStateDto: {
+            /** @enum {string|null} */
+            follow_state: "following" | "muted" | null;
+        };
+        ThreadReadDto: {
+            last_read_at: string;
         };
         ChatBackgroundResponseDto: {
             /**
@@ -9407,6 +9538,171 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatSidebarDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatThreadController_getFollowedThreads_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FollowedThreadDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatThreadController_getThread_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                rootId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatThreadDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatThreadController_getReplies_v1: {
+        parameters: {
+            query?: {
+                /** @description Max messages to return. Integers outside 1–200 are rejected; omitted defaults to 50 after clamp. */
+                limit?: number;
+                /** @description Cursor — return messages created strictly before this timestamp. Full ISO 8601 with an explicit UTC offset; feed back the `created_at` of the oldest row you received. */
+                before?: string;
+                /** @description Message UUID — returns messages created after this message (reconnect replay). Still newest first under `limit`: the page is the newest `limit` messages after this one, so a full page may not reach back to it. 404 with code `chat.since_not_found` when no message in this channel has this id. */
+                since?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+                rootId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatMessageDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatThreadController_setFollow_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                rootId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetThreadFollowDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadFollowStateDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatThreadController_markRead_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                rootId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadReadDto"];
                 };
             };
             /** @description Error */

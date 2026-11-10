@@ -70,7 +70,7 @@ import {
  *   It is a grouped list like the rows around it: one switch while off, and
  *   time rows with native pickers only while on (`QuietHoursSection` says why).
  * - **CHAT is here and is not drawn.** It holds one row, Chat density, which
- *   opens a sheet of the two densities (`components.md` §11 § Density, owner
+ *   opens a sheet of the three densities (`components.md` §11 § Density, owner
  *   request 2026-11-06, #2252). A section of its own because it is a display
  *   preference for this phone, not a notification or an account setting.
  * - **No Chat switch.** Chat is tuned per channel and per DM, from the
@@ -435,7 +435,7 @@ export default function PreferencesScreen() {
 
       <SectionHeader>Chat</SectionHeader>
       <ListSection>
-        {/* One row, a tap from the picker: the sheet draws both densities so
+        {/* One row, a tap from the picker: the sheet draws every density so
             the choice is made by looking (components.md §11 § Density). */}
         <ListRow
           label="Chat density"

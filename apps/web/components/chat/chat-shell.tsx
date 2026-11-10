@@ -2700,7 +2700,7 @@ export function ChatShell({
                 is what is loading, and the announcer above already says so —
                 adding a second region would read one event twice.
               */}
-              <MessageTimelineSkeleton />
+              <MessageTimelineSkeleton channelId={activeChannelId} />
             </div>
             {/*
               The composer, before there is a channel to send to.

@@ -5241,6 +5241,318 @@
         ]
       }
     },
+    "/v1/channels/{id}/threads/followed": {
+      "get": {
+        "operationId": "ChatThreadController_getFollowedThreads_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FollowedThreadDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller’s followed and muted threads in a channel, with new-reply counts",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/{id}/threads/{rootId}": {
+      "get": {
+        "operationId": "ChatThreadController_getThread_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "rootId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatThreadDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "A thread’s parent message and the caller’s follow",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/{id}/threads/{rootId}/messages": {
+      "get": {
+        "operationId": "ChatThreadController_getReplies_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "rootId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Max messages to return. Integers outside 1–200 are rejected; omitted defaults to 50 after clamp.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "example": 50,
+              "type": "number"
+            }
+          },
+          {
+            "name": "before",
+            "required": false,
+            "in": "query",
+            "description": "Cursor — return messages created strictly before this timestamp. Full ISO 8601 with an explicit UTC offset; feed back the `created_at` of the oldest row you received.",
+            "schema": {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,6})?)?(Z|[+-]\\d{2}:\\d{2})$",
+              "example": "2026-01-31T23:59:59.999Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "required": false,
+            "in": "query",
+            "description": "Message UUID — returns messages created after this message (reconnect replay). Still newest first under `limit`: the page is the newest `limit` messages after this one, so a full page may not reach back to it. 404 with code `chat.since_not_found` when no message in this channel has this id.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChatMessageDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "A thread’s replies, newest first, paged like the channel timeline (before= and since=)",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/{id}/threads/{rootId}/follow": {
+      "put": {
+        "operationId": "ChatThreadController_setFollow_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "rootId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetThreadFollowDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadFollowStateDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Follow, mute or unfollow a thread",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/{id}/threads/{rootId}/read": {
+      "post": {
+        "operationId": "ChatThreadController_markRead_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "rootId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadReadDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mark a thread read through now",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/chat-backgrounds/channels/{id}": {
       "get": {
         "operationId": "ChatBackgroundController_getForChannel_v1",
@@ -13991,6 +14303,27 @@
               "type": "string"
             }
           },
+          "thread_root_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The parent message when this row is a reply inside a message thread (#3785). Thread replies never appear in the channel timeline; a client that receives one over Realtime must keep it out of the timeline."
+          },
+          "thread_reply_count": {
+            "type": "number",
+            "description": "On a thread parent: its reply count, kept by a trigger so the parent’s Realtime UPDATE echo carries it. 0 on every other row."
+          },
+          "thread_last_reply_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "thread_recent_sender_ids": {
+            "description": "On a thread parent: up to three recent repliers, newest first.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "created_at": {
             "type": "string"
           },
@@ -14100,6 +14433,10 @@
           "reply_to_id": {
             "type": "string"
           },
+          "thread_root_id": {
+            "type": "string",
+            "format": "uuid"
+          },
           "metadata": {
             "type": "object"
           }
@@ -14183,6 +14520,10 @@
           "with_preview": {
             "type": "boolean",
             "description": "Also mint an upload URL for a smaller JPEG copy of this photo, which readers draw in the timeline. Ignored unless content_type is an image."
+          },
+          "for_thread": {
+            "type": "boolean",
+            "description": "The file is for a reply inside a message thread (#3785). Authorizes as a thread write, which a read-only channel allows, so mint and send agree for a thread reply under an announcement."
           }
         },
         "required": [
@@ -14738,6 +15079,106 @@
             "type": "boolean"
           }
         }
+      },
+      "FollowedThreadDto": {
+        "type": "object",
+        "properties": {
+          "thread_root_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "following",
+              "muted"
+            ]
+          },
+          "last_read_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "unread_count": {
+            "type": "number",
+            "description": "Replies new to the caller; always 0 when muted."
+          }
+        },
+        "required": [
+          "thread_root_id",
+          "state",
+          "last_read_at",
+          "unread_count"
+        ]
+      },
+      "ChatThreadDto": {
+        "type": "object",
+        "properties": {
+          "root": {
+            "$ref": "#/components/schemas/ChatMessageDto"
+          },
+          "follow_state": {
+            "type": "string",
+            "enum": [
+              "following",
+              "muted"
+            ],
+            "nullable": true,
+            "description": "The caller’s state; null when not following."
+          },
+          "last_read_at": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "root",
+          "follow_state",
+          "last_read_at"
+        ]
+      },
+      "SetThreadFollowDto": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "following",
+              "muted",
+              "none"
+            ],
+            "description": "`following` pushes replies within the channel’s level, `muted` never pushes, `none` unfollows."
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "ThreadFollowStateDto": {
+        "type": "object",
+        "properties": {
+          "follow_state": {
+            "type": "string",
+            "enum": [
+              "following",
+              "muted"
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "follow_state"
+        ]
+      },
+      "ThreadReadDto": {
+        "type": "object",
+        "properties": {
+          "last_read_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "last_read_at"
+        ]
       },
       "ChatBackgroundResponseDto": {
         "type": "object",

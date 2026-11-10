@@ -3271,9 +3271,37 @@ alter table public.members
 drop table if exists public.chapter_pledge_classes;
 ```
 
-## Rollback chat backgrounds (20261110200000)
+## Rollback message threads (20261110220000)
 
-* **Migration**: `20261110200000_chat_backgrounds.sql`
+* **Migration**: `20261110220000_chat_message_threads.sql`
+
+Four columns, a check, a trigger and two partial indexes on `chat_messages`; one new table, `chat_thread_follows`; one new function, `get_followed_thread_unread`; and redefinitions of `get_channel_unread_counts`, `get_channel_latest_messages` and `anonymize_user`. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API selects explicit columns, so it never reads the thread columns. But it also does not filter them: any thread reply written while threads were live shows up in its channel's timeline as an ordinary message, and the redefined RPCs keep it out of unread counts and previews only while they stay in place. That is the safe direction (nothing is hidden), so leave the database alone unless the schema itself is the problem.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This keeps every reply as a timeline message (it only drops the link to its parent) and restores the earlier function bodies:
+
+```sql
+drop trigger if exists chat_messages_thread_summary on public.chat_messages;
+drop function if exists public.chat_messages_bump_thread_summary();
+drop function if exists public.get_followed_thread_unread(uuid, uuid);
+drop table if exists public.chat_thread_follows;
+-- Re-create get_channel_unread_counts from 20261106193000,
+-- get_channel_latest_messages from 20261106210000, and anonymize_user from
+-- 20261106200000, verbatim, before dropping the columns they reference.
+alter table public.chat_messages
+  drop constraint if exists chat_messages_thread_not_self,
+  drop column if exists thread_recent_sender_ids,
+  drop column if exists thread_last_reply_at,
+  drop column if exists thread_reply_count,
+  drop column if exists thread_root_id;
+```
+
+Dropping `chat_thread_follows` loses who followed or muted which thread and every read cursor; nothing else depends on it.
+
+## Rollback chat backgrounds (20261110230000)
+
+* **Migration**: `20261110230000_chat_backgrounds.sql`
 
 Six nullable or defaulted columns (three on `chapters`, three on `chat_channels`), with checks and two foreign keys to `chat_messages`. No existing row changed.
 

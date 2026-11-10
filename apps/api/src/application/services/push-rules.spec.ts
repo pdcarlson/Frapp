@@ -75,6 +75,75 @@ describe('resolveLevel', () => {
 });
 
 describe('decidePush', () => {
+  describe('thread replies (#3785)', () => {
+    const base = {
+      channel: ch('general'),
+      messageKind: 'text',
+      recipientIsPresent: false,
+      preferences: [] as ChatNotificationPreferenceRow[],
+    };
+
+    it('skips a member who does not follow the thread', () => {
+      expect(
+        decidePush({
+          ...base,
+          hasMention: false,
+          thread: { followState: null },
+        }),
+      ).toBe('skip-thread');
+    });
+
+    it('skips a member who muted the thread', () => {
+      expect(
+        decidePush({
+          ...base,
+          hasMention: false,
+          thread: { followState: 'muted' },
+        }),
+      ).toBe('skip-thread');
+    });
+
+    it('lets an @mention through a muted thread', () => {
+      expect(
+        decidePush({
+          ...base,
+          hasMention: true,
+          thread: { followState: 'muted' },
+        }),
+      ).toBe('send');
+    });
+
+    it('never pushes a follower more than the channel level allows', () => {
+      const off: ChatNotificationPreferenceRow = {
+        user_id: 'u',
+        chapter_id: 'c',
+        scope: 'channel',
+        scope_id: 'general',
+        scope_kind: null,
+        level: 'off',
+      };
+      expect(
+        decidePush({
+          ...base,
+          channel: { ...ch('general'), id: 'general' },
+          preferences: [off],
+          hasMention: false,
+          thread: { followState: 'following' },
+        }),
+      ).toBe('skip-level');
+    });
+
+    it('pushes a follower when the channel level allows', () => {
+      expect(
+        decidePush({
+          ...base,
+          hasMention: false,
+          thread: { followState: 'following' },
+        }),
+      ).toBe('send');
+    });
+  });
+
   it('skips presence even if level=all', () => {
     expect(
       decidePush({

@@ -14,7 +14,7 @@ import {
   MuteGlyph,
   PinGlyph,
 } from "./chat-glyphs";
-import { SearchGlyph } from "@/components/layout/nav-glyphs";
+import { ChatGlyph, SearchGlyph } from "@/components/layout/nav-glyphs";
 import { cn } from "@/lib/utils";
 import { EYEBROW } from "@/components/ui/typography";
 import { compactControlClassName } from "@/components/shared/table-controls";
@@ -34,6 +34,9 @@ import {
   CHAT_BACKGROUND_LABELS,
   type ChatBackgroundKey,
 } from "@repo/validation";
+import { ChannelDisplayPanel } from "./channel-display-panel";
+import { channelDensityDetail } from "@repo/chat-core/density";
+import { useChannelDensityOverride } from "@/lib/chat/chat-density";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   CHANNEL_LEVEL_DETAIL,
@@ -93,6 +96,7 @@ type View =
   | "pins"
   | "saved"
   | "notifications"
+  | "display"
   | "hide"
   | "background";
 
@@ -184,6 +188,7 @@ const VIEW_TITLES: Record<Exclude<View, "menu">, string> = {
   pins: "Pinned",
   saved: "Saved",
   notifications: "Notifications",
+  display: "Display",
   hide: HIDE_CONVERSATION_LABEL,
   background: "Background",
 };
@@ -212,6 +217,7 @@ export function ChannelMenu({
 }: ChannelMenuProps) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<View>("menu");
+  const densityOverride = useChannelDensityOverride(activeChannelId);
   const backRef = useRef<HTMLButtonElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
 
@@ -271,6 +277,17 @@ export function ChannelMenu({
         ? CHANNEL_LEVEL_DETAIL[notificationLevel]
         : undefined,
     },
+    // This channel's display on this browser (#3787). Needs a channel.
+    ...(activeChannelId
+      ? [
+          {
+            view: "display" as const,
+            label: "Display",
+            Glyph: ChatGlyph,
+            detail: channelDensityDetail(densityOverride),
+          },
+        ]
+      : []),
     ...(background
       ? [
           {
@@ -489,6 +506,12 @@ export function ChannelMenu({
                   </Button>
                 </div>
               </div>
+            ) : null}
+            {view === "display" && activeChannelId ? (
+              <ChannelDisplayPanel
+                channelId={activeChannelId}
+                onChange={close}
+              />
             ) : null}
             {view === "background" && background ? (
               // Stays open while saving: the swatches show the pending state,

@@ -4,7 +4,12 @@ import { LANDING_CTA_EVENT, LANDING_CTAS, LANDING_CTA_SURFACES } from "./events"
 describe("landing analytics event names", () => {
   it("uses kebab-case CTA event and closed allowlists", () => {
     expect(LANDING_CTA_EVENT).toBe("landing-cta-clicked");
-    expect(LANDING_CTAS).toEqual(["get-started", "log-in", "join-chapter"]);
+    expect(LANDING_CTAS).toEqual([
+      "get-started",
+      "log-in",
+      "join-chapter",
+      "start-free-trial",
+    ]);
     expect(LANDING_CTA_SURFACES).toEqual([
       "header",
       "hero",
@@ -15,10 +20,14 @@ describe("landing analytics event names", () => {
   });
 
   it("drops the CTA ids the rebuilt page no longer renders", () => {
-    // Both died with their sections in #2367: the single $149 card's
-    // "Start free trial" and the hero's "Explore the product" anchor.
-    expect(LANDING_CTAS).not.toContain("start-free-trial");
+    // The hero's "Explore the product" anchor died with its section in #2367.
     expect(LANDING_CTAS).not.toContain("explore-the-product");
+  });
+
+  it("brings start-free-trial back for the Pro card's trial button", () => {
+    // Same id the old $149 card's trial CTA used, so its funnel continues
+    // (#3869).
+    expect(LANDING_CTAS).toContain("start-free-trial");
   });
 
   it("keeps log-in as an id so the PostHog funnel survives the relabel", () => {
