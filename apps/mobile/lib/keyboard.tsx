@@ -5,6 +5,8 @@ import {
   View,
   type ViewProps,
 } from "react-native";
+import Animated, { useAnimatedStyle } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { isExpoGo } from "./expo-go";
 import { createIsolatedModule } from "./isolated-module";
 
@@ -99,12 +101,32 @@ export function KeyboardProviderGuarded({ children }: { children: ReactNode }) {
  * the focused field scrolled into view, on iOS; a padding view around it would
  * count the keyboard twice. With this set the area is a plain `View` on iOS
  * and still avoids on Android, where that prop does nothing (sign-in).
+ *
+ * **`atScreenBottom`** (#4010). For a screen whose area runs to the bottom of
+ * the window, inside a `SafeAreaView` that pads the bottom inset (the chat
+ * thread and a message thread). On Android store builds the area pads by
+ * `keyboardLift`: the keyboard's current height, as the library last reported
+ * it, less that inset. In steady state that is the same number the library's
+ * view below computes, but the library's view takes the keyboard's height from
+ * the *start* of the open animation (`heightWhenOpened`, set in `onStart`) and
+ * the view's position from a native measurement on each layout, while this
+ * reads the height the library reports at the animation's *end* and after
+ * every resize. The suspected #4010 path, derived from the library's source
+ * (1.21.9) and two testers' screenshots, not reproduced on a device: the
+ * keyboard grows while it is still opening (Gboard's suggestion strip), the
+ * library skips the resize mid-animation, and the library's view stays short
+ * by the growth. iOS and Expo Go are unchanged.
  */
 export function KeyboardAvoidingArea({
   children,
   iosInsetFromScrollView = false,
+  atScreenBottom = false,
   ...viewProps
-}: ViewProps & { children: ReactNode; iosInsetFromScrollView?: boolean }) {
+}: ViewProps & {
+  children: ReactNode;
+  iosInsetFromScrollView?: boolean;
+  atScreenBottom?: boolean;
+}) {
   if (Platform.OS === "ios" && iosInsetFromScrollView) {
     return <View {...viewProps}>{children}</View>;
   }
@@ -112,12 +134,23 @@ export function KeyboardAvoidingArea({
   const keyboardController =
     Platform.OS === "android" ? loadKeyboardController() : null;
 
+  if (keyboardController && atScreenBottom) {
+    return (
+      <ScreenBottomKeyboardArea
+        {...viewProps}
+        keyboardController={keyboardController}
+      >
+        {children}
+      </ScreenBottomKeyboardArea>
+    );
+  }
+
   if (keyboardController) {
     const { KeyboardAvoidingView } = keyboardController;
     return (
       // `automaticOffset` measures the view's position in the window natively,
-      // so the overlap is right wherever the screen nests it (under a safe-area
-      // inset, above the tab bar) without a hand-kept `keyboardVerticalOffset`.
+      // so no hand-kept `keyboardVerticalOffset` is needed. A screen whose area
+      // sits at the bottom inset passes `atScreenBottom` instead (#4010).
       <KeyboardAvoidingView {...viewProps} behavior="padding" automaticOffset>
         {children}
       </KeyboardAvoidingView>
@@ -131,5 +164,57 @@ export function KeyboardAvoidingArea({
     >
       {children}
     </NativeKeyboardAvoidingView>
+  );
+}
+
+/**
+ * How far a screen-bottom area rises for the keyboard (#4010): the keyboard's
+ * height as the library reports it, less the bottom inset the screen's
+ * `SafeAreaView` already pads, never below zero.
+ *
+ * Derived from the libraries' source, not measured on a device. The two
+ * numbers agree because `KeyboardProviderGuarded` mounts the provider with no
+ * props, so the library treats the navigation bar as translucent exactly when
+ * the app is edge to edge (`src/animated.tsx`). Edge to edge, the reported
+ * height includes the navigation bar (`KeyboardAnimationCallback.kt`
+ * `getCurrentKeyboardHeight`) and so does the safe-area inset. Otherwise the
+ * library leaves the bar out of the height and margins the content above it
+ * (`EdgeToEdgeReactViewGroup.kt`), so the inset is 0. Passing
+ * `navigationBarTranslucent` or `preserveEdgeToEdge` to the provider would
+ * break that agreement. The library reports a resize of an open keyboard
+ * (emoji panel, another keyboard) through `onApplyWindowInsets`.
+ */
+export function keyboardLift(keyboardHeight: number, bottomInset: number) {
+  "worklet";
+  return Math.max(0, keyboardHeight - bottomInset);
+}
+
+/**
+ * `KeyboardAvoidingArea`'s Android `atScreenBottom` view. The module comes in
+ * as a prop because the package may only be reached through the loader above;
+ * this component renders only when the loader returned it, and the loader
+ * caches its answer, so the hook below runs on every render.
+ */
+function ScreenBottomKeyboardArea({
+  children,
+  style,
+  keyboardController,
+  ...viewProps
+}: ViewProps & {
+  children: ReactNode;
+  keyboardController: KeyboardControllerModule;
+}) {
+  // `height` runs from 0 to minus the keyboard's height as it opens, frame by
+  // frame, so the composer tracks the keyboard's top through the animation,
+  // an interactive drag and a resize alike.
+  const { height } = keyboardController.useReanimatedKeyboardAnimation();
+  const { bottom } = useSafeAreaInsets();
+  const lift = useAnimatedStyle(() => ({
+    paddingBottom: keyboardLift(-height.get(), bottom),
+  }));
+  return (
+    <Animated.View {...viewProps} style={[style, lift]}>
+      {children}
+    </Animated.View>
   );
 }
