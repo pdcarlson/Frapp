@@ -12,13 +12,34 @@ import { SegmentError } from "@/components/shared/segment-error";
  * the panel.
  */
 export class ChatPanelBoundary extends Component<
-  { children: ReactNode },
-  { error: Error | null }
+  {
+    children: ReactNode;
+    /**
+     * Clears a caught error when it changes. The shell passes the pathname, so
+     * moving to another route retries chat, as leaving the `/chat` segment
+     * reset its boundary when chat was a page.
+     */
+    resetKey?: string;
+  },
+  { error: Error | null; errorKey: string | undefined }
 > {
-  state: { error: Error | null } = { error: null };
+  state: { error: Error | null; errorKey: string | undefined } = {
+    error: null,
+    errorKey: undefined,
+  };
 
   static getDerivedStateFromError(error: Error) {
     return { error };
+  }
+
+  componentDidCatch() {
+    this.setState({ errorKey: this.props.resetKey });
+  }
+
+  componentDidUpdate() {
+    if (this.state.error && this.props.resetKey !== this.state.errorKey) {
+      this.setState({ error: null, errorKey: undefined });
+    }
   }
 
   render() {
@@ -27,7 +48,7 @@ export class ChatPanelBoundary extends Component<
         <div className="w-full max-w-md p-4">
           <SegmentError
             error={this.state.error}
-            retry={() => this.setState({ error: null })}
+            retry={() => this.setState({ error: null, errorKey: undefined })}
           />
         </div>
       );

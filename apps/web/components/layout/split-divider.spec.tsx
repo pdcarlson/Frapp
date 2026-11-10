@@ -60,7 +60,9 @@ describe("SplitDivider (#3779)", () => {
     fireEvent.keyDown(divider, { key: "Home" });
     fireEvent.keyDown(divider, { key: "End" });
     const flexible = width - CHANNELS_WIDTH - 1;
-    const [max, min] = [onChange.mock.calls[0]![0], onChange.mock.calls[1]![0]];
+    // Home is the minimum page share, End the maximum (window splitter).
+    const [min, max] = [onChange.mock.calls[0]![0], onChange.mock.calls[1]![0]];
+    expect(min).toBeLessThan(max);
     expect(Math.round(flexible * max)).toBeLessThanOrEqual(
       flexible - PANE_FLOOR,
     );

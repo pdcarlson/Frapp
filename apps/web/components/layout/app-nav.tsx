@@ -45,7 +45,7 @@ type AppNavProps = {
   pathname: string;
   onNavigate?: () => void;
   /**
-   * `column` is the desktop column's modules face (`nav-column.tsx`), which
+   * `column` is the desktop shell's left column (`nav-column.tsx`), which
    * pins the chapter row above it. The drawer reuses this component wholesale
    * rather than duplicating the nav ("the drawer is the sidebar"), with the
    * chapter row on top, no collapse toggle and no rail.
@@ -178,9 +178,12 @@ export function AppNav({
                   pressed: chatRow.open,
                   selectLabel: chatRow.open ? "Close chat" : "Open chat",
                 }
-              : onCloseTool &&
+              : // Only the row whose own page is open. A Settings tool's
+                // route marks the Settings row too (`activeFor`), and there
+                // the row stays the way back to the Settings hub.
+                onCloseTool &&
                   item.id !== "chat" &&
-                  currentFor(item, pathname) !== undefined
+                  currentFor(item, pathname) === "page"
                 ? {
                     onSelect: onCloseTool,
                     pressed: true,

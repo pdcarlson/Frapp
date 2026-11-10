@@ -1,6 +1,6 @@
 import {
-  NAV_COLLAPSED_MAX_AGE,
   writePreferenceCookie,
+  writePreferenceValue,
 } from "@/components/layout/nav-collapse";
 
 /**
@@ -41,9 +41,5 @@ export function parseToolShare(value: string | undefined): number {
 }
 
 export function persistToolShare(share: number): void {
-  if (typeof document === "undefined") return;
-  const secure = window.location.protocol === "https:" ? "; Secure" : "";
-  document.cookie =
-    `${CHAT_SPLIT_COOKIE}=${share.toFixed(3)}` +
-    `; Path=/; Max-Age=${NAV_COLLAPSED_MAX_AGE}; SameSite=Lax${secure}`;
+  writePreferenceValue(CHAT_SPLIT_COOKIE, share.toFixed(3));
 }

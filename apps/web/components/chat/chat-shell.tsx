@@ -591,7 +591,7 @@ export function ChatShell({
    * The shell's responsive contract is two states switching once at `lg`
    * (`spec/ui/web-dashboard/README.md` § Responsive contract), and chat has to
    * hold it: below `lg` the app
-   * nav is a drawer and `<main>` is the whole viewport, so a 240px channels
+   * nav is a drawer and the chat panel is the whole viewport, so a 240px channels
    * column beside the thread leaves the thread about 135px wide at the
    * documented 375px floor. That is not a narrow layout, it is an unusable one,
    * and it clears the floor's horizontal-scroll check while failing what the

@@ -44,10 +44,11 @@ const {
   mockPermissions: { value: [] as string[] },
 }));
 const routerPush = vi.hoisted(() => vi.fn());
+const mockSearch = vi.hoisted(() => ({ value: "" }));
 vi.mock("next/navigation", () => ({
   usePathname: () => mockPathname.value,
   useRouter: () => ({ push: routerPush }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(mockSearch.value),
 }));
 // Chat's panel has its own specs (`chat-shell.spec.tsx`); here it is a stub
 // that reports what the shell hands it.
@@ -145,6 +146,7 @@ vi.mock("@/lib/chat/use-chat-realtime-binding", () => ({
   },
 }));
 
+import { signetDarkTokens } from "@repo/theme/signet";
 import { DashboardShell } from "./dashboard-shell";
 import {
   CONNECTION_PILL_ATTR,
@@ -160,7 +162,10 @@ afterEach(() => {
   mockChapter.value = undefined;
   unreadReads.count = 0;
   routerPush.mockClear();
+  mockSearch.value = "";
   setWindowWidth(null);
+  document.cookie = "frapp_chat_open=; Max-Age=0; Path=/";
+  document.cookie = "frapp_chat_split=; Max-Age=0; Path=/";
 });
 
 /**
@@ -435,26 +440,18 @@ describe("DashboardShell", () => {
    * of chat itself: the padding just reappears around a layout that still
    * "works".
    */
-  it("insets and scrolls an ordinary route", () => {
+  it("insets and scrolls a tool page, inside the one main landmark", () => {
     mockPathname.value = "/events";
-    render(<DashboardShell>content</DashboardShell>);
+    const { container } = render(<DashboardShell>content</DashboardShell>);
 
+    const page = container.querySelector("[data-tool-page]") as HTMLElement;
+    expect(page.className).toContain("overflow-y-auto");
+    expect(page.className).toContain("px-4");
+    // `<main>` is the whole row (chat, divider, page), flush and unscrolled.
     const main = screen.getByRole("main");
-    expect(main.className).toContain("overflow-y-auto");
-    expect(main.className).toContain("px-4");
-  });
-
-  it("hands a full-bleed route the frame, with no inset and no scroll of its own", () => {
-    mockPathname.value = "/chat";
-    render(<DashboardShell defaultChatOpen={false}>content</DashboardShell>);
-
-    // Hidden by CSS below the side-by-side width; jsdom ignores that.
-    const main = screen.getByRole("main", { hidden: true });
-    expect(main.className).toContain("overflow-hidden");
-    expect(main.className).not.toContain("px-4");
-    expect(main.className).not.toContain("overflow-y-auto");
-    // Still the same landmark, and still the skip link's target.
     expect(main).toHaveAttribute("id", "main-content");
+    expect(main).toContainElement(page);
+    expect(main.className).not.toContain("px-4");
   });
 
   it("honours the server-read collapse preference on first render", () => {
@@ -479,16 +476,29 @@ describe("DashboardShell", () => {
     const chatPanel = (container: HTMLElement) =>
       container.querySelector("[data-chat-panel]") as HTMLElement | null;
 
-    it("hosts chat alone on /chat, with the skip link pointed at it", () => {
+    it("hosts chat alone on /chat, inside main, so the skip link, focus fallback and floor suite reach it", () => {
       mockPathname.value = "/chat";
       const { container } = render(<DashboardShell>{null}</DashboardShell>);
       expect(chatPanel(container)).not.toBeNull();
       expect(screen.getByTestId("chat-stub")).toHaveTextContent("alone");
+      const main = screen.getByRole("main");
+      expect(main).toContainElement(chatPanel(container));
+      expect(main.className).not.toMatch(/(^|\s)hidden(\s|$)/);
       expect(
         screen.getByRole("link", { name: "Skip to main content" }),
-      ).toHaveAttribute("href", "#chat-panel");
-      // No tool page: the main landmark is out of the way.
-      expect(screen.getByRole("main", { hidden: true })).toHaveClass("hidden");
+      ).toHaveAttribute("href", "#main-content");
+      expect(container.querySelector("[data-tool-page]")).toBeNull();
+    });
+
+    it("opens chat on a fresh load of a chat deep link, even with the cookie closed", () => {
+      setWindowWidth(1440);
+      mockPathname.value = "/chat";
+      mockSearch.value = "channel=c1";
+      const { container } = render(
+        <DashboardShell defaultChatOpen={false}>{null}</DashboardShell>,
+      );
+      expect(chatPanel(container)).not.toBeNull();
+      expect(container.querySelector("[data-chapter-home]")).toBeNull();
     });
 
     it("keeps /chat the chat page below the side-by-side width, whatever the cookie says", () => {
@@ -512,14 +522,27 @@ describe("DashboardShell", () => {
           <p>events page</p>
         </DashboardShell>,
       );
-      // Width unknown (server, hydration): drawn, and CSS decides.
+      // Width unknown (server, hydration): the panel holds its place by CSS
+      // with chat's skeleton, and chat itself waits for a known-wide window,
+      // so a phone never builds a chat it cannot show.
       expect(chatPanel(container)).toHaveClass("hidden", "min-[1056px]:flex");
+      expect(screen.queryByTestId("chat-stub")).not.toBeInTheDocument();
+      expect(screen.getByRole("separator")).toBeInTheDocument();
+      expect(screen.getByText("events page")).toBeInTheDocument();
+      // Both floors: the page keeps 375px, and chat its channels plus 375px.
+      expect(container.querySelector("[data-tool-page]")).toHaveClass(
+        "min-[1056px]:min-w-[375px]",
+      );
+      expect(chatPanel(container)!.style.minWidth).toBe("615px");
+    });
+
+    it("mounts chat beside the tool once the window is known to be wide", () => {
+      setWindowWidth(1440);
+      mockPathname.value = "/events";
+      render(<DashboardShell>events</DashboardShell>);
       expect(screen.getByTestId("chat-stub")).toHaveTextContent(
         "beside a tool",
       );
-      expect(screen.getByRole("separator")).toBeInTheDocument();
-      expect(screen.getByText("events page")).toBeInTheDocument();
-      expect(screen.getByRole("main")).toHaveClass("min-[1056px]:min-w-[375px]");
     });
 
     it("drops chat beside a tool once the window is known to be narrow", () => {
@@ -539,9 +562,17 @@ describe("DashboardShell", () => {
         const chatRow = within(nav()).getByRole("button", { name: /^Chat/ });
         expect(chatRow).toHaveAttribute("aria-pressed", "true");
 
+        // A page load paints chat in place: no entrance.
+        expect(chatPanel(container)!.style.animation).toBe("");
         fireEvent.click(chatRow);
-        // It plays its exit, inert, then goes.
+        // It plays its exit on Signet's exit ease, inert, then goes.
         expect(chatPanel(container)).toHaveAttribute("inert");
+        expect(chatPanel(container)!.style.animation).toContain(
+          "shell-panel-out",
+        );
+        expect(chatPanel(container)!.style.animation).toContain(
+          signetDarkTokens.motion.easing.exit,
+        );
         act(() => {
           vi.runAllTimers();
         });
@@ -550,6 +581,27 @@ describe("DashboardShell", () => {
           within(nav()).getByRole("button", { name: /^Chat/ }),
         ).toHaveAttribute("aria-pressed", "false");
         expect(document.cookie).toContain("frapp_chat_open=0");
+
+        // Opening from the row plays the entrance: `context` on the entrance
+        // ease, never the `settle` overshoot (that one needs Paul).
+        fireEvent.click(within(nav()).getByRole("button", { name: /^Chat/ }));
+        const anim = chatPanel(container)!.style.animation;
+        expect(anim).toContain("shell-panel-in");
+        expect(anim).toContain(
+          `${signetDarkTokens.motion.duration.context}ms`,
+        );
+        expect(anim).toContain(signetDarkTokens.motion.easing.entrance);
+        expect(anim).not.toContain(signetDarkTokens.motion.easing.settle);
+        // jsdom has no AnimationEvent, so React listens for the prefixed
+        // name; dispatch both.
+        for (const type of ["animationend", "webkitAnimationEnd"]) {
+          fireEvent(chatPanel(container)!, new Event(type, { bubbles: true }));
+        }
+        expect(chatPanel(container)!.style.animation).toBe("");
+        fireEvent.click(within(nav()).getByRole("button", { name: /^Chat/ }));
+        act(() => {
+          vi.runAllTimers();
+        });
 
         // The open tool's row is a toggle too: it goes to `/chat`, no tool.
         const events = within(nav()).getByRole("button", { name: "Events" });
@@ -609,6 +661,52 @@ describe("DashboardShell", () => {
       mockPathname.value = "/events";
       rerender(<DashboardShell>events</DashboardShell>);
       expect(column(container)).toHaveClass("w-60");
+    });
+
+    it("leaves the Settings row a link back to Settings on a Settings tool's page", () => {
+      setWindowWidth(1440);
+      mockPathname.value = "/reports";
+      mockPermissions.value = ["reports:view", "chapter-config:view"];
+      render(<DashboardShell>reports</DashboardShell>);
+      expect(
+        within(nav()).getByRole("link", { name: "Settings" }),
+      ).toHaveAttribute("href", "/settings");
+      expect(
+        within(nav()).queryByRole("button", { name: "Settings" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("remembers where the divider was left, in its cookie", () => {
+      setWindowWidth(1440);
+      mockPathname.value = "/events";
+      render(<DashboardShell>events</DashboardShell>);
+      fireEvent.keyDown(screen.getByRole("separator"), { key: "Enter" });
+      expect(document.cookie).toContain("frapp_chat_split=0.500");
+    });
+
+    it("draws the chapter mark on the home view", () => {
+      setWindowWidth(1440);
+      mockPathname.value = "/chat";
+      mockChapter.value = {
+        id: "chap-1",
+        name: "Alpha Beta",
+        university: "State University",
+        logo_url: null,
+        branding: {},
+        enabled_modules: [],
+      };
+      const { container } = render(
+        <DashboardShell defaultChatOpen={false}>{null}</DashboardShell>,
+      );
+      const home = container.querySelector("[data-chapter-home]")!;
+      expect(home).toBeInTheDocument();
+      expect(
+        within(home as HTMLElement).getByTestId("chapter-mark-text"),
+      ).toHaveClass("h-28", "bg-accent-subtle", "text-accent-text");
+      expect(home).toHaveTextContent("Alpha Beta");
+      expect(home).toHaveTextContent("State University");
+      // The top bar names no page over it.
+      expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
     });
 
     it("keeps one nav column across Chat and every other route (Paul, 2026-11-06)", () => {

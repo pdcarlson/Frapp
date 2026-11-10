@@ -2,6 +2,7 @@
 
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import {
+  CHANNELS_WIDTH,
   clampToolShare,
   toolShareBounds,
 } from "@/components/layout/shell-layout";
@@ -53,7 +54,7 @@ export function SplitDivider({
     if (!row) return latest.current;
     // The tool page is right of the divider: its share is what is left of
     // the row past the pointer, out of the width after the channels column.
-    const flexible = row.width - 241;
+    const flexible = row.width - CHANNELS_WIDTH - 1;
     if (flexible <= 0) return latest.current;
     return clampToolShare((row.right - clientX) / flexible, row.width);
   };
@@ -82,15 +83,17 @@ export function SplitDivider({
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const width = rowWidth();
-    const flexible = Math.max(1, width - 241);
+    const flexible = Math.max(1, width - CHANNELS_WIDTH - 1);
     const step = KEY_STEP_PX / flexible;
     const { min, max } = toolShareBounds(width);
     let next: number | null = null;
     // Left grows the tool page (the divider moves left), right shrinks it.
     if (event.key === "ArrowLeft") next = share + step;
     else if (event.key === "ArrowRight") next = share - step;
-    else if (event.key === "Home") next = max;
-    else if (event.key === "End") next = min;
+    // The window-splitter pattern: Home to the minimum value, End to the
+    // maximum, the value being the page's share.
+    else if (event.key === "Home") next = min;
+    else if (event.key === "End") next = max;
     else if (event.key === "Enter") next = DEFAULT_TOOL_SHARE;
     if (next === null) return;
     event.preventDefault();

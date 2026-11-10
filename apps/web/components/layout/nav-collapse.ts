@@ -49,9 +49,17 @@ export function persistNavCollapsed(collapsed: boolean): void {
  * preferences cannot drift on cookie policy.
  */
 export function writePreferenceCookie(name: string, on: boolean): void {
+  writePreferenceValue(name, on ? "1" : "0");
+}
+
+/**
+ * The same cookie policy for a preference that is a value, not on/off (the
+ * chat divider's position, `shell-prefs.ts`).
+ */
+export function writePreferenceValue(name: string, value: string): void {
   if (typeof document === "undefined") return;
   const secure = window.location.protocol === "https:" ? "; Secure" : "";
   document.cookie =
-    `${name}=${on ? "1" : "0"}` +
+    `${name}=${value}` +
     `; Path=/; Max-Age=${NAV_COLLAPSED_MAX_AGE}; SameSite=Lax${secure}`;
 }

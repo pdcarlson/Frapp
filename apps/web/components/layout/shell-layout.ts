@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useSyncExternalStore } from "react";
 import { useMediaQuery } from "@/lib/use-media-query";
+
+export { useMediaQueryState } from "@/lib/use-media-query";
 
 /**
  * The desktop shell's layout state: chat as a panel beside the chapter tools
@@ -16,10 +17,10 @@ import { useMediaQuery } from "@/lib/use-media-query";
  * - **The open tool is the URL** (`/events`), so links and Back work as they
  *   always did. `/chat` is "no tool": chat alone, or the home view when chat
  *   is closed.
- * - **Chat open or closed is a cookie** (`CHAT_OPEN_COOKIE`), read by the
- *   dashboard layout on the server so the first paint is right.
- * - **The split is a cookie too** (`CHAT_SPLIT_COOKIE`): the tool page's
- *   share of the width left after the channels column.
+ * - **Chat open or closed is a cookie**, and so is the split (the tool page's
+ *   share of the width left after the channels column), both read by the
+ *   dashboard layout on the server so the first paint is right. They live in
+ *   `shell-prefs.ts`, which the server imports, so it holds no hooks.
  *
  * Side by side needs room for both 375px floors (the width the thread is
  * tested at), so it starts at `SPLIT_MIN_WIDTH`. Below it the shell is the
@@ -62,33 +63,6 @@ const DESKTOP_SHELL_QUERY = "(min-width: 1024px)";
 /** Whether the desktop column is on screen. `false` on the server. */
 export function useIsDesktopShell(): boolean {
   return useMediaQuery(DESKTOP_SHELL_QUERY);
-}
-
-/**
- * A media query that says when it does not know yet: `null` on the server and
- * through hydration, then the real answer. The shell needs the difference,
- * because "not side by side" unmounts chat beside a tool page, and doing that
- * on a hydration-time `false` would tear down and rebuild the chat panel on
- * every desktop load.
- */
-export function useMediaQueryState(query: string): boolean | null {
-  const subscribe = useCallback(
-    (onChange: () => void) => {
-      if (typeof window === "undefined" || !window.matchMedia) return () => {};
-      const mql = window.matchMedia(query);
-      mql.addEventListener("change", onChange);
-      return () => mql.removeEventListener("change", onChange);
-    },
-    [query],
-  );
-  return useSyncExternalStore<boolean | null>(
-    subscribe,
-    () =>
-      typeof window !== "undefined" && !!window.matchMedia
-        ? window.matchMedia(query).matches
-        : null,
-    () => null,
-  );
 }
 
 /** The routes that hold no tool page: chat alone, or the home view. */

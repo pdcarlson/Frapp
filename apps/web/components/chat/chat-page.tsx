@@ -1,7 +1,8 @@
 "use client";
 
-import { Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { isChatRoute } from "@/components/layout/shell-layout";
 import { ChatProvider } from "@/lib/chat/chat-provider";
 import { ChatShell } from "./chat-shell";
 import { ChatRouteSkeleton } from "@/components/chat/chat-route-skeleton";
@@ -13,6 +14,12 @@ import { CHAT_CHANNEL_PARAM, CHAT_MESSAGE_PARAM } from "@/lib/chat/chat-links";
  * navigate here with a channel — and optionally a specific message —
  * pre-selected. `useSearchParams` requires a Suspense boundary (matches
  * `directory-page.tsx`'s `?tab=` pattern).
+ *
+ * Only a chat URL names chat's target (#3779). The panel stays mounted beside
+ * every tool page, and a tool's own `?channel=` (`/chat-admin?channel=` is
+ * the channel editor's) must not steer it. Off a chat URL the panel keeps the
+ * target it last had, so going from a linked message to a tool page does not
+ * read as the link being cleared.
  */
 function ChatPageContent({
   defaultMembersHidden,
@@ -22,8 +29,21 @@ function ChatPageContent({
   toolBeside: boolean;
 }) {
   const searchParams = useSearchParams();
-  const channelParam = searchParams.get(CHAT_CHANNEL_PARAM);
-  const messageParam = searchParams.get(CHAT_MESSAGE_PARAM);
+  const onChatUrl = isChatRoute(usePathname());
+  const liveChannel = searchParams.get(CHAT_CHANNEL_PARAM);
+  const liveMessage = searchParams.get(CHAT_MESSAGE_PARAM);
+  const [target, setTarget] = useState({
+    channel: onChatUrl ? liveChannel : null,
+    message: onChatUrl ? liveMessage : null,
+  });
+  if (
+    onChatUrl &&
+    (target.channel !== liveChannel || target.message !== liveMessage)
+  ) {
+    setTarget({ channel: liveChannel, message: liveMessage });
+  }
+  const channelParam = target.channel;
+  const messageParam = target.message;
 
   return (
     <ChatProvider>

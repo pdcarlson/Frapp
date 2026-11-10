@@ -30,11 +30,12 @@ import { SplitDivider } from "@/components/layout/split-divider";
 import { ChapterHome } from "@/components/layout/chapter-home";
 import { ChatPanelBoundary } from "@/components/layout/chat-panel-boundary";
 import { ChatPage } from "@/components/chat/chat-page";
+import { ChatRouteSkeleton } from "@/components/chat/chat-route-skeleton";
+import { CHAT_CHANNEL_PARAM, CHAT_MESSAGE_PARAM } from "@/lib/chat/chat-links";
 import { TopBar } from "@/components/layout/top-bar";
 import { DashboardNotificationDrawer } from "@/components/layout/dashboard-notification-drawer";
 import { AccountMenu } from "@/components/layout/account-menu";
 import { persistNavCollapsed } from "@/components/layout/nav-collapse";
-import { isFullBleedRoute } from "@/components/layout/full-bleed-routes";
 import { resolvePageTitle } from "@/components/layout/page-title";
 import { isNavItemVisible } from "@/components/layout/protected-nav-item";
 import { useChapterTheme } from "@/lib/hooks/use-chapter-theme";
@@ -116,7 +117,7 @@ type DashboardShellProps = {
    * 240px and then snap to 56px after hydration, on every route.
    */
   defaultNavCollapsed?: boolean;
-  /** Chat open or closed, from its cookie (`shell-layout.ts`). */
+  /** Chat open or closed, from its cookie (`shell-prefs.ts`). */
   defaultChatOpen?: boolean;
   /** The divider's tool-page share, from its cookie. */
   defaultToolShare?: number;
@@ -138,7 +139,6 @@ export function DashboardShell({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const fullBleed = isFullBleedRoute(pathname);
   // Chapter accent, shell-wide: maps the persisted engine roles onto the
   // semantic tokens signet.css defines. Mounted here (not in ChatProvider) so
   // the nav's active-item tint does not depend on which route is open.
@@ -158,9 +158,20 @@ export function DashboardShell({
   const onChatRoute = isChatRoute(pathname);
   const hasTool = !onChatRoute;
 
-  const [chatOpen, setChatOpen] = useState(defaultChatOpen);
+  // A chat deep link (`?channel=`, `?message=`) opens chat even when the
+  // cookie says closed: the member followed a link to a message, from an
+  // email, a push or sign-in, and the home view would swallow it.
+  const [chatOpen, setChatOpen] = useState(
+    () =>
+      defaultChatOpen ||
+      (onChatRoute &&
+        Boolean(
+          searchParams?.get(CHAT_CHANNEL_PARAM) ||
+            searchParams?.get(CHAT_MESSAGE_PARAM),
+        )),
+  );
   const [toolShare, setToolShare] = useState(defaultToolShare);
-  const splitRowRef = useRef<HTMLDivElement>(null);
+  const splitRowRef = useRef<HTMLElement>(null);
 
   /*
     Arriving at a chat URL opens chat: a `/chat` link, a notification, a Find
@@ -171,11 +182,19 @@ export function DashboardShell({
   */
   const url = `${pathname}?${searchParams?.toString() ?? ""}`;
   const [seenUrl, setSeenUrl] = useState(url);
+  // Only an open the member asked for plays the entrance; a page load or a
+  // link that opens chat paints it in place. Cleared when the entrance ends,
+  // so a later remount (the window narrowing and widening) does not replay it.
+  const [animateOpen, setAnimateOpen] = useState(false);
   const [closingTool, setClosingTool] = useState(false);
   if (seenUrl !== url) {
     setSeenUrl(url);
     if (closingTool) setClosingTool(false);
-    else if (onChatRoute && !chatOpen) setChatOpen(true);
+    else if (onChatRoute && !chatOpen) {
+      setChatOpen(true);
+      // A link paints chat in place; only the Chat row plays the entrance.
+      setAnimateOpen(false);
+    }
   }
   // The cookie follows the state, whichever way it changed.
   useEffect(() => {
@@ -193,12 +212,11 @@ export function DashboardShell({
     return () => window.clearTimeout(timer);
   }, [leaving]);
 
-  // Only an open the member asked for plays the entrance; a page load or a
-  // link that opens chat paints it in place.
-  const [animateOpen, setAnimateOpen] = useState(false);
   const toggleChat = useCallback(() => {
-    if (chatOpen) setLeaving(true);
-    else setAnimateOpen(true);
+    if (chatOpen) {
+      setLeaving(true);
+      setAnimateOpen(false);
+    } else setAnimateOpen(true);
     setChatOpen(!chatOpen);
   }, [chatOpen]);
   const closeTool = useCallback(() => {
@@ -214,8 +232,10 @@ export function DashboardShell({
     : chatShown && split !== false;
   // The rail, forced while chat and a tool share a window too narrow for the
   // full nav beside both 375px floors.
+  // `chatShown`, not `chatOpen`: the panel keeps its width while it plays
+  // its exit, so the rail holds until it is gone.
   const forceRail =
-    hasTool && chatOpen && split === true && fullNavRoom === false;
+    hasTool && chatShown && split === true && fullNavRoom === false;
 
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
   const { data: permissionsPayload } = useMyPermissions({
@@ -284,10 +304,6 @@ export function DashboardShell({
       : {}),
   };
   const showDivider = hasTool && chatShown && split !== false;
-  const skipTarget =
-    onChatRoute && (chatShown || split !== true)
-      ? "#chat-panel"
-      : "#main-content";
 
   return (
     /*
@@ -350,7 +366,7 @@ export function DashboardShell({
         </SheetContent>
       </Sheet>
 
-      <a href={skipTarget} className={SKIP_LINK_CLASSES}>
+      <a href="#main-content" className={SKIP_LINK_CLASSES}>
         Skip to main content
       </a>
 
@@ -391,7 +407,18 @@ export function DashboardShell({
           onOpenNotifications={() => setNotificationDrawerOpen(true)}
           onOpenMobileNav={() => setMobileNavOpen(true)}
         />
-        <div ref={splitRowRef} className="flex min-h-0 flex-1">
+        {/*
+          `<main>` is the whole row right of the nav: chat, the divider and
+          the tool page (#3779). One landmark for everything the member came
+          for, so the skip link, the confirm dialog's focus fallback
+          (`confirm-dialog.tsx`) and the 375px floor suite, which measures
+          inside `<main>`, all reach chat as well as the page.
+        */}
+        <main
+          id="main-content"
+          ref={splitRowRef}
+          className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
+        >
           {chatMounted ? (
             <section
               id="chat-panel"
@@ -400,12 +427,23 @@ export function DashboardShell({
               inert={leaving}
               className={chatPanelClassName}
               style={chatPanelStyle}
+              onAnimationEnd={() => setAnimateOpen(false)}
             >
-              <ChatPanelBoundary>
-                <ChatPage
-                  defaultMembersHidden={defaultMembersHidden}
-                  toolBeside={hasTool}
-                />
+              <ChatPanelBoundary resetKey={pathname}>
+                {/*
+                  Beside a tool, chat mounts once the window is known to be
+                  wide enough. Until then (server render, hydration) the
+                  panel holds its place with chat's skeleton, so a phone never
+                  builds and tears down a chat it cannot show.
+                */}
+                {onChatRoute || split === true ? (
+                  <ChatPage
+                    defaultMembersHidden={defaultMembersHidden}
+                    toolBeside={hasTool}
+                  />
+                ) : (
+                  <ChatRouteSkeleton />
+                )}
               </ChatPanelBoundary>
             </section>
           ) : null}
@@ -426,29 +464,25 @@ export function DashboardShell({
             refuses to shrink below its widest unbreakable content and the
             whole page scrolls sideways (six of the seven routes in #1142).
             Beside chat it keeps the 375px floor.
-
-            On `/chat` there is no tool page: `<main>` holds the home view when
-            chat is closed, from the side-by-side width up, and is hidden
-            otherwise (the page itself renders nothing; chat is the panel).
           */}
-          <main
-            id="main-content"
-            className={cn(
-              "flex min-h-0 min-w-0 flex-1 flex-col",
-              hasTool && chatShown && "min-[1056px]:min-w-[375px]",
-              onChatRoute
-                ? cn(
-                    "overflow-hidden",
-                    chatShown ? "hidden" : "hidden min-[1056px]:flex",
-                  )
-                : fullBleed
-                  ? "overflow-hidden"
-                  : "gap-3 overflow-y-auto px-4 py-4 sm:px-6",
-            )}
-          >
-            {onChatRoute ? (chatShown ? null : <ChapterHome />) : children}
-          </main>
-        </div>
+          {hasTool ? (
+            <div
+              data-tool-page=""
+              className={cn(
+                "flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4 sm:px-6",
+                chatShown && "min-[1056px]:min-w-[375px]",
+              )}
+            >
+              {children}
+            </div>
+          ) : chatShown ? null : (
+            // `/chat` with chat closed: the home view, from the side-by-side
+            // width up (below it `/chat` is the chat page).
+            <div className="hidden min-h-0 min-w-0 flex-1 min-[1056px]:flex">
+              <ChapterHome />
+            </div>
+          )}
+        </main>
       </div>
     </div>
   );
