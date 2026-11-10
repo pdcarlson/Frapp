@@ -83,7 +83,7 @@ export function ConnectionPill({
             aria-label={indicator.description}
             title={indicator.description}
             className={cn(
-              "pointer-events-auto flex h-7 max-w-full shrink-0 items-center gap-2 rounded-full border border-border bg-popover px-2.5 text-caption text-foreground animate-slide-down hover:bg-card",
+              "pointer-events-auto flex h-7 max-w-full shrink-0 items-center gap-2 rounded-full border border-border bg-popover px-2.5 text-caption text-foreground animate-slide-down hover:bg-card-hover",
               FOCUS_RING_ALWAYS,
               placement === "top-bar" &&
                 "max-xl:w-7 max-xl:justify-center max-xl:px-0",
@@ -109,7 +109,9 @@ export function ConnectionPill({
         </PopoverTrigger>
         {/* The sentence, a tap away on a touch screen with no hover title. */}
         <PopoverContent align="end" className="w-64">
-          <p className="text-caption text-foreground">{indicator.description}</p>
+          <p className="text-caption text-foreground">
+            {indicator.description}
+          </p>
         </PopoverContent>
       </Popover>
     </>

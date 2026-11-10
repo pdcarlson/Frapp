@@ -118,9 +118,9 @@ describe("PlanMatrix", () => {
   });
 
   it("clears the 4.5:1 text gate on the not-included dash", () => {
-    // `--disabled` (#525252) is 2.53:1 on `--background`, under §6's release
+    // `--disabled` (#6B6B6B) is 3.72:1 on `--background`, under §6's release
     // gate, and WCAG's inactive-control exemption does not cover informational
-    // content. `--muted-foreground` is 7.85:1.
+    // content. `--muted-foreground` is 11.35:1.
     const { container } = render(<PlanMatrix />);
     const dash = Array.from(container.querySelectorAll("span")).find(
       (node) => node.textContent === "–",
