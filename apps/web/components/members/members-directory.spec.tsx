@@ -561,6 +561,31 @@ describe("Actives on a chapter with alumni", () => {
     ).toBeInTheDocument();
   });
 
+  it("reads a bulk role as unpicked once that role is deleted, and can un-pick one", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<MembersDirectory />);
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: /select all members on this page/i,
+      }),
+    );
+    await pick(user, "Assign role", "Treasurer");
+    expect(screen.getByRole("button", { name: "Apply" })).toBeEnabled();
+
+    // Un-picking keeps the selection, which Clear would not.
+    await pick(user, "Assign role: Treasurer", "No role");
+    expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
+
+    await pick(user, "Assign role", "Treasurer");
+    Object.assign(rolesRead, read([]));
+    rerender(<MembersDirectory />);
+    expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Assign role" }),
+    ).toBeInTheDocument();
+  });
+
   it("narrows the selection to the failures after a partly failed bulk assign", async () => {
     const user = userEvent.setup();
     Object.assign(membersRead, read(CHAPTER));
