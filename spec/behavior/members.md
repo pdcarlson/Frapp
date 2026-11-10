@@ -10,6 +10,20 @@ The `members` module is always-on (free tier). Every chapter has a searchable me
 - Search also supports name, role, and join date.
 - The directory paginates at **25 rows per page**; the pager renders only when the filtered set exceeds one page. (Web renders one flush list; the table and card layouts this line used to name were deleted by the greenfield Directory lane, [#2146](https://github.com/pdcarlson/Frapp/issues/2146).)
 
+## Pledge class and order number
+
+Added for [#3939](https://github.com/pdcarlson/Frapp/issues/3939) (asked by shawnatomklein-eng; approved by Paul on the issue, 2026-11-10).
+
+- A chapter keeps its own ordered list of **pledge classes** (`GET /v1/pledge-classes`). A class is a name ("Alpha", "Fall 2019") and a place in the list, oldest first. The order is the chapter's, never alphabetical, because Greek-letter names don't sort that way. A new class goes at the end.
+- Each member may belong to one class, and may carry an **order number**: an integer an officer gives them. It is one number on purpose. A chapter that orders people inside a class and a chapter that numbers everyone chapter-wide (a roll or bond number) both store it there, and it needs no class, so a chapter that keeps only a chapter-wide number can use it alone. Two members may hold the same number; nothing requires them to be unique.
+- **Fraternal order** is the sort these make: oldest class first, then order number within the class, lowest first, then name. A member with a class and no number follows the numbered members of that class. Members with no class come after every class, ordered by their number, and members with neither come last, by name.
+- Pledge class and graduation year are different things and both stay: one pledge class can span several graduation years.
+- Nothing assumes how a chapter runs (Paul, 2026-11-10, #3967). A chapter with no classes and no numbers sees no pledge class or order controls outside the place an officer sets them up.
+- What a chapter calls these is its vocabulary: `vocab("class")` for the class ("Pledge class", "New member class", "Line", "Cohort") and `vocab("order")` for the number ("Fraternal order" for IFC, "Bond number" for NPC, "Line number" for NPHC, "Roll number" elsewhere), both the chapter's to change in Settings → vocabulary. The `order` field there arrives with the officer-editing part of #3939; until then a chapter reads its archetype's word.
+- Reading needs `members:view`, like the Directory. Writing (the class list, and any member's class and number, one at a time or many at once through `PUT /v1/pledge-classes/assignments`, which writes all of them or none) needs `roles:manage`: the officers who already set a member's roles. A member cannot set their own.
+- Deleting a class leaves its members with no class; they keep their order number. Alumni keep both.
+- `GET /v1/members` returns `pledge_class_id` and `order_number` on every profile.
+
 ## Profiles
 
 - Each member has a profile card showing: display name, profile photo, role(s), point balance, join date, and optional bio.

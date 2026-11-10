@@ -16,7 +16,7 @@ Returns the merged chapter configuration: archetype defaults overlaid with per-c
   "org_archetype": "ifc",
   "archetype_meta": { "label": "IFC Fraternity", "short": "IFC", "description": "...", "council": "..." },
   "enabled_modules": { "chat": true, "events": true, "dues": false, ... },
-  "vocabulary": { "recruitment": "Rush", "pledge": "New member", "class": "Pledge class" },
+  "vocabulary": { "recruitment": "Rush", "pledge": "New member", "class": "Pledge class", "order": "Fraternal order" },
   "branding": { "greek_letters": "ΣΦΕ", "short_name": "SigEp", "show_greek_letters": true, "designation": "California Eta", "school_short": "UCLA", "colors": { "accent": "#C9A56F" } },
   "theme_palette": { "--signet-accent-primary": "#...", "--signet-accent-text": "#...", ... },
   "beta_config": { "enabled": true, "style": "sidebar_pill" },

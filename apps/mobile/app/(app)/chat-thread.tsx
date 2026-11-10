@@ -277,6 +277,7 @@ export default function ChatThreadScreen() {
     nameFor,
     roleColorFor,
     avatarFor: memberAvatarFor,
+    avatarTintFor,
     refetch: refetchRoster,
   } = roster;
 
@@ -321,9 +322,13 @@ export default function ChatThreadScreen() {
             const memberId = otherMemberId(openChannel.channel, viewerId);
             return memberId ? memberAvatarFor(memberId) : null;
           })()}
+          photoTint={(() => {
+            const memberId = otherMemberId(openChannel.channel, viewerId);
+            return memberId ? avatarTintFor(memberId) : null;
+          })()}
         />
       ) : undefined,
-    [openChannel, viewerId, memberAvatarFor],
+    [openChannel, viewerId, memberAvatarFor, avatarTintFor],
   );
   const headerDescription =
     openChannel && !isDirectChannel(openChannel.channel)
@@ -866,6 +871,7 @@ export default function ChatThreadScreen() {
         <ThreadMessageRow
           row={item}
           startsRun={placement?.startsRun ?? true}
+          endsRun={placement?.endsRun ?? true}
           startsDay={placement?.startsDay ?? false}
           viewerId={viewerId}
           nameFor={nameFor}
@@ -1148,7 +1154,7 @@ export default function ChatThreadScreen() {
             // member's own messages as incoming, then flip them when identity
             // lands; messages can arrive from cache well before `/users/me`.
             // Message-shaped, at the bottom where the rows will land (§10).
-            <ThreadSkeleton />
+            <ThreadSkeleton channelId={channelId} />
           ) : thread.rows.length === 0 && thread.heldCount === 0 ? (
             // Counted after the block list, held rows included: a channel whose
             // only messages are being held is not an empty channel, and the
@@ -1324,6 +1330,7 @@ export default function ChatThreadScreen() {
               context={staging.context}
               mentionCandidates={mentionRoster.data}
               avatarFor={memberAvatarFor}
+              avatarTintFor={avatarTintFor}
               mentionRoles={mentionRoles.data}
               placeholder={composerPlaceholder}
               // A send that never reached the outbox has no failed row to show

@@ -128,6 +128,13 @@ function maskMessage(message: ChatMessage): MaskedChatMessage {
     edited_at: message.edited_at,
     is_deleted: message.is_deleted,
     mentions: null,
+    // Structure, not content (#3785): kept so a masked reply stays out of the
+    // timeline and a masked parent still leads to the other members' replies.
+    // The recent repliers are other members, whose ids the chip draws.
+    thread_root_id: message.thread_root_id ?? null,
+    thread_reply_count: message.thread_reply_count ?? 0,
+    thread_last_reply_at: message.thread_last_reply_at ?? null,
+    thread_recent_sender_ids: message.thread_recent_sender_ids ?? [],
     created_at: message.created_at,
     sender_blocked: true,
   };

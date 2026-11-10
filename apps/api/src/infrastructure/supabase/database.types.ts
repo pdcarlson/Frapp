@@ -25,6 +25,8 @@ import type {
   ChatMessageAction,
   ChatMessageAttachment,
   ChatMessageBookmark,
+  ChatThreadFollow,
+  FollowedThreadUnread,
   ChatMessageReport,
   ChatNotificationPreference,
   ChatPushDispatch,
@@ -60,6 +62,8 @@ import type {
   StudyGeofence,
   StudySession,
   Task,
+  PledgeClass,
+  PledgeClassAssignment,
   RushCandidate,
   RushCandidateVote,
   User,
@@ -134,6 +138,7 @@ export interface Database {
       message_reactions: TableDefinition<MessageReaction>;
       channel_read_receipts: TableDefinition<ChannelReadReceipt>;
       chat_message_bookmarks: TableDefinition<ChatMessageBookmark>;
+      chat_thread_follows: TableDefinition<ChatThreadFollow>;
       chat_message_reports: TableDefinition<ChatMessageReport>;
       chat_member_blocks: TableDefinition<ChatMemberBlock>;
       poll_votes: TableDefinition<PollVote>;
@@ -147,6 +152,7 @@ export interface Database {
       financial_transactions: TableDefinition<FinancialTransaction>;
       service_entries: TableDefinition<ServiceEntry>;
       tasks: TableDefinition<Task>;
+      chapter_pledge_classes: TableDefinition<PledgeClass>;
       rush_candidates: TableDefinition<RushCandidate>;
       rush_candidate_votes: TableDefinition<RushCandidateVote>;
       chapter_documents: TableDefinition<ChapterDocument>;
@@ -211,6 +217,15 @@ export interface Database {
           attachment_count: number;
           created_at: string;
         }[];
+      };
+      /**
+       * `20261110220000` (#3785). The caller's followed and muted threads in
+       * one channel, with how many replies are new to them (0 when muted).
+       * The service authorizes the channel first.
+       */
+      get_followed_thread_unread: {
+        Args: { p_channel_id: string; p_user_id: string };
+        Returns: FollowedThreadUnread[];
       };
       /**
        * `20261107043000`. Onboarding chapter search: word prefixes over
@@ -331,6 +346,16 @@ export interface Database {
           p_chapter_cap: number;
         };
         Returns: DiscordImportFile[];
+      };
+      /** `20261110170000` (#3939) — `returns setof chapter_pledge_classes`. */
+      reorder_chapter_pledge_classes: {
+        Args: { p_chapter_id: string; p_ids: string[] };
+        Returns: PledgeClass[];
+      };
+      /** `20261110170000` (#3939) — `p_assignments` is `jsonb`; `returns setof members`. */
+      assign_member_pledge_classes: {
+        Args: { p_chapter_id: string; p_assignments: PledgeClassAssignment[] };
+        Returns: Member[];
       };
       /** `20260602210000` — `returns setof tasks`. */
       confirm_task_completion: {

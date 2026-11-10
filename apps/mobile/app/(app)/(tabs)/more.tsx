@@ -14,6 +14,7 @@ import {
   usePermissionList,
   useStudySessions,
   useViewerUserId,
+  useOwnAvatarTint,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { can, isBetaOffModule, isModuleEnabled } from "@repo/validation";
@@ -113,6 +114,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 export default function MoreScreen() {
   const router = useRouter();
   const { tokens } = useFrappTheme();
+  // Your initials wear the color the chapter sees on them (#3860).
+  const ownTint = useOwnAvatarTint();
   const { chapterName } = useChapterBranding();
   const styles = createStyles(tokens);
   // Every row's leading glyph is neutral, member and Admin rows alike: an icon
@@ -216,6 +219,7 @@ export default function MoreScreen() {
         photoUrl={profile?.photoUrl ?? null}
         fetchedAt={userQuery.dataUpdatedAt}
         pointsLabel={formatPointsLabel(pointsBalance)}
+        tint={ownTint}
       />
 
       <ListSection>

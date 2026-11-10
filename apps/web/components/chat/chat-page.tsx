@@ -1,7 +1,8 @@
 "use client";
 
-import { Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { isChatRoute } from "@/components/layout/shell-layout";
 import { ChatProvider } from "@/lib/chat/chat-provider";
 import { ChatShell } from "./chat-shell";
 import { ChatRouteSkeleton } from "@/components/chat/chat-route-skeleton";
@@ -13,15 +14,36 @@ import { CHAT_CHANNEL_PARAM, CHAT_MESSAGE_PARAM } from "@/lib/chat/chat-links";
  * navigate here with a channel — and optionally a specific message —
  * pre-selected. `useSearchParams` requires a Suspense boundary (matches
  * `directory-page.tsx`'s `?tab=` pattern).
+ *
+ * Only a chat URL names chat's target (#3779). The panel stays mounted beside
+ * every tool page, and a tool's own `?channel=` (`/chat-admin?channel=` is
+ * the channel editor's) must not steer it. Off a chat URL the panel keeps the
+ * target it last had, so going from a linked message to a tool page does not
+ * read as the link being cleared.
  */
 function ChatPageContent({
   defaultMembersHidden,
+  toolBeside,
 }: {
   defaultMembersHidden: boolean;
+  toolBeside: boolean;
 }) {
   const searchParams = useSearchParams();
-  const channelParam = searchParams.get(CHAT_CHANNEL_PARAM);
-  const messageParam = searchParams.get(CHAT_MESSAGE_PARAM);
+  const onChatUrl = isChatRoute(usePathname());
+  const liveChannel = searchParams.get(CHAT_CHANNEL_PARAM);
+  const liveMessage = searchParams.get(CHAT_MESSAGE_PARAM);
+  const [target, setTarget] = useState({
+    channel: onChatUrl ? liveChannel : null,
+    message: onChatUrl ? liveMessage : null,
+  });
+  if (
+    onChatUrl &&
+    (target.channel !== liveChannel || target.message !== liveMessage)
+  ) {
+    setTarget({ channel: liveChannel, message: liveMessage });
+  }
+  const channelParam = target.channel;
+  const messageParam = target.message;
 
   return (
     <ChatProvider>
@@ -29,13 +51,15 @@ function ChatPageContent({
         initialChannelId={channelParam}
         initialMessageId={messageParam}
         defaultMembersHidden={defaultMembersHidden}
+        toolBeside={toolBeside}
       />
     </ChatProvider>
   );
 }
 
 /**
- * Entry component for the `/chat` route. Mounts the chat hot-path provider
+ * The chat panel's contents, which the dashboard shell hosts beside the open
+ * tool page or alone on `/chat` (`dashboard-shell.tsx`, #3779). Mounts the chat hot-path provider
  * (outbox flush + persisted first chunk; the realtime manager is the
  * dashboard shell's, `use-chat-realtime-binding.ts`) and renders the chat
  * shell. The provider lives inside the dashboard tree so it sees the existing
@@ -43,9 +67,12 @@ function ChatPageContent({
  */
 export function ChatPage({
   defaultMembersHidden = false,
+  toolBeside = false,
 }: {
-  /** The member list's remembered state, read by the route on the server. */
+  /** The member list's remembered state, read by the layout on the server. */
   defaultMembersHidden?: boolean;
+  /** Open beside a tool page (`ChatShell`'s prop of the same name). */
+  toolBeside?: boolean;
 } = {}) {
   /*
     This boundary's fallback must never be what the server sends.
@@ -59,7 +86,7 @@ export function ChatPage({
     with every test still green.
 
     It does not, because `app/(dashboard)/layout.tsx` awaits `cookies()` for the
-    nav-collapse preference, which opts this whole segment into dynamic
+    nav-collapse and chat preferences, which opts this whole segment into dynamic
     rendering. That is a real dependency between two files that never mention
     each other, and nothing enforces it: if that `cookies()` read ever moves or
     is memoized away, check the `/chat` SSR payload still contains the
@@ -67,7 +94,10 @@ export function ChatPage({
   */
   return (
     <Suspense fallback={<ChatRouteSkeleton />}>
-      <ChatPageContent defaultMembersHidden={defaultMembersHidden} />
+      <ChatPageContent
+        defaultMembersHidden={defaultMembersHidden}
+        toolBeside={toolBeside}
+      />
     </Suspense>
   );
 }

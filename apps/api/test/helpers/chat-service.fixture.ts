@@ -24,6 +24,7 @@ import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-modera
 import type { ChatChannel, ChatMessage } from '#domain/entities/chat.entity';
 import { memberFixture } from './entity-fixtures';
 import { ChatService } from '../../src/application/services/chat.service';
+import { CHAT_THREAD_REPOSITORY } from '#domain/repositories/chat-thread.repository.interface';
 import { ChatMentionService } from '../../src/application/services/chat-mention.service';
 import { ChatAttachmentService } from '../../src/application/services/chat-attachment.service';
 import { ChatNotificationPreferenceService } from '../../src/application/services/chat-notification-preference.service';
@@ -227,6 +228,18 @@ export async function createChatServiceFixture() {
     ),
   };
 
+  // Message threads (#3785): auto-follow and the read cursor on a thread send.
+  const mockThreadRepo = {
+    findReplies: jest.fn().mockResolvedValue([]),
+    findFollow: jest.fn().mockResolvedValue(null),
+    findFollowStates: jest.fn().mockResolvedValue(new Map()),
+    ensureFollowing: jest.fn().mockResolvedValue(undefined),
+    followOnReply: jest.fn().mockResolvedValue(undefined),
+    setFollowState: jest.fn().mockResolvedValue(undefined),
+    markRead: jest.fn().mockResolvedValue(undefined),
+    findFollowedUnread: jest.fn().mockResolvedValue([]),
+  };
+
   const mockRbac = {
     getEffectivePermissions: jest.fn(),
     // The chapter's roles, for `@`-role resolution (`ChatMentionService`).
@@ -285,6 +298,7 @@ export async function createChatServiceFixture() {
       { provide: ChannelCacheService, useValue: mockChannelCache },
       { provide: ChatBlockService, useValue: mockChatBlocks },
       { provide: CHAT_MESSAGE_REPORT_REPOSITORY, useValue: mockReportRepo },
+      { provide: CHAT_THREAD_REPOSITORY, useValue: mockThreadRepo },
     ],
   }).compile();
 
@@ -310,6 +324,7 @@ export async function createChatServiceFixture() {
     mockRbac,
     mockChatBlocks,
     mockReportRepo,
+    mockThreadRepo,
   };
 }
 

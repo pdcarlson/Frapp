@@ -149,6 +149,31 @@ export function formatRelativeDayTime(
 }
 
 /**
+ * A list's day heading, written out: `"Today"`, `"Tomorrow"`, `"Yesterday"`,
+ * the weekday within the coming week (`"Sunday"`), otherwise the month and
+ * day (`"November 14"`, `"January 3, 2027"` outside the current year). The
+ * Events lists group their rows under these (#3707); a row under one then
+ * says only its time.
+ */
+export function formatDayHeading(
+  value: unknown,
+  now: Date = new Date(),
+): string | null {
+  const at = toDate(value);
+  if (!at) return null;
+  const days = dayDelta(now, at);
+  if (days === 0) return "Today";
+  if (days === 1) return "Tomorrow";
+  if (days === -1) return "Yesterday";
+  if (days > 1 && days < 7) return weekdayName(at);
+  return at.toLocaleDateString(undefined, {
+    month: "long",
+    day: "numeric",
+    ...(sameYear(at, now) ? {} : { year: "numeric" }),
+  });
+}
+
+/**
  * When something was sent, in words: `"Sent today at 4:46 PM"`,
  * `"Sent yesterday at 9:00 AM"`, `"Sent Nov 3 at …"` (a past day reads as its
  * date; only a time ahead of the device clock could read as a weekday).

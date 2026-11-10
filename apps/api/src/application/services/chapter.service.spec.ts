@@ -201,6 +201,8 @@ describe('ChapterService', () => {
       role_ids: ['role-president'],
       custom_role_ids: [],
       has_completed_onboarding: true,
+      pledge_class_id: null,
+      order_number: null,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     };

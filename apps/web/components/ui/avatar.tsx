@@ -3,6 +3,8 @@
 import * as React from "react"
 import * as AvatarPrimitive from "@radix-ui/react-avatar"
 
+import type { MemberAvatarTint } from "@repo/hooks"
+
 import { cn } from "@/lib/utils"
 
 /*
@@ -14,6 +16,12 @@ import { cn } from "@/lib/utils"
  * fill is spelled `bg-popover`, not the `bg-accent` alias that held the same
  * value (deleted, #3036): `components/shared/elevation-call-sites.spec.ts` bans
  * the name.
+ *
+ * A member's initials take their own color (#3860, Paul approved 2026-11-10):
+ * pass `tint` from the roster's `avatarTintFor(userId)` and the fallback draws
+ * style A, the hue at 18% over `--popover` with the initials in the full hue.
+ * Without `tint` it stays the neutral circle: a group DM's title initials and
+ * the auth showcase, which stand in for no one member.
  */
 
 const Avatar = React.forwardRef<
@@ -45,14 +53,23 @@ AvatarImage.displayName = AvatarPrimitive.Image.displayName
 
 const AvatarFallback = React.forwardRef<
   React.ElementRef<typeof AvatarPrimitive.Fallback>,
-  React.ComponentPropsWithoutRef<typeof AvatarPrimitive.Fallback>
->(({ className, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof AvatarPrimitive.Fallback> & {
+    /** The member's initials paint; omit for the neutral circle. */
+    tint?: MemberAvatarTint | null
+  }
+>(({ className, tint, style, ...props }, ref) => (
   <AvatarPrimitive.Fallback
     ref={ref}
+    data-avatar-tint={tint ? tint.text : undefined}
     className={cn(
       "flex h-full w-full items-center justify-center rounded-full bg-popover text-caption font-bold text-muted-foreground",
       className
     )}
+    style={
+      tint
+        ? { backgroundColor: tint.fill, color: tint.text, ...style }
+        : style
+    }
     {...props}
   />
 ))

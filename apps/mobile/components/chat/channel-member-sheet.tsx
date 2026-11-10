@@ -11,6 +11,8 @@ import {
   MEMBER_SEARCH_THRESHOLD,
   filterChannelMembers,
   groupChannelMembersByRole,
+  memberAvatarHue,
+  memberAvatarTint,
   memberLabel,
   useChannelMembers,
   useMemberDisplayNames,
@@ -248,6 +250,9 @@ export function MemberRows({
                   uri={row.avatarUrl}
                   initials={initialsFor(row.name)}
                   size={AVATAR_SIZE}
+                  tint={memberAvatarTint(
+                    memberAvatarHue(row.userId, row.roleColor),
+                  )}
                   style={styles.avatar}
                   textStyle={styles.avatarText}
                 />

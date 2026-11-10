@@ -66,7 +66,7 @@ export function DocumentRow({
     place in the lane to pay it. Do not "correct" the row to 40
     to match the board.
   */
-    <li className="flex min-h-11 flex-col gap-1 py-1 sm:flex-row sm:items-center sm:gap-3">
+    <li className="flex min-h-11 flex-col gap-1 py-1 @md:flex-row @md:items-center @md:gap-3">
       {/*
       s12 draws a leading file glyph on every document row —
       the accent duotone on its pinned cards, the neutral one
@@ -89,7 +89,7 @@ export function DocumentRow({
           FOCUS_RING,
         )}
       >
-        <DocumentsGlyph className="hidden h-4 w-4 shrink-0 text-muted sm:block" />
+        <DocumentsGlyph className="hidden h-4 w-4 shrink-0 text-muted @md:block" />
         <span className="block min-w-0 flex-1">
           <span className="block truncate text-sm font-semibold">{doc.title}</span>
           {/*
@@ -119,7 +119,7 @@ export function DocumentRow({
           </span>
         </span>
       </button>
-      <div className="flex shrink-0 items-center gap-1 sm:ml-auto">
+      <div className="flex shrink-0 items-center gap-1 @md:ml-auto">
         <DownloadButton id={doc.id} title={doc.title} />
         <Can permission="chapter_docs:manage">
           {/*

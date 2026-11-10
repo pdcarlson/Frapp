@@ -93,7 +93,9 @@ vi.mock("@repo/hooks", async () => {
     // The pure helpers run for real; only the data hooks are stubbed.
     ...actual,
     useViewerUserId: () => VIEWER,
+    useOwnAvatarTint: () => null,
     useMemberDisplayNames: () => ({
+      avatarTintFor: () => null,
       byId: { [ALICE]: "Alice Chen", [BOB]: "Bob Diaz" },
       nameFor: (id: string) =>
         ({ [ALICE]: "Alice Chen", [BOB]: "Bob Diaz" })[id] ?? null,

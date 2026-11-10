@@ -27,8 +27,11 @@ export function DocumentRowsSkeleton() {
  */
 export function DocumentsPageSkeleton() {
   return (
-    <PageSkeleton label="Loading chapter documents">
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-x-6 gap-y-4 md:grid-cols-[200px_minmax(0,1fr)]">
+    <PageSkeleton
+      label="Loading chapter documents"
+      className="@container space-y-6"
+    >
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-x-6 gap-y-4 @2xl:grid-cols-[200px_minmax(0,1fr)]">
         <div className="space-y-1">
           <div className="flex min-h-9 items-center">
             <SkeletonSectionLabel width="w-16" />
@@ -45,7 +48,7 @@ export function DocumentsPageSkeleton() {
             <div className="mr-auto">
               <SkeletonSectionLabel width="w-28" count />
             </div>
-            <SkeletonControl className="w-full sm:w-64" />
+            <SkeletonControl className="w-full @md:w-64" />
           </div>
           <div className="pt-2">
             <DocumentRows />

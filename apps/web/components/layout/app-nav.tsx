@@ -1,6 +1,5 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useHiddenUnsetFeatures } from "@repo/hooks";
 import { cn } from "@/lib/utils";
@@ -20,17 +19,16 @@ import { EYEBROW } from "@/components/ui/typography";
  * rows. The width and padding around it are not this component's; they belong
  * to whatever holds it.
  *
- * **It is not the column.** From `lg` up it is the modules face of the
- * shell's one left column (`nav-column.tsx`), which owns the width, the
- * surface, the hairline and the pinned chapter row. On `/chat` the column also
- * holds the channel list, and this nav slides in over it from a back arrow.
- * Below `lg` it renders inside the mobile drawer (`variant="drawer"`), with the
- * chapter row on top, always expanded, and no toggle.
+ * **It is not the column.** From `lg` up it sits in the shell's left column
+ * (`nav-column.tsx`), which owns the width, the surface, the hairline and the
+ * pinned chapter row. From the side-by-side width up its Chat row and the open
+ * tool's row are toggles (`shell-layout.ts`, #3779). Below `lg` it renders
+ * inside the mobile drawer (`variant="drawer"`), with the chapter row on top,
+ * always expanded, and no toggle.
  *
- * **Collapsing is a preference, not a breakpoint.** The responsive contract is
- * still two states switching once at `lg` (`spec/ui/web-dashboard/README.md`):
- * the rail never appears in the drawer. Adding a viewport tier would be a spec
- * change; letting a desktop user narrow their own nav is not.
+ * **Collapsing is a preference**, and also what the shell does while chat and
+ * a tool are open side by side on a window too narrow for the full nav
+ * (`shell-layout.ts`). The rail never appears in the drawer.
  *
  * Section headings are derived, never declared — a heading renders only when at
  * least one of its items survives the permission, module and setup gates, so a
@@ -47,18 +45,25 @@ type AppNavProps = {
   pathname: string;
   onNavigate?: () => void;
   /**
-   * `column` is the desktop column's modules face (`nav-column.tsx`), which
+   * `column` is the desktop shell's left column (`nav-column.tsx`), which
    * pins the chapter row above it. The drawer reuses this component wholesale
    * rather than duplicating the nav ("the drawer is the sidebar"), with the
    * chapter row on top, no collapse toggle and no rail.
    */
   variant?: "column" | "drawer";
   /**
-   * `/chat`'s modules face (`nav-face.tsx`): the Chat row slides the channel
-   * list back instead of linking to the open route, and trails what the column
-   * gives it (a chevron; the unread dot is the row's `highlighted` state).
+   * The desktop shell's Chat row from the side-by-side width up
+   * (`shell-layout.ts`, #3779): a toggle that opens and closes the chat panel
+   * instead of a link to `/chat`. `open` marks it the way a current row is
+   * marked. Absent, the row is the plain link it is below that width.
    */
-  chatRow?: { onSelect: () => void; trailing: ReactNode };
+  chatRow?: { onSelect: () => void; open: boolean };
+  /**
+   * Clicking the open tool's row closes it (#3779). Given, the row whose
+   * route is open becomes a button that calls this instead of a link to the
+   * page already on screen.
+   */
+  onCloseTool?: () => void;
   /**
    * Ids of rows with something new for the member (today Chat's unread,
    * `use-chat-has-unread.ts`; the only row the app counts). A highlighted row
@@ -100,6 +105,7 @@ export function AppNav({
   onNavigate,
   variant = "column",
   chatRow,
+  onCloseTool,
   highlighted,
   className,
 }: AppNavProps) {
@@ -147,7 +153,13 @@ export function AppNav({
           <ProtectedNavItem
             key={item.id}
             item={item}
-            current={currentFor(item, pathname)}
+            current={
+              chatRow && item.id === "chat"
+                ? chatRow.open
+                  ? "true"
+                  : undefined
+                : currentFor(item, pathname)
+            }
             permissions={permissions}
             iconClassName={navIconClassName}
             onNavigate={onNavigate}
@@ -161,8 +173,23 @@ export function AppNav({
                 : undefined
             }
             {...(chatRow && item.id === "chat"
-              ? { onSelect: chatRow.onSelect, trailing: chatRow.trailing }
-              : {})}
+              ? {
+                  onSelect: chatRow.onSelect,
+                  pressed: chatRow.open,
+                  selectLabel: chatRow.open ? "Close chat" : "Open chat",
+                }
+              : // Only the row whose own page is open. A Settings tool's
+                // route marks the Settings row too (`activeFor`), and there
+                // the row stays the way back to the Settings hub.
+                onCloseTool &&
+                  item.id !== "chat" &&
+                  currentFor(item, pathname) === "page"
+                ? {
+                    onSelect: onCloseTool,
+                    pressed: true,
+                    selectLabel: `Close ${item.label}`,
+                  }
+                : {})}
           />
         ))}
       </div>

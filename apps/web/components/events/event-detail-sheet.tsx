@@ -50,9 +50,10 @@ import { MyCheckIn } from "@/components/events/my-check-in";
 import { Can } from "@/components/shared/can";
 import { PermissionsOfflineSurface } from "@/components/shared/async-states";
 import { normalizeRoleOptions } from "@/lib/roles";
-import { formatDayTimeRange } from "@repo/formatting";
+import { formatDayTime, formatDayTimeRange } from "@repo/formatting";
 import { pointsLabel, recurrenceLabel } from "@/components/events/event-labels";
-import { getErrorMessage } from "@/lib/utils";
+import { cn, getErrorMessage } from "@/lib/utils";
+import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 
 type EventRecord = Record<string, unknown>;
@@ -61,6 +62,20 @@ type EventDetailSheetProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   event: EventRecord | null;
+  /**
+   * The upcoming meetings of the series this occurrence belongs to, soonest
+   * first and this one included, listed under it (#3707), whether the sheet
+   * was opened from the list or the calendar. `null` or absent for a one-time
+   * event.
+   */
+  series?: EventRecord[] | null;
+  /**
+   * The series' rule, read off its head by the caller: only the head row
+   * carries one, so a generated meeting's own `recurrence_rule` is `null`.
+   */
+  seriesRule?: unknown;
+  /** Opens another meeting of {@link series} in this sheet. */
+  onSelectOccurrence?: (event: EventRecord) => void;
   usingPreviewData: boolean;
   onRequestEdit: (event: EventRecord) => void;
   onEventDeleted: () => Promise<void> | void;
@@ -70,6 +85,9 @@ export function EventDetailSheet({
   open,
   onOpenChange,
   event,
+  series = null,
+  seriesRule,
+  onSelectOccurrence,
   usingPreviewData,
   onRequestEdit,
   onEventDeleted,
@@ -169,7 +187,11 @@ export function EventDetailSheet({
   );
   const isMandatory = attendance.everyone === "required";
   // `null` for a one-time event, which then shows no cadence badge at all.
-  const cadence = recurrenceLabel(resolvedEvent?.recurrence_rule);
+  // The head's rule when the caller knows the series: a generated meeting
+  // carries none of its own, and would otherwise read as one-time.
+  const cadence = recurrenceLabel(
+    seriesRule ?? resolvedEvent?.recurrence_rule,
+  );
   const schedule = formatDayTimeRange(
     resolvedEvent?.start_time,
     resolvedEvent?.end_time,
@@ -453,6 +475,53 @@ export function EventDetailSheet({
               </div>
             </div>
 
+            {/*
+              The series right under the meeting it opened, ahead of the long
+              attendance roster (#3707): the list shows a repeating event once,
+              so this is where its other dates live.
+            */}
+            {series && series.length > 1 ? (
+              <section
+                aria-labelledby="event-series-label"
+                className="rounded-lg border border-border p-3"
+              >
+                <p
+                  id="event-series-label"
+                  className="mb-1 text-caption text-muted-foreground"
+                >
+                  Upcoming in this series
+                </p>
+                <ul role="list" className="grid gap-0.5">
+                  {series.map((occurrence) => {
+                    const occurrenceId =
+                      typeof occurrence.id === "string" ? occurrence.id : "";
+                    const isOpen = occurrenceId === eventId;
+                    const when =
+                      formatDayTime(occurrence.start_time) ?? "Date not set";
+                    return (
+                      <li key={occurrenceId || when}>
+                        <button
+                          type="button"
+                          aria-current={isOpen ? "true" : undefined}
+                          disabled={isOpen || !onSelectOccurrence}
+                          onClick={() => onSelectOccurrence?.(occurrence)}
+                          className={cn(
+                            "flex min-h-9 w-full items-center rounded-md px-2 text-left text-sm transition-colors pointer-coarse:min-h-11",
+                            isOpen
+                              ? "bg-accent-subtle font-semibold text-accent-text"
+                              : "hover:bg-card-hover",
+                            FOCUS_RING_OFFSET,
+                          )}
+                        >
+                          {when}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            ) : null}
+
             {description ? (
               <div className="rounded-lg border border-border p-3">
                 <p className="mb-1 text-caption text-muted-foreground">
@@ -499,12 +568,16 @@ export function EventDetailSheet({
                 )}
               >
                 <AttendancePanel
+                  // Keyed by meeting: opening another one from the series
+                  // list starts its roster fresh, filter included.
+                  key={eventId}
                   eventId={eventId}
                   eventStart={resolvedEvent?.start_time}
                   eventEnd={resolvedEvent?.end_time}
                 />
               </Can>
             ) : null}
+
           </div>
         </PanelBody>
         {confirmDialog}

@@ -7,6 +7,9 @@ import {
   matchMentionCandidate,
   mentionChipFilter,
   mentionLabelFor,
+  mentionPickLabel,
+  sendMentionReading,
+  spacedMentionNames,
   mentionPickerEntries,
   mentionSuggestions,
   resolveMentions,
@@ -430,7 +433,7 @@ describe("mentionPickerEntries", () => {
   it("offers members first, then the roles the viewer may ping", () => {
     expect(
       mentionPickerEntries(roster, roles, "").map((entry) => entry.label),
-    ).toEqual(["JaneDoe", "JanetRoe", "BobStone", "Officers"]);
+    ).toEqual(["Jane Doe", "Janet Roe", "Bob Stone", "Officers"]);
   });
 
   it("filters roles by the query as it does members", () => {
@@ -524,11 +527,11 @@ describe("mentionSuggestions", () => {
 
   it("matches anywhere in the display name, ignoring case", () => {
     expect(mentionSuggestions(roster, "STONE").map((s) => s.label)).toEqual([
-      "BobStone",
+      "Bob Stone",
     ]);
     expect(mentionSuggestions(roster, "jan").map((s) => s.label)).toEqual([
-      "JaneDoe",
-      "JanetRoe",
+      "Jane Doe",
+      "Janet Roe",
     ]);
   });
 
@@ -662,17 +665,273 @@ describe("mentionChipFilter", () => {
 
 describe("draftWithMention", () => {
   it("writes the picker's label with a trailing space into an empty draft", () => {
-    expect(draftWithMention("", "Shawn Klein")).toBe("@ShawnKlein ");
+    expect(draftWithMention("", "Shawn Klein")).toBe("@Shawn Klein ");
   });
 
   it("separates it from text already typed", () => {
-    expect(draftWithMention("hey", "Shawn Klein")).toBe("hey @ShawnKlein ");
-    expect(draftWithMention("hey ", "Shawn Klein")).toBe("hey @ShawnKlein ");
+    expect(draftWithMention("hey", "Shawn Klein")).toBe("hey @Shawn Klein ");
+    expect(draftWithMention("hey ", "Shawn Klein")).toBe("hey @Shawn Klein ");
+  });
+
+  it("reduces a name that can't be read back as written", () => {
+    expect(draftWithMention("", "Sam (VP)")).toBe("@SamVP ");
   });
 
   it("writes nothing the picker wouldn't, since it would reach nobody", () => {
     expect(draftWithMention("hey", "!!")).toBeNull();
     expect(draftWithMention("hey", "2Fast")).toBeNull();
     expect(draftWithMention("hey", "a".repeat(65))).toBeNull();
+  });
+});
+
+describe("names with spaces (#3825)", () => {
+  const WINSTON: MentionCandidate = {
+    user_id: "u-winston",
+    display_name: "Winston Hewitt",
+  };
+  const WINSTON_JR: MentionCandidate = {
+    user_id: "u-winston-jr",
+    display_name: "Winston Hewitt Jr",
+  };
+  const WINNIE: MentionCandidate = {
+    user_id: "u-winnie",
+    display_name: "Winston Park",
+  };
+  const SAM: MentionCandidate = { user_id: "u-sam", display_name: "Sam" };
+  const SAM_ABE: MentionCandidate = {
+    user_id: "u-sam-abe",
+    display_name: "Sam Abernathy",
+  };
+  const chapter = [WINSTON, WINSTON_JR, WINNIE, SAM, SAM_ABE, JANE];
+  const names = spacedMentionNames(chapter, ["Vice President"]);
+
+  it("lists the names that hold a space, longest first, one per spelling", () => {
+    expect(
+      spacedMentionNames(
+        [
+          WINSTON,
+          { display_name: "  winston   hewitt " },
+          SAM,
+          { display_name: "Sam (VP)" },
+          { display_name: "123 Squad" },
+          { display_name: "Mary-Jane O'Brien" },
+          { display_name: `${"a".repeat(40)} ${"b".repeat(40)}` },
+        ],
+        ["Vice President", "Officers"],
+      ),
+    ).toEqual(["Mary-Jane O'Brien", "Winston Hewitt", "Vice President"]);
+  });
+
+  it("reads a known name as one token, as written", () => {
+    expect(
+      findMentionSpans("hey @winston hewitt, you in?", { names }),
+    ).toEqual([{ start: 4, end: 19, token: "winston hewitt" }]);
+  });
+
+  it("still stops at whitespace without the names, as every body did before", () => {
+    expect(extractMentionTokens("hey @Winston Hewitt")).toEqual(["Winston"]);
+  });
+
+  it("takes the longest name that fits", () => {
+    expect(
+      extractMentionTokens("@Winston Hewitt Jr and @Winston Hewitt", { names }),
+    ).toEqual(["Winston Hewitt Jr", "Winston Hewitt"]);
+  });
+
+  it("does not read a name out of a longer word", () => {
+    // "Winston Hewitts" is not "Winston Hewitt"; the bare token stands.
+    expect(extractMentionTokens("@Winston Hewitts", { names })).toEqual([
+      "Winston",
+    ]);
+  });
+
+  it.each([
+    ["@Winston Hewitt.", "Winston Hewitt"],
+    ["@Winston Hewitt, hi", "Winston Hewitt"],
+    ["@Winston Hewitt's turn", "Winston Hewitt"],
+    ["(@Winston Hewitt)", "Winston Hewitt"],
+    ["@Winston Hewitt!", "Winston Hewitt"],
+    ["@Winston Hewitt\nnext line", "Winston Hewitt"],
+  ])("stops at punctuation after the name: %j", (body, token) => {
+    expect(extractMentionTokens(body, { names })).toEqual([token]);
+  });
+
+  it("leaves other words alone: @jane and bob is still @jane", () => {
+    expect(extractMentionTokens("@jane and bob", { names })).toEqual(["jane"]);
+  });
+
+  it("resolves a name typed in full to that member", () => {
+    expect(resolveMentions("ask @Winston Hewitt", chapter)).toEqual([
+      "u-winston",
+    ]);
+    expect(resolveMentions("ask @winston hewitt jr.", chapter)).toEqual([
+      "u-winston-jr",
+    ]);
+  });
+
+  it("resolves the full name where the first name alone is ambiguous", () => {
+    // Three Winstons: `@Winston` reaches nobody, the full name reaches one.
+    expect(resolveMentions("@Winston", chapter)).toEqual([]);
+    expect(resolveMentions("@Winston Park", chapter)).toEqual(["u-winnie"]);
+  });
+
+  it("gives the full name to its holder, not to the member it starts with", () => {
+    // Before, `@Sam Abernathy` read as `@Sam` and pinged the member "Sam".
+    expect(resolveMentions("@Sam Abernathy", chapter)).toEqual(["u-sam-abe"]);
+    expect(resolveMentions("@Sam and others", chapter)).toEqual(["u-sam"]);
+  });
+
+  it("reaches nobody when two members hold the same full name", () => {
+    const twin = { user_id: "u-twin", display_name: "winston hewitt" };
+    expect(resolveMentions("@Winston Hewitt", [...chapter, twin])).toEqual([]);
+  });
+
+  it("still resolves the old reduced label", () => {
+    expect(resolveMentions("@WinstonHewitt", chapter)).toEqual(["u-winston"]);
+  });
+
+  it("resolves a role named with its space", () => {
+    const roles: MentionRole[] = [
+      {
+        role_id: "r-vp",
+        name: "Vice President",
+        member_ids: ["u-sam", "u-sam-abe"],
+        mentionable: true,
+      },
+    ];
+    expect(resolveMentions("@Vice President please", chapter, roles)).toEqual([
+      "u-sam",
+      "u-sam-abe",
+    ]);
+  });
+
+  it("does not let a role nobody holds claim the words", () => {
+    const vice = { user_id: "u-vice", display_name: "Vice" };
+    const roles: MentionRole[] = [
+      {
+        role_id: "r-vp",
+        name: "Vice President",
+        member_ids: [],
+        mentionable: true,
+      },
+    ];
+    expect(resolveMentions("@Vice President", [...chapter, vice], roles)).toEqual(
+      ["u-vice"],
+    );
+  });
+
+  describe("a spaced name next to someone the first word names", () => {
+    const JORDAN = { user_id: "u-jordan", display_name: "Jordan" };
+    const JORDAN_WILL = { user_id: "u-jordan-will", display_name: "Jordan Will" };
+    const both = [JORDAN, JORDAN_WILL, JANE];
+
+    it("leaves prose after a one-word name alone", () => {
+      expect(resolveMentions("@Jordan will you come", both)).toEqual([
+        "u-jordan",
+      ]);
+    });
+
+    it("reads the spaced name when it is written as the name is", () => {
+      expect(resolveMentions("@Jordan Will, you in?", both)).toEqual([
+        "u-jordan-will",
+      ]);
+    });
+
+    it("does not let a renamed member take a role's mention", () => {
+      const squatter = { user_id: "u-x", display_name: "Officers meeting" };
+      const roles: MentionRole[] = [
+        {
+          role_id: "r-off",
+          name: "Officers",
+          member_ids: ["u-jordan"],
+          mentionable: true,
+        },
+      ];
+      expect(
+        resolveMentions("@Officers Meeting at 7", [...both, squatter], roles),
+      ).toEqual(["u-jordan"]);
+    });
+
+    it("ignores case where the first word names nobody exactly", () => {
+      expect(resolveMentions("@winston hewitt", chapter)).toEqual([
+        "u-winston",
+      ]);
+    });
+
+    it("reads a send's tokens once, for the resolver and the permission pre-read", () => {
+      // An empty "Vice President" role must not hide a held "Vice" role.
+      const roles: MentionRole[] = [
+        { role_id: "r-v", name: "Vice", member_ids: ["u-sam"], mentionable: false },
+        { role_id: "r-vp", name: "Vice President", member_ids: [], mentionable: true },
+      ];
+      expect(
+        extractMentionTokens(
+          "@Vice President is out",
+          sendMentionReading(chapter, roles),
+        ),
+      ).toEqual(["Vice"]);
+    });
+  });
+
+  it("replaces a whole written name when the caret sits inside it", () => {
+    expect(activeMentionQuery("@Jane Doe tomorrow", 3, ["Jane Doe"])).toEqual({
+      start: 0,
+      query: "Ja",
+      end: 9,
+    });
+    // Without the names, or on other text, the handle ends at the space.
+    expect(activeMentionQuery("@Jane Doe tomorrow", 3)?.end).toBe(5);
+    expect(activeMentionQuery("@Jane Smith", 3, ["Jane Doe"])?.end).toBe(5);
+  });
+
+  it("keeps a bare chip the message is known to have sent over a role's name", () => {
+    const vice = { user_id: "u-vice", display_name: "Vice" };
+    const chips = mentionChipFilter(["u-vice"], {
+      members: [...chapter, vice],
+      roleNames: ["Vice President"],
+    });
+    expect(chips("Vice President")).toBe(false);
+    expect(chips("Vice")).toBe(true);
+    // A role whose first word names nobody reached still chips on trust.
+    expect(
+      mentionChipFilter(["u-sam"], {
+        members: chapter,
+        roleNames: ["Vice President"],
+      })("Vice President"),
+    ).toBe(true);
+  });
+
+  it("offers the name as written, and the reduced label where it can't be read back", () => {
+    expect(mentionPickLabel("Winston Hewitt")).toBe("Winston Hewitt");
+    expect(mentionPickLabel("  Winston   Hewitt ")).toBe("Winston Hewitt");
+    expect(mentionPickLabel("Sam (VP)")).toBe("SamVP");
+    expect(mentionPickLabel("O'Brien")).toBe("OBrien");
+  });
+
+  it("a picked member is the member that resolves", () => {
+    for (const member of chapter) {
+      const label = mentionPickLabel(member.display_name);
+      const resolved = resolveMentions(`hi @${label} there`, chapter);
+      // `@Winston Hewitt` vs "Winston Hewitt Jr" is the one accepted overlap:
+      // each resolves to itself.
+      expect(resolved, member.display_name).toEqual([member.user_id]);
+    }
+  });
+
+  it("lets a renderer keep the bare token an old body pinged", () => {
+    // "@Sam Abernathy" sent before spaced names pinged the member "Sam".
+    const pingedSam = (token: string) => token.toLowerCase() === "sam";
+    expect(
+      findMentionSpans("@Sam Abernathy", { names, accept: pingedSam }),
+    ).toEqual([{ start: 0, end: 4, token: "Sam" }]);
+    expect(
+      findMentionSpans("@Sam Abernathy", { names, accept: () => false }),
+    ).toEqual([]);
+  });
+
+  it("chips a spaced token by who it reached", () => {
+    const chips = mentionChipFilter(["u-winston"], { members: chapter });
+    expect(chips("Winston Hewitt")).toBe(true);
+    expect(chips("Winston Park")).toBe(false);
   });
 });

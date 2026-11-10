@@ -201,6 +201,8 @@ interface MarkdownContextValue {
   onMentionPress?: (handle: string) => void;
   bold: boolean;
   italic: boolean;
+  /** Code takes its own foreground on its fill; see `MessageMarkdown`'s `opaqueCode`. */
+  opaqueCode?: boolean;
 }
 
 const MarkdownContext = createContext<MarkdownContextValue | null>(null);
@@ -255,11 +257,12 @@ function Emphasis({
  * `fontStyle` here (`typeRole` says why that is wrong for Figtree only).
  */
 function Code({ children }: { children?: ReactNode }) {
-  const { styles, bold, italic } = useMarkdownContext();
+  const { styles, bold, italic, opaqueCode } = useMarkdownContext();
   return (
     <Text
       style={[
         styles.code,
+        opaqueCode ? styles.codeOpaque : null,
         bold ? styles.codeBold : null,
         italic ? styles.codeItalic : null,
       ]}
@@ -344,6 +347,7 @@ export function MessageMarkdown({
   trailing,
   onLongPress,
   onMentionPress,
+  opaqueCode = false,
 }: {
   /** `parseMessageMarkdown(message.content)`, memoized by the caller. */
   parsed: ParsedMessageMarkdown;
@@ -366,6 +370,8 @@ export function MessageMarkdown({
    * the handle against the message's own server-resolved `mentions`.
    */
   onMentionPress?: (handle: string) => void;
+  /** Inline code draws foreground on its own fill rather than inheriting the body's color. */
+  opaqueCode?: boolean;
 }) {
   const { tokens } = useFrappTheme();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
@@ -391,8 +397,9 @@ export function MessageMarkdown({
         : undefined,
       bold: false,
       italic: false,
+      opaqueCode,
     }),
-    [styles, hasLongPress, hasMentionPress],
+    [styles, hasLongPress, hasMentionPress, opaqueCode],
   );
   return (
     <MarkdownContext.Provider value={context}>
@@ -450,6 +457,10 @@ function createStyles(tokens: SignetTokens) {
       fontFamily: MONO_FONT_FAMILY,
       backgroundColor: tokens.color.surface.popover,
     },
+    // On the accent bubble the inherited text color is the accent's contrast
+    // color, which isn't checked against this fill, so code takes the
+    // thread's own foreground there (§11 § Bubbles).
+    codeOpaque: { color: tokens.color.text.foreground },
     codeBold: { fontWeight: "700" },
     mention: {
       backgroundColor: tokens.color.semantic.mentionChip,

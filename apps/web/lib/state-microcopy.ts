@@ -36,11 +36,20 @@ export const stateMicrocopy = {
     empty: "No events yet.",
     noUpcoming: "No upcoming events.",
     noPast: "No past events.",
+    // Upcoming holds the next two weeks (#3707); what's after them waits
+    // behind Later, right under this line.
+    noneSoon: "Nothing in the next two weeks.",
     noSearchMatches: "No events match that search.",
     noFilterMatches: "No events match these filters.",
     // On the calendar of a chapter with no events. Officers who can create
     // get the how; everyone else gets the fact.
     calendarFirstEvent: "Pick a day to schedule the first event.",
+    // The compact month (#4022): pressing a day picks it, and New event under
+    // the grid makes one on the picked day.
+    calendarFirstEventCompact:
+      "Pick a day, then New event to schedule the first event.",
+    // The compact month's day list, for a picked day with nothing on it.
+    calendarDayEmpty: "Nothing on this day.",
     calendarNothingYet: "Nothing on the calendar yet.",
     offlineTitle: "Events workspace unavailable offline",
     offlineDescription:

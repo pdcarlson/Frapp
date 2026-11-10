@@ -6,6 +6,7 @@ import {
 } from "@repo/hooks/channel-start";
 import { SignetTokens } from "@repo/theme/signet";
 import { isDirectChannel } from "@repo/validation";
+import type { MemberAvatarTint } from "@repo/hooks";
 import { MemberAvatar } from "@/components/member-avatar";
 import { AuditGlyph } from "@/components/chat/card-glyphs";
 import {
@@ -49,6 +50,7 @@ export function ChannelStart({
   displayName,
   description,
   photoUrl = null,
+  photoTint = null,
 }: {
   /** The channel's `type` as the row carries it. */
   type: string;
@@ -59,6 +61,8 @@ export function ChannelStart({
   description?: string | null;
   /** A 1:1 DM's other member's photo, drawn over their initials. */
   photoUrl?: string | null;
+  /** A 1:1 DM's other member's initials paint (#3860). */
+  photoTint?: MemberAvatarTint | null;
 }) {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
@@ -84,6 +88,7 @@ export function ChannelStart({
         ) : isDirect ? (
           <MemberAvatar
             uri={photoUrl}
+            tint={photoTint}
             initials={initialsFor(displayName)}
             size={START_TILE_SIZE}
             style={styles.photoTile}

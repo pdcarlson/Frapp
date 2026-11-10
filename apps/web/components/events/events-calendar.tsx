@@ -10,6 +10,7 @@ import { compactControlClassName } from "@/components/shared/table-controls";
 import { InlineNote } from "@/components/shared/inline-note";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { formatTimeOfDay, localIsoDate, parseInstant } from "@repo/formatting";
+import { useIsNarrow } from "@/lib/use-is-narrow";
 import { attendanceFieldsOf, eventDefaultAttendance } from "@repo/validation";
 
 type EventRow = Record<string, unknown>;
@@ -18,8 +19,8 @@ type EventsCalendarProps = {
   events: EventRow[];
   onSelectEvent: (event: EventRow) => void;
   /**
-   * Fires when an officer clicks a day's date number to create an event on
-   * that day. `disabled` mirrors `SubscriptionGate.controlProps().disabled` —
+   * Fires when an officer clicks a day's date number (the compact month: the
+   * picked day's New event) to create an event on that day. `disabled` mirrors `SubscriptionGate.controlProps().disabled` —
    * the caller is responsible for gating; this component only renders the
    * disabled state it's given so a lapsed chapter still sees the day it
    * clicked, not a silently inert control.
@@ -53,10 +54,10 @@ type EventsCalendarProps = {
    */
   createTitle?: string;
   /**
-   * Lifted to the parent rather than kept as local state: the Calendar tab
-   * lives inside a Radix `TabsContent`, which unmounts on tab switch by
-   * default, and a `useState` here would silently reset to the current month
-   * every time an officer navigates away and back.
+   * Lifted to the parent rather than kept as local state: the page unmounts
+   * the calendar while the list is showing, and a `useState` here would
+   * silently reset to the current month every time an officer switches to
+   * the list and back.
    */
   monthAnchor: Date;
   onMonthAnchorChange: (next: Date) => void;
@@ -64,6 +65,44 @@ type EventsCalendarProps = {
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MAX_VISIBLE_EVENTS_PER_DAY = 3;
+/**
+ * Below this calendar width the month goes compact (#4022): a day cell is
+ * about 80px, too narrow for an event's name ("Cha…" beside chat at 480px).
+ * The days then carry a dot per event, and the picked day's events are
+ * listed under the grid with their full names.
+ */
+const COMPACT_BELOW_WIDTH = 600;
+const MAX_DOTS_PER_DAY = 3;
+
+/**
+ * What both months draw for one event, so the wide grid's chip and the
+ * compact month's row name it, mark it and badge its series the same way.
+ */
+function calendarEventFacts(event: EventRow) {
+  const eventName = String(event.name ?? "Untitled event");
+  // Required of everyone by default, as the list's badge.
+  const isMandatory =
+    eventDefaultAttendance(attendanceFieldsOf(event)) === "required";
+  // The time of day only: the day is the cell's (or the day list's) own.
+  const clockLabel = formatTimeOfDay(event.start_time);
+  return {
+    eventId: String(event.id ?? event.name ?? "unknown-event"),
+    eventName,
+    isMandatory,
+    // The series head carries `recurrence_rule`; every generated occurrence
+    // carries `parent_event_id` instead (and a null `recurrence_rule`), see
+    // `event-series.service.ts`. Distinct icons so the two don't read as the
+    // same thing.
+    isSeriesHead:
+      typeof event.recurrence_rule === "string" &&
+      event.recurrence_rule.length > 0,
+    isSeriesInstance:
+      typeof event.parent_event_id === "string" &&
+      event.parent_event_id.length > 0,
+    clockLabel,
+    viewLabel: `View ${eventName}${clockLabel ? `, ${clockLabel}` : ""}${isMandatory ? ", mandatory" : ""}`,
+  };
+}
 
 export function startOfMonth(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), 1);
@@ -119,6 +158,13 @@ export function EventsCalendar({
   // every other day too. Reset is implicit: a fresh month grid means fresh
   // keys, so navigating away and back naturally collapses everything.
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
+  // Measured, not a viewport query: beside chat the page is narrow while the
+  // window is wide. Unmeasured (the server, tests) draws the full month.
+  const [sectionRef, narrow] = useIsNarrow<HTMLElement>(COMPACT_BELOW_WIDTH);
+  const compact = narrow === true;
+  // The compact month's picked day. Kept even when the month changes; a key
+  // outside the shown month falls back below, so it needs no reset.
+  const [pickedKey, setPickedKey] = useState<string | null>(null);
 
   const days = useMemo(() => buildMonthGrid(monthAnchor), [monthAnchor]);
 
@@ -166,10 +212,32 @@ export function EventsCalendar({
   }
   function goToToday() {
     onMonthAnchorChange(startOfMonth(new Date()));
+    setPickedKey(todayKey);
+  }
+  // A day from the month before or after (the grid's leading and trailing
+  // days carry their dots too) opens its own month, as a phone calendar does.
+  function pickDay(day: Date) {
+    if (day.getMonth() !== monthAnchor.getMonth()) {
+      onMonthAnchorChange(startOfMonth(day));
+    }
+    setPickedKey(localDayKey(day));
   }
 
+  // The compact month's day: the one picked if it is in this month, else
+  // today when this is the current month, else the 1st.
+  const monthKeyPrefix = localDayKey(startOfMonth(monthAnchor)).slice(0, 7);
+  const shownDayKey = pickedKey?.startsWith(monthKeyPrefix)
+    ? pickedKey
+    : todayKey.startsWith(monthKeyPrefix)
+      ? todayKey
+      : localDayKey(startOfMonth(monthAnchor));
+
   return (
-    <section aria-labelledby="events-calendar-month" className="space-y-3">
+    <section
+      ref={sectionRef}
+      aria-labelledby="events-calendar-month"
+      className="space-y-3"
+    >
       <div className="flex items-center justify-between gap-2">
         <h2 id="events-calendar-month" className="text-base font-semibold">
           {monthLabel}
@@ -207,175 +275,382 @@ export function EventsCalendar({
             above the toolbar says why the days are off.
           */}
           {canCreate && !createDisabled
-            ? stateMicrocopy.events.calendarFirstEvent
+            ? compact
+              ? stateMicrocopy.events.calendarFirstEventCompact
+              : stateMicrocopy.events.calendarFirstEvent
             : stateMicrocopy.events.calendarNothingYet}
         </InlineNote>
       )}
 
-      {/*
+      {compact ? (
+        <CompactMonth
+          days={days}
+          monthAnchor={monthAnchor}
+          todayKey={todayKey}
+          eventsByDay={eventsByDay}
+          shownDayKey={shownDayKey}
+          onPickDay={pickDay}
+          onSelectEvent={onSelectEvent}
+          onCreateOnDay={onCreateOnDay}
+          canCreate={canCreate}
+          createDisabled={createDisabled}
+          createDescribedBy={createDescribedBy}
+          createTitle={createTitle}
+        />
+      ) : (
+        /*
         A hairline frame on the page surface, not a card: the grid's 1px gaps
         show `--border` between cells that paint `--background`.
-      */}
-      <div className="overflow-hidden rounded-[14px] border border-border">
-        <div className="grid grid-cols-7 gap-px bg-border text-xs font-semibold text-muted-foreground">
-          {WEEKDAY_LABELS.map((label) => (
-            <div key={label} className="bg-background px-2 py-1.5 text-center">
-              {label}
-            </div>
-          ))}
-        </div>
-
-        <div className="grid grid-cols-7 gap-px bg-border">
-          {days.map((day) => {
-            const key = localDayKey(day);
-            const dayEvents = eventsByDay.get(key) ?? [];
-            const isCurrentMonth = day.getMonth() === monthAnchor.getMonth();
-            const isToday = key === todayKey;
-            const isExpanded = expandedDays.has(key);
-            const visibleEvents =
-              isExpanded || dayEvents.length <= MAX_VISIBLE_EVENTS_PER_DAY
-                ? dayEvents
-                : dayEvents.slice(0, MAX_VISIBLE_EVENTS_PER_DAY);
-            const overflowCount = dayEvents.length - visibleEvents.length;
-            const dayLabel = day.toLocaleDateString(undefined, {
-              month: "long",
-              day: "numeric",
-              year: "numeric",
-            });
-
-            return (
+      */
+        <div className="overflow-hidden rounded-[14px] border border-border">
+          <div className="grid grid-cols-7 gap-px bg-border text-xs font-semibold text-muted-foreground">
+            {WEEKDAY_LABELS.map((label) => (
               <div
-                key={key}
-                className={cn(
-                  "flex min-h-24 flex-col gap-1 p-2",
-                  isCurrentMonth ? "bg-background" : "bg-surface-1",
-                )}
+                key={label}
+                className="bg-background px-2 py-1.5 text-center"
               >
-                {canCreate ? (
-                  <button
-                    type="button"
-                    disabled={createDisabled}
-                    title={createTitle}
-                    aria-label={`Create event on ${dayLabel}`}
-                    aria-describedby={createDescribedBy}
-                    className={cn(
-                      dayNumberClassName(isToday, isCurrentMonth),
-                      "transition-colors",
-                      FOCUS_RING,
-                      "hover:bg-card-hover disabled:pointer-events-none disabled:text-disabled",
-                    )}
-                    onClick={() => onCreateOnDay(day)}
-                  >
-                    {day.getDate()}
-                  </button>
-                ) : (
-                  <span className={dayNumberClassName(isToday, isCurrentMonth)}>
-                    {day.getDate()}
-                  </span>
-                )}
+                {label}
+              </div>
+            ))}
+          </div>
 
-                {/*
+          <div className="grid grid-cols-7 gap-px bg-border">
+            {days.map((day) => {
+              const key = localDayKey(day);
+              const dayEvents = eventsByDay.get(key) ?? [];
+              const isCurrentMonth = day.getMonth() === monthAnchor.getMonth();
+              const isToday = key === todayKey;
+              const isExpanded = expandedDays.has(key);
+              const visibleEvents =
+                isExpanded || dayEvents.length <= MAX_VISIBLE_EVENTS_PER_DAY
+                  ? dayEvents
+                  : dayEvents.slice(0, MAX_VISIBLE_EVENTS_PER_DAY);
+              const overflowCount = dayEvents.length - visibleEvents.length;
+              const dayLabel = day.toLocaleDateString(undefined, {
+                month: "long",
+                day: "numeric",
+                year: "numeric",
+              });
+
+              return (
+                <div
+                  key={key}
+                  className={cn(
+                    "flex min-h-24 flex-col gap-1 p-2",
+                    isCurrentMonth ? "bg-background" : "bg-surface-1",
+                  )}
+                >
+                  {canCreate ? (
+                    <button
+                      type="button"
+                      disabled={createDisabled}
+                      title={createTitle}
+                      aria-label={`Create event on ${dayLabel}`}
+                      aria-describedby={createDescribedBy}
+                      className={cn(
+                        dayNumberClassName(isToday, isCurrentMonth),
+                        "transition-colors",
+                        FOCUS_RING,
+                        "hover:bg-card-hover disabled:pointer-events-none disabled:text-disabled",
+                      )}
+                      onClick={() => onCreateOnDay(day)}
+                    >
+                      {day.getDate()}
+                    </button>
+                  ) : (
+                    <span
+                      className={dayNumberClassName(isToday, isCurrentMonth)}
+                    >
+                      {day.getDate()}
+                    </span>
+                  )}
+
+                  {/*
                   Rule 2 of the empty-states plan: the first action sits where
                   the first item will go. A pointer target only: the day
                   number above is the same action and the one a keyboard or a
                   screen reader reaches, so this stays out of both.
                 */}
-                {isToday &&
-                canCreate &&
-                !createDisabled &&
-                !chapterHasEvents ? (
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    aria-hidden="true"
-                    data-testid="calendar-first-event-slot"
-                    className={cn(
-                      "flex h-7 items-center justify-center rounded-xs border border-dashed border-input text-muted-foreground transition-colors",
-                      "hover:bg-card-hover hover:text-foreground",
-                    )}
-                    onClick={() => onCreateOnDay(day)}
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </button>
-                ) : null}
-
-                <div className="flex flex-col gap-1">
-                  {visibleEvents.map((event) => {
-                    const eventId = String(
-                      event.id ?? event.name ?? "unknown-event",
-                    );
-                    const eventName = String(event.name ?? "Untitled event");
-                    // Required of everyone by default, as the list's badge.
-                    const isMandatory =
-                      eventDefaultAttendance(attendanceFieldsOf(event)) ===
-                      "required";
-                    // The series head carries `recurrence_rule`; every
-                    // generated occurrence carries `parent_event_id` instead
-                    // (and a null `recurrence_rule`) — see
-                    // `event-series.service.ts`. Distinct icons so the two don't
-                    // read as the same thing on the grid.
-                    const isSeriesHead =
-                      typeof event.recurrence_rule === "string" &&
-                      event.recurrence_rule.length > 0;
-                    const isSeriesInstance =
-                      typeof event.parent_event_id === "string" &&
-                      event.parent_event_id.length > 0;
-                    // The time of day only: the day is the cell's own.
-                    const clockLabel = formatTimeOfDay(event.start_time);
-
-                    return (
-                      <button
-                        key={eventId}
-                        type="button"
-                        title={eventName}
-                        aria-label={`View ${eventName}${clockLabel ? `, ${clockLabel}` : ""}${isMandatory ? ", mandatory" : ""}`}
-                        className={cn(
-                          "flex items-center gap-1 truncate rounded-xs border-l-2 bg-surface-1 px-1.5 py-1 text-left text-[11px] font-semibold text-foreground transition-colors",
-                          FOCUS_RING,
-                          "hover:bg-card-hover",
-                          isMandatory ? "border-l-primary" : "border-l-border",
-                        )}
-                        onClick={() => onSelectEvent(event)}
-                      >
-                        {isSeriesHead ? (
-                          <EventsGlyph className="h-3 w-3 shrink-0 text-muted-foreground" />
-                        ) : null}
-                        {isSeriesInstance ? (
-                          <Repeat
-                            aria-hidden="true"
-                            className="h-3 w-3 shrink-0 text-muted-foreground"
-                          />
-                        ) : null}
-                        <span className="truncate">{eventName}</span>
-                      </button>
-                    );
-                  })}
-                  {overflowCount > 0 ? (
+                  {isToday &&
+                  canCreate &&
+                  !createDisabled &&
+                  !chapterHasEvents ? (
                     <button
                       type="button"
+                      tabIndex={-1}
+                      aria-hidden="true"
+                      data-testid="calendar-first-event-slot"
                       className={cn(
-                        "rounded-xs px-1.5 py-0.5 text-left text-[11px] font-semibold text-muted-foreground transition-colors",
-                        FOCUS_RING,
+                        "flex h-7 items-center justify-center rounded-xs border border-dashed border-input text-muted-foreground transition-colors",
                         "hover:bg-card-hover hover:text-foreground",
                       )}
-                      aria-label={`Show ${overflowCount} more event${overflowCount > 1 ? "s" : ""} on ${dayLabel}`}
-                      onClick={() =>
-                        setExpandedDays((previous) => {
-                          const next = new Set(previous);
-                          next.add(key);
-                          return next;
-                        })
-                      }
+                      onClick={() => onCreateOnDay(day)}
                     >
-                      +{overflowCount} more
+                      <Plus className="h-3.5 w-3.5" />
                     </button>
                   ) : null}
+
+                  <div className="flex flex-col gap-1">
+                    {visibleEvents.map((event) => {
+                      const {
+                        eventId,
+                        eventName,
+                        isMandatory,
+                        isSeriesHead,
+                        isSeriesInstance,
+                        viewLabel,
+                      } = calendarEventFacts(event);
+
+                      return (
+                        <button
+                          key={eventId}
+                          type="button"
+                          title={eventName}
+                          aria-label={viewLabel}
+                          className={cn(
+                            "flex items-center gap-1 truncate rounded-xs border-l-2 bg-surface-1 px-1.5 py-1 text-left text-[11px] font-semibold text-foreground transition-colors",
+                            FOCUS_RING,
+                            "hover:bg-card-hover",
+                            isMandatory
+                              ? "border-l-primary"
+                              : "border-l-border",
+                          )}
+                          onClick={() => onSelectEvent(event)}
+                        >
+                          {isSeriesHead ? (
+                            <EventsGlyph className="h-3 w-3 shrink-0 text-muted-foreground" />
+                          ) : null}
+                          {isSeriesInstance ? (
+                            <Repeat
+                              aria-hidden="true"
+                              className="h-3 w-3 shrink-0 text-muted-foreground"
+                            />
+                          ) : null}
+                          <span className="truncate">{eventName}</span>
+                        </button>
+                      );
+                    })}
+                    {overflowCount > 0 ? (
+                      <button
+                        type="button"
+                        className={cn(
+                          "rounded-xs px-1.5 py-0.5 text-left text-[11px] font-semibold text-muted-foreground transition-colors",
+                          FOCUS_RING,
+                          "hover:bg-card-hover hover:text-foreground",
+                        )}
+                        aria-label={`Show ${overflowCount} more event${overflowCount > 1 ? "s" : ""} on ${dayLabel}`}
+                        onClick={() =>
+                          setExpandedDays((previous) => {
+                            const next = new Set(previous);
+                            next.add(key);
+                            return next;
+                          })
+                        }
+                      >
+                        +{overflowCount} more
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+type CompactMonthProps = {
+  days: Date[];
+  monthAnchor: Date;
+  todayKey: string;
+  eventsByDay: Map<string, EventRow[]>;
+  shownDayKey: string;
+  onPickDay: (day: Date) => void;
+} & Pick<
+  EventsCalendarProps,
+  | "onSelectEvent"
+  | "onCreateOnDay"
+  | "canCreate"
+  | "createDisabled"
+  | "createDescribedBy"
+  | "createTitle"
+>;
+
+/**
+ * The month on a narrow page (#4022), the shape Google Calendar's and Apple
+ * Calendar's phone month views use: each day a dot per event (up to three),
+ * pressing a day picks it, and the picked day's events are listed under the
+ * grid with their full names and times. Nothing is cut: every event opens
+ * from the list, and a creator makes one on the picked day from its
+ * "New event" button, which is what the day number does on the wide month.
+ */
+function CompactMonth({
+  days,
+  monthAnchor,
+  todayKey,
+  eventsByDay,
+  shownDayKey,
+  onPickDay,
+  onSelectEvent,
+  onCreateOnDay,
+  canCreate,
+  createDisabled,
+  createDescribedBy,
+  createTitle,
+}: CompactMonthProps) {
+  const shownDay =
+    days.find((day) => localDayKey(day) === shownDayKey) ?? days[0]!;
+  const shownEvents = eventsByDay.get(shownDayKey) ?? [];
+  const shownDayLabel = shownDay.toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+
+  return (
+    <div className="space-y-3">
+      <div className="overflow-hidden rounded-[14px] border border-border">
+        <div
+          aria-hidden="true"
+          className="grid grid-cols-7 gap-px bg-border text-caption font-semibold text-muted-foreground"
+        >
+          {WEEKDAY_LABELS.map((label) => (
+            <div key={label} className="bg-background py-1.5 text-center">
+              {label.slice(0, 1)}
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-px bg-border">
+          {days.map((day) => {
+            const key = localDayKey(day);
+            const count = eventsByDay.get(key)?.length ?? 0;
+            const isCurrentMonth = day.getMonth() === monthAnchor.getMonth();
+            const isToday = key === todayKey;
+            const isPicked = key === shownDayKey;
+            const dayLabel = day.toLocaleDateString(undefined, {
+              month: "long",
+              day: "numeric",
+            });
+            return (
+              <button
+                key={key}
+                type="button"
+                aria-pressed={isPicked}
+                aria-label={`${dayLabel}, ${count === 0 ? "no events" : `${count} event${count > 1 ? "s" : ""}`}`}
+                className={cn(
+                  "flex min-h-11 flex-col items-center gap-1 py-1.5 transition-colors",
+                  FOCUS_RING,
+                  isPicked
+                    ? "bg-popover"
+                    : isCurrentMonth
+                      ? "bg-background hover:bg-card-hover"
+                      : "bg-surface-1 hover:bg-card-hover",
+                )}
+                onClick={() => onPickDay(day)}
+              >
+                <span
+                  className={cn(
+                    dayNumberClassName(isToday, isCurrentMonth),
+                    "h-6 w-6 self-center",
+                  )}
+                >
+                  {day.getDate()}
+                </span>
+                <span aria-hidden="true" className="flex h-1.5 gap-0.5">
+                  {Array.from(
+                    { length: Math.min(count, MAX_DOTS_PER_DAY) },
+                    (_, index) => (
+                      <span
+                        key={index}
+                        className="h-1.5 w-1.5 rounded-full bg-primary"
+                      />
+                    ),
+                  )}
+                </span>
+              </button>
             );
           })}
         </div>
       </div>
-    </section>
+
+      <section aria-labelledby="events-calendar-day" className="space-y-1">
+        <div className="flex min-h-9 items-center justify-between gap-2 px-2">
+          <h3
+            id="events-calendar-day"
+            className="text-caption font-semibold text-foreground"
+          >
+            {shownDayLabel}
+          </h3>
+          {canCreate ? (
+            <Button
+              variant="ghost"
+              size="toolbar"
+              className="gap-1.5"
+              disabled={createDisabled}
+              title={createTitle}
+              aria-describedby={createDescribedBy}
+              aria-label={`New event on ${shownDayLabel}`}
+              onClick={() => onCreateOnDay(shownDay)}
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              New event
+            </Button>
+          ) : null}
+        </div>
+        {shownEvents.length === 0 ? (
+          <p className="px-2 text-sm text-muted-foreground">
+            {stateMicrocopy.events.calendarDayEmpty}
+          </p>
+        ) : (
+          <ul role="list" className="space-y-1">
+            {shownEvents.map((event) => {
+              const {
+                eventId,
+                eventName,
+                isMandatory,
+                isSeriesHead,
+                isSeriesInstance,
+                clockLabel,
+                viewLabel,
+              } = calendarEventFacts(event);
+              return (
+                <li key={eventId}>
+                  <button
+                    type="button"
+                    title={eventName}
+                    aria-label={viewLabel}
+                    className={cn(
+                      "flex min-h-11 w-full items-center gap-3 rounded-md border-l-2 px-2 py-1.5 text-left transition-colors",
+                      FOCUS_RING,
+                      "hover:bg-card-hover",
+                      isMandatory ? "border-l-primary" : "border-l-border",
+                    )}
+                    onClick={() => onSelectEvent(event)}
+                  >
+                    <span className="w-16 shrink-0 text-caption tabular-nums text-muted-foreground">
+                      {clockLabel ?? ""}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
+                      {eventName}
+                    </span>
+                    {isSeriesHead ? (
+                      <EventsGlyph className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    ) : null}
+                    {isSeriesInstance ? (
+                      <Repeat
+                        aria-hidden="true"
+                        className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                      />
+                    ) : null}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+    </div>
   );
 }
