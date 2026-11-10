@@ -44,6 +44,9 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
       .select('*')
       .eq('chapter_id', chapterId);
 
+    if (filters?.uploader_id) {
+      query = query.eq('uploader_id', filters.uploader_id);
+    }
     if (filters?.department_id) {
       query = query.eq('department_id', filters.department_id);
     }

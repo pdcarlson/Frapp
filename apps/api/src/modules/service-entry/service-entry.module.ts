@@ -30,5 +30,7 @@ import { AuthModule } from '../auth/auth.module';
     },
     { provide: STORAGE_PROVIDER, useClass: SupabaseStorageService },
   ],
+  // ActivityModule reads the approval queue through the service (#3897).
+  exports: [ServiceEntryService],
 })
 export class ServiceEntryModule {}

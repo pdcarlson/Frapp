@@ -22,5 +22,7 @@ import { SupabaseStorageService } from '../../infrastructure/storage/supabase-st
     },
     { provide: STORAGE_PROVIDER, useClass: SupabaseStorageService },
   ],
+  // ActivityModule reads a member's own uploads through the service (#3897).
+  exports: [ChapterDocumentService],
 })
 export class ChapterDocumentModule {}

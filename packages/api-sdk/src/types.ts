@@ -3084,6 +3084,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get what needs the caller and what they made
+         * @description The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the tasks they assigned and the files they uploaded. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.
+         */
+        get: operations["ActivityController_getActivity_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/chapter-directory/search": {
         parameters: {
             query?: never;
@@ -5453,6 +5473,151 @@ export interface components {
             actor: components["schemas"]["ActivityFeedActorDto"] | null;
             /** @description The underlying record id (event, point transaction, backwork resource, joining member’s user id, or announcement channel id) for client-side navigation. */
             target_id: string;
+        };
+        ActivityTaskDto: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            /**
+             * Format: date
+             * @example 2026-11-20
+             */
+            due_date: string;
+            /**
+             * @description Display status: OVERDUE for an open task past its due date.
+             * @enum {string}
+             */
+            status: "TODO" | "IN_PROGRESS" | "COMPLETED" | "OVERDUE";
+            /**
+             * @description The status actually stored, which the next transition is checked against.
+             * @enum {string}
+             */
+            stored_status: "TODO" | "IN_PROGRESS" | "COMPLETED" | "OVERDUE";
+            /** Format: uuid */
+            assignee_id: string;
+            /** @description Empty when the member cannot be resolved (they have left). */
+            assignee_name: string;
+            /** Format: uuid */
+            created_by: string;
+            /** @description Empty when the member cannot be resolved (they have left). */
+            created_by_name: string;
+            point_reward: number | null;
+            /** Format: date-time */
+            completed_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        ActivityHoursEntryDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            user_id: string;
+            /** @description Empty when the member cannot be resolved (they have left). */
+            member_name: string;
+            /**
+             * Format: date
+             * @example 2026-11-08
+             */
+            date: string;
+            duration_minutes: number;
+            description: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        ActivityPollDto: {
+            /**
+             * Format: uuid
+             * @description The chat message that is the poll card. It is served whole in `message`; this row carries no tallies.
+             */
+            message_id: string;
+            /** Format: uuid */
+            channel_id: string;
+            /** @description The channel’s name. A direct message’s is server-generated, so label those from `channel_type`. */
+            channel_name: string;
+            /** @enum {string} */
+            channel_type: "PUBLIC" | "PRIVATE" | "ROLE_GATED" | "DM" | "GROUP_DM";
+            /** Format: uuid */
+            sender_id: string | null;
+            question: string;
+            option_count: number;
+            /**
+             * Format: date-time
+             * @description When voting stops. Null for a card posted with no usable deadline, which stays open.
+             */
+            closes_at: string | null;
+            /**
+             * Format: date-time
+             * @description Set when its creator closed it early.
+             */
+            closed_at: string | null;
+            is_closed: boolean;
+            has_voted: boolean;
+            /** Format: date-time */
+            created_at: string;
+            /** @description The poll’s chat message, as `GET /v1/channels/{id}/messages` serves it, for chat’s own poll card. Its votes are read from `chat_message_actions`, as chat reads them. */
+            message: components["schemas"]["ChatMessageDto"];
+        };
+        ActivityNeedsYouDto: {
+            /** @description Open tasks assigned to the caller, soonest due first. */
+            tasks: components["schemas"]["ActivityTaskDto"][];
+            /** @description Finished tasks the caller can confirm (`tasks:manage`, never their own), longest waiting first. */
+            task_confirmations: components["schemas"]["ActivityTaskDto"][];
+            /** @description Pending service entries the caller can approve (`service:approve`, never their own), oldest first. */
+            hours_approvals: components["schemas"]["ActivityHoursEntryDto"][];
+            /** @description Open polls from other members, in channels the caller can read, that the caller hasn’t voted on. Soonest closing first. */
+            polls: components["schemas"]["ActivityPollDto"][];
+        };
+        ActivityEventDto: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            location: string | null;
+            /** Format: date-time */
+            start_time: string;
+            /** Format: date-time */
+            end_time: string;
+            /**
+             * @description What the event asks of the caller, not the event’s default: a role of theirs the event lists decides it, and an alumnus the default alone would require is optional.
+             * @enum {string}
+             */
+            attendance: "required" | "optional";
+            point_value: number;
+            check_in_opens_minutes: number;
+            /** @description Whether the caller can check in right now: the window is open and check-in would not refuse them. */
+            check_in_open: boolean;
+            /** @description Whether the caller has an attendance row for it. Read only while check-in is open; null otherwise, and when that read failed. */
+            checked_in: boolean | null;
+        };
+        ActivityFileDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description Which module holds it: a chapter document or a backwork resource.
+             * @enum {string}
+             */
+            source: "document" | "backwork";
+            /** @description Empty for a backwork resource with no title. */
+            title: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        ActivityMadeByYouDto: {
+            /** @description Poll cards the caller posted, newest first. */
+            polls: components["schemas"]["ActivityPollDto"][];
+            /** @description Tasks the caller assigned, newest first. Empty unless the caller still holds `tasks:manage`. */
+            tasks: components["schemas"]["ActivityTaskDto"][];
+            /** @description Documents and backwork the caller uploaded, newest first. */
+            files: components["schemas"]["ActivityFileDto"][];
+        };
+        ActivityDto: {
+            needs_you: components["schemas"]["ActivityNeedsYouDto"];
+            /** @description Events that invite the caller and start within 14 days, or whose check-in is still open, soonest first. At most 10. */
+            coming_up: components["schemas"]["ActivityEventDto"][];
+            made_by_you: components["schemas"]["ActivityMadeByYouDto"];
+            /** @description How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t. */
+            needs_you_count: number;
+            /** @description Sections that could not be read this time. Each is served empty; the others are unaffected. */
+            unavailable: ("tasks" | "hours_approvals" | "polls" | "coming_up" | "files")[];
         };
         CreateDiscordImportDto: {
             /** @description The admin confirms they have posted an in-channel notice in their Discord server telling members the history is being archived into Frapp. Required — the API refuses without it, and the column is NOT NULL, so no import can exist that was not preceded by this. */
@@ -12749,6 +12914,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ActivityFeedItemDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_getActivity_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityDto"];
                 };
             };
             /** @description Error */
