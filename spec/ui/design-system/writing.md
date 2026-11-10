@@ -409,13 +409,15 @@ Why the states are split this way:
 | Loading | — | `Generating report...` |
 | Empty filter | — | `Nothing in this chapter matches these filters.` (one line) |
 | Error | `Couldn't generate <kind> report` | the API's own message, or the load-failure line (§ copy rules) |
-| Truncated | `Incomplete report` (badge) | `<cap summary> This preview and the CSV built from it are not a complete record of the chapter.` |
+| Truncated | `Incomplete report` (badge) | `<cap summary> This preview and any export built from it are not a complete record of the chapter.` |
 | Permission denied | — | `Your role can't export chapter data. Ask your chapter president for access.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can export chapter data.` |
 
 **This table had no Error row until the Resources & Reporting slice, and that is why the screen had no error state.** A failed run reported a toast and never touched `preview`, so the panel fell through to the Idle copy — a failure rendering as "nothing has happened yet", against [README.md](README.md) §4's requirement of an error state with a retry path on every async view. The Idle and Empty-filter titles were added in the same pass: [components.md](components.md) §10's state family needs a title and a description, and the approved sentences are kept verbatim as the descriptions rather than rewritten.
 
-**The Truncated row is a state, not a toast.** [`../../behavior/reports.md`](../../behavior/reports.md) caps a report at 5,000 rows and requires that truncation is never silent; the toast fires once and then a partial table sits on screen claiming to be the whole report, and the CSV built from it carries that claim into a file. The badge is [components.md](components.md) §5's Semantic warning kind, which needs no §1 lift on its own tint.
+**The Truncated row is a state, not a toast.** [`../../behavior/reports.md`](../../behavior/reports.md) caps a report at 5,000 rows and requires that truncation is never silent; the toast fires once and then a partial table sits on screen claiming to be the whole report, and the export built from it carries that claim into a file. The badge is [components.md](components.md) §5's Semantic warning kind, which needs no §1 lift on its own tint.
+
+Changed in #3977 by shawnatomklein-eng, 2026-11-10: the Truncated description says "any export" where it said "the CSV", because the export is now a file-type menu (CSV, Excel, copy for Google Sheets; [`../../behavior/reports.md`](../../behavior/reports.md)).
 
 ### Backwork (dashboard)
 

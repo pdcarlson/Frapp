@@ -44,13 +44,48 @@ body. The bucket carries no storage RLS policies: it is written only by the API'
 service-role client and read only through the URLs the API signs, so a generated
 export is never publicly addressable and never reachable across chapters.
 
-The dashboard additionally builds a CSV client-side from the previewed rows, which
-is why its "Download CSV" button issues no second request.
+The dashboard additionally builds its own export client-side from the previewed
+rows, which is why its "Export" button issues no second request.
 
 Column identity, order, and labels are shared between the CSV and PDF exports.
 Individual cell values are rendered for their audience: CSV emits composite
 values as JSON so a spreadsheet import stays parseable, the PDF flattens them
 for reading (`ATTENDANCE: 12, SERVICE: 4`).
+
+### Choosing the file type (dashboard exports)
+
+*(2026-11-10, #3969; Shawn's addition, after the export menus in Stripe's
+dashboard, Notion, Airtable and Google Sheets' File → Download.)* Every
+client-side dashboard export (this page's **Export**, and **Export selected** on
+Points transactions and on Billing invoices) is one button that opens a
+**File type** menu, not a one-shot `.csv` download. A `.csv` opens in whatever
+spreadsheet app the computer has, so the old button read as "it goes to Excel"
+with no choice. The menu offers:
+
+| Choice                 | What the member gets                                                                                                                                                                                                                         |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CSV                    | `frapp-<name>-<date>.csv`, UTF-8 with a BOM and CRLF line endings, readable by any spreadsheet app.                                                                                                                                             |
+| Excel (.xlsx)          | `frapp-<name>-<date>.xlsx`, a real workbook with a bold, frozen header row. A column is typed as numbers, currency, dates or timestamps (UTC) when every non-empty cell in it is one, and as text otherwise.                                    |
+| Copy for Google Sheets | The rows on the clipboard as tab-separated text, and a "Copied N rows. Paste into a Google Sheet." notice. It uses no Google account connection; creating a Sheet in the member's Drive is out of scope until the Google connection (#3927). |
+
+All three carry the same rows and columns. `<date>` in a filename is the
+member's local day. A truncated report's clipboard copy says "Copied an
+incomplete report" in place of the plain copied notice. Workbook columns are
+sized to their contents. The browser remembers the last file
+type used (localStorage, per browser, not per account) and marks it **Last
+used** in the menu.
+
+A cell that a spreadsheet would run as a formula (text starting with `=`, `+`,
+`-`, `@`, a tab or a carriage return) is made inert: CSV and the clipboard copy
+prefix it with an apostrophe, and the workbook stores it as a text cell. Plain
+numbers and currency amounts (`-5`, `-$12.00`) are left as values. In the
+clipboard copy a tab or line break inside a cell becomes a space, and a cell
+holding a double quote is quoted as in CSV, so a paste keeps every cell in its
+own column. The workbook
+writer loads only when Excel is picked. One menu component
+(`apps/web/components/shared/export-menu.tsx`) and one set of helpers
+(`exportRows` and its neighbors in `apps/web/lib/utils.ts`) serve all three
+exports.
 
 ### Retention
 
@@ -153,8 +188,9 @@ All three headers are named in the API's CORS `exposedHeaders`
 (`apps/api/src/interface/http/cors.options.ts`), and the
 dashboard reads them: the report hooks return the truncation flags alongside
 the rows, the preview toast says the report is incomplete instead of quoting a
-row count, and downloading the CSV — which is serialized from that preview —
-warns again at the moment the file leaves the app. Exposing headers nobody
+row count, and exporting from the dashboard (CSV, Excel or the clipboard copy,
+each serialized from that preview) warns again at the moment the rows leave the
+app. Exposing headers nobody
 reads would have been decoration. A truncated report is also logged as a
 warning by the API, for callers that discard headers.
 
@@ -162,7 +198,8 @@ warning by the API, for callers that discard headers.
 `INCOMPLETE — …` into the document. Keeping the CSV body clean is deliberate —
 it is consumed by parsers, and a preamble row would break them — but it means
 a downloaded CSV, once detached from the app, no longer says it is short. The
-warnings above sit either side of that gap rather than closing it.
+dashboard's `.xlsx` and clipboard copy carry no marker either. The warnings
+above sit either side of that gap rather than closing it.
 
 The in-document clause is deliberately plain ASCII. The standard PDF fonts are
 Latin-1 only, so a warning glyph like `⚠` folds to `?` under the rules in
