@@ -291,6 +291,18 @@ export function ChannelMenu({
           view === "search" ? "w-[min(32rem,calc(100vw-1rem))]" : "w-80",
         )}
         align="end"
+        // An open picker inside a panel (search's `from:` / `in:` list) takes
+        // Escape first, as a combobox does; the panel puts its list away.
+        // Without this Escape would close the menu and drop the search.
+        onEscapeKeyDown={(event) => {
+          const target = event.target;
+          if (
+            target instanceof Element &&
+            target.closest('[role="combobox"][aria-expanded="true"]')
+          ) {
+            event.preventDefault();
+          }
+        }}
       >
         {view === "menu" ? (
           <ul className="divide-y divide-border">

@@ -59,7 +59,7 @@ that apart from a channel with no matches. Narrowing has to reach SQL.
 
 `GET /v1/search` takes four optional filters on the `messages` source (#3958, asked by Shawn
 2026-11-10; web's chat search panel sends them from its filter chips,
-[`chat/README.md`](chat/README.md) § Search):
+[`chat/README.md`](chat/README.md#messages) § Messages, the **Search** block):
 
 | Parameter | Matches | Notes |
 | --- | --- | --- |

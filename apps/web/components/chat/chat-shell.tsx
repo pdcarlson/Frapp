@@ -11,6 +11,7 @@ import { createPortal } from "react-dom";
 import { MembersGlyph } from "./chat-glyphs";
 import { ChannelMemberList } from "./channel-member-list";
 import { channelDescription } from "@repo/hooks/channel-start";
+import { memberLabel } from "@repo/hooks/display-names";
 import { useReportOpenChatTransport } from "@repo/hooks/open-chat-transport";
 import { ChannelHeaderTitle } from "./channel-header-title";
 import { ChannelStart } from "./channel-start";
@@ -904,7 +905,9 @@ export function ChatShell({
   const searchMembers = useMemo(
     () =>
       Object.entries(memberNames)
-        .map(([id, label]) => ({ id, label }))
+        // `memberLabel`, not the raw name: a member who never set one holds
+        // `''`, which would be a blank first row that Enter picks.
+        .map(([id, name]) => ({ id, label: memberLabel(name, id) }))
         .sort((a, b) => a.label.localeCompare(b.label)),
     [memberNames],
   );

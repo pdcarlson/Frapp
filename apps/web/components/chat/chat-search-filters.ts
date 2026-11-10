@@ -1,5 +1,6 @@
 import { parseBareDateLocalMidnight } from "@repo/formatting";
-import type { SearchHasTrait } from "@repo/hooks";
+import { filterChannelMembers, type SearchHasTrait } from "@repo/hooks";
+import { dateFilterLabel } from "@repo/hooks/document-library";
 
 /**
  * The pure half of the chat search filters (#3958): how a Date choice becomes
@@ -38,6 +39,18 @@ export const SEARCH_HAS_TRAITS: readonly {
   { trait: "poll", label: "Poll" },
 ];
 
+/**
+ * A custom field's day, or `null` while it is unfinished. A date field reports
+ * a complete value on every digit of the year (`0002`, `0020`, `0202`, `2026`),
+ * and each would be a request of its own, the first three of them scans of
+ * everything since the year 2. No message predates the product, so a year
+ * before 2000 is a year still being typed.
+ */
+function customDay(value: string | undefined): Date | null {
+  const day = value ? parseBareDateLocalMidnight(value) : null;
+  return day && day.getFullYear() >= 2000 ? day : null;
+}
+
 /** Local midnight `days` calendar days from `day` (DST-safe: by date, not by 24h). */
 function localMidnight(day: Date, days = 0): Date {
   return new Date(day.getFullYear(), day.getMonth(), day.getDate() + days);
@@ -67,8 +80,8 @@ export function searchDateBounds(
     case "30d":
       return { after: localMidnight(now, -30).toISOString() };
     case "custom": {
-      let from = filter.from ? parseBareDateLocalMidnight(filter.from) : null;
-      let to = filter.to ? parseBareDateLocalMidnight(filter.to) : null;
+      let from = customDay(filter.from);
+      let to = customDay(filter.to);
       if (from && to && from.getTime() > to.getTime()) [from, to] = [to, from];
       return {
         ...(from ? { after: from.toISOString() } : {}),
@@ -76,6 +89,26 @@ export function searchDateBounds(
       };
     }
   }
+}
+
+/**
+ * The Date chip's value, or `null` when the choice narrows nothing: any time,
+ * or a custom range with no finished date, which is a filter in waiting and
+ * must not paint as set (`isActiveDateFilter`'s rule in Documents). A custom
+ * range is named the way Documents names one, by the same function.
+ */
+export function searchDateLabel(filter: SearchDateFilter): string | null {
+  if (filter.preset === "any") return null;
+  if (filter.preset !== "custom") {
+    return (
+      SEARCH_DATE_PRESETS.find((entry) => entry.preset === filter.preset)
+        ?.label ?? null
+    );
+  }
+  const from = customDay(filter.from) ? (filter.from ?? null) : null;
+  const to = customDay(filter.to) ? (filter.to ?? null) : null;
+  if (!from && !to) return null;
+  return dateFilterLabel({ preset: "custom", from, to });
 }
 
 export type SearchTokenKind = "from" | "in";
@@ -89,19 +122,20 @@ export interface SearchToken {
 }
 
 /**
- * A `from:` or `in:` the member is typing, when it is the last thing in the
- * box. It runs to the end of the text, so a name with a space in it
- * (`from:ada lov`) keeps narrowing the picker. Words before it stay the search
- * text.
+ * A `from:` or `in:` the member is typing: the last word in the box, with
+ * nothing but the picker's filter after the colon. Only the last word, so
+ * text is never dropped from the search without a sign: `error in: login
+ * page` and `from:ada budget` are searched as typed, and the words before a
+ * trailing token stay the search text.
  */
-const TOKEN = /(^|\s)(from|in):([^:]*)$/i;
+const TOKEN = /(^|\s)(from|in):(\S*)$/i;
 
 export function parseSearchToken(text: string): SearchToken | null {
   const match = TOKEN.exec(text);
   if (!match) return null;
   return {
     kind: match[2]!.toLowerCase() as SearchTokenKind,
-    partial: match[3]!.trim().replace(/^[@#]/, ""),
+    partial: match[3]!.replace(/^[@#]/, ""),
     rest: text.slice(0, match.index + match[1]!.length),
   };
 }
@@ -111,15 +145,17 @@ export interface SearchPickerOption {
   label: string;
 }
 
-/** Options whose label holds every typed word, ignoring case. */
+/**
+ * Options matching what was typed, by the member column's own rule
+ * (`filterChannelMembers`): every typed word starts a word of the label,
+ * ignoring case and accents, so `jose` finds José here as it does there.
+ */
 export function matchPickerOptions(
   options: readonly SearchPickerOption[],
   partial: string,
 ): SearchPickerOption[] {
-  const words = partial.toLowerCase().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return [...options];
-  return options.filter((option) => {
-    const label = option.label.toLowerCase();
-    return words.every((word) => label.includes(word));
-  });
+  return filterChannelMembers(
+    options.map((option) => ({ name: option.label, option })),
+    partial,
+  ).map((row) => row.option);
 }

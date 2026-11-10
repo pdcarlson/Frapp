@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +26,7 @@ import {
   matchPickerOptions,
   parseSearchToken,
   searchDateBounds,
+  searchDateLabel,
   type SearchDateFilter,
   type SearchPickerOption,
   type SearchTokenKind,
@@ -44,7 +45,7 @@ const ALL_CHANNELS: SearchPickerOption = { id: "", label: "All channels" };
 
 /**
  * Message search for the chat shell: the form of search
- * `spec/behavior/chat/README.md` § Search specifies, narrowed by four filter
+ * `spec/behavior/chat/README.md` specifies (§ Messages, the **Search** block), narrowed by four filter
  * chips (#3958): **From** (one member), **In** (one channel the member can
  * read, or all of them), **Date** and **Has**.
  *
@@ -98,9 +99,14 @@ export function ChatSearchPanel({
 }) {
   const [query, setQuery] = useState("");
   const [fromUserId, setFromUserId] = useState<string | null>(null);
-  // Starts on the open channel (#469); `null` is every readable channel. With
-  // no channel open there is nothing to start on.
-  const [channelId, setChannelId] = useState<string | null>(activeChannelId);
+  // `undefined` until the member touches In: the filter then follows the open
+  // channel (#469), including one that resolves after the panel mounted on a
+  // cold load. `null` is every readable channel.
+  const [channelChoice, setChannelId] = useState<string | null | undefined>(
+    undefined,
+  );
+  const channelId =
+    channelChoice === undefined ? activeChannelId : channelChoice;
   const [date, setDate] = useState<SearchDateFilter>({ preset: "any" });
   const [has, setHas] = useState<readonly SearchHasTrait[]>([]);
   const [openPanel, setOpenPanel] = useState<"date" | "has" | null>(null);
@@ -124,13 +130,26 @@ export function ChatSearchPanel({
   }, [token?.kind, token?.partial, members, channels]);
   const activeOption = options[Math.min(activeIndex, options.length - 1)];
 
+  // Arrowing moves the highlight, not focus, so the browser will not scroll
+  // the list for it; without this Enter picks a row below the fold.
+  const activeOptionId =
+    token && activeOption ? `${listId}-${activeOption.id || "all"}` : undefined;
+  useEffect(() => {
+    if (!activeOptionId) return;
+    document
+      .getElementById(activeOptionId)
+      ?.scrollIntoView?.({ block: "nearest" });
+  }, [activeOptionId]);
+
   const debouncedText = useDebouncedValue(text, 200);
   // True while the member has typed something the debounce has not caught up
   // to. Without this the panel shows the PREVIOUS query's hits as though they
   // were current for 200ms — `isFetching` is false in that window because no
   // request is in flight yet — and a fast click jumps to a message that does
   // not match what is on screen. Filters are not debounced: a pick is one
-  // deliberate act, and the query key changes with it at once.
+  // deliberate act, and the query key changes with it at once. The one filter
+  // that is typed, a custom date, sends nothing until its year is finished
+  // (`searchDateBounds`).
   const isSettling = text !== debouncedText;
 
   // The local day is part of the memo so "Today" picked before midnight does
@@ -201,8 +220,26 @@ export function ChatSearchPanel({
     focusInput();
   }
 
+  /**
+   * Clearing a chip unmounts the button that was pressed. Left alone, focus
+   * falls to `<body>` and the next Tab dismisses the menu's non-modal popover
+   * with the whole search in it (`channel-menu.tsx`), so it goes to the box.
+   */
+  function clear(reset: () => void) {
+    reset();
+    focusInput();
+  }
+
   function onInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
-    if (!token || options.length === 0) return;
+    if (!token) return;
+    // Escape closes the picker, not the menu: `channel-menu.tsx` holds the
+    // popover open for an expanded combobox, and this puts the picker away.
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setQuery(token.rest.trimEnd());
+      return;
+    }
+    if (options.length === 0) return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       const step = event.key === "ArrowDown" ? 1 : -1;
@@ -219,11 +256,7 @@ export function ChatSearchPanel({
 
   const fromName = fromUserId ? (nameFor(fromUserId) ?? "a member") : null;
   const inName = channelId ? (channelNameFor(channelId) ?? "a channel") : null;
-  const dateLabel =
-    date.preset === "any"
-      ? null
-      : (SEARCH_DATE_PRESETS.find((entry) => entry.preset === date.preset)
-          ?.label ?? null);
+  const dateLabel = searchDateLabel(date);
   const hasLabel =
     has.length > 0
       ? SEARCH_HAS_TRAITS.filter((entry) => has.includes(entry.trait))
@@ -241,11 +274,7 @@ export function ChatSearchPanel({
           aria-expanded={token !== null}
           aria-controls={token ? listId : undefined}
           aria-autocomplete="list"
-          aria-activedescendant={
-            token && activeOption
-              ? `${listId}-${activeOption.id || "all"}`
-              : undefined
-          }
+          aria-activedescendant={activeOptionId}
           value={query}
           autoFocus
           onChange={(event) => {
@@ -267,14 +296,14 @@ export function ChatSearchPanel({
             value={fromName}
             expanded={token?.kind === "from"}
             onOpen={() => startToken("from")}
-            onClear={() => setFromUserId(null)}
+            onClear={() => clear(() => setFromUserId(null))}
           />
           <FilterChip
             name="In"
             value={inName}
             expanded={token?.kind === "in"}
             onOpen={() => startToken("in")}
-            onClear={() => setChannelId(null)}
+            onClear={() => clear(() => setChannelId(null))}
           />
           <FilterChip
             name="Date"
@@ -285,7 +314,7 @@ export function ChatSearchPanel({
               if (token) setQuery(token.rest.trimEnd());
               setOpenPanel((current) => (current === "date" ? null : "date"));
             }}
-            onClear={() => setDate({ preset: "any" })}
+            onClear={() => clear(() => setDate({ preset: "any" }))}
           />
           <FilterChip
             name="Has"
@@ -295,7 +324,7 @@ export function ChatSearchPanel({
               if (token) setQuery(token.rest.trimEnd());
               setOpenPanel((current) => (current === "has" ? null : "has"));
             }}
-            onClear={() => setHas([])}
+            onClear={() => clear(() => setHas([]))}
           />
         </div>
 
@@ -583,7 +612,11 @@ function ChatSearchResults({
     return (
       <p className="px-3 py-4 text-caption text-muted-foreground">
         Type at least {SEARCH_MIN_QUERY_LENGTH} characters to search
-        {searchedChannelId ? " this channel" : " every channel you can read"}
+        {searchedChannelId === null
+          ? " every channel you can read"
+          : searchedChannelId === activeChannelId
+            ? " this channel"
+            : ` ${channelNameFor(searchedChannelId) ?? "that channel"}`}
         {hasFilter
           ? "."
           : ", or pick From, Date or Has to search without text."}
@@ -643,8 +676,9 @@ function ChatSearchResults({
       <ul className="max-h-[min(26rem,50vh)] divide-y divide-border overflow-y-auto">
         {hits.map((hit) => {
           const channelName = channelNameFor(hit.channelId);
-          const showChannel =
-            searchedChannelId === null && hit.channelId !== activeChannelId;
+          // Whatever In holds: with In on another channel every hit is
+          // outside the channel in view, and each still says where it is.
+          const showChannel = hit.channelId !== activeChannelId;
           return (
             <li key={hit.message.id}>
               <button

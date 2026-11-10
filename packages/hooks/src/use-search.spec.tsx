@@ -395,6 +395,57 @@ describe("useSearch", () => {
       expect(mockClient.GET).toHaveBeenCalledTimes(2);
     });
 
+    it.each([
+      [
+        "after",
+        { after: "2026-11-01T05:00:00.000Z" },
+        { after: "2026-11-09T05:00:00.000Z" },
+      ],
+      [
+        "before",
+        { before: "2026-11-01T05:00:00.000Z" },
+        { before: "2026-11-09T05:00:00.000Z" },
+      ],
+      ["has", { has: ["link"] as const }, { has: ["poll"] as const }],
+    ])(
+      "refetches when %s changes, rather than keeping the old hits",
+      async (_name, first, second) => {
+        // Each filter is part of the query key. Drop one from the key and the
+        // panel shows the previous filter's hits under the new chip.
+        const mockClient = {
+          GET: vi
+            .fn()
+            .mockResolvedValueOnce({
+              data: { messages: [{ id: "first" }] },
+              error: undefined,
+              response: mockResponse(),
+            })
+            .mockResolvedValueOnce({
+              data: { messages: [{ id: "second" }] },
+              error: undefined,
+              response: mockResponse(),
+            }),
+        };
+
+        const { result, rerender } = renderHook(
+          ({ filters }) => useSearch("", filters),
+          {
+            wrapper: createWrapper(queryClient, mockClient, "chapter-a"),
+            initialProps: { filters: first as Parameters<typeof useSearch>[1] },
+          },
+        );
+        await waitFor(() => expect(result.current.isSuccess).toBe(true));
+        rerender({ filters: second as Parameters<typeof useSearch>[1] });
+
+        await waitFor(() =>
+          expect(result.current.data?.payload).toEqual({
+            messages: [{ id: "second" }],
+          }),
+        );
+        expect(mockClient.GET).toHaveBeenCalledTimes(2);
+      },
+    );
+
     it("holds back what the API refuses", () => {
       const mockClient = { GET: vi.fn() };
 

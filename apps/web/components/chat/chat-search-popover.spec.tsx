@@ -10,8 +10,13 @@ vi.mock("@repo/hooks", async () => {
   const actual = await vi.importActual<
     typeof import("../../../../packages/hooks/src/use-search")
   >("../../../../packages/hooks/src/use-search");
+  // The real name matcher too: the pickers share it with the member column.
+  const members = await vi.importActual<
+    typeof import("../../../../packages/hooks/src/channel-members")
+  >("../../../../packages/hooks/src/channel-members");
   return {
     SEARCH_MIN_QUERY_LENGTH: 3,
+    filterChannelMembers: members.filterChannelMembers,
     hasMessageFilter: actual.hasMessageFilter,
     isSearchRunnable: actual.isSearchRunnable,
     useSearch: (query: string, filters?: unknown) => useSearch(query, filters),
@@ -421,6 +426,151 @@ describe("ChatSearchPanel", () => {
       // Back to a channel alone, which is not a search without text.
       expect(
         screen.getByText(/or pick From, Date or Has to search without text/i),
+      ).toBeInTheDocument();
+    });
+
+    it("sends a custom range through both date fields, and clears it", async () => {
+      const user = userEvent.setup();
+      renderPanel();
+
+      await user.click(screen.getByRole("button", { name: "Date" }));
+      await user.click(screen.getByRole("radio", { name: "Custom" }));
+      // No date yet: not a set filter, and not a search.
+      expect(screen.getByRole("button", { name: "Date" })).toBeInTheDocument();
+
+      await user.type(screen.getByLabelText("From"), "2026-11-01");
+      await user.type(screen.getByLabelText("To"), "2026-11-05");
+
+      await waitFor(() => {
+        expect(useSearch).toHaveBeenLastCalledWith("", {
+          channelId: "chan-1",
+          after: new Date(2026, 10, 1).toISOString(),
+          before: new Date(2026, 10, 6).toISOString(),
+        });
+      });
+      await user.click(
+        screen.getByRole("button", { name: "Date: 2026-11-01 to 2026-11-05" }),
+      );
+      await user.click(
+        screen.getByRole("button", { name: "Clear Date filter" }),
+      );
+
+      await waitFor(() => {
+        expect(useSearch).toHaveBeenLastCalledWith("", { channelId: "chan-1" });
+      });
+    });
+
+    it("sends each preset's own bound", async () => {
+      const user = userEvent.setup();
+      renderPanel();
+      await user.click(screen.getByRole("button", { name: "Date" }));
+      const after = () =>
+        (useSearch.mock.lastCall as [string, { after?: string }])[1].after;
+
+      await user.click(screen.getByRole("radio", { name: "Last 7 days" }));
+      const week = after();
+      await user.click(screen.getByRole("radio", { name: "Last 30 days" }));
+      const month = after();
+
+      const days = (iso: string | undefined) =>
+        Math.round((Date.now() - new Date(iso ?? "").getTime()) / 86_400_000);
+      expect(days(week)).toBeGreaterThanOrEqual(7);
+      expect(days(week)).toBeLessThanOrEqual(8);
+      expect(days(month)).toBeGreaterThanOrEqual(30);
+      expect(days(month)).toBeLessThanOrEqual(31);
+    });
+
+    it("clears From and returns focus to the box", async () => {
+      const user = await typeQuery("from:gra");
+      await user.keyboard("{Enter}");
+
+      await user.click(
+        screen.getByRole("button", { name: "Clear From filter" }),
+      );
+
+      await waitFor(() => {
+        expect(useSearch).toHaveBeenLastCalledWith("", { channelId: "chan-1" });
+      });
+      // The pressed button is gone; focus left on <body> would let the next
+      // Tab close the menu with the search in it.
+      expect(screen.getByRole("combobox")).toHaveFocus();
+    });
+
+    it("un-ticks a Has trait", async () => {
+      const user = userEvent.setup();
+      renderPanel();
+      await user.click(screen.getByRole("button", { name: "Has" }));
+      await user.click(screen.getByRole("button", { name: "Link" }));
+      await user.click(screen.getByRole("button", { name: "File" }));
+
+      await user.click(screen.getByRole("button", { name: "Link" }));
+
+      await waitFor(() => {
+        expect(useSearch).toHaveBeenLastCalledWith("", {
+          channelId: "chan-1",
+          has: ["file"],
+        });
+      });
+    });
+
+    it("puts the picker away on Escape and keeps the search text", async () => {
+      const user = await typeQuery("budget from:gr");
+
+      await user.keyboard("{Escape}");
+
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+      expect(screen.getByRole("combobox")).toHaveValue("budget");
+    });
+
+    it("searches from: and in: as typed when they are not the last word", async () => {
+      await typeQuery("error in: login page");
+
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+      await waitFor(() => {
+        expect(useSearch).toHaveBeenLastCalledWith("error in: login page", {
+          channelId: "chan-1",
+        });
+      });
+    });
+
+    it("labels hits when In names a channel other than the open one", async () => {
+      useSearch.mockReturnValue(
+        messagesResult([message("m-2", "chan-2", "pizza night")]),
+      );
+      const user = await typeQuery("pizza in:ran");
+      await user.keyboard("{Enter}");
+
+      // Picking this row switches channel, whatever In holds.
+      expect(await screen.findByText(/in random/i)).toBeInTheDocument();
+    });
+
+    it("names the searched channel in the hint, not the open one", async () => {
+      const user = await typeQuery("in:ran");
+      await user.keyboard("{Enter}");
+
+      expect(
+        screen.getByText(/type at least 3 characters to search random,/i),
+      ).toBeInTheDocument();
+    });
+
+    it("follows the open channel until In is touched", () => {
+      // Opened on a cold load, before the shell knows the channel.
+      const { rerender } = renderPanel({ activeChannelId: null });
+      expect(screen.getByRole("button", { name: "In" })).toBeInTheDocument();
+
+      rerender(
+        <ChatSearchPanel
+          activeChannelId="chan-1"
+          channels={[{ id: "chan-1", label: "general" }]}
+          members={[]}
+          channelNameFor={() => "general"}
+          nameFor={() => null}
+          onJump={vi.fn()}
+        />,
+      );
+
+      expect(
+        screen.getByRole("button", { name: "In: general" }),
       ).toBeInTheDocument();
     });
 
