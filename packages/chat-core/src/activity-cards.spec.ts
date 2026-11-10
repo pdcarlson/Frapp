@@ -149,6 +149,8 @@ describe("Activity card messages", () => {
     expect(tallyPollVotes(message, payload!.options, "user-a")).toEqual({
       byOption: { a: 1, b: 1 },
       total: 2,
+      voters: 2,
+      myVotes: ["a"],
       myVote: "a",
     });
     expect(message.id).toBe("poll-1");

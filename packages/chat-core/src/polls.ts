@@ -116,6 +116,8 @@ export interface PollMessageInput {
   options: readonly string[];
   /** When voting stops, or `null` for a poll that doesn't close (#3896). */
   closesAt: Date | null;
+  /** A member may pick more than one option (#3793). Single-choice if unset. */
+  multiple?: boolean;
 }
 
 /**
@@ -137,6 +139,9 @@ export function buildPollMessage(
       question: input.question,
       options: input.options.map((label) => ({ id: makeOptionId(), label })),
       closes_at: input.closesAt ? input.closesAt.toISOString() : null,
+      // Only on a multi-choice card, so a single-choice one is built exactly
+      // as it was before the mode existed.
+      ...(input.multiple ? { choice_mode: "multi" as const } : {}),
     },
   };
 }
@@ -158,6 +163,7 @@ export function readPollPayload(message: ChatMessage): PollPayload | null {
     }
   }
   if (parsed.length < 2) return null;
+  const choiceMode = (raw as { choice_mode?: unknown }).choice_mode;
   const closedAt = (raw as { closed_at?: unknown }).closed_at;
   const closedBy = (raw as { closed_by?: unknown }).closed_by;
   return {
@@ -165,6 +171,11 @@ export function readPollPayload(message: ChatMessage): PollPayload | null {
     options: parsed,
     closes_at:
       typeof closesAt === "string" && closesAt !== "" ? closesAt : null,
+    // As the API's vote rules read it (`cardPollChoiceMode`): absent or
+    // "single" is single-choice, and anything else votes as multi.
+    ...(choiceMode != null && choiceMode !== "single"
+      ? { choice_mode: "multi" as const }
+      : {}),
     // Only on a card closed early (#3794), so an open card reads back exactly
     // as `buildPollMessage` built it.
     ...(typeof closedAt === "string" && closedAt !== ""
@@ -237,19 +248,49 @@ export const CLOSE_POLL_CONFIRM_BODY =
   "No one can vote after it closes, and it can't be reopened. The results stay on the card.";
 export const CLOSE_POLL_CONFIRM_LABEL = "Close poll";
 
+/** Whether a member may pick more than one option on this card (#3793). */
+export function isMultiChoicePoll(payload: PollPayload): boolean {
+  return payload.choice_mode === "multi";
+}
+
 export interface PollTally {
+  /** How many members picked each option. */
   byOption: Record<string, number>;
+  /**
+   * Every pick counted: on a single-choice card, the number of members who
+   * voted; on a multi-choice one, a member who picked three options adds three.
+   */
   total: number;
+  /** Members with at least one pick. Equals `total` on a single-choice card. */
+  voters: number;
+  /** The viewer's picks, in the card's option order. */
+  myVotes: string[];
+  /** The viewer's pick on a single-choice card: the first of `myVotes`. */
   myVote: string | null;
 }
 
 /**
+ * The option ids one vote row names. ADR-07 keeps a member's vote to one
+ * `action_type='vote'` row; its `payload.option_id` is one id on a
+ * single-choice card and a list of ids on a multi-choice one (#3793, the shape
+ * the API's `cardVoteSelection` reads). Ids the card doesn't list are dropped,
+ * and an id repeated in one row counts once.
+ */
+function votePicks(payload: unknown, known: Record<string, number>): string[] {
+  const raw = (payload as { option_id?: unknown } | null)?.option_id;
+  const picks = new Set<string>();
+  for (const id of Array.isArray(raw) ? raw : [raw]) {
+    if (typeof id === "string" && id in known) picks.add(id);
+  }
+  return [...picks];
+}
+
+/**
  * Per-option tally derived from the raw `chat_message_actions` rows attached
- * to the message. ADR-07: the wire format uses a single `action_type='vote'`
- * row per user, with the option id in `payload.option_id`; vote-change
- * UPSERTs the same row. Counting from `message.actions` (vs the aggregate
- * `reactions`) keeps the per-option breakdown accurate and lets the viewer's
- * chosen option be identified without a server round-trip.
+ * to the message: one vote row per member, changed in place by an UPSERT
+ * (ADR-07). Counting from `message.actions` (vs the aggregate `reactions`)
+ * keeps the per-option breakdown accurate and lets the viewer's own picks be
+ * identified without a server round-trip.
  */
 export function tallyPollVotes(
   message: ChatMessage,
@@ -259,15 +300,80 @@ export function tallyPollVotes(
   const byOption: Record<string, number> = {};
   for (const o of options) byOption[o.id] = 0;
   let total = 0;
-  let myVote: string | null = null;
+  let voters = 0;
+  let mine = new Set<string>();
   for (const action of message.actions) {
     if (action.action_type !== POLL_VOTE_ACTION_TYPE) continue;
-    const optionId = (action.payload as { option_id?: unknown } | null)
-      ?.option_id;
-    if (typeof optionId !== "string" || !(optionId in byOption)) continue;
-    byOption[optionId] = (byOption[optionId] ?? 0) + 1;
-    total += 1;
-    if (viewerId && action.user_id === viewerId) myVote = optionId;
+    const picks = votePicks(action.payload, byOption);
+    if (picks.length === 0) continue;
+    for (const id of picks) byOption[id] = (byOption[id] ?? 0) + 1;
+    total += picks.length;
+    voters += 1;
+    if (viewerId && action.user_id === viewerId) mine = new Set(picks);
   }
-  return { byOption, total, myVote };
+  const myVotes = options.map((o) => o.id).filter((id) => mine.has(id));
+  return { byOption, total, voters, myVotes, myVote: myVotes[0] ?? null };
+}
+
+/**
+ * The vote a tap on `optionId` sends. A single-choice card names that option,
+ * replacing any earlier pick. A multi-choice card toggles it in the viewer's
+ * picks and sends the whole list, in the card's option order; an empty list
+ * clears the vote, which the API accepts on a multi-choice card.
+ */
+export function pollVotePayload(
+  payload: PollPayload,
+  myVotes: readonly string[],
+  optionId: string,
+): Record<string, unknown> {
+  if (!isMultiChoicePoll(payload)) return { option_id: optionId };
+  const picked = new Set(myVotes);
+  if (picked.has(optionId)) picked.delete(optionId);
+  else picked.add(optionId);
+  return {
+    option_id: payload.options.map((o) => o.id).filter((id) => picked.has(id)),
+  };
+}
+
+/**
+ * An option's share, as the bar and the "N%" beside it show it. Single-choice:
+ * its share of the votes. Multi-choice: the share of voters who picked it, so
+ * the options needn't add up to 100.
+ */
+export function pollOptionPercent(
+  payload: PollPayload,
+  tally: PollTally,
+  optionId: string,
+): number {
+  const of = isMultiChoicePoll(payload) ? tally.voters : tally.total;
+  return of > 0 ? Math.round(((tally.byOption[optionId] ?? 0) / of) * 100) : 0;
+}
+
+/**
+ * The line under a multi-choice card's question, or `null` on a single-choice
+ * card, which has none.
+ */
+export function pollChoiceHint(
+  payload: PollPayload,
+  isClosed: boolean,
+): string | null {
+  if (!isMultiChoicePoll(payload)) return null;
+  return isClosed ? "More than one choice was allowed" : "Select one or more";
+}
+
+/** The card's footer line under its options, the same on both clients. */
+export function pollCardFooter(
+  payload: PollPayload,
+  tally: PollTally,
+  canVote: boolean,
+): string {
+  if (tally.voters === 0) {
+    return `No votes yet${canVote ? " · be the first to vote" : ""}.`;
+  }
+  const mine = tally.myVotes.length > 0;
+  if (isMultiChoicePoll(payload)) {
+    const people = tally.voters === 1 ? "1 person" : `${tally.voters} people`;
+    return `${people} voted${mine ? " · your choices are highlighted" : ""}`;
+  }
+  return `${tally.total} vote${tally.total === 1 ? "" : "s"}${mine ? " · your vote is highlighted" : ""}`;
 }

@@ -25,10 +25,10 @@
 export const CARD_VOTE_ACTION_TYPE = 'vote';
 
 /**
- * A chat poll card's payload as the composer writes it
- * (`@repo/chat-core/dispatch`), plus the `choice_mode` the vote rules honour,
- * which no composer sets yet. Nothing validates it on send, so read it through
- * the helpers below, which guard each field.
+ * A chat poll card's payload as the clients write it (`buildPollMessage` in
+ * `@repo/chat-core/polls`), `choice_mode: 'multi'` included when the creator
+ * allows more than one choice (#3793). Nothing validates it on send, so read
+ * it through the helpers below, which guard each field.
  */
 export interface CardPollPayload {
   options?: { id?: unknown }[];
@@ -69,8 +69,9 @@ export function cardPollOptionIds(card: CardPollPayload): string[] | null {
 
 /**
  * The card's choice mode as the vote rules hold it: absent is single-choice,
- * matching the composer, which offers no multi-select. Any other value is held
- * to no cardinality, so it votes as multi.
+ * which is how the clients build a single-choice card. Any other value is held
+ * to no cardinality, so it votes as multi; the cards read it the same way
+ * (`readPollPayload`).
  */
 export function cardPollChoiceMode(card: CardPollPayload): 'single' | 'multi' {
   return card.choice_mode == null || card.choice_mode === 'single'
@@ -79,8 +80,10 @@ export function cardPollChoiceMode(card: CardPollPayload): 'single' | 'multi' {
 }
 
 /**
- * The option ids a card vote selects: its `payload.option_id` is one id or
- * several, and anything that isn't a string is ignored.
+ * The option ids a card vote selects: its `payload.option_id` is one id, or a
+ * list of ids on a multi-choice card (an empty list clears the vote), and
+ * anything that isn't a string is ignored. A member's vote stays one
+ * `chat_message_actions` row either way (ADR-07; `spec/behavior/polls.md`).
  */
 export function cardVoteSelection(
   actionPayload: Record<string, unknown> | undefined,

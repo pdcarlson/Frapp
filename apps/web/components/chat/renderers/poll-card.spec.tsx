@@ -411,3 +411,65 @@ describe("PollCard closed early by its creator (#3794)", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe("PollCard with more than one choice (#3793)", () => {
+  const multi = (actions: object[]) =>
+    poll({
+      payload: {
+        question: "Which days work?",
+        options: [
+          { id: "fri", label: "Fri" },
+          { id: "sat", label: "Sat" },
+          { id: "sun", label: "Sun" },
+        ],
+        closes_at: "2999-01-01T00:00:00.000Z",
+        choice_mode: "multi",
+      },
+      actions,
+    } as Partial<ChatMessage>);
+  const vote = (user_id: string, option_id: unknown) => ({
+    action_type: "vote",
+    user_id,
+    payload: { option_id },
+  });
+
+  it("says a member can pick several, and adds an option to their picks", () => {
+    const { onVote } = renderPoll(
+      multi([vote(VIEWER, ["fri"]), vote(OTHER, ["fri", "sat"])]),
+    );
+
+    expect(screen.getByText("Select one or more")).toBeInTheDocument();
+    // Shares are of the two voters, so they needn't add up to 100.
+    expect(optionButton("Fri")).toHaveTextContent("2 · 100%");
+    expect(optionButton("Sat")).toHaveTextContent("1 · 50%");
+    expect(optionButton("Fri")).toHaveAttribute("aria-pressed", "true");
+    expect(optionButton("Sat")).toHaveAttribute("aria-pressed", "false");
+    expect(
+      screen.getByText("2 people voted · your choices are highlighted"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(optionButton("Sun"));
+    expect(onVote).toHaveBeenCalledWith("msg-1", "vote", {
+      option_id: ["fri", "sun"],
+    });
+  });
+
+  it("clears a pick on a second tap, down to none", () => {
+    const { onVote } = renderPoll(multi([vote(VIEWER, ["fri"])]));
+
+    fireEvent.click(optionButton("Fri"));
+    expect(onVote).toHaveBeenCalledWith("msg-1", "vote", { option_id: [] });
+  });
+
+  it("leaves a single-choice card as it was: no hint, one pick replacing another", () => {
+    const { onVote } = renderPoll();
+
+    expect(screen.queryByText("Select one or more")).not.toBeInTheDocument();
+    expectReadable();
+    expect(
+      screen.getByText("2 votes · your vote is highlighted"),
+    ).toBeInTheDocument();
+    fireEvent.click(optionButton("No"));
+    expect(onVote).toHaveBeenCalledWith("msg-1", "vote", { option_id: "no" });
+  });
+});

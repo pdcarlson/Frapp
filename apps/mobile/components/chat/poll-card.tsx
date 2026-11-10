@@ -6,6 +6,10 @@ import {
   canClosePoll,
   isPollCardClosed,
   pollCardEyebrow,
+  pollCardFooter,
+  pollChoiceHint,
+  pollOptionPercent,
+  pollVotePayload,
   pollsGateReason,
   readPollPayload,
   tallyPollVotes,
@@ -103,14 +107,10 @@ export function PollCard(props: PollCardProps) {
     useMyPermissions().data?.permissions,
   );
 
-  const {
-    byOption,
-    total,
-    myVote: viewerVote,
-  } = useMemo(() => {
-    if (!payload) return { byOption: {}, total: 0, myVote: null };
-    return tallyPollVotes(message, payload.options, viewerId);
-  }, [message, payload, viewerId]);
+  const tally = useMemo(
+    () => tallyPollVotes(message, payload?.options ?? [], viewerId),
+    [message, payload, viewerId],
+  );
 
   if (!payload) {
     return (
@@ -137,10 +137,17 @@ export function PollCard(props: PollCardProps) {
     });
   const canVote = isConfirmed && !isClosed && pollsGate === "on";
   const gateReason = pollsGateReason(pollsGate, { isClosed, isConfirmed });
+  const choiceHint = pollChoiceHint(payload, isClosed);
 
   const cast = (option: PollOption) => {
     if (!canVote) return;
-    onVote(message.id, POLL_VOTE_ACTION_TYPE, { option_id: option.id });
+    // A multi-choice card (#3793) adds or clears the tapped option and sends
+    // the member's whole list in their one vote row.
+    onVote(
+      message.id,
+      POLL_VOTE_ACTION_TYPE,
+      pollVotePayload(payload, tally.myVotes, option.id),
+    );
   };
 
   return (
@@ -150,15 +157,15 @@ export function PollCard(props: PollCardProps) {
         <>
           <CardEyebrow label={pollCardEyebrow(payload, now)} />
           <CardTitle>{payload.question}</CardTitle>
+          {choiceHint ? <Text style={styles.hint}>{choiceHint}</Text> : null}
         </>
       }
     >
       <View style={styles.options}>
         {payload.options.map((option) => {
-          const count = byOption[option.id] ?? 0;
-          const denom = total > 0 ? total : 1;
-          const pct = total > 0 ? Math.round((count / denom) * 100) : 0;
-          const isMyVote = viewerVote === option.id;
+          const count = tally.byOption[option.id] ?? 0;
+          const pct = pollOptionPercent(payload, tally, option.id);
+          const isMyVote = tally.myVotes.includes(option.id);
           return (
             <View key={option.id}>
               <Pressable
@@ -209,9 +216,7 @@ export function PollCard(props: PollCardProps) {
         })}
       </View>
       <Text style={styles.footer}>
-        {total === 0
-          ? `No votes yet${canVote ? " · be the first to vote" : ""}.`
-          : `${total} vote${total === 1 ? "" : "s"}${viewerVote ? " · your vote is highlighted" : ""}`}
+        {pollCardFooter(payload, tally, canVote)}
       </Text>
       {showClose ? (
         <Pressable
@@ -247,6 +252,11 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     malformed: {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
+    },
+    hint: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+      marginTop: tokens.spacing.xs,
     },
     options: {
       marginTop: tokens.spacing.sm + 1,
