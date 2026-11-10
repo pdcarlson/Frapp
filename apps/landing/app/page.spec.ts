@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { isBetaOffModule } from "@repo/validation";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -124,19 +125,33 @@ describe("landing marketing copy rules", () => {
     }
   });
 
-  it("leads with /about's mission, and claims no dues in the thread", () => {
-    // The hero opens with the mission statement (#3869), and `/about` is the
-    // one draft of it, so the two say the same sentence or neither changes.
-    const mission =
-      "every chapter one place where its members actually talk, and let the work of running the chapter happen in that same conversation";
+  it("leads with the mission /about states, and claims no dues in the thread", () => {
+    // The hero opens with the mission statement (#3869). Both pages render the
+    // one `MISSION` constant, so neither can carry a drifted copy of it.
     const about = readFileSync(join(landingRoot, "app/about/page.tsx"), "utf8");
-    expect(flatAll).toContain(mission);
-    expect(about.replace(/\s+/g, " ")).toContain(mission);
+    const hero = withoutComments(homeSource("hero-section.tsx"));
+    expect(hero).toMatch(/\{MISSION\}/);
+    expect(withoutComments(about)).toMatch(/paragraphs: \[MISSION\]/);
     // `spec/behavior/chat/integrations.md` lists the dues chat kind as a stub
     // renderer, so no dues artifact may be claimed to land in the thread.
     expect(renderedAll).not.toMatch(
       /dues[^.]{0,40}(in|into) (the )?(chat|thread|conversation)/i,
     );
+  });
+
+  it("sells no dues while the beta switches dues off (#3869)", () => {
+    // `BETA_OFF_MODULES` turns dues off for every chapter, so no line on the
+    // page, the JSON-LD included, may offer it. When dues returns this test
+    // stops applying, and the Treasurer line and the Pro list line can too.
+    if (!isBetaOffModule("dues")) return;
+    expect(renderedAll).not.toMatch(/\bdues\b/i);
+  });
+
+  it("draws no count on a plain unread channel", () => {
+    // `foundations.md` (2026-11-07): a plain unread channel is a bold name
+    // only. The one counted row in the rail is the DM's red badge.
+    const frame = withoutComments(homeSource("chat-frame.tsx"));
+    expect(frame).not.toMatch(/<ChannelRow\b[^>]*badge/);
   });
 
   it("carries no testimonial, no FAQ and no stats array", () => {

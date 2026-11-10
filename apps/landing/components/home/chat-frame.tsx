@@ -99,15 +99,15 @@ function ChatThread({ animate }: { animate: boolean }) {
       style={{ "--i": index } as StaggerStyle}
     >
       {row.kind === "them" && (
-        <RunStart initials="JE" author="Jordan Ellis" time="4:02 PM">
+        <RunStart initials="JE" author="Jordan Ellis" time="6:21 PM">
           <p className={BODY}>
-            Chapter is 6:30 tonight. Committee reports go first.
+            Chapter starts at 6:30. Committee reports go first.
           </p>
         </RunStart>
       )}
 
       {row.kind === "event" && (
-        <RunStart initials="JE" author="Jordan Ellis" time="4:03 PM">
+        <RunStart initials="JE" author="Jordan Ellis" time="6:22 PM">
           {/*
             A card is a thing posted into the channel, so it keeps its frame
             (`--card`, hairline, radius 14) where a message has none.
@@ -134,7 +134,7 @@ function ChatThread({ animate }: { animate: boolean }) {
                 Check in
               </span>
               <span className="text-[12.5px] text-muted-foreground">
-                closes 6:45
+                closes 7:45
               </span>
               <span className="text-[12.5px] text-muted-foreground">
                 31 checked in
@@ -150,13 +150,13 @@ function ChatThread({ animate }: { animate: boolean }) {
           feeds unread counts (`spec/behavior/chat/README.md` § Read
           Receipts), so no message is ever marked "read".
         */
-        <RunStart initials="AK" author="You" self time="4:05 PM">
+        <RunStart initials="AK" author="You" self time="6:24 PM">
           <p className={BODY}>On it. Roster is pulled, 42 for food.</p>
         </RunStart>
       )}
 
       {row.kind === "mention" && (
-        <RunStart initials="MC" author="Maya Chen" time="4:06 PM">
+        <RunStart initials="MC" author="Maya Chen" time="6:25 PM">
           <p className={BODY}>
             {/*
               The in-body mention chip, on the handle alone: the row around

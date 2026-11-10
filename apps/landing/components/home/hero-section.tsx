@@ -1,3 +1,4 @@
+import { MISSION } from "../../lib/mission";
 import { TrackedCta } from "../tracked-cta";
 import { ChatFrame } from "./chat-frame";
 import {
@@ -26,21 +27,17 @@ export function HeroSection({
       <div className="flex flex-col gap-6 lg:col-span-6 lg:pb-10">
         {/*
           Mission first (#3869): the mission statement, then Get started,
-          then the product. The words are `/about`'s mission, which is the
-          one draft of it; change them there and here together. Hero B's
-          frame (D9) is unchanged beside it. This replaced the eyebrow
-          "Chapter operations, chat first", the H1 "Run your chapter where it
-          already talks." and the chat-first lead, and is a proposal for the
-          owner to accept or reject on the PR that made it.
+          then the product. The lead is `MISSION`, the sentence `/about`
+          states too. Hero B's layout and frame (D9) stand beside it; the
+          words that differ from the board are listed in
+          `spec/ui/landing/reference/README.md`.
         */}
         <p className={EYEBROW}>Our mission</p>
         <h1 id="hero" className="text-hero text-balance text-foreground">
           One place to talk and run your chapter.
         </h1>
         <p className="max-w-[616px] text-lead text-muted-foreground">
-          We give every chapter one place where its members actually talk,
-          and let the work of running the chapter happen in that same
-          conversation.
+          {MISSION}
         </p>
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
           <TrackedCta

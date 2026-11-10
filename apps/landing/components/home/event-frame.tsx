@@ -83,7 +83,7 @@ export function EventFrame() {
             Check-in is open
           </span>
           <span className="text-[12.5px] text-muted-foreground">
-            closes 6:45
+            closes 7:45
           </span>
         </div>
         <span className="flex h-12 items-center justify-center gap-2 rounded-md bg-primary text-[16px] font-bold text-primary-foreground">

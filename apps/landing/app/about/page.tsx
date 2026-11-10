@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LINK_ACCENT } from "../../components/home/styles";
 import { SitePage } from "../../components/site-page";
+import { MISSION } from "../../lib/mission";
 import { routeMetadata } from "../../lib/route-metadata";
 
 export const metadata: Metadata = routeMetadata({
@@ -43,9 +44,7 @@ const sections = [
   },
   {
     heading: "Our mission",
-    paragraphs: [
-      "Give every chapter one place where its members actually talk, and let the work of running the chapter happen in that same conversation, so officers spend less time chasing people and more time on the chapter itself.",
-    ],
+    paragraphs: [MISSION],
   },
 ];
 

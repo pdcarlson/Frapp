@@ -494,6 +494,20 @@ test.describe("the header nav lights the section on screen", () => {
               a.textContent?.trim(),
             ),
           );
+        /*
+         * What a sighted visitor sees: each link's text colour and its rule's
+         * fill. `aria-current` alone would pass with a lit state that paints
+         * nothing, so the colours are asserted too.
+         */
+        const paint = () =>
+          nav.evaluate((el) =>
+            [...el.querySelectorAll("a")].slice(0, 2).map((a) => ({
+              text: getComputedStyle(a).color,
+              rule: a.querySelector("span")
+                ? getComputedStyle(a.querySelector("span")!).backgroundColor
+                : null,
+            })),
+          );
         const boxes = () =>
           nav.evaluate((el) =>
             [...el.querySelectorAll("a")].map((a) => {
@@ -504,6 +518,7 @@ test.describe("the header nav lights the section on screen", () => {
 
         await expect.poll(lit).toEqual([]);
         const atRest = await boxes();
+        const [unlit] = await paint();
 
         const jumpTo = (selector: string) =>
           page.evaluate((s) => {
@@ -512,7 +527,24 @@ test.describe("the header nav lights the section on screen", () => {
 
         await jumpTo("#product");
         await expect.poll(lit).toEqual(["Product"]);
-        // The events section is Product's too.
+        // Polled, because the colours transition: the first frame after the
+        // flip still paints the old value, even at reduced motion's 1ms.
+        await expect
+          .poll(async () => (await paint())[0]?.text, {
+            message: "lit Product paints no new text colour",
+          })
+          .not.toBe(unlit?.text);
+        await expect
+          .poll(async () => (await paint())[0]?.rule, {
+            message: "lit Product paints no rule",
+          })
+          .not.toBe(unlit?.rule);
+
+        // The events section is Product's too. Go back to the top first, so
+        // Product is dark and the poll below has to see it light again
+        // rather than pass on the state the previous jump left.
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await expect.poll(lit).toEqual([]);
         await jumpTo('[aria-labelledby="events"]');
         await expect.poll(lit).toEqual(["Product"]);
         expect(await boxes(), "lighting Product moved the nav").toEqual(atRest);
