@@ -10,7 +10,7 @@ import {
   checkPollDraft,
   closesAtFor,
   movePollOption,
-  POLL_CLOSE_CHOICES,
+  pollCloseChoicesFor,
   removePollOption,
   setPollOption,
   type PollCloseChoice,
@@ -63,6 +63,12 @@ export interface NewPollDialogProps {
     content: string;
     payload: PollPayload;
   }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /**
+   * Whether this member could end the poll from its card (they hold
+   * `polls:create`): only then is **Doesn't close** offered, so nobody posts
+   * a poll they can't close. `false` while that isn't known.
+   */
+  canCloseEarly: boolean;
   /** Injected so the close time is deterministic under test. */
   now?: () => Date;
 }
@@ -72,6 +78,7 @@ export function NewPollDialog({
   onOpenChange,
   initialDraft,
   onPost,
+  canCloseEarly,
   now,
 }: NewPollDialogProps) {
   const [draft, setDraft] = useState<PollDraft>(initialDraft);
@@ -246,7 +253,7 @@ export function NewPollDialog({
               className={`${dashboardFormSelectClassName} w-full`}
               disabled={posting}
             >
-              {POLL_CLOSE_CHOICES.map((choice) => (
+              {pollCloseChoicesFor(canCloseEarly).map((choice) => (
                 <option key={choice.id} value={choice.id}>
                   {choice.label}
                 </option>

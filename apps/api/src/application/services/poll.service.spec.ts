@@ -632,7 +632,7 @@ describe('PollService', () => {
         expect(patch).not.toHaveProperty('metadata');
       });
 
-      it('closes a card with no deadline, so an open-ended poll is never stuck open (#3896)', async () => {
+      it('lets the creator close a card with no deadline (#3896)', async () => {
         const openEnded = {
           ...cardPoll,
           payload: { ...cardPoll.payload, closes_at: null },

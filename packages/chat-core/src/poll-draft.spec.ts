@@ -4,6 +4,7 @@ import {
   checkPollDraft,
   closesAtFor,
   POLL_CLOSE_CHOICES,
+  pollCloseChoicesFor,
   pollCloseSummary,
   DEFAULT_POLL_CLOSE,
   DUPLICATE_OPTION_PROBLEM,
@@ -129,6 +130,22 @@ describe("closesAtFor (#3701)", () => {
     expect(DEFAULT_POLL_CLOSE).toBe("1d");
   });
 
+  it("offers Doesn't close only to a member who could close the poll", () => {
+    expect(pollCloseChoicesFor(true).map((c) => c.id)).toEqual([
+      "1h",
+      "1d",
+      "3d",
+      "1w",
+      "never",
+    ]);
+    expect(pollCloseChoicesFor(false).map((c) => c.id)).toEqual([
+      "1h",
+      "1d",
+      "3d",
+      "1w",
+    ]);
+  });
+
   it("says the choice as mobile's More options row reads it", () => {
     expect(pollCloseSummary("1d")).toBe("Closes in 1 day");
     expect(pollCloseSummary("never")).toBe("Doesn't close");
@@ -157,6 +174,7 @@ describe("pollDraftFromArgs (#3865)", () => {
     // However long, a typed number of minutes is a deadline: the nearest
     // timed choice, never "Doesn't close" (#3896).
     expect(pollDraftFromArgs('"Q" closes=9999999').closes).toBe("1w");
+    expect(pollDraftFromArgs('"Q" closes=5').closes).toBe("1h");
   });
 
   it("recovers the options when the last one's closing quote is missing", () => {

@@ -31,6 +31,19 @@ export const POLL_CLOSE_CHOICES: readonly {
 ];
 
 /**
+ * The choices a form offers this member. **Doesn't close** is offered only to
+ * a member who could end the poll: Close poll is the creator's alone and needs
+ * `polls:create` (`canClosePoll` in `./polls`), which posting a card does not
+ * (#3007), so without it an open-ended poll could only be ended by deleting
+ * it. Pass `false` while the permission isn't known.
+ */
+export function pollCloseChoicesFor(canCloseEarly: boolean) {
+  return canCloseEarly
+    ? POLL_CLOSE_CHOICES
+    : POLL_CLOSE_CHOICES.filter((choice) => choice.minutes !== null);
+}
+
+/**
  * The choice as a sentence fragment, for mobile's collapsed More options row:
  * "Closes in 1 day", or "Doesn't close".
  */

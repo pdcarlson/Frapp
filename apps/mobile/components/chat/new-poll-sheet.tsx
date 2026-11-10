@@ -42,7 +42,7 @@ import {
   closesAtFor,
   emptyPollDraft,
   movePollOption,
-  POLL_CLOSE_CHOICES,
+  pollCloseChoicesFor,
   pollCloseSummary,
   removePollOption,
   setPollOption,
@@ -79,6 +79,12 @@ export interface NewPollSheetProps {
     content: string;
     payload: PollPayload;
   }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /**
+   * Whether this member could end the poll from its card (they hold
+   * `polls:create`): only then is **Doesn't close** offered, so nobody posts
+   * a poll they can't close. `false` while that isn't known.
+   */
+  canCloseEarly: boolean;
   /** Injected so the close time is deterministic under test. */
   now?: () => Date;
 }
@@ -87,7 +93,7 @@ export interface NewPollSheetProps {
 type Focus = "question" | string | null;
 
 export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
-  function NewPollSheet({ onPost, now }, ref) {
+  function NewPollSheet({ onPost, canCloseEarly, now }, ref) {
     const { tokens } = useFrappTheme();
     const brand = useChapterBranding();
     const styles = createStyles(tokens, brand);
@@ -282,7 +288,7 @@ export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
             <View style={styles.more}>
               <Text style={styles.groupLabel}>Voting closes in</Text>
               <FilterChips
-                chips={POLL_CLOSE_CHOICES.map((choice) => ({
+                chips={pollCloseChoicesFor(canCloseEarly).map((choice) => ({
                   value: choice.id,
                   label: choice.label,
                 }))}

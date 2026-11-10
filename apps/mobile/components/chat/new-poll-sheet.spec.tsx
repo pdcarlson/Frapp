@@ -25,12 +25,19 @@ import { NewPollSheet, type NewPollSheetProps } from "./new-poll-sheet";
 
 const NOW = new Date("2026-11-09T12:00:00.000Z");
 
-function render(onPost: NewPollSheetProps["onPost"]): ReactTestRenderer {
+function render(
+  onPost: NewPollSheetProps["onPost"],
+  canCloseEarly = true,
+): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
       <FrappThemeProvider>
-        <NewPollSheet onPost={onPost} now={() => NOW} />
+        <NewPollSheet
+          onPost={onPost}
+          canCloseEarly={canCloseEarly}
+          now={() => NOW}
+        />
       </FrappThemeProvider>,
     );
   });
@@ -120,6 +127,20 @@ describe("New poll sheet (#3701)", () => {
     expect(onPost.mock.calls[0]![0].payload.closes_at).toBe(
       "2026-11-09T13:00:00.000Z",
     );
+    act(() => tree.unmount());
+  });
+
+  it("withholds Doesn't close from a member who couldn't close the poll", () => {
+    const tree = render(queued(), false);
+    act(() => control(tree, "More options: Closes in 1 day")!.props.onPress());
+    const chips = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Voting closes in" &&
+        typeof node.props.onSelect === "function",
+    );
+    expect(
+      chips.props.chips.map((chip: { value: string }) => chip.value),
+    ).toEqual(["1h", "1d", "3d", "1w"]);
     act(() => tree.unmount());
   });
 
@@ -233,7 +254,12 @@ describe("New poll sheet across visits (#3701)", () => {
     act(() => {
       tree = create(
         <FrappThemeProvider>
-          <NewPollSheet ref={ref} onPost={onPost} now={() => NOW} />
+          <NewPollSheet
+            ref={ref}
+            onPost={onPost}
+            canCloseEarly
+            now={() => NOW}
+          />
         </FrappThemeProvider>,
         {
           createNodeMock: (element) =>

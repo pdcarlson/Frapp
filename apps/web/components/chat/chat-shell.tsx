@@ -2988,6 +2988,7 @@ export function ChatShell({
             )
           }
           initialDraft={pollForm.draft}
+          canCloseEarly={can("polls:create", permissionsPayload?.permissions)}
           onPost={async (poll) => {
             const result = await channel.sendPoll(pollForm.channelId, poll);
             // Posted, but this device couldn't finish saving it: the same
