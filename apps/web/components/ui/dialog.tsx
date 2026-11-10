@@ -68,9 +68,11 @@ const DialogContent = React.forwardRef<
     >
       {children}
       {/*
-        `--muted-foreground`, not `--muted`: §1 bars `--muted` as text anywhere
-        on the ladder, and this is an accessibly named control ("Close") that
-        measured 3.126:1 on the dialog's `--popover` against §6's 4.5:1 (#1208).
+        `--muted-foreground`, not `--muted`: this is an accessibly named
+        control ("Close"), so it takes the secondary reading tone. In `--muted`
+        it measured 3.126:1 on the dialog's `--popover` against §6's 4.5:1
+        (#1208); since the 2026-11-09 text ladder `--muted` clears the gate
+        (6.22:1), and the tone stays for legibility, not for the gate.
         `ui/sheet.tsx` carries the same control.
       */}
       <DialogPrimitive.Close

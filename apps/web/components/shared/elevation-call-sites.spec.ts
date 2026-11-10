@@ -456,8 +456,10 @@ describe("global-error's hand copy of the Secondary button", () => {
 });
 
 describe("the overlay close controls are text-toned and named (#1208)", () => {
-  // The value half is in `elevation-contrast.spec.ts`: `--muted` on
-  // `--popover` misses the text gate, `--muted-foreground` clears it. All three
+  // The value half is in `elevation-contrast.spec.ts`. `--muted` on
+  // `--popover` missed the text gate when this was written (#1208) and clears
+  // it since the 2026-11-09 text ladder; a named control still takes
+  // `--muted-foreground`, the secondary reading tone. All three
   // draw an X glyph on `--popover` (the toast's default variant included).
   it.each(["dialog.tsx", "sheet.tsx", "toast.tsx"])("%s", (file) => {
     const source = codeWithoutComments(join(WEB, "components", "ui", file));
