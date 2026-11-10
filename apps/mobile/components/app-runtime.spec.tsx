@@ -10,7 +10,7 @@ import { renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 const calls = vi.hoisted(() => [] as string[]);
-vi.mock("@/lib/chat/unread-first-paint", () => ({
+vi.mock("@/lib/chat/use-unread-first-paint-runtime", () => ({
   useUnreadFirstPaintRuntime: () => calls.push("unread-first-paint"),
 }));
 vi.mock("@/lib/chat/use-chat-runtime", () => ({

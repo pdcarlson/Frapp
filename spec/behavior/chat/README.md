@@ -547,12 +547,17 @@ Both are computed server-side by `get_channel_unread_counts` and served from `GE
 
 ### Before the counts arrive (mobile)
 
-On open and on resume the counts request is one of several sent at once and can take seconds (#3728). Until it answers, the phone shows what it already has (#4006, asked by Shawn, 2026-11-10), in `apps/mobile/lib/chat/unread-first-paint.ts`:
+On open and on resume the counts request is one of several sent at once and can take seconds (#3728). Until it answers, the phone shows what it already has (#4006, asked by Shawn, 2026-11-10), laid over the counts by `useShownUnreadCounts` in `apps/mobile/lib/chat/unread-first-paint.ts`:
 
-- **The last answer.** Each answer from `GET /v1/channels/unread` is saved on the phone per member and chapter, and seeds the counts on a cold start. A first launch, or one after signing in, has none and shows no marks until the server answers, as before. The channel list itself is not saved, so on a cold start the marks appear with the list's first paint, not ahead of it.
-- **Chat pushes still in the tray.** On a cold start and each time the app returns from the background, a channel that reads as fully read and has a chat push in the tray is shown as one unread. A push names only its channel, so no mention is claimed and a channel that already has a count keeps it. The thread on screen is left out, since coming forward stamps it read.
+- **The last answer.** Each answer from `GET /v1/channels/unread` is saved on the phone per member and chapter ([`caching.md`](../../ui/resilience/caching.md) lists it), and stands in while the request has not answered. Signing out forgets it, so a first launch and the first after signing in have none. The channel list itself is not saved, so on a cold start the marks appear with the list's first paint, not ahead of it.
+- **Chat pushes still in the tray.** At launch and each time the app returns from the background, a channel with a chat push in the tray that reads as fully read, or has no count yet, is shown as one unread. A push names only its channel, so no mention is claimed and a channel that already has a count keeps it. The thread on screen is left out, since coming forward stamps it read.
 
-This is a placeholder, not a second definition of unread. Neither write makes the cached counts fresh, so the request still goes out, and its answer replaces them whole: a channel read on another device goes dark when it lands. Nothing is lit once the server has answered since the launch or foreground in question, and only a server answer is saved. Chat home, Messages and the app icon badge read the same counts, so they agree throughout.
+This is a placeholder, not a second definition of unread, and the server's answer always wins:
+
+- Nothing is written into the cached counts. The request goes out as it always did, and once it answers the saved answer is no longer shown; the tray stops lighting a channel at the first answer after that tray read, so a channel read on another device goes dark then.
+- A failed request reads as failed: the counts are unavailable, not the saved ones.
+- **Unread only** (§ Sidebar arrangement) hides nothing while the counts shown are the saved ones.
+- Chat home, Messages and the app icon badge read the same overlay, so they agree. The tray is cleared on the server's answers only ([`../notifications.md` § Notification Grouping](../notifications.md#notification-grouping)), and only a server answer is saved.
 
 ### Mentions
 

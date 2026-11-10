@@ -23,8 +23,7 @@ const mockState = vi.hoisted(() => ({
   }[],
   channels: [] as { id: string; name: string; type: string }[],
   channelUnreadOptions: [] as ({ enabled?: boolean } | undefined)[],
-  unreadFetching: false,
-  unreadError: false,
+  unreadUpdatedAt: 0,
   setBadgeCount: vi.fn(async (count: number) => {
     void count;
   }),
@@ -43,8 +42,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     mockState.channelUnreadOptions.push(options);
     return {
       data: mockState.channelUnread,
-      isFetching: mockState.unreadFetching,
-      isError: mockState.unreadError,
+      isError: false,
+      dataUpdatedAt: mockState.unreadUpdatedAt,
     };
   },
 }));
@@ -56,14 +55,15 @@ vi.mock("./push", () => ({
 }));
 
 const { useBadgeSyncRuntime } = await import("./use-badge-sync");
+const { holdUnreadFirstPaint, resetUnreadFirstPaintForTests } =
+  await import("../chat/unread-first-paint");
 
 beforeEach(() => {
   mockState.chapterId = "chapter-1";
   mockState.notifications = [];
   mockState.channelUnread = [];
   mockState.channelUnreadOptions = [];
-  mockState.unreadFetching = false;
-  mockState.unreadError = false;
+  mockState.unreadUpdatedAt = 0;
   mockState.channels = [];
   mockState.setBadgeCount.mockClear();
   mockState.clearRead.mockClear();
@@ -71,6 +71,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
+  resetUnreadFirstPaintForTests();
 });
 
 describe("useBadgeSyncRuntime", () => {
@@ -163,22 +164,26 @@ describe("useBadgeSyncRuntime", () => {
     expect(mockState.clearRead).toHaveBeenCalledWith(new Set(["read"]));
   });
 
-  it("waits for the server's answer before clearing the tray (#4006)", () => {
-    // Counts saved from the last launch read this channel as read, and a push
-    // for it has arrived since.
-    mockState.channelUnread = [{ channel_id: "read", unread_count: 0 }];
-    mockState.unreadFetching = true;
+  it("badges what chat home shows before the counts answer, and clears the tray on the server's answer only (#4006)", () => {
+    mockState.channels = [{ id: "d1", name: "dm-a-b", type: "DM" }];
+    // No answer yet. The last launch's answer has the DM read, and a push for
+    // it is in the tray.
+    mockState.channelUnread = undefined as never;
+    holdUnreadFirstPaint({
+      saved: [{ channel_id: "d1", unread_count: 0, mention_count: 0 }],
+      tray: { channelIds: new Set(["d1"]), since: Date.now() },
+    });
     const { rerender } = renderHook(() => useBadgeSyncRuntime());
+
+    expect(mockState.setBadgeCount).toHaveBeenLastCalledWith(1);
+    // The saved answer reads the DM as read; that must not dismiss its push.
     expect(mockState.clearRead).not.toHaveBeenCalled();
 
-    mockState.unreadFetching = false;
-    mockState.unreadError = true;
+    mockState.channelUnread = [{ channel_id: "d1", unread_count: 0 }];
+    mockState.unreadUpdatedAt = Date.now() + 1;
     rerender();
-    expect(mockState.clearRead).not.toHaveBeenCalled();
-
-    mockState.unreadError = false;
-    rerender();
-    expect(mockState.clearRead).toHaveBeenCalledWith(new Set(["read"]));
+    expect(mockState.setBadgeCount).toHaveBeenLastCalledWith(0);
+    expect(mockState.clearRead).toHaveBeenCalledWith(new Set(["d1"]));
   });
 
   it("clears nothing without an active chapter", () => {

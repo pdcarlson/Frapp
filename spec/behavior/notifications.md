@@ -162,11 +162,7 @@ single "N new messages" push, and that decision reaches the client only as
   which dismisses presented notifications whose `data.target` is that chat
   channel. Opening a channel marks it read and refetches the counts, and the
   counts refetch on foreground, so a channel read on another device or the web
-  clears the next time the app comes forward. Only a settled answer clears: not
-  while the counts are being read and not after a failed read, when the counts on
-  screen may be the phone's own
-  ([`chat/README.md` § Before the counts arrive](chat/README.md#before-the-counts-arrive-mobile)).
-  Clearing while the app stays
+  clears the next time the app comes forward. Clearing while the app stays
   closed would need a silent (`content-available`) push and a background task,
   which the app does not have.
 
