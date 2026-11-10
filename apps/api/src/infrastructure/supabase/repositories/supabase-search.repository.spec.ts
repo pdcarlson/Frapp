@@ -237,6 +237,9 @@ describe('SupabaseSearchRepository — query shape', () => {
         'eq',
         'in',
         'ilike',
+        'like',
+        'gte',
+        'lt',
         'or',
         'textSearch',
         'limit',
@@ -403,6 +406,78 @@ describe('SupabaseSearchRepository — query shape', () => {
     expect(String(messages.select.mock.calls[0][0])).not.toContain(
       'content_search',
     );
+  });
+
+  describe('message filters (#3958)', () => {
+    const SENDER = '99999999-9999-4999-8999-999999999999';
+
+    it('adds each filter to the channel-scoped query, never in place of it', async () => {
+      const { client, chains } = recordingClient();
+      const repo = new SupabaseSearchRepository(client);
+
+      await repo.searchMessages(['c-1'], 'budget', 10, {
+        fromUserId: SENDER,
+        after: '2026-11-01T00:00:00.000Z',
+        before: '2026-11-08T00:00:00.000Z',
+        has: ['image', 'link', 'poll'],
+      });
+
+      const messages = chains.chat_messages;
+      expect(messages.in).toHaveBeenCalledWith('channel_id', ['c-1']);
+      expect(messages.eq).toHaveBeenCalledWith('is_deleted', false);
+      expect(messages.eq).toHaveBeenCalledWith('sender_id', SENDER);
+      expect(messages.gte).toHaveBeenCalledWith(
+        'created_at',
+        '2026-11-01T00:00:00.000Z',
+      );
+      expect(messages.lt).toHaveBeenCalledWith(
+        'created_at',
+        '2026-11-08T00:00:00.000Z',
+      );
+      expect(messages.eq).toHaveBeenCalledWith('kind', 'poll');
+      expect(messages.ilike).toHaveBeenCalledWith('content', '%http%://%');
+      expect(messages.like).toHaveBeenCalledWith(
+        'chat_message_attachments.content_type',
+        'image/%',
+      );
+      // The inner join is what makes the attachment filter restrict messages.
+      expect(String(messages.select.mock.calls[0][0])).toContain(
+        'chat_message_attachments!inner(id)',
+      );
+    });
+
+    it('has:file joins attachments without a content-type condition', async () => {
+      const { client, chains } = recordingClient({
+        data: [{ id: 'm-1', chat_message_attachments: [{ id: 'a-1' }] }],
+        error: null,
+      });
+      const repo = new SupabaseSearchRepository(client);
+
+      const hits = await repo.searchMessages(['c-1'], '', 10, {
+        has: ['file'],
+      });
+
+      expect(String(chains.chat_messages.select.mock.calls[0][0])).toContain(
+        'chat_message_attachments!inner(id)',
+      );
+      expect(chains.chat_messages.like).not.toHaveBeenCalled();
+      // The embed filters; it is not returned as part of a message.
+      expect(hits).toEqual([{ id: 'm-1' }]);
+    });
+
+    it('skips the text match for an empty query and joins nothing unasked', async () => {
+      const { client, chains } = recordingClient();
+      const repo = new SupabaseSearchRepository(client);
+
+      await repo.searchMessages(['c-1'], '', 10, { fromUserId: SENDER });
+
+      const messages = chains.chat_messages;
+      expect(messages.textSearch).not.toHaveBeenCalled();
+      expect(messages.in).toHaveBeenCalledWith('channel_id', ['c-1']);
+      expect(String(messages.select.mock.calls[0][0])).not.toContain(
+        'chat_message_attachments',
+      );
+    });
   });
 
   describe('channel candidate push-down (#469)', () => {

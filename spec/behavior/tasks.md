@@ -5,6 +5,10 @@ A lightweight task management system for chapter operations.
 ## Task Lifecycle
 
 - Admins with `tasks:manage` permission create tasks with: title, description (optional), assignee (single member), due date, and optional point reward on completion.
+- **Setting a due date never needs the year** (Paul, 2026-11-09, #3928). Almost every task is due in the next days or weeks, so a month and a day are enough and the year is filled in as the next time that date comes round, today included. A date further out, an annual chore set a year ahead, is still reachable on purpose, and a date picked outside the current year shows its year in the field so it can't be misread.
+  - **Web** types it (`apps/web/components/tasks/due-date-field.tsx`, on the board's Add a task row and the chat composer's Task form): `Nov 14`, `11/14`, `Friday`, `tomorrow`, with a year only when one is meant (`Nov 14 2027`). `parseDueEntry` in `@repo/formatting` owns what is read. The field shows an upcoming day this year as `Sat, Nov 14` and any other date with its year, `Mar 14, 2027`.
+  - **The `/task` command** reads its date with the same reader: whatever follows the `@member` is the date, or the date and then the points, so `/task "Sweep" @sam 11/14 5` and `… Nov 14 2027` work; `YYYY-MM-DD` still does ([`integrations.md`](chat/integrations.md)).
+  - **Mobile's** New task sheet offers Today, Tomorrow, Friday (when it isn't one of those two) and Next week as chips, and the platform's date picker for any other day, which opens on the current year. Its field label shows the year for a date in another one. Mobile's task rows and cards still print a due date without its year ([#3420](https://github.com/pdcarlson/Frapp/issues/3420)).
 - Task statuses: TODO → IN_PROGRESS → COMPLETED. Tasks past their due date that are not COMPLETED are flagged as OVERDUE.
 - **OVERDUE is derived, not stored.** `toDisplayStatus` synthesizes it on every read for a task whose stored status is TODO or IN_PROGRESS and whose `due_date` is before today (UTC). An optimistic write must therefore predict the *rendered* status, or an overdue row visibly flips back on the next refetch.
 - **Read paths carry `stored_status` alongside `status`.** Because TODO+past-due and IN_PROGRESS+past-due both render as OVERDUE with `completed_at: null`, the rendered value alone cannot tell a client which transition is legal — and the assignee transition table (`VALID_ASSIGNEE_TRANSITIONS` in `apps/api/src/application/services/task.service.ts`) is checked against the *stored* status. So every read returns both: `status` (rendered, what to display and group by) and `stored_status` (persisted, what to compute the next action from). `POST /v1/tasks` returns the freshly created row and does **not** derive, so it carries no `stored_status`; the next read does. The field is additive — the server remains the only authority on whether a transition is accepted.
@@ -79,7 +83,7 @@ On mobile's task board only the row's checkbox changes a task; a tap elsewhere o
 Tasks are surfaced inline in chat as a [chat integration](integrations.md) (slash command +
 rich renderer + server-originated card).
 
-- **Slash command.** `/task "<title>" @assignee <YYYY-MM-DD> [points]` (gated on the `tasks`
+- **Slash command.** `/task "<title>" @assignee <due date> [points]` (gated on the `tasks`
   module) creates and assigns a task, mirroring the existing dashboard create. It is a *heavy*
   command: the client posts an optimistic `loading` placeholder, calls `POST /v1/tasks` with the
   active `channel_id` + `client_message_id`, and the server posts the rich card after the row

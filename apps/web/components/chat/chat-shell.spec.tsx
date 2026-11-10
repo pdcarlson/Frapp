@@ -203,6 +203,8 @@ const sidebarState = {
   unreadError: false,
   pinnedIds: new Set<string>(),
   levels: [] as { channel_id: string; level: string }[],
+  /** `users.id` → display name, as the roster read serves it. */
+  memberNames: {} as Record<string, string>,
 };
 
 /**
@@ -268,9 +270,9 @@ vi.mock("./report-message-dialog", () => ({
 // column the shell decides to show.
 const mockTrackEventCard = vi.fn();
 const mockSendPoll = vi.fn(async () => ({ ok: true as const }));
-const mockPostTask = vi.fn(
-  async (): Promise<Record<string, unknown>> => ({ ok: true }),
-);
+const mockPostTask = vi.fn(async (): Promise<Record<string, unknown>> => ({
+  ok: true,
+}));
 const mockPostHours = vi.fn(async () => ({ ok: true }));
 const mockPostPoints = vi.fn(async () => ({ ok: true }));
 
@@ -374,7 +376,9 @@ vi.mock("@/components/events/event-editor-dialog", () => ({
       {/* What the dialog does on Create: ask the chat to track the card. */}
       <button
         data-testid="event-form-track"
-        onClick={() => props.trackChatCard?.(props.postToChannelId ?? "", "Formal")}
+        onClick={() =>
+          props.trackChatCard?.(props.postToChannelId ?? "", "Formal")
+        }
       >
         track
       </button>
@@ -460,7 +464,7 @@ vi.mock("@repo/hooks", async () => ({
   // pass-through from a re-sort.
   useCategories: () => ({ data: CATEGORIES, isPending: false }),
   useMemberDisplayNames: () => ({
-    byId: new Map(),
+    byId: sidebarState.memberNames,
     nameFor: () => null,
     avatarFor: () => null,
   }),
@@ -881,23 +885,21 @@ vi.mock("./composer", () => ({
           "Chapter Dinner",
           "Chapter Dinner 2026-11-20 9:00-11:00",
           '"Formal" 2026-11-20 18:00-20:00',
-        ].map(
-          (args) => (
-            <button
-              key={args}
-              data-testid={`composer-event:${args}`}
-              onClick={(event) => {
-                const took = onOpenCommandForm?.(
-                  { name: "event", implemented: true },
-                  args,
-                );
-                event.currentTarget.dataset.took = String(took);
-              }}
-            >
-              /event {args}
-            </button>
-          ),
-        )}
+        ].map((args) => (
+          <button
+            key={args}
+            data-testid={`composer-event:${args}`}
+            onClick={(event) => {
+              const took = onOpenCommandForm?.(
+                { name: "event", implemented: true },
+                args,
+              );
+              event.currentTarget.dataset.took = String(took);
+            }}
+          >
+            /event {args}
+          </button>
+        ))}
         {["", '"Who drives?" Sam', '"Who drives?" Sam Alex'].map((args) => (
           <button
             key={`poll:${args}`}
@@ -984,7 +986,11 @@ vi.mock("./channel-menu", () => ({
     onJumpToBookmark,
     hideConversation,
     pinToTop,
+    searchChannels,
+    searchMembers,
   }: {
+    searchChannels: Array<{ id: string; label: string }>;
+    searchMembers: Array<{ id: string; label: string }>;
     pinToTop?: { pinned: boolean; onToggle: () => void };
     messages: Array<{ id: string }>;
     hiddenPins: { blocked: number; held: number };
@@ -999,6 +1005,12 @@ vi.mock("./channel-menu", () => ({
       {/* What the Pinned panel would read: the block list's cases assert on it. */}
       <span data-testid="menu-messages">
         {messages.map((m) => m.id).join(",")}
+      </span>
+      <span data-testid="menu-search-channels">
+        {searchChannels.map((c) => c.id).join(",")}
+      </span>
+      <span data-testid="menu-search-members">
+        {searchMembers.map((m) => m.label).join(",")}
       </span>
       <span data-testid="menu-hidden-pins">
         {`${hiddenPins.blocked}/${hiddenPins.held}`}
@@ -1287,6 +1299,40 @@ describe("ChatShell channel categories", () => {
 
     expect(screen.getByTestId("channel-list-categories").textContent).toBe(
       "Executive,Committees",
+    );
+  });
+});
+
+describe("ChatShell search pickers (#3958)", () => {
+  afterEach(() => {
+    sidebarState.memberNames = {};
+  });
+
+  it("offers search the roster, with a label for a member who never set a name", () => {
+    // `display_name` defaults to '', which would be a blank first row that
+    // Enter picks.
+    sidebarState.memberNames = { "user-ada": "Ada Lovelace", "2f4a1c00": "" };
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    const offered = (
+      screen.getByTestId("menu-search-members").textContent ?? ""
+    ).split(",");
+    expect(offered).toHaveLength(2);
+    expect(offered).toContain("Ada Lovelace");
+    expect(offered.every((label) => label.trim() !== "")).toBe(true);
+  });
+
+  it("offers search every readable channel, not only the open one", () => {
+    // The panel's own spec builds its lists by hand, so without this the shell
+    // could hand search the open channel alone and every test would pass.
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    const offered = (
+      screen.getByTestId("menu-search-channels").textContent ?? ""
+    ).split(",");
+    expect(offered).toHaveLength(CHANNELS.length);
+    expect(offered).toEqual(
+      expect.arrayContaining(CHANNELS.map((channel) => channel.id)),
     );
   });
 });
@@ -4865,7 +4911,9 @@ describe("ChatShell opens the Task, Service hours and Points forms (#3865)", () 
     mockPostHours.mockClear();
     mockPostPoints.mockClear();
     render(<ChatShell />);
-    const channelId = screen.getByTestId("composer").textContent?.split(/\s/)[0];
+    const channelId = screen
+      .getByTestId("composer")
+      .textContent?.split(/\s/)[0];
     click("composer-hours:");
     fireEvent.click(screen.getByTestId("hours-form-post"));
     click("composer-points:");

@@ -2603,6 +2603,53 @@
         ]
       }
     },
+    "/v1/notifications/read": {
+      "post": {
+        "operationId": "NotificationController_markAllRead_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkNotificationsReadDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkNotificationsReadResultDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mark all unread notifications read, or only those pointing at the named screens",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
     "/v1/notifications/{id}/read": {
       "patch": {
         "operationId": "NotificationController_markRead_v1",
@@ -9568,6 +9615,42 @@
             }
           },
           {
+            "name": "has",
+            "required": false,
+            "in": "query",
+            "description": "Message hits that carry all of these, comma-separated: `file` (any attachment), `image`, `link`, `poll`. A message filter: it narrows the messages source inside the caller’s accessible-channel set, makes the search messages-only, and lets `q` be empty.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "before",
+            "required": false,
+            "in": "query",
+            "description": "Message hits sent before this instant: ISO 8601 with an explicit offset. A message filter: it narrows the messages source inside the caller’s accessible-channel set, makes the search messages-only, and lets `q` be empty.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "required": false,
+            "in": "query",
+            "description": "Message hits sent at or after this instant: ISO 8601 with an explicit offset. A message filter: it narrows the messages source inside the caller’s accessible-channel set, makes the search messages-only, and lets `q` be empty.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fromUserId",
+            "required": false,
+            "in": "query",
+            "description": "Message hits from this sender only. A message filter: it narrows the messages source inside the caller’s accessible-channel set, makes the search messages-only, and lets `q` be empty.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "channelId",
             "required": false,
             "in": "query",
@@ -12664,6 +12747,40 @@
         },
         "required": [
           "token"
+        ]
+      },
+      "MarkNotificationsReadDto": {
+        "type": "object",
+        "properties": {
+          "screens": {
+            "description": "Mark read only the notifications that point at one of these screens (`data.target.screen`). Omit to mark every unread notification read.",
+            "maxItems": 10,
+            "example": [
+              "events"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "MarkNotificationsReadResultDto": {
+        "type": "object",
+        "properties": {
+          "read_at": {
+            "type": "string",
+            "description": "The instant written to `read_at` on every row this call read",
+            "format": "date-time"
+          },
+          "updated": {
+            "type": "number",
+            "description": "How many notifications this call marked read"
+          }
+        },
+        "required": [
+          "read_at",
+          "updated"
         ]
       },
       "UpdateNotificationPreferenceDto": {

@@ -12,7 +12,7 @@
  * the worst direction**: the channel still joins and still reports `SUBSCRIBED`,
  * it just never receives anything — which is indistinguishable from "nothing has
  * changed yet". That is precisely the failure mode #867 spent two days
- * diagnosing, so `change-topics.spec.ts` pins every string here against the
+ * diagnosing, so `apps/web/lib/realtime/change-topics.spec.ts` pins every string here against the
  * definitions the migrations leave in effect. Treat a failure of that test as
  * "change the SQL too", never as "update the expectation", and change it with a
  * **new** migration: an edit to a shipped one never reaches a database that
@@ -20,6 +20,11 @@
  *
  * Kept deliberately tiny and dependency-free so both the hook and the pin test
  * can import it without pulling in React or the Supabase client.
+ *
+ * Moved here from `apps/web/lib/realtime/change-topics.ts` (#3929) when mobile
+ * began listening on `notif:<users.id>` too
+ * (`apps/mobile/lib/notifications/use-notification-ping.ts`), so both clients
+ * build the topic from one definition.
  */
 
 /** The `event` name every change ping is sent under (`realtime.send(..., 'change', ...)`). */

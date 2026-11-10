@@ -20,7 +20,7 @@ import {
   type PresenceStatus,
   type RawPresenceState,
 } from "@/lib/realtime/presence-status";
-import type { OwnStatus } from "@/lib/realtime/member-status";
+import type { OwnStatus } from "@repo/hooks/member-status";
 
 /**
  * Chapter-wide Realtime Presence.

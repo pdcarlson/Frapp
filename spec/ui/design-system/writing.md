@@ -342,6 +342,7 @@ The **Accent server contrast disclosure** row is independent of every row above 
 | Nothing assigned (member) | — | `Nothing on your plate.` then, when an event is ahead and Events is on, `Next up: {event}, {when}.` (one line, in place of the board) |
 | Add row (officer) | — | `Add a task`, at the top of To do |
 | Add row, required field left out | — | `Pick an assignee.` / `Pick a due date.` (under the field, on submit only) |
+| Add row or chat Task form, due date typed but not readable | — | `Try a date like Nov 14 or 11/14, or a day like Friday.` (under the field; it takes the place of `Pick a due date.` once a submit has left the date out and what is typed is still not a date, and goes when it is; #3928) |
 | Error | `Couldn't load tasks` | the load-failure line (§ copy rules) |
 | Offline | `Tasks unavailable offline` | `Reconnect to load the chapter board and move tasks through it.` |
 
@@ -368,11 +369,12 @@ Mobile's Tasks tab (s08) is a personal board for everyone, so with nothing assig
 |---|---|---|
 | Loading | — | `Loading chapter documents...` |
 | Empty | — | `No documents yet.`, `Nothing in {folder} yet.`, or on No folder `Every document is in a folder.`; for a viewer with `chapter_docs:upload` then **Upload a file** `or drop one anywhere on this page.` (one line) |
-| Empty (search or filter, all files) | — | `No documents match “{query}”.`, or with no search typed `No documents match these filters.`, then a **Clear filters** link that clears the search and both filters (one line) |
+| Empty (search or filter, all files) | — | `No documents match “{query}”.`, or with no search typed `No documents match these filters.`, then a **Clear filters** link that clears the search and every filter (one line) |
 | Empty (search or filter, inside a folder) | — | `Nothing in {folder} matches.` (on No folder, `No documents outside a folder match.`) then a **Search all files** link, which keeps the search and filters (one line) |
-| Capped list (status line above the rows) | — | `Showing the newest 1,000 documents. Search and filters look only at these for now.` |
+| Capped list (status line above the rows; both apps) | — | `Showing the newest 1,000 documents. Search and filters look only at these for now.` |
 | Empty, mobile s12 | — | `No documents yet.` or `Nothing in {folder} yet.`; for a viewer with `chapter_docs:upload` then `Tap + to upload one.`, the screen's own + (one line) |
-| Empty (search), mobile s12 | — | `No documents match “{query}”.` with **Clear search**, or inside a folder chip `Nothing in {folder} matches “{query}”.` with **Search all files** (one line). Web's lines differ since #3852, which added filters there |
+| Empty (search or filter), mobile s12 | — | `No documents match “{query}”.`, or with no search typed `No documents match these filters.`, then **Clear search** when only a search is set, or **Clear filters**, which clears the search and every filter; inside a folder chip `Nothing in {folder} matches “{query}”.` (or `… matches these filters.`) with **Search all files** (one line). The capped-list line is the one above |
+| Delete (both apps) | `Delete {title}?` | `This removes the file from chapter storage immediately and cannot be undone.`, confirm **Delete document** (web's confirm dialog, mobile's system alert after a long press). Mobile's failure line under the search: the refusal's own reason when there is one, else `Couldn't delete “{title}”. Try again in a moment.` |
 | Error | `Couldn't load documents` | the load-failure line (§ copy rules) |
 | Offline | `Documents unavailable offline` | `Reconnect to browse the chapter library and download files.` |
 | Folder list failed (inline, under the rail) | — | `Couldn't load the folder list, so these are read from the documents shown. Empty folders and folder management are unavailable until it loads.` |
@@ -407,13 +409,15 @@ Why the states are split this way:
 | Loading | — | `Generating report...` |
 | Empty filter | — | `Nothing in this chapter matches these filters.` (one line) |
 | Error | `Couldn't generate <kind> report` | the API's own message, or the load-failure line (§ copy rules) |
-| Truncated | `Incomplete report` (badge) | `<cap summary> This preview and the CSV built from it are not a complete record of the chapter.` |
+| Truncated | `Incomplete report` (badge) | `<cap summary> This preview and any export built from it are not a complete record of the chapter.` |
 | Permission denied | — | `Your role can't export chapter data. Ask your chapter president for access.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can export chapter data.` |
 
 **This table had no Error row until the Resources & Reporting slice, and that is why the screen had no error state.** A failed run reported a toast and never touched `preview`, so the panel fell through to the Idle copy — a failure rendering as "nothing has happened yet", against [README.md](README.md) §4's requirement of an error state with a retry path on every async view. The Idle and Empty-filter titles were added in the same pass: [components.md](components.md) §10's state family needs a title and a description, and the approved sentences are kept verbatim as the descriptions rather than rewritten.
 
-**The Truncated row is a state, not a toast.** [`../../behavior/reports.md`](../../behavior/reports.md) caps a report at 5,000 rows and requires that truncation is never silent; the toast fires once and then a partial table sits on screen claiming to be the whole report, and the CSV built from it carries that claim into a file. The badge is [components.md](components.md) §5's Semantic warning kind, which needs no §1 lift on its own tint.
+**The Truncated row is a state, not a toast.** [`../../behavior/reports.md`](../../behavior/reports.md) caps a report at 5,000 rows and requires that truncation is never silent; the toast fires once and then a partial table sits on screen claiming to be the whole report, and the export built from it carries that claim into a file. The badge is [components.md](components.md) §5's Semantic warning kind, which needs no §1 lift on its own tint.
+
+Changed in #3977 by shawnatomklein-eng, 2026-11-10: the Truncated description says "any export" where it said "the CSV", because the export is now a file-type menu (CSV, Excel, copy for Google Sheets; [`../../behavior/reports.md`](../../behavior/reports.md)).
 
 ### Backwork (dashboard)
 

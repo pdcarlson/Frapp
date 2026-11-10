@@ -80,6 +80,14 @@ describe("/about", () => {
     }
     expect(about).toContain('href="mailto:team@frapp.live"');
   });
+
+  it("points at Support from its own contact section (#3869)", () => {
+    // The footer links Support on every page, so only the page body counts.
+    const main = about.slice(about.indexOf("<main"), about.indexOf("</main>"));
+    const contact = main.slice(main.indexOf(">Get in touch</h2>"));
+    expect(contact).toContain('href="mailto:team@frapp.live"');
+    expect(contact).toMatch(/href="\/support"[^>]*>Get support</);
+  });
 });
 
 describe("both pages", () => {

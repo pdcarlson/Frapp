@@ -3241,3 +3241,12 @@ drop function if exists public.backwork_course_nicknames_ok(text[]);
 ```
 
 Dropping it loses every course name and nickname members saved; the files keep their department and course number.
+
+## Rollback notifications seen-chat backfill (20261109233000)
+
+* **Migration**: `20261109233000_notifications_backfill_seen_chat_rows.sql`
+
+A data-only backfill: it set `read_at` on unread chat notifications the member's read receipt already covered, and on chat notifications whose channel no longer exists. No schema changed, so there is nothing to drop, and no code depends on it.
+
+**There is normally nothing to roll back.** The rows it read are ones the member had already seen; "unread" for them was the defect. The backfill did not record which rows it touched, so it cannot be reversed exactly. If rows must be reopened, a row it stamped from a receipt has `read_at` equal to that receipt's `last_read_at` at the time, which no API write produces for a row created before #3807 was live; restore those rows from the pre-promotion backup ([§ 2) Full rollback to backup/snapshot](#2-full-rollback-to-backupsnapshot)) rather than guessing.
+

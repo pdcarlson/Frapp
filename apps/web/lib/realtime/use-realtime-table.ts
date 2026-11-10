@@ -7,7 +7,7 @@ import {
   CHANGE_EVENT,
   changeTopic,
   type ChangeTable,
-} from "@/lib/realtime/change-topics";
+} from "@repo/chat-core/change-topics";
 
 type Options = {
   /** Table whose changes should invalidate. Must emit a ping — see `change-topics.ts`. */
@@ -74,7 +74,7 @@ export function useRealtimeTable({
   // must not. Broadcast is fire-and-forget with no replay: a detach/re-attach
   // cycle drops any ping landing inside it, permanently, and the REST poll
   // cannot cover the gap because it only arms after a channel has been non-live
-  // for >10s, which a clean resubscribe never triggers. `attendance-panel.tsx`
+  // for >10s, which a clean resubscribe never triggers. `event-detail-sheet.tsx`
   // puts `chapterId` in its invalidate array, so keying the effect on the
   // array's JSON would re-mint the `attendance:<eventId>` channel on every
   // chapter switch — losing whichever check-in landed in that window and

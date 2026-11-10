@@ -836,6 +836,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/notifications/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark all unread notifications read, or only those pointing at the named screens */
+        post: operations["NotificationController_markAllRead_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/notifications/{id}/read": {
         parameters: {
             query?: never;
@@ -3953,6 +3970,24 @@ export interface components {
             token: string;
             /** @description Device name for display */
             device_name?: string;
+        };
+        MarkNotificationsReadDto: {
+            /**
+             * @description Mark read only the notifications that point at one of these screens (`data.target.screen`). Omit to mark every unread notification read.
+             * @example [
+             *       "events"
+             *     ]
+             */
+            screens?: string[];
+        };
+        MarkNotificationsReadResultDto: {
+            /**
+             * Format: date-time
+             * @description The instant written to `read_at` on every row this call read
+             */
+            read_at: string;
+            /** @description How many notifications this call marked read */
+            updated: number;
         };
         UpdateNotificationPreferenceDto: {
             /** @description Chapter ID */
@@ -7331,6 +7366,38 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    NotificationController_markAllRead_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkNotificationsReadDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarkNotificationsReadResultDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -12022,6 +12089,14 @@ export interface operations {
             query: {
                 /** @description Search query */
                 q: string;
+                /** @description Message hits that carry all of these, comma-separated: `file` (any attachment), `image`, `link`, `poll`. A message filter: it narrows the messages source inside the caller’s accessible-channel set, makes the search messages-only, and lets `q` be empty. */
+                has?: string;
+                /** @description Message hits sent before this instant: ISO 8601 with an explicit offset. A message filter: it narrows the messages source inside the caller’s accessible-channel set, makes the search messages-only, and lets `q` be empty. */
+                before?: string;
+                /** @description Message hits sent at or after this instant: ISO 8601 with an explicit offset. A message filter: it narrows the messages source inside the caller’s accessible-channel set, makes the search messages-only, and lets `q` be empty. */
+                after?: string;
+                /** @description Message hits from this sender only. A message filter: it narrows the messages source inside the caller’s accessible-channel set, makes the search messages-only, and lets `q` be empty. */
+                fromUserId?: string;
                 /** @description Narrow the search to one chat channel. This is the single-channel form of search specified in spec/behavior/chat/README.md: only the `messages` source runs and `backwork`, `events` and `members` come back empty. The channel is still resolved through the caller’s accessible-channel set, so an unreadable or unknown id returns no matches rather than an error. */
                 channelId?: string;
             };

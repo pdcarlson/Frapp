@@ -28,6 +28,7 @@ import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
+import { DueDateField } from "@/components/tasks/due-date-field";
 import { useToast } from "@/lib/hooks/use-toast";
 import { guardIntDraft, parseGuardedInt } from "@/lib/utils";
 
@@ -218,25 +219,20 @@ export function NewTaskDialog({
             </div>
             <div className="grid min-w-0 gap-1">
               <Label htmlFor={`${ids}-due`}>Due date</Label>
-              <Input
-                ref={dueRef}
-                id={`${ids}-due`}
-                type="date"
-                value={dueDate}
-                aria-invalid={missing.due || undefined}
-                onChange={(event) => {
-                  setDueDate(event.target.value);
-                  if (event.target.value) {
-                    setMissing((prev) => ({ ...prev, due: false }));
-                  }
-                }}
-                {...gate.controlProps()}
-              />
-              {missing.due ? (
-                <p role="alert" className="text-caption text-destructive-text">
-                  Pick a due date.
-                </p>
-              ) : null}
+              <div>
+                <DueDateField
+                  ref={dueRef}
+                  id={`${ids}-due`}
+                  placeholder="Nov 14, Friday, tomorrow"
+                  missing={missing.due}
+                  value={dueDate}
+                  onChange={(value) => {
+                    setDueDate(value);
+                    if (value) setMissing((prev) => ({ ...prev, due: false }));
+                  }}
+                  {...gate.controlProps()}
+                />
+              </div>
             </div>
           </div>
           <div className="grid gap-1">

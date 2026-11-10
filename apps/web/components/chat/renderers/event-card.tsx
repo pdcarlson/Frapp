@@ -5,7 +5,6 @@ import { EventsGlyph, LocationGlyph } from "../chat-glyphs";
 import {
   countCheckedIn,
   useAttendance,
-  useCheckIn,
   useMyPermissions,
   useNow,
 } from "@repo/hooks";
@@ -22,8 +21,7 @@ import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
-import { useToast } from "@/lib/hooks/use-toast";
-import { getErrorMessage } from "@/lib/utils";
+import { useSelfCheckIn } from "@/lib/hooks/use-self-check-in";
 
 interface EventCardProps {
   message: ChatMessage;
@@ -53,17 +51,6 @@ function formatRange(startIso: string, endIso: string): string {
 }
 
 /**
- * A check-in conflict (already on the attendance list) surfaces as HTTP 409.
- * Prefer the typed status off the error body over string-matching the message,
- * which is brittle if the wording or `getErrorMessage` format ever changes.
- */
-function isAlreadyCheckedIn(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-  const e = error as { statusCode?: unknown; status?: unknown };
-  return e.statusCode === 409 || e.status === 409;
-}
-
-/**
  * Event card. The chat message is an immutable creation-time snapshot (name,
  * when, location, point value); the *live* checked-in count is read back from
  * the attendance query so the card reflects check-ins without ever mutating the
@@ -72,13 +59,12 @@ function isAlreadyCheckedIn(error: unknown): boolean {
  *
  * Interactive: any member can Check in during the event window — the button
  * fires the existing check-in endpoint (the server enforces the window, role
- * gate, and one-per-member uniqueness; the gating here is UX-only). A 409 is
- * treated as an idempotent "already checked in".
+ * gate, and one-per-member uniqueness; the gating here is UX-only). The
+ * request and its toasts are `useSelfCheckIn`'s, shared with the event sheet.
  */
 export function EventCard({ message, isConfirmed }: EventCardProps) {
   const payload = readEventPayload(message);
-  const { toast } = useToast();
-  const checkIn = useCheckIn();
+  const checkIn = useSelfCheckIn();
   // `POST /v1/events/:eventId/attendance/check-in` sits on `AttendanceController`,
   // which is `ChapterGuard`-guarded with no `@FreeTier` — so it is paid-ops even
   // though this card is rendered inside chat, which is free-tier. The host
@@ -124,31 +110,6 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
     now <= bounds.closesAt.getTime();
   const actionsDisabled = !isConfirmed || checkIn.isPending;
 
-  const handleCheckIn = async (): Promise<void> => {
-    try {
-      // No token and no coordinates: this is the plain self check-in surface.
-      // For an event that defines a check-in geofence the server rejects that
-      // with a message naming the mobile app, which the catch below renders.
-      await checkIn.mutateAsync({ eventId: payload.event_id });
-      toast({
-        title: "Checked in",
-        description: payload.point_value
-          ? `+${payload.point_value} pts`
-          : undefined,
-      });
-    } catch (error) {
-      const alreadyIn = isAlreadyCheckedIn(error);
-      const detail = getErrorMessage(error, "Couldn't check in.");
-      toast({
-        title: alreadyIn ? "Already checked in" : "Couldn't check in",
-        description: alreadyIn
-          ? "You're already on the attendance list for this event."
-          : detail,
-        variant: alreadyIn ? "default" : "destructive",
-      });
-    }
-  };
-
   return (
     <Card className={cn(MESSAGE_CARD)}>
       <div className="flex items-center justify-between gap-2">
@@ -192,7 +153,7 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
           <Button
             size="sm"
             {...gate.controlProps(actionsDisabled)}
-            onClick={() => void handleCheckIn()}
+            onClick={() => void checkIn.run(payload.event_id, payload.point_value)}
           >
             <Check className="h-4 w-4" />
             Check in

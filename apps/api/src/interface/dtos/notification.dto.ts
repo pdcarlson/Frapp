@@ -1,4 +1,7 @@
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsIn,
   IsInt,
   IsOptional,
@@ -114,6 +117,42 @@ export class ListNotificationsQueryDto {
   @Min(LIST_QUERY_LIMIT_MIN)
   @Max(LIST_QUERY_LIMIT_MAX)
   limit?: number;
+}
+
+/**
+ * A notification's `data.target.screen`, as the API's senders write it:
+ * lowercase words joined by underscores (`chat`, `chat_reports`).
+ */
+const NOTIFICATION_SCREEN_REGEX = /^[a-z][a-z_]{0,39}$/;
+
+/** Most screens one "seen" call may name; a client screen covers one or two. */
+const MARK_READ_SCREENS_MAX = 10;
+
+export class MarkNotificationsReadDto {
+  @ApiPropertyOptional({
+    description:
+      'Mark read only the notifications that point at one of these screens (`data.target.screen`). Omit to mark every unread notification read.',
+    type: [String],
+    maxItems: MARK_READ_SCREENS_MAX,
+    example: ['events'],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(MARK_READ_SCREENS_MAX)
+  @Matches(NOTIFICATION_SCREEN_REGEX, { each: true })
+  screens?: string[];
+}
+
+export class MarkNotificationsReadResultDto {
+  @ApiProperty({
+    description: 'The instant written to `read_at` on every row this call read',
+    format: 'date-time',
+  })
+  read_at: string;
+
+  @ApiProperty({ description: 'How many notifications this call marked read' })
+  updated: number;
 }
 
 export class UpdateNotificationPreferenceDto {
