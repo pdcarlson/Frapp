@@ -181,7 +181,8 @@ const TYPING_LINE_BLANK = "\u00a0";
  * Keyboard: `KeyboardAvoidingArea` from `lib/keyboard.tsx`, which picks the
  * avoiding view per platform and keyboard path. On Android the window does not
  * resize for the keyboard while the app-wide `KeyboardProvider` is active, so
- * the composer has to be moved up from here (#3346), and a screen must never
+ * the composer has to be moved up from here (#3346), by the keyboard's height
+ * less the bottom inset (`atScreenBottom`, #4010), and a screen must never
  * import the native package directly (ESLint `no-restricted-imports`).
  */
 export default function ChatThreadRoute() {
@@ -1096,6 +1097,9 @@ function ChannelThreadScreen() {
     >
       <KeyboardAvoidingArea
         style={styles.flex}
+        // The area runs to the bottom inset this SafeAreaView pads, so on
+        // Android it rises by the keyboard's height less that inset (#4010).
+        atScreenBottom
         // Everything the image viewer covers, out of the accessibility tree
         // while it is open, as the mute menu's wrapper below does for the
         // menu. Either avoiding view hands these to the View it renders.

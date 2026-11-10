@@ -374,7 +374,8 @@ export function MessageThreadScreen({
       style={styles.safeArea}
       edges={["top", "left", "right", "bottom"]}
     >
-      <KeyboardAvoidingArea style={styles.flex}>
+      {/* As s05's: rises by the keyboard less the bottom inset (#4010). */}
+      <KeyboardAvoidingArea style={styles.flex} atScreenBottom>
         <View style={styles.header}>
           <Pressable
             accessibilityRole="button"
