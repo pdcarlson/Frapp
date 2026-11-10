@@ -41,6 +41,40 @@ describe("SettingsOrgTab", () => {
     expect(screen.getByPlaceholderText("Line")).toBeInTheDocument();
   });
 
+  it("saves the order word with the other three, and a cleared field as blank (#3939)", () => {
+    const onPatchConfig = vi.fn();
+    render(
+      <SettingsOrgTab
+        archetypeKey="ifc"
+        {...baseProps}
+        vocabulary={{
+          recruitment: "Rush",
+          pledge: "New member",
+          class: "Pledge class",
+          order: "Fraternal order",
+        }}
+        onPatchConfig={onPatchConfig}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Member order number"), {
+      target: { value: " Roll number " },
+    });
+    // The PATCH merges, so a key left out would keep its stored word.
+    fireEvent.change(screen.getByLabelText("Cohort label"), {
+      target: { value: "" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save vocabulary/i }));
+
+    expect(onPatchConfig).toHaveBeenCalledWith({
+      vocabulary: {
+        recruitment: "Rush",
+        pledge: "New member",
+        class: "",
+        order: "Roll number",
+      },
+    });
+  });
+
   it("confirming an archetype switch patches org_archetype + resets vocab and modules", () => {
     const onPatchConfig = vi.fn();
     render(
