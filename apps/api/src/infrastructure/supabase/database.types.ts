@@ -60,6 +60,8 @@ import type {
   StudyGeofence,
   StudySession,
   Task,
+  PledgeClass,
+  PledgeClassAssignment,
   RushCandidate,
   RushCandidateVote,
   User,
@@ -147,6 +149,7 @@ export interface Database {
       financial_transactions: TableDefinition<FinancialTransaction>;
       service_entries: TableDefinition<ServiceEntry>;
       tasks: TableDefinition<Task>;
+      chapter_pledge_classes: TableDefinition<PledgeClass>;
       rush_candidates: TableDefinition<RushCandidate>;
       rush_candidate_votes: TableDefinition<RushCandidateVote>;
       chapter_documents: TableDefinition<ChapterDocument>;
@@ -331,6 +334,16 @@ export interface Database {
           p_chapter_cap: number;
         };
         Returns: DiscordImportFile[];
+      };
+      /** `20261110170000` (#3939) — `returns setof chapter_pledge_classes`. */
+      reorder_chapter_pledge_classes: {
+        Args: { p_chapter_id: string; p_ids: string[] };
+        Returns: PledgeClass[];
+      };
+      /** `20261110170000` (#3939) — `p_assignments` is `jsonb`; `returns setof members`. */
+      assign_member_pledge_classes: {
+        Args: { p_chapter_id: string; p_assignments: PledgeClassAssignment[] };
+        Returns: Member[];
       };
       /** `20260602210000` — `returns setof tasks`. */
       confirm_task_completion: {

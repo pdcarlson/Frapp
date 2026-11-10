@@ -7992,6 +7992,284 @@
         ]
       }
     },
+    "/v1/pledge-classes": {
+      "get": {
+        "operationId": "PledgeClassController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PledgeClassDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the chapter's pledge classes, oldest first",
+        "tags": [
+          "Pledge classes"
+        ]
+      },
+      "post": {
+        "operationId": "PledgeClassController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PledgeClassNameDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PledgeClassDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add a pledge class at the end of the list",
+        "tags": [
+          "Pledge classes"
+        ]
+      }
+    },
+    "/v1/pledge-classes/order": {
+      "put": {
+        "operationId": "PledgeClassController_reorder_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderPledgeClassesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PledgeClassDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set the order of the chapter's pledge classes",
+        "tags": [
+          "Pledge classes"
+        ]
+      }
+    },
+    "/v1/pledge-classes/assignments": {
+      "put": {
+        "operationId": "PledgeClassController_assign_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignPledgeClassesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MemberPledgeClassDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set members' pledge class and order number, all or none",
+        "tags": [
+          "Pledge classes"
+        ]
+      }
+    },
+    "/v1/pledge-classes/{id}": {
+      "patch": {
+        "operationId": "PledgeClassController_rename_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PledgeClassNameDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PledgeClassDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Rename a pledge class",
+        "tags": [
+          "Pledge classes"
+        ]
+      },
+      "delete": {
+        "operationId": "PledgeClassController_remove_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a pledge class; its members keep their order number and lose the class",
+        "tags": [
+          "Pledge classes"
+        ]
+      }
+    },
     "/v1/rush/candidates": {
       "get": {
         "operationId": "RushController_lookup_v1",
@@ -12375,6 +12653,17 @@
           "email": {
             "type": "string"
           },
+          "pledge_class_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The member's pledge class, one of `GET /v1/pledge-classes`, or null."
+          },
+          "order_number": {
+            "type": "number",
+            "nullable": true,
+            "description": "The member's order within their pledge class, or chapter-wide (a roll or bond number), set by officers; or null."
+          },
           "is_alumni": {
             "type": "boolean",
             "description": "Whether the member holds the chapter's Alumni system role, resolved the same way GET /alumni resolves it — a directory splitting actives from alumni filters on this rather than on role ids."
@@ -12404,6 +12693,8 @@
           "current_city",
           "current_company",
           "email",
+          "pledge_class_id",
+          "order_number",
           "is_alumni"
         ]
       },
@@ -15450,6 +15741,140 @@
             "description": "Optional comment for rejection"
           }
         }
+      },
+      "PledgeClassDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "position": {
+            "type": "number",
+            "description": "The class's place in the chapter's list, lowest first, which is oldest first."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "name",
+          "position",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "PledgeClassNameDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "The class name as the chapter writes it (\"Alpha\", \"Fall 2019\"). Stored trimmed; unique within the chapter, ignoring case."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "ReorderPledgeClassesDto": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "maxItems": 200,
+            "description": "Every one of the chapter's class ids, oldest class first. A list that is not exactly the chapter's current classes is refused with 409, so a stale editor can't drop a class out of order.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "PledgeClassAssignmentDto": {
+        "type": "object",
+        "properties": {
+          "member_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The membership id (members.id)."
+          },
+          "pledge_class_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "One of the chapter's pledge classes, or null for none."
+          },
+          "order_number": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 1000000,
+            "description": "The member's order within their class, or chapter-wide (a roll or bond number), or null for none. Not required to be unique."
+          }
+        },
+        "required": [
+          "member_id",
+          "pledge_class_id",
+          "order_number"
+        ]
+      },
+      "AssignPledgeClassesDto": {
+        "type": "object",
+        "properties": {
+          "assignments": {
+            "maxItems": 500,
+            "description": "Each listed member gets both values; members not listed are untouched. All of them are written or none.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PledgeClassAssignmentDto"
+            }
+          }
+        },
+        "required": [
+          "assignments"
+        ]
+      },
+      "MemberPledgeClassDto": {
+        "type": "object",
+        "properties": {
+          "member_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The membership id (members.id)."
+          },
+          "pledge_class_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "order_number": {
+            "type": "number",
+            "nullable": true
+          }
+        },
+        "required": [
+          "member_id",
+          "pledge_class_id",
+          "order_number"
+        ]
       },
       "RushCandidateViewDto": {
         "type": "object",

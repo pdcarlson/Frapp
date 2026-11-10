@@ -13,6 +13,16 @@ export interface Member {
    * § "Ops-setup nudges" requires — see #492.
    */
   dismissed_ops_nudges: string[];
+  /**
+   * The `chapter_pledge_classes` row this member belongs to, or null (#3939).
+   * Always a class of the member's own chapter (composite foreign key).
+   */
+  pledge_class_id: string | null;
+  /**
+   * The member's order within their pledge class, or chapter-wide (a roll or
+   * bond number), set by officers. Null when the chapter keeps none.
+   */
+  order_number: number | null;
   created_at: string;
   updated_at: string;
 }

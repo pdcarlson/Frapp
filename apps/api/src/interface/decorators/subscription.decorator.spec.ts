@@ -45,6 +45,7 @@ import { NotificationController } from '../controllers/notification.controller';
 import { ChatReportController } from '../controllers/chat-report.controller';
 import { ChatBlockController } from '../controllers/chat-block.controller';
 import { MemberController } from '../controllers/member.controller';
+import { PledgeClassController } from '../controllers/pledge-class.controller';
 import { InviteController } from '../controllers/invite.controller';
 import { RbacController } from '../controllers/rbac.controller';
 import { ChapterConfigController } from '../controllers/chapter-config.controller';
@@ -97,6 +98,8 @@ describe('subscription decorator wiring', () => {
     ChapterController,
     // #2878: linking a member's Discord history follows chat's billing rule.
     DiscordAuthorLinkController,
+    // #3939: pledge classes are Directory data, and the Directory is free.
+    PledgeClassController,
   ];
 
   /**

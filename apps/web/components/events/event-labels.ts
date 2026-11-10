@@ -1,4 +1,5 @@
 import { RECURRENCE_RULE_LABELS, isRecurrenceRule } from "@repo/validation";
+import { ruleTokenLabel } from "@repo/hooks/event-series";
 import {
   formatDayTime,
   formatTimeOfDay,
@@ -24,8 +25,7 @@ import {
 export function recurrenceLabel(rule: unknown): string | null {
   if (typeof rule !== "string" || rule.trim() === "") return null;
   if (isRecurrenceRule(rule)) return RECURRENCE_RULE_LABELS[rule];
-  const words = rule.trim().replace(/_/g, " ").toLowerCase();
-  return words.charAt(0).toUpperCase() + words.slice(1);
+  return ruleTokenLabel(rule);
 }
 
 /** `"1 point"`, `"5 points"`; `null` when the event awards none. */

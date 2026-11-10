@@ -55,6 +55,12 @@ vi.mock("@repo/hooks", () => ({
   useNow: () => Date.parse("2026-09-01T12:00:00Z"),
 }));
 
+// The viewer whose last view (List or Calendar) the page reads; no stored
+// choice unless a test writes one.
+vi.mock("@/lib/auth/use-frapp-user", () => ({
+  useFrappUser: () => ({ userId: "user-1", isLoading: false }),
+}));
+
 vi.mock("@/lib/providers/network-provider", () => ({
   useNetwork: () => networkState,
 }));
@@ -143,7 +149,7 @@ describe("EventsPage offline write gating (#1753)", () => {
     networkState.isOffline = true;
     render(<EventsPage />);
 
-    await userEvent.click(screen.getByRole("tab", { name: /calendar/i }));
+    await userEvent.click(screen.getByRole("radio", { name: /calendar/i }));
     const dayCreate = screen.getAllByRole("button", {
       name: /create event on/i,
     })[0];
