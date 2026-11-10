@@ -8,6 +8,7 @@ import {
   mentionChipFilter,
   mentionLabelFor,
   mentionPickLabel,
+  sendMentionReading,
   spacedMentionNames,
   mentionPickerEntries,
   mentionSuggestions,
@@ -817,6 +818,87 @@ describe("names with spaces (#3825)", () => {
     expect(resolveMentions("@Vice President", [...chapter, vice], roles)).toEqual(
       ["u-vice"],
     );
+  });
+
+  describe("a spaced name next to someone the first word names", () => {
+    const JORDAN = { user_id: "u-jordan", display_name: "Jordan" };
+    const JORDAN_WILL = { user_id: "u-jordan-will", display_name: "Jordan Will" };
+    const both = [JORDAN, JORDAN_WILL, JANE];
+
+    it("leaves prose after a one-word name alone", () => {
+      expect(resolveMentions("@Jordan will you come", both)).toEqual([
+        "u-jordan",
+      ]);
+    });
+
+    it("reads the spaced name when it is written as the name is", () => {
+      expect(resolveMentions("@Jordan Will, you in?", both)).toEqual([
+        "u-jordan-will",
+      ]);
+    });
+
+    it("does not let a renamed member take a role's mention", () => {
+      const squatter = { user_id: "u-x", display_name: "Officers meeting" };
+      const roles: MentionRole[] = [
+        {
+          role_id: "r-off",
+          name: "Officers",
+          member_ids: ["u-jordan"],
+          mentionable: true,
+        },
+      ];
+      expect(
+        resolveMentions("@Officers Meeting at 7", [...both, squatter], roles),
+      ).toEqual(["u-jordan"]);
+    });
+
+    it("ignores case where the first word names nobody exactly", () => {
+      expect(resolveMentions("@winston hewitt", chapter)).toEqual([
+        "u-winston",
+      ]);
+    });
+
+    it("reads a send's tokens once, for the resolver and the permission pre-read", () => {
+      // An empty "Vice President" role must not hide a held "Vice" role.
+      const roles: MentionRole[] = [
+        { role_id: "r-v", name: "Vice", member_ids: ["u-sam"], mentionable: false },
+        { role_id: "r-vp", name: "Vice President", member_ids: [], mentionable: true },
+      ];
+      expect(
+        extractMentionTokens(
+          "@Vice President is out",
+          sendMentionReading(chapter, roles),
+        ),
+      ).toEqual(["Vice"]);
+    });
+  });
+
+  it("replaces a whole written name when the caret sits inside it", () => {
+    expect(activeMentionQuery("@Jane Doe tomorrow", 3, ["Jane Doe"])).toEqual({
+      start: 0,
+      query: "Ja",
+      end: 9,
+    });
+    // Without the names, or on other text, the handle ends at the space.
+    expect(activeMentionQuery("@Jane Doe tomorrow", 3)?.end).toBe(5);
+    expect(activeMentionQuery("@Jane Smith", 3, ["Jane Doe"])?.end).toBe(5);
+  });
+
+  it("keeps a bare chip the message is known to have sent over a role's name", () => {
+    const vice = { user_id: "u-vice", display_name: "Vice" };
+    const chips = mentionChipFilter(["u-vice"], {
+      members: [...chapter, vice],
+      roleNames: ["Vice President"],
+    });
+    expect(chips("Vice President")).toBe(false);
+    expect(chips("Vice")).toBe(true);
+    // A role whose first word names nobody reached still chips on trust.
+    expect(
+      mentionChipFilter(["u-sam"], {
+        members: chapter,
+        roleNames: ["Vice President"],
+      })("Vice President"),
+    ).toBe(true);
   });
 
   it("offers the name as written, and the reduced label where it can't be read back", () => {

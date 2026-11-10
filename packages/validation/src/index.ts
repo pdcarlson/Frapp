@@ -615,11 +615,13 @@ export {
   mentionPickerEntries,
   mentionSuggestions,
   resolveMentions,
+  sendMentionReading,
 } from "./mentions";
 export type {
   ActiveMentionQuery,
   MentionCandidate,
   MentionChipTargets,
+  MentionChipTest,
   MentionPickerEntry,
   MentionRole,
   MentionRoleOption,

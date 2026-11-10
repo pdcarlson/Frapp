@@ -527,6 +527,14 @@ describe("ChatComposer @-mention picker", () => {
     expect(props.onChangeText).toHaveBeenCalledWith("@Pat O'Brien tomorrow");
   });
 
+  it("replaces a whole name written with its space (#3825)", () => {
+    // Caret after `@Pa` in `@Paul Carlson tomorrow`: "Carlson" must go too,
+    // or the pick would read `@Pat O'Brien Carlson tomorrow`.
+    const { tree, props } = typed("@Paul Carlson tomorrow", 3);
+    act(() => byLabel(tree, "Mention Pat O'Brien")!.props.onPress());
+    expect(props.onChangeText).toHaveBeenCalledWith("@Pat O'Brien tomorrow");
+  });
+
   it("keeps text after the caret, reusing a space already there", () => {
     const { tree, props } = typed("@sa how are you", 3);
     act(() => byLabel(tree, "Mention Sam (VP)")!.props.onPress());

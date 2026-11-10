@@ -3,7 +3,7 @@ import {
   extractMentionTokens,
   foldMentionName,
   resolveMentions,
-  spacedMentionNames,
+  sendMentionReading,
   type MentionRole,
 } from '@repo/validation';
 import {
@@ -101,16 +101,14 @@ export class ChatMentionService {
       const views = mentionRoleViews(roles, candidates);
       // The sender's permissions cost two more reads, so they are fetched only
       // when a token names a role that is switched off, the one case they decide.
-      // Re-read with the names that hold a space, now that they are known: a
-      // switched-off "Vice President" is named by `@Vice President`, which
-      // the bare read above saw as `@Vice`.
+      // Re-read as the resolver will (`sendMentionReading`), now that the
+      // names holding a space are known: a switched-off "Vice President" is
+      // named by `@Vice President`, which the bare read above saw as `@Vice`.
       const named = new Set(
-        extractMentionTokens(content, {
-          names: spacedMentionNames(
-            candidates,
-            views.map((view) => view.name),
-          ),
-        }).map(foldMentionName),
+        extractMentionTokens(
+          content,
+          sendMentionReading(candidates, views),
+        ).map(foldMentionName),
       );
       const needsOfficer = views.some(
         (view) => !view.open_to_all && named.has(foldMentionName(view.name)),

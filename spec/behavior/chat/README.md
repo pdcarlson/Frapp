@@ -556,7 +556,8 @@ Resolution is tiered and fails closed — exact user id, exact display name, nam
 - **Only a name made of token characters qualifies**: letters, digits, marks and `_ ' ’ . -`, opening on a letter, ending on a letter or digit, within the token bound. "Sam (VP)" does not, and neither does a digit-led name; they are mentioned by the reduced label, as before.
 - **Old bodies are unchanged.** `@WinstonHewitt` still resolves (the folded tier), and nothing stored is rewritten. A renderer chips the reading that was sent: for a body sent before this rule, `@Sam Abernathy` that pinged "Sam" keeps its `@Sam` chip, because the chip follows the message's stored `mentions` (`findMentionSpans`' `accept`).
 - **A role nobody holds lends no name**, as it is no target: `@Vice President` with an empty Vice President role is still `@Vice`.
-- **Typing a spaced name by hand** resolves on send, but the pickers close at the first space, as tiptap's and mobile's query never spanned whitespace.
+- **A spaced name never takes a mention from someone the first word names exactly, unless it is written as the name is.** With members "Jordan" and "Jordan Will", `@Jordan will you come` is Jordan and `@Jordan Will`, capitalised as the picker writes it, is Jordan Will. Otherwise a member could rename themselves "Officers meeting" and take `@Officers meeting at 7` from the role, and a wrong recipient is worse than none. Where the first word names nobody exactly, case is ignored: `@winston hewitt` is Winston Hewitt (`sendMentionReading`).
+- **Typing a spaced name by hand** resolves on send, but the pickers close at the first space, as tiptap's and mobile's query never spanned whitespace. On mobile a pick made with the caret inside a written `@Jane Doe` replaces the whole name.
 
 **Three deliberate limits, invisible to anyone building a mention affordance without reading this:**
 
@@ -1235,10 +1236,12 @@ What follows is the behaviour the archive has once it is in.
     one Frapp role was meant. The Frapp name is used only when the mapping
     recorded no Discord name. `@everyone`'s role reads `@everyone`. An upload
     has no role mapping, so there it reads `@unknown-role`;
-  - a user or role name is written the way the composer's mention picker
-    writes one, with everything but letters, digits and marks removed
-    (`@TristanHatton`), so a client draws it as one mention chip: the mention
-    tokenizer stops at a space. A name that would not start with a letter that
+  - a user or role name is written in the reduced form, with everything but
+    letters, digits and marks removed (`@TristanHatton`), so a client draws it
+    as one mention chip with no roster to consult: the bare mention tokenizer
+    stops at a space. (The composer's picker has written a current member's
+    name with its space since 2026-11-09, § Mentions; an imported author may
+    be on no roster, so the import keeps the reduced form.) A name that would not start with a letter that
     way is written as its plain name instead;
   - a channel (`<#id>`) reads `#name`, linked to the Frapp channel its messages
     landed in (`/chat?channel=<id>`). A thread links to its parent's channel.

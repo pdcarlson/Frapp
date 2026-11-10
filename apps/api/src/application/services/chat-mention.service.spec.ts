@@ -151,6 +151,20 @@ describe('ChatMentionService.resolveForSend', () => {
       ).resolves.toEqual([]);
     });
 
+    it('reads permissions for a held switched-off role an empty role would hide', async () => {
+      // "Rush" is off and held; "Rush Chair" (in `roles`) is held by nobody.
+      const rush = role('rush', 'Rush', { mentionable: false });
+      const held = [
+        ...members,
+        { user_id: 'u7', display_name: 'Eli', role_ids: ['rush'] },
+      ];
+      const officer = service(held, [...roles, rush], ['roles:manage']);
+      await expect(
+        officer.mentions.resolveForSend('ch-1', 'u2', '@Rush chair needs help'),
+      ).resolves.toEqual(['u7']);
+      expect(officer.getEffectivePermissions).toHaveBeenCalledTimes(1);
+    });
+
     it("reads the sender's permissions for a switched-off role named with its space", async () => {
       const vp = role('vp', 'Vice President', { mentionable: false });
       const member = service(spaced, [...roles, vp]);

@@ -1,4 +1,8 @@
-import { extractMentionTokens, findMentionSpans } from "@repo/validation";
+import {
+  extractMentionTokens,
+  findMentionSpans,
+  type MentionChipTest,
+} from "@repo/validation";
 
 /**
  * A remark transform that lifts every `@`-token in a message body out of its
@@ -213,21 +217,12 @@ export interface MentionChipOptions {
   /**
    * Whether a token the API read really pinged someone (`mentionChipFilter`
    * in `@repo/validation`, fed the message's resolved `mentions`). Left out,
-   * every token the API read is chipped.
+   * every token the API read is chipped. It carries the spaced names a token
+   * may be (`MentionChipTest`): without them `@Winston Hewitt` chips as
+   * `@Winston` alone.
    */
   chips?: MentionChipTest;
 }
-
-/**
- * "Did this token ping someone", carrying the names with a space in them that
- * a token may be (`spacedMentionNames` in `@repo/validation`, #3825). The
- * names ride on the function so every caller that already hands `chips` down
- * to a body, and every memo keyed on it, needs no second prop: without them
- * `@Winston Hewitt` chips as `@Winston` alone.
- */
-export type MentionChipTest = ((token: string) => boolean) & {
-  names?: readonly string[];
-};
 
 export function remarkMentionChips(options: MentionChipOptions) {
   const properties = options.properties ?? {};

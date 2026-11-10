@@ -145,10 +145,12 @@ export function inertName(name: string): string | null {
  * but letters, digits and marks removed, so `Tristan Hatton` reads
  * `@TristanHatton`.
  *
- * That is the form the composer's own mention picker inserts
- * (`mentionLabelFor`), and the only one a chat client draws as a single chip:
- * the mention tokenizer (`@repo/validation`'s `MENTION_TOKEN`) stops at a
- * space, so `@Tristan Hatton` chipped `@Tristan` and left `Hatton` as prose.
+ * That is the reduced form (`mentionLabelFor`), which a chat client always
+ * draws as a single chip: the bare mention tokenizer (`@repo/validation`'s
+ * `MENTION_TOKEN`) stops at a space. Since 2026-11-09 (#3825) the composer's
+ * picker writes `@Tristan Hatton` for a current member and clients chip it
+ * whole, but only for a name on today's roster; an imported author may hold
+ * none, so the import keeps the form that needs no roster.
  * What it keeps is inert by construction. A name that keeps nothing that can
  * open a mention (a digit-led `21+`, say) is written as its inert name
  * instead, readable though never chipped.

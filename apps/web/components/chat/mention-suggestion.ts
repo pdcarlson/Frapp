@@ -25,8 +25,8 @@ export interface MentionRoleEntry {
  * The roster and the roles as this popup offers them. Which rows, in what
  * order, and the label each inserts are `mentionPickerEntries`'s
  * (`@repo/validation`), shared with mobile's composer so a pick on either
- * client sends the same body; `mentionLabelFor` there says why the label is
- * the name reduced to letters, digits and marks. Roles come after members,
+ * client sends the same body; `mentionPickLabel` there says when the label is
+ * the name as written and when it is reduced to letters, digits and marks. Roles come after members,
  * at most three, and only the ones the viewer may ping (2026-11-06).
  */
 export function filterMentionEntries(
