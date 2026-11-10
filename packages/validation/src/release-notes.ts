@@ -63,6 +63,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "On the web, officers who manage roles can set up pledge classes in Settings and give each member a class and an order number.",
       "On your phone, a channel you have a chat notification for shows as unread as soon as you open the app, before the latest counts arrive.",
       "Chats can have a background, a built-in look or a photo, which officers with the right role set on the web for one channel or as the chapter's default, and you see it on your phone too.",
+      "Whoever created a channel, or an officer who manages channels, can make it Always formal when creating it on the web, or later from its menu under Display, and then everyone sees it in the Cozy layout and can't switch that channel to Compact or Bubbles.",
+      "When you join a chapter, you now pick how chat looks, Cozy, Compact, or Bubbles, as part of setting up on the web or your phone, and you can change it anytime.",
     ],
   },
   {
