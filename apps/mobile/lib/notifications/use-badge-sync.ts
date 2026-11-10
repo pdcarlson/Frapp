@@ -99,13 +99,19 @@ export function useBadgeSyncRuntime(): void {
   // refetch on foreground covers a channel read on another device or the web
   // while the app was closed (`spec/behavior/notifications.md` § Grouping and
   // clearing).
+  //
+  // Only on a settled answer. While the counts are being read, or after a read
+  // failed, `data` can be the last launch's counts (`lib/chat/unread-first-paint.ts`
+  // seeds them, #4006), and a channel read back then may have a push that
+  // arrived since.
+  const unreadSettled = !channelUnread.isFetching && !channelUnread.isError;
   useEffect(() => {
-    if (!chapterId || !channelUnread.data) return;
+    if (!chapterId || !channelUnread.data || !unreadSettled) return;
     const read = new Set(
       channelUnread.data
         .filter((row) => row.unread_count === 0)
         .map((row) => row.channel_id),
     );
     void clearReadChatNotifications(read);
-  }, [chapterId, channelUnread.data]);
+  }, [chapterId, channelUnread.data, unreadSettled]);
 }

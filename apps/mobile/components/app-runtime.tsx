@@ -1,3 +1,4 @@
+import { useUnreadFirstPaintRuntime } from "@/lib/chat/unread-first-paint";
 import { useChatRealtimeBinding } from "@/lib/chat/use-chat-runtime";
 import { useConnectionRuntime } from "@/lib/connection/use-connection";
 import { useBadgeSyncRuntime } from "@/lib/notifications/use-badge-sync";
@@ -37,6 +38,10 @@ import { useOnboardingRedirect } from "@/lib/onboarding/use-onboarding-redirect"
  * queries wherever they're already fetched, and needs no screen of its own
  * (`lib/notifications/use-badge-sync.ts`).
  *
+ * **Unread first paint** (#4006) seeds those chat counts from the last server
+ * answer and lights channels whose pushes are still in the tray, so the marks
+ * don't wait on the request (`lib/chat/unread-first-paint.ts`).
+ *
  * **Notification sync** (#3929) listens for the member's `notif:<users.id>`
  * change ping, so a notification read on another device reads here within
  * seconds, and reads the notices about whichever screen is open
@@ -48,6 +53,7 @@ export function AppRuntime(): null {
   usePushRuntime();
   useOnboardingRedirect();
   useBadgeSyncRuntime();
+  useUnreadFirstPaintRuntime();
   useNotificationSyncRuntime();
   return null;
 }

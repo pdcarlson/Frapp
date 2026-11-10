@@ -545,6 +545,15 @@ Mention count is the subset of that same set which mentions the viewer.
 
 Both are computed server-side by `get_channel_unread_counts` and served from `GET /v1/channels/unread`, which returns one row per channel the caller can read — including channels with nothing unread, as zero. Clients MUST NOT re-derive either number locally: a second definition would disagree with this one on exactly the cases above.
 
+### Before the counts arrive (mobile)
+
+On open and on resume the counts request is one of several sent at once and can take seconds (#3728). Until it answers, the phone shows what it already has (#4006, asked by Shawn, 2026-11-10), in `apps/mobile/lib/chat/unread-first-paint.ts`:
+
+- **The last answer.** Each answer from `GET /v1/channels/unread` is saved on the phone per member and chapter, and seeds the counts on a cold start. A first launch, or one after signing in, has none and shows no marks until the server answers, as before. The channel list itself is not saved, so on a cold start the marks appear with the list's first paint, not ahead of it.
+- **Chat pushes still in the tray.** On a cold start and each time the app returns from the background, a channel that reads as fully read and has a chat push in the tray is shown as one unread. A push names only its channel, so no mention is claimed and a channel that already has a count keeps it. The thread on screen is left out, since coming forward stamps it read.
+
+This is a placeholder, not a second definition of unread. Neither write makes the cached counts fresh, so the request still goes out, and its answer replaces them whole: a channel read on another device goes dark when it lands. Nothing is lit once the server has answered since the launch or foreground in question, and only a server answer is saved. Chat home, Messages and the app icon badge read the same counts, so they agree throughout.
+
 ### Mentions
 
 `chat_messages.mentions` holds the `users.id` of everyone mentioned in the body, resolved **server-side at send time** against the chapter roster. This is a security boundary rather than a convenience: a mention overrides a per-channel mute in the push rules, so a client-supplied list would let any member force a push to any other member in a channel they had deliberately muted.

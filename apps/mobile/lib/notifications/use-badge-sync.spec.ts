@@ -23,6 +23,8 @@ const mockState = vi.hoisted(() => ({
   }[],
   channels: [] as { id: string; name: string; type: string }[],
   channelUnreadOptions: [] as ({ enabled?: boolean } | undefined)[],
+  unreadFetching: false,
+  unreadError: false,
   setBadgeCount: vi.fn(async (count: number) => {
     void count;
   }),
@@ -39,7 +41,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useNotifications: () => ({ data: mockState.notifications }),
   useChannelUnreadCounts: (options?: { enabled?: boolean }) => {
     mockState.channelUnreadOptions.push(options);
-    return { data: mockState.channelUnread };
+    return {
+      data: mockState.channelUnread,
+      isFetching: mockState.unreadFetching,
+      isError: mockState.unreadError,
+    };
   },
 }));
 
@@ -56,6 +62,8 @@ beforeEach(() => {
   mockState.notifications = [];
   mockState.channelUnread = [];
   mockState.channelUnreadOptions = [];
+  mockState.unreadFetching = false;
+  mockState.unreadError = false;
   mockState.channels = [];
   mockState.setBadgeCount.mockClear();
   mockState.clearRead.mockClear();
@@ -152,6 +160,24 @@ describe("useBadgeSyncRuntime", () => {
       { channel_id: "unread", unread_count: 2 },
     ];
     renderHook(() => useBadgeSyncRuntime());
+    expect(mockState.clearRead).toHaveBeenCalledWith(new Set(["read"]));
+  });
+
+  it("waits for the server's answer before clearing the tray (#4006)", () => {
+    // Counts saved from the last launch read this channel as read, and a push
+    // for it has arrived since.
+    mockState.channelUnread = [{ channel_id: "read", unread_count: 0 }];
+    mockState.unreadFetching = true;
+    const { rerender } = renderHook(() => useBadgeSyncRuntime());
+    expect(mockState.clearRead).not.toHaveBeenCalled();
+
+    mockState.unreadFetching = false;
+    mockState.unreadError = true;
+    rerender();
+    expect(mockState.clearRead).not.toHaveBeenCalled();
+
+    mockState.unreadError = false;
+    rerender();
     expect(mockState.clearRead).toHaveBeenCalledWith(new Set(["read"]));
   });
 
