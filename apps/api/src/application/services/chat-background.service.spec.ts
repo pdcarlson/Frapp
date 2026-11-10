@@ -22,6 +22,8 @@ function channel(over: Partial<ChatChannel> = {}): ChatChannel {
     default_notification_level: null,
     is_default: false,
     is_audit_log: false,
+    display_locked: false,
+    created_by: null,
     background: null,
     background_photo_path: null,
     background_message_id: null,

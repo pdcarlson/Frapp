@@ -136,6 +136,8 @@ const HTTP_LEDGER: Record<string, Entry> = {
   ChatController_getChannel_v1: CHANNEL_METADATA,
   ChatController_updateChannel_v1: CHANNEL_METADATA,
   ChatController_deleteChannel_v1: CHANNEL_METADATA,
+  // Always formal (#3787). Returns the channel row, to a caller who can read it.
+  ChatController_setChannelDisplayLock_v1: CHANNEL_METADATA,
   ChatController_getOrCreateDm_v1: CHANNEL_METADATA,
   ChatController_createGroupDm_v1: CHANNEL_METADATA,
   ChatController_leaveGroupDm_v1: CHANNEL_METADATA,
