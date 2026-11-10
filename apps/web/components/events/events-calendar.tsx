@@ -514,7 +514,7 @@ function CompactMonth({
       <div className="overflow-hidden rounded-[14px] border border-border">
         <div
           aria-hidden="true"
-          className="grid grid-cols-7 gap-px bg-border text-[11px] font-semibold text-muted-foreground"
+          className="grid grid-cols-7 gap-px bg-border text-caption font-semibold text-muted-foreground"
         >
           {WEEKDAY_LABELS.map((label) => (
             <div key={label} className="bg-background py-1.5 text-center">
