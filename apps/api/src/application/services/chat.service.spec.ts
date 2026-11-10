@@ -1413,7 +1413,13 @@ describe('ChatService', () => {
         display_locked: true,
       });
 
-      await service.setDisplayLock('ch-chan-1', 'ch-1', 'u-officer', true, true);
+      await service.setDisplayLock(
+        'ch-chan-1',
+        'ch-1',
+        'u-officer',
+        true,
+        true,
+      );
 
       expect(mockChannelRepo.update).toHaveBeenCalled();
     });
