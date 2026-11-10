@@ -25,10 +25,11 @@ import { FOCUS_RING, FOCUS_RING_OFFSET } from "@/components/ui/focus"
  * unambiguous against both states.
  *
  * Inactive labels take `--muted-foreground` rather than §6's drawn `#78716A`.
- * `--muted` on this ladder measures 3.3–4.0:1 depending on the surface the row
- * sits on, under README §6's 4.5:1 release gate; §1's rounding rule ("lift a
- * drawn tone that fails the gate one step up the §4 ladder") applies, and the
- * hover lift moves up with it to `--foreground` so the two stay distinct.
+ * `--muted` measured 3.3–4.0:1 on this ladder when this was written, under
+ * README §6's 4.5:1 release gate, so §1's rounding rule ("lift a drawn tone
+ * that fails the gate one step up the §4 ladder") applied, and the hover lift
+ * moved up with it to `--foreground` so the two stay distinct. The 2026-11-09
+ * text ladder lifted `--muted` over the gate; the labels keep the step.
  *
  * Two numbers are rounded onto the locked maps instead of transcribed:
  * §6 draws the item gap at 22 and the vertical padding at 11, which are off

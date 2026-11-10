@@ -17,8 +17,10 @@ export {
   releaseNoteVersion,
   parseReleaseNoteVersion,
   isNewerReleaseNoteVersion,
+  decideWhatsNew,
   type ReleaseNote,
   type ReleaseNoteVersion,
+  type WhatsNewDecision,
 } from "./release-notes";
 
 // ── Legal / compliance ───────────────────────────────────────────────────────

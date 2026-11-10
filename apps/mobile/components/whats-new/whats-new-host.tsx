@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { useCurrentUser } from "@repo/hooks";
-import { RELEASE_NOTES, type ReleaseNote } from "@repo/validation";
+import {
+  RELEASE_NOTES,
+  decideWhatsNew,
+  type ReleaseNote,
+} from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   SheetBackToClose,
@@ -18,7 +22,6 @@ import { ReleaseNoteCard } from "@/components/whats-new/release-note-card";
 import { isTourDue } from "@/lib/onboarding/tour";
 import { useFrappTheme } from "@/lib/theme";
 import {
-  decideWhatsNew,
   readWhatsNewSeen,
   recordWhatsNewSeen,
   startWhatsNewBootRead,
@@ -26,7 +29,7 @@ import {
 
 /**
  * Opens What's new by itself, once, after an update brings a new entry or new
- * lines in the newest one (`lib/whats-new.ts` has the rule). Mounted in the
+ * lines in the newest one (`decideWhatsNew` in `@repo/validation` is the rule). Mounted in the
  * tab layout beside the first-run tour's host, so it never runs during
  * onboarding, which lives in the auth group, and it sits out any launch the
  * tour is due on.
