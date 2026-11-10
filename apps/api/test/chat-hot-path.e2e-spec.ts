@@ -169,6 +169,7 @@ describe('Chat hot path (e2e)', () => {
     findLatestPerChannel: jest.fn(),
     countPinnedByChannel: jest.fn(),
     findPollsByChapter: jest.fn(),
+    findPollCardsByChapter: jest.fn(),
     findByClientMessageId: jest.fn(),
     findAuthorAvatarPaths: jest.fn(),
     insertIdempotent: jest.fn(),
@@ -179,6 +180,7 @@ describe('Chat hot path (e2e)', () => {
     create: jest.fn(),
     findOne: jest.fn(),
     updateForVote: jest.fn(),
+    findActedMessageIds: jest.fn(),
   };
   const attachmentRepoMock: jest.Mocked<IChatMessageAttachmentRepository> = {
     createMany: jest.fn(),
