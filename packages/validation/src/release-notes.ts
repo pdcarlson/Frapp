@@ -48,10 +48,10 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "On your phone, Documents search finds more and forgives typos, you can sort the list, and you can delete a file if your role allows it.",
       "Documents can be filtered by file type on your phone and on the web, and on your phone also by who added a file and when.",
       "A notification you read on one device is read on your others, and opening a page clears the notifications that point to it.",
-      "On the web, chat search narrows down by who sent a message, where, when, and what it has in it.",
+      "On the web, chat search narrows down by who sent a message, where, when, and what it has in it, and long filters in the Directory, Backwork, and Documents can be searched.",
       "On the web, Points, Billing, and Reports export as CSV, Excel, or a copy ready to paste into Google Sheets, wherever your role lets you export.",
-      "On the web, a task's due date takes just a month and a day, with no year to set.",
-      "On the web, an event shows you your own check-in, long filters in the Directory, Backwork, and Documents can be searched, and the Directory's year filter reads Graduation year.",
+      "On the web, a task's due date takes just a month and a day with no year to set, and an event shows you your own check-in.",
+      "Text across the app is brighter and easier to read, and on the web what's new now opens on its own once after an update.",
     ],
   },
   {
