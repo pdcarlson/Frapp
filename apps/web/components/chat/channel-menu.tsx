@@ -323,7 +323,7 @@ export function ChannelMenu({
                         ? `${label}, ${detail}`
                         : undefined
                   }
-                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-foreground transition-colors hover:bg-card"
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-foreground transition-colors hover:bg-card-hover"
                 >
                   <Glyph className="h-5 w-5 shrink-0 text-muted-foreground" />
                   {label}
@@ -343,7 +343,7 @@ export function ChannelMenu({
                     pinToTop.onToggle();
                     close();
                   }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-foreground transition-colors hover:bg-card"
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-foreground transition-colors hover:bg-card-hover"
                 >
                   <PinGlyph
                     className="h-5 w-5 shrink-0 text-muted-foreground"

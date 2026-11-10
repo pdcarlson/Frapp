@@ -156,10 +156,10 @@ const SIGNET_DARK: SignetTokens = {
       input: "rgba(255,255,255,0.14)",
     },
     text: {
-      foreground: "#EBEBEB",
-      mutedForeground: "#A3A3A3",
-      muted: "#737373",
-      disabled: "#525252",
+      foreground: "#F5F5F5",
+      mutedForeground: "#C4C4C4",
+      muted: "#9E9E9E",
+      disabled: "#6B6B6B",
     },
     semantic: {
       success: "#3FB950",

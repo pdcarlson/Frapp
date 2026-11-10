@@ -133,7 +133,7 @@ export function NotificationLevelPanel({
                   "flex w-full flex-col gap-0.5 px-3 py-2.5 text-left transition-colors disabled:opacity-60",
                   selected
                     ? "bg-accent-subtle text-accent-text"
-                    : "text-foreground hover:bg-card",
+                    : "text-foreground hover:bg-card-hover",
                 )}
               >
                 <span className="text-label font-semibold">{option.label}</span>

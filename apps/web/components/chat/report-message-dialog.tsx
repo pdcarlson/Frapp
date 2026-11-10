@@ -146,7 +146,7 @@ export function ReportMessageDialog({
                   key={option.reason}
                   className={cn(
                     "flex min-h-9 cursor-pointer items-center gap-3 rounded-md px-2 text-sm",
-                    "hover:bg-muted pointer-coarse:min-h-11",
+                    "hover:bg-card-hover pointer-coarse:min-h-11",
                   )}
                 >
                   <input
