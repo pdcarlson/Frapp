@@ -1,9 +1,14 @@
 import { useSyncExternalStore } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
+  CHAT_CHANNEL_DENSITY_STORAGE_KEY,
   CHAT_DENSITY_STORAGE_KEY,
   DEFAULT_CHAT_DENSITY,
+  parseChannelDensityMap,
   parseChatDensity,
+  resolveChannelDensity,
+  withChannelDensity,
+  type ChannelDensityMap,
   type ChatDensity,
 } from "@repo/chat-core/density";
 
@@ -22,6 +27,10 @@ let density: ChatDensity = DEFAULT_CHAT_DENSITY;
 let hydration: Promise<void> | null = null;
 /** Set by a choice made in this process, which the stored read must not undo. */
 let chosen = false;
+/** Per-channel overrides on this phone (#3787); a channel absent follows `density`. */
+const NO_OVERRIDES: ChannelDensityMap = {};
+let overrides: ChannelDensityMap = NO_OVERRIDES;
+let channelsChosen = false;
 const listeners = new Set<() => void>();
 
 function notify() {
@@ -43,6 +52,19 @@ export function hydrateChatDensity(): Promise<void> {
       .catch(() => {
         /* Cozy, the default, stands. */
       });
+    const channels = AsyncStorage.getItem(CHAT_CHANNEL_DENSITY_STORAGE_KEY)
+      .then((raw) => {
+        if (channelsChosen) return;
+        const stored = parseChannelDensityMap(raw);
+        if (Object.keys(stored).length > 0) {
+          overrides = stored;
+          notify();
+        }
+      })
+      .catch(() => {
+        /* No overrides: every channel follows the default. */
+      });
+    hydration = Promise.all([hydration, channels]).then(() => undefined);
   }
   return hydration;
 }
@@ -61,8 +83,42 @@ function getSnapshot(): ChatDensity {
   return density;
 }
 
-export function useChatDensity(): ChatDensity {
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+function getOverrides(): ChannelDensityMap {
+  return overrides;
+}
+
+/**
+ * The member's default density on this phone, or, given a channel, what that
+ * channel draws: its override if the member set one, else the default.
+ */
+export function useChatDensity(channelId?: string | null): ChatDensity {
+  const fallback = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const map = useSyncExternalStore(subscribe, getOverrides, getOverrides);
+  return resolveChannelDensity(fallback, map, channelId);
+}
+
+/** The channel's own override on this phone, or `null` when it follows the default. */
+export function useChannelDensityOverride(
+  channelId: string | null | undefined,
+): ChatDensity | null {
+  const map = useSyncExternalStore(subscribe, getOverrides, getOverrides);
+  return (channelId ? map[channelId] : undefined) ?? null;
+}
+
+/** Pins a channel to a density on this phone, or back to the default with `null`. */
+export function setChannelDensity(
+  channelId: string,
+  next: ChatDensity | null,
+): void {
+  channelsChosen = true;
+  overrides = withChannelDensity(overrides, channelId, next);
+  notify();
+  AsyncStorage.setItem(
+    CHAT_CHANNEL_DENSITY_STORAGE_KEY,
+    JSON.stringify(overrides),
+  ).catch(() => {
+    /* Best-effort, as the default is. */
+  });
 }
 
 export function setChatDensity(next: ChatDensity): void {
@@ -79,5 +135,7 @@ export function resetChatDensityForTests(): void {
   density = DEFAULT_CHAT_DENSITY;
   hydration = null;
   chosen = false;
+  overrides = NO_OVERRIDES;
+  channelsChosen = false;
   listeners.clear();
 }

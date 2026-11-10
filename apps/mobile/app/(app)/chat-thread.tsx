@@ -871,6 +871,7 @@ export default function ChatThreadScreen() {
         <ThreadMessageRow
           row={item}
           startsRun={placement?.startsRun ?? true}
+          endsRun={placement?.endsRun ?? true}
           startsDay={placement?.startsDay ?? false}
           viewerId={viewerId}
           nameFor={nameFor}

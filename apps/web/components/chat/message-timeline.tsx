@@ -668,15 +668,17 @@ export const MessageTimeline = forwardRef<
       message: ChatMessage;
       visibility: ThreadRow["visibility"];
       showHeader: boolean;
+      endsRun: boolean;
       startsDay: boolean;
       runStartedAt: string;
     }[] = [];
     for (let index = 0; index < rows.length; index++) {
-      const { row, startsDay, startsRun } = rows[index]!;
+      const { row, startsDay, startsRun, endsRun } = rows[index]!;
       out.push({
         message: row.message,
         visibility: row.visibility,
         showHeader: startsRun,
+        endsRun,
         startsDay,
         // The run's first message, whose author line a follow-on's gutter time
         // is read against (it keeps AM/PM once the run has crossed noon).
@@ -1058,6 +1060,7 @@ export const MessageTimeline = forwardRef<
                   }
                   viewerId={viewerId}
                   showHeader={entry.showHeader}
+                  endsRun={entry.endsRun}
                   runStartedAt={entry.runStartedAt}
                   onReact={onReact}
                   onUnreact={onUnreact}

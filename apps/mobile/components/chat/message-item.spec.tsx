@@ -8,10 +8,16 @@ import { reactionActionType } from "@repo/chat-core/types";
 import { FrappThemeProvider } from "@/lib/theme";
 import { memberAvatarTint, memberHashHue } from "@repo/hooks";
 import { MemberAvatar } from "@/components/member-avatar";
-import { Keyboard, StyleSheet } from "react-native";
+import {
+  Keyboard,
+  StyleSheet,
+  type StyleProp,
+  type ViewStyle,
+} from "react-native";
 import { drawnText, screenText } from "@/test/screen-text";
 import {
   resetChatDensityForTests,
+  setChannelDensity,
   setChatDensity,
 } from "@/lib/chat/chat-density";
 
@@ -177,6 +183,7 @@ function renderItem(
   replyParent?: ChatMessage | null,
   extra: {
     startsRun?: boolean;
+    endsRun?: boolean;
     onOpenActions?: () => void;
     roleColorFor?: (userId: string) => string | null;
     onOpenProfile?: (userId: string) => void;
@@ -192,6 +199,7 @@ function renderItem(
           nameFor={(id) => (id === OTHER ? "Casey" : null)}
           roleColorFor={extra.roleColorFor}
           startsRun={extra.startsRun ?? true}
+          endsRun={extra.endsRun}
           replyParent={replyParent}
           onRetry={vi.fn()}
           onDiscard={vi.fn()}
@@ -1242,7 +1250,11 @@ describe("opening a member's profile from a row", () => {
     const open = vi.fn();
     const nameFor = (id: string) => (id === OTHER ? "Casey" : null);
     expect(
-      authorProfileOpener(message({ sender_id: SYSTEM_SENDER_ID }), open, nameFor),
+      authorProfileOpener(
+        message({ sender_id: SYSTEM_SENDER_ID }),
+        open,
+        nameFor,
+      ),
     ).toBeUndefined();
     expect(
       authorProfileOpener(message({ sender_id: null }), open, nameFor),
@@ -1250,6 +1262,58 @@ describe("opening a member's profile from a row", () => {
     expect(authorProfileOpener(message(), undefined, nameFor)).toBeUndefined();
     // Left the chapter: the roster no longer names them.
     expect(authorProfileOpener(message(), open, () => null)).toBeUndefined();
-    expect(authorProfileOpener(message(), open, nameFor)).toBeTypeOf("function");
+    expect(authorProfileOpener(message(), open, nameFor)).toBeTypeOf(
+      "function",
+    );
+  });
+});
+
+// Bubbles (§11 § Bubbles, #3787): an opt-in, per phone or per channel.
+describe("bubbles", () => {
+  beforeEach(() => {
+    resetChatDensityForTests();
+  });
+
+  const byTestId = (tree: ReactTestRenderer, id: string) =>
+    tree.root.findAll((node) => node.props.testID === id);
+  const flat = (style: unknown): ViewStyle =>
+    StyleSheet.flatten(style as StyleProp<ViewStyle>) ?? {};
+
+  it("puts others on the left in a card bubble, avatar under the last", () => {
+    act(() => setChatDensity("bubbles"));
+    const tree = renderItem(message({ content: "hello" }));
+    expect(byTestId(tree, "bubble-row-other").length).toBeGreaterThan(0);
+    const bubble = flat(byTestId(tree, "message-bubble")[0]!.props.style);
+    expect(bubble.backgroundColor).toBe(signetDarkTokens.color.surface.card);
+    expect(byTestId(tree, "message-avatar").length).toBeGreaterThan(0);
+  });
+
+  it("puts the viewer's own on the right in the accent pair", () => {
+    act(() => setChatDensity("bubbles"));
+    const tree = renderItem(message({ content: "hi", sender_id: VIEWER }));
+    expect(byTestId(tree, "bubble-row-self").length).toBeGreaterThan(0);
+    const bubble = flat(byTestId(tree, "message-bubble")[0]!.props.style);
+    expect(bubble.backgroundColor).toBe("#C49A3A");
+    expect(byTestId(tree, "message-avatar")).toHaveLength(0);
+  });
+
+  it("tucks a stacked bubble's corners and holds the avatar back", () => {
+    act(() => setChatDensity("bubbles"));
+    const tree = renderItem(message({ content: "hello" }), undefined, {
+      startsRun: false,
+      endsRun: false,
+    });
+    const bubble = flat(byTestId(tree, "message-bubble")[0]!.props.style);
+    expect(bubble.borderTopLeftRadius).toBe(6);
+    expect(bubble.borderBottomLeftRadius).toBe(6);
+    expect(byTestId(tree, "message-avatar")).toHaveLength(0);
+  });
+
+  it("draws one pinned channel in bubbles and leaves the rest", () => {
+    act(() => setChannelDensity("chan-1", "bubbles"));
+    const pinned = renderItem(message({ channel_id: "chan-1" }));
+    expect(byTestId(pinned, "bubble-row-other").length).toBeGreaterThan(0);
+    const other = renderItem(message({ channel_id: "chan-2" }));
+    expect(byTestId(other, "bubble-row-other")).toHaveLength(0);
   });
 });

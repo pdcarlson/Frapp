@@ -796,7 +796,11 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     expect(vi.mocked(Alert.alert)).not.toHaveBeenCalled();
     expect(haptics.impactAsync).toHaveBeenCalledTimes(1);
     // A channel row has no Hide: that is a conversation's action.
-    expect(menuLabels(tree)).toEqual(["Pin to top", "Notifications"]);
+    expect(menuLabels(tree)).toEqual([
+      "Pin to top",
+      "Notifications",
+      "Display, Default",
+    ]);
     pressItem(tree, "Pin to top");
     expect(setPinned).toHaveBeenCalledWith({
       channelId: general.id,
@@ -835,6 +839,7 @@ describe("Chat home sidebar arrangement (#2877)", () => {
       "Mark as read",
       "Pin to top",
       "Notifications, Muted",
+      "Display, Default",
     ]);
     pressItem(tree, "Mark as read");
     expect(markReadMutate).toHaveBeenCalledWith(general.id);

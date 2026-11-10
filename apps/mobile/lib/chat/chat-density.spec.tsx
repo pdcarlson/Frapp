@@ -2,11 +2,16 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { CHAT_DENSITY_STORAGE_KEY } from "@repo/chat-core/density";
+import {
+  CHAT_CHANNEL_DENSITY_STORAGE_KEY,
+  CHAT_DENSITY_STORAGE_KEY,
+} from "@repo/chat-core/density";
 import {
   hydrateChatDensity,
   resetChatDensityForTests,
+  setChannelDensity,
   setChatDensity,
+  useChannelDensityOverride,
   useChatDensity,
 } from "./chat-density";
 
@@ -59,5 +64,49 @@ describe("the phone's chat density", () => {
       await hydrateChatDensity();
     });
     expect(result.current).toBe("compact");
+  });
+});
+
+describe("a channel's own display on this phone (#3787)", () => {
+  beforeEach(() => {
+    resetChatDensityForTests();
+    getItem.mockReset();
+    setItem.mockReset();
+    setItem.mockResolvedValue(undefined);
+  });
+
+  it("reads overrides stored by an earlier launch", async () => {
+    getItem.mockImplementation(async (key: string) =>
+      key === CHAT_CHANNEL_DENSITY_STORAGE_KEY
+        ? JSON.stringify({ a: "bubbles" })
+        : null,
+    );
+    const { result } = renderHook(() => useChatDensity("a"));
+    await act(async () => {
+      await hydrateChatDensity();
+    });
+    expect(result.current).toBe("bubbles");
+  });
+
+  it("pins one channel, stores it, and clears it back to the default", () => {
+    getItem.mockResolvedValue(null);
+    const { result } = renderHook(() => ({
+      a: useChatDensity("a"),
+      b: useChatDensity("b"),
+      override: useChannelDensityOverride("a"),
+    }));
+    act(() => setChannelDensity("a", "bubbles"));
+    expect(result.current).toEqual({
+      a: "bubbles",
+      b: "cozy",
+      override: "bubbles",
+    });
+    expect(setItem).toHaveBeenCalledWith(
+      CHAT_CHANNEL_DENSITY_STORAGE_KEY,
+      JSON.stringify({ a: "bubbles" }),
+    );
+    act(() => setChannelDensity("a", null));
+    expect(result.current.override).toBeNull();
+    expect(result.current.a).toBe("cozy");
   });
 });

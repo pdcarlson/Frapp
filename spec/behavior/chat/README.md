@@ -65,6 +65,8 @@ Added 2026-11-06, owner request ([#2252](https://github.com/pdcarlson/Frapp/issu
 
 - **A member picks cozy (the default) or compact**, on web in Profile and on mobile in Settings. What each draws is [`components.md` §11 § Density](../../ui/design-system/components.md#density).
 - **It is device state, not a server preference**, like the last channel above: kept per browser or phone (`localStorage`, AsyncStorage, key in `@repo/chat-core/density`), so a phone can stay cozy while a laptop is compact. It is not keyed by member, so a shared device keeps one density across sign-ins, and sign-out leaves it. Syncing it to the account would need a stored setting and an endpoint; revisit if members ask for it to follow them.
+- **Bubbles is a third choice** (added 2026-11-10, [#3787](https://github.com/pdcarlson/Frapp/issues/3787); Paul's opt-in OK is [his comment there](https://github.com/pdcarlson/Frapp/issues/3787#issuecomment-6771881257)). Cozy stays the default; nobody is put on Bubbles.
+- **A channel can have its own display**, per device like the default: the channel's menu (web: the header's ⋯ → Display; mobile: long-press the channel → Display) offers "Your default (…)", then Cozy, Compact or Bubbles "here". Unset, the channel follows the default. Kept as one map of channel id to density under its own key in `@repo/chat-core/density`, so the default's key is unchanged.
 
 ## Direct Messages
 

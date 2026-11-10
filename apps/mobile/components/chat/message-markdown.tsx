@@ -446,9 +446,12 @@ function createStyles(tokens: SignetTokens) {
     },
     // Mono takes the size of the role it sits in (foundations.md §7), so only
     // the family changes. The fill sets code apart the way web's tint does.
+    // Its own text color, so the fill and the text stay a fixed pair on any
+    // surface, the accent bubble included (§11 § Bubbles).
     code: {
       fontFamily: MONO_FONT_FAMILY,
       backgroundColor: tokens.color.surface.popover,
+      color: tokens.color.text.foreground,
     },
     codeBold: { fontWeight: "700" },
     mention: {

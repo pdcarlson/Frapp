@@ -85,6 +85,13 @@ export const ChatDensitySheet = forwardRef<BottomSheetModal>(
 /** Shapes, not words, so the drawing never shows a made-up member or message. */
 const COZY_ROWS = [0.75, 0.5, 0.66];
 const COMPACT_ROWS = [0.75, 0.5, 0.66, 0.6, 0.35, 0.5];
+/** Bubbles: theirs on the left, yours on the right in the accent. */
+const BUBBLE_ROWS = [
+  { mine: false, width: 0.7 },
+  { mine: false, width: 0.5 },
+  { mine: true, width: 0.6 },
+  { mine: true, width: 0.4 },
+] as const;
 
 function DensityPreview({
   density,
@@ -93,6 +100,26 @@ function DensityPreview({
   density: ChatDensity;
   styles: ReturnType<typeof createStyles>;
 }) {
+  if (density === "bubbles") {
+    return (
+      <View
+        style={[styles.preview, styles.previewBubbles]}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
+        {BUBBLE_ROWS.map(({ mine, width }, index) => (
+          <View
+            key={index}
+            style={[
+              styles.bubbleBar,
+              mine ? styles.bubbleBarMine : styles.bubbleBarTheirs,
+              { width: `${width * 100}%` },
+            ]}
+          />
+        ))}
+      </View>
+    );
+  }
   const cozy = density === "cozy";
   return (
     <View
@@ -143,7 +170,8 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     option: {
       flex: 1,
       gap: tokens.spacing.xs,
-      padding: tokens.spacing.md,
+      // Three cards share a 343pt row on the smallest phone.
+      padding: tokens.spacing.sm,
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
@@ -165,6 +193,16 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     },
     previewCozy: { gap: tokens.spacing.md },
     previewCompact: { gap: tokens.spacing.sm },
+    previewBubbles: { gap: tokens.spacing.xs },
+    bubbleBar: { height: 10, borderRadius: 5 },
+    bubbleBarTheirs: {
+      alignSelf: "flex-start",
+      backgroundColor: tokens.color.surface.popover,
+    },
+    bubbleBarMine: {
+      alignSelf: "flex-end",
+      backgroundColor: brand.accentPrimary,
+    },
     cozyRow: { flexDirection: "row", gap: tokens.spacing.sm },
     cozyLines: { flex: 1, gap: tokens.spacing.xs },
     compactRow: {
