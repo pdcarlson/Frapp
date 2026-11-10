@@ -30,6 +30,7 @@ import {
   UpdateRoleDto,
   TransferPresidencyDto,
   PresidencyClaimStatusDto,
+  PermissionCatalogEntryDto,
 } from '../dtos/rbac.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
 
@@ -50,7 +51,8 @@ export class RbacController {
 
   @Get('permissions-catalog')
   @ApiOperation({ summary: 'Get system permissions catalog' })
-  catalog() {
+  @ApiOkResponse({ type: PermissionCatalogEntryDto, isArray: true })
+  catalog(): PermissionCatalogEntryDto[] {
     return this.rbacService.getPermissionsCatalog();
   }
 

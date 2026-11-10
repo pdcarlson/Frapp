@@ -1479,7 +1479,17 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PermissionCatalogEntryDto"
+                  }
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -13098,6 +13108,67 @@
           "diff",
           "member_visible",
           "created_at"
+        ]
+      },
+      "PermissionCatalogEntryDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "The API constant's name, e.g. `EVENTS_CREATE`."
+          },
+          "permission": {
+            "type": "string",
+            "description": "The string a role stores, e.g. `events:create`."
+          },
+          "module": {
+            "type": "string",
+            "enum": [
+              "chapter",
+              "members",
+              "chat",
+              "announcements",
+              "events",
+              "tasks",
+              "points",
+              "hours",
+              "polls",
+              "backwork",
+              "documents",
+              "geofences",
+              "reports",
+              "billing"
+            ],
+            "description": "The module the permission belongs to: a module catalog key, or `chapter` for a chapter-level permission."
+          },
+          "module_label": {
+            "type": "string",
+            "description": "The module's display name."
+          },
+          "label": {
+            "type": "string",
+            "description": "What the permission lets a role do."
+          },
+          "description": {
+            "type": "string",
+            "description": "One line on what granting it opens."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "chapter"
+            ],
+            "description": "The level the permission applies at. Always `chapter` today."
+          }
+        },
+        "required": [
+          "key",
+          "permission",
+          "module",
+          "module_label",
+          "label",
+          "description",
+          "scope"
         ]
       },
       "CreateRoleDto": {

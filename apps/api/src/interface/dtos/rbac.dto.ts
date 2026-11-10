@@ -12,7 +12,13 @@ import {
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ROLE_COLOR_HEXES, ROLE_NAME_MAX_LENGTH } from '@repo/validation';
+import {
+  PERMISSION_MODULES,
+  ROLE_COLOR_HEXES,
+  ROLE_NAME_MAX_LENGTH,
+  type PermissionModuleKey,
+  type PermissionScope,
+} from '@repo/validation';
 import { POSITION_MAX } from '#domain/constants/field-limits';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 
@@ -138,4 +144,39 @@ export class PresidencyClaimStatusDto {
       'Name of the eligible role, or null when no role below President has any member at all (the "Frapp support intervenes" case).',
   })
   next_role_name: string | null;
+}
+
+/** One row of `GET /v1/roles/permissions-catalog` (#4069). */
+export class PermissionCatalogEntryDto {
+  @ApiProperty({
+    description: "The API constant's name, e.g. `EVENTS_CREATE`.",
+  })
+  key: string;
+
+  @ApiProperty({
+    description: 'The string a role stores, e.g. `events:create`.',
+  })
+  permission: string;
+
+  @ApiProperty({
+    enum: PERMISSION_MODULES.map((module) => module.key),
+    description:
+      'The module the permission belongs to: a module catalog key, or `chapter` for a chapter-level permission.',
+  })
+  module: PermissionModuleKey;
+
+  @ApiProperty({ description: "The module's display name." })
+  module_label: string;
+
+  @ApiProperty({ description: 'What the permission lets a role do.' })
+  label: string;
+
+  @ApiProperty({ description: 'One line on what granting it opens.' })
+  description: string;
+
+  @ApiProperty({
+    enum: ['chapter'],
+    description: 'The level the permission applies at. Always `chapter` today.',
+  })
+  scope: PermissionScope;
 }

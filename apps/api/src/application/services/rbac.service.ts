@@ -14,10 +14,12 @@ import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.inte
 import type { IChapterRepository } from '#domain/repositories/chapter.repository.interface';
 import { Role } from '#domain/entities/role.entity';
 import { Member } from '#domain/entities/member.entity';
+import { permissionDefinition, permissionModuleLabel } from '@repo/validation';
 import {
   SystemPermissions,
   SystemRoleKeys,
   WILDCARD,
+  type PermissionCatalogEntry,
 } from '#domain/constants/permissions';
 import { flattenPermissionSets } from '#domain/utils/permissions';
 import { CustomRoleService } from './custom-role.service';
@@ -525,11 +527,25 @@ export class RbacService {
     });
   }
 
-  getPermissionsCatalog() {
-    return Object.entries(SystemPermissions).map(([key, value]) => ({
-      key,
-      permission: value,
-    }));
+  /**
+   * Every system permission with the registry's words for it. `key` is the
+   * API constant's name, kept because clients already key on it; the label,
+   * description, module and scope come from `PERMISSION_REGISTRY`.
+   */
+  getPermissionsCatalog(): PermissionCatalogEntry[] {
+    return Object.entries(SystemPermissions).map(([key, value]) => {
+      const definition = permissionDefinition(value);
+      if (!definition) {
+        // `permissions.spec.ts` pins the two lists together, so this is a
+        // build that skipped its tests.
+        throw new Error(`Permission ${value} has no registry entry`);
+      }
+      return {
+        key,
+        ...definition,
+        module_label: permissionModuleLabel(definition.module),
+      };
+    });
   }
 
   async memberHasAnyPermission(
