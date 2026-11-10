@@ -44,6 +44,12 @@ export const stateMicrocopy = {
     // On the calendar of a chapter with no events. Officers who can create
     // get the how; everyone else gets the fact.
     calendarFirstEvent: "Pick a day to schedule the first event.",
+    // The compact month (#4022): pressing a day picks it, and New event under
+    // the grid makes one on the picked day.
+    calendarFirstEventCompact:
+      "Pick a day, then New event to schedule the first event.",
+    // The compact month's day list, for a picked day with nothing on it.
+    calendarDayEmpty: "Nothing on this day.",
     calendarNothingYet: "Nothing on the calendar yet.",
     offlineTitle: "Events workspace unavailable offline",
     offlineDescription:
