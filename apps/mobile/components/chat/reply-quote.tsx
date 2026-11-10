@@ -11,8 +11,8 @@ import { italicFontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
 /**
  * Quote chrome for a reply on s05. Re-implements the web rule against
  * mobile tokens — not a port of `QuotedMessage` (Tailwind / web type
- * treatment). Author and preview, or the unavailable line when the parent is
- * outside the loaded window. It sits above the row's author line, after the
+ * treatment). Author and preview in a `popover` block, wrapping to two lines,
+ * or the unavailable line when the parent is outside the loaded window. It sits above the row's author line, after the
  * elbow `MessageRowFrame` draws (`components.md` §11 § What rides the row), so
  * it draws no rule of its own.
  *
@@ -62,42 +62,50 @@ export function ReplyQuote({
 
   const placeholder = hiddenText ?? (replyParent ? null : UNAVAILABLE_QUOTE);
 
+  // The preview runs on after the author and wraps to two lines before its
+  // ellipsis (#4001): a long parent used to stop at one line, cut mid-word at
+  // the screen's edge. One `Text` with the author nested, so the two flow as a
+  // sentence and `numberOfLines` clamps them together.
   return (
     <Pressable
       accessibilityRole="text"
       disabled={!onPress}
       onPress={onPress}
       onLongPress={onLongPress}
-      style={({ pressed }) => [pressed ? styles.pressed : null]}
+      // The Pressable keeps the row's full width, so a tap beside a short
+      // quote still jumps; only the block inside hugs the text.
+      style={({ pressed }) => (pressed ? styles.pressed : null)}
     >
-      {placeholder !== null || !replyParent ? (
-        <Text
-          style={[styles.preview, styles.unavailable]}
-          numberOfLines={1}
-        >
-          {placeholder ?? UNAVAILABLE_QUOTE}
-        </Text>
-      ) : (
-        <View style={styles.row}>
-          <Text style={styles.author} numberOfLines={1}>
-            {resolveAuthorLabel(replyParent, nameFor, viewerId)}
+      <View style={styles.block}>
+        {placeholder !== null || !replyParent ? (
+          <Text style={[styles.preview, styles.unavailable]} numberOfLines={2}>
+            {placeholder ?? UNAVAILABLE_QUOTE}
           </Text>
-          <Text style={styles.preview} numberOfLines={1}>
+        ) : (
+          <Text style={styles.preview} numberOfLines={2}>
+            <Text style={styles.author}>
+              {resolveAuthorLabel(replyParent, nameFor, viewerId)}
+            </Text>
+            {"  "}
             {replyPreviewText(replyParent)}
           </Text>
-        </View>
-      )}
+        )}
+      </View>
     </Pressable>
   );
 }
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    row: {
-      flexDirection: "row",
-      alignItems: "baseline",
-      gap: tokens.spacing.sm,
-      minWidth: 0,
+    // A `popover` block, the elbow's own colour, so the elbow runs into it and
+    // the two read as one "replying to" mark (#4001); it hugs a short quote.
+    block: {
+      alignSelf: "flex-start",
+      maxWidth: "100%",
+      backgroundColor: tokens.color.surface.popover,
+      borderRadius: tokens.radius.chip,
+      paddingHorizontal: tokens.spacing.sm,
+      paddingVertical: tokens.spacing.xs,
     },
     author: {
       ...typeRole({
@@ -105,12 +113,10 @@ function createStyles(tokens: SignetTokens) {
         weight: tokens.typography.weight.semibold,
       }),
       color: tokens.color.text.foreground,
-      flexShrink: 0,
     },
     preview: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
-      flexShrink: 1,
     },
     unavailable: {
       fontFamily: italicFontFamilyFor(400),

@@ -118,10 +118,11 @@ function flattenMarkdown(text: string): string {
 }
 
 /**
- * One line standing in for a message inside a quote.
+ * The text standing in for a message inside a quote.
  *
- * Newlines collapse to spaces here rather than being left to CSS: a quote
- * strip is one line by design. Order matters. A deleted parent says so —
+ * Newlines collapse to spaces here rather than being left to CSS: a quote runs
+ * on as one sentence after its author and is clamped (two lines in the
+ * timeline, #4001), so a line break would spend that budget on blank space. Order matters. A deleted parent says so —
  * falling through to its blanked `content` would render an empty quote that
  * reads as a rendering bug. Then real text. Then a file-only message. Then
  * the kind, for a card whose body lives in `payload`.
