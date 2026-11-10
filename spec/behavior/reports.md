@@ -44,8 +44,37 @@ body. The bucket carries no storage RLS policies: it is written only by the API'
 service-role client and read only through the URLs the API signs, so a generated
 export is never publicly addressable and never reachable across chapters.
 
-The dashboard additionally builds a CSV client-side from the previewed rows, which
-is why its "Download CSV" button issues no second request.
+The dashboard additionally builds its own export client-side from the previewed
+rows, which is why its "Export" button issues no second request.
+
+### Choosing the file type (dashboard exports)
+
+*(2026-11-10, #3969; Shawn's addition, after the export menus in Stripe's
+dashboard, Notion, Airtable and Google Sheets' File → Download.)* Every
+client-side dashboard export (this page's **Export**, and **Export selected** on
+Points transactions and on Billing invoices) is one button that opens a
+**File type** menu, not a one-shot `.csv` download. A `.csv` opens in whatever
+spreadsheet app the computer has, so the old button read as "it goes to Excel"
+with no choice. The menu offers:
+
+| Choice                 | What the member gets                                                                                                                                                                                                                         |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CSV                    | `frapp-<name>-<date>.csv`, UTF-8 with a BOM and CRLF line endings, readable by any spreadsheet app.                                                                                                                                             |
+| Excel (.xlsx)          | `frapp-<name>-<date>.xlsx`, a real workbook with a bold, frozen header row. A column is typed as numbers, currency, dates or timestamps (UTC) when every non-empty cell in it is one, and as text otherwise.                                    |
+| Copy for Google Sheets | The rows on the clipboard as tab-separated text, and a "Copied N rows. Paste into a Google Sheet." notice. It uses no Google account connection; creating a Sheet in the member's Drive is out of scope until the Google connection (#3927). |
+
+All three carry the same rows and columns. The browser remembers the last file
+type used (localStorage, per browser, not per account) and marks it **Last
+used** in the menu.
+
+A cell that a spreadsheet would run as a formula (text starting with `=`, `+`,
+`-`, `@`, a tab or a carriage return) is made inert: CSV and the clipboard copy
+prefix it with an apostrophe, and the workbook stores it as a text cell. Plain
+numbers and currency amounts (`-5`, `-$12.00`) are left as values. The workbook
+writer loads only when Excel is picked. One menu component
+(`apps/web/components/shared/export-menu.tsx`) and one set of helpers
+(`exportRows` and its neighbors in `apps/web/lib/utils.ts`) serve all three
+exports.
 
 Column identity, order, and labels are shared between the CSV and PDF exports.
 Individual cell values are rendered for their audience: CSV emits composite

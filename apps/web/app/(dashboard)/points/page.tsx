@@ -35,7 +35,8 @@ import {
 } from "@/components/shared/table-controls";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { asArray, cn, downloadCsv } from "@/lib/utils";
+import { asArray, cn } from "@/lib/utils";
+import { ExportMenu } from "@/components/shared/export-menu";
 import { PointsAdjustmentDialog } from "@/components/points/points-adjustment-dialog";
 import {
   SubscriptionNotice,
@@ -242,8 +243,8 @@ export default function PointsPage() {
       selectedTransactionIds.includes(transactionId),
     );
 
-  function exportSelectedTransactionsCsv() {
-    const rows = filteredTransactions
+  function selectedTransactionRows() {
+    return filteredTransactions
       .filter((transaction) => selectedTransactionIds.includes(transaction.id))
       .map((transaction) => ({
         Amount: String(transaction.amount),
@@ -254,7 +255,6 @@ export default function PointsPage() {
         // and a locale string with no year or zone would lose both.
         Time: transaction.created_at,
       }));
-    downloadCsv(rows, "points");
   }
 
   function toggleAllTransactions(checked: boolean) {
@@ -608,14 +608,13 @@ export default function PointsPage() {
               <p className="text-caption font-semibold text-foreground">
                 {`${selectedCount} transaction${selectedCount > 1 ? "s" : ""} selected`}
               </p>
-              <Button
+              <ExportMenu
+                label="Export selected"
+                filenamePrefix="points"
+                getRows={selectedTransactionRows}
                 size="toolbar"
-                variant="secondary"
                 className="sm:ml-auto"
-                onClick={exportSelectedTransactionsCsv}
-              >
-                Export selected
-              </Button>
+              />
             </div>
           ) : null}
           {filteredTransactions.length === 0 ? (

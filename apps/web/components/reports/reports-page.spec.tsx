@@ -66,7 +66,7 @@ const chapter = chapterSubscription(mockCurrentChapter);
 const generateButton = () =>
   screen.getByRole("button", { name: /generate report/i });
 const pdfButton = () => screen.getByRole("button", { name: /download pdf/i });
-const csvButton = () => screen.getByRole("button", { name: /download csv/i });
+const csvButton = () => screen.getByRole("button", { name: /^export$/i });
 
 describe("ReportsPage subscription gating", () => {
   beforeEach(() => {
@@ -311,7 +311,7 @@ describe("ReportsPage preview states", () => {
 
   it("says so on screen when the report is truncated, not only in a toast", async () => {
     // `spec/behavior/reports.md`: truncation is never silent. The toast is
-    // transient; the preview and the CSV built from it are not.
+    // transient; the preview and any export built from it are not.
     const user = userEvent.setup();
     mockAttendanceReport.mockReturnValue({
       mutateAsync: vi.fn().mockResolvedValue({
