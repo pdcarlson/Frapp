@@ -56,10 +56,10 @@ import {
   addressedUnreadTotal,
   useActiveChapterId,
   useChannels,
-  useChannelUnreadCounts,
   useNotifications,
 } from "@repo/hooks";
 import { isDirectChannel, selectChannels } from "../chat/channel-list";
+import { useShownUnreadCounts } from "../chat/unread-first-paint";
 import { selectUnreadNonChatCount } from "../more/notifications";
 import { clearReadChatNotifications, setBadgeCount } from "./push";
 
@@ -68,7 +68,11 @@ export function useBadgeSyncRuntime(): void {
   // No explicit limit: matches the in-app history's own call
   // (`app/(app)/notifications.tsx`), so both read the same default page.
   const notifications = useNotifications();
-  const channelUnread = useChannelUnreadCounts({ enabled: !!chapterId });
+  // The badge counts what chat home draws, the phone's stand-in before the
+  // server answers included (`lib/chat/unread-first-paint.ts`, #4006). The
+  // tray below is cleared on the server's own answer only.
+  const shownUnread = useShownUnreadCounts({ enabled: !!chapterId });
+  const channelUnread = shownUnread.query;
   // Which channels are direct messages: their every unread message counts.
   const channels = useChannels({ enabled: !!chapterId });
 
@@ -87,18 +91,18 @@ export function useBadgeSyncRuntime(): void {
         .filter(isDirectChannel)
         .map((channel) => channel.id),
     );
-    const unreadChat = addressedUnreadTotal(channelUnread.data ?? [], (id) =>
+    const unreadChat = addressedUnreadTotal(shownUnread.data ?? [], (id) =>
       directIds.has(id),
     );
     void setBadgeCount(unreadNotifications + unreadChat);
-  }, [chapterId, notifications.data, channelUnread.data, channels.data]);
+  }, [chapterId, notifications.data, shownUnread.data, channels.data]);
 
   // The tray follows the same counts the badge does: once a channel reads as
   // fully read, its pushes leave Notification Center. Opening a channel marks
   // it read and refetches these counts, so this covers reading here; the
   // refetch on foreground covers a channel read on another device or the web
-  // while the app was closed (`spec/behavior/notifications.md` § Grouping and
-  // clearing).
+  // while the app was closed (`spec/behavior/notifications.md` § Notification
+  // Grouping).
   useEffect(() => {
     if (!chapterId || !channelUnread.data) return;
     const read = new Set(

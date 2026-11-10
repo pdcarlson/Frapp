@@ -51,7 +51,7 @@ import { landingAuthUrls } from "../lib/auth-urls";
  */
 
 export default function Home() {
-  const { signupUrl, loginUrl } = landingAuthUrls();
+  const { signupUrl, loginUrl, trialUrl } = landingAuthUrls();
 
   /*
    * The invite CTA points at this origin's own `/join`, which is what the
@@ -99,7 +99,7 @@ export default function Home() {
       <OfficersSection />
       <ChatProofSection />
       <EventsProofSection />
-      <PricingSection signupUrl={signupUrl} />
+      <PricingSection signupUrl={signupUrl} trialUrl={trialUrl} />
       <ClosingSection signupUrl={signupUrl} loginUrl={loginUrl} />
       {/* Last, so the hero stays the first thing inside `main`. */}
       <script

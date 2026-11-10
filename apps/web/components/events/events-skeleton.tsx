@@ -19,10 +19,10 @@ export function EventsPageSkeleton() {
   return (
     <PageSkeleton
       label={stateMicrocopy.events.loading}
-      className="space-y-4"
+      className="@container space-y-4"
       actions={
         <>
-          <SkeletonControl className="w-full sm:w-56" />
+          <SkeletonControl className="w-full @xl:w-56" />
           <SkeletonControl className="w-[132px]" />
           <SkeletonControl className="w-[148px]" />
           <SkeletonControl className="w-[124px]" />

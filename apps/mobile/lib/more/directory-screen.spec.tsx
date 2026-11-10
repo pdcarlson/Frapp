@@ -90,6 +90,7 @@ const refetches = vi.hoisted(() => ({
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
   useActiveChapterId: () => "c-1",
   usePermissionList: () => state.permissions,
   useMembers: () => read(MEMBERS, refetches.members),

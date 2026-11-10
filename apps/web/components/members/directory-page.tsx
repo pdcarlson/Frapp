@@ -21,11 +21,12 @@ import { DirectoryBodySkeleton } from "@/components/members/directory-skeleton";
  *
  * **The tab row stays the underline treatment, and that is a derivation rather
  * than an oversight.** The framework board draws no horizontal tab bar at all
- * (`grep -c 'border-bottom:2px'` over it returns 0); its two tab shapes are
- * `4d`'s 200px left rail, which is for a settings page with six sections, and
- * `1f`'s 34px segmented Calendar/List *view toggle*, which switches two
- * renderings of one dataset. Actives and alumni are two different datasets
- * behind two different queries, so neither board shape is about this control.
+ * (`grep -c 'border-bottom:2px'` over it returns 0); its tab shape is `4d`'s
+ * 200px left rail, which is for a settings page with six sections. (`1f`'s
+ * Calendar/List toggle picks one rendering of one dataset, which is a
+ * segmented control, not a tab: `spec/ui/web-dashboard/README.md`, corrected
+ * 2026-11-09.) Actives and alumni are two different datasets behind two
+ * different queries, so the rail is not about this control.
  * Where the board is silent the trust order falls through to
  * [`components.md`](../../../../spec/ui/design-system/components.md) §6, which
  * is explicit — "underline style only, no segmented pill controls" — and which

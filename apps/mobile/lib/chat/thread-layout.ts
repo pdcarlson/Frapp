@@ -4,6 +4,8 @@ import { decorateThread } from "@repo/chat-core/grouping";
 export interface RowPlacement {
   /** Draw the avatar and author line (`components.md` §11 § Grouping). */
   startsRun: boolean;
+  /** The run's last row: Bubbles' avatar goes under it (§11 § Bubbles). */
+  endsRun: boolean;
   /** Draw a day divider above the row. */
   startsDay: boolean;
 }
@@ -22,8 +24,8 @@ export function threadLayout(
   rows: readonly ThreadRow[],
 ): ReadonlyMap<string, RowPlacement> {
   const byKey = new Map<string, RowPlacement>();
-  for (const { row, startsRun, startsDay } of decorateThread(rows)) {
-    byKey.set(row.message.client_message_id, { startsRun, startsDay });
+  for (const { row, startsRun, endsRun, startsDay } of decorateThread(rows)) {
+    byKey.set(row.message.client_message_id, { startsRun, endsRun, startsDay });
   }
   return byKey;
 }

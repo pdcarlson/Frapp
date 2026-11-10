@@ -229,6 +229,8 @@ vi.mock("@repo/hooks", async () => {
     useChannelUnreadCounts: () => ({
       ...query(unreadData.value, refetches.unread),
       isError: queryErrors.unread,
+      // As TanStack reports it: 0 until a read has answered.
+      dataUpdatedAt: unreadData.value === undefined ? 0 : 1,
     }),
     useChapterSetupChecklist: (options?: { omit?: readonly string[] }) => {
       setupChecklistOptions.value = options;
@@ -246,7 +248,9 @@ vi.mock("@repo/hooks", async () => {
     useCurrentUser: () => query({ id: VIEWER }, refetches.viewer),
     useTasks: () => query([], refetches.tasks),
     useViewerUserId: () => VIEWER,
+    useOwnAvatarTint: () => null,
     useMemberDisplayNames: () => ({
+      avatarTintFor: () => null,
       byId: { [ALICE]: "Alice Chen", [BOB]: "Bob Diaz" },
       nameFor: (id: string) =>
         ({ [ALICE]: "Alice Chen", [BOB]: "Bob Diaz" })[id] ?? null,
@@ -792,13 +796,40 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     expect(vi.mocked(Alert.alert)).not.toHaveBeenCalled();
     expect(haptics.impactAsync).toHaveBeenCalledTimes(1);
     // A channel row has no Hide: that is a conversation's action.
-    expect(menuLabels(tree)).toEqual(["Pin to top", "Notifications"]);
+    expect(menuLabels(tree)).toEqual([
+      "Pin to top",
+      "Notifications",
+      "Display, Default",
+    ]);
     pressItem(tree, "Pin to top");
     expect(setPinned).toHaveBeenCalledWith({
       channelId: general.id,
       pinned: true,
     });
     expect(menu(tree).props.target).toBeNull();
+  });
+
+  it("pins this channel to a display on this phone from the menu (#3787)", () => {
+    channelsData.value = [general];
+    const tree = render();
+
+    longPress(tree, "general");
+    pressItem(tree, "Display, Default");
+    expect(menuLabels(tree)).toEqual([
+      "Your default (Cozy)",
+      "Cozy here",
+      "Compact here",
+      "Bubbles here",
+    ]);
+    pressItem(tree, "Bubbles here");
+    expect(menu(tree).props.target).toBeNull();
+
+    longPress(tree, "general");
+    expect(menuLabels(tree)).toContain("Display, Bubbles");
+    pressItem(tree, "Display, Bubbles");
+    pressItem(tree, "Your default (Cozy)");
+    longPress(tree, "general");
+    expect(menuLabels(tree)).toContain("Display, Default");
   });
 
   it("says Unpin from top on a pinned row", () => {
@@ -831,6 +862,7 @@ describe("Chat home sidebar arrangement (#2877)", () => {
       "Mark as read",
       "Pin to top",
       "Notifications, Muted",
+      "Display, Default",
     ]);
     pressItem(tree, "Mark as read");
     expect(markReadMutate).toHaveBeenCalledWith(general.id);
@@ -961,6 +993,38 @@ describe("Chat home filters on unknown data (#2877)", () => {
       "general",
       "social",
     ]);
+  });
+
+  it("hides nothing under Unread only on counts the phone saved, and marks from them (#4006)", async () => {
+    const { holdUnreadFirstPaint, resetUnreadFirstPaintForTests } =
+      await import("@/lib/chat/unread-first-paint");
+    channelsData.value = [general, social];
+    // The request hasn't answered; the last launch's answer says social has
+    // nothing unread, and a push for general is in the tray.
+    unreadData.value = undefined as never;
+    holdUnreadFirstPaint({
+      saved: [
+        { channel_id: general.id, unread_count: 0, mention_count: 0 },
+        { channel_id: social.id, unread_count: 0, mention_count: 0 },
+      ],
+      tray: { channelIds: new Set([general.id]), since: Date.now() },
+    });
+    sidebarPrefs.value = {
+      ...sidebarPrefs.value,
+      filters: { unreadOnly: true, hideMuted: false },
+    };
+    try {
+      const tree = render();
+
+      expect(
+        rows(tree).map((row) => [row.props.name, row.props.unreadCount]),
+      ).toEqual([
+        ["general", 1],
+        ["social", 0],
+      ]);
+    } finally {
+      resetUnreadFirstPaintForTests();
+    }
   });
 
   it("hides nothing under Hide muted while the levels' last read failed", () => {

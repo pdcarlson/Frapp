@@ -106,3 +106,27 @@
     pointer-events: none;
   }
 }
+
+/*
+ * The shell's chat panel opening and closing (#3779): a fade with a 16px
+ * glide from the nav side. Duration and easing are the Signet motion tokens,
+ * set inline by `dashboard-shell.tsx` (`context` + `entrance` in, `standard` +
+ * `exit` out). Instant under reduced motion.
+ */
+@keyframes shell-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+}
+@keyframes shell-panel-out {
+  to {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-chat-panel] {
+    animation: none !important;
+  }
+}

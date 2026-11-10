@@ -3,6 +3,8 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it } from "vitest";
+import { StyleSheet } from "react-native";
+import { memberAvatarTint } from "@repo/hooks";
 import { MemberAvatar, photoCacheKey } from "./member-avatar";
 
 /**
@@ -69,6 +71,44 @@ describe("MemberAvatar", () => {
       );
     });
     expect(photos(tree)).toHaveLength(0);
+  });
+});
+
+// The host view that draws the circle, not the `MemberAvatar` element above it.
+const circleOf = (tree: ReactTestRenderer) =>
+  tree.root.find(
+    (node) => node.props.testID === "avatar" && node.type !== MemberAvatar,
+  );
+
+describe("MemberAvatar tint (#3860)", () => {
+  it("paints the circle's fill and the initials from the member's tint", () => {
+    const tint = memberAvatarTint("#F2994A");
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <MemberAvatar
+          uri={null}
+          initials="SK"
+          size={32}
+          style={{ backgroundColor: "#1E1E1E" }}
+          textStyle={{ color: "#A3A3A3" }}
+          tint={tint}
+          testID="avatar"
+        />,
+      );
+    });
+    const circle = circleOf(tree);
+    expect(StyleSheet.flatten(circle.props.style).backgroundColor).toBe("#443426");
+    const text = tree.root.find(
+      (node) => node.props.children === "SK" && node.props.style !== undefined,
+    );
+    expect(StyleSheet.flatten(text.props.style).color).toBe("#F2994A");
+  });
+
+  it("keeps the caller's neutral circle without a tint", () => {
+    const tree = render(null);
+    const circle = circleOf(tree);
+    expect(StyleSheet.flatten(circle.props.style).backgroundColor).toBeUndefined();
   });
 });
 

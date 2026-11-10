@@ -5,6 +5,8 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { ChannelMemberSheet, MemberRows } from "./channel-member-sheet";
+import { memberAvatarHue, memberAvatarTint } from "@repo/hooks";
+import { MemberAvatar } from "@/components/member-avatar";
 
 /**
  * The mobile member sheet (#3536): who can read the channel, officers first,
@@ -183,6 +185,18 @@ describe("MemberRows", () => {
 
     expect(nameStyle("Amy Officer").color).toBe("#5865F2");
     expect(nameStyle("Bob Member").color).not.toBe("#5865F2");
+  });
+
+  it("tints each row's initials the way that member's name resolves (#3860)", () => {
+    const tree = render(<MemberRows channelId="chan-1" />);
+    const avatars = tree.root.findAllByType(MemberAvatar);
+    expect(avatars.length).toBeGreaterThan(0);
+    for (const avatar of avatars) {
+      expect(avatar.props.tint).toBeTruthy();
+    }
+    expect(avatars.map((a) => a.props.tint)).toContainEqual(
+      memberAvatarTint(memberAvatarHue("u-officer", "#5865F2")),
+    );
   });
 
   it("holds the skeleton until the roster has the names", () => {

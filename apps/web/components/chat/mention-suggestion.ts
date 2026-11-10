@@ -1,5 +1,6 @@
 import { ReactRenderer } from "@tiptap/react";
 import type { SuggestionOptions } from "@tiptap/suggestion";
+import { memberAvatarHue, memberAvatarTint } from "@repo/hooks";
 import { mentionPickerEntries } from "@repo/validation";
 import {
   MentionList,
@@ -12,6 +13,8 @@ export interface MentionRosterEntry {
   user_id: string;
   display_name: string;
   avatar_url: string | null;
+  /** The name's role color, which an officer's initials avatar takes (#3860). */
+  role_color?: string | null;
 }
 
 /** Role shape this module needs — a subset of `MentionRoleDto`. */
@@ -25,8 +28,8 @@ export interface MentionRoleEntry {
  * The roster and the roles as this popup offers them. Which rows, in what
  * order, and the label each inserts are `mentionPickerEntries`'s
  * (`@repo/validation`), shared with mobile's composer so a pick on either
- * client sends the same body; `mentionLabelFor` there says why the label is
- * the name reduced to letters, digits and marks. Roles come after members,
+ * client sends the same body; `mentionPickLabel` there says when the label is
+ * the name as written and when it is reduced to letters, digits and marks. Roles come after members,
  * at most three, and only the ones the viewer may ping (2026-11-06).
  */
 export function filterMentionEntries(
@@ -42,6 +45,9 @@ export function filterMentionEntries(
           label: entry.label,
           displayName: entry.member.display_name,
           avatarUrl: entry.member.avatar_url,
+          avatarTint: memberAvatarTint(
+            memberAvatarHue(entry.member.user_id, entry.member.role_color),
+          ),
         }
       : {
           kind: "role",
@@ -49,6 +55,7 @@ export function filterMentionEntries(
           label: entry.label,
           displayName: entry.role.name,
           avatarUrl: null,
+          avatarTint: null,
         },
   );
 }

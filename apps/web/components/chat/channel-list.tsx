@@ -14,10 +14,12 @@ import {
   HIDE_MUTED_LABEL,
   isAddressed,
   NO_MATCHING_CHANNELS,
+  otherMemberId,
   SHOW_ALL_CHANNELS_LABEL,
   sidebarSections,
   UNREAD_ONLY_LABEL,
   type DisplayNameMap,
+  type MemberAvatarTint,
   type SidebarFilterChange,
   type SidebarPreferences,
   type SidebarUnreadCounts,
@@ -209,6 +211,12 @@ export interface ChannelListProps {
   /** `users.id` → display name, from `useMemberDisplayNames()`. */
   memberNames: DisplayNameMap;
   /**
+   * A member's initials paint, from `useMemberDisplayNames()` (#3860). A 1:1
+   * DM's mark wears the other member's tint; without it, or on a group DM, the
+   * mark stays the neutral circle.
+   */
+  avatarTintFor?: (userId: string) => MemberAvatarTint;
+  /**
    * Keyed by channel id; a channel with no row counts as fully read.
    *
    * `undefined` is distinct from an empty map and means **the counts are not
@@ -272,6 +280,7 @@ export function ChannelList({
   activeChannelId,
   viewerId,
   memberNames,
+  avatarTintFor,
   unreadByChannelId,
   categories = NO_CATEGORIES,
   onPick,
@@ -451,6 +460,7 @@ export function ChannelList({
             <ChannelMark
               channel={channel}
               title={titleFor(channel)}
+              tint={dmTint(channel, viewerId, avatarTintFor)}
               // The `#`, lock and audit marks follow mobile's sigil: the
               // row's own tone when unread or active, one step quieter
               // when read, and `--muted` with a muted row.
@@ -639,6 +649,20 @@ export function ChannelList({
 }
 
 /**
+ * A 1:1 DM's mark wears the other member's tint, as their avatar does in the
+ * thread (#3860). A group DM, or a row whose peer can't be told, stays neutral.
+ */
+function dmTint(
+  channel: ChatChannel,
+  viewerId: string | null,
+  avatarTintFor: ((userId: string) => MemberAvatarTint) | undefined,
+): MemberAvatarTint | null {
+  if (!avatarTintFor || !isDm(channel)) return null;
+  const peer = otherMemberId(channel, viewerId);
+  return peer ? avatarTintFor(peer) : null;
+}
+
+/**
  * The leading mark. s04 draws a plain channel as a **text `#`** and a direct
  * message as an initials avatar, so those are type and an avatar rather than
  * icons; the kinds the reference does not draw take their duotone intent glyph.
@@ -646,10 +670,13 @@ export function ChannelList({
 function ChannelMark({
   channel,
   title,
+  tint,
   tone,
 }: {
   channel: ChatChannel;
   title: string;
+  /** A 1:1 DM's initials paint: the other member's tint (#3860). */
+  tint?: MemberAvatarTint | null;
   /** A text-colour class for the glyph; unset, it inherits the row's tone. */
   tone?: string;
 }) {
@@ -661,7 +688,7 @@ function ChannelMark({
       // override. s04 draws the DM avatar larger because it is a full-bleed
       // list row; a rail row is 40px tall, and the `#` beside it is 16px.
       <Avatar className="h-6 w-6 shrink-0" aria-hidden="true">
-        <AvatarFallback>{initials(title)}</AvatarFallback>
+        <AvatarFallback tint={tint}>{initials(title)}</AvatarFallback>
       </Avatar>
     );
   if (channel.type === "PRIVATE" || channel.type === "ROLE_GATED")

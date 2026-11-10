@@ -1,6 +1,5 @@
 "use client";
 
-import type { ReactNode } from "react";
 import Link from "next/link";
 import { can, canAny } from "@repo/validation";
 import type { UnsetFeatureKey } from "@repo/hooks";
@@ -36,14 +35,15 @@ type Props = {
   /** The setup gate, from `useHiddenUnsetFeatures` (see `isNavItemVisible`). */
   hiddenFeatures?: ReadonlySet<UnsetFeatureKey>;
   /**
-   * Act in place instead of navigating. The Chat row on `/chat`'s module face
-   * uses it to slide the channel list back (`nav-face.tsx`): its route is
-   * already open, and a link to `/chat` would drop the `?channel=` a deep link
-   * opened, so it renders as a button with the same geometry.
+   * Act in place instead of navigating (#3779): the desktop shell's Chat row
+   * opens and closes the chat panel, and the open tool's row closes it. It
+   * renders as a toggle button with the same geometry.
    */
   onSelect?: () => void;
-  /** Trailing marks after the label (a chevron). Expanded rows only. */
-  trailing?: ReactNode;
+  /** With `onSelect`: whether the panel this row toggles is open. */
+  pressed?: boolean;
+  /** With `onSelect`: what the toggle does, as its tooltip ("Close Events"). */
+  selectLabel?: string;
   /**
    * Something new behind this row (#3824), named for a screen reader ("unread
    * messages"). The row draws bright and semibold with a dot, and in the rail
@@ -136,7 +136,8 @@ export function ProtectedNavItem({
   hiddenFeatures,
   collapsed = false,
   onSelect,
-  trailing,
+  pressed,
+  selectLabel,
   highlight,
 }: Props) {
   if (!isNavItemVisible(item, permissions, isModuleEnabled, hiddenFeatures)) {
@@ -196,10 +197,9 @@ export function ProtectedNavItem({
       <item.icon className={iconClassName} active={isActive} />
       {collapsed ? null : <span className="truncate">{item.label}</span>}
       {collapsed ? dot : null}
-      {collapsed || (!trailing && !dot) ? null : (
+      {collapsed || !dot ? null : (
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
           {dot}
-          {trailing}
         </span>
       )}
       {highlight && !collapsed ? (
@@ -214,8 +214,9 @@ export function ProtectedNavItem({
         type="button"
         onClick={onSelect}
         aria-current={current}
+        aria-pressed={pressed}
         aria-label={collapsed ? railLabel : undefined}
-        title={collapsed ? item.label : item.description}
+        title={selectLabel ?? (collapsed ? item.label : item.description)}
         className={className}
       >
         {content}

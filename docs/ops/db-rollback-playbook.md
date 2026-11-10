@@ -3250,9 +3250,9 @@ A data-only backfill: it set `read_at` on unread chat notifications the member's
 
 **There is normally nothing to roll back.** The rows it read are ones the member had already seen; "unread" for them was the defect. The backfill did not record which rows it touched, so it cannot be reversed exactly. If rows must be reopened, a row it stamped from a receipt has `read_at` equal to that receipt's `last_read_at` at the time, which no API write produces for a row created before #3807 was live; restore those rows from the pre-promotion backup ([§ 2) Full rollback to backup/snapshot](#2-full-rollback-to-backupsnapshot)) rather than guessing.
 
-## Rollback chat messages poll-cards index (20261110180000)
+## Rollback chat messages poll-cards index (20261110230000)
 
-* **Migration**: `20261110180000_chat_messages_poll_cards_index.sql`
+* **Migration**: `20261110230000_chat_messages_poll_cards_index.sql`
 
 One partial index on `chat_messages`, `idx_chat_messages_poll_cards`. Nothing depends on it for correctness: `GET /v1/activity` only gets slower without it, so no API rollback is needed first.
 
@@ -3261,3 +3261,53 @@ One partial index on `chat_messages`, `idx_chat_messages_poll_cards`. Nothing de
 ```sql
 drop index if exists public.idx_chat_messages_poll_cards;
 ```
+
+## Rollback pledge classes (20261110170000)
+
+* **Migration**: `20261110170000_chapter_pledge_classes.sql`
+
+One new table, `chapter_pledge_classes`; two nullable columns on `members`, `pledge_class_id` and `order_number`, with a check and a composite foreign key; and two functions, `reorder_chapter_pledge_classes` and `assign_member_pledge_classes`. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API has no `/v1/pledge-classes` routes, so nothing can change a class or a number, and a client that lists classes gets a 404. It still returns `pledge_class_id` and `order_number` on member reads, because those are `select('*')` spread into the response: a client that shows them keeps showing the stored values until the columns are dropped. Roll back any client that writes them first, or with it.
+
+**Keep the table and columns unless they are themselves the problem.** Dropping them loses every chapter's class list and every member's class and number, which officers entered by hand. To remove them, do it in a later forward migration after the code revert has shipped:
+
+```sql
+drop function if exists public.assign_member_pledge_classes(uuid, jsonb);
+drop function if exists public.reorder_chapter_pledge_classes(uuid, uuid[]);
+alter table public.members
+  drop constraint if exists members_pledge_class_fk,
+  drop constraint if exists members_order_number_range,
+  drop column if exists pledge_class_id,
+  drop column if exists order_number;
+drop table if exists public.chapter_pledge_classes;
+```
+
+## Rollback message threads (20261110220000)
+
+* **Migration**: `20261110220000_chat_message_threads.sql`
+
+Four columns, a check, a trigger and two partial indexes on `chat_messages`; one new table, `chat_thread_follows`; one new function, `get_followed_thread_unread`; and redefinitions of `get_channel_unread_counts`, `get_channel_latest_messages` and `anonymize_user`. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API selects explicit columns, so it never reads the thread columns. But it also does not filter them: any thread reply written while threads were live shows up in its channel's timeline as an ordinary message, and the redefined RPCs keep it out of unread counts and previews only while they stay in place. That is the safe direction (nothing is hidden), so leave the database alone unless the schema itself is the problem.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This keeps every reply as a timeline message (it only drops the link to its parent) and restores the earlier function bodies:
+
+```sql
+drop trigger if exists chat_messages_thread_summary on public.chat_messages;
+drop function if exists public.chat_messages_bump_thread_summary();
+drop function if exists public.get_followed_thread_unread(uuid, uuid);
+drop table if exists public.chat_thread_follows;
+-- Re-create get_channel_unread_counts from 20261106193000,
+-- get_channel_latest_messages from 20261106210000, and anonymize_user from
+-- 20261106200000, verbatim, before dropping the columns they reference.
+alter table public.chat_messages
+  drop constraint if exists chat_messages_thread_not_self,
+  drop column if exists thread_recent_sender_ids,
+  drop column if exists thread_last_reply_at,
+  drop column if exists thread_reply_count,
+  drop column if exists thread_root_id;
+```
+
+Dropping `chat_thread_follows` loses who followed or muted which thread and every read cursor; nothing else depends on it.
+

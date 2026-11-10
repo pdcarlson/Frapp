@@ -356,6 +356,7 @@ describe('Chat hot path (e2e)', () => {
       payload: null,
       client_message_id: clientMessageId,
       reply_to_id: null,
+      thread_root_id: null,
       metadata: {},
       mentions: [],
     });
@@ -395,6 +396,7 @@ describe('Chat hot path (e2e)', () => {
       payload: null,
       client_message_id: clientMessageId,
       reply_to_id: null,
+      thread_root_id: null,
       metadata: {},
       mentions: [],
     });

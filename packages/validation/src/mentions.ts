@@ -28,9 +28,11 @@ const MAX_TOKEN_LENGTH = 64;
 /**
  * `@` followed by a run of name-ish characters.
  *
- * Deliberately does not span whitespace: `@Jane Doe` yields the token `Jane`,
+ * By itself it does not span whitespace: `@Jane Doe` yields the token `Jane`,
  * which the `firstWord` tier below resolves when it is unambiguous. Matching
- * across spaces would make `@jane and bob` try to resolve "jane and bob".
+ * across spaces blindly would make `@jane and bob` try to resolve "jane and
+ * bob". A name with a space in it is read whole only when the caller says it
+ * is a name someone holds ({@link MentionSpanOptions.names}).
  *
  * The lookbehind stops `email@example.com` from producing a token. It is
  * Unicode-aware rather than `\w`-based, or `josé@example.com` would slip
@@ -97,6 +99,50 @@ export interface MentionSpan {
   token: string;
 }
 
+/** What a caller knows that the bare tokenizer does not. */
+export interface MentionSpanOptions {
+  /**
+   * Names with a space in them that someone can be mentioned by, from
+   * {@link spacedMentionNames}: members' display names and role names
+   * (2026-11-09, #3825: "Winston Hewitt" is mentionable as written). After an
+   * `@`, text that spells one of them, ignoring case, is one token, the
+   * longest name first. Without the list every token stops at whitespace, as
+   * all of them did before.
+   */
+  names?: readonly string[];
+  /**
+   * Which reading of an `@` to keep when a spaced name and the bare token both
+   * fit: the first one this accepts, the spaced name tried first. A renderer
+   * passes "did this ping someone", so a body written before spaced names
+   * (`@Jane Doe`, which pinged a member named "Jane") keeps its `@Jane` chip.
+   * Left out, the spaced name wins, which is the resolver's reading.
+   */
+  accept?: (token: string) => boolean;
+}
+
+/** What may not follow a spaced name: more of a word. */
+const WORD_CONTINUES = /^[\p{L}\p{N}\p{M}_]/u;
+
+/**
+ * The spaced name `content` spells at `from` (just past an `@`), as written
+ * there, or `null`. `names` is longest first, so "Sam Abernathy Jr" is tried
+ * before "Sam Abernathy".
+ */
+function spacedNameAt(
+  content: string,
+  from: number,
+  names: readonly string[],
+): string | null {
+  for (const name of names) {
+    const written = content.slice(from, from + name.length);
+    if (written.length !== name.length) continue;
+    if (written.toLowerCase() !== name.toLowerCase()) continue;
+    if (WORD_CONTINUES.test(content.slice(from + name.length))) continue;
+    return written;
+  }
+  return null;
+}
+
 /**
  * Every `@`-token in a message body **with its position**, in source order.
  *
@@ -105,7 +151,9 @@ export interface MentionSpan {
  * know which characters to wrap, and re-deriving that from its own regex is how
  * a highlight starts disagreeing with the resolution that actually sent the
  * notification — a message that paints `@Sam` as a mention nobody was notified
- * about, or the reverse. Both functions walk `MENTION_TOKEN`, so they cannot.
+ * about, or the reverse. Both functions walk `MENTION_TOKEN`, so they cannot,
+ * provided the caller passes the same `names` the send was read with (the
+ * roster's and roles', {@link spacedMentionNames}).
  *
  * Unlike `extractMentionTokens` this does **not** deduplicate: three `@jane`s
  * in a sentence are three spans, because all three are on screen. It applies
@@ -116,30 +164,98 @@ export interface MentionSpan {
  * member needs `matchMentionCandidate` and a roster, which a renderer holding
  * nothing but `content` does not have — see `resolveMentions` for that half.
  */
-export function findMentionSpans(content: string): MentionSpan[] {
+export function findMentionSpans(
+  content: string,
+  options: MentionSpanOptions = {},
+): MentionSpan[] {
+  const names = options.names ?? [];
   const spans: MentionSpan[] = [];
+  // A spaced name can run past a later `@` only if a name holds one; skipping
+  // any match inside the last span keeps spans from overlapping regardless.
+  let floor = 0;
   for (const match of content.matchAll(MENTION_TOKEN)) {
-    const token = match[1];
-    if (!token || token.length > MAX_TOKEN_LENGTH) continue;
     // `match.index` is the `@`: the lookbehind is zero-width, so it does not
     // move the match start.
     const start = match.index;
-    spans.push({ start, end: start + 1 + token.length, token });
+    if (start < floor) continue;
+    const bare = match[1];
+    const readings: string[] = [];
+    const spaced =
+      names.length > 0 ? spacedNameAt(content, start + 1, names) : null;
+    if (spaced !== null) readings.push(spaced);
+    if (bare && bare.length <= MAX_TOKEN_LENGTH) readings.push(bare);
+    const token = options.accept
+      ? readings.find(options.accept)
+      : readings[0];
+    if (token === undefined) continue;
+    const end = start + 1 + token.length;
+    spans.push({ start, end, token });
+    floor = end;
   }
   return spans;
 }
 
 /** Every distinct `@`-token in a message body, in order of first appearance. */
-export function extractMentionTokens(content: string): string[] {
+export function extractMentionTokens(
+  content: string,
+  options: MentionSpanOptions = {},
+): string[] {
   const seen = new Set<string>();
   const tokens: string[] = [];
-  for (const { token } of findMentionSpans(content)) {
+  for (const { token } of findMentionSpans(content, options)) {
     const key = token.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
     tokens.push(token);
   }
   return tokens;
+}
+
+/**
+ * A name as a spaced mention spells it: trimmed, runs of whitespace as one
+ * space. `null` when the name has no space (the bare tokenizer reads it), or
+ * when it could not be read back whole: every word must be made of the
+ * characters a token may hold, the first opening on a letter and the last
+ * ending on a letter or digit, within `MAX_TOKEN_LENGTH`. "Sam (VP)" is not
+ * one, and a picker inserts its reduced label instead ({@link mentionLabelFor}).
+ *
+ * The word rule also keeps CommonMark out of it: no `*`, `[` or backtick can
+ * be in a spaced name, so the text a renderer sees is the text that was sent.
+ */
+function spacedMentionName(displayName: string): string | null {
+  const name = displayName.trim().replace(/\s+/g, " ");
+  if (!name.includes(" ") || name.length > MAX_TOKEN_LENGTH) return null;
+  return SPACED_NAME.test(name) ? name : null;
+}
+
+const SPACED_NAME =
+  /^\p{L}[\p{L}\p{M}\p{N}_'’.-]*(?: [\p{L}\p{M}\p{N}_'’.-]+)*(?<=[\p{L}\p{M}\p{N}])$/u;
+
+/**
+ * The names a chapter's members and roles can be mentioned by with a space in
+ * them, for {@link MentionSpanOptions.names}: longest first, one per spelling.
+ *
+ * Both sides build it from the same roster and roles, the API to resolve a
+ * send and each client to chip what was sent, so "is `@Winston Hewitt` one
+ * mention" has one answer.
+ */
+export function spacedMentionNames(
+  members: readonly Pick<MentionCandidate, "display_name">[] = [],
+  roleNames: readonly string[] = [],
+): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  const add = (raw: string) => {
+    const name = spacedMentionName(raw);
+    if (name === null) return;
+    const key = name.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    names.push(name);
+  };
+  for (const member of members) add(member.display_name);
+  for (const role of roleNames) add(role);
+  return names.sort((a, b) => b.length - a.length);
 }
 
 /**
@@ -242,7 +358,10 @@ export function resolveMentions(
     resolved.push(userId);
   };
 
-  for (const token of extractMentionTokens(content)) {
+  for (const token of extractMentionTokens(
+    content,
+    sendMentionReading(candidates, roles),
+  )) {
     const role = matchMentionRole(candidates, roles, token);
     if (role !== undefined) {
       // A role token is consumed even when it reaches nobody, so a role this
@@ -256,6 +375,64 @@ export function resolveMentions(
   }
   return resolved;
 }
+
+/**
+ * How a send reads its `@`s: the spaced names this chapter has, and which
+ * reading wins where a spaced name and the bare token both fit. One function
+ * for the resolver and for the API's "does this name a switched-off role"
+ * pre-read, so the two can't read one body differently.
+ *
+ * - **A role nobody holds lends no name.** It is no target
+ *   (`matchMentionRole`), so it must not claim `@Vice President` from a member
+ *   or a held role named "Vice".
+ * - **A spaced name does not take a mention from someone the bare token names
+ *   exactly, unless it is written as the name is.** With members "Jordan" and
+ *   "Jordan Will", `@Jordan will you come` is Jordan: the words after the name
+ *   are prose. `@Jordan Will`, capitalised as the picker writes it, is Jordan
+ *   Will. Without this rule a member could rename themselves "Officers
+ *   meeting" and take `@Officers meeting at 7` from the role; a wrong
+ *   recipient is worse than none (§ Mentions), and a mention overrides a mute.
+ *   Where the bare token names nobody exactly, case is ignored as before:
+ *   `@winston hewitt` is Winston Hewitt.
+ */
+export function sendMentionReading(
+  candidates: readonly MentionCandidate[],
+  roles: readonly MentionRole[],
+): MentionSpanOptions {
+  const held = roles.filter((role) => role.member_ids.length > 0);
+  const names = spacedMentionNames(
+    candidates,
+    held.map((role) => role.name),
+  );
+  if (names.length === 0) return {};
+  const asWritten = new Set(names);
+  const namesSomeoneExactly = (bare: string): boolean => {
+    const folded = fold(bare);
+    if (held.some((role) => fold(role.name) === folded)) return true;
+    return tierPredicates<MentionCandidate>(bare)
+      .slice(0, EXACT_TIERS)
+      .some((pred) => candidates.some(pred));
+  };
+  return {
+    names,
+    accept: (token) => {
+      const space = token.indexOf(" ");
+      if (space === -1) return true;
+      if (asWritten.has(token)) return true;
+      return !namesSomeoneExactly(token.slice(0, space));
+    },
+  };
+}
+
+/**
+ * A chip test with the spaced names a token may be, riding on the function
+ * (`remarkMentionChips` in `@repo/chat-core` reads them, `useMentionChips` in
+ * `@repo/hooks` sets them). Declared here, the one package both depend on, so
+ * the two ends can't drift on the property's name.
+ */
+export type MentionChipTest = ((token: string) => boolean) & {
+  names?: readonly string[];
+};
 
 /**
  * A chapter role as `@`-resolution sees it (2026-11-06, owner direction:
@@ -309,8 +486,10 @@ function matchMentionRole(
 }
 
 /**
- * The text a mention picker inserts for a member: `display_name` with every
- * character that isn't a Unicode letter, digit, or mark removed.
+ * A name reduced to what the bare tokenizer always reads whole: every
+ * character that isn't a Unicode letter, digit, or mark removed. What a picker
+ * inserts for a name that can't be mentioned as written
+ * ({@link mentionPickLabel}), and what every picker inserted before 2026-11-09.
  *
  * Stripping *only* whitespace is not enough. `MENTION_TOKEN` allows a narrow
  * set of mid-token punctuation (`'’.-_`) but **truncates the match** at the
@@ -326,12 +505,24 @@ function matchMentionRole(
  * picked is the member that resolves. What it cannot prevent is the resolver's
  * accepted ambiguity, two members whose names fold to the same string, which
  * fails closed (nobody mentioned, not the wrong person).
- *
- * Shared by both composers' pickers (web's tiptap suggestion, mobile's
- * `ChatComposer`), so a member picked on either sends the same body.
  */
 export function mentionLabelFor(displayName: string): string {
   return displayName.replace(/[^\p{L}\p{N}\p{M}]/gu, "");
+}
+
+/**
+ * The text a mention picker inserts after the `@` for a member or a role
+ * (2026-11-09, #3825): the name as written, "Winston Hewitt", when it can be
+ * read back whole ({@link spacedMentionNames}), and otherwise the reduced
+ * label ({@link mentionLabelFor}), as for a one-word name or "Sam (VP)".
+ *
+ * The name as written resolves through the exact-name tier, since the
+ * resolver builds the same name list from the same roster. Shared by both
+ * composers' pickers (web's tiptap suggestion, mobile's `ChatComposer`), so a
+ * member picked on either sends the same body.
+ */
+export function mentionPickLabel(displayName: string): string {
+  return spacedMentionName(displayName) ?? mentionLabelFor(displayName);
 }
 
 /**
@@ -345,7 +536,7 @@ export function draftWithMention(
   draft: string,
   displayName: string,
 ): string | null {
-  const label = mentionLabelFor(displayName);
+  const label = mentionPickLabel(displayName);
   // The picker's own refusals (`mentionSuggestions`): a label the tokenizer
   // wouldn't read as a mention reaches nobody.
   if (!/^\p{L}/u.test(label) || label.length > MAX_TOKEN_LENGTH) return null;
@@ -356,7 +547,7 @@ export function draftWithMention(
 /** One member as a mention picker offers them. */
 export interface MentionSuggestion<T extends MentionCandidate> {
   member: T;
-  /** What picking them inserts after the `@` (`mentionLabelFor`). */
+  /** What picking them inserts after the `@` (`mentionPickLabel`). */
   label: string;
 }
 
@@ -392,7 +583,7 @@ export function mentionSuggestions<T extends MentionCandidate>(
   for (const member of roster) {
     if (offered.length >= limit) break;
     if (member.display_name.length === 0) continue;
-    const label = mentionLabelFor(member.display_name);
+    const label = mentionPickLabel(member.display_name);
     if (!/^\p{L}/u.test(label)) continue;
     // The tokenizer drops a longer token, so the pick would reach nobody.
     if (label.length > MAX_TOKEN_LENGTH) continue;
@@ -447,7 +638,7 @@ export function mentionPickerEntries<
   for (const role of roles) {
     if (roleRows.length >= Math.min(MAX_ROLE_SUGGESTIONS, limit)) break;
     if (!role.mentionable) continue;
-    const label = mentionLabelFor(role.name);
+    const label = mentionPickLabel(role.name);
     if (!/^\p{L}/u.test(label)) continue;
     if (label.length > MAX_TOKEN_LENGTH) continue;
     if (needle && !matchable(role.name).includes(needle)) continue;
@@ -500,11 +691,13 @@ const HANDLE_TAIL = /^[\p{L}\p{M}\p{N}_'’.-]*/u;
  *
  * A plain text input has no editor plugin to say this (web's tiptap
  * suggestion does), so mobile's composer asks here on every change of text or
- * selection. The query never spans whitespace, as tiptap's default doesn't.
+ * selection. The query never spans whitespace, as tiptap's default doesn't;
+ * `names` (`spacedMentionNames`) only widens what a pick replaces.
  */
 export function activeMentionQuery(
   text: string,
   caret: number,
+  names: readonly string[] = [],
 ): ActiveMentionQuery | null {
   if (caret < 1 || caret > text.length) return null;
   const match = ACTIVE_MENTION.exec(text.slice(0, caret));
@@ -513,7 +706,15 @@ export function activeMentionQuery(
   if (query.length > MAX_TOKEN_LENGTH) return null;
   const tail =
     query.length > 0 ? (HANDLE_TAIL.exec(text.slice(caret))?.[0] ?? "") : "";
-  return { start: match.index, query, end: caret + tail.length };
+  // A handle already written with its space ("@Jane Doe", #3825) is replaced
+  // whole: ending it at "Jane" would leave a pick as "@Jane Doe Doe".
+  const spaced =
+    query.length > 0 ? spacedNameAt(text, match.index + 1, names) : null;
+  const end = Math.max(
+    caret + tail.length,
+    spaced === null ? 0 : match.index + 1 + spaced.length,
+  );
+  return { start: match.index, query, end };
 }
 
 /**
@@ -559,7 +760,16 @@ export function mentionChipFilter(
   const roles = new Set((targets?.roleNames ?? []).map(fold));
   return (token) => {
     const folded = fold(token);
-    if (folded.length > 0 && roles.has(folded)) return true;
+    if (folded.length > 0 && roles.has(folded)) {
+      // A role chips on trust (the client can't see who holds it). Where the
+      // token's first word names a member this message did reach, that bare
+      // reading is the one known to be true, so the spaced role stands down:
+      // `@Vice President` that pinged the member "Vice" stays `@Vice`.
+      const space = token.indexOf(" ");
+      const bare =
+        space === -1 ? null : matchMentionCandidate(members, token.slice(0, space));
+      return bare === null || !mentioned.has(bare.user_id);
+    }
     const member = matchMentionCandidate(members, token);
     return member !== null && mentioned.has(member.user_id);
   };

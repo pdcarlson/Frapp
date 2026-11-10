@@ -612,17 +612,22 @@ export {
   matchMentionCandidate,
   mentionChipFilter,
   mentionLabelFor,
+  mentionPickLabel,
+  spacedMentionNames,
   mentionPickerEntries,
   mentionSuggestions,
   resolveMentions,
+  sendMentionReading,
 } from "./mentions";
 export type {
   ActiveMentionQuery,
   MentionCandidate,
   MentionChipTargets,
+  MentionChipTest,
   MentionPickerEntry,
   MentionRole,
   MentionRoleOption,
+  MentionSpanOptions,
   MentionSpan,
   MentionSuggestion,
 } from "./mentions";
@@ -755,6 +760,10 @@ export {
   POLL_QUESTION_MAX_LENGTH,
   SERVICE_DESCRIPTION_MAX_LENGTH,
   TASK_TITLE_MAX_LENGTH,
+  PLEDGE_CLASS_NAME_MAX_LENGTH,
+  PLEDGE_CLASSES_MAX,
+  MEMBER_ORDER_NUMBER_MAX,
+  PLEDGE_CLASS_ASSIGNMENTS_MAX,
   YEAR_MAX,
 } from "./field-limits";
 

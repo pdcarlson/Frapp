@@ -419,6 +419,9 @@ describe("landing page structure", () => {
       ["get-started", "hero"],
       ["join-chapter", "hero"],
       ["get-started", "pricing"],
+      // Not in the Spec sheet's §5: the Pro card's trial button, added by
+      // #3869 and recorded in `spec/ui/landing/reference/README.md`.
+      ["start-free-trial", "pricing"],
       ["get-started", "cta-band"],
       ["log-in", "cta-band"],
       ["log-in", "footer"],
@@ -433,11 +436,25 @@ describe("landing page structure", () => {
     expect(renderedPage).toContain('const joinUrl = "/join"');
   });
 
-  it("puts one control in the pricing section, on the Free card", () => {
+  it("puts one control on each pricing card, gold only on Free", () => {
+    // D3 as amended (#3869): Get started on Free stays the primary; the Pro
+    // card's trial button is the outlined secondary into sign-up → /billing.
     const pricing = withoutComments(homeSource("pricing-section.tsx"));
     expect(pricing).toContain('id="pricing"');
-    expect(pricing.match(/surface="pricing"/g) ?? []).toHaveLength(1);
-    expect(pricing).toContain("Upgrade any time from Billing in the web app.");
+    expect(pricing.match(/surface="pricing"/g) ?? []).toHaveLength(2);
+    expect(pricing.match(/BUTTON_PRIMARY\b/g) ?? []).toHaveLength(2); // import + Free
+    expect(pricing).toMatch(
+      /cta="start-free-trial"\s+surface="pricing"\s+href=\{trialUrl\}\s+className=\{`\$\{BUTTON_SECONDARY\}/,
+    );
+    expect(pricing.indexOf('cta="get-started"')).toBeLessThan(
+      pricing.indexOf('cta="start-free-trial"'),
+    );
+    // The label names the trial `positioning.md` commits to, and the page
+    // hands the section the trial URL rather than plain sign-up, which ends on
+    // /chat instead of /billing.
+    expect(flatten(pricing)).toMatch(/>\s*Start 14-day trial\s*</);
+    expect(renderedPage).toMatch(/<PricingSection\b[^>]*\btrialUrl=\{trialUrl\}/);
+    expect(renderedPage).toMatch(/\{[^}]*\btrialUrl\b[^}]*\}\s*=\s*landingAuthUrls\(\)/);
   });
 });
 

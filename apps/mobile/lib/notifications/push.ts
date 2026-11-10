@@ -3,7 +3,7 @@ import Constants from "expo-constants";
 import { isWebOrExpoGo } from "../expo-go";
 import { createIsolatedModule } from "../isolated-module";
 import { requireNotifications } from "./push-module";
-import { chatChannelIdFrom } from "./targets";
+import { chatChannelIdFrom, isThreadChatPush } from "./targets";
 import type {
   NotificationsModule,
   PushNotificationResponse,
@@ -324,8 +324,15 @@ export async function clearReadChatNotifications(
     await Promise.allSettled(
       presented
         .filter((n) => {
-          const channelId = chatChannelIdFrom(n.request.content.data);
-          return channelId !== null && readChannelIds.has(channelId);
+          const data = n.request.content.data;
+          const channelId = chatChannelIdFrom(data);
+          // A thread reply's push stays: a channel at zero unread says
+          // nothing about its threads (#3785).
+          return (
+            channelId !== null &&
+            readChannelIds.has(channelId) &&
+            !isThreadChatPush(data)
+          );
         })
         .map((n) => mod.dismissNotificationAsync(n.request.identifier)),
     );
@@ -333,6 +340,29 @@ export async function clearReadChatNotifications(
     // An older native build without the call, or the OS refusing: leave the
     // tray as it is.
   }
+}
+
+/**
+ * The channels whose chat pushes are still in the tray: what the phone was
+ * told about and the member hasn't opened here. `lib/chat/unread-first-paint.ts`
+ * lights those channels before `GET /v1/channels/unread` answers (#4006).
+ *
+ * Empty wherever the tray can't be read (web, Expo Go, an older native build,
+ * the OS refusing), which only means nothing is lit early.
+ */
+export async function presentedChatChannelIds(): Promise<Set<string>> {
+  const ids = new Set<string>();
+  const mod = localOnlyModule();
+  if (!mod) return ids;
+  try {
+    for (const n of await mod.getPresentedNotificationsAsync()) {
+      const channelId = chatChannelIdFrom(n.request.content.data);
+      if (channelId !== null) ids.add(channelId);
+    }
+  } catch {
+    // As in `clearReadChatNotifications`: leave it at what was read.
+  }
+  return ids;
 }
 
 /**

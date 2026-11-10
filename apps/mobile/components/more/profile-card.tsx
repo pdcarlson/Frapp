@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Image, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { onlineManager } from "@tanstack/react-query";
+import type { MemberAvatarTint } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import { PressableRow } from "@/components/list-section";
@@ -17,9 +18,9 @@ const AVATAR_SIZE = 48;
  * permissions only, #1048), so the line is the balance alone rather than a
  * chip that would have to invent one.
  *
- * The initials avatar is neutral (a raised fill, a hairline, foreground
- * initials): a person's avatar never takes the chapter accent, the viewer's
- * own included (foundations.md §6, "Where the accent goes", 2026-11-05).
+ * The initials wear the viewer's member tint (#3860), with a hairline; a
+ * person's avatar never takes the chapter accent, the viewer's own included
+ * (foundations.md §6, "Where the accent goes", 2026-11-05).
  *
  * It navigates with `router.push` in `onPress`, never `<Link asChild>`: on
  * native, Link's slot merges the child's props with an object spread, which
@@ -31,9 +32,12 @@ export function ProfileCard({
   photoUrl,
   fetchedAt = 0,
   pointsLabel,
+  tint = null,
 }: {
   displayName: string | null;
   initials: string;
+  /** The viewer's initials paint (#3860); `null` keeps the neutral fill. */
+  tint?: MemberAvatarTint | null;
   photoUrl: string | null;
   /** When that read last completed (`dataUpdatedAt`); a refetch retries a failed load. */
   fetchedAt?: number;
@@ -84,8 +88,16 @@ export function ProfileCard({
           importantForAccessibility="no-hide-descendants"
         />
       ) : (
-        <View style={[styles.avatar, styles.avatarInitials]}>
-          <Text style={styles.initials}>{initials}</Text>
+        <View
+          style={[
+            styles.avatar,
+            styles.avatarInitials,
+            tint ? { backgroundColor: tint.fill } : null,
+          ]}
+        >
+          <Text style={[styles.initials, tint ? { color: tint.text } : null]}>
+            {initials}
+          </Text>
         </View>
       )}
       <View style={styles.text}>

@@ -40,6 +40,7 @@ const alumniRead = {
 };
 
 vi.mock("@repo/hooks", () => ({
+  useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
   useAlumni: () => alumniRead,
 }));
 

@@ -6,10 +6,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { reactionActionType } from "@repo/chat-core/types";
 import { FrappThemeProvider } from "@/lib/theme";
-import { Keyboard, StyleSheet } from "react-native";
+import { memberAvatarTint, memberHashHue } from "@repo/hooks";
+import { MemberAvatar } from "@/components/member-avatar";
+import {
+  Keyboard,
+  StyleSheet,
+  Text,
+  type StyleProp,
+  type TextStyle,
+} from "react-native";
 import { drawnText, screenText } from "@/test/screen-text";
 import {
   resetChatDensityForTests,
+  setChannelDensity,
   setChatDensity,
 } from "@/lib/chat/chat-density";
 
@@ -60,6 +69,7 @@ import {
   ADD_REACTION_A11Y_LABEL,
   groupReactions,
   MessageItem,
+  MessageRowFrame,
   authorProfileOpener,
 } from "./message-item";
 
@@ -175,6 +185,7 @@ function renderItem(
   replyParent?: ChatMessage | null,
   extra: {
     startsRun?: boolean;
+    endsRun?: boolean;
     onOpenActions?: () => void;
     roleColorFor?: (userId: string) => string | null;
     onOpenProfile?: (userId: string) => void;
@@ -190,6 +201,7 @@ function renderItem(
           nameFor={(id) => (id === OTHER ? "Casey" : null)}
           roleColorFor={extra.roleColorFor}
           startsRun={extra.startsRun ?? true}
+          endsRun={extra.endsRun}
           replyParent={replyParent}
           onRetry={vi.fn()}
           onDiscard={vi.fn()}
@@ -420,6 +432,21 @@ describe("an author's name takes their role color", () => {
         (node.type as unknown) === "Text" && node.props.children === "Casey",
     );
     expect(JSON.stringify(name.props.style)).toContain('"color":"#6FD08C"');
+  });
+
+  it("tints the author's initials in the name's color, else the hashed hue (#3860)", () => {
+    const tintOf = (tree: ReactTestRenderer) =>
+      tree.root.findByType(MemberAvatar).props.tint;
+    expect(
+      tintOf(
+        renderItem(message({ sender_id: OTHER, content: "hi" }), undefined, {
+          roleColorFor,
+        }),
+      ),
+    ).toEqual(memberAvatarTint("#6FD08C"));
+    expect(
+      tintOf(renderItem(message({ sender_id: OTHER, content: "hi" }))),
+    ).toEqual(memberAvatarTint(memberHashHue(OTHER)));
   });
 
   it("paints the viewer's own name in their role color too, never the accent", () => {
@@ -1225,7 +1252,11 @@ describe("opening a member's profile from a row", () => {
     const open = vi.fn();
     const nameFor = (id: string) => (id === OTHER ? "Casey" : null);
     expect(
-      authorProfileOpener(message({ sender_id: SYSTEM_SENDER_ID }), open, nameFor),
+      authorProfileOpener(
+        message({ sender_id: SYSTEM_SENDER_ID }),
+        open,
+        nameFor,
+      ),
     ).toBeUndefined();
     expect(
       authorProfileOpener(message({ sender_id: null }), open, nameFor),
@@ -1233,6 +1264,143 @@ describe("opening a member's profile from a row", () => {
     expect(authorProfileOpener(message(), undefined, nameFor)).toBeUndefined();
     // Left the chapter: the roster no longer names them.
     expect(authorProfileOpener(message(), open, () => null)).toBeUndefined();
-    expect(authorProfileOpener(message(), open, nameFor)).toBeTypeOf("function");
+    expect(authorProfileOpener(message(), open, nameFor)).toBeTypeOf(
+      "function",
+    );
+  });
+});
+
+// Bubbles (§11 § Bubbles, #3787): an opt-in, per phone or per channel.
+describe("bubbles", () => {
+  beforeEach(() => {
+    resetChatDensityForTests();
+  });
+
+  const byTestId = (tree: ReactTestRenderer, id: string) =>
+    tree.root.findAll((node) => node.props.testID === id);
+  const flat = (style: unknown): TextStyle =>
+    StyleSheet.flatten(style as StyleProp<TextStyle>) ?? {};
+
+  it("puts others on the left in a card bubble, avatar under the last", () => {
+    act(() => setChatDensity("bubbles"));
+    const tree = renderItem(message({ content: "hello" }));
+    expect(byTestId(tree, "bubble-row-other").length).toBeGreaterThan(0);
+    const bubble = flat(byTestId(tree, "message-bubble")[0]!.props.style);
+    expect(bubble.backgroundColor).toBe(signetDarkTokens.color.surface.card);
+    expect(byTestId(tree, "message-avatar").length).toBeGreaterThan(0);
+  });
+
+  it("puts the viewer's own on the right in the accent pair", () => {
+    act(() => setChatDensity("bubbles"));
+    const tree = renderItem(message({ content: "hi", sender_id: VIEWER }));
+    expect(byTestId(tree, "bubble-row-self").length).toBeGreaterThan(0);
+    const bubble = flat(byTestId(tree, "message-bubble")[0]!.props.style);
+    expect(bubble.backgroundColor).toBe("#C49A3A");
+    expect(byTestId(tree, "message-avatar")).toHaveLength(0);
+  });
+
+  it("tucks a stacked bubble's corners and holds the avatar back", () => {
+    act(() => setChatDensity("bubbles"));
+    const tree = renderItem(message({ content: "hello" }), undefined, {
+      startsRun: false,
+      endsRun: false,
+    });
+    const bubble = flat(byTestId(tree, "message-bubble")[0]!.props.style);
+    expect(bubble.borderTopLeftRadius).toBe(6);
+    expect(bubble.borderBottomLeftRadius).toBe(6);
+    expect(byTestId(tree, "message-avatar")).toHaveLength(0);
+  });
+
+  it("draws one pinned channel in bubbles and leaves the rest", () => {
+    act(() => setChannelDensity("chan-1", "bubbles"));
+    const pinned = renderItem(message({ channel_id: "chan-1" }));
+    expect(byTestId(pinned, "bubble-row-other").length).toBeGreaterThan(0);
+    const other = renderItem(message({ channel_id: "chan-2" }));
+    expect(byTestId(other, "bubble-row-other")).toHaveLength(0);
+  });
+
+  type Node = ReactTestRenderer["root"];
+  const textOf = (n: Node): string =>
+    n.children
+      .map((c) => (typeof c === "string" ? c : textOf(c as Node)))
+      .join("");
+  const colorOf = (tree: ReactTestRenderer, text: string) => {
+    const node = tree.root.find(
+      (n) =>
+        (n.type as unknown) === "Text" &&
+        (n.props.children === text ||
+          (Array.isArray(n.props.children) && n.props.children.includes(text))),
+    );
+    return flat(node.props.style).color as string | undefined;
+  };
+
+  it("draws the viewer's text, markers and deleted line in the contrast color", () => {
+    act(() => setChatDensity("bubbles"));
+    const edited = renderItem(
+      message({
+        content: "hi",
+        sender_id: VIEWER,
+        edited_at: "2026-11-06T20:30:00.000Z",
+        is_pinned: true,
+      }),
+    );
+    // The body's outermost Text: the first whose content holds the words.
+    const body = edited.root.findAll(
+      (n) => (n.type as unknown) === "Text" && textOf(n).includes("hi"),
+    )[0]!;
+    expect(flat(body.props.style).color).toBe("#2B2009");
+    const markers = edited.root.findAll(
+      (n) => (n.type as unknown) === "Text" && textOf(n).includes("Pinned"),
+    );
+    // The innermost: the marker's own Text, whose color is the one drawn.
+    const marker = markers[markers.length - 1]!;
+    expect(flat(marker.props.style).color).toBe("#2B2009");
+
+    const deleted = renderItem(
+      message({ sender_id: VIEWER, is_deleted: true }),
+    );
+    expect(colorOf(deleted, DELETED_MESSAGE_PLACEHOLDER)).toBe("#2B2009");
+  });
+
+  it("gives a follow-on bubble a screen-reader handle with who and when", () => {
+    act(() => setChatDensity("bubbles"));
+    const tree = renderItem(message({ content: "hello" }), undefined, {
+      startsRun: false,
+      onOpenActions: vi.fn(),
+    });
+    const handle = byTestId(tree, "bubble-follow-on-handle")[0]!;
+    expect(handle.props.accessible).toBe(true);
+    expect(handle.props.accessibilityLabel).toMatch(/^Casey, /);
+  });
+});
+
+describe("bubbles: cards through the row frame", () => {
+  beforeEach(() => {
+    resetChatDensityForTests();
+  });
+
+  it("sides the viewer's own card on the right with no avatar", () => {
+    act(() => setChatDensity("bubbles"));
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <MessageRowFrame
+            message={message({ sender_id: VIEWER, kind: "poll" })}
+            viewerId={VIEWER}
+            nameFor={() => null}
+            startsRun
+          >
+            <Text>card</Text>
+          </MessageRowFrame>
+        </FrappThemeProvider>,
+      );
+    });
+    expect(
+      tree.root.findAll((n) => n.props.testID === "bubble-row-self").length,
+    ).toBeGreaterThan(0);
+    expect(
+      tree.root.findAll((n) => n.props.testID === "message-avatar"),
+    ).toHaveLength(0);
   });
 });
