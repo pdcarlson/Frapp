@@ -454,6 +454,16 @@ vi.mock("@repo/hooks", async () => ({
       }),
     )),
   useBlockedUserIds: () => blockListState.value,
+  // Chat backgrounds (#3973): decoration, read and written elsewhere's specs.
+  useChatBackground: () => ({ data: undefined }),
+  useChapterChatBackground: () => ({ data: undefined }),
+  useSetChannelBackground: () => ({
+    mutate: vi.fn(),
+    reset: vi.fn(),
+    isPending: false,
+    error: null,
+  }),
+  errorCopy: () => "Something went wrong.",
   useChannels: () => ({
     data: CHANNELS,
     isFetching: false,
@@ -3442,6 +3452,19 @@ describe("ChatShell narrow viewports (#2142)", () => {
     render(<ChatShell />);
     const back = screen.getByRole("button", { name: "Back to channels" });
     expect(back).toHaveClass("h-10", "w-10");
+  });
+
+  it("keeps the channel rail's gutter inside its scroller, so pinned headings sit flush (#4051)", () => {
+    render(<ChatShell />);
+    // Padding on the scroller itself would sit outside the box a sticky
+    // category heading pins to: the heading would stop 8px short of the top
+    // and rows would scroll through that band above it.
+    const scroller = screen
+      .getByTestId("pick-random")
+      .closest(".overflow-y-auto") as HTMLElement;
+    expect(scroller).not.toBeNull();
+    expect(scroller.className).not.toMatch(/(^|\s)p[ty]?-/);
+    expect(scroller.firstElementChild).toHaveClass("p-2");
   });
 
   it("leaves an Esc that closes an open overlay to the overlay (#3824)", () => {

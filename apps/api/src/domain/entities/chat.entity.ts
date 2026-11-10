@@ -160,6 +160,16 @@ export interface ChatChannel {
    * gone, so it grants nothing.
    */
   created_by: string | null;
+  /**
+   * The channel's chat background (#3973): a `CHAT_BACKGROUND_KEYS` key, or
+   * null to follow the chapter default. Always null on a DM or group DM.
+   * Optional because older fixtures predate it; the column always exists.
+   */
+  background?: string | null;
+  /** In the `branding` bucket; set exactly when `background` is `photo`. */
+  background_photo_path?: string | null;
+  /** The chat line announcing that photo; a deleted line withdraws it. */
+  background_message_id?: string | null;
 }
 
 /**

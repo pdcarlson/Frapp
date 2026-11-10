@@ -26,6 +26,7 @@ import {
   type ChatNotificationLevel,
 } from "@repo/validation";
 import { Can } from "@/components/shared/can";
+import { ChatBackgroundDefaultCard } from "./chat-background-default-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -206,6 +207,14 @@ export function ChatAdminPage({
           <ChatAdminBody initialChannelId={initialChannelId} />
         </div>
       </Can>
+      {/*
+        Outside the channels:manage gate: the chapter default is set by whoever
+        edits the chapter profile (#3973), who may not manage channels. The
+        card carries its own CHAPTER_PROFILE_PERMISSIONS gate.
+      */}
+      <div className="mt-6">
+        <ChatBackgroundDefaultCard />
+      </div>
     </>
   );
 }

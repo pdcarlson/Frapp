@@ -19,6 +19,7 @@ import { useNetwork } from "@/lib/providers/network-provider";
 import { useMessageThread } from "@/lib/chat/use-message-thread";
 import { cn, initials } from "@/lib/utils";
 import { TextRenderer } from "./renderers/text-renderer";
+import { ChatBackground } from "./chat-background";
 
 export interface ThreadPanelProps {
   channelId: string;
@@ -130,9 +131,16 @@ export function ThreadPanel({
   return (
     <section
       aria-label="Thread"
-      className={cn("flex min-h-0 flex-col bg-background", className)}
+      // `isolate` + positioned: the channel's chat background (#3973) sits at
+      // `-z-10` inside the panel, so a thread reads on the same background
+      // as its channel while the panel still hides the timeline beneath.
+      className={cn(
+        "relative isolate flex min-h-0 flex-col bg-background",
+        className,
+      )}
       onKeyDown={onPanelKey}
     >
+      <ChatBackground channelId={channelId} />
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-2">
         <Button
           variant="ghost"

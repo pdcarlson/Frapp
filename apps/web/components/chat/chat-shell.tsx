@@ -31,6 +31,10 @@ import {
   useChannelUnreadCounts,
   useChannels,
   useSetChannelNotificationLevel,
+  useChatBackground,
+  useChapterChatBackground,
+  useSetChannelBackground,
+  errorCopy,
   useMarkChannelRead,
   useCategories,
   useChapterRoster,
@@ -114,6 +118,7 @@ import {
   type ChatChannel,
 } from "./channel-list";
 import { ChannelListSkeleton } from "./channel-list-skeleton";
+import { ChatBackground, useChapterLetters } from "./chat-background";
 import {
   MessageTimeline,
   MessageTimelineSkeleton,
@@ -1158,6 +1163,18 @@ export function ChatShell({
     permissionsPayload?.permissions,
   );
 
+  // Chat backgrounds (#3973): the open channel's, for the menu's picker.
+  const channelBackground = useChatBackground(activeChannel?.id ?? null);
+  const setChannelBackground = useSetChannelBackground();
+  const chapterBackground = useChapterChatBackground();
+  // One mutation serves whichever channel is open, so a failed save on one
+  // channel must not show its error (or its pending state) on the next.
+  const resetChannelBackground = setChannelBackground.reset;
+  useEffect(() => {
+    resetChannelBackground();
+  }, [activeChannel?.id, resetChannelBackground]);
+  const chapterLetters = useChapterLetters();
+
   // `/event` typed bare, with details the one-liner can't read, or picked
   // from the palette or the composer's + menu, opens the Events page's own
   // form, filled in with what was typed, and the card posts in the channel it
@@ -1964,7 +1981,11 @@ export function ChatShell({
   } | null>(null);
   // Leaving the channel closes its thread, so coming back shows the timeline
   // (state adjusted during render, React's pattern for a reset on a prop).
-  if (openThread && activeChannel && openThread.channelId !== activeChannel.id) {
+  if (
+    openThread &&
+    activeChannel &&
+    openThread.channelId !== activeChannel.id
+  ) {
     setOpenThread(null);
   }
   const threadRootId =
@@ -2280,8 +2301,15 @@ export function ChatShell({
           onChange={sidebarControls.onSetFilters}
         />
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
-        {/*
+      {/*
+        The gutter is on an inner wrapper, not the scroller: a scroller's own
+        padding sits outside the box a sticky child pins to, so a pinned
+        category heading would stop 8px short of the top and rows would scroll
+        through that band, half-cut under the title row (#4051).
+      */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="p-2">
+          {/*
               Only `loading` shimmers, and `no-chapter` deliberately does not.
 
               `loading` is now the state a cold load actually renders — see
@@ -2293,40 +2321,41 @@ export function ChatShell({
               open. That is the same defect `profile-panel.tsx` rejects
               `hasHydrated` for, reached from the other side.
             */}
-        {channelsPaneState === "loading" ? <ChannelListSkeleton /> : null}
-        {/*
+          {channelsPaneState === "loading" ? <ChannelListSkeleton /> : null}
+          {/*
           The officer setup checklist, above the channels where Discord puts
           its server guide. Renders `null` for anyone with nothing to set up.
         */}
-        {channelsPaneState === "ready" ? <SetupChecklistSection /> : null}
-        {channelsPaneState === "ready" ? (
-          <ChannelList
-            viewerId={userId}
-            memberNames={memberNames}
-            avatarTintFor={avatarTintFor}
-            channels={channels}
-            categories={categories}
-            unreadByChannelId={unreadByChannelId}
-            activeChannelId={activeChannelId}
-            onHide={hideFromRail}
-            rowActions={rowActions}
-            sidebar={sidebarControls}
-            onPick={(ch) => {
-              if (ch.hidden) {
-                const memberId = otherMemberId(ch, userId);
-                if (memberId) reopenDm.mutate({ member_id: memberId });
-              }
-              setSelectedChannelId(ch.id);
-              // Below `lg` the list and the thread are never both on screen,
-              // so picking has to navigate. Inert at `lg` and up.
-              openThreadPane();
-              // Deliberately leaves any pending jump target alone - it is
-              // gated on its own channel and will resolve if the member
-              // returns. Only the notice is channel-scoped for display.
-              setUnreachableTarget(null);
-            }}
-          />
-        ) : null}
+          {channelsPaneState === "ready" ? <SetupChecklistSection /> : null}
+          {channelsPaneState === "ready" ? (
+            <ChannelList
+              viewerId={userId}
+              memberNames={memberNames}
+              avatarTintFor={avatarTintFor}
+              channels={channels}
+              categories={categories}
+              unreadByChannelId={unreadByChannelId}
+              activeChannelId={activeChannelId}
+              onHide={hideFromRail}
+              rowActions={rowActions}
+              sidebar={sidebarControls}
+              onPick={(ch) => {
+                if (ch.hidden) {
+                  const memberId = otherMemberId(ch, userId);
+                  if (memberId) reopenDm.mutate({ member_id: memberId });
+                }
+                setSelectedChannelId(ch.id);
+                // Below `lg` the list and the thread are never both on screen,
+                // so picking has to navigate. Inert at `lg` and up.
+                openThreadPane();
+                // Deliberately leaves any pending jump target alone - it is
+                // gated on its own channel and will resolve if the member
+                // returns. Only the notice is channel-scoped for display.
+                setUnreachableTarget(null);
+              }}
+            />
+          ) : null}
+        </div>
       </div>
     </>
   );
@@ -2415,10 +2444,13 @@ export function ChatShell({
       */}
       <section
         className={cn(
-          "relative flex min-w-0 flex-1 flex-col bg-background",
+          // `isolate` + `relative`: the chat background (#3973) sits at
+          // `-z-10` inside this column, and only this column (#3779).
+          "relative isolate flex min-w-0 flex-1 flex-col bg-background",
           narrowPane === "channels" && "max-lg:hidden",
         )}
       >
+        <ChatBackground channelId={activeChannel?.id ?? null} />
         {/*
           48px, one row (`1b` pin 11). The name, its description and the one
           overflow control share the row; anything that cannot fit in 48px and
@@ -2524,6 +2556,37 @@ export function ChatShell({
                           },
                         );
                       },
+                    }
+                  : undefined
+              }
+              background={
+                activeChannel &&
+                canManageChannel &&
+                activeChannel.type !== "DM" &&
+                activeChannel.type !== "GROUP_DM"
+                  ? {
+                      value:
+                        channelBackground.data?.source === "channel"
+                          ? channelBackground.data.background
+                          : null,
+                      inheritPreview: chapterBackground.data?.background,
+                      letters: chapterLetters,
+                      saving: setChannelBackground.isPending,
+                      error: setChannelBackground.error
+                        ? errorCopy(setChannelBackground.error)
+                        : null,
+                      onPick: (pick) =>
+                        setChannelBackground.mutate({
+                          channelId: activeChannel.id,
+                          background: pick.background,
+                          photo: pick.photo
+                            ? {
+                                body: pick.photo,
+                                filename: pick.photo.name,
+                                contentType: pick.photo.type,
+                              }
+                            : undefined,
+                        }),
                     }
                   : undefined
               }

@@ -24,6 +24,9 @@ const thread = {
 };
 let offline = false;
 
+// Chat backgrounds (#3973) read their own query; decoration, not under test here.
+vi.mock("./chat-background", () => ({ ChatBackground: () => null }));
+
 vi.mock("@/lib/chat/use-message-thread", () => ({
   useMessageThread: () => thread,
 }));

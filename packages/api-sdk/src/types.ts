@@ -1670,6 +1670,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/chat-backgrounds/channels/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What to draw behind a channel's messages (resolved, photo signed) */
+        get: operations["ChatBackgroundController_getForChannel_v1"];
+        /** Set or clear a channel's own background */
+        put: operations["ChatBackgroundController_setForChannel_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/chat-backgrounds/channels/photo-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Signed upload URL for a channel background photo */
+        post: operations["ChatBackgroundController_channelPhotoUrl_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/chat-backgrounds/default": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The chapter's default chat background */
+        get: operations["ChatBackgroundController_getDefault_v1"];
+        /** Set the chapter's default chat background */
+        put: operations["ChatBackgroundController_setDefault_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/chat-backgrounds/default/photo-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Signed upload URL for a chapter default photo */
+        post: operations["ChatBackgroundController_defaultPhotoUrl_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events": {
         parameters: {
             query?: never;
@@ -4738,6 +4808,55 @@ export interface components {
         };
         ThreadReadDto: {
             last_read_at: string;
+        };
+        ChatBackgroundResponseDto: {
+            /**
+             * @description What to draw behind the messages column.
+             * @enum {string}
+             */
+            background: "plain" | "gold-glow" | "midnight" | "game-day" | "letters" | "photo";
+            /**
+             * @description Where it came from: the channel's own setting, the chapter default, or `none` for a DM (always plain).
+             * @enum {string}
+             */
+            source: "channel" | "chapter" | "none";
+            /** @description A signed URL for the photo when `background` is `photo`; null otherwise, or when signing failed (draw plain). */
+            photo_url: string | null;
+        };
+        SetChannelBackgroundDto: {
+            /**
+             * @description A built-in key, `photo` (with `storage_path`), or null to follow the chapter's default.
+             * @enum {string|null}
+             */
+            background: "plain" | "gold-glow" | "midnight" | "game-day" | "letters" | "photo" | null;
+            /** @description Required with `photo`: the path the photo-url call returned. */
+            storage_path?: string;
+        };
+        ChatBackgroundPhotoUrlDto: {
+            /** @description Original filename (e.g. house.jpg) */
+            filename: string;
+            /** @description MIME content type (e.g. image/jpeg) */
+            content_type: string;
+        };
+        ChatBackgroundPhotoUrlResponseDto: {
+            /** @description Short-lived signed URL; PUT the bytes to it. */
+            upload_url: string;
+            /** @description Storage path to send back as `storage_path` when setting the photo. */
+            storage_path: string;
+        };
+        ChapterChatBackgroundResponseDto: {
+            /** @enum {string} */
+            background: "plain" | "gold-glow" | "midnight" | "game-day" | "letters" | "photo";
+            photo_url: string | null;
+        };
+        SetChapterChatBackgroundDto: {
+            /**
+             * @description A built-in key, or `photo` (with `storage_path`).
+             * @enum {string}
+             */
+            background: "plain" | "gold-glow" | "midnight" | "game-day" | "letters" | "photo";
+            /** @description Required with `photo`: the path the photo-url call returned. */
+            storage_path?: string;
         };
         GeofenceCoordinateDto: {
             lat: number;
@@ -9804,6 +9923,194 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadReadDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatBackgroundController_getForChannel_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatBackgroundResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatBackgroundController_setForChannel_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetChannelBackgroundDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatBackgroundResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatBackgroundController_channelPhotoUrl_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatBackgroundPhotoUrlDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatBackgroundPhotoUrlResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatBackgroundController_getDefault_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterChatBackgroundResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatBackgroundController_setDefault_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetChapterChatBackgroundDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterChatBackgroundResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatBackgroundController_defaultPhotoUrl_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatBackgroundPhotoUrlDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatBackgroundPhotoUrlResponseDto"];
                 };
             };
             /** @description Error */

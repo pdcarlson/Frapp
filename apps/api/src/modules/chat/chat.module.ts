@@ -12,6 +12,8 @@ import { ChatThreadController } from '../../interface/controllers/chat-thread.co
 import { SupabaseChatThreadRepository } from '../../infrastructure/supabase/repositories/supabase-chat-thread.repository';
 import { CHAT_THREAD_REPOSITORY } from '#domain/repositories/chat-thread.repository.interface';
 import { ChatController } from '../../interface/controllers/chat.controller';
+import { ChatBackgroundController } from '../../interface/controllers/chat-background.controller';
+import { ChatBackgroundService } from '../../application/services/chat-background.service';
 import { ChatBookmarkController } from '../../interface/controllers/chat-bookmark.controller';
 import { ChatBlockController } from '../../interface/controllers/chat-block.controller';
 import { ChatReportController } from '../../interface/controllers/chat-report.controller';
@@ -90,6 +92,8 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
     // reason bookmarks are.
     ChatSidebarController,
     ChatThreadController,
+    // Chat backgrounds (#3973), at their own root for the reason bookmarks are.
+    ChatBackgroundController,
   ],
   providers: [
     // Provided directly rather than by importing `ChatPushWorkerModule`, which
@@ -130,6 +134,8 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
       provide: CHAT_THREAD_REPOSITORY,
       useClass: SupabaseChatThreadRepository,
     },
+    // Chat backgrounds (#3973): the chapter default and channel overrides.
+    ChatBackgroundService,
     {
       provide: CHAT_CHANNEL_REPOSITORY,
       useClass: SupabaseChatChannelRepository,
