@@ -26,13 +26,12 @@ const LONG = [
 function setup(
   options: readonly { value: string; label: string }[],
   value: string | null = null,
-  anyLabel: string | null = "Any role",
 ) {
   const onChange = vi.fn();
   render(
     <FilterChip
       label="Role"
-      anyLabel={anyLabel ?? undefined}
+      anyLabel="Any role"
       options={options}
       value={value}
       onChange={onChange}
@@ -86,6 +85,8 @@ describe("FilterChip", () => {
     expect(matchesWordStarts("MATH 2210 · Calc (Honors)", "honors 22")).toBe(true);
     expect(matchesWordStarts("Vice President", "vi pre")).toBe(true);
     expect(matchesWordStarts("Vice President", "ice")).toBe(false);
+    // Every word must match: a second word narrows, never widens.
+    expect(matchesWordStarts("Vice President", "vi tre")).toBe(false);
     expect(matchesWordStarts("Anything", "  ")).toBe(true);
   });
 
@@ -132,10 +133,111 @@ describe("FilterChip", () => {
     expect(onChange).toHaveBeenCalledWith(null);
   });
 
-  it("offers no clearing row without an anyLabel", async () => {
-    const { user } = setup(LONG, null, null);
+  it("puts the field on lists past the threshold, and only those", async () => {
+    const options = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({ value: `v${i}`, label: `Opt ${i}` }));
+    const user = userEvent.setup();
+    const { unmount } = render(
+      <FilterChip
+        label="Role"
+        anyLabel="Any role"
+        options={options(FILTER_SEARCH_THRESHOLD)}
+        value={null}
+        onChange={() => {}}
+      />,
+    );
     await user.click(screen.getByRole("button", { name: "Role" }));
-    await screen.findByRole("combobox");
-    expect(screen.getAllByRole("option")).toHaveLength(LONG.length);
+    await screen.findAllByRole("menuitem");
+    expect(screen.queryByRole("combobox")).toBeNull();
+    unmount();
+
+    render(
+      <FilterChip
+        label="Role"
+        anyLabel="Any role"
+        options={options(FILTER_SEARCH_THRESHOLD + 1)}
+        value={null}
+        onChange={() => {}}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Role" }));
+    expect(await screen.findByRole("combobox")).toBeInTheDocument();
+  });
+
+  it("hides the Any row while a query is typed, so Enter picks a real option", async () => {
+    const { user, onChange } = setup(LONG);
+    await user.click(screen.getByRole("button", { name: "Role" }));
+    // "ro" starts a word of "Any role"; it must not be the row Enter takes.
+    await user.type(await screen.findByRole("combobox"), "co");
+    expect(screen.queryByRole("option", { name: "Any role" })).toBeNull();
+    await user.keyboard("{Enter}");
+    expect(onChange).toHaveBeenCalledWith("r-jose");
+  });
+
+  it("opens whole again after a query was typed and the list closed", async () => {
+    const { user } = setup(LONG);
+    await user.click(screen.getByRole("button", { name: "Role" }));
+    await user.type(await screen.findByRole("combobox"), "pres");
+    await user.keyboard("{Enter}");
+    await user.click(screen.getByRole("button", { name: "Role" }));
+    expect(await screen.findByRole("combobox")).toHaveValue("");
+    expect(screen.getAllByRole("option")).toHaveLength(LONG.length + 1);
+  });
+
+  it("names the field for a screen reader", async () => {
+    const { user } = setup(LONG);
+    await user.click(screen.getByRole("button", { name: "Role" }));
+    expect(
+      await screen.findByRole("combobox", { name: "Filter the Role list" }),
+    ).toBeInTheDocument();
+  });
+
+  it("reads an option's short name on the chip, and a name with a dot whole", () => {
+    render(
+      <>
+        <FilterChip
+          label="Course"
+          anyLabel="Any course"
+          options={[{ value: "c", label: "COGS 2120 · Cognition", short: "COGS 2120" }]}
+          value="c"
+          onChange={() => {}}
+        />
+        <FilterChip
+          label="Role"
+          anyLabel="Any role"
+          options={[{ value: "r", label: "Exec · Treasurer" }]}
+          value="r"
+          onChange={() => {}}
+        />
+      </>,
+    );
+    expect(
+      screen.getByRole("button", { name: "Course: COGS 2120 · Cognition" }),
+    ).toHaveTextContent(/^COGS 2120$/);
+    expect(
+      screen.getByRole("button", { name: "Role: Exec · Treasurer" }),
+    ).toHaveTextContent("Exec · Treasurer");
+  });
+
+  it("on touch, leaves the field unfocused but keeps the keyboard working", async () => {
+    const original = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: query === "(pointer: coarse)",
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+    })) as unknown as typeof window.matchMedia;
+    try {
+      const { user, onChange } = setup(LONG);
+      await user.click(screen.getByRole("button", { name: "Role" }));
+      const field = await screen.findByRole("combobox");
+      expect(field).not.toHaveFocus();
+      await user.keyboard("{ArrowDown}{Enter}");
+      expect(onChange).toHaveBeenCalledWith("r-pres");
+    } finally {
+      window.matchMedia = original;
+    }
   });
 });

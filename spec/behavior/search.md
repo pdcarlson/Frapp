@@ -58,7 +58,8 @@ that apart from a channel with no matches. Narrowing has to reach SQL.
 ## Message filters
 
 `GET /v1/search` takes four optional filters on the `messages` source (#3958, asked by Shawn
-2026-11-10; the web chips that send them are a follow-up PR on the same issue):
+2026-11-10; web's chat search panel sends them from its filter chips,
+[`chat/README.md`](chat/README.md#messages) § Messages, the **Search** block):
 
 | Parameter | Matches | Notes |
 | --- | --- | --- |

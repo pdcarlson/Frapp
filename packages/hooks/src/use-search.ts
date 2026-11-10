@@ -34,25 +34,96 @@ function isSearchSource(value: string): value is SearchSource {
   );
 }
 
+/** What a message can carry, as `GET /v1/search`'s `has` names it. */
+export type SearchHasTrait = "file" | "image" | "link" | "poll";
+
 /**
- * Cross-domain search, or — when `channelId` is given — the single-channel
- * message search `spec/behavior/chat/README.md` specifies.
- *
- * The channel filter is deliberately **not** something a caller can do by
- * filtering this hook's results: `SEARCH_LIMIT` is applied by the database
- * across every channel the caller can read, so a channel whose matches rank
- * below that cut would come back empty and be indistinguishable from a channel
- * with no matches at all. Narrowing has to reach SQL, which is why it is a
- * request parameter and part of the query key.
+ * Narrowing for the `messages` source (spec/behavior/search.md § Single-channel
+ * scope and § Message filters). Any of them makes the search messages-only.
  */
-export function useSearch(query: string, channelId?: string) {
+export interface SearchFilters {
+  /** One chat channel. On its own it still needs three characters of text. */
+  channelId?: string;
+  /** Messages from this sender only. */
+  fromUserId?: string;
+  /** Sent at or after this instant: ISO 8601 with an explicit offset, never a bare date. */
+  after?: string;
+  /** Sent strictly before this instant, in the same form. */
+  before?: string;
+  /** Carries every listed trait. */
+  has?: readonly SearchHasTrait[];
+}
+
+/** True when a sender, date or content filter is set. A channel alone is not one. */
+export function hasMessageFilter(filters: SearchFilters | undefined): boolean {
+  return Boolean(
+    filters &&
+    (filters.fromUserId ||
+      filters.after ||
+      filters.before ||
+      (filters.has && filters.has.length > 0)),
+  );
+}
+
+/**
+ * The API's own rule for what it will search (`search.service.ts`): three or
+ * more characters, or no text at all beside a sender, date or content filter.
+ * One or two characters are refused either way, and so is empty text with only
+ * a channel.
+ */
+export function isSearchRunnable(
+  query: string,
+  filters?: SearchFilters,
+): boolean {
+  const length = query.trim().length;
+  if (length >= SEARCH_MIN_QUERY_LENGTH) return true;
+  return length === 0 && hasMessageFilter(filters);
+}
+
+/**
+ * Cross-domain search, or, when `filters` narrows it, the message search
+ * `spec/behavior/chat/README.md` specifies.
+ *
+ * Narrowing is deliberately **not** something a caller can do by filtering
+ * this hook's results: `SEARCH_LIMIT` is applied by the database across every
+ * channel the caller can read, so a channel (or sender, or week) whose matches
+ * rank below that cut would come back empty and be indistinguishable from one
+ * with no matches at all. Narrowing has to reach SQL, which is why every
+ * filter is a request parameter and part of the query key.
+ */
+export function useSearch(query: string, filters?: SearchFilters) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
+  const channelId = filters?.channelId;
+  const fromUserId = filters?.fromUserId;
+  const after = filters?.after;
+  const before = filters?.before;
+  // Sorted so the key and the request do not depend on the order the member
+  // ticked the traits in.
+  const has = filters?.has?.length ? [...filters.has].sort().join(",") : null;
   return useQuery({
-    queryKey: ["search", chapterId, query, channelId ?? null],
+    queryKey: [
+      "search",
+      chapterId,
+      query,
+      channelId ?? null,
+      fromUserId ?? null,
+      after ?? null,
+      before ?? null,
+      has,
+    ],
     queryFn: async (): Promise<SearchResponse<unknown>> => {
       const { data, error, response } = await client.GET("/v1/search", {
-        params: { query: channelId ? { q: query, channelId } : { q: query } },
+        params: {
+          query: {
+            q: query,
+            ...(channelId ? { channelId } : {}),
+            ...(fromUserId ? { fromUserId } : {}),
+            ...(after ? { after } : {}),
+            ...(before ? { before } : {}),
+            ...(has ? { has } : {}),
+          },
+        },
       });
       if (error) throw error;
       return {
@@ -67,6 +138,6 @@ export function useSearch(query: string, channelId?: string) {
       };
     },
     staleTime: 0,
-    enabled: !!chapterId && query.trim().length >= SEARCH_MIN_QUERY_LENGTH,
+    enabled: !!chapterId && isSearchRunnable(query, filters),
   });
 }
