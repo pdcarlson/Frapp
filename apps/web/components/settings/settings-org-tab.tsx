@@ -244,8 +244,9 @@ export function SettingsOrgTab({
   function confirmArchetypeSwitch() {
     if (!pendingArchetype) return;
     const next = getArchetype(pendingArchetype);
-    // Reset modules + vocabulary to the new archetype's defaults; the role pack
-    // follows `org_archetype` server-side. Identity/branding are preserved.
+    // Reset modules + vocabulary to the new archetype's defaults. The
+    // `role_pack` label follows `org_archetype` server-side, but it is only a
+    // label: no role changes. Identity/branding are preserved.
     void onPatchConfig({
       org_archetype: next.key,
       vocabulary: { ...VOCABULARY_DEFAULTS[next.key] },
@@ -403,10 +404,15 @@ export function SettingsOrgTab({
                   placeholder="e.g. 1901"
                   onBlur={() => reveal.blur("founded")}
                   aria-invalid={foundedError}
-                  aria-describedby={foundedError ? "founded-year-error" : undefined}
+                  aria-describedby={
+                    foundedError ? "founded-year-error" : undefined
+                  }
                 />
                 {foundedError ? (
-                  <p id="founded-year-error" className="text-xs text-destructive">
+                  <p
+                    id="founded-year-error"
+                    className="text-xs text-destructive"
+                  >
                     {foundedCleared
                       ? "A founded year can't be removed once saved. "
                       : null}
@@ -419,10 +425,7 @@ export function SettingsOrgTab({
           </CardContent>
           <CardFooter className="flex items-center justify-between gap-3">
             {manageHint ?? <span />}
-            <Button
-              type="submit"
-              disabled={!canManage || savingConfig}
-            >
+            <Button type="submit" disabled={!canManage || savingConfig}>
               {savingConfig ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : null}
@@ -442,8 +445,7 @@ export function SettingsOrgTab({
             </span>
           </CardTitle>
           <CardDescription>
-            {current.description} Sets defaults for modules, role pack, and
-            vocabulary.
+            {current.description} Sets defaults for modules and vocabulary.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -577,7 +579,7 @@ export function SettingsOrgTab({
               {pendingArchetype ? getArchetype(pendingArchetype).label : ""}?
             </DialogTitle>
             <DialogDescription>
-              This resets modules, the role pack, and vocabulary to{" "}
+              This resets modules and vocabulary to{" "}
               {pendingArchetype ? getArchetype(pendingArchetype).short : ""}{" "}
               defaults. Your chapter identity, branding, and custom fields are
               kept. An entry is written to the audit log.
