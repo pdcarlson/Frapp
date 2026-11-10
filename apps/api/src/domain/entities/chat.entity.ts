@@ -155,7 +155,9 @@ export interface ChatChannel {
    * Who created the channel through `POST /v1/channels`, the one member
    * besides `channels:manage` holders who may set `display_locked`. Null for
    * channels from before it was recorded, seeded defaults, Discord-imported
-   * channels, DMs, and a creator whose account was deleted.
+   * channels and DMs. Account deletion tombstones the `users` row in place
+   * (`anonymize_user`), so a deleted creator's id stays here; their sign-in is
+   * gone, so it grants nothing.
    */
   created_by: string | null;
 }

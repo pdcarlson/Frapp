@@ -1,7 +1,8 @@
 /**
  * s03's display beat (#3787): the new member picks how chat looks while
  * setting up, rather than being put on a display (Winston's decision on the
- * issue). Cozy is preselected, so Continue keeps the default.
+ * issue). The phone's current display is preselected (Cozy on a phone that
+ * never picked one), so Continue keeps it.
  */
 export const DISPLAY_STEP_TITLE = "Pick your chat display";
 export const DISPLAY_STEP_SUBTITLE =

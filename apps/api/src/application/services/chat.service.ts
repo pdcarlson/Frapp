@@ -503,11 +503,11 @@ export class ChatService {
 
   /**
    * Turns Always formal on or off (#3787, `spec/behavior/chat/README.md`
-   * § Always formal). Allowed for the channel's creator and for a
-   * `channels:manage` holder, which the controller resolves (the route itself
-   * needs only chapter membership, so a creator without the permission can
-   * reach it). A DM or group DM has no creator in this sense and no officer,
-   * so it is refused there.
+   * § Always formal). Allowed for a `channels:manage` holder, which the
+   * controller resolves, and for the channel's creator while they can still
+   * read it (the route itself needs only chapter membership, so a creator
+   * without the permission can reach it). A DM or group DM has no creator in
+   * this sense and no officer, so it is refused there.
    */
   async setDisplayLock(
     id: string,
@@ -516,17 +516,25 @@ export class ChatService {
     hasManagePermission: boolean,
     locked: boolean,
   ): Promise<ChatChannel> {
-    const existing = await this.requireChannelInChapter(id, chapterId);
-    if (isDirectChannel(existing)) {
-      throw new BadRequestException(
-        "A DM or group DM can't be set to Always formal",
-      );
-    }
+    // A `channels:manage` holder edits any channel in the chapter, as
+    // `updateChannel` does. A creator without it must still be able to read
+    // the channel: one removed from their own PRIVATE channel, or who lost a
+    // ROLE_GATED channel's permission, is refused like any other member, and
+    // never gets the row back. Authorization runs before the DM check, so the
+    // 400 tells nobody without the right whether an id is a DM.
+    const existing = hasManagePermission
+      ? await this.requireChannelInChapter(id, chapterId)
+      : await this.assertChannelAccess(id, chapterId, userId);
     const isCreator =
       existing.created_by !== null && existing.created_by === userId;
     if (!hasManagePermission && !isCreator) {
       throw new ForbiddenException(
         "Only the channel's creator or a member with channels:manage can set Always formal",
+      );
+    }
+    if (isDirectChannel(existing)) {
+      throw new BadRequestException(
+        "A DM or group DM can't be set to Always formal",
       );
     }
     if (existing.display_locked === locked) return existing;

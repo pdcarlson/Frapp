@@ -222,15 +222,22 @@ export default function ChatThreadScreen() {
     postCapability;
   // Always formal (#3787): a thread opened from a push or a link may arrive
   // before chat home has read the list, so the channel's own read keeps its
-  // lock current too.
+  // lock current too. Only when that read is newer than the list chat home
+  // copied the locks from: a single-channel read served from cache can be
+  // older, and would otherwise undo a lock the list just brought in.
+  const lockQueryClient = useQueryClient();
+  const channelReadAt = channelQuery.dataUpdatedAt;
   useEffect(() => {
     const data: unknown = channelQuery.data;
     if (!channelId || !data || typeof data !== "object") return;
+    const listReadAt =
+      lockQueryClient.getQueryState(CHANNEL_LIST_KEY)?.dataUpdatedAt ?? 0;
+    if (channelReadAt <= listReadAt) return;
     setChannelLocked(
       channelId,
       (data as { display_locked?: unknown }).display_locked === true,
     );
-  }, [channelId, channelQuery.data]);
+  }, [channelId, channelQuery.data, channelReadAt, lockQueryClient]);
 
   const {
     messages,

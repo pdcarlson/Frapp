@@ -862,7 +862,9 @@ describe("Chat home sidebar arrangement (#2877)", () => {
       locked: true,
     });
 
-    // The list now says the channel is locked.
+    // The list now says the channel is locked. The store is cleared first, so
+    // only chat home's sync from the list can lock it again.
+    resetLockedChannelsForTests();
     channelsData.value = [{ ...general, display_locked: true }];
     const locked = render();
     longPress(locked, "general");

@@ -72,7 +72,8 @@ const STEPS: Step[] = [
   },
   {
     // The member picks their chat display while setting up (#3787, Winston's
-    // decision): Cozy is preselected, so Next keeps today's default.
+    // decision): the browser's current display is preselected (Cozy on a
+    // fresh browser), so Next keeps it.
     id: "chat-display",
     title: "Pick your chat display",
     description:

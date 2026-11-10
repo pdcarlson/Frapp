@@ -1450,6 +1450,55 @@ describe('ChatService', () => {
       expect(mockChannelRepo.update).not.toHaveBeenCalled();
     });
 
+    it('refuses a creator who can no longer read their channel, and returns no row', async () => {
+      // Removed from their own PRIVATE channel by an officer.
+      mockChannelRepo.findById.mockResolvedValue({
+        ...created,
+        type: 'PRIVATE',
+        member_ids: ['u-officer'],
+      });
+
+      await expect(
+        service.setDisplayLock('ch-chan-1', 'ch-1', 'u-creator', false, true),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockChannelRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('lets a PRIVATE channel creator who is still a member set it', async () => {
+      const own = {
+        ...created,
+        type: 'PRIVATE' as const,
+        member_ids: ['u-creator'],
+      };
+      mockChannelRepo.findById.mockResolvedValue(own);
+      mockChannelRepo.update.mockResolvedValue({
+        ...own,
+        display_locked: true,
+      });
+
+      await service.setDisplayLock(
+        'ch-chan-1',
+        'ch-1',
+        'u-creator',
+        false,
+        true,
+      );
+
+      expect(mockChannelRepo.update).toHaveBeenCalled();
+    });
+
+    it("answers a member's DM probe with 403, not the DM 400", async () => {
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        type: 'GROUP_DM',
+        member_ids: ['u-member', 'u-2', 'u-3'],
+      });
+
+      await expect(
+        service.setDisplayLock('ch-chan-1', 'ch-1', 'u-member', false, true),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
     it('writes nothing when the lock is already in that state', async () => {
       const locked = { ...created, display_locked: true };
       mockChannelRepo.findById.mockResolvedValue(locked);

@@ -1,7 +1,11 @@
 "use client";
 
 import { throwUnlessOk } from "@repo/api-sdk";
-import { can, type ChatNotificationLevel } from "@repo/validation";
+import {
+  can,
+  isDirectChannel,
+  type ChatNotificationLevel,
+} from "@repo/validation";
 
 import { useEffect, useMemo, useRef } from "react";
 import {
@@ -459,7 +463,7 @@ export function canSetChannelDisplayLock(
   userId: string | null | undefined,
   permissions: readonly string[] | null | undefined,
 ): boolean {
-  if (channel.type === "DM" || channel.type === "GROUP_DM") return false;
+  if (isDirectChannel({ type: channel.type ?? "" })) return false;
   if (userId && channel.created_by && channel.created_by === userId) {
     return true;
   }

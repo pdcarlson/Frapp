@@ -15,7 +15,10 @@
 --    null). Winston's decision on #3787 lets the channel's creator set the
 --    lock as well as anyone with `channels:manage`, and nothing recorded the
 --    creator before. Existing channels, seeded defaults and Discord-imported
---    channels have none, so only `channels:manage` can lock them.
+--    channels have none, so only `channels:manage` can lock them. Account
+--    deletion tombstones the `users` row in place (`anonymize_user`), so the
+--    `on delete set null` covers only a hard delete of the row, which no
+--    product path does.
 --
 -- `chat_channels` has RLS on and no policies (API only, service role), so no
 -- client can write either column directly.
@@ -24,9 +27,9 @@ alter table public.chat_channels
   add column if not exists display_locked boolean not null default false,
   add column if not exists created_by uuid;
 
--- `not valid`, then validated, so the validating scan holds SHARE UPDATE
--- EXCLUSIVE rather than ACCESS EXCLUSIVE. Every existing row is null, so it
--- passes.
+-- `not valid`, then validated, the shape the other foreign keys added to
+-- existing tables use. Every existing row is null, so validation scans
+-- nothing it can reject, and `chat_channels` is small.
 do $$
 begin
   if not exists (

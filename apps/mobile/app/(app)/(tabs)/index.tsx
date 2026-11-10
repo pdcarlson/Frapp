@@ -167,11 +167,6 @@ export default function ChatHomeScreen() {
   const { chapterName } = useChapterBranding();
 
   const channelsQuery = useChannels();
-  // Always formal (#3787): copied where every thread row reads its density.
-  // Only from a loaded list, so a refetch in flight never clears a lock.
-  useEffect(() => {
-    if (channelsQuery.data) syncLockedChannels(selectChannels(channelsQuery.data));
-  }, [channelsQuery.data]);
   const setDisplayLock = useSetChannelDisplayLock();
   const channelsError = channelsErrorCopy(channelsQuery.error, chapterName);
   useEffect(() => {
@@ -201,6 +196,11 @@ export default function ChatHomeScreen() {
     () => selectChannels(channelsQuery.data),
     [channelsQuery.data],
   );
+  // Always formal (#3787): copied where every thread row reads its density.
+  // Only from a loaded list, so a refetch in flight never clears a lock.
+  useEffect(() => {
+    if (channelsQuery.data) syncLockedChannels(allChannels);
+  }, [channelsQuery.data, allChannels]);
   // Chat home lists channels only; direct messages live behind the Messages
   // door at the top right (owner, 2026-11-07).
   const channels = useMemo(

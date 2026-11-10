@@ -60,8 +60,9 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *    pre-filled. Every message carries both, so a member who skips this looks
  *    like a stranger in every channel.
  * 2. **Pick your chat display**, always (#3787, Winston's decision: the
- *    member decides while setting up). Cozy is preselected, so Continue keeps
- *    today's default; a tap saves the pick on this phone at once.
+ *    member decides while setting up). The phone's current display is
+ *    preselected (Cozy on a fresh phone), so Continue keeps it; a tap saves
+ *    the pick on this phone at once.
  * 3. **Turn on notifications**, when this build can push and push isn't on
  *    yet (`shouldOfferPrimer`, #2299). Either answer goes to chat; a "Not
  *    now" comes back once, days later, on the chat home (`usePushReminder`).
