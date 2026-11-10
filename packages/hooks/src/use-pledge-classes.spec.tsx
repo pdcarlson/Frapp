@@ -7,7 +7,9 @@ import { createFrappClient } from "@repo/api-sdk";
 import { FrappClientProvider } from "./use-frapp-client";
 import {
   useAssignPledgeClasses,
+  useCreatePledgeClass,
   useDeletePledgeClass,
+  useRenamePledgeClass,
   usePledgeClasses,
   useReorderPledgeClasses,
 } from "./use-pledge-classes";
@@ -91,6 +93,41 @@ describe("pledge class hooks", () => {
       body: { assignments },
     });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["members", CHAPTER] });
+    // The Alumni tab's rows carry the same two fields.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["alumni", CHAPTER] });
+  });
+
+  it("re-reads the list after adding a class, before the save settles", async () => {
+    const client = { POST: vi.fn().mockResolvedValue(answered({ id: "g" })) };
+    const { result } = renderHook(() => useCreatePledgeClass(), {
+      wrapper: wrapperFor(client),
+    });
+    await act(async () => {
+      await result.current.mutateAsync("Gamma");
+    });
+    expect(client.POST).toHaveBeenCalledWith("/v1/pledge-classes", {
+      body: { name: "Gamma" },
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["pledge-classes", CHAPTER],
+    });
+  });
+
+  it("re-reads the list after a rename", async () => {
+    const client = { PATCH: vi.fn().mockResolvedValue(answered({ id: "a" })) };
+    const { result } = renderHook(() => useRenamePledgeClass(), {
+      wrapper: wrapperFor(client),
+    });
+    await act(async () => {
+      await result.current.mutateAsync({ id: "a", name: "Alpha 2019" });
+    });
+    expect(client.PATCH).toHaveBeenCalledWith("/v1/pledge-classes/{id}", {
+      params: { path: { id: "a" } },
+      body: { name: "Alpha 2019" },
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["pledge-classes", CHAPTER],
+    });
   });
 
   it("refreshes both the list and the members after a delete", async () => {

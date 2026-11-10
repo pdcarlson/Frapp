@@ -1,23 +1,6 @@
 import { MEMBER_ORDER_NUMBER_MAX } from "@repo/validation";
 import type { PledgeClassAssignment } from "@repo/hooks";
 
-/**
- * The plural of a chapter's word for a class, for a heading over the list:
- * "Pledge class" becomes "Pledge classes", "Line" becomes "Lines". The word is
- * the chapter's own, so this only knows the two regular English endings.
- */
-export function pluralTerm(term: string): string {
-  const word = term.trim();
-  if (!word) return word;
-  return /(s|x|z|ch|sh)$/i.test(word) ? `${word}es` : `${word}s`;
-}
-
-/** A term inside a sentence: "Fraternal order" reads "fraternal order". */
-export function lowerTerm(term: string): string {
-  const word = term.trim();
-  return word.charAt(0).toLowerCase() + word.slice(1);
-}
-
 /** One member in the class editor: who, and the number as it is being typed. */
 export type ClassEditorRow = {
   memberId: string;
@@ -77,6 +60,11 @@ type SavedMember = {
 /**
  * What saving the class editor writes: one assignment per member whose class
  * or number changed, and nothing for a member left as they were.
+ *
+ * `members` is the roster as it stood when the editor opened, not the live
+ * read. Only a member who was in the class then, and whose row the officer
+ * took out, is removed; someone another officer added to the class meanwhile
+ * is not in the editor and is left alone.
  *
  * A member taken out of the class loses the class and keeps their number, as a
  * member of a deleted class does (`spec/behavior/members.md`). Returns `null`

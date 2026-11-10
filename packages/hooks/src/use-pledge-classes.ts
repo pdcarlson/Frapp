@@ -48,9 +48,10 @@ export function useCreatePledgeClass() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: pledgeClassesKey(chapterId) });
-    },
+    // Returned, so `mutateAsync` settles after the list is re-read and a
+    // caller never draws the old list for a frame after a success.
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: pledgeClassesKey(chapterId) }),
   });
 }
 
@@ -68,9 +69,10 @@ export function useRenamePledgeClass() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: pledgeClassesKey(chapterId) });
-    },
+    // Returned, so `mutateAsync` settles after the list is re-read and a
+    // caller never draws the old list for a frame after a success.
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: pledgeClassesKey(chapterId) }),
   });
 }
 
@@ -78,7 +80,8 @@ export function useRenamePledgeClass() {
  * Set the order of the chapter's classes: every class id, oldest first. The
  * API refuses a list that is not exactly the chapter's current classes (409),
  * so the list is re-read after a failure as well as a success: a stale editor
- * then shows what the chapter really has.
+ * then shows what the chapter really has. `mutateAsync` settles after that
+ * re-read.
  */
 export function useReorderPledgeClasses() {
   const client = useFrappClient();
@@ -93,9 +96,8 @@ export function useReorderPledgeClasses() {
       if (error) throw error;
       return data;
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: pledgeClassesKey(chapterId) });
-    },
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: pledgeClassesKey(chapterId) }),
   });
 }
 
@@ -115,10 +117,15 @@ export function useDeletePledgeClass() {
       });
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: pledgeClassesKey(chapterId) });
-      queryClient.invalidateQueries({ queryKey: ["members", chapterId] });
-    },
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: pledgeClassesKey(chapterId),
+        }),
+        queryClient.invalidateQueries({ queryKey: ["members", chapterId] }),
+        // `GET /v1/alumni` carries the same two fields.
+        queryClient.invalidateQueries({ queryKey: ["alumni", chapterId] }),
+      ]),
   });
 }
 
@@ -141,8 +148,13 @@ export function useAssignPledgeClasses() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["members", chapterId] });
-    },
+    // Returned, so the caller's read view shows the saved values, not the
+    // cached ones, when `mutateAsync` settles.
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["members", chapterId] }),
+        // `GET /v1/alumni` carries the same two fields.
+        queryClient.invalidateQueries({ queryKey: ["alumni", chapterId] }),
+      ]),
   });
 }

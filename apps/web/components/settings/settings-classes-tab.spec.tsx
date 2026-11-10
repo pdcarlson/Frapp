@@ -88,7 +88,7 @@ describe("SettingsClassesTab", () => {
   it("lists the chapter's classes oldest first, each with its member count", () => {
     renderTab();
     const rows = within(
-      screen.getByRole("list", { name: "Pledge classes" }),
+      screen.getByRole("list", { name: "Pledge class" }),
     ).getAllByRole("listitem");
     expect(rows.map((row) => row.textContent)).toEqual([
       "Alpha2 members",
@@ -108,8 +108,9 @@ describe("SettingsClassesTab", () => {
     render(
       <SettingsClassesTab canManage classTerm="Line" orderTerm="Line number" />,
     );
-    expect(screen.getByText(/no lines yet/i)).toBeInTheDocument();
-    expect(screen.getByText("Add a line")).toBeInTheDocument();
+    expect(screen.getByText(/nothing here yet/i)).toBeInTheDocument();
+    // The chapter's word, as typed: never "Lines" or "line".
+    expect(screen.getByText("Line", { exact: true })).toBeInTheDocument();
   });
 
   it("adds a class by name", async () => {
@@ -159,12 +160,83 @@ describe("SettingsClassesTab", () => {
     renderTab();
     await userEvent.click(screen.getByRole("button", { name: "Delete Alpha" }));
     expect(
-      screen.getByText(/2 members will have no pledge class/i),
+      screen.getByText(/its 2 members are left without one/i),
     ).toBeInTheDocument();
     await userEvent.click(
-      screen.getByRole("button", { name: "Delete pledge class" }),
+      screen.getByRole("button", { name: "Delete Alpha", hidden: false, description: undefined }),
     );
     expect(mockDelete).toHaveBeenCalledWith("alpha");
+  });
+
+  it("keeps the handles while a save is in flight, and sends moves made meanwhile as one more save", async () => {
+    let finishFirst: () => void = () => {};
+    mockReorder.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (finishFirst = resolve)),
+    );
+    renderTab();
+    fireEvent.keyDown(screen.getByRole("button", { name: "Reorder Alpha" }), {
+      key: "ArrowDown",
+    });
+    // Still there, and still usable, while the first save is out.
+    fireEvent.keyDown(screen.getByRole("button", { name: "Reorder Alpha" }), {
+      key: "ArrowUp",
+    });
+    expect(mockReorder).toHaveBeenCalledTimes(1);
+    finishFirst();
+    await waitFor(() => expect(mockReorder).toHaveBeenCalledTimes(2));
+    expect(mockReorder).toHaveBeenLastCalledWith(["alpha", "beta"]);
+  });
+
+  it("puts the saved order back on screen when the API refuses a move", async () => {
+    mockReorder.mockRejectedValue({ statusCode: 409 });
+    renderTab();
+    fireEvent.keyDown(screen.getByRole("button", { name: "Reorder Alpha" }), {
+      key: "ArrowDown",
+    });
+    await waitFor(() => expect(mockToast).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole("list", { name: "Pledge class" }))
+          .getAllByRole("listitem")
+          .map((row) => row.textContent),
+      ).toEqual(["Alpha2 members", "Beta1 member"]),
+    );
+  });
+
+  describe("before the roster read answers", () => {
+    beforeEach(() => {
+      mockMembers.mockReturnValue({
+        data: undefined,
+        isError: false,
+        refetch: vi.fn(),
+      });
+    });
+
+    it("won't open the class editor, which would start from an empty class", () => {
+      renderTab();
+      expect(
+        screen.getByRole("button", { name: "Edit members of Alpha" }),
+      ).toBeDisabled();
+    });
+
+    it("doesn't claim a class is empty when deleting it", async () => {
+      renderTab();
+      await userEvent.click(
+        screen.getByRole("button", { name: "Delete Alpha" }),
+      );
+      expect(screen.queryByText("No members are in it.")).toBeNull();
+      expect(
+        screen.getByText(/any members in it are left without one/i),
+      ).toBeInTheDocument();
+    });
+
+    it("says the roster failed and offers the read again", async () => {
+      const refetch = vi.fn();
+      mockMembers.mockReturnValue({ data: undefined, isError: true, refetch });
+      renderTab();
+      await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+      expect(refetch).toHaveBeenCalled();
+    });
   });
 
   it("offers no editing to a viewer without roles:manage", () => {
@@ -239,6 +311,33 @@ describe("SettingsClassesTab", () => {
       await userEvent.type(field, "0");
       expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
       expect(screen.getByRole("alert")).toHaveTextContent(/whole number/i);
+    });
+
+    it("leaves alone a member another officer added while the editor was open", async () => {
+      const view = renderTab();
+      await userEvent.click(
+        screen.getByRole("button", { name: "Edit members of Alpha" }),
+      );
+      // A background re-read brings in Dee, now in Alpha.
+      mockMembers.mockReturnValue({
+        data: [...MEMBERS.slice(0, 3), member("m4", "Dee", "alpha", 3)],
+        isError: false,
+      });
+      view.rerender(
+        <SettingsClassesTab
+          canManage
+          classTerm="Pledge class"
+          orderTerm="Fraternal order"
+        />,
+      );
+      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+      await userEvent.click(
+        screen.getByRole("button", { name: "Remove Ada from Alpha" }),
+      );
+      await userEvent.click(screen.getByRole("button", { name: "Save" }));
+      expect(mockAssign).toHaveBeenCalledWith([
+        { member_id: "m1", pledge_class_id: null, order_number: 2 },
+      ]);
     });
 
     it("has nothing to save until something changes", async () => {

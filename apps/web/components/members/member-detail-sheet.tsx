@@ -724,8 +724,12 @@ export function MemberDetailSheet({
                     ? member.order_number
                     : null
                 }
+                // Waits for the profile read: the write sets both fields, so
+                // an edit seeded from the directory row that opened the sheet
+                // could save a class or number that row no longer has.
                 canEdit={
                   !!memberId &&
+                  fetched !== null &&
                   !memberQuery.isError &&
                   can("roles:manage", myPermissions)
                 }

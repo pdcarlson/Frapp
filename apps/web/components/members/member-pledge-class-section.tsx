@@ -23,7 +23,7 @@ import {
 } from "@/components/members/member-detail-rows";
 import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
 import { useToast } from "@/lib/hooks/use-toast";
-import { lowerTerm, parseOrderNumber, pluralTerm } from "@/lib/pledge-classes";
+import { parseOrderNumber } from "@/lib/pledge-classes";
 import { cn, getErrorMessage } from "@/lib/utils";
 
 /** The select's value for "no class": Radix refuses an empty-string item. */
@@ -50,6 +50,8 @@ type Props = {
  * (`spec/behavior/members.md` § Pledge class and order number). An officer
  * holding `roles:manage` always sees it, with Edit, because this is one of the
  * two places they are set; the other is Settings, for a whole class at once.
+ * It is the only place a chapter that keeps a number and no classes can set
+ * one, which is why it does not wait for the chapter to have used either.
  */
 export function MemberPledgeClassSection({
   open,
@@ -106,13 +108,13 @@ export function MemberPledgeClassSection({
         },
       ]);
       toast({
-        title: `${classTerm} updated`,
-        description: `${displayName}'s ${lowerTerm(classTerm)} and ${lowerTerm(orderTerm)} were saved.`,
+        title: "Saved",
+        description: `${displayName}'s profile was updated.`,
       });
       setEditing(false);
     } catch (error) {
       toast({
-        title: `Could not update ${lowerTerm(classTerm)}`,
+        title: "Could not save",
         description: getErrorMessage(
           error,
           "Something went wrong. Please retry.",
@@ -129,14 +131,18 @@ export function MemberPledgeClassSection({
           id={headingId}
           className="text-label font-semibold text-muted-foreground"
         >
-          {/* Both words, so the heading never repeats the first row's label. */}
-          {classTerm} and {lowerTerm(orderTerm)}
+          {/*
+            Both words, as the chapter typed them, so the heading never
+            repeats the first row's label. Neither is lowercased or
+            pluralized: a free-text word like "PC" would come out wrong.
+          */}
+          {classTerm} · {orderTerm}
         </h3>
         {canEdit && !editing ? (
           <button
             type="button"
             onClick={startEditing}
-            aria-label={`Edit ${displayName}'s ${lowerTerm(classTerm)}`}
+            aria-label={`Edit ${displayName}'s ${classTerm}`}
             className={cn(
               "rounded-sm text-label font-semibold text-accent-text hover:underline",
               FOCUS_RING_OFFSET,
@@ -170,19 +176,18 @@ export function MemberPledgeClassSection({
             </Select>
             {classesQuery.isSuccess && classes.length === 0 ? (
               <p className="text-caption text-muted-foreground">
-                This chapter has no {lowerTerm(pluralTerm(classTerm))} yet.{" "}
+                This chapter&apos;s list is empty.{" "}
                 <Link
                   href="/settings?tab=classes"
                   className={inlineNoteActionClassName}
                 >
-                  Add them in Settings
+                  Add to it in Settings
                 </Link>
               </p>
             ) : null}
             {classesQuery.isError && !classesQuery.data ? (
               <p role="alert" className="text-caption text-destructive-text">
-                Couldn&apos;t load the chapter&apos;s{" "}
-                {lowerTerm(pluralTerm(classTerm))}.
+                Couldn&apos;t load the chapter&apos;s list.
               </p>
             ) : null}
           </div>

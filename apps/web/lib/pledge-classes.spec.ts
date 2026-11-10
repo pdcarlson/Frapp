@@ -2,10 +2,8 @@ import { describe, expect, it } from "vitest";
 import { MEMBER_ORDER_NUMBER_MAX } from "@repo/validation";
 import {
   classAssignments,
-  lowerTerm,
   nextOrderNumber,
   parseOrderNumber,
-  pluralTerm,
   renumberRows,
   type ClassEditorRow,
 } from "./pledge-classes";
@@ -14,21 +12,6 @@ const row = (memberId: string, number: string): ClassEditorRow => ({
   memberId,
   name: memberId,
   number,
-});
-
-describe("pluralTerm and lowerTerm", () => {
-  it.each([
-    ["Pledge class", "Pledge classes"],
-    ["Line", "Lines"],
-    ["Cohort", "Cohorts"],
-    ["", ""],
-  ])("%s becomes %s", (term, plural) => {
-    expect(pluralTerm(term)).toBe(plural);
-  });
-
-  it("lowers only the first letter", () => {
-    expect(lowerTerm("Fraternal order")).toBe("fraternal order");
-  });
 });
 
 describe("parseOrderNumber", () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, Loader2, Pencil, Plus, Trash2, Users, X } from "lucide-react";
 import {
   fraternalOrderComparator,
@@ -38,7 +38,10 @@ import {
   anyReadUncached,
 } from "@/components/shared/async-states";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
-import { InlineNote } from "@/components/shared/inline-note";
+import {
+  InlineNote,
+  InlineNoteAction,
+} from "@/components/shared/inline-note";
 import {
   PanelBody,
   PanelContent,
@@ -51,10 +54,8 @@ import { useToast } from "@/lib/hooks/use-toast";
 import { useNetwork } from "@/lib/providers/network-provider";
 import {
   classAssignments,
-  lowerTerm,
   nextOrderNumber,
   parseOrderNumber,
-  pluralTerm,
   renumberRows,
   type ClassEditorRow,
 } from "@/lib/pledge-classes";
@@ -84,6 +85,12 @@ function memberCountLabel(count: number): string {
  *
  * Reads need `members:view`; every write needs `roles:manage`, which is also
  * what shows the tab (`settings-access.ts`).
+ *
+ * **Copy never inflects the chapter's words.** `classTerm` and `orderTerm` are
+ * whatever the chapter typed in Settings → vocabulary, so they are drawn as
+ * typed, in a heading or a label, and sentences say "it" or "the list". A
+ * plural or a lowercased form of a free-text word comes out wrong for "PC" or
+ * "Family" (`settings-semester-tab.tsx` words around its term the same way).
  */
 export function SettingsClassesTab({ canManage, classTerm, orderTerm }: Props) {
   const classesQuery = usePledgeClasses();
@@ -98,13 +105,20 @@ export function SettingsClassesTab({ canManage, classTerm, orderTerm }: Props) {
   // The order as the officer just dropped it, shown until the save and the
   // re-read answer, so a row never jumps back and then forward again.
   const [pendingOrder, setPendingOrder] = useState<PledgeClass[] | null>(null);
+  // The newest order not yet sent, and whether a save is running. Moves made
+  // while one is in flight collapse into a single follow-up save, so the
+  // handles stay usable and two saves never race each other.
+  const wantedOrder = useRef<PledgeClass[] | null>(null);
+  const savingOrder = useRef(false);
 
   const saved = classesQuery.data ?? [];
   const classes = pendingOrder ?? saved;
-  const members = useMemo(() => membersQuery.data ?? [], [membersQuery.data]);
+  // `undefined` until the roster read answers: a count, the delete warning
+  // and the class editor all need the real roster, never an empty stand-in.
+  const members = membersQuery.data;
   const countByClass = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const member of members) {
+    for (const member of members ?? []) {
       if (member.pledge_class_id) {
         counts.set(
           member.pledge_class_id,
@@ -115,17 +129,23 @@ export function SettingsClassesTab({ canManage, classTerm, orderTerm }: Props) {
     return counts;
   }, [members]);
 
-  const plural = pluralTerm(classTerm);
-  const lowerPlural = lowerTerm(plural);
-  const lowerClass = lowerTerm(classTerm);
   const editingClass =
     saved.find((entry) => entry.id === editingClassId) ?? null;
 
   async function handleReorder(next: PledgeClass[]) {
     setPendingOrder(next);
+    wantedOrder.current = next;
+    if (savingOrder.current) return;
+    savingOrder.current = true;
     try {
-      await reorder.mutateAsync(next.map((entry) => entry.id));
+      while (wantedOrder.current) {
+        const ids = wantedOrder.current.map((entry) => entry.id);
+        wantedOrder.current = null;
+        // Settles after the list is re-read (`useReorderPledgeClasses`).
+        await reorder.mutateAsync(ids);
+      }
     } catch (error) {
+      wantedOrder.current = null;
       toast({
         title: "Couldn't save the order",
         description: getErrorMessage(
@@ -135,9 +155,9 @@ export function SettingsClassesTab({ canManage, classTerm, orderTerm }: Props) {
         variant: "destructive",
       });
     } finally {
-      // The hook re-reads the list either way; wait for it so the saved order
-      // replaces the pending one in the same paint.
-      await classesQuery.refetch();
+      savingOrder.current = false;
+      // The saved list is in the cache by now, so the row neither jumps back
+      // nor keeps an order the API refused.
       setPendingOrder(null);
     }
   }
@@ -149,18 +169,18 @@ export function SettingsClassesTab({ canManage, classTerm, orderTerm }: Props) {
   if (isOffline && anyReadUncached(classesQuery)) {
     body = (
       <OfflineState
-        title={`${plural} unavailable offline`}
-        description={`Reconnect to load this chapter's ${lowerPlural} and edit them.`}
+        title="This list is unavailable offline"
+        description="Reconnect to load it and make changes."
         onRetry={() => void classesQuery.refetch()}
       />
     );
   } else if (classesQuery.isLoading || paused) {
-    body = <SettingsListCardSkeleton label={`Loading ${lowerPlural}`} />;
+    body = <SettingsListCardSkeleton label={`Loading ${classTerm}`} />;
   } else if (classesQuery.isError && classesQuery.data === undefined) {
     body = (
       <ErrorState
-        title={`Couldn't load ${lowerPlural}`}
-        description={`Retry to fetch this chapter's ${lowerPlural}.`}
+        title="Couldn't load the list"
+        description="Retry to fetch it again."
         onRetry={() => void classesQuery.refetch()}
       />
     );
@@ -169,53 +189,55 @@ export function SettingsClassesTab({ canManage, classTerm, orderTerm }: Props) {
       <>
         <Card>
           <CardHeader>
-            <CardTitle>{plural}</CardTitle>
+            <CardTitle>{classTerm}</CardTitle>
             <CardDescription>
-              Oldest first. The Directory sorts by this order, then by each
-              member&apos;s {lowerTerm(orderTerm)}.
+              The chapter&apos;s list, oldest first.
               {canManage && classes.length > 1 ? " Drag to reorder." : ""}
             </CardDescription>
           </CardHeader>
           <CardContent>
             {classes.length === 0 ? (
-              <InlineNote>
-                No {lowerPlural} yet. Add the oldest one first.
-              </InlineNote>
+              <InlineNote>Nothing here yet. Add the oldest one first.</InlineNote>
             ) : (
               <ReorderList
-                aria-label={plural}
+                aria-label={classTerm}
                 items={classes}
                 getId={(entry) => entry.id}
                 getLabel={(entry) => entry.name}
                 onReorder={(next) => void handleReorder(next)}
-                disabled={!canManage || reorder.isPending}
+                disabled={!canManage}
                 renderItem={(entry) => (
                   <ClassRow
                     pledgeClass={entry}
                     memberCount={
-                      membersQuery.data
-                        ? (countByClass.get(entry.id) ?? 0)
-                        : null
+                      members ? (countByClass.get(entry.id) ?? 0) : null
                     }
                     canManage={canManage}
-                    classTerm={lowerClass}
                     confirm={confirm}
                     onEditMembers={() => setEditingClassId(entry.id)}
                   />
                 )}
               />
             )}
+            {membersQuery.isError && !members ? (
+              // Without the roster there are no counts and no class editor,
+              // so say why and offer the read again.
+              <InlineNote className="mt-3">
+                Couldn&apos;t load the chapter&apos;s members, so counts and
+                the member editor are unavailable.{" "}
+                <InlineNoteAction onClick={() => void membersQuery.refetch()}>
+                  Retry
+                </InlineNoteAction>
+              </InlineNote>
+            ) : null}
           </CardContent>
         </Card>
 
         {canManage ? (
-          <AddClassForm
-            classTerm={classTerm}
-            full={classes.length >= PLEDGE_CLASSES_MAX}
-          />
+          <AddClassForm full={classes.length >= PLEDGE_CLASSES_MAX} />
         ) : (
           <InlineNote>
-            Only officers who manage roles can change {lowerPlural}.
+            Only officers who manage roles can change this list.
           </InlineNote>
         )}
       </>
@@ -227,22 +249,19 @@ export function SettingsClassesTab({ canManage, classTerm, orderTerm }: Props) {
       {confirmDialog}
       {body}
       <Sheet
-        open={editingClass !== null}
+        open={editingClass !== null && members !== undefined}
         onOpenChange={(open) => {
           if (!open) setEditingClassId(null);
         }}
       >
-        {editingClass ? (
+        {editingClass && members ? (
           <ClassMembersEditor
             // Keyed by class, so a draft never carries over to the next class.
             key={editingClass.id}
             pledgeClass={editingClass}
             classes={saved}
             members={members}
-            membersFailed={membersQuery.isError && !membersQuery.data}
-            onRetryMembers={() => void membersQuery.refetch()}
             orderTerm={orderTerm}
-            classTerm={lowerClass}
             onDone={() => setEditingClassId(null)}
           />
         ) : null}
@@ -255,7 +274,6 @@ function ClassRow({
   pledgeClass,
   memberCount,
   canManage,
-  classTerm,
   confirm,
   onEditMembers,
 }: {
@@ -263,7 +281,6 @@ function ClassRow({
   /** `null` until the member read answers. */
   memberCount: number | null;
   canManage: boolean;
-  classTerm: string;
   confirm: ReturnType<typeof useConfirmDialog>["confirm"];
   onEditMembers: () => void;
 }) {
@@ -286,7 +303,7 @@ function ClassRow({
       setDraft(null);
     } catch (error) {
       toast({
-        title: `Couldn't rename the ${classTerm}`,
+        title: `Couldn't rename ${pledgeClass.name}`,
         description: getErrorMessage(
           error,
           "Check that no other one has this name, then try again.",
@@ -299,11 +316,15 @@ function ClassRow({
   async function handleDelete() {
     const confirmed = await confirm({
       title: `Delete ${pledgeClass.name}?`,
+      // `null` is "not known", never "none": the roster read may be pending
+      // or failed, and the class may be full.
       description:
-        memberCount && memberCount > 0
-          ? `Its ${memberCountLabel(memberCount)} will have no ${classTerm}. They keep their number.`
-          : "No members are in it.",
-      confirmLabel: `Delete ${classTerm}`,
+        memberCount === null
+          ? "Any members in it are left without one. They keep their number."
+          : memberCount > 0
+            ? `Its ${memberCountLabel(memberCount)} ${memberCount === 1 ? "is" : "are"} left without one. They keep their number.`
+            : "No members are in it.",
+      confirmLabel: `Delete ${pledgeClass.name}`,
       tone: "destructive",
     });
     if (!confirmed) return;
@@ -312,7 +333,7 @@ function ClassRow({
       toast({ title: `${pledgeClass.name} deleted` });
     } catch (error) {
       toast({
-        title: `Couldn't delete the ${classTerm}`,
+        title: `Couldn't delete ${pledgeClass.name}`,
         description: getErrorMessage(error, "Retry in a moment."),
         variant: "destructive",
       });
@@ -361,9 +382,11 @@ function ClassRow({
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold">{pledgeClass.name}</p>
+    // Wraps: with chat docked beside Settings the card can be under 300px
+    // wide, and three icon buttons on the name's line left it one letter.
+    <div className="flex flex-wrap items-center gap-x-2">
+      <div className="min-w-[8rem] flex-1">
+        <p className="break-words text-sm font-semibold">{pledgeClass.name}</p>
         {memberCount !== null ? (
           <p className="text-caption text-muted-foreground">
             {memberCountLabel(memberCount)}
@@ -374,7 +397,8 @@ function ClassRow({
         <div className="flex shrink-0 items-center">
           <IconButton
             label={`Edit members of ${pledgeClass.name}`}
-            disabled={busy}
+            // The editor is built from the roster, so it waits for it.
+            disabled={busy || memberCount === null}
             onClick={onEditMembers}
           >
             <Users className="h-4 w-4" />
@@ -404,17 +428,14 @@ function ClassRow({
 }
 
 function AddClassForm({
-  classTerm,
   full,
 }: {
-  classTerm: string;
   /** The chapter holds as many classes as it may. */
   full: boolean;
 }) {
   const { toast } = useToast();
   const create = useCreatePledgeClass();
   const [name, setName] = useState("");
-  const lower = lowerTerm(classTerm);
 
   async function handleCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -425,7 +446,7 @@ function AddClassForm({
       setName("");
     } catch (error) {
       toast({
-        title: `Couldn't add the ${lower}`,
+        title: `Couldn't add ${trimmed}`,
         description: getErrorMessage(
           error,
           "Check that no other one has this name, then try again.",
@@ -438,16 +459,19 @@ function AddClassForm({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Add a {lower}</CardTitle>
+        <CardTitle>Add to the list</CardTitle>
         <CardDescription>
           {full
             ? `This chapter has ${PLEDGE_CLASSES_MAX}, the most it can hold.`
-            : "It goes at the end of the list, as the newest."}
+            : "It goes at the end, as the newest."}
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleCreate} className="flex items-end gap-3">
-          <div className="grid min-w-0 flex-1 gap-1">
+        <form
+          onSubmit={handleCreate}
+          className="flex flex-wrap items-end gap-3"
+        >
+          <div className="grid min-w-[10rem] flex-1 gap-1">
             <Label htmlFor="pledge-class-name">Name</Label>
             <Input
               id="pledge-class-name"
@@ -488,24 +512,24 @@ function rowName(member: MemberProfile): string {
 function ClassMembersEditor({
   pledgeClass,
   classes,
-  members,
-  membersFailed,
-  onRetryMembers,
+  members: liveMembers,
   orderTerm,
-  classTerm,
   onDone,
 }: {
   pledgeClass: PledgeClass;
   classes: readonly PledgeClass[];
+  /** The loaded roster; the editor never mounts without it. */
   members: readonly MemberProfile[];
-  membersFailed: boolean;
-  onRetryMembers: () => void;
   orderTerm: string;
-  classTerm: string;
   onDone: () => void;
 }) {
   const { toast } = useToast();
   const assign = useAssignPledgeClasses();
+  // The roster as it stood when the editor opened. The rows are built from it
+  // once, so the save is worked out against the same snapshot: a background
+  // re-read that brings in a member another officer just added to this class
+  // must not read as "the officer took them out".
+  const [members] = useState(liveMembers);
   const [rows, setRows] = useState<ClassEditorRow[]>(() =>
     members
       .filter((member) => member.pledge_class_id === pledgeClass.id)
@@ -579,18 +603,6 @@ function ClassMembersEditor({
     <PanelContent aria-describedby={undefined}>
       <PanelHeader>{pledgeClass.name}</PanelHeader>
       <PanelBody>
-        {membersFailed ? (
-          <div
-            role="alert"
-            className="flex items-center justify-between gap-3 rounded-md border border-destructive/[.28] bg-destructive-tint p-3 text-sm text-destructive-text"
-          >
-            <span>Couldn&apos;t load the chapter&apos;s members.</span>
-            <Button variant="secondary" size="sm" onClick={onRetryMembers}>
-              Retry
-            </Button>
-          </div>
-        ) : null}
-
         <div className="grid gap-1">
           <Label htmlFor="class-add-member">Add a member</Label>
           <Input
@@ -640,10 +652,10 @@ function ClassMembersEditor({
 
         <div className="space-y-2">
           <p className="text-label font-semibold text-muted-foreground">
-            {memberCountLabel(rows.length)}, by {lowerTerm(orderTerm)}
+            {memberCountLabel(rows.length)} · {orderTerm}
           </p>
           {rows.length === 0 ? (
-            <InlineNote>Nobody is in this {classTerm} yet.</InlineNote>
+            <InlineNote>Nobody is in it yet.</InlineNote>
           ) : (
             <ReorderList
               aria-label={`Members of ${pledgeClass.name}`}
@@ -656,7 +668,7 @@ function ClassMembersEditor({
                 const bad = parseOrderNumber(row.number) === undefined;
                 return (
                   <div className="flex items-center gap-2">
-                    <p className="min-w-0 flex-1 truncate text-sm">
+                    <p className="min-w-0 flex-1 break-words text-sm">
                       {row.name}
                     </p>
                     <Input

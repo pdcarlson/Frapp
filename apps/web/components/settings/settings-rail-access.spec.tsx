@@ -91,6 +91,19 @@ vi.mock("@/components/settings/settings-roles-tab", () => ({
   SettingsRolesTab: () => <p>Roles matrix</p>,
 }));
 
+// The pledge class tab has its own spec; here it shows what the page hands it.
+vi.mock("@/components/settings/settings-classes-tab", () => ({
+  SettingsClassesTab: (props: {
+    canManage: boolean;
+    classTerm: string;
+    orderTerm: string;
+  }) => (
+    <p>
+      {`classes tab: ${props.canManage ? "can manage" : "read only"}, ${props.classTerm}, ${props.orderTerm}`}
+    </p>
+  ),
+}));
+
 const { SettingsPage } = await import("./settings-page");
 
 function tabNames() {
@@ -114,7 +127,12 @@ describe("Settings shows each viewer what they can use", () => {
   beforeEach(() => {
     permissions.current = undefined;
     search.current = "";
-    currentChapter.current = { ...currentChapter.current, enabled_modules: {} };
+    currentChapter.current = {
+      ...currentChapter.current,
+      enabled_modules: {},
+      // A test that gives the chapter its own words must not leak them.
+      vocabulary: undefined,
+    } as typeof currentChapter.current;
   });
 
   it("gives the President every tool above every setup tab", () => {
@@ -131,7 +149,7 @@ describe("Settings shows each viewer what they can use", () => {
       "Accent",
       "Modules",
       "Roles",
-      "Pledge classes",
+      "Pledge class",
       "Semester",
       "Fields",
       "Dues",
@@ -180,7 +198,7 @@ describe("Settings shows each viewer what they can use", () => {
     permissions.current = ["roles:manage"];
     search.current = "tab=modules";
     render(<SettingsPage />);
-    expect(tabNames()).toEqual(["Roles", "Pledge classes"]);
+    expect(tabNames()).toEqual(["Roles", "Pledge class"]);
     expect(screen.getByRole("tab", { name: "Roles" })).toHaveAttribute(
       "aria-selected",
       "true",
@@ -194,7 +212,16 @@ describe("Settings shows each viewer what they can use", () => {
       vocabulary: { class: "Line" },
     } as typeof currentChapter.current;
     render(<SettingsPage />);
-    expect(tabNames()).toEqual(["Roles", "Lines"]);
+    expect(tabNames()).toEqual(["Roles", "Line"]);
+  });
+
+  it("opens the pledge class tab writable for a roles:manage holder, in the chapter's words", () => {
+    permissions.current = ["roles:manage"];
+    search.current = "tab=classes";
+    render(<SettingsPage />);
+    expect(
+      screen.getByText("classes tab: can manage, Pledge class, Fraternal order"),
+    ).toBeInTheDocument();
   });
 
   it("hides a tool whose module the chapter switched off", () => {

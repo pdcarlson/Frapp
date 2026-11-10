@@ -326,14 +326,39 @@ describe("MemberDetailSheet pledge class (#3939)", () => {
 
   it("shows the member's class and order number under the roles", () => {
     renderProfile({ ...baseMember, pledge_class_id: "alpha", order_number: 12 });
-    const section = screen.getByRole("region", { name: "Pledge class and fraternal order" });
+    const section = screen.getByRole("region", { name: "Pledge class · Fraternal order" });
     expect(within(section).getByText("Alpha")).toBeInTheDocument();
     expect(within(section).getByText("12")).toBeInTheDocument();
   });
 
   it("draws no section for a member with neither", () => {
     renderProfile();
-    expect(screen.queryByRole("region", { name: "Pledge class and fraternal order" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Pledge class · Fraternal order" })).toBeNull();
+  });
+
+  it("gives Edit to a roles:manage holder, and to nobody else", () => {
+    mockPermissions.current = ["members:view", "roles:manage"];
+    renderProfile();
+    expect(
+      screen.getByRole("button", { name: "Edit Jane Smith's Pledge class" }),
+    ).toBeInTheDocument();
+  });
+
+  it("holds Edit back until the profile read answers, so a stale row can't seed it", () => {
+    mockPermissions.current = ["members:view", "roles:manage"];
+    memberQueryState.data = undefined;
+    render(
+      <MemberDetailSheet
+        open
+        onOpenChange={() => {}}
+        userId="u1"
+        initialMember={{ ...baseMember, pledge_class_id: "alpha" }}
+      />,
+    );
+    expect(screen.getByText("Alpha")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Edit Jane Smith's Pledge class" }),
+    ).toBeNull();
   });
 });
 

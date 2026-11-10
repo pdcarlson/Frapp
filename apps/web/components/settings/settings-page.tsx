@@ -69,7 +69,6 @@ import { SettingsRolesTab } from "@/components/settings/settings-roles-tab";
 import { SettingsPrivacyTab } from "@/components/settings/settings-privacy-tab";
 import { SettingsFieldsTab } from "@/components/settings/settings-fields-tab";
 import { SettingsClassesTab } from "@/components/settings/settings-classes-tab";
-import { pluralTerm } from "@/lib/pledge-classes";
 import {
   SettingsBodySkeleton,
   SettingsTabSkeleton,
@@ -452,7 +451,7 @@ function SettingsPageContent() {
   const visibleTabs = SETTINGS_TABS.filter((tab) =>
     isSettingsTabVisible(tab.value, permissions),
   ).map((tab) =>
-    tab.value === "classes" ? { ...tab, label: pluralTerm(classTerm) } : tab,
+    tab.value === "classes" ? { ...tab, label: classTerm } : tab,
   );
   // A `?tab=` deep link to a tab this viewer does not get, or the default
   // `org` for someone with no setup tabs, lands on the first tab they do get.

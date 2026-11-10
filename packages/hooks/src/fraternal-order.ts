@@ -7,8 +7,8 @@
  * that class. Members with no class come after every class, ordered by their
  * number, and members with neither come last, by name.
  *
- * One definition for web and mobile, and for the class editor, which lists a
- * class's members in the order the Directory will show them.
+ * One definition, so every surface that sorts this way agrees. Its first
+ * caller is the Settings class editor, which lists a class's members in it.
  */
 
 /** The fields of a member the sort reads. */
@@ -59,20 +59,4 @@ export function fraternalOrderComparator(
       sensitivity: "base",
     });
   };
-}
-
-/**
- * Whether the chapter uses pledge classes or order numbers at all. A chapter
- * with no classes and no numbers sees no pledge class or order controls
- * outside the place an officer sets them up.
- */
-export function usesFraternalOrder(
-  classes: readonly OrderedClass[] | null | undefined,
-  members: readonly FraternalOrderMember[] | null | undefined,
-): boolean {
-  if ((classes?.length ?? 0) > 0) return true;
-  return (members ?? []).some(
-    (member) =>
-      numberOrNull(member.order_number) !== null || !!member.pledge_class_id,
-  );
 }

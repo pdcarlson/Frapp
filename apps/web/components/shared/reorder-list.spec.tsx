@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { ReorderList, moveItem } from "./reorder-list";
 
@@ -77,6 +78,43 @@ describe("ReorderList", () => {
     fireEvent.dragOver(target, { dataTransfer });
     fireEvent.drop(target, { dataTransfer });
     expect(onReorder).toHaveBeenCalledWith(["Gamma", "Alpha", "Beta"]);
+  });
+
+  it("keeps focus on the grip of a row moved by keyboard", () => {
+    function Harness() {
+      const [items, setItems] = useState(ITEMS);
+      return (
+        <ReorderList
+          aria-label="Classes"
+          items={items}
+          getId={(item) => item}
+          getLabel={(item) => item}
+          onReorder={setItems}
+          renderItem={(item) => <span>{item}</span>}
+        />
+      );
+    }
+    render(<Harness />);
+    const grip = () => screen.getByRole("button", { name: "Reorder Alpha" });
+    grip().focus();
+    fireEvent.keyDown(grip(), { key: "ArrowDown" });
+    expect(grip()).toHaveFocus();
+    fireEvent.keyDown(grip(), { key: "ArrowDown" });
+    expect(grip()).toHaveFocus();
+    // At the end of the list the touch button it pressed is disabled, so
+    // focus goes to its pair rather than nowhere.
+    // Order is now Beta, Gamma, Alpha; Gamma moves to the top.
+    fireEvent.click(screen.getByRole("button", { name: "Move Gamma up" }));
+    expect(
+      screen.getByRole("button", { name: "Move Gamma down" }),
+    ).toHaveFocus();
+  });
+
+  it("draws the grip as something Firefox will drag, not a button element", () => {
+    renderList();
+    expect(
+      screen.getByRole("button", { name: "Reorder Alpha" }).tagName,
+    ).toBe("DIV");
   });
 
   it("draws no handles when disabled", () => {
