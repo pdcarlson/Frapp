@@ -10,6 +10,9 @@ import { renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 const calls = vi.hoisted(() => [] as string[]);
+vi.mock("@/lib/chat/use-unread-first-paint-runtime", () => ({
+  useUnreadFirstPaintRuntime: () => calls.push("unread-first-paint"),
+}));
 vi.mock("@/lib/chat/use-chat-runtime", () => ({
   useChatRealtimeBinding: () => calls.push("chat"),
 }));
@@ -18,6 +21,9 @@ vi.mock("@/lib/connection/use-connection", () => ({
 }));
 vi.mock("@/lib/notifications/use-badge-sync", () => ({
   useBadgeSyncRuntime: () => calls.push("badge"),
+}));
+vi.mock("@/lib/notifications/use-notification-sync", () => ({
+  useNotificationSyncRuntime: () => calls.push("notification-sync"),
 }));
 vi.mock("@/lib/notifications/use-push-runtime", () => ({
   usePushRuntime: () => calls.push("push"),
@@ -32,5 +38,17 @@ describe("AppRuntime", () => {
   it("binds the chat realtime manager app-wide (#3698)", () => {
     renderHook(() => AppRuntime());
     expect(calls).toContain("chat");
+  });
+
+  it("keeps notifications in step with the member's other devices (#3929)", () => {
+    calls.length = 0;
+    renderHook(() => AppRuntime());
+    expect(calls).toContain("notification-sync");
+  });
+
+  it("shows unread marks before the counts request answers (#4006)", () => {
+    calls.length = 0;
+    renderHook(() => AppRuntime());
+    expect(calls).toContain("unread-first-paint");
   });
 });

@@ -3,7 +3,7 @@
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useMemo, useState } from "react";
 import { SearchGlyph } from "@/components/members/directory-glyphs";
-import { useAlumni } from "@repo/hooks";
+import { useAlumni, useMemberDisplayNames } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -64,6 +64,8 @@ type AlumniRow = {
 export function AlumniDirectory() {
   const { isOffline } = useNetwork();
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
+  // An alum's initials wear the color they wear everywhere else (#3860).
+  const { avatarTintFor } = useMemberDisplayNames();
 
   const [graduationYear, setGraduationYear] = useState("");
   const [cityFilter, setCityFilter] = useState("");
@@ -327,7 +329,10 @@ export function AlumniDirectory() {
                     {alum.avatar_url ? (
                       <AvatarImage src={alum.avatar_url} alt="" />
                     ) : null}
-                    <AvatarFallback className="text-[9px]">
+                    <AvatarFallback
+                      className="text-[9px]"
+                      tint={alum.user_id ? avatarTintFor(alum.user_id) : null}
+                    >
                       {initials(alum.display_name)}
                     </AvatarFallback>
                   </Avatar>

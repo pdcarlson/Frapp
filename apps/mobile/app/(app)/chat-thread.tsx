@@ -277,6 +277,7 @@ export default function ChatThreadScreen() {
     nameFor,
     roleColorFor,
     avatarFor: memberAvatarFor,
+    avatarTintFor,
     refetch: refetchRoster,
   } = roster;
 
@@ -321,9 +322,13 @@ export default function ChatThreadScreen() {
             const memberId = otherMemberId(openChannel.channel, viewerId);
             return memberId ? memberAvatarFor(memberId) : null;
           })()}
+          photoTint={(() => {
+            const memberId = otherMemberId(openChannel.channel, viewerId);
+            return memberId ? avatarTintFor(memberId) : null;
+          })()}
         />
       ) : undefined,
-    [openChannel, viewerId, memberAvatarFor],
+    [openChannel, viewerId, memberAvatarFor, avatarTintFor],
   );
   const headerDescription =
     openChannel && !isDirectChannel(openChannel.channel)
@@ -1324,6 +1329,7 @@ export default function ChatThreadScreen() {
               context={staging.context}
               mentionCandidates={mentionRoster.data}
               avatarFor={memberAvatarFor}
+              avatarTintFor={avatarTintFor}
               mentionRoles={mentionRoles.data}
               placeholder={composerPlaceholder}
               // A send that never reached the outbox has no failed row to show

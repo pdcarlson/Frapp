@@ -231,7 +231,7 @@ export function RolesMatrix({
               >
                 <span
                   aria-hidden
-                  className="mx-auto mb-1 grid h-7 w-7 place-items-center rounded-full bg-muted text-[10px] font-bold text-foreground"
+                  className="mx-auto mb-1 grid h-7 w-7 place-items-center rounded-full bg-card-hover text-[10px] font-bold text-foreground"
                 >
                   {initials(role.name)}
                 </span>

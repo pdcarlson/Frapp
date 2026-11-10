@@ -186,12 +186,15 @@ describe("the pre-auth screens have no tenant, so nothing on them takes the acce
     // that token's *most forgiving* step on the whole ladder and it still
     // misses §6's text gate, which is why every one of them lifts to
     // `--muted-foreground`. The assertion is the argument. (neutral ladder,
-    // 2026-11-05: `--muted` is now `#737373`, and the darker floor lifts it
-    // from 3.893 to 4.175; the reference's literal `#78716A` is 4.119 there.
-    // Both still miss.)
+    // 2026-11-05: `--muted` was `#737373`, 4.175 there; the reference's
+    // literal `#78716A` is 4.119. Both missed. The 2026-11-09 text ladder,
+    // foundations.md §4, put `--muted` at `#9E9E9E`, 7.39 there, so the token
+    // now clears and only the literal still misses: transcribing the board's
+    // hex instead of the token is the defect this keeps.)
     expect(ratio("#78716A", SURFACE.background)).toBeLessThan(AA_TEXT);
-    expect(ratio(TEXT.muted, SURFACE.background)).toBeLessThan(AA_TEXT);
-    expect(ratio(TEXT.muted, SURFACE.background)).toBeCloseTo(4.175, 2);
+    expect(ratio(TEXT.muted, SURFACE.background)).toBeGreaterThanOrEqual(
+      AA_TEXT,
+    );
     expect(
       ratio(TEXT.mutedForeground, SURFACE.background),
     ).toBeGreaterThanOrEqual(AA_TEXT);

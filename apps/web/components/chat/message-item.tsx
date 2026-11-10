@@ -56,6 +56,8 @@ import { blockActionLabel } from "@repo/chat-core/block-copy";
 import type { ChatMessage, ReplayRequest } from "@repo/chat-core/types";
 import {
   authorInitialsFallback,
+  memberAvatarHue,
+  memberAvatarTint,
   resolveAuthorLabel,
   resolveAuthorName,
 } from "@repo/hooks";
@@ -412,6 +414,13 @@ export function MessageItem({
   // leads the body's first line.
   const compact = useChatDensity() === "compact";
   const avatarSrc = isSystemPost ? SYSTEM_AVATAR_SRC : avatarUrl;
+  // The initials take the author's own color (#3860): their name's role color
+  // when it has one, so the two always match, otherwise their hashed hue. An
+  // imported message with no sender keeps the neutral circle.
+  const avatarTint =
+    !isSystemPost && message.sender_id
+      ? memberAvatarTint(memberAvatarHue(message.sender_id, authorColor))
+      : null;
   const isPending = message._status === "pending";
   const isFailed = message._status === "failed";
   // An outcome we could not read, NOT a known failure — see `MessageStatus`.
@@ -758,6 +767,7 @@ export function MessageItem({
         would draw an "F" where the crest goes.
       */}
       <AvatarFallback
+        tint={avatarTint}
         style={isSystemPost ? { backgroundColor: CREST_FIELD } : undefined}
       >
         {isSystemPost

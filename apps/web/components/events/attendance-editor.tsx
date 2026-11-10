@@ -26,8 +26,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { cn } from "@/lib/utils";
-import { FOCUS_RING } from "@/components/ui/focus";
+import { SegmentedChoice } from "@/components/ui/segmented";
 import type { RoleOption } from "@/lib/roles";
 
 /**
@@ -67,10 +66,11 @@ export function AttendanceEditor({
     <div className="grid gap-2">
       <SegmentedChoice
         label="Attendance for everyone"
-        options={EVENT_ATTENDANCE_STATUSES}
+        options={attendanceOptions(EVENT_ATTENDANCE_STATUSES)}
         value={value.everyone}
         onChange={(everyone) => onChange(withEveryone(value, everyone))}
         disabled={disabled}
+        fill
       />
       <p className="text-caption text-muted-foreground">
         {value.everyone === "required"
@@ -94,11 +94,10 @@ export function AttendanceEditor({
               </span>
               <SegmentedChoice
                 label={`Attendance for ${nameOf(roleId)}`}
-                options={roleChoicesFor(value.everyone)}
+                options={attendanceOptions(roleChoicesFor(value.everyone))}
                 value={status}
                 onChange={(next) => onChange(withRole(value, roleId, next))}
                 disabled={disabled}
-                compact
               />
               <IconButton
                 label={`Remove ${nameOf(roleId)}`}
@@ -177,60 +176,9 @@ export function AttendanceEditor({
   );
 }
 
-/**
- * Two or three answers side by side, the held one lit: every answer in view,
- * so the current one never hides behind a menu.
- */
-function SegmentedChoice({
-  label,
-  options,
-  value,
-  onChange,
-  disabled,
-  compact = false,
-}: {
-  label: string;
-  options: readonly EventAttendanceStatus[];
-  value: EventAttendanceStatus;
-  onChange: (next: EventAttendanceStatus) => void;
-  disabled: boolean;
-  compact?: boolean;
-}) {
-  return (
-    <div
-      role="radiogroup"
-      aria-label={label}
-      className={cn(
-        "inline-flex rounded-md border border-input bg-surface-1 p-0.5",
-        compact ? "shrink-0" : "w-full",
-      )}
-    >
-      {options.map((option) => {
-        const held = option === value;
-        return (
-          <button
-            key={option}
-            type="button"
-            role="radio"
-            aria-checked={held}
-            disabled={disabled}
-            onClick={() => {
-              if (!held) onChange(option);
-            }}
-            className={cn(
-              "flex min-h-8 flex-1 items-center justify-center whitespace-nowrap rounded-sm px-3 text-sm font-semibold transition-colors pointer-coarse:min-h-11",
-              // The held answer as chat search's filter radios draw theirs.
-              held
-                ? "bg-accent-subtle text-accent-text"
-                : "text-muted-foreground hover:bg-card-hover hover:text-foreground",
-              disabled && "pointer-events-none text-disabled",
-              FOCUS_RING,
-            )}
-          >
-            {EVENT_ATTENDANCE_LABELS[option]}
-          </button>
-        );
-      })}
-    </div>
-  );
+function attendanceOptions(statuses: readonly EventAttendanceStatus[]) {
+  return statuses.map((status) => ({
+    value: status,
+    label: EVENT_ATTENDANCE_LABELS[status],
+  }));
 }

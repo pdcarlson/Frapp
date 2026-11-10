@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -7,6 +8,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { markWhatsNewSeen, markWhatsNewUnread } from "@/lib/whats-new";
 
 // next/link needs a router context jsdom lacks; render a plain anchor.
 vi.mock("next/link", () => ({
@@ -21,7 +23,10 @@ vi.mock("next/link", () => ({
 }));
 
 const useCurrentUser = vi.fn();
-vi.mock("@repo/hooks", () => ({ useCurrentUser: () => useCurrentUser() }));
+vi.mock("@repo/hooks", () => ({
+  useCurrentUser: () => useCurrentUser(),
+  useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
+}));
 
 const signOutCurrentSession = vi.fn().mockResolvedValue(undefined);
 vi.mock("@/lib/auth/session", () => ({
@@ -163,6 +168,22 @@ describe("AccountMenu", () => {
     expect(
       screen.getByRole("menuitem", { name: /what's new/i }),
     ).toHaveAttribute("href", "/whats-new");
+  });
+
+  it("marks What's new while an entry is unread, and clears once it is seen", async () => {
+    const user = userEvent.setup();
+    render(<AccountMenu variant="topbar" />);
+    act(() => markWhatsNewUnread(true));
+
+    await user.click(screen.getByRole("button", { name: /account menu/i }));
+    expect(
+      screen.getByRole("menuitem", { name: "What's new, new" }),
+    ).toBeInTheDocument();
+
+    act(() => markWhatsNewSeen());
+    expect(
+      screen.getByRole("menuitem", { name: "What's new" }),
+    ).toBeInTheDocument();
   });
 
   it("keeps chapter switching out of the account menu", async () => {

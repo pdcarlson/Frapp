@@ -336,6 +336,29 @@ export async function clearReadChatNotifications(
 }
 
 /**
+ * The channels whose chat pushes are still in the tray: what the phone was
+ * told about and the member hasn't opened here. `lib/chat/unread-first-paint.ts`
+ * lights those channels before `GET /v1/channels/unread` answers (#4006).
+ *
+ * Empty wherever the tray can't be read (web, Expo Go, an older native build,
+ * the OS refusing), which only means nothing is lit early.
+ */
+export async function presentedChatChannelIds(): Promise<Set<string>> {
+  const ids = new Set<string>();
+  const mod = localOnlyModule();
+  if (!mod) return ids;
+  try {
+    for (const n of await mod.getPresentedNotificationsAsync()) {
+      const channelId = chatChannelIdFrom(n.request.content.data);
+      if (channelId !== null) ids.add(channelId);
+    }
+  } catch {
+    // As in `clearReadChatNotifications`: leave it at what was read.
+  }
+  return ids;
+}
+
+/**
  * Shows notifications while the app is foregrounded.
  *
  * Without a handler the OS suppresses them in-app, which reads as "push is

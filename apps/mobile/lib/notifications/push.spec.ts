@@ -399,6 +399,41 @@ describe("push isolation module", () => {
   });
 });
 
+describe("presentedChatChannelIds", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    constantsState.executionEnvironment = "bare";
+    constantsState.projectId = "00000000-0000-4000-8000-000000000000";
+  });
+
+  it("names each chat channel with a push in the tray, once", async () => {
+    const push = await importPush();
+    const mod = fakeModule();
+    push.setPushLoaderForTests(() => mod);
+    mod.getPresentedNotificationsAsync.mockResolvedValue([
+      presented("a1", { target: { screen: "chat", channelId: "general" } }),
+      presented("a2", { target: { screen: "chat", channelId: "general" } }),
+      presented("b", { target: { screen: "chat", channelId: "dm" } }),
+      presented("c", { target: { screen: "events", eventId: "general" } }),
+      presented("d", null),
+    ]);
+
+    expect([...(await push.presentedChatChannelIds())].sort()).toEqual([
+      "dm",
+      "general",
+    ]);
+  });
+
+  it("is empty when the tray can't be read", async () => {
+    const push = await importPush();
+    const mod = fakeModule();
+    push.setPushLoaderForTests(() => mod);
+    mod.getPresentedNotificationsAsync.mockRejectedValue(new Error("old build"));
+
+    expect((await push.presentedChatChannelIds()).size).toBe(0);
+  });
+});
+
 describe("clearReadChatNotifications", () => {
   beforeEach(() => {
     vi.resetModules();

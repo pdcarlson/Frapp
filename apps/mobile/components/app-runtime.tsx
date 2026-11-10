@@ -1,6 +1,8 @@
+import { useUnreadFirstPaintRuntime } from "@/lib/chat/use-unread-first-paint-runtime";
 import { useChatRealtimeBinding } from "@/lib/chat/use-chat-runtime";
 import { useConnectionRuntime } from "@/lib/connection/use-connection";
 import { useBadgeSyncRuntime } from "@/lib/notifications/use-badge-sync";
+import { useNotificationSyncRuntime } from "@/lib/notifications/use-notification-sync";
 import { usePushRuntime } from "@/lib/notifications/use-push-runtime";
 import { useOnboardingRedirect } from "@/lib/onboarding/use-onboarding-redirect";
 
@@ -35,12 +37,25 @@ import { useOnboardingRedirect } from "@/lib/onboarding/use-onboarding-redirect"
  * **Badge sync** reacts to the same notification and chat
  * queries wherever they're already fetched, and needs no screen of its own
  * (`lib/notifications/use-badge-sync.ts`).
+ *
+ * **Unread first paint** (#4006) holds the last saved chat counts and the
+ * channels whose pushes are still in the tray, which the screens and the badge
+ * show until the server's counts answer (`lib/chat/unread-first-paint.ts`).
+ *
+ * **Notification sync** (#3929) listens for the member's `notif:<users.id>`
+ * change ping, so a notification read on another device reads here within
+ * seconds, and reads the notices about whichever screen is open
+ * (`lib/notifications/use-notification-sync.ts`).
  */
 export function AppRuntime(): null {
   useConnectionRuntime();
   useChatRealtimeBinding();
   usePushRuntime();
   useOnboardingRedirect();
+  // Ahead of badge sync: it reads the tray, which badge sync can empty on
+  // Android (`lib/chat/use-unread-first-paint-runtime.ts`).
+  useUnreadFirstPaintRuntime();
   useBadgeSyncRuntime();
+  useNotificationSyncRuntime();
   return null;
 }

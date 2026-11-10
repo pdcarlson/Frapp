@@ -6,6 +6,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { reactionActionType } from "@repo/chat-core/types";
 import { FrappThemeProvider } from "@/lib/theme";
+import { memberAvatarTint, memberHashHue } from "@repo/hooks";
+import { MemberAvatar } from "@/components/member-avatar";
 import { Keyboard, StyleSheet } from "react-native";
 import { drawnText, screenText } from "@/test/screen-text";
 import {
@@ -420,6 +422,21 @@ describe("an author's name takes their role color", () => {
         (node.type as unknown) === "Text" && node.props.children === "Casey",
     );
     expect(JSON.stringify(name.props.style)).toContain('"color":"#6FD08C"');
+  });
+
+  it("tints the author's initials in the name's color, else the hashed hue (#3860)", () => {
+    const tintOf = (tree: ReactTestRenderer) =>
+      tree.root.findByType(MemberAvatar).props.tint;
+    expect(
+      tintOf(
+        renderItem(message({ sender_id: OTHER, content: "hi" }), undefined, {
+          roleColorFor,
+        }),
+      ),
+    ).toEqual(memberAvatarTint("#6FD08C"));
+    expect(
+      tintOf(renderItem(message({ sender_id: OTHER, content: "hi" }))),
+    ).toEqual(memberAvatarTint(memberHashHue(OTHER)));
   });
 
   it("paints the viewer's own name in their role color too, never the accent", () => {

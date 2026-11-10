@@ -17,8 +17,10 @@ export {
   releaseNoteVersion,
   parseReleaseNoteVersion,
   isNewerReleaseNoteVersion,
+  decideWhatsNew,
   type ReleaseNote,
   type ReleaseNoteVersion,
+  type WhatsNewDecision,
 } from "./release-notes";
 
 // ── Legal / compliance ───────────────────────────────────────────────────────
@@ -758,6 +760,10 @@ export {
   POLL_QUESTION_MAX_LENGTH,
   SERVICE_DESCRIPTION_MAX_LENGTH,
   TASK_TITLE_MAX_LENGTH,
+  PLEDGE_CLASS_NAME_MAX_LENGTH,
+  PLEDGE_CLASSES_MAX,
+  MEMBER_ORDER_NUMBER_MAX,
+  PLEDGE_CLASS_ASSIGNMENTS_MAX,
   YEAR_MAX,
 } from "./field-limits";
 

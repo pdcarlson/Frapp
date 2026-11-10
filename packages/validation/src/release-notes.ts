@@ -18,11 +18,12 @@
  * only list what is merged and shipped. Five to eight lines a new entry, each
  * one sentence.
  *
- * Mobile opens the newest entry by itself once after an update
- * (`apps/mobile/lib/whats-new.ts`), and a phone remembers how many lines it
- * showed ({@link releaseNoteVersion}). Dates are unique, so **a second release
+ * Mobile and the web dashboard open the newest entry by themselves once after
+ * an update ({@link decideWhatsNew}; `apps/mobile/lib/whats-new.ts`,
+ * `apps/web/lib/whats-new.ts`), and a phone or browser remembers how many
+ * lines it showed ({@link releaseNoteVersion}). Dates are unique, so **a second release
  * on the same day appends lines to that day's entry, even past eight, and
- * never trims or merges the ones already there**: phones show it again only
+ * never trims or merges the ones already there**: they show it again only
  * when it has more lines than they saw. Rewording a line is fine but isn't
  * news, so it shows nothing. Deploy production warns when a release ships with
  * neither a new entry nor new lines, or when the day's entry got shorter
@@ -39,6 +40,20 @@ export type ReleaseNote = {
 };
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
+  {
+    date: "2026-11-10",
+    title: "Status on your phone, better Documents, and narrower search",
+    changes: [
+      "You can now set your status from your phone too, not only on the web.",
+      "On your phone, Documents search finds more and forgives typos, you can sort the list, and you can delete a file if your role allows it.",
+      "Documents can be filtered by file type on your phone and on the web, and on your phone also by who added a file and when.",
+      "A notification you read on one device is read on your others, and opening a page clears the notifications that point to it.",
+      "On the web, chat search narrows down by who sent a message, where, when, and what it has in it, and long filters in the Directory, Backwork, and Documents can be searched.",
+      "On the web, Points, Billing, and Reports export as CSV, Excel, or a copy ready to paste into Google Sheets, wherever your role lets you export.",
+      "On the web, a task's due date takes just a month and a day with no year to set, and an event shows you your own check-in.",
+      "Text across the app is brighter and easier to read, and on the web what's new now opens on its own once after an update.",
+    ],
+  },
   {
     date: "2026-11-09",
     title: "Easier check-in, live unread counts, and what's new on your phone",
@@ -115,6 +130,62 @@ export function isNewerReleaseNoteVersion(
     candidate.date > seen.date ||
     (candidate.date === seen.date && candidate.lines > seen.lines)
   );
+}
+
+export interface WhatsNewDecision {
+  /** The entries to show, newest first; empty shows nothing. */
+  readonly show: readonly ReleaseNote[];
+  /** The version to store as seen, or `null` to leave the marker alone. */
+  readonly record: string | null;
+}
+
+/**
+ * Whether What's new opens by itself, and with which entries: the one rule
+ * behind the phone's sheet (`apps/mobile/lib/whats-new.ts`) and the web
+ * dashboard's dialog (`apps/web/lib/whats-new.ts`). Each surface keeps its own
+ * marker and says what `tourDue` and `existingInstall` mean there.
+ *
+ * `notes` is {@link RELEASE_NOTES} (newest first); dates are `YYYY-MM-DD`, so
+ * they compare as strings. `seen` is a stored {@link releaseNoteVersion}, or
+ * `null` when this device has no marker.
+ *
+ * - A marker at or past the newest entry shows nothing and records nothing.
+ *   That covers a rollback too, to an earlier day or to a shorter version of
+ *   the same day's entry.
+ * - `tourDue` (a first-run tour owns this visit), or no marker on a device or
+ *   account that wasn't here before the newest entry (`existingInstall`
+ *   false), records the newest entry without showing it: old news to them.
+ * - No marker but `existingInstall` shows the newest entry only; what they
+ *   saw before is unknown.
+ * - Otherwise it shows every entry newer than the marker, and that day's
+ *   entry itself when lines were added to it since.
+ */
+export function decideWhatsNew(input: {
+  notes: readonly ReleaseNote[];
+  seen: string | null;
+  tourDue: boolean;
+  existingInstall: boolean;
+}): WhatsNewDecision {
+  const { notes, seen, tourDue, existingInstall } = input;
+  const newest = notes[0];
+  if (!newest) return { show: [], record: null };
+  const newestVersion = releaseNoteVersion(newest);
+  const marker = seen === null ? null : parseReleaseNoteVersion(seen);
+  const versionOf = (note: ReleaseNote) => ({
+    date: note.date,
+    lines: note.changes.length,
+  });
+  if (marker !== null && !isNewerReleaseNoteVersion(versionOf(newest), marker)) {
+    return { show: [], record: null };
+  }
+  if (tourDue || (marker === null && !existingInstall)) {
+    return { show: [], record: newestVersion };
+  }
+  const show =
+    marker === null
+      ? [newest]
+      : notes.filter((note) => isNewerReleaseNoteVersion(versionOf(note), marker));
+  return { show, record: newestVersion };
 }
 
 const MONTHS = [

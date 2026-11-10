@@ -333,6 +333,54 @@ describe("the notification drawer's row hover (#1208)", () => {
   });
 });
 
+describe("rows inside a popover hover up, never down a step (#2399, #3826)", () => {
+  /*
+   * `--popover` is the top of the ladder, so `hover:bg-card` on a row inside
+   * one steps DOWN and reads as a hole. These rows sat in a `PopoverContent`
+   * (the channel menu and its notification-level panel) or on a `bg-popover`
+   * fill (the connection pill) and hovered to `--card`; they take the state
+   * above the ladder instead.
+   */
+  const sites = [
+    ["chat", "channel-menu.tsx"],
+    ["chat", "notification-level-popover.tsx"],
+    ["shared", "connection-pill.tsx"],
+  ] as const;
+
+  it.each(sites)("%s/%s hovers to --card-hover, not --card", (dir, file) => {
+    const code = codeWithoutComments(join(WEB, "components", dir, file));
+    expect(code).toMatch(/(?<![\w-])hover:bg-card-hover(?![\w-])/);
+    expect(code).not.toMatch(/(?<![\w-])hover:bg-card(?![\w-])/);
+  });
+});
+
+describe("--muted is a text tone, never a fill under text (#3826)", () => {
+  /*
+   * `--muted` is `#9E9E9E` since the 2026-11-09 text ladder (foundations.md
+   * §4). As a fill it puts foreground text at 2.46:1 and the accent text at
+   * 1.64:1, so a quiet fill takes a ladder step or `--card-hover`. Two
+   * non-text uses are allowed, named here so a third is a decision: the
+   * switch's unchecked thumb and the chat-density preview bars. An alpha wash
+   * (`bg-muted/40`) composites dark enough to keep text over AA.
+   */
+  const ALLOWED = new Set([
+    "apps/web/components/ui/switch.tsx",
+    "apps/web/components/profile/chat-density-control.tsx",
+  ]);
+
+  it("finds no solid or hover bg-muted outside the allowed non-text sites", () => {
+    const hits = productSourceFiles()
+      .filter((path) => !ALLOWED.has(relative(REPO, path)))
+      .filter((path) =>
+        classLiterals(path).some((text) =>
+          /(?<![\w-])bg-muted(?![\w/-])/.test(text),
+        ),
+      )
+      .map((path) => relative(REPO, path));
+    expect(hits).toEqual([]);
+  });
+});
+
 describe("a filled row hover stays inside its rounded list", () => {
   /*
    * Settings' officer-tools list is a rounded card of link rows. Its row hover

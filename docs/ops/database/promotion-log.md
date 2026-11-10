@@ -29,6 +29,26 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-10: Pledge classes and a member's order number (#3939)
+
+### 20261110170000_chapter_pledge_classes.sql
+
+- **Purpose**: Adds `chapter_pledge_classes`, a chapter's own ordered list of pledge classes (`name`, 1 to 80 characters trimmed, unique per chapter ignoring case; `position`, lowest first, which is oldest first). FK to `chapters` cascades. RLS on, no policies (API only, service role). Adds two nullable columns to `members`: `pledge_class_id` and `order_number` (1 to 1,000,000 by check). The foreign key is composite, `(pledge_class_id, chapter_id)` to `chapter_pledge_classes (id, chapter_id)`, `on delete set null (pledge_class_id)`, so a member can only point at a class of their own chapter and deleting a class clears only that column. Adds `reorder_chapter_pledge_classes(uuid, uuid[])` and `assign_member_pledge_classes(uuid, jsonb)` (security invoker, EXECUTE for `service_role` only). The second writes all the listed members or none: it raises `no_data_found` when one is not in the chapter, and a class of another chapter fails the foreign key. No existing row changes: both columns are null everywhere, so the foreign key validates against nothing. The rule is [`spec/behavior/members.md` § Pledge class and order number](../../../spec/behavior/members.md#pledge-class-and-order-number).
+- **Checks**: After `db push`, `select relrowsecurity from pg_class where relname = 'chapter_pledge_classes';` returns `true`, `select count(*) from pg_policies where tablename = 'chapter_pledge_classes';` returns `0`, `select column_name from information_schema.columns where table_name = 'members' and column_name in ('pledge_class_id', 'order_number');` returns two rows, and `select has_function_privilege('authenticated', 'public.assign_member_pledge_classes(uuid, jsonb)', 'execute');` and `select has_function_privilege('authenticated', 'public.reorder_chapter_pledge_classes(uuid, uuid[])', 'execute');` both return `false`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never reads the table and never writes the columns, but its member reads are `select('*')` spread into the response, so once this is applied it returns `pledge_class_id` and `order_number` (both null) on every member profile, and on the raw row `PATCH /v1/members/:id/roles` answers with. The newer API against an unmigrated database fails every `/v1/pledge-classes` route; `GET /v1/members` still answers, without the two fields. `alter table members` takes a brief exclusive lock to add two nullable columns and a foreign key over all-null values, with no rewrite. `create table if not exists`, `add column if not exists`, the guarded `add constraint` blocks and `create or replace` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-pledge-classes-20261110170000) § Rollback pledge classes.
+
+## 2026-11-09: Clear chat notifications already seen (#3929)
+
+### 20261109233000_notifications_backfill_seen_chat_rows.sql
+
+- **Purpose**: One-off data backfill on `notifications`, no schema change. Marks read every unread chat row (`data.target.screen` is `chat`) its member's `channel_read_receipts.last_read_at` already covers (the row was created at or before the receipt), stamping `read_at` with the receipt's instant, and every unread chat row whose channel no longer exists, stamped `now()`. Since #3788 the API clears these on each channel read; rows from before that API was live stayed unread (in production on 2026-11-09, 16 of the owner's 17 unread chat rows were older than his own receipt, and one named a deleted channel). Rows newer than the receipt and every non-chat row are untouched. The rule is [`spec/behavior/notifications.md`](../../../spec/behavior/notifications.md#delivery-flow) § How an in-app row is marked read.
+- **Checks**: After `db push`, `select count(*) from notifications n join channel_read_receipts r on r.user_id = n.user_id and r.channel_id::text = n.data->'target'->>'channelId' where n.read_at is null and n.data->'target'->>'screen' = 'chat' and n.created_at <= r.last_read_at;` returns `0`.
+- **Promoter notes**: Order-free against the API, and worth little without an API that carries #3807: an older API never clears a chat row on a channel read, so new stale rows build up again after the backfill. Both statements match only `read_at is null`, so re-applying changes nothing. Each fires the `notif:<users.id>` change ping once per affected member; an open client refetches. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-notifications-seen-chat-backfill-20261109233000) § Rollback notifications seen-chat backfill.
+
 ## 2026-11-09: Member status and Do Not Disturb
 
 ### 20261109230001_user_settings_member_status.sql

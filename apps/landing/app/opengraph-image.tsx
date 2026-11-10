@@ -106,7 +106,7 @@ export default async function OpenGraphImage() {
           fontWeight: 700,
           letterSpacing: "-0.02em", // the marketing hero role's tracking
           lineHeight: 1,
-          color: "#EBEBEB", // --foreground
+          color: "#F5F5F5", // --foreground
         }}
       >
         Frapp
@@ -118,7 +118,7 @@ export default async function OpenGraphImage() {
           fontSize: 34,
           fontWeight: 400,
           lineHeight: 1.3,
-          color: "#A3A3A3", // --muted-foreground
+          color: "#C4C4C4", // --muted-foreground
         }}
       >
         Ask your chapter anything.

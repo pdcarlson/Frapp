@@ -411,6 +411,7 @@ export function ChatShell({
     nameFor,
     avatarFor,
     roleColorFor,
+    avatarTintFor,
     isPending: rosterPending,
     isError: rosterError,
   } = useMemberDisplayNames();
@@ -2243,6 +2244,7 @@ export function ChatShell({
           <ChannelList
             viewerId={userId}
             memberNames={memberNames}
+            avatarTintFor={avatarTintFor}
             channels={channels}
             categories={categories}
             unreadByChannelId={unreadByChannelId}

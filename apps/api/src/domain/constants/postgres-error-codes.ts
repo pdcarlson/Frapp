@@ -24,6 +24,13 @@ export const PG_FOREIGN_KEY_VIOLATION = '23503';
  * with a `code` field, compare against {@link PG_UNIQUE_VIOLATION} directly
  * rather than widening it back to `unknown` to call this.
  */
+/**
+ * `no_data_found`. Postgres raises it for a strict `select into` that matched
+ * nothing; `assign_member_pledge_classes` raises it on purpose when a listed
+ * member is not in the chapter (#3939).
+ */
+export const PG_NO_DATA_FOUND = 'P0002';
+
 export function isUniqueViolation(error: unknown): boolean {
   return (
     typeof error === 'object' &&

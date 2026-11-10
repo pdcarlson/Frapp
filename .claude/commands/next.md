@@ -341,8 +341,8 @@ inline, and you wait for its verdicts before implementing; otherwise run all thr
    `{files, patterns, tests, destructive}`. This is exploration, not verification, and you need it
    in your own context to implement, so read it inline.
 
-Read AGENTS.md and the spec files the issue links. If the issue and the spec conflict, the spec wins, unless the issue changes how an existing feature
-looks and reads ([`AGENTS.md` § ADR discipline](../../AGENTS.md#adr-discipline)): then the PR
+Read AGENTS.md and the spec files the issue links. If the issue and the spec conflict, the spec wins, unless a person asked for the issue (its `Asked by:` line) and it is a change
+[`AGENTS.md` § ADR discipline](../../AGENTS.md#adr-discipline) lets their PR make to the spec: then the PR
 changes the spec, as that section says.
 Scale thoroughness by the brief's `depth` (the floor is always all three); `deep` also reads the
 surrounding subsystem and runtime evidence, not just the named files. Post the result to the issue
@@ -422,11 +422,10 @@ pre-push hook, the only pre-PR review gate, requires
 `/code-review`: a `/next` turn is a slash-command expansion, which its invocation scan skips, so it
 is always refused here.
 
-Address every finding: fix it, or file a self-contained `triage` follow-up with a reason. A
-post-review commit changes HEAD and invalidates the marker, so re-run `/diff-review` after it. The
-skill decides how much to review again: usually an inline review of just the commits since the last
-reviewed one, and nothing for a clean merge of `main`. Either way every change you push has been
-reviewed. Never push around the gate (`--no-verify`), and never
+Address every finding: fix it, or file a self-contained `triage` follow-up with a reason. Commit the
+fixes, then mark the new HEAD (`node scripts/diff-review-scope.mjs --mark`); the fixes get no second
+round. This is the branch's one review: after the first push, a fix, a merge of `main` or a resolved
+conflict is pushed without one (Paul, 2026-11-10; ADR-23 amendment 2). Never push around the gate (`--no-verify`), and never
 delete, revert, stash, or gitignore a file to make it pass. If the gate objects to a file, review the
 file.
 

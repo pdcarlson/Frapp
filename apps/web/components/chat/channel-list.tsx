@@ -14,10 +14,12 @@ import {
   HIDE_MUTED_LABEL,
   isAddressed,
   NO_MATCHING_CHANNELS,
+  otherMemberId,
   SHOW_ALL_CHANNELS_LABEL,
   sidebarSections,
   UNREAD_ONLY_LABEL,
   type DisplayNameMap,
+  type MemberAvatarTint,
   type SidebarFilterChange,
   type SidebarPreferences,
   type SidebarUnreadCounts,
@@ -209,6 +211,12 @@ export interface ChannelListProps {
   /** `users.id` → display name, from `useMemberDisplayNames()`. */
   memberNames: DisplayNameMap;
   /**
+   * A member's initials paint, from `useMemberDisplayNames()` (#3860). A 1:1
+   * DM's mark wears the other member's tint; without it, or on a group DM, the
+   * mark stays the neutral circle.
+   */
+  avatarTintFor?: (userId: string) => MemberAvatarTint;
+  /**
    * Keyed by channel id; a channel with no row counts as fully read.
    *
    * `undefined` is distinct from an empty map and means **the counts are not
@@ -251,12 +259,13 @@ export interface ChannelListProps {
 /**
  * Left-rail channel list, per `canvas-screens.dc.html` s04.
  *
- * The row carries the read/unread distinction in its **type weight and tone**,
- * which is what foundations.md §5 specifies: an unread row is a bold title in
- * `--foreground`, a read one drops to `--muted-foreground` and carries no badge
- * at all. That is the whole signal here. s04 also draws a message preview and a
- * timestamp per row, which mobile has drawn since 2026-11-06 from
- * `GET /v1/channels/latest` (`useChannelLatestMessages`, worded by
+ * The row carries the read/unread distinction in its **type weight**, which
+ * is what foundations.md §5 specifies: an unread row is a bold title in
+ * `--foreground`, a read one keeps `--foreground` at regular weight (#3777,
+ * matching mobile) and carries no badge at all, and a muted one drops to
+ * `--muted` unless it addresses the member. That is the whole signal here.
+ * s04 also draws a message preview and a timestamp per row, which mobile
+ * has drawn since 2026-11-06 from `GET /v1/channels/latest` (`useChannelLatestMessages`, worded by
  * `channelPreviewLine` in `@repo/chat-core/channel-preview`;
  * spec/behavior/chat/README.md § Channel list previews). The rail doesn't yet:
  * #1191.
@@ -271,6 +280,7 @@ export function ChannelList({
   activeChannelId,
   viewerId,
   memberNames,
+  avatarTintFor,
   unreadByChannelId,
   categories = NO_CATEGORIES,
   onPick,
@@ -396,6 +406,12 @@ export function ChannelList({
     // disagree — a red badge on a read-styled row is a contradiction
     // on screen.
     const isUnread = countsKnown && (counts.unreadCount > 0 || hasMention);
+    // Mobile's rule (`channel-row.tsx`), so the two clients agree (#3777):
+    // a muted channel reads as unread only when it addresses the member, and
+    // otherwise sits quietly in `--muted`. A read row keeps the primary tone
+    // and drops the weight; unread reads by weight, never by a dimmer colour.
+    const isMuted = !!channel.muted;
+    const looksUnread = isUnread && (!isMuted || hasMention);
     const pinned = preferences.pinnedIds.has(channel.id);
     const offersHide =
       !!onHide && canHideConversation(channel) && !channel.hidden;
@@ -434,12 +450,28 @@ export function ChannelList({
               "flex h-8 w-full items-center gap-2 rounded-xs px-2 text-left text-sm transition-colors",
               isActive
                 ? "bg-accent-subtle font-semibold text-accent-text"
-                : isUnread
+                : looksUnread
                   ? "font-semibold text-foreground hover:bg-card"
-                  : "text-muted-foreground hover:bg-card hover:text-foreground",
+                  : isMuted
+                    ? "text-muted hover:bg-card hover:text-foreground"
+                    : "text-foreground hover:bg-card",
             )}
           >
-            <ChannelMark channel={channel} title={titleFor(channel)} />
+            <ChannelMark
+              channel={channel}
+              title={titleFor(channel)}
+              tint={dmTint(channel, viewerId, avatarTintFor)}
+              // The `#`, lock and audit marks follow mobile's sigil: the
+              // row's own tone when unread or active, one step quieter
+              // when read, and `--muted` with a muted row.
+              tone={
+                isActive || looksUnread
+                  ? undefined
+                  : isMuted
+                    ? "text-muted"
+                    : "text-muted-foreground"
+              }
+            />
             <span className="truncate">{titleFor(channel)}</span>
             <span className="ml-auto flex shrink-0 items-center gap-1.5">
               {/*
@@ -617,6 +649,20 @@ export function ChannelList({
 }
 
 /**
+ * A 1:1 DM's mark wears the other member's tint, as their avatar does in the
+ * thread (#3860). A group DM, or a row whose peer can't be told, stays neutral.
+ */
+function dmTint(
+  channel: ChatChannel,
+  viewerId: string | null,
+  avatarTintFor: ((userId: string) => MemberAvatarTint) | undefined,
+): MemberAvatarTint | null {
+  if (!avatarTintFor || !isDm(channel)) return null;
+  const peer = otherMemberId(channel, viewerId);
+  return peer ? avatarTintFor(peer) : null;
+}
+
+/**
  * The leading mark. s04 draws a plain channel as a **text `#`** and a direct
  * message as an initials avatar, so those are type and an avatar rather than
  * icons; the kinds the reference does not draw take their duotone intent glyph.
@@ -624,25 +670,34 @@ export function ChannelList({
 function ChannelMark({
   channel,
   title,
+  tint,
+  tone,
 }: {
   channel: ChatChannel;
   title: string;
+  /** A 1:1 DM's initials paint: the other member's tint (#3860). */
+  tint?: MemberAvatarTint | null;
+  /** A text-colour class for the glyph; unset, it inherits the row's tone. */
+  tone?: string;
 }) {
   if (isSystemChannel(channel))
-    return <AuditGlyph className="h-4 w-4 shrink-0" />;
+    return <AuditGlyph className={cn("h-4 w-4 shrink-0", tone)} />;
   if (isDm(channel))
     return (
       // 24px, with the primitive's own caption-role initials — no size
       // override. s04 draws the DM avatar larger because it is a full-bleed
       // list row; a rail row is 40px tall, and the `#` beside it is 16px.
       <Avatar className="h-6 w-6 shrink-0" aria-hidden="true">
-        <AvatarFallback>{initials(title)}</AvatarFallback>
+        <AvatarFallback tint={tint}>{initials(title)}</AvatarFallback>
       </Avatar>
     );
   if (channel.type === "PRIVATE" || channel.type === "ROLE_GATED")
-    return <LockGlyph className="h-4 w-4 shrink-0" />;
+    return <LockGlyph className={cn("h-4 w-4 shrink-0", tone)} />;
   return (
-    <span aria-hidden="true" className="w-4 shrink-0 text-center font-bold">
+    <span
+      aria-hidden="true"
+      className={cn("w-4 shrink-0 text-center font-bold", tone)}
+    >
       #
     </span>
   );

@@ -64,6 +64,7 @@ describe('NotificationService', () => {
       findById: jest.fn(),
       markRead: jest.fn(),
       markChatChannelRead: jest.fn(),
+      markAllRead: jest.fn(),
     };
     mockPushTokenRepo = {
       create: jest.fn(),
@@ -1438,6 +1439,62 @@ describe('NotificationService', () => {
         'chapter-1',
         'channel-1',
         '2026-11-09T05:00:00.000Z',
+      );
+    });
+  });
+
+  describe('markNotificationsRead (#3929)', () => {
+    beforeEach(() => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-11-09T22:00:00.000Z'));
+    });
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('marks every unread row read through now and answers with the stamp', async () => {
+      mockNotificationRepo.markAllRead.mockResolvedValue(20);
+
+      const result = await service.markNotificationsRead('user-1', 'chapter-1');
+
+      expect(mockNotificationRepo.markAllRead).toHaveBeenCalledWith(
+        'user-1',
+        'chapter-1',
+        '2026-11-09T22:00:00.000Z',
+        undefined,
+      );
+      expect(result).toEqual({
+        read_at: '2026-11-09T22:00:00.000Z',
+        updated: 20,
+      });
+    });
+
+    it('narrows to the named screens, once each', async () => {
+      mockNotificationRepo.markAllRead.mockResolvedValue(2);
+
+      await service.markNotificationsRead('user-1', 'chapter-1', {
+        screens: ['tasks', 'points', 'tasks'],
+      });
+
+      expect(mockNotificationRepo.markAllRead).toHaveBeenCalledWith(
+        'user-1',
+        'chapter-1',
+        '2026-11-09T22:00:00.000Z',
+        ['tasks', 'points'],
+      );
+    });
+
+    it('treats an empty screen list as every row, never as none', async () => {
+      mockNotificationRepo.markAllRead.mockResolvedValue(0);
+
+      await service.markNotificationsRead('user-1', 'chapter-1', {
+        screens: [],
+      });
+
+      expect(mockNotificationRepo.markAllRead).toHaveBeenCalledWith(
+        'user-1',
+        'chapter-1',
+        '2026-11-09T22:00:00.000Z',
+        undefined,
       );
     });
   });
