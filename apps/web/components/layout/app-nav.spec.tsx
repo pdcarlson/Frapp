@@ -209,21 +209,40 @@ describe("AppNav", () => {
     const onToggleCollapsed = vi.fn();
     const { unmount } = renderNav({ onToggleCollapsed });
     expect(
-      screen.getByRole("button", { name: /collapse navigation/i }),
+      screen.getByRole("button", { name: /collapse sidebar/i }),
     ).toBeInTheDocument();
     unmount();
 
     // On /chat the column passes no handler, because the rail does not apply.
     const second = renderNav();
     expect(
-      screen.queryByRole("button", { name: /collapse navigation/i }),
+      screen.queryByRole("button", { name: /collapse sidebar/i }),
     ).not.toBeInTheDocument();
     second.unmount();
 
     renderNav({ variant: "drawer", onToggleCollapsed });
     expect(
-      screen.queryByRole("button", { name: /collapse navigation/i }),
+      screen.queryByRole("button", { name: /collapse sidebar/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("labels the collapse toggle with its action, and names it in the rail (#4044)", () => {
+    const onToggleCollapsed = vi.fn();
+    const { unmount } = renderNav({ onToggleCollapsed });
+    const collapse = screen.getByRole("button", { name: "Collapse sidebar" });
+    // Expanded, the action is visible text, not only a tooltip.
+    expect(collapse).toHaveTextContent("Collapse sidebar");
+    expect(collapse).toHaveAttribute("aria-expanded", "true");
+    collapse.click();
+    expect(onToggleCollapsed).toHaveBeenCalledTimes(1);
+    unmount();
+
+    renderNav({ collapsed: true, onToggleCollapsed });
+    const expand = screen.getByRole("button", { name: "Expand sidebar" });
+    // The rail has no room for the label; the name and tooltip carry it.
+    expect(expand).not.toHaveTextContent("Expand sidebar");
+    expect(expand).toHaveAttribute("title", "Expand sidebar");
+    expect(expand).toHaveAttribute("aria-expanded", "false");
   });
 
   it("ignores the collapsed preference inside the drawer", () => {
