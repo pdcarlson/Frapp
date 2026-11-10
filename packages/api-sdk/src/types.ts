@@ -4058,6 +4058,28 @@ export interface components {
             member_visible: boolean;
             created_at: string;
         };
+        PermissionCatalogEntryDto: {
+            /** @description The API constant's name, e.g. `EVENTS_CREATE`. */
+            key: string;
+            /** @description The string a role stores, e.g. `events:create`. */
+            permission: string;
+            /**
+             * @description The module the permission belongs to: a module catalog key, or `chapter` for a chapter-level permission.
+             * @enum {string}
+             */
+            module: "chapter" | "members" | "chat" | "announcements" | "events" | "tasks" | "points" | "hours" | "polls" | "backwork" | "documents" | "geofences" | "reports" | "billing";
+            /** @description The module's display name. */
+            module_label: string;
+            /** @description What the permission lets a role do. */
+            label: string;
+            /** @description One line on what granting it opens. */
+            description: string;
+            /**
+             * @description The level the permission applies at. Always `chapter` today.
+             * @enum {string}
+             */
+            scope: "chapter";
+        };
         CreateRoleDto: {
             name: string;
             permissions: string[];
@@ -7158,7 +7180,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PermissionCatalogEntryDto"][];
+                };
             };
             /** @description Error */
             default: {
