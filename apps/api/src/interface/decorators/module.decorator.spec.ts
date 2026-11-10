@@ -16,6 +16,7 @@ import {
 } from '../controllers/study.controller';
 import { ChatController } from '../controllers/chat.controller';
 import { MemberController } from '../controllers/member.controller';
+import { PledgeClassController } from '../controllers/pledge-class.controller';
 import { InviteController } from '../controllers/invite.controller';
 import { BillingController } from '../controllers/billing.controller';
 import { FinancialInvoiceController } from '../controllers/financial-invoice.controller';
@@ -69,6 +70,7 @@ describe('RequireModule', () => {
       ['ChatController', ChatController],
       ['MemberController', MemberController],
       ['InviteController', InviteController],
+      ['PledgeClassController', PledgeClassController],
       // Subscription recovery paths: a chapter must be able to reach billing
       // and pay its invoices while locked. nav-config deliberately leaves
       // /billing ungated for the same reason.

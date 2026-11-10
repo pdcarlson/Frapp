@@ -103,6 +103,11 @@ export interface Archetype {
   readonly recruitmentLanguage: string;
   readonly pledgeLanguage: string;
   readonly classLanguage: string;
+  /**
+   * The chapter's word for a member's order number (`members.order_number`,
+   * #3939): their place within their class, or chapter-wide.
+   */
+  readonly orderLanguage: string;
   readonly duesCadence: "monthly" | "per_semester" | "per_quarter";
   readonly requirePresidentApprovalOnBudgetOver: number;
 }
@@ -111,6 +116,7 @@ export interface VocabularyDefaults {
   readonly recruitment: string;
   readonly pledge: string;
   readonly class: string;
+  readonly order: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -139,6 +145,7 @@ export const ARCHETYPES = Object.freeze({
     recruitmentLanguage: "Rush",
     pledgeLanguage: "New member",
     classLanguage: "Pledge class",
+    orderLanguage: "Fraternal order",
     duesCadence: "per_semester" as const,
     requirePresidentApprovalOnBudgetOver: 500,
   }),
@@ -163,6 +170,7 @@ export const ARCHETYPES = Object.freeze({
     recruitmentLanguage: "Recruitment",
     pledgeLanguage: "New member",
     classLanguage: "New member class",
+    orderLanguage: "Bond number",
     duesCadence: "per_semester" as const,
     requirePresidentApprovalOnBudgetOver: 250,
   }),
@@ -187,6 +195,7 @@ export const ARCHETYPES = Object.freeze({
     recruitmentLanguage: "Intake",
     pledgeLanguage: "Aspirant",
     classLanguage: "Line",
+    orderLanguage: "Line number",
     duesCadence: "per_semester" as const,
     requirePresidentApprovalOnBudgetOver: 100,
   }),
@@ -211,6 +220,7 @@ export const ARCHETYPES = Object.freeze({
     recruitmentLanguage: "Intake",
     pledgeLanguage: "New member",
     classLanguage: "Line",
+    orderLanguage: "Roll number",
     duesCadence: "per_semester" as const,
     requirePresidentApprovalOnBudgetOver: 300,
   }),
@@ -235,6 +245,7 @@ export const ARCHETYPES = Object.freeze({
     recruitmentLanguage: "Recruitment",
     pledgeLanguage: "Candidate",
     classLanguage: "Cohort",
+    orderLanguage: "Roll number",
     duesCadence: "per_semester" as const,
     requirePresidentApprovalOnBudgetOver: 250,
   }),
@@ -259,6 +270,7 @@ export const ARCHETYPES = Object.freeze({
     recruitmentLanguage: "Rush",
     pledgeLanguage: "Pledge",
     classLanguage: "Pledge class",
+    orderLanguage: "Roll number",
     duesCadence: "per_semester" as const,
     requirePresidentApprovalOnBudgetOver: 150,
   }),
@@ -283,6 +295,7 @@ export const ARCHETYPES = Object.freeze({
     recruitmentLanguage: "Induction",
     pledgeLanguage: "Inductee",
     classLanguage: "Class",
+    orderLanguage: "Roll number",
     duesCadence: "per_semester" as const,
     requirePresidentApprovalOnBudgetOver: 100,
   }),
@@ -307,6 +320,7 @@ export const ARCHETYPES = Object.freeze({
     recruitmentLanguage: "Rush",
     pledgeLanguage: "Founding member",
     classLanguage: "Founding class",
+    orderLanguage: "Roll number",
     duesCadence: "per_semester" as const,
     requirePresidentApprovalOnBudgetOver: 0,
   }),
@@ -639,6 +653,7 @@ export const VOCABULARY_DEFAULTS: Readonly<Record<ArchetypeKey, VocabularyDefaul
             recruitment: a.recruitmentLanguage,
             pledge:      a.pledgeLanguage,
             class:       a.classLanguage,
+            order:       a.orderLanguage,
           }),
         ];
       }),
@@ -647,11 +662,13 @@ export const VOCABULARY_DEFAULTS: Readonly<Record<ArchetypeKey, VocabularyDefaul
 
 // ─────────────────────────────────────────────────────────────────────────────
 // VOCABULARY LOOKUP
-// A chapter's own word for recruitment, a new member and a class, read the
+// A chapter's own word for recruitment, a new member, a class and a member's
+// order number, read the
 // same way on web and mobile:
 //   vocab("recruitment", config)   // → "Rush" / "Recruitment" / "Intake" / "Induction"
 //   vocab("pledge", config)        // → "New member" / "Aspirant" / "Candidate"
 //   vocab("class", config)         // → "Pledge class" / "Line" / "Cohort"
+//   vocab("order", config)         // → "Fraternal order" / "Bond number" / "Roll number"
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type VocabKey = keyof VocabularyDefaults;
