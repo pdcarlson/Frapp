@@ -5,7 +5,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { drawnText, screenText } from "@/test/screen-text";
-import { DUPLICATE_OPTION_PROBLEM } from "@/lib/chat/new-poll";
+import { DUPLICATE_OPTION_PROBLEM } from "@repo/chat-core/poll-draft";
 
 /**
  * s05's New poll sheet (#3701), rendered: what it posts, when Post is held,

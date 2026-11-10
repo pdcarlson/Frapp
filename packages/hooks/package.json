@@ -11,7 +11,11 @@
     "./error-copy": "./src/error-copy.ts",
     "./event-series": "./src/event-series.ts",
     "./open-chat-transport": "./src/open-chat-transport.ts",
-    "./mention-chips": "./src/mention-chips.ts"
+    "./mention-chips": "./src/mention-chips.ts",
+    "./member-status": "./src/member-status.ts",
+    "./use-own-status-at": "./src/use-own-status-at.ts",
+    "./fuzzy-match": "./src/fuzzy-match.ts",
+    "./document-library": "./src/document-library.ts"
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",
@@ -33,6 +37,7 @@
     "@repo/typescript-config": "*",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.8",
+    "@types/node": "^26.6.6",
     "jsdom": "^30.1.3",
     "react-dom": "19.2.3",
     "typescript": "npm:@typescript/typescript6@6.0.2",

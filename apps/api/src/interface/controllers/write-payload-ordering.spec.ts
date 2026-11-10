@@ -74,9 +74,10 @@ describe('Write payload ordering — server-decided keys survive a DTO collision
 
   it('BackworkController.confirmUpload keeps the server chapter and uploader', async () => {
     const confirmUpload = jest.fn().mockResolvedValue({ id: 'bw-1' });
-    const controller = new BackworkController({
-      confirmUpload,
-    } as unknown as BackworkService);
+    const controller = new BackworkController(
+      { confirmUpload } as unknown as BackworkService,
+      {} as unknown as RbacService,
+    );
 
     await controller.confirmUpload(CHAPTER_ID, USER_ID, {
       storage_path: `chapters/${CHAPTER_ID}/backwork/x.pdf`,

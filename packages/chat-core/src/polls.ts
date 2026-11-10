@@ -1,4 +1,6 @@
+import { parseInstant } from "@repo/formatting";
 import { moduleRefusalFromServerMessage } from "@repo/validation";
+import { canActOnMessage, isOwnMessage } from "./message-actions";
 import type { ChatMessage } from "./types";
 import {
   POLL_VOTE_ACTION_TYPE,
@@ -119,8 +121,9 @@ export interface PollMessageInput {
 /**
  * The `kind: "poll"` message a client posts: `content` is the question, which
  * is what a notification, the channel preview and search read, and `payload`
- * is the card. Both posting paths build it here, web's `/poll` command
- * (`dispatch.ts`) and mobile's New poll sheet (#3701), so the card a member
+ * is the card. Every posting path builds it here, web's `/poll` command
+ * (`dispatch.ts`), web's New poll dialog (#3865) and mobile's New poll sheet
+ * (#3701), so the card a member
  * votes on can't differ by which client made it. The caller has already
  * validated the text; this only shapes it.
  */
@@ -155,12 +158,71 @@ export function readPollPayload(message: ChatMessage): PollPayload | null {
     }
   }
   if (parsed.length < 2) return null;
+  const closedAt = (raw as { closed_at?: unknown }).closed_at;
+  const closedBy = (raw as { closed_by?: unknown }).closed_by;
   return {
     question,
     options: parsed,
     closes_at: typeof closesAt === "string" ? closesAt : "",
+    // Only on a card closed early (#3794), so an open card reads back exactly
+    // as `buildPollMessage` built it.
+    ...(typeof closedAt === "string" && closedAt !== ""
+      ? {
+          closed_at: closedAt,
+          closed_by: typeof closedBy === "string" ? closedBy : null,
+        }
+      : {}),
   };
 }
+
+/**
+ * Whether a poll card takes no more votes: its creator closed it early
+ * (`closed_at`, #3794), or its deadline has passed. The API refuses a vote on
+ * either (`ChatReactionService`); this is the same answer for the cards to
+ * draw. A deadline that doesn't parse never closes the card, as on the server.
+ */
+export function isPollCardClosed(payload: PollPayload, now: number): boolean {
+  if (payload.closed_at) return true;
+  const deadline = parseInstant(payload.closes_at);
+  return deadline ? deadline.getTime() < now : false;
+}
+
+/**
+ * Whether the viewer is offered Close poll on this card (#3794): it is their
+ * own poll (`isOwnMessage`), the server has it and it isn't deleted
+ * (`canActOnMessage`), it is still open, and the close route would take it.
+ * That route (`POST /v1/polls/{messageId}/close`) also requires `polls:create`
+ * and the Polls module, which posting a card does not (#3007), so a creator
+ * without the permission, or any creator while Polls is off or not yet
+ * known to be on, isn't offered a control the API would refuse every time.
+ * The API enforces all of it (`PollService.close`); this only keeps the card
+ * honest.
+ */
+export function canClosePoll(
+  message: Pick<ChatMessage, "sender_id" | "_status" | "is_deleted">,
+  payload: PollPayload,
+  viewerId: string | null,
+  now: number,
+  gates: { pollsGate: PollsGate; canCreatePolls: boolean },
+): boolean {
+  return (
+    isOwnMessage(message, viewerId) &&
+    canActOnMessage(message) &&
+    !isPollCardClosed(payload, now) &&
+    gates.pollsGate === "on" &&
+    gates.canCreatePolls
+  );
+}
+
+/**
+ * Close poll asks first, with the same words on web's dialog and mobile's
+ * alert: it can't be undone, and it stops everyone's voting at once.
+ */
+export const CLOSE_POLL_LABEL = "Close poll";
+export const CLOSE_POLL_CONFIRM_TITLE = "Close this poll?";
+export const CLOSE_POLL_CONFIRM_BODY =
+  "No one can vote after it closes, and it can't be reopened. The results stay on the card.";
+export const CLOSE_POLL_CONFIRM_LABEL = "Close poll";
 
 export interface PollTally {
   byOption: Record<string, number>;

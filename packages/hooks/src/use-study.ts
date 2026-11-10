@@ -9,8 +9,8 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
  * `options.enabled` exists because the route is guarded twice over —
  * `members:view` plus `@RequireModule('geofences')` — so a surface that only
  * shows zones to some members should not fire a request the rest will get a
- * 403 for. Same shape as `usePolls`, and the same reasoning
- * `host-check-in.tsx` records for its officer-gated reads.
+ * 403 for. The same reasoning `host-check-in.tsx` records for its
+ * officer-gated reads.
  */
 export function useGeofences(options?: { enabled?: boolean }) {
   const client = useFrappClient();
@@ -66,6 +66,7 @@ export function useCreateGeofence() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["geofences", "create-geofence"],
     mutationFn: async (body: {
       name: string;
       coordinates: { lat: number; lng: number }[];
@@ -89,6 +90,7 @@ export function useUpdateGeofence() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["geofences", "update-geofence"],
     mutationFn: async ({
       id,
       body,
@@ -121,6 +123,7 @@ export function useDeleteGeofence() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["geofences", "delete-geofence"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.DELETE("/v1/geofences/{id}", {
         params: { path: { id } },
@@ -138,6 +141,7 @@ export function useStartStudySession() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["study-sessions", "start-study-session"],
     mutationFn: async (body: {
       geofence_id: string;
       lat: number;
@@ -158,6 +162,7 @@ export function useStartStudySession() {
 export function useStudyHeartbeat() {
   const client = useFrappClient();
   return useMutation({
+    mutationKey: ["study-sessions", "study-heartbeat"],
     mutationFn: async (body: {
       lat: number;
       lng: number;
@@ -183,6 +188,7 @@ export function usePauseStudySession() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["study-sessions", "pause-study-session"],
     mutationFn: async () => {
       const { data, error } = await client.POST("/v1/study-sessions/pause");
       if (error) throw error;
@@ -203,6 +209,7 @@ export function useResumeStudySession() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["study-sessions", "resume-study-session"],
     mutationFn: async (body: { lat: number; lng: number }) => {
       const { data, error } = await client.POST("/v1/study-sessions/resume", {
         body,
@@ -221,6 +228,7 @@ export function useStopStudySession() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["study-sessions", "stop-study-session"],
     mutationFn: async () => {
       const { data, error } = await client.POST("/v1/study-sessions/stop");
       if (error) throw error;

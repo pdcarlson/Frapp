@@ -92,6 +92,11 @@ export function ServiceGlyph(props: NavGlyphProps) {
   return <NavGlyph paths={NAV_GLYPHS.service} {...props} />;
 }
 
+/**
+ * No nav row draws this since #3871 retired `/polls`, and nothing else on web
+ * does yet. It is kept on purpose for the chat composer's + menu, which #3865
+ * is building to mark New poll with it; if that lands without it, delete this.
+ */
 export function PollsGlyph(props: NavGlyphProps) {
   return <NavGlyph paths={NAV_GLYPHS.polls} {...props} />;
 }

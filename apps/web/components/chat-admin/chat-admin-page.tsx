@@ -1,6 +1,7 @@
 "use client";
 
 import { describeLoadFailure } from "@repo/hooks/error-copy";
+import { AUDIT_LOG_SETTINGS_NOTE } from "@repo/chat-core/audit-log-copy";
 import { useCallback, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { Loader2, Pencil, PinOff, Plus, Trash2 } from "lucide-react";
@@ -89,6 +90,12 @@ interface AdminChannel {
   default_notification_level: ChatNotificationLevel | null;
   /** The chapter's default channel, where Chat opens with no last channel. */
   is_default?: boolean;
+  /**
+   * The chapter's audit log, `#chapter-audit` (#3909). Only Frapp posts in
+   * it, so the server refuses a rename or switching read-only off, and this
+   * form locks both.
+   */
+  is_audit_log?: boolean;
 }
 
 interface AdminCategory {
@@ -855,15 +862,18 @@ function ChatAdminBody({
                       </span>
                     ) : null}
                   </button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={compactControlClassName}
-                    aria-label={`Delete #${channel.name}`}
-                    onClick={() => void handleDeleteChannel(channel)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  {/* The server refuses deleting the audit log (#3909). */}
+                  {channel.is_audit_log ? null : (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={compactControlClassName}
+                      aria-label={`Delete #${channel.name}`}
+                      onClick={() => void handleDeleteChannel(channel)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -896,6 +906,7 @@ function ChatAdminBody({
                       <Input
                         id="ca-name"
                         value={nameDraft}
+                        disabled={selectedChannel.is_audit_log === true}
                         onChange={(event) => setNameDraft(event.target.value)}
                       />
                     </div>
@@ -933,15 +944,21 @@ function ChatAdminBody({
                       rows={2}
                     />
                   </div>
-                  <label className="flex items-center gap-3">
-                    <Switch
-                      checked={readOnlyDraft}
-                      onCheckedChange={setReadOnlyDraft}
-                    />
-                    <span className="text-sm">
-                      Read-only (only officers with permission can post)
-                    </span>
-                  </label>
+                  {selectedChannel.is_audit_log ? (
+                    <p className="text-xs text-muted-foreground">
+                      {AUDIT_LOG_SETTINGS_NOTE}
+                    </p>
+                  ) : (
+                    <label className="flex items-center gap-3">
+                      <Switch
+                        checked={readOnlyDraft}
+                        onCheckedChange={setReadOnlyDraft}
+                      />
+                      <span className="text-sm">
+                        Read-only (only officers with permission can post)
+                      </span>
+                    </label>
+                  )}
                   <div className="grid gap-1">
                     <label className="flex items-center gap-3">
                       <Switch

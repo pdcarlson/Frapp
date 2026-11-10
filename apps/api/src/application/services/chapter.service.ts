@@ -306,6 +306,7 @@ export class ChapterService {
         description: channelDef.description,
         type: channelDef.type,
         is_read_only: channelDef.is_read_only,
+        is_audit_log: 'is_audit_log' in channelDef && channelDef.is_audit_log,
         required_permissions: channelDef.required_permissions
           ? [...channelDef.required_permissions]
           : null,

@@ -70,7 +70,10 @@ import {
 } from "@/lib/utils";
 import { parseInstant } from "@repo/formatting";
 import { randomClientId } from "@repo/api-sdk";
-import type { EventCardTrack } from "@repo/chat-core/dispatch";
+import {
+  eventCardOutcomeCopy,
+  type EventCardTrack,
+} from "@repo/chat-core/dispatch";
 
 type EventRecord = Record<string, unknown>;
 
@@ -200,21 +203,11 @@ export function createdToast(
   name: string,
   card: { cardKeptOut: boolean; cardLost: boolean },
 ): { title: string; description: string } {
-  if (card.cardKeptOut) {
-    return {
-      title: "Event created",
-      description: `${name} is on the calendar. It isn't posted in chat because it's only for some roles.`,
-    };
-  }
-  if (card.cardLost) {
-    return {
-      title: "Event created",
-      description: `${name} is on the calendar, but its card couldn't be posted in chat.`,
-    };
-  }
   return {
     title: "Event created",
-    description: `${name} was added to the chapter calendar.`,
+    description:
+      eventCardOutcomeCopy(name, card) ??
+      `${name} was added to the chapter calendar.`,
   };
 }
 

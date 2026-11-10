@@ -17,6 +17,7 @@ import { STATUS_LABELS, can, statusLabel } from "@repo/validation";
 import { formatDay } from "@repo/formatting";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ExportMenu } from "@/components/shared/export-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -67,7 +68,6 @@ import { formatCurrency } from "@/lib/currency";
 import {
   asArray,
   cn,
-  downloadCsv,
   getErrorMessage,
   labelled,
 } from "@/lib/utils";
@@ -78,7 +78,7 @@ import { InvoiceRowsSkeleton } from "@/components/billing/billing-skeleton";
  *
  * **There were two, and they showed the same rows.** `/billing` rendered a
  * "Member Invoices" card holding a checkbox table with search, a status filter,
- * three count badges, CSV export and a Pay button — and directly beneath it an
+ * three count badges, the export menu and a Pay button — and directly beneath it an
  * `InvoiceAdminCard` holding a second list of the same `useInvoices()` data
  * with its own status filter, its own overdue badges and the DRAFT/OPEN/VOID
  * transitions. `GET /v1/invoices` returns the whole chapter to a holder of
@@ -261,7 +261,7 @@ export function InvoiceList({ id }: { id?: string }) {
 
   // Changing the search or the status filter swaps the visible population, so
   // drop the selection — otherwise the bulk bar keeps counting invoices that
-  // are no longer shown, and Export CSV silently exports fewer rows than it
+  // are no longer shown, and Export selected silently exports fewer rows than it
   // claims (or an empty file once none of the selection remains visible).
   /* eslint-disable react-hooks/set-state-in-effect -- reset selection when the visible invoice set changes */
   useEffect(() => {
@@ -301,8 +301,8 @@ export function InvoiceList({ id }: { id?: string }) {
     ? transitionStatus.variables?.id
     : undefined;
 
-  function exportSelectedCsv() {
-    const rows = filtered
+  function selectedInvoiceRows() {
+    return filtered
       .filter((invoice) => selectedIds.includes(invoice.id))
       .map((invoice) => ({
         Title: invoice.title,
@@ -312,7 +312,6 @@ export function InvoiceList({ id }: { id?: string }) {
         "Due Date": invoice.due_date ?? "",
         "Member ID": invoice.user_id,
       }));
-    downloadCsv(rows, "invoices");
   }
 
   async function submitDraft(event: React.FormEvent<HTMLFormElement>) {
@@ -682,13 +681,12 @@ export function InvoiceList({ id }: { id?: string }) {
             already get an automatic notification, and there is no
             manual-remind endpoint to call.
           */}
-          <Button
+          <ExportMenu
+            label="Export selected"
+            filenamePrefix="invoices"
+            getRows={selectedInvoiceRows}
             size="toolbar"
-            variant="secondary"
-            onClick={exportSelectedCsv}
-          >
-            Export CSV
-          </Button>
+          />
         </div>
       ) : null}
 

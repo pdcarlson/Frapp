@@ -3138,6 +3138,24 @@ alter table public.chat_message_attachments
 
 Dropping them loses each photo's blur and the link to its preview copy; photos still draw, from the original. The preview objects stay in the `chat` bucket under each original's `preview/` folder, unreferenced, until a sweep removes them (#2197).
 
+## Rollback chapter-audit system-write (20261109210000)
+
+* **Migration**: `20261109210000_chat_channels_is_audit_log.sql`
+
+One not-null column with a default on `chat_channels`, `is_audit_log`, its partial unique index, and the `before insert` trigger `chat_channels_flag_audit_log` with its function. The API from the same PR writes the column when it seeds a chapter and filters on it to find the audit log, so roll the API back first: dropping the column under the new API fails chapter onboarding, skips every audit mirror (the lookup errors), and quietly reopens `#chapter-audit` to `*` and `announcements:post` holders, while channel reads keep working. With the older API those holders can post there again too (#3909); that is what rolling back means.
+
+**Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). After the API is back on the earlier version:
+
+```sql
+drop trigger if exists chat_channels_flag_audit_log on public.chat_channels;
+drop function if exists public.chat_channels_flag_audit_log();
+drop index if exists public.chat_channels_one_audit_log_per_chapter;
+alter table public.chat_channels
+  drop column if exists is_audit_log;
+```
+
+The `is_read_only = true` the backfill set stays; an officer can switch it off again in Chat settings under the older API.
+
 ## Rollback invites pending-emailed index (20261109050000)
 
 * **Migration**: `20261109050000_invites_pending_by_email_index.sql`
@@ -3189,3 +3207,37 @@ alter table public.discord_import_channels
 
 Dropping it loses only the scan's record. Each mapped row keeps the `new_channel_is_read_only` it saved, and the channels an import already created keep their own `is_read_only`.
 
+## Rollback user settings member status (20261109230001)
+
+* **Migration**: `20261109230001_user_settings_member_status.sql`
+
+Four columns on `user_settings`: `status`, `status_expires_at`, `custom_status` and `custom_status_expires_at`, with their checks. Nothing was backfilled.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API stops reading the columns, so Do Not Disturb stops silencing pushes, and stops writing them. Roll back any client that sets a status first, or with it: the older API refuses a `PATCH /v1/settings` that carries a status field with a `400` (`forbidNonWhitelisted`), and any quiet-hours or theme change in the same body fails with it.
+
+**Keep the columns unless they are themselves the problem.** Dropping them loses every member's current status and custom line. To remove them, do it in a later forward migration after the code revert has shipped:
+
+```sql
+alter table public.user_settings
+  drop column if exists status,
+  drop column if exists status_expires_at,
+  drop column if exists custom_status,
+  drop column if exists custom_status_expires_at;
+```
+
+## Rollback backwork courses (20261109230000)
+
+* **Migration**: `20261109230000_backwork_courses.sql`
+
+One new table, `backwork_courses`; its CHECK helper `backwork_course_nicknames_ok`; the write function `backwork_course_write` and its helper `backwork_course_merge_nicknames`; and a new body for `search_backwork_resources`. No existing row changed. The API from the same PR reads and writes the table, so roll the API back first: dropping the table under the new API fails `GET /v1/backwork/courses`, every course `PUT` and every department merge; an upload that names a course still succeeds without saving the name.
+
+**Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). After the API is back on the earlier version, re-run the `create or replace function public.search_backwork_resources` block from `20261106190000_backwork_search_wider.sql` first (the new body joins the table), and the `comment on function public.search_backwork_resources(uuid, text, integer)` statement after it in the same file (this migration replaced the comment too, and it would otherwise still describe course-name search), then:
+
+```sql
+drop function if exists public.backwork_course_write(uuid, uuid, text, boolean, text, boolean, text[], text[], boolean);
+drop table if exists public.backwork_courses;
+drop function if exists public.backwork_course_merge_nicknames(text[], text[], text[], text, boolean);
+drop function if exists public.backwork_course_nicknames_ok(text[]);
+```
+
+Dropping it loses every course name and nickname members saved; the files keep their department and course number.

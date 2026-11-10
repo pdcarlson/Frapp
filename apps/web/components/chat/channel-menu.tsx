@@ -18,7 +18,11 @@ import { SearchGlyph } from "@/components/layout/nav-glyphs";
 import { cn } from "@/lib/utils";
 import { EYEBROW } from "@/components/ui/typography";
 import { compactControlClassName } from "@/components/shared/table-controls";
-import { ChatSearchPanel, type ChatSearchHit } from "./chat-search-popover";
+import {
+  ChatSearchPanel,
+  type ChatSearchHit,
+  type SearchPickerOption,
+} from "./chat-search-popover";
 import { PinsPanel, pinnedMessages, type HiddenPins } from "./pins-popover";
 import { BookmarksPanel, type BookmarkEntry } from "./bookmarks-popover";
 import { NotificationLevelPanel } from "./notification-level-popover";
@@ -96,6 +100,10 @@ type ChannelMenuProps = {
   nameFor: (userId: string) => string | null;
   /** Resolves a channel id → display name; `null` when unknown. */
   channelNameFor: (channelId: string) => string | null;
+  /** Every channel the member can read, for search's In filter. */
+  searchChannels: readonly SearchPickerOption[];
+  /** The chapter's members, for search's From filter. */
+  searchMembers: readonly SearchPickerOption[];
   onJumpToMessage: (messageId: string) => void;
   onJumpToSearchHit: (hit: ChatSearchHit) => void;
   onJumpToBookmark: (channelId: string, messageId: string) => void;
@@ -152,6 +160,8 @@ export function ChannelMenu({
   hiddenPins,
   nameFor,
   channelNameFor,
+  searchChannels,
+  searchMembers,
   onJumpToMessage,
   onJumpToSearchHit,
   onJumpToBookmark,
@@ -273,8 +283,28 @@ export function ChannelMenu({
       </PopoverTrigger>
       <PopoverContent
         ref={contentRef}
-        className={cn("p-0", view === "search" ? "w-96" : "w-80")}
+        // Search is wider than the other views (#3859's cheap half): its rows
+        // are message excerpts under a row of filter chips. Capped by the
+        // viewport so it holds the 375px floor.
+        className={cn(
+          "p-0",
+          view === "search" ? "w-[min(32rem,calc(100vw-1rem))]" : "w-80",
+        )}
         align="end"
+        // An open picker inside a panel (search's `from:` / `in:` list) takes
+        // Escape first, as a combobox does; the panel puts its list away.
+        // Without this Escape would close the menu and drop the search.
+        onEscapeKeyDown={(event) => {
+          // Anywhere in the menu, not only on the box: focus may be on a chip
+          // while the list is open.
+          if (
+            contentRef.current?.querySelector(
+              '[role="combobox"][aria-expanded="true"]',
+            )
+          ) {
+            event.preventDefault();
+          }
+        }}
       >
         {view === "menu" ? (
           <ul className="divide-y divide-border">
@@ -350,6 +380,8 @@ export function ChannelMenu({
             {view === "search" ? (
               <ChatSearchPanel
                 activeChannelId={activeChannelId}
+                channels={searchChannels}
+                members={searchMembers}
                 channelNameFor={channelNameFor}
                 nameFor={nameFor}
                 onJump={(hit) => {

@@ -599,9 +599,10 @@ describe("ChatRealtimeManager — channel reopen (#783)", () => {
     const firstActions = channels.get("chat:actions:global");
     expect(firstActions).toBeDefined();
 
-    // `ChatProvider`'s effect deps include `apiClient`/`userId`, so this is an
-    // ordinary re-auth: destroy() removes the actions channel fire-and-forget
-    // and configure() immediately recreates it on the same topic.
+    // A remount of the binding's owner (web's `DashboardShell`) runs this
+    // cycle: destroy() removes the actions channel fire-and-forget and
+    // configure() immediately recreates it on the same topic. A re-auth never
+    // destroys (#3002).
     chatRealtime.destroy();
     expect(() =>
       chatRealtime.configure({ queryClient, supabase, backfill }),

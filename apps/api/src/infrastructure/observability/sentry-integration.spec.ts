@@ -372,6 +372,9 @@ describe('Sentry SDK integration', () => {
     expect(event.tags).toMatchObject({ security_event: 'auth_failure_spike' });
     expect(event.user?.id).toBe(pseudonym);
     expect(event.fingerprint).toEqual(['auth-failure-spike']);
+    // No synthetic exception: Sentry titles one by its top frame's function,
+    // which made every message report read `reportSwallowed` (#3906).
+    expect(event.exception).toBeUndefined();
   });
 
   it('ships no cookie, secret header, query string or body from the request', async () => {

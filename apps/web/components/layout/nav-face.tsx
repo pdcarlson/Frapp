@@ -3,8 +3,6 @@
 import { createContext, useContext } from "react";
 import { ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { compactControlClassName } from "@/components/shared/table-controls";
-import { cn } from "@/lib/utils";
 import { useMediaQuery } from "@/lib/use-media-query";
 
 /**
@@ -69,17 +67,23 @@ export function useIsDesktopShell(): boolean {
 }
 
 /**
- * The back arrow beside the Channels heading: 32px ghost icon button, named
- * "Back to menu" (`spec/ui/design-system/components.md` § 7). One component
- * because two places draw it, chat's channels header and the column's own
- * placeholder, and the column moves focus to it by `data-nav-back`.
+ * The back arrow beside the Channels heading, named "Back to menu"
+ * (`spec/ui/design-system/components.md` § 7). Drawn only inside
+ * `NavChannelsTitle`, which chat's channels header and the column's own
+ * placeholder both use; the column moves focus to it by `data-nav-back`.
+ *
+ * 40px, and its hit area is the whole title, the arrow and the word Channels
+ * (#3824, Paul 2026-11-09: "a tiny back arrow, which is the only way out"). The
+ * button's `::after` stretches over the `relative` box `NavChannelsTitle` puts
+ * around both, so a click anywhere on the title goes back, while the heading
+ * stays a heading and the button keeps its one name for a screen reader.
  */
 export function NavBackButton({ onClick }: { onClick: () => void }) {
   return (
     <Button
       variant="ghost"
       size="icon"
-      className={cn(compactControlClassName, "-ml-1.5 shrink-0")}
+      className="h-10 w-10 shrink-0 after:absolute after:inset-0 after:rounded-[10px] after:content-[''] hover:bg-transparent"
       onClick={onClick}
       aria-label="Back to menu"
       title="Back to menu"
@@ -87,5 +91,27 @@ export function NavBackButton({ onClick }: { onClick: () => void }) {
     >
       <ChevronLeft className="h-4 w-4" aria-hidden="true" />
     </Button>
+  );
+}
+
+/**
+ * "‹ Channels": the back arrow and the column's heading as one 40px target,
+ * hovered as one (see `NavBackButton`). `heading` is false for the column's
+ * placeholder, which stands in for chat's pane and must not add a second
+ * Channels heading beside it.
+ */
+export function NavChannelsTitle({
+  onBack,
+  heading = true,
+}: {
+  onBack: () => void;
+  heading?: boolean;
+}) {
+  const Title = heading ? "h2" : "span";
+  return (
+    <div className="relative -ml-2 flex h-10 shrink-0 items-center rounded-[10px] pr-2.5 transition-colors hover:bg-card">
+      <NavBackButton onClick={onBack} />
+      <Title className="text-sm font-semibold text-foreground">Channels</Title>
+    </div>
   );
 }

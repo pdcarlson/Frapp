@@ -6,7 +6,10 @@
  * One copy for every surface. The API enforces this window; mobile's event
  * screens and both apps' chat event cards read it only to stop offering a
  * check-in the server would refuse. They used to keep their own copies of the
- * grace (three of them), which is how a rule drifts.
+ * grace (three of them), which is how a rule drifts. The API also refuses
+ * auto-absent until `closesAt` (`AttendanceService.markAutoAbsent`), and the
+ * web's events screens read `closesAt` to hold that action back until then
+ * (`apps/web/components/events/check-in-close.ts`).
  */
 
 /** Minutes after `end_time` during which check-in stays open. */

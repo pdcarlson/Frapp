@@ -113,6 +113,17 @@ const CHANNELS = [
     is_read_only: false,
     can_post: false,
   },
+  // The audit log (#3909): the shell must tell the composer, which swaps in
+  // the audit log line.
+  {
+    id: "chan-audit",
+    name: "chapter-audit",
+    type: "PUBLIC",
+    member_ids: [],
+    is_read_only: true,
+    is_audit_log: true,
+    can_post: false,
+  },
 ];
 
 /**
@@ -192,6 +203,8 @@ const sidebarState = {
   unreadError: false,
   pinnedIds: new Set<string>(),
   levels: [] as { channel_id: string; level: string }[],
+  /** `users.id` → display name, as the roster read serves it. */
+  memberNames: {} as Record<string, string>,
 };
 
 /**
@@ -256,6 +269,92 @@ vi.mock("./report-message-dialog", () => ({
 // The member list owns its own reads and has its own spec; here it is only a
 // column the shell decides to show.
 const mockTrackEventCard = vi.fn();
+const mockSendPoll = vi.fn(async () => ({ ok: true as const }));
+const mockPostTask = vi.fn(async (): Promise<Record<string, unknown>> => ({
+  ok: true,
+}));
+const mockPostHours = vi.fn(async () => ({ ok: true }));
+const mockPostPoints = vi.fn(async () => ({ ok: true }));
+
+// The + menu's Task, Service hours and Points forms (#3865) have their own
+// specs; here each is only what the shell opens and what it does on submit.
+vi.mock("@/components/tasks/new-task-dialog", () => ({
+  NewTaskDialog: (props: {
+    open: boolean;
+    prefill?: { title?: string; dueDate?: string };
+    initialAssigneeId?: string;
+    onPost: (input: unknown) => Promise<unknown>;
+  }) => (
+    <div
+      data-testid="task-form"
+      data-open={String(props.open)}
+      data-title={props.prefill?.title ?? ""}
+      data-due={props.prefill?.dueDate ?? ""}
+      data-assignee={props.initialAssigneeId ?? ""}
+    >
+      <button
+        data-testid="task-form-post"
+        onClick={() =>
+          void props.onPost({
+            title: "Sweep",
+            assignee_id: "u-1",
+            due_date: "2026-11-12",
+          })
+        }
+      >
+        post
+      </button>
+    </div>
+  ),
+}));
+vi.mock("@/components/service/log-hours-dialog", () => ({
+  LogHoursDialog: (props: {
+    open: boolean;
+    showSubscriptionNotice?: boolean;
+    submitToChannel?: (input: unknown) => Promise<unknown>;
+  }) => (
+    <div
+      data-testid="hours-form"
+      data-open={String(props.open)}
+      data-notice={String(Boolean(props.showSubscriptionNotice))}
+    >
+      <button
+        data-testid="hours-form-post"
+        onClick={() =>
+          void props.submitToChannel?.({
+            date: "2026-11-09",
+            duration_minutes: 60,
+            description: "Food bank",
+          })
+        }
+      >
+        post
+      </button>
+    </div>
+  ),
+}));
+vi.mock("@/components/points/points-adjustment-dialog", () => ({
+  PointsAdjustmentDialog: (props: {
+    open: boolean;
+    submitToChannel?: (input: unknown) => Promise<unknown>;
+  }) => (
+    <div data-testid="points-form" data-open={String(props.open)}>
+      <button
+        data-testid="points-form-post"
+        onClick={() =>
+          void props.submitToChannel?.({
+            target_user_id: "u-2",
+            amount: 5,
+            category: "MANUAL",
+            reason: "Ran the table",
+          })
+        }
+      >
+        post
+      </button>
+    </div>
+  ),
+}));
 
 vi.mock("@/components/events/event-editor-dialog", () => ({
   EventEditorDialog: (props: {
@@ -277,7 +376,9 @@ vi.mock("@/components/events/event-editor-dialog", () => ({
       {/* What the dialog does on Create: ask the chat to track the card. */}
       <button
         data-testid="event-form-track"
-        onClick={() => props.trackChatCard?.(props.postToChannelId ?? "", "Formal")}
+        onClick={() =>
+          props.trackChatCard?.(props.postToChannelId ?? "", "Formal")
+        }
       >
         track
       </button>
@@ -363,7 +464,7 @@ vi.mock("@repo/hooks", async () => ({
   // pass-through from a re-sort.
   useCategories: () => ({ data: CATEGORIES, isPending: false }),
   useMemberDisplayNames: () => ({
-    byId: new Map(),
+    byId: sidebarState.memberNames,
     nameFor: () => null,
     avatarFor: () => null,
   }),
@@ -416,7 +517,7 @@ vi.mock("@repo/hooks", async () => ({
           fetchStatus: "idle",
           refetch: vi.fn(),
         },
-  useChapterRoster: () => ({ data: [] }),
+  useChapterRoster: () => mockChapterRoster(),
   useMentionRoles: () => ({ data: [] }),
   useMyPermissions: () => mockUseMyPermissions(),
   // Read by `OpsSetupNudge`, which the shell renders above the timeline
@@ -683,7 +784,12 @@ vi.mock("./channel-list", () => ({
 // real ProseMirror view (jsdom can't render one; see composer.spec.tsx).
 // Keyed off `channelId` rather than `channelName` because this file's
 // `directChannelDisplayName` stub always returns `""`.
+const mockNotifyOutcome = vi.hoisted(() => vi.fn());
+const NO_ROSTER = { data: [] as { user_id: string; display_name: string }[] };
+const mockChapterRoster = vi.hoisted(() => vi.fn());
+
 vi.mock("./composer", () => ({
+  notifyDispatchOutcome: mockNotifyOutcome,
   Composer: ({
     channelId,
     draft,
@@ -696,8 +802,12 @@ vi.mock("./composer", () => ({
     slashCommandsStatus,
     recruitmentVocab,
     onOpenCommandForm,
+    commandForms,
+    isAuditLog,
   }: {
     channelId: string;
+    isAuditLog?: boolean;
+    commandForms?: readonly { command: string; roleAllows: unknown }[];
     onOpenCommandForm?: (
       command: { name: string; implemented: boolean },
       args: string,
@@ -736,10 +846,14 @@ vi.mock("./composer", () => ({
     return (
       <div
         data-testid="composer"
+        data-audit-log={String(isAuditLog ?? false)}
         data-draft={draft ?? ""}
         data-slash-status={slashCommandsStatus ?? ""}
         data-polls-enabled={String(isModuleEnabled?.("polls"))}
         data-recruitment={recruitmentVocab ?? ""}
+        data-command-forms={(commandForms ?? [])
+          .map((form) => `${form.command}:${String(form.roleAllows)}`)
+          .join(",")}
       >
         {channelId}
         {/* The staged-reply seam (#489). The real Composer cannot be driven
@@ -771,23 +885,58 @@ vi.mock("./composer", () => ({
           "Chapter Dinner",
           "Chapter Dinner 2026-11-20 9:00-11:00",
           '"Formal" 2026-11-20 18:00-20:00',
-        ].map(
-          (args) => (
-            <button
-              key={args}
-              data-testid={`composer-event:${args}`}
-              onClick={(event) => {
-                const took = onOpenCommandForm?.(
-                  { name: "event", implemented: true },
-                  args,
-                );
-                event.currentTarget.dataset.took = String(took);
-              }}
-            >
-              /event {args}
-            </button>
-          ),
-        )}
+        ].map((args) => (
+          <button
+            key={args}
+            data-testid={`composer-event:${args}`}
+            onClick={(event) => {
+              const took = onOpenCommandForm?.(
+                { name: "event", implemented: true },
+                args,
+              );
+              event.currentTarget.dataset.took = String(took);
+            }}
+          >
+            /event {args}
+          </button>
+        ))}
+        {["", '"Who drives?" Sam', '"Who drives?" Sam Alex'].map((args) => (
+          <button
+            key={`poll:${args}`}
+            data-testid={`composer-poll:${args}`}
+            onClick={(event) => {
+              const took = onOpenCommandForm?.(
+                { name: "poll", implemented: true },
+                args,
+              );
+              event.currentTarget.dataset.took = String(took);
+            }}
+          >
+            /poll {args}
+          </button>
+        ))}
+        {[
+          ["task", ""],
+          ["task", "Sweep the porch @bobby 2026-11-12"],
+          ["task", '"Sweep" @bobby 2026-11-12'],
+          ["hours", ""],
+          ["hours", "log 2h"],
+          ["points", ""],
+        ].map(([name, args]) => (
+          <button
+            key={`${name}:${args}`}
+            data-testid={`composer-${name}:${args}`}
+            onClick={(event) => {
+              const took = onOpenCommandForm?.(
+                { name: name as "task", implemented: true },
+                args!,
+              );
+              event.currentTarget.dataset.took = String(took);
+            }}
+          >
+            /{name} {args}
+          </button>
+        ))}
         <button data-testid="composer-cancel-reply" onClick={onCancelReply}>
           cancel reply
         </button>
@@ -837,7 +986,11 @@ vi.mock("./channel-menu", () => ({
     onJumpToBookmark,
     hideConversation,
     pinToTop,
+    searchChannels,
+    searchMembers,
   }: {
+    searchChannels: Array<{ id: string; label: string }>;
+    searchMembers: Array<{ id: string; label: string }>;
     pinToTop?: { pinned: boolean; onToggle: () => void };
     messages: Array<{ id: string }>;
     hiddenPins: { blocked: number; held: number };
@@ -852,6 +1005,12 @@ vi.mock("./channel-menu", () => ({
       {/* What the Pinned panel would read: the block list's cases assert on it. */}
       <span data-testid="menu-messages">
         {messages.map((m) => m.id).join(",")}
+      </span>
+      <span data-testid="menu-search-channels">
+        {searchChannels.map((c) => c.id).join(",")}
+      </span>
+      <span data-testid="menu-search-members">
+        {searchMembers.map((m) => m.label).join(",")}
       </span>
       <span data-testid="menu-hidden-pins">
         {`${hiddenPins.blocked}/${hiddenPins.held}`}
@@ -898,6 +1057,7 @@ vi.mock("./message-timeline", async () => {
     {
       messages?: Array<{ id: string; reply_to_id?: string | null }>;
       onDelete?: (messageId: string) => void;
+      onClosePoll?: (messageId: string) => void;
       onReply?: (message: { id: string; reply_to_id?: string | null }) => void;
       onEdit?: (messageId: string, content: string) => Promise<void>;
       canManageChannel?: boolean;
@@ -910,6 +1070,7 @@ vi.mock("./message-timeline", async () => {
       onOpenProfile,
       messages,
       onDelete,
+      onClosePoll,
       onReply,
       onEdit,
       canManageChannel,
@@ -946,6 +1107,9 @@ vi.mock("./message-timeline", async () => {
         {/* Edit is withheld the same way where the member can't post (#2775). */}
         <span data-testid="edit-offered">{String(!!onEdit)}</span>
         <button onClick={() => onDelete?.("msg-1")}>trigger-delete</button>
+        <button onClick={() => onClosePoll?.("poll-1")}>
+          trigger-close-poll
+        </button>
         <button onClick={() => onOpenProfile?.("u-author")}>
           open-author-profile
         </button>
@@ -1010,6 +1174,7 @@ function chatChannelResult(
     unreact: vi.fn(),
     edit: vi.fn(),
     delete: vi.fn(),
+    closePoll: vi.fn(),
     draft: overrides.draft ?? "",
     setDraft: overrides.setDraft ?? vi.fn(),
     typingUsers: overrides.typingUsers ?? [],
@@ -1019,6 +1184,10 @@ function chatChannelResult(
     discard: vi.fn(),
     dispatchSlash: vi.fn(),
     trackEventCard: mockTrackEventCard,
+    sendPoll: mockSendPoll,
+    postTask: mockPostTask,
+    postHours: mockPostHours,
+    postPointsAdjustment: mockPostPoints,
     act: vi.fn(),
     hasOlder: overrides.hasOlder ?? false,
     isLoadingOlder: overrides.isLoadingOlder ?? false,
@@ -1055,6 +1224,7 @@ beforeEach(() => {
   mockSendReturned.mockClear();
   mockUseMyPermissions.mockReset();
   mockUseMyPermissions.mockReturnValue({ data: { permissions: [] } });
+  mockChapterRoster.mockReturnValue(NO_ROSTER);
   mockBookmarkIsError.mockReturnValue(false);
   mockBookmarkReset.mockClear();
   mockUnbookmarkReset.mockClear();
@@ -1129,6 +1299,40 @@ describe("ChatShell channel categories", () => {
 
     expect(screen.getByTestId("channel-list-categories").textContent).toBe(
       "Executive,Committees",
+    );
+  });
+});
+
+describe("ChatShell search pickers (#3958)", () => {
+  afterEach(() => {
+    sidebarState.memberNames = {};
+  });
+
+  it("offers search the roster, with a label for a member who never set a name", () => {
+    // `display_name` defaults to '', which would be a blank first row that
+    // Enter picks.
+    sidebarState.memberNames = { "user-ada": "Ada Lovelace", "2f4a1c00": "" };
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    const offered = (
+      screen.getByTestId("menu-search-members").textContent ?? ""
+    ).split(",");
+    expect(offered).toHaveLength(2);
+    expect(offered).toContain("Ada Lovelace");
+    expect(offered.every((label) => label.trim() !== "")).toBe(true);
+  });
+
+  it("offers search every readable channel, not only the open one", () => {
+    // The panel's own spec builds its lists by hand, so without this the shell
+    // could hand search the open channel alone and every test would pass.
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    const offered = (
+      screen.getByTestId("menu-search-channels").textContent ?? ""
+    ).split(",");
+    expect(offered).toHaveLength(CHANNELS.length);
+    expect(offered).toEqual(
+      expect.arrayContaining(CHANNELS.map((channel) => channel.id)),
     );
   });
 });
@@ -1850,6 +2054,28 @@ describe("ChatShell deep-link targets", () => {
   });
 });
 
+describe("ChatShell audit log (#3909)", () => {
+  it("tells the composer when the open channel is the audit log", async () => {
+    render(<ChatShell initialChannelId="chan-audit" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("composer")).toHaveAttribute(
+        "data-audit-log",
+        "true",
+      );
+    });
+  });
+
+  it("doesn't in an ordinary channel", async () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("composer")).toHaveAttribute(
+        "data-audit-log",
+        "false",
+      );
+    });
+  });
+});
+
 describe("ChatShell composer remount per channel (#1014)", () => {
   it("remounts the composer — not just re-renders it — on every channel switch", async () => {
     const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
@@ -2112,6 +2338,61 @@ describe("ChatShell channel description and start", () => {
         hidden: true,
       }),
     ).toBeNull();
+  });
+});
+
+describe("ChatShell Close poll wiring (#3794)", () => {
+  it("closes nothing when the confirmation is cancelled", async () => {
+    const channel = chatChannelResult();
+    mockUseChatChannel.mockReturnValue(channel);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByText("trigger-close-poll"));
+    await waitFor(() => {
+      expect(screen.getByText("Close this poll?")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Close this poll?")).not.toBeInTheDocument();
+    });
+    expect(channel.closePoll).not.toHaveBeenCalled();
+  });
+
+  it("closes the confirmed poll's id once the dialog is confirmed", async () => {
+    const channel = chatChannelResult();
+    mockUseChatChannel.mockReturnValue(channel);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByText("trigger-close-poll"));
+    await waitFor(() => {
+      expect(screen.getByText("Close this poll?")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Close poll" }));
+
+    await waitFor(() => {
+      expect(channel.closePoll).toHaveBeenCalledWith("poll-1");
+    });
+  });
+
+  it("swallows a refused close: the close action already toasted", async () => {
+    const channel = chatChannelResult();
+    channel.closePoll = vi.fn().mockRejectedValue(new Error("refused"));
+    mockUseChatChannel.mockReturnValue(channel);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByText("trigger-close-poll"));
+    await waitFor(() => {
+      expect(screen.getByText("Close this poll?")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Close poll" }));
+
+    await waitFor(() => {
+      expect(channel.closePoll).toHaveBeenCalledWith("poll-1");
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("Close this poll?")).not.toBeInTheDocument();
+    });
   });
 });
 
@@ -3096,6 +3377,199 @@ describe("ChatShell narrow viewports (#2142)", () => {
       expect(columns().thread.className).not.toContain("max-lg:hidden");
     });
   });
+
+  it("gives the way back a 40px target, not the 32px compact control (#3824)", () => {
+    render(<ChatShell />);
+    const back = screen.getByRole("button", { name: "Back to channels" });
+    expect(back).toHaveClass("h-10", "w-10");
+  });
+
+  it("leaves an Esc that closes an open overlay to the overlay (#3824)", () => {
+    render(<ChatShell />);
+    const overlay = document.createElement("div");
+    overlay.setAttribute("role", "dialog");
+    document.body.appendChild(overlay);
+    try {
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      expect(columns().thread.className).not.toContain("max-lg:hidden");
+    } finally {
+      overlay.remove();
+    }
+    // A handled Esc (Radix prevents its default) is the overlay's too.
+    const handled = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    handled.preventDefault();
+    act(() => {
+      document.body.dispatchEvent(handled);
+    });
+    expect(columns().thread.className).not.toContain("max-lg:hidden");
+  });
+
+  it("returns to the list on Esc, and leaves an Esc typed in a field alone (#3824)", async () => {
+    render(<ChatShell />);
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    try {
+      fireEvent.keyDown(input, { key: "Escape" });
+      expect(columns().thread.className).not.toContain("max-lg:hidden");
+
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      await waitFor(() => {
+        expect(columns().channels.className).not.toContain("max-lg:hidden");
+      });
+    } finally {
+      input.remove();
+    }
+  });
+
+  it("returns from a picked channel on the browser's Back (#3824)", async () => {
+    // jsdom keeps one history across the file; start off a plain entry.
+    window.history.replaceState(null, "");
+    render(<ChatShell />);
+    fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+    await waitFor(() => {
+      expect(columns().channels.className).not.toContain("max-lg:hidden");
+    });
+
+    // The pick is a step Back can undo: it pushes a marked same-URL entry.
+    fireEvent.click(screen.getByTestId("pick-random"));
+    await waitFor(() => {
+      expect(columns().thread.className).not.toContain("max-lg:hidden");
+    });
+    expect(window.history.state).toMatchObject({
+      frappChatThreadPane: expect.any(String),
+    });
+
+    // jsdom's `history.back()` fires `popstate` asynchronously.
+    window.history.back();
+    await waitFor(() => {
+      expect(columns().channels.className).not.toContain("max-lg:hidden");
+    });
+  });
+
+  it("goes back one entry however fast the arrow is pressed twice (#3824)", async () => {
+    window.history.replaceState(null, "");
+    render(<ChatShell />);
+    fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+    fireEvent.click(screen.getByTestId("pick-random"));
+    await waitFor(() => {
+      expect(columns().thread.className).not.toContain("max-lg:hidden");
+    });
+
+    const back = vi.spyOn(window.history, "back");
+    try {
+      // Both before the first `popstate` lands: the list shows at once, and
+      // the second press must not go back a second entry, out of /chat.
+      const arrow = screen.getByRole("button", { name: "Back to channels" });
+      fireEvent.click(arrow);
+      fireEvent.click(arrow);
+      expect(back).toHaveBeenCalledTimes(1);
+      expect(columns().channels.className).not.toContain("max-lg:hidden");
+    } finally {
+      back.mockRestore();
+    }
+    await waitFor(() => {
+      expect(window.history.state).not.toMatchObject({
+        frappChatThreadPane: expect.anything(),
+      });
+    });
+  });
+
+  it("still goes back through its own entry after Next rewrites it on a same-URL navigation (#3824)", async () => {
+    window.history.replaceState(null, "");
+    render(<ChatShell />);
+    fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+    fireEvent.click(screen.getByTestId("pick-random"));
+    await waitFor(() => {
+      expect(columns().thread.className).not.toContain("max-lg:hidden");
+    });
+
+    // The nav's Chat link while on /chat: Next replaces the entry's state
+    // with its own, and our marker is gone (`preserveCustomHistoryState`).
+    window.history.replaceState({ __NA: true }, "");
+
+    // The arrow still goes back through it, pushing nothing new.
+    const push = vi.spyOn(window.history, "pushState");
+    const back = vi.spyOn(window.history, "back");
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+      expect(back).toHaveBeenCalledTimes(1);
+      expect(push).not.toHaveBeenCalled();
+    } finally {
+      push.mockRestore();
+      back.mockRestore();
+    }
+    await waitFor(() => {
+      expect(columns().channels.className).not.toContain("max-lg:hidden");
+    });
+  });
+
+  it("shows the list without going back from a thread a link opened after a pick (#3824)", async () => {
+    window.history.replaceState(null, "");
+    const { rerender } = render(<ChatShell />);
+    fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+    fireEvent.click(screen.getByTestId("pick-random"));
+    await waitFor(() => {
+      expect(columns().thread.className).not.toContain("max-lg:hidden");
+    });
+
+    // A Find result or a notification: Next pushes its own unmarked entry
+    // and the shell sees a new URL target, without remounting.
+    window.history.pushState({}, "");
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    const back = vi.spyOn(window.history, "back");
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+      expect(back).not.toHaveBeenCalled();
+      expect(columns().channels.className).not.toContain("max-lg:hidden");
+    } finally {
+      back.mockRestore();
+    }
+  });
+
+  it("opens a channel picked while its own Back is still traversing, with its own entry (#3824)", async () => {
+    window.history.replaceState(null, "");
+    render(<ChatShell />);
+    fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+    fireEvent.click(screen.getByTestId("pick-random"));
+    await waitFor(() => {
+      expect(columns().thread.className).not.toContain("max-lg:hidden");
+    });
+
+    // Back to the list, and a pick before the `popstate` lands.
+    fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+    fireEvent.click(screen.getByTestId("pick-general"));
+
+    await waitFor(() => {
+      expect(window.history.state).toMatchObject({
+        frappChatThreadPane: expect.any(String),
+      });
+    });
+    expect(columns().thread.className).not.toContain("max-lg:hidden");
+  });
+
+  it("never goes back through a marker another document left, as after a reload (#3824)", () => {
+    // History state outlives a reload; the entry under it does not belong to
+    // this document, so going back would reload the page into the thread.
+    window.history.replaceState(
+      { frappChatThreadPane: "another-document" },
+      "",
+    );
+    const back = vi.spyOn(window.history, "back");
+    try {
+      render(<ChatShell />);
+      fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+      expect(back).not.toHaveBeenCalled();
+      expect(columns().channels.className).not.toContain("max-lg:hidden");
+    } finally {
+      back.mockRestore();
+      window.history.replaceState(null, "");
+    }
+  });
 });
 
 /**
@@ -3137,6 +3611,35 @@ describe("ChatShell inside the shell's left column", () => {
   afterEach(() => {
     slot.remove();
     window.matchMedia = realMatchMedia;
+  });
+
+  it("brings the channels back on Esc while the column shows the module nav (#3824)", () => {
+    stubDesktop(true);
+    const value = navFace({ face: "modules" });
+    render(
+      <NavFaceContext.Provider value={value}>
+        <ChatShell />
+      </NavFaceContext.Provider>,
+    );
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(value.showChannels).toHaveBeenCalled();
+  });
+
+  it("pushes no history for a pick from lg up, where the list is already on screen (#3824)", () => {
+    stubDesktop(true);
+    window.history.replaceState(null, "");
+    const push = vi.spyOn(window.history, "pushState");
+    try {
+      render(
+        <NavFaceContext.Provider value={navFace()}>
+          <ChatShell />
+        </NavFaceContext.Provider>,
+      );
+      fireEvent.click(screen.getByTestId("pick-random"));
+      expect(push).not.toHaveBeenCalled();
+    } finally {
+      push.mockRestore();
+    }
   });
 
   it("renders the channels pane into the shell's column, with a back arrow to the menu", () => {
@@ -4145,7 +4648,8 @@ describe("ChatShell reports its transport to the connection pill", () => {
 
 /*
  * The open channel is the one the member is looking at (#3698): the activity
- * handler `ChatProvider` wires re-stamps it read when a message lands in it,
+ * handler the shell's `useChatRealtimeBinding` wires re-stamps it read when a
+ * message lands in it,
  * so the rail never lights up the channel being read. The claim is what tells
  * it which one that is.
  */
@@ -4158,6 +4662,21 @@ describe("ChatShell claims the open channel as viewed (#3698)", () => {
 
     unmount();
     expect(viewedChannelId()).toBeNull();
+  });
+
+  it("releases it below lg while the list is on screen, and claims it again on the way back in (#3824)", async () => {
+    // Still claimed on the list, a message landing in the channel was stamped
+    // read before the member saw it: no lit nav, nothing unread on return.
+    const { viewedChannelId } =
+      await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(viewedChannelId()).toBe("chan-general");
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+    await waitFor(() => expect(viewedChannelId()).toBeNull());
+
+    fireEvent.click(screen.getByTestId("pick-general"));
+    await waitFor(() => expect(viewedChannelId()).toBe("chan-general"));
   });
 });
 
@@ -4252,6 +4771,291 @@ describe("ChatShell opens the event form for an /event it can't read (#3773)", (
     expect(screen.queryByTestId("event-form")).toBeNull();
     expect(mockToast).toHaveBeenCalledWith(
       expect.objectContaining({ title: "You can't create events" }),
+    );
+  });
+});
+
+describe("ChatShell opens the New poll form for a /poll it can't read (#3865)", () => {
+  function pollButton(args: string) {
+    return screen.getByTestId(`composer-poll:${args}`);
+  }
+
+  it("opens it on what was typed, and posts the card into the channel it came from", async () => {
+    mockSendPoll.mockClear();
+    render(<ChatShell />);
+    fireEvent.click(pollButton('"Who drives?" Sam'));
+
+    expect(pollButton('"Who drives?" Sam').dataset.took).toBe("opened");
+    expect(await screen.findByText("New poll")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Ask a question")).toHaveValue(
+      "Who drives?",
+    );
+    fireEvent.change(screen.getByLabelText("Option 2"), {
+      target: { value: "Alex" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Post poll" }));
+
+    await waitFor(() =>
+      expect(mockSendPoll).toHaveBeenCalledWith(
+        expect.stringMatching(/.+/),
+        expect.objectContaining({ content: "Who drives?" }),
+      ),
+    );
+    // The composer stub prints its `channelId` first: the card goes there.
+    const [channelId] = mockSendPoll.mock.calls[0] as unknown as [string];
+    expect(screen.getByTestId("composer").textContent).toMatch(
+      new RegExp(`^${channelId}`),
+    );
+  });
+
+  it("shows the posted-but-not-saved warning, so nobody posts it twice", async () => {
+    mockSendPoll.mockResolvedValueOnce({
+      ok: true,
+      warning: "Don't send it again",
+    } as unknown as { ok: true });
+    mockToast.mockClear();
+    render(<ChatShell />);
+    fireEvent.click(pollButton('"Who drives?" Sam'));
+    fireEvent.change(await screen.findByLabelText("Option 2"), {
+      target: { value: "Alex" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Post poll" }));
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Poll posted",
+          description: "Don't send it again",
+        }),
+      ),
+    );
+  });
+
+  it("leaves a one-liner it can read to the dispatcher", () => {
+    render(<ChatShell />);
+    fireEvent.click(pollButton('"Who drives?" Sam Alex'));
+    expect(pollButton('"Who drives?" Sam Alex').dataset.took).toBe("null");
+    expect(screen.queryByText("New poll")).toBeNull();
+  });
+});
+
+describe("ChatShell opens the Task, Service hours and Points forms (#3865)", () => {
+  beforeEach(() => {
+    mockUseMyPermissions.mockReturnValue({
+      data: {
+        permissions: [
+          "tasks:manage",
+          "service:log",
+          "points:adjust",
+          "members:view",
+        ],
+      },
+    });
+  });
+
+  const click = (id: string) => {
+    const button = screen.getByTestId(id);
+    fireEvent.click(button);
+    return button.dataset.took;
+  };
+
+  it("opens the task form on what a half-typed /task named, with the @member resolved", () => {
+    const roster = {
+      data: [
+        { user_id: "u-bobby", display_name: "Bobby Member" },
+        { user_id: "u-alex", display_name: "Alex Member" },
+      ],
+    };
+    mockChapterRoster.mockReturnValue(roster);
+    render(<ChatShell />);
+    expect(click("composer-task:Sweep the porch @bobby 2026-11-12")).toBe(
+      "opened",
+    );
+    const form = screen.getByTestId("task-form");
+    expect(form.dataset.open).toBe("true");
+    expect(form.dataset.title).toBe("Sweep the porch");
+    expect(form.dataset.due).toBe("2026-11-12");
+    expect(form.dataset.assignee).toBe("u-bobby");
+  });
+
+  it("leaves a /task it can read to the dispatcher", () => {
+    render(<ChatShell />);
+    expect(click('composer-task:"Sweep" @bobby 2026-11-12')).toBe("null");
+    expect(screen.queryByTestId("task-form")).toBeNull();
+  });
+
+  it("posts the task into the channel it came from and shows a lost card's warning", async () => {
+    mockPostTask.mockResolvedValueOnce({
+      ok: true,
+      warning: "Task was created, but the chat card couldn't be posted.",
+    });
+    mockNotifyOutcome.mockClear();
+    render(<ChatShell />);
+    click("composer-task:");
+    fireEvent.click(screen.getByTestId("task-form-post"));
+    await waitFor(() => expect(mockPostTask).toHaveBeenCalled());
+    const [channelId] = mockPostTask.mock.calls[0] as unknown as [string];
+    expect(screen.getByTestId("composer").textContent).toMatch(
+      new RegExp(`^${channelId}`),
+    );
+    // The typed command's own notice, so a lost card reads the same either way.
+    await waitFor(() =>
+      expect(mockNotifyOutcome).toHaveBeenCalledWith(
+        expect.any(Function),
+        "task",
+        expect.objectContaining({ warning: expect.any(String) }),
+      ),
+    );
+  });
+
+  it("posts Service hours and Points into the channel each was opened in", async () => {
+    mockPostHours.mockClear();
+    mockPostPoints.mockClear();
+    render(<ChatShell />);
+    const channelId = screen
+      .getByTestId("composer")
+      .textContent?.split(/\s/)[0];
+    click("composer-hours:");
+    fireEvent.click(screen.getByTestId("hours-form-post"));
+    click("composer-points:");
+    fireEvent.click(screen.getByTestId("points-form-post"));
+    await waitFor(() => expect(mockPostPoints).toHaveBeenCalled());
+    expect(mockPostHours).toHaveBeenCalledWith(
+      expect.stringMatching(/.+/),
+      expect.objectContaining({ description: "Food bank" }),
+    );
+    const [hoursChannel] = mockPostHours.mock.calls[0] as unknown as [string];
+    const [pointsChannel] = mockPostPoints.mock.calls[0] as unknown as [string];
+    expect(screen.getByTestId("composer").textContent).toMatch(
+      new RegExp(`^${hoursChannel}`),
+    );
+    expect(pointsChannel).toBe(hoursChannel);
+    expect(channelId).toBeTruthy();
+  });
+
+  it("posts into the channel a form was opened in, even after a switch", async () => {
+    mockPostHours.mockClear();
+    render(<ChatShell initialChannelId="chan-general" />);
+    click("composer-hours:");
+    // Chat has no notice of its own for the hours form's gate; the dialog
+    // carries it (the Service page shows its own).
+    expect(screen.getByTestId("hours-form").dataset.notice).toBe("true");
+    fireEvent.click(screen.getByTestId("pick-random"));
+    fireEvent.click(screen.getByTestId("hours-form-post"));
+    await waitFor(() => expect(mockPostHours).toHaveBeenCalled());
+    const [channelId] = mockPostHours.mock.calls[0] as unknown as [string];
+    expect(channelId).toBe("chan-general");
+    expect(screen.getByTestId("composer").textContent).not.toMatch(
+      /^chan-general/,
+    );
+  });
+
+  it("reads a form write that threw as unconfirmed, never as a refusal to resubmit", async () => {
+    mockPostPoints.mockRejectedValueOnce(new Error("cache write failed"));
+    mockNotifyOutcome.mockClear();
+    render(<ChatShell />);
+    click("composer-points:");
+    fireEvent.click(screen.getByTestId("points-form-post"));
+    await waitFor(() =>
+      expect(mockNotifyOutcome).toHaveBeenCalledWith(
+        expect.any(Function),
+        "points",
+        expect.objectContaining({ ok: true, unconfirmed: true }),
+      ),
+    );
+  });
+
+  it("opens Service hours and Points only when picked bare", () => {
+    render(<ChatShell />);
+    expect(click("composer-hours:log 2h")).toBe("null");
+    expect(screen.queryByTestId("hours-form")).toBeNull();
+    expect(click("composer-hours:")).toBe("opened");
+    expect(screen.getByTestId("hours-form").dataset.open).toBe("true");
+    expect(click("composer-points:")).toBe("opened");
+    expect(screen.getByTestId("points-form").dataset.open).toBe("true");
+  });
+
+  it("refuses a role that can't, before any form opens", () => {
+    mockUseMyPermissions.mockReturnValue({
+      data: { permissions: ["members:view"] },
+    } as unknown as { data: { permissions: string[] } });
+    mockToast.mockClear();
+    render(<ChatShell />);
+    expect(click("composer-points:")).toBe("refused");
+    expect(click("composer-task:")).toBe("refused");
+    expect(click("composer-hours:")).toBe("refused");
+    expect(screen.queryByTestId("points-form")).toBeNull();
+    expect(screen.queryByTestId("task-form")).toBeNull();
+    expect(screen.queryByTestId("hours-form")).toBeNull();
+    for (const title of [
+      "You can't adjust points",
+      "You can't create tasks",
+      "You can't log service hours",
+    ]) {
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({ title }),
+      );
+    }
+  });
+});
+
+describe("ChatShell tells the composer's + which forms the role may use (#3865)", () => {
+  function formsFor(payload: unknown) {
+    mockUseMyPermissions.mockReturnValue(
+      payload as { data: { permissions: string[] } },
+    );
+    const { unmount } = render(<ChatShell />);
+    const forms = screen
+      .getByTestId("composer")
+      .getAttribute("data-command-forms");
+    unmount();
+    return forms;
+  }
+
+  it("maps polls:create and the event grants", () => {
+    expect(formsFor({ data: { permissions: ["polls:create"] } })).toBe(
+      "poll:true,event:false,task:false,hours:false,points:false",
+    );
+    expect(
+      formsFor({ data: { permissions: ["events:create", "members:view"] } }),
+    ).toBe("poll:false,event:true,task:false,hours:false,points:false");
+    // Both event grants, not `events:create` alone: the form needs the roster.
+    expect(formsFor({ data: { permissions: ["events:create"] } })).toBe(
+      "poll:false,event:false,task:false,hours:false,points:false",
+    );
+  });
+
+  it("maps the task, hours and points grants, each with the roster its form lists", () => {
+    expect(
+      formsFor({
+        data: {
+          permissions: [
+            "tasks:manage",
+            "service:log",
+            "points:adjust",
+            "members:view",
+          ],
+        },
+      }),
+    ).toBe("poll:false,event:false,task:true,hours:true,points:true");
+    // Without `members:view` the task and points forms can't list anyone;
+    // logging your own hours needs no roster.
+    expect(
+      formsFor({
+        data: { permissions: ["tasks:manage", "service:log", "points:adjust"] },
+      }),
+    ).toBe("poll:false,event:false,task:false,hours:true,points:false");
+  });
+
+  it("blames nothing on the role while permissions load, and says when they couldn't be read", () => {
+    expect(formsFor({ data: undefined })).toBe(
+      "poll:loading,event:loading,task:loading,hours:loading,points:loading",
+    );
+    expect(formsFor({ data: undefined, isError: true })).toBe(
+      "poll:unknown,event:unknown,task:unknown,hours:unknown,points:unknown",
+    );
+    // Paused offline before it ever landed: it can't answer either.
+    expect(formsFor({ data: undefined, fetchStatus: "paused" })).toBe(
+      "poll:unknown,event:unknown,task:unknown,hours:unknown,points:unknown",
     );
   });
 });

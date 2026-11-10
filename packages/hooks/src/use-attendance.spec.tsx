@@ -19,6 +19,7 @@ import {
   useMintCheckInToken,
   useMyAttendance,
   useUpdateAttendanceStatus,
+  selectOwnAttendance,
 } from "./use-attendance";
 import { FrappClientProvider } from "./use-frapp-client";
 
@@ -820,6 +821,38 @@ describe("the officer's attendance writes", () => {
     return Wrapper;
   };
 
+  it("keys every attendance write under `attendance`, so a failure reports by feature (#3393, #3905)", async () => {
+    // The Sentry reporter groups a failed mutation by its key's root; with no
+    // key it is `unkeyed`, which is how FRAPP-WEB-7's 400 arrived.
+    const ok = vi.fn().mockResolvedValue(answered({ marked: 0 }));
+    const { result } = renderHook(
+      () => ({
+        checkIn: useCheckIn(),
+        status: useUpdateAttendanceStatus(),
+        autoAbsent: useAutoAbsent(),
+      }),
+      { wrapper: createWrapper({ POST: ok, PATCH: ok }) },
+    );
+    await act(async () => {
+      await result.current.checkIn.mutateAsync({ eventId: "event-1" });
+      await result.current.status.mutateAsync({
+        eventId: "event-1",
+        userId: "user-1",
+        body: { status: "PRESENT" },
+      });
+      await result.current.autoAbsent.mutateAsync("event-1");
+    });
+    const keys = queryClient
+      .getMutationCache()
+      .getAll()
+      .map((mutation) => mutation.options.mutationKey);
+    expect(keys).toEqual([
+      ["attendance", "check-in"],
+      ["attendance", "update-status"],
+      ["attendance", "auto-absent"],
+    ]);
+  });
+
   it("rejects an empty-bodied 5xx when setting a member's status", async () => {
     for (const error of [undefined, ""] as const) {
       const mockPatch = vi.fn().mockResolvedValue(emptyBodied(502, error));
@@ -873,6 +906,25 @@ describe("the officer's attendance writes", () => {
     await expect(absent.result.current.mutateAsync("event-1")).resolves.toEqual(
       { marked: 3 },
     );
+  });
+});
+
+describe("selectOwnAttendance", () => {
+  it("reads the row out of `/attendance/me`'s answer", () => {
+    expect(
+      selectOwnAttendance({
+        attendance: { status: "LATE", check_in_time: "2026-11-09T19:05:00Z" },
+      }),
+    ).toEqual({ status: "LATE", checkInTime: "2026-11-09T19:05:00Z" });
+    expect(
+      selectOwnAttendance({ attendance: { status: "EXCUSED" } }),
+    ).toEqual({ status: "EXCUSED", checkInTime: null });
+  });
+
+  it("is null for no row or an unreadable one", () => {
+    expect(selectOwnAttendance({ attendance: null })).toBeNull();
+    expect(selectOwnAttendance({ attendance: { status: "GONE" } })).toBeNull();
+    expect(selectOwnAttendance(undefined)).toBeNull();
   });
 });
 

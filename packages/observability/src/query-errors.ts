@@ -30,8 +30,8 @@ import { httpStatusClass } from "./sentry-http";
  * - the query key's first element, when it is identifier-shaped. Later
  *   elements hold chapter, channel and entity ids, and `["search", chapterId,
  *   query]` holds the text a member typed, so neither they nor `queryHash` are
- *   ever sent. A mutation without a `mutationKey` (most of them) reports under
- *   `unkeyed`;
+ *   ever sent. A mutation without a `mutationKey` reports under `unkeyed`;
+ *   every one in `@repo/hooks` sets one (#3393);
  * - the status, its class, the API's machine `code` and the body's
  *   `requestId`, each kept only when it has the shape those fields have;
  * - for an HTTP failure or a dead fetch, an `Error` this module builds from
