@@ -85,4 +85,20 @@ export class SupabaseChatMessageActionRepository implements IChatMessageActionRe
     if (error) throw new SupabaseQueryError(error);
     return data;
   }
+
+  async findActedMessageIds(
+    messageIds: string[],
+    userId: string,
+    actionType: string,
+  ): Promise<string[]> {
+    if (messageIds.length === 0) return [];
+    const { data, error } = await this.supabase
+      .from('chat_message_actions')
+      .select('message_id')
+      .in('message_id', messageIds)
+      .eq('user_id', userId)
+      .eq('action_type', actionType);
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).map((row) => row.message_id);
+  }
 }

@@ -9741,6 +9741,44 @@
         ]
       }
     },
+    "/v1/activity": {
+      "get": {
+        "description": "The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the tasks they assigned and the files they uploaded. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.",
+        "operationId": "ActivityController_getActivity_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get what needs the caller and what they made",
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
     "/v1/chapter-directory/search": {
       "get": {
         "operationId": "ChapterDirectoryController_search_v1",
@@ -16107,6 +16145,398 @@
           "body",
           "actor",
           "target_id"
+        ]
+      },
+      "ActivityTaskDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-20"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "TODO",
+              "IN_PROGRESS",
+              "COMPLETED",
+              "OVERDUE"
+            ],
+            "description": "Display status: OVERDUE for an open task past its due date."
+          },
+          "stored_status": {
+            "type": "string",
+            "enum": [
+              "TODO",
+              "IN_PROGRESS",
+              "COMPLETED",
+              "OVERDUE"
+            ],
+            "description": "The status actually stored, which the next transition is checked against."
+          },
+          "assignee_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "assignee_name": {
+            "type": "string",
+            "description": "Empty when the member cannot be resolved (they have left)."
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_by_name": {
+            "type": "string",
+            "description": "Empty when the member cannot be resolved (they have left)."
+          },
+          "point_reward": {
+            "type": "number",
+            "nullable": true
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "due_date",
+          "status",
+          "stored_status",
+          "assignee_id",
+          "assignee_name",
+          "created_by",
+          "created_by_name",
+          "point_reward",
+          "completed_at",
+          "created_at"
+        ]
+      },
+      "ActivityHoursEntryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "member_name": {
+            "type": "string",
+            "description": "Empty when the member cannot be resolved (they have left)."
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-08"
+          },
+          "duration_minutes": {
+            "type": "number"
+          },
+          "description": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "member_name",
+          "date",
+          "duration_minutes",
+          "description",
+          "created_at"
+        ]
+      },
+      "ActivityPollDto": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The chat message that is the poll card. A client reads that message the way chat does and draws chat’s own card from it; this row carries no tallies."
+          },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "channel_name": {
+            "type": "string",
+            "description": "The channel’s name. A direct message’s is server-generated, so label those from `channel_type`."
+          },
+          "channel_type": {
+            "type": "string",
+            "enum": [
+              "PUBLIC",
+              "PRIVATE",
+              "ROLE_GATED",
+              "DM",
+              "GROUP_DM"
+            ]
+          },
+          "sender_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "question": {
+            "type": "string"
+          },
+          "option_count": {
+            "type": "number"
+          },
+          "closes_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "closed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Set when its creator closed it early."
+          },
+          "is_closed": {
+            "type": "boolean"
+          },
+          "has_voted": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "message_id",
+          "channel_id",
+          "channel_name",
+          "channel_type",
+          "sender_id",
+          "question",
+          "option_count",
+          "closes_at",
+          "closed_at",
+          "is_closed",
+          "has_voted",
+          "created_at"
+        ]
+      },
+      "ActivityNeedsYouDto": {
+        "type": "object",
+        "properties": {
+          "tasks": {
+            "description": "Open tasks assigned to the caller, soonest due first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityTaskDto"
+            }
+          },
+          "task_confirmations": {
+            "description": "Finished tasks the caller can confirm (`tasks:manage`, never their own), longest waiting first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityTaskDto"
+            }
+          },
+          "hours_approvals": {
+            "description": "Pending service entries the caller can approve (`service:approve`, never their own), oldest first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityHoursEntryDto"
+            }
+          },
+          "polls": {
+            "description": "Open polls from other members, in channels the caller can read, that the caller hasn’t voted on. Soonest closing first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityPollDto"
+            }
+          }
+        },
+        "required": [
+          "tasks",
+          "task_confirmations",
+          "hours_approvals",
+          "polls"
+        ]
+      },
+      "ActivityEventDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string",
+            "nullable": true
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "is_mandatory": {
+            "type": "boolean"
+          },
+          "point_value": {
+            "type": "number"
+          },
+          "check_in_opens_minutes": {
+            "type": "number"
+          },
+          "check_in_open": {
+            "type": "boolean",
+            "description": "Whether the check-in window is open right now."
+          },
+          "checked_in": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "Whether the caller has an attendance row for it. Read only while check-in is open; null otherwise, and when that read failed."
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "location",
+          "start_time",
+          "end_time",
+          "is_mandatory",
+          "point_value",
+          "check_in_opens_minutes",
+          "check_in_open",
+          "checked_in"
+        ]
+      },
+      "ActivityFileDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "document",
+              "backwork"
+            ],
+            "description": "Which module holds it: a chapter document or a backwork resource."
+          },
+          "title": {
+            "type": "string",
+            "description": "Empty for a backwork resource with no title."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "title",
+          "created_at"
+        ]
+      },
+      "ActivityMadeByYouDto": {
+        "type": "object",
+        "properties": {
+          "polls": {
+            "description": "Poll cards the caller posted, newest first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityPollDto"
+            }
+          },
+          "tasks": {
+            "description": "Tasks the caller assigned, newest first. Empty unless the caller still holds `tasks:manage`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityTaskDto"
+            }
+          },
+          "files": {
+            "description": "Documents and backwork the caller uploaded, newest first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityFileDto"
+            }
+          }
+        },
+        "required": [
+          "polls",
+          "tasks",
+          "files"
+        ]
+      },
+      "ActivityDto": {
+        "type": "object",
+        "properties": {
+          "needs_you": {
+            "$ref": "#/components/schemas/ActivityNeedsYouDto"
+          },
+          "coming_up": {
+            "description": "Events the caller is invited to that start within 14 days or whose check-in is still open, soonest first. At most 10.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityEventDto"
+            }
+          },
+          "made_by_you": {
+            "$ref": "#/components/schemas/ActivityMadeByYouDto"
+          },
+          "needs_you_count": {
+            "type": "number",
+            "description": "How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events whose check-in is open and not yet used."
+          },
+          "unavailable": {
+            "type": "array",
+            "description": "Sections that could not be read this time. Each is served empty; the others are unaffected.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "tasks",
+                "hours_approvals",
+                "polls",
+                "coming_up",
+                "files"
+              ]
+            }
+          }
+        },
+        "required": [
+          "needs_you",
+          "coming_up",
+          "made_by_you",
+          "needs_you_count",
+          "unavailable"
         ]
       },
       "CreateDiscordImportDto": {

@@ -250,6 +250,29 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
     return data || [];
   }
 
+  async findPollCardsByChapter(
+    chapterId: string,
+    options: { senderId?: string; limit: number },
+  ): Promise<ChatMessage[]> {
+    // Chapter scope through the channel join, as `findPollsByChapter` does:
+    // `chat_messages` carries no `chapter_id` of its own.
+    let query = this.supabase
+      .from('chat_messages')
+      .select(`${CHAT_MESSAGE_COLUMNS}, chat_channels!inner(chapter_id)`)
+      .eq('kind', 'poll')
+      .eq('is_deleted', false)
+      .eq('chat_channels.chapter_id', chapterId)
+      .order('created_at', { ascending: false });
+
+    if (options.senderId) {
+      query = query.eq('sender_id', options.senderId);
+    }
+
+    const { data, error } = await query.limit(options.limit);
+    if (error) throw new SupabaseQueryError(error);
+    return data || [];
+  }
+
   async findByClientMessageId(
     channelId: string,
     senderId: string | null,

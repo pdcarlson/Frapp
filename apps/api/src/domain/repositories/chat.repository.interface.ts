@@ -226,6 +226,19 @@ export interface IChatMessageRepository {
     options?: { channelId?: string; limit?: number; active?: boolean },
   ): Promise<ChatMessage[]>;
   /**
+   * Newest-first poll **cards** (`kind = 'poll'`, the format every client
+   * posts) across the chapter, deleted rows left out. `senderId` keeps one
+   * member's. Whether a card is still open is not decided here: its deadline
+   * is an ISO string inside `payload`, and comparing those as text is wrong
+   * across offsets, so the caller parses it. Every channel's rows come back,
+   * readable or not; the caller filters by access, as with
+   * {@link findPollsByChapter}.
+   */
+  findPollCardsByChapter(
+    chapterId: string,
+    options: { senderId?: string; limit: number },
+  ): Promise<ChatMessage[]>;
+  /**
    * Locate an already-persisted message by its idempotency triple. Used by
    * the hot-path send to reconcile a duplicate `(channel_id, sender_id,
    * client_message_id)` insert. Returns null when no such row exists.
@@ -305,6 +318,17 @@ export interface IChatMessageActionRepository {
     actionType: string,
     payload: Record<string, unknown>,
   ): Promise<ChatMessageAction | null>;
+  /**
+   * Which of `messageIds` this member has an `actionType` row on: the batch
+   * form of {@link findOne}, for "which of these polls have I voted on".
+   * Returns message ids only. No chapter argument, like the rest of this
+   * interface: the caller passes ids it has already scoped and authorized.
+   */
+  findActedMessageIds(
+    messageIds: string[],
+    userId: string,
+    actionType: string,
+  ): Promise<string[]>;
 }
 
 export interface IMessageReactionRepository {
