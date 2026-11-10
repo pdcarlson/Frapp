@@ -10,6 +10,9 @@ import { renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 const calls = vi.hoisted(() => [] as string[]);
+vi.mock("@/lib/chat/use-unread-first-paint-runtime", () => ({
+  useUnreadFirstPaintRuntime: () => calls.push("unread-first-paint"),
+}));
 vi.mock("@/lib/chat/use-chat-runtime", () => ({
   useChatRealtimeBinding: () => calls.push("chat"),
 }));
@@ -41,5 +44,11 @@ describe("AppRuntime", () => {
     calls.length = 0;
     renderHook(() => AppRuntime());
     expect(calls).toContain("notification-sync");
+  });
+
+  it("shows unread marks before the counts request answers (#4006)", () => {
+    calls.length = 0;
+    renderHook(() => AppRuntime());
+    expect(calls).toContain("unread-first-paint");
   });
 });
