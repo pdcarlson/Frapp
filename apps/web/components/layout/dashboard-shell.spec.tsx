@@ -729,6 +729,58 @@ describe("DashboardShell", () => {
       }
     });
 
+    it("draws one column on the server where no rail can be forced", () => {
+      // Chat closed beside a tool, and chat alone on /chat: the full nav at
+      // every width, so no band CSS and no second column.
+      for (const [path, chatOpen] of [
+        ["/events", false],
+        ["/chat", true],
+      ] as const) {
+        mockPathname.value = path;
+        const host = document.createElement("div");
+        host.innerHTML = renderToString(
+          <DashboardShell defaultChatOpen={chatOpen}>{null}</DashboardShell>,
+        );
+        const served = host.querySelectorAll("[data-nav-column]");
+        expect(served, path).toHaveLength(1);
+        expect(served[0]!.className, path).not.toContain("max-[1240px]");
+      }
+    });
+
+    it("keeps the member's own rail through hydration in the band", async () => {
+      mockPathname.value = "/events";
+      const host = document.createElement("div");
+      const shell = <DashboardShell defaultNavCollapsed>events</DashboardShell>;
+      host.innerHTML = renderToString(shell);
+      document.body.appendChild(host);
+      try {
+        const served = host.querySelector<HTMLElement>("[data-nav-column]");
+        setWindowWidth(1100);
+        const root = await act(async () => hydrateRoot(host, shell));
+        const left = host.querySelectorAll<HTMLElement>("[data-nav-column]");
+        expect(left).toHaveLength(1);
+        expect(left[0]).toBe(served);
+        expect(left[0]).toHaveClass("w-14");
+        act(() => root.unmount());
+      } finally {
+        host.remove();
+      }
+    });
+
+    it("narrows the same nav column, without remounting it, when chat opens in the band", () => {
+      // A remount would drop focus from the Chat row the member just pressed.
+      setWindowWidth(1100);
+      mockPathname.value = "/events";
+      const { container } = render(
+        <DashboardShell defaultChatOpen={false}>events</DashboardShell>,
+      );
+      const before = column(container);
+      expect(before).toHaveClass("w-60");
+      fireEvent.click(within(nav()).getByRole("button", { name: "Chat" }));
+      expect(column(container)).toBe(before);
+      expect(before).toHaveClass("w-14");
+    });
+
     it("leaves the Settings row a link back to Settings on a Settings tool's page", () => {
       setWindowWidth(1440);
       mockPathname.value = "/reports";

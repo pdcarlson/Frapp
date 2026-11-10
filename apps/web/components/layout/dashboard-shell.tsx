@@ -246,9 +246,18 @@ export function DashboardShell({
     full nav first and clipped ~130px off the tool page until it snapped.
     From the first client render the shell knows and draws only the one CSS
     already showed, keyed so it keeps its DOM: nothing moves.
+
+    The key is settled once, on that first render, and never follows
+    `forceRail` after it: a chat toggle in the band must change the column's
+    width, not remount it (focus on the Chat row, the nav's scroll and the
+    chapter menu all live in it).
   */
   const hydrated = useHydrated();
   const railByCss = !hydrated && hasTool && chatShown && !navCollapsed;
+  // The server drew a separate "rail" column only when `railByCss` held.
+  const hydratedNavKey = forceRail && !navCollapsed ? "rail" : "column";
+  const [navKey, setNavKey] = useState<"rail" | "column" | null>(null);
+  if (hydrated && navKey === null) setNavKey(hydratedNavKey);
 
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
   const { data: permissionsPayload } = useMyPermissions({
@@ -391,9 +400,13 @@ export function DashboardShell({
         {(railByCss ? [false, true] : [navCollapsed || forceRail]).map(
           (rail) => (
             <NavColumn
-              // The forced rail and the column the member chose are the same
-              // column when they agree; the key keeps it across hydration.
-              key={rail && (forceRail || railByCss) ? "rail" : "column"}
+              key={
+                railByCss
+                  ? rail
+                    ? "rail"
+                    : "column"
+                  : (navKey ?? hydratedNavKey)
+              }
               className={
                 railByCss ? (rail ? RAIL_BAND_ONLY : OUTSIDE_RAIL_BAND) : undefined
               }
