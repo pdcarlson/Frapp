@@ -39,7 +39,7 @@ export function ThreadChip({
         <span className="flex -space-x-1.5" aria-hidden="true">
           {summary.recent_sender_ids.map((id) => (
             <Avatar key={id} className="h-5 w-5 border border-card">
-              <AvatarFallback className="text-[9px]">
+              <AvatarFallback className="text-label">
                 {initials(nameFor(id) ?? "?")}
               </AvatarFallback>
             </Avatar>
@@ -61,7 +61,7 @@ export function ThreadChip({
   return (
     <button
       type="button"
-      className={cn(className, "hover:bg-muted", FOCUS_RING)}
+      className={cn(className, "hover:bg-accent-subtle", FOCUS_RING)}
       aria-label={`${replies}${lastReply ? `, ${lastReply}` : ""}. Open thread`}
       onClick={onOpen}
     >
