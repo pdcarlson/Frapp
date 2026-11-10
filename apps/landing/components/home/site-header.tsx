@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { FrappLockup } from "../frapp-lockup";
 import { TrackedCta } from "../tracked-cta";
+import { SectionNavLink } from "./section-nav-link";
 import { BUTTON_PRIMARY_NAV, LINK_QUIET, SHELL } from "./styles";
 
 /* The four rules at the top of `app/page.tsx` bind everything this file draws. */
@@ -31,12 +32,16 @@ export function SiteHeader({
           between 768 and 1024, where 32 left Changelog touching Sign in.
         */}
         <nav aria-label="Primary" className="hidden items-center gap-5 md:flex lg:gap-8">
-          <Link href={`${anchorBase}#product`} className={LINK_QUIET}>
+          {/*
+            Product and Pricing light up while their section is on screen
+            (#3869); About and Changelog are pages, so they never do.
+          */}
+          <SectionNavLink href={`${anchorBase}#product`} section="product">
             Product
-          </Link>
-          <Link href={`${anchorBase}#pricing`} className={LINK_QUIET}>
+          </SectionNavLink>
+          <SectionNavLink href={`${anchorBase}#pricing`} section="pricing">
             Pricing
-          </Link>
+          </SectionNavLink>
           <Link href="/about" className={LINK_QUIET}>
             About
           </Link>
