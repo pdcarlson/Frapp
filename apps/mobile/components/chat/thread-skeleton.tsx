@@ -28,10 +28,11 @@ const BODY_WIDTHS = ["70%", "52%", "60%", "45%"] as const;
  * and the §10 shimmer lands here when it lands in `SkeletonBlock`. Neutral
  * only, never the accent.
  */
-export function ThreadSkeleton() {
+export function ThreadSkeleton({ channelId }: { channelId?: string | null }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const compact = useChatDensity() === "compact";
+  // The channel's display on this phone, when it has one pinned (#3787).
+  const compact = useChatDensity(channelId) === "compact";
 
   if (compact) {
     return (

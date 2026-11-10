@@ -39,10 +39,22 @@ describe("threadLayout", () => {
       row("b", { created_at: new Date(2026, 8, 28, 23, 59).toISOString() }),
       row("c", { created_at: new Date(2026, 8, 29, 0, 1).toISOString() }),
     ]);
-    expect(layout.get("c-a")).toEqual({ startsRun: true, startsDay: true });
-    expect(layout.get("c-b")).toEqual({ startsRun: false, startsDay: false });
+    expect(layout.get("c-a")).toEqual({
+      startsRun: true,
+      endsRun: false,
+      startsDay: true,
+    });
+    expect(layout.get("c-b")).toEqual({
+      startsRun: false,
+      endsRun: true,
+      startsDay: false,
+    });
     // The divider lands above the first row of the new day — which would be
     // "a", not "c", if the inverted list were grouped instead.
-    expect(layout.get("c-c")).toEqual({ startsRun: true, startsDay: true });
+    expect(layout.get("c-c")).toEqual({
+      startsRun: true,
+      endsRun: true,
+      startsDay: true,
+    });
   });
 });

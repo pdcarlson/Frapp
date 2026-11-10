@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useMemo, type ComponentProps, type ReactNode } from "react";
 import {
   Image,
   Keyboard,
@@ -17,6 +17,7 @@ import { emojiFromActionType } from "@repo/chat-core/types";
 import { DELETED_MESSAGE_PLACEHOLDER } from "@repo/chat-core/reply-preview";
 import {
   EDITED_MARKER,
+  isOwnMessage,
   showsEditedMarker,
 } from "@repo/chat-core/message-actions";
 import { formatTimeOfDay } from "@repo/formatting";
@@ -120,6 +121,12 @@ export interface MessageItemProps {
    * the avatar and author line.
    */
   startsRun: boolean;
+  /**
+   * Whether this row is the last of its run. Only Bubbles reads it: the
+   * avatar sits under the stack, and the speaker's bottom corner tucks on
+   * every row but the last (§11 § Bubbles). Defaults to `true`.
+   */
+  endsRun?: boolean;
   onRetry: (clientMessageId: string) => void;
   onDiscard: (clientMessageId: string) => void;
   onReact: (messageId: string, emoji: string) => void;
@@ -319,6 +326,7 @@ export function MessageRowFrame({
   roleColorFor,
   avatarFor,
   startsRun,
+  endsRun = true,
   quote,
   onOpenActions,
   onJumpToParent,
@@ -334,6 +342,8 @@ export function MessageRowFrame({
   /** The author's photo for the run's avatar; see `MessageItemProps`. */
   avatarFor?: (message: ChatMessage) => string | null;
   startsRun: boolean;
+  /** The run's last row; Bubbles draws the avatar beside it. Defaults to `true`. */
+  endsRun?: boolean;
   /**
    * Compact only: the body leads with the time and name itself
    * (`CompactLead`), so the frame draws no author line.
@@ -365,7 +375,9 @@ export function MessageRowFrame({
     // unread badge skips it, the push is gone), so its tombstone stays plain.
     !message.is_deleted &&
     message.mentions.includes(viewerId);
-  const compact = useChatDensity() === "compact";
+  // The channel's display on this phone: its pin, else the default (#3787).
+  const density = useChatDensity(message.channel_id);
+  const compact = density === "compact";
   // Resolved once and used for both the author line and the avatar initials —
   // two lookups would be two chances for them to drift apart. Both come from
   // `@repo/hooks`: `sender_id` is nullable, so an imported archive message has
@@ -385,6 +397,30 @@ export function MessageRowFrame({
     onJumpToParent: quote ? onJumpToParent : undefined,
     onOpenProfile: openAuthor,
   });
+
+  // A card row reaches the frame directly, not through `MessageItem`, so
+  // Bubbles sides it here: the viewer's own card on the right, unbubbled.
+  if (density === "bubbles") {
+    return (
+      <BubbleRowFrame
+        message={message}
+        viewerId={viewerId}
+        nameFor={nameFor}
+        roleColorFor={roleColorFor}
+        avatarFor={avatarFor}
+        startsRun={startsRun}
+        endsRun={endsRun}
+        mine={isOwnMessage(message, viewerId)}
+        quote={quote}
+        onOpenActions={onOpenActions}
+        onJumpToParent={onJumpToParent}
+        onOpenProfile={onOpenProfile}
+        styles={styles}
+      >
+        {children}
+      </BubbleRowFrame>
+    );
+  }
 
   return (
     <Pressable
@@ -458,53 +494,15 @@ export function MessageRowFrame({
       ) : (
         <View style={styles.main}>
           {startsRun ? (
-            message.sender_id === SYSTEM_SENDER_ID ? (
-              // Frapp's own posts (the welcome, the audit bridge, a poll's
-              // closing notice, an invite-accept DM) wear the crest, not
-              // initials: the sender is the product, not a member (#3347).
-              <View
-                style={[styles.avatar, styles.systemAvatar]}
-                testID="system-avatar"
-              >
-                <Image
-                  // Metro asset id; a static import fails `tsc` (no `*.png`
-                  // module declaration), as in `(auth)/sign-in.tsx`.
-                  // eslint-disable-next-line @typescript-eslint/no-require-imports
-                  source={require("../../assets/images/system-avatar.png")}
-                  style={styles.systemAvatarImage}
-                  accessibilityElementsHidden
-                  importantForAccessibility="no-hide-descendants"
-                />
-              </View>
-            ) : (
-              <Pressable
-                onPress={openAuthor}
-                onLongPress={openAuthor ? onOpenActions : undefined}
-                disabled={!openAuthor}
-                // The author line carries the same tap as a named action.
-                accessible={false}
-              >
-                <MemberAvatar
-                  uri={avatarFor?.(message) ?? null}
-                  initials={
-                    authorName
-                      ? initialsFor(authorName)
-                      : authorInitialsFallback(message)
-                  }
-                  size={MESSAGE_AVATAR_SIZE}
-                  tint={
-                    message.sender_id
-                      ? memberAvatarTint(
-                          memberAvatarHue(message.sender_id, roleColor),
-                        )
-                      : null
-                  }
-                  style={styles.avatar}
-                  textStyle={styles.avatarText}
-                  testID="message-avatar"
-                />
-              </Pressable>
-            )
+            <RowAvatar
+              message={message}
+              avatarFor={avatarFor}
+              authorName={authorName}
+              roleColor={roleColor}
+              openAuthor={openAuthor}
+              onOpenActions={onOpenActions}
+              styles={styles}
+            />
           ) : (
             // A follow-on row draws no author or time, so its gutter is where a
             // screen reader hears them — and where the long-press action rides
@@ -670,6 +668,7 @@ export function MessageItem({
   roleColorFor,
   avatarFor,
   startsRun,
+  endsRun = true,
   onRetry,
   onDiscard,
   onReact,
@@ -682,7 +681,10 @@ export function MessageItem({
 }: MessageItemProps) {
   const { tokens } = useFrappTheme();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
-  const compact = useChatDensity() === "compact";
+  // A channel pinned to a display on this phone draws in that one (#3787).
+  const density = useChatDensity(message.channel_id);
+  const compact = density === "compact";
+  const bubbles = density === "bubbles";
   // Reactions address a server id, so a message still in flight has nothing to
   // address. Web gates the same affordance on the same condition.
   const isConfirmed = message._status === "confirmed";
@@ -804,6 +806,103 @@ export function MessageItem({
     />
   ) : null;
 
+  if (bubbles) {
+    const mine = isOwnMessage(message, viewerId);
+    return (
+      <BubbleRowFrame
+        message={message}
+        viewerId={viewerId}
+        nameFor={nameFor}
+        roleColorFor={roleColorFor}
+        avatarFor={avatarFor}
+        startsRun={startsRun}
+        endsRun={endsRun}
+        mine={mine}
+        quote={quote}
+        onOpenActions={onOpenActions}
+        onJumpToParent={text ? undefined : quoteJump(message, onJumpToParent)}
+        onOpenProfile={onOpenProfile}
+        styles={styles}
+      >
+        {text ? (
+          <View
+            accessible={"accessibilityActions" in bodyA11y || pending}
+            accessibilityHint={pending ? "Sending" : undefined}
+            {...bodyA11y}
+          >
+            <Bubble
+              mine={mine}
+              startsRun={startsRun}
+              endsRun={endsRun}
+              dimmed={mine && muted}
+              styles={styles}
+            >
+              {mine && message.is_deleted ? (
+                <SelfText style={styles.deleted}>
+                  {DELETED_MESSAGE_PLACEHOLDER}
+                </SelfText>
+              ) : mine && hasText ? (
+                <SelfMarkdown
+                  parsed={parsed}
+                  style={styles.body}
+                  trailing={
+                    edited || pinned ? (
+                      <SelfText style={styles.trailing}>
+                        {edited ? `${ownLine ? "" : " "}${EDITED_MARKER}` : ""}
+                        {pinned
+                          ? edited || !ownLine
+                            ? " · Pinned"
+                            : "Pinned"
+                          : ""}
+                      </SelfText>
+                    ) : undefined
+                  }
+                  onLongPress={onOpenActions}
+                  onMentionPress={openMention}
+                />
+              ) : (
+                text
+              )}
+            </Bubble>
+          </View>
+        ) : null}
+        {attachments && pending ? (
+          <View style={styles.pendingFiles}>{attachments}</View>
+        ) : (
+          attachments
+        )}
+        {text ? null : <OwnLineMarkers message={message} />}
+        {/* Reactions ride the bubble's lower corner on the speaker's side. */}
+        {message.is_deleted || reactions.length === 0 ? null : (
+          <View
+            testID="bubble-reactions"
+            style={[
+              styles.bubbleReactions,
+              text ? styles.bubbleReactionsOverlap : null,
+            ]}
+          >
+            <ReactionRow
+              reactions={reactions}
+              messageId={message.id}
+              disabled={!isConfirmed}
+              onReact={onReact}
+              onUnreact={onUnreact}
+              onLongPress={onOpenActions}
+              styles={styles}
+            />
+          </View>
+        )}
+        <DeliveryLine
+          chrome={chrome}
+          styles={styles}
+          clientMessageId={message.client_message_id}
+          onRetry={onRetry}
+          onDiscard={onDiscard}
+        />
+      </BubbleRowFrame>
+    );
+  }
+
   return (
     <MessageRowFrame
       message={message}
@@ -862,6 +961,314 @@ export function MessageItem({
       )}
     </MessageRowFrame>
   );
+}
+
+/**
+ * The run's 32pt avatar, shared by every layout that draws one: Frapp's own
+ * posts wear the crest (#3347), a member their photo over tinted initials
+ * (#3860), and a press opens their profile while a long-press still opens
+ * the row's actions.
+ */
+function RowAvatar({
+  message,
+  avatarFor,
+  authorName,
+  roleColor,
+  openAuthor,
+  onOpenActions,
+  styles,
+}: {
+  message: ChatMessage;
+  avatarFor?: (message: ChatMessage) => string | null;
+  authorName: string | null;
+  roleColor: string | null;
+  openAuthor: (() => void) | undefined;
+  onOpenActions?: () => void;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  if (message.sender_id === SYSTEM_SENDER_ID) {
+    return (
+      <View style={[styles.avatar, styles.systemAvatar]} testID="system-avatar">
+        <Image
+          // Metro asset id; a static import fails `tsc` (no `*.png`
+          // module declaration), as in `(auth)/sign-in.tsx`.
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          source={require("../../assets/images/system-avatar.png")}
+          style={styles.systemAvatarImage}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        />
+      </View>
+    );
+  }
+  return (
+    <Pressable
+      onPress={openAuthor}
+      onLongPress={openAuthor ? onOpenActions : undefined}
+      disabled={!openAuthor}
+      // The author line carries the same tap as a named action.
+      accessible={false}
+    >
+      <MemberAvatar
+        uri={avatarFor?.(message) ?? null}
+        initials={
+          authorName ? initialsFor(authorName) : authorInitialsFallback(message)
+        }
+        size={MESSAGE_AVATAR_SIZE}
+        tint={
+          message.sender_id
+            ? memberAvatarTint(memberAvatarHue(message.sender_id, roleColor))
+            : null
+        }
+        style={styles.avatar}
+        textStyle={styles.avatarText}
+        testID="message-avatar"
+      />
+    </Pressable>
+  );
+}
+
+/**
+ * Bubbles' row (§11 § Bubbles; owner OK 2026-11-10 on #3787, an opt-in beside
+ * cozy and compact). Others on the left with the name and time once above the
+ * stack and the avatar once below it; the viewer's own on the right, time
+ * only. The root is the long-press target, as `MessageRowFrame`'s is.
+ */
+function BubbleRowFrame({
+  message,
+  viewerId,
+  nameFor,
+  roleColorFor,
+  avatarFor,
+  startsRun,
+  endsRun,
+  mine,
+  quote,
+  onOpenActions,
+  onJumpToParent,
+  onOpenProfile,
+  styles,
+  children,
+}: {
+  message: ChatMessage;
+  viewerId: string;
+  nameFor: (userId: string) => string | null;
+  roleColorFor?: (userId: string) => string | null;
+  avatarFor?: (message: ChatMessage) => string | null;
+  startsRun: boolean;
+  endsRun: boolean;
+  mine: boolean;
+  quote?: ReactNode;
+  onOpenActions?: () => void;
+  /** As `MessageRowFrame`'s: the quote's jump, for a row with no text to carry it. */
+  onJumpToParent?: () => void;
+  onOpenProfile?: (userId: string) => void;
+  styles: ReturnType<typeof createStyles>;
+  children: ReactNode;
+}) {
+  const mentionsViewer =
+    !!viewerId &&
+    message.sender_id !== viewerId &&
+    !message.is_deleted &&
+    message.mentions.includes(viewerId);
+  const { authorName, authorLabel, roleColor } = rowAuthor(
+    message,
+    nameFor,
+    viewerId,
+    roleColorFor,
+  );
+  const time = formatTimeOfDay(message.created_at);
+  const openAuthor = authorProfileOpener(message, onOpenProfile, nameFor);
+  const headerA11y = messageActionsA11yProps(onOpenActions, {
+    onJumpToParent: quote ? onJumpToParent : undefined,
+    onOpenProfile: openAuthor,
+  });
+  return (
+    <Pressable
+      accessible={false}
+      onLongPress={onOpenActions}
+      onPress={Keyboard.dismiss}
+      disabled={!onOpenActions}
+      testID={mine ? "bubble-row-self" : "bubble-row-other"}
+      style={[
+        styles.row,
+        startsRun ? styles.bubbleRowStartsRun : styles.rowFollows,
+      ]}
+    >
+      {mentionsViewer ? (
+        <MentionHighlight style={styles.mentionHighlight} />
+      ) : null}
+      {startsRun ? null : (
+        // A follow-on's handle, as cozy's gutter is: who sent it and when,
+        // and the long-press as an action, for a row with no text to carry
+        // it (a photo-only follow-on).
+        <View
+          style={styles.gutterInset}
+          accessible
+          accessibilityLabel={`${authorLabel}, ${time}`}
+          testID="bubble-follow-on-handle"
+          {...headerA11y}
+        />
+      )}
+      <View style={[styles.bubbleMain, mine ? styles.bubbleMainSelf : null]}>
+        {mine ? null : (
+          <View style={styles.bubbleGutter}>
+            {endsRun ? (
+              <RowAvatar
+                message={message}
+                avatarFor={avatarFor}
+                authorName={authorName}
+                roleColor={roleColor}
+                openAuthor={openAuthor}
+                onOpenActions={onOpenActions}
+                styles={styles}
+              />
+            ) : null}
+          </View>
+        )}
+        <View
+          style={[
+            styles.bubbleColumn,
+            mine ? styles.bubbleColumnSelf : styles.bubbleColumnOther,
+          ]}
+        >
+          {startsRun ? (
+            <View
+              style={styles.bubbleAuthorLine}
+              accessible
+              accessibilityLabel={`${authorLabel}, ${time}`}
+              {...headerA11y}
+            >
+              {mine ? null : (
+                <Text
+                  style={
+                    roleColor
+                      ? [styles.name, { color: roleColor }]
+                      : styles.name
+                  }
+                  numberOfLines={1}
+                  onPress={openAuthor}
+                  onLongPress={openAuthor ? onOpenActions : undefined}
+                  suppressHighlighting
+                >
+                  {authorLabel}
+                </Text>
+              )}
+              <Text style={styles.time}>{time}</Text>
+            </View>
+          ) : null}
+          {quote ? <View style={styles.bubbleQuote}>{quote}</View> : null}
+          {children}
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+/** Radius 18, the speaker-side corners tucked to 6 inside a stack. */
+const BUBBLE_RADIUS = 18;
+const BUBBLE_TUCK = 6;
+
+/**
+ * One bubble. Theirs is `--card` with its load-bearing hairline; yours is the
+ * chapter's `accent-primary` under `accent-on-primary` text, the engine's
+ * AA-by-construction pair (`accent-engine.md` §8). Only the viewer's own calls
+ * `useChapterBranding()` (see `AccentText`).
+ */
+function Bubble({
+  mine,
+  startsRun,
+  endsRun,
+  dimmed,
+  styles,
+  children,
+}: {
+  mine: boolean;
+  startsRun: boolean;
+  endsRun: boolean;
+  dimmed: boolean;
+  styles: ReturnType<typeof createStyles>;
+  children: ReactNode;
+}) {
+  const corners = mine
+    ? {
+        borderTopRightRadius: startsRun ? BUBBLE_RADIUS : BUBBLE_TUCK,
+        borderBottomRightRadius: endsRun ? BUBBLE_RADIUS : BUBBLE_TUCK,
+      }
+    : {
+        borderTopLeftRadius: startsRun ? BUBBLE_RADIUS : BUBBLE_TUCK,
+        borderBottomLeftRadius: endsRun ? BUBBLE_RADIUS : BUBBLE_TUCK,
+      };
+  if (!mine) {
+    return (
+      <View
+        testID="message-bubble"
+        style={[styles.bubble, styles.bubbleOther, corners]}
+      >
+        {children}
+      </View>
+    );
+  }
+  return (
+    <SelfBubble
+      style={[styles.bubble, corners, dimmed ? styles.bubbleDimmed : null]}
+    >
+      {children}
+    </SelfBubble>
+  );
+}
+
+function SelfBubble({
+  style,
+  children,
+}: {
+  style: StyleProp<ViewStyle>;
+  children: ReactNode;
+}) {
+  const { accentPrimary } = useChapterBranding();
+  return (
+    <View
+      testID="message-bubble"
+      style={[style, { backgroundColor: accentPrimary }]}
+    >
+      {children}
+    </View>
+  );
+}
+
+/**
+ * The viewer's own text on the accent fill, in `accent-on-primary`. Links
+ * inherit it and keep their underline; a mention chip and inline code paint
+ * their own opaque pairs (`message-markdown.tsx`), so they need nothing here.
+ */
+function SelfMarkdown({
+  style,
+  ...props
+}: ComponentProps<typeof MessageMarkdown>) {
+  const { accentOnPrimary } = useChapterBranding();
+  return (
+    <MessageMarkdown
+      {...props}
+      opaqueCode
+      style={[style, { color: accentOnPrimary }]}
+    />
+  );
+}
+
+/**
+ * Text on the accent fill in `accent-on-primary`, set on the Text itself: a
+ * nested Text keeps its own color over the one it would inherit, so a
+ * wrapper can't recolor `styles.trailing` or `styles.deleted`.
+ */
+function SelfText({
+  style,
+  children,
+}: {
+  style: StyleProp<TextStyle>;
+  children: ReactNode;
+}) {
+  const { accentOnPrimary } = useChapterBranding();
+  return <Text style={[style, { color: accentOnPrimary }]}>{children}</Text>;
 }
 
 /** The quote's jump, when the row draws a quote at all. */
@@ -1288,6 +1695,44 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
     },
+    // Bubbles (§11 § Bubbles). A new speaker sits 12 below the row above.
+    bubbleRowStartsRun: { paddingTop: tokens.spacing.md },
+    bubbleMain: {
+      flexDirection: "row",
+      alignItems: "flex-end",
+      gap: tokens.spacing.sm,
+    },
+    bubbleMainSelf: { justifyContent: "flex-end" },
+    bubbleGutter: { width: MESSAGE_AVATAR_SIZE },
+    // A bubble never runs the row's width: 80% of it, the messenger habit.
+    bubbleColumn: { maxWidth: "80%", minWidth: 0 },
+    bubbleColumnOther: { alignItems: "flex-start" },
+    bubbleColumnSelf: { alignItems: "flex-end" },
+    bubbleAuthorLine: {
+      flexDirection: "row",
+      alignItems: "baseline",
+      gap: tokens.spacing.sm,
+      paddingHorizontal: tokens.spacing.md,
+      paddingBottom: 2,
+      minWidth: 0,
+    },
+    bubbleQuote: { alignSelf: "stretch", marginBottom: 2 },
+    bubble: {
+      borderRadius: BUBBLE_RADIUS,
+      paddingHorizontal: tokens.spacing.md,
+      paddingVertical: 6,
+      maxWidth: "100%",
+    },
+    bubbleOther: {
+      backgroundColor: tokens.color.surface.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: tokens.color.border.hairline,
+    },
+    // In flight, the whole accent bubble dims rather than graying its text.
+    bubbleDimmed: { opacity: 0.6 },
+    bubbleReactions: { paddingHorizontal: tokens.spacing.sm, zIndex: 1 },
+    // Up over the bubble's lower corner, 8 deep.
+    bubbleReactionsOverlap: { marginTop: -14 },
     reactionRow: {
       flexDirection: "row",
       flexWrap: "wrap",

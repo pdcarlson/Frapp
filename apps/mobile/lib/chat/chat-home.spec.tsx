@@ -796,13 +796,40 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     expect(vi.mocked(Alert.alert)).not.toHaveBeenCalled();
     expect(haptics.impactAsync).toHaveBeenCalledTimes(1);
     // A channel row has no Hide: that is a conversation's action.
-    expect(menuLabels(tree)).toEqual(["Pin to top", "Notifications"]);
+    expect(menuLabels(tree)).toEqual([
+      "Pin to top",
+      "Notifications",
+      "Display, Default",
+    ]);
     pressItem(tree, "Pin to top");
     expect(setPinned).toHaveBeenCalledWith({
       channelId: general.id,
       pinned: true,
     });
     expect(menu(tree).props.target).toBeNull();
+  });
+
+  it("pins this channel to a display on this phone from the menu (#3787)", () => {
+    channelsData.value = [general];
+    const tree = render();
+
+    longPress(tree, "general");
+    pressItem(tree, "Display, Default");
+    expect(menuLabels(tree)).toEqual([
+      "Your default (Cozy)",
+      "Cozy here",
+      "Compact here",
+      "Bubbles here",
+    ]);
+    pressItem(tree, "Bubbles here");
+    expect(menu(tree).props.target).toBeNull();
+
+    longPress(tree, "general");
+    expect(menuLabels(tree)).toContain("Display, Bubbles");
+    pressItem(tree, "Display, Bubbles");
+    pressItem(tree, "Your default (Cozy)");
+    longPress(tree, "general");
+    expect(menuLabels(tree)).toContain("Display, Default");
   });
 
   it("says Unpin from top on a pinned row", () => {
@@ -835,6 +862,7 @@ describe("Chat home sidebar arrangement (#2877)", () => {
       "Mark as read",
       "Pin to top",
       "Notifications, Muted",
+      "Display, Default",
     ]);
     pressItem(tree, "Mark as read");
     expect(markReadMutate).toHaveBeenCalledWith(general.id);

@@ -41,7 +41,7 @@ Every accent role maps to a fixed step of the generated scale. Components consum
 
 | Role | Source | Used for |
 |---|---|---|
-| `accent-primary` | step 9 | Primary button fill, active RSVP, solid chips (the own chat bubble until the compact layout removed it, 2026-09-29) |
+| `accent-primary` | step 9 | Primary button fill, active RSVP, solid chips (the own chat bubble until the compact layout removed it, 2026-09-29; again since 2026-11-10 in the opt-in Bubbles density, with `on-primary` text, [components.md](components.md) §11 § Bubbles) |
 | `accent-hover` | step 10 | Hover/pressed state of primary fills |
 | `accent-ring` | step 8 | Focus rings |
 | `accent-subtle-bg` | step 3 | Tinted backgrounds: active nav item, badge/chip fills, selected rows |

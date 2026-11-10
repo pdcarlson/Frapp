@@ -208,7 +208,9 @@ describe("decorateThread — runs", () => {
   it("does not merge two different imported authors", () => {
     expect(
       runs([
-        visible(msg({ sender_id: null, author_external_id: "1", author_name: "Ada" })),
+        visible(
+          msg({ sender_id: null, author_external_id: "1", author_name: "Ada" }),
+        ),
         visible(
           msg({
             sender_id: null,
@@ -254,7 +256,11 @@ describe("authorGroupingKey", () => {
     // null` is true, so an imported channel where twenty Discord members spoke
     // in turn collapsed into one block under one name.
     const a = { sender_id: null, author_name: "Ada", author_external_id: "1" };
-    const b = { sender_id: null, author_name: "Grace", author_external_id: "2" };
+    const b = {
+      sender_id: null,
+      author_name: "Grace",
+      author_external_id: "2",
+    };
     expect(authorGroupingKey(a)).not.toBe(authorGroupingKey(b));
   });
 
@@ -289,7 +295,9 @@ describe("authorGroupingKey", () => {
       author_name: "Ada",
       author_external_id: "1",
     };
-    expect(authorGroupingKey(linked)).toBe(authorGroupingKey({ sender_id: "u1" }));
+    expect(authorGroupingKey(linked)).toBe(
+      authorGroupingKey({ sender_id: "u1" }),
+    );
     expect(authorGroupingKey(linked)).not.toBe(
       authorGroupingKey({ ...linked, sender_id: null }),
     );
@@ -314,9 +322,9 @@ describe("authorGroupingKey", () => {
   });
 
   it("falls back to the name when an imported row carries no external id", () => {
-    expect(
-      authorGroupingKey({ sender_id: null, author_name: "Ada" }),
-    ).not.toBe(authorGroupingKey({ sender_id: null, author_name: "Grace" }));
+    expect(authorGroupingKey({ sender_id: null, author_name: "Ada" })).not.toBe(
+      authorGroupingKey({ sender_id: null, author_name: "Grace" }),
+    );
   });
 
   it("reads a nameless, idless author as unknown", () => {
@@ -350,5 +358,22 @@ describe("day dividers", () => {
   it("prints nothing for an unreadable timestamp", () => {
     expect(dayDividerLabel("nope", now)).toBe("");
     expect(calendarDayKey("nope")).toBeNull();
+  });
+});
+
+describe("decorateThread — run ends", () => {
+  it("ends a run on the row before the next run starts, and on the last row", () => {
+    const decorated = decorateThread([
+      visible(msg({ created_at: at(28, 17, 15) })),
+      visible(msg({ created_at: at(28, 17, 16) })),
+      visible(msg({ sender_id: "u2", created_at: at(28, 17, 17) })),
+      visible(msg({ sender_id: "u2", created_at: at(29, 9, 0) })),
+    ]);
+    expect(decorated.map((entry) => entry.endsRun)).toEqual([
+      false,
+      true,
+      true,
+      true,
+    ]);
   });
 });

@@ -9,7 +9,7 @@ import { setChatDensity, useChatDensity } from "@/lib/chat/chat-density";
 import { cn } from "@/lib/utils";
 
 /**
- * Profile → Chat → Density: two cards, each a small drawing of the thread in
+ * Profile → Chat → Density: three cards, each a small drawing of the thread in
  * that density, so the choice is made by looking rather than by reading
  * (`components.md` §11 § Density). It saves on the click, with no Save button,
  * and the thread redraws at once.
@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
 export function ChatDensityControl() {
   const density = useChatDensity();
   return (
-    <fieldset className="grid max-w-xl grid-cols-2 gap-3">
+    <fieldset className="grid max-w-2xl grid-cols-2 gap-3 sm:grid-cols-3">
       <legend className="sr-only">Chat density</legend>
       {CHAT_DENSITY_OPTIONS.map((option) => {
         const checked = option.value === density;
@@ -70,6 +70,13 @@ const COZY_ROWS = [
   ["w-8", "w-1/2"],
   ["w-12", "w-2/3"],
 ] as const;
+// Bubbles: [side, width] — theirs left, yours right in the accent.
+const BUBBLE_ROWS = [
+  ["start", "w-2/3"],
+  ["start", "w-1/2"],
+  ["end", "w-3/5"],
+  ["end", "w-2/5"],
+] as const;
 const COMPACT_ROWS = [
   ["w-10", "w-3/4"],
   ["w-8", "w-1/2"],
@@ -85,6 +92,25 @@ const COMPACT_ROWS = [
  * than words, so the drawing never shows a made-up member or message.
  */
 function DensityPreview({ density }: { density: ChatDensity }) {
+  if (density === "bubbles") {
+    return (
+      <span
+        aria-hidden="true"
+        className="flex h-24 flex-col justify-center gap-1 overflow-hidden rounded-md bg-surface-1 px-3"
+      >
+        {BUBBLE_ROWS.map(([side, width], index) => (
+          <span
+            key={index}
+            className={cn(
+              "h-3 rounded-full",
+              width,
+              side === "end" ? "self-end bg-primary" : "self-start bg-popover",
+            )}
+          />
+        ))}
+      </span>
+    );
+  }
   // The same box holds three cozy rows or six compact ones, which is the
   // whole difference the choice makes.
   const rows = density === "cozy" ? COZY_ROWS : COMPACT_ROWS;

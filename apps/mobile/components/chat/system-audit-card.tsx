@@ -61,7 +61,7 @@ export function SystemAuditLine({
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   // Compact has no gutter (§11 § Density): the line starts at the row's
   // inset, where compact message text starts, and draws no shield.
-  const compact = useChatDensity() === "compact";
+  const compact = useChatDensity(message.channel_id) === "compact";
   const reactionStyles = useCardStyles();
   const actor = actorLabel(payload.actor_user_id, nameFor);
   const { phrase, detail } = auditLineText(payload);
