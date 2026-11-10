@@ -612,17 +612,22 @@ export {
   matchMentionCandidate,
   mentionChipFilter,
   mentionLabelFor,
+  mentionPickLabel,
+  spacedMentionNames,
   mentionPickerEntries,
   mentionSuggestions,
   resolveMentions,
+  sendMentionReading,
 } from "./mentions";
 export type {
   ActiveMentionQuery,
   MentionCandidate,
   MentionChipTargets,
+  MentionChipTest,
   MentionPickerEntry,
   MentionRole,
   MentionRoleOption,
+  MentionSpanOptions,
   MentionSpan,
   MentionSuggestion,
 } from "./mentions";

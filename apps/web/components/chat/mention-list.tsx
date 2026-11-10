@@ -20,8 +20,9 @@ export interface MentionSuggestionItem {
   /** `users.id`, or the role's id. */
   id: string;
   /**
-   * The mention node's serialized text label — the display name reduced to
-   * letters, digits, and marks (`mentionLabelFor` in `@repo/validation`).
+   * The mention node's serialized text label (`mentionPickLabel` in
+   * `@repo/validation`): the name as written, "Winston Hewitt", when it can
+   * be read back whole, else the name reduced to letters, digits, and marks.
    * This is what gets sent, not `displayName`; see that function's comment
    * for why.
    */
