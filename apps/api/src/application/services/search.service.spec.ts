@@ -299,7 +299,9 @@ describe('SearchService', () => {
       });
 
       it('narrows the message scan to the one requested channel', async () => {
-        await service.searchWithinBudget('ch-1', 'user-1', 'hello', PUB2);
+        await service.searchWithinBudget('ch-1', 'user-1', 'hello', {
+          channelId: PUB2,
+        });
 
         // The whole point: the narrowing reaches SQL. Filtering client-side
         // would be wrong, because SEARCH_LIMIT is applied by the database
@@ -308,7 +310,9 @@ describe('SearchService', () => {
       });
 
       it('passes the channel id down as the candidate narrowing', async () => {
-        await service.searchWithinBudget('ch-1', 'user-1', 'hello', PUB2);
+        await service.searchWithinBudget('ch-1', 'user-1', 'hello', {
+          channelId: PUB2,
+        });
 
         expect(repo.findChannelsForAccess).toHaveBeenCalledWith('ch-1', PUB2);
       });
@@ -318,7 +322,7 @@ describe('SearchService', () => {
           'ch-1',
           'user-1',
           'hello',
-          PRIV_OUT,
+          { channelId: PRIV_OUT },
         );
 
         // Never queried: the id intersects the accessible set to nothing, so
@@ -332,7 +336,7 @@ describe('SearchService', () => {
           'ch-1',
           'user-1',
           'hello',
-          UNKNOWN_ID,
+          { channelId: UNKNOWN_ID },
         );
 
         // Same empty answer as an inaccessible channel, deliberately: telling
@@ -349,7 +353,7 @@ describe('SearchService', () => {
           'ch-1',
           'user-1',
           'hello',
-          'general',
+          { channelId: 'general' },
         );
 
         expect(repo.searchMessages).not.toHaveBeenCalled();
@@ -361,7 +365,7 @@ describe('SearchService', () => {
           'ch-1',
           'user-1',
           'hello',
-          PUB,
+          { channelId: PUB },
         );
 
         expect(result.messages).toHaveLength(1);
@@ -397,11 +401,193 @@ describe('SearchService', () => {
           'ch-1',
           'user-1',
           'hi',
-          PUB,
+          { channelId: PUB },
         );
 
         noRepoCalls();
         expect(result.messages).toEqual([]);
+      });
+    });
+
+    /**
+     * #3958. Sender, date and content filters narrow the message source. They
+     * are handed to the repository BESIDE the accessible channel ids, so the
+     * invariant these pin is that no filter value changes which channels are
+     * searched: `spec/behavior/chat/README.md` § Channel-access enforcement.
+     */
+    describe('message filters (#3958)', () => {
+      const PUB = '11111111-1111-4111-8111-111111111111';
+      const PRIV_IN = '22222222-2222-4222-8222-222222222222';
+      const PRIV_OUT = '33333333-3333-4333-8333-333333333333';
+      const GATED_NO = '44444444-4444-4444-8444-444444444444';
+      const DM_OTHERS = '55555555-5555-4555-8555-555555555555';
+      const SENDER = '99999999-9999-4999-8999-999999999999';
+      const READABLE = [PUB, PRIV_IN];
+
+      beforeEach(() => {
+        repo.findChannelsForAccess.mockResolvedValue([
+          channel(PUB, 'PUBLIC'),
+          channel(PRIV_IN, 'PRIVATE', { member_ids: ['user-1'] }),
+          channel(PRIV_OUT, 'PRIVATE', { member_ids: [SENDER] }),
+          channel(GATED_NO, 'ROLE_GATED', {
+            required_permissions: ['secret:view'],
+          }),
+          channel(DM_OTHERS, 'DM', { member_ids: [SENDER, 'user-3'] }),
+        ]);
+      });
+
+      const searchedChannels = () =>
+        (repo.searchMessages.mock.calls[0] as [string[]])[0];
+
+      it.each([
+        ['fromUserId', { fromUserId: SENDER }],
+        ['after', { after: '2026-11-01T00:00:00.000Z' }],
+        ['before', { before: '2026-11-08T00:00:00.000Z' }],
+        ['has', { has: ['file'] as const }],
+        [
+          'every filter at once',
+          {
+            fromUserId: SENDER,
+            after: '2026-11-01T00:00:00.000Z',
+            before: '2026-11-08T00:00:00.000Z',
+            has: ['image', 'link', 'poll'] as const,
+          },
+        ],
+      ])(
+        '%s searches only the channels the caller can read',
+        async (_, filters) => {
+          await service.searchWithinBudget('ch-1', 'user-1', 'hello', filters);
+
+          // The sender is in PRIV_OUT and DM_OTHERS; filtering by them must not
+          // bring either channel in.
+          expect(searchedChannels()).toEqual(READABLE);
+          expect(repo.searchMessages).toHaveBeenCalledWith(
+            READABLE,
+            'hello',
+            10,
+            filters,
+          );
+        },
+      );
+
+      it.each([PRIV_OUT, GATED_NO, DM_OTHERS])(
+        'a filter beside an unreadable channelId (%s) still returns nothing',
+        async (channelId) => {
+          const { results } = await service.searchWithinBudget(
+            'ch-1',
+            'user-1',
+            '',
+            { channelId, fromUserId: SENDER, has: ['file'] },
+          );
+
+          expect(repo.searchMessages).not.toHaveBeenCalled();
+          expect(results.messages).toEqual([]);
+        },
+      );
+
+      it('combines a channel with a filter inside the accessible set', async () => {
+        await service.searchWithinBudget('ch-1', 'user-1', 'hello', {
+          channelId: PRIV_IN,
+          fromUserId: SENDER,
+        });
+
+        expect(repo.searchMessages).toHaveBeenCalledWith(
+          [PRIV_IN],
+          'hello',
+          10,
+          { fromUserId: SENDER },
+        );
+      });
+
+      it('searches nothing for a caller with no membership, filter or not', async () => {
+        members.findByUserAndChapter.mockResolvedValue(null);
+
+        const { results } = await service.searchWithinBudget(
+          'ch-1',
+          'user-1',
+          '',
+          { fromUserId: SENDER },
+        );
+
+        expect(repo.searchMessages).not.toHaveBeenCalled();
+        expect(results.messages).toEqual([]);
+      });
+
+      it('runs a filter with no text', async () => {
+        await service.searchWithinBudget('ch-1', 'user-1', '   ', {
+          fromUserId: SENDER,
+        });
+
+        expect(repo.searchMessages).toHaveBeenCalledWith(READABLE, '', 10, {
+          fromUserId: SENDER,
+        });
+      });
+
+      it('still refuses one or two characters, filter or not', async () => {
+        const { results } = await service.searchWithinBudget(
+          'ch-1',
+          'user-1',
+          'hi',
+          { fromUserId: SENDER },
+        );
+
+        noRepoCalls();
+        expect(results.messages).toEqual([]);
+      });
+
+      it('refuses no text with only a channel: that is the timeline, not a search', async () => {
+        await service.searchWithinBudget('ch-1', 'user-1', '', {
+          channelId: PUB,
+          has: [],
+        });
+
+        noRepoCalls();
+      });
+
+      it('runs only the message source', async () => {
+        await service.searchWithinBudget('ch-1', 'user-1', 'hello', {
+          has: ['link'],
+        });
+
+        expect(repo.searchBackwork).not.toHaveBeenCalled();
+        expect(repo.searchEvents).not.toHaveBeenCalled();
+        expect(repo.searchMembers).not.toHaveBeenCalled();
+      });
+
+      it('returns nothing for a sender id that is not a uuid, without querying', async () => {
+        const { results } = await service.searchWithinBudget(
+          'ch-1',
+          'user-1',
+          'hello',
+          { fromUserId: "x' or 1=1" },
+        );
+
+        noRepoCalls();
+        expect(results.messages).toEqual([]);
+      });
+
+      it('still masks a blocked sender when filtering by them', async () => {
+        repo.searchMessages.mockResolvedValue([
+          {
+            id: 'm-1',
+            channel_id: PUB,
+            sender_id: SENDER,
+            content: 'the secret',
+          },
+        ]);
+        mockChatBlocks.listBlockedUserIds.mockResolvedValue([SENDER]);
+
+        const { results } = await service.searchWithinBudget(
+          'ch-1',
+          'user-1',
+          '',
+          { fromUserId: SENDER },
+        );
+
+        expect(results.messages[0]).toMatchObject({
+          content: BLOCKED_MESSAGE_CONTENT,
+          sender_blocked: true,
+        });
       });
     });
 

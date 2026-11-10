@@ -12022,6 +12022,14 @@ export interface operations {
             query: {
                 /** @description Search query */
                 q: string;
+                /** @description Message hits that carry all of these, comma-separated: `file` (any attachment), `image`, `link`, `poll`. A message filter: it narrows the messages source inside the caller’s accessible-channel set, makes the search messages-only, and lets `q` be empty. */
+                has?: string;
+                /** @description Message hits sent before this instant: ISO 8601 with an explicit offset. A message filter: it narrows the messages source inside the caller’s accessible-channel set, makes the search messages-only, and lets `q` be empty. */
+                before?: string;
+                /** @description Message hits sent at or after this instant: ISO 8601 with an explicit offset. A message filter: it narrows the messages source inside the caller’s accessible-channel set, makes the search messages-only, and lets `q` be empty. */
+                after?: string;
+                /** @description Message hits from this sender only. A message filter: it narrows the messages source inside the caller’s accessible-channel set, makes the search messages-only, and lets `q` be empty. */
+                fromUserId?: string;
                 /** @description Narrow the search to one chat channel. This is the single-channel form of search specified in spec/behavior/chat/README.md: only the `messages` source runs and `backwork`, `events` and `members` come back empty. The channel is still resolved through the caller’s accessible-channel set, so an unreadable or unknown id returns no matches rather than an error. */
                 channelId?: string;
             };
