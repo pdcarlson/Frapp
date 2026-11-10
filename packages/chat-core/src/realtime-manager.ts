@@ -251,6 +251,13 @@ interface PerChannelState {
   typingSnapshot: readonly string[];
   typingLastEmit: number;
   /**
+   * Typing inside this channel's message threads (#3785), keyed by thread
+   * root: kept apart from `typingUsers` so a thread typist never shows on the
+   * channel's own typing line. Each thread has its own snapshot and throttle,
+   * like the channel's.
+   */
+  threadTyping: Map<string, ThreadTypingState>;
+  /**
    * Ticket for the in-flight attach. Freeing an occupied topic is async, so two
    * reopens can overlap; only the holder of the newest ticket is allowed to
    * install a channel. See `attachChannel`.
@@ -258,7 +265,40 @@ interface PerChannelState {
   attachSeq: number;
 }
 
+interface ThreadTypingState {
+  users: Map<string, number>; // userId → expires-at ms
+  snapshot: readonly string[];
+  lastEmit: number;
+}
+
+/** A thread reply's realtime row, handed to `onThreadReply` listeners. */
+export type ThreadReplyListener = (
+  row: RawChatMessage,
+  event: "INSERT" | "UPDATE",
+) => void;
+
+/** The live list in `users`, reusing `previous` while its membership holds. */
+function liveTypists(
+  users: Map<string, number>,
+  previous: readonly string[],
+): readonly string[] {
+  const now = Date.now();
+  const live: string[] = [];
+  for (const [user, expires] of users) {
+    if (expires > now) live.push(user);
+  }
+  if (
+    live.length === previous.length &&
+    live.every((userId, index) => userId === previous[index])
+  ) {
+    return previous;
+  }
+  return live.length === 0 ? NO_TYPING_USERS : live;
+}
+
 class ChatRealtimeManager {
+  /** Thread reply listeners, per channel (#3785). See `onThreadReply`. */
+  private threadReplyListeners = new Map<string, Set<ThreadReplyListener>>();
   private ctx: ManagerContext | null = null;
   private channels = new Map<string, PerChannelState>();
   private actionsChannel: RealtimeChannel | null = null;
@@ -419,6 +459,7 @@ class ChatRealtimeManager {
       typingUsers: new Map(),
       typingSnapshot: NO_TYPING_USERS,
       typingLastEmit: 0,
+      threadTyping: new Map(),
       attachSeq: 0,
     };
     this.channels.set(channelId, state);
@@ -540,17 +581,58 @@ class ChatRealtimeManager {
     };
   }
 
-  emitTyping(channelId: string, userId: string, displayName?: string): void {
+  /**
+   * Announce that `userId` is typing in `channelId`, or inside the thread off
+   * `threadRootId` there (#3785). A thread's typing rides the channel's topic,
+   * tagged with its root, so the topic never re-keys (rule 2).
+   */
+  emitTyping(
+    channelId: string,
+    userId: string,
+    displayName?: string,
+    threadRootId?: string | null,
+  ): void {
     const state = this.channels.get(channelId);
     if (!state || !state.channel) return;
     const now = Date.now();
-    if (now - state.typingLastEmit < 3000) return;
-    state.typingLastEmit = now;
+    if (threadRootId) {
+      const thread = this.threadTypingState(state, threadRootId);
+      if (now - thread.lastEmit < 3000) return;
+      thread.lastEmit = now;
+    } else {
+      if (now - state.typingLastEmit < 3000) return;
+      state.typingLastEmit = now;
+    }
     void state.channel.send({
       type: "broadcast",
       event: "typing",
-      payload: { userId, displayName: displayName ?? null },
+      payload: {
+        userId,
+        displayName: displayName ?? null,
+        ...(threadRootId ? { threadRootId } : {}),
+      },
     });
+  }
+
+  /**
+   * Listen for thread replies on `channelId`'s topic (#3785). The timeline
+   * drops them (they are not its rows), so a thread panel takes them here
+   * into its own cache. It needs the channel subscribed (`subscribe`), which
+   * the open channel already holds. Returns the unsubscribe.
+   */
+  onThreadReply(channelId: string, listener: ThreadReplyListener): () => void {
+    let set = this.threadReplyListeners.get(channelId);
+    if (!set) {
+      set = new Set();
+      this.threadReplyListeners.set(channelId, set);
+    }
+    set.add(listener);
+    return () => {
+      const current = this.threadReplyListeners.get(channelId);
+      if (!current) return;
+      current.delete(listener);
+      if (current.size === 0) this.threadReplyListeners.delete(channelId);
+    };
   }
 
   /**
@@ -566,23 +648,32 @@ class ChatRealtimeManager {
    * compare membership itself and web's never did (#1004); here it holds for
    * every caller.
    */
-  getTypingUsers(channelId: string): readonly string[] {
+  getTypingUsers(
+    channelId: string,
+    threadRootId?: string | null,
+  ): readonly string[] {
     const state = this.channels.get(channelId);
     if (!state) return NO_TYPING_USERS;
-    const now = Date.now();
-    const live: string[] = [];
-    for (const [user, expires] of state.typingUsers) {
-      if (expires > now) live.push(user);
+    if (threadRootId) {
+      const thread = state.threadTyping.get(threadRootId);
+      if (!thread) return NO_TYPING_USERS;
+      thread.snapshot = liveTypists(thread.users, thread.snapshot);
+      return thread.snapshot;
     }
-    const previous = state.typingSnapshot;
-    if (
-      live.length === previous.length &&
-      live.every((userId, index) => userId === previous[index])
-    ) {
-      return previous;
-    }
-    state.typingSnapshot = live.length === 0 ? NO_TYPING_USERS : live;
+    state.typingSnapshot = liveTypists(state.typingUsers, state.typingSnapshot);
     return state.typingSnapshot;
+  }
+
+  private threadTypingState(
+    state: PerChannelState,
+    threadRootId: string,
+  ): ThreadTypingState {
+    let thread = state.threadTyping.get(threadRootId);
+    if (!thread) {
+      thread = { users: new Map(), snapshot: NO_TYPING_USERS, lastEmit: 0 };
+      state.threadTyping.set(threadRootId, thread);
+    }
+    return thread;
   }
 
   // ─── internals ──────────────────────────────────────────────────────────
@@ -616,6 +707,17 @@ class ChatRealtimeManager {
           if (expires <= now) {
             state.typingUsers.delete(user);
             dirty = true;
+          }
+        }
+        for (const [rootId, thread] of state.threadTyping) {
+          for (const [user, expires] of thread.users) {
+            if (expires <= now) {
+              thread.users.delete(user);
+              dirty = true;
+            }
+          }
+          if (thread.users.size === 0 && thread.snapshot.length === 0) {
+            state.threadTyping.delete(rootId);
           }
         }
       }
@@ -789,7 +891,16 @@ class ChatRealtimeManager {
         // channel's timeline: merged here it would land in the timeline cache
         // and move the last-seen cursor to a row the timeline read never
         // returns. The parent's own UPDATE echo carries the new reply count.
-        if (next?.thread_root_id) return;
+        // A thread panel takes it instead, through `onThreadReply`.
+        if (next?.thread_root_id) {
+          if (
+            payload.eventType === "INSERT" ||
+            payload.eventType === "UPDATE"
+          ) {
+            this.dispatchThreadReply(state.channelId, next, payload.eventType);
+          }
+          return;
+        }
         if (next && next.id) {
           // INSERT / UPDATE — full row is present and authoritative about its
           // content, and says nothing about the viewer's block list: this path
@@ -843,9 +954,22 @@ class ChatRealtimeManager {
 
     channel.on("broadcast", { event: "typing" }, (msg) => {
       const payload = msg.payload as
-        { userId?: string; displayName?: string | null } | undefined;
+        | {
+            userId?: string;
+            displayName?: string | null;
+            threadRootId?: string | null;
+          }
+        | undefined;
       if (!payload?.userId) return;
-      state.typingUsers.set(payload.userId, Date.now() + 4000);
+      const expires = Date.now() + 4000;
+      if (typeof payload.threadRootId === "string" && payload.threadRootId) {
+        this.threadTypingState(state, payload.threadRootId).users.set(
+          payload.userId,
+          expires,
+        );
+      } else {
+        state.typingUsers.set(payload.userId, expires);
+      }
       this.emitStatus();
     });
 
@@ -1083,6 +1207,22 @@ class ChatRealtimeManager {
   }
 
   /** Hands activity to the client, never letting its failure into a frame dispatch. */
+  private dispatchThreadReply(
+    channelId: string,
+    row: RawChatMessage,
+    event: "INSERT" | "UPDATE",
+  ): void {
+    const listeners = this.threadReplyListeners.get(channelId);
+    if (!listeners) return;
+    for (const listener of [...listeners]) {
+      try {
+        listener(row, event);
+      } catch {
+        // One panel's failure must not starve another, or the timeline.
+      }
+    }
+  }
+
   private reportActivity(activity: MessageActivity): void {
     try {
       this.ctx?.onMessageActivity?.(activity);

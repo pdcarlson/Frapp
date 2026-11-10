@@ -682,6 +682,32 @@ describe("ChatRealtimeManager — channel reopen (#783)", () => {
     );
   });
 
+  test("a thread reply reaches the thread listeners until they leave (#3785)", () => {
+    chatRealtime.subscribe("channel-1");
+    const ch = current("channel-1");
+    ch.trigger("SUBSCRIBED");
+    const seen: string[] = [];
+    const stop = chatRealtime.onThreadReply("channel-1", (row, event) =>
+      seen.push(`${event}:${row.id}`),
+    );
+    const reply = {
+      id: "msg-thread-reply",
+      channel_id: "channel-1",
+      sender_id: "user-2",
+      kind: "text",
+      content: "in the thread",
+      thread_root_id: "msg-root",
+      created_at: "2026-11-10T12:00:00.000Z",
+    };
+    ch.emitPostgresChange({ eventType: "INSERT", new: reply });
+    stop();
+    ch.emitPostgresChange({
+      eventType: "INSERT",
+      new: { ...reply, id: "msg-after-close" },
+    });
+    expect(seen).toEqual(["INSERT:msg-thread-reply"]);
+  });
+
   test("a live row still enters the cache through the same handler", () => {
     // Pins that the guard above is a `kind` check and not an accidental
     // short-circuit of the whole INSERT path.
@@ -1177,6 +1203,42 @@ describe("ChatRealtimeManager — typing list identity (#1004)", () => {
     const none = chatRealtime.getTypingUsers("c1");
     expect(none).toEqual([]);
     expect(chatRealtime.getTypingUsers("c1")).toBe(none);
+  });
+
+  test("a thread's typists stay off the channel's line, and theirs (#3785)", () => {
+    const ch = joined("c1");
+    ch.emitBroadcast("typing", { userId: A, displayName: null });
+    ch.emitBroadcast("typing", {
+      userId: B,
+      displayName: null,
+      threadRootId: "root-1",
+    });
+    expect(chatRealtime.getTypingUsers("c1")).toEqual([A]);
+    expect(chatRealtime.getTypingUsers("c1", "root-1")).toEqual([B]);
+    expect(chatRealtime.getTypingUsers("c1", "root-2")).toEqual([]);
+    // Same identity while unchanged, like the channel's list.
+    expect(chatRealtime.getTypingUsers("c1", "root-1")).toBe(
+      chatRealtime.getTypingUsers("c1", "root-1"),
+    );
+    vi.advanceTimersByTime(4500);
+    expect(chatRealtime.getTypingUsers("c1", "root-1")).toEqual([]);
+  });
+
+  test("a thread typist's broadcast carries the root and throttles per thread", () => {
+    const ch = joined("c1");
+    const sent = ch.send;
+    sent.mockClear();
+    chatRealtime.emitTyping("c1", A, undefined, "root-1");
+    chatRealtime.emitTyping("c1", A, undefined, "root-1");
+    chatRealtime.emitTyping("c1", A);
+    expect(sent).toHaveBeenCalledTimes(2);
+    expect(sent.mock.calls[0]?.[0]).toMatchObject({
+      event: "typing",
+      payload: { userId: A, threadRootId: "root-1" },
+    });
+    expect(
+      (sent.mock.calls[1]?.[0] as { payload: object }).payload,
+    ).not.toHaveProperty("threadRootId");
   });
 
   test("an unknown channel's empty list is one identity", () => {

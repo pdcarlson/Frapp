@@ -27,6 +27,7 @@ import { isAuditLine } from "@repo/chat-core/cards";
 import { ImportedReactionChips } from "./imported-reaction-chips";
 import { selectImportedReactions } from "./imported-reactions";
 import { ReactionChips, ReactionQuickPick } from "./reaction-bar";
+import { ThreadChip, StartThreadGlyph } from "./thread-chip";
 import { MessageAttachments } from "./message-attachments";
 import { QuotedMessage, replyPreviewText } from "./reply-quote";
 import {
@@ -164,6 +165,12 @@ export interface MessageItemProps {
    * jumps into is the real one with a composer under it, not a copy.
    */
   onJumpToParent?: (message: ChatMessage) => void;
+  /**
+   * Opens this message's thread (#3785): the row's **Start thread** control,
+   * and the chip under a parent that has replies. Absent where threads aren't
+   * offered (inside a thread, a 1:1 DM).
+   */
+  onOpenThread?: (message: ChatMessage) => void;
   /**
    * The message this one replies to, when `message.reply_to_id` is set and that
    * parent is inside the loaded window; `null` or absent when it is not.
@@ -343,6 +350,7 @@ export function MessageItem({
   onUnreact,
   onReply,
   onJumpToParent,
+  onOpenThread,
   replyParent,
   onRetry,
   onDiscard,
@@ -924,6 +932,17 @@ export function MessageItem({
             <ThreadGlyph className="h-4 w-4" />
           </button>
         ) : null}
+        {onOpenThread && !message.thread_root_id && !message.thread ? (
+          <button
+            type="button"
+            className={ACTION_BAR_BUTTON}
+            aria-label="Start thread"
+            title="Start thread"
+            onClick={() => onOpenThread(message)}
+          >
+            <StartThreadGlyph className="h-4 w-4" />
+          </button>
+        ) : null}
         {onToggleBookmark ? (
           <button
             type="button"
@@ -1337,6 +1356,15 @@ export function MessageItem({
                 <div className="mt-1 leading-5 [&>span]:ml-0">{trailing}</div>
               ) : null}
               {reactions}
+              {message.thread ? (
+                <ThreadChip
+                  summary={message.thread}
+                  nameFor={nameFor}
+                  onOpen={
+                    onOpenThread ? () => onOpenThread(message) : undefined
+                  }
+                />
+              ) : null}
               {/*
             The delivery state, under the body. Only this line is a live region,
             and it is mounted empty until it has something to say: a region
