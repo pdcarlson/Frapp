@@ -112,6 +112,41 @@ describe("ExportMenu", () => {
     expect(window.localStorage.getItem("frapp.export-format")).toBeNull();
   });
 
+  it("names a failed download as an export, not a clipboard problem", async () => {
+    exportRowsSpy.mockImplementation(async () => {
+      throw new Error("chunk failed");
+    });
+    renderMenu();
+    await pick("Excel (.xlsx)");
+
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Couldn't export",
+        variant: "destructive",
+      }),
+    );
+  });
+
+  it("says so when the selection has no rows left, instead of doing nothing", async () => {
+    renderMenu({ getRows: () => [] });
+    await pick("CSV");
+
+    expect(exportRowsSpy).not.toHaveBeenCalled();
+    expect(toastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Nothing to export" }),
+    );
+  });
+
+  it("leaves the notice to a caller that shows its own", async () => {
+    // One toast shows at a time, so a caller's warning must not be raced by
+    // the menu's "Copied".
+    renderMenu({ onExported: () => true });
+    await pick("Copy for Google Sheets");
+
+    expect(exportRowsSpy).toHaveBeenCalledTimes(1);
+    expect(toastSpy).not.toHaveBeenCalled();
+  });
+
   it("is disabled when the caller has nothing to export", () => {
     renderMenu({ disabled: true });
     expect(

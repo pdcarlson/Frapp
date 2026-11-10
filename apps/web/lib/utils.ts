@@ -1,3 +1,4 @@
+import { localIsoDate } from "@repo/formatting";
 import { type ErrorCopyOptions, errorCopy } from "@repo/hooks/error-copy";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { type ClassValue, clsx } from "clsx";
@@ -327,7 +328,9 @@ export function downloadBlob(blob: Blob, filename: string): void {
 
 /** `frapp-<filenamePrefix>-<date>.<extension>`, the one export filename shape. */
 function exportFilename(filenamePrefix: string, extension: string): string {
-  return `frapp-${filenamePrefix}-${new Date().toISOString().slice(0, 10)}.${extension}`;
+  // The member's own day, not UTC's: an evening export in the Americas would
+  // otherwise be dated tomorrow.
+  return `frapp-${filenamePrefix}-${localIsoDate(new Date())}.${extension}`;
 }
 
 /**
@@ -359,7 +362,19 @@ export async function downloadXlsx(
       ? row.map((cell) => (cell ? { ...cell, fontWeight: "bold" as const } : cell))
       : row,
   );
-  const blob = await writeXlsxFile(data, { stickyRowsCount: 1 }).toBlob();
+  // The writer does no auto-fit, and a date cell wider than its column shows
+  // as ######## in Excel, so size each column to its longest value.
+  const columns = exportHeaders(rows).map((header) => ({
+    width: Math.min(
+      60,
+      Math.max(header.length, ...rows.map((row) => (row[header] ?? "").length)) +
+        2,
+    ),
+  }));
+  const blob = await writeXlsxFile(data, {
+    stickyRowsCount: 1,
+    columns,
+  }).toBlob();
   downloadBlob(blob, exportFilename(filenamePrefix, "xlsx"));
 }
 

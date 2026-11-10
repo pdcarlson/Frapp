@@ -584,7 +584,7 @@ Properties are listed without `feature`, which every event carries. "Counts requ
 
 | Event | Recorded when | Properties |
 | --- | --- | --- |
-| `report-generated` | A report is generated. The dashboard previews through `format: json` and builds its CSV in the browser, so `json` includes previews and a web CSV download isn't seen | `report_kind`, `format` |
+| `report-generated` | A report is generated. The dashboard previews through `format: json` and builds its export (CSV, Excel or a clipboard copy) in the browser, so `json` includes previews and a web export isn't seen | `report_kind`, `format` |
 
 **Members (`members`), chapter setup (`chapter-settings`) and billing (`billing`)**
 
@@ -618,7 +618,7 @@ Every module in `MODULE_CATALOG` has an event above or a row here.
 ### Reading them
 
 - **Funnels and conversion use the `activation-*` events**, which are keyed by chapter and recorded once per chapter ([§ Product Analytics — Activation Funnel](#product-analytics--activation-funnel)). Feature events are keyed by user and count every action, so `invite-created` and `activation-first-invite-created` answer different questions.
-- **Server-side means successes only.** A tap that ends in an error, and an action the client never sends to the API (removing a reaction, building a CSV in the browser), records nothing.
+- **Server-side means successes only.** A tap that ends in an error, and an action the client never sends to the API (removing a reaction, building an export in the browser), records nothing.
 - **No `app` is not an error.** Expo Go, server-side Next.js calls and anything else `requestApp` can't place carry none.
 - **Writes from workers and schedules are not covered**: they aren't a member's action, and they have no request.
 

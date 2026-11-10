@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import sharedConfig from "@repo/theme/tailwind";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 const { writeXlsxFileSpy } = vi.hoisted(() => ({
@@ -396,7 +398,8 @@ describe("downloadXlsx", () => {
         [{ value: "Amount", type: String, fontWeight: "bold" }],
         [{ value: 12, type: Number }],
       ],
-      { stickyRowsCount: 1 },
+      // Sized to the longest value, so a date column never opens as ########.
+      { stickyRowsCount: 1, columns: [{ width: 8 }] },
     );
     expect(clickSpy).toHaveBeenCalledTimes(1);
     clickSpy.mockRestore();
@@ -404,6 +407,34 @@ describe("downloadXlsx", () => {
 });
 
 describe("exportRows", () => {
+  it("downloads a .csv for CSV and an .xlsx for Excel", async () => {
+    URL.createObjectURL = vi.fn(() => "blob:mock-url");
+    URL.revokeObjectURL = vi.fn();
+    const names: string[] = [];
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        names.push(this.download);
+      });
+    writeXlsxFileSpy.mockClear();
+
+    await exportRows([{ Amount: "12" }], "points", "csv");
+    expect(writeXlsxFileSpy).not.toHaveBeenCalled();
+    await exportRows([{ Amount: "12" }], "points", "xlsx");
+    expect(writeXlsxFileSpy).toHaveBeenCalledTimes(1);
+
+    expect(names.map((name) => name.split(".").pop())).toEqual(["csv", "xlsx"]);
+    clickSpy.mockRestore();
+  });
+
+  it("loads the workbook writer on demand, never with the module", () => {
+    // `lib/utils.ts` is imported by nearly every component (`cn`), so a static
+    // import here would put the writer in every page's first load.
+    const source = readFileSync(join(process.cwd(), "lib/utils.ts"), "utf8");
+    expect(source).toMatch(/await import\("write-excel-file\/browser"\)/);
+    expect(source).not.toMatch(/^import .*write-excel-file/m);
+  });
+
   it("copies tab-separated rows to the clipboard for Google Sheets", async () => {
     const writeText = vi.fn(async () => {});
     Object.defineProperty(navigator, "clipboard", {

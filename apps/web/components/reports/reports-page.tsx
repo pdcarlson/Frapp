@@ -52,7 +52,7 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/lib/hooks/use-toast";
-import { asArray, getErrorMessage } from "@/lib/utils";
+import { asArray, getErrorMessage, type ExportFormat } from "@/lib/utils";
 import { ExportMenu } from "@/components/shared/export-menu";
 import { ReportsFormSkeleton } from "@/components/reports/reports-skeleton";
 import { InlineNote } from "@/components/shared/inline-note";
@@ -483,17 +483,24 @@ export function ReportsPage() {
     }
   }
 
-  function onRowsExported() {
+  function onRowsExported(format: ExportFormat) {
     // The export is serialized from the preview, so it inherits the preview's
     // truncation. Saying so at export time is the last point before the rows
     // leave the app and stop carrying any context at all.
-    if (truncation?.truncated) {
-      toast({
-        title: "Exported an incomplete report",
-        variant: "destructive",
-        description: `${truncationSummary(truncation)} Do not treat this export as a complete record of the chapter.`,
-      });
-    }
+    if (!truncation?.truncated) return false;
+    // One toast shows at a time, so for the clipboard copy this notice also
+    // has to say the rows were copied and where they go.
+    const copied = format === "sheets";
+    toast({
+      title: copied
+        ? "Copied an incomplete report"
+        : "Exported an incomplete report",
+      variant: "destructive",
+      description: `${truncationSummary(truncation)} ${
+        copied ? "Paste into a Google Sheet, but do" : "Do"
+      } not treat this export as a complete record of the chapter.`,
+    });
+    return true;
   }
 
   /**
