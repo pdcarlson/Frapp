@@ -19,6 +19,11 @@ import { screenText } from "@/test/screen-text";
  * and cache it wraps are chat-core's `threads.ts`, pinned by its own spec.
  */
 
+// Chat backgrounds (#3973) read their own query; decoration, not under test here.
+vi.mock("@/components/chat/chat-background", () => ({
+  ChatBackground: () => null,
+}));
+
 vi.mock("react-native", async () => {
   const { reactNativeStub, RenderingFlatList } =
     await import("@/test/react-native-stub");

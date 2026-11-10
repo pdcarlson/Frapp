@@ -5553,6 +5553,282 @@
         ]
       }
     },
+    "/v1/chat-backgrounds/channels/{id}": {
+      "get": {
+        "operationId": "ChatBackgroundController_getForChannel_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatBackgroundResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "What to draw behind a channel's messages (resolved, photo signed)",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "put": {
+        "operationId": "ChatBackgroundController_setForChannel_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetChannelBackgroundDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatBackgroundResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set or clear a channel's own background",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/chat-backgrounds/channels/photo-url": {
+      "post": {
+        "operationId": "ChatBackgroundController_channelPhotoUrl_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatBackgroundPhotoUrlDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatBackgroundPhotoUrlResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Signed upload URL for a channel background photo",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/chat-backgrounds/default": {
+      "get": {
+        "operationId": "ChatBackgroundController_getDefault_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterChatBackgroundResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The chapter's default chat background",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "put": {
+        "operationId": "ChatBackgroundController_setDefault_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetChapterChatBackgroundDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterChatBackgroundResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set the chapter's default chat background",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/chat-backgrounds/default/photo-url": {
+      "post": {
+        "operationId": "ChatBackgroundController_defaultPhotoUrl_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatBackgroundPhotoUrlDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatBackgroundPhotoUrlResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Signed upload URL for a chapter default photo",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/events": {
       "get": {
         "operationId": "EventController_list_v1",
@@ -14940,6 +15216,149 @@
         },
         "required": [
           "last_read_at"
+        ]
+      },
+      "ChatBackgroundResponseDto": {
+        "type": "object",
+        "properties": {
+          "background": {
+            "type": "string",
+            "enum": [
+              "plain",
+              "gold-glow",
+              "midnight",
+              "game-day",
+              "letters",
+              "photo"
+            ],
+            "description": "What to draw behind the messages column."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "channel",
+              "chapter",
+              "none"
+            ],
+            "description": "Where it came from: the channel's own setting, the chapter default, or `none` for a DM (always plain)."
+          },
+          "photo_url": {
+            "type": "string",
+            "nullable": true,
+            "description": "A signed URL for the photo when `background` is `photo`; null otherwise, or when signing failed (draw plain)."
+          }
+        },
+        "required": [
+          "background",
+          "source",
+          "photo_url"
+        ]
+      },
+      "SetChannelBackgroundDto": {
+        "type": "object",
+        "properties": {
+          "background": {
+            "type": "string",
+            "enum": [
+              "plain",
+              "gold-glow",
+              "midnight",
+              "game-day",
+              "letters",
+              "photo"
+            ],
+            "nullable": true,
+            "description": "A built-in key, `photo` (with `storage_path`), or null to follow the chapter's default."
+          },
+          "storage_path": {
+            "type": "string",
+            "description": "Required with `photo`: the path the photo-url call returned."
+          }
+        },
+        "required": [
+          "background"
+        ]
+      },
+      "ChatBackgroundPhotoUrlDto": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "Original filename (e.g. house.jpg)"
+          },
+          "content_type": {
+            "type": "string",
+            "description": "MIME content type (e.g. image/jpeg)"
+          }
+        },
+        "required": [
+          "filename",
+          "content_type"
+        ]
+      },
+      "ChatBackgroundPhotoUrlResponseDto": {
+        "type": "object",
+        "properties": {
+          "upload_url": {
+            "type": "string",
+            "description": "Short-lived signed URL; PUT the bytes to it."
+          },
+          "storage_path": {
+            "type": "string",
+            "description": "Storage path to send back as `storage_path` when setting the photo."
+          }
+        },
+        "required": [
+          "upload_url",
+          "storage_path"
+        ]
+      },
+      "ChapterChatBackgroundResponseDto": {
+        "type": "object",
+        "properties": {
+          "background": {
+            "type": "string",
+            "enum": [
+              "plain",
+              "gold-glow",
+              "midnight",
+              "game-day",
+              "letters",
+              "photo"
+            ]
+          },
+          "photo_url": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "background",
+          "photo_url"
+        ]
+      },
+      "SetChapterChatBackgroundDto": {
+        "type": "object",
+        "properties": {
+          "background": {
+            "type": "string",
+            "enum": [
+              "plain",
+              "gold-glow",
+              "midnight",
+              "game-day",
+              "letters",
+              "photo"
+            ],
+            "description": "A built-in key, or `photo` (with `storage_path`)."
+          },
+          "storage_path": {
+            "type": "string",
+            "description": "Required with `photo`: the path the photo-url call returned."
+          }
+        },
+        "required": [
+          "background"
         ]
       },
       "GeofenceCoordinateDto": {
