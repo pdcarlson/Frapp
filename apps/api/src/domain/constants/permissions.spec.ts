@@ -1,3 +1,5 @@
+import { MODULE_CATALOG } from '@repo/org-archetypes';
+import { PERMISSION_MODULES, PERMISSION_REGISTRY } from '@repo/validation';
 import {
   DEFAULT_SYSTEM_ROLES,
   STARTING_ROLE_TIERS,
@@ -80,5 +82,24 @@ describe('DEFAULT_SYSTEM_ROLES colors', () => {
       NEW_MEMBER: null,
       ALUMNI: '#A9B4C2',
     });
+  });
+});
+
+// #4069: the guards enforce `SystemPermissions`; the words for each entry live
+// in `PERMISSION_REGISTRY` (`@repo/validation`). One list without the other is
+// either a permission no screen can name or a row that gates nothing.
+describe('SystemPermissions and PERMISSION_REGISTRY', () => {
+  it('list the same permission strings', () => {
+    expect(PERMISSION_REGISTRY.map((entry) => entry.permission).sort()).toEqual(
+      [...Object.values(SystemPermissions)].sort(),
+    );
+  });
+
+  it('files every permission under a module catalog key, or chapter', () => {
+    const moduleKeys = new Set(MODULE_CATALOG.map((module) => module.key));
+    for (const module of PERMISSION_MODULES) {
+      if (module.key === 'chapter') continue;
+      expect(moduleKeys).toContain(module.key);
+    }
   });
 });
