@@ -44,11 +44,14 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     Object.entries(real).map(([name, value]) => [
       name,
       // `usePermissionList` returns the list itself, `[]` while loading.
+      // `useDocumentLibrary` reads no server: it works over what it is given.
       name === "usePermissionList"
         ? () => []
-        : /^use[A-Z]/.test(name) && typeof value === "function"
-          ? () => loading
-          : value,
+        : name === "useDocumentLibrary"
+          ? value
+          : /^use[A-Z]/.test(name) && typeof value === "function"
+            ? () => loading
+            : value,
     ]),
   );
 });

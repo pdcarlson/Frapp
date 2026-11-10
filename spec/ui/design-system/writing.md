@@ -369,11 +369,12 @@ Mobile's Tasks tab (s08) is a personal board for everyone, so with nothing assig
 |---|---|---|
 | Loading | — | `Loading chapter documents...` |
 | Empty | — | `No documents yet.`, `Nothing in {folder} yet.`, or on No folder `Every document is in a folder.`; for a viewer with `chapter_docs:upload` then **Upload a file** `or drop one anywhere on this page.` (one line) |
-| Empty (search or filter, all files) | — | `No documents match “{query}”.`, or with no search typed `No documents match these filters.`, then a **Clear filters** link that clears the search and both filters (one line) |
+| Empty (search or filter, all files) | — | `No documents match “{query}”.`, or with no search typed `No documents match these filters.`, then a **Clear filters** link that clears the search and every filter (one line) |
 | Empty (search or filter, inside a folder) | — | `Nothing in {folder} matches.` (on No folder, `No documents outside a folder match.`) then a **Search all files** link, which keeps the search and filters (one line) |
-| Capped list (status line above the rows) | — | `Showing the newest 1,000 documents. Search and filters look only at these for now.` |
+| Capped list (status line above the rows; both apps) | — | `Showing the newest 1,000 documents. Search and filters look only at these for now.` |
 | Empty, mobile s12 | — | `No documents yet.` or `Nothing in {folder} yet.`; for a viewer with `chapter_docs:upload` then `Tap + to upload one.`, the screen's own + (one line) |
-| Empty (search), mobile s12 | — | `No documents match “{query}”.` with **Clear search**, or inside a folder chip `Nothing in {folder} matches “{query}”.` with **Search all files** (one line). Web's lines differ since #3852, which added filters there |
+| Empty (search or filter), mobile s12 | — | `No documents match “{query}”.`, or with no search typed `No documents match these filters.`, then **Clear search** when only a search is set, or **Clear filters**, which clears the search and every filter; inside a folder chip `Nothing in {folder} matches “{query}”.` (or `… matches these filters.`) with **Search all files** (one line). The capped-list line is the one above |
+| Delete (both apps) | `Delete {title}?` | `This removes the file from chapter storage immediately and cannot be undone.`, confirm **Delete document** (web's confirm dialog, mobile's system alert after a long press). Mobile's failure line under the search: the refusal's own reason when there is one, else `Couldn't delete “{title}”. Try again in a moment.` |
 | Error | `Couldn't load documents` | the load-failure line (§ copy rules) |
 | Offline | `Documents unavailable offline` | `Reconnect to browse the chapter library and download files.` |
 | Folder list failed (inline, under the rail) | — | `Couldn't load the folder list, so these are read from the documents shown. Empty folders and folder management are unavailable until it loads.` |
