@@ -4067,7 +4067,7 @@ export interface components {
              * @description The module the permission belongs to: a module catalog key, or `chapter` for a chapter-level permission.
              * @enum {string}
              */
-            module: "chapter" | "members" | "chat" | "announcements" | "events" | "tasks" | "points" | "hours" | "polls" | "backwork" | "documents" | "geofences" | "reports" | "billing";
+            module: "chapter" | "members" | "chat" | "announcements" | "events" | "tasks" | "points" | "hours" | "polls" | "rush" | "backwork" | "documents" | "geofences" | "reports" | "billing";
             /** @description The module's display name. */
             module_label: string;
             /** @description What the permission lets a role do. */
