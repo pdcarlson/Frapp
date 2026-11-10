@@ -43,6 +43,7 @@ import {
   emptyPollDraft,
   movePollOption,
   POLL_CLOSE_CHOICES,
+  pollCloseSummary,
   removePollOption,
   setPollOption,
   type PollCloseChoice,
@@ -58,7 +59,7 @@ import {
  *
  * The form: a question, two to ten options (add, remove, and move up or
  * down), and **More options** for when voting stops, a day by default as on
- * web. A chat-card poll is single-choice (multi-choice is #3793); its creator
+ * web, or not at all (**Doesn't close**, #3896). A chat-card poll is single-choice (multi-choice is #3793); its creator
  * closes it early from the card itself (`poll-card.tsx`, #3794).
  *
  * Posting goes through the outbox like any message, so it is optimistic and
@@ -106,9 +107,6 @@ export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
 
     const check = useMemo(() => checkPollDraft(draft), [draft]);
     const canPost = check.ok && !posting;
-    const closesLabel =
-      POLL_CLOSE_CHOICES.find((each) => each.id === draft.closes)?.label ??
-      "1 day";
 
     const edit = useCallback((next: (current: PollDraft) => PollDraft) => {
       setDraft(next);
@@ -273,7 +271,7 @@ export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
 
           <MoreOptionsRow
             open={showMore}
-            summary={`Closes in ${closesLabel}`}
+            summary={pollCloseSummary(draft.closes)}
             onToggle={() => {
               Keyboard.dismiss();
               setShowMore((open) => !open);

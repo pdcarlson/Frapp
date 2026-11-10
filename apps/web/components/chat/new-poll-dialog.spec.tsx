@@ -39,6 +39,32 @@ describe("NewPollDialog (#3865)", () => {
     expect(poll.payload.closes_at).toBe("2026-11-10T12:00:00.000Z");
   });
 
+  it("posts a poll with no deadline for Doesn't close (#3896)", async () => {
+    const user = userEvent.setup();
+    const onPost = vi.fn(async () => ({ ok: true as const }));
+    const onOpenChange = vi.fn();
+    render(
+      <NewPollDialog
+        open
+        onOpenChange={onOpenChange}
+        initialDraft={pollDraftFromArgs('"Standing lunch?" Subs Pizza')}
+        onPost={onPost}
+        now={() => NOW}
+      />,
+    );
+    const closes = screen.getByLabelText("Voting closes in");
+    // A day stays the default; Doesn't close is the last choice offered.
+    expect(closes).toHaveValue("1d");
+    await user.selectOptions(closes, "Doesn't close");
+    await user.click(screen.getByRole("button", { name: "Post poll" }));
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    const [poll] = onPost.mock.calls[0] as unknown as [
+      { payload: { closes_at: string | null } },
+    ];
+    expect(poll.payload.closes_at).toBeNull();
+  });
+
   it("opens on what was typed after /poll", () => {
     render(
       <NewPollDialog

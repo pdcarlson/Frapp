@@ -43,7 +43,8 @@ import { dashboardFormSelectClassName } from "@/components/shared/table-controls
  * the phone post.
  *
  * A question, two to ten options (add, remove, move up or down), and when
- * voting closes, a day by default as `/poll` does. Posting goes through the
+ * voting closes, a day by default as `/poll` does, or **Doesn't close**
+ * (#3896) for a poll its creator ends from the card. Posting goes through the
  * outbox like a message, so it works offline and a server refusal lands on
  * the card's own failed row with Retry and Discard. What this dialog reports
  * itself is only an outbox that refused the row, when the draft is all the

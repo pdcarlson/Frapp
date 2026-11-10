@@ -123,6 +123,29 @@ describe("New poll sheet (#3701)", () => {
     act(() => tree.unmount());
   });
 
+  it("posts a poll with no deadline for Doesn't close (#3896)", async () => {
+    const onPost = queued();
+    const tree = render(onPost);
+    fill(tree);
+    act(() => control(tree, "More options: Closes in 1 day")!.props.onPress());
+    const chips = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Voting closes in" &&
+        typeof node.props.onSelect === "function",
+    );
+    expect(chips.props.chips.at(-1)).toEqual({
+      value: "never",
+      label: "Doesn't close",
+    });
+    act(() => chips.props.onSelect("never"));
+    // Collapsed again, the row says the choice in its own words.
+    act(() => control(tree, "Fewer options")!.props.onPress());
+    expect(control(tree, "More options: Doesn't close")).toBeTruthy();
+    await act(async () => postButton(tree).props.onPress());
+    expect(onPost.mock.calls[0]![0].payload.closes_at).toBeNull();
+    act(() => tree.unmount());
+  });
+
   it("adds, moves and removes option rows", async () => {
     const onPost = queued();
     const tree = render(onPost);

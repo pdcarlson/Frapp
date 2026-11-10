@@ -3,6 +3,8 @@ import {
   addPollOption,
   checkPollDraft,
   closesAtFor,
+  POLL_CLOSE_CHOICES,
+  pollCloseSummary,
   DEFAULT_POLL_CLOSE,
   DUPLICATE_OPTION_PROBLEM,
   emptyPollDraft,
@@ -102,18 +104,34 @@ describe("closesAtFor (#3701)", () => {
   const now = new Date("2026-11-09T12:00:00.000Z");
 
   it("closes a day out by default, as /poll does", () => {
-    expect(closesAtFor(DEFAULT_POLL_CLOSE, now).toISOString()).toBe(
+    expect(closesAtFor(DEFAULT_POLL_CLOSE, now)?.toISOString()).toBe(
       "2026-11-10T12:00:00.000Z",
     );
   });
 
   it("offers an hour and a week", () => {
-    expect(closesAtFor("1h", now).toISOString()).toBe(
+    expect(closesAtFor("1h", now)?.toISOString()).toBe(
       "2026-11-09T13:00:00.000Z",
     );
-    expect(closesAtFor("1w", now).toISOString()).toBe(
+    expect(closesAtFor("1w", now)?.toISOString()).toBe(
       "2026-11-16T12:00:00.000Z",
     );
+  });
+
+  it("sets no deadline for Doesn't close (#3896)", () => {
+    expect(closesAtFor("never", now)).toBeNull();
+    expect(POLL_CLOSE_CHOICES.at(-1)).toEqual({
+      id: "never",
+      label: "Doesn't close",
+      minutes: null,
+    });
+    // The default is still a day.
+    expect(DEFAULT_POLL_CLOSE).toBe("1d");
+  });
+
+  it("says the choice as mobile's More options row reads it", () => {
+    expect(pollCloseSummary("1d")).toBe("Closes in 1 day");
+    expect(pollCloseSummary("never")).toBe("Doesn't close");
   });
 });
 
@@ -136,6 +154,9 @@ describe("pollDraftFromArgs (#3865)", () => {
 
   it("snaps closes= to the nearest choice the form offers", () => {
     expect(pollDraftFromArgs('"Q" closes=4000').closes).toBe("3d");
+    // However long, a typed number of minutes is a deadline: the nearest
+    // timed choice, never "Doesn't close" (#3896).
+    expect(pollDraftFromArgs('"Q" closes=9999999').closes).toBe("1w");
   });
 
   it("recovers the options when the last one's closing quote is missing", () => {

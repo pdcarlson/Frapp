@@ -10,19 +10,36 @@ import { tokenizeQuotedArgs } from "./integrations/parsers";
  * so a poll made in either form is the card every client already votes on.
  */
 
-/** When voting stops, as More options offers it. */
-export type PollCloseChoice = "1h" | "1d" | "3d" | "1w";
+/**
+ * When voting stops, as the form offers it. `never` is a poll with no
+ * deadline (#3896): it stays open until its creator closes it from the card
+ * (Close poll, #3794).
+ */
+export type PollCloseChoice = "1h" | "1d" | "3d" | "1w" | "never";
 
 export const POLL_CLOSE_CHOICES: readonly {
   id: PollCloseChoice;
   label: string;
-  minutes: number;
+  /** Minutes from posting to the deadline, or `null` for no deadline. */
+  minutes: number | null;
 }[] = [
   { id: "1h", label: "1 hour", minutes: 60 },
   { id: "1d", label: "1 day", minutes: 60 * 24 },
   { id: "3d", label: "3 days", minutes: 60 * 24 * 3 },
   { id: "1w", label: "1 week", minutes: 60 * 24 * 7 },
+  { id: "never", label: "Doesn't close", minutes: null },
 ];
+
+/**
+ * The choice as a sentence fragment, for mobile's collapsed More options row:
+ * "Closes in 1 day", or "Doesn't close".
+ */
+export function pollCloseSummary(choice: PollCloseChoice): string {
+  const found =
+    POLL_CLOSE_CHOICES.find((each) => each.id === choice) ??
+    POLL_CLOSE_CHOICES.find((each) => each.id === DEFAULT_POLL_CLOSE)!;
+  return found.minutes === null ? found.label : `Closes in ${found.label}`;
+}
 
 /** A day, as web's `/poll` closes when it isn't told otherwise. */
 export const DEFAULT_POLL_CLOSE: PollCloseChoice = "1d";
@@ -60,10 +77,11 @@ export function emptyPollDraft(): PollDraft {
   };
 }
 
-export function closesAtFor(choice: PollCloseChoice, now: Date): Date {
-  const minutes =
-    POLL_CLOSE_CHOICES.find((each) => each.id === choice)?.minutes ??
-    60 * 24;
+/** The deadline the choice sets, or `null` for a poll that doesn't close. */
+export function closesAtFor(choice: PollCloseChoice, now: Date): Date | null {
+  const found = POLL_CLOSE_CHOICES.find((each) => each.id === choice);
+  const minutes = found ? found.minutes : 60 * 24;
+  if (minutes === null) return null;
   return new Date(now.getTime() + minutes * 60 * 1000);
 }
 
@@ -207,12 +225,13 @@ export function pollDraftFromArgs(args: string): PollDraft {
   return { question: question.trim(), options, closes };
 }
 
+/** The timed choice nearest to `minutes`; "Doesn't close" is never nearest. */
 function nearestCloseChoice(minutes: number): PollCloseChoice {
-  let best = POLL_CLOSE_CHOICES[0]!;
+  let best: { id: PollCloseChoice; distance: number } | null = null;
   for (const choice of POLL_CLOSE_CHOICES) {
-    if (Math.abs(choice.minutes - minutes) < Math.abs(best.minutes - minutes)) {
-      best = choice;
-    }
+    if (choice.minutes === null) continue;
+    const distance = Math.abs(choice.minutes - minutes);
+    if (!best || distance < best.distance) best = { id: choice.id, distance };
   }
-  return best.id;
+  return best ? best.id : DEFAULT_POLL_CLOSE;
 }
