@@ -90,9 +90,9 @@ the same rule search and the poll list follow
   ([`chat/README.md` § What a block does and does not hide](chat/README.md#what-a-block-does-and-does-not-hide)). If
   the block list cannot be read, the polls section fails (empty, named in `unavailable`) instead
   of listing unmasked. The other sections are chapter records, which a block leaves alone.
-- A row is a pointer to the message (`message_id`, `channel_id`) plus what a list shows: the
+- A row is the poll's chat message (`message`, as chat serves it) plus what a list shows: the
   question, the channel, when it closes, whether the caller voted. It carries **no tallies**. A
-  client reads the message the way chat does and draws chat's own poll card from it, so the same
+  client reads its votes the way chat does and draws chat's own poll card from it, so the same
   access rule and the same live updates apply, and the card counts the votes.
 - A card counts as a poll, and as open, by the rules chat's card and the vote route use: it needs
   a question and two options with an id and a label (a card without them draws as "Malformed

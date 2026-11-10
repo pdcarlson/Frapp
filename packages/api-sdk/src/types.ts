@@ -5270,7 +5270,7 @@ export interface components {
         ActivityPollDto: {
             /**
              * Format: uuid
-             * @description The chat message that is the poll card. A client reads that message the way chat does and draws chat’s own card from it; this row carries no tallies.
+             * @description The chat message that is the poll card. It is served whole in `message`; this row carries no tallies.
              */
             message_id: string;
             /** Format: uuid */
@@ -5297,6 +5297,8 @@ export interface components {
             has_voted: boolean;
             /** Format: date-time */
             created_at: string;
+            /** @description The poll’s chat message, as `GET /v1/channels/{id}/messages` serves it, for chat’s own poll card. Its votes are read from `chat_message_actions`, as chat reads them. */
+            message: components["schemas"]["ChatMessageDto"];
         };
         ActivityNeedsYouDto: {
             /** @description Open tasks assigned to the caller, soonest due first. */

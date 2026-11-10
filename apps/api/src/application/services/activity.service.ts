@@ -29,6 +29,8 @@ import type { CardPollPayload } from '#domain/utils/poll-vote-rules';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { BackworkService } from './backwork.service';
 import { ChapterDocumentService } from './chapter-document.service';
+import { maskBlockedMessages } from './chat-block-mask';
+import type { MaskedChatMessage } from './chat-block-mask';
 import { ChatBlockService } from './chat-block.service';
 import { ChatService } from './chat.service';
 import { EventService } from './event.service';
@@ -107,6 +109,12 @@ export interface ActivityPoll {
   is_closed: boolean;
   has_voted: boolean;
   created_at: string;
+  /**
+   * The poll's chat message, as `GET /v1/channels/{id}/messages` serves it,
+   * so a client can hand it to chat's own poll card. Its votes are not in it:
+   * a client reads `chat_message_actions` for the message the way chat does.
+   */
+  message: MaskedChatMessage;
 }
 
 /** An upcoming event the member is invited to. */
@@ -564,6 +572,10 @@ export class ActivityService {
         is_closed: pollCardClosed(card, nowDate),
         has_voted: votedIds.has(message.id),
         created_at: message.created_at,
+        // Through the mask every chat read uses, with the block list read
+        // above. A blocked author's poll never reaches this line; the mask is
+        // what gives the row chat's own shape (`sender_blocked` set).
+        message: maskBlockedMessages([message], blocked)[0],
       };
     };
     const rowsOf = (messages: ChatMessage[]): ActivityPoll[] =>

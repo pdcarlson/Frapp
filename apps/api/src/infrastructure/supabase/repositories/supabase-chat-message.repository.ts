@@ -270,7 +270,13 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
 
     const { data, error } = await query.limit(options.limit);
     if (error) throw new SupabaseQueryError(error);
-    return data || [];
+    // The joined channel is only the chapter filter. It is dropped here so a
+    // caller that serves the row serves a chat message and nothing else.
+    return (data || []).map((row) => {
+      const message: ChatMessage & { chat_channels?: unknown } = { ...row };
+      delete message.chat_channels;
+      return message;
+    });
   }
 
   async findByClientMessageId(

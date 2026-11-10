@@ -190,6 +190,12 @@ describe('ActivityService', () => {
           option_count: 2,
           is_closed: false,
           has_voted: false,
+          // The chat message itself, in the shape chat serves, for chat's card.
+          message: expect.objectContaining({
+            id: 'poll-1',
+            kind: 'poll',
+            sender_blocked: false,
+          }),
         }),
       ]);
       expect(view.needs_you_count).toBe(1);

@@ -214,6 +214,8 @@ describe('SupabaseChatMessageRepository — tenant scope', () => {
     // Not chapter A's card, not the deleted one, and not the old-format poll
     // (`type: 'POLL'` with no `kind`), which no card can draw.
     expect(cards.map((c) => c.id)).toEqual([CARD_B]);
+    // The join that scopes the read is not served with the row.
+    expect(cards[0]).not.toHaveProperty('chat_channels');
     expect(
       harness.ops[0].filters.map((f) => [f.column, f.value]),
     ).toContainEqual(['chat_channels.chapter_id', CHAPTER_B]);

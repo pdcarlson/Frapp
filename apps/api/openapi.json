@@ -16274,7 +16274,7 @@
           "message_id": {
             "type": "string",
             "format": "uuid",
-            "description": "The chat message that is the poll card. A client reads that message the way chat does and draws chat’s own card from it; this row carries no tallies."
+            "description": "The chat message that is the poll card. It is served whole in `message`; this row carries no tallies."
           },
           "channel_id": {
             "type": "string",
@@ -16326,6 +16326,14 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "message": {
+            "description": "The poll’s chat message, as `GET /v1/channels/{id}/messages` serves it, for chat’s own poll card. Its votes are read from `chat_message_actions`, as chat reads them.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChatMessageDto"
+              }
+            ]
           }
         },
         "required": [
@@ -16340,7 +16348,8 @@
           "closed_at",
           "is_closed",
           "has_voted",
-          "created_at"
+          "created_at",
+          "message"
         ]
       },
       "ActivityNeedsYouDto": {

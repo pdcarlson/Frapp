@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { ChatMessageDto } from './chat.dto';
 import { TaskStatus } from '#domain/entities/task.entity';
 import type { ChannelType } from '#domain/entities/chat.entity';
 import { ACTIVITY_SECTIONS } from '../../application/services/activity.service';
@@ -104,7 +105,7 @@ export class ActivityPollDto implements ActivityPoll {
   @ApiProperty({
     format: 'uuid',
     description:
-      'The chat message that is the poll card. A client reads that message the way chat does and draws chat’s own card from it; this row carries no tallies.',
+      'The chat message that is the poll card. It is served whole in `message`; this row carries no tallies.',
   })
   message_id: string;
 
@@ -154,6 +155,13 @@ export class ActivityPollDto implements ActivityPoll {
 
   @ApiProperty({ format: 'date-time' })
   created_at: string;
+
+  @ApiProperty({
+    type: ChatMessageDto,
+    description:
+      'The poll’s chat message, as `GET /v1/channels/{id}/messages` serves it, for chat’s own poll card. Its votes are read from `chat_message_actions`, as chat reads them.',
+  })
+  message: ActivityPoll['message'];
 }
 
 export class ActivityEventDto implements ActivityEvent {
