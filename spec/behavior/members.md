@@ -5,7 +5,8 @@ The `members` module is always-on (free tier). Every chapter has a searchable me
 ## Directory
 
 - The directory is searchable across **name, email, and custom-field values**. Custom-field search is **visibility-scoped** — a viewer can only match on field values they are permitted to see.
-- Filters: role, class/line/cohort (rendered via the chapter vocabulary term), and status.
+- Filters: role, graduation year, and status. The graduation-year filter is labelled "Graduation year", never the chapter's class/line/cohort term: one pledge class can span several graduation years, and that term is kept for real pledge classes ([#3939](https://github.com/pdcarlson/Frapp/issues/3939)).
+  - Changed for [#3941](https://github.com/pdcarlson/Frapp/issues/3941) by shawnatomklein-eng, 2026-11-09 (was: "class/line/cohort (rendered via the chapter vocabulary term)").
 - Search also supports name, role, and join date.
 - The directory paginates at **25 rows per page**; the pager renders only when the filtered set exceeds one page. (Web renders one flush list; the table and card layouts this line used to name were deleted by the greenfield Directory lane, [#2146](https://github.com/pdcarlson/Frapp/issues/2146).)
 
