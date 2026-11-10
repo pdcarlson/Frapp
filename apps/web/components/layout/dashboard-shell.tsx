@@ -339,10 +339,18 @@ export function DashboardShell({
       `dvh`, not `vh`: on a phone browser whose toolbar can hide, `100vh` is
       the viewport with the toolbar hidden, so a shell that clips its overflow
       would put chat's composer under the toolbar while it shows.
+
+      `relative` is load-bearing (#4000). `overflow-hidden` clips only the
+      boxes whose containing block is this element or inside it. Without a
+      position here, every `absolute` box in the shell (each `sr-only` label,
+      a Radix control's hidden input) took `<body>` as its containing block
+      and sat at its unscrolled place in a long page. Nothing clipped it, so
+      the document grew past the viewport and scrolled the whole shell up,
+      leaving a black band below it.
     */
     <div
       data-dashboard-shell=""
-      className="flex h-dvh overflow-hidden bg-background"
+      className="relative flex h-dvh overflow-hidden bg-background"
     >
       <ChapterWizardGate />
       {/* A member whose roles grant nothing (#3236). */}
