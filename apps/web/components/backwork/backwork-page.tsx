@@ -135,13 +135,14 @@ const CHIPS: { key: ChipKey; label: string; anyLabel: string }[] = [
 ];
 
 /*
- * Columns at md and up. Below md a row stacks: title and course, then one
+ * Columns from a 896px page (`@4xl`; the page root is a container, #4022,
+ * and the fixed columns alone take ~700px). Below it a row stacks: title and course, then one
  * wrapping line of tag, professor, term, copy and date, with the actions on
- * the right. The meta wrapper is `md:contents`, so at md its children become
- * grid cells and `md:order-*` puts the type tag in the first column.
+ * the right. The meta wrapper is `@4xl:contents`, so there its children become
+ * grid cells and `@4xl:order-*` puts the type tag in the first column.
  */
 const ROW_GRID =
-  "md:grid-cols-[112px_minmax(0,1fr)_140px_104px_128px_64px_76px]";
+  "@4xl:grid-cols-[112px_minmax(0,1fr)_140px_104px_128px_64px_76px]";
 
 
 /**
@@ -566,7 +567,9 @@ export function BackworkPage() {
         : `${count} file${count === 1 ? "" : "s"}`;
 
   return (
-    <div className="space-y-3">
+    // A container (#4022): beside chat (#3779) the page is narrow while the
+    // window is wide, so the table counts the page's own width.
+    <div className="@container space-y-3">
       <section
         aria-label="Search and filter backwork"
         className="flex flex-wrap items-center gap-2"
@@ -818,7 +821,7 @@ export function BackworkPage() {
             <div
               aria-hidden="true"
               className={cn(
-                "hidden gap-3 px-2 pb-1.5 text-caption font-semibold uppercase tracking-[0.06em] text-muted md:grid",
+                "hidden gap-3 px-2 pb-1.5 text-caption font-semibold uppercase tracking-[0.06em] text-muted @4xl:grid",
                 ROW_GRID,
               )}
             >
@@ -842,11 +845,11 @@ export function BackworkPage() {
                     <li
                       className={cn(
                         "group grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-2 py-2 hover:bg-card data-[state=open]:bg-card",
-                        "md:min-h-12",
+                        "@4xl:min-h-12",
                         ROW_GRID,
                       )}
                     >
-                      <div className="min-w-0 md:order-2">
+                      <div className="min-w-0 @4xl:order-2">
                         <p className="truncate text-sm font-semibold">
                           <Highlighted text={row.title} hits={hits} />
                         </p>
@@ -890,37 +893,37 @@ export function BackworkPage() {
                           ) : null}
                         </p>
                       </div>
-                      <div className="col-start-1 row-start-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-caption text-muted-foreground md:contents">
-                        <span className="md:order-1 md:min-w-0">
+                      <div className="col-start-1 row-start-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-caption text-muted-foreground @4xl:contents">
+                        <span className="@4xl:order-1 @4xl:min-w-0">
                           <TypeTag type={row.resource.assignment_type} />
                         </span>
                         {row.professor ? (
-                          <span className="truncate md:order-3 md:text-sm">
+                          <span className="truncate @4xl:order-3 @4xl:text-sm">
                             <Highlighted
                               text={row.professor.name}
                               hits={hits}
                             />
                           </span>
                         ) : (
-                          <span className="hidden md:order-3 md:block" />
+                          <span className="hidden @4xl:order-3 @4xl:block" />
                         )}
-                        <span className="whitespace-nowrap tabular-nums text-foreground md:order-4 md:text-sm">
+                        <span className="whitespace-nowrap tabular-nums text-foreground @4xl:order-4 @4xl:text-sm">
                           {row.term ? (
                             <Highlighted text={row.term} hits={hits} />
                           ) : null}
                         </span>
-                        <span className="md:order-5">
+                        <span className="@4xl:order-5">
                           <CopyLabel
                             variant={row.resource.document_variant}
                             redacted={row.resource.is_redacted}
                           />
                         </span>
-                        <span className="whitespace-nowrap tabular-nums md:order-6">
-                          <span className="md:hidden">Added </span>
+                        <span className="whitespace-nowrap tabular-nums @4xl:order-6">
+                          <span className="@4xl:hidden">Added </span>
                           {formatDay(row.resource.created_at) ?? ""}
                         </span>
                       </div>
-                      <div className="col-start-2 row-span-2 row-start-1 flex items-center justify-end gap-0.5 md:order-7 md:col-start-auto md:row-span-1 md:row-start-auto">
+                      <div className="col-start-2 row-span-2 row-start-1 flex items-center justify-end gap-0.5 @4xl:order-7 @4xl:col-start-auto @4xl:row-span-1 @4xl:row-start-auto">
                         <Button
                           type="button"
                           variant="ghost"

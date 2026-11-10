@@ -39,7 +39,7 @@ export function BulkFieldsForm({ value, onChange, disabled }: Props) {
           onChange={text("title")}
         />
       </UploadField>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 @lg:grid-cols-2">
         <UploadField id="bulk-department" label="Department code">
           <Input
             id="bulk-department"

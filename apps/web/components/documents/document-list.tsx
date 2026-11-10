@@ -99,7 +99,9 @@ export function DocumentList({
   onUpload?: () => void;
 }) {
   return (
-    <section aria-labelledby="doc-list-label">
+    // Its own container (#4022): the rows break on the list's width, which
+    // the folder rail and, beside chat, the chat panel both take from.
+    <section aria-labelledby="doc-list-label" className="@container">
       {/*
         One toolbar row, not a card header: the list's own name and count
         on the left, its search on the right, sitting directly on the page
@@ -140,8 +142,8 @@ export function DocumentList({
           glyph class sized against the toolbar field. The wrapper carries the
           spacing so the icon offset never has to compensate for it.
         */}
-        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-          <div className="relative w-full sm:w-64">
+        <div className="flex w-full flex-wrap items-center gap-2 @md:w-auto">
+          <div className="relative w-full @md:w-64">
             <Label htmlFor="doc-search" className="sr-only">
               Search documents
             </Label>

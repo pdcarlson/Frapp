@@ -45,7 +45,7 @@ type Category = PointCategory;
  * field at 40 (44 to a finger) by default; in this section's toolbar row it lines up with the
  * buttons beside it instead.
  */
-const TOOLBAR_SELECT = `${dashboardToolbarHeightClassName} w-full text-sm sm:w-44`;
+const TOOLBAR_SELECT = `${dashboardToolbarHeightClassName} w-full text-sm @xl:w-44`;
 
 /** The square refresh control at the toolbar height: 36, or 44 to a finger. */
 const TOOLBAR_ICON = `${dashboardToolbarHeightClassName} w-9 pointer-coarse:w-11`;
@@ -364,7 +364,7 @@ export function PointsAuditCard() {
                   return (
                     <li
                       key={row.id}
-                      className="flex min-h-11 flex-col gap-0.5 py-2 sm:flex-row sm:items-center sm:gap-3"
+                      className="flex min-h-11 flex-col gap-0.5 py-2 @xl:flex-row @xl:items-center @xl:gap-3"
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
@@ -392,7 +392,7 @@ export function PointsAuditCard() {
                       <span
                         className={cn(
                           amountToneClassName(amount, "sm"),
-                          "shrink-0 sm:text-right",
+                          "shrink-0 @xl:text-right",
                         )}
                       >
                         {`${sign}${amount} points`}

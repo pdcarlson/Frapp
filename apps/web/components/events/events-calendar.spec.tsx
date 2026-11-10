@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cardFilledContainers } from "@/tests/card-surfaces";
 import { EventsCalendar, startOfMonth } from "./events-calendar";
 
@@ -142,5 +142,194 @@ describe("EventsCalendar", () => {
     expect(
       screen.queryByTestId("calendar-first-event-slot"),
     ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * A `ResizeObserver` that reports `width` as soon as it observes, standing in
+ * for a calendar beside chat (#4022). The suite's setup stub never fires, so
+ * every other test draws the full month.
+ */
+function stubCalendarWidth(width: number) {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      constructor(private readonly callback: ResizeObserverCallback) {}
+      observe() {
+        this.callback(
+          [{ contentRect: { width } } as ResizeObserverEntry],
+          this as unknown as ResizeObserver,
+        );
+      }
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+}
+
+describe("EventsCalendar on a narrow page (#4022)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps the full month, names on the grid, when the page is wide", () => {
+    stubCalendarWidth(900);
+    renderCalendar();
+
+    expect(
+      screen.getByRole("button", { name: /^view chapter meeting/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^november 6, 1 event$/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("goes compact at 480px: days carry counts, the picked day lists its events", () => {
+    stubCalendarWidth(480);
+    const onSelectEvent = vi.fn();
+    const onCreateOnDay = vi.fn();
+    render(
+      <EventsCalendar
+        events={[
+          {
+            id: "evt-1",
+            name: "Chapter Meeting",
+            start_time: start,
+            is_mandatory: true,
+          },
+        ]}
+        monthAnchor={anchor}
+        onMonthAnchorChange={vi.fn()}
+        onSelectEvent={onSelectEvent}
+        onCreateOnDay={onCreateOnDay}
+        canCreate
+        chapterHasEvents
+        createDisabled={false}
+      />,
+    );
+
+    // No event name on the grid: the day says how many.
+    expect(
+      screen.queryByRole("button", { name: /^view chapter meeting/i }),
+    ).not.toBeInTheDocument();
+    const day = screen.getByRole("button", { name: "November 6, 1 event" });
+    expect(day).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(day);
+    expect(day).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("heading", { name: /November 6/ }),
+    ).toBeInTheDocument();
+
+    // The event opens from the day's list, by its full name.
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /^View Chapter Meeting, 5:00\sPM, mandatory$/,
+      }),
+    );
+    expect(onSelectEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "evt-1" }),
+    );
+
+    // Creating on a day is still one press away, on the picked day.
+    fireEvent.click(
+      screen.getByRole("button", { name: /^New event on .*November 6/ }),
+    );
+    const created = onCreateOnDay.mock.calls[0]?.[0] as Date;
+    expect(created.getDate()).toBe(6);
+    expect(created.getMonth()).toBe(10);
+  });
+
+  it("opens on today in the current month", () => {
+    stubCalendarWidth(480);
+    const now = new Date();
+    render(
+      <EventsCalendar
+        events={[]}
+        monthAnchor={startOfMonth(now)}
+        onMonthAnchorChange={vi.fn()}
+        onSelectEvent={vi.fn()}
+        onCreateOnDay={vi.fn()}
+        canCreate
+        chapterHasEvents
+        createDisabled={false}
+      />,
+    );
+
+    const pressed = screen
+      .getAllByRole("button", { pressed: true })
+      .map((button) => button.getAttribute("aria-label"));
+    const todayLabel = now.toLocaleDateString(undefined, {
+      month: "long",
+      day: "numeric",
+    });
+    expect(pressed).toEqual([`${todayLabel}, no events`]);
+  });
+
+  it("opens the next month from one of its days on the grid", () => {
+    stubCalendarWidth(480);
+    const onMonthAnchorChange = vi.fn();
+    // November 2026 starts on a Sunday and has 30 days, so the grid ends
+    // with December 1–12.
+    render(
+      <EventsCalendar
+        events={[]}
+        monthAnchor={anchor}
+        onMonthAnchorChange={onMonthAnchorChange}
+        onSelectEvent={vi.fn()}
+        onCreateOnDay={vi.fn()}
+        canCreate
+        chapterHasEvents
+        createDisabled={false}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "December 3, no events" }),
+    );
+    expect(onMonthAnchorChange).toHaveBeenCalledWith(new Date(2026, 11, 1));
+  });
+
+  it("tells a creator with no events to pick a day, then New event", () => {
+    stubCalendarWidth(480);
+    render(
+      <EventsCalendar
+        events={[]}
+        monthAnchor={startOfMonth(new Date())}
+        onMonthAnchorChange={vi.fn()}
+        onSelectEvent={vi.fn()}
+        onCreateOnDay={vi.fn()}
+        canCreate
+        chapterHasEvents={false}
+        createDisabled={false}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "Pick a day, then New event to schedule the first event.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("offers no New event to a viewer who cannot create", () => {
+    stubCalendarWidth(480);
+    render(
+      <EventsCalendar
+        events={[]}
+        monthAnchor={anchor}
+        onMonthAnchorChange={vi.fn()}
+        onSelectEvent={vi.fn()}
+        onCreateOnDay={vi.fn()}
+        canCreate={false}
+        chapterHasEvents={false}
+        createDisabled={false}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /^New event on/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Nothing on this day.")).toBeInTheDocument();
   });
 });
