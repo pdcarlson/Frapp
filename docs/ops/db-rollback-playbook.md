@@ -3250,3 +3250,23 @@ A data-only backfill: it set `read_at` on unread chat notifications the member's
 
 **There is normally nothing to roll back.** The rows it read are ones the member had already seen; "unread" for them was the defect. The backfill did not record which rows it touched, so it cannot be reversed exactly. If rows must be reopened, a row it stamped from a receipt has `read_at` equal to that receipt's `last_read_at` at the time, which no API write produces for a row created before #3807 was live; restore those rows from the pre-promotion backup ([§ 2) Full rollback to backup/snapshot](#2-full-rollback-to-backupsnapshot)) rather than guessing.
 
+## Rollback pledge classes (20261110170000)
+
+* **Migration**: `20261110170000_chapter_pledge_classes.sql`
+
+One new table, `chapter_pledge_classes`; two nullable columns on `members`, `pledge_class_id` and `order_number`, with a check and a composite foreign key; and two functions, `reorder_chapter_pledge_classes` and `assign_member_pledge_classes`. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API has no `/v1/pledge-classes` routes and stops returning the two member fields; a client that shows them reads them as absent and shows nothing. Roll back any client that writes them first, or with it.
+
+**Keep the table and columns unless they are themselves the problem.** Dropping them loses every chapter's class list and every member's class and number, which officers entered by hand. To remove them, do it in a later forward migration after the code revert has shipped:
+
+```sql
+drop function if exists public.assign_member_pledge_classes(uuid, jsonb);
+drop function if exists public.reorder_chapter_pledge_classes(uuid, uuid[]);
+alter table public.members
+  drop constraint if exists members_pledge_class_fk,
+  drop constraint if exists members_order_number_range,
+  drop column if exists pledge_class_id,
+  drop column if exists order_number;
+drop table if exists public.chapter_pledge_classes;
+```

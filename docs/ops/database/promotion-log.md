@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-10: Pledge classes and a member's order number (#3939)
+
+### 20261110170000_chapter_pledge_classes.sql
+
+- **Purpose**: Adds `chapter_pledge_classes`, a chapter's own ordered list of pledge classes (`name`, 1 to 80 characters trimmed, unique per chapter ignoring case; `position`, lowest first, which is oldest first). FK to `chapters` cascades. RLS on, no policies (API only, service role). Adds two nullable columns to `members`: `pledge_class_id` and `order_number` (1 to 1,000,000 by check). The foreign key is composite, `(pledge_class_id, chapter_id)` to `chapter_pledge_classes (id, chapter_id)`, `on delete set null (pledge_class_id)`, so a member can only point at a class of their own chapter and deleting a class clears only that column. Adds `reorder_chapter_pledge_classes(uuid, uuid[])` and `assign_member_pledge_classes(uuid, jsonb)`, each one statement (security invoker, EXECUTE for `service_role` only). No existing row changes: both columns are null everywhere, so the foreign key validates against nothing. The rule is [`spec/behavior/members.md` § Pledge class and order number](../../../spec/behavior/members.md#pledge-class-and-order-number).
+- **Checks**: After `db push`, `select relrowsecurity from pg_class where relname = 'chapter_pledge_classes';` returns `true`, `select count(*) from pg_policies where tablename = 'chapter_pledge_classes';` returns `0`, `select column_name from information_schema.columns where table_name = 'members' and column_name in ('pledge_class_id', 'order_number');` returns two rows, and `select has_function_privilege('authenticated', 'public.assign_member_pledge_classes(uuid, jsonb)', 'execute');` and `select has_function_privilege('authenticated', 'public.reorder_chapter_pledge_classes(uuid, uuid[])', 'execute');` both return `false`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never reads the table or the columns. The newer API against an unmigrated database fails every `/v1/pledge-classes` route; `GET /v1/members` still answers, without the two fields. `alter table members` takes a brief exclusive lock to add two nullable columns and a foreign key over all-null values, with no rewrite. `create table if not exists`, `add column if not exists`, the guarded `add constraint` blocks and `create or replace` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-pledge-classes-20261110170000) § Rollback pledge classes.
+
 ## 2026-11-09: Clear chat notifications already seen (#3929)
 
 ### 20261109233000_notifications_backfill_seen_chat_rows.sql
