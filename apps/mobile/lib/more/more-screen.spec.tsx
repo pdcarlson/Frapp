@@ -54,6 +54,7 @@ afterEach(() => {
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  useOwnAvatarTint: () => null,
   useListChapters: () => ({ isSuccess: true, data: [{ id: "chapter-1" }] }),
   usePermissionList: () => permissions,
   useMyPermissions: () => ({

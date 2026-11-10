@@ -246,7 +246,9 @@ vi.mock("@repo/hooks", async () => {
     useCurrentUser: () => query({ id: VIEWER }, refetches.viewer),
     useTasks: () => query([], refetches.tasks),
     useViewerUserId: () => VIEWER,
+    useOwnAvatarTint: () => null,
     useMemberDisplayNames: () => ({
+      avatarTintFor: () => null,
       byId: { [ALICE]: "Alice Chen", [BOB]: "Bob Diaz" },
       nameFor: (id: string) =>
         ({ [ALICE]: "Alice Chen", [BOB]: "Bob Diaz" })[id] ?? null,

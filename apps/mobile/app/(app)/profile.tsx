@@ -7,6 +7,7 @@ import {
   useMyPoints,
   useServiceEntries,
   useViewerUserId,
+  useOwnAvatarTint,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
@@ -72,6 +73,8 @@ import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
  */
 export default function ProfileScreen() {
   const { tokens } = useFrappTheme();
+  // Your initials wear the color the chapter sees on them (#3860).
+  const ownTint = useOwnAvatarTint();
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
   const { email: sessionEmail } = useAuthSession();
@@ -151,6 +154,7 @@ export default function ProfileScreen() {
           photoUrl={profile?.photoUrl ?? null}
           fetchedAt={userQuery.dataUpdatedAt}
           initials={profile?.initials ?? "?"}
+          avatarTint={ownTint}
         />
         <Text style={styles.name}>
           {profile?.displayName ?? "Your profile"}

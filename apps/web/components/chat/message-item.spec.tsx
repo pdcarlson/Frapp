@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { CHAT_DENSITY_STORAGE_KEY } from "@repo/chat-core/density";
+import { memberHashHue } from "@repo/hooks";
 import {
   resetChatDensityForTests,
   setChatDensity,
@@ -276,6 +277,26 @@ describe("MessageItem compact layout (#2873)", () => {
       authorColor: "#6FD08C",
     });
     expect(screen.getByText("You")).toHaveStyle({ color: "#6FD08C" });
+  });
+
+  it("tints the author's initials in their name's color, else their hashed hue (#3860)", () => {
+    const officer = renderItemWithProps({
+      message: message({ sender_id: OTHER }),
+      authorColor: "#6FD08C",
+    });
+    expect(
+      officer.container
+        .querySelector("[data-avatar-tint]")
+        ?.getAttribute("data-avatar-tint"),
+    ).toBe("#6FD08C");
+    officer.unmount();
+
+    const { container } = renderItem(message({ sender_id: OTHER }));
+    expect(
+      container
+        .querySelector("[data-avatar-tint]")
+        ?.getAttribute("data-avatar-tint"),
+    ).toBe(memberHashHue(OTHER));
   });
 
   it("puts the time of day on the author line, never the date", () => {

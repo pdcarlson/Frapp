@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import {
   useActiveChapterId,
   useCurrentUser,
+  useMemberDisplayNames,
   useNotificationPreferences,
   useUpdateNotificationPreference,
   useUpdateOnboarding,
@@ -94,6 +95,9 @@ export function ProfilePanel() {
   const { toast } = useToast();
   const { isOffline } = useNetwork();
   const userQuery = useCurrentUser();
+  // Your initials wear the color the chapter sees on them (#3860).
+  const { avatarTintFor } = useMemberDisplayNames();
+  const ownId = (userQuery.data as CurrentUser | undefined)?.id;
   const settingsQuery = useUserSettings();
   const updateUser = useUpdateUser();
   const updateSettings = useUpdateUserSettings();
@@ -559,10 +563,8 @@ export function ProfilePanel() {
       */}
       <div className="max-w-2xl space-y-10">
         {/*
-          s15's identity header, as far as the data goes. The avatar is the
-          neutral circle (`--popover` fill, initials in `--muted-foreground`);
-          the member tint other surfaces draw since #3860 has not reached this
-          header yet (#4017). s15 drew it in
+          s15's identity header, as far as the data goes. The initials take
+          your member tint, as everywhere your face appears (#3860). s15 drew it in
           the house-gold family and this transcribed that as the chapter accent
           until 2026-11-05, when the accent came off people's avatars
           (`foundations.md` §6). Measured in `profile-contrast.spec.ts`.
@@ -582,7 +584,10 @@ export function ProfilePanel() {
               for `signet-mark.tsx`'s reason: initials in an avatar are a drawn
               mark, not a run of text. s15 draws them at 28 in an 84px circle.
             */}
-            <AvatarFallback className="bg-popover text-[26px] font-bold text-muted-foreground">
+            <AvatarFallback
+              tint={ownId ? avatarTintFor(ownId) : null}
+              className="bg-popover text-[26px] font-bold text-muted-foreground"
+            >
               {initials(storedName || profile.email || "")}
             </AvatarFallback>
           </Avatar>

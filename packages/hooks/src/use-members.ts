@@ -11,6 +11,7 @@ import type { components } from "@repo/api-sdk";
 import { roleColorOrNull, type MemberDismissalKey } from "@repo/validation";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { resolveDisplayName, type DisplayNameMap } from "./display-names";
+import { useViewerUserId } from "./use-user";
 import {
   memberAvatarHue,
   memberAvatarTint,
@@ -426,4 +427,15 @@ export function useDismissOpsNudge() {
       queryClient.invalidateQueries({ queryKey: ["chapters"] });
     },
   });
+}
+
+/**
+ * The viewer's own initials paint (#3860): the color the chapter sees on them,
+ * for the surfaces that draw the viewer's own avatar (the account button, the
+ * More tab's card, the profile page). `null` until the viewer's id is known.
+ */
+export function useOwnAvatarTint(): MemberAvatarTint | null {
+  const viewerId = useViewerUserId();
+  const { avatarTintFor } = useMemberDisplayNames();
+  return viewerId ? avatarTintFor(viewerId) : null;
 }

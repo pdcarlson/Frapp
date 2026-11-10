@@ -49,6 +49,7 @@ import {
   useSetChannelNotificationLevel,
   type ChannelRowActionKey,
   type ChatNotificationLevel,
+  useOwnAvatarTint,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChapterMark } from "@/components/chapter-mark";
@@ -144,6 +145,8 @@ function filterLineText(filters: { unreadOnly: boolean; hideMuted: boolean }) {
 
 export default function ChatHomeScreen() {
   const { tokens } = useFrappTheme();
+  // Your initials wear the color the chapter sees on them (#3860).
+  const ownTint = useOwnAvatarTint();
   const styles = createStyles(tokens);
   const router = useRouter();
   const { height: windowHeight } = useWindowDimensions();
@@ -579,6 +582,7 @@ export default function ChatHomeScreen() {
             initials={viewerProfile?.initials ?? "?"}
             photoUrl={viewerProfile?.photoUrl ?? null}
             fetchedAt={viewerQuery.dataUpdatedAt}
+            tint={ownTint}
           />
         </View>
       }
