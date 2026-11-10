@@ -54,11 +54,11 @@ export interface ChannelSummary {
   description?: string;
   /**
    * Always formal (#3787): everyone sees the channel in the formal display.
-   * `false` unless the row says exactly `true`.
+   * Present, and `true`, only when the row says exactly `true`.
    */
   display_locked?: boolean;
-  /** Who created the channel, who may set Always formal; `null` when unrecorded. */
-  created_by?: string | null;
+  /** Who created the channel, who may set Always formal; absent when unrecorded. */
+  created_by?: string;
 }
 
 /**
@@ -100,8 +100,12 @@ export function selectChannels(data: unknown): ChannelSummary[] {
           typeof row.description === "string"
             ? (channelDescription(row.description) ?? undefined)
             : undefined,
-        display_locked: row.display_locked === true,
-        created_by: typeof row.created_by === "string" ? row.created_by : null,
+        // Present only when set, so a row from an API before #3787 reads
+        // exactly as it did.
+        ...(row.display_locked === true ? { display_locked: true } : {}),
+        ...(typeof row.created_by === "string"
+          ? { created_by: row.created_by }
+          : {}),
       },
     ];
   });

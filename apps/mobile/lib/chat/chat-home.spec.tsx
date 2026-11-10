@@ -56,10 +56,12 @@ const {
   permissionList,
   markReadMutate,
   setLevelMutate,
+  setDisplayLock,
   deleteMutateAsync,
   connection,
   latestCalls,
 } = vi.hoisted(() => ({
+  setDisplayLock: vi.fn(),
   latestCalls: vi.fn(),
   permissionList: { value: [] as string[] },
   markReadMutate: vi.fn(),
@@ -173,6 +175,8 @@ vi.mock("@repo/hooks", async () => {
   });
   return {
     canHideConversation: actual.canHideConversation,
+    canSetChannelDisplayLock: actual.canSetChannelDisplayLock,
+    useSetChannelDisplayLock: () => ({ mutateAsync: setDisplayLock }),
     lastChannelLandingId: actual.lastChannelLandingId,
     lastChannelStorageKey: actual.lastChannelStorageKey,
     useActiveChapterId: () => "chapter-1",
@@ -830,6 +834,62 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     pressItem(tree, "Your default (Cozy)");
     longPress(tree, "general");
     expect(menuLabels(tree)).toContain("Display, Default");
+  });
+
+  it("gives an officer Always formal in Display, and locks a formal channel's choices (#3787)", async () => {
+    const { resetLockedChannelsForTests } = await import(
+      "@repo/chat-core/density"
+    );
+    permissionList.value = ["channels:manage"];
+    setDisplayLock.mockResolvedValue(undefined);
+    channelsData.value = [general];
+    const tree = render();
+
+    longPress(tree, "general");
+    pressItem(tree, "Display, Default");
+    const toggle = menu(tree).find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "switch",
+    );
+    expect(toggle.props.accessibilityLabel).toBe("Always formal");
+    expect(toggle.props.accessibilityState).toEqual({ checked: false });
+    await act(async () => {
+      toggle.props.onPress();
+    });
+    expect(setDisplayLock).toHaveBeenCalledWith({
+      id: general.id,
+      locked: true,
+    });
+
+    // The list now says the channel is locked.
+    channelsData.value = [{ ...general, display_locked: true }];
+    const locked = render();
+    longPress(locked, "general");
+    expect(menuLabels(locked)).toContain("Display, Formal");
+    pressItem(locked, "Display, Formal");
+    const bubbles = menu(locked).find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Bubbles here",
+    );
+    expect(bubbles.props.disabled).toBe(true);
+    resetLockedChannelsForTests();
+  });
+
+  it("gives a member no Always formal switch on a channel they didn't create", () => {
+    channelsData.value = [{ ...general, created_by: "someone-else" }];
+    const tree = render();
+
+    longPress(tree, "general");
+    pressItem(tree, "Display, Default");
+    expect(
+      menu(tree).findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityRole === "switch",
+      ),
+    ).toHaveLength(0);
   });
 
   it("says Unpin from top on a pinned row", () => {
