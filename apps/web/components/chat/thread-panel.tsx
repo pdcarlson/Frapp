@@ -19,6 +19,7 @@ import { useNetwork } from "@/lib/providers/network-provider";
 import { useMessageThread } from "@/lib/chat/use-message-thread";
 import { cn, initials } from "@/lib/utils";
 import { TextRenderer } from "./renderers/text-renderer";
+import { ChatBackground } from "./chat-background";
 
 export interface ThreadPanelProps {
   channelId: string;
@@ -59,6 +60,13 @@ export function ThreadPanel({
 
   // Follow the newest reply into view as replies arrive.
   const replyCount = thread.messages.length;
+  // The divider's count: the thread's own while older replies are still
+  // unread here, the confirmed rows once they're all held. Unsent rows never
+  // count (mobile's `message-thread-screen.tsx` reads it the same way).
+  const shownReplies = Math.max(
+    thread.messages.filter((m) => m._status === "confirmed").length,
+    thread.root?.thread?.reply_count ?? 0,
+  );
   useEffect(() => {
     listEnd.current?.scrollIntoView({ block: "end" });
   }, [replyCount]);
@@ -123,9 +131,16 @@ export function ThreadPanel({
   return (
     <section
       aria-label="Thread"
-      className={cn("flex min-h-0 flex-col bg-background", className)}
+      // `isolate` + positioned: the channel's chat background (#3973) sits at
+      // `-z-10` inside the panel, so a thread reads on the same background
+      // as its channel while the panel still hides the timeline beneath.
+      className={cn(
+        "relative isolate flex min-h-0 flex-col bg-background",
+        className,
+      )}
       onKeyDown={onPanelKey}
     >
+      <ChatBackground channelId={channelId} />
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-2">
         <Button
           variant="ghost"
@@ -180,7 +195,7 @@ export function ThreadPanel({
               role="separator"
             >
               <span>
-                {replyCount === 1 ? "1 reply" : `${replyCount} replies`}
+                {shownReplies === 1 ? "1 reply" : `${shownReplies} replies`}
               </span>
               <span className="h-px flex-1 bg-border" />
             </div>

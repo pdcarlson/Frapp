@@ -202,6 +202,16 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
         { choice_mode: 'single', option_count: 2, has_expiry: true },
       ],
       [
+        "a poll posted with Doesn't close (#3896)",
+        {
+          body: {
+            payload: { options: [{ id: 'a' }, { id: 'b' }], closes_at: null },
+          },
+          result: { deduplicated: false, message: { kind: 'poll' } },
+        },
+        { choice_mode: 'single', option_count: 2, has_expiry: false },
+      ],
+      [
         'a multi-choice poll with no close time',
         {
           body: { payload: { options: 'x', choice_mode: 'multi' } },

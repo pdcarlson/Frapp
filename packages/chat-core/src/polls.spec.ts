@@ -7,6 +7,7 @@ import {
   canClosePoll,
   isPollCardClosed,
   makePollOptionId,
+  pollCardEyebrow,
   pollsGateOf,
   pollsGateReason,
   readPollPayload,
@@ -89,6 +90,46 @@ describe("buildPollMessage (#3701)", () => {
     });
     const message = { payload } as unknown as ChatMessage;
     expect(readPollPayload(message)).toEqual(payload);
+  });
+
+  it("writes no deadline for a poll that doesn't close (#3896)", () => {
+    const { payload } = buildPollMessage({
+      question: "Standing lunch order?",
+      options: ["Subs", "Pizza"],
+      closesAt: null,
+    });
+    expect(payload.closes_at).toBeNull();
+    const message = { payload } as unknown as ChatMessage;
+    expect(readPollPayload(message)).toEqual(payload);
+    // It never closes on its own, and says so; a timed card reads as before.
+    const farFuture = Date.parse("2999-01-01T00:00:00.000Z");
+    expect(isPollCardClosed(payload, farFuture)).toBe(false);
+    expect(pollCardEyebrow(payload, farFuture)).toBe("Poll · No end date");
+    const timed = { ...payload, closes_at: "2026-11-10T18:30:00.000Z" };
+    expect(pollCardEyebrow(timed, closesAt.getTime() - 1)).toBe("Poll");
+    expect(pollCardEyebrow(timed, closesAt.getTime() + 1)).toBe("Poll · Closed");
+    // Closed early by its creator, it reads closed like any other.
+    expect(
+      pollCardEyebrow(
+        { ...payload, closed_at: "2026-11-10T18:30:00.000Z" },
+        farFuture,
+      ),
+    ).toBe("Poll · Closed");
+  });
+
+  it("reads a card with a missing or empty deadline as having none", () => {
+    const options = [
+      { id: "a", label: "A" },
+      { id: "b", label: "B" },
+    ];
+    for (const payload of [
+      { question: "Q?", options },
+      { question: "Q?", options, closes_at: "" },
+      { question: "Q?", options, closes_at: null },
+    ]) {
+      const message = { payload } as unknown as ChatMessage;
+      expect(readPollPayload(message)?.closes_at).toBeNull();
+    }
   });
 
   it("gives every option its own id by default", () => {

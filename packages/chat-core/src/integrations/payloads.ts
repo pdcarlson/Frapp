@@ -17,10 +17,12 @@ export interface PollPayload {
   question: string;
   options: PollOption[];
   /**
-   * Wall-clock when the poll closes. ISO-8601 string. The cards stop offering
-   * a vote once it passes, and the API refuses one (#871).
+   * Wall-clock when the poll closes, an ISO-8601 string: the cards stop
+   * offering a vote once it passes, and the API refuses one (#871). `null` is
+   * a poll with no deadline (#3896), open until its creator closes it
+   * (`closed_at`).
    */
-  closes_at: string;
+  closes_at: string | null;
   /**
    * When the creator closed the poll early (#3794), or absent while it is
    * open. Written only by the API (`POST /v1/polls/{messageId}/close`); a

@@ -16,6 +16,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // mount. A purple chapter's values, deliberately not house gold, so a control
 // that slips back to a `gold.*` token shows up in an assertion; the hook
 // itself has its own spec.
+// Chat backgrounds (#3973) read their own query; decoration, not under test here.
+vi.mock("@/components/chat/chat-background", () => ({
+  ChatBackground: () => null,
+}));
+
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({
     accent: "#CB9FFF",
@@ -118,6 +123,16 @@ vi.mock("@/components/chat/message-actions-sheet", async () => {
       }));
       return createElement("MessageActionsSheet", props);
     }),
+  };
+});
+
+// A message thread (#3785) is the same route with a root; its own spec
+// (`components/chat/message-thread-screen.spec.tsx`) draws it.
+vi.mock("@/components/chat/message-thread-screen", async () => {
+  const { createElement } = await import("react");
+  return {
+    MessageThreadScreen: (props: Record<string, unknown>) =>
+      createElement("MessageThreadScreen", props),
   };
 });
 
@@ -343,6 +358,8 @@ let viewerQuery = { isError: false, isFetching: false, refetch: vi.fn() };
 let channelRow: "found" | "reading" | "missing" = "found";
 /** The open channel's type, for the member list's 1:1 DM rule (#3536). */
 let channelType = "PUBLIC";
+/** A read-only channel (announcements) the viewer can only read. */
+let channelIsReadOnly = false;
 /** The open channel is the chapter's audit log (#3909). */
 let channelIsAuditLog = false;
 /** The viewer's permissions, and the chapter's modules, for the + (#3701). */
@@ -400,8 +417,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
             name: "general",
             type: channelType,
             description: "The whole chapter.",
-            can_post: !channelIsAuditLog,
-            is_read_only: channelIsAuditLog,
+            can_post: !channelIsAuditLog && !channelIsReadOnly,
+            is_read_only: channelIsAuditLog || channelIsReadOnly,
             is_audit_log: channelIsAuditLog,
           },
           isFetching: false,
@@ -443,7 +460,9 @@ vi.mock("@/lib/chat/block-actions", async (importOriginal) => ({
   useBlockActions: () => ({ unblock: vi.fn(), reloadMaskedCopies: vi.fn() }),
 }));
 
-let params: { channelId?: string } = { channelId: CHANNEL };
+let params: { channelId?: string; threadRootId?: string } = {
+  channelId: CHANNEL,
+};
 vi.mocked(expoRouter.useLocalSearchParams).mockImplementation(() => params);
 
 import ChatThreadScreen from "@/app/(app)/chat-thread";
@@ -555,6 +574,7 @@ beforeEach(() => {
   params = { channelId: CHANNEL };
   channelRow = "found";
   channelType = "PUBLIC";
+  channelIsReadOnly = false;
   channelIsAuditLog = false;
   permissionList = [];
   enabledModules = {};
@@ -2201,5 +2221,109 @@ describe("chat thread + sheet (#3865)", () => {
     act(() => refocus());
     expect(dismissPollSheet).toHaveBeenCalled();
     act(() => tree.unmount());
+  });
+});
+
+describe("message threads (#3785)", () => {
+  it("draws the thread when the route carries a root, and not the channel", () => {
+    params = { channelId: CHANNEL, threadRootId: "m1" };
+    const tree = render();
+    expect(
+      tree.root.findByType("MessageThreadScreen" as never).props,
+    ).toMatchObject({ channelId: CHANNEL, rootId: "m1" });
+    expect(rows(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("pushes a parent's thread over the channel from its chip", () => {
+    const tree = render();
+    const onOpenThread = rows(tree)[0]!.props.onOpenThread as (
+      message: ChatMessage,
+    ) => void;
+    act(() => onOpenThread(message("m1")));
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/chat-thread",
+      params: { channelId: CHANNEL, threadRootId: "m1" },
+    });
+    act(() => tree.unmount());
+  });
+
+  it("offers Start thread on a message with no thread, and hands it the same push", () => {
+    const tree = render();
+    act(() =>
+      (rows(tree)[1]!.props.onOpenActions as (m: ChatMessage) => void)(
+        message("m2", {
+          created_at: new Date(2026, 8, 28, 17, 1).toISOString(),
+        }),
+      ),
+    );
+    const sheet = tree.root.findByType("MessageActionsSheet" as never);
+    expect(sheet.props.target).toMatchObject({ canStartThread: true });
+    act(() => (sheet.props.onStartThread as (id: string) => void)("m2"));
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/chat-thread",
+      params: { channelId: CHANNEL, threadRootId: "m2" },
+    });
+    act(() => tree.unmount());
+  });
+
+  it("starts no second thread on a parent that has one", () => {
+    const tree = render();
+    act(() =>
+      (rows(tree)[0]!.props.onOpenActions as (m: ChatMessage) => void)(
+        message("m1", {
+          thread: {
+            reply_count: 2,
+            last_reply_at: null,
+            recent_sender_ids: [],
+          },
+        }),
+      ),
+    );
+    expect(
+      tree.root.findByType("MessageActionsSheet" as never).props.target,
+    ).toMatchObject({ canStartThread: false });
+    act(() => tree.unmount());
+  });
+
+  it("offers threads in a read-only channel (the pending-Paul override)", () => {
+    channelIsReadOnly = true;
+    const tree = render();
+    expect(rows(tree)[0]!.props.onOpenThread).toBeTypeOf("function");
+    act(() =>
+      (rows(tree)[1]!.props.onOpenActions as (m: ChatMessage) => void)(
+        message("m2"),
+      ),
+    );
+    expect(
+      tree.root.findByType("MessageActionsSheet" as never).props.target,
+    ).toMatchObject({ canStartThread: true, canReply: false });
+    act(() => tree.unmount());
+  });
+
+  it("offers no Start thread in a 1:1 DM", () => {
+    channelType = "DM";
+    const tree = render();
+    act(() =>
+      (rows(tree)[1]!.props.onOpenActions as (m: ChatMessage) => void)(
+        message("m2"),
+      ),
+    );
+    expect(
+      tree.root.findByType("MessageActionsSheet" as never).props.target,
+    ).toMatchObject({ canStartThread: false });
+    act(() => tree.unmount());
+  });
+
+  it("offers no thread in a 1:1 DM or the audit log", () => {
+    channelType = "DM";
+    const dm = render();
+    expect(rows(dm)[0]!.props.onOpenThread).toBeUndefined();
+    act(() => dm.unmount());
+    channelType = "PUBLIC";
+    channelIsAuditLog = true;
+    const audit = render();
+    expect(rows(audit)[0]!.props.onOpenThread).toBeUndefined();
+    act(() => audit.unmount());
   });
 });

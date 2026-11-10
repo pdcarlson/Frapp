@@ -9,7 +9,8 @@
     "./signet": "./src/signet.ts",
     "./glass": "./src/glass.ts",
     "./nav-glyphs": "./src/nav-glyphs.ts",
-    "./signature": "./src/signature.ts"
+    "./signature": "./src/signature.ts",
+    "./chat-backgrounds": "./src/chat-backgrounds.ts"
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",

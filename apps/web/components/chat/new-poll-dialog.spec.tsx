@@ -13,6 +13,7 @@ describe("NewPollDialog (#3865)", () => {
     const onOpenChange = vi.fn();
     render(
       <NewPollDialog
+        canCloseEarly
         open
         onOpenChange={onOpenChange}
         initialDraft={emptyPollDraft()}
@@ -39,9 +40,53 @@ describe("NewPollDialog (#3865)", () => {
     expect(poll.payload.closes_at).toBe("2026-11-10T12:00:00.000Z");
   });
 
+  it("posts a poll with no deadline for Doesn't close (#3896)", async () => {
+    const user = userEvent.setup();
+    const onPost = vi.fn(async () => ({ ok: true as const }));
+    const onOpenChange = vi.fn();
+    render(
+      <NewPollDialog
+        canCloseEarly
+        open
+        onOpenChange={onOpenChange}
+        initialDraft={pollDraftFromArgs('"Standing lunch?" Subs Pizza')}
+        onPost={onPost}
+        now={() => NOW}
+      />,
+    );
+    const closes = screen.getByLabelText("Voting closes in");
+    // A day stays the default; Doesn't close is the last choice offered.
+    expect(closes).toHaveValue("1d");
+    await user.selectOptions(closes, "Doesn't close");
+    await user.click(screen.getByRole("button", { name: "Post poll" }));
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    const [poll] = onPost.mock.calls[0] as unknown as [
+      { payload: { closes_at: string | null } },
+    ];
+    expect(poll.payload.closes_at).toBeNull();
+  });
+
+  it("withholds Doesn't close from a member who couldn't close the poll", () => {
+    render(
+      <NewPollDialog
+        open
+        onOpenChange={vi.fn()}
+        initialDraft={emptyPollDraft()}
+        onPost={vi.fn()}
+        canCloseEarly={false}
+      />,
+    );
+    const choices = Array.from(
+      (screen.getByLabelText("Voting closes in") as HTMLSelectElement).options,
+    ).map((option) => option.text);
+    expect(choices).toEqual(["1 hour", "1 day", "3 days", "1 week"]);
+  });
+
   it("opens on what was typed after /poll", () => {
     render(
       <NewPollDialog
+        canCloseEarly
         open
         onOpenChange={vi.fn()}
         initialDraft={pollDraftFromArgs('"Who drives?" Sam')}
@@ -58,6 +103,7 @@ describe("NewPollDialog (#3865)", () => {
     const user = userEvent.setup();
     render(
       <NewPollDialog
+        canCloseEarly
         open
         onOpenChange={vi.fn()}
         initialDraft={pollDraftFromArgs('"Q" Yes yes')}
@@ -76,6 +122,7 @@ describe("NewPollDialog (#3865)", () => {
     const onOpenChange = vi.fn();
     render(
       <NewPollDialog
+        canCloseEarly
         open
         onOpenChange={onOpenChange}
         initialDraft={pollDraftFromArgs('"Q" A B')}
