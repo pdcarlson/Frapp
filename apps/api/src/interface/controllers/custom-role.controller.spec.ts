@@ -3,7 +3,7 @@ import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory'
 import { CustomRoleController } from './custom-role.controller';
 import { CustomRoleService } from '../../application/services/custom-role.service';
 import { SystemPermissions } from '#domain/constants/permissions';
-import { PERMISSIONS_ANY_KEY } from '../decorators/permissions.decorator';
+import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import {
   CreateCustomRoleDto,
   UpdateCustomRoleDto,
@@ -63,12 +63,11 @@ describe('CustomRoleController', () => {
       expect(result).toEqual(expected);
     });
 
-    it('requires chapter-config:manage (or wildcard) to write', () => {
-      const anyOf = Reflect.getMetadata(PERMISSIONS_ANY_KEY, controller.create);
-      expect(anyOf).toEqual([
-        SystemPermissions.CHAPTER_CONFIG_MANAGE,
-        SystemPermissions.WILDCARD,
-      ]);
+    // No wildcard in the list: `PermissionsGuard` lets `*` through before it
+    // reads any requirement, so naming it here would be a second, dead path.
+    it('requires chapter-config:manage to write', () => {
+      const required = Reflect.getMetadata(PERMISSIONS_KEY, controller.create);
+      expect(required).toEqual([SystemPermissions.CHAPTER_CONFIG_MANAGE]);
     });
   });
 

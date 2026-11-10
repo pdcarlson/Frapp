@@ -17,6 +17,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   ErrorState,
   anyReadUncached,
   OfflineState,
@@ -290,6 +297,15 @@ function normalizeCatalog(data: unknown): MatrixCatalogEntry[] {
  * tab's switch: it is one scalar, the write is audit-logged, and there is no
  * draft state worth protecting.
  */
+/**
+ * The picker's "no default" choice. Radix `Select` refuses an item whose value
+ * is the empty string (it reserves that for "nothing picked, show the
+ * placeholder"), so the choice carries this sentinel and `onValueChange`
+ * turns it back into the `null` the API clears the setting with.
+ */
+const NO_DEFAULT_INVITE_ROLE = "__no-default__";
+const NO_DEFAULT_INVITE_ROLE_LABEL = "No default (falls back to Member)";
+
 function DefaultInviteRoleCard({
   canManage,
   defaultInviteRoleId,
@@ -331,23 +347,29 @@ function DefaultInviteRoleCard({
       </CardHeader>
       <CardContent className="space-y-2">
         <Label htmlFor="default-invite-role">Role</Label>
-        <select
-          id="default-invite-role"
-          className="flex h-9 w-full max-w-sm rounded-md border border-input bg-transparent px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-          value={defaultInviteRoleId ?? ""}
+        <Select
+          value={
+            isDangling ? "" : (defaultInviteRoleId ?? NO_DEFAULT_INVITE_ROLE)
+          }
           disabled={!canManage || isSaving || rolesQuery.isPending}
-          onChange={(event) => {
-            const next = event.target.value;
-            void onSave(next === "" ? null : next);
+          onValueChange={(next) => {
+            void onSave(next === NO_DEFAULT_INVITE_ROLE ? null : next);
           }}
         >
-          <option value="">No default (falls back to Member)</option>
-          {roleOptions.map((role) => (
-            <option key={role.id} value={role.id}>
-              {role.name}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger id="default-invite-role" className="max-w-sm">
+            <SelectValue placeholder={NO_DEFAULT_INVITE_ROLE_LABEL} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NO_DEFAULT_INVITE_ROLE}>
+              {NO_DEFAULT_INVITE_ROLE_LABEL}
+            </SelectItem>
+            {roleOptions.map((role) => (
+              <SelectItem key={role.id} value={role.id}>
+                {role.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {isDangling ? (
           <p className="text-caption text-warning">
             The configured default role no longer exists. Pick another, or leave

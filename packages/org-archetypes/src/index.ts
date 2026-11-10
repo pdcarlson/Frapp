@@ -55,13 +55,6 @@ export interface ModuleCatalogEntry {
   readonly subFeatures: readonly SubFeature[];
 }
 
-export interface RoleEntry {
-  readonly key: string;
-  readonly label: string;
-  readonly rank: number;
-  readonly optional?: boolean;
-}
-
 export interface CustomFieldEntry {
   readonly id: string;
   readonly label: string;
@@ -99,6 +92,11 @@ export interface Archetype {
   readonly description: string;
   readonly council: string;
   readonly modules: Readonly<Record<string, boolean>>;
+  /**
+   * A label only, echoed as `role_pack` in the chapter config response. No
+   * catalog is keyed by it: the `ROLE_PACKS` table it once named had no caller
+   * and was deleted (#2435).
+   */
   readonly rolePack: string;
   readonly recruitmentLanguage: string;
   readonly pledgeLanguage: string;
@@ -527,85 +525,6 @@ export const MODULE_CATALOG: readonly ModuleCatalogEntry[] = Object.freeze([
     subFeatures: Object.freeze([]),
   },
 ]);
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ROLE_PACKS
-// ─────────────────────────────────────────────────────────────────────────────
-
-export const ROLE_PACKS = Object.freeze({
-  ifc_standard: Object.freeze([
-    { key: "president",  label: "President",           rank: 1 },
-    { key: "vp",         label: "Vice President",      rank: 2 },
-    { key: "treasurer",  label: "Treasurer",           rank: 3 },
-    { key: "secretary",  label: "Secretary",           rank: 4 },
-    { key: "risk",       label: "Risk Manager",        rank: 5, optional: true },
-    { key: "rush_chair", label: "Rush Chair",          rank: 6, optional: true },
-    { key: "philan",     label: "Philanthropy Chair",  rank: 7, optional: true },
-    { key: "social",     label: "Social Chair",        rank: 8, optional: true },
-    { key: "newmem_ed",  label: "New Member Educator", rank: 9, optional: true },
-    { key: "member",     label: "Active Member",       rank: 10 },
-    { key: "newmember",  label: "New Member",          rank: 11 },
-  ] as const),
-
-  npc_standard: Object.freeze([
-    { key: "president",  label: "President",             rank: 1 },
-    { key: "vp",         label: "Vice President",        rank: 2 },
-    { key: "treasurer",  label: "Treasurer",             rank: 3 },
-    { key: "secretary",  label: "Recording Secretary",   rank: 4 },
-    { key: "standards",  label: "Standards Chair",       rank: 5 },
-    { key: "rush_chair", label: "Recruitment Chair",     rank: 6 },
-    { key: "philan",     label: "Philanthropy Chair",    rank: 7 },
-    { key: "panhel",     label: "Panhellenic Delegate",  rank: 8 },
-    { key: "newmem_ed",  label: "New Member Educator",   rank: 9 },
-    { key: "member",     label: "Active Member",         rank: 10 },
-    { key: "newmember",  label: "New Member",            rank: 11 },
-  ] as const),
-
-  nphc_standard: Object.freeze([
-    { key: "president",  label: "Basileus / President",       rank: 1 },
-    { key: "vp",         label: "Anti-Basileus / VP",         rank: 2 },
-    { key: "treasurer",  label: "Tamiouchos / Treasurer",     rank: 3 },
-    { key: "secretary",  label: "Grammateus / Secretary",     rank: 4 },
-    { key: "member",     label: "Member",                     rank: 5 },
-    { key: "aspirant",   label: "Aspirant",                   rank: 6 },
-  ] as const),
-
-  professional: Object.freeze([
-    { key: "president", label: "President",              rank: 1 },
-    { key: "vp_pro",    label: "VP of Professional Dev", rank: 2 },
-    { key: "vp_mem",    label: "VP of Membership",       rank: 3 },
-    { key: "treasurer", label: "Treasurer",              rank: 4 },
-    { key: "secretary", label: "Secretary",              rank: 5 },
-    { key: "member",    label: "Brother / Sister",       rank: 6 },
-    { key: "candidate", label: "Candidate",              rank: 7 },
-  ] as const),
-
-  service: Object.freeze([
-    { key: "president",  label: "President",         rank: 1 },
-    { key: "vp_service", label: "VP of Service",     rank: 2 },
-    { key: "vp_member",  label: "VP of Membership",  rank: 3 },
-    { key: "treasurer",  label: "Treasurer",         rank: 4 },
-    { key: "secretary",  label: "Secretary",         rank: 5 },
-    { key: "member",     label: "Active Brother",    rank: 6 },
-    { key: "pledge",     label: "Pledge",            rank: 7 },
-  ] as const),
-
-  honor: Object.freeze([
-    { key: "president", label: "President",       rank: 1 },
-    { key: "vp",        label: "Vice President",  rank: 2 },
-    { key: "treasurer", label: "Treasurer",       rank: 3 },
-    { key: "secretary", label: "Secretary",       rank: 4 },
-    { key: "advisor",   label: "Faculty Advisor", rank: 5 },
-    { key: "member",    label: "Inductee",        rank: 6 },
-  ] as const),
-
-  minimal: Object.freeze([
-    { key: "president", label: "Founding President", rank: 1 },
-    { key: "vp",        label: "Founding VP",        rank: 2 },
-    { key: "treasurer", label: "Treasurer",          rank: 3 },
-    { key: "member",    label: "Founding Member",    rank: 4 },
-  ] as const),
-} satisfies Record<string, readonly RoleEntry[]>);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CUSTOM_FIELDS_SEED

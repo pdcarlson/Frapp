@@ -550,7 +550,8 @@ describe("the capability matrix's marks, at the call site", () => {
   // ── Default invite role (#422) ───────────────────────────────────────────
 
   describe("default invite role", () => {
-    it("selects the configured role and offers an explicit no-default option", () => {
+    it("selects the configured role and offers an explicit no-default option", async () => {
+      const user = userEvent.setup();
       render(
         <SettingsRolesTab
           canManage
@@ -559,8 +560,9 @@ describe("the capability matrix's marks, at the call site", () => {
           onSaveDefaultInviteRole={mockSaveDefaultRole}
         />,
       );
-      const select = screen.getByLabelText("Role") as HTMLSelectElement;
-      expect(select.value).toBe("role-pledge");
+      const picker = screen.getByRole("combobox", { name: "Role" });
+      expect(picker).toHaveTextContent("New Member");
+      await user.click(picker);
       expect(
         screen.getByRole("option", { name: /no default/i }),
       ).toBeInTheDocument();
@@ -576,16 +578,16 @@ describe("the capability matrix's marks, at the call site", () => {
           onSaveDefaultInviteRole={mockSaveDefaultRole}
         />,
       );
-      await user.selectOptions(screen.getByLabelText("Role"), "role-member");
+      await user.click(screen.getByRole("combobox", { name: "Role" }));
+      await user.click(screen.getByRole("option", { name: "Member" }));
       expect(mockSaveDefaultRole).toHaveBeenCalledWith("role-member");
     });
 
     /*
-     * Clearing writes `null`, not `""`. The select's no-default option carries
-     * an empty string value because that is the only thing a native <option>
-     * can hold, so the component has to translate it — and `""` reaching the
-     * API would fail uuid validation with a 400 rather than clearing the
-     * setting.
+     * Clearing writes `null`. The no-default option carries a sentinel value,
+     * because a Radix item cannot hold an empty string, so the component has
+     * to translate it — the sentinel reaching the API would fail uuid
+     * validation with a 400 rather than clearing the setting.
      */
     it("saves null when the default is cleared", async () => {
       const user = userEvent.setup();
@@ -597,7 +599,8 @@ describe("the capability matrix's marks, at the call site", () => {
           onSaveDefaultInviteRole={mockSaveDefaultRole}
         />,
       );
-      await user.selectOptions(screen.getByLabelText("Role"), "");
+      await user.click(screen.getByRole("combobox", { name: "Role" }));
+      await user.click(screen.getByRole("option", { name: /no default/i }));
       expect(mockSaveDefaultRole).toHaveBeenCalledWith(null);
     });
 
@@ -610,7 +613,7 @@ describe("the capability matrix's marks, at the call site", () => {
           onSaveDefaultInviteRole={mockSaveDefaultRole}
         />,
       );
-      expect(screen.getByLabelText("Role")).toBeDisabled();
+      expect(screen.getByRole("combobox", { name: "Role" })).toBeDisabled();
     });
 
     it("flags a configured role that is no longer in the catalog", () => {

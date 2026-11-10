@@ -20,10 +20,7 @@ import { CustomFieldService } from '../../application/services/custom-field.serv
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
-import {
-  RequireAnyOfPermissions,
-  RequirePermissions,
-} from '../decorators/permissions.decorator';
+import { RequirePermissions } from '../decorators/permissions.decorator';
 import { FreeTier } from '../decorators/subscription.decorator';
 import {
   CurrentChapterId,
@@ -59,10 +56,7 @@ export class CustomFieldController {
   }
 
   @Post()
-  @RequireAnyOfPermissions(
-    SystemPermissions.CHAPTER_CONFIG_MANAGE,
-    SystemPermissions.WILDCARD,
-  )
+  @RequirePermissions(SystemPermissions.CHAPTER_CONFIG_MANAGE)
   @ApiOperation({ summary: 'Create a custom field (audit-logged)' })
   @ApiCreatedResponse({ type: CustomFieldDto })
   @ApiConflictResponse({
@@ -77,10 +71,7 @@ export class CustomFieldController {
   }
 
   @Patch(':id')
-  @RequireAnyOfPermissions(
-    SystemPermissions.CHAPTER_CONFIG_MANAGE,
-    SystemPermissions.WILDCARD,
-  )
+  @RequirePermissions(SystemPermissions.CHAPTER_CONFIG_MANAGE)
   @ApiOperation({ summary: 'Update a custom field (audit-logged)' })
   @ApiOkResponse({ type: CustomFieldDto })
   async update(
@@ -93,10 +84,7 @@ export class CustomFieldController {
   }
 
   @Delete(':id')
-  @RequireAnyOfPermissions(
-    SystemPermissions.CHAPTER_CONFIG_MANAGE,
-    SystemPermissions.WILDCARD,
-  )
+  @RequirePermissions(SystemPermissions.CHAPTER_CONFIG_MANAGE)
   @ApiOperation({ summary: 'Delete a custom field (audit-logged)' })
   @ApiOkResponse({ type: RemoveCustomFieldResponseDto })
   async remove(
