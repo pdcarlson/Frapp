@@ -54,6 +54,9 @@
 >   - **unread.** A plain unread channel is a bold name with no count
 >     ([`foundations.md`](../../design-system/foundations.md), 2026-11-07), so the rail draws no
 >     neutral badge.
+>   - **the Pro card's button.** The boards draw one button, on Free (D3). Since 2026-11-10 the
+>     Chapter Pro card carries an outlined "Start 14-day trial" too, which D3's changed row in
+>     [`../README.md`](../README.md) records.
 >   - **the nav's lit state.** Product and Pricing light while their section is on screen; no
 >     board draws it. The as-built header is [`../README.md`](../README.md) § Section inventory.
 

@@ -433,11 +433,19 @@ describe("landing page structure", () => {
     expect(renderedPage).toContain('const joinUrl = "/join"');
   });
 
-  it("puts one control in the pricing section, on the Free card", () => {
+  it("puts one control on each pricing card, gold only on Free", () => {
+    // D3 as amended (#3869): Get started on Free stays the primary; the Pro
+    // card's trial button is the outlined secondary into sign-up → /billing.
     const pricing = withoutComments(homeSource("pricing-section.tsx"));
     expect(pricing).toContain('id="pricing"');
-    expect(pricing.match(/surface="pricing"/g) ?? []).toHaveLength(1);
-    expect(pricing).toContain("Upgrade any time from Billing in the web app.");
+    expect(pricing.match(/surface="pricing"/g) ?? []).toHaveLength(2);
+    expect(pricing.match(/BUTTON_PRIMARY\b/g) ?? []).toHaveLength(2); // import + Free
+    expect(pricing).toMatch(
+      /cta="start-free-trial"\s+surface="pricing"\s+href=\{trialUrl\}\s+className=\{`\$\{BUTTON_SECONDARY\}/,
+    );
+    expect(pricing.indexOf('cta="get-started"')).toBeLessThan(
+      pricing.indexOf('cta="start-free-trial"'),
+    );
   });
 });
 

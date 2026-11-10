@@ -2,6 +2,7 @@ import { RevealOnView } from "../reveal-on-view";
 import { TrackedCta } from "../tracked-cta";
 import {
   BUTTON_PRIMARY,
+  BUTTON_SECONDARY,
   EYEBROW,
   PROOF_BODY,
   SECTION_GAP,
@@ -36,7 +37,13 @@ const proPlan = [
 ];
 
 /* 5 · Pricing (D3). */
-export function PricingSection({ signupUrl }: { signupUrl: string }) {
+export function PricingSection({
+  signupUrl,
+  trialUrl,
+}: {
+  signupUrl: string;
+  trialUrl: string;
+}) {
   return (
     <section id="pricing" data-nav-section="pricing" className={`${SHELL} ${SECTION_GAP}`}>
       <div className="grid gap-10 lg:grid-cols-12 lg:gap-x-6">
@@ -81,9 +88,9 @@ export function PricingSection({ signupUrl }: { signupUrl: string }) {
               ))}
             </ul>
             {/*
-              The only control in this section. Both tiers resolve to
-              `/sign-up` because no checkout deep link exists, so a second
-              button would be the same link twice wearing two labels.
+              The section's primary. Free is the wedge (`positioning.md`), so
+              the gold button stays here and the Pro card's trial button is
+              the outlined secondary.
             */}
             <TrackedCta
               cta="get-started"
@@ -124,9 +131,21 @@ export function PricingSection({ signupUrl }: { signupUrl: string }) {
                 </li>
               ))}
             </ul>
-            <p className={`${PROOF_BODY} mt-auto`}>
-              Upgrade any time from Billing in the web app.
-            </p>
+            {/*
+              The trial button (#3869): sign-up, then the web app's Billing
+              page, where checkout opens the 14-day trial. Someone already
+              signed in goes straight to Billing. It replaced "Upgrade any time
+              from Billing in the web app.", which named the place and offered
+              no way to it.
+            */}
+            <TrackedCta
+              cta="start-free-trial"
+              surface="pricing"
+              href={trialUrl}
+              className={`${BUTTON_SECONDARY} mt-auto w-full`}
+            >
+              Start 14-day trial
+            </TrackedCta>
           </div>
         </RevealOnView>
       </div>

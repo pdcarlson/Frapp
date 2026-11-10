@@ -34,6 +34,14 @@ export const FOCUS_RING =
 
 export const BUTTON_PRIMARY = `chrome-motion inline-flex h-12 items-center justify-center rounded-md border border-transparent bg-primary bg-clip-padding px-6 text-body font-bold text-primary-foreground hover:bg-primary-hover ${FOCUS_RING}`;
 
+/*
+ * Signet's Secondary, the outlined control (the web Button's `secondary`
+ * variant takes the same `border-input`), on the primary's 48 box and radius.
+ * It holds the page's foreground rather than gold, so a section that carries a
+ * primary and a secondary still reads as one gold action.
+ */
+export const BUTTON_SECONDARY = `chrome-motion inline-flex h-12 items-center justify-center rounded-md border border-input bg-transparent px-6 text-body font-semibold text-foreground hover:border-primary ${FOCUS_RING}`;
+
 /* The nav's own primary sits on the 44 touch floor rather than the 48 box. */
 export const BUTTON_PRIMARY_NAV = `chrome-motion inline-flex h-11 items-center justify-center rounded-md border border-transparent bg-primary bg-clip-padding px-[18px] text-label font-bold text-primary-foreground hover:bg-primary-hover ${FOCUS_RING}`;
 

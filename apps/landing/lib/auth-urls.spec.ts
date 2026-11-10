@@ -36,6 +36,7 @@ describe("buildAuthUrls", () => {
     const expected = {
       signupUrl: "https://app.frapp.live/sign-up",
       loginUrl: "https://app.frapp.live/sign-in",
+      trialUrl: "https://app.frapp.live/sign-up?redirectTo=%2Fbilling",
     };
     for (const base of ["", "   ", "app.frapp.live", "localhost:3000"]) {
       expect(buildAuthUrls(base)).toEqual(expected);
@@ -87,6 +88,18 @@ describe("buildAuthUrls", () => {
     expect(buildAuthUrls("https://user@app.frapp.live").signupUrl).toBe(
       "https://app.frapp.live/sign-up",
     );
+    expect(buildAuthUrls("https://u:p@app.frapp.live/x").trialUrl).toBe(
+      "https://app.frapp.live/sign-up?redirectTo=%2Fbilling",
+    );
+  });
+
+  it("sends the trial button through sign-up to the web app's Billing page", () => {
+    // #3869: checkout is web-only and starts on `/billing`. The web app's
+    // `resolveRedirectPath` reads this param, so it stays a same-origin path.
+    const trial = new URL(buildAuthUrls("https://app.example.com").trialUrl);
+    expect(trial.origin).toBe("https://app.example.com");
+    expect(trial.pathname).toBe("/sign-up");
+    expect(trial.searchParams.get("redirectTo")).toBe("/billing");
   });
 
   it("refuses production Vercel CTAs pointed at staging", () => {
