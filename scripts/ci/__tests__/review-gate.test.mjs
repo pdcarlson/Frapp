@@ -91,6 +91,21 @@ test("one reviewed ref cannot mask another unreviewed ref in an atomic push", ()
   ]).status, 1);
 });
 
+test("a push to a ref the remote already has needs no evidence; its first push does", () => {
+  // The review runs once, before the branch's first push (ADR-23 amendment 2). A fix or a merge
+  // pushed after that goes through unreviewed.
+  clear();
+  assert.equal(run([`refs/heads/work ${head} refs/heads/work ${"0".repeat(40)}`]).status, 1);
+  const later = run([`refs/heads/work ${head} refs/heads/work ${"1".repeat(40)}`]);
+  assert.equal(later.status, 0);
+  assert.match(later.stderr, /already on the remote/);
+  // One existing ref doesn't carry a new one pushed beside it.
+  assert.equal(run([
+    `refs/heads/work ${head} refs/heads/work ${"1".repeat(40)}`,
+    `refs/heads/new ${head} refs/heads/new ${"0".repeat(40)}`,
+  ]).status, 1);
+});
+
 test("allows ref deletion because it publishes no object", () => {
   clear();
   assert.equal(run([`(delete) ${"0".repeat(40)} refs/heads/old ${head}`]).status, 0);
