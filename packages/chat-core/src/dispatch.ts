@@ -764,7 +764,7 @@ function unconfirmed(
 }
 
 /**
- * Dispatch `/task "<title>" @assignee <YYYY-MM-DD> [points]`. Like `/points`,
+ * Dispatch `/task "<title>" @assignee <due date> [points]`. Like `/points`,
  * this is a "heavy" command: it creates a real task row, so the task card is
  * server-originated (a client cannot post `kind:"task"` directly). We show an
  * optimistic `loading` placeholder, call `POST /v1/tasks` (which creates the
