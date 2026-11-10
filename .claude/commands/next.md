@@ -341,8 +341,8 @@ inline, and you wait for its verdicts before implementing; otherwise run all thr
    `{files, patterns, tests, destructive}`. This is exploration, not verification, and you need it
    in your own context to implement, so read it inline.
 
-Read AGENTS.md and the spec files the issue links. If the issue and the spec conflict, the spec wins, unless the issue changes how an existing feature
-looks and reads ([`AGENTS.md` § ADR discipline](../../AGENTS.md#adr-discipline)): then the PR
+Read AGENTS.md and the spec files the issue links. If the issue and the spec conflict, the spec wins, unless the issue is a change
+[`AGENTS.md` § ADR discipline](../../AGENTS.md#adr-discipline) lets a PR make to the spec: then the PR
 changes the spec, as that section says.
 Scale thoroughness by the brief's `depth` (the floor is always all three); `deep` also reads the
 surrounding subsystem and runtime evidence, not just the named files. Post the result to the issue
