@@ -62,6 +62,29 @@ describe('SupabaseEventRepository — tenant scope', () => {
     expect(events.map((e) => e.id)).toEqual([EVENT_B]);
   });
 
+  it('findByChapter keeps the chapter predicate alongside a time window', async () => {
+    // Both chapters' events sit inside the window; only the chapter separates them.
+    const inside = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findByChapter(CHAPTER_B, {
+        endsAfter: '2026-09-01T00:00:00.000Z',
+        startsBefore: '2026-09-02T00:00:00.000Z',
+      }),
+    );
+    // An event that ended before the window, or starts after it, is left out.
+    const after = await repo.findByChapter(CHAPTER_B, {
+      endsAfter: '2026-09-02T00:00:00.000Z',
+      startsBefore: '2026-09-30T00:00:00.000Z',
+    });
+    const before = await repo.findByChapter(CHAPTER_B, {
+      endsAfter: '2026-08-01T00:00:00.000Z',
+      startsBefore: '2026-08-31T00:00:00.000Z',
+    });
+
+    expect(inside.map((e) => e.id)).toEqual([EVENT_B]);
+    expect(after).toEqual([]);
+    expect(before).toEqual([]);
+  });
+
   it('findById refuses an id belonging to another chapter', async () => {
     // `AttendanceService` treats a null here as "event not found" and is what
     // keeps every attendance read and write inside the chapter.

@@ -12,6 +12,7 @@ export * from "./fraternal-order";
 export * from "./setup-checklist";
 export * from "./unset-features";
 export * from "./use-events";
+export * from "./use-activity";
 export * from "./event-series";
 export * from "./use-activity-feed";
 export * from "./use-attendance";

@@ -66,7 +66,9 @@ List every open issue labeled `triage`. For each:
    duplicate for a human.
 2. **Prioritize.** Set a priority label `P1`–`P4` from impact; no issue leaves triage without
    one. A routine suggestion is usually `P3` or `P4`; `P2` is for genuine high impact (security,
-   data loss, broken core flows). Optionally add an `Estimate: <fibonacci>` line when scope is
+   data loss, broken core flows). Baseline first (Paul, 2026-11-10;
+   [`AGENTS.md` § Work tracking](../../../AGENTS.md#work-tracking)): a bug or polish on what already
+   exists outranks a new-feature idea Paul didn't ask for. Optionally add an `Estimate: <fibonacci>` line when scope is
    clear.
 3. **Agent brief.** On `suggestion`-owned items, add a missing `### Agent brief` (format in the
    [curator skill](../issue-curator/SKILL.md#agent-brief), field policy in

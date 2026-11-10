@@ -52,6 +52,10 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
       }
     }
 
+    if (filter?.uploaded_by) {
+      query = query.eq('uploaded_by', filter.uploaded_by);
+    }
+
     if (filter?.search) {
       query = query.ilike('title', `%${escapeLikePattern(filter.search)}%`);
     }
