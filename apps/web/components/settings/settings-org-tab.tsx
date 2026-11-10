@@ -113,6 +113,7 @@ export function SettingsOrgTab({
   const [recruitment, setRecruitment] = useState(vocabulary.recruitment ?? "");
   const [pledge, setPledge] = useState(vocabulary.pledge ?? "");
   const [cohort, setCohort] = useState(vocabulary.class ?? "");
+  const [order, setOrder] = useState(vocabulary.order ?? "");
   const [pendingArchetype, setPendingArchetype] = useState<ArchetypeKey | null>(
     null,
   );
@@ -161,7 +162,13 @@ export function SettingsOrgTab({
     setRecruitment(vocabulary.recruitment ?? "");
     setPledge(vocabulary.pledge ?? "");
     setCohort(vocabulary.class ?? "");
-  }, [vocabulary.recruitment, vocabulary.pledge, vocabulary.class]);
+    setOrder(vocabulary.order ?? "");
+  }, [
+    vocabulary.recruitment,
+    vocabulary.pledge,
+    vocabulary.class,
+    vocabulary.order,
+  ]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const foundedTrimmed = foundedYear.trim();
@@ -220,10 +227,17 @@ export function SettingsOrgTab({
 
   function saveVocabulary(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const vocab: Record<string, string> = {};
-    if (recruitment.trim()) vocab.recruitment = recruitment.trim();
-    if (pledge.trim()) vocab.pledge = pledge.trim();
-    if (cohort.trim()) vocab.class = cohort.trim();
+    // The PATCH merges these into the stored vocabulary, so a key left out
+    // keeps its stored word. A cleared field is therefore sent as "", which
+    // `memberViewVocabulary` reads as "use the archetype's word". Leaving a
+    // cleared key out, as this did before #3939, saved nothing, and the old
+    // word came back on the next read.
+    const vocab: Record<string, string> = {
+      recruitment: recruitment.trim(),
+      pledge: pledge.trim(),
+      class: cohort.trim(),
+      order: order.trim(),
+    };
     void onPatchConfig({ vocabulary: vocab });
   }
 
@@ -499,7 +513,7 @@ export function SettingsOrgTab({
           </CardDescription>
         </CardHeader>
         <form onSubmit={saveVocabulary}>
-          <CardContent className="grid gap-3 md:grid-cols-3">
+          <CardContent className="grid gap-3 md:grid-cols-2">
             <div className="grid gap-1">
               <Label htmlFor="vocab-recruitment">Recruitment process</Label>
               <Input
@@ -525,6 +539,15 @@ export function SettingsOrgTab({
                 value={cohort}
                 onChange={(event) => setCohort(event.target.value)}
                 placeholder={current.classLanguage}
+              />
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="vocab-order">Member order number</Label>
+              <Input
+                id="vocab-order"
+                value={order}
+                onChange={(event) => setOrder(event.target.value)}
+                placeholder={current.orderLanguage}
               />
             </div>
           </CardContent>

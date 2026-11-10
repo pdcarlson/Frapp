@@ -400,6 +400,27 @@ export function channelAllowsThreads(channel: {
 }
 
 /**
+ * Whether a message offers **Start thread** (#3785), in a channel that offers
+ * threads at all (`channelAllowsThreads`): not a reply inside a thread (a
+ * thread can't hold one), not a parent that already has replies (its chip
+ * opens that thread), and not a deleted or imported message. One rule for
+ * web's action bar and mobile's long-press sheet.
+ */
+export function messageCanStartThread(message: {
+  thread_root_id?: string | null;
+  thread?: unknown;
+  is_deleted: boolean;
+  kind: string;
+}): boolean {
+  return (
+    !message.thread_root_id &&
+    !message.thread &&
+    !message.is_deleted &&
+    message.kind !== "imported"
+  );
+}
+
+/**
  * Whether the viewer is offered a composer inside a thread (#3785). A
  * read-only channel refuses timeline posts but takes thread replies from any
  * member who can read it (`spec/behavior/chat/README.md` § Message threads),
