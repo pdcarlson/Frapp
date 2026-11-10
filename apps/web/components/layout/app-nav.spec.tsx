@@ -28,6 +28,7 @@ vi.mock("@/lib/stores/chapter-store", () => ({
 }));
 
 import { AppNav } from "./app-nav";
+import { FOCUS_RING_SHELL } from "@/components/ui/focus";
 
 /** Permissions for a member who holds nothing role-gated. */
 const ORDINARY_MEMBER: readonly string[] = [];
@@ -248,7 +249,50 @@ describe("AppNav", () => {
     // The rail has no room for the label; the name and tooltip carry it.
     expect(expand).not.toHaveTextContent("Expand sidebar");
     expect(expand).toHaveAttribute("title", "Expand sidebar");
+    // The name must not lean on the tooltip, which a screen reader may skip.
+    expect(expand).toHaveAttribute("aria-label", "Expand sidebar");
     expect(expand).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("draws the toggle in the row color under a hairline, in both states (#4044)", () => {
+    // The old toggle was a lone `text-muted` glyph in the corner, which
+    // members missed. It now reads as a nav row, set off by a hairline.
+    for (const collapsed of [false, true]) {
+      const { container, unmount } = renderNav({
+        collapsed,
+        onToggleCollapsed: vi.fn(),
+      });
+      const toggle = screen.getByRole("button", {
+        name: collapsed ? "Expand sidebar" : "Collapse sidebar",
+      });
+      expect(toggle).toHaveClass("text-muted-foreground");
+      expect(toggle).not.toHaveClass("text-muted");
+      const hairline = container.querySelector(
+        "[data-nav-toggle] > span[aria-hidden='true']",
+      );
+      expect(hairline).toHaveClass("h-px", "bg-border");
+      expect(hairline).not.toHaveClass("hidden");
+      unmount();
+    }
+  });
+
+  it("keeps keyboard focus on the toggle as it flips (#4044)", () => {
+    const { rerender } = renderNav({ onToggleCollapsed: vi.fn() });
+    const toggle = screen.getByRole("button", { name: "Collapse sidebar" });
+    toggle.focus();
+    expect(toggle).toHaveClass(...FOCUS_RING_SHELL.split(" "));
+    rerender(
+      <AppNav
+        collapsed
+        permissions={OFFICER}
+        pathname="/events"
+        onToggleCollapsed={vi.fn()}
+      />,
+    );
+    // Same element, so a member who pressed Enter is still on it.
+    const flipped = screen.getByRole("button", { name: "Expand sidebar" });
+    expect(flipped).toBe(toggle);
+    expect(flipped).toHaveFocus();
   });
 
   it("ignores the collapsed preference inside the drawer", () => {
