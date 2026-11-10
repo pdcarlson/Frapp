@@ -86,6 +86,13 @@ export interface ChatChannel {
    * so the composer gives way to a line saying so.
    */
   is_audit_log?: boolean;
+  /**
+   * Always formal (#3787): everyone sees the channel in the formal display.
+   * The shell copies it into `@repo/chat-core/density` for every row.
+   */
+  display_locked?: boolean;
+  /** Who created the channel, who may set Always formal; null when unrecorded. */
+  created_by?: string | null;
 }
 
 /**

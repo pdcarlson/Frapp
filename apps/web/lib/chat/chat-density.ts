@@ -5,9 +5,11 @@ import {
   CHAT_CHANNEL_DENSITY_STORAGE_KEY,
   CHAT_DENSITY_STORAGE_KEY,
   DEFAULT_CHAT_DENSITY,
+  getLockedChannels,
   parseChannelDensityMap,
   parseChatDensity,
   resolveChannelDensity,
+  subscribeLockedChannels,
   withChannelDensity,
   type ChannelDensityMap,
   type ChatDensity,
@@ -106,7 +108,8 @@ function getServerChannelSnapshot(): ChannelDensityMap {
 
 /**
  * The member's default density on this browser, or, given a channel, what
- * that channel draws: its override if the member set one, else the default.
+ * that channel draws: the formal display if the channel is set to Always
+ * formal, else its override if the member set one, else the default.
  */
 export function useChatDensity(channelId?: string | null): ChatDensity {
   const fallback = useSyncExternalStore(
@@ -119,7 +122,32 @@ export function useChatDensity(channelId?: string | null): ChatDensity {
     getChannelSnapshot,
     getServerChannelSnapshot,
   );
-  return resolveChannelDensity(fallback, overrides, channelId);
+  const locked = useSyncExternalStore(
+    subscribeLockedChannels,
+    getLockedChannels,
+    getLockedChannels,
+  );
+  return resolveChannelDensity(
+    fallback,
+    overrides,
+    channelId,
+    channelId ? locked.has(channelId) : false,
+  );
+}
+
+/**
+ * Whether the channel is set to Always formal (#3787), from the channel list
+ * the shell copies into `@repo/chat-core/density` (`syncLockedChannels`).
+ */
+export function useChannelDisplayLocked(
+  channelId: string | null | undefined,
+): boolean {
+  const locked = useSyncExternalStore(
+    subscribeLockedChannels,
+    getLockedChannels,
+    getLockedChannels,
+  );
+  return channelId ? locked.has(channelId) : false;
 }
 
 /** The channel's own override on this browser, or `null` when it follows the default. */

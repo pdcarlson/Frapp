@@ -1,7 +1,11 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CHAT_CHANNEL_DENSITY_STORAGE_KEY } from "@repo/chat-core/density";
+import {
+  CHAT_CHANNEL_DENSITY_STORAGE_KEY,
+  resetLockedChannelsForTests,
+  syncLockedChannels,
+} from "@repo/chat-core/density";
 import { resetChatDensityForTests } from "@/lib/chat/chat-density";
 import type { ChatMessage } from "@repo/chat-core/types";
 
@@ -531,5 +535,42 @@ describe("ChannelMenu display (#3787)", () => {
     renderMenu({ activeChannelId: null });
     await openMenu(user);
     expect(screen.queryByRole("button", { name: /^Display/ })).toBeNull();
+  });
+});
+
+describe("ChannelMenu Always formal (#3787)", () => {
+  afterEach(() => {
+    window.localStorage.clear();
+    resetChatDensityForTests();
+    resetLockedChannelsForTests();
+  });
+
+  it("shows a locked channel's choices disabled under the reason, with no switch for a member", async () => {
+    syncLockedChannels([{ id: "chan-1", display_locked: true }]);
+    const user = userEvent.setup();
+    renderMenu();
+    await openMenu(user);
+    await user.click(screen.getByRole("button", { name: "Display, Formal" }));
+
+    expect(
+      screen.getByText(
+        "Always formal: everyone sees this channel in the formal display.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Bubbles here" })).toBeDisabled();
+    expect(screen.queryByRole("switch")).toBeNull();
+  });
+
+  it("gives the creator or an officer the switch", async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    renderMenu({ displayLock: { saving: false, onChange } });
+    await openMenu(user);
+    await user.click(screen.getByRole("button", { name: "Display, Default" }));
+
+    const toggle = screen.getByRole("switch", { name: "Always formal" });
+    expect(toggle).not.toBeChecked();
+    await user.click(toggle);
+    expect(onChange).toHaveBeenCalledWith(true);
   });
 });
