@@ -87,6 +87,19 @@ export function chatChannelIdFrom(data: unknown): string | null {
   return str(data.target, "channelId");
 }
 
+/**
+ * Whether a chat push is about a reply inside a message thread (#3785). Its
+ * target names the channel too, but the channel's read state says nothing
+ * about the thread: thread replies never count toward the channel's unread.
+ */
+export function isThreadChatPush(data: unknown): boolean {
+  return (
+    isRecord(data) &&
+    isRecord(data.target) &&
+    str(data.target, "threadRootId") !== null
+  );
+}
+
 /** The in-app `notifications` row id, so a tap can mark it read. */
 export function notificationIdFrom(data: unknown): string | null {
   return isRecord(data) ? str(data, "notificationId") : null;

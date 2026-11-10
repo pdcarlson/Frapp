@@ -4,6 +4,12 @@ import * as Sentry from '@sentry/nestjs';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
+import { CHAT_THREAD_REPOSITORY } from '#domain/repositories/chat-thread.repository.interface';
+
+/** Message threads (#3785): nobody follows anything unless a test says so. */
+const threadRepoStub = {
+  findFollowStates: jest.fn().mockResolvedValue(new Map()),
+};
 import { NotificationService } from '../services/notification.service';
 import { RbacService } from '../services/rbac.service';
 import { ChatBlockService } from '../services/chat-block.service';
@@ -88,6 +94,7 @@ describe('ChatPushWorkerService — presence channels and the fan-out span', () 
             removeChannel: realtime.removeChannel,
           },
         },
+        { provide: CHAT_THREAD_REPOSITORY, useValue: threadRepoStub },
         {
           provide: USER_REPOSITORY,
           useValue: {

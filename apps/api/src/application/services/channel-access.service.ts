@@ -205,7 +205,7 @@ export class ChannelAccessService {
     // Reuses the member row already fetched above rather than re-querying it.
     const alumniRuleCouldApply =
       isChapterMember &&
-      operation === 'post' &&
+      (operation === 'post' || operation === 'thread') &&
       !isAlumniPostableChannel({
         type: channel.type,
         member_ids: channel.member_ids,
@@ -222,7 +222,9 @@ export class ChannelAccessService {
     const needsPermissions =
       isChapterMember &&
       (channel.type === 'ROLE_GATED' ||
-        (operation !== 'read' && channel.is_read_only === true) ||
+        (operation !== 'read' &&
+          operation !== 'thread' &&
+          channel.is_read_only === true) ||
         isAlumni);
     const permissions = needsPermissions
       ? await this.rbac.getEffectivePermissions(chapterId, userId)

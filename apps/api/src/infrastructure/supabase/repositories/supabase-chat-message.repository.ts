@@ -91,7 +91,7 @@ function effectivePollListLimit(requested?: number): number {
  * message page for a field that is discarded on arrival.
  */
 export const CHAT_MESSAGE_COLUMNS =
-  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, type, kind, payload, client_message_id, reply_to_id, metadata, mentions, is_pinned, pinned_at, edited_at, is_deleted, created_at' as const;
+  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, type, kind, payload, client_message_id, reply_to_id, metadata, mentions, thread_root_id, thread_reply_count, thread_last_reply_at, thread_recent_sender_ids, is_pinned, pinned_at, edited_at, is_deleted, created_at' as const;
 
 @Injectable()
 export class SupabaseChatMessageRepository implements IChatMessageRepository {
@@ -135,6 +135,9 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       .from('chat_messages')
       .select(CHAT_MESSAGE_COLUMNS)
       .eq('channel_id', channelId)
+      // The timeline only: a thread reply lives in its thread (#3785), read
+      // through `SupabaseChatThreadRepository.findReplies`.
+      .is('thread_root_id', null)
       .order('created_at', { ascending: false })
       .limit(options?.limit ?? DEFAULT_MESSAGE_LIMIT);
 

@@ -6,6 +6,8 @@ import { SupabaseChatChannelRepository } from '../../infrastructure/supabase/rep
 import { CHAT_NOTIFICATION_PREFERENCE_REPOSITORY } from '#domain/repositories/chat-notification-preference.repository.interface';
 import { CHAT_PUSH_DISPATCH_REPOSITORY } from '#domain/repositories/chat-push-dispatch.repository.interface';
 import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import { CHAT_THREAD_REPOSITORY } from '#domain/repositories/chat-thread.repository.interface';
+import { SupabaseChatThreadRepository } from '../../infrastructure/supabase/repositories/supabase-chat-thread.repository';
 import { NotificationModule } from '../notification/notification.module';
 import { ChapterModule } from '../chapter/chapter.module';
 import { RbacModule } from '../rbac/rbac.module';
@@ -57,6 +59,11 @@ import { AuthModule } from '../auth/auth.module';
     {
       provide: CHAT_CHANNEL_REPOSITORY,
       useClass: SupabaseChatChannelRepository,
+    },
+    // Thread follows decide a thread reply's audience (#3785).
+    {
+      provide: CHAT_THREAD_REPOSITORY,
+      useClass: SupabaseChatThreadRepository,
     },
   ],
 })
