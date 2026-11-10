@@ -71,7 +71,7 @@ export default function Home() {
     operatingSystem: "Web, iOS, Android",
     url: "https://frapp.live",
     description:
-      "Frapp is chat first. Free covers unlimited chat, members and chapters with no card; Chapter Pro adds events with check-in, the points ledger and dues invoicing for one flat price per chapter.",
+      "Frapp is chat first. Free covers unlimited chat, members and chapters with no card; Chapter Pro adds events with check-in and the points ledger for one flat price per chapter.",
     offers: [
       {
         "@type": "Offer",
@@ -87,7 +87,7 @@ export default function Home() {
         priceCurrency: "USD",
         price: "149",
         description:
-          "Flat monthly chapter plan. Events with check-in, points ledger, dues invoicing, backwork library, reports and exports.",
+          "Flat monthly chapter plan. Events with check-in, points ledger, backwork library, reports and exports.",
       },
     ],
     brand: { "@type": "Brand", name: "Frapp" },

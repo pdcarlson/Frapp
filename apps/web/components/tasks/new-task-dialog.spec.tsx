@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { formatDueEntry } from "@repo/formatting";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
@@ -66,7 +67,10 @@ describe("NewTaskDialog (#3865)", () => {
       initialAssigneeId: "u-2",
     });
     expect(screen.getByLabelText("Title")).toHaveValue("Sweep the porch");
-    expect(screen.getByLabelText("Due date")).toHaveValue("2026-11-12");
+    // Shown as a day, not the wire date; the year appears outside this one.
+    expect(screen.getByLabelText("Due date")).toHaveValue(
+      formatDueEntry("2026-11-12", new Date()),
+    );
     expect(screen.getByLabelText("Points (optional)")).toHaveValue(5);
     expect(screen.getByLabelText("Assignee")).toHaveTextContent("Social Chair");
   });
@@ -156,6 +160,7 @@ describe("NewTaskDialog (#3865)", () => {
     renderDialog({ prefill: { title: "Sweep" } });
     expect(create()).toBeDisabled();
     expect(screen.getByLabelText("Title")).toBeDisabled();
+    expect(screen.getByLabelText("Due date")).toBeDisabled();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
   });
 });

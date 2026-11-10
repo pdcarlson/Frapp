@@ -14,8 +14,8 @@ import {
 
 const freePlan = [
   "Unlimited chat, members and chapters",
-  "Announcements and direct messages",
-  "Member directory and invites",
+  "Announcements, direct messages, photos and reactions",
+  "Member profiles, the directory and invites",
   "Chapter settings and the member-visible audit log",
   "No card",
 ];
@@ -23,20 +23,22 @@ const freePlan = [
 /*
  * The AI features are left off deliberately although `positioning.md` gates
  * them behind this tier: nothing ships that can answer a question yet
- * (`spec/behavior/ai.md`), so listing them would sell an unbuilt module.
+ * (`spec/behavior/ai.md`), so listing them would sell an unbuilt module. Dues
+ * invoicing is left off for the same reason while the beta switches dues off
+ * for every chapter (`BETA_OFF_MODULES`, `packages/validation`); it comes back
+ * here, and in the JSON-LD in `app/page.tsx`, when dues does (#3869).
  */
 const proPlan = [
   "Everything in Free",
   "Events with QR check-in and attendance",
   "Points ledger and leaderboard",
-  "Dues invoicing, collected through Stripe",
   "Backwork library, reports and exports",
 ];
 
 /* 5 · Pricing (D3). */
 export function PricingSection({ signupUrl }: { signupUrl: string }) {
   return (
-    <section id="pricing" className={`${SHELL} ${SECTION_GAP}`}>
+    <section id="pricing" data-nav-section="pricing" className={`${SHELL} ${SECTION_GAP}`}>
       <div className="grid gap-10 lg:grid-cols-12 lg:gap-x-6">
         <div className="flex flex-col gap-6 lg:col-span-4">
           <p className={EYEBROW}>Pricing</p>
@@ -52,7 +54,7 @@ export function PricingSection({ signupUrl }: { signupUrl: string }) {
             starts on Free and the trial opens at checkout.
           */}
           <p className={`${PROOF_BODY} border-t border-border pt-4`}>
-            The trial starts at checkout inside the app: 14 days, card up
+            The trial starts at checkout in the web app: 14 days, card up
             front, first charge on day 15, once per chapter.
           </p>
         </div>
@@ -123,7 +125,7 @@ export function PricingSection({ signupUrl }: { signupUrl: string }) {
               ))}
             </ul>
             <p className={`${PROOF_BODY} mt-auto`}>
-              Upgrade any time from Settings inside the app.
+              Upgrade any time from Billing in the web app.
             </p>
           </div>
         </RevealOnView>
