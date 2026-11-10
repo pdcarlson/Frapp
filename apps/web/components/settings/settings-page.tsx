@@ -68,6 +68,8 @@ import { SettingsDuesTab } from "@/components/settings/settings-dues-tab";
 import { SettingsRolesTab } from "@/components/settings/settings-roles-tab";
 import { SettingsPrivacyTab } from "@/components/settings/settings-privacy-tab";
 import { SettingsFieldsTab } from "@/components/settings/settings-fields-tab";
+import { SettingsClassesTab } from "@/components/settings/settings-classes-tab";
+import { pluralTerm } from "@/lib/pledge-classes";
 import {
   SettingsBodySkeleton,
   SettingsTabSkeleton,
@@ -301,12 +303,15 @@ function SettingsPageContent() {
   // it is, which can be `{}` (a chapter created without onboarding's seed) or
   // hold a cleared `""`, and either alone would name an NPHC chapter's
   // aspirants "New Member".
-  const pledgeTerm = titleCase(
-    vocab(
-      "pledge",
-      memberViewVocabulary({ org_archetype: archetypeKey, vocabulary }),
-    ),
-  );
+  const chapterWords = memberViewVocabulary({
+    org_archetype: archetypeKey,
+    vocabulary,
+  });
+  const pledgeTerm = titleCase(vocab("pledge", chapterWords));
+  // The chapter's words for a pledge class and a member's order number, which
+  // name the pledge class tab and everything in it (#3939).
+  const classTerm = vocab("class", chapterWords);
+  const orderTerm = vocab("order", chapterWords);
   const brandingRaw = config?.branding ?? {};
   const branding: Branding = {
     greek_letters:
@@ -446,6 +451,8 @@ function SettingsPageContent() {
   const tools = visibleSettingsTools(permissions, isModuleEnabled);
   const visibleTabs = SETTINGS_TABS.filter((tab) =>
     isSettingsTabVisible(tab.value, permissions),
+  ).map((tab) =>
+    tab.value === "classes" ? { ...tab, label: pluralTerm(classTerm) } : tab,
   );
   // A `?tab=` deep link to a tab this viewer does not get, or the default
   // `org` for someone with no setup tabs, lands on the first tab they do get.
@@ -591,6 +598,19 @@ function SettingsPageContent() {
                   "Default invite role saved",
                 )
               }
+            />
+          </TabsContent>
+
+          {/*
+            No config gate: the tab reads the pledge class list and the
+            roster, neither of which is chapter config, and its words fall
+            back to the member view's vocabulary.
+          */}
+          <TabsContent value="classes" className="mt-0">
+            <SettingsClassesTab
+              canManage={can("roles:manage", permissions)}
+              classTerm={classTerm}
+              orderTerm={orderTerm}
             />
           </TabsContent>
 

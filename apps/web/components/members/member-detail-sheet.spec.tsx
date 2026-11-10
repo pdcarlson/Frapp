@@ -69,6 +69,19 @@ vi.mock("@repo/hooks", () => ({
   useGetOrCreateDm: () => ({ mutateAsync: dmMutateAsync, isPending: false }),
   useMyPermissions: () => ({ data: { permissions: mockPermissions.current } }),
   useCustomRoles: () => customRolesState,
+  // The pledge class section (#3939) has its own spec; here it only has to
+  // mount with the member's values.
+  usePledgeClasses: () => ({
+    data: [{ id: "alpha", name: "Alpha" }],
+    isPending: false,
+    isSuccess: true,
+    isError: false,
+  }),
+  useAssignPledgeClasses: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
+vi.mock("@/lib/hooks/use-chapter-vocabulary", () => ({
+  useChapterVocabulary: () => undefined,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -303,6 +316,27 @@ describe("MemberDetailSheet layout follows mobile's order", () => {
   });
 });
 
+describe("MemberDetailSheet pledge class (#3939)", () => {
+  beforeEach(() => {
+    mockPermissions.current = ["members:view"];
+  });
+  afterEach(() => {
+    mockPermissions.current = ["*"];
+  });
+
+  it("shows the member's class and order number under the roles", () => {
+    renderProfile({ ...baseMember, pledge_class_id: "alpha", order_number: 12 });
+    const section = screen.getByRole("region", { name: "Pledge class" });
+    expect(within(section).getByText("Alpha")).toBeInTheDocument();
+    expect(within(section).getByText("12")).toBeInTheDocument();
+  });
+
+  it("draws no section for a member with neither", () => {
+    renderProfile();
+    expect(screen.queryByRole("region", { name: "Pledge class" })).toBeNull();
+  });
+});
+
 describe("MemberDetailSheet custom fields", () => {
   it("renders server-provided custom fields with typed value formatting", () => {
     renderProfile({
@@ -320,7 +354,10 @@ describe("MemberDetailSheet custom fields", () => {
     expect(screen.getByText("Yes")).toBeInTheDocument();
     // An unset value says so in a word, never a lone em dash: board `1t` lists
     // "em dashes in UI copy" under gone.
-    expect(screen.getByText("Not set")).toBeInTheDocument();
+    // Scoped to the row: an officer's unset pledge class reads "Not set" too.
+    expect(
+      within(screen.getByText("Hometown").parentElement!).getByText("Not set"),
+    ).toBeInTheDocument();
     expect(screen.queryByText("—")).toBeNull();
   });
 

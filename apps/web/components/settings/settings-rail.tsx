@@ -69,6 +69,9 @@ export const SETTINGS_TABS: readonly { value: string; label: string }[] = [
   { value: "theme", label: "Accent" },
   { value: "modules", label: "Modules" },
   { value: "roles", label: "Roles" },
+  // Ours, like `dues`: the chapter's pledge classes (#3939). The page draws
+  // the label in the chapter's own word for a class.
+  { value: "classes", label: "Pledge classes" },
   { value: "semester", label: "Semester" },
   { value: "fields", label: "Fields" },
   { value: "dues", label: "Dues" },

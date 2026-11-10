@@ -42,6 +42,8 @@ import { dashboardTableCheckboxClassName } from "@/components/shared/table-contr
 import { asArray, cn, getErrorMessage, initials } from "@/lib/utils";
 import { memberLabel } from "@repo/hooks/display-names";
 import { normalizeRoleOptions, roleAccessRows } from "@/lib/roles";
+import { DETAIL_LIST, DetailRow } from "@/components/members/member-detail-rows";
+import { MemberPledgeClassSection } from "@/components/members/member-pledge-class-section";
 
 type MemberRecord = Record<string, unknown>;
 
@@ -210,24 +212,6 @@ function RoleChip({ chip }: { chip: MemberRoleChip }) {
   );
 }
 
-/** One label-over-value row of a flat detail list. */
-function DetailRow({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-baseline justify-between gap-4 px-3 py-2.5">
-      <dt className="shrink-0 text-caption text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 break-words text-right text-sm">{children}</dd>
-    </div>
-  );
-}
-
-const DETAIL_LIST = "divide-y divide-border rounded-md border border-border";
-
 /**
  * A member's profile: one sheet for every door on web (#3726). The
  * directory's Actives and Alumni rows, and in chat a sender's name or photo,
@@ -250,6 +234,9 @@ const DETAIL_LIST = "divide-y divide-border rounded-md border border-border";
  * an officer changes a member's roles from chat without leaving it (tester
  * report on #3726). **Remove member** sits in the footer for a viewer holding
  * `members:remove`, and is absent for anyone else.
+ *
+ * **Pledge class and order number** (#3939) sit under the roles, in the
+ * chapter's own words; `MemberPledgeClassSection` owns them.
  */
 export function MemberDetailSheet({
   open,
@@ -723,6 +710,26 @@ export function MemberDetailSheet({
                   </p>
                 )}
               </section>
+
+              <MemberPledgeClassSection
+                // Keyed by member, so an open editor never carries over to
+                // the next member the sheet shows.
+                key={memberId ?? "none"}
+                open={open}
+                memberId={memberId}
+                displayName={displayName}
+                pledgeClassId={stringField(member, "pledge_class_id")}
+                orderNumber={
+                  typeof member.order_number === "number"
+                    ? member.order_number
+                    : null
+                }
+                canEdit={
+                  !!memberId &&
+                  !memberQuery.isError &&
+                  can("roles:manage", myPermissions)
+                }
+              />
 
               <dl className={cn("mt-6", DETAIL_LIST)}>
                 {email ? (

@@ -131,6 +131,7 @@ describe("Settings shows each viewer what they can use", () => {
       "Accent",
       "Modules",
       "Roles",
+      "Pledge classes",
       "Semester",
       "Fields",
       "Dues",
@@ -179,11 +180,21 @@ describe("Settings shows each viewer what they can use", () => {
     permissions.current = ["roles:manage"];
     search.current = "tab=modules";
     render(<SettingsPage />);
-    expect(tabNames()).toEqual(["Roles"]);
+    expect(tabNames()).toEqual(["Roles", "Pledge classes"]);
     expect(screen.getByRole("tab", { name: "Roles" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
+  });
+
+  it("names the pledge class tab in the chapter's own word", () => {
+    permissions.current = ["roles:manage"];
+    currentChapter.current = {
+      ...currentChapter.current,
+      vocabulary: { class: "Line" },
+    } as typeof currentChapter.current;
+    render(<SettingsPage />);
+    expect(tabNames()).toEqual(["Roles", "Lines"]);
   });
 
   it("hides a tool whose module the chapter switched off", () => {
@@ -198,6 +209,6 @@ describe("Settings shows each viewer what they can use", () => {
 
   it("shows every tab while permissions are still loading, so nothing flashes out", () => {
     render(<SettingsPage />);
-    expect(tabNames()).toHaveLength(10);
+    expect(tabNames()).toHaveLength(11);
   });
 });
