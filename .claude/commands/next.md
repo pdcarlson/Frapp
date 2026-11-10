@@ -197,7 +197,7 @@ priority label (`P1`→`P4`, no priority label last), tie-broken by lower issue 
 issue for being unestimated, small, or large; prefer the most valuable viable work, including large,
 high-impact issues. The order is deterministic so concurrent agents agree on it and the claim
 resolves collisions. Baseline first ([`AGENTS.md` § Work tracking](../../AGENTS.md#work-tracking))
-reaches this order through the priority labels; don't reorder by hand.
+is applied where priorities are set, so this order doesn't re-rank for it.
 
 **Walk your lane, not the list.** Every session agrees on the order, so sessions must not walk it in
 step.

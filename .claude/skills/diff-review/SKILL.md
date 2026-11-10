@@ -33,7 +33,9 @@ When a turn does carry the token, run it as asked, then run this skill. Full rul
 ## 1. Scope
 
 First check the branch isn't on the remote already (`git ls-remote --exit-code --heads origin
-<branch>` exits 2 when it isn't). If it is, stop: there is nothing to review, so push. The modes
+<branch>` exits 2 when it isn't). If it is, stop: there is nothing to review, so push. The exception
+is a branch whose first push bypassed the gate (a parked or WIP push with `--no-verify`): it was
+never reviewed, so review it here before its PR opens. The modes
 below other than `full` then matter only when someone asks for a second look at a pushed branch.
 
 Commit first: the marker keys to a commit. Then:

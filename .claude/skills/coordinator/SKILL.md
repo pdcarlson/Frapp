@@ -16,9 +16,8 @@ description: >
 
 Claude Code projects, a coordinator chat that spins off threads, aren't offered on Team plans
 (checked 2026-11-08, [docs](https://code.claude.com/docs/en/claude-projects)). This skill builds the
-same shape from parts this environment has. Checked on 2026-11-08: `create_session` starts a worker,
-a worker's `send_message` to the coordinator is delivered (it arrives as a new turn once the
-coordinator's current turn ends), and `get_session` reads context use. The front door both people
+same shape from parts this environment has. Checked on 2026-11-08: `create_session` starts a worker
+and `get_session` reads its status and context use. The front door both people
 share is an artifact page, whose comments sent to Claude wake the session that published it (the
 Artifact tool's stated behavior, not yet tried from Shawn's account). A shared session is view-only for
 teammates ([docs](https://code.claude.com/docs/en/claude-code-on-the-web), "Share sessions"), so
@@ -58,9 +57,10 @@ naming the work, tags `frapp:coordinator`, and a brief that stands alone. The br
 
 Workers report in their own chats (Paul, 2026-11-10): each message to the coordinator wakes its
 whole context, which costs more than the report is worth. Add the board row as soon as the worker
-starts. Read a worker's state when you need it, when Paul asks or when you bring the board up to
-date: `get_session` for its status, `list_events` with `kinds` for its last reply, and its issue
-and PR. Archive a worker's session (`archive_session`) once its PR merged or its work is done.
+starts. Nothing wakes you when a worker opens a PR or blocks, so whenever a message from Paul or
+a board comment has you awake anyway, read each open worker's state and bring its row up to date:
+`get_session` for its status, `list_events` with `kinds` for its last reply, and its issue and PR.
+Archive a worker's session (`archive_session`) once its PR merged or its work is done.
 
 ## The board
 

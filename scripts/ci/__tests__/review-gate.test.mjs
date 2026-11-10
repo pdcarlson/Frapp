@@ -59,6 +59,7 @@ test("denies an unreviewed branch update with a nonzero exit", () => {
   assert.equal(result.status, 1);
   assert.match(result.stderr, /no review evidence/);
   assert.match(result.stderr, /Retrying cannot create review evidence/);
+  assert.match(result.stderr, /Bypass, when a review would buy nothing.*git push --no-verify/);
 });
 
 test("retrying an unreviewed push never changes the verdict", () => {
