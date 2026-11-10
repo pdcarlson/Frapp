@@ -101,6 +101,11 @@ export interface ThreadMessageRowProps {
   maskedRefresh: ReadonlyMap<string, MaskedRefreshState>;
   /** A stale tombstone's Reload: re-runs that member's re-read. */
   onReload: (userId: string) => void;
+  /**
+   * Pushes a message's thread (#3785): the chip under a parent with replies.
+   * Absent where the channel offers no threads (a 1:1 DM).
+   */
+  onOpenThread?: (message: ChatMessage) => void;
 }
 
 export function ThreadMessageRow(props: ThreadMessageRowProps) {
@@ -143,6 +148,7 @@ function ThreadMessageRowBody({
   onUnblock,
   maskedRefresh,
   onReload,
+  onOpenThread,
 }: ThreadMessageRowProps) {
   const { message: cached, visibility } = row;
 
@@ -276,6 +282,7 @@ function ThreadMessageRowBody({
       onOpenActions={openActions}
       onJumpToParent={onJumpToParent}
       onOpenProfile={onOpenProfile}
+      onOpenThread={onOpenThread ? () => onOpenThread(cached) : undefined}
     />
   );
 }

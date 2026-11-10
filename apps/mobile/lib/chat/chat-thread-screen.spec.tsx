@@ -121,6 +121,16 @@ vi.mock("@/components/chat/message-actions-sheet", async () => {
   };
 });
 
+// A message thread (#3785) is the same route with a root; its own spec
+// (`components/chat/message-thread-screen.spec.tsx`) draws it.
+vi.mock("@/components/chat/message-thread-screen", async () => {
+  const { createElement } = await import("react");
+  return {
+    MessageThreadScreen: (props: Record<string, unknown>) =>
+      createElement("MessageThreadScreen", props),
+  };
+});
+
 const presentProfileSheet = vi.fn();
 vi.mock("@/components/directory/member-detail-sheet", async () => {
   const { createElement, forwardRef, useImperativeHandle } =
@@ -443,7 +453,9 @@ vi.mock("@/lib/chat/block-actions", async (importOriginal) => ({
   useBlockActions: () => ({ unblock: vi.fn(), reloadMaskedCopies: vi.fn() }),
 }));
 
-let params: { channelId?: string } = { channelId: CHANNEL };
+let params: { channelId?: string; threadRootId?: string } = {
+  channelId: CHANNEL,
+};
 vi.mocked(expoRouter.useLocalSearchParams).mockImplementation(() => params);
 
 import ChatThreadScreen from "@/app/(app)/chat-thread";
@@ -2201,5 +2213,80 @@ describe("chat thread + sheet (#3865)", () => {
     act(() => refocus());
     expect(dismissPollSheet).toHaveBeenCalled();
     act(() => tree.unmount());
+  });
+});
+
+describe("message threads (#3785)", () => {
+  it("draws the thread when the route carries a root, and not the channel", () => {
+    params = { channelId: CHANNEL, threadRootId: "m1" };
+    const tree = render();
+    expect(
+      tree.root.findByType("MessageThreadScreen" as never).props,
+    ).toMatchObject({ channelId: CHANNEL, rootId: "m1" });
+    expect(rows(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("pushes a parent's thread over the channel from its chip", () => {
+    const tree = render();
+    const onOpenThread = rows(tree)[0]!.props.onOpenThread as (
+      message: ChatMessage,
+    ) => void;
+    act(() => onOpenThread(message("m1")));
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/chat-thread",
+      params: { channelId: CHANNEL, threadRootId: "m1" },
+    });
+    act(() => tree.unmount());
+  });
+
+  it("offers Start thread on a message with no thread, and hands it the same push", () => {
+    const tree = render();
+    act(() =>
+      (rows(tree)[1]!.props.onOpenActions as (m: ChatMessage) => void)(
+        message("m2", {
+          created_at: new Date(2026, 8, 28, 17, 1).toISOString(),
+        }),
+      ),
+    );
+    const sheet = tree.root.findByType("MessageActionsSheet" as never);
+    expect(sheet.props.target).toMatchObject({ canStartThread: true });
+    act(() => (sheet.props.onStartThread as (id: string) => void)("m2"));
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/chat-thread",
+      params: { channelId: CHANNEL, threadRootId: "m2" },
+    });
+    act(() => tree.unmount());
+  });
+
+  it("starts no second thread on a parent that has one", () => {
+    const tree = render();
+    act(() =>
+      (rows(tree)[0]!.props.onOpenActions as (m: ChatMessage) => void)(
+        message("m1", {
+          thread: {
+            reply_count: 2,
+            last_reply_at: null,
+            recent_sender_ids: [],
+          },
+        }),
+      ),
+    );
+    expect(
+      tree.root.findByType("MessageActionsSheet" as never).props.target,
+    ).toMatchObject({ canStartThread: false });
+    act(() => tree.unmount());
+  });
+
+  it("offers no thread in a 1:1 DM or the audit log", () => {
+    channelType = "DM";
+    const dm = render();
+    expect(rows(dm)[0]!.props.onOpenThread).toBeUndefined();
+    act(() => dm.unmount());
+    channelType = "PUBLIC";
+    channelIsAuditLog = true;
+    const audit = render();
+    expect(rows(audit)[0]!.props.onOpenThread).toBeUndefined();
+    act(() => audit.unmount());
   });
 });

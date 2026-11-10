@@ -29,7 +29,10 @@ import {
   visibleTypingUsers,
   type ThreadRow,
 } from "@repo/chat-core/blocks";
-import { channelAllowsReplies } from "@repo/chat-core/message-actions";
+import {
+  channelAllowsReplies,
+  channelAllowsThreads,
+} from "@repo/chat-core/message-actions";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -77,6 +80,7 @@ import {
 } from "@/components/chat/notification-level-control";
 import { ThreadHistoryEdge } from "@/components/chat/thread-history-edge";
 import { ThreadMessageRow } from "@/components/chat/thread-message-row";
+import { MessageThreadScreen } from "@/components/chat/message-thread-screen";
 import { MentionChipTargetsContext } from "@repo/hooks/mention-chips";
 import { ThreadSkeleton } from "@/components/chat/thread-skeleton";
 import { threadLayout } from "@/lib/chat/thread-layout";
@@ -177,7 +181,29 @@ const TYPING_LINE_BLANK = "\u00a0";
  * the composer has to be moved up from here (#3346), and a screen must never
  * import the native package directly (ESLint `no-restricted-imports`).
  */
-export default function ChatThreadScreen() {
+export default function ChatThreadRoute() {
+  const params = useLocalSearchParams<{
+    channelId?: string | string[];
+    threadRootId?: string | string[];
+  }>();
+  const channelId = firstParam(params.channelId);
+  const threadRootId = firstParam(params.threadRootId);
+  // A message thread (#3785) is this route pushed again with its root, so
+  // the frozen stack layout needs no new route and the back gesture returns
+  // to the channel under it (`MessageThreadScreen`).
+  if (channelId && threadRootId) {
+    return <MessageThreadScreen channelId={channelId} rootId={threadRootId} />;
+  }
+  return <ChannelThreadScreen />;
+}
+
+/** A route param's one value: a repeated query key arrives as an array. */
+function firstParam(raw: string | string[] | undefined): string | null {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function ChannelThreadScreen() {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
   const styles = createStyles(tokens);
@@ -350,6 +376,31 @@ export default function ChatThreadScreen() {
     can_post: channelCanPost,
     is_read_only: channelIsReadOnly,
   });
+  // Message threads (#3785): channels and group DMs, read-only ones included
+  // (the pending-Paul override in `spec/behavior/chat/README.md` § Message
+  // threads); never a 1:1 DM or the audit log. A thread is this route pushed
+  // again with its root (`ChatThreadRoute`).
+  const canThreadHere =
+    !!openChannel &&
+    channelAllowsThreads({
+      type: openChannel.channel.type,
+      is_audit_log: postCapability.isAuditLog,
+    });
+  const openThreadFor = useCallback(
+    (rootId: string) => {
+      if (!channelId) return;
+      Keyboard.dismiss();
+      router.push({
+        pathname: "/chat-thread",
+        params: { channelId, threadRootId: rootId },
+      });
+    },
+    [channelId, router],
+  );
+  const openThread = useCallback(
+    (message: ChatMessage) => openThreadFor(message.id),
+    [openThreadFor],
+  );
 
   // Members a block attempt proved are not in this chapter (`DepartedMembers`).
   const chapterId = useActiveChapterId();
@@ -792,6 +843,14 @@ export default function ChatThreadScreen() {
         messageId: message.id,
         copyText: copyableText(message),
         canReply: actions.canReply,
+        // A parent with replies opens from its chip; a reply, a deleted or
+        // an imported message starts none (web's row offers the same).
+        canStartThread:
+          canThreadHere &&
+          !message.thread_root_id &&
+          !message.thread &&
+          !message.is_deleted &&
+          message.kind !== "imported",
         canEdit: actions.canEdit,
         // Someone else's message from a real member, where the viewer can
         // post: the system actor and an imported author have nobody to ping.
@@ -816,6 +875,7 @@ export default function ChatThreadScreen() {
     [
       canManageChannel,
       canReplyHere,
+      canThreadHere,
       channelCanPost,
       isMember,
       nameFor,
@@ -893,6 +953,7 @@ export default function ChatThreadScreen() {
           onUnblock={handleUnblock}
           maskedRefresh={maskedRefresh}
           onReload={handleReload}
+          onOpenThread={canThreadHere ? openThread : undefined}
         />
       );
     },
@@ -919,6 +980,8 @@ export default function ChatThreadScreen() {
       handleUnblock,
       maskedRefresh,
       handleReload,
+      canThreadHere,
+      openThread,
     ],
   );
 
@@ -1410,6 +1473,7 @@ export default function ChatThreadScreen() {
         target={sheetTarget}
         onSenderDeparted={markDeparted}
         onReply={staging.startReply}
+        onStartThread={openThreadFor}
         onEdit={staging.startEdit}
         onDelete={handleDelete}
         onMention={handleMention}

@@ -70,7 +70,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * **Laid out the way Discord's long-press is**, because that is the menu the
  * chapters moving off Discord already know: the reaction row, then the
- * conversation actions (Reply, Edit), then the copy-and-reference ones (Copy
+ * conversation actions (Reply, Start thread, Edit), then the copy-and-reference ones (Copy
  * text, Mention), then Report and Delete last. Rows are bare labels: a menu
  * row says what it does, and a sentence under it explaining the button is
  * noise (Paul, 2026-11-07).
@@ -159,6 +159,11 @@ export interface MessageActionsTarget {
    */
   copyText: string | null;
   canReply: boolean;
+  /**
+   * Start thread (#3785): a message in a channel that offers threads, with no
+   * thread yet (one that has replies opens from its chip).
+   */
+  canStartThread?: boolean;
   canEdit: boolean;
   /**
    * Someone else's message in a channel the viewer can post in: Mention puts
@@ -227,6 +232,8 @@ export interface MessageActionsSheetProps {
   onSenderDeparted?: (userId: string) => void;
   /** Stage a reply to this message in the composer. */
   onReply?: (messageId: string) => void;
+  /** Push this message's thread screen (#3785). */
+  onStartThread?: (messageId: string) => void;
   /** Start editing this message in the composer. */
   onEdit?: (messageId: string) => void;
   /** Confirm, then delete, this message. */
@@ -250,6 +257,7 @@ export const MessageActionsSheet = forwardRef<
     target,
     onSenderDeparted,
     onReply,
+    onStartThread,
     onEdit,
     onDelete,
     onMention,
@@ -536,13 +544,22 @@ export const MessageActionsSheet = forwardRef<
               </Pressable>
             </View>
           ) : null}
-          {target?.canReply || target?.canEdit ? (
+          {target?.canReply ||
+          (target?.canStartThread && onStartThread) ||
+          target?.canEdit ? (
             <ListSection>
               {target.canReply ? (
                 <ListRow
                   label="Reply"
                   action
                   onPress={() => handOff(onReply)}
+                />
+              ) : null}
+              {target.canStartThread && onStartThread ? (
+                <ListRow
+                  label="Start thread"
+                  action
+                  onPress={() => handOff(onStartThread)}
                 />
               ) : null}
               {target.canEdit ? (
