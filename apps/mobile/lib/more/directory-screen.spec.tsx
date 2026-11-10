@@ -79,6 +79,12 @@ const state = vi.hoisted(() => ({
   search: [] as unknown[],
   pending: false,
   permissions: [] as string[],
+  // `GET /v1/members`, `GET /v1/pledge-classes` and the chapter's own
+  // vocabulary, each swapped by the pledge class specs (#3939).
+  members: null as unknown[] | null,
+  classes: [] as { id: string; name: string }[],
+  classesFailed: false,
+  vocabulary: undefined as Record<string, string> | undefined,
 }));
 
 // One refetch per read, so a pull can be checked against each of them.
@@ -86,6 +92,7 @@ const refetches = vi.hoisted(() => ({
   members: vi.fn(),
   alumni: vi.fn(),
   search: vi.fn(),
+  classes: vi.fn(),
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
@@ -93,7 +100,22 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
   useActiveChapterId: () => "c-1",
   usePermissionList: () => state.permissions,
-  useMembers: () => read(MEMBERS, refetches.members),
+  useMembers: () => read(state.members ?? MEMBERS, refetches.members),
+  usePledgeClasses: () =>
+    state.classesFailed
+      ? {
+          // What a failed refetch leaves: the last list, and an error.
+          data: state.classes,
+          isPending: false,
+          isError: true,
+          isSuccess: false,
+          isFetching: false,
+          refetch: refetches.classes,
+        }
+      : read(state.classes, refetches.classes),
+  useCurrentChapter: () => ({
+    data: state.vocabulary ? { vocabulary: state.vocabulary } : undefined,
+  }),
   useAlumni: (filters?: { company?: string }) =>
     read(filters?.company === "Acme" ? [CHARLES] : ALUMNI, refetches.alumni),
   // Off without a term, as the real query is, so a pull skips it then.
@@ -219,6 +241,10 @@ beforeEach(() => {
   state.search = [];
   state.pending = false;
   state.permissions = [];
+  state.members = null;
+  state.classes = [];
+  state.classesFailed = false;
+  state.vocabulary = undefined;
   for (const refetch of Object.values(refetches)) {
     refetch.mockReset().mockResolvedValue(undefined);
   }
@@ -334,6 +360,8 @@ describe("s13 Directory on a chapter with alumni (#2484)", () => {
 
     expect(refetches.members).toHaveBeenCalledWith({ cancelRefetch: true });
     expect(refetches.alumni).toHaveBeenCalledWith({ cancelRefetch: true });
+    // The class list too (#3939): rows name a class from it.
+    expect(refetches.classes).toHaveBeenCalledWith({ cancelRefetch: true });
     expect(refetches.search).not.toHaveBeenCalled();
   });
 
@@ -368,6 +396,126 @@ describe("s13 Directory on a chapter with alumni (#2484)", () => {
   });
 });
 
+/**
+ * #3939, mobile: `spec/behavior/members.md` § Pledge class and order number.
+ * Read-only here. The chip is the Actives tab's trailing chip, where the
+ * Alumni tab carries Filters.
+ */
+describe("s13's pledge classes and fraternal order (#3939)", () => {
+  const CLASSES = [
+    { id: "pc-alpha", name: "Alpha" },
+    { id: "pc-beta", name: "Beta" },
+  ];
+  // Andre is in the younger class, so name order and fraternal order differ.
+  const WITH_CLASSES = [
+    { ...MARCUS, pledge_class_id: "pc-alpha", order_number: 1 },
+    { ...ANDRE, pledge_class_id: "pc-beta", order_number: 1 },
+    CHARLES,
+    DANIEL,
+  ];
+
+  function orderChip(tree: ReactTestRenderer) {
+    return chips(tree).trailing as React.ReactElement<{
+      label: string;
+      on: boolean;
+      accessibilityLabel: string;
+      accessibilityState: { selected: boolean };
+      onPress: () => void;
+    }> | null;
+  }
+
+  function metaOf(tree: ReactTestRenderer, name: string) {
+    return (list(tree).props.data as DirectoryRow[]).find(
+      (row) => row.displayName === name,
+    )?.meta;
+  }
+
+  it("shows a chapter with no classes and no numbers none of it", () => {
+    const tree = render();
+
+    expect(orderChip(tree)).toBeNull();
+    expect(metaOf(tree, "Marcus Reid")).toBeNull();
+  });
+
+  it("names a member's class on their row", () => {
+    state.classes = CLASSES;
+    state.members = WITH_CLASSES;
+    const tree = render();
+
+    expect(metaOf(tree, "Marcus Reid")).toBe("Alpha");
+    expect(metaOf(tree, "Andre Silva")).toBe("Beta");
+  });
+
+  it("offers the sort under the chapter's own word, as typed, and lists by it", () => {
+    state.classes = CLASSES;
+    state.members = WITH_CLASSES;
+    state.vocabulary = { order: "roll number" };
+    const tree = render();
+
+    const chip = orderChip(tree)!;
+    expect(chip.props.label).toBe("Sort: roll number");
+    expect(chip.props.accessibilityLabel).toBe("Sort by roll number");
+    expect(chip.props.on).toBe(false);
+    expect(listed(tree)).toEqual(["Andre Silva", "Marcus Reid"]);
+
+    act(() => chip.props.onPress());
+
+    expect(orderChip(tree)!.props.on).toBe(true);
+    expect(orderChip(tree)!.props.accessibilityState).toEqual({
+      selected: true,
+    });
+    expect(listed(tree)).toEqual(["Marcus Reid", "Andre Silva"]);
+
+    act(() => orderChip(tree)!.props.onPress());
+    expect(listed(tree)).toEqual(["Andre Silva", "Marcus Reid"]);
+  });
+
+  it("offers the sort to a chapter that keeps numbers and no classes", () => {
+    state.members = [
+      { ...MARCUS, order_number: 2 },
+      { ...ANDRE, order_number: 5 },
+    ];
+    const tree = render();
+
+    expect(orderChip(tree)!.props.label).toBe("Sort: Fraternal order");
+    act(() => orderChip(tree)!.props.onPress());
+    expect(listed(tree)).toEqual(["Marcus Reid", "Andre Silva"]);
+  });
+
+  it("keeps the Alumni tab's trailing chip as Filters, and its list by name", () => {
+    state.classes = CLASSES;
+    state.members = WITH_CLASSES;
+    const tree = render();
+    act(() => orderChip(tree)!.props.onPress());
+
+    act(() => chips(tree).onSelect("alumni"));
+
+    expect(chips(tree).trailing!.props.label).toBe("Filters");
+    expect(listed(tree)).toEqual(["Charles Whitmore III", "Daniel Kirkpatrick"]);
+  });
+
+  it("drops the sort and the class names when the class list can't be read", () => {
+    state.classes = CLASSES;
+    state.members = WITH_CLASSES;
+    const tree = render();
+    act(() => orderChip(tree)!.props.onPress());
+    expect(listed(tree)).toEqual(["Marcus Reid", "Andre Silva"]);
+
+    state.classesFailed = true;
+    act(() =>
+      tree.update(
+        <FrappThemeProvider>
+          <DirectoryScreen />
+        </FrappThemeProvider>,
+      ),
+    );
+
+    expect(orderChip(tree)).toBeNull();
+    expect(listed(tree)).toEqual(["Andre Silva", "Marcus Reid"]);
+    expect(metaOf(tree, "Marcus Reid")).toBeNull();
+  });
+});
+
 describe("s13's member rows", () => {
   const ROW: DirectoryRow = {
     memberId: "m-u-1",
@@ -376,6 +524,8 @@ describe("s13's member rows", () => {
     initials: "MR",
     meta: null,
     avatarUrl: null,
+    pledgeClassId: null,
+    orderNumber: null,
   };
 
   function pressableOf(onPress?: () => void) {
@@ -446,6 +596,8 @@ describe("s13's loading state", () => {
               initials: "MR",
               meta: null,
               avatarUrl: null,
+              pledgeClassId: null,
+              orderNumber: null,
             }}
             onPress={vi.fn()}
           />

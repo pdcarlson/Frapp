@@ -4,7 +4,9 @@ import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useActiveChapterId,
   useCurrentUser,
+  useMemberByUserId,
   useMyPoints,
+  usePledgeClasses,
   useServiceEntries,
   useViewerUserId,
   useOwnAvatarTint,
@@ -33,6 +35,12 @@ import {
 } from "@/components/state-block";
 import { useAuthSession } from "@/lib/auth-session";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import { selectMemberDetail } from "@/lib/directory/member-detail";
+import {
+  classNamesById,
+  pledgeClassRows,
+  usePledgeClassTerms,
+} from "@/lib/directory/pledge-class";
 import {
   formatGraduationYear,
   formatHours,
@@ -54,15 +62,15 @@ import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
  * no denominator of events a member owed. `spec/ui/mobile/screens.md` also
  * records that reports stay web-only. Filed rather than invented.
  *
- * ## Five detail rows, not four different ones
+ * ## The detail rows
  *
- * Canvas draws Email, Phone, Pledge class and Big brother. Of those the
- * `users` table has only Email: no phone or big-brother column exists, and a
- * pledge class lives on the membership (`members.pledge_class_id`, #3939),
- * which this screen does not draw yet. The
- * rows below are Email plus four of the fields the API's `UpdateUserDto`
- * lets a member edit (major, graduation year, city, company); display name heads the
- * screen and bio gets its own card. Filed.
+ * Canvas draws Email, Phone, Pledge class and Big brother. No phone or
+ * big-brother column exists, so those two are omitted. The rows are Email,
+ * four of the fields the API's `UpdateUserDto` lets a member edit (major,
+ * graduation year, city, company), and after Graduation the member's pledge
+ * class and order number (#3939), which live on the membership and are drawn
+ * only when an officer has set them. Display name heads the screen and bio
+ * gets its own card.
  *
  * ## Editing
  *
@@ -97,6 +105,32 @@ export default function ProfileScreen() {
     () => selectViewerProfile(userQuery.data),
     [userQuery.data],
   );
+  // The viewer's pledge class and order number (#3939) live on their member
+  // profile, not on `/v1/users/me`. Each row is drawn only when set, unlike
+  // the "Not set" rows below: those are the member's own to fill in under
+  // Edit, and these are an officer's, so an empty one would be a row the
+  // member can do nothing about, in a chapter that may keep neither.
+  const memberQuery = useMemberByUserId(viewerUserId ?? "");
+  const membership = useMemo(
+    () => selectMemberDetail(memberQuery.data),
+    [memberQuery.data],
+  );
+  const { classTerm, orderTerm } = usePledgeClassTerms();
+  const classesQuery = usePledgeClasses({
+    enabled: !!membership?.pledgeClassId,
+  });
+  const classRows = membership
+    ? pledgeClassRows({
+        pledgeClassId: membership.pledgeClassId,
+        orderNumber: membership.orderNumber,
+        classNames: classNamesById(
+          classesQuery.isSuccess ? classesQuery.data : null,
+        ),
+        classesPending: classesQuery.isPending,
+        classTerm,
+        orderTerm,
+      })
+    : [];
   const pointsBalance = selectPointsBalance(pointsQuery.data);
   // `null` until the entries land, so the card shows an em dash rather than a
   // confident "0 service hrs" beside a correct name and points balance.
@@ -224,6 +258,14 @@ export default function ProfileScreen() {
             profile?.graduationYear ? String(profile.graduationYear) : "Not set"
           }
         />
+        {classRows.map((row) => (
+          <ListRow
+            key={row.key}
+            variant="detail"
+            label={row.label}
+            value={row.value}
+          />
+        ))}
         <ListRow
           variant="detail"
           label="City"

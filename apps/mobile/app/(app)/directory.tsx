@@ -9,6 +9,8 @@ import {
   useMemberSearch,
   useMembers,
   usePermissionList,
+  usePledgeClasses,
+  usesFraternalOrder,
   type MemberAvatarTint,
 } from "@repo/hooks";
 import { useRouter } from "expo-router";
@@ -46,6 +48,10 @@ import {
   selectDirectoryRows,
 } from "@/lib/more/directory";
 import { records, str } from "@/lib/more/narrow";
+import {
+  classNamesById,
+  usePledgeClassTerms,
+} from "@/lib/directory/pledge-class";
 import { FLOATING_TAB_BAR, useTabBarClearance } from "@/lib/floating-chrome";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -87,6 +93,20 @@ import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
  * under it. The roster is where Discord and web put Invite, so it is where a
  * President looks first (owner ask 2026-11-06). While the permission read
  * loads the button is absent, which fails closed.
+ *
+ * ## Pledge class and fraternal order (#3939)
+ *
+ * `spec/behavior/members.md` § Pledge class and order number. A member's class
+ * leads their row's meta line, and the Actives tab's chip row ends with a
+ * chip, "Sort:" and the chapter's word for a member's order number, that
+ * lists the actives in fraternal order instead of by name. Canvas draws no
+ * sort on this screen, so the chip is this file's addition: one toggle, on the
+ * row that already carries the Alumni tab's Filters chip, because the list has
+ * exactly two orders. As on web, all of it waits for the class list: a chapter
+ * with no classes and no numbers sees none of it, and a failed class read
+ * drops the chip and the names rather than sort by a list it doesn't have.
+ * The Alumni tab has no chip: `GET /v1/alumni` carries neither field (#4088).
+ * Read-only here; officers set both on web (mobile editing is #3991).
  */
 type Tab = "actives" | "alumni";
 
@@ -144,6 +164,22 @@ export default function DirectoryScreen() {
   const hasAlumniFilters = countSetFilters(deferredAlumniFilters) > 0;
 
   const membersQuery = useMembers();
+  const classesQuery = usePledgeClasses();
+  const { orderTerm } = usePledgeClassTerms();
+  // Only a list that answered: `data` can outlive a failed refetch, and a
+  // stale list would sort and name classes the chapter may have changed.
+  const pledgeClasses = useMemo(
+    () => (classesQuery.isSuccess ? (classesQuery.data ?? []) : null),
+    [classesQuery.isSuccess, classesQuery.data],
+  );
+  const classNames = useMemo(
+    () => classNamesById(pledgeClasses),
+    [pledgeClasses],
+  );
+  const orderOffered =
+    pledgeClasses !== null &&
+    usesFraternalOrder(pledgeClasses, records(membersQuery.data));
+  const [sortByOrder, setSortByOrder] = useState(false);
   const alumniQuery = useAlumni(deferredAlumniFilters);
   const searchQuery = useMemberSearch(deferredQuery);
 
@@ -155,7 +191,12 @@ export default function DirectoryScreen() {
       : alumniQuery;
   // Both lists, since the tab chips count each, and the search results
   // while there is a term (that query is off without one).
-  const refresh = useRefetchAll([membersQuery, alumniQuery, searchQuery]);
+  const refresh = useRefetchAll([
+    membersQuery,
+    alumniQuery,
+    searchQuery,
+    classesQuery,
+  ]);
 
   // `GET /v1/members` is the whole chapter; the Actives tab is the part of it
   // that isn't on the Alumni tab (#2484). Search stays directory-wide: it hides
@@ -167,7 +208,19 @@ export default function DirectoryScreen() {
   const listData =
     !isSearching && tab === "actives" ? actives : activeQuery.data;
 
-  const rows = useMemo(() => selectDirectoryRows(listData), [listData]);
+  // The Actives list alone: search ranks across both lists by name, and the
+  // alumni read carries no class or number to order by (#4088).
+  const inFraternalOrder =
+    sortByOrder && orderOffered && !isSearching && tab === "actives";
+  const rows = useMemo(
+    () =>
+      selectDirectoryRows(listData, {
+        classNames,
+        fraternalOrder:
+          inFraternalOrder && pledgeClasses ? pledgeClasses : undefined,
+      }),
+    [listData, classNames, inFraternalOrder, pledgeClasses],
+  );
   // Counted, not selected: `selectDirectoryRows` maps and sorts, and sorting to
   // read a `.length` would run a full `localeCompare` sort over both lists on
   // every keystroke. `null` until the query succeeds, so a populated tab never
@@ -229,6 +282,22 @@ export default function DirectoryScreen() {
                 }
                 on={filtersOpen}
                 onPress={() => setFiltersOpen((open) => !open)}
+              />
+            ) : orderOffered ? (
+              <Chip
+                accessibilityRole="button"
+                accessibilityState={{ selected: sortByOrder }}
+                accessibilityLabel={`Sort by ${orderTerm}`}
+                accessibilityHint={
+                  sortByOrder
+                    ? "Lists actives by name again."
+                    : "Lists actives oldest class first, then by number."
+                }
+                // "Sort:" leads, because beside Actives and Alumni a chip
+                // reading only the chapter's word looks like a third tab.
+                label={`Sort: ${orderTerm}`}
+                on={sortByOrder}
+                onPress={() => setSortByOrder((on) => !on)}
               />
             ) : null
           }

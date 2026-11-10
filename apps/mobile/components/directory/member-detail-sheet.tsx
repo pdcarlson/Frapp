@@ -17,6 +17,7 @@ import {
   useMemberByUserId,
   useMemberDisplayNames,
   usePermissionList,
+  usePledgeClasses,
   useRoles,
   useViewerUserId,
 } from "@repo/hooks";
@@ -26,6 +27,11 @@ import {
   resolveRoleChips,
   type MemberRoleChip,
 } from "@repo/validation";
+import {
+  classNamesById,
+  pledgeClassRows,
+  usePledgeClassTerms,
+} from "@/lib/directory/pledge-class";
 import { MemberAvatar } from "@/components/member-avatar";
 import {
   confirmBlockMember,
@@ -166,6 +172,22 @@ export const MemberDetailSheet = forwardRef<
     () => selectMemberDetail(memberQuery.data),
     [memberQuery.data],
   );
+  // The member's pledge class and order number (#3939), each drawn only when
+  // set. The class list is read only for a member who has a class to name.
+  const { classTerm, orderTerm } = usePledgeClassTerms();
+  const classesQuery = usePledgeClasses({ enabled: !!detail?.pledgeClassId });
+  const classRows = detail
+    ? pledgeClassRows({
+        pledgeClassId: detail.pledgeClassId,
+        orderNumber: detail.orderNumber,
+        classNames: classNamesById(
+          classesQuery.isSuccess ? classesQuery.data : null,
+        ),
+        classesPending: classesQuery.isPending,
+        classTerm,
+        orderTerm,
+      })
+    : [];
   const roleChips = useMemo(
     () => resolveRoleChips(rolesQuery.data, detail?.roleIds ?? []),
     [rolesQuery.data, detail?.roleIds],
@@ -447,6 +469,14 @@ export const MemberDetailSheet = forwardRef<
                     }
                   />
                 ) : null}
+                {classRows.map((row) => (
+                  <ListRow
+                    key={row.key}
+                    variant="detail"
+                    label={row.label}
+                    value={row.value}
+                  />
+                ))}
                 <ListRow
                   variant="detail"
                   label="Member since"

@@ -34,6 +34,14 @@ const LOADED_USER = {
 };
 // Swapped by the back-row specs for s15's loading and error states.
 let currentUser: Record<string, unknown> = LOADED_USER;
+// The viewer's own member profile and the chapter's class list (#3939).
+let membership: Record<string, unknown> | undefined;
+let pledgeClasses: { id: string; name: string }[] = [];
+const usePledgeClasses = vi.fn((options?: { enabled?: boolean }) =>
+  options?.enabled === false
+    ? { data: undefined, isPending: true, isSuccess: false }
+    : { data: pledgeClasses, isPending: false, isSuccess: true },
+);
 const useServiceEntries = vi.fn<(...args: unknown[]) => unknown>(() => ({
   data: [],
   isPending: false,
@@ -49,6 +57,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useMyPoints: () => ({ data: undefined, isPending: true, isError: false }),
   useServiceEntries: (...args: unknown[]) => useServiceEntries(...args),
   useUpdateUser: () => ({ mutate: vi.fn(), isPending: false }),
+  useMemberByUserId: () => ({ data: membership }),
+  usePledgeClasses: (options?: { enabled?: boolean }) =>
+    usePledgeClasses(options),
+  useCurrentChapter: () => ({ data: undefined }),
 }));
 
 vi.mock("@/lib/auth-session", () => ({
@@ -238,6 +250,52 @@ describe("Profile stat cards and Details", () => {
       "Company",
     ]);
     for (const row of rows) expect(row.props.variant).toBe("detail");
+    tree.unmount();
+  });
+});
+
+/**
+ * #3939. Canvas draws a Pledge class row on s15; its source is the viewer's
+ * member profile. Read-only, and drawn only when an officer has set it.
+ */
+describe("Profile pledge class and order number (#3939)", () => {
+  afterEach(() => {
+    membership = undefined;
+    pledgeClasses = [];
+    usePledgeClasses.mockClear();
+  });
+
+  function detailRows(tree: ReactTestRenderer) {
+    return tree.root
+      .findAllByType(ListRow)
+      .map((row) => [row.props.label, row.props.value]);
+  }
+
+  it("draws the class and the number after Graduation, in the chapter's words", () => {
+    membership = { user_id: "user-1", pledge_class_id: "pc-1", order_number: 14 };
+    pledgeClasses = [{ id: "pc-1", name: "Alpha" }];
+    const tree = render();
+
+    expect(detailRows(tree).slice(2, 5)).toEqual([
+      ["Graduation", "Not set"],
+      ["Pledge class", "Alpha"],
+      ["Fraternal order", "14"],
+    ]);
+    tree.unmount();
+  });
+
+  it("draws neither, and reads no class list, for a member with none set", () => {
+    membership = { user_id: "user-1", pledge_class_id: null, order_number: null };
+    const tree = render();
+
+    expect(detailRows(tree).map(([label]) => label)).toEqual([
+      "Email",
+      "Major",
+      "Graduation",
+      "City",
+      "Company",
+    ]);
+    expect(usePledgeClasses).toHaveBeenLastCalledWith({ enabled: false });
     tree.unmount();
   });
 });
