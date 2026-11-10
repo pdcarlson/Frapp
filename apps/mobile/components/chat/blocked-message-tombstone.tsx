@@ -51,6 +51,8 @@ import {
 export interface BlockedMessageTombstoneProps {
   /** Shown only in the accessibility label and the confirm prompt. */
   senderName: string | null;
+  /** The row's channel, so a display pinned to it on this device applies (#3787). */
+  channelId?: string;
   /**
    * `false` only when this client confirmed unblocking the sender and this row
    * is still the server's masked copy (older than the page the unblock
@@ -77,13 +79,14 @@ export function BlockedMessageTombstone({
   reload = null,
   onReload,
   startsRun = true,
+  channelId,
 }: BlockedMessageTombstoneProps) {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
   const styles = createStyles(tokens, brand);
   // Compact (§11 § Density) has no gutter and starts a run 4 below, so the
   // line stays in the body column beside the rows around it.
-  const compact = useChatDensity() === "compact";
+  const compact = useChatDensity(channelId) === "compact";
   const text = canUnblock ? TOMBSTONE_TEXT : TOMBSTONE_STALE_TEXT;
   const hiddenFrom = senderName
     ? `hidden messages from ${senderName}`

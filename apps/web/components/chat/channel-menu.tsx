@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, MoreHorizontal } from "lucide-react";
+import { ChevronLeft, Image as ImageIcon, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -14,14 +14,35 @@ import {
   MuteGlyph,
   PinGlyph,
 } from "./chat-glyphs";
-import { SearchGlyph } from "@/components/layout/nav-glyphs";
+import { ChatGlyph, SearchGlyph } from "@/components/layout/nav-glyphs";
 import { cn } from "@/lib/utils";
 import { EYEBROW } from "@/components/ui/typography";
 import { compactControlClassName } from "@/components/shared/table-controls";
-import { ChatSearchPanel, type ChatSearchHit } from "./chat-search-popover";
+import {
+  ChatSearchPanel,
+  type ChatSearchHit,
+  type SearchPickerOption,
+} from "./chat-search-popover";
 import { PinsPanel, pinnedMessages, type HiddenPins } from "./pins-popover";
 import { BookmarksPanel, type BookmarkEntry } from "./bookmarks-popover";
 import { NotificationLevelPanel } from "./notification-level-popover";
+import {
+  ChannelDisplayPanel,
+  type ChannelDisplayLockControl,
+} from "./channel-display-panel";
+import {
+  ChatBackgroundPicker,
+  type ChatBackgroundPick,
+} from "./chat-background-picker";
+import {
+  CHAT_BACKGROUND_LABELS,
+  type ChatBackgroundKey,
+} from "@repo/validation";
+import { channelDensityDetail } from "@repo/chat-core/density";
+import {
+  useChannelDensityOverride,
+  useChannelDisplayLocked,
+} from "@/lib/chat/chat-density";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   CHANNEL_LEVEL_DETAIL,
@@ -75,7 +96,15 @@ import {
  * which a touch screen never has.
  */
 
-type View = "menu" | "search" | "pins" | "saved" | "notifications" | "hide";
+type View =
+  | "menu"
+  | "search"
+  | "pins"
+  | "saved"
+  | "notifications"
+  | "display"
+  | "hide"
+  | "background";
 
 type ChannelMenuProps = {
   /** The channel currently open, or `null` when none is selected yet. */
@@ -96,6 +125,10 @@ type ChannelMenuProps = {
   nameFor: (userId: string) => string | null;
   /** Resolves a channel id → display name; `null` when unknown. */
   channelNameFor: (channelId: string) => string | null;
+  /** Every channel the member can read, for search's In filter. */
+  searchChannels: readonly SearchPickerOption[];
+  /** The chapter's members, for search's From filter. */
+  searchMembers: readonly SearchPickerOption[];
   onJumpToMessage: (messageId: string) => void;
   onJumpToSearchHit: (hit: ChatSearchHit) => void;
   onJumpToBookmark: (channelId: string, messageId: string) => void;
@@ -120,6 +153,26 @@ type ChannelMenuProps = {
     pinned: boolean;
     onToggle: () => void;
   };
+  /**
+   * The Always formal switch in the Display view (#3787). Pass it only when
+   * the viewer created the open channel or holds `channels:manage`
+   * (`canSetChannelDisplayLock`); absent, the view has no switch.
+   */
+  displayLock?: ChannelDisplayLockControl;
+  /**
+   * The channel's background (#3973). Present only for someone who can manage
+   * channels, on a channel that isn't a DM; absent, no row.
+   */
+  background?: {
+    /** The channel's own choice; null when it follows the chapter default. */
+    value: ChatBackgroundKey | null;
+    /** The chapter default, for the "Chapter default" swatch. */
+    inheritPreview?: ChatBackgroundKey;
+    letters: string;
+    saving: boolean;
+    error: string | null;
+    onPick: (pick: ChatBackgroundPick) => void;
+  };
 };
 
 type MenuRow = {
@@ -138,12 +191,18 @@ type MenuRow = {
   count?: number;
 };
 
+function BackgroundGlyph({ className }: { className?: string }) {
+  return <ImageIcon className={className} aria-hidden="true" />;
+}
+
 const VIEW_TITLES: Record<Exclude<View, "menu">, string> = {
   search: "Search messages",
   pins: "Pinned",
   saved: "Saved",
   notifications: "Notifications",
+  display: "Display",
   hide: HIDE_CONVERSATION_LABEL,
+  background: "Background",
 };
 
 export function ChannelMenu({
@@ -152,6 +211,8 @@ export function ChannelMenu({
   hiddenPins,
   nameFor,
   channelNameFor,
+  searchChannels,
+  searchMembers,
   onJumpToMessage,
   onJumpToSearchHit,
   onJumpToBookmark,
@@ -164,9 +225,13 @@ export function ChannelMenu({
   onChangeNotificationLevel,
   hideConversation,
   pinToTop,
+  displayLock,
+  background,
 }: ChannelMenuProps) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<View>("menu");
+  const densityOverride = useChannelDensityOverride(activeChannelId);
+  const displayLocked = useChannelDisplayLocked(activeChannelId);
   const backRef = useRef<HTMLButtonElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
 
@@ -226,6 +291,29 @@ export function ChannelMenu({
         ? CHANNEL_LEVEL_DETAIL[notificationLevel]
         : undefined,
     },
+    // This channel's display on this browser (#3787). Needs a channel.
+    ...(activeChannelId
+      ? [
+          {
+            view: "display" as const,
+            label: "Display",
+            Glyph: ChatGlyph,
+            detail: channelDensityDetail(densityOverride, displayLocked),
+          },
+        ]
+      : []),
+    ...(background
+      ? [
+          {
+            view: "background" as const,
+            label: "Background",
+            Glyph: BackgroundGlyph,
+            detail: background.value
+              ? CHAT_BACKGROUND_LABELS[background.value]
+              : "Chapter default",
+          },
+        ]
+      : []),
     ...(hideConversation
       ? [
           {
@@ -273,8 +361,28 @@ export function ChannelMenu({
       </PopoverTrigger>
       <PopoverContent
         ref={contentRef}
-        className={cn("p-0", view === "search" ? "w-96" : "w-80")}
+        // Search is wider than the other views (#3859's cheap half): its rows
+        // are message excerpts under a row of filter chips. Capped by the
+        // viewport so it holds the 375px floor.
+        className={cn(
+          "p-0",
+          view === "search" ? "w-[min(32rem,calc(100vw-1rem))]" : "w-80",
+        )}
         align="end"
+        // An open picker inside a panel (search's `from:` / `in:` list) takes
+        // Escape first, as a combobox does; the panel puts its list away.
+        // Without this Escape would close the menu and drop the search.
+        onEscapeKeyDown={(event) => {
+          // Anywhere in the menu, not only on the box: focus may be on a chip
+          // while the list is open.
+          if (
+            contentRef.current?.querySelector(
+              '[role="combobox"][aria-expanded="true"]',
+            )
+          ) {
+            event.preventDefault();
+          }
+        }}
       >
         {view === "menu" ? (
           <ul className="divide-y divide-border">
@@ -293,7 +401,7 @@ export function ChannelMenu({
                         ? `${label}, ${detail}`
                         : undefined
                   }
-                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-foreground transition-colors hover:bg-card"
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-foreground transition-colors hover:bg-card-hover"
                 >
                   <Glyph className="h-5 w-5 shrink-0 text-muted-foreground" />
                   {label}
@@ -313,7 +421,7 @@ export function ChannelMenu({
                     pinToTop.onToggle();
                     close();
                   }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-foreground transition-colors hover:bg-card"
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-foreground transition-colors hover:bg-card-hover"
                 >
                   <PinGlyph
                     className="h-5 w-5 shrink-0 text-muted-foreground"
@@ -350,6 +458,8 @@ export function ChannelMenu({
             {view === "search" ? (
               <ChatSearchPanel
                 activeChannelId={activeChannelId}
+                channels={searchChannels}
+                members={searchMembers}
                 channelNameFor={channelNameFor}
                 nameFor={nameFor}
                 onJump={(hit) => {
@@ -410,6 +520,26 @@ export function ChannelMenu({
                   </Button>
                 </div>
               </div>
+            ) : null}
+            {view === "display" && activeChannelId ? (
+              <ChannelDisplayPanel
+                channelId={activeChannelId}
+                onChange={close}
+                lockControl={displayLock}
+              />
+            ) : null}
+            {view === "background" && background ? (
+              // Stays open while saving: the swatches show the pending state,
+              // and a refused photo needs its error read here.
+              <ChatBackgroundPicker
+                value={background.value}
+                allowInherit
+                inheritPreview={background.inheritPreview}
+                letters={background.letters}
+                saving={background.saving}
+                error={background.error}
+                onPick={background.onPick}
+              />
             ) : null}
             {view === "notifications" ? (
               <NotificationLevelPanel

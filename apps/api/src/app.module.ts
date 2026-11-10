@@ -22,6 +22,7 @@ import { BackworkModule } from './modules/backwork/backwork.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { ServiceEntryModule } from './modules/service-entry/service-entry.module';
 import { TaskModule } from './modules/task/task.module';
+import { PledgeClassModule } from './modules/pledge-class/pledge-class.module';
 import { RushModule } from './modules/rush/rush.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { StudyModule } from './modules/study/study.module';
@@ -31,6 +32,7 @@ import { SemesterRolloverModule } from './modules/semester-rollover/semester-rol
 import { ReportModule } from './modules/report/report.module';
 import { SearchModule } from './modules/search/search.module';
 import { ActivityFeedModule } from './modules/activity-feed/activity-feed.module';
+import { ActivityModule } from './modules/activity/activity.module';
 import { ChapterConfigModule } from './modules/chapter-config/chapter-config.module';
 import { ChapterDirectoryModule } from './modules/chapter-directory/chapter-directory.module';
 import { ChatBridgeWorkerModule } from './modules/chat-bridge-worker/chat-bridge-worker.module';
@@ -76,6 +78,7 @@ import { validateEnv } from './config/env.validation';
     ChatModule,
     ServiceEntryModule,
     TaskModule,
+    PledgeClassModule,
     RushModule,
     NotificationModule,
     StudyModule,
@@ -85,6 +88,7 @@ import { validateEnv } from './config/env.validation';
     ReportModule,
     SearchModule,
     ActivityFeedModule,
+    ActivityModule,
     ChapterConfigModule,
     ChapterDirectoryModule,
     ChatBridgeWorkerModule,

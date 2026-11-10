@@ -4,7 +4,16 @@ export const EVENT_REPOSITORY = 'EVENT_REPOSITORY';
 
 export interface IEventRepository {
   findById(id: string, chapterId: string): Promise<Event | null>;
-  findByChapter(chapterId: string): Promise<Event[]>;
+  /**
+   * The chapter's events, earliest start first. `window` keeps only events
+   * that overlap it (`end_time >= endsAfter` and `start_time <= startsBefore`),
+   * so a caller after "what is coming up" does not read the chapter's whole
+   * history.
+   */
+  findByChapter(
+    chapterId: string,
+    window?: { endsAfter: string; startsBefore: string },
+  ): Promise<Event[]>;
   /**
    * The generated instances of a recurring event, oldest first.
    *

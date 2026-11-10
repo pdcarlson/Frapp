@@ -877,3 +877,49 @@ describe("ChannelFilters (#2877)", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("row tone, matching mobile's channel-row (#3777)", () => {
+  const rowFor = (name: string) =>
+    screen.getByText(name).closest("button") as HTMLElement;
+  const quiet: ChatChannel = {
+    id: "c-quiet",
+    name: "quiet",
+    type: "PUBLIC",
+    muted: true,
+  };
+  const loud: ChatChannel = {
+    id: "c-loud",
+    name: "loud",
+    type: "PUBLIC",
+    muted: true,
+  };
+
+  it("keeps a read row in the primary tone at regular weight", () => {
+    renderList([general], new Map());
+    const row = rowFor("general");
+    expect(row).toHaveClass("text-foreground");
+    expect(row).not.toHaveClass("font-semibold");
+    expect(row).not.toHaveClass("text-muted-foreground");
+  });
+
+  it("tells unread from read by weight, not by a dimmer colour", () => {
+    renderList(
+      [general],
+      new Map([["c-gen", { unreadCount: 3, mentionCount: 0 }]]),
+    );
+    expect(rowFor("general")).toHaveClass("font-semibold", "text-foreground");
+  });
+
+  it("keeps a muted channel quiet unless it addresses the member", () => {
+    renderList(
+      [quiet, loud],
+      new Map([
+        ["c-quiet", { unreadCount: 4, mentionCount: 0 }],
+        ["c-loud", { unreadCount: 1, mentionCount: 1 }],
+      ]),
+    );
+    expect(rowFor("quiet")).toHaveClass("text-muted");
+    expect(rowFor("quiet")).not.toHaveClass("font-semibold");
+    expect(rowFor("loud")).toHaveClass("font-semibold", "text-foreground");
+  });
+});

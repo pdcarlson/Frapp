@@ -109,6 +109,13 @@ export const MAJOR_MAX_LENGTH = 100;
 export const DOCUMENT_TITLE_MAX_LENGTH = 255;
 
 /**
+ * A task's title (`CreateTaskDto.title`), from the task board, the `/task`
+ * one-liner and the chat composer's Task form (#3865). The API refuses a
+ * longer one; the form and the one-liner say so first.
+ */
+export const TASK_TITLE_MAX_LENGTH = 255;
+
+/**
  * What a member says they did on a service entry
  * (`service_entries.description`), on web and mobile s20. The API's
  * `CreateServiceEntryDto` refuses a longer one, and s20's field stops at it.
@@ -130,3 +137,17 @@ export const POLL_OPTIONS_MIN = 2;
  */
 export const POLL_QUESTION_MAX_LENGTH = 500;
 export const POLL_OPTION_MAX_LENGTH = 200;
+
+/**
+ * Pledge classes and a member's order number (#3939). The name and number
+ * bounds mirror the CHECK constraints in
+ * `20261110170000_chapter_pledge_classes.sql`; the two counts are API-side
+ * caps on one request and one chapter's list.
+ */
+export const PLEDGE_CLASS_NAME_MAX_LENGTH = 80;
+/** A chapter's whole list rides one reorder request, so it is bounded. */
+export const PLEDGE_CLASSES_MAX = 200;
+/** `members.order_number`: 1 to this, whether per class or chapter-wide. */
+export const MEMBER_ORDER_NUMBER_MAX = 1_000_000;
+/** Members one `PUT /v1/pledge-classes/assignments` may carry. */
+export const PLEDGE_CLASS_ASSIGNMENTS_MAX = 500;

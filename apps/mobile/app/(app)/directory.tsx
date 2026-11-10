@@ -5,9 +5,11 @@ import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useActiveChapterId,
   useAlumni,
+  useMemberDisplayNames,
   useMemberSearch,
   useMembers,
   usePermissionList,
+  type MemberAvatarTint,
 } from "@repo/hooks";
 import { useRouter } from "expo-router";
 import { can } from "@repo/validation";
@@ -94,6 +96,9 @@ export default function DirectoryScreen() {
   const tabBarClearance = useTabBarClearance();
   const chapterId = useActiveChapterId();
   const router = useRouter();
+  // The roster's role-color resolution, so a row's initials match the color
+  // that member's name takes in chat (#3860).
+  const { avatarTintFor } = useMemberDisplayNames();
   const canInvite = can("members:invite", usePermissionList());
   const detailSheetRef = useRef<BottomSheetModal>(null);
   const [selected, setSelected] = useState<DirectoryRow | null>(null);
@@ -316,7 +321,7 @@ export default function DirectoryScreen() {
       {canInvite && chapterId ? (
         <FloatingCreateButton
           label="Invite members"
-          hint="Opens invite links to share with new members."
+          hint="Opens invites to email or share with new members."
           onPress={() =>
             router.push({ pathname: "/invite", params: { from: "directory" } })
           }
@@ -358,6 +363,7 @@ export default function DirectoryScreen() {
             renderItem={({ item }) => (
               <MemberRow
                 row={item}
+                avatarTint={avatarTintFor(item.userId)}
                 onPress={() => {
                   setSelected(item);
                   detailSheetRef.current?.present();
@@ -395,9 +401,12 @@ export default function DirectoryScreen() {
  */
 export function MemberRow({
   row,
+  avatarTint,
   onPress,
 }: {
   row: DirectoryRow;
+  /** The member's initials paint (#3860); omit for the neutral circle. */
+  avatarTint?: MemberAvatarTint | null;
   onPress?: () => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -428,6 +437,7 @@ export function MemberRow({
         uri={row.avatarUrl}
         initials={row.initials}
         size={AVATAR_SIZE}
+        tint={avatarTint}
         style={styles.avatar}
         textStyle={styles.avatarText}
       />

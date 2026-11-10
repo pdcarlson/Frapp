@@ -8,6 +8,7 @@ import {
   formatDayTimeRange,
   formatDueLabel,
   formatRelativeDayTime,
+  formatSentLabel,
   formatTimestampFull,
   formatWeekdayDay,
 } from "./display";
@@ -73,6 +74,18 @@ describe("house date shapes", () => {
     expect(formatRelativeDayTime("2026-11-20T17:00:00-08:00", NOW)).toBe("Nov 20 · 5:00 PM");
   });
 
+  it("writes a day heading out, as the Events lists group by", () => {
+    expect(formatDayHeading("2026-11-04T17:00:00-08:00", NOW)).toBe("Today");
+    expect(formatDayHeading("2026-11-05T08:00:00-08:00", NOW)).toBe("Tomorrow");
+    expect(formatDayHeading("2026-11-03T17:00:00-08:00", NOW)).toBe("Yesterday");
+    expect(formatDayHeading(FRI_5PM, NOW)).toBe("Friday");
+    expect(formatDayHeading("2026-11-10T17:00:00-08:00", NOW)).toBe("Tuesday");
+    expect(formatDayHeading("2026-11-11T17:00:00-08:00", NOW)).toBe("November 11");
+    expect(formatDayHeading("2026-10-30T17:00:00-07:00", NOW)).toBe("October 30");
+    expect(formatDayHeading("2027-01-03T17:00:00-08:00", NOW)).toBe("January 3, 2027");
+    expect(formatDayHeading(null, NOW)).toBeNull();
+  });
+
   it("counts a due date down, as mobile's task subtitle does", () => {
     expect(formatDueLabel("2026-11-05", NOW)).toBe("Due tomorrow");
     expect(formatDueLabel("2026-11-06", NOW)).toBe("Due Friday");
@@ -91,5 +104,23 @@ describe("house date shapes", () => {
     expect(formatDayHeading("2026-11-11T18:00:00-08:00", NOW)).toBe("November 11");
     expect(formatDayHeading("2027-01-03T18:00:00-08:00", NOW)).toBe("January 3, 2027");
     expect(formatDayHeading("not a date", NOW)).toBeNull();
+  });
+});
+
+describe("formatSentLabel", () => {
+  it("says when, in words", () => {
+    expect(formatSentLabel("2026-11-04T08:46:00-08:00", NOW)).toBe(
+      "Sent today at 8:46 AM",
+    );
+    expect(formatSentLabel("2026-11-03T09:00:00-08:00", NOW)).toBe(
+      "Sent yesterday at 9:00 AM",
+    );
+    expect(formatSentLabel("2026-10-20T09:00:00-07:00", NOW)).toMatch(
+      /^Sent Oct 20 at 9:00/,
+    );
+  });
+
+  it("leaves an unreadable time out", () => {
+    expect(formatSentLabel("not a date", NOW)).toBeNull();
   });
 });

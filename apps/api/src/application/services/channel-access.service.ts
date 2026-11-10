@@ -41,6 +41,7 @@ function toPredicateChannel(channel: ChatChannel) {
     required_permissions: channel.required_permissions,
     is_read_only: channel.is_read_only ?? null,
     archived_at: channel.archived_at,
+    is_audit_log: channel.is_audit_log ?? null,
   };
 }
 
@@ -204,7 +205,7 @@ export class ChannelAccessService {
     // Reuses the member row already fetched above rather than re-querying it.
     const alumniRuleCouldApply =
       isChapterMember &&
-      operation === 'post' &&
+      (operation === 'post' || operation === 'thread') &&
       !isAlumniPostableChannel({
         type: channel.type,
         member_ids: channel.member_ids,
@@ -214,14 +215,16 @@ export class ChannelAccessService {
       ? await this.rbac.hasAlumniRole(chapterId, member?.role_ids)
       : false;
 
-    // For a write against a read-only channel (#announcements, #chapter-audit)
+    // For a write against a read-only channel (#announcements)
     // we need to evaluate the caller's permissions even on a PUBLIC channel
     // so the announcements:post gate can fire. Alumni posts need them too, so
     // a President who also carries the Alumni role still bypasses (wildcard).
     const needsPermissions =
       isChapterMember &&
       (channel.type === 'ROLE_GATED' ||
-        (operation !== 'read' && channel.is_read_only === true) ||
+        (operation !== 'read' &&
+          operation !== 'thread' &&
+          channel.is_read_only === true) ||
         isAlumni);
     const permissions = needsPermissions
       ? await this.rbac.getEffectivePermissions(chapterId, userId)

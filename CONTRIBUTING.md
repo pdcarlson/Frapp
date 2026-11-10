@@ -83,9 +83,9 @@ else.
 
 - Code review is a **local Git pre-push gate**, not CI. The checked-in
   [`.githooks/pre-push`](.githooks/pre-push) is enabled by `npm install` / `npm ci` and applies to
-  agents and humans alike. It requires `.cache/diff-review/<PUSHED_COMMIT_SHA>` for the commit each
-  pushed ref points at, unless that commit adds nothing unreviewed (it is on `main`, or only cleanly
-  merges `main` into reviewed work); `/diff-review` writes that evidence. Retrying never releases a denied push. Git's
+  agents and humans alike. On a branch's first push it requires `.cache/diff-review/<PUSHED_COMMIT_SHA>` for the commit the
+  ref points at, unless that commit is already on `main`; `/diff-review` writes that evidence. A
+  later push to a branch the remote already has is not reviewed again. Retrying never releases a denied push. Git's
   explicit `--no-verify` option and an uninstalled/changed hooks path remain bypasses, so this is not
   described as an unconditional server-side gate. Details:
   [`ai-code-review-runbook.md`](docs/ci-cd/ai-code-review-runbook.md).
@@ -153,18 +153,17 @@ For example `feat(api): add service hours endpoints`, `refactor: switch api auth
   - Call out follow-up work and tech debt explicitly.
 - Check the "Docs / Spec impact" section; whether your change owes a doc edit, and which doc, is under [Documentation](#documentation).
 - CI checks will run automatically.
-- Code review runs **locally before you push**, not on the PR: the pre-push review-gate hook requires a
-  `/diff-review` pass, which writes the evidence marker itself. `git push --no-verify` is for
-  emergencies only — never as the routine path after a review you did run, because it leaves that push
-  indistinguishable from one that skipped review. Procedure:
+- Code review runs **locally, once, before the branch's first push**, not on the PR: the pre-push
+  review-gate hook requires a `/diff-review` pass for that push, which writes the evidence marker itself. `git push --no-verify` bypasses the gate.
+  Use it on judgment, when a review would buy nothing, and say in the PR that you did and why:
+  [`AGENTS.md` § Claude Code web sandbox](AGENTS.md#claude-code-web-sandbox). Procedure:
   [`ai-code-review-runbook.md`](docs/ci-cd/ai-code-review-runbook.md) § How the gate enforces.
 
 ### 4. Address feedback
 
 - Fix any CI failures.
-- Address review comments and push follow-up commits. A push that adds commits of your own needs a
-  `/diff-review` pass (usually a short inline round over just the new commits), or the pre-push hook
-  refuses it.
+- Address review comments and push follow-up commits. They need no `/diff-review` pass: the review
+  ran once, before the branch's first push, and the hook lets a later push through.
 - All required checks must pass before merging.
 
 ### 5. Merge via squash merge

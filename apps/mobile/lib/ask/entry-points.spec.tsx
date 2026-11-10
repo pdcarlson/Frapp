@@ -23,12 +23,26 @@ import { useRouter } from "expo-router";
  * (`lib/routes.spec.ts`, `docs/mobile/testing.md` § Gotchas).
  */
 
+// The member's own status (#3845) has its own spec
+// (`components/chat/home-header.spec.tsx`); here it is simply unknown.
+vi.mock("@/lib/account/own-status", () => ({
+  useOwnStatus: () => null,
+  useOwnStatusSync: () => undefined,
+  useSaveOwnStatus: () => ({ save: vi.fn(), isSaving: false }),
+}));
+// Chat home's status sheet is a second `BottomSheetModal`; this spec counts
+// Ask's alone.
+vi.mock("@/components/account/status-sheet", () => ({
+  StatusSheet: () => null,
+}));
+
 vi.mock("@repo/hooks", async (importOriginal) => {
   // s06's pure series helpers (#3823), which its list runs on any data.
   const {
     collapseSeries,
     eventSeriesKey,
     seriesCadenceLabel,
+    seriesHeadOf,
     splitByHorizon,
   } = await importOriginal<typeof import("@repo/hooks")>();
   const empty = {
@@ -43,6 +57,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     collapseSeries,
     eventSeriesKey,
     seriesCadenceLabel,
+    seriesHeadOf,
     splitByHorizon,
     useNowDate: () => now,
     // s06 gates its list on an active chapter (no chapter, no query).
@@ -59,7 +74,9 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useCurrentUser: () => empty,
     useTasks: () => empty,
     useViewerUserId: () => "viewer-1",
-    useMemberDisplayNames: () => ({ byId: {}, nameFor: () => null }),
+    useOwnAvatarTint: () => null,
+    useMemberDisplayNames: () => ({
+      avatarTintFor: () => null, byId: {}, nameFor: () => null }),
     useChapterRoster: () => empty,
     useMentionRoles: () => empty,
     useChapterSetupChecklist: () => ({
@@ -71,6 +88,8 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useLeaveChannel: () => ({ mutateAsync: vi.fn() }),
     useMarkChannelRead: () => ({ mutate: vi.fn() }),
     useSetChannelNotificationLevel: () => ({ mutate: vi.fn() }),
+    useSetChannelDisplayLock: () => ({ mutateAsync: vi.fn() }),
+    canSetChannelDisplayLock: () => false,
     useDeleteChannel: () => ({ mutateAsync: vi.fn() }),
     channelRowActions: () => ({ member: [], officer: [] }),
     useGetOrCreateDm: () => ({ mutate: vi.fn() }),

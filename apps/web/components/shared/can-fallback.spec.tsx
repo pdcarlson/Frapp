@@ -371,6 +371,9 @@ describe("the branches this change did not touch", () => {
  * heuristic: the mistake was in the classification, so the classification is
  * what has to be written down.
  *
+ * **`polls-page` left both lists by ceasing to exist** (#3871): the `/polls`
+ * page and its `polls:view_all` surface gate were retired, not reclassified.
+ *
  * **`invoice-admin-card` has since left this list, by ceasing to exist.** The
  * greenfield Finance lane merged it into `components/billing/invoice-list.tsx`,
  * where there is no longer a gate standing in for the invoice surface: the
@@ -382,7 +385,6 @@ describe("the branches this change did not touch", () => {
  * make someone justify.
  */
 const SURFACE_GATES: readonly { file: string; match: string }[] = [
-  { file: "components/polls/polls-page.tsx", match: 'permission="polls:view_all"' },
   { file: "components/reports/reports-page.tsx", match: 'permission="reports:export"' },
   { file: "components/geofences/geofences-admin-page.tsx", match: 'permission="geofences:manage"' },
   { file: "components/roles/roles-page.tsx", match: 'permission="roles:manage"' },
@@ -393,6 +395,7 @@ const SURFACE_GATES: readonly { file: string; match: string }[] = [
   { file: "components/chat-admin/chat-reports-card.tsx", match: "allOf={CHAT_REPORT_QUEUE_PERMISSIONS}" },
   { file: "components/discord-import/discord-import-page.tsx", match: 'permission="channels:manage"' },
   { file: "components/backwork/bulk/bulk-upload-page.tsx", match: 'permission="backwork:upload"' },
+  { file: "components/events/event-detail-sheet.tsx", match: 'permission="events:update"' },
 ];
 
 /**
@@ -414,10 +417,10 @@ const CONSUMERS: readonly string[] = [
   "components/documents/documents-page.tsx",
   "components/documents/folder-rail.tsx",
   "components/events/attendance-panel.tsx",
+  "components/events/event-detail-sheet.tsx",
   "components/events/events-page.tsx",
   "components/geofences/geofences-admin-page.tsx",
   "components/points/points-audit-card.tsx",
-  "components/polls/polls-page.tsx",
   "components/reports/reports-page.tsx",
   "components/roles/roles-page.tsx",
   "components/service/service-page.tsx",

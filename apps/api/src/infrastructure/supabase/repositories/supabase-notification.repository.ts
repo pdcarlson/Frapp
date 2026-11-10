@@ -127,13 +127,14 @@ export class SupabaseNotificationRepository implements INotificationRepository {
     chapterId: string,
     channelId: string,
     readThrough: string,
+    threadRootId?: string,
   ): Promise<void> {
     const patch: TablesUpdate<'notifications'> = { read_at: readThrough };
     // `read_at is null` keeps an earlier read's timestamp, and lets the
     // partial index `idx_notifications_unread` serve the scan. An update that
     // matches nothing sends no realtime ping: the statement trigger loops over
     // the changed rows.
-    const { error } = await this.supabase
+    const query = this.supabase
       .from('notifications')
       .update(patch)
       .eq('user_id', userId)
@@ -142,8 +143,42 @@ export class SupabaseNotificationRepository implements INotificationRepository {
       .eq('data->target->>screen', 'chat')
       .eq('data->target->>channelId', channelId)
       .lte('created_at', readThrough);
+    // A thread reply's push targets its channel and its thread (#3785). A
+    // channel read leaves those rows; a thread read clears only them.
+    const scoped = threadRootId
+      ? query.eq('data->target->>threadRootId', threadRootId)
+      : query.is('data->target->>threadRootId', null);
+    const { error } = await scoped;
 
     if (error) throw new SupabaseQueryError(error);
+  }
+
+  async markAllRead(
+    userId: string,
+    chapterId: string,
+    readThrough: string,
+    screens?: readonly string[],
+  ): Promise<number> {
+    const patch: TablesUpdate<'notifications'> = { read_at: readThrough };
+    // `read_at is null` and the `created_at` bound, as in `markChatChannelRead`:
+    // an earlier read keeps its own timestamp, and a row that lands after the
+    // request began is one the member has not seen.
+    let query = this.supabase
+      .from('notifications')
+      .update(patch)
+      .eq('user_id', userId)
+      .eq('chapter_id', chapterId)
+      .is('read_at', null)
+      .lte('created_at', readThrough);
+    if (screens && screens.length > 0) {
+      // The DTO admits only lowercase screen names, so nothing here needs
+      // quoting inside the `in (...)` list.
+      query = query.in('data->target->>screen', [...screens]);
+    }
+    const { data, error } = await query.select('id');
+
+    if (error) throw new SupabaseQueryError(error);
+    return data?.length ?? 0;
   }
 }
 

@@ -134,6 +134,42 @@ export interface ChatChannel {
    * never a DM or group DM. `spec/behavior/chat/README.md` § Where Chat opens.
    */
   is_default: boolean;
+  /**
+   * The chapter's audit-log channel, `#chapter-audit` (#3909): at most one
+   * per chapter (a partial unique index), set when the chapter is seeded
+   * (`DEFAULT_CHANNELS`, or the `chat_channels_flag_audit_log` trigger for an
+   * API that doesn't send it) and never by an officer. It is system-write only: `canAccessChannel` refuses
+   * every member write in it whatever the caller's permissions, and the audit
+   * mirror (`ChatBridgeWorkerService`) finds it by this flag, not its name.
+   */
+  is_audit_log: boolean;
+  /**
+   * Always formal (#3787): every member sees this channel in the formal
+   * (cozy) display, whatever display they picked, and can't override it
+   * here. Set by the channel's creator or a `channels:manage` holder
+   * (`ChatService.setDisplayLock`); never on a DM or group DM.
+   * `spec/behavior/chat/README.md` § Always formal.
+   */
+  display_locked: boolean;
+  /**
+   * Who created the channel through `POST /v1/channels`, the one member
+   * besides `channels:manage` holders who may set `display_locked`. Null for
+   * channels from before it was recorded, seeded defaults, Discord-imported
+   * channels and DMs. Account deletion tombstones the `users` row in place
+   * (`anonymize_user`), so a deleted creator's id stays here; their sign-in is
+   * gone, so it grants nothing.
+   */
+  created_by: string | null;
+  /**
+   * The channel's chat background (#3973): a `CHAT_BACKGROUND_KEYS` key, or
+   * null to follow the chapter default. Always null on a DM or group DM.
+   * Optional because older fixtures predate it; the column always exists.
+   */
+  background?: string | null;
+  /** In the `branding` bucket; set exactly when `background` is `photo`. */
+  background_photo_path?: string | null;
+  /** The chat line announcing that photo; a deleted line withdraws it. */
+  background_message_id?: string | null;
 }
 
 /**
@@ -253,7 +289,64 @@ export interface ChatMessage {
    * Optional for rows written before the column existed.
    */
   mentions?: string[] | null;
+  /**
+   * The parent message when this row is a reply inside a message thread
+   * (#3785); `null` for a timeline message. A thread reply never appears in
+   * the channel's timeline, unread count or Chat home preview, and a thread
+   * never nests: the parent of a reply is always a timeline message.
+   *
+   * Optional for rows written before the column existed.
+   */
+  thread_root_id?: string | null;
+  /**
+   * On a thread's parent: how many replies it has, when the latest landed,
+   * and up to three recent repliers, newest first. Kept by the
+   * `chat_messages_thread_summary` trigger, so the parent's Realtime UPDATE
+   * echo carries the chip ("3 replies · last reply 5m ago"). Zero, null and
+   * empty on every other row.
+   */
+  thread_reply_count?: number;
+  thread_last_reply_at?: string | null;
+  thread_recent_sender_ids?: string[];
   created_at: string;
+}
+
+/**
+ * Whether a member follows or muted a message thread (#3785). No row means
+ * not following: a thread reply pushes only to followers, within the
+ * channel's level, and an @mention pushes regardless (`decidePush`).
+ */
+export const CHAT_THREAD_FOLLOW_STATES = ['following', 'muted'] as const;
+export type ChatThreadFollowState = (typeof CHAT_THREAD_FOLLOW_STATES)[number];
+
+/**
+ * What `chat_thread_follows.state` stores: the two public states, plus
+ * `unfollowed`, a member who unfollowed or only read the thread. It keeps the
+ * read cursor, is never pushed, and only the member's own reply re-follows
+ * it. The API reports it as "not following" (`null`).
+ */
+export type ChatThreadFollowRowState = ChatThreadFollowState | 'unfollowed';
+
+/** A row of `chat_thread_follows`. */
+export interface ChatThreadFollow {
+  thread_root_id: string;
+  user_id: string;
+  /** The root's channel, copied from the root row by the API. */
+  channel_id: string;
+  state: ChatThreadFollowRowState;
+  /** How far the member has read the thread; null when never opened. */
+  last_read_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** `get_followed_thread_unread`: one followed or muted thread in a channel. */
+export interface FollowedThreadUnread {
+  thread_root_id: string;
+  state: ChatThreadFollowState;
+  last_read_at: string | null;
+  /** New replies since `last_read_at`; always 0 for a muted thread. */
+  unread_count: number;
 }
 
 /**

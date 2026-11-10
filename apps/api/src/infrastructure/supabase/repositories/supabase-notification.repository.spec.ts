@@ -182,6 +182,110 @@ describe('SupabaseNotificationRepository — tenant scope', () => {
     });
   });
 
+  describe('markAllRead (#3929)', () => {
+    const rows = [
+      {
+        id: 'chat',
+        data: { target: { screen: 'chat', channelId: 'c-1' } },
+        read_at: null,
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'event',
+        data: { target: { screen: 'events', eventId: 'e-1' } },
+        read_at: null,
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'task',
+        data: { target: { screen: 'tasks', taskId: 't-1' } },
+        read_at: null,
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+      // Landed after the request began: not seen yet.
+      {
+        id: 'late',
+        data: { target: { screen: 'events', eventId: 'e-2' } },
+        read_at: null,
+        created_at: '2026-01-01T00:05:00.000Z',
+      },
+      // Already read: keeps its own timestamp.
+      {
+        id: 'read',
+        data: { target: { screen: 'events', eventId: 'e-3' } },
+        read_at: '2025-12-31T00:00:00.000Z',
+        created_at: '2025-12-30T00:00:00.000Z',
+      },
+    ];
+    const READ_THROUGH = '2026-01-01T00:01:00.000Z';
+
+    beforeEach(() => {
+      const row = (r: (typeof rows)[number], prefix: string) => ({
+        ...r,
+        id: `${prefix}-${r.id}`,
+        user_id: USER_SHARED,
+        title: 'Alex',
+        body: 'hi',
+      });
+      harness = createTenantHarness({
+        tables: {
+          notifications: [
+            ...rows.map((r) => inA(row(r, 'a'))),
+            ...rows.map((r) => inB(row(r, 'b'))),
+          ],
+        },
+      });
+      repo = new SupabaseNotificationRepository(harness.client);
+    });
+
+    const readAtById = () =>
+      Object.fromEntries(
+        harness.rows('notifications').map((n) => [n.id, n.read_at]),
+      );
+    const chapterAUntouched = {
+      'a-chat': null,
+      'a-event': null,
+      'a-task': null,
+      'a-late': null,
+      'a-read': '2025-12-31T00:00:00.000Z',
+    };
+
+    it('marks every unread row read through the instant, in the caller chapter only', async () => {
+      const updated = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.markAllRead(USER_SHARED, CHAPTER_B, READ_THROUGH),
+      );
+
+      expect(updated).toBe(3);
+      expect(readAtById()).toEqual({
+        ...chapterAUntouched,
+        'b-chat': READ_THROUGH,
+        'b-event': READ_THROUGH,
+        'b-task': READ_THROUGH,
+        'b-late': null,
+        'b-read': '2025-12-31T00:00:00.000Z',
+      });
+    });
+
+    it('marks only the rows that point at the named screens', async () => {
+      const updated = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.markAllRead(USER_SHARED, CHAPTER_B, READ_THROUGH, [
+          'events',
+          'points',
+        ]),
+      );
+
+      expect(updated).toBe(1);
+      expect(readAtById()).toEqual({
+        ...chapterAUntouched,
+        'b-chat': null,
+        'b-event': READ_THROUGH,
+        'b-task': null,
+        'b-late': null,
+        'b-read': '2025-12-31T00:00:00.000Z',
+      });
+    });
+  });
+
   it('create issues the row under the caller chapter', async () => {
     const created = await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.create({

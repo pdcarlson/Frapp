@@ -1,6 +1,5 @@
 "use client";
 
-import type { ReactNode } from "react";
 import Link from "next/link";
 import { can, canAny } from "@repo/validation";
 import type { UnsetFeatureKey } from "@repo/hooks";
@@ -36,14 +35,21 @@ type Props = {
   /** The setup gate, from `useHiddenUnsetFeatures` (see `isNavItemVisible`). */
   hiddenFeatures?: ReadonlySet<UnsetFeatureKey>;
   /**
-   * Act in place instead of navigating. The Chat row on `/chat`'s module face
-   * uses it to slide the channel list back (`nav-face.tsx`): its route is
-   * already open, and a link to `/chat` would drop the `?channel=` a deep link
-   * opened, so it renders as a button with the same geometry.
+   * Act in place instead of navigating (#3779): the desktop shell's Chat row
+   * opens and closes the chat panel, and the open tool's row closes it. It
+   * renders as a toggle button with the same geometry.
    */
   onSelect?: () => void;
-  /** Trailing marks after the label (an unread dot, a chevron). Expanded rows only. */
-  trailing?: ReactNode;
+  /** With `onSelect`: whether the panel this row toggles is open. */
+  pressed?: boolean;
+  /** With `onSelect`: what the toggle does, as its tooltip ("Close Events"). */
+  selectLabel?: string;
+  /**
+   * Something new behind this row (#3824), named for a screen reader ("unread
+   * messages"). The row draws bright and semibold with a dot, and in the rail
+   * the dot sits on the glyph.
+   */
+  highlight?: string;
 };
 
 function isGranted(
@@ -130,7 +136,9 @@ export function ProtectedNavItem({
   hiddenFeatures,
   collapsed = false,
   onSelect,
-  trailing,
+  pressed,
+  selectLabel,
+  highlight,
 }: Props) {
   if (!isNavItemVisible(item, permissions, isModuleEnabled, hiddenFeatures)) {
     return null;
@@ -159,22 +167,44 @@ export function ProtectedNavItem({
      * web as well as mobile (foundations §9) - so the row is 44px until
      * the desktop breakpoint, then takes the board's density.
      */
-    "flex min-h-touch items-center rounded-[10px] text-left text-sm transition lg:h-[34px] lg:min-h-0",
+    "relative flex min-h-touch items-center rounded-[10px] text-left text-sm transition lg:h-[34px] lg:min-h-0",
     collapsed ? "w-[34px] justify-center" : "w-full gap-2.5 px-2.5",
     focusClassName,
     isActive
       ? "bg-accent-subtle font-semibold text-accent-text"
-      : "text-muted-foreground hover:bg-card hover:text-foreground",
+      : highlight
+        ? // Something new (#3824): bright and semibold, the way an unread
+          // channel row draws, so it reads lit at a glance and stays lit.
+          "font-semibold text-foreground hover:bg-card"
+        : "text-muted-foreground hover:bg-card hover:text-foreground",
   );
+  // The rail's `aria-label` replaces the row's content, the sr-only words
+  // included, so it carries them itself.
+  const railLabel = highlight ? `${item.label}, ${highlight}` : item.label;
+  const dot = highlight ? (
+    <span
+      aria-hidden="true"
+      data-nav-highlight=""
+      className={cn(
+        "h-1.5 w-1.5 shrink-0 rounded-full bg-foreground",
+        // In the rail there is no label to trail, so the dot sits on the glyph.
+        collapsed && "absolute right-1 top-1",
+      )}
+    />
+  ) : null;
   const content = (
     <>
       <item.icon className={iconClassName} active={isActive} />
       {collapsed ? null : <span className="truncate">{item.label}</span>}
-      {collapsed || !trailing ? null : (
+      {collapsed ? dot : null}
+      {collapsed || !dot ? null : (
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
-          {trailing}
+          {dot}
         </span>
       )}
+      {highlight && !collapsed ? (
+        <span className="sr-only">, {highlight}</span>
+      ) : null}
     </>
   );
 
@@ -184,8 +214,9 @@ export function ProtectedNavItem({
         type="button"
         onClick={onSelect}
         aria-current={current}
-        aria-label={collapsed ? item.label : undefined}
-        title={collapsed ? item.label : item.description}
+        aria-pressed={pressed}
+        aria-label={collapsed ? railLabel : undefined}
+        title={selectLabel ?? (collapsed ? item.label : item.description)}
         className={className}
       >
         {content}
@@ -200,7 +231,7 @@ export function ProtectedNavItem({
       aria-current={current}
       // In the rail the label has nowhere to render, so the accessible name
       // has to come from somewhere other than the text content.
-      aria-label={collapsed ? item.label : undefined}
+      aria-label={collapsed ? railLabel : undefined}
       title={collapsed ? item.label : item.description}
       className={className}
     >

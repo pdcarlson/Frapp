@@ -14,7 +14,11 @@
 import {
   collapseSeries,
   eventSeriesKey,
+  selectOwnAttendance,
+  seriesCadenceLabel,
+  seriesHeadOf,
   splitByHorizon,
+  type AttendanceRowStatus,
   type DeviceInstant,
 } from "@repo/hooks";
 import {
@@ -181,10 +185,65 @@ function groupByDay(entries: EventListEntry[], now: Date): EventDayGroup[] {
 }
 
 /**
+ * How often `event`'s series meets ("Every Sunday"), or `null` for a one-time
+ * event or a series whose head isn't among `rows`. The rule is the head's;
+ * the day is the one most of the series' meetings share (`seriesCadenceLabel`,
+ * as web's list reads it), never `event`'s own: an occurrence the API clamped
+ * to the 30th, or one an officer moved to a Monday, belongs to a series that
+ * still meets on the 31st or on Sundays.
+ */
+export function selectSeriesCadence(
+  rows: readonly EventRow[],
+  event: Pick<
+    EventRow,
+    "id" | "start_time" | "recurrence_rule" | "parent_event_id"
+  >,
+): string | null {
+  const key = eventSeriesKey(event);
+  if (!key) return null;
+  const rule =
+    key === event.id
+      ? event.recurrence_rule
+      : seriesHeadOf(key, rows)?.recurrence_rule;
+  if (!rule) return null;
+  return seriesCadenceLabel(
+    rule,
+    event.start_time,
+    rows
+      .filter((row) => eventSeriesKey(row) === key)
+      .map((row) => row.start_time),
+  );
+}
+
+/**
+ * The name most of a series' meetings carry (a tie goes to the soonest
+ * meeting's), or `null` when none of them is among `rows`. s07 tells an
+ * occurrence renamed on its own ("This event only") apart from it.
+ */
+export function selectSeriesName(
+  rows: readonly EventRow[],
+  key: string,
+): string | null {
+  // Map keeps first-insertion order and `rows` come soonest first, so the
+  // first name to reach the top count is the soonest meeting's.
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    if (eventSeriesKey(row) !== key) continue;
+    counts.set(row.name, (counts.get(row.name) ?? 0) + 1);
+  }
+  let best: string | null = null;
+  for (const [name, count] of counts) {
+    if (best === null || count > (counts.get(best) ?? 0)) best = name;
+  }
+  return best;
+}
+
+/**
  * s06's list (#3707): what a member can still act on, a repeating series once
  * as its next occurrence with "Every Sunday" beside it, grouped under
  * written-out day headings, split at the two-week horizon into `soon` and
- * `later`.
+ * `later`. Grouping and the horizon are `@repo/hooks`' `event-series.ts`,
+ * which web's list reads too.
  *
  * A series meeting that has started and is still open for check-in is the
  * series' row while it runs: it carries the cadence, and next week's
@@ -198,8 +257,9 @@ export function selectEventList(
   rows: readonly EventRow[],
   now: Date,
 ): { soon: EventDayGroup[]; later: EventDayGroup[] } {
-  const visible = collapseSeries(rows, now).filter(
-    ({ event }) => isCurrentOrUpcoming(event.start_time, event.end_time, now),
+  const nowMs = now.getTime();
+  const visible = collapseSeries(rows, nowMs).filter(({ event }) =>
+    isCurrentOrUpcoming(event.start_time, event.end_time, now),
   );
 
   // Series with a meeting under way: that meeting is the series' row.
@@ -209,15 +269,21 @@ export function selectEventList(
     if (key && series === null) running.add(key);
   }
 
-  const entries: { event: EventRow; cadence: string | null }[] = [];
-  for (const { event, series, cadence } of visible) {
+  const shown = visible.filter(({ event, series }) => {
     const key = eventSeriesKey(event);
-    if (key && series !== null && running.has(key)) continue;
-    entries.push({ event, cadence });
-  }
+    return !(key && series !== null && running.has(key));
+  });
 
-  const { soon, later } = splitByHorizon(entries, now);
-  return { soon: groupByDay(soon, now), later: groupByDay(later, now) };
+  const withCadence = (entries: typeof shown): EventListEntry[] =>
+    entries.map(({ event }) => ({
+      event,
+      cadence: selectSeriesCadence(rows, event),
+    }));
+  const { soon, later } = splitByHorizon(shown, nowMs);
+  return {
+    soon: groupByDay(withCadence(soon), now),
+    later: groupByDay(withCadence(later), now),
+  };
 }
 
 /**
@@ -294,7 +360,7 @@ export function selectMintedToken(data: unknown): MintedCheckInToken | null {
 
 /** The viewer's own attendance row, as the event page reads it. */
 export interface MyAttendance {
-  status: "PRESENT" | "LATE" | "EXCUSED" | "ABSENT";
+  status: AttendanceRowStatus;
   /**
    * When they checked in: set for a PRESENT or LATE row with a time (a LATE
    * row is a check-in, as the roster counts it), `null` for a row an officer
@@ -303,23 +369,19 @@ export interface MyAttendance {
   checkedInAt: Date | null;
 }
 
-const ATTENDANCE_STATUSES = new Set(["PRESENT", "LATE", "EXCUSED", "ABSENT"]);
-
 /**
  * The viewer's row from `useMyAttendance`'s answer
  * (`{ attendance: row | null }`), or `null` when they have none or the answer
- * is unreadable.
+ * is unreadable. Parsed by `selectOwnAttendance` in `@repo/hooks`, which web's
+ * event sheet reads too; this adds the check-in time as a `Date`.
  */
 export function selectMyAttendance(data: unknown): MyAttendance | null {
-  if (!isRecord(data) || !isRecord(data.attendance)) return null;
-  const { status, check_in_time } = data.attendance;
-  if (typeof status !== "string" || !ATTENDANCE_STATUSES.has(status)) {
-    return null;
-  }
-  const checkedIn = status === "PRESENT" || status === "LATE";
+  const row = selectOwnAttendance(data);
+  if (!row) return null;
+  const checkedIn = row.status === "PRESENT" || row.status === "LATE";
   return {
-    status: status as MyAttendance["status"],
-    checkedInAt: checkedIn ? parseInstant(check_in_time) : null,
+    status: row.status,
+    checkedInAt: checkedIn ? parseInstant(row.checkInTime) : null,
   };
 }
 

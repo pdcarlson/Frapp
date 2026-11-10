@@ -196,7 +196,8 @@ shortlist as sizing context; neither is a filter.
 priority label (`P1`→`P4`, no priority label last), tie-broken by lower issue number. Never skip an
 issue for being unestimated, small, or large; prefer the most valuable viable work, including large,
 high-impact issues. The order is deterministic so concurrent agents agree on it and the claim
-resolves collisions.
+resolves collisions. Baseline first ([`AGENTS.md` § Work tracking](../../AGENTS.md#work-tracking))
+is applied where priorities are set, so this order doesn't re-rank for it.
 
 **Walk your lane, not the list.** Every session agrees on the order, so sessions must not walk it in
 step.
@@ -341,8 +342,8 @@ inline, and you wait for its verdicts before implementing; otherwise run all thr
    `{files, patterns, tests, destructive}`. This is exploration, not verification, and you need it
    in your own context to implement, so read it inline.
 
-Read AGENTS.md and the spec files the issue links. If the issue and the spec conflict, the spec wins, unless the issue changes how an existing feature
-looks and reads ([`AGENTS.md` § ADR discipline](../../AGENTS.md#adr-discipline)): then the PR
+Read AGENTS.md and the spec files the issue links. If the issue and the spec conflict, the spec wins, unless a person asked for the issue (its `Asked by:` line) and it is a change
+[`AGENTS.md` § ADR discipline](../../AGENTS.md#adr-discipline) lets their PR make to the spec: then the PR
 changes the spec, as that section says.
 Scale thoroughness by the brief's `depth` (the floor is always all three); `deep` also reads the
 surrounding subsystem and runtime evidence, not just the named files. Post the result to the issue
@@ -422,11 +423,11 @@ pre-push hook, the only pre-PR review gate, requires
 `/code-review`: a `/next` turn is a slash-command expansion, which its invocation scan skips, so it
 is always refused here.
 
-Address every finding: fix it, or file a self-contained `triage` follow-up with a reason. A
-post-review commit changes HEAD and invalidates the marker, so re-run `/diff-review` after it. The
-skill decides how much to review again: usually an inline review of just the commits since the last
-reviewed one, and nothing for a clean merge of `main`. Either way every change you push has been
-reviewed. Never push around the gate (`--no-verify`), and never
+Address every finding: fix it, or file a self-contained `triage` follow-up with a reason. Commit the
+fixes, then mark the new HEAD (`node scripts/diff-review-scope.mjs --mark`); the fixes get no second
+round. This is the branch's one review: after the first push, a fix, a merge of `main` or a resolved
+conflict is pushed without one (Paul, 2026-11-10; ADR-23 amendment 2). A `/next` branch is real work about to become a PR, so the
+gate's bypass (`--no-verify`) doesn't fit its first push. Never
 delete, revert, stash, or gitignore a file to make it pass. If the gate objects to a file, review the
 file.
 
@@ -443,7 +444,7 @@ when it is a decision and you hold no sibling claims, your end-of-run report oth
 blocking on a prompt would stall the run. Still write the block; the PR Follow-ups routine harvests
 it into the Human Action List. If Paul is present and the action is small, ask on the spot; file it
 unless he clears it then and there. Paul is present only when `get_me` returns his login
-(`pdcarlson`). In a session that runs as anyone else (Shawn or Winston), whoever answers the prompt
+(`pdcarlson`). In a session that runs as anyone else (Shawn, Winston or Evan), whoever answers the prompt
 is not Paul, so a decision only he can make is filed per `file-follow-up`, never cleared there.
 
 ## Phase 4 — ship and sync

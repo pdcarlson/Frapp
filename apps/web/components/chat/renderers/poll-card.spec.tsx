@@ -17,6 +17,12 @@ import {
  * these also pin that it is the member view and not the officer-only config.
  */
 
+// The viewer's permissions, for the Close poll gate (#3794): the seeded Member
+// role's `polls:create` unless a case says otherwise.
+const myPermissions = vi.hoisted(() => ({
+  current: ["members:view", "polls:create"] as string[],
+}));
+
 const chapterRead = vi.hoisted(() => ({
   current: {} as {
     data?: unknown;
@@ -36,6 +42,9 @@ vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
+    useMyPermissions: () => ({
+      data: { permissions: myPermissions.current },
+    }),
     useCurrentChapter: (options: unknown) => {
       chapterRead.options = options;
       return chapterRead.current;
@@ -277,5 +286,128 @@ describe("PollCard module gate (#3012)", () => {
     expect(screen.getByText(/Closed/)).toBeInTheDocument();
     expect(optionButton("No")).toBeDisabled();
     expect(screen.queryByText(POLLS_OFF_COPY)).not.toBeInTheDocument();
+  });
+});
+
+describe("PollCard closed early by its creator (#3794)", () => {
+  beforeEach(() => {
+    myPermissions.current = ["members:view", "polls:create"];
+    chapterStore.activeChapterId = "chapter-1";
+    chapterRead.current = {
+      data: { enabled_modules: { polls: true } },
+      isError: false,
+      fetchStatus: "idle",
+      refetch: vi.fn(),
+    };
+  });
+
+  const card = {
+    question: "Lunch?",
+    options: [
+      { id: "yes", label: "Yes" },
+      { id: "no", label: "No" },
+    ],
+    closes_at: "2999-01-01T00:00:00.000Z",
+  };
+
+  function renderWithClose(message: ChatMessage) {
+    const onVote = vi.fn();
+    const onClosePoll = vi.fn();
+    render(
+      <PollCard
+        message={message}
+        viewerId={VIEWER}
+        isConfirmed
+        onVote={onVote}
+        onClosePoll={onClosePoll}
+      />,
+    );
+    return { onVote, onClosePoll };
+  }
+
+  it("offers Close poll on the viewer's own open poll, and calls back with its id", () => {
+    const { onClosePoll } = renderWithClose(
+      poll({ sender_id: VIEWER, payload: card }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Close poll" }));
+    expect(onClosePoll).toHaveBeenCalledWith("msg-1");
+  });
+
+  it("offers it to nobody else", () => {
+    renderWithClose(poll({ sender_id: OTHER, payload: card }));
+
+    expect(
+      screen.queryByRole("button", { name: "Close poll" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("withholds it from a creator the close route would refuse", () => {
+    // No polls:create: a New Member can post a card (#3007) but not close it.
+    myPermissions.current = ["members:view"];
+    const { unmount } = render(
+      <PollCard
+        message={poll({ sender_id: VIEWER, payload: card })}
+        viewerId={VIEWER}
+        isConfirmed
+        onVote={vi.fn()}
+        onClosePoll={vi.fn()}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Close poll" }),
+    ).not.toBeInTheDocument();
+    unmount();
+
+    // Polls off: the module guard refuses the close too.
+    myPermissions.current = ["members:view", "polls:create"];
+    chapterRead.current = {
+      ...chapterRead.current,
+      data: { enabled_modules: { polls: false } },
+    };
+    renderWithClose(poll({ sender_id: VIEWER, payload: card }));
+    expect(
+      screen.queryByRole("button", { name: "Close poll" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says an open poll with no deadline has no end date, and still offers its creator Close poll (#3896)", () => {
+    const { onVote } = renderWithClose(
+      poll({ sender_id: VIEWER, payload: { ...card, closes_at: null } }),
+    );
+
+    expect(screen.getByText("Poll · No end date")).toBeInTheDocument();
+    fireEvent.click(optionButton("No"));
+    expect(onVote).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByRole("button", { name: "Close poll" }),
+    ).toBeInTheDocument();
+  });
+
+  it("reads a timed, open poll as plain Poll, as before", () => {
+    renderWithClose(poll({ sender_id: VIEWER, payload: card }));
+    expect(screen.getByText("Poll")).toBeInTheDocument();
+  });
+
+  it("draws a card closed early as closed, with its tally and no vote, before its deadline", () => {
+    const { onVote } = renderWithClose(
+      poll({
+        sender_id: VIEWER,
+        payload: {
+          ...card,
+          closed_at: "2026-01-01T00:00:00.000Z",
+          closed_by: VIEWER,
+        },
+      }),
+    );
+
+    expect(screen.getByText("Poll · Closed")).toBeInTheDocument();
+    expectReadable();
+    expect(optionButton("No")).toBeDisabled();
+    fireEvent.click(optionButton("No"));
+    expect(onVote).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("button", { name: "Close poll" }),
+    ).not.toBeInTheDocument();
   });
 });

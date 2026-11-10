@@ -18,11 +18,12 @@
  * only list what is merged and shipped. Five to eight lines a new entry, each
  * one sentence.
  *
- * Mobile opens the newest entry by itself once after an update
- * (`apps/mobile/lib/whats-new.ts`), and a phone remembers how many lines it
- * showed ({@link releaseNoteVersion}). Dates are unique, so **a second release
+ * Mobile and the web dashboard open the newest entry by themselves once after
+ * an update ({@link decideWhatsNew}; `apps/mobile/lib/whats-new.ts`,
+ * `apps/web/lib/whats-new.ts`), and a phone or browser remembers how many
+ * lines it showed ({@link releaseNoteVersion}). Dates are unique, so **a second release
  * on the same day appends lines to that day's entry, even past eight, and
- * never trims or merges the ones already there**: phones show it again only
+ * never trims or merges the ones already there**: they show it again only
  * when it has more lines than they saw. Rewording a line is fine but isn't
  * news, so it shows nothing. Deploy production warns when a release ships with
  * neither a new entry nor new lines, or when the day's entry got shorter
@@ -40,6 +41,33 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
   {
+    date: "2026-11-10",
+    title: "Chat beside your tools, threads, and status on your phone",
+    changes: [
+      "You can now set your status from your phone too, not only on the web.",
+      "On your phone, Documents search finds more and forgives typos, you can sort the list, and you can delete a file if your role allows it.",
+      "Documents can be filtered by file type on your phone and on the web, and on your phone also by who added a file and when.",
+      "A notification you read on one device is read on your others, and opening a page clears the notifications that point to it.",
+      "On the web, chat search narrows down by who sent a message, where, when, and what it has in it, and long filters in the Directory, Backwork, and Documents can be searched.",
+      "On the web, Points, Billing, and Reports export as CSV, Excel, or a copy ready to paste into Google Sheets, wherever your role lets you export.",
+      "On the web, a task's due date takes just a month and a day with no year to set, and an event shows you your own check-in.",
+      "Text across the app is brighter and easier to read, and on the web what's new now opens on its own once after an update.",
+      "On the web, on a wide enough screen, chat now stays open beside Events, Tasks, Points, and your other pages: Chat in the menu opens or closes it, clicking the open page's name again closes that page, and you can drag the line between them to give either side more room.",
+      "With chat and a page open side by side, the menu slims down to icons when space is tight, and Events, Tasks, Points, Documents, and Backwork rearrange to fit, with a simpler Events calendar that lists the day you pick under the month.",
+      "Reply to a message in a thread, on the web and on your phone: Start thread opens one, the message shows how many replies it has, and Follow keeps you posted on new ones.",
+      "Chat can show messages as bubbles, yours on the right and everyone else's on the left, and you can give any channel its own look on this device from its menu under Display.",
+      "People without a profile photo now get colored initials, in their role's color when their role has one, and a color of their own otherwise.",
+      "Mentioning someone whose name has a space, like a first and last name, now mentions and notifies them as written.",
+      "If your role lets you close polls, a new poll can be set to stay open until you close it.",
+      "On the web, Events has one Filter button, remembers whether you last used the list or the calendar, and shows a repeating event as one row.",
+      "On the web, officers who manage roles can set up pledge classes in Settings and give each member a class and an order number.",
+      "On your phone, a channel you have a chat notification for shows as unread as soon as you open the app, before the latest counts arrive.",
+      "Chats can have a background, a built-in look or a photo, which officers with the right role set on the web for one channel or as the chapter's default, and you see it on your phone too.",
+      "Whoever creates a channel, or an officer who manages channels, can make it Always formal when creating it on the web, or later from its menu under Display, and then everyone sees it in the Cozy layout and can't switch that channel to Compact or Bubbles.",
+      "When you join a chapter, you now pick how chat looks, Cozy, Compact, or Bubbles, as part of setting up on the web or your phone, and you can change it anytime.",
+    ],
+  },
+  {
     date: "2026-11-09",
     title: "Easier check-in, live unread counts, and what's new on your phone",
     changes: [
@@ -51,6 +79,19 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Handing over the presidency no longer locks the old president out, and changing roles asks first if it would take away someone's access.",
       "Only officers who can do something about it are pinged when someone new joins, and Add to calendar is gone until calendar sync arrives.",
       "On the web, an invite sent to your email shows up when you sign in, ready to join in one tap, and signing in with Google or Apple tells you if it just made a new account.",
+      "On the web, Chat in the menu lights up as soon as a new message arrives, whatever page you're on, and getting back to your channel list is easier: a bigger back button, Esc, or your browser's Back.",
+      "On your phone, the + beside the message box opens Photo, Poll, Event, Task, and Service hours, whichever of them your role allows, so you can start one from a chat.",
+      "On the web, one + in the message box attaches a file or opens a form for a Poll, Event, Task, Service hours, or Points, whichever of them your role allows, with no command to type.",
+      "Whoever started a poll in chat can close it early, and on the web polls now live only in chat, so the separate Polls page is gone.",
+      "On the web, click someone's name, photo, or mention in a chat to open their profile.",
+      "On the web, set a status from your account menu: Do Not Disturb, which also quiets your notifications, Invisible, or a short line of your own that others see by your name.",
+      "On the web, a document opens full screen instead of downloading, and you can search, sort, and filter Documents by who added a file and when.",
+      "On the web, a Backwork course can have a name and nicknames, so searching Calc 1 finds Calculus I.",
+      "On your phone, officers who invite members can now do it by email, and an invite that was emailed to you is waiting when you sign in.",
+      "A photo or file sent in chat now says so in its notification instead of arriving blank.",
+      "On the web, opening a channel stays on the newest message while photos load, and whoever approves service hours sees how many points each entry will award.",
+      "On the web, signing up tells you to check your email, a wrong password says so, and the join page takes you back to a chapter you're already in.",
+      "Only Frapp posts in the chapter audit channel now, so it stays a clean record.",
     ],
   },
   {
@@ -102,6 +143,62 @@ export function isNewerReleaseNoteVersion(
     candidate.date > seen.date ||
     (candidate.date === seen.date && candidate.lines > seen.lines)
   );
+}
+
+export interface WhatsNewDecision {
+  /** The entries to show, newest first; empty shows nothing. */
+  readonly show: readonly ReleaseNote[];
+  /** The version to store as seen, or `null` to leave the marker alone. */
+  readonly record: string | null;
+}
+
+/**
+ * Whether What's new opens by itself, and with which entries: the one rule
+ * behind the phone's sheet (`apps/mobile/lib/whats-new.ts`) and the web
+ * dashboard's dialog (`apps/web/lib/whats-new.ts`). Each surface keeps its own
+ * marker and says what `tourDue` and `existingInstall` mean there.
+ *
+ * `notes` is {@link RELEASE_NOTES} (newest first); dates are `YYYY-MM-DD`, so
+ * they compare as strings. `seen` is a stored {@link releaseNoteVersion}, or
+ * `null` when this device has no marker.
+ *
+ * - A marker at or past the newest entry shows nothing and records nothing.
+ *   That covers a rollback too, to an earlier day or to a shorter version of
+ *   the same day's entry.
+ * - `tourDue` (a first-run tour owns this visit), or no marker on a device or
+ *   account that wasn't here before the newest entry (`existingInstall`
+ *   false), records the newest entry without showing it: old news to them.
+ * - No marker but `existingInstall` shows the newest entry only; what they
+ *   saw before is unknown.
+ * - Otherwise it shows every entry newer than the marker, and that day's
+ *   entry itself when lines were added to it since.
+ */
+export function decideWhatsNew(input: {
+  notes: readonly ReleaseNote[];
+  seen: string | null;
+  tourDue: boolean;
+  existingInstall: boolean;
+}): WhatsNewDecision {
+  const { notes, seen, tourDue, existingInstall } = input;
+  const newest = notes[0];
+  if (!newest) return { show: [], record: null };
+  const newestVersion = releaseNoteVersion(newest);
+  const marker = seen === null ? null : parseReleaseNoteVersion(seen);
+  const versionOf = (note: ReleaseNote) => ({
+    date: note.date,
+    lines: note.changes.length,
+  });
+  if (marker !== null && !isNewerReleaseNoteVersion(versionOf(newest), marker)) {
+    return { show: [], record: null };
+  }
+  if (tourDue || (marker === null && !existingInstall)) {
+    return { show: [], record: newestVersion };
+  }
+  const show =
+    marker === null
+      ? [newest]
+      : notes.filter((note) => isNewerReleaseNoteVersion(versionOf(note), marker));
+  return { show, record: newestVersion };
 }
 
 const MONTHS = [

@@ -114,11 +114,16 @@ export interface IChatChannelRepository {
    * The chapter's channel with this exact name, or `null`. Nothing makes a
    * name unique within a chapter, so more than one match is a query error,
    * not a pick. Onboarding calls it where a duplicate cannot exist yet, for
-   * the `general` channel it seeded moments earlier. The audit bridge calls it
-   * for `#chapter-audit` and treats that error as a skipped mirror (logged),
-   * which is how a duplicate `chapter-audit` channel stops the feed.
+   * the `general` channel it seeded moments earlier.
    */
   findByName(chapterId: string, name: string): Promise<ChatChannel | null>;
+  /**
+   * The chapter's audit-log channel (`is_audit_log`, #3909), or null when the
+   * chapter has none. Keyed on the flag rather than the name, so neither a
+   * rename nor a second channel called `chapter-audit` moves the audit feed;
+   * a partial unique index holds it to one per chapter.
+   */
+  findAuditLog(chapterId: string): Promise<ChatChannel | null>;
   create(data: Partial<ChatChannel>): Promise<ChatChannel>;
   /** Insert several channels in one statement, all or none. */
   createMany(data: Partial<ChatChannel>[]): Promise<void>;
@@ -221,6 +226,19 @@ export interface IChatMessageRepository {
     options?: { channelId?: string; limit?: number; active?: boolean },
   ): Promise<ChatMessage[]>;
   /**
+   * Newest-first poll **cards** (`kind = 'poll'`, the format every client
+   * posts) across the chapter, deleted rows left out. `senderId` keeps one
+   * member's. Whether a card is still open is not decided here: its deadline
+   * is an ISO string inside `payload`, and comparing those as text is wrong
+   * across offsets, so the caller parses it. Every channel's rows come back,
+   * readable or not; the caller filters by access, as with
+   * {@link findPollsByChapter}.
+   */
+  findPollCardsByChapter(
+    chapterId: string,
+    options: { senderId?: string; limit: number },
+  ): Promise<ChatMessage[]>;
+  /**
    * Locate an already-persisted message by its idempotency triple. Used by
    * the hot-path send to reconcile a duplicate `(channel_id, sender_id,
    * client_message_id)` insert. Returns null when no such row exists.
@@ -300,6 +318,17 @@ export interface IChatMessageActionRepository {
     actionType: string,
     payload: Record<string, unknown>,
   ): Promise<ChatMessageAction | null>;
+  /**
+   * Which of `messageIds` this member has an `actionType` row on: the batch
+   * form of {@link findOne}, for "which of these polls have I voted on".
+   * Returns message ids only. No chapter argument, like the rest of this
+   * interface: the caller passes ids it has already scoped and authorized.
+   */
+  findActedMessageIds(
+    messageIds: string[],
+    userId: string,
+    actionType: string,
+  ): Promise<string[]>;
 }
 
 export interface IMessageReactionRepository {

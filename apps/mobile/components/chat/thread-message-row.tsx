@@ -28,6 +28,7 @@ import type { ChatCardFrameProps } from "./chat-card";
 import { EventCard } from "./event-card";
 import { HoursCard } from "./hours-card";
 import { MessageItem, MessageRowFrame, OwnLineMarkers } from "./message-item";
+import { ThreadChip } from "./thread-chip";
 import { PointsCard } from "./points-card";
 import { PollCard } from "./poll-card";
 import { ReplyQuote } from "./reply-quote";
@@ -64,6 +65,8 @@ export interface ThreadMessageRowProps {
    * avatar and author line, and whether a day divider goes above it.
    */
   startsRun: boolean;
+  /** The run's last row (Bubbles draws the avatar under it). Defaults to `true`. */
+  endsRun?: boolean;
   startsDay: boolean;
   /**
    * Resolved before any row mounts (#2250): `chat-thread.tsx` withholds the
@@ -83,6 +86,8 @@ export interface ThreadMessageRowProps {
     actionType: string,
     payload: Record<string, unknown>,
   ) => void;
+  /** A poll card's Close poll, on the viewer's own open poll (#3794). */
+  onClosePoll: (messageId: string) => void;
   onRetry: (clientMessageId: string) => void;
   onDiscard: (clientMessageId: string) => void;
   onReact: (messageId: string, emoji: string) => void;
@@ -97,6 +102,11 @@ export interface ThreadMessageRowProps {
   maskedRefresh: ReadonlyMap<string, MaskedRefreshState>;
   /** A stale tombstone's Reload: re-runs that member's re-read. */
   onReload: (userId: string) => void;
+  /**
+   * Pushes a message's thread (#3785): the chip under a parent with replies.
+   * Absent where the channel offers no threads (a 1:1 DM).
+   */
+  onOpenThread?: (message: ChatMessage) => void;
 }
 
 export function ThreadMessageRow(props: ThreadMessageRowProps) {
@@ -120,6 +130,7 @@ export function ThreadMessageRow(props: ThreadMessageRowProps) {
 function ThreadMessageRowBody({
   row,
   startsRun,
+  endsRun,
   viewerId,
   nameFor,
   roleColorFor,
@@ -127,6 +138,7 @@ function ThreadMessageRowBody({
   replyParent,
   blockState,
   onVote,
+  onClosePoll,
   onRetry,
   onDiscard,
   onReact,
@@ -137,6 +149,7 @@ function ThreadMessageRowBody({
   onUnblock,
   maskedRefresh,
   onReload,
+  onOpenThread,
 }: ThreadMessageRowProps) {
   const { message: cached, visibility } = row;
 
@@ -144,6 +157,7 @@ function ThreadMessageRowBody({
     const senderId = cached.sender_id;
     return (
       <BlockedMessageTombstone
+        channelId={cached.channel_id}
         senderName={senderId ? nameFor(senderId) : null}
         canUnblock={tombstoneCanUnblock(cached, blockState)}
         onUnblock={() => {
@@ -219,7 +233,7 @@ function ThreadMessageRowBody({
           onOpenActions: openActions,
           onJumpToParent: message.reply_to_id ? onJumpToParent : undefined,
         },
-        { onVote },
+        { onVote, onClosePoll },
       );
   if (card) {
     const quote = message.reply_to_id ? (
@@ -247,6 +261,15 @@ function ThreadMessageRowBody({
       >
         {card}
         <OwnLineMarkers message={message} />
+        {/* A card can be a thread's parent too (#3785), as on web. */}
+        {message.thread ? (
+          <ThreadChip
+            summary={message.thread}
+            nameFor={nameFor}
+            roleColorFor={roleColorFor}
+            onPress={onOpenThread ? () => onOpenThread(cached) : undefined}
+          />
+        ) : null}
       </MessageRowFrame>
     );
   }
@@ -259,6 +282,7 @@ function ThreadMessageRowBody({
       roleColorFor={roleColorFor}
       avatarFor={avatarFor}
       startsRun={startsRun}
+      endsRun={endsRun}
       replyParent={quotedParent}
       replyParentHidden={replyParentHidden}
       onRetry={onRetry}
@@ -268,6 +292,7 @@ function ThreadMessageRowBody({
       onOpenActions={openActions}
       onJumpToParent={onJumpToParent}
       onOpenProfile={onOpenProfile}
+      onOpenThread={onOpenThread ? () => onOpenThread(cached) : undefined}
     />
   );
 }
@@ -282,19 +307,27 @@ function ThreadMessageRowBody({
  * keeps its own malformed state, which names the poll.
  *
  * Not cards on mobile: `dues`, which web draws as a "coming soon" card, and
- * `loading`, web's placeholder for a slash command in flight, which mobile
- * never sends.
+ * `loading`, the placeholder for a heavy write in flight, which the + sheet's
+ * Task, Service hours and Event forms send (#3865); it reads as its text
+ * ("Creating task …") until the server's card replaces it.
  */
 function cardFor(
   frame: ChatCardFrameProps,
   row: {
     onVote: ThreadMessageRowProps["onVote"];
+    onClosePoll: ThreadMessageRowProps["onClosePoll"];
   },
 ): ReactNode | null {
   const { message } = frame;
   switch (message.kind) {
     case "poll":
-      return <PollCard {...frame} onVote={row.onVote} />;
+      return (
+        <PollCard
+          {...frame}
+          onVote={row.onVote}
+          onClosePoll={row.onClosePoll}
+        />
+      );
     case "event": {
       const payload = readEventPayload(message);
       return payload ? <EventCard {...frame} payload={payload} /> : null;

@@ -6,7 +6,8 @@ import {
 } from "@/lib/realtime/presence-status";
 
 /**
- * The Online / Idle / Offline dot pinned to a member's avatar.
+ * The presence dot pinned to a member's avatar: Online, Idle, Do Not Disturb,
+ * Invisible (the viewer's own, only) or Offline.
  *
  * `status: null` renders nothing — the honest answer before presence has
  * resolved and while the socket is suppressed. Offline is a claim about *that
@@ -46,7 +47,66 @@ export function AvatarPresenceDot({ status }: { status: PresenceStatus | null })
     <span
       aria-hidden="true"
       data-presence={status}
-      className={`absolute bottom-0 right-0 inline-block h-2.5 w-2.5 shrink-0 rounded-full ring-2 ring-background ${presenceStatusKind(status)}`}
-    />
+      className={`absolute bottom-0 right-0 ring-2 ring-background ${DOT_SHAPE} ${presenceStatusKind(status)}`}
+    >
+      <DndBar status={status} />
+    </span>
+  );
+}
+
+/**
+ * The same dot standing alone, for a menu row that names a status (the
+ * account menu's Status submenu, #3845): no avatar under it, so no ring.
+ */
+export function PresenceGlyph({ status }: { status: PresenceStatus }) {
+  return (
+    <span className="inline-flex size-4 shrink-0 items-center justify-center">
+      <span
+        aria-hidden="true"
+        data-presence={status}
+        className={`${DOT_SHAPE} ${presenceStatusKind(status)}`}
+      >
+        <DndBar status={status} />
+      </span>
+    </span>
+  );
+}
+
+const DOT_SHAPE =
+  "inline-flex h-2.5 w-2.5 shrink-0 items-center justify-center rounded-full";
+
+/**
+ * Do Not Disturb's bar (#3845): a dark dash across the red fill, so DND
+ * differs from Online by shape and not by hue alone. 6 by 2 on the 10px dot,
+ * the proportion Discord and Slack draw. `--destructive-foreground` is the
+ * dark text step paired with `--destructive`.
+ */
+function DndBar({ status }: { status: PresenceStatus }) {
+  if (status !== "dnd") return null;
+  return (
+    <span className="block h-0.5 w-1.5 rounded-full bg-destructive-foreground" />
+  );
+}
+
+/**
+ * A member's custom status line (#3845): one muted line under their name,
+ * truncated to the row. Renders nothing without one, so a row without a line
+ * keeps its height.
+ */
+export function CustomStatusLine({
+  line,
+  className,
+}: {
+  line: string | null;
+  className?: string;
+}) {
+  if (!line) return null;
+  return (
+    <span
+      data-custom-status=""
+      className={`block min-w-0 truncate text-caption text-muted-foreground ${className ?? ""}`}
+    >
+      {line}
+    </span>
   );
 }

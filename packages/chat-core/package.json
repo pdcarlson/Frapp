@@ -5,6 +5,8 @@
   "exports": {
     "./adapters": "./src/adapters.ts",
     "./topic-registry": "./src/topic-registry.ts",
+    "./topic-attach": "./src/topic-attach.ts",
+    "./change-topics": "./src/change-topics.ts",
     "./types": "./src/types.ts",
     "./cache": "./src/cache.ts",
     "./history": "./src/history.ts",
@@ -13,12 +15,15 @@
     "./chat-client": "./src/chat-client.ts",
     "./realtime-manager": "./src/realtime-manager.ts",
     "./polls": "./src/polls.ts",
+    "./poll-draft": "./src/poll-draft.ts",
+    "./plus-menu": "./src/plus-menu.ts",
     "./cards": "./src/cards.ts",
     "./reply-preview": "./src/reply-preview.ts",
     "./channel-preview": "./src/channel-preview.ts",
     "./blocks": "./src/blocks.ts",
     "./block-copy": "./src/block-copy.ts",
     "./channels-refused-copy": "./src/channels-refused-copy.ts",
+    "./audit-log-copy": "./src/audit-log-copy.ts",
     "./message-actions": "./src/message-actions.ts",
     "./report-copy": "./src/report-copy.ts",
     "./grouping": "./src/grouping.ts",
@@ -27,7 +32,9 @@
     "./markdown": "./src/markdown.ts",
     "./profile-targets": "./src/profile-targets.ts",
     "./test/markdown-parse-budget.fixtures": "./src/test/markdown-parse-budget.fixtures.ts",
-    "./attachments": "./src/attachments.ts"
+    "./attachments": "./src/attachments.ts",
+    "./threads": "./src/threads.ts",
+    "./typing-label": "./src/typing-label.ts"
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",
@@ -38,6 +45,7 @@
   "dependencies": {
     "@repo/api-sdk": "*",
     "@repo/formatting": "*",
+    "@repo/org-archetypes": "*",
     "@repo/validation": "*",
     "@supabase/supabase-js": "^2.119.0",
     "@tanstack/react-query": "^5.105.0"

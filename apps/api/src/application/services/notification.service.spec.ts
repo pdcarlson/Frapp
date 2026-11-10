@@ -1,5 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
 import { NotificationService } from './notification.service';
 import { ChatBlockService } from './chat-block.service';
@@ -59,6 +64,7 @@ describe('NotificationService', () => {
       findById: jest.fn(),
       markRead: jest.fn(),
       markChatChannelRead: jest.fn(),
+      markAllRead: jest.fn(),
     };
     mockPushTokenRepo = {
       create: jest.fn(),
@@ -440,6 +446,103 @@ describe('NotificationService', () => {
         expect.objectContaining({
           priority: 'URGENT',
         }),
+      );
+    });
+
+    describe('Do Not Disturb (#3845)', () => {
+      const noWindow = {
+        ...baseSettings,
+        quiet_hours_start: null,
+        quiet_hours_end: null,
+      };
+
+      beforeEach(() => {
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date('2026-11-09T18:00:00Z'));
+        mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue(
+          basePreference,
+        );
+        mockNotificationRepo.create.mockResolvedValue(baseNotification);
+        mockPushTokenRepo.findByUser.mockResolvedValue([basePushToken]);
+      });
+
+      afterEach(() => {
+        jest.useRealTimers();
+      });
+
+      it('downgrades NORMAL to SILENT while DND is on', async () => {
+        mockSettingsRepo.findByUser.mockResolvedValue({
+          ...noWindow,
+          status: 'dnd',
+          status_expires_at: null,
+        });
+
+        await service.notifyUser('u-1', 'ch-1', {
+          title: 'Alex in #general',
+          body: 'Hello',
+          category: 'chat',
+          priority: 'NORMAL',
+        });
+
+        expectSilentPush();
+      });
+
+      it('still rings URGENT while DND is on', async () => {
+        mockSettingsRepo.findByUser.mockResolvedValue({
+          ...noWindow,
+          status: 'dnd',
+        });
+
+        await service.notifyUser('u-1', 'ch-1', {
+          title: 'Urgent',
+          body: 'Emergency',
+          priority: 'URGENT',
+        });
+
+        expect(mockPushProvider.sendToUser).toHaveBeenCalledWith(
+          [basePushToken.token],
+          expect.objectContaining({ priority: 'URGENT' }),
+        );
+      });
+
+      it('rings again once DND has ended', async () => {
+        mockSettingsRepo.findByUser.mockResolvedValue({
+          ...noWindow,
+          status: 'dnd',
+          status_expires_at: '2026-11-09T17:59:00.000Z',
+        });
+
+        await service.notifyUser('u-1', 'ch-1', {
+          title: 'Test',
+          body: 'Body',
+          priority: 'NORMAL',
+        });
+
+        expect(mockPushProvider.sendToUser).toHaveBeenCalledWith(
+          [basePushToken.token],
+          expect.objectContaining({ priority: 'NORMAL' }),
+        );
+      });
+
+      it.each(['idle', 'invisible'] as const)(
+        'does not quiet a member who is only %s',
+        async (status) => {
+          mockSettingsRepo.findByUser.mockResolvedValue({
+            ...noWindow,
+            status,
+          });
+
+          await service.notifyUser('u-1', 'ch-1', {
+            title: 'Test',
+            body: 'Body',
+            priority: 'NORMAL',
+          });
+
+          expect(mockPushProvider.sendToUser).toHaveBeenCalledWith(
+            [basePushToken.token],
+            expect.objectContaining({ priority: 'NORMAL' }),
+          );
+        },
       );
     });
 
@@ -971,6 +1074,51 @@ describe('NotificationService', () => {
       jest.useRealTimers();
     });
 
+    it('downgrades NORMAL to SILENT for a member with DND on, on the batched path (#3845)', async () => {
+      stubChapterNotify({
+        settings: [
+          {
+            ...baseSettings,
+            quiet_hours_start: null,
+            quiet_hours_end: null,
+            status: 'dnd',
+          },
+        ],
+      });
+
+      await service.notifyChapter('ch-1', {
+        title: 'Test',
+        body: 'Body',
+        priority: 'NORMAL',
+      });
+
+      expectSilentPush();
+    });
+
+    it('still rings URGENT for a member with DND on, on the batched path (#3845)', async () => {
+      stubChapterNotify({
+        settings: [
+          {
+            ...baseSettings,
+            quiet_hours_start: null,
+            quiet_hours_end: null,
+            status: 'dnd',
+          },
+        ],
+      });
+
+      await service.notifyChapter('ch-1', {
+        title: 'Urgent',
+        body: 'Emergency',
+        priority: 'URGENT',
+      });
+
+      expect(mockPushProvider.sendToUser).toHaveBeenCalledWith(
+        [basePushToken.token],
+        expect.objectContaining({ priority: 'URGENT' }),
+      );
+    });
+
     it('reports a failed insert chunk once and still delivers the surviving chunk', async () => {
       const warn = spyWarn();
       const error = jest
@@ -1291,6 +1439,63 @@ describe('NotificationService', () => {
         'chapter-1',
         'channel-1',
         '2026-11-09T05:00:00.000Z',
+        undefined,
+      );
+    });
+  });
+
+  describe('markNotificationsRead (#3929)', () => {
+    beforeEach(() => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-11-09T22:00:00.000Z'));
+    });
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('marks every unread row read through now and answers with the stamp', async () => {
+      mockNotificationRepo.markAllRead.mockResolvedValue(20);
+
+      const result = await service.markNotificationsRead('user-1', 'chapter-1');
+
+      expect(mockNotificationRepo.markAllRead).toHaveBeenCalledWith(
+        'user-1',
+        'chapter-1',
+        '2026-11-09T22:00:00.000Z',
+        undefined,
+      );
+      expect(result).toEqual({
+        read_at: '2026-11-09T22:00:00.000Z',
+        updated: 20,
+      });
+    });
+
+    it('narrows to the named screens, once each', async () => {
+      mockNotificationRepo.markAllRead.mockResolvedValue(2);
+
+      await service.markNotificationsRead('user-1', 'chapter-1', {
+        screens: ['tasks', 'points', 'tasks'],
+      });
+
+      expect(mockNotificationRepo.markAllRead).toHaveBeenCalledWith(
+        'user-1',
+        'chapter-1',
+        '2026-11-09T22:00:00.000Z',
+        ['tasks', 'points'],
+      );
+    });
+
+    it('treats an empty screen list as every row, never as none', async () => {
+      mockNotificationRepo.markAllRead.mockResolvedValue(0);
+
+      await service.markNotificationsRead('user-1', 'chapter-1', {
+        screens: [],
+      });
+
+      expect(mockNotificationRepo.markAllRead).toHaveBeenCalledWith(
+        'user-1',
+        'chapter-1',
+        '2026-11-09T22:00:00.000Z',
+        undefined,
       );
     });
   });
@@ -1370,7 +1575,15 @@ describe('NotificationService', () => {
   });
 
   describe('user settings', () => {
-    // `toStrictEqual`, not `toEqual`: the response is the four editable
+    /** The status fields of a member who never picked one (#3845). */
+    const NO_STATUS = {
+      status: 'online',
+      status_expires_at: null,
+      custom_status: null,
+      custom_status_expires_at: null,
+    } as const;
+
+    // `toStrictEqual`, not `toEqual`: the response is the editable
     // fields, and a row's `id`, `user_id` and `updated_at` must not leak
     // through, because a member with no row has none of them to send.
     it('should get user settings as the editable fields of the row', async () => {
@@ -1384,6 +1597,7 @@ describe('NotificationService', () => {
         quiet_hours_end: '08:00:00',
         quiet_hours_tz: 'America/New_York',
         theme: 'system',
+        ...NO_STATUS,
       });
     });
 
@@ -1401,6 +1615,7 @@ describe('NotificationService', () => {
         quiet_hours_end: null,
         quiet_hours_tz: null,
         theme: 'system',
+        ...NO_STATUS,
       });
     });
 
@@ -1428,6 +1643,7 @@ describe('NotificationService', () => {
       mockSettingsRepo.upsert.mockResolvedValue({
         ...baseSettings,
         theme: 'dark',
+        ...NO_STATUS,
       });
 
       const result = await service.updateSettings('u-1', { theme: 'dark' });
@@ -1438,13 +1654,14 @@ describe('NotificationService', () => {
           theme: 'dark',
         }),
       );
-      // The same four fields `getSettings` answers with, so the two routes
+      // The same fields `getSettings` answers with, so the two routes
       // share one response schema.
       expect(result).toStrictEqual({
         quiet_hours_start: '22:00:00',
         quiet_hours_end: '08:00:00',
         quiet_hours_tz: 'America/New_York',
         theme: 'dark',
+        ...NO_STATUS,
       });
     });
 
@@ -1460,28 +1677,27 @@ describe('NotificationService', () => {
         quiet_hours_end: '08:00',
       });
 
+      // Only the named fields: a new row takes the column defaults for the rest.
       expect(mockSettingsRepo.upsert).toHaveBeenCalledWith({
         user_id: 'u-1',
         quiet_hours_start: '22:00',
         quiet_hours_end: '08:00',
-        quiet_hours_tz: null,
-        theme: 'system',
       });
     });
 
-    it('should preserve existing quiet-hour fields when omitted from update', async () => {
-      mockSettingsRepo.findByUser.mockResolvedValue(baseSettings);
+    // Omitted fields are left out of the write, so the upsert keeps what is
+    // stored, including a value another device saved after this request began
+    // (#3924). Writing back an earlier read would undo that change.
+    it('should leave omitted quiet-hour fields out of the write', async () => {
       mockSettingsRepo.upsert.mockResolvedValue(baseSettings);
 
       await service.updateSettings('u-1', { theme: 'dark' });
 
       expect(mockSettingsRepo.upsert).toHaveBeenCalledWith({
         user_id: 'u-1',
-        quiet_hours_start: '22:00:00',
-        quiet_hours_end: '08:00:00',
-        quiet_hours_tz: 'America/New_York',
         theme: 'dark',
       });
+      expect(mockSettingsRepo.findByUser).not.toHaveBeenCalled();
     });
 
     // The test above passes a plain object literal, which is NOT what the
@@ -1505,9 +1721,6 @@ describe('NotificationService', () => {
 
       expect(mockSettingsRepo.upsert).toHaveBeenCalledWith({
         user_id: 'u-1',
-        quiet_hours_start: '22:00:00',
-        quiet_hours_end: '08:00:00',
-        quiet_hours_tz: 'America/New_York',
         theme: 'dark',
       });
     });
@@ -1532,7 +1745,6 @@ describe('NotificationService', () => {
         quiet_hours_start: null,
         quiet_hours_end: null,
         quiet_hours_tz: null,
-        theme: 'system',
       });
       expect(result.quiet_hours_start).toBeNull();
       expect(result.quiet_hours_end).toBeNull();
@@ -1547,10 +1759,238 @@ describe('NotificationService', () => {
 
       expect(mockSettingsRepo.upsert).toHaveBeenCalledWith({
         user_id: 'u-1',
-        quiet_hours_start: '22:00:00',
-        quiet_hours_end: '08:00:00',
         quiet_hours_tz: null,
-        theme: 'system',
+      });
+    });
+
+    describe('member status (#3845)', () => {
+      const NOW = new Date('2026-11-09T18:00:00Z');
+      const LATER = '2026-11-09T19:00:00.000Z';
+      const EARLIER = '2026-11-09T17:00:00.000Z';
+
+      beforeEach(() => {
+        jest.useFakeTimers();
+        jest.setSystemTime(NOW);
+        mockSettingsRepo.upsert.mockImplementation((row) =>
+          Promise.resolve({
+            ...baseSettings,
+            ...row,
+          }),
+        );
+      });
+
+      afterEach(() => {
+        jest.useRealTimers();
+      });
+
+      it('reads a status and custom line that have not ended', async () => {
+        mockSettingsRepo.findByUser.mockResolvedValue({
+          ...baseSettings,
+          status: 'dnd',
+          status_expires_at: LATER,
+          custom_status: 'At practice till 6',
+          custom_status_expires_at: LATER,
+        });
+
+        const result = await service.getSettings('u-1');
+
+        expect(result).toMatchObject({
+          status: 'dnd',
+          status_expires_at: LATER,
+          custom_status: 'At practice till 6',
+          custom_status_expires_at: LATER,
+        });
+      });
+
+      it('reads an ended status as online and an ended line as none', async () => {
+        mockSettingsRepo.findByUser.mockResolvedValue({
+          ...baseSettings,
+          status: 'dnd',
+          status_expires_at: EARLIER,
+          custom_status: 'At practice till 6',
+          custom_status_expires_at: EARLIER,
+        });
+
+        const result = await service.getSettings('u-1');
+
+        expect(result).toMatchObject(NO_STATUS);
+      });
+
+      it('replaces the end time when a new status is picked', async () => {
+        mockSettingsRepo.findByUser.mockResolvedValue({
+          ...baseSettings,
+          status: 'dnd',
+          status_expires_at: LATER,
+        });
+
+        await service.updateSettings('u-1', { status: 'invisible' });
+
+        expect(mockSettingsRepo.upsert).toHaveBeenCalledWith(
+          expect.objectContaining({
+            status: 'invisible',
+            status_expires_at: null,
+          }),
+        );
+      });
+
+      it('saves a status with its end time', async () => {
+        mockSettingsRepo.findByUser.mockResolvedValue(null);
+
+        const result = await service.updateSettings('u-1', {
+          status: 'dnd',
+          status_expires_at: LATER,
+        });
+
+        expect(result).toMatchObject({
+          status: 'dnd',
+          status_expires_at: LATER,
+        });
+      });
+
+      it('never gives online an end time', async () => {
+        mockSettingsRepo.findByUser.mockResolvedValue(baseSettings);
+
+        await service.updateSettings('u-1', {
+          status: 'online',
+          status_expires_at: LATER,
+        });
+
+        expect(mockSettingsRepo.upsert).toHaveBeenCalledWith(
+          expect.objectContaining({
+            status: 'online',
+            status_expires_at: null,
+          }),
+        );
+      });
+
+      it('rejects an end time in the past', async () => {
+        mockSettingsRepo.findByUser.mockResolvedValue(baseSettings);
+
+        await expect(
+          service.updateSettings('u-1', {
+            status: 'dnd',
+            status_expires_at: EARLIER,
+          }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        await expect(
+          service.updateSettings('u-1', {
+            custom_status: 'Studying',
+            custom_status_expires_at: EARLIER,
+          }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(mockSettingsRepo.upsert).not.toHaveBeenCalled();
+      });
+
+      it('rejects an end time sent without its status', async () => {
+        mockSettingsRepo.findByUser.mockResolvedValue(baseSettings);
+
+        await expect(
+          service.updateSettings('u-1', { status_expires_at: LATER }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        await expect(
+          service.updateSettings('u-1', { custom_status_expires_at: LATER }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      });
+
+      it('clears the custom line and its end time together', async () => {
+        mockSettingsRepo.findByUser.mockResolvedValue({
+          ...baseSettings,
+          custom_status: 'At practice till 6',
+          custom_status_expires_at: LATER,
+        });
+
+        await service.updateSettings('u-1', { custom_status: null });
+
+        expect(mockSettingsRepo.upsert).toHaveBeenCalledWith(
+          expect.objectContaining({
+            custom_status: null,
+            custom_status_expires_at: null,
+          }),
+        );
+      });
+
+      // An unrelated save must not write the status back: a value read before
+      // another device switched DND on would undo it.
+      it('leaves the status and line out of an unrelated save', async () => {
+        mockSettingsRepo.findByUser.mockResolvedValue({
+          ...baseSettings,
+          status: 'idle',
+          custom_status: 'Studying',
+          custom_status_expires_at: LATER,
+        });
+
+        await service.updateSettings('u-1', { theme: 'dark' });
+
+        const written = mockSettingsRepo.upsert.mock.calls[0][0];
+        expect(written).not.toHaveProperty('status');
+        expect(written).not.toHaveProperty('status_expires_at');
+        expect(written).not.toHaveProperty('custom_status');
+        expect(written).not.toHaveProperty('custom_status_expires_at');
+      });
+
+      it('clears the end time with the line even when one is sent', async () => {
+        await service.updateSettings('u-1', {
+          custom_status: null,
+          custom_status_expires_at: LATER,
+        });
+
+        expect(mockSettingsRepo.upsert).toHaveBeenCalledWith(
+          expect.objectContaining({
+            custom_status: null,
+            custom_status_expires_at: null,
+          }),
+        );
+      });
+
+      it('treats theme: null as not supplied, since the column is NOT NULL', async () => {
+        await service.updateSettings('u-1', { theme: null as never });
+
+        expect(mockSettingsRepo.upsert).toHaveBeenCalledWith({
+          user_id: 'u-1',
+        });
+      });
+
+      // A null end time on its own asks for nothing, so it must not fail the
+      // save and take the member's other edits with it.
+      it('ignores a null end time sent without its status', async () => {
+        await service.updateSettings('u-1', {
+          theme: 'dark',
+          status_expires_at: null,
+          custom_status_expires_at: null,
+        });
+
+        expect(mockSettingsRepo.upsert).toHaveBeenCalledWith({
+          user_id: 'u-1',
+          theme: 'dark',
+        });
+      });
+
+      it('gives a new custom line its own end time, not the old one', async () => {
+        mockSettingsRepo.findByUser.mockResolvedValue({
+          ...baseSettings,
+          custom_status: 'At practice',
+          custom_status_expires_at: LATER,
+        });
+
+        await service.updateSettings('u-1', { custom_status: 'Studying' });
+
+        expect(mockSettingsRepo.upsert).toHaveBeenCalledWith(
+          expect.objectContaining({
+            custom_status: 'Studying',
+            custom_status_expires_at: null,
+          }),
+        );
+      });
+
+      it('rejects an end time on a day that does not exist', async () => {
+        mockSettingsRepo.findByUser.mockResolvedValue(baseSettings);
+
+        await expect(
+          service.updateSettings('u-1', {
+            status: 'dnd',
+            status_expires_at: '2027-02-30T10:00:00Z',
+          }),
+        ).rejects.toBeInstanceOf(BadRequestException);
       });
     });
   });

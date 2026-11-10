@@ -12,7 +12,14 @@ import {
   isDirectChannel,
   isModuleEnabled,
 } from '@repo/validation';
-import { allowsInThreadReplies } from '#domain/utils/channel-access';
+import {
+  allowsInThreadReplies,
+  channelAllowsThreads,
+} from '#domain/utils/channel-access';
+import {
+  CHAT_THREAD_REPOSITORY,
+  type IChatThreadRepository,
+} from '#domain/repositories/chat-thread.repository.interface';
 import {
   CHAT_CHANNEL_REPOSITORY,
   CHAT_MESSAGE_REPOSITORY,
@@ -76,6 +83,7 @@ export interface CreateChannelInput {
   required_permissions?: string[] | null;
   category_id?: string | null;
   is_read_only?: boolean;
+  display_locked?: boolean;
 }
 
 export interface CreateDmInput {
@@ -97,6 +105,11 @@ export interface SendMessageInput {
   /** Inline card payload for rich kinds. */
   payload?: Record<string, any> | null;
   reply_to_id?: string | null;
+  /**
+   * Post as a reply inside this message's thread (#3785) instead of the
+   * timeline. The root must be a timeline message in the same channel.
+   */
+  thread_root_id?: string | null;
   metadata?: Record<string, any>;
   /**
    * The chapter's `enabled_modules`, as `ChapterGuard` read it. Required on a
@@ -154,6 +167,25 @@ const MODULE_GATED_KINDS: Readonly<Partial<Record<ChatMessageKind, string>>> = {
   dues: 'dues',
 };
 
+/**
+ * A poll card's early close (`payload.closed_at` / `closed_by`, #3794) is
+ * written only by `PollService.close`, which checks the caller is the poll's
+ * creator. A client composes the rest of the card, so the pair is dropped from
+ * what it posts: a card can't arrive already closed, or "closed by" someone
+ * else.
+ */
+function withoutServerPollFields(
+  kind: ChatMessageKind,
+  payload: Record<string, any> | null | undefined,
+): Record<string, any> | null {
+  if (!payload) return null;
+  if (kind !== 'poll') return payload;
+  const card = { ...payload };
+  delete card.closed_at;
+  delete card.closed_by;
+  return card;
+}
+
 /** What {@link ChatService.deleteReportedMessage} did, and where. */
 export interface ReportedMessageRemoval {
   /** True when the message was already soft-deleted and nothing was written. */
@@ -194,6 +226,9 @@ export class ChatService {
     private readonly mentions: ChatMentionService,
     // A channel read also clears the chat notifications about it (#3788).
     private readonly notifications: NotificationService,
+    // Message threads (#3785): a thread reply's auto-follow and read cursor.
+    @Inject(CHAT_THREAD_REPOSITORY)
+    private readonly threads: IChatThreadRepository,
   ) {}
 
   // ── Channels ─────────────────────────────────────────────────────────
@@ -360,6 +395,10 @@ export class ChatService {
       required_permissions: input.required_permissions ?? null,
       category_id: input.category_id ?? null,
       is_read_only: input.is_read_only ?? false,
+      display_locked: input.display_locked ?? false,
+      // Recorded so the creator can set Always formal later without holding
+      // `channels:manage` (#3787, `setDisplayLock`).
+      created_by: userId,
       // Seed the creator so a PRIVATE channel is readable by at least one
       // person. `canAccessChannel` resolves PRIVATE as membership of this list
       // with **no `"*"` wildcard bypass**, so a row landing with `member_ids`
@@ -395,6 +434,22 @@ export class ChatService {
     >,
   ): Promise<ChatChannel> {
     const existing = await this.requireChannelInChapter(id, chapterId);
+
+    // The audit log (#3909) is the chapter's record of officer changes, so
+    // its two defining settings are locked: it stays read-only, and it keeps
+    // its name, which members know it by. The flag (not the name) is what
+    // the server keys on, so this is about members finding it, not about the
+    // mirror. Description, group and push default stay editable.
+    if (existing.is_audit_log) {
+      if (data.is_read_only === false) {
+        throw new BadRequestException(
+          'The audit log channel is always read-only',
+        );
+      }
+      if (data.name !== undefined && data.name !== existing.name) {
+        throw new BadRequestException("The audit log channel can't be renamed");
+      }
+    }
 
     // Chat opens on the chapter default for everyone who can see it; a DM is
     // two members' conversation, not somewhere to send the whole chapter.
@@ -446,8 +501,58 @@ export class ChatService {
     return updated;
   }
 
+  /**
+   * Turns Always formal on or off (#3787, `spec/behavior/chat/README.md`
+   * § Always formal). Allowed for a `channels:manage` holder, which the
+   * controller resolves, and for the channel's creator while they can still
+   * read it (the route itself needs only chapter membership, so a creator
+   * without the permission can reach it). A DM or group DM has no creator in
+   * this sense and no officer, so it is refused there.
+   */
+  async setDisplayLock(
+    id: string,
+    chapterId: string,
+    userId: string,
+    hasManagePermission: boolean,
+    locked: boolean,
+  ): Promise<ChatChannel> {
+    // A `channels:manage` holder edits any channel in the chapter, as
+    // `updateChannel` does. A creator without it must still be able to read
+    // the channel: one removed from their own PRIVATE channel, or who lost a
+    // ROLE_GATED channel's permission, is refused like any other member, and
+    // never gets the row back. Authorization runs before the DM check, so the
+    // 400 tells nobody without the right whether an id is a DM.
+    const existing = hasManagePermission
+      ? await this.requireChannelInChapter(id, chapterId)
+      : await this.assertChannelAccess(id, chapterId, userId);
+    const isCreator =
+      existing.created_by !== null && existing.created_by === userId;
+    if (!hasManagePermission && !isCreator) {
+      throw new ForbiddenException(
+        "Only the channel's creator or a member with channels:manage can set Always formal",
+      );
+    }
+    if (isDirectChannel(existing)) {
+      throw new BadRequestException(
+        "A DM or group DM can't be set to Always formal",
+      );
+    }
+    if (existing.display_locked === locked) return existing;
+    const updated = await this.channelRepo.update(id, chapterId, {
+      display_locked: locked,
+    });
+    this.channelCache.invalidate(id);
+    return updated;
+  }
+
   async deleteChannel(id: string, chapterId: string): Promise<void> {
-    await this.requireChannelInChapter(id, chapterId);
+    const existing = await this.requireChannelInChapter(id, chapterId);
+    // The audit log (#3909) is the chapter's record of officer changes, and
+    // the mirror has nowhere else to post. Refused like a rename; DMs and
+    // group DMs are #3633's half.
+    if (existing.is_audit_log) {
+      throw new BadRequestException("The audit log channel can't be deleted");
+    }
     await this.channelRepo.delete(id, chapterId);
     // A deleted channel's stale row must not outlive it in the push worker's
     // cache — see `updateChannel`'s note on `ChannelCacheService`.
@@ -776,8 +881,9 @@ export class ChatService {
    * Hot-path send. Mirrors the retired `chat-send` Edge Function:
    *
    * - Authorizes via the shared `canAccessChannel` predicate with
-   *   `operation: "post"` so read-only channels (#announcements,
-   *   #chapter-audit) gate on the `announcements:post` permission.
+   *   `operation: "post"` so read-only channels (#announcements) gate on the
+   *   `announcements:post` permission, and the audit log (`is_audit_log`,
+   *   #chapter-audit) refuses every member, the President included (#3909).
    * - Cross-channel reply links are rejected before the insert, as are
    *   in-thread replies in a read-only channel — a broadcast is not a thread,
    *   regardless of the sender's permissions.
@@ -823,12 +929,19 @@ export class ChatService {
       );
     }
 
+    const threadRootId = input.thread_root_id ?? null;
     const channel = await this.assertChannelAccess(
       input.channel_id,
       input.chapter_id,
       input.sender_id,
-      'post',
+      // A thread reply authorizes as `thread`, which a read-only channel
+      // allows: any reader may thread under an announcement (#3785).
+      threadRootId ? 'thread' : 'post',
     );
+
+    const threadRoot = threadRootId
+      ? await this.assertThreadRoot(channel, threadRootId, input)
+      : null;
 
     if (input.reply_to_id) {
       // A read-only channel is a broadcast surface, so nothing in it is
@@ -845,6 +958,13 @@ export class ChatService {
       if (!replyTo || replyTo.channel_id !== input.channel_id) {
         throw new BadRequestException(
           'reply_to_id must reference a message in the same channel',
+        );
+      }
+      // A quote in the timeline cannot point into a thread, whose replies the
+      // timeline never shows (#3785).
+      if (replyTo.thread_root_id) {
+        throw new BadRequestException(
+          'reply_to_id cannot reference a reply inside a thread',
         );
       }
     }
@@ -883,6 +1003,26 @@ export class ChatService {
       input.content,
     );
 
+    // Auto-follow BEFORE the insert, so the push worker, which reacts to the
+    // insert, already finds the follows it decides by: the sender (whose own
+    // reply re-follows an unfollow, never a mute), the root's author on the
+    // first reply only, and everyone mentioned. `ensureFollowing` adds rows
+    // only for members with none, so it never undoes a mute or an unfollow.
+    // Idempotent, so a retried send that turns out to be a duplicate costs
+    // nothing.
+    if (threadRoot) {
+      await this.threads.followOnReply(
+        threadRoot.id,
+        input.channel_id,
+        input.sender_id,
+      );
+      const isFirstReply = (threadRoot.thread_reply_count ?? 0) === 0;
+      await this.threads.ensureFollowing(threadRoot.id, input.channel_id, [
+        ...(isFirstReply && threadRoot.sender_id ? [threadRoot.sender_id] : []),
+        ...mentions,
+      ]);
+    }
+
     let message: ChatMessage;
     const deduplicated = false;
     try {
@@ -892,9 +1032,10 @@ export class ChatService {
         content: input.content,
         type: 'TEXT',
         kind,
-        payload: input.payload ?? null,
+        payload: withoutServerPollFields(kind, input.payload),
         client_message_id: input.client_message_id ?? null,
         reply_to_id: input.reply_to_id ?? null,
+        thread_root_id: threadRootId,
         // `attachment_count` is a COUNT, not a copy — `chat_message_attachments`
         // stays the source of truth. It rides on the message row because a
         // `postgres_changes` echo cannot carry a join, so it is the only way a
@@ -959,6 +1100,27 @@ export class ChatService {
       attachments,
     );
 
+    // Your own reply is read: without this the thread you just wrote in would
+    // count your reply's predecessors as new. Best-effort, like the channel
+    // read's notification clear: a stale count must not fail a committed send.
+    if (threadRoot) {
+      await this.threads
+        .markRead(
+          threadRoot.id,
+          input.channel_id,
+          input.sender_id,
+          message.created_at,
+        )
+        .catch((error: unknown) =>
+          reportCaughtFailure(this.logger, {
+            level: 'warning',
+            site: 'chat-thread-send-marks-read',
+            message: `Could not mark thread ${threadRoot.id} read after a send`,
+            error,
+          }),
+        );
+    }
+
     // No push is sent from here. The push worker handles every
     // `chat_messages` insert, this one included, and is the only chat push
     // path (#2771): it applies the member's per-channel level, presence, burst
@@ -983,6 +1145,45 @@ export class ChatService {
   }
 
   /**
+   * The root of a thread reply: a timeline message in this channel, in a
+   * channel that takes threads (#3785, spec/behavior/chat/README.md § Message
+   * threads). A thread never nests, a 1:1 DM has no threads in slice 1, and a
+   * thread reply is never also a quote-reply.
+   */
+  private async assertThreadRoot(
+    channel: ChatChannel,
+    rootId: string,
+    input: SendMessageInput,
+  ): Promise<ChatMessage> {
+    if (!channelAllowsThreads(channel)) {
+      throw new BadRequestException('This channel does not take threads');
+    }
+    if (input.reply_to_id) {
+      throw new BadRequestException(
+        'A thread reply cannot also quote-reply; send one or the other',
+      );
+    }
+    const root = await this.messageRepo.findById(rootId);
+    if (!root || root.channel_id !== channel.id) {
+      throw new BadRequestException(
+        'thread_root_id must reference a message in the same channel',
+      );
+    }
+    if (root.thread_root_id) {
+      throw new BadRequestException(
+        'A thread cannot be started on a thread reply',
+      );
+    }
+    // An imported archive row is hard-deleted when its import is purged, and
+    // the purge would take the members' replies with it (the foreign key
+    // cascades). Threading imported history is slice 3 (#3785).
+    if (root.kind === 'imported') {
+      throw new BadRequestException('An imported message cannot be threaded');
+    }
+    return root;
+  }
+
+  /**
    * Authorize a caller for a channel from a TRUSTED DB lookup
    * (channel → chapter → membership), never client-supplied chapter fields.
    *
@@ -994,7 +1195,7 @@ export class ChatService {
     channelId: string,
     chapterId: string,
     userId: string,
-    operation: 'read' | 'post' = 'read',
+    operation: 'read' | 'post' | 'thread' = 'read',
   ): Promise<ChatChannel> {
     return this.channelAccess.assertChannelAccess(
       channelId,
@@ -1022,7 +1223,7 @@ export class ChatService {
     messageId: string,
     chapterId: string,
     userId: string,
-    operation: 'read' | 'post' = 'read',
+    operation: 'read' | 'post' | 'thread' = 'read',
     grant?: ReportedMessageGrant,
   ): Promise<ChatMessage> {
     return this.channelAccess.assertMessageAccess(
@@ -1046,11 +1247,18 @@ export class ChatService {
     // the channel, so it must clear the same gates as sending. Otherwise an
     // alumnus (or a member in a read-only channel) could rewrite an older
     // message of theirs to arbitrary text and broadcast it.
+    //
+    // A thread reply re-authorizes as `thread`, the operation it was written
+    // under (#3785): a member may reply in a thread under an announcement, so
+    // `post`'s read-only gate would let them write a reply they can never
+    // fix. Read first to learn which; the archive, audit-log and alumni rules
+    // apply to both.
+    const seen = await this.assertMessageAccess(messageId, chapterId, senderId);
     const message = await this.assertMessageAccess(
       messageId,
       chapterId,
       senderId,
-      'post',
+      seen.thread_root_id ? 'thread' : 'post',
     );
 
     if (message.sender_id !== senderId) {

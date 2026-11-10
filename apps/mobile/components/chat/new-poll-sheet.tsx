@@ -42,12 +42,13 @@ import {
   closesAtFor,
   emptyPollDraft,
   movePollOption,
-  POLL_CLOSE_CHOICES,
+  pollCloseChoicesFor,
+  pollCloseSummary,
   removePollOption,
   setPollOption,
   type PollCloseChoice,
   type PollDraft,
-} from "@/lib/chat/new-poll";
+} from "@repo/chat-core/poll-draft";
 
 /**
  * s05's New poll sheet (#3701): an officer on their phone in the group chat
@@ -58,8 +59,8 @@ import {
  *
  * The form: a question, two to ten options (add, remove, and move up or
  * down), and **More options** for when voting stops, a day by default as on
- * web. A chat-card poll is single-choice and has no early close yet, on any
- * client; both are their own work.
+ * web, or not at all (**Doesn't close**, #3896). A chat-card poll is single-choice (multi-choice is #3793); its creator
+ * closes it early from the card itself (`poll-card.tsx`, #3794).
  *
  * Posting goes through the outbox like any message, so it is optimistic and
  * survives a lost connection, and a server refusal (Polls switched off since
@@ -78,6 +79,12 @@ export interface NewPollSheetProps {
     content: string;
     payload: PollPayload;
   }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /**
+   * Whether this member could end the poll from its card (they hold
+   * `polls:create`): only then is **Doesn't close** offered, so nobody posts
+   * a poll they can't close. `false` while that isn't known.
+   */
+  canCloseEarly: boolean;
   /** Injected so the close time is deterministic under test. */
   now?: () => Date;
 }
@@ -86,7 +93,7 @@ export interface NewPollSheetProps {
 type Focus = "question" | string | null;
 
 export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
-  function NewPollSheet({ onPost, now }, ref) {
+  function NewPollSheet({ onPost, canCloseEarly, now }, ref) {
     const { tokens } = useFrappTheme();
     const brand = useChapterBranding();
     const styles = createStyles(tokens, brand);
@@ -106,9 +113,6 @@ export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
 
     const check = useMemo(() => checkPollDraft(draft), [draft]);
     const canPost = check.ok && !posting;
-    const closesLabel =
-      POLL_CLOSE_CHOICES.find((each) => each.id === draft.closes)?.label ??
-      "1 day";
 
     const edit = useCallback((next: (current: PollDraft) => PollDraft) => {
       setDraft(next);
@@ -229,7 +233,7 @@ export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
             <OptionRow
               // The row's own key, not its position: a moved row takes its
               // field with it, so a member typing in it keeps typing in it
-              // (`PollOptionRow` in `lib/chat/new-poll.ts`).
+              // (`PollOptionRow` in `@repo/chat-core/poll-draft`).
               key={option.key}
               index={index}
               count={draft.options.length}
@@ -273,7 +277,7 @@ export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
 
           <MoreOptionsRow
             open={showMore}
-            summary={`Closes in ${closesLabel}`}
+            summary={pollCloseSummary(draft.closes)}
             onToggle={() => {
               Keyboard.dismiss();
               setShowMore((open) => !open);
@@ -284,7 +288,7 @@ export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
             <View style={styles.more}>
               <Text style={styles.groupLabel}>Voting closes in</Text>
               <FilterChips
-                chips={POLL_CLOSE_CHOICES.map((choice) => ({
+                chips={pollCloseChoicesFor(canCloseEarly).map((choice) => ({
                   value: choice.id,
                   label: choice.label,
                 }))}

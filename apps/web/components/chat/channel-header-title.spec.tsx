@@ -19,6 +19,21 @@ describe("ChannelHeaderTitle", () => {
     ).toBeInTheDocument();
   });
 
+  it("draws the title in the open row's type, never larger (#3824)", () => {
+    render(
+      <ChannelHeaderTitle
+        channel={{ name: "general", type: "PUBLIC" }}
+        name="general"
+        description={null}
+      />,
+    );
+    const heading = screen.getByRole("heading", { level: 2, name: "general" });
+    expect(heading).toHaveClass("text-label");
+    expect(heading.className).not.toMatch(
+      /\bfont-(bold|extrabold|black)\b|\btext-(base|lg|xl|[2-9]xl|title|heading|display)\b/,
+    );
+  });
+
   it("draws no dot without a description", () => {
     const { container } = render(
       <ChannelHeaderTitle

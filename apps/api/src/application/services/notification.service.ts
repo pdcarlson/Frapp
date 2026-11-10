@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -25,6 +26,7 @@ import type {
   UserSettingsValues,
 } from '#domain/entities/notification.entity';
 import { clampListLimit } from '#domain/constants/list-query-limits';
+import { parseIsoInstant } from '#domain/constants/iso-instant';
 import { ID_CHUNK_SIZE, chunkIds } from '#domain/utils/chunk-ids';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
@@ -45,16 +47,72 @@ const USER_SETTINGS_DEFAULTS: UserSettingsValues = {
   quiet_hours_end: null,
   quiet_hours_tz: null,
   theme: 'system',
+  status: 'online',
+  status_expires_at: null,
+  custom_status: null,
+  custom_status_expires_at: null,
 };
 
-/** The {@link UserSettingsValues} a stored row holds. */
-function toUserSettingsValues(row: UserSettings): UserSettingsValues {
+/** True when `expiresAt` is set and is not later than `now`. */
+function hasExpired(expiresAt: string | null | undefined, now: Date): boolean {
+  return expiresAt != null && new Date(expiresAt).getTime() <= now.getTime();
+}
+
+/**
+ * The {@link UserSettingsValues} a stored row holds, as of `now`. A status whose
+ * end time has passed reads as `online`, and an expired custom line as none
+ * (#3845): the row keeps the stale values until the member next sets that status or
+ * line, so
+ * every read resolves them.
+ */
+function toUserSettingsValues(
+  row: UserSettings,
+  now: Date = new Date(),
+): UserSettingsValues {
+  const statusExpired = hasExpired(row.status_expires_at, now);
+  const customExpired = hasExpired(row.custom_status_expires_at, now);
   return {
     quiet_hours_start: row.quiet_hours_start,
     quiet_hours_end: row.quiet_hours_end,
     quiet_hours_tz: row.quiet_hours_tz,
     theme: row.theme,
+    status: statusExpired ? 'online' : (row.status ?? 'online'),
+    status_expires_at: statusExpired ? null : (row.status_expires_at ?? null),
+    custom_status: customExpired ? null : (row.custom_status ?? null),
+    custom_status_expires_at: customExpired
+      ? null
+      : (row.custom_status_expires_at ?? null),
   };
+}
+
+/**
+ * Whether the member has Do Not Disturb on right now (#3845). DND is quiet
+ * hours switched on now: non-URGENT pushes arrive SILENT, URGENT still rings
+ * (`spec/behavior/notifications.md` § Do Not Disturb).
+ */
+function isDoNotDisturb(settings: UserSettings | null, now: Date): boolean {
+  return (
+    settings?.status === 'dnd' && !hasExpired(settings.status_expires_at, now)
+  );
+}
+
+/**
+ * Rejects an end time that is not a future instant. A past one would save a
+ * status that is already over, which the member would read as their pick being
+ * ignored.
+ */
+function assertFutureExpiry(
+  field: string,
+  value: string | null,
+  now: Date,
+): void {
+  if (value === null) return;
+  // `parseIsoInstant`, not `new Date`: it refuses an impossible day rather
+  // than rolling it forward to one Postgres would then reject as a 500.
+  const at = parseIsoInstant(value);
+  if (at === null || at <= now.getTime()) {
+    throw new BadRequestException(`${field} must be a time in the future`);
+  }
 }
 
 /** Cap on how much of an offending value reaches a log line. */
@@ -248,10 +306,7 @@ export class NotificationService {
 
     const settings = await this.settingsRepo.findByUser(userId);
     let effectivePriority = priority;
-    if (
-      effectivePriority !== 'URGENT' &&
-      this.isInQuietHours(settings, userId)
-    ) {
+    if (effectivePriority !== 'URGENT' && this.isQuieted(settings, userId)) {
       effectivePriority = 'SILENT';
     }
 
@@ -387,7 +442,7 @@ export class NotificationService {
       let effectivePriority = priority;
       if (
         effectivePriority !== 'URGENT' &&
-        this.isInQuietHours(settingsByUser.get(userId) ?? null, userId)
+        this.isQuieted(settingsByUser.get(userId) ?? null, userId)
       ) {
         effectivePriority = 'SILENT';
       }
@@ -580,6 +635,17 @@ export class NotificationService {
     return { rows, failedIds };
   }
 
+  /**
+   * Whether a non-URGENT push to this member goes out SILENT: Do Not Disturb is
+   * on, or they are inside their quiet-hours window.
+   */
+  private isQuieted(settings: UserSettings | null, userId: string): boolean {
+    return (
+      isDoNotDisturb(settings, new Date()) ||
+      this.isInQuietHours(settings, userId)
+    );
+  }
+
   private isInQuietHours(
     settings: UserSettings | null,
     userId: string,
@@ -748,13 +814,40 @@ export class NotificationService {
     chapterId: string,
     channelId: string,
     readThrough: string,
+    threadRootId?: string,
   ): Promise<void> {
     await this.notificationRepo.markChatChannelRead(
       userId,
       chapterId,
       channelId,
       readThrough,
+      threadRootId,
     );
+  }
+
+  /**
+   * Mark the member's unread notifications in this chapter read in one write
+   * (#3929): all of them for "Mark all read", or only the rows that point at
+   * `screens` once the member has opened one of those screens. Rows created
+   * after this call began stay unread. Answers with the stamp it wrote, so a
+   * client can put the same instant in its cache.
+   */
+  async markNotificationsRead(
+    userId: string,
+    chapterId: string,
+    options?: { screens?: readonly string[] },
+  ): Promise<{ read_at: string; updated: number }> {
+    const readAt = new Date().toISOString();
+    const screens = options?.screens?.length
+      ? [...new Set(options.screens)]
+      : undefined;
+    const updated = await this.notificationRepo.markAllRead(
+      userId,
+      chapterId,
+      readAt,
+      screens,
+    );
+    return { read_at: readAt, updated };
   }
 
   async registerPushToken(
@@ -844,27 +937,74 @@ export class NotificationService {
     data: Partial<
       Pick<
         UserSettings,
-        'quiet_hours_start' | 'quiet_hours_end' | 'quiet_hours_tz' | 'theme'
+        | 'quiet_hours_start'
+        | 'quiet_hours_end'
+        | 'quiet_hours_tz'
+        | 'theme'
+        | 'status'
+        | 'status_expires_at'
+        | 'custom_status'
+        | 'custom_status_expires_at'
       >
     >,
   ): Promise<UserSettingsValues> {
-    const existing = await this.settingsRepo.findByUser(userId);
-    // `undefined` means "not supplied" and `null` means "clear this". Test the
-    // VALUE, not key presence: `field in data` is always true here, because
-    // class-transformer materializes every declared DTO property as an own key
-    // (undefined when absent). Keying on presence made a theme-only PATCH read
-    // as an explicit clear and wipe the member's whole quiet-hours window.
-    const resolve = <K extends keyof typeof data>(field: K) =>
-      data[field] !== undefined
-        ? (data[field] ?? null)
-        : (existing?.[field] ?? null);
-    const saved = await this.settingsRepo.upsert({
-      user_id: userId,
-      quiet_hours_start: resolve('quiet_hours_start'),
-      quiet_hours_end: resolve('quiet_hours_end'),
-      quiet_hours_tz: resolve('quiet_hours_tz'),
-      theme: data.theme ?? existing?.theme ?? USER_SETTINGS_DEFAULTS.theme,
-    });
-    return toUserSettingsValues(saved);
+    const now = new Date();
+
+    // Only what the PATCH names is written (#3845, #3924): `undefined` means
+    // "not supplied" and leaves the stored value alone, `null` means "clear
+    // this". The repository's upsert then touches no other column, so a save
+    // from one device cannot write back a value another device changed after
+    // this request began. Test the VALUE, not key presence: class-transformer
+    // can materialize a declared DTO property as an own key set to undefined,
+    // and keying on presence once made a theme-only PATCH wipe the member's
+    // whole quiet-hours window.
+    const write: Partial<UserSettingsValues> = {};
+    for (const field of [
+      'quiet_hours_start',
+      'quiet_hours_end',
+      'quiet_hours_tz',
+    ] as const) {
+      if (data[field] !== undefined) write[field] = data[field] ?? null;
+    }
+    // `!= null`: the DTO's `@IsOptional` lets `theme: null` through, and the
+    // column is NOT NULL, so null means "not supplied" here, never a clear.
+    if (data.theme != null) write.theme = data.theme;
+
+    // A status and its end time are one choice: picking a status replaces the
+    // old end time, so switching from "DND for 1 hour" to Invisible does not
+    // end Invisible an hour later. An end time alone has no status to attach
+    // to, so it is refused rather than guessed at; a null one alone asks for
+    // nothing and is ignored, so it cannot fail the save's other edits. The
+    // same holds for the custom line and its end time.
+    if (data.status !== undefined && data.status !== null) {
+      write.status = data.status;
+      write.status_expires_at =
+        data.status === 'online' ? null : (data.status_expires_at ?? null);
+      assertFutureExpiry('status_expires_at', write.status_expires_at, now);
+    } else if (data.status_expires_at != null) {
+      throw new BadRequestException(
+        'status_expires_at is accepted only together with status',
+      );
+    }
+
+    if (data.custom_status !== undefined) {
+      write.custom_status = data.custom_status ?? null;
+      write.custom_status_expires_at =
+        write.custom_status === null
+          ? null
+          : (data.custom_status_expires_at ?? null);
+      assertFutureExpiry(
+        'custom_status_expires_at',
+        write.custom_status_expires_at,
+        now,
+      );
+    } else if (data.custom_status_expires_at != null) {
+      throw new BadRequestException(
+        'custom_status_expires_at is accepted only together with custom_status',
+      );
+    }
+
+    const saved = await this.settingsRepo.upsert({ user_id: userId, ...write });
+    return toUserSettingsValues(saved, now);
   }
 }

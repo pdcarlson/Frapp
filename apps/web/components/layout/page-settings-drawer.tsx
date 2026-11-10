@@ -32,9 +32,9 @@ import { CHIP } from "@/components/chat/chip";
  * says it "takes the right slot like Ask and Notifications". Notifications is
  * `dashboard-notification-drawer.tsx`, a right-side `Sheet` — so this is the
  * same primitive at the board's width rather than a second mechanism. Taking
- * the board's literal in-layout rail would mean handing every settings-bearing
- * route the full-bleed contract (`full-bleed-routes.ts`) and rebuilding its
- * padding and scroll, which is a shell change, not a page one.
+ * the board's literal in-layout rail would mean a third column in the shell's
+ * row beside chat and the tool page (`dashboard-shell.tsx`), which is a shell
+ * change, not a page one.
  *
  * **Autosave, no Save button** (`4c` pin 4). The footer line says so, and it is
  * not decoration: there is no submit here for a section to hang a button on.
@@ -177,7 +177,7 @@ export function PageSettingsRoleChip({
         CHIP.base,
         tone === "role"
           ? CHIP.accent
-          : "border-transparent bg-muted text-foreground",
+          : "border-transparent bg-card-hover text-foreground",
       )}
     >
       {children}

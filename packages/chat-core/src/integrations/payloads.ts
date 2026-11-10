@@ -17,10 +17,20 @@ export interface PollPayload {
   question: string;
   options: PollOption[];
   /**
-   * Wall-clock when the poll closes. ISO-8601 string. Voting is gated
-   * client-side; the server has no auto-close — Chunk 10 may add it.
+   * Wall-clock when the poll closes, an ISO-8601 string: the cards stop
+   * offering a vote once it passes, and the API refuses one (#871). `null` is
+   * a poll with no deadline (#3896), open until its creator closes it
+   * (`closed_at`).
    */
-  closes_at: string;
+  closes_at: string | null;
+  /**
+   * When the creator closed the poll early (#3794), or absent while it is
+   * open. Written only by the API (`POST /v1/polls/{messageId}/close`); a
+   * client never sends it, and the API drops it from a card a client posts.
+   */
+  closed_at?: string | null;
+  /** `users.id` of the creator who closed it early; set with `closed_at`. */
+  closed_by?: string | null;
 }
 
 export interface AnnouncementPayload {

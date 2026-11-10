@@ -8,7 +8,6 @@ import {
   parseInstant,
   startOfMonth,
 } from "@repo/formatting";
-import { seriesCadence, seriesHeads } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChevronGlyph } from "@/components/chat/viewer-glyphs";
 import { IconButton } from "@/components/icon-button";
@@ -16,7 +15,7 @@ import { InlineNote } from "@/components/inline-note";
 import { SectionHeader } from "@/components/list-section";
 import { EventRowFlat } from "@/components/events/event-rows";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import type { EventRow } from "@/lib/events/select";
+import { selectSeriesCadence, type EventRow } from "@/lib/events/select";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -84,10 +83,6 @@ export function EventsCalendar({
     }
     return map;
   }, [events]);
-
-  // A series' cadence is its head's rule on the day most occurrences share
-  // (`seriesHeads`), the same for every occurrence.
-  const heads = useMemo(() => seriesHeads(events), [events]);
 
   const month = startOfMonth(monthAnchor);
   const days = monthGrid(month);
@@ -228,7 +223,7 @@ export function EventsCalendar({
             <EventRowFlat
               key={event.id}
               event={event}
-              cadence={seriesCadence(heads, event)}
+              cadence={selectSeriesCadence(events, event)}
               now={now}
               isFirst={index === 0}
               onPress={() => onOpen(event.id)}

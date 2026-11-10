@@ -7,7 +7,7 @@
 > § Precedence, rule 1). Drift between them and the page,
 > [`apps/landing/app/page.tsx`](../../../../apps/landing/app/page.tsx) and the sections and frames it
 > composes from [`apps/landing/components/home/`](../../../../apps/landing/components/home/), is a filable bug now rather
-> than an expected gap, with seven standing exceptions, none of them drift:
+> than an expected gap, with eight standing exceptions, none of them drift:
 >
 > - the two decisions below that supersede what the boards draw (D8 and D9);
 > - the signature moment, which is **cut** from the shipped page until brand sign-off clears
@@ -32,6 +32,36 @@
 >   ([#3817](https://github.com/pdcarlson/Frapp/issues/3817)), so the shipped nav and footer carry
 >   both links as well. The as-built header and footer, and where their anchors resolve, are
 >   [`../README.md`](../README.md) § Section inventory and § Route facts.
+> - the 2026-11-09 refresh ([#3869](https://github.com/pdcarlson/Frapp/issues/3869)), where the
+>   boards draw something the product no longer does or a wording the owner replaced:
+>   - **the hero's words.** The boards draw the eyebrow "Chapter operations, chat first", the H1
+>     "Run your chapter where it already talks." and a chat-first lead; the page opens with the
+>     mission statement instead (`apps/landing/lib/mission.ts`, which `/about` states too).
+>     `HeroB`'s layout, its frame and both controls still bind.
+>   - **dues.** Dues is off for every chapter in the beta (`BETA_OFF_MODULES` in
+>     `packages/validation/src/beta-off-modules.ts`), so the page sells none of it: no Treasurer
+>     column (a Vice president column on points and attendance stands in), no dues line in the Pro
+>     list, the JSON-LD or the hero's tier line, and no dues message in the frame's thread. The
+>     Spec sheet's "the universal three" and "Dues invoicing … stays in the Treasurer line" are
+>     superseded for as long as that switch holds; when dues returns, so can they.
+>   - **checkout.** The boards say the trial starts and upgrades happen "inside the app" or "from
+>     Settings"; checkout is the web app's Billing page only (`spec/behavior/onboarding.md`), so
+>     the page says so.
+>   - **check-in.** The window opens on its own before the start and closes 15 minutes after the
+>     end (`spec/behavior/events.md`), so the frames close it at 7:45 and post their thread inside
+>     that window, and the events lead no longer has an officer open it. The event frame draws no
+>     Host block, because an event has no host list (#3762).
+>   - **unread.** A plain unread channel is a bold name with no count
+>     ([`foundations.md`](../../design-system/foundations.md), 2026-11-07), so the rail draws no
+>     neutral badge.
+>   - **the Pro card's button.** The boards draw one button, on Free (D3), and the Spec sheet's
+>     §5 gives the Pro card no control and drops `start-free-trial` from the CTA allowlist. Since
+>     2026-11-10 the Chapter Pro card carries an outlined "Start 14-day trial" that reports
+>     `start-free-trial` on the `pricing` surface; D3's changed row and § Route facts in
+>     [`../README.md`](../README.md) record it, and `apps/landing/app/page.spec.ts`'s routes test
+>     carries the row.
+>   - **the nav's lit state.** Product and Pricing light while their section is on screen; no
+>     board draws it. The as-built header is [`../README.md`](../README.md) § Section inventory.
 
 ## What this is
 

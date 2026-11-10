@@ -1,3 +1,4 @@
+import { MISSION } from "../../lib/mission";
 import { TrackedCta } from "../tracked-cta";
 import { ChatFrame } from "./chat-frame";
 import {
@@ -24,14 +25,19 @@ export function HeroSection({
       className={`${SHELL} grid gap-10 overflow-hidden pt-10 sm:pt-18 lg:grid-cols-12 lg:gap-x-6`}
     >
       <div className="flex flex-col gap-6 lg:col-span-6 lg:pb-10">
-        <p className={EYEBROW}>Chapter operations, chat first</p>
+        {/*
+          Mission first (#3869): the mission statement, then Get started,
+          then the product. The lead is `MISSION`, the sentence `/about`
+          states too. Hero B's layout and frame (D9) stand beside it; the
+          words that differ from the board are listed in
+          `spec/ui/landing/reference/README.md`.
+        */}
+        <p className={EYEBROW}>Our mission</p>
         <h1 id="hero" className="text-hero text-balance text-foreground">
-          Run your chapter where it already talks.
+          One place to talk and run your chapter.
         </h1>
         <p className="max-w-[616px] text-lead text-muted-foreground">
-          Frapp is chat first. Events, check-in and points land in the
-          conversation your members already read. Officers stop chasing.
-          Members stop asking where things are.
+          {MISSION}
         </p>
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
           <TrackedCta
@@ -53,7 +59,7 @@ export function HeroSection({
         </div>
         <p className="max-w-[616px] text-body text-muted-foreground">
           Free for chat, members and announcements. No card. Officers add
-          Chapter Pro when the chapter needs events, dues and points.
+          Chapter Pro when the chapter needs events, check-in and points.
         </p>
       </div>
 

@@ -5,6 +5,8 @@ import {
   MEMBER_SEARCH_THRESHOLD,
   filterChannelMembers,
   groupChannelMembersByRole,
+  memberAvatarHue,
+  memberAvatarTint,
   memberLabel,
   useChannelMembers,
   useMemberDisplayNames,
@@ -14,9 +16,15 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { EYEBROW } from "@/components/ui/typography";
 import { Skeleton } from "@/components/shared/async-states";
-import { AvatarPresenceDot } from "@/components/members/presence-dot";
+import {
+  AvatarPresenceDot,
+  CustomStatusLine,
+} from "@/components/members/presence-dot";
 import { useChapterPresenceContext } from "@/lib/providers/chapter-presence-provider";
-import type { PresenceStatus } from "@/lib/realtime/presence-status";
+import {
+  presenceLabel,
+  type PresenceStatus,
+} from "@/lib/realtime/presence-status";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { cn, initials } from "@/lib/utils";
 
@@ -32,15 +40,11 @@ export interface ChannelMemberRow {
   roleName: string | null;
   /** `null` until presence has resolved: no dot, and no claim of Offline. */
   status: PresenceStatus | null;
+  /** The member's custom status line (#3845), or `null`. */
+  line: string | null;
 }
 
 export type ChannelMemberGroup = ChannelMemberRoleGroup<ChannelMemberRow>;
-
-const STATUS_LABELS: Record<PresenceStatus, string> = {
-  online: "Online",
-  idle: "Idle",
-  offline: "Offline",
-};
 
 /**
  * Who can read the open channel, Discord-style (#3536): grouped under each
@@ -100,6 +104,7 @@ export function ChannelMemberList({
         roleId: member.role_id ?? null,
         roleName: member.role_name ?? null,
         status: presence.isReady ? presence.statusOf(member.user_id) : null,
+        line: presence.isReady ? presence.lineOf(member.user_id) : null,
       })),
     [membersQuery.data, byId, avatarFor, roleColorFor, presence],
   );
@@ -232,7 +237,7 @@ function MemberRow({
   row: ChannelMemberRow;
   onOpen?: () => void;
 }) {
-  const offline = row.status === "offline";
+  const offline = row.status === "offline" || row.status === "invisible";
   const content = (
     <>
       <span className="relative shrink-0">
@@ -241,28 +246,37 @@ function MemberRow({
           aria-hidden="true"
         >
           {row.avatarUrl ? <AvatarImage src={row.avatarUrl} alt="" /> : null}
-          <AvatarFallback className="text-[10px]">
+          <AvatarFallback
+            className="text-[10px]"
+            tint={memberAvatarTint(memberAvatarHue(row.userId, row.roleColor))}
+          >
             {initials(row.name)}
           </AvatarFallback>
         </Avatar>
         <AvatarPresenceDot status={row.status} />
       </span>
-      <span
-        className={cn(
-          "min-w-0 truncate text-label",
-          !row.roleColor &&
-            (offline ? "text-muted-foreground" : "text-foreground"),
-        )}
-        style={row.roleColor ? { color: row.roleColor } : undefined}
-      >
-        {row.name}
+      <span className="flex min-w-0 flex-col">
+        <span
+          className={cn(
+            "min-w-0 truncate text-label",
+            !row.roleColor &&
+              (offline ? "text-muted-foreground" : "text-foreground"),
+          )}
+          style={row.roleColor ? { color: row.roleColor } : undefined}
+        >
+          {row.name}
+        </span>
+        <CustomStatusLine line={row.line} />
       </span>
       {row.status ? (
-        <span className="sr-only">, {STATUS_LABELS[row.status]}</span>
+        <span className="sr-only">, {presenceLabel(row.status)}</span>
       ) : null}
     </>
   );
-  const rowClass = "flex h-8 w-full items-center gap-2 rounded-md px-2";
+  const rowClass = cn(
+    "flex w-full items-center gap-2 rounded-md px-2",
+    row.line ? "h-10" : "h-8",
+  );
   return (
     <li data-presence={row.status ?? undefined}>
       {onOpen ? (

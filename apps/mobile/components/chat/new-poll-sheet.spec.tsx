@@ -5,7 +5,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { drawnText, screenText } from "@/test/screen-text";
-import { DUPLICATE_OPTION_PROBLEM } from "@/lib/chat/new-poll";
+import { DUPLICATE_OPTION_PROBLEM } from "@repo/chat-core/poll-draft";
 
 /**
  * s05's New poll sheet (#3701), rendered: what it posts, when Post is held,
@@ -25,12 +25,19 @@ import { NewPollSheet, type NewPollSheetProps } from "./new-poll-sheet";
 
 const NOW = new Date("2026-11-09T12:00:00.000Z");
 
-function render(onPost: NewPollSheetProps["onPost"]): ReactTestRenderer {
+function render(
+  onPost: NewPollSheetProps["onPost"],
+  canCloseEarly = true,
+): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
       <FrappThemeProvider>
-        <NewPollSheet onPost={onPost} now={() => NOW} />
+        <NewPollSheet
+          onPost={onPost}
+          canCloseEarly={canCloseEarly}
+          now={() => NOW}
+        />
       </FrappThemeProvider>,
     );
   });
@@ -123,6 +130,43 @@ describe("New poll sheet (#3701)", () => {
     act(() => tree.unmount());
   });
 
+  it("withholds Doesn't close from a member who couldn't close the poll", () => {
+    const tree = render(queued(), false);
+    act(() => control(tree, "More options: Closes in 1 day")!.props.onPress());
+    const chips = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Voting closes in" &&
+        typeof node.props.onSelect === "function",
+    );
+    expect(
+      chips.props.chips.map((chip: { value: string }) => chip.value),
+    ).toEqual(["1h", "1d", "3d", "1w"]);
+    act(() => tree.unmount());
+  });
+
+  it("posts a poll with no deadline for Doesn't close (#3896)", async () => {
+    const onPost = queued();
+    const tree = render(onPost);
+    fill(tree);
+    act(() => control(tree, "More options: Closes in 1 day")!.props.onPress());
+    const chips = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Voting closes in" &&
+        typeof node.props.onSelect === "function",
+    );
+    expect(chips.props.chips.at(-1)).toEqual({
+      value: "never",
+      label: "Doesn't close",
+    });
+    act(() => chips.props.onSelect("never"));
+    // Collapsed again, the row says the choice in its own words.
+    act(() => control(tree, "Fewer options")!.props.onPress());
+    expect(control(tree, "More options: Doesn't close")).toBeTruthy();
+    await act(async () => postButton(tree).props.onPress());
+    expect(onPost.mock.calls[0]![0].payload.closes_at).toBeNull();
+    act(() => tree.unmount());
+  });
+
   it("adds, moves and removes option rows", async () => {
     const onPost = queued();
     const tree = render(onPost);
@@ -210,7 +254,12 @@ describe("New poll sheet across visits (#3701)", () => {
     act(() => {
       tree = create(
         <FrappThemeProvider>
-          <NewPollSheet ref={ref} onPost={onPost} now={() => NOW} />
+          <NewPollSheet
+            ref={ref}
+            onPost={onPost}
+            canCloseEarly
+            now={() => NOW}
+          />
         </FrappThemeProvider>,
         {
           createNodeMock: (element) =>

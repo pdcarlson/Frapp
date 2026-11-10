@@ -7,10 +7,10 @@ import {
   channelsRoleRefusalBody,
   isRoleRefusal,
 } from "@repo/chat-core/channels-refused-copy";
-import { createPortal } from "react-dom";
 import { MembersGlyph } from "./chat-glyphs";
 import { ChannelMemberList } from "./channel-member-list";
 import { channelDescription } from "@repo/hooks/channel-start";
+import { memberLabel } from "@repo/hooks/display-names";
 import { useReportOpenChatTransport } from "@repo/hooks/open-chat-transport";
 import { ChannelHeaderTitle } from "./channel-header-title";
 import { ChannelStart } from "./channel-start";
@@ -31,6 +31,10 @@ import {
   useChannelUnreadCounts,
   useChannels,
   useSetChannelNotificationLevel,
+  useChatBackground,
+  useChapterChatBackground,
+  useSetChannelBackground,
+  errorCopy,
   useMarkChannelRead,
   useCategories,
   useChapterRoster,
@@ -52,11 +56,16 @@ import {
   useSetSidebarSectionCollapsed,
   useSidebarPreferences,
   landingChannelId,
+  canSetChannelDisplayLock,
+  useSetChannelDisplayLock,
 } from "@repo/hooks";
+import {
+  setChannelLocked,
+  syncLockedChannels,
+} from "@repo/chat-core/density";
 import {
   can,
   canAll,
-  EVENT_CREATE_PERMISSIONS,
   isAnnouncementChannel,
   type MentionCandidate,
   type MentionChipTargets,
@@ -92,6 +101,7 @@ import { vocab } from "@repo/org-archetypes";
 import * as Sentry from "@sentry/nextjs";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useDeleteChannelFlow } from "./use-delete-channel-flow";
+import { ThreadPanel } from "./thread-panel";
 import {
   classifyMessage,
   hiddenQuoteText,
@@ -108,6 +118,7 @@ import {
   type ChatChannel,
 } from "./channel-list";
 import { ChannelListSkeleton } from "./channel-list-skeleton";
+import { ChatBackground, useChapterLetters } from "./chat-background";
 import {
   MessageTimeline,
   MessageTimelineSkeleton,
@@ -122,6 +133,8 @@ import {
 import {
   canBlockSender,
   channelAllowsReplies,
+  channelAllowsThreadReplies,
+  channelAllowsThreads,
   DELETE_MESSAGE_CONFIRM_BODY,
   DELETE_MESSAGE_CONFIRM_LABEL,
   DELETE_MESSAGE_CONFIRM_TITLE,
@@ -133,6 +146,11 @@ import {
   type DepartedMembers,
 } from "@repo/chat-core/message-actions";
 import { blockActionLabel } from "@repo/chat-core/block-copy";
+import {
+  CLOSE_POLL_CONFIRM_BODY,
+  CLOSE_POLL_CONFIRM_LABEL,
+  CLOSE_POLL_CONFIRM_TITLE,
+} from "@repo/chat-core/polls";
 import { replyPreviewText } from "./reply-quote";
 import { OpsSetupNudge } from "./ops-setup-nudge";
 import { SetupChecklistSection } from "./setup-checklist";
@@ -148,20 +166,44 @@ import {
   type ReportTarget,
 } from "./report-message-dialog";
 import { compactControlClassName } from "@/components/shared/table-controls";
-import {
-  NavBackButton,
-  useIsDesktopShell,
-  useNavFace,
-} from "@/components/layout/nav-face";
+import { useIsDesktopShell } from "@/components/layout/shell-layout";
 import {
   eventFormPrefill,
   parseEventArgs,
+  parsePollArgs,
+  parseTaskArgs,
+  taskFormPrefill,
   type EventFormPrefill,
   type SlashCommand,
 } from "@repo/chat-core/integrations";
+import type { DispatchResult } from "@repo/chat-core/dispatch";
+import {
+  NewTaskDialog,
+  type NewTaskPrefill,
+} from "@/components/tasks/new-task-dialog";
+import { LogHoursDialog } from "@/components/service/log-hours-dialog";
+import { PointsAdjustmentDialog } from "@/components/points/points-adjustment-dialog";
+import { useSubscriptionGate } from "@/components/shared/subscription-gate";
 import { EventEditorDialog } from "@/components/events/event-editor-dialog";
+import { pollDraftFromArgs, type PollDraft } from "@repo/chat-core/poll-draft";
+import { NewPollDialog } from "./new-poll-dialog";
+import {
+  PLUS_MENU_COMMANDS,
+  PLUS_MENU_PERMISSIONS,
+  plusMenuForms,
+  type PlusMenuForm,
+} from "@repo/chat-core/plus-menu";
 import type { ChatNotificationLevel } from "@repo/hooks";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
+
+/** What a + menu form says when its write threw after the request went out. */
+const FORM_UNCONFIRMED_WARNING = {
+  task: "Couldn't confirm the task was created. Check the task board before you create it again.",
+  hours:
+    "Couldn't confirm the hours were logged. Check the Service page before you log them again.",
+  points:
+    "Couldn't confirm the points were adjusted. Check the points ledger before you adjust them again.",
+} as const;
 
 interface DirectoryMember {
   user_id: string;
@@ -222,6 +264,62 @@ const UNREACHABLE_COPY: Record<UnreachableReason, string> = {
 };
 
 /**
+ * Marks the history entry a channel pick pushes below `lg`, so Back returns
+ * from the thread to the channel list (#3824).
+ *
+ * The value is this document's own token, not `true`. History state outlives
+ * a reload, but the entry under a marked one then belongs to the document the
+ * reload discarded, and going back to it is a full page load, not a
+ * `popstate`. A marker from another document is not ours to go back through.
+ */
+const THREAD_PANE_HISTORY_KEY = "frappChatThreadPane";
+const THREAD_PANE_DOCUMENT_TOKEN = `${Date.now().toString(36)}-${Math.random()
+  .toString(36)
+  .slice(2)}`;
+
+function isThreadPaneEntry(state: unknown): boolean {
+  return (
+    typeof state === "object" &&
+    state !== null &&
+    (state as Record<string, unknown>)[THREAD_PANE_HISTORY_KEY] ===
+      THREAD_PANE_DOCUMENT_TOKEN
+  );
+}
+
+/** Pushes this document's marked, same-URL entry for an opened thread. */
+function pushThreadPaneEntry(): void {
+  // The spread keeps Next's own `__NA` state, so its patched `pushState`
+  // passes the entry straight through.
+  window.history.pushState(
+    {
+      ...(window.history.state as object | null),
+      [THREAD_PANE_HISTORY_KEY]: THREAD_PANE_DOCUMENT_TOKEN,
+    },
+    "",
+  );
+}
+
+/**
+ * Overlays that own `Esc` while open. Radix closes them on the same keydown,
+ * before this listener runs but while they are still in the DOM.
+ */
+const ESCAPE_OWNERS =
+  '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-radix-popper-content-wrapper]';
+
+/**
+ * Whether an `Esc` is someone else's: typed in a field or the composer (which
+ * cancel a reply or an edit with it), or closing an open overlay. Chat only
+ * takes the key when nothing else would have (#3824).
+ */
+function escapeBelongsElsewhere(target: EventTarget | null): boolean {
+  if (target instanceof HTMLElement) {
+    if (target.isContentEditable) return true;
+    if (target.closest("input, textarea, select")) return true;
+  }
+  return document.querySelector(ESCAPE_OWNERS) !== null;
+}
+
+/**
  * A typed `/event` date and clock time as a `datetime-local` value, or
  * `undefined` unless both are there (the form's field takes neither alone).
  */
@@ -238,11 +336,12 @@ export function prefillLocalInput(
  * The chat surface: channels column, then thread and composer.
  *
  * **Two columns, flush, full height** (`1b`). It was three, the third being a
- * Details rail that hosted `ThreadPanel` over a static placeholder. Both are
- * deleted. Where threads went: the quote above a reply, which was the panel's
- * only remaining entry point, now scrolls this timeline to the message it
- * quotes (`MessageItem`'s `onJumpToParent`). The decision is recorded in
- * `spec/ui/web-dashboard/README.md` § Chat.
+ * Details rail that hosted the old `ThreadPanel` over a static placeholder.
+ * #2142 deleted both: the quote above a reply now scrolls this timeline to the
+ * message it quotes (`MessageItem`'s `onJumpToParent`). Message threads
+ * (#3785) are a different feature: their `ThreadPanel` (`./thread-panel`)
+ * opens over this column, in place of the timeline, never as a third column.
+ * Both are recorded in `spec/ui/web-dashboard/README.md` § Chat.
  *
  * **The panes are not cards, and that is load-bearing.** They used to be
  * `<Card>`s, so the whole surface painted `--card` — and `components.md` §11
@@ -264,6 +363,7 @@ export function ChatShell({
   initialChannelId = null,
   initialMessageId = null,
   defaultMembersHidden = false,
+  toolBeside = false,
 }: {
   initialChannelId?: string | null;
   initialMessageId?: string | null;
@@ -272,6 +372,13 @@ export function ChatShell({
    * server (`lib/chat/members-panel.ts`) so the column paints right first time.
    */
   defaultMembersHidden?: boolean;
+  /**
+   * Chat is open beside a tool page (`dashboard-shell.tsx`, #3779). The
+   * member column closes on its own then, and the people button opens the
+   * list as a Panel; the remembered preference is untouched, so the column
+   * comes back with chat alone.
+   */
+  toolBeside?: boolean;
 } = {}) {
   const activeChapterId = useChapterStore((state) => state.activeChapterId);
   /*
@@ -327,6 +434,7 @@ export function ChatShell({
     nameFor,
     avatarFor,
     roleColorFor,
+    avatarTintFor,
     isPending: rosterPending,
     isError: rosterError,
   } = useMemberDisplayNames();
@@ -376,6 +484,16 @@ export function ChatShell({
     [channelsQuery.data, levelByChannelId],
   );
 
+  // Always formal (#3787): every row asks its channel's density by id, so the
+  // locked ids are copied where those rows read them. Only from a loaded list:
+  // a list still loading must not clear the locks a cached one set.
+  useEffect(() => {
+    if (channelsQuery.data) {
+      syncLockedChannels(asArray<ChatChannel>(channelsQuery.data));
+    }
+  }, [channelsQuery.data]);
+  const setDisplayLock = useSetChannelDisplayLock();
+
   // The rail groups plain channels under these. Passed through in the order the
   // API returned them — `SupabaseChatCategoryRepository.findByChapter` orders by
   // `display_order` and then `created_at` server-side, so there is nothing to
@@ -399,6 +517,12 @@ export function ChatShell({
     () => asArray<ChannelCategory>(categoriesQuery.data),
     [categoriesQuery.data],
   );
+
+  // The pane-history refs (#3824), described with `openThreadPane` below.
+  // Declared here because the URL-target effect clears `onThreadEntry`.
+  const onThreadEntry = useRef(false);
+  const backPending = useRef(false);
+  const openAfterBack = useRef(false);
 
   // Seeded from the `?channel=` query param a caller (e.g. the member
   // directory's Message action, a chat notification, a command-palette
@@ -498,7 +622,7 @@ export function ChatShell({
    * The shell's responsive contract is two states switching once at `lg`
    * (`spec/ui/web-dashboard/README.md` § Responsive contract), and chat has to
    * hold it: below `lg` the app
-   * nav is a drawer and `<main>` is the whole viewport, so a 240px channels
+   * nav is a drawer and the chat panel is the whole viewport, so a 240px channels
    * column beside the thread leaves the thread about 135px wide at the
    * documented 375px floor. That is not a narrow layout, it is an unusable one,
    * and it clears the floor's horizontal-scroll check while failing what the
@@ -519,7 +643,9 @@ export function ChatShell({
   */
   const [membersHidden, setMembersHidden] = useState(defaultMembersHidden);
   const [membersSheetOpen, setMembersSheetOpen] = useState(false);
-  const isWideChat = useMediaQuery(WIDE_CHAT_QUERY);
+  const wideWindow = useMediaQuery(WIDE_CHAT_QUERY);
+  // Room for the column: a wide window, and no tool page beside chat.
+  const isWideChat = wideWindow && !toolBeside;
   const toggleMembers = () => {
     if (!isWideChat) {
       setMembersSheetOpen(true);
@@ -529,13 +655,8 @@ export function ChatShell({
     setMembersHidden(next);
     persistMembersHidden(next);
   };
-  // Inside the dashboard shell, from `lg` up, the channels pane is the shell's
-  // left column (`components/layout/nav-face.tsx`); everywhere else it is
-  // inline beside the thread.
-  const navFace = useNavFace();
+  // From `lg` up the channels and the thread are both on screen.
   const isDesktopShell = useIsDesktopShell();
-  const channelsInNav = Boolean(navFace?.channelsSlot && isDesktopShell);
-  const showChannelsInNav = navFace?.showChannels;
 
   useEffect(() => {
     if (
@@ -548,6 +669,10 @@ export function ChatShell({
       channelId: initialChannelId,
       messageId: initialMessageId,
     };
+    // A new URL target (a Find result, a notification) is a new history entry
+    // Next pushed, not the one this mount marked (#3824), so the arrow must
+    // not go back through it and the next pick pushes its own.
+    onThreadEntry.current = false;
     setSelectedChannelId(initialChannelId);
     setChannelTargetDismissed(false);
     setPendingMessageId(initialMessageId);
@@ -563,11 +688,83 @@ export function ChatShell({
     // reading is not what "no target" should mean.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronizing to the URL, the external system this whole effect exists to follow; the six setState calls above it are the same act
     if (initialChannelId) setNarrowPane("thread");
-    // The same from `lg` up: a link that lands while the left column shows
-    // the module nav brings the channel list back, so the channel it opened
-    // is on screen in the list too.
-    if (initialChannelId) showChannelsInNav?.();
-  }, [initialChannelId, initialMessageId, showChannelsInNav]);
+  }, [initialChannelId, initialMessageId]);
+
+  /*
+    Getting back from a channel without hunting for the arrow (#3824): the
+    browser's Back and `Esc` return to the channel list.
+
+    Below `lg` the thread and the list are one screen each, so opening a
+    channel from the list is a step the member expects Back to undo. Picking a
+    row pushes a same-URL history entry marked `THREAD_PANE_HISTORY_KEY`, and a
+    `popstate` that lands off a marked entry shows the list. The arrow and
+    `Esc` show the list at once and go back through that entry when we are on
+    it, so the list is never one Back press away while also being on screen. A
+    thread that opened without a pick (the landing channel, a deep link) has
+    no entry of its own, and going back from it just shows the list, as the
+    arrow always did.
+
+    "On it" is the marker or `onThreadEntry`. The ref covers a later soft
+    navigation to the same URL (the nav's Chat link, a notification for
+    `/chat`): Next then rewrites the entry's state without our marker
+    (`preserveCustomHistoryState: false`), and only this mount still knows the
+    entry is the one it pushed. A new URL target (a Find result, a
+    notification) is an entry Next pushed, so it clears the ref.
+    `backPending` keeps a quick second press from going back a second entry,
+    out of `/chat`, before the first `popstate` lands, and a pick made in that
+    window pushes its entry once the `popstate` has.
+
+    The spread keeps Next's own `__NA` state on the entry, which its patched
+    `pushState` then passes straight through, and its `popstate` handler
+    restores the same route for the same URL.
+
+    From `lg` up the list is on screen beside the thread, so a pick pushes
+    nothing and `Esc` does nothing. An entry pushed below `lg` that outlives a widening past it
+    costs one Back press that changes nothing on screen.
+  */
+  const openThreadPane = useCallback(() => {
+    setNarrowPane("thread");
+    if (isDesktopShell) return;
+    // A pick while our own Back is still traversing: `history.state` is the
+    // entry being left, so push only once the `popstate` lands.
+    if (backPending.current) {
+      openAfterBack.current = true;
+      return;
+    }
+    if (onThreadEntry.current) return;
+    if (isThreadPaneEntry(window.history.state)) {
+      onThreadEntry.current = true;
+      return;
+    }
+    pushThreadPaneEntry();
+    onThreadEntry.current = true;
+  }, [isDesktopShell]);
+  const backToChannels = useCallback(() => {
+    setNarrowPane("channels");
+    if (backPending.current) return;
+    if (onThreadEntry.current || isThreadPaneEntry(window.history.state)) {
+      backPending.current = true;
+      onThreadEntry.current = false;
+      window.history.back();
+    }
+  }, []);
+  useEffect(() => {
+    const onPopState = (event: PopStateEvent) => {
+      backPending.current = false;
+      if (openAfterBack.current) {
+        openAfterBack.current = false;
+        pushThreadPaneEntry();
+        onThreadEntry.current = true;
+        setNarrowPane("thread");
+        return;
+      }
+      const thread = isThreadPaneEntry(event.state);
+      onThreadEntry.current = thread;
+      setNarrowPane(thread ? "thread" : "channels");
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
   // `useChannels()` can serve a read up to its `staleTime` old. A channel
   // created moments ago (a fresh DM, a newly shared private channel) can
@@ -720,6 +917,25 @@ export function ChatShell({
   const channelNameFor = useCallback(
     (channelId: string) => channelTitles.get(channelId) ?? null,
     [channelTitles],
+  );
+  // Search's In and From pickers (#3958). `channels` is what
+  // `GET /v1/channels` served, so it is exactly what the member can read,
+  // hidden DMs included: they stay searchable, as they stay readable by id.
+  const searchChannels = useMemo(
+    () =>
+      [...channelTitles]
+        .map(([id, label]) => ({ id, label }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [channelTitles],
+  );
+  const searchMembers = useMemo(
+    () =>
+      Object.entries(memberNames)
+        // `memberLabel`, not the raw name: a member who never set one holds
+        // `''`, which would be a blank first row that Enter picks.
+        .map(([id, name]) => ({ id, label: memberLabel(name, id) }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [memberNames],
   );
 
   // The same predicate the push worker uses (#2771). An exact-name match could
@@ -940,36 +1156,166 @@ export function ChatShell({
   // admin — same gate `chat-admin-page.tsx` computes for its own page-level
   // `<Can>`, done inline here since this is a per-row boolean, not a whole
   // surface to hide.
-  const { data: permissionsPayload } = useMyPermissions();
+  const permissionsQuery = useMyPermissions();
+  const permissionsPayload = permissionsQuery.data;
   const canManageChannel = can(
     "channels:manage",
     permissionsPayload?.permissions,
   );
 
+  // Chat backgrounds (#3973): the open channel's, for the menu's picker.
+  const channelBackground = useChatBackground(activeChannel?.id ?? null);
+  const setChannelBackground = useSetChannelBackground();
+  const chapterBackground = useChapterChatBackground();
+  // One mutation serves whichever channel is open, so a failed save on one
+  // channel must not show its error (or its pending state) on the next.
+  const resetChannelBackground = setChannelBackground.reset;
+  useEffect(() => {
+    resetChannelBackground();
+  }, [activeChannel?.id, resetChannelBackground]);
+  const chapterLetters = useChapterLetters();
+
   // `/event` typed bare, with details the one-liner can't read, or picked
-  // from the palette opens the Events page's own form, filled in with what
-  // was typed, and the card posts in the channel it came from (#3773).
+  // from the palette or the composer's + menu, opens the Events page's own
+  // form, filled in with what was typed, and the card posts in the channel it
+  // came from (#3773, #3865).
   const [eventForm, setEventForm] = useState<{
     open: boolean;
     channelId: string;
     prefill: EventFormPrefill;
   } | null>(null);
+  // `/poll` the same way: the New poll dialog (#3773 step 2). Keyed per open,
+  // so each visit starts from what was typed and posts where it was opened.
+  const [pollForm, setPollForm] = useState<{
+    open: boolean;
+    key: number;
+    channelId: string;
+    draft: PollDraft;
+  } | null>(null);
+  // `/task`, `/hours` and `/points` the same way (#3865): the + menu's Task,
+  // Service hours and Points rows, `/task` with details the one-liner can't
+  // read, and `/hours` or `/points` picked bare. Keyed per open, like the poll.
+  const [taskForm, setTaskForm] = useState<{
+    open: boolean;
+    key: number;
+    channelId: string;
+    prefill: NewTaskPrefill;
+    assigneeId?: string;
+  } | null>(null);
+  const [hoursForm, setHoursForm] = useState<{
+    open: boolean;
+    key: number;
+    channelId: string;
+  } | null>(null);
+  const [pointsForm, setPointsForm] = useState<{
+    open: boolean;
+    channelId: string;
+  } | null>(null);
+  // The Service hours form's writes are paid-ops (#841); the dialog takes its
+  // host's gate, as on the Service page.
+  const hoursGate = useSubscriptionGate();
   const openCommandForm = useCallback(
     (command: SlashCommand, args: string): CommandFormOutcome => {
-      if (command.name !== "event" || !activeChannelId) return null;
-      if (parseEventArgs(args).ok) return null;
+      if (!activeChannelId) return null;
       // Unknown until the read lands, and the server enforces it either way,
-      // so only a loaded grant without it refuses before the form opens.
-      if (
-        permissionsPayload &&
-        !canAll(EVENT_CREATE_PERMISSIONS, permissionsPayload.permissions)
-      ) {
+      // so only a loaded grant without it refuses before a form opens.
+      const roleRefuses = (
+        permissions: readonly string[],
+        verb: string,
+        gerund: string,
+      ) => {
+        if (
+          !permissionsPayload ||
+          canAll([...permissions], permissionsPayload.permissions)
+        ) {
+          return false;
+        }
         toast({
-          title: "You can't create events",
-          description:
-            "Your role doesn't include creating events. An officer can add it in Settings.",
+          title: `You can't ${verb}`,
+          description: `Your role doesn't include ${gerund}. An officer can add it in Settings.`,
           variant: "destructive",
         });
+        return true;
+      };
+      if (command.name === "task") {
+        if (parseTaskArgs(args).ok) return null;
+        if (
+          roleRefuses(
+            PLUS_MENU_PERMISSIONS.task,
+            "create tasks",
+            "creating tasks",
+          )
+        ) {
+          return "refused";
+        }
+        const { assigneeToken, ...prefill } = taskFormPrefill(args);
+        const assignee = assigneeToken ? resolveMember(assigneeToken) : null;
+        setTaskForm((previous) => ({
+          open: true,
+          key: (previous?.key ?? 0) + 1,
+          channelId: activeChannelId,
+          prefill,
+          assigneeId: assignee?.user_id,
+        }));
+        return "opened";
+      }
+      // `/hours` and `/points` open their forms only when picked or typed
+      // bare: a half-typed one-liner keeps the parser's precise refusal, since
+      // neither form has a field for what the member got wrong.
+      if (command.name === "hours") {
+        if (args.trim().length > 0) return null;
+        if (
+          roleRefuses(
+            PLUS_MENU_PERMISSIONS.hours,
+            "log service hours",
+            "logging service hours",
+          )
+        ) {
+          return "refused";
+        }
+        setHoursForm((previous) => ({
+          open: true,
+          key: (previous?.key ?? 0) + 1,
+          channelId: activeChannelId,
+        }));
+        return "opened";
+      }
+      if (command.name === "points") {
+        if (args.trim().length > 0) return null;
+        if (
+          roleRefuses(
+            PLUS_MENU_PERMISSIONS.points,
+            "adjust points",
+            "adjusting points",
+          )
+        ) {
+          return "refused";
+        }
+        setPointsForm({ open: true, channelId: activeChannelId });
+        return "opened";
+      }
+      if (command.name === "poll") {
+        if (parsePollArgs(args).ok) return null;
+        // No role check: `/poll` lets any member post a poll today, and
+        // whether it should is #3007's open call. The + menu offers Poll
+        // only to `polls:create`, as the phone's + does.
+        setPollForm((previous) => ({
+          open: true,
+          key: (previous?.key ?? 0) + 1,
+          channelId: activeChannelId,
+          draft: pollDraftFromArgs(args),
+        }));
+        return "opened";
+      }
+      if (command.name !== "event") return null;
+      if (parseEventArgs(args).ok) return null;
+      if (
+        roleRefuses(
+          PLUS_MENU_PERMISSIONS.event,
+          "create events",
+          "creating events",
+        )
+      ) {
         return "refused";
       }
       setEventForm({
@@ -979,7 +1325,63 @@ export function ChatShell({
       });
       return "opened";
     },
-    [activeChannelId, permissionsPayload, toast],
+    [activeChannelId, permissionsPayload, resolveMember, toast],
+  );
+
+  // A + menu form's write, read as the typed command's is: a refusal stays
+  // in the form (which says so and keeps the draft), and a committed write
+  // with a lost card, or an unknown outcome, gets the command's own notice.
+  //
+  // The chat-core calls report a lost answer themselves, as unconfirmed. A
+  // throw here comes from their cache bookkeeping, usually after the request
+  // went out, so the write may have committed (#1718's class). It reads as
+  // unconfirmed too, never as failed: the form closes rather than inviting a
+  // resubmit under a fresh key, which would write it twice.
+  const postFromForm = useCallback(
+    async (
+      commandName: "task" | "hours" | "points",
+      post: () => Promise<DispatchResult>,
+    ): Promise<DispatchResult> => {
+      let result: DispatchResult;
+      try {
+        result = await post();
+      } catch (error) {
+        Sentry.captureException(error, {
+          tags: { plus_menu_form: commandName },
+        });
+        result = {
+          ok: true,
+          unconfirmed: true,
+          warning: FORM_UNCONFIRMED_WARNING[commandName],
+        };
+      }
+      if (
+        result.ok &&
+        (result.warning || result.unconfirmed || result.resolved)
+      ) {
+        notifyDispatchOutcome(toast, commandName, result);
+      }
+      return result;
+    },
+    [toast],
+  );
+
+  // What the composer's + offers beside Attach a file (#3865), and whether
+  // the member's role may use each: `"loading"` until the read lands, so a row
+  // isn't blamed on the role before it does, and `"unknown"` if it failed.
+  // A read paused offline before it ever landed can't answer either, and
+  // stays `pending` rather than erroring, so it counts as failed here.
+  const permissionsFailed =
+    permissionsQuery.isError ||
+    (permissionsQuery.fetchStatus === "paused" && !permissionsPayload);
+  const commandForms = useMemo(
+    (): PlusMenuForm[] =>
+      plusMenuForms(
+        PLUS_MENU_COMMANDS,
+        permissionsPayload?.permissions,
+        permissionsFailed,
+      ),
+    [permissionsPayload, permissionsFailed],
   );
 
   // Memoised because the timeline hands it to the virtualizer's header
@@ -1036,25 +1438,52 @@ export function ChatShell({
   }, [activeChannelId, resetBookmarkMessage, resetUnbookmarkMessage]);
 
   const { confirm, confirmDialog } = useConfirmDialog();
-  const deleteMessage = channel.delete;
-  const handleDeleteMessage = useCallback(
-    (messageId: string) => {
+  // Delete message and Close poll (#3794) are both destructive, so both ask
+  // first through one flow: the copy is the action's, and a failure was
+  // already toasted by the chat-core action, so it is swallowed here.
+  // Mobile's equivalent is `confirmDestructive`.
+  const confirmThen = useCallback(
+    (
+      copy: { title: string; description: string; confirmLabel: string },
+      action: () => Promise<void>,
+    ) => {
       void (async () => {
-        const confirmed = await confirm({
-          title: DELETE_MESSAGE_CONFIRM_TITLE,
-          description: DELETE_MESSAGE_CONFIRM_BODY,
-          confirmLabel: DELETE_MESSAGE_CONFIRM_LABEL,
-          tone: "destructive",
-        });
+        const confirmed = await confirm({ ...copy, tone: "destructive" });
         if (!confirmed) return;
         try {
-          await deleteMessage(messageId);
+          await action();
         } catch {
-          // The delete action already toasted the failure.
+          // The chat-core action already toasted the failure.
         }
       })();
     },
-    [confirm, deleteMessage],
+    [confirm],
+  );
+  const deleteMessage = channel.delete;
+  const handleDeleteMessage = useCallback(
+    (messageId: string) =>
+      confirmThen(
+        {
+          title: DELETE_MESSAGE_CONFIRM_TITLE,
+          description: DELETE_MESSAGE_CONFIRM_BODY,
+          confirmLabel: DELETE_MESSAGE_CONFIRM_LABEL,
+        },
+        () => deleteMessage(messageId),
+      ),
+    [confirmThen, deleteMessage],
+  );
+  const closePoll = channel.closePoll;
+  const handleClosePoll = useCallback(
+    (messageId: string) =>
+      confirmThen(
+        {
+          title: CLOSE_POLL_CONFIRM_TITLE,
+          description: CLOSE_POLL_CONFIRM_BODY,
+          confirmLabel: CLOSE_POLL_CONFIRM_LABEL,
+        },
+        () => closePoll(messageId),
+      ),
+    [confirmThen, closePoll],
   );
 
   const setNotificationLevel = useSetChannelNotificationLevel();
@@ -1131,17 +1560,28 @@ export function ChatShell({
   // a hidden row must leave no badge), and so does the rail's right-click
   // Mark as read. So does a message from someone else landing in the open
   // channel while the tab is visible (#3698: `useChatActivityHandler`, which
-  // `ChatProvider` wires, re-stamps the channel claimed below). Those are the
-  // only things that move it, and the only things that clear the badges
-  // above. Without it the rail lights up on first load and never goes out,
+  // the shell's `useChatRealtimeBinding` wires, re-stamps the channel claimed
+  // below). Those are the only things that move it, and the only things that
+  // clear the badges above. Without it the rail lights up on first load and never goes out,
   // which is worse than the dead badge this slice replaced: it would show
   // every channel as permanently unread.
   // `spec/behavior/chat/README.md` § Read Receipts: opening stamps to server
   // `now()`; there is no mark-read-to-a-message.
   const markRead = useMarkChannelRead();
   const markReadMutate = markRead.mutate;
+  /*
+    Only while the thread is on screen. Below `lg` the list and the thread are
+    one screen each, and a member back on the list (the arrow, `Esc`, the
+    browser's Back, #3824) is not looking at the channel: still claimed, a
+    message landing in it was stamped read before they ever saw it, so the
+    nav's Chat row never lit and the channel came back read. Leaving the
+    thread for the list runs the cleanup, which stamps it read on the way out as leaving
+    a channel always has; coming back claims and stamps it again. From `lg`
+    up both are on screen and `narrowPane` changes nothing.
+  */
+  const threadOnScreen = isDesktopShell || narrowPane === "thread";
   useEffect(() => {
-    if (!activeChannelId) return;
+    if (!activeChannelId || !threadOnScreen) return;
     markReadMutate(activeChannelId);
     const releaseViewed = claimViewedChannel(activeChannelId);
     // Stamp again on the way out, so messages that arrived while the channel
@@ -1150,7 +1590,7 @@ export function ChatShell({
       releaseViewed();
       markReadMutate(activeChannelId);
     };
-  }, [activeChannelId, markReadMutate]);
+  }, [activeChannelId, threadOnScreen, markReadMutate]);
 
   // The rail row's right-click menu (owner, 2026-11-06). Which rows a channel
   // offers is `channelRowActions`' call in `@repo/hooks`, scoped to the
@@ -1533,6 +1973,35 @@ export function ChatShell({
    * `@repo/chat-core/message-actions` says why it is client-side, and why one
    * hop is enough).
    */
+  // The open message thread (#3785), keyed to its channel so switching
+  // channels closes it rather than showing another channel's thread.
+  const [openThread, setOpenThread] = useState<{
+    channelId: string;
+    rootId: string;
+  } | null>(null);
+  // Leaving the channel closes its thread, so coming back shows the timeline
+  // (state adjusted during render, React's pattern for a reset on a prop).
+  if (
+    openThread &&
+    activeChannel &&
+    openThread.channelId !== activeChannel.id
+  ) {
+    setOpenThread(null);
+  }
+  const threadRootId =
+    openThread && openThread.channelId === activeChannel?.id
+      ? openThread.rootId
+      : null;
+  const canThreadHere = !!activeChannel && channelAllowsThreads(activeChannel);
+  const openThreadFor = useCallback(
+    (message: ChatMessage) => {
+      if (!activeChannel) return;
+      setOpenThread({ channelId: activeChannel.id, rootId: message.id });
+    },
+    [activeChannel],
+  );
+  const closeThread = useCallback(() => setOpenThread(null), []);
+
   const startReply = useCallback((message: ChatMessage) => {
     setReplyTarget({
       channelId: message.channel_id,
@@ -1774,10 +2243,25 @@ export function ChatShell({
           : !activeChapterId
             ? "no-chapter"
             : "empty";
+  // `Esc`, where nothing else takes it (#3824; the history half is above).
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (escapeBelongsElsewhere(event.target)) return;
+      if (isDesktopShell) return;
+      if (narrowPane === "thread" && channelsPaneState === "ready") {
+        backToChannels();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [isDesktopShell, narrowPane, channelsPaneState, backToChannels]);
+
   const timelineReady =
     channelsPaneState === "ready" && !requestedChannelMissing;
   const memberColumnMounted =
     !membersHidden &&
+    !toolBeside &&
     (showMemberList || (!activeChannel && channelsPaneState === "loading"));
 
   /**
@@ -1800,8 +2284,7 @@ export function ChatShell({
     return had;
   }, []);
 
-  // The channels pane's contents, rendered in exactly one place: the shell's
-  // left column from `lg` up, or inline beside the thread (`nav-face.tsx`).
+  // The channels pane's contents.
   const channelsPaneBody = (
     <>
       {/*
@@ -1812,17 +2295,21 @@ export function ChatShell({
             screen.
           */}
       <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-3">
-        {channelsInNav && navFace ? (
-          <NavBackButton onClick={navFace.showModules} />
-        ) : null}
         <h2 className="text-sm font-semibold text-foreground">Channels</h2>
         <ChannelFilters
           filters={sidebarPreferences.filters}
           onChange={sidebarControls.onSetFilters}
         />
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
-        {/*
+      {/*
+        The gutter is on an inner wrapper, not the scroller: a scroller's own
+        padding sits outside the box a sticky child pins to, so a pinned
+        category heading would stop 8px short of the top and rows would scroll
+        through that band, half-cut under the title row (#4051).
+      */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="p-2">
+          {/*
               Only `loading` shimmers, and `no-chapter` deliberately does not.
 
               `loading` is now the state a cold load actually renders — see
@@ -1834,39 +2321,41 @@ export function ChatShell({
               open. That is the same defect `profile-panel.tsx` rejects
               `hasHydrated` for, reached from the other side.
             */}
-        {channelsPaneState === "loading" ? <ChannelListSkeleton /> : null}
-        {/*
+          {channelsPaneState === "loading" ? <ChannelListSkeleton /> : null}
+          {/*
           The officer setup checklist, above the channels where Discord puts
           its server guide. Renders `null` for anyone with nothing to set up.
         */}
-        {channelsPaneState === "ready" ? <SetupChecklistSection /> : null}
-        {channelsPaneState === "ready" ? (
-          <ChannelList
-            viewerId={userId}
-            memberNames={memberNames}
-            channels={channels}
-            categories={categories}
-            unreadByChannelId={unreadByChannelId}
-            activeChannelId={activeChannelId}
-            onHide={hideFromRail}
-            rowActions={rowActions}
-            sidebar={sidebarControls}
-            onPick={(ch) => {
-              if (ch.hidden) {
-                const memberId = otherMemberId(ch, userId);
-                if (memberId) reopenDm.mutate({ member_id: memberId });
-              }
-              setSelectedChannelId(ch.id);
-              // Below `lg` the list and the thread are never both on screen,
-              // so picking has to navigate. Inert at `lg` and up.
-              setNarrowPane("thread");
-              // Deliberately leaves any pending jump target alone - it is
-              // gated on its own channel and will resolve if the member
-              // returns. Only the notice is channel-scoped for display.
-              setUnreachableTarget(null);
-            }}
-          />
-        ) : null}
+          {channelsPaneState === "ready" ? <SetupChecklistSection /> : null}
+          {channelsPaneState === "ready" ? (
+            <ChannelList
+              viewerId={userId}
+              memberNames={memberNames}
+              avatarTintFor={avatarTintFor}
+              channels={channels}
+              categories={categories}
+              unreadByChannelId={unreadByChannelId}
+              activeChannelId={activeChannelId}
+              onHide={hideFromRail}
+              rowActions={rowActions}
+              sidebar={sidebarControls}
+              onPick={(ch) => {
+                if (ch.hidden) {
+                  const memberId = otherMemberId(ch, userId);
+                  if (memberId) reopenDm.mutate({ member_id: memberId });
+                }
+                setSelectedChannelId(ch.id);
+                // Below `lg` the list and the thread are never both on screen,
+                // so picking has to navigate. Inert at `lg` and up.
+                openThreadPane();
+                // Deliberately leaves any pending jump target alone - it is
+                // gated on its own channel and will resolve if the member
+                // returns. Only the notice is channel-scoped for display.
+                setUnreachableTarget(null);
+              }}
+            />
+          ) : null}
+        </div>
       </div>
     </>
   );
@@ -1874,12 +2363,10 @@ export function ChatShell({
   return (
     /*
       Flush columns, 100vh, independent scroll (`1b` — the board counts the app
-      nav as the third; this route owns the other two). The route is
-      full-bleed (`layout/full-bleed-routes.ts`), so this sits directly in the
-      shell's `<main>` with no inset, and `h-full` here is the shell's fixed
-      frame rather than a document that grows. From `lg` up the channels
-      column is the shell's left column instead, in place of the module nav
-      (owner, 2026-11-05).
+      nav as the third; chat owns the other two). The dashboard shell hosts
+      chat as a panel of its own (`dashboard-shell.tsx`, #3779), with no inset,
+      and `h-full` here is that panel's fixed frame rather than a document
+      that grows.
 
       The panes no longer carry `rounded-xl` card chrome, `gap-4` between them,
       or `md:sticky` rail positioning. They are flush columns divided by
@@ -1887,13 +2374,10 @@ export function ChatShell({
     */
     <div className="flex h-full min-h-0">
       {/*
-        `dashboard-shell.tsx`'s "Skip to main content" link lands the keyboard
-        user at the top of `/chat`'s `<main>`. Below `lg` that still holds the
-        channel list this link exists to skip past; from `lg` up the list is
-        the shell's left column, before `<main>`, and the link still lands past
-        the channel header and status strip. Every visit to this route needs
-        re-skipping, so it earns its own target. Only offered when there is a
-        timeline to land on.
+        The shell's skip link lands the keyboard user at the top of the chat
+        panel, which holds the channel list this link exists to skip past.
+        Every visit needs re-skipping, so it earns its own target. Only offered
+        when there is a timeline to land on.
       */}
       {timelineReady ? (
         <a href="#chat-timeline" className={SKIP_LINK_CLASSES}>
@@ -1935,40 +2419,21 @@ export function ChatShell({
       </div>
       {/*
         Channels: 240px, full height, its own scroll, no search field (`1b`
-        pin 5). From `lg` up inside the dashboard shell it is the left column
-        itself: the shell owns the column and its chapter header, and this pane
-        is portaled into it, beside a back arrow to the module nav
-        (`components/layout/nav-face.tsx`). Below `lg`, and outside the shell,
-        it stays inline, on `--surface-1`, the step the left column takes.
+        pin 5), on `--surface-1`, the step the left column takes. Beside the
+        thread from `lg` up; below it the list and the thread are one screen
+        each (`narrowPane`).
       */}
-      {channelsInNav && navFace?.channelsSlot
-        ? createPortal(
-            <section
-              aria-label="Channels"
-              className="flex min-h-0 flex-1 flex-col"
-            >
-              {channelsPaneBody}
-            </section>,
-            navFace.channelsSlot,
-          )
-        : null}
-      {channelsInNav ? null : (
-        <section
-          aria-label="Channels"
-          className={cn(
-            "flex min-h-0 flex-col border-r border-border bg-surface-1",
-            // Full width below `lg`, where it is the only column on screen.
-            "w-full lg:w-60 lg:shrink-0",
-            narrowPane === "thread" && "max-lg:hidden",
-            // Inside the shell the column is the shell's from `lg` up; until
-            // the client knows its width, this copy stays out of the way and
-            // the shell's placeholder holds the column.
-            navFace && "lg:hidden",
-          )}
-        >
-          {channelsPaneBody}
-        </section>
-      )}
+      <section
+        aria-label="Channels"
+        className={cn(
+          "flex min-h-0 flex-col border-r border-border bg-surface-1",
+          // Full width below `lg`, where it is the only column on screen.
+          "w-full lg:w-60 lg:shrink-0",
+          narrowPane === "thread" && "max-lg:hidden",
+        )}
+      >
+        {channelsPaneBody}
+      </section>
 
       {/*
         The thread column is the app floor (s05); the cards posted into it are
@@ -1979,10 +2444,13 @@ export function ChatShell({
       */}
       <section
         className={cn(
-          "flex min-w-0 flex-1 flex-col bg-background",
+          // `isolate` + `relative`: the chat background (#3973) sits at
+          // `-z-10` inside this column, and only this column (#3779).
+          "relative isolate flex min-w-0 flex-1 flex-col bg-background",
           narrowPane === "channels" && "max-lg:hidden",
         )}
       >
+        <ChatBackground channelId={activeChannel?.id ?? null} />
         {/*
           48px, one row (`1b` pin 11). The name, its description and the one
           overflow control share the row; anything that cannot fit in 48px and
@@ -2005,8 +2473,10 @@ export function ChatShell({
             <Button
               variant="ghost"
               size="icon"
-              className={cn(compactControlClassName, "shrink-0 lg:hidden")}
-              onClick={() => setNarrowPane("channels")}
+              // 40px, never the 32px compact control (#3824): it is the one
+              // way back below `lg`, so it gets a real target.
+              className="-ml-2 h-10 w-10 shrink-0 lg:hidden"
+              onClick={backToChannels}
               aria-label="Back to channels"
             >
               <ChevronLeft className="h-5 w-5" />
@@ -2042,6 +2512,8 @@ export function ChatShell({
               hiddenPins={hiddenPins}
               nameFor={nameFor}
               channelNameFor={channelNameFor}
+              searchChannels={searchChannels}
+              searchMembers={searchMembers}
               onJumpToMessage={jumpToMessage}
               onJumpToSearchHit={jumpToSearchHit}
               onJumpToBookmark={jumpToBookmark}
@@ -2060,6 +2532,64 @@ export function ChatShell({
                   level,
                 });
               }}
+              displayLock={
+                activeChannel &&
+                canSetChannelDisplayLock(
+                  activeChannel,
+                  userId,
+                  permissionsPayload?.permissions,
+                )
+                  ? {
+                      saving: setDisplayLock.isPending,
+                      onChange: (locked) => {
+                        const channelId = activeChannel.id;
+                        setDisplayLock.mutate(
+                          { id: channelId, locked },
+                          {
+                            onSuccess: () => setChannelLocked(channelId, locked),
+                            onError: () =>
+                              toast({
+                                title: "Couldn't change Always formal",
+                                description: "Try again in a moment.",
+                                variant: "destructive",
+                              }),
+                          },
+                        );
+                      },
+                    }
+                  : undefined
+              }
+              background={
+                activeChannel &&
+                canManageChannel &&
+                activeChannel.type !== "DM" &&
+                activeChannel.type !== "GROUP_DM"
+                  ? {
+                      value:
+                        channelBackground.data?.source === "channel"
+                          ? channelBackground.data.background
+                          : null,
+                      inheritPreview: chapterBackground.data?.background,
+                      letters: chapterLetters,
+                      saving: setChannelBackground.isPending,
+                      error: setChannelBackground.error
+                        ? errorCopy(setChannelBackground.error)
+                        : null,
+                      onPick: (pick) =>
+                        setChannelBackground.mutate({
+                          channelId: activeChannel.id,
+                          background: pick.background,
+                          photo: pick.photo
+                            ? {
+                                body: pick.photo,
+                                filename: pick.photo.name,
+                                contentType: pick.photo.type,
+                              }
+                            : undefined,
+                        }),
+                    }
+                  : undefined
+              }
               pinToTop={
                 activeChannel && !activeChannel.hidden
                   ? {
@@ -2254,7 +2784,7 @@ export function ChatShell({
                 is what is loading, and the announcer above already says so —
                 adding a second region would read one event twice.
               */}
-              <MessageTimelineSkeleton />
+              <MessageTimelineSkeleton channelId={activeChannelId} />
             </div>
             {/*
               The composer, before there is a channel to send to.
@@ -2363,6 +2893,7 @@ export function ChatShell({
                   onReact={channel.react}
                   onUnreact={channel.unreact}
                   onReply={canReplyHere ? startReply : undefined}
+                  onOpenThread={canThreadHere ? openThreadFor : undefined}
                   // The quote above a reply scrolls to the message it quotes. It used
                   // to open `ThreadPanel` in the Details rail; #2142 deleted both, and
                   // this is the same machinery pins and saved messages already use.
@@ -2408,6 +2939,7 @@ export function ChatShell({
                     activeChannel?.can_post !== false ? channel.edit : undefined
                   }
                   onDelete={handleDeleteMessage}
+                  onClosePoll={handleClosePoll}
                   bookmarkedMessageIds={bookmarkedMessageIds}
                   onToggleBookmark={handleToggleBookmark}
                   canManageChannel={canManageChannel}
@@ -2462,6 +2994,7 @@ export function ChatShell({
               activeChannel.type === "DM" || activeChannel.type === "GROUP_DM"
             }
             isReadOnly={!!activeChannel.is_read_only}
+            isAuditLog={activeChannel.is_audit_log === true}
             // Undefined (not yet through the server's capability
             // projection) is left to `Composer`'s own default, which
             // resolves to `!isReadOnly` rather than an unconditional
@@ -2500,6 +3033,7 @@ export function ChatShell({
               )
             }
             onOpenCommandForm={openCommandForm}
+            commandForms={commandForms}
             onTyping={channel.emitTyping}
             isModuleEnabled={isModuleEnabled}
             recruitmentVocab={recruitmentVocab}
@@ -2515,6 +3049,25 @@ export function ChatShell({
             replyTo={replyTo}
             onCancelReply={cancelReply}
             onRestoreReply={restoreReply}
+          />
+        ) : null}
+        {/*
+          A message thread (#3785) replaces the message list inside the chat
+          column, and Back returns to it. Drawn over the column rather than in
+          its place, so the timeline keeps its scroll position underneath.
+        */}
+        {activeChannel && threadRootId ? (
+          <ThreadPanel
+            key={threadRootId}
+            className="absolute inset-0 z-10"
+            channelId={activeChannel.id}
+            channelName={activeChannel.name ?? null}
+            rootId={threadRootId}
+            viewerId={userId}
+            nameFor={nameFor}
+            blockState={blockState}
+            canReply={channelAllowsThreadReplies(activeChannel)}
+            onClose={closeThread}
           />
         ) : null}
       </section>
@@ -2607,6 +3160,80 @@ export function ChatShell({
           )}
           postToChannelId={eventForm.channelId}
           trackChatCard={channel.trackEventCard}
+        />
+      ) : null}
+      {pollForm ? (
+        <NewPollDialog
+          key={`poll:${pollForm.key}`}
+          open={pollForm.open}
+          onOpenChange={(open) =>
+            setPollForm((previous) =>
+              previous ? { ...previous, open } : previous,
+            )
+          }
+          initialDraft={pollForm.draft}
+          canCloseEarly={can("polls:create", permissionsPayload?.permissions)}
+          onPost={async (poll) => {
+            const result = await channel.sendPoll(pollForm.channelId, poll);
+            // Posted, but this device couldn't finish saving it: the same
+            // non-destructive notice `/poll` gives, so nobody posts it twice.
+            if (result.ok && result.warning) {
+              toast({ title: "Poll posted", description: result.warning });
+            }
+            return result;
+          }}
+        />
+      ) : null}
+      {taskForm ? (
+        <NewTaskDialog
+          key={`task:${taskForm.key}`}
+          open={taskForm.open}
+          onOpenChange={(open) =>
+            setTaskForm((previous) =>
+              previous ? { ...previous, open } : previous,
+            )
+          }
+          prefill={taskForm.prefill}
+          initialAssigneeId={taskForm.assigneeId}
+          onPost={async (input) =>
+            postFromForm("task", () =>
+              channel.postTask(taskForm.channelId, input),
+            )
+          }
+        />
+      ) : null}
+      {hoursForm ? (
+        <LogHoursDialog
+          key={`hours:${hoursForm.key}`}
+          open={hoursForm.open}
+          onOpenChange={(open) =>
+            setHoursForm((previous) =>
+              previous ? { ...previous, open } : previous,
+            )
+          }
+          gate={hoursGate}
+          showSubscriptionNotice
+          submitToChannel={async (input) =>
+            postFromForm("hours", () =>
+              channel.postHours(hoursForm.channelId, input),
+            )
+          }
+        />
+      ) : null}
+      {pointsForm ? (
+        <PointsAdjustmentDialog
+          open={pointsForm.open}
+          onOpenChange={(open) =>
+            setPointsForm((previous) =>
+              previous ? { ...previous, open } : previous,
+            )
+          }
+          onAdjusted={() => undefined}
+          submitToChannel={async (input) =>
+            postFromForm("points", () =>
+              channel.postPointsAdjustment(pointsForm.channelId, input),
+            )
+          }
         />
       ) : null}
       <ReportMessageDialog

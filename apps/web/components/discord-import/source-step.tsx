@@ -82,7 +82,7 @@ export function SourceStep({
                 FOCUS_RING,
                 selected
                   ? "border-primary bg-primary/5"
-                  : "border-border hover:bg-muted/50",
+                  : "border-border hover:bg-card-hover",
                 option.disabled && "cursor-not-allowed opacity-60",
               )}
             >

@@ -99,15 +99,15 @@ function ChatThread({ animate }: { animate: boolean }) {
       style={{ "--i": index } as StaggerStyle}
     >
       {row.kind === "them" && (
-        <RunStart initials="JE" author="Jordan Ellis" time="4:02 PM">
+        <RunStart initials="JE" author="Jordan Ellis" time="6:21 PM">
           <p className={BODY}>
-            Chapter is 6:30 tonight. Dues forms in by then if yours is not.
+            Chapter starts at 6:30. Committee reports go first.
           </p>
         </RunStart>
       )}
 
       {row.kind === "event" && (
-        <RunStart initials="JE" author="Jordan Ellis" time="4:03 PM">
+        <RunStart initials="JE" author="Jordan Ellis" time="6:22 PM">
           {/*
             A card is a thing posted into the channel, so it keeps its frame
             (`--card`, hairline, radius 14) where a message has none.
@@ -134,7 +134,7 @@ function ChatThread({ animate }: { animate: boolean }) {
                 Check in
               </span>
               <span className="text-[12.5px] text-muted-foreground">
-                closes 6:45
+                closes 7:45
               </span>
               <span className="text-[12.5px] text-muted-foreground">
                 31 checked in
@@ -150,13 +150,13 @@ function ChatThread({ animate }: { animate: boolean }) {
           feeds unread counts (`spec/behavior/chat/README.md` § Read
           Receipts), so no message is ever marked "read".
         */
-        <RunStart initials="AK" author="You" self time="4:05 PM">
+        <RunStart initials="AK" author="You" self time="6:24 PM">
           <p className={BODY}>On it. Roster is pulled, 42 for food.</p>
         </RunStart>
       )}
 
       {row.kind === "mention" && (
-        <RunStart initials="MC" author="Maya Chen" time="4:06 PM">
+        <RunStart initials="MC" author="Maya Chen" time="6:25 PM">
           <p className={BODY}>
             {/*
               The in-body mention chip, on the handle alone: the row around
@@ -214,14 +214,17 @@ function Composer() {
   );
 }
 
+/*
+ * A channel carries no count: a plain unread channel is a bold name only
+ * (`foundations.md`, 2026-11-07), and the one counted row, the DM's red
+ * badge, is drawn by the DM row below.
+ */
 function ChannelRow({
   name,
   state,
-  badge,
 }: {
   name: string;
   state: "active" | "unread" | "rest";
-  badge?: { count: string; tone: "neutral" | "mention" };
 }) {
   const tone =
     state === "active"
@@ -233,17 +236,6 @@ function ChannelRow({
     <div className={`flex h-8 items-center gap-2 rounded-sm px-2 ${tone}`}>
       <span className="w-4 font-bold">#</span>
       <span className="min-w-0 flex-1 truncate text-[14px]">{name}</span>
-      {badge ? (
-        <span
-          className={`inline-flex h-5 min-w-5 items-center justify-center rounded-[6px] px-1.5 text-[11.5px] font-bold ${
-            badge.tone === "mention"
-              ? "bg-mention text-mention-foreground"
-              : "bg-input text-foreground"
-          }`}
-        >
-          {badge.count}
-        </span>
-      ) : null}
     </div>
   );
 }
@@ -313,11 +305,8 @@ export function ChatFrame({
               +
             </span>
           </div>
-          <ChannelRow
-            name="announcements"
-            state="unread"
-            badge={{ count: "2", tone: "neutral" }}
-          />
+          {/* A plain unread channel is a bold name and no count (#3869). */}
+          <ChannelRow name="announcements" state="unread" />
           <ChannelRow name="general" state="active" />
           <ChannelRow name="treasury" state="rest" />
           <ChannelRow name="house" state="rest" />

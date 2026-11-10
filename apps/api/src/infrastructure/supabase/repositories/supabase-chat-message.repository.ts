@@ -91,7 +91,7 @@ function effectivePollListLimit(requested?: number): number {
  * message page for a field that is discarded on arrival.
  */
 export const CHAT_MESSAGE_COLUMNS =
-  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, type, kind, payload, client_message_id, reply_to_id, metadata, mentions, is_pinned, pinned_at, edited_at, is_deleted, created_at' as const;
+  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, type, kind, payload, client_message_id, reply_to_id, metadata, mentions, thread_root_id, thread_reply_count, thread_last_reply_at, thread_recent_sender_ids, is_pinned, pinned_at, edited_at, is_deleted, created_at' as const;
 
 @Injectable()
 export class SupabaseChatMessageRepository implements IChatMessageRepository {
@@ -135,6 +135,9 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       .from('chat_messages')
       .select(CHAT_MESSAGE_COLUMNS)
       .eq('channel_id', channelId)
+      // The timeline only: a thread reply lives in its thread (#3785), read
+      // through `SupabaseChatThreadRepository.findReplies`.
+      .is('thread_root_id', null)
       .order('created_at', { ascending: false })
       .limit(options?.limit ?? DEFAULT_MESSAGE_LIMIT);
 
@@ -248,6 +251,35 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
     const { data, error } = await query;
     if (error) throw new SupabaseQueryError(error);
     return data || [];
+  }
+
+  async findPollCardsByChapter(
+    chapterId: string,
+    options: { senderId?: string; limit: number },
+  ): Promise<ChatMessage[]> {
+    // Chapter scope through the channel join, as `findPollsByChapter` does:
+    // `chat_messages` carries no `chapter_id` of its own.
+    let query = this.supabase
+      .from('chat_messages')
+      .select(`${CHAT_MESSAGE_COLUMNS}, chat_channels!inner(chapter_id)`)
+      .eq('kind', 'poll')
+      .eq('is_deleted', false)
+      .eq('chat_channels.chapter_id', chapterId)
+      .order('created_at', { ascending: false });
+
+    if (options.senderId) {
+      query = query.eq('sender_id', options.senderId);
+    }
+
+    const { data, error } = await query.limit(options.limit);
+    if (error) throw new SupabaseQueryError(error);
+    // The joined channel is only the chapter filter. It is dropped here so a
+    // caller that serves the row serves a chat message and nothing else.
+    return (data || []).map((row) => {
+      const message: ChatMessage & { chat_channels?: unknown } = { ...row };
+      delete message.chat_channels;
+      return message;
+    });
   }
 
   async findByClientMessageId(

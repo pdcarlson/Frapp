@@ -1,7 +1,11 @@
 "use client";
 
 import { throwUnlessOk } from "@repo/api-sdk";
-import type { ChatNotificationLevel } from "@repo/validation";
+import {
+  can,
+  isDirectChannel,
+  type ChatNotificationLevel,
+} from "@repo/validation";
 
 import { useEffect, useMemo, useRef } from "react";
 import {
@@ -301,6 +305,7 @@ export function useSetChannelNotificationLevel() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["channels", "set-channel-notification-level"],
     mutationFn: async ({
       channelId,
       level,
@@ -337,6 +342,7 @@ export function useCreateChannel() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["channels", "create-channel"],
     mutationFn: async (body: {
       name: string;
       description?: string;
@@ -344,6 +350,8 @@ export function useCreateChannel() {
       required_permissions?: string[];
       category_id?: string;
       is_read_only: boolean;
+      /** Always formal from the start (#3787); false when absent. */
+      display_locked?: boolean;
     }) => {
       const { data, error } = await client.POST("/v1/channels", { body });
       if (error) throw error;
@@ -369,6 +377,7 @@ export function useUpdateChannel() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["channels", "update-channel"],
     mutationFn: async ({
       id,
       body,
@@ -419,10 +428,53 @@ export function useUpdateChannel() {
   });
 }
 
+/**
+ * Sets or clears Always formal on a channel (#3787): every member sees it in
+ * the formal display and can't pick another there. The channel's creator or
+ * a `channels:manage` holder may set it; the server refuses anyone else and
+ * any DM. `canSetChannelDisplayLock` is the client's half of that rule.
+ */
+export function useSetChannelDisplayLock() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["channels", "display-lock"],
+    mutationFn: async ({ id, locked }: { id: string; locked: boolean }) => {
+      const { data, error } = await client.PUT(
+        "/v1/channels/{id}/display-lock",
+        { params: { path: { id } }, body: { display_locked: locked } },
+      );
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: CHANNEL_LIST_KEY });
+    },
+  });
+}
+
+/**
+ * Whether the caller may set Always formal on a channel, mirroring
+ * `ChatService.setDisplayLock`: never on a DM or group DM; otherwise the
+ * channel's creator, or anyone holding `channels:manage` (or `*`).
+ */
+export function canSetChannelDisplayLock(
+  channel: { type?: string | null; created_by?: string | null },
+  userId: string | null | undefined,
+  permissions: readonly string[] | null | undefined,
+): boolean {
+  if (isDirectChannel({ type: channel.type ?? "" })) return false;
+  if (userId && channel.created_by && channel.created_by === userId) {
+    return true;
+  }
+  return can("channels:manage", permissions);
+}
+
 export function useDeleteChannel() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["channels", "delete-channel"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.DELETE("/v1/channels/{id}", {
         params: { path: { id } },
@@ -463,6 +515,7 @@ export function useGetOrCreateDm({
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["channels", "get-or-create-dm"],
     mutationFn: async (body: { member_id: string }) => {
       const { data, error } = await client.POST("/v1/channels/dm", { body });
       if (error) throw error;
@@ -506,6 +559,7 @@ export function useLeaveChannel() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["channels", "leave-channel"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.POST("/v1/channels/{id}/leave", {
         params: { path: { id } },
@@ -527,6 +581,7 @@ export function useUnpinMessage() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["channels", "unpin-message"],
     mutationFn: async (messageId: string) => {
       const { data, error } = await client.DELETE(
         "/v1/channels/messages/{messageId}/pin",
@@ -598,6 +653,7 @@ export function useMarkChannelRead() {
 export function useRequestChatUploadUrl() {
   const client = useFrappClient();
   return useMutation({
+    mutationKey: ["channels", "request-chat-upload-url"],
     mutationFn: async ({
       id,
       body,
@@ -787,6 +843,9 @@ export function useAuthorAvatars(
  */
 export function useUploadSignedUrl() {
   return useMutation({
+    // Rooted at `storage`, not `channels`: the PUT goes to Supabase Storage,
+    // not our API, so its 5xx is Storage's (Beta Watch reads it that way).
+    mutationKey: ["storage", "upload-signed-url"],
     mutationFn: async ({
       signedUrl,
       file,
@@ -806,6 +865,7 @@ export function useCreateCategory() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["channels", "create-category"],
     mutationFn: async (body: { name: string; display_order: number }) => {
       const { data, error } = await client.POST("/v1/channels/categories", {
         body,
@@ -825,6 +885,7 @@ export function useUpdateCategory() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["channels", "update-category"],
     mutationFn: async ({
       id,
       body,
@@ -851,6 +912,7 @@ export function useDeleteCategory() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["channels", "delete-category"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.DELETE(
         "/v1/channels/categories/{id}",
@@ -934,6 +996,7 @@ export function useBookmarkMessage() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["bookmarks", "bookmark-message"],
     mutationFn: async (messageId: string) => {
       const { data, error } = await client.POST(
         "/v1/bookmarks/messages/{messageId}",
@@ -955,6 +1018,7 @@ export function useUnbookmarkMessage() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["bookmarks", "unbookmark-message"],
     mutationFn: async (messageId: string) => {
       const { error } = await client.DELETE(
         "/v1/bookmarks/messages/{messageId}",

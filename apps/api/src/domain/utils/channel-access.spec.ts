@@ -1,4 +1,8 @@
-import { allowsInThreadReplies, canAccessChannel } from './channel-access';
+import {
+  allowsInThreadReplies,
+  canAccessChannel,
+  channelAllowsThreads,
+} from './channel-access';
 
 describe('canAccessChannel', () => {
   const base = {
@@ -173,6 +177,61 @@ describe('canAccessChannel', () => {
         },
       }),
     ).toBe(false);
+  });
+
+  // #3909: `#chapter-audit` is system-write only. A President once posted
+  // there because the read-only gate lets `*` through.
+  describe('the audit log channel', () => {
+    const auditLog = {
+      type: 'PUBLIC' as const,
+      member_ids: null,
+      required_permissions: null,
+      is_read_only: true,
+      is_audit_log: true,
+    };
+
+    it('every member can read it', () => {
+      expect(
+        canAccessChannel({ ...base, channel: auditLog, operation: 'read' }),
+      ).toBe(true);
+    });
+
+    it.each([
+      ['the wildcard', ['*']],
+      ['announcements:post', ['announcements:post']],
+      ['no permission', []],
+    ])('refuses a post from a member holding %s', (_label, permissions) => {
+      expect(
+        canAccessChannel({
+          ...base,
+          permissions,
+          channel: auditLog,
+          operation: 'post',
+        }),
+      ).toBe(false);
+    });
+
+    it('refuses a post even when read-only has been switched off', () => {
+      expect(
+        canAccessChannel({
+          ...base,
+          permissions: ['*'],
+          channel: { ...auditLog, is_read_only: false },
+          operation: 'post',
+        }),
+      ).toBe(false);
+    });
+
+    it('refuses a vote', () => {
+      expect(
+        canAccessChannel({
+          ...base,
+          permissions: ['*'],
+          channel: auditLog,
+          operation: 'vote',
+        }),
+      ).toBe(false);
+    });
   });
 
   describe('operation: "post" on a read-only channel', () => {
@@ -509,5 +568,95 @@ describe('canAccessChannel — archived channel', () => {
         operation: 'post',
       }),
     ).toBe(true);
+  });
+});
+
+// Message threads (#3785, spec/behavior/chat/README.md § Message threads).
+describe('the thread operation', () => {
+  const announcements = {
+    type: 'PUBLIC',
+    member_ids: null,
+    required_permissions: null,
+    is_read_only: true,
+  };
+  const member = {
+    userId: 'user-1',
+    isChapterMember: true,
+    permissions: [] as string[],
+  };
+
+  it('lets a member without announcements:post thread under an announcement', () => {
+    expect(
+      canAccessChannel({
+        ...member,
+        channel: announcements,
+        operation: 'thread',
+      }),
+    ).toBe(true);
+    // The timeline itself stays officer-only.
+    expect(
+      canAccessChannel({
+        ...member,
+        channel: announcements,
+        operation: 'post',
+      }),
+    ).toBe(false);
+  });
+
+  it('refuses the audit log and an archived channel', () => {
+    expect(
+      canAccessChannel({
+        ...member,
+        permissions: ['*'],
+        channel: { ...announcements, is_audit_log: true },
+        operation: 'thread',
+      }),
+    ).toBe(false);
+    expect(
+      canAccessChannel({
+        ...member,
+        channel: { ...announcements, archived_at: '2026-01-01' },
+        operation: 'thread',
+      }),
+    ).toBe(false);
+  });
+
+  it('applies the alumni rule, as a post does', () => {
+    expect(
+      canAccessChannel({
+        ...member,
+        isAlumni: true,
+        channel: { ...announcements, is_read_only: false },
+        operation: 'thread',
+      }),
+    ).toBe(false);
+  });
+
+  it('does not let a non-reader thread', () => {
+    expect(
+      canAccessChannel({
+        ...member,
+        channel: {
+          type: 'PRIVATE',
+          member_ids: ['someone-else'],
+          required_permissions: null,
+        },
+        operation: 'thread',
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('channelAllowsThreads', () => {
+  it('allows channels and group DMs, read-only ones included', () => {
+    expect(channelAllowsThreads({ type: 'PUBLIC' })).toBe(true);
+    expect(channelAllowsThreads({ type: 'GROUP_DM' })).toBe(true);
+  });
+
+  it('refuses a 1:1 DM and the audit log', () => {
+    expect(channelAllowsThreads({ type: 'DM' })).toBe(false);
+    expect(channelAllowsThreads({ type: 'PUBLIC', is_audit_log: true })).toBe(
+      false,
+    );
   });
 });

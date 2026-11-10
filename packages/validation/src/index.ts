@@ -17,8 +17,10 @@ export {
   releaseNoteVersion,
   parseReleaseNoteVersion,
   isNewerReleaseNoteVersion,
+  decideWhatsNew,
   type ReleaseNote,
   type ReleaseNoteVersion,
+  type WhatsNewDecision,
 } from "./release-notes";
 
 // ── Legal / compliance ───────────────────────────────────────────────────────
@@ -138,6 +140,18 @@ const inviteEmailSchema = z.string().email();
  */
 export function isInviteEmail(value: string): boolean {
   return inviteEmailSchema.safeParse(value.trim()).success;
+}
+
+/**
+ * Splits pasted or typed text into addresses (a pasted column, a CSV row, a
+ * mail client's `Name <a@b.edu>` copy loses its brackets). Web's chip field
+ * and mobile's Invite by email field read a draft the same way.
+ */
+export function splitAddresses(text: string): string[] {
+  return text
+    .split(/[\s,;]+/)
+    .map((part) => part.trim().replace(/^<|>$/g, ""))
+    .filter(Boolean);
 }
 
 /**
@@ -598,17 +612,22 @@ export {
   matchMentionCandidate,
   mentionChipFilter,
   mentionLabelFor,
+  mentionPickLabel,
+  spacedMentionNames,
   mentionPickerEntries,
   mentionSuggestions,
   resolveMentions,
+  sendMentionReading,
 } from "./mentions";
 export type {
   ActiveMentionQuery,
   MentionCandidate,
   MentionChipTargets,
+  MentionChipTest,
   MentionPickerEntry,
   MentionRole,
   MentionRoleOption,
+  MentionSpanOptions,
   MentionSpan,
   MentionSuggestion,
 } from "./mentions";
@@ -740,6 +759,11 @@ export {
   POLL_OPTIONS_MIN,
   POLL_QUESTION_MAX_LENGTH,
   SERVICE_DESCRIPTION_MAX_LENGTH,
+  TASK_TITLE_MAX_LENGTH,
+  PLEDGE_CLASS_NAME_MAX_LENGTH,
+  PLEDGE_CLASSES_MAX,
+  MEMBER_ORDER_NUMBER_MAX,
+  PLEDGE_CLASS_ASSIGNMENTS_MAX,
   YEAR_MAX,
 } from "./field-limits";
 
@@ -762,6 +786,17 @@ export type {
   ChapterMarkBranding,
   ChapterTextMarkSource,
 } from "./chapter-mark";
+
+// ── Backwork course names and nicknames (#3848) ──
+export {
+  MAX_COURSE_NAME_LENGTH,
+  MAX_COURSE_NICKNAMES,
+  MAX_COURSE_NICKNAME_LENGTH,
+  collapseCourseText,
+  courseTextLength,
+  courseTextTooLong,
+  normalizeCourseNicknames,
+} from "./backwork-courses";
 
 // ── Upload MIME / extension allowlists + size caps (25 MB; backwork 100 MB) ──
 export {
@@ -928,3 +963,14 @@ export {
   effectiveMinutesPerPoint,
   servicePointsForDuration,
 } from "./service-points";
+export {
+  CHAT_BACKGROUND_BUILT_INS,
+  CHAT_BACKGROUND_KEYS,
+  CHAT_BACKGROUND_LABELS,
+  CHAT_BACKGROUND_PHOTO,
+  isChatBackgroundKey,
+} from "./chat-backgrounds";
+export type {
+  ChatBackgroundBuiltIn,
+  ChatBackgroundKey,
+} from "./chat-backgrounds";

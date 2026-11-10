@@ -10,6 +10,10 @@ import {
 } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
+  setChannelLocked,
+  syncLockedChannels,
+} from "@repo/chat-core/density";
+import {
   arrangeChannelSidebar,
   foldedSectionAnnouncement,
   groupChannelsByCategory,
@@ -22,10 +26,11 @@ import {
   sidebarUnreadCounts,
   useCategories,
   useChannelNotificationPreferences,
-  useChannelUnreadCounts,
   lastChannelLandingId,
   useActiveChapterId,
   useChannels,
+  canSetChannelDisplayLock,
+  useSetChannelDisplayLock,
   useChapterSetupChecklist,
   useChapterRoster,
   useCurrentUser,
@@ -49,6 +54,7 @@ import {
   useSetChannelNotificationLevel,
   type ChannelRowActionKey,
   type ChatNotificationLevel,
+  useOwnAvatarTint,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChapterMark } from "@/components/chapter-mark";
@@ -57,6 +63,7 @@ import { PushReminder } from "@/components/notifications/push-reminder";
 import { useTourAnchor, useTourReady } from "@/components/onboarding/tour";
 import { ScreenShell, StickyHeader } from "@/components/screen-shell";
 import { AskSheet } from "@/components/ask/ask-sheet";
+import { StatusSheet } from "@/components/account/status-sheet";
 import { AskPill } from "@/components/chat/ask-pill";
 import {
   AccountButton,
@@ -104,6 +111,7 @@ import {
   readLastChannel,
   settleChatLaunch,
 } from "@/lib/chat/last-channel";
+import { useShownUnreadCounts } from "@/lib/chat/unread-first-paint";
 import {
   ChannelActionsMenu,
   type ChannelActionsMenuTarget,
@@ -143,6 +151,8 @@ function filterLineText(filters: { unreadOnly: boolean; hideMuted: boolean }) {
 
 export default function ChatHomeScreen() {
   const { tokens } = useFrappTheme();
+  // Your initials wear the color the chapter sees on them (#3860).
+  const ownTint = useOwnAvatarTint();
   const styles = createStyles(tokens);
   const router = useRouter();
   const { height: windowHeight } = useWindowDimensions();
@@ -151,11 +161,13 @@ export default function ChatHomeScreen() {
   // modal and the ✦ pill only presents it — the arrangement `tasks.tsx` uses
   // for s19.
   const askSheetRef = useRef<BottomSheetModal>(null);
+  const statusSheetRef = useRef<BottomSheetModal>(null);
   // Chat home is titled by the chapter, its mark and name, not by the word
   // "Chat" (`components/chapter-mark.tsx`).
   const { chapterName } = useChapterBranding();
 
   const channelsQuery = useChannels();
+  const setDisplayLock = useSetChannelDisplayLock();
   const channelsError = channelsErrorCopy(channelsQuery.error, chapterName);
   useEffect(() => {
     if (channelsQuery.isError) reportChannelsRefused(channelsQuery.error);
@@ -165,7 +177,10 @@ export default function ChatHomeScreen() {
   useTourReady(!channelsQuery.isPending, chapterName);
   const channelsAnchor = useTourAnchor("channels");
   const categoriesQuery = useCategories();
-  const unreadQuery = useChannelUnreadCounts();
+  // The server's counts, with what the phone already holds laid over until
+  // they answer (`lib/chat/unread-first-paint.ts`, #4006).
+  const unread = useShownUnreadCounts();
+  const unreadQuery = unread.query;
   const eventsQuery = useEvents();
   const tasksQuery = useTasks();
   // A DM row's title is the *other* participant, so the list needs the viewer's
@@ -181,6 +196,11 @@ export default function ChatHomeScreen() {
     () => selectChannels(channelsQuery.data),
     [channelsQuery.data],
   );
+  // Always formal (#3787): copied where every thread row reads its density.
+  // Only from a loaded list, so a refetch in flight never clears a lock.
+  useEffect(() => {
+    if (channelsQuery.data) syncLockedChannels(allChannels);
+  }, [channelsQuery.data, allChannels]);
   // Chat home lists channels only; direct messages live behind the Messages
   // door at the top right (owner, 2026-11-07).
   const channels = useMemo(
@@ -201,10 +221,10 @@ export default function ChatHomeScreen() {
   const unreadByChannelId = useMemo(
     () =>
       sidebarUnreadCounts({
-        data: unreadQuery.data,
-        isError: unreadQuery.isError,
+        data: unread.data,
+        isError: unread.isError,
       }),
-    [unreadQuery.data, unreadQuery.isError],
+    [unread.data, unread.isError],
   );
   const accountMenu = useAccountMenu();
 
@@ -363,7 +383,10 @@ export default function ChatHomeScreen() {
       }),
       pinnedIds: preferences.pinnedIds,
       collapsed: preferences.collapsed,
-      filters: preferences.filters,
+      // Unread only hides nothing on counts that aren't the server's yet.
+      filters: unread.provisional
+        ? { ...preferences.filters, unreadOnly: false }
+        : preferences.filters,
       activeChannelId: null,
       titleOf,
       unreadByChannelId,
@@ -373,6 +396,7 @@ export default function ChatHomeScreen() {
     channels,
     categories,
     preferences,
+    unread.provisional,
     unreadByChannelId,
     mutedChannelIds,
     titleOf,
@@ -493,6 +517,11 @@ export default function ChatHomeScreen() {
               permissions,
               surface: { copyLink: false, edit: false },
             }),
+            canSetDisplayLock: canSetChannelDisplayLock(
+              channel,
+              viewerId,
+              permissions,
+            ),
             onTogglePin: togglePin,
           });
         }}
@@ -547,7 +576,10 @@ export default function ChatHomeScreen() {
       overlay={{
         open: filterMenu.visible || accountMenu.visible,
         content: accountMenu.visible ? (
-          <AccountMenu menu={accountMenu} />
+          <AccountMenu
+            menu={accountMenu}
+            onStatus={() => statusSheetRef.current?.present()}
+          />
         ) : (
           <ChannelFilterMenu
             menu={filterMenu}
@@ -574,6 +606,7 @@ export default function ChatHomeScreen() {
             initials={viewerProfile?.initials ?? "?"}
             photoUrl={viewerProfile?.photoUrl ?? null}
             fetchedAt={viewerQuery.dataUpdatedAt}
+            tint={ownTint}
           />
         </View>
       }
@@ -618,7 +651,7 @@ export default function ChatHomeScreen() {
         member they have no @-mentions when they do — the precise failure the
         "never re-derive unread" rule exists to prevent. Say it instead.
       */}
-      {unreadQuery.isError ? (
+      {unread.isError ? (
         <Text style={styles.unreadWarning}>
           Unread counts are unavailable right now, so badges may be missing.
         </Text>
@@ -763,11 +796,23 @@ export default function ChatHomeScreen() {
       )}
 
       <AskSheet ref={askSheetRef} />
+      <StatusSheet ref={statusSheetRef} />
       <ChannelActionsMenu
         target={menuTarget}
         onClose={closeMenu}
         onAction={(key) => runMenuAction(key)}
         writeBlockedReason={writeBlockedReason}
+        onSetDisplayLock={(channelId, locked) => {
+          setDisplayLock
+            .mutateAsync({ id: channelId, locked })
+            .then(() => setChannelLocked(channelId, locked))
+            .catch(() =>
+              Alert.alert(
+                "Couldn't change Always formal",
+                "Nothing changed. Check your connection and try again.",
+              ),
+            );
+        }}
         onSetLevel={(channelId, level) => {
           // Per call, not `mutate`'s per-call `onError`: TanStack runs that
           // only for the latest call, so a quick second change would swallow

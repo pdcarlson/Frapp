@@ -1,4 +1,7 @@
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsIn,
   IsInt,
   IsOptional,
@@ -18,7 +21,15 @@ import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { isSupportedTimeZone, MAX_TIME_ZONE_LENGTH } from '@repo/validation';
 import {
+  ISO_INSTANT_MESSAGE,
+  ISO_INSTANT_PATTERN,
+  ISO_INSTANT_REGEX,
+} from '#domain/constants/iso-instant';
+import {
+  CUSTOM_STATUS_MAX_LENGTH,
+  MEMBER_STATUSES,
   THEMES,
+  type MemberStatus,
   type Theme,
   type UserSettingsValues,
 } from '#domain/entities/notification.entity';
@@ -108,6 +119,42 @@ export class ListNotificationsQueryDto {
   limit?: number;
 }
 
+/**
+ * A notification's `data.target.screen`, as the API's senders write it:
+ * lowercase words joined by underscores (`chat`, `chat_reports`).
+ */
+const NOTIFICATION_SCREEN_REGEX = /^[a-z][a-z_]{0,39}$/;
+
+/** Most screens one "seen" call may name; a client screen covers one or two. */
+const MARK_READ_SCREENS_MAX = 10;
+
+export class MarkNotificationsReadDto {
+  @ApiPropertyOptional({
+    description:
+      'Mark read only the notifications that point at one of these screens (`data.target.screen`). Omit to mark every unread notification read.',
+    type: [String],
+    maxItems: MARK_READ_SCREENS_MAX,
+    example: ['events'],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(MARK_READ_SCREENS_MAX)
+  @Matches(NOTIFICATION_SCREEN_REGEX, { each: true })
+  screens?: string[];
+}
+
+export class MarkNotificationsReadResultDto {
+  @ApiProperty({
+    description: 'The instant written to `read_at` on every row this call read',
+    format: 'date-time',
+  })
+  read_at: string;
+
+  @ApiProperty({ description: 'How many notifications this call marked read' })
+  updated: number;
+}
+
 export class UpdateNotificationPreferenceDto {
   @ApiProperty({ description: 'Chapter ID' })
   @IsUUID()
@@ -123,6 +170,31 @@ export class UpdateNotificationPreferenceDto {
   })
   @IsStrictBoolean()
   is_enabled: boolean;
+}
+
+/**
+ * A custom status line (#3845): at most {@link CUSTOM_STATUS_MAX_LENGTH} code
+ * points, on one line.
+ *
+ * Counts code points, as the column's `char_length` check does, and not
+ * class-validator's `@MaxLength`, which discounts a variation selector after a
+ * character: forty-one "❤️" pass `@MaxLength(80)` as 41 and reach Postgres as
+ * 82, which the check rejects as a 500. "One line" refuses every control
+ * character and the Unicode line and paragraph separators, not only CR and LF.
+ */
+@ValidatorConstraint({ name: 'customStatusLine', async: false })
+export class CustomStatusLineConstraint implements ValidatorConstraintInterface {
+  validate(value: unknown): boolean {
+    return (
+      typeof value === 'string' &&
+      [...value].length <= CUSTOM_STATUS_MAX_LENGTH &&
+      !/[\p{Cc}\u2028\u2029]/u.test(value)
+    );
+  }
+
+  defaultMessage(): string {
+    return `custom_status must be a single line of at most ${CUSTOM_STATUS_MAX_LENGTH} characters`;
+  }
 }
 
 export class UpdateUserSettingsDto {
@@ -183,6 +255,62 @@ export class UpdateUserSettingsDto {
   @IsOptional()
   @IsIn(THEMES, { message: `theme must be one of: ${THEMES.join(', ')}` })
   theme?: Theme;
+
+  @ApiPropertyOptional({
+    description:
+      'The status the member picks (#3845). Sending it replaces `status_expires_at` with the value sent alongside it (absent: no end time). `online` never carries an end time.',
+    enum: MEMBER_STATUSES,
+  })
+  // Not `@IsOptional`, which also skips `null`: a null status would pass and
+  // change nothing behind a 200. Absent is fine; null is refused.
+  @ValidateIf((_, value) => value !== undefined)
+  @IsIn(MEMBER_STATUSES, {
+    message: `status must be one of: ${MEMBER_STATUSES.join(', ')}`,
+  })
+  status?: MemberStatus;
+
+  @ApiPropertyOptional({
+    description:
+      'When `status` reverts to `online`, as an ISO 8601 instant in the future. Accepted only together with `status`; null, blank or absent means no end time (and alone is ignored).',
+    nullable: true,
+    type: String,
+    format: 'date-time',
+    pattern: ISO_INSTANT_PATTERN,
+  })
+  @IsOptional()
+  @Transform(({ value }) => normalizeBlankToNull(value))
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @Matches(ISO_INSTANT_REGEX, { message: `$property ${ISO_INSTANT_MESSAGE}` })
+  status_expires_at?: string | null;
+
+  @ApiPropertyOptional({
+    description: `One short custom status line (at most ${CUSTOM_STATUS_MAX_LENGTH} characters, no line breaks). Trimmed; null or an empty string clears it, and its end time with it. Sending it replaces \`custom_status_expires_at\` with the value sent alongside it.`,
+    nullable: true,
+    type: String,
+    maxLength: CUSTOM_STATUS_MAX_LENGTH,
+  })
+  @IsOptional()
+  @Transform(({ value }) => normalizeBlankToNull(value))
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @Validate(CustomStatusLineConstraint)
+  custom_status?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'When the custom status line clears, as an ISO 8601 instant in the future. Accepted only together with `custom_status`; null, blank or absent means no end time (and alone is ignored).',
+    nullable: true,
+    type: String,
+    format: 'date-time',
+    pattern: ISO_INSTANT_PATTERN,
+  })
+  @IsOptional()
+  @Transform(({ value }) => normalizeBlankToNull(value))
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @Matches(ISO_INSTANT_REGEX, { message: `$property ${ISO_INSTANT_MESSAGE}` })
+  custom_status_expires_at?: string | null;
 }
 
 /**
@@ -221,4 +349,38 @@ export class UserSettingsDto implements UserSettingsValues {
     enum: THEMES,
   })
   theme: Theme;
+
+  @ApiProperty({
+    description:
+      'The status in force now (#3845). `online` until the member picks another, and once a picked status reaches its end time.',
+    enum: MEMBER_STATUSES,
+  })
+  status: MemberStatus;
+
+  @ApiProperty({
+    description:
+      'When `status` reverts to `online`. Null: until the member changes it.',
+    nullable: true,
+    type: String,
+    format: 'date-time',
+  })
+  status_expires_at: string | null;
+
+  @ApiProperty({
+    description:
+      'The custom status line in force now, or null for none (also once it has reached its end time).',
+    nullable: true,
+    type: String,
+    example: 'At practice till 6',
+  })
+  custom_status: string | null;
+
+  @ApiProperty({
+    description:
+      'When the custom status line clears. Null: until the member clears it.',
+    nullable: true,
+    type: String,
+    format: 'date-time',
+  })
+  custom_status_expires_at: string | null;
 }

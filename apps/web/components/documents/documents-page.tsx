@@ -4,8 +4,11 @@ import { useDeferredValue, useMemo, useState } from "react";
 import {
   useDeleteDocument,
   useDocumentFolders,
+  useDocumentLibrary,
   useDocuments,
+  useMemberDisplayNames,
   useMyPermissions,
+  useSemesters,
 } from "@repo/hooks";
 import { can } from "@repo/validation";
 import { Can } from "@/components/shared/can";
@@ -16,6 +19,15 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { DocumentList } from "@/components/documents/document-list";
+import {
+  DELETE_DOCUMENT_BODY,
+  DELETE_DOCUMENT_LABEL,
+  NO_DOCUMENT_FILTERS,
+  deleteDocumentTitle,
+  type DocumentFilters,
+  type DocumentSort,
+} from "@repo/hooks/document-library";
+import { DocumentViewer } from "@/components/documents/document-viewer";
 import type {
   ChapterDocument,
   ChapterDocumentFolder,
@@ -57,18 +69,17 @@ function ChapterDocumentsPage() {
   const { confirm, confirmDialog } = useConfirmDialog();
   const [search, setSearch] = useState("");
   /*
-    Deferred rather than fed raw, for the reason mobile's s12 screen documents:
-    `search` is part of `useDocuments`' query key, so a keystroke-per-request
-    would mint a cache entry per character and blank the list to a skeleton on
-    each one. The trim happens before the defer so " " and "" are the same key.
-
-    `%` and `_` need no escaping here — `spec/behavior/chapter-docs.md` § Search
-    pins that the server matches them literally.
+    Search, the uploader, date and file type filters, and the order all run
+    here (`useDocumentLibrary`), over
+    the library the list endpoint returns in one response (#3852), as
+    `/backwork`'s do: a keystroke re-ranks what is in memory, so there is no
+    request per character, and it works offline over what is loaded. Deferred
+    so a long library re-ranks behind the keystroke rather than ahead of it.
   */
   const deferredSearch = useDeferredValue(search.trim());
-  const documentsQuery = useDocuments({
-    search: deferredSearch || undefined,
-  });
+  const [filters, setFilters] = useState<DocumentFilters>(NO_DOCUMENT_FILTERS);
+  const [sort, setSort] = useState<DocumentSort>("name");
+  const documentsQuery = useDocuments();
   const foldersQuery = useDocumentFolders();
   const deleteDoc = useDeleteDocument();
 
@@ -112,19 +123,13 @@ function ChapterDocumentsPage() {
     right — without a folder record there is nothing to rename, reorder or
     delete, and the management controls key on `id` being present.
 
-    The derivation only runs against an *unfiltered* list. `documents` is the
-    search response, so deriving from it mid-search would rebuild the rail out
-    of the matches alone and drop every folder containing nothing that matched —
-    tabs vanishing key by key as someone types, including the selected one. So
-    while a search is active and the endpoint is down, the rail keeps only its
-    two built-in filters and `FolderRail`'s notice says so. Remembering the last
-    unfiltered list instead would mean a ref written during render or a
-    setState in an effect, both of which the compiler rejects and neither of
-    which is worth it to prop up a degraded path.
+    It derives from the whole library, never what the search or filters
+    leave showing, so a folder tab doesn't vanish as someone types (#3852
+    made the list unfiltered on the wire, which removed the case that once
+    needed a guard here).
   */
   const railFolders = useMemo<FolderRow[]>(() => {
     if (!foldersQuery.isError) return folders;
-    if (deferredSearch) return [];
     const names = new Set<string>();
     for (const doc of documents) {
       if (doc.folder) names.add(doc.folder);
@@ -132,9 +137,13 @@ function ChapterDocumentsPage() {
     return Array.from(names)
       .sort((a, b) => a.localeCompare(b))
       .map((name) => ({ id: null, name, sort_order: null }));
-  }, [folders, foldersQuery.isError, deferredSearch, documents]);
+  }, [folders, foldersQuery.isError, documents]);
 
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
+  // The document open in the viewer (#3849), by id: the viewer reads the row
+  // from `visible`, so it steps through the list as shown and closes when the
+  // row leaves it.
+  const [openId, setOpenId] = useState<string | null>(null);
   const { data: permissionsPayload } = useMyPermissions();
   const canUpload = can(
     "chapter_docs:upload",
@@ -142,23 +151,32 @@ function ChapterDocumentsPage() {
   );
 
   /*
-    Folder filtering stays client-side while search goes to the server. The
-    two compose: the server narrows to title matches across the whole chapter,
-    and the tab then narrows that to one folder. Keeping the tab local means
-    switching folders is instant rather than a refetch per tab, which is the
-    behaviour this page already had and its tests already pin.
+    The folder tab, then the toolbar's search, filters and order, all local,
+    through the hook mobile's s12 runs too (#3938): uploader names and the
+    kept-pick rule, the semester window, and the clock. The clock pauses
+    while a document is open: a window moving past the open file would drop
+    its row and close the viewer mid-read. It catches up when it closes.
   */
-  const visible = useMemo(() => {
-    const filtered =
-      activeFolder === null
-        ? documents
-        : documents.filter((doc) =>
-            activeFolder === "" ? !doc.folder : doc.folder === activeFolder,
-          );
-    return filtered.sort((a, b) =>
-      (a.title || "").localeCompare(b.title || ""),
-    );
-  }, [activeFolder, documents]);
+  const {
+    folderTotal,
+    visible,
+    uploaders,
+    kinds,
+    filters: effectiveFilters,
+    semesterKnown,
+    filtering,
+    truncated,
+  } = useDocumentLibrary({
+    documents,
+    folder: activeFolder,
+    search: deferredSearch,
+    filters,
+    sort,
+    namesById: useMemberDisplayNames().byId,
+    semesters: useSemesters().data,
+    paused: openId !== null,
+  });
+  const visibleDocs = useMemo(() => visible.map((row) => row.doc), [visible]);
 
   /*
     The upload panel's type chips: the common types plus every type this
@@ -166,20 +184,9 @@ function ChapterDocumentsPage() {
     on the wire until #3642, so this keeps new uploads on the spellings the
     library already uses.
   */
-  /*
-    Read from the unsearched list, never the search results: a search for
-    "rush" must not drop the chapter's "Contract" chip or change where the
-    folder guess files a document. Same query key as the page's own list with
-    no search, so it is normally a cache hit, not a second request.
-  */
-  const libraryQuery = useDocuments();
-  const library = useMemo(
-    () => asArray<ChapterDocument>(libraryQuery.data),
-    [libraryQuery.data],
-  );
   const typeOptions = useMemo(
-    () => documentTypeOptions(library.map((doc) => doc.document_type)),
-    [library],
+    () => documentTypeOptions(documents.map((doc) => doc.document_type)),
+    [documents],
   );
   const folderNames = useMemo(
     () => folders.map((folder) => folder.name),
@@ -189,7 +196,7 @@ function ChapterDocumentsPage() {
     activeFolder,
     typeOptions,
     folders: folderNames,
-    documents: library,
+    documents,
   });
   /*
     Which rows' deletes are in flight — a set, not a scalar. `useDeleteDocument` is pessimistic —
@@ -221,10 +228,9 @@ function ChapterDocumentsPage() {
     // the `null`-vs-`""` distinction only matters where a `comment` is asked
     // for, as it is on the two Chapter Ops rejection flows.
     const confirmed = await confirm({
-      title: `Delete ${doc.title}?`,
-      description:
-        "This removes the file from chapter storage immediately and cannot be undone.",
-      confirmLabel: "Delete document",
+      title: deleteDocumentTitle(doc.title),
+      description: DELETE_DOCUMENT_BODY,
+      confirmLabel: DELETE_DOCUMENT_LABEL,
       tone: "destructive",
     });
     if (!confirmed) return;
@@ -274,30 +280,21 @@ function ChapterDocumentsPage() {
     has nothing else to say. Gated on `documents`, not `visible`: a folder
     filter that matches nothing is the empty case, not the offline one.
   */
-  /*
-    `offline-search` is its own state, and it exists because server-side search
-    reintroduced the hazard the comment above rules out. Each query string is a
-    distinct cache key, so an offline member who types one lands on a key that
-    was never fetched — `documents` goes empty and the plain offline branch
-    would replace a library they had cached moments earlier. Naming the state
-    keeps the recovery honest: the search is what needs a connection, and
-    clearing it brings their documents straight back.
-  */
   const listState =
-    isOffline && documents.length === 0 && deferredSearch
-      ? "offline-search"
-      : isOffline && documents.length === 0
-        ? "offline"
-        : documentsQuery.isPending
-          ? "loading"
-          : documentsQuery.isError
-            ? "error"
-            : visible.length === 0
-              ? "empty"
-              : "ready";
+    isOffline && documents.length === 0
+      ? "offline"
+      : documentsQuery.isPending
+        ? "loading"
+        : documentsQuery.isError
+          ? "error"
+          : visible.length === 0
+            ? "empty"
+            : "ready";
 
   return (
-    <div className="space-y-6">
+    // A container (#4022): beside chat (#3779) the page is narrow while the
+    // window is wide, so the folder rail counts the page's own width.
+    <div className="@container space-y-6">
       <PageActions>
         <Can permission="chapter_docs:upload">
           <UploadDocumentPanel
@@ -367,7 +364,7 @@ function ChapterDocumentsPage() {
         200px rather than the old 240: the rail holds folder names and a four
         control management row, and the width it was giving up was the list's.
       */}
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-x-6 gap-y-4 md:grid-cols-[200px_minmax(0,1fr)]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-x-6 gap-y-4 @2xl:grid-cols-[200px_minmax(0,1fr)]">
         <FolderRail
           railFolders={railFolders}
           activeFolder={activeFolder}
@@ -375,7 +372,6 @@ function ChapterDocumentsPage() {
           gate={gate}
           management={folderManagement}
           loadFailed={foldersQuery.isError}
-          searching={!!deferredSearch}
           onRetryLoad={() => void foldersQuery.refetch()}
         />
 
@@ -384,12 +380,27 @@ function ChapterDocumentsPage() {
           loadError={documentsQuery.error}
           visible={visible}
           activeFolder={activeFolder}
+          total={folderTotal}
+          truncated={truncated}
+          filtering={filtering}
           search={search}
           setSearch={setSearch}
           deferredSearch={deferredSearch}
+          filters={effectiveFilters}
+          semesterKnown={semesterKnown}
+          setFilters={setFilters}
+          uploaders={uploaders}
+          kinds={kinds}
+          sort={sort}
+          setSort={setSort}
+          onClearFilters={() => {
+            setSearch("");
+            setFilters(NO_DOCUMENT_FILTERS);
+          }}
           onRetry={() => void documentsQuery.refetch()}
           gate={gate}
           deletingIds={deletingIds}
+          onOpen={(doc) => setOpenId(doc.id)}
           onDelete={(doc) => void handleDelete(doc)}
           onShowAllFiles={() => setActiveFolder(null)}
           onUpload={canUpload ? () => upload.openPanel() : undefined}
@@ -403,6 +414,11 @@ function ChapterDocumentsPage() {
         interaction the Chapter Ops slice shipped and its guard caught.
       */}
       <FolderDialog gate={gate} management={folderManagement} />
+      <DocumentViewer
+        documents={visibleDocs}
+        openId={openId}
+        onOpenChange={setOpenId}
+      />
 
       {confirmDialog}
     </div>

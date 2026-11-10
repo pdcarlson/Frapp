@@ -1,6 +1,5 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useHiddenUnsetFeatures } from "@repo/hooks";
 import { cn } from "@/lib/utils";
@@ -20,17 +19,16 @@ import { EYEBROW } from "@/components/ui/typography";
  * rows. The width and padding around it are not this component's; they belong
  * to whatever holds it.
  *
- * **It is not the column.** From `lg` up it is the modules face of the
- * shell's one left column (`nav-column.tsx`), which owns the width, the
- * surface, the hairline and the pinned chapter row. On `/chat` the column also
- * holds the channel list, and this nav slides in over it from a back arrow.
- * Below `lg` it renders inside the mobile drawer (`variant="drawer"`), with the
- * chapter row on top, always expanded, and no toggle.
+ * **It is not the column.** From `lg` up it sits in the shell's left column
+ * (`nav-column.tsx`), which owns the width, the surface, the hairline and the
+ * pinned chapter row. From the side-by-side width up its Chat row and the open
+ * tool's row are toggles (`shell-layout.ts`, #3779). Below `lg` it renders
+ * inside the mobile drawer (`variant="drawer"`), with the chapter row on top,
+ * always expanded, and no toggle.
  *
- * **Collapsing is a preference, not a breakpoint.** The responsive contract is
- * still two states switching once at `lg` (`spec/ui/web-dashboard/README.md`):
- * the rail never appears in the drawer. Adding a viewport tier would be a spec
- * change; letting a desktop user narrow their own nav is not.
+ * **Collapsing is a preference**, and also what the shell does while chat and
+ * a tool are open side by side on a window too narrow for the full nav
+ * (`shell-layout.ts`). The rail never appears in the drawer.
  *
  * Section headings are derived, never declared — a heading renders only when at
  * least one of its items survives the permission, module and setup gates, so a
@@ -47,20 +45,45 @@ type AppNavProps = {
   pathname: string;
   onNavigate?: () => void;
   /**
-   * `column` is the desktop column's modules face (`nav-column.tsx`), which
+   * `column` is the desktop shell's left column (`nav-column.tsx`), which
    * pins the chapter row above it. The drawer reuses this component wholesale
    * rather than duplicating the nav ("the drawer is the sidebar"), with the
    * chapter row on top, no collapse toggle and no rail.
    */
   variant?: "column" | "drawer";
   /**
-   * `/chat`'s modules face (`nav-face.tsx`): the Chat row slides the channel
-   * list back instead of linking to the open route, and trails what the column
-   * gives it (the unread dot and a chevron).
+   * The desktop shell's Chat row from the side-by-side width up
+   * (`shell-layout.ts`, #3779): a toggle that opens and closes the chat panel
+   * instead of a link to `/chat`. `open` marks it the way a current row is
+   * marked. Absent, the row is the plain link it is below that width.
    */
-  chatRow?: { onSelect: () => void; trailing: ReactNode };
+  chatRow?: { onSelect: () => void; open: boolean };
+  /**
+   * Clicking the open tool's row closes it (#3779). Given, the row whose
+   * route is open becomes a button that calls this instead of a link to the
+   * page already on screen.
+   */
+  onCloseTool?: () => void;
+  /**
+   * Ids of rows with something new for the member (today Chat's unread,
+   * `use-chat-has-unread.ts`; the only row the app counts). A highlighted row
+   * draws bright and semibold with a dot, on every route and in the drawer,
+   * until the count clears (#3824).
+   */
+  highlighted?: ReadonlySet<string>;
   className?: string;
 };
+
+/** What a screen reader hears after a highlighted row's name. */
+const HIGHLIGHT_LABEL: Record<string, string> = {
+  chat: "unread messages",
+};
+
+/** The collapse toggle's action, named as the sidebar it folds (#4044). */
+const TOGGLE_LABEL = {
+  collapse: "Collapse sidebar",
+  expand: "Expand sidebar",
+} as const;
 
 /** 18px duotone glyph, per `1b` pin 2. */
 const navIconClassName = "h-[18px] w-[18px]";
@@ -88,6 +111,8 @@ export function AppNav({
   onNavigate,
   variant = "column",
   chatRow,
+  onCloseTool,
+  highlighted,
   className,
 }: AppNavProps) {
   const isDrawer = variant === "drawer";
@@ -134,7 +159,13 @@ export function AppNav({
           <ProtectedNavItem
             key={item.id}
             item={item}
-            current={currentFor(item, pathname)}
+            current={
+              chatRow && item.id === "chat"
+                ? chatRow.open
+                  ? "true"
+                  : undefined
+                : currentFor(item, pathname)
+            }
             permissions={permissions}
             iconClassName={navIconClassName}
             onNavigate={onNavigate}
@@ -142,9 +173,29 @@ export function AppNav({
             isModuleEnabled={isModuleEnabled}
             hiddenFeatures={hiddenFeatures}
             collapsed={isCollapsed}
+            highlight={
+              highlighted?.has(item.id)
+                ? (HIGHLIGHT_LABEL[item.id] ?? "new")
+                : undefined
+            }
             {...(chatRow && item.id === "chat"
-              ? { onSelect: chatRow.onSelect, trailing: chatRow.trailing }
-              : {})}
+              ? {
+                  onSelect: chatRow.onSelect,
+                  pressed: chatRow.open,
+                  selectLabel: chatRow.open ? "Close chat" : "Open chat",
+                }
+              : // Only the row whose own page is open. A Settings tool's
+                // route marks the Settings row too (`activeFor`), and there
+                // the row stays the way back to the Settings hub.
+                onCloseTool &&
+                  item.id !== "chat" &&
+                  currentFor(item, pathname) === "page"
+                ? {
+                    onSelect: onCloseTool,
+                    pressed: true,
+                    selectLabel: `Close ${item.label}`,
+                  }
+                : {})}
           />
         ))}
       </div>
@@ -174,26 +225,47 @@ export function AppNav({
         {sections}
       </nav>
       {isDrawer || !onToggleCollapsed ? null : (
+        /*
+         * The collapse toggle (#4044). It stays pinned to the bottom of the
+         * column (board `1c` pin 2, `1b` pin 4), but reads as a nav row: a hairline
+         * above it, the row's 34px geometry and colors, and in the expanded
+         * column its action as a visible label ("Collapse sidebar"), the way
+         * WordPress's "Collapse menu" row does. It was a lone 34px
+         * `text-muted` glyph in the corner, which members missed. The rail
+         * has no room for a label, so there the name is the accessible name
+         * and the tooltip.
+         */
         <div
+          data-nav-toggle=""
           className={cn(
-            "mt-auto flex pt-2",
-            isCollapsed ? "justify-center" : "justify-end",
+            "mt-auto flex shrink-0 flex-col pt-2",
+            isCollapsed ? "items-center" : "w-full",
           )}
         >
+          {/* The rail's 24px group hairline; the column's spans the row. */}
+          <span
+            aria-hidden="true"
+            className={cn(
+              "mb-2 h-px shrink-0 bg-border",
+              isCollapsed ? "w-6" : "w-full",
+            )}
+          />
           <button
             type="button"
             onClick={onToggleCollapsed}
-            aria-label={
-              isCollapsed ? "Expand navigation" : "Collapse navigation"
-            }
+            aria-label={isCollapsed ? TOGGLE_LABEL.expand : undefined}
             aria-expanded={!isCollapsed}
-            title={isCollapsed ? "Expand navigation" : "Collapse navigation"}
+            title={isCollapsed ? TOGGLE_LABEL.expand : TOGGLE_LABEL.collapse}
             className={cn(
-              "grid h-[34px] w-[34px] place-items-center rounded-[10px] text-muted transition hover:bg-card hover:text-foreground",
+              "flex h-[34px] shrink-0 items-center rounded-[10px] text-sm text-muted-foreground transition hover:bg-card hover:text-foreground",
+              isCollapsed ? "w-[34px] justify-center" : "w-full gap-2.5 px-2.5",
               FOCUS_RING_SHELL,
             )}
           >
-            <CollapseIcon className="h-[18px] w-[18px]" aria-hidden="true" />
+            <CollapseIcon className={navIconClassName} aria-hidden="true" />
+            {isCollapsed ? null : (
+              <span className="truncate">{TOGGLE_LABEL.collapse}</span>
+            )}
           </button>
         </div>
       )}

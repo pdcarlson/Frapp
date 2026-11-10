@@ -201,6 +201,8 @@ describe('ChapterService', () => {
       role_ids: ['role-president'],
       custom_role_ids: [],
       has_completed_onboarding: true,
+      pledge_class_id: null,
+      order_number: null,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     };
@@ -563,6 +565,9 @@ describe('ChapterService', () => {
         description: channelDef.description,
         type: channelDef.type,
         is_read_only: channelDef.is_read_only,
+        // Spelled out rather than read off `channelDef`, so the test pins
+        // which channel the seeder flags (#3909) instead of echoing it.
+        is_audit_log: channelDef.name === 'chapter-audit',
         required_permissions: channelDef.required_permissions
           ? [...channelDef.required_permissions]
           : null,

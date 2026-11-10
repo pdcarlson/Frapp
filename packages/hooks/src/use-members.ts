@@ -11,6 +11,12 @@ import type { components } from "@repo/api-sdk";
 import { roleColorOrNull, type MemberDismissalKey } from "@repo/validation";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { resolveDisplayName, type DisplayNameMap } from "./display-names";
+import { useViewerUserId } from "./use-user";
+import {
+  memberAvatarHue,
+  memberAvatarTint,
+  type MemberAvatarTint,
+} from "./member-avatar-color";
 
 /**
  * One member row as `GET /v1/members` and `GET /v1/members/search` serve it.
@@ -99,6 +105,12 @@ export interface MemberDisplayNames {
    */
   roleColorFor: (userId: string) => string | null;
   /**
+   * The paint for the member's initials avatar when they have no photo
+   * (#3860): their {@link roleColorFor} color when their role colors their
+   * name, so avatar and name match, otherwise their stable hashed hue.
+   */
+  avatarTintFor: (userId: string) => MemberAvatarTint;
+  /**
    * True until the first roster read settles — and, because the read is
    * `enabled: !!chapterId`, true forever while there is no active chapter. A
    * surface that blocks rendering on this never renders for a chapterless
@@ -173,6 +185,12 @@ export function useMemberDisplayNames(): MemberDisplayNames {
     [roleColorById],
   );
 
+  const avatarTintFor = useCallback(
+    (userId: string) =>
+      memberAvatarTint(memberAvatarHue(userId, roleColorById.get(userId))),
+    [roleColorById],
+  );
+
   // Keyed on `query.refetch`, which TanStack keeps stable, rather than on
   // `query` — the observer hands back a fresh result object every render, so
   // depending on it would make this callback a new identity each time and defeat
@@ -187,6 +205,7 @@ export function useMemberDisplayNames(): MemberDisplayNames {
     nameFor,
     avatarFor,
     roleColorFor,
+    avatarTintFor,
     isPending: query.isPending,
     isError: query.isError,
     hasData: query.data !== undefined,
@@ -266,6 +285,7 @@ export function useUpdateMemberRoles() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["members", "update-member-roles"],
     mutationFn: async ({
       id,
       role_ids,
@@ -309,6 +329,7 @@ export function useRemoveMember() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["members", "remove-member"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.DELETE("/v1/members/{id}", {
         params: { path: { id } },
@@ -330,6 +351,7 @@ export function useUpdateOnboarding() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["members", "update-onboarding"],
     mutationFn: async (body: { has_completed_onboarding: boolean }) => {
       const { data, error } = await client.PATCH("/v1/members/me/onboarding", {
         body,
@@ -391,6 +413,7 @@ export function useDismissOpsNudge() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["members", "dismiss-ops-nudge"],
     scope: { id: "ops-nudge-dismiss" },
     mutationFn: async (body: { module_key: MemberDismissalKey }) => {
       const { data, error } = await client.PATCH(
@@ -404,4 +427,15 @@ export function useDismissOpsNudge() {
       queryClient.invalidateQueries({ queryKey: ["chapters"] });
     },
   });
+}
+
+/**
+ * The viewer's own initials paint (#3860): the color the chapter sees on them,
+ * for the surfaces that draw the viewer's own avatar (the account button, the
+ * More tab's card, the profile page). `null` until the viewer's id is known.
+ */
+export function useOwnAvatarTint(): MemberAvatarTint | null {
+  const viewerId = useViewerUserId();
+  const { avatarTintFor } = useMemberDisplayNames();
+  return viewerId ? avatarTintFor(viewerId) : null;
 }

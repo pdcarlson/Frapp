@@ -5,6 +5,7 @@ import {
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
@@ -28,8 +29,8 @@ import {
   AttachGlyph,
   ReactionGlyph,
   SendArrowGlyph,
-  SlashCommandGlyph,
 } from "./chat-glyphs";
+import { AUDIT_LOG_COMPOSER_NOTE } from "@repo/chat-core/audit-log-copy";
 import { cn } from "@/lib/utils";
 import { compactControlClassName } from "@/components/shared/table-controls";
 import { MENTION_CHIP } from "./chip";
@@ -65,6 +66,14 @@ import {
   readSignedUpload,
 } from "@repo/validation";
 import { EmojiPicker } from "./emoji-picker";
+import {
+  ComposerPlusMenu,
+} from "./composer-plus-menu";
+import {
+  plusMenuModel,
+  type PlusMenuCommand,
+  type PlusMenuForm,
+} from "@repo/chat-core/plus-menu";
 import { QuotedMessage } from "./reply-quote";
 import {
   createMentionSuggestion,
@@ -340,7 +349,7 @@ export function ComposerShell({
 /**
  * `cmdk` and a Radix Dialog, fetched when the palette is first summoned.
  *
- * The palette opens from typing `/` or from the toolbar's ⌘ button, so on most
+ * The palette opens from typing `/` or Cmd/Ctrl+/, so on most
  * cold loads it is never opened at all — but the eager import put its whole
  * dependency chain in the chunk that has to parse before the composer is
  * focusable, which `1s` budgets at 400ms. It is one of the five surfaces the
@@ -357,7 +366,7 @@ const SlashPalette = dynamic(
 
 /**
  * The message the next send replies to, already resolved to a label and a
- * one-line preview by the shell (#489).
+ * preview by the shell (#489).
  *
  * Resolved rather than a `ChatMessage`, because the shell is the only place
  * that holds the viewer id and the name resolver the label needs, and because
@@ -423,6 +432,11 @@ interface ComposerBaseProps {
   isDirect?: boolean;
   isReadOnly: boolean;
   /**
+   * The chapter's audit log (#3909), where only Frapp posts: no member gets a
+   * composer, whatever `canPost` says, and the line that replaces it says why.
+   */
+  isAuditLog?: boolean;
+  /**
    * Server-decided capability (#704): whether the caller may post in this
    * channel at all, from `ChatChannel.can_post` — already folds in the
    * read-only gate (a holder of `announcements:post`, or `*`, gets `true` in
@@ -468,6 +482,13 @@ interface ComposerBaseProps {
     command: SlashCommand,
     args: string,
   ) => CommandFormOutcome;
+  /**
+   * The command forms the **+** menu offers (#3865), each with whether the
+   * member's role may use it; a row opens its form through
+   * `onOpenCommandForm` with no details, as a bare command does. Omitted, the
+   * menu holds Attach a file alone.
+   */
+  commandForms?: readonly PlusMenuForm[];
   onTyping: () => void;
   /**
    * The chapter's module gate. The palette filters by it, and a typed module
@@ -686,6 +707,13 @@ export async function runDispatch(
     return { ok: false };
   }
 }
+
+/**
+ * Commands that post through `sendMessage`, and so queue in the outbox like
+ * a message (`sendSimpleCommand` in `@repo/chat-core/dispatch`). Every other
+ * implemented command POSTs straight to its controller and is refused offline.
+ */
+const QUEUED_COMMANDS: ReadonlySet<string> = new Set(["poll", "announce"]);
 
 /** What `onOpenCommandForm` did with a command; `null` hands it to dispatch. */
 export type CommandFormOutcome = "opened" | "refused" | null;
@@ -951,12 +979,14 @@ export function Composer({
   channelName,
   isDirect,
   isReadOnly,
+  isAuditLog = false,
   canPost,
   draft,
   onChangeDraft,
   onSend,
   onSlashDispatch,
   onOpenCommandForm,
+  commandForms,
   onTyping,
   isModuleEnabled,
   recruitmentVocab,
@@ -1039,7 +1069,7 @@ export function Composer({
   // Hoisted above `useEditor` so `onCreate` can honour it — the early return
   // that reads it next is ~400 lines down, but Tiptap builds the editor from
   // here regardless of whether anything ever renders it. See `onCreate`.
-  const resolvedCanPost = canPost ?? !isReadOnly;
+  const resolvedCanPost = isAuditLog ? false : (canPost ?? !isReadOnly);
   const sendRef = useRef<() => void>(() => {});
   /*
     What is staged as of the last commit, for a refused send to compare
@@ -1207,7 +1237,7 @@ export function Composer({
 
   // Radix's default `onCloseAutoFocus` returns focus to whatever rendered
   // `<DialogTrigger>` — this palette has none, since it opens from typing "/"
-  // as often as from clicking the toolbar button, so that handler is a no-op
+  // or Cmd/Ctrl+/ (the toolbar's palette button became the + menu, #3865), so that handler is a no-op
   // here and focus was landing nowhere (effectively `document.body`) on every
   // close. The composer editor is the one place a member always means to end
   // up, whichever of open/select/Escape/backspace-the-slash closed it.
@@ -1248,7 +1278,12 @@ export function Composer({
       // spec/ui/resilience/connection-state.md's split applies within this one control: the text path
       // is labelled and stays live because it queues, and the queueless path
       // refuses and says why.
-      if (isOffline) {
+      //
+      // `/poll` and `/announce` are not queueless (#3865): both post through
+      // `sendMessage`, which queues in the outbox like a text message, so
+      // offline they run rather than being refused. The New poll form and
+      // the + menu's Poll row queue the same way.
+      if (isOffline && !QUEUED_COMMANDS.has(command.name)) {
         return {
           title: `/${slashToken(command)} needs a connection`,
           description:
@@ -1517,6 +1552,40 @@ export function Composer({
   );
 
   const stagedCount = pending.length + uploading.length;
+
+  // The + menu (#3865): what it offers, what it greys and why.
+  const plusMenu = useMemo(
+    () =>
+      plusMenuModel({
+        forms: commandForms ?? [],
+        moduleStatus: slashCommandsStatus,
+        isModuleEnabled,
+        replying: replyTo != null,
+        attachmentNoun: "file",
+        attachmentsStaged: stagedCount,
+        attachmentLimit: CHAT_FILE_LIMIT,
+        offline: Boolean(isOffline),
+        roleRetryHint: "Reload to try again.",
+      }),
+    [
+      commandForms,
+      slashCommandsStatus,
+      isModuleEnabled,
+      replyTo,
+      stagedCount,
+      isOffline,
+    ],
+  );
+  // A row opens the form its bare command opens. The model has already
+  // greyed every row that can't open right now, so nothing is refused here
+  // that the member wasn't told about beside the row.
+  const openPlusMenuForm = useCallback(
+    (name: PlusMenuCommand) => {
+      const command = getSlashCommand(name);
+      if (command) onOpenCommandForm?.(command, "");
+    },
+    [onOpenCommandForm],
+  );
   const handleAttach = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(event.target.files ?? []);
@@ -1595,7 +1664,7 @@ export function Composer({
    * `replyTo` from `channel.messages`, so an unrelated edit or reaction lands a
    * fresh object on every render of an already-staged reply, and re-focusing on
    * each of those would fight a member who has clicked away — the same hazard
-   * the deleted `thread-panel.tsx` documented for its own focus effect.
+   * the old `thread-panel.tsx` (deleted in #2142) documented for its own focus effect.
    */
   const replyTargetId = replyTo?.id ?? null;
   useEffect(() => {
@@ -1624,7 +1693,7 @@ export function Composer({
         setPalette({ open: true, query: "" });
         return;
       }
-      // `defaultPrevented` for the same reason the deleted `thread-panel.tsx`
+      // `defaultPrevented` for the same reason the old `thread-panel.tsx` (#2142)
       // checked it:
       // a Radix `DismissableLayer` (the emoji popover mounted from this
       // toolbar) closes itself on Escape by calling `preventDefault()` without
@@ -1660,7 +1729,7 @@ export function Composer({
         return;
       }
       // The same refusals the typed path applies. Without this the palette was
-      // a way around all three: picking `/poll` while offline, with a file
+      // a way around all three: picking `/points` while offline, with a file
       // staged, or with a reply staged dispatched anyway and dropped whichever
       // context could not ride along.
       //
@@ -1733,7 +1802,9 @@ export function Composer({
   if (!resolvedCanPost) {
     return (
       <p className="border-t border-border px-4 py-3 text-caption text-muted-foreground">
-        {isReadOnly ? (
+        {isAuditLog ? (
+          <>{AUDIT_LOG_COMPOSER_NOTE}</>
+        ) : isReadOnly ? (
           <>This channel is read-only for your role.</>
         ) : (
           <>
@@ -1765,8 +1836,11 @@ export function Composer({
           what they are about to send.
         */}
         {replyTo ? (
-          <div className="mb-2 flex items-center gap-1.5">
-            <span className="shrink-0 text-caption text-muted-foreground">
+          <div className="mb-2 flex items-start gap-1.5">
+            {/* `py-1` matches the quote block's padding, and the button's
+                `mt-0.5` centres it on the same first line, so both stay on
+                the quote's first line when it wraps to two (#4001). */}
+            <span className="shrink-0 py-1 text-caption text-muted-foreground">
               Replying to
             </span>
             <QuotedMessage
@@ -1779,7 +1853,7 @@ export function Composer({
               type="button"
               variant="ghost"
               size="icon"
-              className="h-5 w-5 shrink-0"
+              className="mt-0.5 h-5 w-5 shrink-0"
               aria-label="Cancel reply"
               onClick={cancelReply}
             >
@@ -1844,6 +1918,27 @@ export function Composer({
         */}
         <div className="mt-2 flex items-center justify-between gap-2">
           <div className="flex items-center gap-1">
+            {/*
+              One + for a file and every command's form (#3865, layout A),
+              replacing the paperclip and the slash-palette button. Typing
+              `/` in the message box still opens the palette, and each row
+              shows its shortcut so the menu teaches it.
+            */}
+            <ComposerPlusMenu
+              model={plusMenu}
+              triggerClassName={compactControlClassName}
+              onAttach={() => fileInput.current?.click()}
+              onOpenForm={openPlusMenuForm}
+            />
+            <input
+              ref={fileInput}
+              type="file"
+              accept={acceptAttribute("document")}
+              multiple
+              className="sr-only"
+              onChange={(event) => void handleAttach(event)}
+              aria-hidden="true"
+            />
             <Popover>
               <PopoverTrigger asChild>
                 <Button
@@ -1860,44 +1955,6 @@ export function Composer({
                 <EmojiPicker onPick={insertEmoji} />
               </PopoverContent>
             </Popover>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className={compactControlClassName}
-              aria-label="Attach file"
-              onClick={() => fileInput.current?.click()}
-              disabled={stagedCount >= CHAT_FILE_LIMIT}
-            >
-              <AttachGlyph className="h-5 w-5" />
-            </Button>
-            <input
-              ref={fileInput}
-              type="file"
-              accept={acceptAttribute("document")}
-              multiple
-              className="sr-only"
-              onChange={(event) => void handleAttach(event)}
-              aria-hidden="true"
-            />
-            {/*
-              Not a ✦. The four-pointed sparkle is the Ask/AI mark and
-              components.md §11 says it "MUST NOT mark anything that is not an
-              Ask/AI entry point or answer" — a slash palette is a command
-              launcher, not an answer surface.
-            */}
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className={compactControlClassName}
-              aria-label="Open slash commands (Command Slash)"
-              aria-haspopup="dialog"
-              aria-expanded={palette.open}
-              onClick={() => setPalette({ open: true, query: "" })}
-            >
-              <SlashCommandGlyph className="h-5 w-5" />
-            </Button>
             <ComposerHelp />
           </div>
           {/*

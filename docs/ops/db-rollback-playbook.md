@@ -3138,6 +3138,24 @@ alter table public.chat_message_attachments
 
 Dropping them loses each photo's blur and the link to its preview copy; photos still draw, from the original. The preview objects stay in the `chat` bucket under each original's `preview/` folder, unreferenced, until a sweep removes them (#2197).
 
+## Rollback chapter-audit system-write (20261109210000)
+
+* **Migration**: `20261109210000_chat_channels_is_audit_log.sql`
+
+One not-null column with a default on `chat_channels`, `is_audit_log`, its partial unique index, and the `before insert` trigger `chat_channels_flag_audit_log` with its function. The API from the same PR writes the column when it seeds a chapter and filters on it to find the audit log, so roll the API back first: dropping the column under the new API fails chapter onboarding, skips every audit mirror (the lookup errors), and quietly reopens `#chapter-audit` to `*` and `announcements:post` holders, while channel reads keep working. With the older API those holders can post there again too (#3909); that is what rolling back means.
+
+**Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). After the API is back on the earlier version:
+
+```sql
+drop trigger if exists chat_channels_flag_audit_log on public.chat_channels;
+drop function if exists public.chat_channels_flag_audit_log();
+drop index if exists public.chat_channels_one_audit_log_per_chapter;
+alter table public.chat_channels
+  drop column if exists is_audit_log;
+```
+
+The `is_read_only = true` the backfill set stays; an officer can switch it off again in Chat settings under the older API.
+
 ## Rollback invites pending-emailed index (20261109050000)
 
 * **Migration**: `20261109050000_invites_pending_by_email_index.sql`
@@ -3189,3 +3207,149 @@ alter table public.discord_import_channels
 
 Dropping it loses only the scan's record. Each mapped row keeps the `new_channel_is_read_only` it saved, and the channels an import already created keep their own `is_read_only`.
 
+## Rollback user settings member status (20261109230001)
+
+* **Migration**: `20261109230001_user_settings_member_status.sql`
+
+Four columns on `user_settings`: `status`, `status_expires_at`, `custom_status` and `custom_status_expires_at`, with their checks. Nothing was backfilled.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API stops reading the columns, so Do Not Disturb stops silencing pushes, and stops writing them. Roll back any client that sets a status first, or with it: the older API refuses a `PATCH /v1/settings` that carries a status field with a `400` (`forbidNonWhitelisted`), and any quiet-hours or theme change in the same body fails with it.
+
+**Keep the columns unless they are themselves the problem.** Dropping them loses every member's current status and custom line. To remove them, do it in a later forward migration after the code revert has shipped:
+
+```sql
+alter table public.user_settings
+  drop column if exists status,
+  drop column if exists status_expires_at,
+  drop column if exists custom_status,
+  drop column if exists custom_status_expires_at;
+```
+
+## Rollback backwork courses (20261109230000)
+
+* **Migration**: `20261109230000_backwork_courses.sql`
+
+One new table, `backwork_courses`; its CHECK helper `backwork_course_nicknames_ok`; the write function `backwork_course_write` and its helper `backwork_course_merge_nicknames`; and a new body for `search_backwork_resources`. No existing row changed. The API from the same PR reads and writes the table, so roll the API back first: dropping the table under the new API fails `GET /v1/backwork/courses`, every course `PUT` and every department merge; an upload that names a course still succeeds without saving the name.
+
+**Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). After the API is back on the earlier version, re-run the `create or replace function public.search_backwork_resources` block from `20261106190000_backwork_search_wider.sql` first (the new body joins the table), and the `comment on function public.search_backwork_resources(uuid, text, integer)` statement after it in the same file (this migration replaced the comment too, and it would otherwise still describe course-name search), then:
+
+```sql
+drop function if exists public.backwork_course_write(uuid, uuid, text, boolean, text, boolean, text[], text[], boolean);
+drop table if exists public.backwork_courses;
+drop function if exists public.backwork_course_merge_nicknames(text[], text[], text[], text, boolean);
+drop function if exists public.backwork_course_nicknames_ok(text[]);
+```
+
+Dropping it loses every course name and nickname members saved; the files keep their department and course number.
+
+## Rollback notifications seen-chat backfill (20261109233000)
+
+* **Migration**: `20261109233000_notifications_backfill_seen_chat_rows.sql`
+
+A data-only backfill: it set `read_at` on unread chat notifications the member's read receipt already covered, and on chat notifications whose channel no longer exists. No schema changed, so there is nothing to drop, and no code depends on it.
+
+**There is normally nothing to roll back.** The rows it read are ones the member had already seen; "unread" for them was the defect. The backfill did not record which rows it touched, so it cannot be reversed exactly. If rows must be reopened, a row it stamped from a receipt has `read_at` equal to that receipt's `last_read_at` at the time, which no API write produces for a row created before #3807 was live; restore those rows from the pre-promotion backup ([§ 2) Full rollback to backup/snapshot](#2-full-rollback-to-backupsnapshot)) rather than guessing.
+
+## Rollback chat messages poll-cards index (20261110230000)
+
+* **Migration**: `20261110230000_chat_messages_poll_cards_index.sql`
+
+One partial index on `chat_messages`, `idx_chat_messages_poll_cards`. Nothing depends on it for correctness: `GET /v1/activity` only gets slower without it, so no API rollback is needed first.
+
+**Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration):
+
+```sql
+drop index if exists public.idx_chat_messages_poll_cards;
+```
+
+## Rollback pledge classes (20261110170000)
+
+* **Migration**: `20261110170000_chapter_pledge_classes.sql`
+
+One new table, `chapter_pledge_classes`; two nullable columns on `members`, `pledge_class_id` and `order_number`, with a check and a composite foreign key; and two functions, `reorder_chapter_pledge_classes` and `assign_member_pledge_classes`. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API has no `/v1/pledge-classes` routes, so nothing can change a class or a number, and a client that lists classes gets a 404. It still returns `pledge_class_id` and `order_number` on member reads, because those are `select('*')` spread into the response: a client that shows them keeps showing the stored values until the columns are dropped. Roll back any client that writes them first, or with it.
+
+**Keep the table and columns unless they are themselves the problem.** Dropping them loses every chapter's class list and every member's class and number, which officers entered by hand. To remove them, do it in a later forward migration after the code revert has shipped:
+
+```sql
+drop function if exists public.assign_member_pledge_classes(uuid, jsonb);
+drop function if exists public.reorder_chapter_pledge_classes(uuid, uuid[]);
+alter table public.members
+  drop constraint if exists members_pledge_class_fk,
+  drop constraint if exists members_order_number_range,
+  drop column if exists pledge_class_id,
+  drop column if exists order_number;
+drop table if exists public.chapter_pledge_classes;
+```
+
+## Rollback message threads (20261110220000)
+
+* **Migration**: `20261110220000_chat_message_threads.sql`
+
+Four columns, a check, a trigger and two partial indexes on `chat_messages`; one new table, `chat_thread_follows`; one new function, `get_followed_thread_unread`; and redefinitions of `get_channel_unread_counts`, `get_channel_latest_messages` and `anonymize_user`. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API selects explicit columns, so it never reads the thread columns. But it also does not filter them: any thread reply written while threads were live shows up in its channel's timeline as an ordinary message, and the redefined RPCs keep it out of unread counts and previews only while they stay in place. That is the safe direction (nothing is hidden), so leave the database alone unless the schema itself is the problem.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This keeps every reply as a timeline message (it only drops the link to its parent) and restores the earlier function bodies:
+
+```sql
+drop trigger if exists chat_messages_thread_summary on public.chat_messages;
+drop function if exists public.chat_messages_bump_thread_summary();
+drop function if exists public.get_followed_thread_unread(uuid, uuid);
+drop table if exists public.chat_thread_follows;
+-- Re-create get_channel_unread_counts from 20261106193000,
+-- get_channel_latest_messages from 20261106210000, and anonymize_user from
+-- 20261106200000, verbatim, before dropping the columns they reference.
+alter table public.chat_messages
+  drop constraint if exists chat_messages_thread_not_self,
+  drop column if exists thread_recent_sender_ids,
+  drop column if exists thread_last_reply_at,
+  drop column if exists thread_reply_count,
+  drop column if exists thread_root_id;
+```
+
+Dropping `chat_thread_follows` loses who followed or muted which thread and every read cursor; nothing else depends on it.
+
+## Rollback chat backgrounds (20261110235500)
+
+* **Migration**: `20261110235500_chat_backgrounds.sql`
+
+Six nullable or defaulted columns (three on `chapters`, three on `chat_channels`), with checks and two foreign keys to `chat_messages`. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API has no `/v1/chat-backgrounds` routes, so clients draw every channel plain (a failed background read draws plain by design). Its channel reads still return the three channel columns, which no reverted client reads.
+
+**Keep the columns unless they are themselves the problem.** Dropping them loses every chapter's and channel's choice. Uploaded photos stay in the `branding` bucket under `chapters/<id>/chat-backgrounds/` either way. To remove the columns, do it in a later forward migration after the code revert has shipped:
+
+```sql
+alter table public.chat_channels
+  drop constraint if exists chat_channels_background_key,
+  drop constraint if exists chat_channels_background_photo,
+  drop constraint if exists chat_channels_background_not_direct,
+  drop column if exists background_message_id,
+  drop column if exists background_photo_path,
+  drop column if exists background;
+alter table public.chapters
+  drop constraint if exists chapters_chat_background_key,
+  drop constraint if exists chapters_chat_background_photo,
+  drop column if exists chat_background_message_id,
+  drop column if exists chat_background_photo_path,
+  drop column if exists chat_background;
+```
+
+## Rollback Always formal channel lock (20261111000000)
+
+* **Migration**: `20261111000000_chat_channels_display_locked.sql`
+
+Two columns on `chat_channels`, `display_locked` and `created_by`, and the `chat_channels_created_by_fk` foreign key. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API never writes either column and returns both as plain fields (`select('*')`) that older clients ignore. Clients that honor the lock read it from those fields, so a channel locked before the revert stays formal for members on newer clients until the lock is cleared: run `update public.chat_channels set display_locked = false;` if that is not wanted.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. Dropping `created_by` loses who created each channel since this shipped; nothing else depends on it:
+
+```sql
+alter table public.chat_channels
+  drop constraint if exists chat_channels_created_by_fk,
+  drop column if exists created_by,
+  drop column if exists display_locked;
+```

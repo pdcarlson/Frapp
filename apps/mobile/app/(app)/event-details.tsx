@@ -6,8 +6,6 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   eventSeriesKey,
-  seriesCadence,
-  seriesHeads,
   useEvent,
   useEvents,
   useMyAttendance,
@@ -39,12 +37,15 @@ import {
   formatEventClock,
   formatEventWindow,
   resolveCheckInWindow,
+  sortEventsByStart,
   type CheckInWindow,
 } from "@/lib/events/format";
 import {
   selectAllEventRows,
   selectEventDetail,
   selectMyAttendance,
+  selectSeriesCadence,
+  selectSeriesName,
   selectSeriesOccurrences,
   type EventDetail,
 } from "@/lib/events/select";
@@ -506,15 +507,15 @@ function SeriesSection({ event, now }: { event: EventDetail; now: Date }) {
     () => selectSeriesOccurrences(rows, event, now),
     [rows, event, now],
   );
-  // The series as a whole (`seriesHeads`): its cadence, and the name most of
-  // its occurrences carry, which a renamed one is told apart from.
+  // The series as a whole: its cadence, and the name most of its occurrences
+  // carry, which a renamed one is told apart from.
   const series = useMemo(() => {
-    const heads = seriesHeads(
-      rows.some((row) => row.id === event.id) ? rows : [event, ...rows],
-    );
+    const all = rows.some((row) => row.id === event.id)
+      ? rows
+      : sortEventsByStart([event, ...rows]);
     return {
-      cadence: seriesCadence(heads, event),
-      name: (key ? heads.get(key)?.name : null) ?? event.name,
+      cadence: selectSeriesCadence(all, event),
+      name: (key ? selectSeriesName(all, key) : null) ?? event.name,
     };
   }, [rows, event, key]);
   const { cadence } = series;

@@ -50,7 +50,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { dashboardFormSelectClassName } from "@/components/shared/table-controls";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -64,7 +70,10 @@ import {
 } from "@/lib/utils";
 import { parseInstant } from "@repo/formatting";
 import { randomClientId } from "@repo/api-sdk";
-import type { EventCardTrack } from "@repo/chat-core/dispatch";
+import {
+  eventCardOutcomeCopy,
+  type EventCardTrack,
+} from "@repo/chat-core/dispatch";
 
 type EventRecord = Record<string, unknown>;
 
@@ -194,21 +203,11 @@ export function createdToast(
   name: string,
   card: { cardKeptOut: boolean; cardLost: boolean },
 ): { title: string; description: string } {
-  if (card.cardKeptOut) {
-    return {
-      title: "Event created",
-      description: `${name} is on the calendar. It isn't posted in chat because it's only for some roles.`,
-    };
-  }
-  if (card.cardLost) {
-    return {
-      title: "Event created",
-      description: `${name} is on the calendar, but its card couldn't be posted in chat.`,
-    };
-  }
   return {
     title: "Event created",
-    description: `${name} was added to the chapter calendar.`,
+    description:
+      eventCardOutcomeCopy(name, card) ??
+      `${name} was added to the chapter calendar.`,
   };
 }
 
@@ -752,21 +751,28 @@ export function EventEditorDialog({
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="grid gap-1">
                     <Label htmlFor="event-recurrence">Repeat</Label>
-                    <select
-                      id="event-recurrence"
+                    {/*
+                      The app's Select, not a native one: /events carries no
+                      browser select (#3822).
+                    */}
+                    <Select
                       value={recurrenceRule}
-                      onChange={(eventValue) =>
-                        setRecurrenceRule(eventValue.target.value)
-                      }
-                      className={dashboardFormSelectClassName}
+                      onValueChange={setRecurrenceRule}
                     >
-                      <option value="NONE">Doesn&apos;t repeat</option>
-                      {RECURRENCE_RULES.map((rule) => (
-                        <option key={rule} value={rule}>
-                          {RECURRENCE_REPEAT_LABELS[rule]}
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger id="event-recurrence">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="NONE">
+                          Doesn&apos;t repeat
+                        </SelectItem>
+                        {RECURRENCE_RULES.map((rule) => (
+                          <SelectItem key={rule} value={rule}>
+                            {RECURRENCE_REPEAT_LABELS[rule]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     {repeatNote ? (
                       <p className="text-caption text-muted-foreground">
                         {repeatNote}

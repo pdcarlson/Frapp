@@ -27,9 +27,9 @@ export interface ChannelAccessRecord {
   member_ids: string[] | null;
   required_permissions: string[] | null;
   /**
-   * Whether the channel rejects member writes (e.g. `#announcements` and
-   * `#chapter-audit`). Only consulted when `operation === "post"`; safe to
-   * omit (treated as `false`) for read checks. (Chunk 05 / ADR-07.)
+   * Whether the channel rejects member writes from anyone without
+   * `announcements:post` (e.g. `#announcements`). Only consulted for a write;
+   * safe to omit (treated as `false`) for read checks. (Chunk 05 / ADR-07.)
    */
   is_read_only?: boolean | null;
   /**
@@ -40,6 +40,13 @@ export interface ChannelAccessRecord {
    * channel stays directly readable by whoever is still in `member_ids`.
    */
   archived_at?: string | null;
+  /**
+   * The chapter's audit-log channel (`#chapter-audit`, #3909). System-write
+   * only: every member write is denied, with no permission that clears it,
+   * because only the server's audit mirror posts there. Safe to omit for read
+   * checks.
+   */
+  is_audit_log?: boolean | null;
 }
 
 /**
@@ -49,8 +56,16 @@ export interface ChannelAccessRecord {
  * clears the same read-only / `announcements:post` gate as `"post"`, but is
  * deliberately **not** subject to the Alumni lifecycle rule — alumni are
  * restricted from posting, not from participating in a poll they can read.
+ *
+ * - `read`: see the channel.
+ * - `post`: write in the timeline (gated in a read-only channel).
+ * - `vote`: take part in something already readable (a poll).
+ * - `thread`: write inside a message thread (#3785). Authored content, so
+ *   archive, the audit log and the alumni rule apply as for `post`, but not the
+ *   read-only gate: any member who can read an announcement may thread under it
+ *   (Winston, 2026-11-10; spec/behavior/chat/README.md § Message threads).
  */
-export type ChannelOperation = 'read' | 'post' | 'vote';
+export type ChannelOperation = 'read' | 'post' | 'vote' | 'thread';
 
 /** Permission key that grants posting into a read-only channel (e.g. `#announcements`). */
 export const ANNOUNCEMENTS_POST_PERMISSION = 'announcements:post';
@@ -76,7 +91,7 @@ export interface ChannelAccessInput {
    * Whether the caller holds the chapter's Alumni role. Alumni are read-mostly:
    * they keep full read access but may only post in direct conversations and in
    * ROLE_GATED channels that require `alumni:post` (the seeded `#alumni`). Only
-   * consulted when `operation === "post"`; omit (or `false`) for active members.
+   * consulted when `operation` is `"post"` or `"thread"`; omit (or `false`) for active members.
    */
   isAlumni?: boolean;
 }
@@ -156,6 +171,18 @@ export function allowsInThreadReplies(channel: ChannelAccessRecord): boolean {
 }
 
 /**
+ * Whether a channel takes message threads (#3785). Channels and group DMs do,
+ * read-only ones included; a 1:1 DM does not in slice 1, and the audit log
+ * (system-write only) never does. `canAccessChannel` with `operation:
+ * 'thread'` still decides whether this caller may write in one.
+ */
+export function channelAllowsThreads(
+  channel: Pick<ChannelAccessRecord, 'type' | 'is_audit_log'>,
+): boolean {
+  return channel.type !== 'DM' && channel.is_audit_log !== true;
+}
+
+/**
  * Decide whether `userId` may access (read / participate in) `channel`.
  *
  * - Non-members of the owning chapter are always denied.
@@ -167,11 +194,13 @@ export function allowsInThreadReplies(channel: ChannelAccessRecord): boolean {
  * - Unknown channel type: denied (guarded default — never falls open).
  *
  * When `operation` is a write (`"post"` or `"vote"`), the read check above must
- * pass AND the channel must either not be read-only, or the caller must hold
- * `"*"` or `"announcements:post"`. Existing callers default to `"read"`, so the
- * predicate stays backward-compatible.
+ * pass, the channel must not be the audit log (`is_audit_log`, which no
+ * member writes in, #3909), AND the channel must either not be read-only, or
+ * the caller must hold `"*"` or `"announcements:post"`. Existing callers default to `"read"`, so the
+ * predicate stays backward-compatible. `"thread"` (#3785) is a write that skips
+ * the read-only gate only: archive and the audit log still refuse it.
  *
- * When `operation === "post"` and `isAlumni` is set, the caller is additionally
+ * When `operation` is `"post"` or `"thread"` and `isAlumni` is set, the caller is additionally
  * limited to direct conversations and ROLE_GATED channels that explicitly
  * require `alumni:post` — alumni read everywhere they can see but do not author
  * content in operational channels.
@@ -220,6 +249,13 @@ export function canAccessChannel(input: ChannelAccessInput): boolean {
   // because there is no "unarchive" flow to make an override meaningful.
   if (channel.archived_at) return false;
 
+  // The audit log (#3909) is system-write only. The audit mirror inserts its
+  // rows directly and never comes through here, so refusing every caller,
+  // the President's `*` included, leaves exactly the server writing in it.
+  // Checked before the read-only gate below, which `*` and
+  // `announcements:post` would otherwise pass.
+  if (channel.is_audit_log) return false;
+
   const isPresident = permissions.includes('*');
 
   // Alumni lifecycle: read-mostly. They may only write in the alumni channel
@@ -227,13 +263,17 @@ export function canAccessChannel(input: ChannelAccessInput): boolean {
   // Only authored content ("post") is restricted — "vote" is participation in
   // something they can already read, so it stays open.
   if (
-    operation === 'post' &&
+    (operation === 'post' || operation === 'thread') &&
     input.isAlumni &&
     !isPresident &&
     !isAlumniPostableChannel(channel)
   ) {
     return false;
   }
+
+  // A thread reply is open to every reader, read-only channel or not. The
+  // timeline of an announcement stays officer-only; its threads do not.
+  if (operation === 'thread') return true;
 
   // operation === "post": gate read-only channels behind announcements:post / *.
   if (!channel.is_read_only) return true;

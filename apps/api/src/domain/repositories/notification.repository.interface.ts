@@ -39,13 +39,30 @@ export interface INotificationRepository {
    * member has for `channelId`, created at or before `readThrough` (#3788).
    * A row created after that instant is about a message the member has not
    * seen, so it stays unread.
+   *
+   * `threadRootId` scopes it to one message thread's rows (#3785); without it
+   * only timeline rows clear, because reading the channel is not reading its
+   * threads.
    */
   markChatChannelRead(
     userId: string,
     chapterId: string,
     channelId: string,
     readThrough: string,
+    threadRootId?: string,
   ): Promise<void>;
+  /**
+   * Mark read every unread row this member has in the chapter, created at or
+   * before `readThrough` (#3929), and return how many changed. `screens`
+   * narrows it to rows whose `data.target.screen` is one of them; omitted, it
+   * is every row, chat rows the in-app list withholds included.
+   */
+  markAllRead(
+    userId: string,
+    chapterId: string,
+    readThrough: string,
+    screens?: readonly string[],
+  ): Promise<number>;
 }
 
 export interface IPushTokenRepository {

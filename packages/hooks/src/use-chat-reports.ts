@@ -1,5 +1,6 @@
 "use client";
 
+import { chatBackgroundKeys } from "./use-chat-background";
 import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
@@ -265,6 +266,7 @@ export function useResolveChatReport() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["chat-reports", "resolve-chat-report"],
     // No retry (`docs/hooks/README.md`): this is a compare-and-set on
     // `status = 'open'`, so if the first attempt lands and only its response
     // is lost, the web client's default retry of a transient failure is
@@ -316,6 +318,7 @@ export function useRemoveReportedMessage(timeline: ReportedMessageTimeline) {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["chat-reports", "remove-reported-message"],
     // No retry, although the route is idempotent and a retry is safe. A first
     // attempt that removed the message and then lost its response would be
     // answered, on the web client's default retry of a transient failure, with
@@ -344,6 +347,14 @@ export function useRemoveReportedMessage(timeline: ReportedMessageTimeline) {
           },
           Boolean(removal),
         );
+      }
+      // The removed line may be a chat background's announcement (#3973),
+      // whose removal withdraws the photo: refetch, so the officer's own view
+      // drops it now rather than when the 5-minute cache goes stale.
+      if (chapterId) {
+        void queryClient.invalidateQueries({
+          queryKey: chatBackgroundKeys.chapter(chapterId),
+        });
       }
       return invalidateReportLists(queryClient, chapterId);
     },

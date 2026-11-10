@@ -2,9 +2,16 @@
 
 import { useSyncExternalStore } from "react";
 import {
+  CHAT_CHANNEL_DENSITY_STORAGE_KEY,
   CHAT_DENSITY_STORAGE_KEY,
   DEFAULT_CHAT_DENSITY,
+  getLockedChannels,
+  parseChannelDensityMap,
   parseChatDensity,
+  resolveChannelDensity,
+  subscribeLockedChannels,
+  withChannelDensity,
+  type ChannelDensityMap,
   type ChatDensity,
 } from "@repo/chat-core/density";
 
@@ -50,8 +57,15 @@ function notify() {
 }
 
 function onStorage(event: StorageEvent) {
-  if (event.key !== null && event.key !== CHAT_DENSITY_STORAGE_KEY) return;
+  if (
+    event.key !== null &&
+    event.key !== CHAT_DENSITY_STORAGE_KEY &&
+    event.key !== CHAT_CHANNEL_DENSITY_STORAGE_KEY
+  ) {
+    return;
+  }
   snapshot = read();
+  channelSnapshot = readChannels();
   notify();
 }
 
@@ -64,8 +78,109 @@ function subscribe(listener: () => void): () => void {
   };
 }
 
-export function useChatDensity(): ChatDensity {
-  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+/*
+  Per-channel overrides (#3787), a map of channel id to density on this
+  browser, read and cached like the default. A channel with no entry follows
+  the default.
+*/
+const NO_OVERRIDES: ChannelDensityMap = {};
+let channelSnapshot: ChannelDensityMap | null = null;
+
+function readChannels(): ChannelDensityMap {
+  if (typeof window === "undefined") return NO_OVERRIDES;
+  try {
+    return parseChannelDensityMap(
+      window.localStorage.getItem(CHAT_CHANNEL_DENSITY_STORAGE_KEY),
+    );
+  } catch {
+    return NO_OVERRIDES;
+  }
+}
+
+function getChannelSnapshot(): ChannelDensityMap {
+  if (channelSnapshot === null) channelSnapshot = readChannels();
+  return channelSnapshot;
+}
+
+function getServerChannelSnapshot(): ChannelDensityMap {
+  return NO_OVERRIDES;
+}
+
+/**
+ * The member's default density on this browser, or, given a channel, what
+ * that channel draws: the formal display if the channel is set to Always
+ * formal, else its override if the member set one, else the default.
+ */
+export function useChatDensity(channelId?: string | null): ChatDensity {
+  const fallback = useSyncExternalStore(
+    subscribe,
+    getSnapshot,
+    getServerSnapshot,
+  );
+  const overrides = useSyncExternalStore(
+    subscribe,
+    getChannelSnapshot,
+    getServerChannelSnapshot,
+  );
+  const locked = useSyncExternalStore(
+    subscribeLockedChannels,
+    getLockedChannels,
+    getLockedChannels,
+  );
+  return resolveChannelDensity(
+    fallback,
+    overrides,
+    channelId,
+    channelId ? locked.has(channelId) : false,
+  );
+}
+
+/**
+ * Whether the channel is set to Always formal (#3787), from the channel list
+ * the shell copies into `@repo/chat-core/density` (`syncLockedChannels`).
+ */
+export function useChannelDisplayLocked(
+  channelId: string | null | undefined,
+): boolean {
+  const locked = useSyncExternalStore(
+    subscribeLockedChannels,
+    getLockedChannels,
+    getLockedChannels,
+  );
+  return channelId ? locked.has(channelId) : false;
+}
+
+/** The channel's own override on this browser, or `null` when it follows the default. */
+export function useChannelDensityOverride(
+  channelId: string | null | undefined,
+): ChatDensity | null {
+  const overrides = useSyncExternalStore(
+    subscribe,
+    getChannelSnapshot,
+    getServerChannelSnapshot,
+  );
+  return (channelId ? overrides[channelId] : undefined) ?? null;
+}
+
+/** Pins a channel to a density on this browser, or back to the default with `null`. */
+export function setChannelDensity(
+  channelId: string,
+  density: ChatDensity | null,
+): void {
+  channelSnapshot = withChannelDensity(
+    getChannelSnapshot(),
+    channelId,
+    density,
+  );
+  try {
+    window.localStorage.setItem(
+      CHAT_CHANNEL_DENSITY_STORAGE_KEY,
+      JSON.stringify(channelSnapshot),
+    );
+  } catch {
+    /* Best-effort, as the default is. */
+  }
+  notify();
 }
 
 export function setChatDensity(density: ChatDensity): void {
@@ -81,4 +196,5 @@ export function setChatDensity(density: ChatDensity): void {
 /** Test seam: forget the cached read so a spec can seed storage first. */
 export function resetChatDensityForTests(): void {
   snapshot = null;
+  channelSnapshot = null;
 }

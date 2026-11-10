@@ -1,250 +1,146 @@
 /**
- * Repeating events, as the Events lists show them (#3707): one row per series
- * (its next occurrence), and a two-week horizon with everything after it
- * under Later. Mobile reads these (#3823), and web adopts them in #3822, so
- * that a series collapses and a horizon falls the same way in each app.
+ * Repeating events as an Events list shows them: one row per series, and a
+ * two-week horizon (#3707). Web's Events page and mobile's Events tab
+ * (#3823) both read it, so both apps collapse a series, and draw the
+ * horizon, the same way.
  *
- * A series on the wire is one head row (`recurrence_rule` set,
- * `parent_event_id` null) plus the occurrences the API generated from it
- * (`recurrence_rule` null, `parent_event_id` the head's id):
- * `EventSeriesService.buildOccurrencePayloads`. The head is itself the
- * series' first occurrence. `GET /v1/events` returns them all as separate
- * rows, so without collapsing a weekly meeting fills the list twelve times.
+ * A series is stored as rows, one per meeting (the "Recurring events" rules
+ * under [`spec/behavior/events.md` § Event Creation](../../../spec/behavior/events.md#event-creation)):
+ * the head carries the `recurrence_rule` and is itself
+ * the first meeting, and each generated occurrence points at the head through
+ * `parent_event_id` with a `null` rule. So the rule says nothing about a
+ * generated occurrence; the series key below is what groups them.
  *
- * Rows are read loosely (`object`) because web keeps the payload as
- * `Record<string, unknown>` and mobile narrows it first; both shapes pass.
+ * Pure functions over plain rows: no React, no query.
  */
-import { dayDelta, parseInstant } from "@repo/formatting";
-import { isRecurrenceRule, type RecurrenceRule } from "@repo/validation";
 
-/** Today through the end of the 14th day after it is "soon" (#3707). */
-export const EVENT_HORIZON_DAYS = 14;
+/** The fields this module reads off an event row. */
+export type SeriesEventLike = {
+  id?: unknown;
+  start_time?: unknown;
+  recurrence_rule?: unknown;
+  parent_event_id?: unknown;
+};
 
-function field(event: object, key: string): unknown {
-  return (event as Record<string, unknown>)[key];
-}
-
-function text(event: object, key: string): string | null {
-  const value = field(event, key);
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function startOf(event: object): Date | null {
-  return parseInstant(field(event, "start_time"));
-}
-
-/** Soonest first; an unreadable start sorts last rather than throwing. */
-function byStart(a: object, b: object): number {
-  const left = startOf(a)?.getTime() ?? Number.POSITIVE_INFINITY;
-  const right = startOf(b)?.getTime() ?? Number.POSITIVE_INFINITY;
-  return left - right;
-}
-
-/**
- * Which series a row belongs to, named by its head's id: the head's own id,
- * a generated occurrence's `parent_event_id`, or `null` for a one-time event.
- */
-export function eventSeriesKey(event: object): string | null {
-  const parent = text(event, "parent_event_id");
-  if (parent) return parent;
-  return text(event, "recurrence_rule") ? text(event, "id") : null;
-}
-
-/** What a series' row says about the series as a whole. */
-export interface SeriesHead {
-  /** The rule, from the head row (the only row that carries it). */
-  rule: RecurrenceRule;
-  /**
-   * A start that shows the day the series meets on: one from the weekday (or,
-   * for a monthly series, the day of the month) most of its occurrences share.
-   */
-  start_time: string;
-  /** The name most of its occurrences carry. */
-  name: string | null;
-}
-
-/**
- * The item whose key most items share. A tie goes to the larger key when
- * `largerWins`, otherwise to the key seen first.
- */
-function mostCommon<T>(
-  items: readonly T[],
-  keyOf: (item: T) => number,
-  largerWins: boolean,
-): T {
-  const counts = new Map<number, { item: T; count: number }>();
-  for (const item of items) {
-    const key = keyOf(item);
-    const seen = counts.get(key);
-    if (seen) seen.count += 1;
-    else counts.set(key, { item, count: 1 });
-  }
-  let best: { key: number; item: T; count: number } | null = null;
-  for (const [key, { item, count }] of counts) {
-    if (
-      !best ||
-      count > best.count ||
-      (largerWins && count === best.count && key > best.key)
-    ) {
-      best = { key, item, count };
-    }
-  }
-  return best!.item;
-}
-
-/** The name most rows carry; a tie goes to the soonest row's. */
-function mostCommonName(rows: readonly object[]): string | null {
-  // Map keeps first-insertion order, and rows go in soonest first, so the
-  // first name to reach the top count in that order is the soonest row's.
-  const counts = new Map<string, number>();
-  for (const row of [...rows].sort(byStart)) {
-    const name = text(row, "name");
-    if (!name) continue;
-    counts.set(name, (counts.get(name) ?? 0) + 1);
-  }
-  let best: string | null = null;
-  for (const [name, count] of counts) {
-    if (best === null || count > (counts.get(best) ?? 0)) best = name;
-  }
-  return best;
-}
-
-/**
- * Each series, by series key ({@link eventSeriesKey}), for its cadence and
- * name. The rule is the head's; the day and the name are what most of the
- * series' occurrences agree on, never one row's alone. A single "This event
- * only" edit moves or renames one row, the head included, and must not
- * relabel the series: a head moved to a Monday leaves a series that still
- * meets on Sundays, and a monthly series on the 31st whose shorter months the
- * API clamps to the 30th still meets on the 31st (a monthly tie goes to the
- * later day; a weekly one to the head's).
- * A series whose head carries a rule this app doesn't know is left out.
- */
-export function seriesHeads(
-  events: readonly object[],
-): Map<string, SeriesHead> {
-  const rules = new Map<string, RecurrenceRule>();
-  const members = new Map<string, object[]>();
-  for (const event of events) {
-    const id = text(event, "id");
-    const rule = field(event, "recurrence_rule");
-    if (id && isRecurrenceRule(rule)) rules.set(id, rule);
-    const key = eventSeriesKey(event);
-    if (key && startOf(event)) {
-      const list = members.get(key);
-      if (list) list.push(event);
-      else members.set(key, [event]);
-    }
-  }
-
-  const heads = new Map<string, SeriesHead>();
-  for (const [key, rule] of rules) {
-    const rows = members.get(key);
-    if (!rows) continue;
-    // The head first, so a weekday tie keeps the head's day; a monthly tie
-    // takes the later day, since the API only ever clamps a day earlier.
-    const ordered = [...rows].sort((a, b) =>
-      text(a, "id") === key ? -1 : text(b, "id") === key ? 1 : 0,
-    );
-    const monthly = rule === "MONTHLY";
-    const anchor = mostCommon(
-      ordered,
-      (row) => (monthly ? startOf(row)!.getDate() : startOf(row)!.getDay()),
-      monthly,
-    );
-    heads.set(key, {
-      rule,
-      start_time: text(anchor, "start_time")!,
-      name: mostCommonName(rows),
-    });
-  }
-  return heads;
-}
-
-/**
- * How often `event`'s series meets ("Every Sunday"), from {@link seriesHeads},
- * never from `event`'s own start: an occurrence the API clamped to the 30th,
- * or one an officer moved to a Monday, belongs to a series that still meets on
- * the 31st or on Sundays. `null` for a one-time event or a series without its
- * head in `heads`.
- */
-export function seriesCadence(
-  heads: ReadonlyMap<string, SeriesHead>,
-  event: object,
-): string | null {
-  const key = eventSeriesKey(event);
-  const head = key ? heads.get(key) : undefined;
-  return head ? seriesCadenceLabel(head.rule, head.start_time) : null;
-}
-
-export interface CollapsedEvent<T> {
-  /** The row to draw: a one-time event, a started occurrence, or a series' next one. */
+/** One list row: the occurrence it shows, and its series when it has one. */
+export type EventListEntry<T> = {
   event: T;
   /**
-   * For a series row, every occurrence of the series that hasn't started,
-   * soonest first and `event` included. `null` for a one-time event and for a
-   * started occurrence, which stands as its own row.
+   * The series' occurrences that haven't started, soonest first, `event`
+   * included. `null` for a one-time event, or for a meeting that already
+   * happened, which stays its own row.
    */
   series: T[] | null;
-  /** {@link seriesCadence} for the row: "Every Sunday", or `null`. */
-  cadence: string | null;
+};
+
+/** Today through the end of the fourteenth day after it (#3707). */
+export const EVENT_HORIZON_DAYS = 14;
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== "" ? value : null;
+}
+
+function startMs(event: SeriesEventLike): number | null {
+  if (typeof event.start_time !== "string") return null;
+  const ms = Date.parse(event.start_time);
+  return Number.isNaN(ms) ? null : ms;
 }
 
 /**
- * Collapses each series to one row, its earliest occurrence that hasn't
- * started. Occurrences that have started stay as their own rows, since each
- * is a meeting with its own attendance. The result is soonest first.
- *
- * `events` should be the whole payload: the rule lives on the head row, and a
- * head that has already started is still where the label comes from.
+ * Which series a row belongs to: the head's id. `null` for a one-time event,
+ * and for an occurrence detached into a standalone event (no parent, no rule).
  */
-export function collapseSeries<T extends object>(
-  events: readonly T[],
-  now: Date,
-): CollapsedEvent<T>[] {
-  const heads = seriesHeads(events);
-  const entry = (event: T, series: T[] | null): CollapsedEvent<T> => {
-    return { event, series, cadence: seriesCadence(heads, event) };
-  };
+export function eventSeriesKey(event: SeriesEventLike): string | null {
+  const parent = nonEmptyString(event.parent_event_id);
+  if (parent) return parent;
+  const id = nonEmptyString(event.id);
+  return id && nonEmptyString(event.recurrence_rule) ? id : null;
+}
 
-  const out: CollapsedEvent<T>[] = [];
-  const upcoming = new Map<string, T[]>();
-  for (const event of [...events].sort(byStart)) {
+/** Whether the row is a meeting of a repeating series, head or generated. */
+export function isSeriesEvent(event: SeriesEventLike): boolean {
+  return eventSeriesKey(event) !== null;
+}
+
+/**
+ * The series' head: the row whose id is the series key, which carries the
+ * rule. `null` when the head isn't among `events`.
+ */
+export function seriesHeadOf<T extends SeriesEventLike>(
+  key: string,
+  events: readonly T[],
+): T | null {
+  return events.find((event) => nonEmptyString(event.id) === key) ?? null;
+}
+
+/**
+ * One row per series: its soonest occurrence that hasn't started, carrying the
+ * rest of its upcoming occurrences. A meeting that already happened, and a
+ * row whose start can't be read, stays its own row: each past meeting has its
+ * own attendance, which is what an officer opens it for.
+ *
+ * Order is kept: the entry sits where its shown occurrence sat in `events`.
+ */
+export function collapseSeries<T extends SeriesEventLike>(
+  events: readonly T[],
+  now: number,
+): EventListEntry<T>[] {
+  const upcomingBySeries = new Map<string, T[]>();
+  for (const event of events) {
     const key = eventSeriesKey(event);
-    const start = startOf(event);
-    if (!key || !start || start.getTime() <= now.getTime()) {
-      out.push(entry(event, null));
+    const start = startMs(event);
+    if (key === null || start === null || start < now) continue;
+    const members = upcomingBySeries.get(key);
+    if (members) members.push(event);
+    else upcomingBySeries.set(key, [event]);
+  }
+  for (const members of upcomingBySeries.values()) {
+    members.sort((a, b) => (startMs(a) ?? 0) - (startMs(b) ?? 0));
+  }
+
+  const entries: EventListEntry<T>[] = [];
+  for (const event of events) {
+    const key = eventSeriesKey(event);
+    const members = key === null ? undefined : upcomingBySeries.get(key);
+    if (!members || !members.includes(event)) {
+      entries.push({ event, series: null });
       continue;
     }
-    const members = upcoming.get(key);
-    if (members) {
-      members.push(event);
-    } else {
-      const series = [event];
-      upcoming.set(key, series);
-      out.push(entry(event, series));
-    }
+    if (members[0] === event) entries.push({ event, series: members });
   }
-  return out.sort((a, b) => byStart(a.event, b.event));
+  return entries;
 }
 
 /**
- * Splits rows at the horizon: `soon` is today through the end of the
- * {@link EVENT_HORIZON_DAYS}th day after it, by calendar day (`dayDelta`), and
- * `later` is everything after. A row before today (a meeting still open for
- * check-in after midnight) is soon; an unreadable start is later.
+ * The first instant past the horizon: local midnight starting the fifteenth
+ * day after `now`'s, so "today through the next 14 days" holds whole days.
  */
-export function splitByHorizon<T extends { event: object }>(
-  entries: readonly T[],
-  now: Date,
-): { soon: T[]; later: T[] } {
-  const soon: T[] = [];
-  const later: T[] = [];
+export function horizonEnd(
+  now: number,
+  days: number = EVENT_HORIZON_DAYS,
+): number {
+  const end = new Date(now);
+  end.setHours(0, 0, 0, 0);
+  end.setDate(end.getDate() + days + 1);
+  return end.getTime();
+}
+
+/**
+ * Splits entries at the horizon. An entry whose start can't be read stays in
+ * `soon`: it may be close, and hiding it behind Later would lose it.
+ */
+export function splitByHorizon<T extends SeriesEventLike>(
+  entries: readonly EventListEntry<T>[],
+  now: number,
+  days: number = EVENT_HORIZON_DAYS,
+): { soon: EventListEntry<T>[]; later: EventListEntry<T>[] } {
+  const end = horizonEnd(now, days);
+  const soon: EventListEntry<T>[] = [];
+  const later: EventListEntry<T>[] = [];
   for (const entry of entries) {
-    const start = startOf(entry.event);
-    (start && dayDelta(now, start) <= EVENT_HORIZON_DAYS ? soon : later).push(
-      entry,
-    );
+    const start = startMs(entry.event);
+    if (start !== null && start >= end) later.push(entry);
+    else soon.push(entry);
   }
   return { soon, later };
 }
@@ -265,29 +161,110 @@ function ordinal(day: number): string {
 }
 
 /**
- * How often a series meets, as a member says it, from its rule and its head's
- * start ({@link seriesCadence} finds both): `"Every Sunday"`,
- * `"Every other Sunday"`, `"Every month on the 9th"`.
- * `null` for a one-time event or an unreadable start.
+ * A rule token in sentence case (`DAILY` → `"Daily"`): how a rule outside the
+ * catalog (one a retired rule left on an old row) reads, on the list row and
+ * in web's `recurrenceLabel` alike. `null` for no rule.
+ */
+export function ruleTokenLabel(rule: unknown): string | null {
+  const token = nonEmptyString(rule);
+  if (!token) return null;
+  const words = token.trim().replace(/_/g, " ").toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * The day of the month a monthly series meets on: the day most of its
+ * meetings fall on, the later day on a tie. Not the head's own date, which an
+ * instance edit can move or a promotion can replace with a clamped meeting
+ * (a series on the 31st meets on Feb 28), and not one meeting's date, for the
+ * same clamp. `null` with no readable start.
+ */
+function monthlyAnchorDay(starts: readonly unknown[]): number | null {
+  const counts = new Map<number, number>();
+  for (const start of starts) {
+    if (typeof start !== "string") continue;
+    const at = new Date(start);
+    if (Number.isNaN(at.getTime())) continue;
+    counts.set(at.getDate(), (counts.get(at.getDate()) ?? 0) + 1);
+  }
+  let best: number | null = null;
+  let bestCount = 0;
+  for (const [day, count] of counts) {
+    if (
+      count > bestCount ||
+      (count === bestCount && best !== null && day > best)
+    ) {
+      best = day;
+      bestCount = count;
+    }
+  }
+  return best;
+}
+
+/**
+ * A date on the weekday most of `starts` fall on (local time), or `null`
+ * when none can be read. A tie goes to the earliest start among the tied
+ * weekdays, so the answer doesn't depend on input order.
+ */
+function majorityWeekday(starts: readonly unknown[]): Date | null {
+  const byDay = new Map<number, { count: number; first: Date }>();
+  for (const start of starts) {
+    if (typeof start !== "string") continue;
+    const at = new Date(start);
+    if (Number.isNaN(at.getTime())) continue;
+    const entry = byDay.get(at.getDay());
+    if (!entry) byDay.set(at.getDay(), { count: 1, first: at });
+    else {
+      entry.count += 1;
+      if (at < entry.first) entry.first = at;
+    }
+  }
+  let best: { count: number; first: Date } | null = null;
+  for (const entry of byDay.values()) {
+    if (
+      !best ||
+      entry.count > best.count ||
+      (entry.count === best.count && entry.first < best.first)
+    ) {
+      best = entry;
+    }
+  }
+  return best?.first ?? null;
+}
+
+/**
+ * How a series row says when it repeats, from its rule and a meeting's start:
+ * `"Every Sunday"`, `"Every other Sunday"`, `"Every month on the 9th"`.
+ *
+ * The day it names is read from `seriesStarts` (every meeting of the series
+ * the caller holds), so one meeting moved on its own doesn't rename the
+ * series: the weekday most of them fall on for a weekly series, the day of the
+ * month for a monthly one (`monthlyAnchorDay`). Without them it falls back to
+ * `start`. A rule outside the catalog reads in sentence
+ * case (`ruleTokenLabel`). `null` for a missing rule or a start it can't
+ * read, so the caller leaves the cadence out rather than guessing.
  */
 export function seriesCadenceLabel(
   rule: unknown,
   start: unknown,
+  seriesStarts: readonly unknown[] = [],
 ): string | null {
-  if (!isRecurrenceRule(rule)) return null;
-  const at = start instanceof Date ? start : parseInstant(start);
-  if (!at || Number.isNaN(at.getTime())) return null;
-  const weekday = at.toLocaleDateString(undefined, { weekday: "long" });
+  if (typeof start !== "string") return null;
+  const at = new Date(start);
+  if (Number.isNaN(at.getTime())) return null;
+  const weekday = (
+    majorityWeekday(seriesStarts) ?? at
+  ).toLocaleDateString("en-US", { weekday: "long" });
   switch (rule) {
     case "WEEKLY":
       return `Every ${weekday}`;
     case "BIWEEKLY":
       return `Every other ${weekday}`;
-    case "MONTHLY":
-      return `Every month on the ${ordinal(at.getDate())}`;
-    default: {
-      const unhandled: never = rule;
-      return unhandled;
+    case "MONTHLY": {
+      const day = monthlyAnchorDay(seriesStarts) ?? at.getDate();
+      return `Every month on the ${ordinal(day)}`;
     }
+    default:
+      return ruleTokenLabel(rule);
   }
 }

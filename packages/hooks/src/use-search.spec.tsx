@@ -2,7 +2,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import React from "react";
-import { useSearch } from "./use-search";
+import { isSearchRunnable, useSearch } from "./use-search";
 import { FrappClientProvider } from "./use-frapp-client";
 
 const SEARCH_ENDPOINT = "/v1/search";
@@ -118,9 +118,12 @@ describe("useSearch", () => {
       }),
     };
 
-    const { result } = renderHook(() => useSearch("dues", "chan-1"), {
-      wrapper: createWrapper(queryClient, mockClient, "chapter-a"),
-    });
+    const { result } = renderHook(
+      () => useSearch("dues", { channelId: "chan-1" }),
+      {
+        wrapper: createWrapper(queryClient, mockClient, "chapter-a"),
+      },
+    );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
@@ -317,6 +320,155 @@ describe("useSearch", () => {
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
       expect(result.current.data?.timedOutSources).toEqual(["messages"]);
+    });
+  });
+
+  describe("message filters (#3958)", () => {
+    it("sends each filter as a request param, has comma-joined", async () => {
+      const mockClient = {
+        GET: vi.fn().mockResolvedValue({
+          data: { messages: [] },
+          error: undefined,
+          response: mockResponse(),
+        }),
+      };
+      const filters = {
+        channelId: "chan-1",
+        fromUserId: "user-1",
+        after: "2026-11-01T05:00:00.000Z",
+        before: "2026-11-08T05:00:00.000Z",
+        has: ["link", "file"] as const,
+      };
+
+      const { result } = renderHook(() => useSearch("", filters), {
+        wrapper: createWrapper(queryClient, mockClient, "chapter-a"),
+      });
+
+      // Empty text beside a filter is a search: "everything Ryan posted this
+      // week".
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(mockClient.GET).toHaveBeenCalledWith("/v1/search", {
+        params: {
+          query: {
+            q: "",
+            channelId: "chan-1",
+            fromUserId: "user-1",
+            after: "2026-11-01T05:00:00.000Z",
+            before: "2026-11-08T05:00:00.000Z",
+            has: "file,link",
+          },
+        },
+      });
+    });
+
+    it("does not serve one sender's cached hits for another", async () => {
+      const mockClient = {
+        GET: vi
+          .fn()
+          .mockResolvedValueOnce({
+            data: { messages: [{ id: "from-ada" }] },
+            error: undefined,
+            response: mockResponse(),
+          })
+          .mockResolvedValueOnce({
+            data: { messages: [{ id: "from-grace" }] },
+            error: undefined,
+            response: mockResponse(),
+          }),
+      };
+
+      const { result, rerender } = renderHook(
+        ({ fromUserId }) => useSearch("dues", { fromUserId }),
+        {
+          wrapper: createWrapper(queryClient, mockClient, "chapter-a"),
+          initialProps: { fromUserId: "ada" },
+        },
+      );
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      rerender({ fromUserId: "grace" });
+
+      await waitFor(() =>
+        expect(result.current.data?.payload).toEqual({
+          messages: [{ id: "from-grace" }],
+        }),
+      );
+      expect(mockClient.GET).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([
+      [
+        "after",
+        { after: "2026-11-01T05:00:00.000Z" },
+        { after: "2026-11-09T05:00:00.000Z" },
+      ],
+      [
+        "before",
+        { before: "2026-11-01T05:00:00.000Z" },
+        { before: "2026-11-09T05:00:00.000Z" },
+      ],
+      ["has", { has: ["link"] as const }, { has: ["poll"] as const }],
+    ])(
+      "refetches when %s changes, rather than keeping the old hits",
+      async (_name, first, second) => {
+        // Each filter is part of the query key. Drop one from the key and the
+        // panel shows the previous filter's hits under the new chip.
+        const mockClient = {
+          GET: vi
+            .fn()
+            .mockResolvedValueOnce({
+              data: { messages: [{ id: "first" }] },
+              error: undefined,
+              response: mockResponse(),
+            })
+            .mockResolvedValueOnce({
+              data: { messages: [{ id: "second" }] },
+              error: undefined,
+              response: mockResponse(),
+            }),
+        };
+
+        const { result, rerender } = renderHook(
+          ({ filters }) => useSearch("", filters),
+          {
+            wrapper: createWrapper(queryClient, mockClient, "chapter-a"),
+            initialProps: { filters: first as Parameters<typeof useSearch>[1] },
+          },
+        );
+        await waitFor(() => expect(result.current.isSuccess).toBe(true));
+        rerender({ filters: second as Parameters<typeof useSearch>[1] });
+
+        await waitFor(() =>
+          expect(result.current.data?.payload).toEqual({
+            messages: [{ id: "second" }],
+          }),
+        );
+        expect(mockClient.GET).toHaveBeenCalledTimes(2);
+      },
+    );
+
+    it("holds back what the API refuses", () => {
+      const mockClient = { GET: vi.fn() };
+
+      renderHook(() => useSearch("", { channelId: "chan-1" }), {
+        wrapper: createWrapper(queryClient, mockClient, "chapter-a"),
+      });
+      renderHook(() => useSearch("du", { fromUserId: "user-1" }), {
+        wrapper: createWrapper(queryClient, mockClient, "chapter-a"),
+      });
+
+      expect(mockClient.GET).not.toHaveBeenCalled();
+    });
+
+    it("follows the API's rule for what is searchable", () => {
+      expect(isSearchRunnable("dues")).toBe(true);
+      expect(isSearchRunnable("")).toBe(false);
+      expect(isSearchRunnable("", { channelId: "c" })).toBe(false);
+      expect(isSearchRunnable("", { has: [] })).toBe(false);
+      expect(isSearchRunnable("", { has: ["poll"] })).toBe(true);
+      expect(isSearchRunnable("", { after: "2026-11-01T00:00:00Z" })).toBe(
+        true,
+      );
+      expect(isSearchRunnable("du", { fromUserId: "u" })).toBe(false);
     });
   });
 });

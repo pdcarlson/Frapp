@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { memberAvatarHue } from "@repo/hooks";
 import { ChannelMemberList } from "./channel-member-list";
 
 const membersQuery = vi.hoisted(() => ({
@@ -21,7 +22,8 @@ const presence = vi.hoisted(() => ({
     isReady: true,
     statusOf: (() => "offline") as (
       id: string,
-    ) => "online" | "idle" | "offline",
+    ) => "online" | "idle" | "dnd" | "invisible" | "offline",
+    lineOf: (() => null) as (id: string) => string | null,
   },
 }));
 
@@ -109,6 +111,7 @@ describe("ChannelMemberList", () => {
           : id === "u-member" || id === "u-blank"
             ? "offline"
             : "online",
+      lineOf: (id) => (id === "u-pres" ? "At nationals" : null),
     };
   });
 
@@ -151,6 +154,27 @@ describe("ChannelMemberList", () => {
     expect(onOpenProfile).toHaveBeenCalledWith("u-member");
   });
 
+  it("tints each row's initials the way that member's name resolves (#3860)", () => {
+    const { container } = render(<ChannelMemberList channelId="chan-1" />);
+    const tints = [...container.querySelectorAll("[data-avatar-tint]")].map(
+      (node) => node.getAttribute("data-avatar-tint"),
+    );
+    const ids = (membersQuery.value.data ?? []).map(
+      (member: { user_id: string }) => member.user_id,
+    );
+    expect(tints).toHaveLength(ids.length);
+    expect(new Set(tints)).toEqual(
+      new Set(
+        ids.map((id: string) =>
+          memberAvatarHue(
+            id,
+            id === "u-officer" || id === "u-member" ? "#5865F2" : null,
+          ),
+        ),
+      ),
+    );
+  });
+
   it("draws plain rows where no profile can open", () => {
     render(<ChannelMemberList channelId="chan-1" />);
     expect(
@@ -161,7 +185,11 @@ describe("ChannelMemberList", () => {
   });
 
   it("does not move a row when presence arrives", () => {
-    presence.value = { isReady: false, statusOf: () => "offline" };
+    presence.value = {
+      isReady: false,
+      statusOf: () => "offline",
+      lineOf: () => null,
+    };
     const { rerender } = render(<ChannelMemberList channelId="chan-1" />);
     const before = screen
       .getAllByRole("listitem")
@@ -170,12 +198,42 @@ describe("ChannelMemberList", () => {
     presence.value = {
       isReady: true,
       statusOf: (id) => (id === "u-idle" ? "idle" : "online"),
+      lineOf: () => null,
     };
     rerender(<ChannelMemberList channelId="chan-1" />);
     const after = screen
       .getAllByRole("listitem")
       .map((item) => item.textContent?.replace(/, (Online|Idle|Offline)$/, ""));
     expect(after).toEqual(before);
+  });
+
+  // #3845: the custom line is one muted line under the name, and the row
+  // grows from 32 to 40px only when it has one.
+  it("shows a member's custom status under their name, growing only that row", () => {
+    render(<ChannelMemberList channelId="chan-1" />);
+    const line = screen.getByText("At nationals");
+    const row = line.closest("li")!;
+    expect(row).toHaveTextContent("Zed President");
+    expect(row.firstElementChild).toHaveClass("h-10");
+    expect(
+      screen.getByText("Bob Member").closest("li")!.firstElementChild,
+    ).toHaveClass("h-8");
+  });
+
+  // The viewer's own Invisible row reads as the chapter sees it: dimmed.
+  it("dims the viewer's own row while they are invisible", () => {
+    presence.value = {
+      isReady: true,
+      statusOf: (id) => (id === "u-officer" ? "invisible" : "online"),
+      lineOf: () => null,
+    };
+    render(<ChannelMemberList channelId="chan-1" />);
+    const row = screen.getByText("Amy Officer").closest("li")!;
+    expect(row).toHaveAttribute("data-presence", "invisible");
+    expect(row.querySelector("[class*='opacity-50']")).not.toBeNull();
+    expect(
+      screen.getByText("Bob Member").closest("li")!.querySelector("[class*='opacity-50']"),
+    ).toBeNull();
   });
 
   it("searches by name past 12 readers and says when no one matches", () => {

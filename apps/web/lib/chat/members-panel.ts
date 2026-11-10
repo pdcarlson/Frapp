@@ -2,15 +2,16 @@ import { writePreferenceCookie } from "@/components/layout/nav-collapse";
 
 /**
  * Persistence for Chat's member list column (#3536): shown or hidden, from
- * 1280px up, where the column sits beside the timeline.
+ * 1280px up, where the column sits beside the timeline (and no tool page is
+ * open beside chat, #3779).
  *
  * A cookie for the reason `components/layout/nav-collapse.ts` gives: the
- * route reads it on the server (`app/(dashboard)/chat/page.tsx`), so a member
- * who hid the column never sees it paint and then vanish after hydration.
- * Below 1280px the same toggle opens a sheet instead, which is never
- * remembered.
+ * dashboard layout reads it on the server (`app/(dashboard)/layout.tsx`), so a
+ * member who hid the column never sees it paint and then vanish after
+ * hydration. Below 1280px the same toggle opens a sheet instead, which is
+ * never remembered.
  *
- * The server page imports this module, so it must stay free of React hooks:
+ * The server layout imports this module, so it must stay free of React hooks:
  * a `useSyncExternalStore` import here fails the production build with an
  * RSC boundary error (vitest has no such boundary and never notices).
  */

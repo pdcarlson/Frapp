@@ -29,7 +29,12 @@ import {
   visibleTypingUsers,
   type ThreadRow,
 } from "@repo/chat-core/blocks";
-import { channelAllowsReplies } from "@repo/chat-core/message-actions";
+import {
+  channelAllowsReplies,
+  channelAllowsThreads,
+  messageCanStartThread,
+} from "@repo/chat-core/message-actions";
+import { setChannelLocked } from "@repo/chat-core/density";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -54,11 +59,10 @@ import {
 } from "@repo/hooks";
 import { can, draftWithMention } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
+import { ChatBackground } from "@/components/chat/chat-background";
 import { BlockListNotice } from "@/components/chat/block-list-notice";
 import { ChatComposer } from "@/components/chat/chat-composer";
-import { NewPollSheet } from "@/components/chat/new-poll-sheet";
-import { canCreatePoll } from "@/lib/chat/new-poll";
-import { usePollsGate } from "@/lib/chat/use-polls-gate";
+import { useComposerPlus } from "@/components/chat/use-composer-plus";
 import {
   ImageViewer,
   ImageViewerContext,
@@ -79,6 +83,7 @@ import {
 } from "@/components/chat/notification-level-control";
 import { ThreadHistoryEdge } from "@/components/chat/thread-history-edge";
 import { ThreadMessageRow } from "@/components/chat/thread-message-row";
+import { MessageThreadScreen } from "@/components/chat/message-thread-screen";
 import { MentionChipTargetsContext } from "@repo/hooks/mention-chips";
 import { ThreadSkeleton } from "@/components/chat/thread-skeleton";
 import { threadLayout } from "@/lib/chat/thread-layout";
@@ -103,6 +108,7 @@ import {
   withDeparted,
   type DepartedMembers,
 } from "@repo/chat-core/message-actions";
+import { AUDIT_LOG_COMPOSER_NOTE } from "@repo/chat-core/audit-log-copy";
 import { useMaskedRefresh } from "@/lib/chat/masked-refresh";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
 import { writeLastChannel } from "@/lib/chat/last-channel";
@@ -121,6 +127,7 @@ import {
   ChannelMembersButton,
 } from "@/components/chat/channel-member-sheet";
 import { MemberDetailSheet } from "@/components/directory/member-detail-sheet";
+import { confirmClosePoll } from "@/lib/chat/confirm-close-poll";
 import { confirmDeleteMessage } from "@/lib/chat/confirm-delete-message";
 import { useComposerStaging } from "@/lib/chat/use-composer-staging";
 import {
@@ -177,7 +184,29 @@ const TYPING_LINE_BLANK = "\u00a0";
  * the composer has to be moved up from here (#3346), and a screen must never
  * import the native package directly (ESLint `no-restricted-imports`).
  */
-export default function ChatThreadScreen() {
+export default function ChatThreadRoute() {
+  const params = useLocalSearchParams<{
+    channelId?: string | string[];
+    threadRootId?: string | string[];
+  }>();
+  const channelId = firstParam(params.channelId);
+  const threadRootId = firstParam(params.threadRootId);
+  // A message thread (#3785) is this route pushed again with its root, so
+  // the frozen stack layout needs no new route and the back gesture returns
+  // to the channel under it (`MessageThreadScreen`).
+  if (channelId && threadRootId) {
+    return <MessageThreadScreen channelId={channelId} rootId={threadRootId} />;
+  }
+  return <ChannelThreadScreen />;
+}
+
+/** A route param's one value: a repeated query key arrives as an array. */
+function firstParam(raw: string | string[] | undefined): string | null {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function ChannelThreadScreen() {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
   const styles = createStyles(tokens);
@@ -219,6 +248,24 @@ export default function ChatThreadScreen() {
   );
   const { isReadOnly: channelIsReadOnly, canPost: channelCanPost } =
     postCapability;
+  // Always formal (#3787): a thread opened from a push or a link may arrive
+  // before chat home has read the list, so the channel's own read keeps its
+  // lock current too. Only when that read is newer than the list chat home
+  // copied the locks from: a single-channel read served from cache can be
+  // older, and would otherwise undo a lock the list just brought in.
+  const lockQueryClient = useQueryClient();
+  const channelReadAt = channelQuery.dataUpdatedAt;
+  useEffect(() => {
+    const data: unknown = channelQuery.data;
+    if (!channelId || !data || typeof data !== "object") return;
+    const listReadAt =
+      lockQueryClient.getQueryState(CHANNEL_LIST_KEY)?.dataUpdatedAt ?? 0;
+    if (channelReadAt <= listReadAt) return;
+    setChannelLocked(
+      channelId,
+      (data as { display_locked?: unknown }).display_locked === true,
+    );
+  }, [channelId, channelQuery.data, channelReadAt, lockQueryClient]);
 
   const {
     messages,
@@ -235,8 +282,12 @@ export default function ChatThreadScreen() {
     send,
     sendInFlight,
     sendPoll,
+    postTask,
+    postHours,
+    trackEventCard,
     edit,
     remove,
+    closePoll,
     react,
     unreact,
     act,
@@ -273,6 +324,7 @@ export default function ChatThreadScreen() {
     nameFor,
     roleColorFor,
     avatarFor: memberAvatarFor,
+    avatarTintFor,
     refetch: refetchRoster,
   } = roster;
 
@@ -317,9 +369,13 @@ export default function ChatThreadScreen() {
             const memberId = otherMemberId(openChannel.channel, viewerId);
             return memberId ? memberAvatarFor(memberId) : null;
           })()}
+          photoTint={(() => {
+            const memberId = otherMemberId(openChannel.channel, viewerId);
+            return memberId ? avatarTintFor(memberId) : null;
+          })()}
         />
       ) : undefined,
-    [openChannel, viewerId, memberAvatarFor],
+    [openChannel, viewerId, memberAvatarFor, avatarTintFor],
   );
   const headerDescription =
     openChannel && !isDirectChannel(openChannel.channel)
@@ -337,18 +393,35 @@ export default function ChatThreadScreen() {
   // row is likely to succeed, as web's `canManageChannel` does.
   const permissionList = usePermissionList();
   const canManageChannel = can("channels:manage", permissionList);
-  // The composer's + offers a poll to a member whose role creates them, in a
-  // chapter with Polls on, in a channel they can post in (#3701). The Polls
-  // read is the poll card's own (`usePollsGate`), failing closed while the
-  // chapter is unread or unreadable.
-  const { gate: pollsGate } = usePollsGate();
-  const pollsAllowed =
-    channelCanPost &&
-    canCreatePoll({ permissions: permissionList, pollsGate });
   const canReplyHere = channelAllowsReplies({
     can_post: channelCanPost,
     is_read_only: channelIsReadOnly,
   });
+  // Message threads (#3785): channels and group DMs, read-only ones included
+  // (the pending-Paul override in `spec/behavior/chat/README.md` § Message
+  // threads); never a 1:1 DM or the audit log. A thread is this route pushed
+  // again with its root (`ChatThreadRoute`).
+  const canThreadHere =
+    !!openChannel &&
+    channelAllowsThreads({
+      type: openChannel.channel.type,
+      is_audit_log: postCapability.isAuditLog,
+    });
+  const openThreadFor = useCallback(
+    (rootId: string) => {
+      if (!channelId) return;
+      Keyboard.dismiss();
+      router.push({
+        pathname: "/chat-thread",
+        params: { channelId, threadRootId: rootId },
+      });
+    },
+    [channelId, router],
+  );
+  const openThread = useCallback(
+    (message: ChatMessage) => openThreadFor(message.id),
+    [openThreadFor],
+  );
 
   // Members a block attempt proved are not in this chapter (`DepartedMembers`).
   const chapterId = useActiveChapterId();
@@ -661,6 +734,12 @@ export default function ChatThreadScreen() {
     [remove],
   );
 
+  // A poll card's Close poll (#3794), asked first like Delete.
+  const handleClosePoll = useCallback(
+    (messageId: string) => confirmClosePoll(() => closePoll(messageId)),
+    [closePoll],
+  );
+
   // The menu's Mention: `@Name ` at the end of the draft, the body the `@`
   // picker would have written.
   const handleMention = useCallback(
@@ -743,20 +822,6 @@ export default function ChatThreadScreen() {
   // the directory's sheet, so a profile reads the same from every door. It
   // closes on blur for the same reason the member list does.
   const profileSheetRef = useRef<BottomSheetModal>(null);
-  // The New poll sheet (#3701). Mounted per channel (keyed below), so a draft
-  // kept by a swipe never posts into another channel, and closed on blur like
-  // the member list.
-  const pollSheetRef = useRef<BottomSheetModal>(null);
-  const openPollSheet = useCallback(() => {
-    Keyboard.dismiss();
-    pollSheetRef.current?.present();
-  }, []);
-  useFocusEffect(
-    useCallback(() => {
-      if (!channelId) return;
-      return () => pollSheetRef.current?.dismiss();
-    }, [channelId]),
-  );
   const [profileTarget, setProfileTarget] = useState<{ userId: string } | null>(
     null,
   );
@@ -799,6 +864,8 @@ export default function ChatThreadScreen() {
         messageId: message.id,
         copyText: copyableText(message),
         canReply: actions.canReply,
+        // The rule web's row uses (`messageCanStartThread`).
+        canStartThread: canThreadHere && messageCanStartThread(message),
         canEdit: actions.canEdit,
         // Someone else's message from a real member, where the viewer can
         // post: the system actor and an imported author have nobody to ping.
@@ -823,6 +890,7 @@ export default function ChatThreadScreen() {
     [
       canManageChannel,
       canReplyHere,
+      canThreadHere,
       channelCanPost,
       isMember,
       nameFor,
@@ -878,6 +946,7 @@ export default function ChatThreadScreen() {
         <ThreadMessageRow
           row={item}
           startsRun={placement?.startsRun ?? true}
+          endsRun={placement?.endsRun ?? true}
           startsDay={placement?.startsDay ?? false}
           viewerId={viewerId}
           nameFor={nameFor}
@@ -888,6 +957,7 @@ export default function ChatThreadScreen() {
           onVote={(id, actionType, payload) =>
             void act(id, actionType, payload)
           }
+          onClosePoll={handleClosePoll}
           onRetry={(id) => void retry(id)}
           onDiscard={(id) => void discard(id)}
           onReact={handleReact}
@@ -898,6 +968,7 @@ export default function ChatThreadScreen() {
           onUnblock={handleUnblock}
           maskedRefresh={maskedRefresh}
           onReload={handleReload}
+          onOpenThread={canThreadHere ? openThread : undefined}
         />
       );
     },
@@ -914,6 +985,7 @@ export default function ChatThreadScreen() {
       handleReact,
       handleUnreact,
       act,
+      handleClosePoll,
       byId,
       layout,
       blockState,
@@ -923,10 +995,20 @@ export default function ChatThreadScreen() {
       handleUnblock,
       maskedRefresh,
       handleReload,
+      canThreadHere,
+      openThread,
     ],
   );
 
   const { isOffline: appOffline, writeBlockedReason } = useConnection();
+
+  const composerPlus = useComposerPlus({
+    channelId,
+    channel: { sendPoll, postTask, postHours, trackEventCard, photos },
+    replying: staging.context?.kind === "reply",
+    offline: appOffline,
+    onPhoto: handleAttach,
+  });
 
   const notificationPrefsQuery = useChannelNotificationPreferences();
   const setNotificationLevel = useSetChannelNotificationLevel();
@@ -1150,7 +1232,7 @@ export default function ChatThreadScreen() {
             // member's own messages as incoming, then flip them when identity
             // lands; messages can arrive from cache well before `/users/me`.
             // Message-shaped, at the bottom where the rows will land (§10).
-            <ThreadSkeleton />
+            <ThreadSkeleton channelId={channelId} />
           ) : thread.rows.length === 0 && thread.heldCount === 0 ? (
             // Counted after the block list, held rows included: a channel whose
             // only messages are being held is not an empty channel, and the
@@ -1185,6 +1267,8 @@ export default function ChatThreadScreen() {
               <MentionChipTargetsContext.Provider value={mentionChipTargets}>
                 {/* The list and the jump control over its corner. */}
                 <View style={styles.flex}>
+                  {/* Behind the messages only (#3973, #3779). */}
+                  <ChatBackground channelId={channelId ?? null} />
                   <FlatList
                     // One list per channel. The screen stays mounted across a
                     // switch, so a shared list kept the last channel's scroll
@@ -1307,70 +1391,67 @@ export default function ChatThreadScreen() {
           impossible, which is the whole failure the outbox exists to prevent,
           and would contradict the banner directly above it.
         */}
-          <ChatComposer
-            value={staging.value}
-            onChangeText={staging.onChangeText}
-            onSend={handleSend}
-            canSend={canSend && channelCanPost && !staging.isSavingEdit}
-            context={staging.context}
-            mentionCandidates={mentionRoster.data}
-            avatarFor={memberAvatarFor}
-            mentionRoles={mentionRoles.data}
-            placeholder={composerPlaceholder}
-            // A send that never reached the outbox has no failed row to show
-            // (nothing was queued), so this line is the only report of it.
-            //
-            // Offline is not said here: #501's "clearly labeled" half is the
-            // app-wide pill, whose sentence carries the queue's promise while
-            // a chat is open (`spec/ui/resilience/connection-state.md` § One
-            // indicator). `lib/connection/state.ts` holds the rule for the
-            // surfaces that have to block instead.
-            disabledHint={
-              attachError ??
-              staging.editError ??
-              sendError ??
-              // `canSend` first. It is false until `ctx` resolves, and
-              // `ChatComposer` keys `editable` on it. The channel-level
-              // `can_post` gate (#704) comes next.
-              (!canSend
-                ? "Connecting to chat…"
-                : !channelCanPost
-                  ? postRefusalHint(postCapability)
-                  : null)
-            }
-            hintTone={
-              sendError || attachError || staging.editError ? "error" : "muted"
-            }
-            // An edit changes text only, so the staged photos and the attach
-            // control stand aside until it is saved or cancelled.
-            photos={staging.isEditing ? undefined : photos}
-            onAttach={staging.isEditing ? undefined : handleAttach}
-            // A poll is its own card, so it can't ride a reply or an edit:
-            // the + offers it only with nothing staged.
-            onCreatePoll={
-              pollsAllowed && !staging.context ? openPollSheet : undefined
-            }
-            attachFull={photoRoom < 1}
-            onRemovePhoto={removePhoto}
-            onRetryPhoto={retryPhoto}
-            isPicking={isPicking}
-            // An upload is a live PUT with no outbox behind it, unlike a send —
-            // so unlike the composer itself, the attach control does have to go
-            // dark offline. It stays visible and states why rather than
-            // disappearing.
-            // Gates the control only. Offline, the member-facing reason is the
-            // connection pill's sentence ("Photos and files need a
-            // connection."), not a composer line, so the screen says offline
-            // once (`connection-state.md` § One indicator). Other reasons ride
-            // the single `disabledHint` above.
-            attachDisabledReason={
-              !channelCanPost
-                ? "You can't post in this channel."
-                : appOffline
-                  ? "offline"
-                  : null
-            }
-          />
+          {/* The audit log (#3909): only Frapp posts there, so there is no
+              composer at all, just the line that says so. */}
+          {postCapability.isAuditLog ? (
+            <Text
+              style={styles.auditLogNote}
+              accessibilityRole="text"
+              testID="chat-audit-log-note"
+            >
+              {AUDIT_LOG_COMPOSER_NOTE}
+            </Text>
+          ) : (
+            <ChatComposer
+              value={staging.value}
+              onChangeText={staging.onChangeText}
+              onSend={handleSend}
+              canSend={canSend && channelCanPost && !staging.isSavingEdit}
+              context={staging.context}
+              mentionCandidates={mentionRoster.data}
+              avatarFor={memberAvatarFor}
+              avatarTintFor={avatarTintFor}
+              mentionRoles={mentionRoles.data}
+              placeholder={composerPlaceholder}
+              // A send that never reached the outbox has no failed row to show
+              // (nothing was queued), so this line is the only report of it.
+              //
+              // Offline is not said here: #501's "clearly labeled" half is the
+              // app-wide pill, whose sentence carries the queue's promise while
+              // a chat is open (`spec/ui/resilience/connection-state.md` § One
+              // indicator). `lib/connection/state.ts` holds the rule for the
+              // surfaces that have to block instead.
+              disabledHint={
+                attachError ??
+                staging.editError ??
+                sendError ??
+                // `canSend` first. It is false until `ctx` resolves, and
+                // `ChatComposer` keys `editable` on it. The channel-level
+                // `can_post` gate (#704) comes next.
+                (!canSend
+                  ? "Connecting to chat…"
+                  : !channelCanPost
+                    ? postRefusalHint(postCapability)
+                    : null)
+              }
+              hintTone={
+                sendError || attachError || staging.editError
+                  ? "error"
+                  : "muted"
+              }
+              // An edit changes text only, so the staged photos and the + stand
+              // aside until it is saved or cancelled.
+              photos={staging.isEditing ? undefined : photos}
+              // The + (#3865): Photo, Poll, Event, Task and Service hours, in
+              // a sheet that greys what can't work this second and says why
+              // (offline Photo among them: an upload has no outbox).
+              onOpenPlus={staging.isEditing ? undefined : composerPlus.openPlus}
+              plusDisabled={!channelCanPost}
+              onRemovePhoto={removePhoto}
+              onRetryPhoto={retryPhoto}
+              isPicking={isPicking}
+            />
+          )}
         </View>
         {/*
           Last, so it is above the header, the inverted list and the composer
@@ -1403,16 +1484,13 @@ export default function ChatThreadScreen() {
         onDismiss={() => setProfileTarget(null)}
         openChannelId={channelId ?? null}
       />
-      <NewPollSheet
-        key={channelId ?? "none"}
-        ref={pollSheetRef}
-        onPost={sendPoll}
-      />
+      {composerPlus.sheets}
       <MessageActionsSheet
         ref={actionsSheetRef}
         target={sheetTarget}
         onSenderDeparted={markDeparted}
         onReply={staging.startReply}
+        onStartThread={openThreadFor}
         onEdit={staging.startEdit}
         onDelete={handleDelete}
         onMention={handleMention}
@@ -1500,6 +1578,16 @@ function createStyles(tokens: SignetTokens) {
       backgroundColor: tokens.color.surface.surface1,
       borderTopWidth: 1,
       borderTopColor: tokens.color.border.hairline,
+    },
+    // Sits where the composer would, with its hairline and padding.
+    auditLogNote: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+      borderTopWidth: 1,
+      borderTopColor: tokens.color.border.hairline,
+      paddingHorizontal: tokens.spacing.lg,
+      paddingVertical: tokens.spacing.md,
+      backgroundColor: tokens.color.surface.background,
     },
     reactionErrorText: {
       ...typeRole(tokens.typography.role.caption),

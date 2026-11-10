@@ -15,6 +15,7 @@ import {
   useCustomRoles,
   useGetOrCreateDm,
   useMemberByUserId,
+  useMemberDisplayNames,
   usePermissionList,
   useRoles,
   useViewerUserId,
@@ -146,6 +147,8 @@ export const MemberDetailSheet = forwardRef<
   // `useMemberByUserId` is already `enabled: !!userId`, so this stays idle until a row is
   // actually tapped rather than firing for every mounted-but-closed sheet.
   const memberQuery = useMemberByUserId(userId ?? "");
+  // The same role-color resolution chat's name uses (#3860).
+  const { avatarTintFor } = useMemberDisplayNames();
   const { accent } = useChapterBranding();
   const rolesQuery = useRoles();
 
@@ -319,6 +322,7 @@ export const MemberDetailSheet = forwardRef<
                   uri={detail.avatarUrl}
                   initials={detail.initials}
                   size={DETAIL_AVATAR_SIZE}
+                  tint={userId ? avatarTintFor(userId) : null}
                   style={styles.avatar}
                   textStyle={styles.avatarText}
                 />

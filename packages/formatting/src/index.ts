@@ -26,7 +26,9 @@ export {
   formatDayTimeRange,
   formatDueLabel,
   formatRelativeDayTime,
+  formatSentLabel,
   formatTimestampFull,
   formatWeekdayDay,
 } from "./display";
+export { formatDueEntry, parseDueEntry } from "./due-entry";
 export { nextUpLine } from "./next-up";

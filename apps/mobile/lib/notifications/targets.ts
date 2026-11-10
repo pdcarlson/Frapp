@@ -87,6 +87,36 @@ export function chatChannelIdFrom(data: unknown): string | null {
   return str(data.target, "channelId");
 }
 
+/**
+ * Whether a chat push is about a reply inside a message thread (#3785). Its
+ * target names the channel too, but the channel's read state says nothing
+ * about the thread: thread replies never count toward the channel's unread.
+ */
+export function isThreadChatPush(data: unknown): boolean {
+  return (
+    isRecord(data) &&
+    isRecord(data.target) &&
+    str(data.target, "threadRootId") !== null
+  );
+}
+
+/**
+ * The focused screen's path as `openHref` may replace it, or `undefined` when
+ * a tap must push instead. A message thread (#3785) is `/chat-thread` again
+ * with a `threadRootId`, so by path alone a chat push tapped inside a thread
+ * would replace the thread with the pushed channel, leaving the thread's own
+ * channel stacked under a channel (`spec/ui/mobile/navigation.md` § Going
+ * back). Over a thread the push goes on the stack, so back returns to the
+ * thread, then its channel.
+ */
+export function replaceablePathname(
+  pathname: string,
+  threadRootId: string | string[] | undefined,
+): string | undefined {
+  const rootId = Array.isArray(threadRootId) ? threadRootId[0] : threadRootId;
+  return rootId ? undefined : pathname;
+}
+
 /** The in-app `notifications` row id, so a tap can mark it read. */
 export function notificationIdFrom(data: unknown): string | null {
   return isRecord(data) ? str(data, "notificationId") : null;

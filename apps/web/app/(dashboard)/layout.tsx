@@ -5,6 +5,16 @@ import {
   NAV_COLLAPSED_COOKIE,
   parseNavCollapsed,
 } from "@/components/layout/nav-collapse";
+import {
+  CHAT_OPEN_COOKIE,
+  CHAT_SPLIT_COOKIE,
+  parseChatOpen,
+  parseToolShare,
+} from "@/components/layout/shell-prefs";
+import {
+  CHAT_MEMBERS_HIDDEN_COOKIE,
+  parseMembersHidden,
+} from "@/lib/chat/members-panel";
 import { ChapterAccentStyle } from "@/lib/theme/chapter-accent-style";
 import { readCachedAccentPaint } from "@/lib/theme/server-accent";
 
@@ -21,6 +31,13 @@ export default async function DashboardLayout({
   const cookieStore = await cookies();
   const navCollapsed = parseNavCollapsed(
     cookieStore.get(NAV_COLLAPSED_COOKIE)?.value,
+  );
+  // The same for the chat panel the shell hosts (#3779): open or closed, the
+  // divider's position, and its member column.
+  const chatOpen = parseChatOpen(cookieStore.get(CHAT_OPEN_COOKIE)?.value);
+  const toolShare = parseToolShare(cookieStore.get(CHAT_SPLIT_COOKIE)?.value);
+  const membersHidden = parseMembersHidden(
+    cookieStore.get(CHAT_MEMBERS_HIDDEN_COOKIE)?.value,
   );
 
   // The same argument, for colour rather than width: the chapter accent
@@ -45,7 +62,12 @@ export default async function DashboardLayout({
         own name in chat) is below.
       */}
       <ChapterAccentStyle paint={accentPaint} />
-      <DashboardShell defaultNavCollapsed={navCollapsed}>
+      <DashboardShell
+        defaultNavCollapsed={navCollapsed}
+        defaultChatOpen={chatOpen}
+        defaultToolShare={toolShare}
+        defaultMembersHidden={membersHidden}
+      >
         {children}
       </DashboardShell>
     </ChapterPresenceProvider>

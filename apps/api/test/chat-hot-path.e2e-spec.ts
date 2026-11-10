@@ -84,6 +84,9 @@ describe('Chat hot path (e2e)', () => {
     archived_at: null,
     default_notification_level: null,
     is_default: false,
+    is_audit_log: false,
+    display_locked: false,
+    created_by: null,
   };
 
   const announcementsChannel: ChatChannel = {
@@ -142,6 +145,7 @@ describe('Chat hot path (e2e)', () => {
     findPushRouting: jest.fn(),
     createDm: jest.fn(),
     findByName: jest.fn(),
+    findAuditLog: jest.fn(),
     createMany: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
@@ -167,6 +171,7 @@ describe('Chat hot path (e2e)', () => {
     findLatestPerChannel: jest.fn(),
     countPinnedByChannel: jest.fn(),
     findPollsByChapter: jest.fn(),
+    findPollCardsByChapter: jest.fn(),
     findByClientMessageId: jest.fn(),
     findAuthorAvatarPaths: jest.fn(),
     insertIdempotent: jest.fn(),
@@ -177,6 +182,7 @@ describe('Chat hot path (e2e)', () => {
     create: jest.fn(),
     findOne: jest.fn(),
     updateForVote: jest.fn(),
+    findActedMessageIds: jest.fn(),
   };
   const attachmentRepoMock: jest.Mocked<IChatMessageAttachmentRepository> = {
     createMany: jest.fn(),
@@ -199,6 +205,7 @@ describe('Chat hot path (e2e)', () => {
   const storageProviderMock: jest.Mocked<IStorageProvider> = {
     getSignedUploadUrl: jest.fn(),
     getSignedDownloadUrl: jest.fn(),
+    getSignedInlineAndAttachmentUrls: jest.fn(),
     getSignedDownloadUrls: jest.fn(),
     uploadFile: jest.fn(),
     downloadFile: jest.fn(),
@@ -351,6 +358,7 @@ describe('Chat hot path (e2e)', () => {
       payload: null,
       client_message_id: clientMessageId,
       reply_to_id: null,
+      thread_root_id: null,
       metadata: {},
       mentions: [],
     });
@@ -390,6 +398,7 @@ describe('Chat hot path (e2e)', () => {
       payload: null,
       client_message_id: clientMessageId,
       reply_to_id: null,
+      thread_root_id: null,
       metadata: {},
       mentions: [],
     });

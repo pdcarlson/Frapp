@@ -46,8 +46,8 @@ export function startOfMonth(date: Date): Date {
  * `anchor`'s month: from the Sunday on or before the 1st, so every month draws
  * the same height however many weeks it spans. Each day is local midnight.
  *
- * Mobile's Events calendar draws it (#3792), and web's moves onto it in #3822,
- * so the two draw the same days. Built by
+ * Mobile's Events calendar draws it (#3792); web's still builds the same
+ * days with its own `buildMonthGrid`. Built by
  * calendar date rather than by adding 24 hours, which a DST change would knock
  * an hour off and, past enough cells, onto the wrong day.
  */

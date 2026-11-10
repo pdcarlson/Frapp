@@ -329,10 +329,18 @@ async function buildWorker(
   } = {},
 ) {
   const channelRepo = {
-    create: jest.fn(async (data: { name: string }) => ({
-      id: 'created-channel-1',
-      name: data.name,
-    })),
+    create: jest.fn(
+      async (data: {
+        name: string;
+      }): Promise<{
+        id: string;
+        name: string;
+        is_audit_log?: boolean;
+      }> => ({
+        id: 'created-channel-1',
+        name: data.name,
+      }),
+    ),
     // Merge targets' types decide whether a mention of a merged channel is
     // named (#2875). The harness's target is a whole-chapter channel.
     findByIds: jest.fn(async (chapterId: string, ids: string[]) =>
@@ -358,6 +366,7 @@ async function buildWorker(
             type: 'PUBLIC',
             required_permissions: null,
             is_read_only: true,
+            is_audit_log: false,
             archived_at: null,
           }
         : null,
@@ -760,6 +769,30 @@ describe('DiscordImportWorkerService — importing', () => {
     });
   });
 
+  it('stops before writing when the channel it created became the audit log (#3909)', async () => {
+    repoRef.channels = [
+      channelMapping({
+        mapping_action: 'create_new',
+        target_channel_id: null,
+        new_channel_name: 'chapter-audit',
+      }),
+    ];
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+    channelRepo.create.mockResolvedValueOnce({
+      id: 'created-channel-1',
+      name: 'chapter-audit',
+      is_audit_log: true,
+    });
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.insertMessages).not.toHaveBeenCalled();
+    expect(repoRef.state().error).toMatch(/became the chapter's audit log/);
+  });
+
   // The purge deletes what an import created once it is empty (#2905). It
   // can't learn that from the mapping rows, which remapping a failed import
   // rewrites without their targets, so the worker records it as it creates.
@@ -998,6 +1031,7 @@ describe('DiscordImportWorkerService — importing', () => {
       type: 'GROUP_DM',
       required_permissions: null,
       is_read_only: true,
+      is_audit_log: false,
       archived_at: null,
     });
 
@@ -1005,6 +1039,28 @@ describe('DiscordImportWorkerService — importing', () => {
 
     expect(repoRef.insertMessages).not.toHaveBeenCalled();
     expect(repoRef.state().error).toMatch(/points at a direct message/);
+  });
+
+  it('stops rather than import into the audit log (#3909)', async () => {
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+    channelRepo.findById.mockResolvedValue({
+      id: SIGNET_CHANNEL,
+      chapter_id: CHAPTER,
+      name: 'chapter-audit',
+      type: 'PUBLIC',
+      required_permissions: null,
+      is_read_only: true,
+      is_audit_log: true,
+      archived_at: null,
+    });
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.insertMessages).not.toHaveBeenCalled();
+    expect(repoRef.state().error).toMatch(/points at the audit log/);
   });
 
   // An officer may delete any channel, one an import merges into included

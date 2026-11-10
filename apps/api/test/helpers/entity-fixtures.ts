@@ -71,6 +71,8 @@ export function memberFixture(overrides: Partial<Member> = {}): Member {
     custom_role_ids: [],
     has_completed_onboarding: false,
     dismissed_ops_nudges: [],
+    pledge_class_id: null,
+    order_number: null,
     created_at: CREATED_AT,
     updated_at: CREATED_AT,
     ...overrides,

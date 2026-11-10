@@ -165,6 +165,8 @@ Unchanged from the Linear era. An issue's description may carry a machine-readab
   architectural, security-sensitive, or subtle-correctness work). Advisory, read at spin-up.
   Sessions default to Opus 5.5, which does about 95% of the work here (owner decision 2026-09-22),
   so `any` means that default and `fable` marks the minority of issues that warrant Fable.
+  *2026-11-10 (Paul):* the repo sets no default model. Whoever starts a chat picks its model and
+  effort, so read `any` as "no preference"; the field stays advisory.
 - **`ultracode`** — whether multi-agent orchestration likely pays for itself.
 
 **Who writes it:** the curator files every suggestion with a brief; the triage routine backfills
@@ -225,7 +227,7 @@ Everything an agent files (follow-ups from `/next`, curator suggestions, PR-foll
   blockers (filed by *any* session, see below) embed
   `` `agent-suggestion: v1 fp=human/<slug> source=<...>` `` (namespaces partition lifecycle
   ownership — PR Follow-ups owns both `pr-followup/` and `human/`); Beta Watch embeds
-  `` `agent-suggestion: v1 fp=beta-watch/<source>/<id>` `` and owns `beta-watch/`. The `fp=` grammar is unchanged,
+  `` `agent-suggestion: v1 fp=beta-watch/<source>/<id>` `` and owns `beta-watch/`, except `beta-watch/dev-channel/`, which marks a team member's own ask that no routine re-bodies or closes. The `fp=` grammar is unchanged,
   so existing dedup queries keep working, and **legacy comment-form markers remain valid** — they
   are stored, and readable again as of 2026-09-05 — but a missing marker still means "unknown",
   never "absent", because that reading survives the next flip and a re-file does not. Ad-hoc

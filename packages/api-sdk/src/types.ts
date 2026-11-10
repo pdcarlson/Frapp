@@ -836,6 +836,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/notifications/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark all unread notifications read, or only those pointing at the named screens */
+        post: operations["NotificationController_markAllRead_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/notifications/{id}/read": {
         parameters: {
             query?: never;
@@ -885,7 +902,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Update user settings (quiet hours, theme) */
+        /** Update user settings (quiet hours, theme, status) */
         patch: operations["NotificationController_updateSettings_v1"];
         trace?: never;
     };
@@ -1027,6 +1044,23 @@ export interface paths {
         head?: never;
         /** Update a channel */
         patch: operations["ChatController_updateChannel_v1"];
+        trace?: never;
+    };
+    "/v1/channels/{id}/display-lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set or clear Always formal on a channel (the channel's creator, or channels:manage) */
+        put: operations["ChatController_setChannelDisplayLock_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/channels/dm": {
@@ -1551,6 +1585,161 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/{id}/threads/followed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller’s followed and muted threads in a channel, with new-reply counts */
+        get: operations["ChatThreadController_getFollowedThreads_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/{id}/threads/{rootId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A thread’s parent message and the caller’s follow */
+        get: operations["ChatThreadController_getThread_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/{id}/threads/{rootId}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A thread’s replies, newest first, paged like the channel timeline (before= and since=) */
+        get: operations["ChatThreadController_getReplies_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/{id}/threads/{rootId}/follow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Follow, mute or unfollow a thread */
+        put: operations["ChatThreadController_setFollow_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/{id}/threads/{rootId}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark a thread read through now */
+        post: operations["ChatThreadController_markRead_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/chat-backgrounds/channels/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What to draw behind a channel's messages (resolved, photo signed) */
+        get: operations["ChatBackgroundController_getForChannel_v1"];
+        /** Set or clear a channel's own background */
+        put: operations["ChatBackgroundController_setForChannel_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/chat-backgrounds/channels/photo-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Signed upload URL for a channel background photo */
+        post: operations["ChatBackgroundController_channelPhotoUrl_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/chat-backgrounds/default": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The chapter's default chat background */
+        get: operations["ChatBackgroundController_getDefault_v1"];
+        /** Set the chapter's default chat background */
+        put: operations["ChatBackgroundController_setDefault_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/chat-backgrounds/default/photo-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Signed upload URL for a chapter default photo */
+        post: operations["ChatBackgroundController_defaultPhotoUrl_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events": {
         parameters: {
             query?: never;
@@ -2063,6 +2252,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/backwork/courses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List chapter course names and nicknames */
+        get: operations["BackworkController_listCourses_v1"];
+        /** Name a course or add nicknames (create on first write) */
+        put: operations["BackworkController_upsertCourse_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/backwork/courses/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a course's name and nicknames (its files are untouched) */
+        delete: operations["BackworkController_deleteCourse_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/backwork/professors": {
         parameters: {
             query?: never;
@@ -2345,6 +2569,76 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/v1/pledge-classes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the chapter's pledge classes, oldest first */
+        get: operations["PledgeClassController_list_v1"];
+        put?: never;
+        /** Add a pledge class at the end of the list */
+        post: operations["PledgeClassController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/pledge-classes/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set the order of the chapter's pledge classes */
+        put: operations["PledgeClassController_reorder_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/pledge-classes/assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set members' pledge class and order number, all or none */
+        put: operations["PledgeClassController_assign_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/pledge-classes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a pledge class; its members keep their order number and lose the class */
+        delete: operations["PledgeClassController_remove_v1"];
+        options?: never;
+        head?: never;
+        /** Rename a pledge class */
+        patch: operations["PledgeClassController_rename_v1"];
         trace?: never;
     };
     "/v1/rush/candidates": {
@@ -2693,7 +2987,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Manually close a poll early (creator only) */
+        /** Manually close a poll early (creator only): a REST poll or a chat-card poll */
         post: operations["PollController_close_v1"];
         delete?: never;
         options?: never;
@@ -2869,6 +3163,26 @@ export interface paths {
          * @description Normalized, newest-first rows aggregated from events, the caller’s own point changes, backwork uploads (only when the caller can view Backwork), new members, and the announcements channel. Read-only aggregation — no separate feed table (`spec/behavior/activity-feed.md`).
          */
         get: operations["ActivityFeedController_getFeed_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get what needs the caller and what they made
+         * @description The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the tasks they assigned and the files they uploaded. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.
+         */
+        get: operations["ActivityController_getActivity_v1"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3807,6 +4121,13 @@ export interface components {
             current_city: string | null;
             current_company: string | null;
             email: string;
+            /**
+             * Format: uuid
+             * @description The member's pledge class, one of `GET /v1/pledge-classes`, or null.
+             */
+            pledge_class_id: string | null;
+            /** @description The member's order within their pledge class, or chapter-wide (a roll or bond number), set by officers; or null. */
+            order_number: number | null;
             /** @description Whether the member holds the chapter's Alumni system role, resolved the same way GET /alumni resolves it — a directory splitting actives from alumni filters on this rather than on role ids. */
             is_alumni: boolean;
             /** @description Custom-field values, present only on single-member reads and already filtered to the fields the requesting viewer may see. */
@@ -3919,6 +4240,24 @@ export interface components {
             /** @description Device name for display */
             device_name?: string;
         };
+        MarkNotificationsReadDto: {
+            /**
+             * @description Mark read only the notifications that point at one of these screens (`data.target.screen`). Omit to mark every unread notification read.
+             * @example [
+             *       "events"
+             *     ]
+             */
+            screens?: string[];
+        };
+        MarkNotificationsReadResultDto: {
+            /**
+             * Format: date-time
+             * @description The instant written to `read_at` on every row this call read
+             */
+            read_at: string;
+            /** @description How many notifications this call marked read */
+            updated: number;
+        };
         UpdateNotificationPreferenceDto: {
             /** @description Chapter ID */
             chapter_id: string;
@@ -3948,6 +4287,26 @@ export interface components {
              * @enum {string}
              */
             theme: "light" | "dark" | "system";
+            /**
+             * @description The status in force now (#3845). `online` until the member picks another, and once a picked status reaches its end time.
+             * @enum {string}
+             */
+            status: "online" | "idle" | "dnd" | "invisible";
+            /**
+             * Format: date-time
+             * @description When `status` reverts to `online`. Null: until the member changes it.
+             */
+            status_expires_at: string | null;
+            /**
+             * @description The custom status line in force now, or null for none (also once it has reached its end time).
+             * @example At practice till 6
+             */
+            custom_status: string | null;
+            /**
+             * Format: date-time
+             * @description When the custom status line clears. Null: until the member clears it.
+             */
+            custom_status_expires_at: string | null;
         };
         UpdateUserSettingsDto: {
             /** @description Quiet hours start (HH:mm format, e.g. 22:00). Pass null or an empty string to clear. */
@@ -3961,6 +4320,23 @@ export interface components {
              * @enum {string}
              */
             theme?: "light" | "dark" | "system";
+            /**
+             * @description The status the member picks (#3845). Sending it replaces `status_expires_at` with the value sent alongside it (absent: no end time). `online` never carries an end time.
+             * @enum {string}
+             */
+            status?: "online" | "idle" | "dnd" | "invisible";
+            /**
+             * Format: date-time
+             * @description When `status` reverts to `online`, as an ISO 8601 instant in the future. Accepted only together with `status`; null, blank or absent means no end time (and alone is ignored).
+             */
+            status_expires_at?: string | null;
+            /** @description One short custom status line (at most 80 characters, no line breaks). Trimmed; null or an empty string clears it, and its end time with it. Sending it replaces `custom_status_expires_at` with the value sent alongside it. */
+            custom_status?: string | null;
+            /**
+             * Format: date-time
+             * @description When the custom status line clears, as an ISO 8601 instant in the future. Accepted only together with `custom_status`; null, blank or absent means no end time (and alone is ignored).
+             */
+            custom_status_expires_at?: string | null;
         };
         ChannelUnreadCountDto: {
             /** Format: uuid */
@@ -4049,6 +4425,8 @@ export interface components {
             category_id?: string;
             /** @default false */
             is_read_only: boolean;
+            /** @description Always formal (#3787): every member sees the channel in the formal display and cannot pick another display there. False when absent. Change it later with PUT /v1/channels/{id}/display-lock. */
+            display_locked?: boolean;
         };
         UpdateChannelDto: {
             name?: string;
@@ -4064,6 +4442,10 @@ export interface components {
             default_notification_level?: "all" | "mentions" | "off" | null;
             /** @description Make this the chapter's default channel, where Chat opens for a member whose device has no last channel (ahead of #general). Setting it moves the default off any other channel; `false` on the current default leaves the chapter with none. Refused as `true` on a DM or group DM. */
             is_default?: boolean;
+        };
+        SetChannelDisplayLockDto: {
+            /** @description True sets the channel to Always formal for every member; false lets each member pick their own display there again. */
+            display_locked: boolean;
         };
         CreateDmDto: {
             /** @description The other member user ID */
@@ -4137,6 +4519,16 @@ export interface components {
             is_deleted: boolean;
             /** @description `users.id` of everyone mentioned, resolved server-side at send time. Null on a masked row: a mention overrides a per-channel mute, so leaving it would let a blocked member keep poking the blocker through a masked row. */
             mentions?: string[] | null;
+            /**
+             * Format: uuid
+             * @description The parent message when this row is a reply inside a message thread (#3785). Thread replies never appear in the channel timeline; a client that receives one over Realtime must keep it out of the timeline.
+             */
+            thread_root_id?: string | null;
+            /** @description On a thread parent: its reply count, kept by a trigger so the parent’s Realtime UPDATE echo carries it. 0 on every other row. */
+            thread_reply_count?: number;
+            thread_last_reply_at?: string | null;
+            /** @description On a thread parent: up to three recent repliers, newest first. */
+            thread_recent_sender_ids?: string[];
             created_at: string;
             /** @description Whether the server masked this row against the caller’s block list. Present on **every** row, not only the masked ones: an absent-means-false flag cannot distinguish “this server does not mask” from “this message is fine”. Not sufficient on its own — rows arriving over the Realtime `postgres_changes` echo carry no viewer, so a client must also apply the list from `GET /v1/chat/blocks`. */
             sender_blocked: boolean;
@@ -4164,6 +4556,8 @@ export interface components {
             kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement";
             payload?: Record<string, never>;
             reply_to_id?: string;
+            /** Format: uuid */
+            thread_root_id?: string;
             metadata?: Record<string, never>;
         };
         ResolveAuthorAvatarsDto: {
@@ -4191,6 +4585,8 @@ export interface components {
             size_bytes?: number;
             /** @description Also mint an upload URL for a smaller JPEG copy of this photo, which readers draw in the timeline. Ignored unless content_type is an image. */
             with_preview?: boolean;
+            /** @description The file is for a reply inside a message thread (#3785). Authorizes as a thread write, which a read-only channel allows, so mint and send agree for a thread reply under an announcement. */
+            for_thread?: boolean;
         };
         ChatUploadUrlResponseDto: {
             /** @description Short-lived signed URL; PUT the bytes to it. */
@@ -4380,6 +4776,87 @@ export interface components {
         UpdateChatSidebarDto: {
             unread_only?: boolean;
             hide_muted?: boolean;
+        };
+        FollowedThreadDto: {
+            /** Format: uuid */
+            thread_root_id: string;
+            /** @enum {string} */
+            state: "following" | "muted";
+            last_read_at: string | null;
+            /** @description Replies new to the caller; always 0 when muted. */
+            unread_count: number;
+        };
+        ChatThreadDto: {
+            root: components["schemas"]["ChatMessageDto"];
+            /**
+             * @description The caller’s state; null when not following.
+             * @enum {string|null}
+             */
+            follow_state: "following" | "muted" | null;
+            last_read_at: string | null;
+        };
+        SetThreadFollowDto: {
+            /**
+             * @description `following` pushes replies within the channel’s level, `muted` never pushes, `none` unfollows.
+             * @enum {string}
+             */
+            state: "following" | "muted" | "none";
+        };
+        ThreadFollowStateDto: {
+            /** @enum {string|null} */
+            follow_state: "following" | "muted" | null;
+        };
+        ThreadReadDto: {
+            last_read_at: string;
+        };
+        ChatBackgroundResponseDto: {
+            /**
+             * @description What to draw behind the messages column.
+             * @enum {string}
+             */
+            background: "plain" | "gold-glow" | "midnight" | "game-day" | "letters" | "photo";
+            /**
+             * @description Where it came from: the channel's own setting, the chapter default, or `none` for a DM (always plain).
+             * @enum {string}
+             */
+            source: "channel" | "chapter" | "none";
+            /** @description A signed URL for the photo when `background` is `photo`; null otherwise, or when signing failed (draw plain). */
+            photo_url: string | null;
+        };
+        SetChannelBackgroundDto: {
+            /**
+             * @description A built-in key, `photo` (with `storage_path`), or null to follow the chapter's default.
+             * @enum {string|null}
+             */
+            background: "plain" | "gold-glow" | "midnight" | "game-day" | "letters" | "photo" | null;
+            /** @description Required with `photo`: the path the photo-url call returned. */
+            storage_path?: string;
+        };
+        ChatBackgroundPhotoUrlDto: {
+            /** @description Original filename (e.g. house.jpg) */
+            filename: string;
+            /** @description MIME content type (e.g. image/jpeg) */
+            content_type: string;
+        };
+        ChatBackgroundPhotoUrlResponseDto: {
+            /** @description Short-lived signed URL; PUT the bytes to it. */
+            upload_url: string;
+            /** @description Storage path to send back as `storage_path` when setting the photo. */
+            storage_path: string;
+        };
+        ChapterChatBackgroundResponseDto: {
+            /** @enum {string} */
+            background: "plain" | "gold-glow" | "midnight" | "game-day" | "letters" | "photo";
+            photo_url: string | null;
+        };
+        SetChapterChatBackgroundDto: {
+            /**
+             * @description A built-in key, or `photo` (with `storage_path`).
+             * @enum {string}
+             */
+            background: "plain" | "gold-glow" | "midnight" | "game-day" | "letters" | "photo";
+            /** @description Required with `photo`: the path the photo-url call returned. */
+            storage_path?: string;
         };
         GeofenceCoordinateDto: {
             lat: number;
@@ -4629,6 +5106,8 @@ export interface components {
             department_code?: string;
             /** @description Course number (e.g. "101") */
             course_number?: string;
+            /** @description The course's name ("Calculus I"). Saved only when the course has no name yet; an upload never renames a course. */
+            course_name?: string;
             /** @description Professor name */
             professor_name?: string;
             year?: number;
@@ -4664,6 +5143,41 @@ export interface components {
         MergeBackworkTaxonomyResponseDto: {
             /** @description Count of resources reassigned from source to target */
             reassigned: number;
+        };
+        BackworkCourseDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /** Format: uuid */
+            department_id: string;
+            /** @description Course number as first saved, e.g. "1010" */
+            course_number: string;
+            /** @description The course number trimmed and lowercased; files join a course by department_id and this. */
+            course_key: string;
+            /** @example Calculus I */
+            name: string | null;
+            /**
+             * @example [
+             *       "Calc 1",
+             *       "Calc I"
+             *     ]
+             */
+            nicknames: string[];
+            created_at: string;
+            updated_at: string;
+        };
+        UpsertBackworkCourseDto: {
+            /** Format: uuid */
+            department_id: string;
+            /** @description Course number (e.g. "1010") */
+            course_number: string;
+            /** @description Omit to keep the stored name. A blank or null clears it (backwork:admin). */
+            name?: string | null;
+            /** @description Nicknames to add to the list as stored. Open to backwork:upload; a list past the cap is a 400. */
+            add_nicknames?: string[];
+            /** @description Nicknames to remove from the list as stored, matched case-insensitively. Needs backwork:admin. */
+            remove_nicknames?: string[];
         };
         UpdateProfessorDto: {
             /** @description Professor name */
@@ -4704,7 +5218,7 @@ export interface components {
             description: string;
             /** @description Storage path to proof file (e.g. from upload) */
             proof_path?: string;
-            /** @description When set with `client_message_id`, posts a read-only hours card to this chat channel after the entry is created (the `/hours log` slash command). Omit for dashboard creates. Chat cannot attach proof — when `wf_hours_receipt` is on, this route still 400s without `proof_path`. */
+            /** @description When set with `client_message_id`, posts a read-only hours card to this chat channel after the entry is created (the `/hours log` slash command). Omit for dashboard creates. The one-liner cannot attach proof (the Service hours form in the chat composer can) — when `wf_hours_receipt` is on, this route still 400s without `proof_path`. */
             channel_id?: string;
             /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Not a server-side dedupe key — a replay creates a duplicate entry. */
             client_message_id?: string;
@@ -4785,6 +5299,55 @@ export interface components {
         RejectTaskCompletionDto: {
             /** @description Optional comment for rejection */
             comment?: string;
+        };
+        PledgeClassDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            name: string;
+            /** @description The class's place in the chapter's list, lowest first, which is oldest first. */
+            position: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        PledgeClassNameDto: {
+            /** @description The class name as the chapter writes it ("Alpha", "Fall 2019"). Stored trimmed; unique within the chapter, ignoring case. */
+            name: string;
+        };
+        ReorderPledgeClassesDto: {
+            /** @description Every one of the chapter's class ids, oldest class first. A list that is not exactly the chapter's current classes is refused with 409, so a stale editor can't drop a class out of order. */
+            ids: string[];
+        };
+        PledgeClassAssignmentDto: {
+            /**
+             * Format: uuid
+             * @description The membership id (members.id).
+             */
+            member_id: string;
+            /**
+             * Format: uuid
+             * @description One of the chapter's pledge classes, or null for none.
+             */
+            pledge_class_id: string | null;
+            /** @description The member's order within their class, or chapter-wide (a roll or bond number), or null for none. Not required to be unique. */
+            order_number: number | null;
+        };
+        AssignPledgeClassesDto: {
+            /** @description Each listed member gets both values; members not listed are untouched. All of them are written or none. */
+            assignments: components["schemas"]["PledgeClassAssignmentDto"][];
+        };
+        MemberPledgeClassDto: {
+            /**
+             * Format: uuid
+             * @description The membership id (members.id).
+             */
+            member_id: string;
+            /** Format: uuid */
+            pledge_class_id: string | null;
+            order_number: number | null;
         };
         RushCandidateViewDto: {
             /** Format: uuid */
@@ -5052,6 +5615,151 @@ export interface components {
             actor: components["schemas"]["ActivityFeedActorDto"] | null;
             /** @description The underlying record id (event, point transaction, backwork resource, joining member’s user id, or announcement channel id) for client-side navigation. */
             target_id: string;
+        };
+        ActivityTaskDto: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            /**
+             * Format: date
+             * @example 2026-11-20
+             */
+            due_date: string;
+            /**
+             * @description Display status: OVERDUE for an open task past its due date.
+             * @enum {string}
+             */
+            status: "TODO" | "IN_PROGRESS" | "COMPLETED" | "OVERDUE";
+            /**
+             * @description The status actually stored, which the next transition is checked against.
+             * @enum {string}
+             */
+            stored_status: "TODO" | "IN_PROGRESS" | "COMPLETED" | "OVERDUE";
+            /** Format: uuid */
+            assignee_id: string;
+            /** @description Empty when the member cannot be resolved (they have left). */
+            assignee_name: string;
+            /** Format: uuid */
+            created_by: string;
+            /** @description Empty when the member cannot be resolved (they have left). */
+            created_by_name: string;
+            point_reward: number | null;
+            /** Format: date-time */
+            completed_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        ActivityHoursEntryDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            user_id: string;
+            /** @description Empty when the member cannot be resolved (they have left). */
+            member_name: string;
+            /**
+             * Format: date
+             * @example 2026-11-08
+             */
+            date: string;
+            duration_minutes: number;
+            description: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        ActivityPollDto: {
+            /**
+             * Format: uuid
+             * @description The chat message that is the poll card. It is served whole in `message`; this row carries no tallies.
+             */
+            message_id: string;
+            /** Format: uuid */
+            channel_id: string;
+            /** @description The channel’s name. A direct message’s is server-generated, so label those from `channel_type`. */
+            channel_name: string;
+            /** @enum {string} */
+            channel_type: "PUBLIC" | "PRIVATE" | "ROLE_GATED" | "DM" | "GROUP_DM";
+            /** Format: uuid */
+            sender_id: string | null;
+            question: string;
+            option_count: number;
+            /**
+             * Format: date-time
+             * @description When voting stops. Null for a card posted with no usable deadline, which stays open.
+             */
+            closes_at: string | null;
+            /**
+             * Format: date-time
+             * @description Set when its creator closed it early.
+             */
+            closed_at: string | null;
+            is_closed: boolean;
+            has_voted: boolean;
+            /** Format: date-time */
+            created_at: string;
+            /** @description The poll’s chat message, as `GET /v1/channels/{id}/messages` serves it, for chat’s own poll card. Its votes are read from `chat_message_actions`, as chat reads them. */
+            message: components["schemas"]["ChatMessageDto"];
+        };
+        ActivityNeedsYouDto: {
+            /** @description Open tasks assigned to the caller, soonest due first. */
+            tasks: components["schemas"]["ActivityTaskDto"][];
+            /** @description Finished tasks the caller can confirm (`tasks:manage`, never their own), longest waiting first. */
+            task_confirmations: components["schemas"]["ActivityTaskDto"][];
+            /** @description Pending service entries the caller can approve (`service:approve`, never their own), oldest first. */
+            hours_approvals: components["schemas"]["ActivityHoursEntryDto"][];
+            /** @description Open polls from other members, in channels the caller can read, that the caller hasn’t voted on. Soonest closing first. */
+            polls: components["schemas"]["ActivityPollDto"][];
+        };
+        ActivityEventDto: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            location: string | null;
+            /** Format: date-time */
+            start_time: string;
+            /** Format: date-time */
+            end_time: string;
+            /**
+             * @description What the event asks of the caller, not the event’s default: a role of theirs the event lists decides it, and an alumnus the default alone would require is optional.
+             * @enum {string}
+             */
+            attendance: "required" | "optional";
+            point_value: number;
+            check_in_opens_minutes: number;
+            /** @description Whether the caller can check in right now: the window is open and check-in would not refuse them. */
+            check_in_open: boolean;
+            /** @description Whether the caller has an attendance row for it. Read only while check-in is open; null otherwise, and when that read failed. */
+            checked_in: boolean | null;
+        };
+        ActivityFileDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description Which module holds it: a chapter document or a backwork resource.
+             * @enum {string}
+             */
+            source: "document" | "backwork";
+            /** @description Empty for a backwork resource with no title. */
+            title: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        ActivityMadeByYouDto: {
+            /** @description Poll cards the caller posted, newest first. */
+            polls: components["schemas"]["ActivityPollDto"][];
+            /** @description Tasks the caller assigned, newest first. Empty unless the caller still holds `tasks:manage`. */
+            tasks: components["schemas"]["ActivityTaskDto"][];
+            /** @description Documents and backwork the caller uploaded, newest first. */
+            files: components["schemas"]["ActivityFileDto"][];
+        };
+        ActivityDto: {
+            needs_you: components["schemas"]["ActivityNeedsYouDto"];
+            /** @description Events that invite the caller and start within 14 days, or whose check-in is still open, soonest first. At most 10. */
+            coming_up: components["schemas"]["ActivityEventDto"][];
+            made_by_you: components["schemas"]["ActivityMadeByYouDto"];
+            /** @description How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t. */
+            needs_you_count: number;
+            /** @description Sections that could not be read this time. Each is served empty; the others are unaffected. */
+            unavailable: ("tasks" | "hours_approvals" | "polls" | "coming_up" | "files")[];
         };
         CreateDiscordImportDto: {
             /** @description The admin confirms they have posted an in-channel notice in their Discord server telling members the history is being archived into Frapp. Required — the API refuses without it, and the column is NOT NULL, so no import can exist that was not preceded by this. */
@@ -7234,6 +7942,38 @@ export interface operations {
             };
         };
     };
+    NotificationController_markAllRead_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkNotificationsReadDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarkNotificationsReadResultDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     NotificationController_markRead_v1: {
         parameters: {
             query?: never;
@@ -7709,6 +8449,38 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["UpdateChannelDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_setChannelDisplayLock_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetChannelDisplayLockDto"];
             };
         };
         responses: {
@@ -8999,6 +9771,359 @@ export interface operations {
             };
         };
     };
+    ChatThreadController_getFollowedThreads_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FollowedThreadDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatThreadController_getThread_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                rootId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatThreadDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatThreadController_getReplies_v1: {
+        parameters: {
+            query?: {
+                /** @description Max messages to return. Integers outside 1–200 are rejected; omitted defaults to 50 after clamp. */
+                limit?: number;
+                /** @description Cursor — return messages created strictly before this timestamp. Full ISO 8601 with an explicit UTC offset; feed back the `created_at` of the oldest row you received. */
+                before?: string;
+                /** @description Message UUID — returns messages created after this message (reconnect replay). Still newest first under `limit`: the page is the newest `limit` messages after this one, so a full page may not reach back to it. 404 with code `chat.since_not_found` when no message in this channel has this id. */
+                since?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+                rootId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatMessageDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatThreadController_setFollow_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                rootId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetThreadFollowDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadFollowStateDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatThreadController_markRead_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                rootId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadReadDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatBackgroundController_getForChannel_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatBackgroundResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatBackgroundController_setForChannel_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetChannelBackgroundDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatBackgroundResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatBackgroundController_channelPhotoUrl_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatBackgroundPhotoUrlDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatBackgroundPhotoUrlResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatBackgroundController_getDefault_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterChatBackgroundResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatBackgroundController_setDefault_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetChapterChatBackgroundDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterChatBackgroundResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatBackgroundController_defaultPhotoUrl_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatBackgroundPhotoUrlDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatBackgroundPhotoUrlResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     EventController_list_v1: {
         parameters: {
             query?: never;
@@ -10084,6 +11209,94 @@ export interface operations {
             };
         };
     };
+    BackworkController_listCourses_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackworkCourseDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BackworkController_upsertCourse_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpsertBackworkCourseDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackworkCourseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BackworkController_deleteCourse_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     BackworkController_listProfessors_v1: {
         parameters: {
             query?: never;
@@ -10728,6 +11941,192 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PledgeClassController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PledgeClassDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PledgeClassController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PledgeClassNameDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PledgeClassDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PledgeClassController_reorder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderPledgeClassesDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PledgeClassDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PledgeClassController_assign_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignPledgeClassesDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberPledgeClassDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PledgeClassController_remove_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PledgeClassController_rename_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PledgeClassNameDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PledgeClassDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -11548,7 +12947,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ChatMessageDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -11823,6 +13224,14 @@ export interface operations {
             query: {
                 /** @description Search query */
                 q: string;
+                /** @description Message hits that carry all of these, comma-separated: `file` (any attachment), `image`, `link`, `poll`. A message filter: it narrows the messages source inside the caller’s accessible-channel set, makes the search messages-only, and lets `q` be empty. */
+                has?: string;
+                /** @description Message hits sent before this instant: ISO 8601 with an explicit offset. A message filter: it narrows the messages source inside the caller’s accessible-channel set, makes the search messages-only, and lets `q` be empty. */
+                before?: string;
+                /** @description Message hits sent at or after this instant: ISO 8601 with an explicit offset. A message filter: it narrows the messages source inside the caller’s accessible-channel set, makes the search messages-only, and lets `q` be empty. */
+                after?: string;
+                /** @description Message hits from this sender only. A message filter: it narrows the messages source inside the caller’s accessible-channel set, makes the search messages-only, and lets `q` be empty. */
+                fromUserId?: string;
                 /** @description Narrow the search to one chat channel. This is the single-channel form of search specified in spec/behavior/chat/README.md: only the `messages` source runs and `backwork`, `events` and `members` come back empty. The channel is still resolved through the caller’s accessible-channel set, so an unreadable or unknown id returns no matches rather than an error. */
                 channelId?: string;
             };
@@ -11867,6 +13276,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ActivityFeedItemDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_getActivity_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityDto"];
                 };
             };
             /** @description Error */

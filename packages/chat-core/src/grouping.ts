@@ -157,6 +157,12 @@ export interface DecoratedRow<R extends GroupableRow> {
   startsDay: boolean;
   /** Draw the avatar and author line on this row. */
   startsRun: boolean;
+  /**
+   * The last row of its run: the next drawn row starts a run of its own, or
+   * there is none. Bubbles draws the avatar here, under the stack (§11 §
+   * Bubbles).
+   */
+  endsRun: boolean;
 }
 
 /**
@@ -167,7 +173,7 @@ export interface DecoratedRow<R extends GroupableRow> {
 export function decorateThread<R extends GroupableRow>(
   rows: readonly R[],
 ): DecoratedRow<R>[] {
-  return rows.map((row, index) => {
+  const out = rows.map((row, index) => {
     const prev = rows[index - 1];
     const day = calendarDayKey(row.message.created_at);
     // A row whose timestamp cannot be read gets no divider, which would have
@@ -175,6 +181,16 @@ export function decorateThread<R extends GroupableRow>(
     const startsDay =
       day !== null &&
       (!prev || calendarDayKey(prev.message.created_at) !== day);
-    return { row, startsDay, startsRun: startsRun(prev, row, startsDay) };
+    return {
+      row,
+      startsDay,
+      startsRun: startsRun(prev, row, startsDay),
+      endsRun: true,
+    };
   });
+  // A row ends its run exactly when the row after it starts one.
+  for (let index = 0; index < out.length - 1; index++) {
+    out[index]!.endsRun = out[index + 1]!.startsRun;
+  }
+  return out;
 }

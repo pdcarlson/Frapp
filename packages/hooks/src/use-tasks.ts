@@ -365,6 +365,7 @@ export function useCreateTask() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["tasks", "create-task"],
     mutationFn: async (body: {
       title: string;
       description?: string;
@@ -402,6 +403,7 @@ export function useUpdateTaskStatus() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["tasks", "update-task-status"],
     // No retry. The web client retries a failed mutation twice when the
     // failure may be transient, a lost response included (`retryMutation` in
     // `apps/web/lib/providers/query-provider.tsx`), and these three are
@@ -479,6 +481,7 @@ export function useConfirmTask() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["tasks", "confirm-task"],
     // No retry. The web client retries a failed mutation twice when the
     // failure may be transient, a lost response included (`retryMutation` in
     // `apps/web/lib/providers/query-provider.tsx`), and these three are
@@ -528,6 +531,7 @@ export function useRejectTask() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["tasks", "reject-task"],
     // No retry. The web client retries a failed mutation twice when the
     // failure may be transient, a lost response included (`retryMutation` in
     // `apps/web/lib/providers/query-provider.tsx`), and these three are
@@ -578,6 +582,7 @@ export function useDeleteTask() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["tasks", "delete-task"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.DELETE("/v1/tasks/{id}", {
         params: { path: { id } },

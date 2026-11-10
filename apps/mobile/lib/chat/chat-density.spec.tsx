@@ -2,11 +2,19 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { CHAT_DENSITY_STORAGE_KEY } from "@repo/chat-core/density";
+import {
+  CHAT_CHANNEL_DENSITY_STORAGE_KEY,
+  CHAT_DENSITY_STORAGE_KEY,
+  resetLockedChannelsForTests,
+  setChannelLocked,
+} from "@repo/chat-core/density";
 import {
   hydrateChatDensity,
   resetChatDensityForTests,
+  setChannelDensity,
   setChatDensity,
+  useChannelDensityOverride,
+  useChannelDisplayLocked,
   useChatDensity,
 } from "./chat-density";
 
@@ -59,5 +67,121 @@ describe("the phone's chat density", () => {
       await hydrateChatDensity();
     });
     expect(result.current).toBe("compact");
+  });
+});
+
+describe("a channel's own display on this phone (#3787)", () => {
+  beforeEach(() => {
+    resetChatDensityForTests();
+    getItem.mockReset();
+    setItem.mockReset();
+    setItem.mockResolvedValue(undefined);
+  });
+
+  it("reads overrides stored by an earlier launch", async () => {
+    getItem.mockImplementation(async (key: string) =>
+      key === CHAT_CHANNEL_DENSITY_STORAGE_KEY
+        ? JSON.stringify({ a: "bubbles" })
+        : null,
+    );
+    const { result } = renderHook(() => useChatDensity("a"));
+    await act(async () => {
+      await hydrateChatDensity();
+    });
+    expect(result.current).toBe("bubbles");
+  });
+
+  it("pins one channel, stores it, and clears it back to the default", async () => {
+    getItem.mockResolvedValue(null);
+    const { result } = renderHook(() => ({
+      a: useChatDensity("a"),
+      b: useChatDensity("b"),
+      override: useChannelDensityOverride("a"),
+    }));
+    await act(async () => {
+      await hydrateChatDensity();
+    });
+    act(() => setChannelDensity("a", "bubbles"));
+    expect(result.current).toEqual({
+      a: "bubbles",
+      b: "cozy",
+      override: "bubbles",
+    });
+    expect(setItem).toHaveBeenCalledWith(
+      CHAT_CHANNEL_DENSITY_STORAGE_KEY,
+      JSON.stringify({ a: "bubbles" }),
+    );
+    act(() => setChannelDensity("a", null));
+    expect(result.current.override).toBeNull();
+    expect(result.current.a).toBe("cozy");
+  });
+
+  it("merges a pick made before the stored map loads, keeping the others", async () => {
+    let resolve!: (raw: string | null) => void;
+    getItem.mockImplementation((key: string) =>
+      key === CHAT_CHANNEL_DENSITY_STORAGE_KEY
+        ? new Promise<string | null>((r) => {
+            resolve = r;
+          })
+        : Promise.resolve(null),
+    );
+    const { result } = renderHook(() => useChatDensity("c"));
+    act(() => setChannelDensity("c", "compact"));
+    expect(result.current).toBe("compact");
+    expect(setItem).not.toHaveBeenCalled();
+    await act(async () => {
+      resolve(JSON.stringify({ a: "bubbles", b: "cozy" }));
+      await hydrateChatDensity();
+    });
+    expect(setItem).toHaveBeenCalledWith(
+      CHAT_CHANNEL_DENSITY_STORAGE_KEY,
+      JSON.stringify({ a: "bubbles", b: "cozy", c: "compact" }),
+    );
+  });
+
+  it("never writes over a stored map it couldn't read", async () => {
+    getItem.mockRejectedValue(new Error("disk"));
+    const { result } = renderHook(() => useChatDensity("c"));
+    await act(async () => {
+      await hydrateChatDensity();
+    });
+    act(() => setChannelDensity("c", "bubbles"));
+    expect(result.current).toBe("bubbles");
+    expect(setItem).not.toHaveBeenCalled();
+  });
+});
+
+describe("an Always-formal channel (#3787)", () => {
+  beforeEach(() => {
+    resetChatDensityForTests();
+    resetLockedChannelsForTests();
+    getItem.mockReset();
+    getItem.mockResolvedValue(null);
+    setItem.mockReset();
+    setItem.mockResolvedValue(undefined);
+  });
+
+  it("draws cozy over the member's default and their own pick, and gives the pick back when cleared", async () => {
+    const { result } = renderHook(() => ({
+      a: useChatDensity("a"),
+      b: useChatDensity("b"),
+      locked: useChannelDisplayLocked("a"),
+    }));
+    await act(async () => {
+      await hydrateChatDensity();
+    });
+    act(() => {
+      setChatDensity("compact");
+      setChannelDensity("a", "bubbles");
+    });
+    act(() => setChannelLocked("a", true));
+    expect(result.current).toEqual({ a: "cozy", b: "compact", locked: true });
+
+    act(() => setChannelLocked("a", false));
+    expect(result.current).toEqual({
+      a: "bubbles",
+      b: "compact",
+      locked: false,
+    });
   });
 });

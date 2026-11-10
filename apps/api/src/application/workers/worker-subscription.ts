@@ -23,12 +23,28 @@ export const WORKER_REOPEN_BASE_DELAY_MS = 1_000;
 /** Reopens back off by doubling, and never wait longer than this. */
 export const WORKER_REOPEN_MAX_DELAY_MS = 60_000;
 
-/**
- * Warning reports for one subscription, at most one per status per window, and
- * the outage report repeats on the same window while the outage lasts. Blips
- * come in runs, and one event says as much as twenty.
- */
+/** The outage report repeats once per this long while the outage lasts. */
 export const WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS = 10 * 60 * 1000;
+
+/**
+ * This many drops inside {@link WORKER_SUBSCRIPTION_UNSTABLE_WINDOW_MS} is a
+ * subscription that keeps dropping, and Sentry hears about it at warning level.
+ *
+ * A drop is a subscribed channel failing. One that recovers is routine: the
+ * socket is cut every few hours (close code 1006, no close frame) and rejoins
+ * in about a second. Production's log lines, which nothing throttles, show 15
+ * of them on 2026-11-06 and 11-07, each one failure long, the closest two 20
+ * minutes apart and no three inside an hour (#3906).
+ */
+export const WORKER_SUBSCRIPTION_UNSTABLE_DROPS = 3;
+
+/**
+ * The window {@link WORKER_SUBSCRIPTION_UNSTABLE_DROPS} are counted in, and the
+ * least time between two unstable reports. Wide enough to catch a subscription
+ * dropping every 15 minutes, and narrow enough that the routine cuts above
+ * never fill it.
+ */
+export const WORKER_SUBSCRIPTION_UNSTABLE_WINDOW_MS = 30 * 60 * 1000;
 
 /** How long the reopen after `reopens` failed reopens in a row waits. */
 export function reopenDelayMs(reopens: number): number {
@@ -94,7 +110,7 @@ export interface WorkerSubscriptionConfig {
  * - `CHANNEL_ERROR` and `TIMED_OUT` leave the channel `errored`, and phoenix's
  *   rejoin timer joins it again by itself (1 s, 2 s, 5 s, then every 10 s), or
  *   as soon as the socket reopens. A second join from here would race that one,
- *   so the channel is kept and the failure is only logged and reported.
+ *   so the channel is kept and the failure is only logged.
  * - `CLOSED` on a channel this worker still holds is the server ending it.
  *   phoenix resets the rejoin timer on close and realtime-js drops the channel
  *   from its client, so nothing ever joins it again: before this, chat pushes
@@ -104,14 +120,23 @@ export interface WorkerSubscriptionConfig {
  *   {@link WORKER_REOPEN_MAX_DELAY_MS}, forever. A worker that stops trying is
  *   a worker that is down until someone restarts it.
  *
- * Every failure is logged, and reported to Sentry as a warning at most once per
- * {@link WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS} per status. A subscription
- * that has gone {@link WORKER_SUBSCRIPTION_DOWN_AFTER_MS} without `SUBSCRIBED`,
- * from boot or from its first failure, is an outage: that is logged and
- * reported at error level, and again every
- * {@link WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS} while it lasts. The error
- * event is the signal that the worker is down, because `/health/ready` leaves
- * the subscriptions out (`spec/behavior/observability.md` § Health Check).
+ * Every failure is logged. A failure that recovers is not reported to Sentry
+ * (#3906): until then each one-second blip sent a warning per worker, which
+ * buried the reports that mean something. Sentry hears about two things:
+ *
+ * - An outage. A subscription that has gone
+ *   {@link WORKER_SUBSCRIPTION_DOWN_AFTER_MS} without `SUBSCRIBED`, from boot
+ *   or from its first failure, is logged and reported at error level, and
+ *   again every {@link WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS} while it lasts.
+ *   That event is the signal that the worker is down, because `/health/ready`
+ *   leaves the subscriptions out (`spec/behavior/observability.md` § Health
+ *   Check).
+ * - A subscription that keeps dropping. Each recovery restarts the outage
+ *   clock, so one that drops and rejoins over and over never becomes an
+ *   outage, while every drop loses inserts.
+ *   {@link WORKER_SUBSCRIPTION_UNSTABLE_DROPS} drops inside
+ *   {@link WORKER_SUBSCRIPTION_UNSTABLE_WINDOW_MS} are reported once, at
+ *   warning level.
  *
  * Inserts made while the subscription is down are never delivered later:
  * postgres_changes does not replay. Each failure's log line says so.
@@ -138,7 +163,9 @@ export class WorkerSubscription {
   private lastFailure = 'NONE';
   /** Reopens in a row that ended without a `SUBSCRIBED`, for the backoff. */
   private reopens = 0;
-  private readonly lastReportAt = new Map<string, number>();
+  /** When each drop inside the current unstable window happened. */
+  private dropsAt: number[] = [];
+  private lastUnstableReportAt = Number.NEGATIVE_INFINITY;
 
   constructor(
     private readonly supabase: FrappSupabaseClient,
@@ -193,7 +220,7 @@ export class WorkerSubscription {
         this.onStatus(fresh, status, err),
       );
     } catch (err) {
-      // caught-failure-exempt: recordFailure reports it below; an outage reports at error
+      // caught-failure-exempt: retried below; reportOutage reports it at error if the opens keep failing
       logThrowable(
         logger,
         'error',
@@ -251,6 +278,7 @@ export class WorkerSubscription {
 
   private recordFailure(status: string, err?: Error): void {
     const { topic, worker, impact, logger } = this.config;
+    const dropped = this.subscribed;
     this.markDown();
     this.failures += 1;
     this.lastFailure = status;
@@ -262,21 +290,34 @@ export class WorkerSubscription {
     logger.warn(
       `${worker}: ${topic} ${status}${detail}; ${impact} stop until ${next}, and inserts meanwhile are not replayed (${this.failures} failed in a row)`,
     );
+    if (dropped) this.recordDrop(status);
+  }
 
+  /**
+   * A subscribed channel failed. Reports the subscription as unstable once
+   * {@link WORKER_SUBSCRIPTION_UNSTABLE_DROPS} of these fall inside one
+   * {@link WORKER_SUBSCRIPTION_UNSTABLE_WINDOW_MS}, at most once per window.
+   */
+  private recordDrop(status: string): void {
+    const { worker, impact, logger } = this.config;
     const now = Date.now();
+    this.dropsAt = this.dropsAt.filter(
+      (at) => now - at < WORKER_SUBSCRIPTION_UNSTABLE_WINDOW_MS,
+    );
+    this.dropsAt.push(now);
     if (
-      now - (this.lastReportAt.get(status) ?? Number.NEGATIVE_INFINITY) <
-      WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS
+      this.dropsAt.length < WORKER_SUBSCRIPTION_UNSTABLE_DROPS ||
+      now - this.lastUnstableReportAt < WORKER_SUBSCRIPTION_UNSTABLE_WINDOW_MS
     ) {
       return;
     }
-    this.lastReportAt.set(status, now);
-    const failures = String(this.failures);
-    reportSwallowed(logger, `the ${worker} subscription`, () => ({
-      message: `${worker} realtime subscription ${status}`,
+    this.lastUnstableReportAt = now;
+    const drops = String(this.dropsAt.length);
+    reportSwallowed(logger, `the ${worker} subscription dropping`, () => ({
+      message: `${worker} realtime subscription keeps dropping; ${impact} are lost each time`,
       level: 'warning',
-      tags: { worker, realtime_status: status, failures },
-      fingerprint: ['worker-subscription-status', worker, status],
+      tags: { worker, realtime_status: status, drops },
+      fingerprint: ['worker-subscription-unstable', worker],
     }));
   }
 

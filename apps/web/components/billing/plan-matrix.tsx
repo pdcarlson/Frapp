@@ -72,6 +72,10 @@ import { ProChip } from "@/components/billing/pro-chip";
  *   screen is that gate), and `4d` draws a "Dues and invoices (Stripe)" row.
  *   Omitting it would understate what the subscription buys, on the page that
  *   sells it.
+ * - **`polls` is listed by hand for the same reason.** Since #3871 retired
+ *   the `/polls` page, polls live only in chat (the `/poll` command and the
+ *   poll card's Vote), so no nav row carries the key, but the module still
+ *   gates them and the subscription still buys it.
  * - **`billing` can never appear**, and would be actively self-contradicting
  *   if it did. `BillingController` is class-level `@SubscriptionExempt()`
  *   precisely so the chapter can reach the screen that ungates it
@@ -89,6 +93,7 @@ const SHIPPED_PAID_KEYS = new Set<string>([
   ...DASHBOARD_NAV_ITEMS.flatMap((item) => (item.module ? [item.module] : [])),
   ...SETTINGS_TOOLS.flatMap((tool) => (tool.module ? [tool.module] : [])),
   "dues",
+  "polls",
 ]);
 
 const FREE_MODULES = MODULE_CATALOG.filter((entry) => entry.tier === "free");
@@ -104,11 +109,12 @@ const SHIPPED_PAID_MODULES = MODULE_CATALOG.filter(
  * semantic hue — a red dash would read as something having gone wrong — and it
  * is not `--disabled` either, which the first cut of this file used on
  * foundations §5's "present but not available" reading. That token is
- * `#525252`, which measures **2.53:1** on `--background` and 2.42:1 on
- * `--surface-1`, under the 4.5:1 text minimum `design-system/README.md` §6
- * sets as a release gate. WCAG's inactive-control exemption does not cover it:
- * this is informational content, not a disabled control. `--muted-foreground`
- * is the adjacent role that clears it, at 7.47:1 and 6.95:1.
+ * `#6B6B6B` (2026-11-09; `#525252` before), which measures **3.72:1** on
+ * `--background` and 3.54:1 on `--surface-1`, under the 4.5:1 text minimum
+ * `design-system/README.md` §6 sets as a release gate. WCAG's inactive-control
+ * exemption does not cover it: this is informational content, not a disabled
+ * control. `--muted-foreground` is the adjacent role that clears it, at 11.35:1
+ * and 10.83:1.
  *
  * **The glyph is `aria-hidden` and the accessible text names its column.** A
  * screen reader announcing "black circle" twenty times tells the listener

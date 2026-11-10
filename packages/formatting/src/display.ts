@@ -149,11 +149,11 @@ export function formatRelativeDayTime(
 }
 
 /**
- * A day heading over a list's rows, the day written out (owner, 2026-11-07):
- * `"Today"`, `"Tomorrow"`, `"Yesterday"`, the weekday 2–6 days ahead
- * (`"Sunday"`), otherwise `"November 14"`, with the year outside the current
- * one. The same ladder as the mobile up-next strip's days, without a clock,
- * for a list grouped by day where each row says its own time (#3707).
+ * A list's day heading, written out: `"Today"`, `"Tomorrow"`, `"Yesterday"`,
+ * the weekday within the coming week (`"Sunday"`), otherwise the month and
+ * day (`"November 14"`, `"January 3, 2027"` outside the current year). The
+ * Events lists group their rows under these (#3707); a row under one then
+ * says only its time.
  */
 export function formatDayHeading(
   value: unknown,
@@ -171,6 +171,25 @@ export function formatDayHeading(
     day: "numeric",
     ...(sameYear(at, now) ? {} : { year: "numeric" }),
   });
+}
+
+/**
+ * When something was sent, in words: `"Sent today at 4:46 PM"`,
+ * `"Sent yesterday at 9:00 AM"`, `"Sent Nov 3 at …"` (a past day reads as its
+ * date; only a time ahead of the device clock could read as a weekday).
+ * Read by web's and mobile's invite lists.
+ */
+export function formatSentLabel(
+  value: unknown,
+  now: Date = new Date(),
+): string | null {
+  const when = formatRelativeDayTime(value, now);
+  if (!when) return null;
+  const [day = when, clock] = when.split(" · ");
+  const spoken = /^(Today|Yesterday|Tomorrow)$/.test(day)
+    ? day.toLowerCase()
+    : day;
+  return clock ? `Sent ${spoken} at ${clock}` : `Sent ${spoken}`;
 }
 
 /**

@@ -23,6 +23,7 @@ describe('ChatController', () => {
       | 'editMessage'
       | 'pinMessage'
       | 'unpinMessage'
+      | 'setDisplayLock'
       | 'getChannelList'
       | 'getChannel'
       | 'createChannel'
@@ -49,6 +50,7 @@ describe('ChatController', () => {
     reactions = { recordMessageAction: jest.fn() };
     service = {
       deleteMessage: jest.fn(),
+      setDisplayLock: jest.fn(),
       editMessage: jest.fn(),
       pinMessage: jest.fn(),
       unpinMessage: jest.fn(),
@@ -134,6 +136,48 @@ describe('ChatController', () => {
         'msg-1',
         'ch-1',
         'user-1',
+        false,
+      );
+    });
+  });
+
+  // Always formal (#3787): open to members at the route so a creator without
+  // channels:manage can reach it; the handler resolves the permission and the
+  // service decides.
+  describe('setChannelDisplayLock', () => {
+    it('resolves channels:manage and passes it to the service', async () => {
+      rbacService.memberHasAnyPermission.mockResolvedValue(true);
+
+      await controller.setChannelDisplayLock('ch-1', 'chan-1', 'user-1', {
+        display_locked: true,
+      });
+
+      expect(rbacService.memberHasAnyPermission).toHaveBeenCalledWith(
+        'ch-1',
+        'user-1',
+        [SystemPermissions.CHANNELS_MANAGE],
+      );
+      expect(service.setDisplayLock).toHaveBeenCalledWith(
+        'chan-1',
+        'ch-1',
+        'user-1',
+        true,
+        true,
+      );
+    });
+
+    it('passes false for a member without it, leaving the creator check to the service', async () => {
+      rbacService.memberHasAnyPermission.mockResolvedValue(false);
+
+      await controller.setChannelDisplayLock('ch-1', 'chan-1', 'user-1', {
+        display_locked: false,
+      });
+
+      expect(service.setDisplayLock).toHaveBeenCalledWith(
+        'chan-1',
+        'ch-1',
+        'user-1',
+        false,
         false,
       );
     });
@@ -374,6 +418,7 @@ describe('ChatController', () => {
         dto.content_type,
         undefined,
         false,
+        false,
       );
       expect(result).toEqual({
         upload_url: 'https://storage.example/put',
@@ -407,6 +452,7 @@ describe('ChatController', () => {
         dto.content_type,
         undefined,
         true,
+        false,
       );
       expect(result).toEqual({
         upload_url: 'https://storage.example/put',

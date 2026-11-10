@@ -49,6 +49,9 @@ describe('ChannelAccessService', () => {
     archived_at: null,
     default_notification_level: null,
     is_default: false,
+    is_audit_log: false,
+    display_locked: false,
+    created_by: null,
   };
 
   const privateChannel: ChatChannel = {
@@ -84,6 +87,7 @@ describe('ChannelAccessService', () => {
       findPushRouting: jest.fn(),
       createDm: jest.fn(),
       findByName: jest.fn(),
+      findAuditLog: jest.fn(),
       createMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
@@ -102,6 +106,7 @@ describe('ChannelAccessService', () => {
       findLatestPerChannel: jest.fn(),
       countPinnedByChannel: jest.fn(),
       findPollsByChapter: jest.fn(),
+      findPollCardsByChapter: jest.fn(),
       findByClientMessageId: jest.fn(),
       findAuthorAvatarPaths: jest.fn(),
       insertIdempotent: jest.fn(),
@@ -434,6 +439,15 @@ describe('ChannelAccessService', () => {
       await expect(
         service.assertChannelAccess('ch-public', 'chap-1', 'user-1', 'post'),
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('denies an alumni member replying in a thread in an operational channel (#3785)', async () => {
+      mockChannelRepo.findById.mockResolvedValue(publicChannel);
+
+      await expect(
+        service.assertChannelAccess('ch-1', 'chap-1', 'user-1', 'thread'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockRbac.hasAlumniRole).toHaveBeenCalled();
     });
 
     it('denies an alumni member posting in a PRIVATE channel they belong to', async () => {

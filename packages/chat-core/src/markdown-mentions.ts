@@ -1,4 +1,8 @@
-import { extractMentionTokens, findMentionSpans } from "@repo/validation";
+import {
+  extractMentionTokens,
+  findMentionSpans,
+  type MentionChipTest,
+} from "@repo/validation";
 
 /**
  * A remark transform that lifts every `@`-token in a message body out of its
@@ -128,10 +132,14 @@ function splitTextNode(
   value: string,
   addressed: ReadonlySet<string>,
   properties: MentionChipProperties,
+  names: readonly string[],
 ): MdastNode[] {
-  const spans = findMentionSpans(value).filter((span) =>
-    addressed.has(span.token.toLowerCase()),
-  );
+  // `accept` rather than a filter afterwards: where a spaced name and the
+  // bare token both fit an `@`, the one that was addressed is the chip.
+  const spans = findMentionSpans(value, {
+    names,
+    accept: (token) => addressed.has(token.toLowerCase()),
+  });
   if (spans.length === 0) return [{ type: "text", value }];
 
   const parts: MdastNode[] = [];
@@ -171,6 +179,7 @@ function transform(
   root: MdastNode,
   addressed: ReadonlySet<string>,
   properties: MentionChipProperties,
+  names: readonly string[],
 ): void {
   const stack: Array<{ node: MdastNode; opaque: boolean }> = [
     { node: root, opaque: false },
@@ -181,7 +190,9 @@ function transform(
     const next: MdastNode[] = [];
     for (const child of node.children) {
       if (!opaque && child.type === "text" && child.value !== undefined) {
-        next.push(...splitTextNode(child.value, addressed, properties));
+        next.push(
+          ...splitTextNode(child.value, addressed, properties, names),
+        );
         continue;
       }
       stack.push({
@@ -206,25 +217,29 @@ export interface MentionChipOptions {
   /**
    * Whether a token the API read really pinged someone (`mentionChipFilter`
    * in `@repo/validation`, fed the message's resolved `mentions`). Left out,
-   * every token the API read is chipped.
+   * every token the API read is chipped. It carries the spaced names a token
+   * may be (`MentionChipTest`): without them `@Winston Hewitt` chips as
+   * `@Winston` alone.
    */
-  chips?: (token: string) => boolean;
+  chips?: MentionChipTest;
 }
 
 export function remarkMentionChips(options: MentionChipOptions) {
   const properties = options.properties ?? {};
   // Folded once per message rather than per text node: a body is one string and
   // a bubble can hold many nodes.
-  const chips = options.chips ?? (() => true);
+  const chips: MentionChipTest = options.chips ?? (() => true);
+  const names = chips.names ?? [];
   const addressed = new Set(
-    extractMentionTokens(options.content)
-      .filter((token) => chips(token))
-      .map((token) => token.toLowerCase()),
+    extractMentionTokens(options.content, {
+      names,
+      accept: (token) => chips(token),
+    }).map((token) => token.toLowerCase()),
   );
   return (tree: MdastNode): void => {
     // Nothing was addressed, so nothing can be chipped and the tree does not
     // need walking — the overwhelmingly common case for a chat message.
     if (addressed.size === 0) return;
-    transform(tree, addressed, properties);
+    transform(tree, addressed, properties, names);
   };
 }

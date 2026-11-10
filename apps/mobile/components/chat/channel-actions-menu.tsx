@@ -34,6 +34,21 @@ import { useFocusOnOpen } from "@/lib/overlay";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { NOTIFICATION_LEVEL_OPTIONS } from "./notification-level-control";
+import {
+  ALWAYS_FORMAL_LABEL,
+  CHANNEL_DISPLAY_LOCKED_NOTE,
+  channelDensityChoices,
+  channelDensityDetail,
+} from "@repo/chat-core/density";
+import {
+  setChannelDensity,
+  useChannelDensityOverride,
+  useChannelDisplayLocked,
+  useChatDensity,
+} from "@/lib/chat/chat-density";
+
+/** The menu's own row: this channel's display on this phone (#3787). */
+type MenuRowKey = ChannelRowActionKey | "display";
 
 export interface ChannelActionsMenuTarget {
   channelId: string;
@@ -46,6 +61,12 @@ export interface ChannelActionsMenuTarget {
   level: ChatNotificationLevel | undefined;
   /** From `channelRowActions` in `@repo/hooks`, the rule web's menu reads too. */
   actions: ChannelRowActionGroups;
+  /**
+   * The viewer created the channel or holds `channels:manage`
+   * (`canSetChannelDisplayLock`), so the Display view offers Always formal
+   * (#3787).
+   */
+  canSetDisplayLock?: boolean;
 }
 
 /** The menu's width, and the gap it keeps from the press and the screen edge. */
@@ -73,6 +94,7 @@ export function ChannelActionsMenu({
   onClose,
   onAction,
   onSetLevel,
+  onSetDisplayLock,
   writeBlockedReason,
 }: {
   target: ChannelActionsMenuTarget | null;
@@ -83,6 +105,8 @@ export function ChannelActionsMenu({
     target: ChannelActionsMenuTarget,
   ) => void;
   onSetLevel: (channelId: string, level: ChatNotificationLevel) => void;
+  /** Sets or clears Always formal (#3787); offered only with `canSetDisplayLock`. */
+  onSetDisplayLock?: (channelId: string, locked: boolean) => void;
   /**
    * Why a queueless write is blocked right now (`useConnection`), or `null`.
    * A level pick is one, so Notifications locks with it, as the thread
@@ -106,6 +130,7 @@ export function ChannelActionsMenu({
           onClose={onClose}
           onAction={onAction}
           onSetLevel={onSetLevel}
+          onSetDisplayLock={onSetDisplayLock}
           writeBlockedReason={writeBlockedReason}
         />
       ) : null}
@@ -118,6 +143,7 @@ function MenuBody({
   onClose,
   onAction,
   onSetLevel,
+  onSetDisplayLock,
   writeBlockedReason,
 }: {
   target: ChannelActionsMenuTarget;
@@ -127,6 +153,7 @@ function MenuBody({
     target: ChannelActionsMenuTarget,
   ) => void;
   onSetLevel: (channelId: string, level: ChatNotificationLevel) => void;
+  onSetDisplayLock?: (channelId: string, locked: boolean) => void;
   writeBlockedReason: string | null;
 }) {
   const { tokens } = useFrappTheme();
@@ -135,7 +162,12 @@ function MenuBody({
   const reduceMotion = useReducedMotion();
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const [view, setView] = useState<"menu" | "levels">("menu");
+  const [view, setView] = useState<"menu" | "levels" | "display">("menu");
+  const defaultDensity = useChatDensity();
+  const densityOverride = useChannelDensityOverride(target.channelId);
+  const displayLocked = useChannelDisplayLocked(target.channelId);
+  const showLockToggle =
+    target.canSetDisplayLock === true && onSetDisplayLock !== undefined;
   const [menuHeight, setMenuHeight] = useState<number | null>(null);
   const titleRef = useRef<React.ComponentRef<typeof Text>>(null);
   useFocusOnOpen(titleRef, true);
@@ -158,7 +190,11 @@ function MenuBody({
       ? null
       : "Loading your notification settings.";
 
-  const run = (key: ChannelRowActionKey) => {
+  const run = (key: MenuRowKey) => {
+    if (key === "display") {
+      setView("display");
+      return;
+    }
     if (key === "notifications") {
       if (levelsBlockedReason) return;
       setView("levels");
@@ -168,8 +204,10 @@ function MenuBody({
     onAction(key, target);
   };
 
-  const label = (key: ChannelRowActionKey): string => {
+  const label = (key: MenuRowKey): string => {
     switch (key) {
+      case "display":
+        return "Display";
       case "mark-read":
         return MARK_AS_READ_LABEL;
       case "toggle-pin":
@@ -187,8 +225,10 @@ function MenuBody({
     }
   };
 
-  const rows: { key: ChannelRowActionKey; divided: boolean }[] = [
+  const rows: { key: MenuRowKey; divided: boolean }[] = [
     ...target.actions.member.map((key, i) => ({ key, divided: i > 0 })),
+    // Every member's, and local: it writes nothing to the server.
+    { key: "display", divided: target.actions.member.length > 0 },
     // The officer's rows sit under a thicker break, so Delete is never the
     // row right under the thumb that pressed.
     ...target.actions.officer.map((key) => ({ key, divided: true })),
@@ -226,14 +266,15 @@ function MenuBody({
               </Text>
               {rows.map(({ key, divided }, index) => {
                 const destructive = key === "delete";
-                const firstOfficer =
-                  index === target.actions.member.length && index > 0;
+                const firstOfficer = index === target.actions.member.length + 1;
                 const disabled =
                   key === "notifications" && levelsBlockedReason !== null;
                 const detail =
-                  key === "notifications" && target.level
-                    ? CHANNEL_LEVEL_DETAIL[target.level]
-                    : null;
+                  key === "display"
+                    ? channelDensityDetail(densityOverride, displayLocked)
+                    : key === "notifications" && target.level
+                      ? CHANNEL_LEVEL_DETAIL[target.level]
+                      : null;
                 return (
                   <Pressable
                     key={key}
@@ -263,7 +304,7 @@ function MenuBody({
                     >
                       {label(key)}
                     </Text>
-                    {key === "notifications" ? (
+                    {key === "notifications" || key === "display" ? (
                       <View style={styles.trailing}>
                         {detail ? (
                           <Text style={styles.detail}>{detail}</Text>
@@ -274,6 +315,99 @@ function MenuBody({
                         />
                       </View>
                     ) : null}
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : view === "display" ? (
+            <View accessibilityRole="menu">
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Back to ${target.name}`}
+                onPress={() => setView("menu")}
+                style={({ pressed }) => [
+                  styles.backRow,
+                  pressed ? styles.pressed : null,
+                ]}
+              >
+                <ChevronGlyph
+                  direction="left"
+                  color={tokens.color.text.mutedForeground}
+                />
+                <Text style={styles.backLabel}>Display</Text>
+              </Pressable>
+              {showLockToggle ? (
+                <Pressable
+                  accessibilityRole="switch"
+                  accessibilityLabel={ALWAYS_FORMAL_LABEL}
+                  accessibilityState={{ checked: displayLocked }}
+                  onPress={() => {
+                    onClose();
+                    onSetDisplayLock?.(target.channelId, !displayLocked);
+                  }}
+                  style={({ pressed }) => [
+                    styles.row,
+                    styles.divided,
+                    pressed ? styles.pressed : null,
+                  ]}
+                >
+                  <Text style={styles.rowLabel}>{ALWAYS_FORMAL_LABEL}</Text>
+                  <View
+                    style={styles.check}
+                    accessibilityElementsHidden
+                    importantForAccessibility="no-hide-descendants"
+                  >
+                    {displayLocked ? (
+                      <CheckGlyph color={brand.accent} size={16} />
+                    ) : null}
+                  </View>
+                </Pressable>
+              ) : null}
+              {displayLocked ? (
+                <Text style={[styles.caption, styles.divided]}>
+                  {CHANNEL_DISPLAY_LOCKED_NOTE}
+                </Text>
+              ) : null}
+              {channelDensityChoices(defaultDensity).map((choice) => {
+                // Locked, the member's own pick doesn't apply here, so none
+                // is marked and none can be picked (#3787).
+                const selected = !displayLocked && choice.value === densityOverride;
+                return (
+                  <Pressable
+                    key={choice.value ?? "default"}
+                    accessibilityRole="menuitem"
+                    accessibilityLabel={choice.label}
+                    accessibilityState={{ selected, disabled: displayLocked }}
+                    disabled={displayLocked}
+                    onPress={() => {
+                      onClose();
+                      if (!selected) {
+                        setChannelDensity(target.channelId, choice.value);
+                      }
+                    }}
+                    style={({ pressed }) => [
+                      styles.row,
+                      styles.divided,
+                      pressed ? styles.pressed : null,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.rowLabel,
+                        displayLocked ? styles.disabledLabel : null,
+                      ]}
+                    >
+                      {choice.label}
+                    </Text>
+                    <View
+                      style={styles.check}
+                      accessibilityElementsHidden
+                      importantForAccessibility="no-hide-descendants"
+                    >
+                      {selected ? (
+                        <CheckGlyph color={brand.accent} size={16} />
+                      ) : null}
+                    </View>
                   </Pressable>
                 );
               })}

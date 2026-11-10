@@ -19,8 +19,8 @@ One implementation per concern; don't fork another:
 | --- | --- |
 | Topic attach/release | `packages/chat-core/src/topic-registry.ts` (`releaseTopic`); import it as `@repo/chat-core/topic-registry` from web or mobile |
 | Realtime + polling fallback | `packages/chat-core/src/realtime-manager.ts` |
-| Live unread badges and Messages order (the `chat:inbox:global` channel, `resume()` on foreground) | The manager reports `onMessageActivity`; `createChatActivityHandler` in `packages/hooks/src/chat-activity.ts` acts on it. Bound app-wide on mobile (`useChatRealtimeBinding`), in `ChatProvider` on web |
-| Web subscriptions (`useRealtimeTable`) | `apps/web/lib/realtime/supabase-realtime.ts`, which queues attach/release per topic |
+| Live unread badges and Messages order (the `chat:inbox:global` channel, `resume()` on foreground) | The manager reports `onMessageActivity`; `createChatActivityHandler` in `packages/hooks/src/chat-activity.ts` acts on it. Bound app-wide on both: mobile's `useChatRealtimeBinding` (`apps/mobile/lib/chat/use-chat-runtime.ts`), web's (`apps/web/lib/chat/use-chat-realtime-binding.ts`, from `DashboardShell`; `ChatProvider` never configures or destroys the manager) |
+| Change-ping subscriptions (web's `useRealtimeTable`, mobile's notification sync) | `packages/chat-core/src/topic-attach.ts` (`attachTopicChannel`), which queues attach/release per topic; web binds its client in `apps/web/lib/realtime/supabase-realtime.ts`. Topics: `packages/chat-core/src/change-topics.ts` |
 | Connection indicator copy (both surfaces) | `connectionIndicator` in `packages/validation/src/connection-state.ts`; the open chat reports its transport through `useReportOpenChatTransport` (`packages/hooks/src/open-chat-transport.ts`) |
 | Mobile connection state / write gating | `apps/mobile/lib/connection/` |
 | Chat outbox network port | Mobile: `createMonitorNetworkState(connectionMonitor)`. Web: chat-core `NetworkState`. |

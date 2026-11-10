@@ -8,6 +8,7 @@ import type {
   ISearchRepository,
   SearchChannelAccessRow,
   SearchMemberHit,
+  SearchMessageFilters,
 } from '#domain/repositories/search.repository.interface';
 import type { BackworkResource } from '#domain/entities/backwork.entity';
 import type { Event } from '#domain/entities/event.entity';
@@ -104,10 +105,12 @@ export class SupabaseSearchRepository implements ISearchRepository {
 
   /**
    * Backwork search through `search_backwork_resources`
-   * (20261106190000_backwork_search_wider.sql): title, course, department,
-   * professor and tags, ranked, with trigram typo tolerance (#585). It joins
-   * the department and professor at query time, which a generated column
-   * can't, so it is a function rather than `.textSearch('search_vector')`.
+   * (20261106190000_backwork_search_wider.sql, replaced by
+   * 20261109230000_backwork_courses.sql): title, course, department, the
+   * course's name and nicknames (#3848), professor and tags, ranked, with
+   * trigram typo tolerance (#585). It joins the department, course and
+   * professor at query time, which a generated column can't, so it is a
+   * function rather than `.textSearch('search_vector')`.
    * The function parses the query with `websearch_to_tsquery('english', …)`,
    * the same parse as `TEXT_SEARCH`, so the raw query still travels as one
    * opaque argument and is never spliced into a filter.
@@ -235,6 +238,11 @@ export class SupabaseSearchRepository implements ISearchRepository {
    * which needs `pg_trgm` — not installed, and not registered in the PGlite CI
    * gate. That is a separate decision with its own index cost.
    *
+   * FILTERS WITHOUT TEXT (#3958). An empty `query` skips the text match, so
+   * nothing here is index-backed beyond the channel list: `has` and a wide
+   * date range read every message in the batch's channels. What that costs,
+   * and the issue that owns it, is spec/behavior/search.md § Message filters.
+   *
    * CHUNKED CHANNEL FILTER (#3265). A chapter-wide search hands this every
    * channel the caller may read, and a Discord-imported chapter has hundreds.
    * One `.in()` list of them overflows the request line: the local gateway
@@ -254,20 +262,66 @@ export class SupabaseSearchRepository implements ISearchRepository {
     channelIds: string[],
     query: string,
     limit: number,
+    filters: SearchMessageFilters = {},
   ): Promise<ChatMessage[]> {
+    const has = new Set(filters.has ?? []);
+    // `has:file` and `has:image` are an INNER JOIN on the attachment rows, the
+    // same embed-filters-the-parent shape `searchMembers` uses. An image is an
+    // attachment whose content type says so; a file is any attachment at all,
+    // images included (Discord's reading of the two words). A legacy row with a
+    // null content type is therefore a file and never an image.
+    const wantsAttachment = has.has('file') || has.has('image');
+    const columns = wantsAttachment
+      ? `${MESSAGE_SEARCH_COLUMNS}, chat_message_attachments!inner(id)`
+      : MESSAGE_SEARCH_COLUMNS;
+
     const batches = await Promise.all(
       chunkIds(channelIds).map(async (batch) => {
-        const { data, error } = (await this.supabase
+        let request = this.supabase
           .from('chat_messages')
-          .select(MESSAGE_SEARCH_COLUMNS)
+          .select(columns)
           .in('channel_id', batch)
-          .textSearch('content_search', query, TEXT_SEARCH)
           .eq('is_deleted', false)
+          // A thread reply has no place in the timeline a hit jumps to;
+          // thread results in search are slice 2 of #3785.
+          .is('thread_root_id', null);
+        // An empty query is a filter-only search ("everything Ryan posted this
+        // week"); `SearchService` allows it only when a filter is present.
+        if (query) {
+          request = request.textSearch('content_search', query, TEXT_SEARCH);
+        }
+        if (filters.fromUserId) {
+          request = request.eq('sender_id', filters.fromUserId);
+        }
+        if (filters.after) request = request.gte('created_at', filters.after);
+        if (filters.before) request = request.lt('created_at', filters.before);
+        if (has.has('image')) {
+          request = request.like(
+            'chat_message_attachments.content_type',
+            'image/%',
+          );
+        }
+        // The chat-card poll, the only shape a client creates. A row from the
+        // legacy `POST /v1/channels/:id/polls` (`type: 'POLL'`) is not one
+        // (spec/behavior/polls.md; that route is retired by #3887).
+        if (has.has('poll')) request = request.eq('kind', 'poll');
+        // A link is a URL scheme in the text. The pattern is a constant, never
+        // the caller's query, so there is still no filter string to inject into.
+        if (has.has('link')) request = request.ilike('content', '%http%://%');
+
+        const { data, error } = (await request
           .order('created_at', { ascending: false })
           .order('id', { ascending: false })
-          .limit(limit)) as QueryResult<ChatMessage>;
+          .limit(limit)) as QueryResult<
+          ChatMessage & { chat_message_attachments?: unknown }
+        >;
         if (error) throw new SupabaseQueryError(error);
-        return data ?? [];
+        // The embed exists only to filter; it is not part of a message.
+        return (data ?? []).map((row): ChatMessage => {
+          const message = { ...row };
+          delete message.chat_message_attachments;
+          return message;
+        });
       }),
     );
     if (batches.length === 1) return batches[0];

@@ -183,7 +183,7 @@ One pill on every screen, web and mobile, says exactly one of these (2026-11-06;
 | Offline (permission check), control slot | — | `Offline — can't check your access.` |
 | Offline (permission check), whole surface | `Can't confirm your access` | `Reconnect to check whether you can <do the thing the surface does>.` |
 
-A paused permission check is **not** the surface being unavailable, and must not borrow that row's copy. "Polls unavailable offline" states a fact about the polls; here we do not know whether this member may see them at all, and saying otherwise promises access on reconnect that may not arrive. Both strings therefore report the *check*, and the second names the surface's verb rather than its noun. The per-surface descriptions are the `Offline (permission check)` rows in the surface tables below.
+A paused permission check is **not** the surface being unavailable, and must not borrow that row's copy. "Study zones unavailable offline" states a fact about the zones; here we do not know whether this member may manage them at all, and saying otherwise promises access on reconnect that may not arrive. Both strings therefore report the *check*, and the second names the surface's verb rather than its noun. The per-surface descriptions are the `Offline (permission check)` rows in the surface tables below.
 
 Implementation: `PermissionsOffline` (`apps/web/components/shared/async-states.tsx`) carries the first string; the second is passed to `<Can offlineFallback>` at each screen-level gate. Behaviour is [README.md](README.md) §4.
 
@@ -244,16 +244,20 @@ The composer is shared by the Members panel and the web setup wizard's last step
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading chapter events...` |
-| No events, calendar, can create | — | `Pick a day to schedule the first event.` (one line under the month) |
+| No events, calendar, can create | — | `Pick a day to schedule the first event.` (one line under the month); on the compact month, `Pick a day, then New event to schedule the first event.` |
+| Compact month, picked day has no events | — | `Nothing on this day.` (under the day's heading) |
 | No events, calendar, can't create | — | `Nothing on the calendar yet.` (one line under the month) |
 | No events, List tab | — | `No events yet.` (one line) |
 | Time window empty | — | `No upcoming events.` or `No past events.` then a **Show all events** link (one line) |
+| Nothing in the next two weeks, later events exist | — | `Nothing in the next two weeks.` (one line; the **Later** disclosure sits under it) |
 | Attendance or cadence filter matched nothing | — | `No events match these filters.` then a **Clear filters** link (one line) |
 | Search matched nothing | — | `No events match that search.` then a **Clear search** link (one line) |
 | Error | `Couldn't load chapter events` | the load-failure line (§ copy rules) |
 | Offline | `Events workspace unavailable offline` | `Reconnect to load event schedules and attendance updates.` |
 
-A chapter with no events opens on the Calendar tab rather than an empty list, and a viewer who can create events (`events:create` and `members:view`, `EVENT_CREATE_PERMISSIONS`) gets a dashed `+` on today's square, where the first event will go. The choice is made once, when the events first load, so making that first event doesn't move the officer to the list. A viewer without them sees the dates as text, with no New event button and nothing to press on a day (2026-11-06). The time-window line is its own row because the default window (Upcoming) hides every past event without the officer touching a filter, and "No events yet" there would be false (2026-11-05). The lines are `InlineNote`s, like [Points (dashboard)](#points-dashboard); error and offline keep their cards.
+The list groups its rows under day headings written out: `Today`, `Tomorrow`, `Yesterday`, the weekday within the coming week (`Sunday`), otherwise the month and day (`November 14`, with the year outside the current one); `formatDayHeading` in `@repo/formatting`. A row under one says only its time (`6:48 PM`), and a repeating series, shown once as its next meeting, says how it repeats before it: `Every Sunday · 6:48 PM`, `Every other Sunday · 6:48 PM`, `Every month on the 9th · 6:48 PM` (`seriesCadenceLabel`, `@repo/hooks/event-series`). Under Upcoming the list holds today through the next 14 days; later events wait behind `Later`, with their count, a disclosure that opens in place (#3707, #3822). The toolbar's filter button is `Filter`, named `Filter events`, or `Filter events, 2 on` while filters are off their defaults, which it also shows as a count; its popover's groups are `Time` (`Upcoming`, `Past`, `All`), `Attendance` (`All`, `Mandatory`, `Optional`) and `Cadence` (`All`, `Repeating`, `One-time`), then `Clear`. Bulk selection is `Select`, then `Mark attendance complete` and `Done`, with the count reading `2 selected` (2026-11-09).
+
+The page opens on whichever view, List or Calendar, this person last used on this browser (2026-11-09, #3822). Without one, a chapter with no events opens on the Calendar rather than an empty list, and a viewer who can create events (`events:create` and `members:view`, `EVENT_CREATE_PERMISSIONS`) gets a dashed `+` on today's square, where the first event will go. The choice is made once, when the events first load, so making that first event doesn't move the officer to the list. A viewer without them sees the dates as text, with no New event button and nothing to press on a day (2026-11-06). On a page narrower than 600px, beside chat or on a phone, the month is compact (#4022): a day carries a dot per event instead of their names, pressing a day picks it (for every viewer, since that is how its events are reached; a day of the month before or after opens that month), and the picked day's events are listed under the grid by time and name. There a creator makes an event with the day list's New event, which replaces the dashed `+` and the pressable day number. The time-window line is its own row because the default window (Upcoming) hides every past event without the officer touching a filter, and "No events yet" there would be false (2026-11-05). The lines are `InlineNote`s, like [Points (dashboard)](#points-dashboard); error and offline keep their cards.
 
 Mobile's Events tab (s06) opens on whichever of List and Calendar the member last used (#3823). With nothing scheduled, either view says one line where the rows go: `Nothing scheduled yet. Tap + to add the first event.` for a viewer the tab bar's + offers New event to, and `Nothing scheduled yet.` for everyone else (2026-11-07). It is mobile's `InlineNote` (`components/inline-note.tsx`), which replaced the `Nothing scheduled` card. When the chapter has events but none in the next two weeks, the List says `Nothing in the next two weeks.` above its folded Later row (`Show 3`); a Calendar day with nothing on it says `Nothing on this day.` (2026-11-09).
 
@@ -342,12 +346,13 @@ The **Accent server contrast disclosure** row is independent of every row above 
 | Nothing assigned (member) | — | `Nothing on your plate.` then, when an event is ahead and Events is on, `Next up: {event}, {when}.` (one line, in place of the board) |
 | Add row (officer) | — | `Add a task`, at the top of To do |
 | Add row, required field left out | — | `Pick an assignee.` / `Pick a due date.` (under the field, on submit only) |
+| Add row or chat Task form, due date typed but not readable | — | `Try a date like Nov 14 or 11/14, or a day like Friday.` (under the field; it takes the place of `Pick a due date.` once a submit has left the date out and what is typed is still not a date, and goes when it is; #3928) |
 | Error | `Couldn't load tasks` | the load-failure line (§ copy rules) |
 | Offline | `Tasks unavailable offline` | `Reconnect to load the chapter board and move tasks through it.` |
 
 The board keeps its four columns at zero for a `tasks:manage` holder, and the add row at the top of To do is its one way to create a task: it replaced the New task button and dialog (2026-11-06). Pressing it opens the row in place; Enter in the title creates the task once it has an assignee and a due date, which `POST /v1/tasks` requires, and the row stays open for the next one. A member without `tasks:manage` reads only their own tasks, so with none the four empty columns give way to the one line above; `{when}` is `formatRelativeDayTime`'s shape (`Tomorrow · 7:00 PM`).
 
-Mobile's Tasks tab (s08) is a personal board for everyone, so with nothing assigned it writes the same line under the points card, from the same `nextUpLine` (`@repo/formatting`), and a `tasks:manage` holder reads ` Tap + to assign a task.` after it, since New task lives in the tab bar's + (2026-11-07). It replaced the `You're all clear` card.
+Mobile's Tasks tab (s08) is a personal board for everyone, so with nothing assigned it writes the same line under the points card, from the same `nextUpLine` (`@repo/formatting`), and a holder of `tasks:manage` and `members:view` (New task's grants) reads ` Tap + to assign a task.` after it, since New task lives in the tab bar's + (2026-11-07). It replaced the `You're all clear` card.
 
 ### Service Hours (dashboard)
 
@@ -368,24 +373,25 @@ Mobile's Tasks tab (s08) is a personal board for everyone, so with nothing assig
 |---|---|---|
 | Loading | — | `Loading chapter documents...` |
 | Empty | — | `No documents yet.`, `Nothing in {folder} yet.`, or on No folder `Every document is in a folder.`; for a viewer with `chapter_docs:upload` then **Upload a file** `or drop one anywhere on this page.` (one line) |
-| Empty (search, all files) | — | `No documents match “{query}”.` then a **Clear search** link (one line) |
-| Empty (search, inside a folder) | — | `Nothing in {folder} matches “{query}”.` (on No folder, `No documents outside a folder match “{query}”.`) then a **Search all files** link, which keeps the search (one line) |
+| Empty (search or filter, all files) | — | `No documents match “{query}”.`, or with no search typed `No documents match these filters.`, then a **Clear filters** link that clears the search and every filter (one line) |
+| Empty (search or filter, inside a folder) | — | `Nothing in {folder} matches.` (on No folder, `No documents outside a folder match.`) then a **Search all files** link, which keeps the search and filters (one line) |
+| Capped list (status line above the rows; both apps) | — | `Showing the newest 1,000 documents. Search and filters look only at these for now.` |
 | Empty, mobile s12 | — | `No documents yet.` or `Nothing in {folder} yet.`; for a viewer with `chapter_docs:upload` then `Tap + to upload one.`, the screen's own + (one line) |
-| Empty (search), mobile s12 | — | The web lines and links: `No documents match “{query}”.` with **Clear search**, or inside a folder chip `Nothing in {folder} matches “{query}”.` with **Search all files** (one line) |
+| Empty (search or filter), mobile s12 | — | `No documents match “{query}”.`, or with no search typed `No documents match these filters.`, then **Clear search** when only a search is set, or **Clear filters**, which clears the search and every filter; inside a folder chip `Nothing in {folder} matches “{query}”.` (or `… matches these filters.`) with **Search all files** (one line). The capped-list line is the one above |
+| Delete (both apps) | `Delete {title}?` | `This removes the file from chapter storage immediately and cannot be undone.`, confirm **Delete document** (web's confirm dialog, mobile's system alert after a long press). Mobile's failure line under the search: the refusal's own reason when there is one, else `Couldn't delete “{title}”. Try again in a moment.` |
 | Error | `Couldn't load documents` | the load-failure line (§ copy rules) |
 | Offline | `Documents unavailable offline` | `Reconnect to browse the chapter library and download files.` |
-| Offline (search active) | `Search needs a connection` | `Clear the search to browse the documents already on this device.` |
 | Folder list failed (inline, under the rail) | — | `Couldn't load the folder list, so these are read from the documents shown. Empty folders and folder management are unavailable until it loads.` |
 
-Three of these exist to keep one state from impersonating another:
+Why the states are split this way:
 
 - A search that matched nothing is not an empty library. The default empty copy
   invites an upload, which is the wrong instruction for a member who mistyped a
   title.
-- Search is served by the API, so each query is a cache key that an offline
-  member has never fetched. Falling to the plain offline card would replace a
-  library they still have cached; naming the search as the thing that needs a
-  connection keeps the recovery in the member's hands.
+- Web search runs over the library already loaded (#3852), so an offline
+  member keeps searching what they have; there is no offline-search state.
+  (Before #3852 search went to the API, and an offline query landed on a cache
+  key never fetched, which needed its own "Search needs a connection" state.)
 - The folder rail is its own request and can fail while the documents load
   fine. It degrades to names derived from the loaded documents rather than
   rendering as a chapter with no folders — so the notice reports what is
@@ -407,13 +413,15 @@ Three of these exist to keep one state from impersonating another:
 | Loading | — | `Generating report...` |
 | Empty filter | — | `Nothing in this chapter matches these filters.` (one line) |
 | Error | `Couldn't generate <kind> report` | the API's own message, or the load-failure line (§ copy rules) |
-| Truncated | `Incomplete report` (badge) | `<cap summary> This preview and the CSV built from it are not a complete record of the chapter.` |
+| Truncated | `Incomplete report` (badge) | `<cap summary> This preview and any export built from it are not a complete record of the chapter.` |
 | Permission denied | — | `Your role can't export chapter data. Ask your chapter president for access.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can export chapter data.` |
 
 **This table had no Error row until the Resources & Reporting slice, and that is why the screen had no error state.** A failed run reported a toast and never touched `preview`, so the panel fell through to the Idle copy — a failure rendering as "nothing has happened yet", against [README.md](README.md) §4's requirement of an error state with a retry path on every async view. The Idle and Empty-filter titles were added in the same pass: [components.md](components.md) §10's state family needs a title and a description, and the approved sentences are kept verbatim as the descriptions rather than rewritten.
 
-**The Truncated row is a state, not a toast.** [`../../behavior/reports.md`](../../behavior/reports.md) caps a report at 5,000 rows and requires that truncation is never silent; the toast fires once and then a partial table sits on screen claiming to be the whole report, and the CSV built from it carries that claim into a file. The badge is [components.md](components.md) §5's Semantic warning kind, which needs no §1 lift on its own tint.
+**The Truncated row is a state, not a toast.** [`../../behavior/reports.md`](../../behavior/reports.md) caps a report at 5,000 rows and requires that truncation is never silent; the toast fires once and then a partial table sits on screen claiming to be the whole report, and the export built from it carries that claim into a file. The badge is [components.md](components.md) §5's Semantic warning kind, which needs no §1 lift on its own tint.
+
+Changed in #3977 by shawnatomklein-eng, 2026-11-10: the Truncated description says "any export" where it said "the CSV", because the export is now a file-type menu (CSV, Excel, copy for Google Sheets; [`../../behavior/reports.md`](../../behavior/reports.md)).
 
 ### Backwork (dashboard)
 
@@ -548,17 +556,6 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can manage study zones.` |
 | Permission denied | — | `Your role can't manage study zones. Ask your chapter president for access.` |
 
-### Polls (dashboard)
-
-| State | Title | Description |
-|---|---|---|
-| Loading | — | `Loading chapter polls...` |
-| Empty | — | `No polls here. Start one in a chat channel.` (one line) |
-| Error | `Couldn't load polls` | the load-failure line (§ copy rules) |
-| Offline | `Polls unavailable offline` | `Reconnect to load the chapter's polls and cast a vote.` |
-| Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can see the chapter's polls.` |
-| Permission denied | `Polls` (the page title) | `Your role can't see every poll. You can still vote in chat.` |
-
 ### Chat (dashboard)
 
 | State | Title | Description |
@@ -583,6 +580,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Error | `Couldn't load channels` / `Couldn't load messages` | the load-failure line (§ copy rules) |
 | Channel list refused by role (a 403 with no `chapter.*` code; both clients, `@repo/chat-core/channels-refused-copy`) | `Chat isn't open to you yet` | `Your role in <chapter> doesn't include chat. Ask an officer to give you the Member role.` (`this chapter` until the name loads). A `chapter.*` 403 keeps the error row above |
 | Read-only channel | — | `This channel is read-only for your role.` (mobile still quotes the permission key, [#3422](https://github.com/pdcarlson/Frapp/issues/3422)) |
+| Audit log channel (`#chapter-audit`, in place of the composer; both clients, #3909) | — | `Only Frapp posts here: it's the chapter's audit log.` In Chat settings (web) the read-only switch gives way to `Only Frapp posts here: it's the chapter's audit log. It stays read-only and keeps its name.` |
 | Alumni-restricted channel | — | `Alumni can read this channel but not post. Alumni may post in #alumni and direct messages.` |
 | Archived conversation (mobile only: a Group DM everyone else left, #348; web's channel list leaves archived channels out) | — | `This conversation is archived because everyone else left. You can still read it.` |
 | No chapter selected | — | `Pick an active chapter to load its channels.` (one line) |
@@ -789,9 +787,34 @@ button, not while typing.
 
 | State | Title | Copy |
 |---|---|---|
-| Step | `How the chapter sees you` | `Your photo and name go on every message you send.` The profile photo control (tap to choose, as on Profile), then the field labelled `Your name`, placeholder `First and last name`. Gold `Continue` when the notifications beat follows, else `Go to chat`. |
+| Step | `How the chapter sees you` | `Your photo and name go on every message you send.` The profile photo control (tap to choose, as on Profile), then the field labelled `Your name`, placeholder `First and last name`. Gold `Continue` (the display beat always follows). |
 | No name | as above | Under the field: `Add your name so the chapter knows who's talking.` |
 | Save failed | as above | Under the field: `Couldn't save your name. Check your connection and try again.` The member stays on the beat with what they typed. |
+
+### Display step (onboarding)
+
+The chat display pick while setting up (#3787): web's tutorial slide and
+mobile s03's beat after the profile one. Copy in
+`apps/mobile/lib/onboarding/display-step.ts` and
+`apps/web/components/onboarding/onboarding-tutorial.tsx`.
+
+| Surface | Title | Copy |
+|---|---|---|
+| Web | `Pick your chat display` | `Choose how messages look on this browser. You can change it anytime in your profile.` Then Profile's three Chat density cards. |
+| Mobile | `Pick your chat display` | `Choose how messages look on this phone. You can change it anytime in Settings.` Then Settings' three cards; gold `Continue` when the notifications beat follows, else `Go to chat`. |
+
+### Always formal
+
+A channel-level lock to the formal display (#3787;
+[`chat/README.md` § Always formal](../../behavior/chat/README.md#always-formal)).
+Strings in `@repo/chat-core/density`.
+
+| Where | Copy |
+|---|---|
+| Display view switch (creator or `channels:manage`) | `Always formal`, with `Show this channel to everyone in the formal display. Members can't change it here.` on web |
+| Display view, when locked | `Always formal: everyone sees this channel in the formal display.` over the disabled choices; the Display row's state reads `Formal` |
+| Chat settings create form (web) | `Always formal (everyone sees it in the formal display)` |
+| Save failed | Web toast `Couldn't change Always formal` / `Try again in a moment.`; mobile alert `Couldn't change Always formal` / `Nothing changed. Check your connection and try again.` |
 
 ### First-run tour (mobile)
 
@@ -949,7 +972,7 @@ and both import it from `@repo/hooks`. The filter note below is web's alone and 
 | State | Title | Description | Where |
 |---|---|---|---|
 | Pin | — | `Pin to top`, and `Unpin from top` on a pinned row: a row in the long-press menu and a named accessibility action (mobile); a row in the rail row's right-click menu and in the channel menu (web) | `PIN_TO_TOP_LABEL`, `UNPIN_FROM_TOP_LABEL` |
-| Row menu (web right-click, mobile long press) | — | `Mark as read`, `Pin to top`, `Notifications` (with the level, `All`, `Mentions` or `Muted`, before the chevron; its choices are the channel menu's `Every message`, `Only @mentions`, `Mute`), `Copy link` (toast `Link copied`), `Hide conversation`; then `Edit channel` (web) and `Delete channel` for `channels:manage`; mobile has no `Copy link` or `Edit channel`. Delete asks `Delete #<name>?` with `Every message, attachment, and pin in this channel is removed. This cannot be undone.`, the same words as Chat settings | `MARK_AS_READ_LABEL`, `CHANNEL_NOTIFICATIONS_LABEL`, `COPY_CHANNEL_LINK_LABEL`, `DELETE_CHANNEL_LABEL`, `deleteChannelConfirmTitle`, `DELETE_CHANNEL_CONFIRM_BODY` |
+| Row menu (web right-click, mobile long press) | — | `Mark as read`, `Pin to top`, `Notifications` (with the level, `All`, `Mentions` or `Muted`, before the chevron; its choices are the channel menu's `Every message`, `Only @mentions`, `Mute`), `Copy link` (toast `Link copied`), `Hide conversation`; then `Edit channel` (web) and `Delete channel` for `channels:manage`; mobile has no `Copy link` or `Edit channel`, and adds `Display` (with `Default`, the pinned density, or `Formal` in an Always-formal channel before the chevron; its choices are `Your default (<density>)`, then `Cozy here`, `Compact here`, `Bubbles here`, the same words as web's `⋯` menu Display view). Delete asks `Delete #<name>?` with `Every message, attachment, and pin in this channel is removed. This cannot be undone.`, the same words as Chat settings | `MARK_AS_READ_LABEL`, `CHANNEL_NOTIFICATIONS_LABEL`, `COPY_CHANNEL_LINK_LABEL`, `DELETE_CHANNEL_LABEL`, `deleteChannelConfirmTitle`, `DELETE_CHANNEL_CONFIRM_BODY` |
 | Pinned section | `Pinned` | The section header above everything else | `PINNED_SECTION_LABEL` |
 | Filters | — | `Unread only`, `Hide muted`: two switches in a menu behind the first section heading's filter button, named `Filter channels`, or `Filter channels, filters on` while one is on, with `Showing unread only.`, `Muted channels hidden.` or `Showing unread only, muted hidden.` and `Show all` under the heading (mobile, 2026-11-06); two switches behind the Channels header's filter control, named `Filter channels`, or `Filter channels, filters on` while one is on (web) | `UNREAD_ONLY_LABEL`, `HIDE_MUTED_LABEL`, `FILTER_CHANNELS_LABEL`, `FILTER_CHANNELS_ON_LABEL` |
 | Filtered to nothing | — | `No channels match your filters.` with the action `Show all channels`, which turns both filters off | `NO_MATCHING_CHANNELS`, `SHOW_ALL_CHANNELS_LABEL` |
@@ -969,7 +992,8 @@ member who turns on Hide muted and still sees a muted channel knows why.
 Reply, Edit and Delete on a message (#2775). Who is offered which is owned by
 [`../../behavior/chat/README.md`](../../behavior/chat/README.md) § Edit and delete and
 § Reply threads. The delete confirmation is one wording for both clients, so it lives in
-`packages/chat-core/src/message-actions.ts`; the rest name controls only mobile has.
+`packages/chat-core/src/message-actions.ts`, and a poll card's Close poll confirmation (#3794)
+likewise lives in `packages/chat-core/src/polls.ts`; the rest name controls only mobile has.
 
 | State | Title | Description | Home |
 |---|---|---|---|
@@ -977,7 +1001,9 @@ Reply, Edit and Delete on a message (#2775). Who is offered which is owned by
 | Add-reaction chip | — | `+` after a message's reactions, read `Add reaction`; it opens the actions sheet | mobile `components/chat/message-item.tsx` (`ADD_REACTION_A11Y_LABEL`) |
 | Delete confirmation | `Delete this message?` | `This can't be undone. Everyone in the channel will see "[message deleted]" in its place.` · confirm `Delete message`. A native alert on mobile, the shell's confirm dialog on web | `message-actions` (`DELETE_MESSAGE_CONFIRM_TITLE`, `_BODY`, `_LABEL`) |
 | Delete failed | `Couldn't delete message` | The reason chat-core classified from the response (an alert) | mobile `lib/chat/confirm-delete-message.ts` |
-| Reply strip | `Replying to <name>` | One line of the parent, as its quote will show it. A parent the block list hides, or one not loaded: `Replying to a message` over the quote's placeholder. Cancel reads `Cancel reply` | mobile `lib/chat/use-composer-staging.ts`; the cancel label in `components/chat/chat-composer.tsx` (`composerCancelLabel`) |
+| Close poll confirmation | `Close this poll?` | `No one can vote after it closes, and it can't be reopened. The results stay on the card.` · confirm `Close poll`. Offered as `Close poll` under the tally, on the creator's own open card while they hold `polls:create` and Polls is on ([#3794](https://github.com/pdcarlson/Frapp/issues/3794)). A native alert on mobile, the shell's confirm dialog on web | `polls` (`CLOSE_POLL_LABEL`, `CLOSE_POLL_CONFIRM_TITLE`, `_BODY`, `_LABEL`) |
+| Close poll failed | `Couldn't close poll` | The reason chat-core classified from the response (an alert on mobile, a toast on web). A card closed early then reads `Poll · Closed`, as one past its deadline does | mobile `lib/chat/confirm-close-poll.ts`, chat-core `chat-client.ts` |
+| Reply strip | `Replying to <name>` | The parent, as its quote will show it: up to two lines on web, which shares the timeline's quote, and one line on mobile's strip. A parent the block list hides, or one not loaded: `Replying to a message` over the quote's placeholder. Cancel reads `Cancel reply` | mobile `lib/chat/use-composer-staging.ts`; the cancel label in `components/chat/chat-composer.tsx` (`composerCancelLabel`) |
 | Edit strip | `Editing message` | — · cancel `Cancel edit`; the send control reads `Save edit` to a screen reader | mobile `lib/chat/use-composer-staging.ts`, `components/chat/chat-composer.tsx` (`composerCancelLabel`) |
 | Edit left empty | — | `A message can't be empty. Delete it instead, or cancel the edit.` (the composer hint, error tone, shown while the text is empty, beside the greyed-out Save) | mobile `lib/chat/use-composer-staging.ts` (`EDIT_EMPTY_HINT`) |
 | Edit failed | — | The reason chat-core classified, in the composer hint; the edit stays open with the member's text | mobile `lib/chat/use-composer-staging.ts` |
@@ -1106,7 +1132,7 @@ The Quiet hours section (the Preferences card until 2026-11-05) is a **second qu
 | Checking the session | — | `Verifying your session…` (announced, not drawn) |
 | Session check failed, offline | `Can't check your session` | `Reconnect to confirm you're signed in, then redeem the invite.` |
 | Session check failed, error | `Couldn't check your session` | `Frapp couldn't be reached to confirm you're signed in. Try again in a moment.` |
-| Redeemed | `Chapter joined` | `You're in. Opening chat.` Mobile goes to s03, which asks only for what is missing (photo and name, then notifications) and otherwise goes straight to chat, where the first-run tour's first stop says `You're in <chapter>.` ([§ First-run tour (mobile)](#first-run-tour-mobile)). |
+| Redeemed | `Chapter joined` | `You're in. Opening chat.` Mobile goes to s03, which asks for the photo and name only when missing, always for the chat display, then for notifications only when push is off, and then goes to chat, where the first-run tour's first stop says `You're in <chapter>.` ([§ First-run tour (mobile)](#first-run-tour-mobile)). |
 | Mobile s02, the question (#3350) | `How are you getting in?` | No line under the title: the two answers say it. The rows above are web `/join`'s, except Unparseable paste, which mobile shares word for word; mobile s02 asks this first and offers two answers instead of a field. |
 | Mobile s02 answers | — | `I have an invite` + `Use the link your officer sent.`, then `I'm starting our chapter` + `Set it up, then invite everyone.` |
 | Mobile s02 invite step | `Join with an invite` | `Paste the invite link or code your officer sent. Invites work once and expire after 24 hours.` The membership hint ([§ Sign in (pre-auth)](#sign-in-pre-auth)) sits under the field, and the pinned button is `Continue`, which opens the confirm step. |
@@ -1204,14 +1230,14 @@ Mobile's first-officer setup, `(auth)/create-chapter.tsx` (#3351). Titles are `S
 
 ### Invite members (mobile)
 
-`(app)/invite.tsx`, setup's invite step inside the chapter (2026-11-06; [`navigation.md` § Inviting members](../mobile/navigation.md#inviting-members)). The body, the card, the `Shared` list and both failure sentences are the setup Invite rows' above, word for word; the share message reads `Join <chapter name> on Frapp`, and Share waits until the chapter's name has loaded rather than send a placeholder.
+`(app)/invite.tsx`, inside the chapter (2026-11-06, invite by email added 2026-11-09; [`navigation.md` § Inviting members](../mobile/navigation.md#inviting-members)). The card and both share-failure sentences are the setup Invite rows' above, word for word; the share message, and an iOS mail target's subject, read `Join <chapter name> on Frapp`, and Share waits until the chapter's name has loaded rather than send a placeholder. The screen draws no `Shared` list: its `Invited` list holds every link.
 
 | State | Title | Copy |
 |---|---|---|
-| Can invite | `Invite members` | Setup's line, card and list. The primary is `Share invite` with the platform's share mark, in the chapter accent. Its screen-reader hint: `Makes a new link and opens the share sheet.` |
+| Can invite | `Invite members` | Web's panel, on the phone (#3828). Top: the label `Invite by email` over a field (placeholder `name@school.edu`, screen-reader label `Email addresses to invite`), the caption `Separate addresses with commas. Each person gets their own link by email.`, and the chapter-accent primary `Send invite` (`Send <n> invites` for several; hint `Emails each address a link to join.`). Under it, `Invite sent to <address>` or `<n> invites sent`, or a problem in the destructive hue: `<address> isn't an email address. Fix or remove it.`, `<n> of these aren't email addresses. Fix or remove them.`, `Up to 50 addresses at a time. Remove some, then send.`, `Couldn't email this address. Send again, or share a link for them.` (`Couldn't email these <n> addresses. Send again, or share links for them.` for several), and on a failed send `Couldn't send invites. Try again in a moment.` Then `Or share a link` over `Paste it in a group chat, or send it from your mail app. A link lets one person in and lasts 24 hours.`, setup's card, and the secondary `Share invite` with the platform's share mark (hint `Makes a new link and opens the share sheet.`). Last, the `Invited` caption over the chapter's invites: the address or `Invite link`, `Sent today at 4:46 PM`, and `Pending`, `Joined` or `Expired`. A row's hint is `Opens what you can do with this invite.`, and its menu reads `Share link`, `Send again`, `Revoke invite`; their results read `Invite sent again to <address>` (`Couldn't email <address>. Its new invite is listed, so you can share its link.` when it didn't go) and `Invite revoked. <address> can't join with it now.` (`That link can't be used to join now.` for a link), and their failures `Couldn't send it again. Try again in a moment.` and `Couldn't revoke the invite. Try again in a moment.` A list that didn't load reads `Couldn't load your invites.` over a `Try again` row. |
 | Can't invite | `Invite members` | One line: `Your role can't send invites. Ask an officer to send each person their own link.` No button. |
 | Role didn't load | `Invite members` | Error state `Couldn't load your role` + `Whether you can send invites depends on it, so it has to load first.`, with `Try again`. |
-| Doors | — | More's row and the Directory's + read `Invite members`; the quick action reads `Invite`; Chat home's checklist line keeps its own `Invite members`. The first three carry the hint `Opens invite links to share with new members.`; the checklist line, like its other in-app lines, carries none. |
+| Doors | — | More's row and the Directory's + read `Invite members`; the quick action reads `Invite`; Chat home's checklist line keeps its own `Invite members`. The first three carry the hint `Opens invites to email or share with new members.`; the checklist line, like its other in-app lines, carries none. |
 
 ### Chapter picker (mobile)
 

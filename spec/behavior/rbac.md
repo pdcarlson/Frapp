@@ -17,7 +17,7 @@ Frapp publishes a **system permissions catalog** — these are the strings the A
 | `members:view`        | View the full member directory                         |
 | `points:adjust`       | Manually add/remove points                             |
 | `points:view_all`     | View all members' transactions (not just own)          |
-| `roles:manage`        | Create, edit, delete roles; assign roles to members    |
+| `roles:manage`        | Create, edit, delete roles; assign roles to members; edit the chapter's pledge classes and any member's class and order number ([`members.md`](members.md#pledge-class-and-order-number)) |
 | `channels:create`     | Create chat channels                                   |
 | `channels:manage`     | Edit/delete channels, pin messages, manage permissions |
 | `announcements:post`  | Post in the #announcements channel                     |
@@ -71,7 +71,7 @@ The only lifecycle rule today is the **Alumni** role (see [`alumni.md`](alumni.m
 - **Seeded permissions** (the API implementation is the source of truth; the constants below must stay in sync with the seeded role definitions):
   - **President:** `*` (wildcard).
   - **Treasurer:** `billing:view`, `billing:manage`, `points:adjust`, `points:view_all`, `polls:view_all`, `members:view`, `reports:export`, `events:create`, `events:update`.
-  - **Vice President:** `members:view`, `polls:view_all` (baseline chapter API access plus dashboard chapter-wide poll list and tallies).
+  - **Vice President:** `members:view`, `polls:view_all` (baseline chapter API access plus `GET /v1/polls`, the chapter-wide poll list, whose web page was retired in #3871; the permission's fate is #3887).
   - **Secretary:** `members:view`, `polls:view_all` (same as Vice President).
   - **Member:** `members:view`, `backwork:upload`, `service:log`, `polls:create`.
   - **New Member:** `members:view`, `backwork:upload`.

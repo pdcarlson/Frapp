@@ -17,18 +17,30 @@ const { autoAbsentMutateAsync, access } = vi.hoisted(() => ({
   },
 }));
 
-// Default `timeFilter` is "upcoming", which drops anything before "now" — a
-// far-future date keeps this fixture upcoming regardless of when the suite
-// actually runs.
+// Dates relative to the suite's clock: Chapter Meeting is tomorrow, inside
+// the default Upcoming window and its two-week horizon; Last Formal was
+// yesterday, so only Past shows it.
 const EVENTS = [
   {
     id: "evt-1",
     name: "Chapter Meeting",
     location: "Great Hall",
-    start_time: "2099-01-01T18:00:00.000Z",
-    end_time: "2099-01-01T19:00:00.000Z",
+    // Tomorrow, inside the list's two-week horizon whenever the suite runs.
+    start_time: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    end_time: new Date(Date.now() + 25 * 60 * 60 * 1000).toISOString(),
     is_mandatory: true,
     point_value: 5,
+  },
+  // Over since yesterday, so its check-in has closed and auto-absent can run.
+  // Shown under the Past time filter.
+  {
+    id: "evt-past",
+    name: "Last Formal",
+    location: null,
+    start_time: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+    end_time: new Date(Date.now() - 23 * 60 * 60 * 1000).toISOString(),
+    is_mandatory: true,
+    point_value: 0,
   },
 ];
 
@@ -55,6 +67,12 @@ vi.mock("@repo/hooks", () => ({
   useNow: () => Date.now(),
 }));
 
+// The viewer whose last view (List or Calendar) the page reads; no stored
+// choice unless a test writes one.
+vi.mock("@/lib/auth/use-frapp-user", () => ({
+  useFrappUser: () => ({ userId: "user-1", isLoading: false }),
+}));
+
 vi.mock("@/lib/providers/network-provider", () => ({
   useNetwork: () => ({ isOffline: false }),
 }));
@@ -79,10 +97,39 @@ vi.mock("@/lib/realtime/use-realtime-table", () => ({
 
 import { EventsPage } from "./events-page";
 
-function selectChapterMeeting() {
-  return userEvent
-    .setup()
-    .click(screen.getByRole("checkbox", { name: /select chapter meeting/i }));
+// Bulk actions sit behind Select (#3822): the default list has no checkboxes.
+async function selectChapterMeeting(
+  user: ReturnType<typeof userEvent.setup> = userEvent.setup(),
+) {
+  await user.click(screen.getByRole("button", { name: "Select" }));
+  await user.click(
+    screen.getByRole("checkbox", { name: /select chapter meeting/i }),
+  );
+}
+
+/** Sets the list's time window through the Filter popover. */
+async function showTime(
+  user: ReturnType<typeof userEvent.setup>,
+  name: "Upcoming" | "Past" | "All",
+) {
+  await user.click(screen.getByRole("button", { name: /^filter events/i }));
+  await user.click(
+    within(screen.getByRole("radiogroup", { name: "Time" })).getByRole(
+      "radio",
+      { name },
+    ),
+  );
+  await user.keyboard("{Escape}");
+}
+
+// The one event whose check-in has closed, so the one auto-absent is sent for
+// (#3905). It sits under Past.
+async function selectLastFormal(user: ReturnType<typeof userEvent.setup>) {
+  await showTime(user, "Past");
+  await user.click(screen.getByRole("button", { name: "Select" }));
+  await user.click(
+    screen.getByRole("checkbox", { name: /select last formal/i }),
+  );
 }
 
 beforeEach(() => {
@@ -98,6 +145,7 @@ describe("EventsPage bulk actions", () => {
     access.permissions = [];
     render(<EventsPage />);
     expect(screen.getByText("Chapter Meeting")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Select" })).toBeNull();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });
 
@@ -126,9 +174,7 @@ describe("EventsPage bulk actions", () => {
     autoAbsentMutateAsync.mockResolvedValue({ marked: 3 });
     const user = userEvent.setup();
     render(<EventsPage />);
-    await user.click(
-      screen.getByRole("checkbox", { name: /select chapter meeting/i }),
-    );
+    await selectLastFormal(user);
 
     await user.click(
       screen.getByRole("button", { name: /mark attendance complete/i }),
@@ -148,7 +194,7 @@ describe("EventsPage bulk actions", () => {
     );
 
     await waitFor(() =>
-      expect(autoAbsentMutateAsync).toHaveBeenCalledWith("evt-1"),
+      expect(autoAbsentMutateAsync).toHaveBeenCalledWith("evt-past"),
     );
     await waitFor(() =>
       expect(toastSpy).toHaveBeenCalledWith(
@@ -160,9 +206,7 @@ describe("EventsPage bulk actions", () => {
   it("cancelling the confirmation never calls the mutation", async () => {
     const user = userEvent.setup();
     render(<EventsPage />);
-    await user.click(
-      screen.getByRole("checkbox", { name: /select chapter meeting/i }),
-    );
+    await selectChapterMeeting(user);
     await user.click(
       screen.getByRole("button", { name: /mark attendance complete/i }),
     );
@@ -173,6 +217,39 @@ describe("EventsPage bulk actions", () => {
     expect(autoAbsentMutateAsync).not.toHaveBeenCalled();
   });
 
+  it("marks only the selected rows on screen, never one a filter hid", async () => {
+    autoAbsentMutateAsync.mockResolvedValue({ marked: 1 });
+    const user = userEvent.setup();
+    render(<EventsPage />);
+
+    // Tick tomorrow's meeting under Upcoming, then switch to Past, where it's
+    // hidden, and tick the one row there.
+    await selectChapterMeeting(user);
+    await showTime(user, "Past");
+    await user.click(
+      screen.getByRole("checkbox", { name: /select last formal/i }),
+    );
+
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: /mark attendance complete/i }),
+    );
+    const dialog = screen.getByRole("dialog");
+    expect(
+      within(dialog).getByText(/mark attendance complete for 1 event\?/i),
+    ).toBeInTheDocument();
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: /^mark attendance complete$/i,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(autoAbsentMutateAsync).toHaveBeenCalledWith("evt-past"),
+    );
+    expect(autoAbsentMutateAsync).toHaveBeenCalledTimes(1);
+  });
+
   it("reports a partial failure without clearing the selection", async () => {
     autoAbsentMutateAsync.mockRejectedValue({
       statusCode: 400,
@@ -180,9 +257,7 @@ describe("EventsPage bulk actions", () => {
     });
     const user = userEvent.setup();
     render(<EventsPage />);
-    await user.click(
-      screen.getByRole("checkbox", { name: /select chapter meeting/i }),
-    );
+    await selectLastFormal(user);
     await user.click(
       screen.getByRole("button", { name: /mark attendance complete/i }),
     );
@@ -202,7 +277,7 @@ describe("EventsPage bulk actions", () => {
           // generic "probably the grace period" guess that would be wrong
           // here — the mutation actually rejected with a different message.
           description: expect.stringContaining(
-            "Chapter Meeting: Wait until the grace period ends to mark absences.",
+            "Last Formal: Wait until the grace period ends to mark absences.",
           ),
         }),
       ),
@@ -210,7 +285,72 @@ describe("EventsPage bulk actions", () => {
     // Selection survives a failure so the officer can retry once the grace
     // period passes, rather than having to re-select from scratch.
     expect(
-      screen.getByRole("checkbox", { name: /select chapter meeting/i }),
+      screen.getByRole("checkbox", { name: /select last formal/i }),
     ).toBeChecked();
+  });
+
+  it("doesn't send an event whose check-in hasn't closed, and names it (FRAPP-WEB-7)", async () => {
+    // The API refuses auto-absent until check-in closes, 15 minutes after
+    // the end; sending it anyway only produced that 400, reported to Sentry.
+    const user = userEvent.setup();
+    render(<EventsPage />);
+    await selectChapterMeeting(user);
+    await user.click(
+      screen.getByRole("button", { name: /mark attendance complete/i }),
+    );
+    const dialog = screen.getByRole("dialog");
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: /^mark attendance complete$/i,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Some events couldn't be finalized",
+          description: expect.stringMatching(
+            /0 succeeded, 1 failed\. Chapter Meeting: Check-in hasn't closed yet; it closes .+ · /,
+          ),
+        }),
+      ),
+    );
+    expect(autoAbsentMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("names each failure against its own event when some are held back and some rejected", async () => {
+    // `results` lines up with the events sent, not with the selection.
+    autoAbsentMutateAsync.mockRejectedValue({
+      statusCode: 400,
+      message: "Cannot mark auto-absent before the grace period ends",
+    });
+    const user = userEvent.setup();
+    render(<EventsPage />);
+    await showTime(user, "All");
+    await selectChapterMeeting(user);
+    await user.click(
+      screen.getByRole("checkbox", { name: /select last formal/i }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: /mark attendance complete/i }),
+    );
+    const dialog = screen.getByRole("dialog");
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: /^mark attendance complete$/i,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: expect.stringMatching(
+            /0 succeeded, 2 failed\. Chapter Meeting: Check-in hasn't closed yet;.*; Last Formal: Wait until the grace period ends/,
+          ),
+        }),
+      ),
+    );
+    expect(autoAbsentMutateAsync).toHaveBeenCalledTimes(1);
+    expect(autoAbsentMutateAsync).toHaveBeenCalledWith("evt-past");
   });
 });

@@ -354,3 +354,48 @@ describe("block-list provenance through the merge (#2315)", () => {
     expect(normalizeRow(toRawRow(vouched))).toEqual(vouched);
   });
 });
+
+describe("thread fields (#3785)", () => {
+  const parent = {
+    id: "root-1",
+    channel_id: "c1",
+    sender_id: "u1",
+    content: "Who's driving Saturday?",
+    created_at: "2026-11-10T12:00:00.000Z",
+    thread_reply_count: 3,
+    thread_last_reply_at: "2026-11-10T12:05:00.000Z",
+    thread_recent_sender_ids: ["u2", "u3", "u4", "u5"],
+  };
+
+  test("a parent's summary survives normalizeRow and toRawRow", () => {
+    const normalized = normalizeRow(parent);
+    expect(normalized.thread).toEqual({
+      reply_count: 3,
+      last_reply_at: "2026-11-10T12:05:00.000Z",
+      recent_sender_ids: ["u2", "u3", "u4"],
+    });
+    expect(normalizeRow(toRawRow(normalized)).thread).toEqual(
+      normalized.thread,
+    );
+  });
+
+  test("a message with no replies, or a malformed count, has no summary", () => {
+    expect(
+      normalizeRow({ ...parent, thread_reply_count: 0 }).thread,
+    ).toBeNull();
+    expect(
+      normalizeRow({ ...parent, thread_reply_count: undefined }).thread,
+    ).toBeNull();
+  });
+
+  test("a thread reply keeps its root", () => {
+    const reply = normalizeRow({
+      ...parent,
+      id: "r1",
+      thread_root_id: "root-1",
+      thread_reply_count: 0,
+    });
+    expect(reply.thread_root_id).toBe("root-1");
+    expect(toRawRow(reply).thread_root_id).toBe("root-1");
+  });
+});

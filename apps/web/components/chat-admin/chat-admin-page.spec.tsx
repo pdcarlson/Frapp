@@ -5,6 +5,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { AUDIT_LOG_SETTINGS_NOTE } from "@repo/chat-core/audit-log-copy";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { denseListClassName } from "@/components/shared/table-controls";
 import { cardFilledContainers } from "@/tests/card-surfaces";
@@ -43,6 +44,15 @@ vi.mock("@repo/hooks", async (importOriginal) => {
   const mutation = () => ({ mutateAsync: vi.fn(), isPending: false });
   return {
     resolveAuthorLabel: actual.resolveAuthorLabel,
+    // Chat backgrounds (#3973): the default card is decoration on this page.
+    errorCopy: actual.errorCopy,
+    useChapterChatBackground: () => ({ data: undefined }),
+    useSetChapterChatBackground: () => ({
+      mutate: vi.fn(),
+      isPending: false,
+      error: null,
+    }),
+    useCurrentChapter: () => ({ data: undefined }),
     useChannels: () => reads.channels,
     useCategories: () => reads.categories,
     usePinnedMessages: () => reads.pins,
@@ -237,6 +247,46 @@ describe("ChatAdminPage — the create panel", () => {
     );
   });
 
+  it("creates the channel unlocked by default, and Always formal when switched on (#3787)", async () => {
+    mockCreateChannel.mockResolvedValue({});
+    render(<ChatAdminPage />);
+    fireEvent.click(screen.getByRole("button", { name: "New channel" }));
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "announcements-2" },
+    });
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("switch", {
+        name: /Always formal/,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Create channel" }));
+
+    await waitFor(() =>
+      expect(mockCreateChannel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "announcements-2",
+          display_locked: true,
+        }),
+      ),
+    );
+  });
+
+  it("sends Always formal off when the switch is left alone (#3787)", async () => {
+    mockCreateChannel.mockResolvedValue({});
+    render(<ChatAdminPage />);
+    fireEvent.click(screen.getByRole("button", { name: "New channel" }));
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "random-2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create channel" }));
+
+    await waitFor(() =>
+      expect(mockCreateChannel).toHaveBeenCalledWith(
+        expect.objectContaining({ display_locked: false }),
+      ),
+    );
+  });
+
   // Cancel sets state directly, and Radix fires no `onOpenChange` for that, so
   // it has to drop the draft itself the way the X and Escape do.
   it("drops the draft on Cancel, so the next New channel starts empty", () => {
@@ -280,7 +330,9 @@ describe("ChatAdminPage — the channel structure's states", () => {
     reads.categories = settled([]);
     const { container } = render(<ChatAdminPage />);
 
-    expect(screen.getByText("No channels yet. Create the first one above.")).toBeInTheDocument();
+    expect(
+      screen.getByText("No channels yet. Create the first one above."),
+    ).toBeInTheDocument();
     expect(screen.getByText(/^No categories yet\./)).toBeInTheDocument();
     expect(cardFilledContainers(container)).toEqual([]);
   });
@@ -362,7 +414,9 @@ describe("ChatAdminPage — the channel structure's states", () => {
       screen.getByRole("heading", { name: "Couldn't load channels" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("Couldn't reach Frapp. Check your connection and try again."),
+      screen.getByText(
+        "Couldn't reach Frapp. Check your connection and try again.",
+      ),
     ).toBeInTheDocument();
     expect(cardFilledContainers(container)).toEqual([]);
   });
@@ -482,7 +536,9 @@ describe("ChatAdminPage — a channel's pins", () => {
     selectExec();
     expect(cardFilledContainers(container)).toEqual([]);
 
-    expect(screen.getByText("Nothing pinned. Pin a message from the channel.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Nothing pinned. Pin a message from the channel."),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { level: 4, name: "Pinned messages (0)" }),
     ).toBeInTheDocument();
@@ -702,5 +758,47 @@ describe("ChatAdminPage — opened from a channel start", () => {
       "aria-pressed",
       "false",
     );
+  });
+});
+
+// #3909: only Frapp posts in the audit log, and the server refuses renaming
+// it or switching its read-only off, so the form locks both.
+describe("ChatAdminPage — the audit log", () => {
+  beforeEach(() => {
+    reads.channels = settled([
+      ...CHANNELS,
+      {
+        ...channel("ch-4", "chapter-audit", "PUBLIC"),
+        is_read_only: true,
+        is_audit_log: true,
+      },
+    ]);
+  });
+
+  it("locks its name and shows the audit log line in place of the read-only switch", () => {
+    render(<ChatAdminPage />);
+    fireEvent.click(screen.getByRole("button", { name: /^#chapter-audit/ }));
+
+    const pane = screen.getByRole("region", { name: "Edit #chapter-audit" });
+    expect(within(pane).getByLabelText("Name")).toBeDisabled();
+    expect(within(pane).getByText(AUDIT_LOG_SETTINGS_NOTE)).toBeInTheDocument();
+    expect(within(pane).queryByText(/^Read-only/)).toBeNull();
+    // The server refuses deleting it, so no Delete control is offered.
+    expect(
+      screen.queryByRole("button", { name: "Delete #chapter-audit" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Delete #general" }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the name and the read-only switch open on an ordinary channel", () => {
+    render(<ChatAdminPage />);
+    selectExec();
+
+    const pane = screen.getByRole("region", { name: "Edit #exec" });
+    expect(within(pane).getByLabelText("Name")).toBeEnabled();
+    expect(within(pane).getByText(/^Read-only/)).toBeInTheDocument();
+    expect(within(pane).queryByText(AUDIT_LOG_SETTINGS_NOTE)).toBeNull();
   });
 });

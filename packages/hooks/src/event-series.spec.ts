@@ -1,228 +1,202 @@
 import { describe, expect, it } from "vitest";
 import {
   collapseSeries,
-  EVENT_HORIZON_DAYS,
   eventSeriesKey,
-  seriesCadence,
+  horizonEnd,
+  isSeriesEvent,
   seriesCadenceLabel,
-  seriesHeads,
+  ruleTokenLabel,
+  seriesHeadOf,
   splitByHorizon,
 } from "./event-series";
 
-/** A local wall-clock instant as the API sends it, so the suite holds in any TZ. */
-function iso(month: number, day: number, hour = 18): string {
-  return new Date(2026, month - 1, day, hour).toISOString();
-}
-
-// Monday Nov 9, 2026, 9:00 AM local.
-const NOW = new Date(2026, 10, 9, 9);
-
-interface Row {
+type Row = {
   id: string;
   name: string;
   start_time: string;
   recurrence_rule: string | null;
   parent_event_id: string | null;
-}
+};
 
-/** A weekly "Chapter" series as the API materializes it: head plus children. */
-function weeklySeries(headDay: number, count: number): Row[] {
-  return Array.from({ length: count }, (_, index) => ({
-    id: index === 0 ? "head" : `child-${index}`,
+const NOW = Date.parse("2026-11-09T12:00:00Z");
+
+function weekly(count: number, firstStart: string): Row[] {
+  const first = Date.parse(firstStart);
+  return Array.from({ length: count }, (_, i) => ({
+    id: i === 0 ? "head" : `child-${i}`,
     name: "Chapter",
-    start_time: iso(11, headDay + index * 7),
-    recurrence_rule: index === 0 ? "WEEKLY" : null,
-    parent_event_id: index === 0 ? null : "head",
+    start_time: new Date(first + i * 7 * 24 * 3600_000).toISOString(),
+    recurrence_rule: i === 0 ? "WEEKLY" : null,
+    parent_event_id: i === 0 ? null : "head",
   }));
 }
 
-function oneOff(id: string, month: number, day: number): Row {
-  return {
-    id,
-    name: id,
-    start_time: iso(month, day),
-    recurrence_rule: null,
-    parent_event_id: null,
-  };
-}
-
 describe("eventSeriesKey", () => {
-  it("names a series by its head, from the head or any occurrence", () => {
-    const [head, child] = weeklySeries(8, 2);
+  it("keys a head by its id and a generated occurrence by its parent", () => {
+    const [head, child] = weekly(2, "2026-11-15T23:48:00Z");
     expect(eventSeriesKey(head!)).toBe("head");
     expect(eventSeriesKey(child!)).toBe("head");
-    expect(eventSeriesKey(oneOff("social", 11, 12))).toBeNull();
+    expect(isSeriesEvent(child!)).toBe(true);
+  });
+
+  it("has no key for a one-time or detached event", () => {
+    expect(
+      eventSeriesKey({ id: "x", recurrence_rule: null, parent_event_id: null }),
+    ).toBeNull();
+    expect(eventSeriesKey({ id: "x", recurrence_rule: "" })).toBeNull();
+  });
+
+  it("finds the head and its rule", () => {
+    const rows = weekly(3, "2026-11-15T23:48:00Z");
+    expect(seriesHeadOf("head", rows)?.recurrence_rule).toBe("WEEKLY");
+    expect(seriesHeadOf("missing", rows)).toBeNull();
   });
 });
 
 describe("collapseSeries", () => {
-  it("draws a weekly series once, as its next occurrence, with its rule", () => {
-    // Head on Sunday Nov 8 (already happened), then every Sunday.
-    const rows = [...weeklySeries(8, 13), oneOff("social", 11, 12)];
-    const collapsed = collapseSeries(rows, NOW);
+  it("shows a 13-meeting series once, as its next meeting", () => {
+    const rows = weekly(13, "2026-11-15T23:48:00Z");
+    const entries = collapseSeries(rows, NOW);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.event.id).toBe("head");
+    expect(entries[0]!.series).toHaveLength(13);
+  });
 
-    const chapter = collapsed.filter((entry) => entry.event.name === "Chapter");
-    // The started head stands alone; the upcoming twelve collapse to one.
-    expect(chapter).toHaveLength(2);
-    expect(chapter[0]).toMatchObject({ event: { id: "head" }, series: null });
-    expect(chapter[0]!.cadence).toBe("Every Sunday");
-    expect(chapter[1]!.event.id).toBe("child-1");
-    expect(chapter[1]!.series).toHaveLength(12);
-    expect(chapter[1]!.series![0]!.id).toBe("child-1");
-    expect(chapter[1]!.cadence).toBe("Every Sunday");
-
-    // Soonest first, the one-off in its place.
-    expect(collapsed.map((entry) => entry.event.id)).toEqual([
+  it("keeps meetings that already happened as their own rows", () => {
+    // Head two weeks ago, so head and child-1 are past.
+    const rows = weekly(5, "2026-10-26T23:48:00Z");
+    const entries = collapseSeries(rows, NOW);
+    expect(entries.map((e) => e.event.id)).toEqual([
       "head",
-      "social",
       "child-1",
+      "child-2",
+    ]);
+    expect(entries[0]!.series).toBeNull();
+    expect(entries[1]!.series).toBeNull();
+    expect(entries[2]!.series?.map((e) => e.id)).toEqual([
+      "child-2",
+      "child-3",
+      "child-4",
     ]);
   });
 
-  it("leaves one-time events alone and reads no rule for them", () => {
-    const collapsed = collapseSeries(
-      [oneOff("b", 11, 20), oneOff("a", 11, 10)],
-      NOW,
-    );
-    expect(collapsed.map((entry) => entry.event.id)).toEqual(["a", "b"]);
-    expect(
-      collapsed.every(
-        (entry) => entry.series === null && entry.cadence === null,
-      ),
-    ).toBe(true);
+  it("leaves one-time events alone and keeps order", () => {
+    const solo: Row = {
+      id: "solo",
+      name: "Formal",
+      start_time: "2026-11-10T02:00:00Z",
+      recurrence_rule: null,
+      parent_event_id: null,
+    };
+    const rows = [solo, ...weekly(3, "2026-11-15T23:48:00Z")];
+    const entries = collapseSeries(rows, NOW);
+    expect(entries.map((e) => e.event.id)).toEqual(["solo", "head"]);
+    expect(entries[0]!.series).toBeNull();
   });
 
-  it("keeps a series whose head is missing, without a rule", () => {
-    const children = weeklySeries(8, 4).slice(1);
-    const [entry] = collapseSeries(children, NOW);
-    expect(entry!.series).toHaveLength(3);
-    expect(entry!.cadence).toBeNull();
-  });
-
-  it("puts an unreadable start last rather than throwing", () => {
-    const broken = { ...oneOff("broken", 11, 10), start_time: "nope" };
-    const collapsed = collapseSeries([broken, oneOff("ok", 11, 11)], NOW);
-    expect(collapsed.map((entry) => entry.event.id)).toEqual(["ok", "broken"]);
+  it("picks the soonest occurrence even when the input is unsorted", () => {
+    const rows = weekly(3, "2026-11-15T23:48:00Z").reverse();
+    const entries = collapseSeries(rows, NOW);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.event.id).toBe("head");
   });
 });
 
 describe("splitByHorizon", () => {
-  it("holds today through the 14th day after it, and leaves the rest for Later", () => {
-    expect(EVENT_HORIZON_DAYS).toBe(14);
-    const entries = [
-      { event: oneOff("today", 11, 9) },
-      { event: oneOff("day-14", 11, 23) },
-      { event: oneOff("day-15", 11, 24) },
-      { event: { ...oneOff("broken", 11, 10), start_time: "" } },
-    ];
-    const { soon, later } = splitByHorizon(entries, NOW);
-    expect(soon.map((entry) => entry.event.id)).toEqual(["today", "day-14"]);
-    expect(later.map((entry) => entry.event.id)).toEqual(["day-15", "broken"]);
+  it("holds today through the end of the fourteenth day after it", () => {
+    const end = new Date(horizonEnd(NOW));
+    expect(end.getHours()).toBe(0);
+    const today = new Date(NOW);
+    today.setHours(0, 0, 0, 0);
+    expect(Math.round((end.getTime() - today.getTime()) / 86_400_000)).toBe(15);
   });
 
-  it("counts a meeting still running from last night as soon", () => {
-    const { soon } = splitByHorizon([{ event: oneOff("late", 11, 8) }], NOW);
+  it("puts what starts past the horizon behind Later", () => {
+    const end = horizonEnd(NOW);
+    const at = (ms: number) => ({
+      event: { id: String(ms), start_time: new Date(ms).toISOString() },
+      series: null,
+    });
+    const { soon, later } = splitByHorizon(
+      [at(NOW + 3600_000), at(end - 1), at(end), at(end + 86_400_000)],
+      NOW,
+    );
+    expect(soon).toHaveLength(2);
+    expect(later).toHaveLength(2);
+  });
+
+  it("keeps an unreadable start in view", () => {
+    const { soon } = splitByHorizon(
+      [{ event: { id: "x", start_time: "nope" }, series: null }],
+      NOW,
+    );
     expect(soon).toHaveLength(1);
   });
 });
 
 describe("seriesCadenceLabel", () => {
-  // Sunday Nov 15, 2026.
-  const sunday = iso(11, 15);
-
-  it("says the weekday for a weekly or every-other-week series", () => {
-    expect(seriesCadenceLabel("WEEKLY", sunday)).toBe("Every Sunday");
-    expect(seriesCadenceLabel("BIWEEKLY", sunday)).toBe("Every other Sunday");
+  // Built from local parts so the weekday holds in any test zone.
+  const sunday = new Date(2026, 10, 15, 18, 48).toISOString();
+  it("names the weekday most meetings fall on, not one moved meeting's", () => {
+    // The next meeting was moved to Saturday on its own; the series meets Sundays.
+    const movedSaturday = new Date(2026, 10, 14, 18, 48).toISOString();
+    const starts = [
+      movedSaturday,
+      new Date(2026, 10, 22, 18, 48).toISOString(),
+      new Date(2026, 10, 29, 18, 48).toISOString(),
+    ];
+    expect(seriesCadenceLabel("WEEKLY", movedSaturday, starts)).toBe(
+      "Every Sunday",
+    );
+    expect(seriesCadenceLabel("BIWEEKLY", movedSaturday, starts)).toBe(
+      "Every other Sunday",
+    );
+    expect(seriesCadenceLabel("WEEKLY", movedSaturday)).toBe("Every Saturday");
   });
 
-  it("says the day of the month for a monthly series", () => {
+  it("says how the series repeats", () => {
+    expect(seriesCadenceLabel("WEEKLY", sunday)).toBe("Every Sunday");
+    expect(seriesCadenceLabel("BIWEEKLY", sunday)).toBe("Every other Sunday");
     expect(seriesCadenceLabel("MONTHLY", sunday)).toBe(
       "Every month on the 15th",
     );
-    expect(seriesCadenceLabel("MONTHLY", iso(11, 1))).toBe(
-      "Every month on the 1st",
+    expect(
+      seriesCadenceLabel("MONTHLY", new Date(2026, 10, 2, 18).toISOString()),
+    ).toBe("Every month on the 2nd");
+    expect(
+      seriesCadenceLabel("MONTHLY", new Date(2026, 10, 11, 18).toISOString()),
+    ).toBe("Every month on the 11th");
+  });
+
+  it("names the day a monthly series meets on, not a clamped or moved meeting's", () => {
+    const on = (month: number, day: number) =>
+      new Date(2027, month, day, 18).toISOString();
+    // On the 31st; the API puts February's meeting on the 28th, and April's
+    // on the 30th. A promoted head on Feb 28 doesn't move the rule either.
+    const clamped = [on(1, 28), on(2, 31), on(3, 30), on(4, 31)];
+    expect(seriesCadenceLabel("MONTHLY", on(1, 28), clamped)).toBe(
+      "Every month on the 31st",
     );
-    expect(seriesCadenceLabel("MONTHLY", iso(11, 2))).toBe(
-      "Every month on the 2nd",
+    // On the 15th, with the head alone moved to the 16th.
+    const moved = [on(0, 16), on(1, 15), on(2, 15)];
+    expect(seriesCadenceLabel("MONTHLY", on(0, 16), moved)).toBe(
+      "Every month on the 15th",
     );
-    expect(seriesCadenceLabel("MONTHLY", iso(11, 3))).toBe(
-      "Every month on the 3rd",
-    );
-    expect(seriesCadenceLabel("MONTHLY", iso(11, 11))).toBe(
-      "Every month on the 11th",
-    );
-    expect(seriesCadenceLabel("MONTHLY", iso(11, 22))).toBe(
-      "Every month on the 22nd",
+    // Without the series, the meeting's own day.
+    expect(seriesCadenceLabel("MONTHLY", on(0, 9))).toBe(
+      "Every month on the 9th",
     );
   });
 
-  it("says nothing for a one-time event or an unreadable start", () => {
+  it("reads a rule outside the catalog in sentence case", () => {
+    expect(seriesCadenceLabel("DAILY", sunday)).toBe("Daily");
+    expect(ruleTokenLabel("TWICE_WEEKLY")).toBe("Twice weekly");
+    expect(ruleTokenLabel(null)).toBeNull();
+  });
+
+  it("says nothing for a missing rule or an unreadable start", () => {
     expect(seriesCadenceLabel(null, sunday)).toBeNull();
-    expect(seriesCadenceLabel("DAILY", sunday)).toBeNull();
+    expect(seriesCadenceLabel("", sunday)).toBeNull();
     expect(seriesCadenceLabel("WEEKLY", "nope")).toBeNull();
-  });
-});
-
-describe("seriesCadence", () => {
-  it("reads the cadence off the head, not the occurrence on screen", () => {
-    // A monthly series on Jan 31: the API clamps April's meeting to the 30th.
-    const head = {
-      id: "dues",
-      start_time: new Date(2027, 0, 31, 18).toISOString(),
-      recurrence_rule: "MONTHLY",
-      parent_event_id: null,
-    };
-    const april = {
-      id: "dues-3",
-      start_time: new Date(2027, 3, 30, 18).toISOString(),
-      recurrence_rule: null,
-      parent_event_id: "dues",
-    };
-    const heads = seriesHeads([head, april]);
-    expect(seriesCadence(heads, april)).toBe("Every month on the 31st");
-  });
-
-  it("keeps a series' weekday for an occurrence moved to another day", () => {
-    const [head, child] = weeklySeries(8, 2);
-    const moved = { ...child!, start_time: iso(11, 16) }; // a Monday
-    const heads = seriesHeads([head!, moved]);
-    expect(seriesCadence(heads, moved)).toBe("Every Sunday");
-    expect(collapseSeries([head!, moved], NOW).at(-1)!.cadence).toBe(
-      "Every Sunday",
-    );
-  });
-
-  it("keeps the series' weekday when the head alone is moved", () => {
-    // "This event only" on an unstarted head: only that row moves.
-    const [head, ...children] = weeklySeries(8, 4);
-    const moved = { ...head!, start_time: iso(11, 9) }; // a Monday
-    const heads = seriesHeads([moved, ...children]);
-    expect(seriesCadence(heads, children[0]!)).toBe("Every Sunday");
-    expect(seriesCadence(heads, moved)).toBe("Every Sunday");
-  });
-
-  it("names the series by what most of its occurrences are called", () => {
-    const [head, ...children] = weeklySeries(8, 4);
-    const renamedHead = { ...head!, name: "Chapter: Elections" };
-    const heads = seriesHeads([renamedHead, ...children]);
-    expect(heads.get("head")!.name).toBe("Chapter");
-  });
-
-  it("breaks a name tie toward the soonest row's name", () => {
-    // Soonest first: A, B, B, A. B reaches two first, but the tie is A's.
-    const [head, ...children] = weeklySeries(8, 4);
-    const rows = [
-      head!,
-      { ...children[0]!, name: "Chapter: Elections" },
-      { ...children[1]!, name: "Chapter: Elections" },
-      children[2]!,
-    ];
-    expect(seriesHeads(rows).get("head")!.name).toBe("Chapter");
-  });
-
-  it("says nothing for a one-time event or a series without its head", () => {
-    const heads = seriesHeads([]);
-    expect(seriesCadence(heads, oneOff("social", 11, 12))).toBeNull();
-    expect(seriesCadence(heads, weeklySeries(8, 2)[1]!)).toBeNull();
   });
 });

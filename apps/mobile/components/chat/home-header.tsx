@@ -10,8 +10,11 @@ import {
 import Svg, { Path } from "react-native-svg";
 import { useFocusEffect, useRouter } from "expo-router";
 import { onlineManager } from "@tanstack/react-query";
-import { useNotifications } from "@repo/hooks";
+import { useNotifications, type MemberAvatarTint } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import { MEMBER_STATUS_LABEL, untilLabel } from "@repo/hooks/member-status";
+import { StatusDot } from "@/components/account/status-dot";
+import { useOwnStatus, useOwnStatusSync } from "@/lib/account/own-status";
 import { selectUnreadNonChatCount } from "@/lib/more/notifications";
 import { useBackToClose, useFocusOnOpen } from "@/lib/overlay";
 import { avatarRadius, tint, typeRole, useFrappTheme } from "@/lib/theme";
@@ -20,7 +23,7 @@ import { avatarRadius, tint, typeRole, useFrappTheme } from "@/lib/theme";
  * Chat home's top-right pair (owner, 2026-11-07, option B of the round-two
  * redesign): a door to Messages, the member's direct messages on their own
  * screen, then the member's own avatar, which opens a small menu holding
- * Profile, Notifications and Settings.
+ * Status (#3845), Profile, Notifications and Settings.
  *
  * Every chat app the members already use puts these two in that corner
  * (Instagram's DM door, the avatar that is "you" in Slack, Discord and
@@ -123,26 +126,37 @@ export function useAccountMenu(): AccountMenuState {
 }
 
 /**
- * The member's own avatar: their photo, or their initials on a neutral fill
- * (a person's avatar never takes the chapter accent, foundations.md §6). A
+ * The member's own avatar: their photo, or their initials in their member
+ * tint (#3860; never the chapter accent, foundations.md §6). A
  * dot in the inbox's house gold says the notification inbox has something
  * unread, the dot the bell's badge used to be.
+ *
+ * The member's picked status (#3845) sits bottom-right, where web draws a
+ * presence dot, so it never collides with the gold dot top-right. It is
+ * hidden while Online, the status a member doesn't pick, so the corner stays
+ * quiet for most members most of the time.
  */
 export function AccountButton({
   menu,
   initials,
   photoUrl,
   fetchedAt,
+  tint = null,
 }: {
   menu: AccountMenuState;
   initials: string;
   photoUrl: string | null;
   fetchedAt: number;
+  /** The viewer's initials paint (#3860); `null` keeps the neutral fill. */
+  tint?: MemberAvatarTint | null;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const ref = useRef<View>(null);
   const inboxUnread = selectUnreadNonChatCount(useNotifications().data);
+  useOwnStatusSync();
+  const own = useOwnStatus();
+  const shownStatus = own && own.status !== "online" ? own.status : null;
   // A photo that fails to load falls back to initials, retried on a refetch
   // or reconnect, as the More tab's profile card does.
   const [failed, setFailed] = useState<{ url: string; at: number } | null>(
@@ -163,12 +177,11 @@ export function AccountButton({
       ref={ref}
       accessibilityRole="button"
       accessibilityLabel="Your account"
-      accessibilityHint="Opens Profile, Notifications and Settings."
-      accessibilityValue={
-        inboxUnread > 0
-          ? { text: `${inboxUnread} unread notifications` }
-          : undefined
-      }
+      accessibilityHint="Opens Status, Profile, Notifications and Settings."
+      accessibilityValue={accountValue(
+        shownStatus ? MEMBER_STATUS_LABEL[shownStatus] : null,
+        inboxUnread,
+      )}
       accessibilityState={{ expanded: menu.visible }}
       hitSlop={4}
       onPress={() => {
@@ -179,7 +192,11 @@ export function AccountButton({
           menu.open(y + height + tokens.spacing.xs),
         );
       }}
-      style={({ pressed }) => [styles.avatar, pressed ? styles.dim : null]}
+      style={({ pressed }) => [
+        styles.avatar,
+        tint ? { backgroundColor: tint.fill } : null,
+        pressed ? styles.dim : null,
+      ]}
     >
       {showPhoto ? (
         <Image
@@ -190,7 +207,9 @@ export function AccountButton({
           importantForAccessibility="no-hide-descendants"
         />
       ) : (
-        <Text style={styles.initials}>{initials}</Text>
+        <Text style={[styles.initials, tint ? { color: tint.text } : null]}>
+          {initials}
+        </Text>
       )}
       {inboxUnread > 0 ? (
         <View
@@ -199,20 +218,53 @@ export function AccountButton({
           style={styles.dot}
         />
       ) : null}
+      {shownStatus ? (
+        <View pointerEvents="none" style={styles.statusDot}>
+          <StatusDot
+            testID={`account-status-${shownStatus}`}
+            status={shownStatus}
+            ring={tokens.color.surface.background}
+          />
+        </View>
+      ) : null}
     </Pressable>
   );
 }
 
+/** The ME button's value: the picked status, then the unread count. */
+function accountValue(
+  status: string | null,
+  inboxUnread: number,
+): { text: string } | undefined {
+  const parts = [
+    status,
+    inboxUnread > 0 ? `${inboxUnread} unread notifications` : null,
+  ].filter((part): part is string => part !== null);
+  return parts.length > 0 ? { text: parts.join(", ") } : undefined;
+}
+
 /** The avatar's menu, drawn by `ScreenShell`'s overlay like the filter menu. */
-export function AccountMenu({ menu }: { menu: AccountMenuState }) {
+export function AccountMenu({
+  menu,
+  onStatus,
+}: {
+  menu: AccountMenuState;
+  /** Opens the status sheet (#3845); the menu has already closed. */
+  onStatus: () => void;
+}) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const router = useRouter();
   const firstRef = useRef<React.ComponentRef<typeof Text>>(null);
   useFocusOnOpen(firstRef, menu.visible);
   const inboxUnread = selectUnreadNonChatCount(useNotifications().data);
+  const own = useOwnStatus();
 
   if (!menu.visible) return null;
+  const status = own?.status ?? "online";
+  const statusSub = own?.statusEndsAt
+    ? untilLabel(own.statusEndsAt, new Date())
+    : (own?.line ?? null);
 
   const rows: {
     key: string;
@@ -244,7 +296,38 @@ export function AccountMenu({ menu }: { menu: AccountMenuState }) {
         style={styles.fill}
       />
       <View style={[styles.menu, { top: menu.top, right: tokens.spacing.lg }]}>
-        {rows.map((row, index) => (
+        {/* Status first, as Discord and Slack put it at the top of the
+            avatar's menu: it opens the status sheet. */}
+        <Pressable
+          testID="account-menu-status"
+          accessibilityRole="button"
+          accessibilityLabel={
+            statusSub
+              ? `Status: ${MEMBER_STATUS_LABEL[status]}, ${statusSub}`
+              : `Status: ${MEMBER_STATUS_LABEL[status]}`
+          }
+          accessibilityHint="Opens your status and custom status."
+          onPress={() => {
+            menu.close();
+            onStatus();
+          }}
+          style={({ pressed }) => [styles.row, pressed ? styles.dim : null]}
+        >
+          <View style={styles.statusGlyph}>
+            <StatusDot status={status} />
+          </View>
+          <View style={styles.statusText}>
+            <Text ref={firstRef} style={styles.label}>
+              {MEMBER_STATUS_LABEL[status]}
+            </Text>
+            {statusSub ? (
+              <Text numberOfLines={1} style={styles.statusSub}>
+                {statusSub}
+              </Text>
+            ) : null}
+          </View>
+        </Pressable>
+        {rows.map((row) => (
           <Pressable
             key={row.key}
             accessibilityRole="button"
@@ -257,13 +340,11 @@ export function AccountMenu({ menu }: { menu: AccountMenuState }) {
             }}
             style={({ pressed }) => [
               styles.row,
-              index > 0 ? styles.rowDivided : null,
+              styles.rowDivided,
               pressed ? styles.dim : null,
             ]}
           >
-            <Text ref={index === 0 ? firstRef : undefined} style={styles.label}>
-              {row.label}
-            </Text>
+            <Text style={styles.label}>{row.label}</Text>
             {row.count ? (
               <View style={[styles.count, styles.countInbox, styles.inline]}>
                 <Text style={[styles.countText, styles.countTextInbox]}>
@@ -323,6 +404,17 @@ function createStyles(tokens: SignetTokens) {
       backgroundColor: tokens.color.gold.house,
       borderWidth: 2,
       borderColor: tokens.color.surface.background,
+    },
+    statusDot: {
+      position: "absolute",
+      bottom: -3,
+      right: -3,
+    },
+    statusGlyph: { width: 16, marginRight: tokens.spacing.sm },
+    statusText: { flex: 1, minWidth: 0, paddingVertical: tokens.spacing.xs },
+    statusSub: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
     },
     count: {
       minWidth: 18,

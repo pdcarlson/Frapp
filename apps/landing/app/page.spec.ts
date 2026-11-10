@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { isBetaOffModule } from "@repo/validation";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -124,15 +125,33 @@ describe("landing marketing copy rules", () => {
     }
   });
 
-  it("names events, check-in and points in the chat sentence, and not dues", () => {
+  it("leads with the mission /about states, and claims no dues in the thread", () => {
+    // The hero opens with the mission statement (#3869). Both pages render the
+    // one `MISSION` constant, so neither can carry a drifted copy of it.
+    const about = readFileSync(join(landingRoot, "app/about/page.tsx"), "utf8");
+    const hero = withoutComments(homeSource("hero-section.tsx"));
+    expect(hero).toMatch(/\{MISSION\}/);
+    expect(withoutComments(about)).toMatch(/paragraphs: \[MISSION\]/);
     // `spec/behavior/chat/integrations.md` lists the dues chat kind as a stub
     // renderer, so no dues artifact may be claimed to land in the thread.
-    expect(flatAll).toContain(
-      "Events, check-in and points land in the conversation",
-    );
     expect(renderedAll).not.toMatch(
       /dues[^.]{0,40}(in|into) (the )?(chat|thread|conversation)/i,
     );
+  });
+
+  it("sells no dues while the beta switches dues off (#3869)", () => {
+    // `BETA_OFF_MODULES` turns dues off for every chapter, so no line on the
+    // page, the JSON-LD included, may offer it. When dues returns this test
+    // stops applying, and the Treasurer line and the Pro list line can too.
+    if (!isBetaOffModule("dues")) return;
+    expect(renderedAll).not.toMatch(/\bdues\b/i);
+  });
+
+  it("draws no count on a plain unread channel", () => {
+    // `foundations.md` (2026-11-07): a plain unread channel is a bold name
+    // only. The one counted row in the rail is the DM's red badge.
+    const frame = withoutComments(homeSource("chat-frame.tsx"));
+    expect(frame).not.toMatch(/<ChannelRow\b[^>]*badge/);
   });
 
   it("carries no testimonial, no FAQ and no stats array", () => {
@@ -252,7 +271,7 @@ describe("landing page structure", () => {
     expect(aboveOfficers).not.toContain("RevealOnView");
     expect(aboveOfficers).not.toContain("reveal-item");
     const hero = withoutComments(homeSource("hero-section.tsx"));
-    expect(hero).toContain("Run your chapter where it already talks.");
+    expect(hero).toContain("One place to talk and run your chapter.");
     expect(hero).not.toContain("RevealOnView");
     expect(hero).not.toContain("reveal-item");
   });
@@ -400,6 +419,9 @@ describe("landing page structure", () => {
       ["get-started", "hero"],
       ["join-chapter", "hero"],
       ["get-started", "pricing"],
+      // Not in the Spec sheet's §5: the Pro card's trial button, added by
+      // #3869 and recorded in `spec/ui/landing/reference/README.md`.
+      ["start-free-trial", "pricing"],
       ["get-started", "cta-band"],
       ["log-in", "cta-band"],
       ["log-in", "footer"],
@@ -414,11 +436,25 @@ describe("landing page structure", () => {
     expect(renderedPage).toContain('const joinUrl = "/join"');
   });
 
-  it("puts one control in the pricing section, on the Free card", () => {
+  it("puts one control on each pricing card, gold only on Free", () => {
+    // D3 as amended (#3869): Get started on Free stays the primary; the Pro
+    // card's trial button is the outlined secondary into sign-up → /billing.
     const pricing = withoutComments(homeSource("pricing-section.tsx"));
     expect(pricing).toContain('id="pricing"');
-    expect(pricing.match(/surface="pricing"/g) ?? []).toHaveLength(1);
-    expect(pricing).toContain("Upgrade any time from Settings inside the app.");
+    expect(pricing.match(/surface="pricing"/g) ?? []).toHaveLength(2);
+    expect(pricing.match(/BUTTON_PRIMARY\b/g) ?? []).toHaveLength(2); // import + Free
+    expect(pricing).toMatch(
+      /cta="start-free-trial"\s+surface="pricing"\s+href=\{trialUrl\}\s+className=\{`\$\{BUTTON_SECONDARY\}/,
+    );
+    expect(pricing.indexOf('cta="get-started"')).toBeLessThan(
+      pricing.indexOf('cta="start-free-trial"'),
+    );
+    // The label names the trial `positioning.md` commits to, and the page
+    // hands the section the trial URL rather than plain sign-up, which ends on
+    // /chat instead of /billing.
+    expect(flatten(pricing)).toMatch(/>\s*Start 14-day trial\s*</);
+    expect(renderedPage).toMatch(/<PricingSection\b[^>]*\btrialUrl=\{trialUrl\}/);
+    expect(renderedPage).toMatch(/\{[^}]*\btrialUrl\b[^}]*\}\s*=\s*landingAuthUrls\(\)/);
   });
 });
 

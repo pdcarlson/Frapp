@@ -7,15 +7,16 @@ import {
   statusOf,
   throwUnlessOk,
 } from "@repo/api-sdk";
+import type { components } from "@repo/api-sdk";
 import { useFrappClient } from "./use-frapp-client";
 
 export interface AttendanceOptions {
   /**
    * Re-read the roster on a timer, in ms, or `false` for no timer (the
    * default). For a screen that shows a count while members arrive, such as
-   * mobile's host check-in (s22). A roster change is pushed: web's attendance
-   * panel subscribes to the `attendance:<eventId>` realtime ping and
-   * invalidates this query. Mobile doesn't subscribe, and there only this
+   * mobile's host check-in (s22). A roster change is pushed: web's event
+   * sheet subscribes to the `attendance:<eventId>` realtime ping and
+   * invalidates this query (and the member's own row under it). Mobile doesn't subscribe, and there only this
    * client's own check-in and status writes invalidate it, so the timer is
    * how mobile shows another member's check-in for now. The caller turns it
    * off while the screen is out of sight.
@@ -76,6 +77,54 @@ export function useMyAttendance(
   });
 }
 
+/** The statuses the server stores on an `event_attendance` row, per the SDK. */
+export type AttendanceRowStatus =
+  components["schemas"]["EventAttendanceDto"]["status"];
+
+// A `Record` over the SDK's union, so a status the API adds fails the
+// typecheck here until it is named, rather than parsing to "no row".
+const ATTENDANCE_ROW_STATUS_SET: Record<AttendanceRowStatus, true> = {
+  PRESENT: true,
+  LATE: true,
+  EXCUSED: true,
+  ABSENT: true,
+};
+
+export const ATTENDANCE_ROW_STATUSES = Object.keys(
+  ATTENDANCE_ROW_STATUS_SET,
+) as AttendanceRowStatus[];
+
+/** The viewer's own row, as {@link useMyAttendance} answers it. */
+export interface OwnAttendanceRow {
+  status: AttendanceRowStatus;
+  /** The raw `check_in_time`, or `null` when the row has none. */
+  checkInTime: string | null;
+}
+
+/**
+ * {@link useMyAttendance}'s answer (`{ attendance: row | null }`) → the row,
+ * or `null` when there is none or it is unreadable. The one parser for that
+ * answer: mobile's event page and scanner and web's event sheet all read
+ * through it, so a status the server adds can't be known to one and not the
+ * other.
+ */
+export function selectOwnAttendance(data: unknown): OwnAttendanceRow | null {
+  if (!data || typeof data !== "object") return null;
+  const row = (data as { attendance?: unknown }).attendance;
+  if (!row || typeof row !== "object") return null;
+  const { status, check_in_time } = row as Record<string, unknown>;
+  if (
+    typeof status !== "string" ||
+    !(ATTENDANCE_ROW_STATUSES as readonly string[]).includes(status)
+  ) {
+    return null;
+  }
+  return {
+    status: status as AttendanceRowStatus,
+    checkInTime: typeof check_in_time === "string" ? check_in_time : null,
+  };
+}
+
 /**
  * How many rows of an attendance roster (`useAttendance`'s data) are a member
  * who is there: `PRESENT` or `LATE`. A member marked LATE did attend, so
@@ -118,6 +167,10 @@ export function useCheckIn() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    // Rooted at `attendance`, the root `useAttendance` reads, so a failed
+    // write reports to Sentry under its feature, not `unkeyed` (#3393). The
+    // other attendance writes below follow it.
+    mutationKey: ["attendance", "check-in"],
     mutationFn: async ({ eventId, ...payload }: CheckInVariables) => {
       const result = await client.POST(
         "/v1/events/{eventId}/attendance/check-in",
@@ -350,6 +403,7 @@ export function useUpdateAttendanceStatus() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["attendance", "update-status"],
     mutationFn: async ({
       eventId,
       userId,
@@ -382,6 +436,7 @@ export function useAutoAbsent() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["attendance", "auto-absent"],
     mutationFn: async (eventId: string) => {
       const result = await client.POST(
         "/v1/events/{eventId}/attendance/auto-absent",

@@ -51,6 +51,7 @@ import {
 } from '#domain/utils/poll-vote-rules';
 import {
   CreateChannelDto,
+  SetChannelDisplayLockDto,
   UpdateChannelDto,
   CreateDmDto,
   CreateGroupDmDto,
@@ -281,6 +282,7 @@ export class ChatController {
         required_permissions: dto.required_permissions,
         category_id: dto.category_id,
         is_read_only: dto.is_read_only,
+        display_locked: dto.display_locked,
       },
       userId,
     );
@@ -295,6 +297,35 @@ export class ChatController {
     @Body() dto: UpdateChannelDto,
   ) {
     return this.chatService.updateChannel(id, chapterId, dto);
+  }
+
+  @Put(':id/display-lock')
+  @ApiOperation({
+    summary:
+      "Set or clear Always formal on a channel (the channel's creator, or channels:manage)",
+  })
+  async setChannelDisplayLock(
+    @CurrentChapterId() chapterId: string,
+    @Param('id') id: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: SetChannelDisplayLockDto,
+  ) {
+    // Resolved here rather than by `@RequirePermissions`, as `deleteMessage`
+    // does: the channel's creator may set it without `channels:manage`
+    // (Winston's decision on #3787), so the route stays open to members and
+    // the service decides.
+    const hasManagePermission = await this.rbacService.memberHasAnyPermission(
+      chapterId,
+      userId,
+      [SystemPermissions.CHANNELS_MANAGE],
+    );
+    return this.chatService.setDisplayLock(
+      id,
+      chapterId,
+      userId,
+      hasManagePermission,
+      dto.display_locked,
+    );
   }
 
   @Delete(':id')
@@ -508,7 +539,7 @@ export class ChatController {
               : 0,
           },
   )
-  // Web's `/poll` and mobile's New poll sheet post a `kind: 'poll'` message
+  // Web's `/poll` and New poll dialog, and mobile's New poll sheet, post a `kind: 'poll'` message
   // through this route (`buildPollMessage` in `@repo/chat-core/polls`).
   @FeatureEvent(
     'poll-created',
@@ -545,6 +576,7 @@ export class ChatController {
       kind: dto.kind,
       payload: dto.payload,
       reply_to_id: dto.reply_to_id,
+      thread_root_id: dto.thread_root_id,
       metadata: dto.metadata,
       attachments: dto.attachments,
       enabled_modules: enabledModules,
@@ -808,6 +840,7 @@ export class ChatController {
       dto.content_type,
       dto.size_bytes,
       dto.with_preview ?? false,
+      dto.for_thread ?? false,
     );
     if (!ticket.signedUrl || !ticket.storagePath) {
       throw new InternalServerErrorException(

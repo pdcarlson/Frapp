@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LINK_ACCENT } from "../../components/home/styles";
 import { SitePage } from "../../components/site-page";
+import { MISSION } from "../../lib/mission";
 import { routeMetadata } from "../../lib/route-metadata";
 
 export const metadata: Metadata = routeMetadata({
@@ -43,9 +44,7 @@ const sections = [
   },
   {
     heading: "Our mission",
-    paragraphs: [
-      "Give every chapter one place where its members actually talk, and let the work of running the chapter happen in that same conversation, so officers spend less time chasing people and more time on the chapter itself.",
-    ],
+    paragraphs: [MISSION],
   },
 ];
 
@@ -75,6 +74,20 @@ export default function AboutPage() {
           </p>
           <Link href="mailto:team@frapp.live" className={LINK_ACCENT}>
             team@frapp.live
+          </Link>
+          {/*
+            Contact on About (#3869). Help with an account lives on /support,
+            which answers the questions a member actually has (sign-in,
+            invites, deleting an account) and is the address both app stores
+            list, so About points there rather than restating it.
+          */}
+          <p className="text-body text-muted-foreground">
+            Need help with your account or the app? Support covers signing
+            in, invites, notifications and deleting an account, and the same
+            address reaches a person.
+          </p>
+          <Link href="/support" className={LINK_ACCENT}>
+            Get support
           </Link>
         </section>
       </div>

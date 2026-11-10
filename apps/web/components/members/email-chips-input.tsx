@@ -2,7 +2,7 @@
 
 import { useRef, type ClipboardEvent, type KeyboardEvent } from "react";
 import { X } from "lucide-react";
-import { isInviteEmail } from "@repo/validation";
+import { isInviteEmail, splitAddresses } from "@repo/validation";
 import { cn } from "@/lib/utils";
 import { FOCUS_RING_WITHIN } from "@/components/ui/focus";
 
@@ -14,14 +14,6 @@ export type EmailChip = { value: string; problem?: "invalid" | "undelivered" };
 
 /** What ends an address while typing: Enter, Tab, comma, semicolon, space. */
 const SEPARATOR_KEYS = new Set(["Enter", "Tab", ",", ";", " "]);
-
-/** Splits pasted or typed text into addresses (a pasted column, a CSV row). */
-export function splitAddresses(text: string): string[] {
-  return text
-    .split(/[\s,;]+/)
-    .map((part) => part.trim().replace(/^<|>$/g, ""))
-    .filter(Boolean);
-}
 
 /**
  * Adds `values` to `chips`, skipping addresses already there

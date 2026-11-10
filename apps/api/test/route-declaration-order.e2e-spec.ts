@@ -93,6 +93,7 @@ describe('Route declaration order — a literal route must not be swallowed by :
   const backworkServiceMock = {
     getDepartments: jest.fn().mockResolvedValue([]),
     getProfessors: jest.fn().mockResolvedValue([]),
+    getCourses: jest.fn().mockResolvedValue([]),
     getDownloadUrls: jest.fn().mockResolvedValue([]),
     findById: jest.fn().mockResolvedValue({ id: 'wrong-handler' }),
   };
@@ -306,6 +307,17 @@ describe('Route declaration order — a literal route must not be swallowed by :
       .expect(200);
 
     expect(backworkServiceMock.getDepartments).toHaveBeenCalledWith(CHAPTER_ID);
+    expect(backworkServiceMock.findById).not.toHaveBeenCalled();
+  });
+
+  it('GET /v1/backwork/courses reaches getCourses, not getOne', async () => {
+    await request(app.getHttpServer())
+      .get(`${V1}/backwork/courses`)
+      .set('authorization', 'Bearer token')
+      .set('x-chapter-id', CHAPTER_ID)
+      .expect(200);
+
+    expect(backworkServiceMock.getCourses).toHaveBeenCalledWith(CHAPTER_ID);
     expect(backworkServiceMock.findById).not.toHaveBeenCalled();
   });
 

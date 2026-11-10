@@ -10,12 +10,19 @@ allowed-tools: Agent, Task, Workflow, Read, Grep, Glob, Edit, Write, ReportFindi
 
 # Review this branch's diff
 
-Frapp's pre-push review gate. A branch gets one thorough review with subagents, the first time it is
-reviewed. After that the gate reviews only what changed since, and a fix round is reviewed inline,
-by you, with no subagents. A clean merge of `main` adds nothing to review. Done means the findings are
-reported, each one is fixed or filed, and the commit you push carries a marker.
+Frapp's pre-push review gate. A branch gets one thorough review with subagents, before its first
+push, which is when its pull request is opened. **That is the only review** (Paul, 2026-11-10;
+[ADR-23](../../../spec/architecture/adr/adr-23.md) amendment 2). Once the branch is on the remote,
+don't run this skill for a push to it: a fix commit, a merge of `main` and a resolved conflict all
+go up on the strength of the tests and CI, and the hook lets them through. That holds for a PR
+another session opened too, where this container has no marker and the scope script would call the
+whole branch unreviewed. Done means the findings are reported, each one is fixed or filed, and the
+commit you first push carries a marker.
 
-Never get past the gate with `git push --no-verify`: it leaves no review evidence.
+`git push --no-verify` bypasses the gate and leaves no review evidence. Whether a push warrants it
+is a judgment call, described in
+[`AGENTS.md` § Claude Code web sandbox](../../../AGENTS.md#claude-code-web-sandbox); it is not a way
+past findings this skill reported.
 
 **`/code-review` doesn't replace this skill.** A model can invoke it only when the current turn's
 prompt carries the token whitespace-delimited (regex `(?<!\S)/code-review(?=$|\s)`), never inside a
@@ -24,6 +31,12 @@ When a turn does carry the token, run it as asked, then run this skill. Full rul
 `docs/ci-cd/ai-code-review-runbook.md`.
 
 ## 1. Scope
+
+First check the branch isn't on the remote already (`git ls-remote --exit-code --heads origin
+<branch>` exits 2 when it isn't). If it is, stop: there is nothing to review, so push. The exception
+is a branch whose first push bypassed the gate (a parked or WIP push with `--no-verify`): it was
+never reviewed, so review it here before its PR opens. The modes
+below other than `full` then matter only when someone asks for a second look at a pushed branch.
 
 Commit first: the marker keys to a commit. Then:
 
@@ -112,6 +125,6 @@ you didn't write. Then:
 node scripts/diff-review-scope.mjs --mark
 ```
 
-It writes `<repo-root>/.cache/diff-review/<HEAD SHA>`, the marker the pre-push hook checks. Committing
-a fix changes HEAD, so run this skill again: §1 then scopes just the new commits, which is usually an
-inline round.
+It writes `<repo-root>/.cache/diff-review/<HEAD SHA>`, the marker the pre-push hook checks on a
+branch's first push. Commit the fixes for this review's findings before you mark, so the marker is
+on the commit you push; they get no second round.

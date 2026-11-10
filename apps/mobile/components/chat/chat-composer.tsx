@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -12,12 +12,10 @@ import {
 } from "react-native";
 import { MemberAvatar } from "@/components/member-avatar";
 import type { StagedPhoto } from "@/lib/chat/use-chat-channel";
-import {
-  attachChoices,
-  presentAttachChoices,
-} from "@/lib/chat/attach-choices";
+import type { MemberAvatarTint } from "@repo/hooks";
 import {
   activeMentionQuery,
+  spacedMentionNames,
   mentionPickerEntries,
   type MentionCandidate,
   type MentionPickerEntry,
@@ -84,8 +82,8 @@ import {
  * **`@` opens a member picker** above the input, as web's composer does: the
  * members whose name holds what follows the `@`, from `mentionCandidates`,
  * then the roles this member may ping, from `mentionRoles` (2026-11-06).
- * Picking one writes `@` and their label (`mentionLabelFor` in
- * `@repo/validation`) in place of what was typed, so the body is the plain text
+ * Picking one writes `@` and their label (`mentionPickLabel` in
+ * `@repo/validation`: the name as written, "Jane Doe", when it reads back whole) in place of what was typed, so the body is the plain text
  * a typed handle would be and the server resolves it as one. A space, or moving
  * the caret out of the handle, closes it; with no member matching it says so,
  * as web's does.
@@ -124,32 +122,21 @@ export interface ChatComposerProps {
   hintTone?: "muted" | "error";
   /** Photos staged for the next send, each uploading, ready or failed. */
   photos?: StagedPhoto[];
-  /** Omit to render no attach affordance at all, rather than an inert one. */
-  onAttach?: () => void;
   /**
-   * Opens the New poll sheet (#3701). Set only for a member who may create a
-   * poll here, and not while editing or replying. With it, the + offers Photo
-   * and Poll (`lib/chat/attach-choices.ts`), and stays live while photos
-   * can't be attached (the tray is full, or offline), because a poll still can.
+   * Opens the + sheet (#3865: Photo, Poll, Event, Task, Service hours), which
+   * says itself what can't be used and why. Omit to render no + at all, as
+   * while editing, rather than an inert one.
    */
-  onCreatePoll?: () => void;
+  onOpenPlus?: () => void;
+  /**
+   * Holds the + dark, still visible, where nothing it offers can work: a
+   * channel the member can't post in. The reason rides `disabledHint`.
+   */
+  plusDisabled?: boolean;
   onRemovePhoto?: (key: string) => void;
   onRetryPhoto?: (key: string) => void;
   /** The system photo sheet is up; the attach control shows a spinner and locks. */
   isPicking?: boolean;
-  /** No room for another photo; the attach control stays, disabled. */
-  attachFull?: boolean;
-  /**
-   * Set when attaching is unavailable right now — offline, or no post
-   * permission. It **gates the control and nothing else**: the member-facing
-   * explanation belongs in `disabledHint`, which is the composer's one hint
-   * slot, so the caller folds the reason in there. Offline is the exception:
-   * the app-wide connection pill says it, so the caller passes no hint. Rendering it here as well
-   * produced two hints for one composer, and the offline pair contradicted
-   * each other. The control stays visible and disabled rather than vanishing —
-   * a control that disappears reads as a missing feature.
-   */
-  attachDisabledReason?: string | null;
   /** A staged reply or an edit in progress; `null` for an ordinary send. */
   context?: ComposerContext | null;
   /**
@@ -159,6 +146,8 @@ export interface ChatComposerProps {
   mentionCandidates?: readonly MentionCandidate[];
   /** A member's photo for their picker row; without it, initials. */
   avatarFor?: (userId: string) => string | null;
+  /** A member's initials paint for their picker row (#3860). */
+  avatarTintFor?: (userId: string) => MemberAvatarTint;
   /**
    * The roles `@` offers after the members (`GET /v1/channels/mention-roles`),
    * each saying whether this member may ping it. `undefined` while it loads,
@@ -185,16 +174,15 @@ export function ChatComposer({
   disabledHint,
   hintTone = "muted",
   photos = [],
-  onAttach,
-  onCreatePoll,
+  onOpenPlus,
+  plusDisabled = false,
   onRemovePhoto,
   onRetryPhoto,
   isPicking = false,
-  attachFull = false,
-  attachDisabledReason,
   context = null,
   mentionCandidates,
   avatarFor,
+  avatarTintFor,
   mentionRoles,
 }: ChatComposerProps) {
   const { tokens } = useFrappTheme();
@@ -223,19 +211,9 @@ export function ChatComposer({
   // button greyed out and no way to explain why.
   const isSendable = canSend && (value.trim().length > 0 || photos.length > 0);
 
-  const canAttachPhoto =
-    !!onAttach && !isPicking && !attachFull && !attachDisabledReason && canSend;
-  // A poll goes through the outbox like a message, so offline doesn't stop it;
-  // only a photo sheet that is up does, which owns the control while it is.
-  const canStartPoll = !!onCreatePoll && !isPicking && canSend;
-  const canAttach = canAttachPhoto || canStartPoll;
-  const openAttach = () =>
-    presentAttachChoices(
-      attachChoices({
-        photo: canAttachPhoto ? onAttach : undefined,
-        poll: canStartPoll ? onCreatePoll : undefined,
-      }),
-    );
+  // The sheet greys what can't work this second and says why, so the + itself
+  // only waits for the photo library it opened and for the chat runtime.
+  const canOpenPlus = !!onOpenPlus && !plusDisabled && !isPicking && canSend;
 
   return (
     <View style={styles.wrapper}>
@@ -344,6 +322,7 @@ export function ChatComposer({
       {mention.open ? (
         <MentionPicker
           avatarFor={avatarFor}
+          avatarTintFor={avatarTintFor}
           suggestions={mention.suggestions}
           onPick={mention.pick}
           styles={styles}
@@ -351,16 +330,16 @@ export function ChatComposer({
       ) : null}
 
       <View style={styles.row}>
-        {onAttach || onCreatePoll ? (
+        {onOpenPlus ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={onCreatePoll ? "Add photo or poll" : "Attach photo"}
-            accessibilityState={{ disabled: !canAttach, busy: isPicking }}
-            disabled={!canAttach}
-            onPress={openAttach}
+            accessibilityLabel="Add a photo, poll, event and more"
+            accessibilityState={{ disabled: !canOpenPlus, busy: isPicking }}
+            disabled={!canOpenPlus}
+            onPress={onOpenPlus}
             style={({ pressed }) => [
               styles.attach,
-              !canAttach ? styles.attachDisabled : null,
+              !canOpenPlus ? styles.attachDisabled : null,
               pressed ? styles.pressed : null,
             ]}
           >
@@ -457,7 +436,18 @@ function useMentionPicker(
 
   // No selection event yet (a restored draft) reads as a caret at the end.
   const at = Math.min(caret ?? value.length, value.length);
-  const active = focused && candidates ? activeMentionQuery(value, at) : null;
+  // The names that hold a space, so a pick inside "@Jane Doe" replaces all of
+  // it, not "@Jane" with " Doe" left behind (#3825).
+  const spacedNames = useMemo(
+    () =>
+      spacedMentionNames(
+        candidates ?? [],
+        (roles ?? []).map((role) => role.name),
+      ),
+    [candidates, roles],
+  );
+  const active =
+    focused && candidates ? activeMentionQuery(value, at, spacedNames) : null;
   // A filter over one chapter's roster, cheap enough to run every render.
   const suggestions: PickerEntry[] =
     active && candidates
@@ -513,10 +503,12 @@ function MentionPicker({
   suggestions,
   onPick,
   avatarFor,
+  avatarTintFor,
   styles,
 }: {
   suggestions: readonly PickerEntry[];
   avatarFor?: (userId: string) => string | null;
+  avatarTintFor?: (userId: string) => MemberAvatarTint;
   onPick: (label: string) => void;
   styles: ReturnType<typeof createStyles>;
 }) {
@@ -560,6 +552,7 @@ function MentionPicker({
                 uri={avatarFor?.(entry.member.user_id) ?? null}
                 initials={initialsFor(name)}
                 size={MENTION_AVATAR_SIZE}
+                tint={avatarTintFor?.(entry.member.user_id) ?? null}
                 style={styles.mentionAvatar}
                 textStyle={styles.mentionAvatarText}
               />

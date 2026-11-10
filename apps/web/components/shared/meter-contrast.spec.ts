@@ -136,8 +136,8 @@ describe("the fix that would itself have been a defect", () => {
 
 describe("why the track recedes instead of rising", () => {
   it("grooves against both containers a meter is actually placed on", () => {
-    // `/polls` renders inside a `<CardContent>` and chat's poll card inside a
-    // message card, so `--card` is today's case; `--popover` is asserted
+    // Chat's poll card renders inside a message card, so `--card` is today's
+    // case; `--popover` is asserted
     // because a meter inside a dialog or sheet is one composition away and is
     // exactly where the other candidates fail.
     for (const container of [SURFACE.card, SURFACE.popover]) {

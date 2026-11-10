@@ -24,6 +24,7 @@ import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-modera
 import type { ChatChannel, ChatMessage } from '#domain/entities/chat.entity';
 import { memberFixture } from './entity-fixtures';
 import { ChatService } from '../../src/application/services/chat.service';
+import { CHAT_THREAD_REPOSITORY } from '#domain/repositories/chat-thread.repository.interface';
 import { ChatMentionService } from '../../src/application/services/chat-mention.service';
 import { ChatAttachmentService } from '../../src/application/services/chat-attachment.service';
 import { ChatNotificationPreferenceService } from '../../src/application/services/chat-notification-preference.service';
@@ -68,6 +69,9 @@ export const baseChannel: ChatChannel = {
   archived_at: null,
   default_notification_level: null,
   is_default: false,
+  is_audit_log: false,
+  display_locked: false,
+  created_by: null,
 };
 
 export const baseMessage: ChatMessage = {
@@ -93,6 +97,7 @@ export async function createChatServiceFixture() {
     findDm: jest.fn(),
     createDm: jest.fn(),
     findByName: jest.fn(),
+    findAuditLog: jest.fn(),
     findPushRouting: jest.fn(),
     createMany: jest.fn(),
     create: jest.fn(),
@@ -121,6 +126,7 @@ export async function createChatServiceFixture() {
     findPinnedByChannel: jest.fn(),
     countPinnedByChannel: jest.fn(),
     findPollsByChapter: jest.fn(),
+    findPollCardsByChapter: jest.fn(),
     findByClientMessageId: jest.fn(),
     findAuthorAvatarPaths: jest.fn().mockResolvedValue([]),
     create: jest.fn(),
@@ -132,6 +138,7 @@ export async function createChatServiceFixture() {
     create: jest.fn(),
     findOne: jest.fn(),
     updateForVote: jest.fn(),
+    findActedMessageIds: jest.fn(),
   };
 
   const mockAttachmentRepo: jest.Mocked<IChatMessageAttachmentRepository> = {
@@ -158,6 +165,7 @@ export async function createChatServiceFixture() {
   const mockStorageProvider: jest.Mocked<IStorageProvider> = {
     getSignedUploadUrl: jest.fn(),
     getSignedDownloadUrl: jest.fn(),
+    getSignedInlineAndAttachmentUrls: jest.fn(),
     getSignedDownloadUrls: jest.fn().mockResolvedValue({}),
     uploadFile: jest.fn(),
     downloadFile: jest.fn(),
@@ -222,6 +230,18 @@ export async function createChatServiceFixture() {
     ),
   };
 
+  // Message threads (#3785): auto-follow and the read cursor on a thread send.
+  const mockThreadRepo = {
+    findReplies: jest.fn().mockResolvedValue([]),
+    findFollow: jest.fn().mockResolvedValue(null),
+    findFollowStates: jest.fn().mockResolvedValue(new Map()),
+    ensureFollowing: jest.fn().mockResolvedValue(undefined),
+    followOnReply: jest.fn().mockResolvedValue(undefined),
+    setFollowState: jest.fn().mockResolvedValue(undefined),
+    markRead: jest.fn().mockResolvedValue(undefined),
+    findFollowedUnread: jest.fn().mockResolvedValue([]),
+  };
+
   const mockRbac = {
     getEffectivePermissions: jest.fn(),
     // The chapter's roles, for `@`-role resolution (`ChatMentionService`).
@@ -280,6 +300,7 @@ export async function createChatServiceFixture() {
       { provide: ChannelCacheService, useValue: mockChannelCache },
       { provide: ChatBlockService, useValue: mockChatBlocks },
       { provide: CHAT_MESSAGE_REPORT_REPOSITORY, useValue: mockReportRepo },
+      { provide: CHAT_THREAD_REPOSITORY, useValue: mockThreadRepo },
     ],
   }).compile();
 
@@ -305,6 +326,7 @@ export async function createChatServiceFixture() {
     mockRbac,
     mockChatBlocks,
     mockReportRepo,
+    mockThreadRepo,
   };
 }
 

@@ -15,10 +15,11 @@ import * as ts from 'typescript';
  * enumerated the rest. So this file **enumerates, and fails on anything it
  * enumerates that is unclassified**:
  *
- * - every operation `openapi.json` gives one of `CHAT_CONTROLLERS`. Three reads
+ * - every operation `openapi.json` gives one of `CHAT_CONTROLLERS`. Four reads
  *   on other controllers serve chat content too (search, the activity feed,
- *   the notification list) and are listed by hand, so a chat read added to
- *   some other controller is the one case this does not catch;
+ *   the Activity page, the notification list) and are listed by hand, so a
+ *   chat read added to some other controller is the one case this does not
+ *   catch;
  * - every policy any migration creates that can read, which is how a client
  *   reads around the API entirely (PostgREST and the Realtime
  *   `postgres_changes` echo), with RLS pinned on for every public table so a
@@ -135,6 +136,8 @@ const HTTP_LEDGER: Record<string, Entry> = {
   ChatController_getChannel_v1: CHANNEL_METADATA,
   ChatController_updateChannel_v1: CHANNEL_METADATA,
   ChatController_deleteChannel_v1: CHANNEL_METADATA,
+  // Always formal (#3787). Returns the channel row, to a caller who can read it.
+  ChatController_setChannelDisplayLock_v1: CHANNEL_METADATA,
   ChatController_getOrCreateDm_v1: CHANNEL_METADATA,
   ChatController_createGroupDm_v1: CHANNEL_METADATA,
   ChatController_leaveGroupDm_v1: CHANNEL_METADATA,
@@ -351,6 +354,19 @@ const HTTP_LEDGER: Record<string, Entry> = {
     proof: {
       spec: 'application/services/activity-feed.service.spec.ts',
       test: 'leaves out an announcement whose author the caller has blocked, reading as the caller',
+    },
+  },
+  ActivityController_getActivity_v1: {
+    // Its poll rows are chat (a card's question, from a channel the caller
+    // can read), and masked: a blocked author's poll is left out. Its other
+    // rows are chapter records carrying text a member wrote (a task title, a
+    // service entry's description, an event name), which a block does not
+    // hide (#2498), as on the activity feed above.
+    status: 'not-hidden',
+    why: "Poll rows are masked. The record rows carrying a member's own text (a task title, a service entry's description, an event name) are not: a block is a chat control, and the spec's table row for non-chat modules says so.",
+    proof: {
+      spec: 'application/services/activity.service.spec.ts',
+      test: 'leaves out a poll whose author the caller has blocked',
     },
   },
   NotificationController_listNotifications_v1: {

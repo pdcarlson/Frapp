@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -32,6 +33,8 @@ import {
   RegisterPushTokenDto,
   ListNotificationPreferencesQueryDto,
   ListNotificationsQueryDto,
+  MarkNotificationsReadDto,
+  MarkNotificationsReadResultDto,
   UpdateNotificationPreferenceDto,
   UpdateUserSettingsDto,
   UserSettingsDto,
@@ -83,6 +86,26 @@ export class NotificationController {
     });
   }
 
+  @Post('notifications/read')
+  @HttpCode(200)
+  @UseGuards(ChapterGuard, PermissionsGuard)
+  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+  @FreeTier()
+  @ApiOperation({
+    summary:
+      'Mark all unread notifications read, or only those pointing at the named screens',
+  })
+  @ApiOkResponse({ type: MarkNotificationsReadResultDto })
+  async markAllRead(
+    @CurrentUser('id') userId: string,
+    @CurrentChapterId() chapterId: string,
+    @Body() dto: MarkNotificationsReadDto,
+  ): Promise<MarkNotificationsReadResultDto> {
+    return this.notificationService.markNotificationsRead(userId, chapterId, {
+      screens: dto.screens,
+    });
+  }
+
   @Patch('notifications/:id/read')
   @UseGuards(ChapterGuard, PermissionsGuard)
   @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
@@ -129,7 +152,9 @@ export class NotificationController {
   }
 
   @Patch('settings')
-  @ApiOperation({ summary: 'Update user settings (quiet hours, theme)' })
+  @ApiOperation({
+    summary: 'Update user settings (quiet hours, theme, status)',
+  })
   @ApiOkResponse({ type: UserSettingsDto })
   async updateSettings(
     @CurrentUser('id') userId: string,
