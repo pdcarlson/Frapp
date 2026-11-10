@@ -9,7 +9,7 @@
  * route here, and every suite in this directory picks it up.
  *
  * Not derived from `nav-config.ts`: that list deliberately omits `/profile` and
- * reaches the officer tools only through the Settings row, so it answers a
+ * `/preferences`, and reaches the officer tools only through the Settings row, so it answers a
  * different question again.
  */
 
@@ -35,6 +35,7 @@ export const DASHBOARD_ROUTES = [
   "/billing",
   "/reports",
   "/profile",
+  "/preferences",
   "/settings",
 ] as const;
 

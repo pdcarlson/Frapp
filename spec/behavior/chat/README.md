@@ -486,7 +486,7 @@ The rules, `POST /v1/chat/reports/{id}/remove-message` (`channels:manage` on top
 
   The rule binds behavior, not just storage. **Any surface that refuses an action *because* of a block leaks the block** — a distinct error on DM creation is enough to binary-search the roster and enumerate exactly who has blocked you. So a block is enforced by **not delivering**, never by refusing: the blocked member can still open a thread and send into it, and sees the ordinary success they would see anyway. Nothing they send reaches the blocker.
 - **A member cannot block themselves, nor the system actor.** Blocking the system sender would silently mask the chapter welcome post, the `#chapter-audit` bridge, invite-accept DMs and the poll-expiry notice, with nothing rendering as "blocked" to explain why — chapter features would simply appear broken. (A poll and its tally are *not* in that set: `poll` is not a server-only kind, so they are authored by the member who created the poll.)
-- **Blocking is reversible, and the unblock affordance is durable.** The blocked-members list is the one place a block can always be undone (mobile: Settings → Blocked members; web: `/profile` → Blocked members, since web's Settings is chapter administration); a tombstone in a thread the member may never reopen is not sufficient.
+- **Blocking is reversible, and the unblock affordance is durable.** The blocked-members list is the one place a block can always be undone (mobile: Settings → Blocked members; web: Settings → Blocked members, the personal page on the account menu, `/preferences?section=blocked`); a tombstone in a thread the member may never reopen is not sufficient.
 
 #### What a block does and does not hide
 
@@ -1385,8 +1385,8 @@ otherwise read like a stranger's: their Discord handle and a letter avatar. A
 member fixes that by **linking the Discord account they used**, and from then
 on their imported messages in that chapter are theirs.
 
-- **Only the member links, by signing in to Discord.** `/profile` → Discord
-  history sends them through Discord's sign-in with the `identify` scope and
+- **Only the member links, by signing in to Discord.** Settings → Discord
+  history (`/preferences?section=discord`) sends them through Discord's sign-in with the `identify` scope and
   nothing else (no bot, no server list), which proves the account is theirs.
   Rejected: *officer mapping*, where an officer matches Discord authors to
   members. It is faster at cutover, but an officer would be putting a member's
@@ -1401,7 +1401,7 @@ on their imported messages in that chapter are theirs.
   member who started it: a member could send their authorize link to someone
   else and have that person's history attached to themselves. So the callback
   binds nothing. It parks the Discord account on the single-use handshake and
-  returns the browser to `/profile` with a one-time token, and
+  returns the browser to that section with a one-time token, and
   `POST /v1/discord/author-link/confirm` links only for the member who
   started the handshake, in the chapter it was started in. It shares the bot
   connect flow's state table and its one registered callback URL

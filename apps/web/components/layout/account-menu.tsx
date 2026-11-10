@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import {
-  Bell,
   Check,
   ChevronsUpDown,
   LogOut,
+  Settings,
   Smile,
   Sparkles,
   User,
@@ -49,6 +49,7 @@ import { useWhatsNewUnread } from "@/lib/whats-new";
 import { cn, initials } from "@/lib/utils";
 import { FOCUS_RING_SHELL } from "@/components/ui/focus";
 import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confirm-drop-bulk-uploads";
+import { PERSONAL_SETTINGS_PATH } from "@/components/personal-settings/personal-settings-sections";
 
 type CurrentUser = {
   display_name?: string | null;
@@ -66,7 +67,10 @@ type CurrentUser = {
  * toggle and nothing else.
  *
  * Contents are exactly Status and the custom status line, a divider, Profile,
- * Notification settings, What's new, a divider, Sign out (`1i`, plus What's
+ * Settings, What's new, a divider, Sign out (`1i`; Settings replaced `1i`'s
+ * "Notification settings" row on 2026-11-10, #3856: it opens the member's own
+ * settings page, whose first section is notifications, the way Discord's User
+ * Settings and Slack's Preferences open from the avatar; plus What's
  * new, 2026-11-07: the changelog members read, the same list as mobile
  * Settings → What's new, with a dot while an entry is unread, #3943; plus Status, 2026-11-09, #3845: the member's own
  * Online / Idle / Do Not Disturb / Invisible and custom line, first because
@@ -114,8 +118,7 @@ export function AccountMenu({
   // Your initials wear the color the chapter sees on them (#3860).
   const { avatarTintFor } = useMemberDisplayNames();
   const ownTint = userId ? avatarTintFor(userId) : null;
-  const ownDot =
-    presence.isReady && userId ? presence.statusOf(userId) : null;
+  const ownDot = presence.isReady && userId ? presence.statusOf(userId) : null;
   // The dot is decorative (`AvatarPresenceDot`), so the control names it.
   const accountLabel = ownDot
     ? `Account menu for ${name}, ${presenceLabel(ownDot)}`
@@ -227,15 +230,12 @@ export function AccountMenu({
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           {/*
-           * Notification preferences are a section of the profile screen, not a
-           * route of their own, so this links to that section's anchor. A
-           * `?tab=` param would have been a dead affordance: the profile screen
-           * has no tabs and would ignore it (`spec/ui/design-system/README.md`
-           * §5, rule 2).
+           * The member's own settings, not the chapter's: the nav row for
+           * those is "Chapter settings" (`nav-config.ts`).
            */}
-          <Link href="/profile#notification-settings" onClick={onNavigate}>
-            <Bell className="h-4 w-4" aria-hidden="true" />
-            <span>Notification settings</span>
+          <Link href={PERSONAL_SETTINGS_PATH} onClick={onNavigate}>
+            <Settings className="h-4 w-4" aria-hidden="true" />
+            <span>Settings</span>
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>

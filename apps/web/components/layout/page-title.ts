@@ -23,7 +23,7 @@ import { SETTINGS_TOOLS } from "@/components/settings/settings-access";
  *
  * **A parent only where there is a page to go back to** (2026-11-05). The four
  * officer tools behind the Settings rail are reached from inside Settings, so
- * they read "Settings › Study zones" and the parent links back. The parent is
+ * they read "Chapter settings › Study zones" and the parent links back. The parent is
  * the nav row that claims the route in its `activeFor`, so it is named and
  * linked exactly as that row is, and it shows only when that row does: a
  * member the nav hides Settings from is not handed a link to it here.
@@ -41,9 +41,13 @@ export type PageTitle = {
   parent?: PageTitleParent;
 };
 
-/** Routes that are not nav rows. Profile hangs off the account menu. */
+/**
+ * Routes that are not nav rows. Profile and the personal Settings page hang
+ * off the account menu; the nav's own settings row is "Chapter settings".
+ */
 const OFF_NAV_TITLES: Readonly<Record<string, string>> = {
   "/profile": "Profile",
+  "/preferences": "Settings",
   "/whats-new": "What's new",
 };
 

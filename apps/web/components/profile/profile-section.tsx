@@ -2,14 +2,14 @@ import type { ReactNode } from "react";
 import { SectionLabel } from "@/components/shared/section-label";
 
 /**
- * One block of `/profile`: a section on the page surface, named by its
+ * One block of `/profile` or of the personal Settings page (`/preferences`):
+ * a section on the page surface, named by its
  * section label, with at most one line under the label saying what the block
  * controls when the label alone can't. The Page grammar's "no wrapper card"
  * rule (`spec/ui/web-dashboard/README.md`), applied to a screen that used to
  * stack seven `Card`s, each with its own description.
  *
- * `id` is the anchor other screens link to (the account menu's
- * "Notification settings" row lands on `#notification-settings`), so
+ * `id` names the section's label for `aria-labelledby` and is an anchor, so
  * `scroll-mt-16` keeps the label clear of the sticky top bar on arrival.
  */
 export function ProfileSection({

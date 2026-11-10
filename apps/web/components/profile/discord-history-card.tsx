@@ -47,7 +47,7 @@ export function linkedMessage(count: number): string {
 }
 
 /**
- * `/profile` → Discord history (#2878): a member links their own Discord
+ * Settings → Discord history (`/preferences?section=discord`, #2878): a member links their own Discord
  * account so the chapter's imported Discord history they wrote is attributed
  * to them.
  *
