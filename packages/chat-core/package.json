@@ -18,6 +18,7 @@
     "./poll-draft": "./src/poll-draft.ts",
     "./plus-menu": "./src/plus-menu.ts",
     "./cards": "./src/cards.ts",
+    "./activity-cards": "./src/activity-cards.ts",
     "./reply-preview": "./src/reply-preview.ts",
     "./channel-preview": "./src/channel-preview.ts",
     "./blocks": "./src/blocks.ts",

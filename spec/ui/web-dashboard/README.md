@@ -57,11 +57,12 @@ No CI check enforces this lock; it is a review rule. A line grep for `—` over 
 
 Source of truth: [`apps/web/components/layout/nav-config.ts`](../../../apps/web/components/layout/nav-config.ts). Each item may declare `requirePermission` or `requireAnyOf`, and an item with neither shows to every member; the shell hides items the caller cannot access. The caller's effective permission set is loaded per chapter via `GET /v1/users/me/permissions` and cached with TanStack Query, keyed by chapter id (resolution rules: [`spec/behavior/rbac.md`](../../behavior/rbac.md)). Controls inside a screen gate through `<Can>` or the `can()` / `canAny()` / `canAll()` helpers, which live in `@repo/validation` ([`packages/validation/src/permissions.ts`](../../../packages/validation/src/permissions.ts)) rather than in `apps/web`, because `apps/mobile` needs the same gate and the wildcard `*` rule has to match the server's `PermissionsGuard`: a per-app copy is how that drifts.
 
-A Chat anchor, two member sections (Chapter, Resources), and one unlabeled group holding Directory, Billing and Settings. There is no Polls row: polls live in the channel where they were made, and the chapter-wide `/polls` list, which could only show the older REST poll shape no client creates any more, was retired ([#3871](https://github.com/pdcarlson/Frapp/issues/3871), Shawn, 2026-11-09). Officer setup and officer tools sit behind the Settings row; there is no Admin group ([#2946](https://github.com/pdcarlson/Frapp/issues/2946)).
+A Chat anchor, two member sections (Chapter, Resources), and one unlabeled group holding Directory, Billing and Settings. Activity leads the Chapter section: it is the inbox for the rows under it ([§ Activity](#activity)). There is no Polls row: polls live in the channel where they were made, and the chapter-wide `/polls` list, which could only show the older REST poll shape no client creates any more, was retired ([#3871](https://github.com/pdcarlson/Frapp/issues/3871), Shawn, 2026-11-09). Officer setup and officer tools sit behind the Settings row; there is no Admin group ([#2946](https://github.com/pdcarlson/Frapp/issues/2946)).
 
 | Section | Item | Route | Module | Permission |
 | --- | --- | --- | --- | --- |
 | _(anchor)_ | Chat | `/chat` | — | — (send gated by channel permissions) |
+| Chapter | Activity | `/activity` | — (each of its sections follows its own module) | — |
 | Chapter | Events | `/events` | `events` | — |
 | Chapter | Tasks | `/tasks` | `tasks` | — (filtered to own tasks unless `tasks:manage`) |
 | Chapter | Points | `/points` | `points` | — |
@@ -157,6 +158,18 @@ Every dashboard route but `/chat` (see [Full-bleed routes](#full-bleed-routes)) 
 ## Surface decisions
 
 Per-route decisions that still bind. Each is either the product declining to be what the board drew, or a call the board did not make. A later change may revisit one, but it reverses the reason stated here rather than rediscovering the question.
+
+### Activity
+
+`/activity` gathers what is waiting on the member and what they made, so they don't have to look through channels and module pages for it ([#3897](https://github.com/pdcarlson/Frapp/issues/3897): Shawn's idea, 2026-11-09; green-lit by Paul, 2026-11-10; Shawn picked its own page over growing it out of chat, and the name). It is an inbox beside chat, the way Slack's Activity and Later, Discord's Inbox and GitHub's notifications sit beside their main surface. It is not a home: `/` and `/dashboard` still land on `/chat`. What the read returns, and who sees which row, is [`../../behavior/activity.md`](../../behavior/activity.md).
+
+- **Three groups, in this order:** Needs you, Coming up, Made by you. Each is a section label with its count over a dense list; a group with nothing says so in one line. An event the member can check in to right now sits under Needs you and not again under Coming up.
+- **Chips narrow every group to one kind:** All, Tasks, Polls, Events, Hours, Files. Under a chip, Coming up and Made by you are left out when they hold nothing of that kind; Needs you always stays.
+- **A row is one hit target:** a title, one line of detail (who and when), and a badge naming what it asks (`Vote`, `Confirm`, `Approve`, `Check in`, `Overdue`). Badges that ask for something are `warning`; a state is `outline` or `success`.
+- **A row opens the record in a panel, drawn with chat's own card** (`components/chat/renderers/`), so the member votes, starts or finishes a task, confirms it, or checks in with the controls chat already taught them. The cards are not forked: the page hands each one a message built from the row (`@repo/chat-core/activity-cards`), and the card reads the record's live state as it does in chat. Two things sit around a card because the card doesn't carry them: a poll has **Open in chat**, a link to its message; a pending service entry has **Approve** and **Reject**, the Service hours page's own review flow (chat's hours card is a read-only record).
+- **The panel stays open after an action.** A vote shows its tallies; the row leaves Needs you underneath. Approving or rejecting hours closes it, since nothing is left to show. A poll's votes are re-read every 15 seconds while its card is open, because the page holds no live channel subscription.
+- **A file row is a link** to Documents or Backwork. A file has no card.
+- **A section that could not be read is said** ("Couldn't load polls"), never drawn as empty.
 
 ### Chat
 
