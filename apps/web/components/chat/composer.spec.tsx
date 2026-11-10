@@ -16,6 +16,7 @@ import { hydrateRoot } from "react-dom/client";
 // also swaps the stub's `null` for an editor double, so `submit()` can run.
 const {
   capturedExtensions,
+  capturedEditorProps,
   editorDouble,
   mockDescribePhoto,
   mockRequestUploadUrl,
@@ -23,6 +24,11 @@ const {
   mockToast,
 } = vi.hoisted(() => ({
   capturedExtensions: [] as unknown[][],
+  // Each `editorProps` the composer built, so the paste suite (#2246) can
+  // call the real `handlePaste` without a contenteditable.
+  capturedEditorProps: [] as Array<{
+    handlePaste?: (view: unknown, event: ClipboardEvent) => boolean;
+  }>,
   // jsdom cannot decode an image, so the real one describes nothing; a test
   // that needs a preview copy says so.
   mockDescribePhoto: vi.fn(
@@ -58,8 +64,12 @@ vi.mock("@tiptap/react", async () => {
     await vi.importActual<typeof import("@tiptap/react")>("@tiptap/react");
   return {
     ...actual,
-    useEditor: (options: { extensions: unknown[] }) => {
+    useEditor: (options: {
+      extensions: unknown[];
+      editorProps?: (typeof capturedEditorProps)[number];
+    }) => {
       capturedExtensions.push(options.extensions);
+      capturedEditorProps.push(options.editorProps ?? {});
       return editorDouble.current;
     },
     EditorContent: () => null,
@@ -1543,6 +1553,122 @@ describe("Composer attachment ticket contract", () => {
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({ description: "Retry in a moment." }),
       ),
+    );
+  });
+});
+
+describe("Composer paste attaches clipboard images (#2246)", () => {
+  /*
+    A clipboard as a paste event carries it. jsdom has no `DataTransfer`, and
+    the handler reads only `getData`, `files` and `items`.
+  */
+  const clipboard = ({ text = "", files = [] as File[] } = {}) =>
+    ({
+      getData: (type: string) => (type === "text/plain" ? text : ""),
+      files,
+      items: [],
+    }) as unknown as DataTransfer;
+
+  const paste = (data: DataTransfer) => {
+    const handlePaste = capturedEditorProps.at(-1)?.handlePaste;
+    if (!handlePaste) throw new Error("composer built no paste handler");
+    const preventDefault = vi.fn();
+    let handled = false;
+    act(() => {
+      handled = handlePaste(null, {
+        clipboardData: data,
+        preventDefault,
+      } as unknown as ClipboardEvent);
+    });
+    return { handled, preventDefault };
+  };
+
+  beforeEach(() => {
+    capturedEditorProps.length = 0;
+    mockToast.mockClear();
+    mockUploadSignedUrl.mockClear();
+    mockRequestUploadUrl.mockClear();
+    Object.assign(URL, {
+      createObjectURL: vi.fn(() => "blob:preview"),
+      revokeObjectURL: vi.fn(),
+    });
+  });
+
+  it("attaches a pasted screenshot through the attach path, under a dated name", async () => {
+    render(<Composer {...baseProps()} />);
+    const { handled, preventDefault } = paste(
+      clipboard({
+        files: [new File(["png"], "image.png", { type: "image/png" })],
+      }),
+    );
+
+    expect(handled).toBe(true);
+    expect(preventDefault).toHaveBeenCalled();
+    await waitFor(() => expect(mockUploadSignedUrl).toHaveBeenCalledTimes(1));
+    expect(mockRequestUploadUrl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          content_type: "image/png",
+          filename: expect.stringMatching(
+            /^Pasted image \d{4}-\d{2}-\d{2} at \d{2}\.\d{2}\.\d{2}\.png$/,
+          ),
+        }),
+      }),
+    );
+    expect(mockToast).not.toHaveBeenCalled();
+  });
+
+  it("leaves a text paste to the editor, even with an image of the text beside it", () => {
+    render(<Composer {...baseProps()} />);
+    const { handled, preventDefault } = paste(
+      clipboard({
+        text: "A1\tB1",
+        files: [new File(["png"], "image.png", { type: "image/png" })],
+      }),
+    );
+
+    expect(handled).toBe(false);
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(mockRequestUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it("leaves a plain text paste alone", () => {
+    render(<Composer {...baseProps()} />);
+    expect(paste(clipboard({ text: "hello" })).handled).toBe(false);
+  });
+
+  it("refuses a pasted file the picker would refuse, with the same toast", () => {
+    render(<Composer {...baseProps()} />);
+    paste(
+      clipboard({
+        files: [new File(["<svg/>"], "logo.svg", { type: "image/svg+xml" })],
+      }),
+    );
+
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "File type not allowed" }),
+    );
+    expect(mockRequestUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it("counts pasted images against the per-message limit", async () => {
+    render(<Composer {...baseProps()} />);
+    paste(
+      clipboard({
+        files: Array.from(
+          { length: CHAT_FILE_LIMIT + 1 },
+          (_, i) => new File(["png"], `shot-${i}.png`, { type: "image/png" }),
+        ),
+      }),
+    );
+
+    await waitFor(() =>
+      expect(mockUploadSignedUrl).toHaveBeenCalledTimes(CHAT_FILE_LIMIT),
+    );
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: `Up to ${CHAT_FILE_LIMIT} files per message`,
+      }),
     );
   });
 });

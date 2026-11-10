@@ -43,6 +43,7 @@ import {
 import * as Sentry from "@sentry/nextjs";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import { describeChatPhoto } from "@/lib/chat/photo-preview";
+import { filesFromClipboard } from "@/lib/chat/clipboard-files";
 import { definitiveRefusalMessage } from "@repo/chat-core/chat-client";
 // Imported, never restated. A structural copy of this shape is assignable even
 // when it is missing a field, so a hand-written `{ ok, error? }` silently erases
@@ -1072,6 +1073,13 @@ export function Composer({
   const resolvedCanPost = isAuditLog ? false : (canPost ?? !isReadOnly);
   const sendRef = useRef<() => void>(() => {});
   /*
+    The attach path, for the editor's paste handler (#2246). Tiptap reads
+    `editorProps` once, at construction, so the handler reaches the latest
+    `attachFiles` (which closes over how many files are staged) through a ref,
+    the way Enter reaches `submit` through `sendRef`.
+  */
+  const attachFilesRef = useRef<(files: File[]) => void>(() => {});
+  /*
     What is staged as of the last commit, for a refused send to compare
     against when it settles (`submit`). The closure it runs in holds the values
     from the moment of sending, which is exactly what it must not trust.
@@ -1120,6 +1128,21 @@ export function Composer({
         // shared preset, so both classes compiled to no rules.
         class: cn(COMPOSER_INPUT_CLASS, "chat-composer-editor"),
         "aria-label": COMPOSER_LABEL,
+      },
+      /*
+        A pasted image (a screenshot, "Copy image" in a browser) attaches the
+        way a picked file does (#2246). `true` tells ProseMirror the paste is
+        handled; any paste that carries text returns `false` and the editor
+        pastes it exactly as before. See `filesFromClipboard` for the line
+        between the two.
+      */
+      handlePaste(_view, event) {
+        const files = filesFromClipboard(event.clipboardData);
+        if (files.length === 0) return false;
+        event.preventDefault();
+        // eslint-disable-next-line react-hooks/refs -- paste handler; latest attach path lives in a ref
+        attachFilesRef.current(files);
+        return true;
       },
     },
     onUpdate({ editor }) {
@@ -1586,10 +1609,10 @@ export function Composer({
     },
     [onOpenCommandForm],
   );
-  const handleAttach = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(event.target.files ?? []);
-      event.target.value = "";
+  // One path for a picked file and a pasted one (#2246): the same type and
+  // size checks, the same per-message limit, the same toasts.
+  const attachFiles = useCallback(
+    (files: File[]) => {
       if (files.length === 0) return;
       const room = Math.max(0, CHAT_FILE_LIMIT - stagedCount);
       let refused: "size" | "type" | null = null;
@@ -1625,6 +1648,17 @@ export function Composer({
       }
     },
     [stagedCount, toast, uploadOne],
+  );
+  useLayoutEffect(() => {
+    attachFilesRef.current = attachFiles;
+  }, [attachFiles]);
+  const handleAttach = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(event.target.files ?? []);
+      event.target.value = "";
+      attachFiles(files);
+    },
+    [attachFiles],
   );
 
   const removePending = useCallback((storagePath: string) => {
