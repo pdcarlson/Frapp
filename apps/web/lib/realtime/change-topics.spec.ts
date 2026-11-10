@@ -12,7 +12,7 @@ import {
   CHANGE_TOPIC_BUILDERS,
   changeTopic,
   type ChangeTable,
-} from "./change-topics";
+} from "@repo/chat-core/change-topics";
 import { chapterPresenceTopic } from "./presence-topics";
 
 /**
