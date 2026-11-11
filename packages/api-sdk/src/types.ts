@@ -6237,7 +6237,7 @@ export interface components {
              */
             host: string;
             /**
-             * @description The linked page’s own name (a form’s or sheet’s title), read once in the background after the link was posted. Null when the page had none worth showing (a private file’s sign-in page, or a page that names only the product) or has not been read yet: title the row by its kind instead.
+             * @description The linked page’s own name (a form’s or sheet’s title), read in the background after the link was posted. Null when the page had none worth showing (a private file’s sign-in page, or a page that names only the product) or has not been read yet: title the row by its kind instead.
              * @example 5K volunteer shifts
              */
             title: string | null;
