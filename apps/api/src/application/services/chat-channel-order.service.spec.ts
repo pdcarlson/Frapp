@@ -88,10 +88,7 @@ describe('ChatChannelOrderService', () => {
     ['a group DM', { type: 'GROUP_DM' }],
     ['the audit log', { is_audit_log: true }],
   ] as const)('refuses %s', async (_label, extra) => {
-    channels.findByIds.mockResolvedValue([
-      channel('a'),
-      channel('x', extra),
-    ]);
+    channels.findByIds.mockResolvedValue([channel('a'), channel('x', extra)]);
     await expect(
       service.reorderChannels(CHAPTER, null, ['a', 'x']),
     ).rejects.toBeInstanceOf(BadRequestException);
