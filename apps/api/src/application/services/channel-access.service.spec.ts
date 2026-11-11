@@ -22,6 +22,28 @@ import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interf
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import type { ChatChannel, ChatMessage } from '#domain/entities/chat.entity';
 import type { Member } from '#domain/entities/member.entity';
+import {
+  EMPTY_ACCESS_HOLDER,
+  type ChannelAccessHolder,
+} from '#domain/utils/channel-access';
+
+// What a who-can-see or who-can-post list names (#3722), and the holders
+// `RbacService.getChannelAccessHolder` answers with.
+const OFFICERS = 'tier:00000000-0000-4000-8000-0000000000e1';
+const SECRET = 'role:00000000-0000-4000-8000-00000000c0de';
+const ALUMNI = 'role:00000000-0000-4000-8000-0000000a1a11';
+const holderOf = (...entries: string[]): ChannelAccessHolder => ({
+  ...EMPTY_ACCESS_HOLDER,
+  entries: new Set(entries),
+});
+const WILDCARD: ChannelAccessHolder = {
+  ...EMPTY_ACCESS_HOLDER,
+  wildcard: true,
+};
+const ALUMNUS: ChannelAccessHolder = {
+  ...holderOf(ALUMNI),
+  alumniEntries: new Set([ALUMNI]),
+};
 
 describe('ChannelAccessService', () => {
   let service: ChannelAccessService;
@@ -29,10 +51,8 @@ describe('ChannelAccessService', () => {
   let mockMessageRepo: jest.Mocked<IChatMessageRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
   let mockRbac: {
-    getEffectivePermissions: jest.Mock;
+    getChannelAccessHolder: jest.Mock;
     getChapterMemberAccess: jest.Mock;
-    hasAlumniRole: jest.Mock;
-    isAlumni: jest.Mock;
   };
 
   const publicChannel: ChatChannel = {
@@ -42,6 +62,8 @@ describe('ChannelAccessService', () => {
     description: null,
     type: 'PUBLIC',
     required_permissions: null,
+    who_can_see: null,
+    who_can_post: null,
     member_ids: null,
     category_id: null,
     is_read_only: false,
@@ -65,13 +87,14 @@ describe('ChannelAccessService', () => {
     ...publicChannel,
     id: 'ch-role',
     type: 'ROLE_GATED',
-    required_permissions: ['secret:view'],
+    who_can_see: [SECRET],
   };
 
   const readOnlyChannel: ChatChannel = {
     ...publicChannel,
     id: 'ch-announce',
     is_read_only: true,
+    who_can_post: [OFFICERS],
   };
 
   // Carries real role_ids: the alumni lookup is fed from this row, and a test
@@ -128,11 +151,9 @@ describe('ChannelAccessService', () => {
       claimPresidencyAtomic: jest.fn(),
     };
     mockRbac = {
-      getEffectivePermissions: jest.fn().mockResolvedValue([]),
+      // Default: an active member holding nothing a list names.
+      getChannelAccessHolder: jest.fn().mockResolvedValue(EMPTY_ACCESS_HOLDER),
       getChapterMemberAccess: jest.fn().mockResolvedValue([]),
-      // Default to an active (non-alumni) member.
-      hasAlumniRole: jest.fn().mockResolvedValue(false),
-      isAlumni: jest.fn().mockResolvedValue(false),
     };
 
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -168,8 +189,8 @@ describe('ChannelAccessService', () => {
       );
 
       expect(result).toBe(publicChannel);
-      // PUBLIC read needs no permission lookup.
-      expect(mockRbac.getEffectivePermissions).not.toHaveBeenCalled();
+      // A channel everyone sees needs no role lookup to read.
+      expect(mockRbac.getChannelAccessHolder).not.toHaveBeenCalled();
     });
 
     it('denies a non-member of the chapter', async () => {
@@ -198,40 +219,43 @@ describe('ChannelAccessService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
-    it('gates a ROLE_GATED channel on effective permissions', async () => {
+    it("gates a channel on its who-can-see list, read from the caller's roles", async () => {
       mockChannelRepo.findById.mockResolvedValue(roleGatedChannel);
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
 
-      mockRbac.getEffectivePermissions.mockResolvedValueOnce(['secret:view']);
+      mockRbac.getChannelAccessHolder.mockResolvedValueOnce(holderOf(SECRET));
       await expect(
         service.assertChannelAccess('ch-role', 'chap-1', 'user-1'),
       ).resolves.toBe(roleGatedChannel);
+      expect(mockRbac.getChannelAccessHolder).toHaveBeenCalledWith(
+        'chap-1',
+        member.role_ids,
+      );
 
-      mockRbac.getEffectivePermissions.mockResolvedValueOnce([]);
+      mockRbac.getChannelAccessHolder.mockResolvedValueOnce(
+        EMPTY_ACCESS_HOLDER,
+      );
       await expect(
         service.assertChannelAccess('ch-role', 'chap-1', 'user-1'),
       ).rejects.toThrow(ForbiddenException);
     });
 
-    it('gates posting to a read-only channel behind announcements:post', async () => {
+    it('gates posting on the who-can-post list', async () => {
       mockChannelRepo.findById.mockResolvedValue(readOnlyChannel);
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
 
       // Read is fine for any member.
-      mockRbac.getEffectivePermissions.mockResolvedValue([]);
       await expect(
         service.assertChannelAccess('ch-announce', 'chap-1', 'user-1', 'read'),
       ).resolves.toBe(readOnlyChannel);
 
-      // Post is denied without the permission...
+      // Post is denied off the list...
       await expect(
         service.assertChannelAccess('ch-announce', 'chap-1', 'user-1', 'post'),
       ).rejects.toThrow(ForbiddenException);
 
-      // ...and allowed with it.
-      mockRbac.getEffectivePermissions.mockResolvedValue([
-        'announcements:post',
-      ]);
+      // ...and allowed on it.
+      mockRbac.getChannelAccessHolder.mockResolvedValue(holderOf(OFFICERS));
       await expect(
         service.assertChannelAccess('ch-announce', 'chap-1', 'user-1', 'post'),
       ).resolves.toBe(readOnlyChannel);
@@ -263,9 +287,6 @@ describe('ChannelAccessService', () => {
     });
   });
 
-  // Alumni are read-mostly (spec/behavior/alumni.md): full read access, but
-  // writes only in direct conversations and ROLE_GATED channels that require
-  // `alumni:post`.
   describe('listChannelMembers', () => {
     const access = [
       {
@@ -273,30 +294,34 @@ describe('ChannelAccessService', () => {
         permissions: new Set(['*']),
         top_role_order: 0,
         top_role: { id: 'r-pres', name: 'President' },
+        channel_access: WILDCARD,
       },
       {
         user_id: 'member-of-private',
         permissions: new Set<string>(),
         top_role_order: 4,
         top_role: { id: 'r-mem', name: 'Member' },
+        channel_access: EMPTY_ACCESS_HOLDER,
       },
       {
         user_id: 'secret-holder',
-        permissions: new Set(['secret:view']),
+        permissions: new Set<string>(),
         top_role_order: 2,
         top_role: { id: 'r-sec', name: 'Secret' },
+        channel_access: holderOf(SECRET),
       },
       {
         user_id: 'no-role',
         permissions: new Set<string>(),
         top_role_order: null,
         top_role: null,
+        channel_access: EMPTY_ACCESS_HOLDER,
       },
     ];
 
     beforeEach(() => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
-      mockRbac.getEffectivePermissions.mockResolvedValue(['*']);
+      mockRbac.getChannelAccessHolder.mockResolvedValue(WILDCARD);
       mockRbac.getChapterMemberAccess.mockResolvedValue(access);
     });
 
@@ -333,7 +358,7 @@ describe('ChannelAccessService', () => {
       expect(mockRbac.getChapterMemberAccess).toHaveBeenCalledWith('chap-1');
     });
 
-    it('lists only holders of a required permission, and the wildcard, for ROLE_GATED', async () => {
+    it('lists only who its who-can-see list names, and the wildcard', async () => {
       mockChannelRepo.findById.mockResolvedValue(roleGatedChannel);
 
       const result = await service.listChannelMembers(
@@ -347,7 +372,7 @@ describe('ChannelAccessService', () => {
         'secret-holder',
       ]);
       // One chapter-wide resolve, never a lookup per listed member.
-      expect(mockRbac.getEffectivePermissions).toHaveBeenCalledTimes(1);
+      expect(mockRbac.getChapterMemberAccess).toHaveBeenCalledTimes(1);
     });
 
     it('lists only `member_ids` for a PRIVATE channel, wildcard or not', async () => {
@@ -390,24 +415,30 @@ describe('ChannelAccessService', () => {
     });
   });
 
+  // Alumni are read-mostly (spec/behavior/alumni.md): full read access, but
+  // writes only in direct conversations and channels whose lists name the
+  // Alumni role.
   describe('assertChannelAccess — Alumni posting', () => {
-    // The shape the seeder actually persists (FRA-321). It used to be
-    // `required_permissions: null`, which is now denied outright.
+    // The shape the seeder persists (#3722): the Alumni role on who can see,
+    // and anyone who can see may post.
     const alumniChannel: ChatChannel = {
       ...publicChannel,
       id: 'ch-alumni',
       name: 'alumni',
       type: 'ROLE_GATED',
-      required_permissions: ['members:view', 'alumni:post'],
+      who_can_see: [OFFICERS, ALUMNI],
     };
 
-    // A chapter's own role-gated channel: gated, but not an alumni space.
+    // FRA-321's shape: a channel alumni can see but whose who-can-post list
+    // leaves them out. Seeing it must not make it alumni-postable.
     const execChannel: ChatChannel = {
       ...publicChannel,
       id: 'ch-exec',
       name: 'exec-board',
       type: 'ROLE_GATED',
-      required_permissions: ['members:view'],
+      is_read_only: true,
+      who_can_see: [OFFICERS, ALUMNI],
+      who_can_post: [OFFICERS],
     };
 
     const dmChannel: ChatChannel = {
@@ -419,12 +450,7 @@ describe('ChannelAccessService', () => {
 
     beforeEach(() => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
-      mockRbac.hasAlumniRole.mockResolvedValue(true);
-      // The Alumni role's seeded permission set.
-      mockRbac.getEffectivePermissions.mockResolvedValue([
-        'members:view',
-        'alumni:post',
-      ]);
+      mockRbac.getChannelAccessHolder.mockResolvedValue(ALUMNUS);
     });
 
     it('lets an alumni member read an operational PUBLIC channel', async () => {
@@ -449,7 +475,7 @@ describe('ChannelAccessService', () => {
       await expect(
         service.assertChannelAccess('ch-1', 'chap-1', 'user-1', 'thread'),
       ).rejects.toThrow(ForbiddenException);
-      expect(mockRbac.hasAlumniRole).toHaveBeenCalled();
+      expect(mockRbac.getChannelAccessHolder).toHaveBeenCalled();
     });
 
     it('denies an alumni member posting in a PRIVATE channel they belong to', async () => {
@@ -463,7 +489,7 @@ describe('ChannelAccessService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
-    it('allows an alumni member to post in the ROLE_GATED #alumni channel', async () => {
+    it('allows an alumni member to post in the seeded #alumni channel', async () => {
       mockChannelRepo.findById.mockResolvedValue(alumniChannel);
 
       await expect(
@@ -471,11 +497,10 @@ describe('ChannelAccessService', () => {
       ).resolves.toBe(alumniChannel);
     });
 
-    // FRA-321: the vulnerability. The post gate keyed on channel *type*, so a
-    // chapter's #exec-board was alumni-postable purely for being ROLE_GATED —
-    // and gating it on members:view (the Alumni role's own permission) did not
-    // help. It is now denied because it does not require alumni:post.
-    it('denies an alumni member posting in a ROLE_GATED channel that is not an alumni space', async () => {
+    // FRA-321: the vulnerability was a channel alumni could see becoming
+    // alumni-postable for that alone. Who can post decides, and it leaves
+    // them out here.
+    it('denies an alumni member posting where who can post leaves them out', async () => {
       mockChannelRepo.findById.mockResolvedValue(execChannel);
 
       await expect(
@@ -483,7 +508,7 @@ describe('ChannelAccessService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
-    it('still lets an alumni member read that ROLE_GATED channel', async () => {
+    it('still lets an alumni member read that channel', async () => {
       mockChannelRepo.findById.mockResolvedValue(execChannel);
 
       await expect(
@@ -501,7 +526,10 @@ describe('ChannelAccessService', () => {
 
     it('does not restrict a President who also carries the Alumni role', async () => {
       mockChannelRepo.findById.mockResolvedValue(publicChannel);
-      mockRbac.getEffectivePermissions.mockResolvedValue(['*']);
+      mockRbac.getChannelAccessHolder.mockResolvedValue({
+        ...ALUMNUS,
+        wildcard: true,
+      });
 
       await expect(
         service.assertChannelAccess('ch-public', 'chap-1', 'user-1', 'post'),
@@ -509,7 +537,7 @@ describe('ChannelAccessService', () => {
     });
 
     it('leaves active members unaffected', async () => {
-      mockRbac.hasAlumniRole.mockResolvedValue(false);
+      mockRbac.getChannelAccessHolder.mockResolvedValue(EMPTY_ACCESS_HOLDER);
       mockChannelRepo.findById.mockResolvedValue(publicChannel);
 
       await expect(
@@ -527,7 +555,7 @@ describe('ChannelAccessService', () => {
         'read',
       );
 
-      expect(mockRbac.hasAlumniRole).not.toHaveBeenCalled();
+      expect(mockRbac.getChannelAccessHolder).not.toHaveBeenCalled();
     });
 
     // Regression guard: without asserting the ARGUMENTS, the lookup can be
@@ -541,7 +569,7 @@ describe('ChannelAccessService', () => {
         service.assertChannelAccess('ch-public', 'chap-1', 'user-1', 'post'),
       ).rejects.toThrow(ForbiddenException);
 
-      expect(mockRbac.hasAlumniRole).toHaveBeenCalledWith(
+      expect(mockRbac.getChannelAccessHolder).toHaveBeenCalledWith(
         'chap-1',
         member.role_ids,
       );
@@ -554,7 +582,7 @@ describe('ChannelAccessService', () => {
 
       // A DM is postable by alumni regardless, so the extra round trip on the
       // chat hot path is not worth paying.
-      expect(mockRbac.hasAlumniRole).not.toHaveBeenCalled();
+      expect(mockRbac.getChannelAccessHolder).not.toHaveBeenCalled();
     });
 
     // "vote" is a write, but participating in a poll is not posting.
@@ -565,12 +593,11 @@ describe('ChannelAccessService', () => {
         service.assertChannelAccess('ch-public', 'chap-1', 'user-1', 'vote'),
       ).resolves.toBe(publicChannel);
 
-      expect(mockRbac.hasAlumniRole).not.toHaveBeenCalled();
+      expect(mockRbac.getChannelAccessHolder).not.toHaveBeenCalled();
     });
 
-    it('still enforces the read-only gate on a vote', async () => {
+    it('still enforces who can post on a vote', async () => {
       mockChannelRepo.findById.mockResolvedValue(readOnlyChannel);
-      mockRbac.getEffectivePermissions.mockResolvedValue([]);
 
       await expect(
         service.assertChannelAccess('ch-announce', 'chap-1', 'user-1', 'vote'),
@@ -624,7 +651,7 @@ describe('ChannelAccessService', () => {
         ),
       );
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
-      mockRbac.getEffectivePermissions.mockResolvedValue(['*']);
+      mockRbac.getChannelAccessHolder.mockResolvedValue(WILDCARD);
     });
 
     it('without a grant, a wildcard officer is refused the DM message', async () => {
@@ -807,17 +834,17 @@ describe('ChannelAccessService', () => {
         'ch-private',
       ]);
       expect(mockChannelRepo.findByChapter).not.toHaveBeenCalled();
-      // No ROLE_GATED candidate → no permission lookup.
-      expect(mockRbac.getEffectivePermissions).not.toHaveBeenCalled();
+      // No candidate with a who-can-see list → no role lookup.
+      expect(mockRbac.getChannelAccessHolder).not.toHaveBeenCalled();
     });
 
-    it('loads permissions once when a ROLE_GATED channel is among the candidates', async () => {
+    it('loads roles once when a channel with a who-can-see list is among the candidates', async () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
       mockChannelRepo.findByIds.mockResolvedValue([
         publicChannel,
         roleGatedChannel,
       ]);
-      mockRbac.getEffectivePermissions.mockResolvedValue(['secret:view']);
+      mockRbac.getChannelAccessHolder.mockResolvedValue(holderOf(SECRET));
 
       const result = await service.filterAccessibleChannelIds(
         'chap-1',
@@ -832,7 +859,7 @@ describe('ChannelAccessService', () => {
         'ch-role',
       ]);
       expect(mockChannelRepo.findByChapter).not.toHaveBeenCalled();
-      expect(mockRbac.getEffectivePermissions).toHaveBeenCalledTimes(1);
+      expect(mockRbac.getChannelAccessHolder).toHaveBeenCalledTimes(1);
     });
 
     it('drops a wanted id the repository does not return for this chapter', async () => {
@@ -994,9 +1021,9 @@ describe('ChannelAccessService', () => {
       expect(mockMemberRepo.findByUserAndChapter).not.toHaveBeenCalled();
     });
 
-    it('resolves permissions once for a ROLE_GATED candidate', async () => {
+    it('resolves roles once for a candidate with a who-can-see list', async () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
-      mockRbac.getEffectivePermissions.mockResolvedValue(['secret:view']);
+      mockRbac.getChannelAccessHolder.mockResolvedValue(holderOf(SECRET));
 
       const result = await service.filterAccessibleChannels(
         'chap-1',
@@ -1008,19 +1035,22 @@ describe('ChannelAccessService', () => {
         'ch-public',
         'ch-role',
       ]);
-      expect(mockRbac.getEffectivePermissions).toHaveBeenCalledTimes(1);
+      expect(mockRbac.getChannelAccessHolder).toHaveBeenCalledTimes(1);
     });
   });
 
   // #704: the capability projection the client's composer state is derived
   // from — must not drift from what `assertChannelAccess` actually enforces.
   describe('withPostCapability', () => {
+    beforeEach(() => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
+    });
+
     it('returns nothing for an empty input without hitting rbac', async () => {
       const result = await service.withPostCapability('chap-1', 'user-1', []);
 
       expect(result).toEqual([]);
-      expect(mockRbac.getEffectivePermissions).not.toHaveBeenCalled();
-      expect(mockRbac.isAlumni).not.toHaveBeenCalled();
+      expect(mockRbac.getChannelAccessHolder).not.toHaveBeenCalled();
     });
 
     it('marks an ordinary PUBLIC channel postable for an active member', async () => {
@@ -1031,7 +1061,7 @@ describe('ChannelAccessService', () => {
       expect(result).toEqual({ ...publicChannel, can_post: true });
     });
 
-    it('marks a read-only channel not-postable without announcements:post', async () => {
+    it('marks a channel not-postable off its who-can-post list', async () => {
       const [result] = await service.withPostCapability('chap-1', 'user-1', [
         readOnlyChannel,
       ]);
@@ -1039,10 +1069,8 @@ describe('ChannelAccessService', () => {
       expect(result?.can_post).toBe(false);
     });
 
-    it('marks a read-only channel postable with announcements:post', async () => {
-      mockRbac.getEffectivePermissions.mockResolvedValue([
-        'announcements:post',
-      ]);
+    it('marks it postable on the list', async () => {
+      mockRbac.getChannelAccessHolder.mockResolvedValue(holderOf(OFFICERS));
 
       const [result] = await service.withPostCapability('chap-1', 'user-1', [
         readOnlyChannel,
@@ -1052,27 +1080,23 @@ describe('ChannelAccessService', () => {
     });
 
     it('marks an operational channel not-postable for an alumni member, without leaking the raw flag', async () => {
-      mockRbac.isAlumni.mockResolvedValue(true);
+      mockRbac.getChannelAccessHolder.mockResolvedValue(ALUMNUS);
 
       const [result] = await service.withPostCapability('chap-1', 'user-1', [
         publicChannel,
       ]);
 
       expect(result).toEqual({ ...publicChannel, can_post: false });
-      expect(Object.keys(result ?? {})).not.toContain('isAlumni');
+      expect(Object.keys(result ?? {})).not.toContain('alumniEntries');
     });
 
-    it('marks the alumni-postable ROLE_GATED channel postable for an alumni member', async () => {
-      mockRbac.isAlumni.mockResolvedValue(true);
-      mockRbac.getEffectivePermissions.mockResolvedValue([
-        'members:view',
-        'alumni:post',
-      ]);
+    it('marks a channel whose lists name the Alumni role postable for an alumni member', async () => {
+      mockRbac.getChannelAccessHolder.mockResolvedValue(ALUMNUS);
       const alumniChannel: ChatChannel = {
         ...publicChannel,
         id: 'ch-alumni',
         type: 'ROLE_GATED',
-        required_permissions: ['members:view', 'alumni:post'],
+        who_can_see: [OFFICERS, ALUMNI],
       };
 
       const [result] = await service.withPostCapability('chap-1', 'user-1', [
@@ -1082,22 +1106,20 @@ describe('ChannelAccessService', () => {
       expect(result?.can_post).toBe(true);
     });
 
-    // Regression: `needsPermissions` must OR in `isAlumni`, the same way
-    // `assertChannelAccess` does — otherwise an alumni President's `*` is
-    // never fetched and `canAccessChannel`'s wildcard bypass can't see it.
     it('does not restrict a President who also carries the Alumni role', async () => {
-      mockRbac.isAlumni.mockResolvedValue(true);
-      mockRbac.getEffectivePermissions.mockResolvedValue(['*']);
+      mockRbac.getChannelAccessHolder.mockResolvedValue({
+        ...ALUMNUS,
+        wildcard: true,
+      });
 
       const [result] = await service.withPostCapability('chap-1', 'user-1', [
         publicChannel,
       ]);
 
       expect(result?.can_post).toBe(true);
-      expect(mockRbac.getEffectivePermissions).toHaveBeenCalled();
     });
 
-    it('skips the alumni lookup when every candidate is alumni-postable by type', async () => {
+    it('skips the role lookup when every candidate is a DM', async () => {
       const dmChannel: ChatChannel = {
         ...publicChannel,
         id: 'ch-dm',
@@ -1107,18 +1129,17 @@ describe('ChannelAccessService', () => {
 
       await service.withPostCapability('chap-1', 'user-1', [dmChannel]);
 
-      expect(mockRbac.isAlumni).not.toHaveBeenCalled();
+      expect(mockRbac.getChannelAccessHolder).not.toHaveBeenCalled();
     });
 
-    it('annotates a mixed batch independently per channel', async () => {
-      mockRbac.getEffectivePermissions.mockResolvedValue([]);
-
+    it('annotates a mixed batch independently per channel, from one lookup', async () => {
       const result = await service.withPostCapability('chap-1', 'user-1', [
         publicChannel,
         readOnlyChannel,
       ]);
 
       expect(result.map((c) => c.can_post)).toEqual([true, false]);
+      expect(mockRbac.getChannelAccessHolder).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -24,6 +24,7 @@ import { ChatMentionService } from '../../application/services/chat-mention.serv
 import { ChatAttachmentService } from '../../application/services/chat-attachment.service';
 import { ChatNotificationPreferenceService } from '../../application/services/chat-notification-preference.service';
 import { ChatCategoryService } from '../../application/services/chat-category.service';
+import { ChannelAccessListService } from '../../application/services/channel-access-list.service';
 import { ChatReactionService } from '../../application/services/chat-reaction.service';
 import { RbacService } from '../../application/services/rbac.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
@@ -69,6 +70,7 @@ import {
   ChannelUnreadCountDto,
   ChannelLatestMessageDto,
   MentionRoleDto,
+  ChannelAccessOptionDto,
   SetChannelNotificationLevelDto,
   SetChapterChatLevelDto,
   ChapterChatLevelDto,
@@ -108,6 +110,7 @@ export class ChatController {
     private readonly reactions: ChatReactionService,
     private readonly rbacService: RbacService,
     private readonly mentions: ChatMentionService,
+    private readonly accessLists: ChannelAccessListService,
   ) {}
 
   // ── Channels ─────────────────────────────────────────────────────────
@@ -150,6 +153,22 @@ export class ChatController {
     @CurrentUser('id') userId: string,
   ): Promise<ChannelLatestMessageDto[]> {
     return this.chatService.getLatestMessages(chapterId, userId);
+  }
+
+  // MUST stay above `@Get(':id')`, for the same reason as `unread`: `:id`
+  // would resolve this as `getChannel('access-options')`.
+  // Enforced by `test/route-declaration-order.e2e-spec.ts` (#990).
+  @Get('access-options')
+  @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
+  @ApiOperation({
+    summary:
+      'What a channel or category’s who-can-see and who-can-post lists can name: tiers, then roles, with who holds each',
+  })
+  @ApiOkResponse({ type: ChannelAccessOptionDto, isArray: true })
+  async getChannelAccessOptions(
+    @CurrentChapterId() chapterId: string,
+  ): Promise<ChannelAccessOptionDto[]> {
+    return this.accessLists.listOptions(chapterId);
   }
 
   // MUST stay above `@Get(':id')`, for the same reason as `unread` directly
@@ -314,10 +333,12 @@ export class ChatController {
         name: dto.name,
         description: dto.description,
         type: dto.type as ChannelType,
-        required_permissions: dto.required_permissions,
+        who_can_see: dto.who_can_see,
+        who_can_post: dto.who_can_post,
         category_id: dto.category_id,
-        is_read_only: dto.is_read_only,
         display_locked: dto.display_locked,
+        required_permissions: dto.required_permissions,
+        is_read_only: dto.is_read_only,
       },
       userId,
     );
@@ -501,6 +522,8 @@ export class ChatController {
       chapter_id: chapterId,
       name: dto.name,
       display_order: dto.display_order,
+      who_can_see: dto.who_can_see,
+      who_can_post: dto.who_can_post,
     });
   }
 

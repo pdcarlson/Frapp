@@ -453,9 +453,9 @@ export class PollService {
    * block had turned into a tombstone. As a reply, both clients draw the poll as
    * the quote, and a quote of a blocked member's message is already masked
    * (§ What a block does and does not hide, "quoted in someone else's reply").
-   * It replies in a read-only channel too, which `ChatService.sendMessage`
-   * refuses a member (`allowsInThreadReplies`); the chat spec records this
-   * notice as the one server-written exception.
+   * It replies in a channel with a who-can-post list too, where
+   * `ChatService.sendMessage` refuses a member not on the list; the chat spec
+   * records this notice as the one server-written exception.
    */
   async announceExpiry(pollId: string, channelId: string): Promise<void> {
     const current = await this.messageRepo.findById(pollId);

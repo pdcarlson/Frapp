@@ -9,6 +9,7 @@ import {
   type ISearchRepository,
 } from '#domain/repositories/search.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import { EMPTY_ACCESS_HOLDER } from '#domain/utils/channel-access';
 import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 import { Logger } from '@nestjs/common';
 import { SupabaseSearchRepository } from '../../infrastructure/supabase/repositories/supabase-search.repository';
@@ -42,7 +43,7 @@ describe('SearchService', () => {
     role_ids: roleIds,
   });
   let mockRbacService: {
-    getEffectivePermissions: jest.Mock;
+    getChannelAccessHolder: jest.Mock;
     memberHasAnyPermission: jest.Mock;
   };
   let mockChatBlocks: { listBlockedUserIds: jest.Mock };
@@ -52,14 +53,19 @@ describe('SearchService', () => {
     type: string,
     access: {
       member_ids?: string[] | null;
-      required_permissions?: string[] | null;
+      who_can_see?: string[] | null;
     } = {},
   ) => ({
     id,
     type,
     member_ids: access.member_ids ?? null,
-    required_permissions: access.required_permissions ?? null,
+    who_can_see: access.who_can_see ?? null,
   });
+
+  // Tiers a who-can-see list names (#3722): the caller's, and one they lack.
+  const CALLER_ROLE = '00000000-0000-4000-8000-0000000001e1';
+  const CALLER_TIER = `tier:00000000-0000-4000-8000-0000000071e1`;
+  const SECRET_TIER = `tier:00000000-0000-4000-8000-00000000c0de`;
 
   const noRepoCalls = () => {
     for (const fn of [...Object.values(repo), members.findByUserAndChapter]) {
@@ -80,7 +86,7 @@ describe('SearchService', () => {
     };
 
     mockRbacService = {
-      getEffectivePermissions: jest.fn().mockResolvedValue([]),
+      getChannelAccessHolder: jest.fn().mockResolvedValue(EMPTY_ACCESS_HOLDER),
       // A caller who may browse backwork and does not manage events: the
       // ordinary active member the fan-out tests assume.
       memberHasAnyPermission: jest.fn(
@@ -235,26 +241,24 @@ describe('SearchService', () => {
         channel('pub', 'PUBLIC'),
         channel('priv-in', 'PRIVATE', { member_ids: ['user-1'] }),
         channel('priv-out', 'PRIVATE', { member_ids: ['user-2'] }),
-        channel('gated-yes', 'ROLE_GATED', {
-          required_permissions: ['alumni:view'],
-        }),
-        channel('gated-no', 'ROLE_GATED', {
-          required_permissions: ['secret:view'],
-        }),
+        channel('gated-yes', 'ROLE_GATED', { who_can_see: [CALLER_TIER] }),
+        channel('gated-no', 'ROLE_GATED', { who_can_see: [SECRET_TIER] }),
       ]);
+      members.findByUserAndChapter.mockResolvedValue(membership([CALLER_ROLE]));
 
-      // The permission set resolves through RbacService, so a role's
-      // permissions gate search exactly as they gate chat channel access
-      // (spec/behavior/rbac.md).
-      mockRbacService.getEffectivePermissions.mockResolvedValue([
-        'alumni:view',
-      ]);
+      // What the caller holds resolves through RbacService from their roles,
+      // so who-can-see lists gate search exactly as they gate chat channel
+      // access (#3722).
+      mockRbacService.getChannelAccessHolder.mockResolvedValue({
+        ...EMPTY_ACCESS_HOLDER,
+        entries: new Set([`role:${CALLER_ROLE}`, CALLER_TIER]),
+      });
 
       await service.search('ch-1', 'user-1', 'hello');
 
-      expect(mockRbacService.getEffectivePermissions).toHaveBeenCalledWith(
+      expect(mockRbacService.getChannelAccessHolder).toHaveBeenCalledWith(
         'ch-1',
-        'user-1',
+        [CALLER_ROLE],
       );
       expect(repo.findChannelsForAccess).toHaveBeenCalledWith(
         'ch-1',
@@ -268,6 +272,21 @@ describe('SearchService', () => {
         string[],
       ];
       expect(searchedChannelIds).toEqual(['pub', 'priv-in', 'gated-yes']);
+    });
+
+    it('skips the role lookup when no channel has a who-can-see list', async () => {
+      repo.findChannelsForAccess.mockResolvedValue([
+        channel('pub', 'PUBLIC'),
+        channel('priv-in', 'PRIVATE', { member_ids: ['user-1'] }),
+      ]);
+
+      await service.search('ch-1', 'user-1', 'hello');
+
+      expect(mockRbacService.getChannelAccessHolder).not.toHaveBeenCalled();
+      const [searchedChannelIds] = repo.searchMessages.mock.calls[0] as [
+        string[],
+      ];
+      expect(searchedChannelIds).toEqual(['pub', 'priv-in']);
     });
 
     describe('single-channel scope (#469)', () => {
@@ -429,9 +448,7 @@ describe('SearchService', () => {
           channel(PUB, 'PUBLIC'),
           channel(PRIV_IN, 'PRIVATE', { member_ids: ['user-1'] }),
           channel(PRIV_OUT, 'PRIVATE', { member_ids: [SENDER] }),
-          channel(GATED_NO, 'ROLE_GATED', {
-            required_permissions: ['secret:view'],
-          }),
+          channel(GATED_NO, 'ROLE_GATED', { who_can_see: [SECRET_TIER] }),
           channel(DM_OTHERS, 'DM', { member_ids: [SENDER, 'user-3'] }),
         ]);
       });
@@ -703,7 +720,7 @@ describe('SearchService', () => {
 
       expect(result.messages).toEqual([]);
       expect(repo.searchMessages).not.toHaveBeenCalled();
-      expect(mockRbacService.getEffectivePermissions).not.toHaveBeenCalled();
+      expect(mockRbacService.getChannelAccessHolder).not.toHaveBeenCalled();
     });
 
     // Search must not become a side-channel around EventService's read
@@ -997,7 +1014,8 @@ describe('SearchService — chapter-wide message search over many channels (#326
       id,
       type: 'PUBLIC',
       member_ids: null,
-      required_permissions: null,
+      who_can_see: null,
+      who_can_post: null,
     });
     // One match per channel, a minute apart, so the newest ten sit in the
     // last channels — the third batch of 100.
@@ -1048,7 +1066,9 @@ describe('SearchService — chapter-wide message search over many channels (#326
         {
           provide: RbacService,
           useValue: {
-            getEffectivePermissions: jest.fn().mockResolvedValue([]),
+            getChannelAccessHolder: jest
+              .fn()
+              .mockResolvedValue(EMPTY_ACCESS_HOLDER),
             memberHasAnyPermission: jest.fn().mockResolvedValue(false),
           },
         },

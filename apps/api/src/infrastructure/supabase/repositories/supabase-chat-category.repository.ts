@@ -99,6 +99,26 @@ export class SupabaseChatCategoryRepository implements IChatCategoryRepository {
     return data ?? [];
   }
 
+  /** Via `set_chat_category_access`: the category and its matching channels together. */
+  async setAccess(
+    chapterId: string,
+    categoryId: string,
+    whoCanSee: string[] | null,
+    whoCanPost: string[] | null,
+  ): Promise<string[]> {
+    const { data, error } = await this.supabase.rpc(
+      'set_chat_category_access',
+      {
+        p_chapter_id: chapterId,
+        p_category_id: categoryId,
+        p_who_can_see: whoCanSee,
+        p_who_can_post: whoCanPost,
+      },
+    );
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
+  }
+
   async delete(id: string, chapterId: string): Promise<void> {
     const { error } = await this.supabase
       .from('chat_channel_categories')

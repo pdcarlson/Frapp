@@ -36,7 +36,9 @@ Default system roles seeded on chapter creation:
    permissions: ['members:view']
 
 Default channels seeded on chapter creation:
-- #general (PUBLIC)
-- #announcements (PUBLIC, is_read_only: true)
-- #alumni (ROLE_GATED, required_permissions: ['alumni_channel_access'])
+- #general (everyone sees and posts)
+- #announcements (everyone sees; the top two starting tiers post)
+- #chapter-audit (everyone sees; only Frapp posts)
+- #alumni (the four starting tiers and the Alumni role see and post)
+(who_can_see / who_can_post, #3722; DEFAULT_CHANNELS owns the list)
 */

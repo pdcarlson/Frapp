@@ -14,10 +14,7 @@ import {
   isModuleEnabled,
   type ChatMessageFlag,
 } from '@repo/validation';
-import {
-  allowsInThreadReplies,
-  channelAllowsThreads,
-} from '#domain/utils/channel-access';
+import { channelAllowsThreads } from '#domain/utils/channel-access';
 import {
   CHAT_THREAD_REPOSITORY,
   type IChatThreadRepository,
@@ -65,6 +62,7 @@ import {
 import { maskBlockedMessages, type MaskedChatMessage } from './chat-block-mask';
 import { ActivationService } from './activation.service';
 import { ChannelCacheService } from './channel-cache.service';
+import { ChannelAccessListService } from './channel-access-list.service';
 import { ChatMentionService } from './chat-mention.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
@@ -72,21 +70,47 @@ import { NotificationService } from './notification.service';
 
 const MAX_PINNED_MESSAGES = 50;
 const MAX_GROUP_DM_MEMBERS = 10;
-// A ROLE_GATED channel that gates on nothing is denied by `canAccessChannel`
-// (FRA-321), so reject the shape at the write points rather than letting a
-// chapter create a channel nobody but the President can open.
-const ROLE_GATED_REQUIRES_PERMISSIONS_MESSAGE =
-  'A ROLE_GATED channel must specify at least one entry in required_permissions';
+// `required_permissions` and `is_read_only` were how a page from before #3722
+// said who could see and post. A page left open across the deploy may still
+// send them; one that would change access is refused rather than ignored, so
+// an officer never believes a channel is locked down when it isn't.
+const LEGACY_ACCESS_FIELDS_MESSAGE =
+  'Frapp was updated. Reload the page to choose who can see and post in this channel.';
 
 export interface CreateChannelInput {
   chapter_id: string;
   name: string;
   description?: string | null;
   type: ChannelType;
-  required_permissions?: string[] | null;
+  /** `undefined` copies the category's list; `null` is everyone (#3722). */
+  who_can_see?: string[] | null;
+  /** `undefined` copies the category's list; `null` is everyone who can see it. */
+  who_can_post?: string[] | null;
   category_id?: string | null;
-  is_read_only?: boolean;
   display_locked?: boolean;
+  /** Pre-#3722 fields, refused when they would change access. */
+  required_permissions?: string[] | null;
+  is_read_only?: boolean;
+}
+
+export interface UpdateChannelInput extends Partial<
+  Pick<
+    ChatChannel,
+    | 'name'
+    | 'description'
+    | 'category_id'
+    | 'default_notification_level'
+    | 'is_default'
+    | 'activity_excluded'
+  >
+> {
+  who_can_see?: string[] | null;
+  who_can_post?: string[] | null;
+  /** Copy the category's lists, so the channel matches it again. */
+  match_category_access?: boolean;
+  /** Pre-#3722 fields, refused when they would change access. */
+  required_permissions?: string[] | null;
+  is_read_only?: boolean;
 }
 
 export interface CreateDmInput {
@@ -217,6 +241,8 @@ export class ChatService {
     @Inject(MEMBER_REPOSITORY)
     private readonly memberRepo: IMemberRepository,
     private readonly channelAccess: ChannelAccessService,
+    // Who can see and post (#3722): checks and fills in the two lists.
+    private readonly accessLists: ChannelAccessListService,
     private readonly activation: ActivationService,
     private readonly channelCache: ChannelCacheService,
     // Report and block (#2257) live in their own services; the hot path needs
@@ -240,7 +266,7 @@ export class ChatService {
    * The chapter's channels, reduced to the ones this caller may read.
    *
    * The filter is load-bearing, not defensive. A channel row carries `name`,
-   * `description`, `required_permissions` and `member_ids`, and a DM is
+   * `description`, `who_can_see` and `member_ids`, and a DM is
    * server-named `dm-<userA>-<userB>` — so the pair in a direct message is
    * disclosed twice over by a single unfiltered row. Returning the chapter's
    * full list to everyone holding `members:view` would publish the chapter's
@@ -387,20 +413,27 @@ export class ChatService {
     }
 
     if (
-      input.type === 'ROLE_GATED' &&
-      (input.required_permissions ?? []).length === 0
+      (input.required_permissions ?? []).length > 0 ||
+      input.is_read_only === true
     ) {
-      throw new BadRequestException(ROLE_GATED_REQUIRES_PERMISSIONS_MESSAGE);
+      throw new BadRequestException(LEGACY_ACCESS_FIELDS_MESSAGE);
     }
+
+    // Who can see and post (#3722): the lists sent, else the category's.
+    // Writes `type` and `is_read_only` to match, which the database checks.
+    const access = await this.accessLists.forNewChannel(
+      input.chapter_id,
+      input.type,
+      input.category_id ?? null,
+      { who_can_see: input.who_can_see, who_can_post: input.who_can_post },
+    );
 
     return this.channelRepo.create({
       chapter_id: input.chapter_id,
       name: input.name,
       description: input.description ?? null,
-      type: input.type,
-      required_permissions: input.required_permissions ?? null,
+      ...access,
       category_id: input.category_id ?? null,
-      is_read_only: input.is_read_only ?? false,
       display_locked: input.display_locked ?? false,
       // Recorded so the creator can set Always formal later without holding
       // `channels:manage` (#3787, `setDisplayLock`).
@@ -415,7 +448,7 @@ export class ChatService {
       // now repairs one, but only for an officer who already has its id.
       //
       // Only PRIVATE. PUBLIC and ROLE_GATED resolve access by chapter
-      // membership and permissions respectively and never consult this column,
+      // membership and `who_can_see` respectively and never consult this column,
       // so populating it there would imply a membership that means nothing.
       // DM and GROUP_DM cannot reach here — they are rejected above and set
       // their own membership in `getOrCreateDm` / `createGroupDm`.
@@ -426,29 +459,26 @@ export class ChatService {
   async updateChannel(
     id: string,
     chapterId: string,
-    data: Partial<
-      Pick<
-        ChatChannel,
-        | 'name'
-        | 'description'
-        | 'required_permissions'
-        | 'category_id'
-        | 'is_read_only'
-        | 'default_notification_level'
-        | 'is_default'
-        | 'activity_excluded'
-      >
-    >,
+    input: UpdateChannelInput,
   ): Promise<ChatChannel> {
     const existing = await this.requireChannelInChapter(id, chapterId);
+    const {
+      who_can_see: whoCanSee,
+      who_can_post: whoCanPost,
+      match_category_access: matchCategoryAccess,
+      required_permissions: legacyPermissions,
+      is_read_only: legacyReadOnly,
+      ...data
+    } = input;
 
     // The audit log (#3909) is the chapter's record of officer changes, so
-    // its two defining settings are locked: it stays read-only, and it keeps
+    // its two defining settings are locked: everyone sees it and only Frapp
+    // posts in it (`forChannelUpdate` refuses lists for it), and it keeps
     // its name, which members know it by. The flag (not the name) is what
     // the server keys on, so this is about members finding it, not about the
     // mirror. Description, group and push default stay editable.
     if (existing.is_audit_log) {
-      if (data.is_read_only === false) {
+      if (legacyReadOnly === false) {
         throw new BadRequestException(
           'The audit log channel is always read-only',
         );
@@ -484,21 +514,31 @@ export class ChatService {
       );
     }
 
-    // `type` is not updatable, so the existing row decides whether the gate
-    // applies. Only guard when the caller actually sends the field — omitting it
-    // leaves the stored list intact.
     if (
-      existing.type === 'ROLE_GATED' &&
-      data.required_permissions !== undefined &&
-      (data.required_permissions ?? []).length === 0
+      legacyPermissions !== undefined ||
+      (legacyReadOnly !== undefined && legacyReadOnly !== existing.is_read_only)
     ) {
-      throw new BadRequestException(ROLE_GATED_REQUIRES_PERMISSIONS_MESSAGE);
+      throw new BadRequestException(LEGACY_ACCESS_FIELDS_MESSAGE);
     }
+
+    // Who can see and post (#3722). Moving a channel to another category
+    // keeps its lists; `match_category_access` copies the category's.
+    const access = await this.accessLists.forChannelUpdate(
+      chapterId,
+      existing,
+      {
+        who_can_see: whoCanSee,
+        who_can_post: whoCanPost,
+        match_category_access: matchCategoryAccess,
+        category_id: data.category_id,
+      },
+    );
 
     // Setting the default goes last, through its own transaction that also
     // unsets the old one, so a save refused above or failing in the update
     // below never leaves the chapter without the default it had.
-    const { is_default: isDefault, ...fields } = data;
+    const { is_default: isDefault, ...rest } = data;
+    const fields = { ...rest, ...access };
     const plain =
       isDefault === false ? { ...fields, is_default: false } : fields;
     let updated =
@@ -508,7 +548,7 @@ export class ChatService {
     if (isDefault === true && !existing.is_default) {
       updated = (await this.channelRepo.setDefault(id, chapterId)) ?? updated;
     }
-    // `required_permissions` is a push-audience authorization input (see
+    // `who_can_see` is a push-audience authorization input (see
     // `ChannelCacheService`), not display data — evict unconditionally rather
     // than only when that field is present in `data`, so a future field this
     // service starts accepting here can't silently reintroduce the staleness
@@ -535,7 +575,7 @@ export class ChatService {
     // A `channels:manage` holder edits any channel in the chapter, as
     // `updateChannel` does. A creator without it must still be able to read
     // the channel: one removed from their own PRIVATE channel, or who lost a
-    // ROLE_GATED channel's permission, is refused like any other member, and
+    // channel's who-can-see list, is refused like any other member, and
     // never gets the row back. Authorization runs before the DM check, so the
     // 400 tells nobody without the right whether an id is a DM.
     const existing = hasManagePermission
@@ -897,12 +937,11 @@ export class ChatService {
    * Hot-path send. Mirrors the retired `chat-send` Edge Function:
    *
    * - Authorizes via the shared `canAccessChannel` predicate with
-   *   `operation: "post"` so read-only channels (#announcements) gate on the
-   *   `announcements:post` permission, and the audit log (`is_audit_log`,
-   *   #chapter-audit) refuses every member, the President included (#3909).
-   * - Cross-channel reply links are rejected before the insert, as are
-   *   in-thread replies in a read-only channel — a broadcast is not a thread,
-   *   regardless of the sender's permissions.
+   *   `operation: "post"` so a channel's who-can-post list decides
+   *   (#announcements), and the audit log (`is_audit_log`, #chapter-audit)
+   *   refuses every member, the President included (#3909). A quote reply is
+   *   a post, so the same gate decides it (#3722).
+   * - Cross-channel reply links are rejected before the insert.
    * - Idempotent on `client_message_id`: a retried POST with the same
    *   `(channel_id, sender_id, client_message_id)` triple returns the
    *   existing row with `deduplicated: true` instead of inserting again
@@ -961,16 +1000,8 @@ export class ChatService {
 
     let replyTo: ChatMessage | null = null;
     if (input.reply_to_id) {
-      // A read-only channel is a broadcast surface, so nothing in it is
-      // threadable — not for a holder of `announcements:post`, not for the
-      // President's `"*"`. Checked before the lookup below: the channel already
-      // answers this, so a threaded announcement never costs a query.
-      if (!allowsInThreadReplies(channel)) {
-        throw new BadRequestException(
-          'Messages in a read-only channel cannot be replied to in-thread',
-        );
-      }
-
+      // A quote reply is a post: whoever may post here may quote (#3722),
+      // which `assertChannelAccess` above already decided.
       replyTo = await this.messageRepo.findById(input.reply_to_id);
       if (!replyTo || replyTo.channel_id !== input.channel_id) {
         throw new BadRequestException(
