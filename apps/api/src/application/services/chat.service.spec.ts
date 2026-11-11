@@ -2280,6 +2280,18 @@ describe('ChatService', () => {
         content_type: 'application/pdf',
         byte_size: 2048,
       };
+      const PHOTO_GEOMETRY = {
+        width: 1200,
+        height: 800,
+        thumbhash: '1QcSHQRnh493V4dIh4eXh1h4kJUI',
+      };
+      const PHOTO = {
+        storage_path:
+          'chapters/ch-1/chat/ch-chan-1/aaaaaaaa-0000-4000-8000-000000000001/photo.jpg',
+        filename: 'photo.jpg',
+        content_type: 'image/jpeg',
+        ...PHOTO_GEOMETRY,
+      };
 
       it('accepts a message that is nothing but a file', async () => {
         // The client stack allows this — the composer's Send button enables on a
@@ -2412,6 +2424,126 @@ describe('ChatService', () => {
         );
       });
 
+      it("stamps each photo's geometry beside the count (#3879)", async () => {
+        // A Realtime echo is the bare row, so the row has to say how big each
+        // photo is for a reader to reserve its box before the attachments read
+        // returns. One entry per photo, sized or not; a file gets none.
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+        const photoPath = (name: string) =>
+          `chapters/ch-1/chat/ch-chan-1/aaaaaaaa-0000-4000-8000-000000000001/${name}`;
+
+        await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: '',
+          attachments: [
+            ATTACHMENT,
+            {
+              storage_path: photoPath('sized.jpg'),
+              filename: 'sized.jpg',
+              content_type: 'image/jpeg',
+              width: 1200,
+              height: 800,
+              thumbhash: 'YJqGPQw7sFlslqhFafSE+Q6oJ1h2iHB2Rw==',
+            },
+            {
+              storage_path: photoPath('unsized.png'),
+              filename: 'unsized.png',
+              content_type: 'image/png',
+              // A lone edge is dropped by validation, so this one is unsized.
+              width: 640,
+            },
+          ],
+        });
+
+        expect(mockMessageRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            metadata: expect.objectContaining({
+              attachment_count: 3,
+              attachment_photos: [
+                {
+                  width: 1200,
+                  height: 800,
+                  thumbhash: 'YJqGPQw7sFlslqhFafSE+Q6oJ1h2iHB2Rw==',
+                },
+                { width: null, height: null, thumbhash: null },
+              ],
+            }),
+          }),
+        );
+      });
+
+      it("drops a client's own count and geometry, which only the server stamps", async () => {
+        // Sent verbatim, a forged count drew a placeholder per claimed file on
+        // every reader (#3879 review).
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+        await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'hi',
+          metadata: {
+            attachment_count: 10_000_000,
+            attachment_photos: [],
+            kept: true,
+          },
+        });
+
+        expect(mockMessageRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ metadata: { kept: true } }),
+        );
+      });
+
+      it('keeps no ThumbHash a decoder cannot read in full', async () => {
+        // `AAAA` passes the base64 pattern but is 3 bytes; expo-image's iOS
+        // decoder reads 5 header bytes unchecked and crashes.
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+        await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: '',
+          attachments: [{ ...PHOTO, thumbhash: 'AAAA' }],
+        });
+
+        expect(mockMessageRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            metadata: expect.objectContaining({
+              attachment_photos: [{ ...PHOTO_GEOMETRY, thumbhash: null }],
+            }),
+          }),
+        );
+        expect(mockAttachmentRepo.createMany).toHaveBeenCalledWith([
+          expect.objectContaining({ thumbhash: null }),
+        ]);
+      });
+
+      it('stamps no geometry on a message with no attachments', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+        await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'plain',
+        });
+
+        expect(mockMessageRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            metadata: expect.not.objectContaining({
+              attachment_photos: expect.anything(),
+            }),
+          }),
+        );
+      });
+
       it('clears attachment_count when the attachment write fails', async () => {
         // The message row is already committed by the time this can fail —
         // separate PostgREST calls, no transaction — so the alternative is a
@@ -2421,7 +2553,7 @@ describe('ChatService', () => {
         mockMessageRepo.create.mockResolvedValue(baseMessage);
         mockMessageRepo.findById.mockResolvedValue({
           ...baseMessage,
-          metadata: { attachment_count: 1 },
+          metadata: { attachment_count: 1, attachment_photos: [] },
         });
         mockAttachmentRepo.createMany.mockRejectedValueOnce(
           new Error('storage write failed'),
@@ -2443,6 +2575,11 @@ describe('ChatService', () => {
             metadata: expect.not.objectContaining({ attachment_count: 1 }),
           }),
         );
+        // The geometry goes with the count: it describes files that are not there.
+        const cleared = mockMessageRepo.update.mock.calls.at(-1)?.[1] as {
+          metadata: Record<string, unknown>;
+        };
+        expect(cleared.metadata).not.toHaveProperty('attachment_photos');
       });
 
       it('writes the attachments on the dedupe retry, not just the first attempt', async () => {
@@ -2466,13 +2603,25 @@ describe('ChatService', () => {
           sender_id: 'user-1',
           content: 'deck attached',
           client_message_id: '11111111-1111-1111-1111-111111111111',
-          attachments: [ATTACHMENT],
+          attachments: [ATTACHMENT, PHOTO],
         });
 
         expect(result.deduplicated).toBe(true);
         expect(mockAttachmentRepo.createMany).toHaveBeenCalledWith([
           expect.objectContaining({ message_id: baseMessage.id }),
+          expect.objectContaining({ message_id: baseMessage.id }),
         ]);
+        // The failed first attempt cleared the count and the geometry; the
+        // retry puts both back (#3879).
+        expect(mockMessageRepo.update).toHaveBeenCalledWith(
+          baseMessage.id,
+          expect.objectContaining({
+            metadata: expect.objectContaining({
+              attachment_count: 2,
+              attachment_photos: [PHOTO_GEOMETRY],
+            }),
+          }),
+        );
       });
     });
 

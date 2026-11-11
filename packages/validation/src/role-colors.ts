@@ -159,20 +159,3 @@ export function resolveRoleChips(
     .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
     .map(({ id, name, color }) => ({ id, name, color }));
 }
-
-/**
- * `custom_role_ids` → custom role labels, resolved off `GET /v1/custom-roles`
- * — a `chapter-config:view`-gated read, unlike `GET /v1/roles`. The caller
- * passes `undefined` when the viewer cannot resolve it (rather than fetching
- * a 403), so this degrades to nothing shown, never a raw id.
- */
-export function resolveCustomRoleNames(
-  customRolesData: readonly { id: string; label: string }[] | undefined,
-  customRoleIds: readonly string[],
-): string[] {
-  if (customRoleIds.length === 0 || !customRolesData) return [];
-  const byId = new Map(customRolesData.map((role) => [role.id, role.label]));
-  return [...new Set(customRoleIds)]
-    .map((id) => byId.get(id))
-    .filter((label): label is string => !!label);
-}

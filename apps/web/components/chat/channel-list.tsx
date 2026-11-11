@@ -672,10 +672,9 @@ export function ChannelList({
     // disagree — a red badge on a read-styled row is a contradiction
     // on screen.
     const isUnread = countsKnown && (counts.unreadCount > 0 || hasMention);
-    // Mobile's rule (`channel-row.tsx`), so the two clients agree (#3777):
-    // a muted channel reads as unread only when it addresses the member, and
-    // otherwise sits quietly in `--muted`. A read row keeps the primary tone
-    // and drops the weight; unread reads by weight, never by a dimmer colour.
+    // Mobile's rule (`channel-row.tsx`), so the two clients agree: a muted
+    // channel reads as unread only when it addresses the member, and
+    // otherwise sits quietly in `--muted`.
     const isMuted = !!channel.muted;
     const looksUnread = isUnread && (!isMuted || hasMention);
     const pinned = preferences.pinnedIds.has(channel.id);
@@ -724,30 +723,41 @@ export function ChannelList({
             // above it, because a rail of channels is a longer list
             // than a rail of sections. 14/600 type, and the accent
             // tint still marks the active row the way the nav's does.
+            // Read is grey, unread is white and bold with a white pip at the
+            // row's start, as Discord draws it (owner, 2026-11-08; mobile's
+            // `ChannelRow` matches). A muted channel's plain unread stays
+            // grey; a mention gets past the mute.
             className={cn(
-              "flex h-8 w-full items-center gap-2 rounded-xs px-2 text-left text-sm transition-colors",
+              "relative flex h-8 w-full items-center gap-2 rounded-xs px-2 text-left text-sm transition-colors",
               isActive
                 ? "bg-accent-subtle font-semibold text-accent-text"
                 : looksUnread
-                  ? "font-semibold text-foreground hover:bg-card"
+                  ? "font-bold text-foreground hover:bg-card"
                   : isMuted
                     ? "text-muted hover:bg-card hover:text-foreground"
-                    : "text-foreground hover:bg-card",
+                    : "text-muted-foreground hover:bg-card hover:text-foreground",
             )}
           >
+            {looksUnread && !isActive ? (
+              <span
+                aria-hidden
+                data-testid="channel-unread-pip"
+                className="absolute left-0 top-1/2 h-2 w-1 -translate-y-1/2 rounded-r-full bg-foreground"
+              />
+            ) : null}
             <ChannelMark
               channel={channel}
               title={titleFor(channel)}
               tint={dmTint(channel, viewerId, avatarTintFor)}
               // The `#`, lock and audit marks follow mobile's sigil: the
-              // row's own tone when unread or active, one step quieter
-              // when read, and `--muted` with a muted row.
+              // row's own tone when unread or active, `--muted` when read,
+              // and `--disabled` with a muted row.
               tone={
                 isActive || looksUnread
                   ? undefined
                   : isMuted
-                    ? "text-muted"
-                    : "text-muted-foreground"
+                    ? "text-disabled"
+                    : "text-muted"
               }
             />
             <span className="truncate">{titleFor(channel)}</span>

@@ -53,7 +53,6 @@ export interface MemberDetail {
    */
   joinedLabel: string | null;
   roleIds: string[];
-  customRoleIds: string[];
   customFields: MemberCustomField[];
   /** The member's pledge class and order number (#3939), each `null` when unset. */
   pledgeClassId: string | null;
@@ -84,7 +83,6 @@ export function selectMemberDetail(data: unknown): MemberDetail | null {
     ]),
     joinedLabel: formatJoinedDate(str(data, "created_at")),
     roleIds: stringArray(data.role_ids),
-    customRoleIds: stringArray(data.custom_role_ids),
     customFields: parseCustomFields(data.custom_fields),
     pledgeClassId: str(data, "pledge_class_id"),
     orderNumber: num(data, "order_number"),
