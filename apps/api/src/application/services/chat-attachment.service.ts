@@ -106,6 +106,44 @@ export interface SendMessageAttachmentInput {
   preview_storage_path?: string | null;
 }
 
+/** One photo's display geometry, as `metadata.attachment_photos` carries it. */
+export interface AttachmentPhotoGeometry {
+  width: number | null;
+  height: number | null;
+  thumbhash: string | null;
+}
+
+/**
+ * The message metadata a send stamps for its attachments (#3879).
+ *
+ * `attachment_count` says there is anything to fetch. `attachment_photos` has
+ * one entry per photo (an `image/` attachment) with the size and ThumbHash
+ * `validateAttachmentInputs` kept, so a reader draws each photo's box, blurred,
+ * before the attachments read returns, and a Realtime echo, which cannot carry
+ * a join, still has it. Every photo gets an entry, a sized one or not, so the
+ * count minus the entries is the number of files: a reader can lay out both.
+ * Live chat accepts only images every client draws (`document` uploads), so
+ * `image/` here means a photo the clients render inline.
+ *
+ * Display metadata, not a copy of the rows: the rows stay the source of truth.
+ * Readers lay the entries out in any order, so this list's order need not match
+ * the read's (a column of boxes is as tall in any order).
+ */
+export function attachmentMetadataOf(
+  attachments: readonly SendMessageAttachmentInput[],
+): { attachment_count: number; attachment_photos: AttachmentPhotoGeometry[] } {
+  return {
+    attachment_count: attachments.length,
+    attachment_photos: attachments
+      .filter((attachment) => attachment.content_type.startsWith('image/'))
+      .map((attachment) => ({
+        width: attachment.width ?? null,
+        height: attachment.height ?? null,
+        thumbhash: attachment.thumbhash ?? null,
+      })),
+  };
+}
+
 /**
  * Chat's Storage objects, from the upload mint to the purge: a message's
  * attachments, an imported author's avatar, and the attachments a report holds
@@ -395,6 +433,7 @@ export class ChatAttachmentService {
         const message = await this.messageRepo.findById(messageId);
         const metadata = { ...(message?.metadata ?? {}) };
         delete metadata.attachment_count;
+        delete metadata.attachment_photos;
         await this.messageRepo.update(messageId, { metadata });
       } catch (cleanupError) {
         // Best effort. If even this fails the message keeps a count it cannot

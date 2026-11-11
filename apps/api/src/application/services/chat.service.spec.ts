@@ -2109,6 +2109,77 @@ describe('ChatService', () => {
         );
       });
 
+      it("stamps each photo's geometry beside the count (#3879)", async () => {
+        // A Realtime echo is the bare row, so the row has to say how big each
+        // photo is for a reader to reserve its box before the attachments read
+        // returns. One entry per photo, sized or not; a file gets none.
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+        const photoPath = (name: string) =>
+          `chapters/ch-1/chat/ch-chan-1/aaaaaaaa-0000-4000-8000-000000000001/${name}`;
+
+        await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: '',
+          attachments: [
+            ATTACHMENT,
+            {
+              storage_path: photoPath('sized.jpg'),
+              filename: 'sized.jpg',
+              content_type: 'image/jpeg',
+              width: 1200,
+              height: 800,
+              thumbhash: 'YJqGPQw7sFlslqhFafSE+Q6oJ1h2iHB2Rw==',
+            },
+            {
+              storage_path: photoPath('unsized.png'),
+              filename: 'unsized.png',
+              content_type: 'image/png',
+              // A lone edge is dropped by validation, so this one is unsized.
+              width: 640,
+            },
+          ],
+        });
+
+        expect(mockMessageRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            metadata: expect.objectContaining({
+              attachment_count: 3,
+              attachment_photos: [
+                {
+                  width: 1200,
+                  height: 800,
+                  thumbhash: 'YJqGPQw7sFlslqhFafSE+Q6oJ1h2iHB2Rw==',
+                },
+                { width: null, height: null, thumbhash: null },
+              ],
+            }),
+          }),
+        );
+      });
+
+      it('stamps no geometry on a message with no attachments', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+        await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'plain',
+        });
+
+        expect(mockMessageRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            metadata: expect.not.objectContaining({
+              attachment_photos: expect.anything(),
+            }),
+          }),
+        );
+      });
+
       it('clears attachment_count when the attachment write fails', async () => {
         // The message row is already committed by the time this can fail —
         // separate PostgREST calls, no transaction — so the alternative is a
@@ -2118,7 +2189,7 @@ describe('ChatService', () => {
         mockMessageRepo.create.mockResolvedValue(baseMessage);
         mockMessageRepo.findById.mockResolvedValue({
           ...baseMessage,
-          metadata: { attachment_count: 1 },
+          metadata: { attachment_count: 1, attachment_photos: [] },
         });
         mockAttachmentRepo.createMany.mockRejectedValueOnce(
           new Error('storage write failed'),
@@ -2140,6 +2211,11 @@ describe('ChatService', () => {
             metadata: expect.not.objectContaining({ attachment_count: 1 }),
           }),
         );
+        // The geometry goes with the count: it describes files that are not there.
+        const cleared = mockMessageRepo.update.mock.calls.at(-1)?.[1] as {
+          metadata: Record<string, unknown>;
+        };
+        expect(cleared.metadata).not.toHaveProperty('attachment_photos');
       });
 
       it('writes the attachments on the dedupe retry, not just the first attempt', async () => {
@@ -2170,6 +2246,17 @@ describe('ChatService', () => {
         expect(mockAttachmentRepo.createMany).toHaveBeenCalledWith([
           expect.objectContaining({ message_id: baseMessage.id }),
         ]);
+        // The failed first attempt cleared the count and the geometry; the
+        // retry puts both back (#3879).
+        expect(mockMessageRepo.update).toHaveBeenCalledWith(
+          baseMessage.id,
+          expect.objectContaining({
+            metadata: expect.objectContaining({
+              attachment_count: 1,
+              attachment_photos: [],
+            }),
+          }),
+        );
       });
     });
 

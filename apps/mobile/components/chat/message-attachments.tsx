@@ -9,6 +9,7 @@ import {
 import { Image, type ImageStyle } from "expo-image";
 import * as WebBrowser from "expo-web-browser";
 import { useMessageAttachments } from "@repo/hooks";
+import type { AttachmentPhoto } from "@repo/chat-core/types";
 import { formatBytes } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -49,9 +50,13 @@ import { chatPhotoCacheKey } from "@/lib/chat/photo-cache";
  * to 256pt tall then replaced, pushing the thread with every one that landed
  * (components.md §10: the skeleton mirrors the layout it becomes).
  *
- * The count is all the row knows yet, not which files are photos: the message
- * carries only `metadata.attachment_count`, and type, name and dimensions
- * arrive with this query. So the tile is a bet, and it is placed on photos.
+ * A message sent since #3879 also carries its photos' geometry
+ * (`photos`, from `metadata.attachment_photos`): how many of its files are
+ * photos, and each one's size and blur. Then a lone photo's tile is the
+ * photo's own box with its blur, and each file is a file row, so nothing
+ * moves when the read lands. An older message carries only the count, and
+ * type, name and dimensions arrive with this query. So the tile is a bet, and
+ * it is placed on photos.
  * Mobile's composer attaches only photos; web's attaches photos and documents
  * (a PDF, say), and a document resolves to a one-line file row, so a web-sent
  * document shrinks by about 150pt when it lands. A file-row-height placeholder
@@ -92,6 +97,8 @@ export interface MessageAttachmentsProps {
    * yet, so nothing is fetched and the local photos (if any) draw alone.
    */
   confirmed?: boolean;
+  /** `message.attachment_photos`: each photo's size and blur (#3879). */
+  photos?: readonly AttachmentPhoto[];
   /**
    * The message's own long-press (its actions sheet — #2257), forwarded to each
    * file. A file row is a `Pressable` that claims the touch, so without it a
@@ -107,6 +114,7 @@ export function MessageAttachments({
   count,
   clientMessageId,
   confirmed = true,
+  photos,
   onLongPress,
 }: MessageAttachmentsProps) {
   const { tokens } = useFrappTheme();
@@ -145,9 +153,17 @@ export function MessageAttachments({
   if (!confirmed) return null;
 
   if (query.isPending) {
-    // Two or more files are bet to be photos, drawn as the grid they become
-    // (components.md §10: the skeleton mirrors the layout it becomes).
-    const tiles = Math.min(count, GRID_MAX_TILES);
+    // With the message's geometry (#3879), the photos and files are known and
+    // a lone photo's size too. Without it, every file is bet to be a photo,
+    // and two or more draw as the grid they become (components.md §10: the
+    // skeleton mirrors the layout it becomes).
+    const known = photos && photos.length <= count ? photos : undefined;
+    const photoCount = known ? known.length : count;
+    const fileCount = count - photoCount;
+    const tiles = Math.min(photoCount, GRID_MAX_TILES);
+    const lone = known?.length === 1 ? known[0]! : undefined;
+    const loneAspect =
+      lone?.width && lone.height ? lone.width / lone.height : null;
     return (
       <View
         accessible
@@ -157,7 +173,32 @@ export function MessageAttachments({
         }
         style={styles.list}
       >
-        {count === 1 ? (
+        {photoCount === 0 ? null : photoCount === 1 && loneAspect !== null ? (
+          // The lone photo's own box, as `SinglePhoto` sizes it, with its blur.
+          <View
+            testID="attachment-loading-tile"
+            style={[
+              styles.imageRow,
+              styles.imageRowSized,
+              {
+                maxWidth: PREVIEW_MAX_HEIGHT * loneAspect,
+                aspectRatio: loneAspect,
+              },
+            ]}
+          >
+            {lone?.thumbhash ? (
+              <Image
+                source={null}
+                placeholder={{ thumbhash: lone.thumbhash }}
+                placeholderContentFit="fill"
+                accessibilityIgnoresInvertColors
+                style={[styles.preview, styles.previewFill]}
+              />
+            ) : (
+              <View style={[styles.loadingTile, styles.previewFill]} />
+            )}
+          </View>
+        ) : photoCount === 1 ? (
           <View testID="attachment-loading-tile" style={styles.imageRow}>
             <View style={styles.loadingTile} />
           </View>
@@ -175,6 +216,20 @@ export function MessageAttachments({
             ))}
           </View>
         )}
+        {Array.from({ length: fileCount }, (_, index) => (
+          // A file row's frame and type, so it is as tall as the row it becomes.
+          <View
+            key={`file-${index}`}
+            testID="attachment-loading-file"
+            style={styles.row}
+          >
+            <View style={styles.fileRow}>
+              <Text style={styles.size} numberOfLines={1}>
+                Loading file…
+              </Text>
+            </View>
+          </View>
+        ))}
       </View>
     );
   }

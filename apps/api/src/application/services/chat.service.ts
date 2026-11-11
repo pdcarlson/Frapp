@@ -59,6 +59,7 @@ import { assertModuleEnabled, type EnabledModules } from './module-gate';
 import { ChatBlockService } from './chat-block.service';
 import {
   ChatAttachmentService,
+  attachmentMetadataOf,
   type SendMessageAttachmentInput,
 } from './chat-attachment.service';
 import { maskBlockedMessages, type MaskedChatMessage } from './chat-block-mask';
@@ -1059,12 +1060,14 @@ export class ChatService {
         // `postgres_changes` echo cannot carry a join, so it is the only way a
         // client receiving a live message learns that it should ask for
         // attachments. Without it a file-only message renders as an empty bubble
-        // for everyone except its sender.
+        // for everyone except its sender. `attachment_photos` rides beside it
+        // for the same reason: each photo's size, so a reader draws its box
+        // before the attachments read returns (#3879).
         metadata:
           attachments.length > 0
             ? {
                 ...(input.metadata ?? {}),
-                attachment_count: attachments.length,
+                ...attachmentMetadataOf(attachments),
               }
             : (input.metadata ?? {}),
         mentions,
@@ -1100,11 +1103,11 @@ export class ChatService {
         // `persistAttachments`), so without this the rows and the storage
         // object exist while every client reads `attachment_count: 0` and
         // renders nothing — the same unreachable-file end state, reached the
-        // long way round.
+        // long way round. The photo geometry was cleared with it.
         const restored = await this.messageRepo.update(existing.id, {
           metadata: {
             ...(existing.metadata ?? {}),
-            attachment_count: attachments.length,
+            ...attachmentMetadataOf(attachments),
           },
         });
         return { message: restored, deduplicated: true };

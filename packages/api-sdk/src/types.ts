@@ -4843,7 +4843,7 @@ export interface components {
             client_message_id?: string | null;
             /** Format: uuid */
             reply_to_id: string | null;
-            /** @description Free-form annotations; carries `attachment_count`. Empty on a masked row, which is what stops a masked message pulling the blocked member’s uploads. */
+            /** @description Free-form annotations; carries `attachment_count`, and `attachment_photos` (one `{width, height, thumbhash}` per photo) so a reader can size each photo before the attachments read returns. Empty on a masked row, which is what stops a masked message pulling the blocked member’s uploads. */
             metadata: Record<string, never>;
             is_pinned: boolean;
             pinned_at: string | null;
