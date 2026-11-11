@@ -62,7 +62,7 @@ its emitter sets: `chat` sends `channelId`, plus `threadRootId` for a thread rep
 `taskId`, and `billing` / `points` / `service` / `members` / `chat_reports` /
 `discord_import` send a bare `screen`. `chat_reports` names the officer report queue
 (the new-report notification, [`chat/README.md`](./chat/README.md#report)); web
-resolves it to `/chat-admin`, and mobile, which has no queue, falls through to the
+resolves it to `/chat-admin#reported-messages`, the queue at the foot of Chat admin, and mobile, which has no queue, falls through to the
 notification list like any screen it does not route. `discord_import` is the notice
 that a Discord import finished or stopped on an error, sent to the admin who set it up
 ([`chat/README.md`](./chat/README.md#imported-archive-messages)); web resolves it to

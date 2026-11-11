@@ -293,7 +293,7 @@ The four docs gates that covered structure, citations, references and rosters ar
 
 The **`api-tests`** job runs the unit, E2E and AI-eval suites; see §2.
 
-The evals run unconditionally rather than path-gated. Spec §13 requires them on any change to prompts, retrieval or the tool registry; running them always is a superset, and costs ~1.5s against the minutes a separate job's checkout and install would burn (ADR-15). Their behavioural half currently **skips** — no agent exists yet — so a green `api-tests` is not evidence any agent was graded; see [`docs/security/ai-prompt-injection.md`](../security/ai-prompt-injection.md) and `apps/api/test/ai-evals/README.md`.
+The evals run whenever `api-tests` does rather than in a job of their own. That job runs on every push, and on every PR except one whose files are all in areas the API never reads (`apps/web`, `apps/landing`, `apps/mobile`, `docs/`, `spec/`), so any change to prompts, retrieval or the tool registry, which Spec §13 requires them on, runs them; that is a superset, and costs ~1.5s against the minutes a separate job's checkout and install would burn (ADR-15). Their behavioural half currently **skips** — no agent exists yet — so a green `api-tests` is not evidence any agent was graded; see [`docs/security/ai-prompt-injection.md`](../security/ai-prompt-injection.md) and `apps/api/test/ai-evals/README.md`.
 
 ## 5a. Chat hot-path tests (ADR-11 / #416)
 
