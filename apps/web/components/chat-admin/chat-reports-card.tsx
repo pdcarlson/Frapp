@@ -102,23 +102,9 @@ export function ChatReportsCard({
   return (
     <Can
       allOf={CHAT_REPORT_QUEUE_PERMISSIONS}
-      deniedFallback={
-        // Labelled as the queue is when it renders. This sits beside the flush
-        // channel sections on the same page, so a card here would draw the
-        // same title in a second style for an officer who can manage channels
-        // but not review reports.
-        <section aria-labelledby="chat-reports-label" className="space-y-1">
-          <h2
-            id="chat-reports-label"
-            className={`${EYEBROW} text-muted-foreground`}
-          >
-            {copy.title}
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            {copy.deniedDescription}
-          </p>
-        </section>
-      }
+      // Nothing for an officer who can't review reports (Paul, 2026-11-11:
+      // reports stay "on the DL", not "staring you right in the face").
+      deniedFallback={null}
       offlineFallback={(retry) => (
         <PermissionsOfflineSurface
           description="Reconnect to check whether you can review reported messages."
@@ -192,17 +178,32 @@ function resolutionFailureMessage(error: unknown, next: Resolution): string {
 export const CHAT_REPORTS_ANCHOR = "reported-messages";
 
 function ChatReportsQueue({ channelId }: { channelId?: string }) {
+  // Kept out of the way (Paul, 2026-11-11: "just not showing reports if
+  // there's no reported messages ... it doesn't need to be staring you right
+  // in the face"). With no open report the queue folds to one quiet link to
+  // its history; an open report, a failed read or a notification's
+  // `#reported-messages` link shows it in full. The read is the Open tab's own
+  // query, so it costs nothing extra.
+  const openQuery = useChatReports("open", channelId);
+  const [historyShown, setHistoryShown] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      window.location.hash === `#${CHAT_REPORTS_ANCHOR}`,
+  );
+  const nothingOpen =
+    Array.isArray(openQuery.data) && openQuery.data.length === 0;
   const [status, setStatus] = useState<ChatReportStatus>("open");
   // The queue sits last on the page, under the channel settings, so a
   // new-report notification (`/chat-admin#reported-messages`) scrolls to it
   // once it mounts: the browser's own jump ran before the permission gate let
   // the section render.
   const sectionRef = useRef<HTMLElement>(null);
+  const loaded = openQuery.data !== undefined || openQuery.isError;
   useEffect(() => {
-    if (window.location.hash === `#${CHAT_REPORTS_ANCHOR}`) {
+    if (loaded && window.location.hash === `#${CHAT_REPORTS_ANCHOR}`) {
       sectionRef.current?.scrollIntoView({ block: "start" });
     }
-  }, []);
+  }, [loaded]);
   const { confirm, confirmDialog } = useConfirmDialog();
   const { toast } = useToast();
   const resolve = useResolveChatReport();
@@ -268,6 +269,26 @@ function ChatReportsQueue({ channelId }: { channelId?: string }) {
     } finally {
       markBusy(report.id, null);
     }
+  }
+
+  // Nothing to show until the open read answers, so the page doesn't flash
+  // a queue that then folds away.
+  if (!loaded) return null;
+  if (nothingOpen && !historyShown) {
+    return (
+      <div id={CHAT_REPORTS_ANCHOR} className="scroll-mt-4">
+        <button
+          type="button"
+          className={cn(
+            "rounded-sm text-caption text-muted transition-colors hover:text-foreground",
+            FOCUS_RING,
+          )}
+          onClick={() => setHistoryShown(true)}
+        >
+          {copy.historyLink}
+        </button>
+      </div>
+    );
   }
 
   return (
