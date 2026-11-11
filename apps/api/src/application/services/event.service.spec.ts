@@ -11,10 +11,16 @@ describe('EventService', () => {
   let mockEventRepo: EventServiceFixture['mockEventRepo'];
   let mockMemberRepo: EventServiceFixture['mockMemberRepo'];
   let mockRbacService: EventServiceFixture['mockRbacService'];
+  let mockEventTypeRepo: EventServiceFixture['mockEventTypeRepo'];
 
   beforeEach(async () => {
-    ({ service, mockEventRepo, mockMemberRepo, mockRbacService } =
-      await createEventServiceFixture());
+    ({
+      service,
+      mockEventRepo,
+      mockMemberRepo,
+      mockRbacService,
+      mockEventTypeRepo,
+    } = await createEventServiceFixture());
   });
 
   it('should find event by id', async () => {
@@ -333,6 +339,8 @@ describe('EventService', () => {
       check_in_zone_name: null,
       // Omitted: the ten-minute default (#3703).
       check_in_opens_minutes: 10,
+      // No type picked.
+      event_type_id: null,
       // No caller named: no creator recorded.
       created_by: null,
     });
@@ -485,5 +493,68 @@ describe('EventService', () => {
     await service.delete('evt-1', 'ch-1');
 
     expect(mockEventRepo.delete).toHaveBeenCalledWith('evt-1', 'ch-1');
+  });
+
+  // Event types (#3730): the type rides on the row, and only the chapter's
+  // own types are accepted.
+  describe('event type', () => {
+    const schedule = {
+      chapter_id: 'ch-1',
+      name: 'Chapter meeting',
+      start_time: '2027-02-26T18:00:00.000Z',
+      end_time: '2027-02-26T19:00:00.000Z',
+    };
+
+    it('stores the type a create names', async () => {
+      mockEventRepo.create.mockResolvedValue(baseEvent);
+      await service.create({ ...schedule, event_type_id: 'type-1' });
+      expect(mockEventTypeRepo.findById).toHaveBeenCalledWith('type-1', 'ch-1');
+      expect(mockEventRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ event_type_id: 'type-1' }),
+      );
+    });
+
+    it('stores no type when a create names none', async () => {
+      mockEventRepo.create.mockResolvedValue(baseEvent);
+      await service.create(schedule);
+      expect(mockEventTypeRepo.findById).not.toHaveBeenCalled();
+      expect(mockEventRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ event_type_id: null }),
+      );
+    });
+
+    it("refuses another chapter's type before writing", async () => {
+      mockEventTypeRepo.findById.mockResolvedValueOnce(null);
+      await expect(
+        service.create({ ...schedule, event_type_id: 'type-other' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockEventRepo.create).not.toHaveBeenCalled();
+    });
+
+    it("refuses another chapter's type on an update", async () => {
+      mockEventTypeRepo.findById.mockResolvedValueOnce(null);
+      await expect(
+        service.update('evt-1', 'ch-1', { event_type_id: 'type-other' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockEventRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('copies the type onto every occurrence of a series', async () => {
+      mockEventRepo.create.mockResolvedValue({
+        ...baseEvent,
+        start_time: schedule.start_time,
+        end_time: schedule.end_time,
+        recurrence_rule: 'WEEKLY',
+        event_type_id: 'type-1',
+      });
+      await service.create({
+        ...schedule,
+        recurrence_rule: 'WEEKLY',
+        event_type_id: 'type-1',
+      });
+      const rows = mockEventRepo.createMany.mock.calls[0][0];
+      expect(rows.length).toBeGreaterThan(0);
+      expect(rows.every((row) => row.event_type_id === 'type-1')).toBe(true);
+    });
   });
 });

@@ -22,6 +22,34 @@ vi.mock("@repo/hooks", () => ({
   EVENT_CREATE_UNCONFIRMED: "unconfirmed-sentinel",
   useCreateEvent: () => ({ mutateAsync: createMutate, isPending: false }),
   useUpdateEvent: () => ({ mutateAsync: updateMutate, isPending: false }),
+  useEventTypes: () => ({
+    data: [
+      {
+        id: "type-meeting",
+        chapter_id: "chap-1",
+        name: "Chapter meeting",
+        point_value: 10,
+        is_mandatory: true,
+        position: 1,
+        created_at: "2026-11-11T00:00:00.000Z",
+        updated_at: "2026-11-11T00:00:00.000Z",
+      },
+      {
+        id: "type-social",
+        chapter_id: "chap-1",
+        name: "Social",
+        point_value: 0,
+        is_mandatory: false,
+        position: 2,
+        created_at: "2026-11-11T00:00:00.000Z",
+        updated_at: "2026-11-11T00:00:00.000Z",
+      },
+    ],
+    isLoading: false,
+  }),
+  useCreateEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useRoles: () => ({
     data: [
       { id: "r1", name: "Exec" },
@@ -786,7 +814,11 @@ describe("EventEditorDialog opened from chat (#3773)", () => {
 
   it("keeps a durable row in chat when the card didn't post, through the chat's tracker", async () => {
     createMutate.mockResolvedValue({ card_posted: false });
-    const track = { clientMessageId: "22222222-2222-4222-8222-222222222222", failed: vi.fn(), lost: vi.fn() };
+    const track = {
+      clientMessageId: "22222222-2222-4222-8222-222222222222",
+      failed: vi.fn(),
+      lost: vi.fn(),
+    };
     const trackChatCard = vi.fn(() => track);
     renderFromChat({ trackChatCard });
     fillRequiredFields();
@@ -802,7 +834,11 @@ describe("EventEditorDialog opened from chat (#3773)", () => {
 
   it("drops the chat placeholder when the create is refused", async () => {
     createMutate.mockRejectedValue(new Error("Forbidden"));
-    const track = { clientMessageId: "33333333-3333-4333-8333-333333333333", failed: vi.fn(), lost: vi.fn() };
+    const track = {
+      clientMessageId: "33333333-3333-4333-8333-333333333333",
+      failed: vi.fn(),
+      lost: vi.fn(),
+    };
     renderFromChat({ trackChatCard: () => track });
     fillRequiredFields();
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));
@@ -831,5 +867,114 @@ describe("EventEditorDialog opened from chat (#3773)", () => {
 
     await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
     expect(createMutate.mock.calls[0]![0]).not.toHaveProperty("channel_id");
+  });
+});
+
+describe("EventEditorDialog event types (#3730)", () => {
+  beforeEach(() => {
+    createMutate.mockReset();
+    updateMutate.mockReset();
+    createMutate.mockResolvedValue(undefined);
+    updateMutate.mockResolvedValue(undefined);
+    chapter.active();
+  });
+
+  function renderCreate() {
+    render(
+      <EventEditorDialog
+        open
+        mode="create"
+        event={null}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+      />,
+    );
+  }
+
+  const fillTimes = () => {
+    fireEvent.change(screen.getByLabelText("Start"), {
+      target: { value: "2026-07-01T18:00" },
+    });
+    fireEvent.change(screen.getByLabelText("End"), {
+      target: { value: "2026-07-01T19:00" },
+    });
+  };
+
+  it("opens with no type held", () => {
+    renderCreate();
+    const group = screen.getByRole("radiogroup", { name: "Type" });
+    for (const chip of within(group).getAllByRole("radio")) {
+      expect(chip).toHaveAttribute("aria-checked", "false");
+    }
+  });
+
+  it("fills the name, points and attendance from the type and sends it", async () => {
+    renderCreate();
+    fireEvent.click(screen.getByRole("radio", { name: "Chapter meeting" }));
+
+    expect(screen.getByLabelText("Event name")).toHaveValue("Chapter meeting");
+    expect(
+      screen.getByRole("button", { name: /More options/ }),
+    ).toHaveTextContent("10 pts · Required for everyone");
+
+    fillTimes();
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    expect(createMutate.mock.calls[0]![0]).toMatchObject({
+      name: "Chapter meeting",
+      event_type_id: "type-meeting",
+      point_value: 10,
+      is_mandatory: true,
+    });
+  });
+
+  it("replaces a name the last type wrote, never one the officer typed", () => {
+    renderCreate();
+    fireEvent.click(screen.getByRole("radio", { name: "Chapter meeting" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Social" }));
+    expect(screen.getByLabelText("Event name")).toHaveValue("Social");
+
+    fireEvent.change(screen.getByLabelText("Event name"), {
+      target: { value: "Bowling night" },
+    });
+    fireEvent.click(screen.getByRole("radio", { name: "Chapter meeting" }));
+    expect(screen.getByLabelText("Event name")).toHaveValue("Bowling night");
+  });
+
+  it("sends no type on create when none is held", async () => {
+    renderCreate();
+    fillRequiredFields();
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    expect(createMutate.mock.calls[0]![0]).not.toHaveProperty("event_type_id");
+  });
+
+  it("reads the type back on edit and clears it when let go", async () => {
+    render(
+      <EventEditorDialog
+        open
+        mode="edit"
+        event={{
+          id: "e1",
+          name: "Weekly chapter",
+          start_time: "2026-07-01T18:00:00.000Z",
+          end_time: "2026-07-01T19:00:00.000Z",
+          event_type_id: "type-meeting",
+        }}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+      />,
+    );
+    const held = screen.getByRole("radio", { name: "Chapter meeting" });
+    expect(held).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(held);
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(updateMutate).toHaveBeenCalledTimes(1));
+    expect(updateMutate.mock.calls[0]![0].body).toMatchObject({
+      event_type_id: null,
+      name: "Weekly chapter",
+    });
   });
 });

@@ -75,6 +75,8 @@ export function useCreateEvent() {
       check_in_zone_name?: string;
       // Minutes before the start that check-in opens; the server defaults it.
       check_in_opens_minutes?: number;
+      // One of the chapter's event types (`useEventTypes`), or omitted.
+      event_type_id?: string;
       // Both or neither: posts the event's card to this chat channel. The API
       // refuses either key on an event that keeps anyone out.
       channel_id?: string;
@@ -104,7 +106,10 @@ export function useCreateEvent() {
     onError: (error) => {
       // The event may exist, and the copy says to check for it: refetch the
       // list so a cached one doesn't hide it.
-      if (error instanceof Error && error.message === EVENT_CREATE_UNCONFIRMED) {
+      if (
+        error instanceof Error &&
+        error.message === EVENT_CREATE_UNCONFIRMED
+      ) {
         void queryClient.invalidateQueries({ queryKey: ["events", chapterId] });
       }
     },
@@ -142,6 +147,8 @@ export function useUpdateEvent() {
         check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
         check_in_zone_name?: string;
         check_in_opens_minutes?: number;
+        // `null` clears the type; omitted leaves it.
+        event_type_id?: string | null;
         // Which rows of a repeating series the edit reaches
         // (`spec/behavior/events.md` § Recurrence edit and cancellation scope).
         scope?: "instance" | "series";

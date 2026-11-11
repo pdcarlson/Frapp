@@ -23,6 +23,7 @@ import {
   EVENT_CREATE_UNCONFIRMED,
   useCreateEvent,
   useDeleteEvent,
+  useEventTypes,
   usePermissionList,
   useRoles,
   useUpdateEvent,
@@ -60,6 +61,7 @@ import { AttendanceSheet } from "@/components/events/attendance-sheet";
 import { roleOptionsFrom } from "@/lib/events/attendance-roles";
 import {
   EVENT_NAME_MAX_LENGTH,
+  applyEventType,
   emptyEventDraft,
   MINUTE_INTERVAL,
   moreOptionsSummary,
@@ -247,6 +249,14 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     const grants = useEventEditGrants();
     const attendanceRef = useRef<BottomSheetModal>(null);
     const rolesQuery = useRoles();
+    // The chapter's event types (#3730), as chips above the name. Managing
+    // them is on web; here they only fill the form.
+    const typesQuery = useEventTypes();
+    const eventTypes = useMemo(() => typesQuery.data ?? [], [typesQuery.data]);
+    const typeChips = useMemo(
+      () => eventTypes.map((type) => ({ value: type.id, label: type.name })),
+      [eventTypes],
+    );
     const roleName = useMemo(() => {
       const byId = new Map(
         roleOptionsFrom(rolesQuery.data).map((role) => [role.id, role.name]),
@@ -586,6 +596,25 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
               onCancel={cancel}
               cancelDisabled={pending}
             />
+
+            {typeChips.length > 0 ? (
+              // One row that scrolls to the sheet's edge, as s12's chips do.
+              <FilterChips
+                chips={typeChips}
+                selected={draft.eventTypeId}
+                onSelect={(value) => {
+                  const type = eventTypes.find((t) => t.id === value);
+                  if (!type) return;
+                  update(applyEventType(draft, type), [
+                    "name",
+                    "points",
+                    "attendance",
+                  ]);
+                }}
+                accessibilityLabel="Event type"
+                scroll
+              />
+            ) : null}
 
             <View
               style={[

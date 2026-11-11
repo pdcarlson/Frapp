@@ -65,6 +65,22 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useUpdateEvent: () => ({ mutate: updateMutate, isPending: false }),
   useDeleteEvent: () => ({ mutate: deleteMutate, isPending: false }),
   usePermissionList: () => permissions,
+  useEventTypes: () => ({
+    data: [
+      {
+        id: "type-meeting",
+        name: "Chapter meeting",
+        point_value: 10,
+        is_mandatory: true,
+      },
+      {
+        id: "type-social",
+        name: "Social",
+        point_value: 0,
+        is_mandatory: false,
+      },
+    ],
+  }),
   useRoles: () => ({
     data: [
       { id: "role-officers", name: "Officers" },
@@ -239,6 +255,27 @@ describe("New event", () => {
     expect(byLabel(tree, "More options").props.accessibilityLabel).toBe(
       "More options: 10 pts · Optional for everyone · Doesn't repeat",
     );
+    act(() => tree.unmount());
+  });
+
+  it("fills the form from a type chip and sends the type (#3730)", () => {
+    const tree = render();
+    act(() => chip(tree, "Chapter meeting").props.onPress());
+    expect(byLabel(tree, "Event name").props.value).toBe("Chapter meeting");
+    expect(byLabel(tree, "More options").props.accessibilityLabel).toBe(
+      "More options: 10 pts · Required for everyone · Doesn't repeat",
+    );
+    // Another type replaces the name the first wrote.
+    act(() => chip(tree, "Social").props.onPress());
+    expect(byLabel(tree, "Event name").props.value).toBe("Social");
+
+    act(() => createButton(tree).props.onPress());
+    expect(mutate.mock.calls[0]![0]).toMatchObject({
+      name: "Social",
+      event_type_id: "type-social",
+      point_value: 0,
+      is_mandatory: false,
+    });
     act(() => tree.unmount());
   });
 
@@ -470,6 +507,7 @@ describe("Edit event", () => {
     description: null,
     notes: null,
     check_in_zone_name: null,
+    event_type_id: null,
     hasCheckInZone: false,
     recurrence_rule: null,
     parent_event_id: null,

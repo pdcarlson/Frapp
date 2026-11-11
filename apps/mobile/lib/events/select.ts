@@ -26,11 +26,7 @@ import {
   checkInOpensMinutes,
   type EventAttendanceFields,
 } from "@repo/validation";
-import {
-  formatDayHeading,
-  localIsoDate,
-  parseInstant,
-} from "@repo/formatting";
+import { formatDayHeading, localIsoDate, parseInstant } from "@repo/formatting";
 import { isCurrentOrUpcoming, sortEventsByStart } from "./format";
 
 export interface EventRow {
@@ -86,6 +82,8 @@ export interface EventDetail extends EventRow {
    * exact boundary to anyone who asked for the event.
    */
   hasCheckInZone: boolean;
+  /** The chapter's event type it was made as (#3730), or `null`. */
+  event_type_id: string | null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -397,5 +395,6 @@ export function selectEventDetail(data: unknown): EventDetail | null {
     check_in_zone_name: str(data, "check_in_zone_name"),
     hasCheckInZone:
       Array.isArray(data.check_in_zone) && data.check_in_zone.length > 0,
+    event_type_id: str(data, "event_type_id"),
   };
 }
