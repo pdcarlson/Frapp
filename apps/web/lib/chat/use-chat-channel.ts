@@ -199,14 +199,8 @@ export interface UseChatChannelResult {
    * points) unconfirmed-retry bookkeeping. Never reject; read the result as
    * `notifyDispatchOutcome` does.
    */
-  postTask: (
-    targetChannelId: string,
-    input: TaskInput,
-  ) => Promise<DispatchResult>;
-  postHours: (
-    targetChannelId: string,
-    input: HoursInput,
-  ) => Promise<DispatchResult>;
+  postTask: (targetChannelId: string, input: TaskInput) => Promise<DispatchResult>;
+  postHours: (targetChannelId: string, input: HoursInput) => Promise<DispatchResult>;
   postPointsAdjustment: (
     targetChannelId: string,
     input: PointsAdjustmentInput,

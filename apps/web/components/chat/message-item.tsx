@@ -1321,7 +1321,8 @@ export function MessageItem({
     ) : isEditing ? (
       editForm
     ) : (
-      body
+      // The caption is drawn above the bubble column, not in it (#3921).
+      bodyCore
     );
     /*
      * A follow-on bubble's own time, beside it on the side away from the
@@ -1766,9 +1767,12 @@ export function MessageItem({
  * danger bar on its leading edge, the shape the mention row takes in the
  * chapter accent (§11 § A row that mentions you). It is information, so it
  * stays on under a pointer and deepens rather than giving way to the lift.
+ * Chapter-accent text on the row (the thread chip's reply count is the one
+ * that sits straight on the tint) reads in `--foreground` here: the accent
+ * misses AA on the red for most chapter seeds.
  */
 const IMPORTANT_ROW =
-  "bg-destructive-tint shadow-[inset_2px_0_0_var(--destructive)] hover:bg-destructive-tint-hover has-[:focus-visible]:bg-destructive-tint-hover";
+  "bg-destructive-tint shadow-[inset_2px_0_0_var(--destructive)] hover:bg-destructive-tint-hover has-[:focus-visible]:bg-destructive-tint-hover [&_.text-primary]:text-foreground";
 
 /** The fill a tapped row holds, by which emphasis it wears. */
 function rowTapClass(important: boolean, mentionsViewer: boolean): string {

@@ -76,7 +76,13 @@ export function messageFlagCaption(view: MessageFlagView): string {
 /**
  * Whether the viewer may open the flag menu on this row: a confirmed, live
  * message they can read (not a blocked member's tombstone, not a pending
- * send), and either it has no flag yet or they may change the one it has.
+ * send, not one of `UNFLAGGABLE_KINDS`), and either it has no flag yet or
+ * they may change the one it has.
+ *
+ * A flag value a newer server added reads as no flag here (`normalizeRow`),
+ * so this can offer the menu on such a row to someone the server then
+ * refuses with a toast. Accepted: it needs a version skew, and refusing is
+ * the server's job.
  * A viewer who can't change someone else's flag sees no control, rather than
  * a menu of choices that would all be refused.
  */
@@ -95,7 +101,9 @@ export function canFlagMessage(
   canManageChannel: boolean,
 ): boolean {
   if (!viewerId || !canActOnMessage(message)) return false;
-  if (message.sender_blocked || message.kind === "loading") return false;
+  if (message.sender_blocked || UNFLAGGABLE_KINDS.has(message.kind)) {
+    return false;
+  }
   return canChangeMessageFlag(
     {
       sender_id: message.sender_id,
@@ -106,6 +114,19 @@ export function canFlagMessage(
     canManageChannel,
   );
 }
+
+/**
+ * Rows the menu is not offered on. A `loading` row is a placeholder, and a
+ * `#chapter-audit` line is a log entry, not something said. An `imported`
+ * Discord row is dropped by the Realtime channel handler, so a flag put on
+ * one would reach nobody else's open timeline until a reload (#3921 review).
+ * The server still accepts all three; this is the client's offer only.
+ */
+const UNFLAGGABLE_KINDS: ReadonlySet<string> = new Set([
+  "loading",
+  "system_audit",
+  "imported",
+]);
 
 /** The menu's choices, Important first, as the API's fixed set orders them. */
 export const MESSAGE_FLAG_OPTIONS: ReadonlyArray<{

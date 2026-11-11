@@ -1,9 +1,13 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { MessageItem, type MessageItemProps } from "./message-item";
 import { NOBODY_BLOCKED } from "@/tests/block-list";
+import {
+  resetChatDensityForTests,
+  setChatDensity,
+} from "@/lib/chat/chat-density";
 
 // Message flags (#3921): a flag a member puts on a message after it is sent.
 // In its own file, beside the row's main suite, so the two change apart.
@@ -184,5 +188,85 @@ describe("MessageItem flags (#3921)", () => {
   it("offers no Flag control where the surface doesn't wire one", () => {
     renderRow();
     expect(screen.queryByRole("button", { name: "Flag" })).toBeNull();
+  });
+});
+
+describe("MessageItem flags across densities and states (#3921)", () => {
+  afterEach(() => {
+    act(() => setChatDensity("cozy"));
+    window.localStorage.clear();
+    resetChatDensityForTests();
+  });
+
+  const captions = (container: HTMLElement) =>
+    container.querySelectorAll('[data-slot="message-flag"]').length;
+
+  it.each(["cozy", "compact", "bubbles"] as const)(
+    "draws one caption in %s, for text and for a message that is only a file",
+    (density) => {
+      act(() => setChatDensity(density));
+      for (const overrides of [
+        {},
+        { content: "", attachment_count: 1 },
+      ] as Partial<ChatMessage>[]) {
+        const { container, unmount } = renderRow({
+          message: message({ ...flagged, ...overrides }),
+        });
+        expect(
+          captions(container),
+          `${density} ${JSON.stringify(overrides)}`,
+        ).toBe(1);
+        unmount();
+      }
+    },
+  );
+
+  it("draws the caption above the bubble, not on its fill", () => {
+    act(() => setChatDensity("bubbles"));
+    const { container } = renderRow({
+      message: message({ ...flagged, sender_id: VIEWER }),
+    });
+    const caption = container.querySelector('[data-slot="message-flag"]');
+    expect(caption?.closest(".bg-primary")).toBeNull();
+  });
+
+  it("holds the deeper tint on a tapped Important row", () => {
+    renderRow({ message: message(flagged), isTapRevealed: true });
+    expect(screen.getByRole("listitem").className).toContain(
+      "bg-destructive-tint-hover",
+    );
+    expect(screen.getByRole("listitem").className).not.toContain(
+      "bg-surface-1",
+    );
+  });
+
+  it("reads chapter-accent text on the row in the foreground tone", () => {
+    renderRow({ message: message(flagged) });
+    expect(screen.getByRole("listitem").className).toContain(
+      "[&_.text-primary]:text-foreground",
+    );
+  });
+
+  it("marks the Flag button on while the message is flagged", () => {
+    renderRow({
+      onFlag: vi.fn(),
+      viewerId: FLAGGER,
+      message: message(flagged),
+    });
+    const flagged_on = screen.getByRole("button", { name: "Flag" }).className;
+    renderRow({ onFlag: vi.fn() });
+    const buttons = screen.getAllByRole("button", { name: "Flag" });
+    expect(flagged_on).not.toEqual(buttons[1]!.className);
+  });
+
+  it("offers no Flag control on an imported or audit row", () => {
+    for (const kind of ["imported", "system_audit"] as const) {
+      const { unmount } = renderRow({
+        onFlag: vi.fn(),
+        message: message({ kind }),
+      });
+      expect(screen.queryByRole("button", { name: "Flag" }), kind).toBeNull();
+      unmount();
+    }
   });
 });

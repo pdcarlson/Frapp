@@ -81,6 +81,8 @@ Was, for comparison: foreground 16.61 / 15.84 / 15.04 / 13.98; muted foreground 
 
 Status-only, never decorative. A semantic hue states a fact ("paid", "overdue"); it never tints chrome, headings, or illustration.
 
+*Changed in #3921 by Shawn (via `pdcarlson`), 2026-11-11; pending Paul:* an **Important** chat message tints its whole row with `--destructive-tint` and a `--destructive` bar ([components.md § A flagged row](components.md#a-flagged-row)). It is read as a status the message carries ("needs attention", the way Microsoft Teams marks Important in red), not decoration, but it is the one place a semantic hue fills a whole row.
+
 | Token | Value | Use |
 |-------|-------|-----|
 | `--success` | `#3fb950` | Paid, confirmed, checked-in, inside-zone |

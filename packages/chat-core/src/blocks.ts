@@ -348,8 +348,9 @@ export function visibleTypingUsers(
 
 /**
  * Whether another member's own action (a reaction, a typing broadcast, the
- * name on a flag they added, #3921) may show: against a ready list unless they are on it, and while the list is not
- * ready only once this client confirmed unblocking them. Callers decide what
+ * name on a flag they added, #3921) may show: against a ready list unless
+ * they are on it, and while the list is not ready only once this client
+ * confirmed unblocking them. Callers decide what
  * the viewer's own actions do.
  */
 export function isVisibleMember(
