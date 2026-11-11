@@ -107,11 +107,23 @@ describe("Playwright OS deps install without the apt mirrors when it can", () =>
     // Chromium needs every library; a missing font changes no launch. Anything
     // but fonts still fails the job after three tries.
     assert.match(text, /grep -qvE '\^x\?fonts-'/);
-    const degrade = at(text, 'if [ "$fonts_only" = true ]; then');
+    const helper = at(text, "without_fonts() {");
     assert.ok(
-      degrade < at(text, 'echo "save=false" >> "$GITHUB_OUTPUT"', degrade),
+      helper < at(text, 'echo "save=false" >> "$GITHUB_OUTPUT"', helper),
     );
-    assert.ok(degrade < at(text, 'if [ "$i" -eq 3 ]; then', degrade));
+    // A dead mirror is caught by one bounded probe before apt, and a failed
+    // attempt never reaches the third try when only fonts are missing.
+    const probe = at(text, "curl -sS -o /dev/null --max-time 15");
+    assert.ok(probe < at(text, INSTALL_DEPS, probe));
+    assert.match(
+      text.slice(probe),
+      /^\s*if \[ "\$fonts_only" = true \]; then without_fonts; fi$/m,
+    );
+    const loop = at(text, "for i in 1 2 3;");
+    assert.ok(
+      at(text, 'if [ "$fonts_only" = true ]; then without_fonts; fi', loop) <
+        at(text, 'if [ "$i" -eq 3 ]; then', loop),
+    );
     assert.match(
       text,
       /if: steps\.restore\.outputs\.cache-hit != 'true' && steps\.install\.outputs\.save != 'false'/,

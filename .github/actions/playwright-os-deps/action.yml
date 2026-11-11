@@ -72,6 +72,22 @@ runs:
         if [ -n "$missing" ] && ! printf '%s\n' "$missing" | grep -qvE '^x?fonts-'; then
           fonts_only=true
         fi
+        without_fonts() {
+          # Not cached, so the next run with apt reachable fetches and caches them.
+          echo "::warning::apt is unreachable and only fonts are missing ($(echo $missing)); running without them."
+          echo "save=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        }
+        # One quick request to the runner's first Ubuntu mirror. Any HTTP answer
+        # counts as reachable. apt's own timeouts did not bound a DNS outage:
+        # one attempt ran past 10 minutes on 2026-11-11.
+        mirror="$(awk 'NF { print $1; exit }' /etc/apt/apt-mirrors.txt 2>/dev/null || true)"
+        mirror="${mirror:-http://archive.ubuntu.com/ubuntu/}"
+        code="$(curl -sS -o /dev/null --max-time 15 -w '%{http_code}' "$mirror" 2>/dev/null || true)"
+        if [ "${code:-000}" = "000" ]; then
+          echo "The Ubuntu mirror $mirror did not answer."
+          if [ "$fonts_only" = true ]; then without_fonts; fi
+        fi
 
         # Drop Google's apt source, whose Hash Sum mismatches retries can't absorb.
         sudo rm -f /etc/apt/sources.list.d/google-chrome.list \
@@ -92,12 +108,7 @@ runs:
           if npx playwright install-deps chromium; then
             break
           fi
-          if [ "$fonts_only" = true ]; then
-            # Not cached, so the next run with apt reachable fetches and caches them.
-            echo "::warning::apt is unreachable and only fonts are missing ($(echo $missing)); running without them."
-            echo "save=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          if [ "$fonts_only" = true ]; then without_fonts; fi
           if [ "$i" -eq 3 ]; then
             echo "::error::playwright install-deps failed after 3 attempts (see prior apt output)."
             exit 1
