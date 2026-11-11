@@ -50,6 +50,9 @@ const link = (
   posted_at: '2026-11-10T12:00:00.000Z',
   removed_at: null,
   removed_by: null,
+  title: null,
+  title_attempts: 0,
+  title_checked_at: null,
   ...overrides,
 });
 
@@ -272,6 +275,89 @@ describe('SupabaseChatMessageLinkRepository — tenant scope', () => {
 
       const restored = await repo.setRemoved(CHAPTER_A, LINK_A, null);
       expect(restored).toMatchObject({ removed_at: null, removed_by: null });
+    });
+  });
+
+  describe('finishTitle', () => {
+    it('ends only the chapter’s own links, even given the other’s id', async () => {
+      await harness.expectTenantScoped(CHAPTER_A, () =>
+        repo.finishTitle(CHAPTER_A, [LINK_A, LINK_B], 'Formal RSVP'),
+      );
+
+      const rows = harness.rows('chat_message_links');
+      expect(rows.find((r) => r.id === LINK_A)).toMatchObject({
+        title: 'Formal RSVP',
+        title_attempts: 3,
+      });
+      expect(rows.find((r) => r.id === LINK_B)).toMatchObject({
+        title: null,
+        title_attempts: 0,
+      });
+    });
+
+    it('ends a page with no name so it is never read again', async () => {
+      await repo.finishTitle(CHAPTER_A, [LINK_A], null);
+
+      expect(
+        harness.rows('chat_message_links').find((r) => r.id === LINK_A),
+      ).toMatchObject({ title: null, title_attempts: 3 });
+      await expect(
+        repo.findTitlePending({ since: SINCE, retryBefore: SINCE, limit: 10 }),
+      ).resolves.toEqual([expect.objectContaining({ id: LINK_B })]);
+    });
+
+    it('writes nothing for no links', async () => {
+      await repo.finishTitle(CHAPTER_A, [], 'Formal RSVP');
+      expect(harness.ops).toHaveLength(0);
+    });
+  });
+
+  // The title sweep's read walks every chapter by design (#4187): it returns
+  // ids, chapters, URLs and attempt counts, and every write is scoped.
+  describe('findTitlePending', () => {
+    it('returns unread, unremoved links inside the window, from every chapter', async () => {
+      const rows = await repo.findTitlePending({
+        since: SINCE,
+        retryBefore: SINCE,
+        limit: 10,
+      });
+
+      expect(rows.map((row) => row.id).sort()).toEqual([LINK_A, LINK_B].sort());
+    });
+  });
+
+  describe('claimForTitle', () => {
+    it('claims a link once per try: a second claim at the same count loses', async () => {
+      const link = {
+        id: LINK_A,
+        chapter_id: CHAPTER_A,
+        url: 'https://forms.gle/abc',
+        title_attempts: 0,
+      };
+
+      await expect(
+        harness.expectTenantScoped(CHAPTER_A, () => repo.claimForTitle(link)),
+      ).resolves.toBe(true);
+      expect(
+        harness.rows('chat_message_links').find((r) => r.id === LINK_A),
+      ).toMatchObject({
+        title_attempts: 1,
+        title_checked_at: expect.any(String),
+      });
+
+      // The other replica read the same count before this claim landed.
+      await expect(repo.claimForTitle(link)).resolves.toBe(false);
+    });
+
+    it('does not claim a link with the other chapter’s id', async () => {
+      await expect(
+        repo.claimForTitle({
+          id: LINK_B,
+          chapter_id: CHAPTER_A,
+          url: 'https://forms.gle/abc',
+          title_attempts: 0,
+        }),
+      ).resolves.toBe(false);
     });
   });
 });

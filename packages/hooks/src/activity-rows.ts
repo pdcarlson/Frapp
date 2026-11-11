@@ -364,13 +364,21 @@ function eventRow(event: ActivityEvent, group: string): ActivityRow {
   };
 }
 
+/**
+ * A link row is titled by the page's own name when the API read one (#4187),
+ * with its kind leading the detail ("Google Form · Olive · #rush · Tue 3:00
+ * PM"); with no name it is titled by its kind, as before.
+ */
 function linkRow(link: ActivityLink): ActivityRow {
+  const kind = activityLinkKind(link);
+  const name = link.title?.trim() || null;
   return {
     kind: "link",
     key: `link:${link.id}`,
     link,
-    title: activityLinkKind(link),
+    title: name ?? kind,
     detail: [
+      name ? kind : null,
       link.posted_by_name || null,
       channelLabel(link),
       formatRelativeDayTime(link.posted_at),

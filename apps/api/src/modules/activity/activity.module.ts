@@ -6,6 +6,9 @@ import { CHAT_MESSAGE_LINK_REPOSITORY } from '#domain/repositories/chat-message-
 import { SupabaseActivityItemReadRepository } from '../../infrastructure/supabase/repositories/supabase-activity-item-read.repository';
 import { ACTIVITY_ITEM_READ_REPOSITORY } from '#domain/repositories/activity-item-read.repository.interface';
 import { ActivityController } from '../../interface/controllers/activity.controller';
+import { LinkTitleSweepService } from '../../application/workers/link-title-sweep.service';
+import { HttpsLinkTitleFetcher } from '../../infrastructure/link-title/https-link-title.fetcher';
+import { LINK_TITLE_FETCHER } from '#domain/adapters/link-title.interface';
 import { SupabaseChatMessageRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message.repository';
 import { SupabaseChatMessageActionRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message-action.repository';
 import { SupabaseAttendanceRepository } from '../../infrastructure/supabase/repositories/supabase-attendance.repository';
@@ -47,10 +50,20 @@ import { TaskModule } from '../task/task.module';
     ActivityService,
     ActivityLinkService,
     // Links on Activity (#3897): this module is the table's only reader. The
-    // database's triggers on `chat_messages` write it.
+    // database's triggers on `chat_messages` write its rows; the title sweep
+    // below writes only their page titles.
     {
       provide: CHAT_MESSAGE_LINK_REPOSITORY,
       useClass: SupabaseChatMessageLinkRepository,
+    },
+    // Link titles (#4187): the background sweep that reads each link's page
+    // title, through the one guarded fetcher in the API that opens a
+    // URL a member posted. Built by a factory, since a spec passes its own
+    // DNS and request in place of the network.
+    LinkTitleSweepService,
+    {
+      provide: LINK_TITLE_FETCHER,
+      useFactory: () => new HttpsLinkTitleFetcher(),
     },
     // Which items each member opened, for unread dots (#4173). This module
     // is the table's only reader and writer.
