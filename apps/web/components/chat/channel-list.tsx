@@ -7,7 +7,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, ChevronRight, ListFilter } from "lucide-react";
 import {
   arrangeChannelSidebar,
@@ -51,10 +53,15 @@ import {
   useRailReorder,
   type RailDrag,
   type RailDrop,
+  type RailLift,
 } from "./use-rail-reorder";
+import { useRailFlip } from "./use-rail-flip";
+import { signetDarkTokens } from "@repo/theme/signet";
 import { isSystemChannel } from "./channel-start";
 import { cn, initials } from "@/lib/utils";
 import { EYEBROW } from "@/components/ui/typography";
+
+const RAIL_MOTION = signetDarkTokens.motion;
 
 export interface ChatChannel {
   id: string;
@@ -313,16 +320,54 @@ function categoryIdOf(key: string): string | null {
   return key.startsWith("category:") ? key.slice("category:".length) : null;
 }
 
-/** The drop line drawn above or below a row, a block or a heading. */
-const DROP_LINE_BEFORE =
-  "before:pointer-events-none before:absolute before:inset-x-2 before:-top-px before:z-20 before:h-0.5 before:rounded-full before:bg-primary";
-const DROP_LINE_AFTER =
-  "after:pointer-events-none after:absolute after:inset-x-2 after:-bottom-px after:z-20 after:h-0.5 after:rounded-full after:bg-primary";
-/** Between two section blocks, which sit 16px apart. */
-const BLOCK_LINE_BEFORE =
-  "before:pointer-events-none before:absolute before:inset-x-2 before:-top-2 before:z-20 before:h-0.5 before:rounded-full before:bg-primary";
-const BLOCK_LINE_AFTER =
-  "after:pointer-events-none after:absolute after:inset-x-2 after:-bottom-2 after:z-20 after:h-0.5 after:rounded-full after:bg-primary";
+/**
+ * The slot a drag opens where the row would land (owner, 2026-11-11: "you
+ * could just reserve the space for it"), in place of a drop line. Neutral, as
+ * every rail state but the active row is (foundations.md §6): a dashed
+ * `--input` hairline around a faint fill, the shape of the row it waits for.
+ */
+const DROP_SLOT =
+  "rounded-xs border border-dashed border-input bg-card-hover/40";
+/**
+ * The held copy: the highest surface on the ladder with the stronger hairline,
+ * because elevation here is a lighter surface, never a shadow (foundations.md
+ * §10). Its rotate and scale ease, so the lift, the sway and the settle all
+ * glide; `use-rail-reorder.ts` sets them, and never under reduced motion.
+ */
+const HELD_COPY =
+  "h-full rounded-xs border border-input bg-popover text-foreground";
+const HELD_COPY_EASE = {
+  transition: `rotate ${RAIL_MOTION.duration.standard}ms ${RAIL_MOTION.easing.standard}, scale ${RAIL_MOTION.duration.micro}ms ${RAIL_MOTION.easing.standard}`,
+};
+
+/**
+ * The copy of a dragged row or heading that follows the pointer (#4178).
+ * `attach` hands its element to `use-rail-reorder.ts`, which moves it, so a
+ * pointer move redraws nothing in React.
+ */
+function HeldCopy({
+  attach,
+  lift,
+  children,
+}: {
+  attach: (el: HTMLElement | null) => void;
+  lift: RailLift;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      ref={attach}
+      aria-hidden="true"
+      data-reorder-ghost=""
+      className="pointer-events-none fixed left-0 top-0 z-50"
+      style={{ width: lift.width, height: lift.height }}
+    >
+      <div className={HELD_COPY} style={HELD_COPY_EASE}>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 /**
  * Left-rail channel list, per `canvas-screens.dc.html` s04.
@@ -557,8 +602,10 @@ export function ChannelList({
     [nameOfDrag],
   );
 
+  const { railRef, track, release, arm } = useRailFlip();
   const railReorder = useRailReorder({
     enabled: !!reorder,
+    onLift: track,
     onDrop: (drag, drop) => announceMove(drag, commitDrop(drag, drop)),
     onKeyMove: (drag, step) => {
       let drop: RailDrop | null = null;
@@ -587,7 +634,11 @@ export function ChannelList({
         }
         refocus.current = `[data-reorder-category="${drag.id}"] [data-reorder-header]`;
       }
-      if (drop) announceMove(drag, commitDrop(drag, drop));
+      if (drop) {
+        // The rows slide to their new places once the new order arrives.
+        arm();
+        announceMove(drag, commitDrop(drag, drop));
+      }
     },
   });
 
@@ -599,7 +650,11 @@ export function ChannelList({
     if (target && target !== document.activeElement) target.focus();
   }, [channels, categories]);
 
-  const { dragging, drop } = railReorder;
+  const { dragging, drop, lift } = railReorder;
+  useEffect(() => {
+    if (!dragging) release();
+  }, [dragging, release]);
+  const draggingCategory = dragging?.kind === "category";
 
   const renderRow = (channel: ChatChannel, sectionKey?: string) => {
     const isActive = channel.id === activeChannelId;
@@ -633,14 +688,6 @@ export function ChannelList({
     const drag: RailDrag | null = draggable
       ? { kind: "channel", id: channel.id, section: sectionKey }
       : null;
-    const dropHere =
-      draggable && drop?.kind === "row" && drop.id === channel.id
-        ? drop.after
-          ? DROP_LINE_AFTER
-          : DROP_LINE_BEFORE
-        : undefined;
-    const isDragged =
-      dragging?.kind === "channel" && dragging.id === channel.id;
     // Every row action lives in the right-click menu (owner, 2026-11-06:
     // "take away the pin option on hover"). The row draws no hover controls,
     // so its end is free for the mute mark and the badge alone.
@@ -660,10 +707,8 @@ export function ChannelList({
           className={cn(
             !isActive &&
               "[&[data-state=open]>button]:bg-card [&[data-state=open]>button]:text-foreground",
-            draggable && "relative",
-            dropHere,
-            isDragged && "opacity-40",
           )}
+          data-flip={`row:${channel.id}`}
           data-reorder-row={draggable ? channel.id : undefined}
           data-reorder-section={draggable ? sectionKey : undefined}
           onPointerDown={drag ? railReorder.pointerDownFor(drag) : undefined}
@@ -780,28 +825,93 @@ export function ChannelList({
     }
   }
 
-  /** A section block's drag attributes and its category drop line. */
+  /**
+   * Where the drag's slot is drawn (#4178). For a channel, a section and an
+   * index among the rows that section draws without the held row; for a
+   * category, the drawn category it goes before, or null for after the last.
+   * "After this row" and "before the next" come out the same, so the slot
+   * holds still while the pointer crosses from one to the other. No target
+   * puts the slot back where the drag began.
+   */
+  type Slot =
+    | { kind: "channel"; section: string; index: number }
+    | { kind: "category"; before: string | null; others: string[] };
+  let slot: Slot | null = null;
+  if (dragging?.kind === "channel") {
+    const rowsIn = (key: string) =>
+      arranged.sections.find((section) => section.key === key)?.rows ?? [];
+    if (drop?.kind === "header") {
+      slot = { kind: "channel", section: drop.section, index: 0 };
+    } else if (drop?.kind === "row") {
+      const index = rowsIn(drop.section)
+        .filter((row) => row.id !== dragging.id)
+        .findIndex((row) => row.id === drop.id);
+      if (index >= 0) {
+        slot = {
+          kind: "channel",
+          section: drop.section,
+          index: drop.after ? index + 1 : index,
+        };
+      }
+    }
+    if (!slot) {
+      const home = rowsIn(dragging.section).findIndex(
+        (row) => row.id === dragging.id,
+      );
+      slot = {
+        kind: "channel",
+        section: dragging.section,
+        index: Math.max(0, home),
+      };
+    }
+  } else if (dragging?.kind === "category") {
+    const heldKey = `category:${dragging.id}`;
+    const drawn = renderOrder
+      .map((entry) =>
+        entry.kind === "section" ? entry.section.key : entry.key,
+      )
+      .filter((key) => key.startsWith("category:"));
+    const others = drawn.filter((key) => key !== heldKey);
+    let index = -1;
+    if (drop?.kind === "category") {
+      const at = others.indexOf(`category:${drop.id}`);
+      if (at >= 0) index = drop.after ? at + 1 : at;
+    }
+    // Home: the held category's own place, counted among the others.
+    if (index < 0) index = Math.max(0, drawn.indexOf(heldKey));
+    slot = { kind: "category", before: others[index] ?? null, others };
+  }
+
+  /** The slot a dragged channel would land in, drawn as a row-sized space. */
+  const channelSlot = (
+    <li
+      key="__reorder-slot"
+      data-flip="slot"
+      data-reorder-gap=""
+      aria-hidden="true"
+      className={DROP_SLOT}
+      style={{ height: lift?.height ?? 32 }}
+    />
+  );
+
+  /** A section's rows while a channel drag is on: the held row out, the slot in. */
+  const rowsWithSlot = (key: string, rows: ChatChannel[]) => {
+    const drawn = rows.map((row) => renderRow(row, key));
+    if (dragging?.kind !== "channel") return drawn;
+    const kept = drawn.filter((_, i) => rows[i]?.id !== dragging.id);
+    if (slot?.kind === "channel" && slot.section === key) {
+      kept.splice(Math.min(slot.index, kept.length), 0, channelSlot);
+    }
+    return kept;
+  };
+
+  /** A section block's drag attributes. */
   const blockProps = (key: string) => {
     if (!reorder) return {};
     if (!isOrderableSection(key)) return { "data-reorder-none": "" };
     const categoryId = categoryIdOf(key);
     if (!categoryId) return {};
-    const lineHere =
-      drop?.kind === "category" && drop.id === categoryId
-        ? drop.after
-          ? BLOCK_LINE_AFTER
-          : BLOCK_LINE_BEFORE
-        : undefined;
-    return {
-      "data-reorder-category": categoryId,
-      className: cn(
-        "relative",
-        lineHere,
-        dragging?.kind === "category" &&
-          dragging.id === categoryId &&
-          "opacity-40",
-      ),
-    };
+    return { "data-reorder-category": categoryId };
   };
 
   /**
@@ -815,21 +925,20 @@ export function ChannelList({
     const drag: RailDrag | null = categoryId
       ? { kind: "category", id: categoryId }
       : null;
-    const lineHere =
-      drop?.kind === "header" && drop.section === key && DROP_LINE_AFTER;
+    const slotHere = slot?.kind === "channel" && slot.section === key;
     return (
       <div key={key} {...blockProps(key)}>
         <p
+          data-flip={`head:${key}`}
           data-reorder-header={key}
           tabIndex={0}
           onPointerDown={drag ? railReorder.pointerDownFor(drag) : undefined}
           onKeyDown={drag ? railReorder.keyDownFor(drag) : undefined}
           aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
           className={cn(
-            "relative flex items-center gap-1 pb-1 text-muted-foreground",
+            "flex items-center gap-1 pb-1 text-muted-foreground",
             sidebar ? "px-2" : "px-3",
             EYEBROW,
-            lineHere,
           )}
         >
           {sidebar ? (
@@ -837,27 +946,110 @@ export function ChannelList({
           ) : null}
           <span className="truncate">{label}</span>
         </p>
-        <p
-          className={cn(
-            "pt-0.5 text-caption text-muted",
-            sidebar ? "pl-[26px] pr-2" : "px-3",
-          )}
-        >
-          {EMPTY_CATEGORY_HINT}
-        </p>
+        {slotHere ? (
+          <ul aria-hidden="true">{channelSlot}</ul>
+        ) : draggingCategory ? null : (
+          <p
+            data-flip={`hint:${key}`}
+            data-reorder-into={key}
+            className={cn(
+              "pt-0.5 text-caption text-muted",
+              sidebar ? "pl-[26px] pr-2" : "px-3",
+            )}
+          >
+            {EMPTY_CATEGORY_HINT}
+          </p>
+        )}
       </div>
     );
   };
 
+  /** A dragged category's slot, as tall as the heading it waits for. */
+  const categorySlot = (
+    <div
+      key="__reorder-slot"
+      data-flip="slot"
+      data-reorder-gap=""
+      aria-hidden="true"
+      className={DROP_SLOT}
+      style={{ height: lift?.height ?? 24 }}
+    />
+  );
+
+  /** The render order with a category drag applied: the held one out, the slot in. */
+  type DrawEntry = RenderEntry | { kind: "slot" };
+  const drawOrder: DrawEntry[] = [];
+  if (slot?.kind === "category" && dragging?.kind === "category") {
+    const heldKey = `category:${dragging.id}`;
+    const lastOther = slot.others[slot.others.length - 1];
+    for (const entry of renderOrder) {
+      const key = entry.kind === "section" ? entry.section.key : entry.key;
+      if (key === slot.before) drawOrder.push({ kind: "slot" });
+      if (key === heldKey) {
+        // The only category: its slot stays where it was.
+        if (slot.others.length === 0) drawOrder.push({ kind: "slot" });
+        continue;
+      }
+      drawOrder.push(entry);
+      if (slot.before === null && key === lastOther) {
+        drawOrder.push({ kind: "slot" });
+      }
+    }
+  } else {
+    drawOrder.push(...renderOrder);
+  }
+
+  /** The held copy that follows the pointer, a look-alike of the row or heading. */
+  const heldChannel =
+    dragging?.kind === "channel"
+      ? channels.find((channel) => channel.id === dragging.id)
+      : undefined;
+  const heldCopy =
+    dragging && lift && typeof document !== "undefined"
+      ? createPortal(
+          <HeldCopy attach={railReorder.attachHeldCopy} lift={lift}>
+            {heldChannel ? (
+              <div className="flex h-full items-center gap-2 px-2 text-sm font-semibold">
+                <ChannelMark
+                  channel={heldChannel}
+                  title={titleFor(heldChannel)}
+                  tint={dmTint(heldChannel, viewerId, avatarTintFor)}
+                />
+                <span className="truncate">{titleFor(heldChannel)}</span>
+              </div>
+            ) : (
+              <div
+                className={cn("flex h-full items-center gap-1 px-2", EYEBROW)}
+              >
+                {sidebar ? (
+                  <ChevronRight
+                    className="h-3.5 w-3.5 shrink-0"
+                    aria-hidden="true"
+                  />
+                ) : null}
+                <span className="truncate">{nameOfDrag(dragging)}</span>
+              </div>
+            )}
+          </HeldCopy>,
+          document.body,
+        )
+      : null;
+
   return (
-    <div className="space-y-4" data-reorder-rail={reorder ? "" : undefined}>
+    <div
+      ref={railRef}
+      className="space-y-4"
+      data-reorder-rail={reorder ? "" : undefined}
+    >
       {/* Where a drag or an Alt+Arrow move is announced (#4178). */}
       {reorder ? (
         <p className="sr-only" aria-live="polite">
           {announcement}
         </p>
       ) : null}
-      {renderOrder.map((entry) => {
+      {heldCopy}
+      {drawOrder.map((entry) => {
+        if (entry.kind === "slot") return categorySlot;
         if (entry.kind === "empty") {
           return renderEmptyCategory(entry.key, entry.label);
         }
@@ -878,11 +1070,12 @@ export function ChannelList({
                 : undefined,
             }
           : {};
-        const headerDropLine =
-          orderable &&
-          drop?.kind === "header" &&
-          drop.section === section.key &&
-          DROP_LINE_AFTER;
+        // A category drag folds every category to its heading, as Discord
+        // does, so the list being reordered is short enough to see whole.
+        const rows =
+          draggingCategory && categoryId
+            ? []
+            : rowsWithSlot(section.key, section.rows);
         return (
           <div key={section.key} {...blockProps(section.key)}>
             {/*
@@ -900,6 +1093,7 @@ export function ChannelList({
               <button
                 type="button"
                 id={headerId}
+                data-flip={`head:${section.key}`}
                 {...headerProps}
                 aria-expanded={!section.collapsed}
                 onClick={() =>
@@ -920,7 +1114,6 @@ export function ChannelList({
                   section.collapsed &&
                     section.unreadCount > 0 &&
                     "font-bold text-foreground",
-                  headerDropLine,
                 )}
               >
                 {section.collapsed ? (
@@ -952,21 +1145,15 @@ export function ChannelList({
             ) : (
               <p
                 id={headerId}
+                data-flip={`head:${section.key}`}
                 {...headerProps}
-                className={cn(
-                  "px-3 pb-1 text-muted-foreground",
-                  EYEBROW,
-                  headerDropLine && "relative",
-                  headerDropLine,
-                )}
+                className={cn("px-3 pb-1 text-muted-foreground", EYEBROW)}
               >
                 {section.label}
               </p>
             )}
-            {section.rows.length > 0 ? (
-              <ul aria-labelledby={headerId}>
-                {section.rows.map((row) => renderRow(row, section.key))}
-              </ul>
+            {rows.length > 0 ? (
+              <ul aria-labelledby={headerId}>{rows}</ul>
             ) : null}
           </div>
         );
@@ -987,6 +1174,7 @@ export function ChannelList({
         <div data-reorder-none={reorder ? "" : undefined}>
           <button
             type="button"
+            data-flip="head:hidden"
             onClick={() => setShowHidden((open) => !open)}
             aria-expanded={showHidden}
             aria-controls="channel-section:hidden"

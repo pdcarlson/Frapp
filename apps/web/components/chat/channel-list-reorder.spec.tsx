@@ -1,4 +1,10 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ChannelList,
@@ -113,8 +119,41 @@ function drag(from: HTMLElement, over: Element) {
   }
 }
 
+/** Press on `from` and travel past the threshold over `over`, without releasing. */
+function hold(from: HTMLElement, over: Element) {
+  const original = document.elementFromPoint;
+  document.elementFromPoint = () => over;
+  fireEvent.pointerDown(from, {
+    button: 0,
+    pointerType: "mouse",
+    pointerId: 1,
+    clientX: 10,
+    clientY: 10,
+  });
+  act(() => {
+    window.dispatchEvent(
+      Object.assign(
+        new MouseEvent("pointermove", { clientX: 10, clientY: 40 }),
+        {
+          pointerId: 1,
+        },
+      ),
+    );
+  });
+  return () => {
+    document.elementFromPoint = original;
+  };
+}
+
+const slotOf = (container: HTMLElement) =>
+  container.querySelector("[data-reorder-gap]");
+
 afterEach(() => {
   document.body.style.removeProperty("cursor");
+  // A test that ends mid-drag leaves its window listeners; Escape clears them.
+  act(() => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+  });
 });
 
 describe("ChannelList reorder", () => {
@@ -233,5 +272,84 @@ describe("ChannelList reorder", () => {
       "cat-exec",
       "cat-empty",
     ]);
+  });
+
+  it("lifts the row into a held copy and opens a slot where it would land", () => {
+    const { container } = setup();
+    const restore = hold(
+      rowOf(container, "c-alum")!,
+      rowOf(container, "c-rand")!,
+    );
+    try {
+      // The row leaves the rail; a copy of it follows the pointer.
+      expect(rowOf(container, "c-alum")).toBeNull();
+      const copy = document.body.querySelector("[data-reorder-ghost]");
+      expect(copy?.textContent).toContain("alumni");
+      // The slot sits after random, the last row: general, random, slot.
+      const items = Array.from(slotOf(container)!.parentElement!.children).map(
+        (li) =>
+          li.hasAttribute("data-reorder-gap")
+            ? "slot"
+            : (li.querySelector("span.truncate")?.textContent ?? ""),
+      );
+      expect(items).toEqual(["general", "random", "slot"]);
+    } finally {
+      restore();
+    }
+  });
+
+  it("opens the slot in an empty category the drag is over", () => {
+    const { container } = setup();
+    const hint = screen.getByText("Drag channels here");
+    const restore = hold(rowOf(container, "c-gen")!, hint);
+    try {
+      const block = container.querySelector(
+        '[data-reorder-category="cat-empty"]',
+      )!;
+      expect(block.querySelector("[data-reorder-gap]")).not.toBeNull();
+      expect(screen.queryByText("Drag channels here")).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  it("settles back home on Escape and saves nothing", async () => {
+    const { container, controls } = setup();
+    const restore = hold(
+      rowOf(container, "c-alum")!,
+      rowOf(container, "c-rand")!,
+    );
+    try {
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+      });
+      expect(controls.onReorderChannels).not.toHaveBeenCalled();
+      // The copy glides home first, then the row takes its place again.
+      await waitFor(() => expect(rowOf(container, "c-alum")).not.toBeNull());
+      expect(slotOf(container)).toBeNull();
+      expect(document.body.querySelector("[data-reorder-ghost]")).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  it("folds every category to its heading while a category is dragged", () => {
+    const { container } = setup();
+    const heading = container.querySelector<HTMLElement>(
+      '[data-reorder-header="category:cat-exec"]',
+    )!;
+    const restore = hold(heading, heading);
+    try {
+      expect(
+        container.querySelector('[data-reorder-category="cat-exec"]'),
+      ).toBeNull();
+      expect(rowOf(container, "c-rush")).toBeNull();
+      expect(screen.queryByText("Drag channels here")).toBeNull();
+      // The default Channels group is not a category and stays open.
+      expect(rowOf(container, "c-gen")).not.toBeNull();
+      expect(slotOf(container)).not.toBeNull();
+    } finally {
+      restore();
+    }
   });
 });
