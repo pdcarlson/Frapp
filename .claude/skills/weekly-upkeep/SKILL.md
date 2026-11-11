@@ -1,34 +1,46 @@
 ---
 name: weekly-upkeep
 description: >
-  Run the Weekly Upkeep routine (3 of 3): once a week, alternating weeks, either sweep a
-  slice of the docs (docs-upkeep) or fix one hygiene theme in the code (hygiene-scan), opening at
-  most one PR and never a second while one is open. Use when the scheduled "Weekly Upkeep" routine
-  fires.
+  Run the Weekly Upkeep routine (3 of 3): once a week, fix one hygiene theme in the code
+  (hygiene-scan), except on the first Wednesday of the month, which sweeps a slice of the docs
+  (docs-upkeep) instead; open at most one PR and never a second while one is open. Use when the
+  scheduled "Weekly Upkeep" routine fires.
 ---
 
 # Weekly Upkeep (routine 3 of 3)
 
-Until 2026-11-06 Docs Upkeep ran weekly and the Hygiene Scan daily. The scan opened one PR in a
-month and then sat behind it, so the two now share one weekly slot and alternate
-([ADR-16](../../../spec/architecture/adr/adr-16.md) amendment 11). The phase's skill owns the work;
-this skill owns which one runs, the open-PR rule, and the record.
+Docs Upkeep and the Hygiene Scan share one weekly slot. Hygiene runs every week except the first
+Wednesday of the month, which sweeps the docs ([ADR-16](../../../spec/architecture/adr/adr-16.md)
+amendment 11 has the history and why). The phase's skill owns the work; this skill owns which one
+runs, the slice each phase reads, the open-PR rule, and the record.
 
-## This week's job
+## This week's job and slice
 
-```sh
-echo $(( $(date -u +%s) / 604800 % 2 ))
+```bash
+W=$(( $(date -u +%s) / 604800 ))             # weeks since the epoch; each starts Thursday 00:00 UTC
+WED=$(( W * 604800 - 86400 ))                 # that week's Wednesday, the day of its scheduled fire
+DAY=$(date -u -d "@$WED" +%-d)
+MON=$(( $(date -u -d "@$WED" +%Y) * 12 + $(date -u -d "@$WED" +%-m) ))
+if [ "$DAY" -le 7 ]; then echo "docs group=$(( MON % 5 ))"
+else echo "hygiene group=$(( ((W - MON) % 5 + 5) % 5 ))"; fi
 ```
 
-- `1`: follow [`docs-upkeep`](../docs-upkeep/SKILL.md).
-- `0`: follow [`hygiene-scan`](../hygiene-scan/SKILL.md).
+- `docs`: the fire's Wednesday is the first of its month (day 7 or less). Follow
+  [`docs-upkeep`](../docs-upkeep/SKILL.md) and sweep the printed group.
+- `hygiene`: any later Wednesday. Follow [`hygiene-scan`](../hygiene-scan/SKILL.md) and read the
+  printed group.
 
-That is whole weeks since the Unix epoch, which start on Thursday 00:00 UTC, just before the
-scheduled fire (Wednesday 23:07 ET is Thursday in UTC). It counts straight through New Year, where
-ISO week numbers don't: 2026 has a week 53, so ISO-week parity would run the same phase twice in a
-row. A manual run before Thursday 00:00 UTC lands in the previous week and gets the other phase.
-Both skills derive their own slice from the calendar, and stepping 14 days still walks every one
-of their five groups (docs-upkeep's New Year skew aside).
+Everything comes from the scheduled fire, not the moment the command runs. The Wednesday 23:07 ET
+fire is already Thursday in UTC, and the week rolls over at Thursday 00:00 UTC, so a run that
+starts hours late, or a manual re-run any time before the next Wednesday evening, gets the same
+phase and group. A manual run on a Wednesday before 00:00 UTC lands in the previous week's job.
+All of it is UTC, so it needs no time-zone data. `%-d` and `%-m` are GNU `date`, unpadded, so the
+arithmetic works in any shell without `10#`.
+
+The docs group counts months since year zero, so it steps by one each month straight through New
+Year and each docs group comes round every five months. The hygiene group counts weeks minus
+months, which steps by one per hygiene run and not at all across the docs week, so each hygiene
+group is read every fifth hygiene run, five to seven weeks apart. Both are checked over 2026–2031.
 
 ## One upkeep PR at a time
 
@@ -39,9 +51,14 @@ do the phase's read-only part (the docs phase lists what it would fix; the hygie
 lenses and writes its ledger) and end. This is the rule `hygiene-scan` §0.5 already applies to
 itself, now covering both.
 
-Inside the phase its skill wins, with two exceptions that this skill owns: the one-upkeep-PR rule
-above (neither phase's own check sees the other kind's PR), and the phase posts no run record of
-its own.
+Hygiene opens most weeks and docs only monthly, so a hygiene PR still open on a first Wednesday
+turns that month's docs run read-only, and its group waits five months for its next sweep. That
+cost is accepted rather than letting two upkeep PRs pile up on the owner, who merges most PRs the
+day they go green. Name it in the report's first line ("Docs sweep blocked by #N") so he sees it.
+
+Inside the phase its skill wins, with three exceptions that this skill owns: the one-upkeep-PR rule
+above (neither phase's own check sees the other kind's PR), the slice group printed above, and the
+phase posts no run record of its own.
 
 ## Telling the owner
 
