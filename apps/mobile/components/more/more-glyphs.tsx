@@ -132,6 +132,11 @@ function HubGlyph({
   return <NavGlyph paths={NAV_GLYPHS[name]} color={color} size={size} />;
 }
 
+/** Activity: the nav set's tray, web's Activity row. */
+export function ActivityGlyph(props: HubGlyphProps) {
+  return <HubGlyph name="activity" {...props} />;
+}
+
 export function StudyGlyph(props: HubGlyphProps) {
   return <HubGlyph name="study" {...props} />;
 }

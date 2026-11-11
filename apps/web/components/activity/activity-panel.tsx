@@ -31,7 +31,7 @@ import { useServiceReview } from "@/components/service/use-service-review";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
 import { chatDeepLink } from "@/lib/chat/chat-links";
-import type { ActivityRow } from "./activity-rows";
+import type { ActivityRow } from "@repo/hooks";
 import { useActivityPoll } from "./use-activity-poll";
 
 const PANEL_TITLES: Record<ActivityRow["kind"], string> = {

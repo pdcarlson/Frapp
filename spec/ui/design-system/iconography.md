@@ -214,6 +214,7 @@ until 2026-11-05).
 
 | Semantic intent | Glyph (nav set key, Phosphor name) | Web counterpart |
 |---|---|---|
+| Activity (#3897) | `activity`, `tray` | `ActivityGlyph` |
 | Study hours | `study`, `graduation-cap` | `StudyGlyph` |
 | Service hours | `service`, `hand-heart` | `ServiceGlyph` |
 | Dues | `billing`, `credit-card` | `BillingGlyph` |

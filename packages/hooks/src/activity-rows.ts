@@ -1,5 +1,5 @@
 import type { components } from "@repo/api-sdk";
-import { TASK_CONFIRMED_LABEL, TASK_STATUS_LABELS } from "@repo/hooks";
+import { TASK_CONFIRMED_LABEL, TASK_STATUS_LABELS } from "./task-card";
 import {
   formatDueLabel,
   formatMinutesRounded,
@@ -26,14 +26,20 @@ export const ACTIVITY_FILTERS = [
 export type ActivityFilter = (typeof ACTIVITY_FILTERS)[number]["value"];
 export type ActivityKind = Exclude<ActivityFilter, "all">;
 
-type BadgeVariant = "outline" | "success" | "warning" | "destructive";
+/**
+ * A row badge's tone. `outline` is quiet metadata that must not read as a
+ * status; the others are the semantic status colours. Web hands it to
+ * `Badge` as its variant; the phone maps it to a status hue.
+ */
+export type ActivityBadgeVariant =
+  "outline" | "success" | "warning" | "destructive";
 
 interface RowBase {
   /** Unique on the page: the same task can sit under two groups. */
   key: string;
   title: string;
   detail: string;
-  badge: { label: string; variant: BadgeVariant } | null;
+  badge: { label: string; variant: ActivityBadgeVariant } | null;
 }
 
 /** One row of the page: what it shows, and the record it opens. */
@@ -57,7 +63,7 @@ export interface ActivityGroup {
 }
 
 /** A name for a section the read could not load, for "Couldn't load …". */
-export const SECTION_NAMES: Record<ActivitySection, string> = {
+export const ACTIVITY_SECTION_NAMES: Record<ActivitySection, string> = {
   tasks: "tasks",
   hours_approvals: "hours waiting for approval",
   polls: "polls",
