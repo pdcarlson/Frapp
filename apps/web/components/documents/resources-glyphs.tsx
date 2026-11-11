@@ -75,7 +75,8 @@ export function FolderGlyph(props: ResourcesGlyphProps) {
  * (#3934). Chat's pin shape (`MARK_GLYPH_PATHS.pin`): pinning a message, a
  * channel and a document is one idea, so it is one shape. Drawn here rather
  * than re-exported because a pinned document's pin is solid (#4289,
- * `markFillProps`); the needle stays a stroke.
+ * `markFillProps`); the needle stays a stroke. #4292 brings chat's pin to the
+ * same fill, after which this goes back to a re-export.
  */
 export function PinGlyph({ className, active }: ResourcesGlyphProps) {
   return (

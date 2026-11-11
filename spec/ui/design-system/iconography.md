@@ -56,10 +56,11 @@ Rules:
 1. A state change **recolors** the glyph (stroke + fill together). It MUST NOT
    swap to a solid-filled variant — solid fills are not part of the duotone
    family.
-   Changed in #4289 by pdcarlson for Shawn, 2026-11-11: one exception, a
-   **mark the member toggles on a thing**, which is Documents' Star and Pin
-   (§6.2.5). While on, its silhouette is solid in its hue; while off, it is
-   the outline. At 16–18% an on star read as the off outline in another
+   Changed in #4289 by pdcarlson for Shawn, 2026-11-11: one exception,
+   **Documents' Star and Pin** (§6.2.5). While on, the silhouette is solid in
+   its hue; while off, it is the outline. Chat's channel pin and bookmark
+   (§6.2.2) are the same kind of toggle and still take the tinted fill until
+   [#4292](https://github.com/pdcarlson/Frapp/issues/4292). At 16–18% an on star read as the off outline in another
    colour, so the state rode on colour alone (Shawn: "it should fill in the
    star. It shouldn't just turn purple"). Same path data, filled, as Google
    Drive, Gmail and Dropbox draw a star. Web: `markFillProps` in
@@ -578,7 +579,7 @@ while chat's keeps the tinted recipe. `StarGlyph` is drawn here, because no
 set entry covers a personal star (#3934). Both
 draw their path data from `MARK_GLYPH_PATHS` (`@repo/theme/nav-glyphs`), which
 mobile's s12 draws too (`apps/mobile/components/documents/document-glyphs.tsx`,
-in the More family's paint), so the two apps keep one pin and one star.
+in the More family's strokes, solid while on since #4289), so the two apps keep one pin and one star.
 
 [`canvas-screens.dc.html`](reference/canvas-screens.dc.html) marks every
 document row on **s12** (the Documents screen) and **s21** (the upload sheet)
