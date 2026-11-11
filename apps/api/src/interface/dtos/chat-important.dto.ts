@@ -1,6 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsUUID } from 'class-validator';
-import { IMPORTANT_CANDIDATE_LIMIT } from '../../application/services/chat-important.service';
+import {
+  IMPORTANT_EXCERPT_LENGTH,
+  IMPORTANT_LIST_LIMIT,
+  IMPORTANT_READ_CEILING,
+  IMPORTANT_SEEN_BATCH_MAX,
+  IMPORTANT_WINDOW_DAYS,
+} from '../../application/services/chat-important.service';
 
 /** One unseen Important message, as the strip needs it (#4186). */
 export class ImportantMessageRefDto {
@@ -29,8 +35,7 @@ export class ImportantMessageRefDto {
   author_name: string | null;
 
   @ApiProperty({
-    description:
-      "The message's first words on one line, at most 140 characters, for the strip's preview.",
+    description: `The message's first words on one line, at most ${IMPORTANT_EXCERPT_LENGTH} characters, for the strip's preview.`,
   })
   excerpt: string;
 }
@@ -40,12 +45,13 @@ export class ImportantMessagesDto {
   @ApiProperty({
     type: ImportantMessageRefDto,
     isArray: true,
-    description:
-      'Unseen Important messages flagged in the last 14 days, oldest first, at most 50.',
+    description: `Unseen Important messages flagged in the last ${IMPORTANT_WINDOW_DAYS} days, oldest first, at most ${IMPORTANT_LIST_LIMIT}.`,
   })
   messages: ImportantMessageRefDto[];
 
-  @ApiProperty({ description: 'How many unseen Important messages there are.' })
+  @ApiProperty({
+    description: `How many unseen Important messages there are, among at most ${IMPORTANT_READ_CEILING} flagged in the window.`,
+  })
   total: number;
 }
 
@@ -55,13 +61,13 @@ export class MarkImportantSeenDto {
     format: 'uuid',
     isArray: true,
     minItems: 1,
-    maxItems: IMPORTANT_CANDIDATE_LIMIT,
+    maxItems: IMPORTANT_SEEN_BATCH_MAX,
     description:
       'Messages the caller jumped to or scrolled onto their screen. Ids the strip does not count are ignored.',
   })
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayMaxSize(IMPORTANT_CANDIDATE_LIMIT)
+  @ArrayMaxSize(IMPORTANT_SEEN_BATCH_MAX)
   @IsUUID('all', { each: true })
   message_ids: string[];
 }

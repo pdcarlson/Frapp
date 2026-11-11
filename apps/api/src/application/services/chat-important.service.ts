@@ -13,14 +13,19 @@ import { ChatBlockService } from './chat-block.service';
 
 /** Only Important messages flagged this recently count (Shawn, 2026-11-11). */
 export const IMPORTANT_WINDOW_DAYS = 14;
+/** One page of the candidate read. A channel rarely flags this many in two weeks. */
+export const IMPORTANT_PAGE_SIZE = 200;
 /**
- * How many recently flagged messages one read considers. A channel flags far
- * fewer than this in two weeks; the cap bounds the read and the dismiss write.
+ * The most candidates one request reads, in pages of
+ * {@link IMPORTANT_PAGE_SIZE}: a ceiling on a pathological channel, not a
+ * limit any real one meets. Below it, `total` is exact.
  */
-export const IMPORTANT_CANDIDATE_LIMIT = 100;
+export const IMPORTANT_READ_CEILING = 1000;
 /** How many unseen messages one answer lists; `total` counts them all. */
 export const IMPORTANT_LIST_LIMIT = 50;
-/** An excerpt's length, before the client cuts it to one line. */
+/** How many ids one seen report may carry. */
+export const IMPORTANT_SEEN_BATCH_MAX = 100;
+/** An excerpt's length in characters, before the client cuts it to one line. */
 export const IMPORTANT_EXCERPT_LENGTH = 140;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -36,6 +41,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * they blocked. A message is seen once the member jumps to it, scrolls it onto
  * their screen, or dismisses the strip; each is a row of
  * `chat_message_important_seen`, so a message once seen stays seen.
+ *
+ * One request reads at most {@link IMPORTANT_READ_CEILING} candidates; past
+ * that, the oldest flags in the window go uncounted.
  *
  * Its own service, as bookmarks are: it shares only the channel-access seam
  * and the block list with `ChatService`.
@@ -69,7 +77,8 @@ export class ChatImportantService {
    * Only ids that are Important messages the strip would count for the caller
    * in this channel are written; any other id is ignored rather than refused,
    * because a client reports what scrolled past and a flag can come off
-   * between its read and this write.
+   * between its read and this write. Ids are compared lowercased: a UUID is
+   * case-insensitive and the database answers lowercase (#688).
    */
   async markSeen(
     channelId: string,
@@ -80,16 +89,19 @@ export class ChatImportantService {
   ): Promise<ImportantMessages> {
     await this.channelAccess.assertChannelAccess(channelId, chapterId, userId);
     const eligible = await this.eligibleFor(channelId, chapterId, userId, now);
-    const asked = new Set(messageIds);
+    const asked = new Set(messageIds.map((id) => id.toLowerCase()));
     await this.seenRepo.markSeen(
       chapterId,
       userId,
-      eligible.filter((m) => asked.has(m.id)).map((m) => m.id),
+      eligible.filter((m) => asked.has(m.id.toLowerCase())).map((m) => m.id),
     );
     return toAnswer(await this.withoutSeen(eligible, chapterId, userId));
   }
 
-  /** The strip's ×: every message it counts now is marked seen. */
+  /**
+   * The strip's ×: every message it counts is marked seen. Writing ones
+   * already seen is harmless, since the write keeps the first `seen_at`.
+   */
   async dismissAll(
     channelId: string,
     chapterId: string,
@@ -97,11 +109,11 @@ export class ChatImportantService {
     now: Date = new Date(),
   ): Promise<ImportantMessages> {
     await this.channelAccess.assertChannelAccess(channelId, chapterId, userId);
-    const unseen = await this.unseenFor(channelId, chapterId, userId, now);
+    const eligible = await this.eligibleFor(channelId, chapterId, userId, now);
     await this.seenRepo.markSeen(
       chapterId,
       userId,
-      unseen.map((m) => m.id),
+      eligible.map((m) => m.id),
     );
     return toAnswer([]);
   }
@@ -127,11 +139,7 @@ export class ChatImportantService {
       now.getTime() - IMPORTANT_WINDOW_DAYS * DAY_MS,
     ).toISOString();
     const [candidates, blocked] = await Promise.all([
-      this.messageRepo.findImportantInChannel(
-        channelId,
-        since,
-        IMPORTANT_CANDIDATE_LIMIT,
-      ),
+      this.readCandidates(channelId, since),
       this.chatBlocks.listBlockedUserIds(chapterId, userId),
     ]);
     const blockedIds = new Set(blocked);
@@ -141,6 +149,32 @@ export class ChatImportantService {
         m.flagged_by !== userId &&
         !(m.sender_id && blockedIds.has(m.sender_id)),
     );
+  }
+
+  /**
+   * Every Important message in the window, page by page, so the filters
+   * above run over all of them rather than over the newest page only, up to
+   * {@link IMPORTANT_READ_CEILING}.
+   */
+  private async readCandidates(
+    channelId: string,
+    since: string,
+  ): Promise<ChatMessage[]> {
+    const all: ChatMessage[] = [];
+    for (
+      let offset = 0;
+      offset < IMPORTANT_READ_CEILING;
+      offset += IMPORTANT_PAGE_SIZE
+    ) {
+      const page = await this.messageRepo.findImportantInChannel(
+        channelId,
+        since,
+        { offset, limit: IMPORTANT_PAGE_SIZE },
+      );
+      all.push(...page);
+      if (page.length < IMPORTANT_PAGE_SIZE) break;
+    }
+    return all;
   }
 
   private async withoutSeen(
@@ -170,7 +204,8 @@ function toAnswer(unseen: ChatMessage[]): ImportantMessages {
 }
 
 function toRef(message: ChatMessage): ImportantMessageRef {
-  const text = (message.content ?? '').replace(/\s+/g, ' ').trim();
+  // By code point, not UTF-16 unit, so the cut never splits an emoji.
+  const chars = Array.from((message.content ?? '').replace(/\s+/g, ' ').trim());
   return {
     id: message.id,
     created_at: message.created_at,
@@ -179,8 +214,8 @@ function toRef(message: ChatMessage): ImportantMessageRef {
     sender_id: message.sender_id ?? null,
     author_name: message.sender_id ? null : (message.author_name ?? null),
     excerpt:
-      text.length > IMPORTANT_EXCERPT_LENGTH
-        ? `${text.slice(0, IMPORTANT_EXCERPT_LENGTH - 1)}…`
-        : text,
+      chars.length > IMPORTANT_EXCERPT_LENGTH
+        ? `${chars.slice(0, IMPORTANT_EXCERPT_LENGTH - 1).join('')}…`
+        : chars.join(''),
   };
 }

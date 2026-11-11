@@ -233,13 +233,13 @@ export interface IChatMessageRepository {
   findPinnedByChannel(channelId: string): Promise<ChatMessage[]>;
   countPinnedByChannel(channelId: string): Promise<number>;
   /**
-   * Live timeline messages in a channel flagged Important since
-   * `flaggedSince`, most recently flagged first, at most `limit` (#4186).
+   * One page of the live timeline messages in a channel flagged Important
+   * since `flaggedSince`, most recently flagged first, ties by id (#4186).
    */
   findImportantInChannel(
     channelId: string,
     flaggedSince: string,
-    limit: number,
+    page: { offset: number; limit: number },
   ): Promise<ChatMessage[]>;
   /**
    * Newest-first list of POLL messages across every channel in the chapter.

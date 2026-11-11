@@ -192,15 +192,16 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
   }
 
   /**
-   * A channel's live timeline messages flagged Important since `flaggedSince`,
-   * most recently flagged first, for the Important strip (#4186). Thread
-   * replies and deleted messages never count, which is also the partial
-   * index's predicate (`idx_chat_messages_channel_important`).
+   * One page of a channel's live timeline messages flagged Important since
+   * `flaggedSince`, most recently flagged first (ties by id, so pages never
+   * overlap), for the Important strip (#4186). Thread replies and deleted
+   * messages never count, which is also the partial index's predicate
+   * (`idx_chat_messages_channel_important`).
    */
   async findImportantInChannel(
     channelId: string,
     flaggedSince: string,
-    limit: number,
+    page: { offset: number; limit: number },
   ): Promise<ChatMessage[]> {
     const { data, error } = await this.supabase
       .from('chat_messages')
@@ -211,7 +212,8 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       .is('thread_root_id', null)
       .gte('flagged_at', flaggedSince)
       .order('flagged_at', { ascending: false })
-      .limit(limit);
+      .order('id', { ascending: false })
+      .range(page.offset, page.offset + page.limit - 1);
     if (error) throw new SupabaseQueryError(error);
     return data || [];
   }

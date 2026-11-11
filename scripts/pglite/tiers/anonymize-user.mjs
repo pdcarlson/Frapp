@@ -157,6 +157,9 @@ console.log("\n=== Functional smoke: anonymize_user ===");
       -- #3785: a thread the member follows, on the event card's thread.
       insert into chat_thread_follows (thread_root_id, user_id, channel_id)
       values ('${EVCARD}', '${U}', '${CH}');
+      -- #4186: an Important message the member has seen.
+      insert into chat_message_important_seen (user_id, message_id, chapter_id)
+      values ('${U}', '${EVCARD}', '${C}');
       -- Rename before deletion: the content rewrite must key on the card's own
       -- payload snapshot ('Doomed User'), not the live display name.
       update users set display_name = 'D' where id = '${U}';
@@ -240,6 +243,12 @@ console.log("\n=== Functional smoke: anonymize_user ===");
         // #3785. The fifth hand copy of the delete block (20261110220000).
         name: "current-state purged: thread follows",
         sql: `select count(*)::int as leftovers from chat_thread_follows where user_id = '${U}'`,
+        ok: (rows) => rows.length === 1 && rows[0].leftovers === 0,
+      },
+      {
+        // #4186. Its line in the delete block (20261111230000).
+        name: "current-state purged: Important messages seen",
+        sql: `select count(*)::int as leftovers from chat_message_important_seen where user_id = '${U}'`,
         ok: (rows) => rows.length === 1 && rows[0].leftovers === 0,
       },
       {

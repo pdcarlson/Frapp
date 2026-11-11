@@ -5300,7 +5300,7 @@ export interface components {
         ImportantMessagesDto: {
             /** @description Unseen Important messages flagged in the last 14 days, oldest first, at most 50. */
             messages: components["schemas"]["ImportantMessageRefDto"][];
-            /** @description How many unseen Important messages there are. */
+            /** @description How many unseen Important messages there are, among at most 1000 flagged in the window. */
             total: number;
         };
         MarkImportantSeenDto: {

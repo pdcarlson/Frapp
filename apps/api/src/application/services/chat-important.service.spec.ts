@@ -1,8 +1,9 @@
 import { NotFoundException } from '@nestjs/common';
 import {
   ChatImportantService,
-  IMPORTANT_CANDIDATE_LIMIT,
   IMPORTANT_LIST_LIMIT,
+  IMPORTANT_PAGE_SIZE,
+  IMPORTANT_READ_CEILING,
 } from './chat-important.service';
 import type { ChannelAccessService } from './channel-access.service';
 import type { ChatBlockService } from './chat-block.service';
@@ -51,7 +52,12 @@ describe('ChatImportantService', () => {
     seen = new Set();
     blocked = [];
     messageRepo = {
-      findImportantInChannel: jest.fn(() => Promise.resolve(messages)),
+      findImportantInChannel: jest.fn(
+        (_c: string, _s: string, page: { offset: number; limit: number }) =>
+          Promise.resolve(
+            messages.slice(page.offset, page.offset + page.limit),
+          ),
+      ),
     };
     seenRepo = {
       findSeenMessageIds: jest.fn((_c, _u, ids: readonly string[]) =>
@@ -91,13 +97,43 @@ describe('ChatImportantService', () => {
       expect(messageRepo.findImportantInChannel).not.toHaveBeenCalled();
     });
 
-    it('reads only the last 14 days of flags, capped', async () => {
+    it('reads only the last 14 days of flags, a page at a time', async () => {
       await service.listUnseen(CHANNEL, CHAPTER, ME, NOW);
 
       expect(messageRepo.findImportantInChannel).toHaveBeenCalledWith(
         CHANNEL,
         '2026-10-28T20:00:00.000Z',
-        IMPORTANT_CANDIDATE_LIMIT,
+        { offset: 0, limit: IMPORTANT_PAGE_SIZE },
+      );
+    });
+
+    it('counts an unseen message past the first page of flags', async () => {
+      // The newest page is all seen; the one unseen message is older. Reading
+      // only the first page would answer an empty strip.
+      messages = Array.from({ length: IMPORTANT_PAGE_SIZE + 1 }, (_, i) =>
+        important(`m${String(i).padStart(3, '0')}`),
+      );
+      messages.slice(0, IMPORTANT_PAGE_SIZE).forEach((m) => seen.add(m.id));
+
+      const answer = await service.listUnseen(CHANNEL, CHAPTER, ME, NOW);
+
+      expect(answer.total).toBe(1);
+      expect(answer.messages.map((m) => m.id)).toEqual([
+        messages[IMPORTANT_PAGE_SIZE].id,
+      ]);
+      expect(messageRepo.findImportantInChannel).toHaveBeenCalledTimes(2);
+    });
+
+    it('stops reading at the ceiling', async () => {
+      messages = Array.from({ length: IMPORTANT_READ_CEILING + 5 }, (_, i) =>
+        important(`m${String(i).padStart(4, '0')}`),
+      );
+
+      const answer = await service.listUnseen(CHANNEL, CHAPTER, ME, NOW);
+
+      expect(answer.total).toBe(IMPORTANT_READ_CEILING);
+      expect(messageRepo.findImportantInChannel).toHaveBeenCalledTimes(
+        IMPORTANT_READ_CEILING / IMPORTANT_PAGE_SIZE,
       );
     });
 
@@ -134,9 +170,16 @@ describe('ChatImportantService', () => {
       expect(ref.excerpt.endsWith('…')).toBe(true);
     });
 
-    it('leaves out the caller’s own messages and the ones they flagged', async () => {
+    it('leaves out the caller’s own message, whoever flagged it', async () => {
+      messages = [important('mine', { sender_id: ME }), important('theirs')];
+
+      const answer = await service.listUnseen(CHANNEL, CHAPTER, ME, NOW);
+
+      expect(answer.messages.map((m) => m.id)).toEqual(['theirs']);
+    });
+
+    it('leaves out a message the caller flagged themselves', async () => {
       messages = [
-        important('mine', { sender_id: ME, flagged_by: ME }),
         important('flagged-by-me', { flagged_by: ME }),
         important('theirs'),
       ];
@@ -182,6 +225,18 @@ describe('ChatImportantService', () => {
         'seen',
         'unseen',
       ]);
+    });
+
+    it('never splits an emoji when it cuts the excerpt', async () => {
+      messages = [
+        important('m1', { content: `${'a'.repeat(138)}😀${'b'.repeat(10)}` }),
+      ];
+
+      const [ref] = (await service.listUnseen(CHANNEL, CHAPTER, ME, NOW))
+        .messages;
+
+      expect(ref.excerpt).toBe(`${'a'.repeat(138)}😀…`);
+      expect(ref.excerpt).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
     });
 
     it('names an imported row by its Discord author', async () => {
@@ -233,6 +288,22 @@ describe('ChatImportantService', () => {
       expect(seenRepo.markSeen).toHaveBeenCalledWith(CHAPTER, ME, ['a']);
     });
 
+    it('matches an id sent in capitals', async () => {
+      messages = [important('3f2a0000-0000-4000-8000-00000000000a')];
+
+      await service.markSeen(
+        CHANNEL,
+        CHAPTER,
+        ME,
+        ['3F2A0000-0000-4000-8000-00000000000A'],
+        NOW,
+      );
+
+      expect(seenRepo.markSeen).toHaveBeenCalledWith(CHAPTER, ME, [
+        '3f2a0000-0000-4000-8000-00000000000a',
+      ]);
+    });
+
     it('answers markSeen with the same exclusions as the list', async () => {
       blocked = [BLOCKED];
       messages = [
@@ -268,7 +339,11 @@ describe('ChatImportantService', () => {
 
       const answer = await service.dismissAll(CHANNEL, CHAPTER, ME, NOW);
 
-      expect(seenRepo.markSeen).toHaveBeenCalledWith(CHAPTER, ME, ['a', 'b']);
+      expect(seenRepo.markSeen).toHaveBeenCalledWith(CHAPTER, ME, [
+        'a',
+        'b',
+        'c',
+      ]);
       expect(answer).toEqual({ messages: [], total: 0 });
       expect((await service.listUnseen(CHANNEL, CHAPTER, ME, NOW)).total).toBe(
         0,

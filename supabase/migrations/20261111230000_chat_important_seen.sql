@@ -5,29 +5,43 @@
 -- the last 14 days. A message is seen once the member jumps to it, scrolls it
 -- onto their screen, or dismisses the strip.
 --
--- 1. `chat_message_important_seen`: one row per (member, message) the member
+-- 1. A partial index on `chat_messages` for the strip's one read: a
+--    channel's live, Important, timeline messages by when they were flagged.
+-- 2. `chat_message_important_seen`: one row per (member, message) the member
 --    has seen. Per message rather than one timestamp per channel, because a
 --    timestamp would let scrolling a newer Important message into view mark
 --    an older one the member never saw. Rows exist only for messages someone
 --    flagged Important and the member saw, so the table stays small. Once
 --    seen, a message stays seen, even if its flag is removed and added again.
 --    RLS on and no policies: API only (service role), like bookmarks.
--- 2. A partial index on `chat_messages` for the strip's one read: a
---    channel's live, Important, timeline messages by when they were flagged.
 -- 3. `anonymize_user` also deletes the member's seen rows, as it does their
 --    read receipts. Their `user_id` cascade never fires, because the `users`
 --    row is tombstoned in place, not deleted.
 --
 -- Locks. Every migration file runs in one transaction, so each lock below is
--- held until commit. Creating the table touches nothing existing. The index
--- is built without CONCURRENTLY (impossible inside a transaction), so it takes
--- a SHARE lock on `chat_messages`: reads go on, but every insert, update and
--- delete on it (a send, an edit, a delete, a flag) waits until the file
--- commits. The index covers only Important rows, so the build is one scan of
--- `chat_messages` and a tiny sort. Redefining `anonymize_user` takes a lock on the function only.
+-- held until commit, and the statements are ordered so the slow one takes
+-- its lock first and the rest are held only for the quick tail.
+-- - The index is built without CONCURRENTLY (impossible inside a
+--   transaction), so it takes a SHARE lock on `chat_messages`: reads go on,
+--   but every insert, update and delete on it (a send, an edit, a delete, a
+--   flag) waits until the file commits. The build is one scan of
+--   `chat_messages` and a sort of its few Important rows.
+-- - The table's three foreign keys each add triggers to the table they
+--   reference, which takes a SHARE ROW EXCLUSIVE lock on `users`,
+--   `chat_messages` and `chapters`: from there to commit, writes to `users`
+--   (a sign-up, a profile edit, a chapter switch) and to `chapters` wait too.
+--   That is after the index is built, so only for the table and function
+--   statements, which touch no rows.
+-- - Redefining `anonymize_user` locks the function only.
 -- Promote it outside the chapters' busy evening hours.
 
 -- 1. ------------------------------------------------------------------------
+
+create index if not exists idx_chat_messages_channel_important
+  on public.chat_messages (channel_id, flagged_at)
+  where flag = 'important' and not is_deleted and thread_root_id is null;
+
+-- 2. ------------------------------------------------------------------------
 
 create table if not exists public.chat_message_important_seen (
   user_id uuid not null references users(id) on delete cascade,
@@ -42,12 +56,6 @@ create table if not exists public.chat_message_important_seen (
 );
 
 alter table public.chat_message_important_seen enable row level security;
-
--- 2. ------------------------------------------------------------------------
-
-create index if not exists idx_chat_messages_channel_important
-  on public.chat_messages (channel_id, flagged_at)
-  where flag = 'important' and not is_deleted and thread_root_id is null;
 
 -- 3. Account deletion purges seen rows ---------------------------------------
 
