@@ -23,6 +23,8 @@ import type { ChatMessage } from '#domain/entities/chat.entity';
 import type { ChatChannel } from '#domain/entities/chat.entity';
 import type { PollVote } from '#domain/entities/poll-vote.entity';
 import type { Member } from '#domain/entities/member.entity';
+import { EMPTY_ACCESS_HOLDER } from '#domain/utils/channel-access';
+import type { ChannelAccessHolder } from '#domain/utils/channel-access';
 
 jest.mock('@sentry/nestjs', () => ({
   captureException: jest.fn(() => 'event-exception'),
@@ -38,8 +40,7 @@ describe('PollService', () => {
   let mockVoteRepo: jest.Mocked<IPollVoteRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
   let mockRbac: {
-    getEffectivePermissions: jest.Mock;
-    hasAlumniRole: jest.Mock;
+    getChannelAccessHolder: jest.Mock;
   };
   let mockChatBlocks: { listBlockedUserIds: jest.Mock };
   let loggerErrorSpy: jest.SpyInstance;
@@ -52,6 +53,8 @@ describe('PollService', () => {
     description: null,
     type: 'PUBLIC',
     required_permissions: null,
+    who_can_see: null,
+    who_can_post: null,
     member_ids: null,
     category_id: null,
     is_read_only: false,
@@ -81,6 +84,19 @@ describe('PollService', () => {
     edited_at: null,
     is_deleted: false,
     created_at: '2026-01-01T00:00:00.000Z',
+  };
+
+  // A tier a who-can-see list names (#3722), and the Alumni role.
+  const SECRET_TIER = '00000000-0000-4000-8000-00000000c0de';
+  const SECRET_VIEWERS = `tier:${SECRET_TIER}`;
+  const ALUMNI_ROLE = '00000000-0000-4000-8000-0000000a1a11';
+  const holderOf = (...entries: string[]): ChannelAccessHolder => ({
+    ...EMPTY_ACCESS_HOLDER,
+    entries: new Set(entries),
+  });
+  const ALUMNUS: ChannelAccessHolder = {
+    ...holderOf(`role:${ALUMNI_ROLE}`),
+    alumniEntries: new Set([`role:${ALUMNI_ROLE}`]),
   };
 
   const baseVote: PollVote = {
@@ -162,22 +178,20 @@ describe('PollService', () => {
     };
 
     mockRbac = {
-      getEffectivePermissions: jest.fn(),
-      // Active (non-alumni) member by default; alumni posting is covered in
-      // channel-access.service.spec.ts.
-      hasAlumniRole: jest.fn().mockResolvedValue(false),
+      // Holds nothing on any list, and not Alumni, by default; alumni posting
+      // is covered in channel-access.service.spec.ts.
+      getChannelAccessHolder: jest.fn().mockResolvedValue(EMPTY_ACCESS_HOLDER),
     };
 
     // Nobody blocked by default; the block-list tests below set their own.
     mockChatBlocks = { listBlockedUserIds: jest.fn().mockResolvedValue([]) };
 
-    // Default: caller is a chapter member with no extra permissions, and the
+    // Default: caller is a chapter member holding nothing a list names, and the
     // chapter's channels are PUBLIC (channel-1 hosts the listPolls fixtures).
     // Individual tests override these to exercise PRIVATE / ROLE_GATED / 404.
     mockMemberRepo.findByUserAndChapter.mockResolvedValue({
       id: 'm-1',
     } as Member);
-    mockRbac.getEffectivePermissions.mockResolvedValue([]);
     mockChannelRepo.findByIds.mockResolvedValue([
       { ...baseChannel, id: 'channel-1', type: 'PUBLIC', member_ids: null },
     ]);
@@ -1441,7 +1455,7 @@ describe('PollService', () => {
       id: 'ch-role',
       type: 'ROLE_GATED',
       member_ids: null,
-      required_permissions: ['secret:view'],
+      who_can_see: [SECRET_VIEWERS],
     };
 
     const privatePoll: ChatMessage = {
@@ -1507,10 +1521,12 @@ describe('PollService', () => {
       );
     });
 
-    it('getPoll → allowed for a ROLE_GATED channel when the caller holds the permission', async () => {
+    it('getPoll → allowed for a ROLE_GATED channel when the caller holds an entry on its who-can-see list', async () => {
       mockMessageRepo.findById.mockResolvedValue(roleGatedPoll);
       mockChannelRepo.findById.mockResolvedValue(roleGatedChannel);
-      mockRbac.getEffectivePermissions.mockResolvedValue(['secret:view']);
+      mockRbac.getChannelAccessHolder.mockResolvedValue(
+        holderOf(SECRET_VIEWERS),
+      );
       mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
       mockVoteRepo.findByMessageAndUser.mockResolvedValue([]);
 
@@ -1519,10 +1535,12 @@ describe('PollService', () => {
       expect(result.id).toBe('msg-1');
     });
 
-    it('getPoll → 403 for a ROLE_GATED channel when the caller lacks the permission', async () => {
+    it('getPoll → 403 for a ROLE_GATED channel when the caller holds nothing on its who-can-see list', async () => {
       mockMessageRepo.findById.mockResolvedValue(roleGatedPoll);
       mockChannelRepo.findById.mockResolvedValue(roleGatedChannel);
-      mockRbac.getEffectivePermissions.mockResolvedValue([]);
+      mockRbac.getChannelAccessHolder.mockResolvedValue(
+        holderOf('role:00000000-0000-4000-8000-0000000000aa'),
+      );
 
       await expect(service.getPoll('msg-1', 'ch-1', 'user-1')).rejects.toThrow(
         ForbiddenException,
@@ -1585,9 +1603,9 @@ describe('PollService', () => {
     beforeEach(() => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue({
         id: 'm-1',
-        role_ids: ['role-alumni'],
+        role_ids: [ALUMNI_ROLE],
       } as Member);
-      mockRbac.hasAlumniRole.mockResolvedValue(true);
+      mockRbac.getChannelAccessHolder.mockResolvedValue(ALUMNUS);
     });
 
     it('denies an alumni member creating a poll in a PUBLIC channel', async () => {

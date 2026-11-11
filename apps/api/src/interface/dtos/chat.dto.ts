@@ -19,6 +19,8 @@ import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  CHANNEL_ACCESS_ENTRY_PATTERN,
+  CHANNEL_ACCESS_LIST_MAX,
   CHAT_CHAPTER_LEVELS,
   CHAT_MESSAGE_CONTENT_MAX_LENGTH,
   CHAT_MESSAGE_FLAGS,
@@ -50,6 +52,18 @@ import {
 
 const CHANNEL_TYPES = ['PUBLIC', 'PRIVATE', 'ROLE_GATED'] as const;
 
+const ENTRY_MESSAGE =
+  'each entry must be tier:<id> or role:<id>, as GET /v1/channels/access-options lists them';
+
+const WHO_CAN_SEE_DESCRIPTION =
+  "Who can see the channel (#3722): null for everyone in the chapter, or the tiers and roles named, each as `tier:<id>` or `role:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category).";
+
+const WHO_CAN_POST_DESCRIPTION =
+  "Who can post (#3722): null for everyone who can see it, or the tiers and roles named, each as `tier:<id>` or `role:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list.";
+
+const LEGACY_FIELD_DESCRIPTION =
+  'Replaced by `who_can_see` and `who_can_post` (#3722); kept so an open page from before the change gets a clear refusal. A value that would change who can see or post is refused with a reload message.';
+
 export class CreateChannelDto {
   @ApiProperty()
   @IsString()
@@ -61,11 +75,45 @@ export class CreateChannelDto {
   @IsString()
   description?: string;
 
-  @ApiProperty({ enum: CHANNEL_TYPES })
+  @ApiProperty({
+    enum: CHANNEL_TYPES,
+    description:
+      'PRIVATE for a channel its members decide (`member_ids`); PUBLIC otherwise. ROLE_GATED is still accepted and needs `who_can_see`; the API sets `type` from `who_can_see` either way.',
+  })
   @IsIn(CHANNEL_TYPES)
   type: string;
 
-  @ApiPropertyOptional({ type: [String] })
+  @ApiPropertyOptional({
+    type: [String],
+    nullable: true,
+    maxItems: CHANNEL_ACCESS_LIST_MAX,
+    description: WHO_CAN_SEE_DESCRIPTION,
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(CHANNEL_ACCESS_LIST_MAX)
+  @IsString({ each: true })
+  @Matches(CHANNEL_ACCESS_ENTRY_PATTERN, { each: true, message: ENTRY_MESSAGE })
+  who_can_see?: string[] | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    nullable: true,
+    maxItems: CHANNEL_ACCESS_LIST_MAX,
+    description: WHO_CAN_POST_DESCRIPTION,
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(CHANNEL_ACCESS_LIST_MAX)
+  @IsString({ each: true })
+  @Matches(CHANNEL_ACCESS_ENTRY_PATTERN, { each: true, message: ENTRY_MESSAGE })
+  who_can_post?: string[] | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    deprecated: true,
+    description: LEGACY_FIELD_DESCRIPTION,
+  })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
@@ -76,14 +124,17 @@ export class CreateChannelDto {
   @IsUUID()
   category_id?: string;
 
-  @ApiPropertyOptional({ default: false })
+  @ApiPropertyOptional({
+    deprecated: true,
+    description: LEGACY_FIELD_DESCRIPTION,
+  })
   @IsOptional()
   @IsStrictBoolean()
   is_read_only?: boolean;
 
-  // No `default:` in the schema, unlike `is_read_only`: openapi-typescript
-  // reads a default as required, which would make every existing create call
-  // send it. The service still writes false when it is absent.
+  // No `default:` in the schema: openapi-typescript reads a default as
+  // required, which would make every existing create call send it. The
+  // service still writes false when it is absent.
   @ApiPropertyOptional({
     description:
       'Always formal (#3787): every member sees the channel in the formal display and cannot pick another display there. False when absent. Change it later with PUT /v1/channels/{id}/display-lock.',
@@ -119,7 +170,45 @@ export class UpdateChannelDto {
   @IsString()
   description?: string;
 
-  @ApiPropertyOptional({ type: [String] })
+  @ApiPropertyOptional({
+    type: [String],
+    nullable: true,
+    maxItems: CHANNEL_ACCESS_LIST_MAX,
+    description: WHO_CAN_SEE_DESCRIPTION,
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(CHANNEL_ACCESS_LIST_MAX)
+  @IsString({ each: true })
+  @Matches(CHANNEL_ACCESS_ENTRY_PATTERN, { each: true, message: ENTRY_MESSAGE })
+  who_can_see?: string[] | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    nullable: true,
+    maxItems: CHANNEL_ACCESS_LIST_MAX,
+    description: WHO_CAN_POST_DESCRIPTION,
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(CHANNEL_ACCESS_LIST_MAX)
+  @IsString({ each: true })
+  @Matches(CHANNEL_ACCESS_ENTRY_PATTERN, { each: true, message: ENTRY_MESSAGE })
+  who_can_post?: string[] | null;
+
+  @ApiPropertyOptional({
+    description:
+      "Copy both lists from the channel's category (the one it ends up in, when `category_id` moves it in the same request), so it matches the category again and follows its later changes. Refused with `who_can_see` or `who_can_post`, and on a channel with no category.",
+  })
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsStrictBoolean()
+  match_category_access?: boolean;
+
+  @ApiPropertyOptional({
+    type: [String],
+    deprecated: true,
+    description: LEGACY_FIELD_DESCRIPTION,
+  })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
@@ -142,7 +231,10 @@ export class UpdateChannelDto {
   @IsUUID()
   category_id?: string | null;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    deprecated: true,
+    description: LEGACY_FIELD_DESCRIPTION,
+  })
   @IsOptional()
   @IsStrictBoolean()
   is_read_only?: boolean;
@@ -252,6 +344,34 @@ export class CreateCategoryDto {
   @Min(0)
   @Max(POSITION_MAX)
   display_order?: number;
+
+  @ApiPropertyOptional({
+    type: [String],
+    nullable: true,
+    maxItems: CHANNEL_ACCESS_LIST_MAX,
+    description:
+      'Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` entries. A new channel in the category starts with it.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(CHANNEL_ACCESS_LIST_MAX)
+  @IsString({ each: true })
+  @Matches(CHANNEL_ACCESS_ENTRY_PATTERN, { each: true, message: ENTRY_MESSAGE })
+  who_can_see?: string[] | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    nullable: true,
+    maxItems: CHANNEL_ACCESS_LIST_MAX,
+    description:
+      'Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` entries.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(CHANNEL_ACCESS_LIST_MAX)
+  @IsString({ each: true })
+  @Matches(CHANNEL_ACCESS_ENTRY_PATTERN, { each: true, message: ENTRY_MESSAGE })
+  who_can_post?: string[] | null;
 }
 
 export class UpdateCategoryDto {
@@ -267,6 +387,34 @@ export class UpdateCategoryDto {
   @Min(0)
   @Max(POSITION_MAX)
   display_order?: number;
+
+  @ApiPropertyOptional({
+    type: [String],
+    nullable: true,
+    maxItems: CHANNEL_ACCESS_LIST_MAX,
+    description:
+      'Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` entries. Changing it changes every channel in the category that matched it, and only those.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(CHANNEL_ACCESS_LIST_MAX)
+  @IsString({ each: true })
+  @Matches(CHANNEL_ACCESS_ENTRY_PATTERN, { each: true, message: ENTRY_MESSAGE })
+  who_can_see?: string[] | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    nullable: true,
+    maxItems: CHANNEL_ACCESS_LIST_MAX,
+    description:
+      'Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` entries.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(CHANNEL_ACCESS_LIST_MAX)
+  @IsString({ each: true })
+  @Matches(CHANNEL_ACCESS_ENTRY_PATTERN, { each: true, message: ENTRY_MESSAGE })
+  who_can_post?: string[] | null;
 }
 
 /**
@@ -568,6 +716,51 @@ export class MentionRoleDto {
       'Whether the caller may `@` this role: its own switch (`mentionable` on the role, on by default), or the caller holding `channels:manage` or `roles:manage`. A token naming a role the sender may not ping reaches nobody.',
   })
   mentionable: boolean;
+}
+
+/** `GET /v1/channels/access-options` (#3722): one thing a who-can-see or who-can-post list can name. */
+export class ChannelAccessOptionDto {
+  @ApiProperty({
+    description:
+      'The entry as a list stores it: `tier:<id>` or `role:<id>`. Send it back in `who_can_see` or `who_can_post`.',
+  })
+  entry: string;
+
+  @ApiProperty({
+    enum: ['tier', 'role'],
+    description:
+      'What the entry names. More kinds may come (groups, #4076); an editor groups by kind and should show an unknown one under its own heading.',
+  })
+  kind: string;
+
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty()
+  name: string;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      "A role's palette color; null for a tier or an uncolored role.",
+  })
+  color: string | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: "A role's tier, or null; always null for a tier.",
+  })
+  tier_id: string | null;
+
+  @ApiProperty({
+    type: [String],
+    description:
+      'The `users.id` of every member it names, so the editor can count who a list reaches without counting anyone twice.',
+  })
+  user_ids: string[];
 }
 
 export class ChannelUnreadCountDto {
