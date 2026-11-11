@@ -4,7 +4,7 @@ Frapp's AI features (Q&A, summarization, drafting, suggestions) answer from the 
 
 > **Changed 2026-11-11 (Paul, [ADR-28](../architecture/adr/adr-28.md) decision 5).** This file used to say the chapter chat is not part of the AI corpus in v1, trading cross-conversation synthesis for confidence in every answer. Paul reversed that: chat carries much of a chapter's context, so it is in, with a per-member choice. The confidence concern is kept by the rules in [Chat as a source](#chat-as-a-source): chat ranks below official sources, is cited as chat, and can never trigger an action.
 
-Nothing here is built yet. There is no `ai` module in the API. How the pieces are meant to fit is [`spec/architecture/README.md`](../architecture/README.md) §13 and ADR-28.
+How the pieces are meant to fit is [`spec/architecture/README.md`](../architecture/README.md) §13 and ADR-28.
 
 ## Corpus scope
 
@@ -19,14 +19,19 @@ Prose, embedded once and re-embedded when its source is edited:
 | --------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | Meeting minutes and transcripts                     | Stored with `meeting_type` metadata so the summarizer can vary tone (see [`meetings.md`](meetings.md)). |
 | Uploaded chapter documents                          | Bylaws, policies, calendars from Chapter Docs ([`chapter-docs.md`](chapter-docs.md)).  |
-| Formal announcements                                | `#announcements` channel messages (officer-posted, all-read, see [`chat/README.md`](chat/README.md#announcements)). |
+| Formal announcements                                | Top-level posts in `#announcements` (officer-posted, all-read, see [`chat/README.md`](chat/README.md#announcements)). A member's reply in an announcement's thread is a channel message, the row below. |
 | Channel messages                                    | Messages in chapter channels, from members who agreed. Ranked below the three rows above. Rules: [Chat as a source](#chat-as-a-source). |
 
 ### Live structured data (tool-called, never embedded)
 
-Officer roster, events, dues amounts, points balances, attendance, and contacts are **not indexed**.
+Officer roster, events, dues amounts, points balances and attendance are **not indexed**.
 The model reads them at answer time by calling the same permission-guarded API endpoints the rest of
 the product uses, and the result is injected into the answer as a tool result.
+
+A member's contact details (phone, email, address) are never returned to a model. (Changed
+2026-11-11 with [Consent](#consent): this paragraph used to list contacts among the fields a model
+reads. The sheet a member accepts promises no contact details are sent, so the tools don't return
+them. An answer can still say who holds a role and link to their profile.)
 
 This is a deliberate correction to an earlier design that materialized structured data into the
 embedding corpus via a "facts" view. Embedding mutable rows has two failure modes an index cannot
@@ -52,16 +57,17 @@ should query canon rather than keep a stale copy of it.
 
 ## Chat as a source
 
-Messages in chapter channels are part of the corpus: general, committee, role-gated and topic channels alike. `#announcements` was already a source and stays an official one.
+Messages in chapter channels are part of the corpus: general, committee, role-gated and topic channels alike. `#announcements` was already a source and stays an official one for its top-level posts. A reply in an announcement's thread, which any reader of the channel can write, is an ordinary channel message under the rules below.
 
 - **Only from members who said yes.** A message is indexed, and sent to a model, only when its author accepted the member sheet in [Consent](#consent). Everyone else's messages are left out of the index and out of every model input.
 - **Answers say what was left out.** When an answer or summary draws on a channel or thread that holds left-out messages, it says so in plain words, for example "4 messages from members who opted out aren't included". It never says who.
 - **A member's name is not their messages.** Name, role and tags are roster data, read through tools. A mention of an opted-out member in someone else's message still resolves.
 - **Answers follow the asker's access.** Retrieval returns a message only if the asker could open its channel. A private or role-gated channel never leaks through an answer.
+- **A block holds.** An answer never quotes or cites a member the asker has blocked, as the timeline, search and reply quotes already don't ([`chat/README.md` § What a block does and does not hide](chat/README.md#what-a-block-does-and-does-not-hide)).
 - **Chat ranks below official sources and is cited as chat.** The citation names the channel, the date and the author, and links to the message. When chat disagrees with a bylaw, minutes or an announcement, the answer shows both, as [Citation requirement](#citation-requirement) says for any conflict.
 - **Chat never triggers an action.** Any member can write chat, so it is the easiest place to plant an instruction. Nothing is done because a message asked for it, and every action needs the asker's own confirmation.
 - **Imported Discord messages count only for linked members who said yes.** An imported author never saw a sheet. Their messages are included only when the author is linked to a Frapp member ([`chat/README.md` § Linking a member's Discord history](chat/README.md#linking-a-members-discord-history), #2878) and that member said yes.
-- **Edits, deletes and changes of mind are followed.** An edited message is re-indexed and a deleted one is dropped. A member who turns the choice off stops being read from that moment, and their message embeddings are purged within a day. Deleting an account counts as turning it off.
+- **Edits, deletes and changes of mind are followed.** An edited message is re-indexed and a deleted one is dropped. A member who turns the choice off stops being read from that moment, and their message embeddings are purged within a day. Their words also leave what was made from them: a waiting suggestion loses its quote of them, and a stored report that quotes them is deleted early ([Stored AI text](#stored-ai-text)). Deleting an account counts as turning it off.
 
 ## Explicit non-goals (v1)
 
@@ -71,26 +77,36 @@ Messages in chapter channels are part of the corpus: general, committee, role-ga
 - **No location reaches a model.** Study-hours location is never an input.
 - **Standards meetings never reach a model.** See [`meetings.md`](meetings.md#standards-meetings).
 
+## Whose access an AI run uses
+
+- **A question uses the asker's access, in one chapter.** That is the chapter the asker is in when they ask. Belonging to a second chapter adds nothing to the answer.
+- **Background work acts for a named member.** Drafting minutes acts for the officer who started it. A scheduled feature acts for the officer who turned it on or who will receive its result. The run reads only what that member can open at the moment it runs. A run with no member to act for does not read the corpus.
+- **What a run produces is shown only to people who could open its sources.** A suggestion drawn from an Exec meeting or a role-gated channel is listed only for officers who can open that meeting or channel.
+
 ## Consent
 
-Three things must all be true before a member's data reaches a model.
+Three gates stand between Frapp's data and a model. Each governs a different thing.
 
-1. **The chapter turned the feature on.** The president switches on each family separately: Ask, meeting notes, and chat as a source. Each is off until then.
-2. **The member said yes, once, on a sheet.** The sheet names each provider and each kind of data that is sent: the member's own questions, chapter documents and announcements, roster fields (name, role, points and dues status, with no contact details), messages in channels, and meeting audio and transcripts. It has a real No.
+1. **The chapter turned the feature on.** The president switches on each family separately: Ask, meeting notes, and chat as a source. Each is off until then. This gate governs the chapter's records, which are the chapter's to share: documents, announcements, minutes and roster fields, whoever uploaded or posted them.
+2. **The member said yes, once, on a sheet.** This gate governs what is the member's to share: their own use of AI, and their own messages. The sheet names each provider and every kind of data that is sent, the chapter's records included, so a member knows what leaves Frapp before they answer: the member's own questions, chapter documents and announcements, roster fields (name, role, points, dues status and attendance, with no contact details), messages in channels, and meeting notes, audio and transcripts. It has a real No.
    - Adding a provider or a kind of data makes a new version of the sheet, and every member is asked again.
    - A member who has not answered counts as No. That covers everyone who joined before the sheet existed.
    - The answer is checked on the server, never only in the app.
    - A member can change the answer later in Settings.
-3. **A meeting was announced before it was recorded.** See [`meetings.md`](meetings.md#recording-notice).
+3. **A meeting was announced before it was recorded.** This gate governs voices. See [`meetings.md`](meetings.md#recording-notice).
 
 What No means for that member:
 
 | Area | Effect |
 | --- | --- |
 | Ask and summaries | They can't use them. |
-| Their chat messages | Left out, as [Chat as a source](#chat-as-a-source) says. |
+| Their chat messages | Left out, as [Chat as a source](#chat-as-a-source) says. That includes their replies under an announcement. |
+| Announcements and documents they posted as an officer | Still read. They are the chapter's records, under the president's switch. |
 | Their roster fields | Still appear in an officer's tool results. A question like "who is behind on dues" needs every member, and the fields carry no contact details. |
-| Meetings | They can ask the officer not to record, and the officer then doesn't. |
+| Minutes that name them | Still drafted. Notes an officer writes about a meeting are the officer's text, and minutes have always named who said and owes what. |
+| A recorded meeting | Their answer on the sheet does not stop a recording. The [recording notice](meetings.md#recording-notice) does: anyone present can object, whatever they answered, and the officer then doesn't record. |
+
+A No is therefore not a promise that nothing about the member reaches a model. It keeps their own messages out and their own use off. The sheet and the privacy page must say it that way.
 
 The sheet is asked up front because Apple requires an explicit yes before personal data goes to a third-party AI (App Review Guideline 5.1.2(i)). The sheet, the privacy page's list of providers and the store answers ship in the same release that first sends member data to a model ([#3297](https://github.com/pdcarlson/Frapp/issues/3297)).
 
@@ -111,7 +127,7 @@ Some features propose instead of answer: a task drafted from minutes, a decision
 - **A suggestion is a proposal, and nothing changes until a person accepts it.** Accepting checks that person's permission again, at that moment, and then makes the change the ordinary way.
 - **Suggestions are never posted into chat as messages.** They appear where they belong (on the minutes, on the task list) and in one "Suggested" list for officers.
 - **One notification per batch.** Ten suggested tasks from one meeting are one push, not ten.
-- **A suggestion shows why.** It carries the quote or the source it came from.
+- **A suggestion shows why.** It carries the quote or the source it came from. The server checks the quote word for word against that source, as it does a citation, and the quote is shown only to someone who can open the source.
 - **Unaccepted suggestions expire.** A suggestion whose source is deleted goes with it.
 
 ## Stored AI text
@@ -120,12 +136,13 @@ Frapp does not keep the text of prompts or answers, with two exceptions.
 
 | Exception | What is kept | Who reads it | How long |
 | --- | --- | --- | --- |
-| A member reports an answer | That one exchange, shown to the member before they confirm | The Frapp team | 30 days, encrypted |
+| A member reports an answer or a draft | That one exchange, shown to the member before they confirm | The Frapp team | 30 days, encrypted |
 | Beta diagnostics | Questions and answers in Ask, for one chapter | The Frapp team | 14 days, encrypted, with a fixed end date |
 
-- The diagnostics window exists for the beta only. While it is on, Ask shows a line saying answers are being saved. It never covers chat-derived or meeting features.
+- The diagnostics window exists for the beta only, and only on Ask. While it is on, Ask shows a line saying answers are being saved. It never covers meeting features, and it never keeps an answer that drew on chat. Ask comes after the beta's first features, so until it exists the window keeps nothing and a report is the only stored text.
 - Neither store holds meeting audio or Standards material.
-- Both are deleted when the member deletes their account, and both are named on the privacy page.
+- A stored exchange is deleted when the member who asked or reported deletes their account. It is also deleted early when a member it quotes deletes their account or turns their choice off.
+- Both are named on the privacy page.
 - The usage ledger has no text column. It records counts, the model, the prompt version and the cost.
 - No prompt or answer text goes to any outside service: not to error tracking, not to analytics, not to a provider's own request logs. That rule has no exception ([`observability.md`](observability.md)).
 

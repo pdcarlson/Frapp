@@ -1,16 +1,21 @@
 ### ADR-28: AI platform — two providers behind a port Frapp owns, one model per feature, a bake-off decides (2026-11-11)
 
-**Status: Current.** Paul took every decision below on 2026-11-11, in the chat thread "Plan Frapp's
-AI architecture". Decisions 5, 7 and 9 are his own answers to the privacy research. Decisions 4, 3,
-6 and 8 are the plan's recommendations, which he accepted together. The rest follow from those and
-were listed in the plan as defaults he could object to. The wording here is the drafting session's.
-Nothing in this record is built: there is no `ai` module in `apps/api/src/modules`, no AI SDK in any
-`package.json`, and no vector or usage table in `supabase/migrations/`.
+**Status: Current.** Paul took the decisions below on 2026-11-11, in the chat thread "Plan Frapp's
+AI architecture". Three are his own answers to the privacy research: chat is part of the AI and a
+member can opt out (5), recordings go as planned (7), and there is no set date for Google Cloud (9).
+Decisions 3, 4, 6 and 8 are the plan's recommendations, which he accepted together. The rest follow
+from those and were listed in the plan as defaults he could object to. The wording here is the
+drafting session's, and so are the detailed rules under decision 5, which says where they differ
+from what he said. As of 2026-11-11 nothing in this record is built: there is no `ai` module in
+`apps/api/src/modules`, no AI SDK in any `package.json`, and no vector or usage table in
+`supabase/migrations/`.
 
-This record resolves [#2534](https://github.com/pdcarlson/Frapp/issues/2534) (the AI ADR),
-[#1303](https://github.com/pdcarlson/Frapp/issues/1303) (model access) and
-[#1456](https://github.com/pdcarlson/Frapp/issues/1456) (embeddings). Work is tracked under the AI
-epic, [#427](https://github.com/pdcarlson/Frapp/issues/427).
+This record answers [#1303](https://github.com/pdcarlson/Frapp/issues/1303) (model access) and
+[#1456](https://github.com/pdcarlson/Frapp/issues/1456) (embeddings and rerank). It is the ADR
+[#2534](https://github.com/pdcarlson/Frapp/issues/2534) asked for, and records that issue's
+decisions 1, 2, 3, 6 and 7. Its decisions 4 (how retrieval is isolated per chapter) and 5 (the eval
+gate's thresholds) are not settled here: see "What this record does not decide". Work is tracked
+under the AI epic, [#427](https://github.com/pdcarlson/Frapp/issues/427).
 
 **Decision.**
 
@@ -28,8 +33,13 @@ epic, [#427](https://github.com/pdcarlson/Frapp/issues/427).
    - Claude, on Anthropic's own API, runs the text features: minutes, suggested tasks, and later Ask
      Frapp and the acting agent. It also judges evals.
    - Gemini, on Google Cloud's paid platform (Vertex AI, which Google now calls the Gemini
-     Enterprise Agent Platform), runs embeddings from the first day there is an index. It is the
-     first candidate for audio and PDF jobs.
+     Enterprise Agent Platform), runs embeddings from the first day there is an index: Gemini
+     Embedding at 1,536 dimensions. It is the first candidate for bulk PDF reading, and Google's
+     transcription model is one of the two candidates for transcription (decision 6).
+   - Retrieval is hybrid: a vector search and Postgres full-text search, merged by reciprocal rank
+     fusion. There is no reranker in the first version, as a deliberate cut. One is added only if
+     the retrieval evals show misses, and Google's ranking API is the first candidate because it
+     adds no vendor.
    - A bake-off on Frapp's own eval cases decides each feature's model after that. Neither vendor is
      "the" provider.
    - Member data never goes to a free tier, to AI Studio API keys, or to a consumer chat app. Those
@@ -39,21 +49,35 @@ epic, [#427](https://github.com/pdcarlson/Frapp/issues/427).
    word in that source, and drops the claim's citation otherwise. This replaces the rule that
    citations come from the provider's native citation feature. The rule is the same one the eval
    grader already applies (`apps/api/test/ai-evals/harness/grader.ts`).
-5. **Chat is part of the AI, with a per-member choice** (Paul). Messages in chapter channels join
-   the corpus. A member can say no, and then their messages are left out of indexing and out of
-   every model input, and an answer that would have drawn on them says some messages were not
-   included. Direct messages and group DMs stay out, always. The rules that make this hold up are in
-   [`spec/behavior/ai.md` § Consent](../../behavior/ai.md#consent).
+5. **Chat is part of the AI, and a member can keep their messages out** (Paul). Messages in chapter
+   channels join the corpus. In his words, chat "should be part of the AI somehow", and "members
+   could choose to opt out", with their messages marked as opted out. Direct messages and group DMs
+   stay out, always, as they did before.
+
+   The rules that carry this out came from the privacy research, not from Paul, and he had not
+   objected to them when this was written. They differ from his sketch in two ways, on purpose:
+   - **A member is asked once, and silence counts as no.** He described opting out. Apple requires
+     an explicit yes before personal data goes to a third-party AI (App Review Guideline 5.1.2(i)),
+     so a default of yes is not available on iOS. A chapter therefore starts with no chat in the
+     corpus and gains it member by member.
+   - **An answer says how many messages were left out, and never whose.** He described a notice on
+     the member's messages. Marking them would show the chapter who said no.
+
+   The president also turns chat on as a source for the chapter, separately from the other AI
+   features. All of it is in [`spec/behavior/ai.md` § Chat as a source](../../behavior/ai.md#chat-as-a-source)
+   and [§ Consent](../../behavior/ai.md#consent).
 6. **The beta ships minutes from notes first.** An officer pastes or types notes and gets drafted
    minutes with suggested tasks. Uploading a recording on web comes second, after a transcription
    bake-off. The in-app recorder, Ask Frapp and the acting agent come after the beta.
 7. **Recording rules** (Paul). Standards meetings are never recorded and never reach a model. Raw
    audio is deleted when the minutes post, and after 30 days if they never post. Frapp stores no
    voiceprint and never recognises a member by voice.
-8. **AI text is stored in two cases only.** A member can report an answer, which keeps that one
-   exchange for 30 days, encrypted, for the Frapp team to read. During the beta, one chapter can
-   have a 14-day diagnostics window with a visible notice. Nothing else stores prompt or answer
-   text, and no external sink ever receives it.
+8. **AI text is stored in two cases only.** A member can report an answer or a draft, which keeps
+   that one exchange for 30 days, encrypted, for the Frapp team to read. During the beta, one
+   chapter can have a 14-day diagnostics window on Ask, with a visible notice. The research that
+   proposed the window kept it off meeting and chat-derived features, so it has nothing to keep
+   until Ask exists, and Ask comes after the beta (decision 6). Until then the report is the only
+   stored text. Nothing else stores prompt or answer text, and no external sink ever receives it.
 9. **Google Cloud holds model calls only** (Paul: "no set date" for anything more). The calls run
    from two new projects, `frapp-ai-staging` and `frapp-ai-prod`. Hosting stays where
    [ADR-24](adr-24.md) put it, on that ADR's triggers. This record adds a vendor and changes nothing
@@ -117,6 +141,11 @@ The catalog names the models. This table is a dated observation, not a pin.
   return yet. Rejected for now, not forever: the bake-off can move any feature to Gemini.
 - **Claude for everything.** The October recommendation. It leaves embeddings, audio and bulk PDF
   reading to a second vendor anyway, so the port has to exist either way.
+- **A third vendor for embeddings.** Voyage's model is good and cheap, and it would add a vendor and
+  a credential for no measured gain. OpenAI's and Cohere's embeddings were not evaluated.
+- **A reranker in the first version.** At one chapter's corpus, hybrid retrieval is likely enough.
+  That is an estimate, and the retrieval evals are what would overturn it
+  ([#3286](https://github.com/pdcarlson/Frapp/issues/3286)).
 - **A model router or gateway vendor** (OpenRouter and similar). Rejected in October and again here.
   It adds a subprocessor that sees every prompt, and it does not remove the need for a ledger and
   caps Frapp controls.
@@ -142,11 +171,18 @@ The catalog names the models. This table is a dated observation, not a pin.
 
 **Consequences.**
 
-- Spec changes ship with this record: [`ai.md`](../../behavior/ai.md) (chat, consent, citations,
-  suggestions, stored text), [`meetings.md`](../../behavior/meetings.md) (three ways to capture,
-  Standards, audio retention), [`../README.md` §13](../README.md#13-ai-corpus-architecture-v1), and
-  the chat section of
+- Spec changes ship with this record: [`ai.md`](../../behavior/ai.md) (chat, consent, whose access
+  a run uses, citations, suggestions, stored text), [`meetings.md`](../../behavior/meetings.md)
+  (three ways to capture, who can read minutes, Standards, audio retention),
+  [`../README.md` §13](../README.md#13-ai-corpus-architecture-v1),
+  [`positioning.md`](../../product/positioning.md), and the corpus, chat and citation parts of
   [`ai-prompt-injection.md`](../../../docs/security/ai-prompt-injection.md).
+- Three rules in those specs go further than anything Paul was asked, because the specs could not
+  be made consistent without them. Each is marked in place as the drafting session's, and is his to
+  change: a meeting's minutes are read by the members its event invites, and are no longer posted
+  as text into a shared `#meetings` channel; a member's contact details are never returned to a
+  model; and announcements and documents an officer posted stay readable by AI when that officer's
+  own answer on the sheet is no, because they are the chapter's records.
 - Two tables are new to the design and serve every feature: a queue of AI runs with a dedupe key,
   claimed by the scheduled-worker pattern the Discord import already uses, and a table of proposals
   waiting for a person. On Google Cloud the queue's trigger becomes Cloud Tasks; the table and the
@@ -154,9 +190,19 @@ The catalog names the models. This table is a dated observation, not a pin.
 - Streamed answers use one versioned event format that web and mobile both read, defined in
   `packages/validation`.
 - The eval harness becomes provider-neutral, so the same cases can grade either vendor. That is the
-  bake-off.
+  bake-off ([#4311](https://github.com/pdcarlson/Frapp/issues/4311)).
+- No pull request calls a paid model by default. Every pull request grades Frapp's own enforcement
+  (citation grounding, chapter scoping, the authority ceiling) against the scripted adapter, and CI
+  sets `AI_EVALS_REQUIRE_AGENT=1` once that adapter exists
+  ([#4306](https://github.com/pdcarlson/Frapp/issues/4306)). What only a live model can show
+  (refusals, resisting an injection) is graded by live runs outside the pull-request path
+  ([#3282](https://github.com/pdcarlson/Frapp/issues/3282)). This answers #1303's CI question.
 - Citing calls return prose plus a citation list. A call that needs a strict JSON shape (minutes,
-  proposals) is a separate, non-citing call using the provider's structured output mode.
+  proposals) is a separate call using the provider's structured output mode. The quote a proposal
+  carries gets the same word-for-word check as a citation.
+- The credentials are Paul's to create: the Anthropic organization
+  ([#3279](https://github.com/pdcarlson/Frapp/issues/3279)) and the Google Cloud projects
+  ([#4316](https://github.com/pdcarlson/Frapp/issues/4316)).
 - The consent sheet, the privacy page's subprocessor list and the store answers ship in the same
   release that first sends member data to a model, not before and not after
   ([#3297](https://github.com/pdcarlson/Frapp/issues/3297)).
@@ -170,11 +216,36 @@ The catalog names the models. This table is a dated observation, not a pin.
 - **The monthly allowance.** [`billing.md`](../../behavior/billing.md#ai-usage-pricing) still reads
   it off real usage.
 - **When hosting moves.** ADR-24's triggers.
-- **AI over vault content, and AI over rush data.** Both stay out.
+- **How retrieval is isolated per chapter** (#2534's decision 4). The rule is stated in
+  [`../README.md` §13](../README.md#13-ai-corpus-architecture-v1): one chapter per request, and a
+  read check per source. Whether the retrieval function also runs under the caller's own database
+  identity, so row-level security backs the filter, is open. The October research recommended it.
+  The API reads with the service role today, which bypasses row-level security, and a background
+  job has no caller. It is settled with the corpus schema
+  ([#720](https://github.com/pdcarlson/Frapp/issues/720)).
+- **The eval gate's thresholds and how often live models run** (#2534's decision 5). #3282 owns
+  both. The research recommended manual runs plus runs on pull requests that touch prompts,
+  retrieval or the catalog during the beta, and nightly from about ten chapters.
+- **The vector index type and the database plan it needs.** Settled with the corpus schema (#720).
+- **AI over vault content, rush data and backwork.** All three stay out.
+  [`ai.md`](../../behavior/ai.md)'s list of sources is closed.
 
-**Not verified.** The session could not reach `ai.google.dev` or `docs.cloud.google.com`, so these
-rest on search results and should be checked before anything depends on them:
+**Not verified.** The session could not reach `ai.google.dev` or `docs.cloud.google.com`, so every
+statement about Google in this record rests on search results. Two of them carry a decision, and
+should be read at the source before the work that depends on them starts:
 
+- that Gemini returns per-claim citations only when Google runs the retrieval. This is the stated
+  reason for decision 4. Decision 4 stands without it, because a check Frapp owns works with any
+  provider, but the "can't cite" argument for the provider split would weaken;
+- that Gemini Embedding can be cut to 1,536 dimensions. The vector column is sized from it, and a
+  column can't change width without re-embedding the corpus (#720).
+
+The rest should be checked before anything depends on them:
+
+- that AI Studio keys and the free tier fall under terms that allow training on what they receive,
+  and that the paid platform does not;
+- that Claude on Google Cloud is run by Anthropic with the same API;
+- every Gemini price in the "Prices the estimates used" table, and so the Gemini cost figures;
 - that the Google Cloud trial credit can't pay for Gemini through AI Studio keys, and stops covering
   Vertex for trials started or upgraded on or after 2026-11-16;
 - that keyless sign-in from Render to Google Cloud (Workload Identity Federation) needs Render's Pro
