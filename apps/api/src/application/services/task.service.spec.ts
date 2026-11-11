@@ -75,6 +75,8 @@ describe('TaskService', () => {
       createSubtasks: jest.fn().mockResolvedValue([]),
       setSubtaskDone: jest.fn(),
       deleteSubtask: jest.fn(),
+      updateUnconfirmed: jest.fn(),
+      releaseReminderClaims: jest.fn().mockResolvedValue(undefined),
     };
 
     mockMemberRepo = {
@@ -1068,6 +1070,211 @@ describe('TaskService', () => {
       await expect(service.findById('task-1', 'ch-1')).rejects.toThrow(
         'Task not found',
       );
+    });
+  });
+
+  describe('update (#4296)', () => {
+    it('changes only what differs and keeps the reminders when the due date stays', async () => {
+      mockTaskRepo.findById.mockResolvedValue(baseTask);
+      mockTaskRepo.updateUnconfirmed.mockImplementation((_id, _ch, patch) =>
+        Promise.resolve({ ...baseTask, ...patch }),
+      );
+
+      const result = await service.update('task-1', 'ch-1', 'admin-1', {
+        title: '  Book the venue ',
+        description: 'Test description',
+        due_date: '2099-03-15',
+        point_reward: 25,
+      });
+
+      expect(mockTaskRepo.updateUnconfirmed).toHaveBeenCalledWith(
+        'task-1',
+        'ch-1',
+        { title: 'Book the venue', point_reward: 25 },
+      );
+      expect(mockTaskRepo.releaseReminderClaims).not.toHaveBeenCalled();
+      expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+      expect(result).toMatchObject({
+        title: 'Book the venue',
+        point_reward: 25,
+        stored_status: TaskStatus.TODO,
+        subtasks: [],
+      });
+    });
+
+    it('re-arms the reminders when a timed task moves within its day', async () => {
+      const timed = {
+        ...baseTask,
+        due_at: '2099-03-15T21:00:00.000Z',
+      };
+      mockTaskRepo.findById.mockResolvedValue(timed);
+      mockTaskRepo.updateUnconfirmed.mockImplementation((_id, _ch, patch) =>
+        Promise.resolve({ ...timed, ...patch }),
+      );
+
+      await service.update('task-1', 'ch-1', 'admin-1', {
+        due_date: '2099-03-15',
+        due_at: '2099-03-15T23:00:00-00:00',
+      });
+
+      expect(mockTaskRepo.updateUnconfirmed).toHaveBeenCalledWith(
+        'task-1',
+        'ch-1',
+        { due_at: '2099-03-15T23:00:00.000Z' },
+      );
+      expect(mockTaskRepo.releaseReminderClaims).toHaveBeenCalledWith(
+        'ch-1',
+        'task-1',
+      );
+    });
+
+    it('takes a time off with due_at null', async () => {
+      mockTaskRepo.findById.mockResolvedValue({
+        ...baseTask,
+        due_at: '2099-03-15T21:00:00.000Z',
+      });
+      mockTaskRepo.updateUnconfirmed.mockResolvedValue(baseTask);
+
+      await service.update('task-1', 'ch-1', 'admin-1', { due_at: null });
+
+      expect(mockTaskRepo.updateUnconfirmed).toHaveBeenCalledWith(
+        'task-1',
+        'ch-1',
+        { due_at: null },
+      );
+    });
+
+    it('refuses a time that does not fall on the due date', async () => {
+      mockTaskRepo.findById.mockResolvedValue(baseTask);
+
+      await expect(
+        service.update('task-1', 'ch-1', 'admin-1', {
+          due_date: '2099-03-15',
+          due_at: '2099-03-20T17:00:00Z',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockTaskRepo.updateUnconfirmed).not.toHaveBeenCalled();
+    });
+
+    it('starts a reassigned task over and tells the new assignee', async () => {
+      const waiting = {
+        ...baseTask,
+        status: TaskStatus.COMPLETED,
+        completed_at: '2099-03-14T12:00:00.000Z',
+        sent_back_at: '2099-03-13T12:00:00.000Z',
+      };
+      mockTaskRepo.findById.mockResolvedValue(waiting);
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+      mockTaskRepo.updateUnconfirmed.mockImplementation((_id, _ch, patch) =>
+        Promise.resolve({ ...waiting, ...patch }),
+      );
+
+      const result = await service.update('task-1', 'ch-1', 'admin-1', {
+        assignee_id: 'user-2',
+      });
+
+      expect(mockTaskRepo.updateUnconfirmed).toHaveBeenCalledWith(
+        'task-1',
+        'ch-1',
+        {
+          assignee_id: 'user-2',
+          status: TaskStatus.TODO,
+          completed_at: null,
+          sent_back_at: null,
+        },
+      );
+      expect(mockTaskRepo.releaseReminderClaims).toHaveBeenCalled();
+      expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+        'user-2',
+        'ch-1',
+        expect.objectContaining({ title: 'Test Task' }),
+      );
+      expect(result.status).toBe(TaskStatus.TODO);
+    });
+
+    it('sends no push when the officer reassigns the task to themselves (#1340)', async () => {
+      mockTaskRepo.findById.mockResolvedValue(baseTask);
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+      mockTaskRepo.updateUnconfirmed.mockImplementation((_id, _ch, patch) =>
+        Promise.resolve({ ...baseTask, ...patch }),
+      );
+
+      await service.update('task-1', 'ch-1', 'admin-1', {
+        assignee_id: 'admin-1',
+      });
+
+      expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('refuses an assignee outside the chapter', async () => {
+      mockTaskRepo.findById.mockResolvedValue(baseTask);
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+      await expect(
+        service.update('task-1', 'ch-1', 'admin-1', {
+          assignee_id: 'stranger',
+        }),
+      ).rejects.toThrow('Assignee must be a member of the chapter');
+    });
+
+    it('refuses a blank title', async () => {
+      mockTaskRepo.findById.mockResolvedValue(baseTask);
+
+      await expect(
+        service.update('task-1', 'ch-1', 'admin-1', { title: '   ' }),
+      ).rejects.toThrow('A task needs a title');
+    });
+
+    it('refuses a confirmed task', async () => {
+      mockTaskRepo.findById.mockResolvedValue({
+        ...baseTask,
+        status: TaskStatus.COMPLETED,
+        points_awarded: true,
+      });
+
+      await expect(
+        service.update('task-1', 'ch-1', 'admin-1', { title: 'New' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockTaskRepo.updateUnconfirmed).not.toHaveBeenCalled();
+    });
+
+    it('refuses when a confirm lands between the read and the write', async () => {
+      mockTaskRepo.findById.mockResolvedValue(baseTask);
+      mockTaskRepo.updateUnconfirmed.mockResolvedValue(null);
+
+      await expect(
+        service.update('task-1', 'ch-1', 'admin-1', { title: 'New' }),
+      ).rejects.toThrow('confirmed while you were editing');
+    });
+
+    it('404s a missing task', async () => {
+      mockTaskRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.update('task-1', 'ch-1', 'admin-1', { title: 'New' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('keeps the edit when releasing the reminders fails', async () => {
+      mockTaskRepo.findById.mockResolvedValue(baseTask);
+      mockTaskRepo.updateUnconfirmed.mockImplementation((_id, _ch, patch) =>
+        Promise.resolve({ ...baseTask, ...patch }),
+      );
+      mockTaskRepo.releaseReminderClaims.mockRejectedValue(new Error('down'));
+      const report = jest
+        .spyOn(caughtFailure, 'reportCaughtFailure')
+        .mockImplementation(() => undefined);
+
+      const result = await service.update('task-1', 'ch-1', 'admin-1', {
+        due_date: '2099-03-20',
+      });
+
+      expect(result.due_date).toBe('2099-03-20');
+      expect(report).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ site: 'task-edit-release-reminders' }),
+      );
+      report.mockRestore();
     });
   });
 

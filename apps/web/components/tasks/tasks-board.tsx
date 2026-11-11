@@ -2,7 +2,7 @@
 
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useMemo, useState } from "react";
-import { CheckCircle2, Trash2, Undo2 } from "lucide-react";
+import { CheckCircle2, Pencil, Trash2, Undo2 } from "lucide-react";
 import {
   useConfirmTask,
   useCreateTask,
@@ -45,9 +45,10 @@ import {
   actionStatus,
   canReopenOwnTask,
 } from "@repo/hooks";
-import { asArray, getErrorMessage } from "@/lib/utils";
+import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import { taskDueClause } from "./task-due";
 import { TaskSubtaskList, TaskSubtasksToggle } from "./task-subtasks";
+import { TaskEditForm } from "./task-edit-form";
 import { AddTaskRow, type TaskDraft } from "./add-task-row";
 import { TasksPageSkeleton } from "@/components/tasks/tasks-skeleton";
 
@@ -624,6 +625,27 @@ function TaskTile({
   const due = taskDueClause(task);
   const status = actionStatus(task);
   const [subtasksOpen, setSubtasksOpen] = useState(false);
+  // An officer's edit replaces the tile with the task form until it saves or
+  // is cancelled (#4296). A confirmed task's points were paid on it as it
+  // stood, so it has no Edit.
+  const [editing, setEditing] = useState(false);
+  const editable = canManage && !task.points_awarded;
+
+  if (editing && editable) {
+    return (
+      <li
+        aria-label={`Editing ${task.title}`}
+        className="rounded-[14px] border border-ring/60 p-3"
+      >
+        <TaskEditForm
+          task={task}
+          assigneeName={assigneeName}
+          gate={gate}
+          onClose={() => setEditing(false)}
+        />
+      </li>
+    );
+  }
 
   return (
     <li className="rounded-[14px] border border-border p-3">
@@ -765,10 +787,25 @@ function TaskTile({
             Reject and Delete fit one row of a narrow column. Named for the
             task, since every tile has one.
           */}
+          {editable ? (
+            <Button
+              size="toolbar"
+              variant="ghost"
+              className="ml-auto w-9 px-0 pointer-coarse:w-11 pointer-coarse:px-0"
+              aria-label={`Edit ${task.title}`}
+              {...gate.controlProps()}
+              onClick={() => setEditing(true)}
+            >
+              <Pencil className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          ) : null}
           <Button
             size="toolbar"
             variant="ghost"
-            className="ml-auto w-9 px-0 pointer-coarse:w-11 pointer-coarse:px-0"
+            className={cn(
+              "w-9 px-0 pointer-coarse:w-11 pointer-coarse:px-0",
+              !editable && "ml-auto",
+            )}
             aria-label={`Delete ${task.title}`}
             {...gate.controlProps()}
             onClick={onDelete}
