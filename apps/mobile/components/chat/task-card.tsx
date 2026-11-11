@@ -2,6 +2,7 @@ import type { TaskPayload } from "@repo/chat-core/cards";
 import {
   canReadCardTask,
   readLiveTask,
+  subtaskProgress,
   taskCardControls,
   TASK_ACTION_LABELS,
   taskStatusLabel,
@@ -128,6 +129,10 @@ export function TaskCard({
               payload.point_reward ? (
                 <PointsChip points={payload.point_reward} />
               ) : null,
+              // The live task's steps (#4003): "2 of 5 subtasks".
+              live && live.subtasks.length > 0
+                ? `${subtaskProgress(live.subtasks)?.label} subtasks`
+                : null,
             ]}
           />
         </>

@@ -24,6 +24,7 @@ import {
  * A picked day is held as a date, like "Friday" ({@link resolveDue}).
  */
 
+import { TASK_SUBTASKS_MAX } from "@repo/validation";
 import { POINTS_MAX, TITLE_MAX_LENGTH } from "./limits";
 
 export interface NewTaskDraft {
@@ -35,6 +36,8 @@ export interface NewTaskDraft {
    * time of day (#4003); `null` or absent for a task due by the day.
    */
   dueTime?: string | null;
+  /** The steps, in order (#4003); blank lines are dropped on send. */
+  subtasks?: string[];
   assigneeId: string | null;
   /** Raw keypad text, so a half-typed value is not silently coerced. */
   pointsInput: string;
@@ -197,6 +200,8 @@ export interface ValidatedNewTask {
   due_date: string;
   /** The moment it is due, when the draft has a time. */
   due_at?: string;
+  /** Subtask titles, in order, when the draft has any. */
+  subtasks?: string[];
   point_reward?: number;
 }
 
@@ -268,6 +273,11 @@ export function validateNewTask(
     const { due_at } = dueEntryFields(`${draft.dueDate}T${draft.dueTime}`);
     if (due_at) body.due_at = due_at;
   }
+  const subtasks = (draft.subtasks ?? [])
+    .map((step) => step.trim())
+    .filter((step) => step.length > 0)
+    .slice(0, TASK_SUBTASKS_MAX);
+  if (subtasks.length > 0) body.subtasks = subtasks;
   if (points.kind === "value") body.point_reward = points.points;
   return body;
 }

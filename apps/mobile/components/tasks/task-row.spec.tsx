@@ -48,6 +48,7 @@ function row(overrides: Partial<TaskRowModel> = {}): TaskRowModel {
     pointsAwarded: false,
     isDone: false,
     isOverdue: false,
+    subtasks: [],
     ...overrides,
   };
 }

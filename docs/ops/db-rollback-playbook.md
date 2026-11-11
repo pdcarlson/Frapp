@@ -3588,16 +3588,17 @@ drop function if exists public.reorder_chat_categories(uuid, uuid[]);
 alter table public.chat_channels drop column if exists display_order;
 ```
 
-## Rollback Task due times (20261111214500)
+## Rollback Task due times and subtasks (20261111214500)
 
 * **Migration**: `20261111214500_task_due_time_and_subtasks.sql`
 
-One nullable column on `tasks`, `due_at`. No existing row changed.
+One nullable column on `tasks`, `due_at`, and one new table, `task_subtasks`. No existing row changed.
 
-**Revert the code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API reads tasks with `select('*')` and returns the column as a plain field clients ignore; tasks created with a time keep their `due_date` and fall back to day-based overdue and reminders.
+**Revert the code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API reads tasks with `select('*')` and returns the column as a plain field clients ignore; tasks created with a time keep their `due_date` and fall back to day-based overdue and reminders, and the reverted API never reads `task_subtasks`, so steps stay stored but unseen.
 
-**To remove the schema**, in a later forward migration after the code revert has shipped. Dropping the column loses the time on every timed task; their days stay:
+**To remove the schema**, in a later forward migration after the code revert has shipped. Dropping the column loses the time on every timed task, their days stay; dropping the table loses every task's steps:
 
 ```sql
+drop table if exists public.task_subtasks;
 alter table public.tasks drop column if exists due_at;
 ```

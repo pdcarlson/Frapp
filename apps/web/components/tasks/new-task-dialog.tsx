@@ -30,6 +30,7 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { DueDateField } from "@/components/tasks/due-date-field";
+import { SubtaskListEditor } from "@/components/tasks/subtask-list-editor";
 import { useToast } from "@/lib/hooks/use-toast";
 import { guardIntDraft, parseGuardedInt } from "@/lib/utils";
 
@@ -90,6 +91,7 @@ export function NewTaskDialog({
     prefill?.pointReward !== undefined ? String(prefill.pointReward) : "",
   );
   const [description, setDescription] = useState("");
+  const [subtasks, setSubtasks] = useState<string[]>([]);
   const [missing, setMissing] = useState<Missing>({});
   const [posting, setPosting] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
@@ -120,6 +122,7 @@ export function NewTaskDialog({
         assignee_id: assigneeId,
         ...dueEntryFields(dueDate),
         point_reward: parseGuardedInt(points),
+        subtasks: subtasks.length > 0 ? subtasks : undefined,
       });
       if (!result.ok) {
         toast({
@@ -252,6 +255,11 @@ export function NewTaskDialog({
               {...gate.controlProps()}
             />
           </div>
+          <SubtaskListEditor
+            items={subtasks}
+            onChange={setSubtasks}
+            disabled={posting}
+          />
           <div className="grid gap-1">
             <Label htmlFor={`${ids}-description`}>Description (optional)</Label>
             <Textarea

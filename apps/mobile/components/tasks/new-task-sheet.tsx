@@ -42,6 +42,7 @@ import {
 } from "@/components/sheet-scaffold";
 import { DueDateField } from "@/components/tasks/due-date-field";
 import { DueTimeField } from "@/components/tasks/due-time-field";
+import { SubtaskDraftField } from "@/components/tasks/subtask-draft-field";
 import { localIsoDate } from "@repo/formatting";
 import { TITLE_MAX_LENGTH } from "@/lib/tasks/limits";
 import {
@@ -197,6 +198,9 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const [due, setDue] = useState<DueChoice>(DEFAULT_DUE_CHOICE);
     // `HH:MM`, or null for a task due by the day (#4003).
     const [dueTime, setDueTime] = useState<string | null>(null);
+    // The steps (#4003), and the one being typed, which sends as the last.
+    const [subtasks, setSubtasks] = useState<string[]>([]);
+    const [subtaskText, setSubtaskText] = useState("");
     // Defaults to the viewer, so the common case needs no picker interaction.
     const [assigneeId, setAssigneeId] = useState<string | null>(null);
     const [titleFocused, setTitleFocused] = useState(false);
@@ -253,6 +257,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       title,
       dueDate,
       dueTime,
+      subtasks: [...subtasks, subtaskText],
       assigneeId: effectiveAssigneeId,
       pointsInput,
     };
@@ -267,6 +272,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       setPointsInput("");
       setDue(DEFAULT_DUE_CHOICE);
       setDueTime(null);
+      setSubtasks([]);
+      setSubtaskText("");
       setAssigneeId(null);
     }, []);
 
@@ -490,6 +497,15 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
                 onChange={setDueTime}
               />
             </View>
+
+            <SubtaskDraftField
+              items={subtasks}
+              onChange={setSubtasks}
+              text={subtaskText}
+              onTextChange={setSubtaskText}
+              disabled={pending}
+              fieldStyle={styles.field}
+            />
 
             <Pressable
               accessibilityRole="button"

@@ -17,7 +17,7 @@ import {
   useTasks,
   useUpdateTaskStatus,
 } from "@repo/hooks";
-import type { TaskStatus } from "@repo/hooks";
+import type { TaskStatus, TaskSubtask } from "@repo/hooks";
 import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
 import { formatDayTime, formatWeekdayDay, nextUpLine } from "@repo/formatting";
 import { can } from "@repo/validation";
@@ -47,6 +47,7 @@ import {
 } from "@repo/hooks";
 import { asArray, getErrorMessage } from "@/lib/utils";
 import { taskDueClause } from "./task-due";
+import { TaskSubtaskList, TaskSubtasksToggle } from "./task-subtasks";
 import { AddTaskRow, type TaskDraft } from "./add-task-row";
 import { TasksPageSkeleton } from "@/components/tasks/tasks-skeleton";
 
@@ -60,6 +61,8 @@ type Task = {
   due_date: string;
   /** The moment it is due, when it has a time of day (#4003). */
   due_at?: string | null;
+  /** Its checklist, in order (#4003). */
+  subtasks?: TaskSubtask[];
   /** Display status — `OVERDUE` when derived. Drives the column grouping. */
   status: TaskStatus;
   /**
@@ -510,6 +513,7 @@ export function TasksBoard() {
                           memberFallbackLabel(task.assignee_id)
                         }
                         myUserId={myUserId}
+                        canManage={canManage}
                         gate={gate}
                         lifecycleWritePending={lifecycleWritePending}
                         onChangeStatus={(next) => void changeStatus(task, next)}
@@ -551,6 +555,7 @@ export function TasksBoard() {
                   memberFallbackLabel(task.assignee_id)
                 }
                 myUserId={myUserId}
+                canManage={canManage}
                 gate={gate}
                 lifecycleWritePending={lifecycleWritePending}
                 onChangeStatus={(next) => void changeStatus(task, next)}
@@ -582,6 +587,7 @@ function TaskTile({
   task,
   assigneeName,
   myUserId,
+  canManage,
   gate,
   lifecycleWritePending,
   onChangeStatus,
@@ -592,6 +598,8 @@ function TaskTile({
   task: Task;
   assigneeName: string;
   myUserId: string;
+  /** Holds `tasks:manage`: may check off and edit anyone's subtasks. */
+  canManage: boolean;
   gate: SubscriptionGate;
   lifecycleWritePending: boolean;
   onChangeStatus: (next: TaskStatus) => void;
@@ -615,6 +623,7 @@ function TaskTile({
   const cannotConfirm = isMine || viewerUnknown;
   const due = taskDueClause(task);
   const status = actionStatus(task);
+  const [subtasksOpen, setSubtasksOpen] = useState(false);
 
   return (
     <li className="rounded-[14px] border border-border p-3">
@@ -645,10 +654,30 @@ function TaskTile({
           </>
         ) : null}
         <span className="min-w-0 truncate">{assigneeName}</span>
+        {task.subtasks && task.subtasks.length > 0 ? (
+          <>
+            <span aria-hidden="true">·</span>
+            <TaskSubtasksToggle
+              subtasks={task.subtasks}
+              open={subtasksOpen}
+              onToggle={() => setSubtasksOpen((open) => !open)}
+            />
+          </>
+        ) : null}
         {task.point_reward ? (
           <Badge className="ml-1">+{task.point_reward} pts</Badge>
         ) : null}
       </div>
+      {subtasksOpen && task.subtasks && task.subtasks.length > 0 ? (
+        <TaskSubtaskList
+          taskId={task.id}
+          subtasks={task.subtasks}
+          canCheck={isMine || canManage}
+          canEdit={canManage}
+          closed={task.points_awarded}
+          gate={gate}
+        />
+      ) : null}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {/*
           The inline status controls are writes too

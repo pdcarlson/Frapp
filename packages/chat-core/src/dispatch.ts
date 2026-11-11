@@ -812,6 +812,8 @@ export interface TaskInput {
   due_date: string;
   /** The moment it is due, when it has a time of day (#4003). */
   due_at?: string;
+  /** Subtask titles, in order (#4003). */
+  subtasks?: string[];
   point_reward?: number;
 }
 
@@ -845,6 +847,7 @@ export async function postTask(
         assignee_id: input.assignee_id,
         due_date: input.due_date,
         due_at: input.due_at,
+        subtasks: input.subtasks,
         point_reward: input.point_reward,
         channel_id: channelId,
         client_message_id: clientMessageId,

@@ -47,6 +47,28 @@ export interface TaskRowModel {
   pointsAwarded: boolean;
   isDone: boolean;
   isOverdue: boolean;
+  /** Its checklist, in order (#4003); empty for none. */
+  subtasks: TaskRowSubtask[];
+}
+
+export interface TaskRowSubtask {
+  id: string;
+  title: string;
+  done: boolean;
+}
+
+function toSubtasks(value: unknown): TaskRowSubtask[] {
+  if (!Array.isArray(value)) return [];
+  const rows: TaskRowSubtask[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const record = entry as Record<string, unknown>;
+    const id = str(record, "id");
+    const title = str(record, "title");
+    if (!id || !title) continue;
+    rows.push({ id, title, done: typeof record.done_at === "string" });
+  }
+  return rows;
 }
 
 export interface TaskBoard {
@@ -86,6 +108,7 @@ function toRow(row: Record<string, unknown>): TaskRowModel | null {
     // a task due today.
     isDone: !isOpenTask(storedStatus ?? displayStatus),
     isOverdue: displayStatus === "OVERDUE",
+    subtasks: toSubtasks(row.subtasks),
   };
 }
 

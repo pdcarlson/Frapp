@@ -9,6 +9,7 @@ import {
   TASK_ACTION_LABELS,
   taskStatusLabel,
   useMyPermissions,
+  subtaskProgress,
   useTask,
   useUpdateTaskStatus,
   useConfirmTask,
@@ -187,6 +188,12 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
           {formatDueOn(payload.due_at ?? payload.due_date) ??
             `Due ${payload.due_date}`}
         </span>
+        {live && live.subtasks.length > 0 ? (
+          <>
+            <span aria-hidden="true">·</span>
+            <span>{subtaskProgress(live.subtasks)?.label} subtasks</span>
+          </>
+        ) : null}
         {payload.point_reward ? (
           <Badge variant="outline">+{payload.point_reward} pts</Badge>
         ) : null}
