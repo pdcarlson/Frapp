@@ -23,6 +23,11 @@ import {
 } from '#domain/constants/permissions';
 import { flattenPermissionSets } from '#domain/utils/permissions';
 import {
+  accessHolderFromRoles,
+  EMPTY_ACCESS_HOLDER,
+  type ChannelAccessHolder,
+} from '#domain/utils/channel-access';
+import {
   ChapterAuditLogService,
   type AuditDiff,
 } from './chapter-audit-log.service';
@@ -64,6 +69,8 @@ export interface ChapterMemberAccess {
    * groups readers under it.
    */
   top_role: { id: string; name: string } | null;
+  /** What the member holds for a channel's who-can-see and who-can-post lists (#3722). */
+  channel_access: ChannelAccessHolder;
 }
 
 /**
@@ -644,6 +651,24 @@ export class RbacService {
   }
 
   /**
+   * What a member holds for channel lists (#3722): their roles in this chapter,
+   * their tiers, `*`, and whether one is the Alumni role. One read of
+   * `roles`, re-scoped to the chapter, so a stale or foreign id in
+   * `role_ids` contributes nothing. The chat hot path calls it only when a
+   * list or the Alumni rule can decide (`needsAccessHolder`).
+   */
+  async getChannelAccessHolder(
+    chapterId: string,
+    roleIds: readonly string[] | null | undefined,
+  ): Promise<ChannelAccessHolder> {
+    if (!roleIds?.length) return EMPTY_ACCESS_HOLDER;
+    const roles = await this.roleRepo.findByIds([...roleIds], chapterId);
+    return accessHolderFromRoles(
+      roles.filter((role) => role.chapter_id === chapterId),
+    );
+  }
+
+  /**
    * The `users.id` of every member of `chapterId` whose effective permissions
    * satisfy **all** of `permissions` — the wildcard satisfies any list — for
    * addressing a notification to "whoever in this chapter can act on it"
@@ -722,7 +747,7 @@ export class RbacService {
     const roleById = new Map(
       roles
         .filter((role) => role.chapter_id === chapterId)
-        .map((role) => [role.id, role] as const),
+        .map((role) => [role.id.toLowerCase(), role] as const),
     );
 
     const held = new Map<string, string[]>();
@@ -734,9 +759,17 @@ export class RbacService {
     }
 
     return [...held].map(([userId, roleIds]) => {
-      const liveRoles = roleIds
-        .map((id) => roleById.get(id))
-        .filter((role): role is Role => role !== undefined);
+      // `role_ids` is not foreign-keyed and may hold an uppercase id; the
+      // per-member read (`findByIds`, a uuid `in`) and `can_read_chat_channel`
+      // match it case-insensitively, so this does too, or the push audience
+      // would drift from the read audience.
+      const liveRoles = [
+        ...new Set(
+          roleIds
+            .map((id) => roleById.get(id.toLowerCase()))
+            .filter((role): role is Role => role !== undefined),
+        ),
+      ];
       const top = topRole(liveRoles);
       return {
         user_id: userId,
@@ -745,6 +778,7 @@ export class RbacService {
         ),
         top_role_order: top?.display_order ?? null,
         top_role: top ? { id: top.id, name: top.name } : null,
+        channel_access: accessHolderFromRoles(liveRoles),
       };
     });
   }

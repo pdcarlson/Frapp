@@ -9,7 +9,11 @@ import {
   CHAT_SINCE_NOT_FOUND_CODE,
   moduleDisabledMessage,
 } from '@repo/validation';
-import { canAccessChannel } from '#domain/utils/channel-access';
+import {
+  canAccessChannel,
+  EMPTY_ACCESS_HOLDER,
+  type ChannelAccessHolder,
+} from '#domain/utils/channel-access';
 import { ChatService, tombstoneMetadata } from './chat.service';
 import { ChatAttachmentService } from './chat-attachment.service';
 import {
@@ -44,6 +48,9 @@ describe('ChatService', () => {
   let mockChatBlocks: ChatServiceFixture['mockChatBlocks'];
   let mockReportRepo: ChatServiceFixture['mockReportRepo'];
   let mockNotificationService: ChatServiceFixture['mockNotificationService'];
+  let mockRoleRepo: ChatServiceFixture['mockRoleRepo'];
+  let mockTierRepo: ChatServiceFixture['mockTierRepo'];
+  let mockCategoryRepo: ChatServiceFixture['mockCategoryRepo'];
   beforeEach(async () => {
     ({
       service,
@@ -60,8 +67,38 @@ describe('ChatService', () => {
       mockChatBlocks,
       mockReportRepo,
       mockNotificationService,
+      mockRoleRepo,
+      mockTierRepo,
+      mockCategoryRepo,
     } = await createChatServiceFixture());
   });
+
+  // A role and a tier of chapter `ch-1`, as a who-can-see or who-can-post
+  // list names them (#3722).
+  const EXEC_ROLE = '00000000-0000-4000-8000-00000000e0e0';
+  const EXEC_TIER = '00000000-0000-4000-8000-0000000071e1';
+  const OFFICERS = `tier:${EXEC_TIER}`;
+  const holderOf = (...entries: string[]): ChannelAccessHolder => ({
+    ...EMPTY_ACCESS_HOLDER,
+    entries: new Set(entries),
+  });
+  const WILDCARD: ChannelAccessHolder = {
+    ...EMPTY_ACCESS_HOLDER,
+    wildcard: true,
+  };
+  const ALUMNI_ROLE = '00000000-0000-4000-8000-0000000a1a11';
+  const ALUMNUS: ChannelAccessHolder = {
+    ...holderOf(`role:${ALUMNI_ROLE}`),
+    alumniEntries: new Set([`role:${ALUMNI_ROLE}`]),
+  };
+  const withChapterRolesAndTiers = () => {
+    mockRoleRepo.findByChapter.mockResolvedValue([
+      { id: EXEC_ROLE, chapter_id: 'ch-1', tier_id: EXEC_TIER },
+    ]);
+    mockTierRepo.findByChapter.mockResolvedValue([
+      { id: EXEC_TIER, chapter_id: 'ch-1' },
+    ]);
+  };
 
   // ── Channels ─────────────────────────────────────────────────────────
 
@@ -135,18 +172,19 @@ describe('ChatService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    // FRA-321: canAccessChannel denies a ROLE_GATED channel that gates on
-    // nothing, so creating one would strand it. Reject the shape at the door.
+    // A channel only some can see needs a list of who: ROLE_GATED with no
+    // who-can-see list, or an empty one, would be a channel nobody but the
+    // President can open.
     it.each([undefined, []])(
-      'should reject a ROLE_GATED channel with required_permissions %p',
-      async (required) => {
+      'should reject a ROLE_GATED channel with who_can_see %p',
+      async (whoCanSee) => {
         await expect(
           service.createChannel(
             {
               chapter_id: 'ch-1',
               name: 'exec-board',
               type: 'ROLE_GATED',
-              required_permissions: required,
+              who_can_see: whoCanSee,
             },
             'u-creator',
           ),
@@ -200,7 +238,7 @@ describe('ChatService', () => {
           channel: created,
           userId: 'u-creator',
           isChapterMember: true,
-          permissions: [],
+          holder: EMPTY_ACCESS_HOLDER,
         }),
       ).toBe(true);
     });
@@ -227,17 +265,17 @@ describe('ChatService', () => {
           userId: 'u-other',
           isChapterMember: true,
           // Even `*` must not open it: the PRIVATE branch has no wildcard bypass.
-          permissions: ['*'],
+          holder: { ...EMPTY_ACCESS_HOLDER, wildcard: true },
         }),
       ).toBe(false);
     });
 
-    // PUBLIC and ROLE_GATED resolve access by chapter membership and by
-    // permissions; a membership list there would imply something that is never
-    // consulted.
+    // PUBLIC and ROLE_GATED resolve access by who can see; a membership list
+    // there would imply something that is never consulted.
     it.each(['PUBLIC', 'ROLE_GATED'] as const)(
       'should not seed member_ids on a %s channel',
       async (type) => {
+        withChapterRolesAndTiers();
         mockChannelRepo.create.mockResolvedValue(baseChannel);
 
         await service.createChannel(
@@ -245,8 +283,8 @@ describe('ChatService', () => {
             chapter_id: 'ch-1',
             name: 'general',
             type,
-            required_permissions:
-              type === 'ROLE_GATED' ? ['roles:manage'] : undefined,
+            who_can_see:
+              type === 'ROLE_GATED' ? [`role:${EXEC_ROLE}`] : undefined,
           },
           'u-creator',
         );
@@ -257,25 +295,148 @@ describe('ChatService', () => {
       },
     );
 
-    it('should create a ROLE_GATED channel that specifies requirements', async () => {
-      mockChannelRepo.create.mockResolvedValue(baseChannel);
+    describe('who can see and post (#3722)', () => {
+      it('writes the lists sent, sorted, with type and read-only to match', async () => {
+        withChapterRolesAndTiers();
+        mockChannelRepo.create.mockResolvedValue(baseChannel);
 
-      await service.createChannel(
-        {
+        await service.createChannel(
+          {
+            chapter_id: 'ch-1',
+            name: 'exec-board',
+            type: 'PUBLIC',
+            who_can_see: [`role:${EXEC_ROLE}`, `tier:${EXEC_TIER}`],
+            who_can_post: [`TIER:${EXEC_TIER}`.toLowerCase()],
+          },
+          'u-creator',
+        );
+
+        expect(mockChannelRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'ROLE_GATED',
+            who_can_see: [`role:${EXEC_ROLE}`, `tier:${EXEC_TIER}`],
+            who_can_post: [`tier:${EXEC_TIER}`],
+            is_read_only: true,
+          }),
+        );
+        const written = mockChannelRepo.create.mock.calls[0][0];
+        expect(written).not.toHaveProperty('required_permissions');
+      });
+
+      it("copies its category's lists for a list it leaves out", async () => {
+        withChapterRolesAndTiers();
+        mockChannelRepo.create.mockResolvedValue(baseChannel);
+        mockCategoryRepo.findById.mockResolvedValue({
+          id: 'cat-1',
           chapter_id: 'ch-1',
-          name: 'exec-board',
-          type: 'ROLE_GATED',
-          required_permissions: ['roles:manage'],
-        },
-        'u-creator',
-      );
+          name: 'Exec',
+          display_order: 0,
+          created_at: '',
+          who_can_see: [`tier:${EXEC_TIER}`],
+          who_can_post: null,
+        });
 
-      expect(mockChannelRepo.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: 'ROLE_GATED',
-          required_permissions: ['roles:manage'],
-        }),
-      );
+        await service.createChannel(
+          {
+            chapter_id: 'ch-1',
+            name: 'budget',
+            type: 'PUBLIC',
+            category_id: 'cat-1',
+          },
+          'u-creator',
+        );
+
+        expect(mockCategoryRepo.findById).toHaveBeenCalledWith('cat-1', 'ch-1');
+        expect(mockChannelRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'ROLE_GATED',
+            who_can_see: [`tier:${EXEC_TIER}`],
+            who_can_post: null,
+            is_read_only: false,
+          }),
+        );
+      });
+
+      it('is everyone with no lists and no category', async () => {
+        mockChannelRepo.create.mockResolvedValue(baseChannel);
+
+        await service.createChannel(
+          { chapter_id: 'ch-1', name: 'random', type: 'PUBLIC' },
+          'u-creator',
+        );
+
+        expect(mockChannelRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'PUBLIC',
+            who_can_see: null,
+            who_can_post: null,
+            is_read_only: false,
+          }),
+        );
+      });
+
+      it("refuses an entry that isn't a tier or role of this chapter", async () => {
+        withChapterRolesAndTiers();
+
+        await expect(
+          service.createChannel(
+            {
+              chapter_id: 'ch-1',
+              name: 'exec',
+              type: 'PUBLIC',
+              who_can_see: ['role:00000000-0000-4000-8000-0000000000ff'],
+            },
+            'u-creator',
+          ),
+        ).rejects.toThrow("That role isn't in this chapter anymore");
+        expect(mockChannelRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('refuses lists on a private channel, which its members decide', async () => {
+        withChapterRolesAndTiers();
+
+        await expect(
+          service.createChannel(
+            {
+              chapter_id: 'ch-1',
+              name: 'secret',
+              type: 'PRIVATE',
+              who_can_see: [`role:${EXEC_ROLE}`],
+            },
+            'u-creator',
+          ),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      // A page left open across the deploy still sends the old fields.
+      it.each([
+        { required_permissions: ['roles:manage'] },
+        { is_read_only: true },
+      ])('refuses an old page that sends %p', async (legacy) => {
+        await expect(
+          service.createChannel(
+            { chapter_id: 'ch-1', name: 'x', type: 'PUBLIC', ...legacy },
+            'u-creator',
+          ),
+        ).rejects.toThrow('Reload the page');
+        expect(mockChannelRepo.create).not.toHaveBeenCalled();
+      });
+
+      it("accepts an old page's create that changes nothing about access", async () => {
+        mockChannelRepo.create.mockResolvedValue(baseChannel);
+
+        await service.createChannel(
+          {
+            chapter_id: 'ch-1',
+            name: 'x',
+            type: 'PUBLIC',
+            is_read_only: false,
+          },
+          'u-creator',
+        );
+
+        expect(mockChannelRepo.create).toHaveBeenCalled();
+      });
     });
   });
 
@@ -283,20 +444,10 @@ describe('ChatService', () => {
     const roleGated = {
       ...baseChannel,
       type: 'ROLE_GATED' as const,
-      required_permissions: ['roles:manage'],
+      who_can_see: [`tier:${EXEC_TIER}`],
     };
 
-    it('should reject clearing required_permissions on a ROLE_GATED channel', async () => {
-      mockChannelRepo.findById.mockResolvedValue(roleGated);
-
-      await expect(
-        service.updateChannel('chan-1', 'ch-1', { required_permissions: [] }),
-      ).rejects.toThrow(BadRequestException);
-
-      expect(mockChannelRepo.update).not.toHaveBeenCalled();
-    });
-
-    it('should leave the stored list intact when the field is omitted', async () => {
+    it('should leave the stored lists intact when neither is sent', async () => {
       mockChannelRepo.findById.mockResolvedValue(roleGated);
       mockChannelRepo.update.mockResolvedValue(roleGated);
 
@@ -304,6 +455,182 @@ describe('ChatService', () => {
 
       expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
         name: 'renamed',
+      });
+    });
+
+    describe('who can see and post (#3722)', () => {
+      it('writes a list sent and keeps the other', async () => {
+        withChapterRolesAndTiers();
+        mockChannelRepo.findById.mockResolvedValue(roleGated);
+        mockChannelRepo.update.mockResolvedValue(roleGated);
+
+        await service.updateChannel('chan-1', 'ch-1', {
+          who_can_post: [`role:${EXEC_ROLE}`],
+        });
+
+        expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
+          type: 'ROLE_GATED',
+          who_can_see: [`tier:${EXEC_TIER}`],
+          who_can_post: [`role:${EXEC_ROLE}`],
+          is_read_only: true,
+        });
+        expect(mockChannelCache.invalidate).toHaveBeenCalledWith('chan-1');
+      });
+
+      it('opens a channel to everyone with null', async () => {
+        mockChannelRepo.findById.mockResolvedValue(roleGated);
+        mockChannelRepo.update.mockResolvedValue(baseChannel);
+
+        await service.updateChannel('chan-1', 'ch-1', { who_can_see: null });
+
+        expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
+          type: 'PUBLIC',
+          who_can_see: null,
+          who_can_post: null,
+          is_read_only: false,
+        });
+      });
+
+      // A private channel made read-only before #3722 keeps its posters as a
+      // list (migration 20261111233000): an officer may clear it, not set one.
+      it('clears a read-only private channel and refuses setting one', async () => {
+        const locked = {
+          ...baseChannel,
+          type: 'PRIVATE' as const,
+          member_ids: ['u-1'],
+          who_can_post: [`role:${EXEC_ROLE}`],
+          is_read_only: true,
+        };
+        mockChannelRepo.findById.mockResolvedValue(locked);
+        mockChannelRepo.update.mockResolvedValue(locked);
+
+        await service.updateChannel('chan-1', 'ch-1', { who_can_post: null });
+        expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
+          who_can_post: null,
+          is_read_only: false,
+        });
+
+        await expect(
+          service.updateChannel('chan-1', 'ch-1', {
+            who_can_post: [`role:${EXEC_ROLE}`],
+          }),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('refuses an empty list', async () => {
+        mockChannelRepo.findById.mockResolvedValue(roleGated);
+
+        await expect(
+          service.updateChannel('chan-1', 'ch-1', { who_can_see: [] }),
+        ).rejects.toThrow('Pick at least one tier or role');
+        expect(mockChannelRepo.update).not.toHaveBeenCalled();
+        expect(mockChannelCache.invalidate).not.toHaveBeenCalled();
+      });
+
+      it('matches the category: copies the lists of the category it ends up in', async () => {
+        mockChannelRepo.findById.mockResolvedValue({
+          ...roleGated,
+          category_id: 'cat-old',
+        });
+        mockChannelRepo.update.mockResolvedValue(baseChannel);
+        mockCategoryRepo.findById.mockResolvedValue({
+          id: 'cat-new',
+          chapter_id: 'ch-1',
+          name: 'Chapter',
+          display_order: 0,
+          created_at: '',
+          who_can_see: null,
+          who_can_post: [`tier:${EXEC_TIER}`],
+        });
+
+        await service.updateChannel('chan-1', 'ch-1', {
+          category_id: 'cat-new',
+          match_category_access: true,
+        });
+
+        expect(mockCategoryRepo.findById).toHaveBeenCalledWith(
+          'cat-new',
+          'ch-1',
+        );
+        expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
+          category_id: 'cat-new',
+          type: 'PUBLIC',
+          who_can_see: null,
+          who_can_post: [`tier:${EXEC_TIER}`],
+          is_read_only: true,
+        });
+      });
+
+      it('keeps its lists when it moves to another category', async () => {
+        mockChannelRepo.findById.mockResolvedValue(roleGated);
+        mockChannelRepo.update.mockResolvedValue(roleGated);
+
+        await service.updateChannel('chan-1', 'ch-1', { category_id: 'cat-2' });
+
+        expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
+          category_id: 'cat-2',
+        });
+        expect(mockCategoryRepo.findById).not.toHaveBeenCalled();
+      });
+
+      it('refuses matching with no category, or with lists sent too', async () => {
+        mockChannelRepo.findById.mockResolvedValue(roleGated);
+
+        await expect(
+          service.updateChannel('chan-1', 'ch-1', {
+            match_category_access: true,
+          }),
+        ).rejects.toThrow("This channel isn't in a category");
+        await expect(
+          service.updateChannel('chan-1', 'ch-1', {
+            match_category_access: true,
+            who_can_see: null,
+          }),
+        ).rejects.toThrow('not both');
+      });
+
+      it.each(['PRIVATE', 'DM', 'GROUP_DM'] as const)(
+        'refuses lists on a %s, which its members decide',
+        async (type) => {
+          mockChannelRepo.findById.mockResolvedValue({
+            ...baseChannel,
+            type,
+            member_ids: ['user-1'],
+          });
+
+          await expect(
+            service.updateChannel('chan-1', 'ch-1', { who_can_see: null }),
+          ).rejects.toThrow(BadRequestException);
+          expect(mockChannelRepo.update).not.toHaveBeenCalled();
+        },
+      );
+
+      it('refuses an old page that sends required_permissions', async () => {
+        mockChannelRepo.findById.mockResolvedValue(roleGated);
+
+        await expect(
+          service.updateChannel('chan-1', 'ch-1', {
+            required_permissions: ['roles:manage'],
+          }),
+        ).rejects.toThrow('Reload the page');
+        expect(mockChannelRepo.update).not.toHaveBeenCalled();
+      });
+
+      it('refuses an old page that flips read-only, and ignores one that repeats it', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockChannelRepo.update.mockResolvedValue(baseChannel);
+
+        await expect(
+          service.updateChannel('chan-1', 'ch-1', { is_read_only: true }),
+        ).rejects.toThrow('Reload the page');
+
+        await service.updateChannel('chan-1', 'ch-1', {
+          is_read_only: false,
+          name: 'random',
+        });
+        expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
+          name: 'random',
+        });
       });
     });
 
@@ -344,6 +671,7 @@ describe('ChatService', () => {
         ...baseChannel,
         name: 'chapter-audit',
         is_read_only: true,
+        who_can_post: [],
         is_audit_log: true,
       };
 
@@ -377,9 +705,17 @@ describe('ChatService', () => {
 
         expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
           name: 'chapter-audit',
-          is_read_only: true,
           description: 'Every officer change, posted by Frapp.',
         });
+      });
+
+      it('refuses who-can-see and who-can-post lists', async () => {
+        mockChannelRepo.findById.mockResolvedValue(auditLog);
+
+        await expect(
+          service.updateChannel('chan-1', 'ch-1', { who_can_post: null }),
+        ).rejects.toThrow('Everyone sees the audit log channel');
+        expect(mockChannelRepo.update).not.toHaveBeenCalled();
       });
     });
 
@@ -477,12 +813,12 @@ describe('ChatService', () => {
         mockChannelRepo.findById.mockResolvedValue({
           ...baseChannel,
           type: 'ROLE_GATED',
-          required_permissions: ['roles:manage'],
+          who_can_see: [OFFICERS],
         });
 
         await expect(
           service.updateChannel('chan-1', 'ch-1', {
-            required_permissions: [],
+            who_can_see: [],
             is_default: true,
           }),
         ).rejects.toThrow(BadRequestException);
@@ -540,17 +876,6 @@ describe('ChatService', () => {
       );
     });
 
-    it('should allow clearing required_permissions on a non-ROLE_GATED channel', async () => {
-      mockChannelRepo.findById.mockResolvedValue(baseChannel);
-      mockChannelRepo.update.mockResolvedValue(baseChannel);
-
-      await service.updateChannel('chan-1', 'ch-1', {
-        required_permissions: [],
-      });
-
-      expect(mockChannelRepo.update).toHaveBeenCalled();
-    });
-
     // Regression for the Chat Admin UI (#327): `category_id: undefined` is
     // dropped by JSON serialization before the request even leaves the
     // client, so "move this channel back to uncategorized" is only
@@ -574,16 +899,14 @@ describe('ChatService', () => {
       });
     });
 
-    // #988: the push worker's channel cache carries `required_permissions` as
-    // an authorization input. A write that changes it must evict the cached
+    // #988: the push worker's channel cache carries `who_can_see` as an
+    // authorization input. A write that changes it must evict the cached
     // entry rather than let up to 30s of pushes decide from the old value.
     it('evicts the push worker channel cache on a successful update', async () => {
       mockChannelRepo.findById.mockResolvedValue(baseChannel);
       mockChannelRepo.update.mockResolvedValue(baseChannel);
 
-      await service.updateChannel('chan-1', 'ch-1', {
-        required_permissions: ['roles:manage'],
-      });
+      await service.updateChannel('chan-1', 'ch-1', { who_can_see: null });
 
       expect(mockChannelCache.invalidate).toHaveBeenCalledWith('chan-1');
     });
@@ -592,7 +915,7 @@ describe('ChatService', () => {
       mockChannelRepo.findById.mockResolvedValue(roleGated);
 
       await expect(
-        service.updateChannel('chan-1', 'ch-1', { required_permissions: [] }),
+        service.updateChannel('chan-1', 'ch-1', { who_can_see: [] }),
       ).rejects.toThrow(BadRequestException);
 
       expect(mockChannelCache.invalidate).not.toHaveBeenCalled();
@@ -637,7 +960,7 @@ describe('ChatService', () => {
       id: 'ch-exec',
       name: 'exec',
       type: 'ROLE_GATED',
-      required_permissions: ['roles:manage'],
+      who_can_see: [OFFICERS],
     };
     // The row shape #1008 was about: a PRIVATE channel whose membership is
     // NULL. `privMine`/`privTheirs` both carry explicit lists, so they encode a
@@ -784,7 +1107,7 @@ describe('ChatService', () => {
         ).toBe(false);
       });
 
-      it('hides a ROLE_GATED channel the caller lacks the permission for', async () => {
+      it('hides a channel whose who-can-see list leaves the caller out', async () => {
         mockChannelRepo.findByChapter.mockResolvedValue([roleGated]);
 
         const result = await service.getChannels('ch-1', 'user-1');
@@ -792,9 +1115,9 @@ describe('ChatService', () => {
         expect(result).toEqual([]);
       });
 
-      it('returns a ROLE_GATED channel once the caller holds a required permission', async () => {
+      it('returns it once the caller holds a tier or role on the list', async () => {
         mockChannelRepo.findByChapter.mockResolvedValue([roleGated]);
-        mockRbac.getEffectivePermissions.mockResolvedValue(['roles:manage']);
+        mockRbac.getChannelAccessHolder.mockResolvedValue(holderOf(OFFICERS));
 
         const result = await service.getChannels('ch-1', 'user-1');
 
@@ -819,12 +1142,16 @@ describe('ChatService', () => {
         expect(mockMemberRepo.findByUserAndChapter).not.toHaveBeenCalled();
       });
 
-      it('does not resolve permissions when no ROLE_GATED channel is present', async () => {
+      // The read filter needs no roles when no channel has a who-can-see
+      // list; the post flag (the Alumni rule) reads them once for the list.
+      it('resolves what the caller holds at most once', async () => {
         mockChannelRepo.findByChapter.mockResolvedValue([baseChannel, dmMine]);
 
         await service.getChannels('ch-1', 'user-1');
 
-        expect(mockRbac.getEffectivePermissions).not.toHaveBeenCalled();
+        expect(
+          mockRbac.getChannelAccessHolder.mock.calls.length,
+        ).toBeLessThanOrEqual(1);
       });
 
       it('reads the chapter’s channels exactly once', async () => {
@@ -1869,26 +2196,28 @@ describe('ChatService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
-    it('should allow reads of a role-gated channel when the caller holds the permission', async () => {
+    it('should allow reads of a channel whose who-can-see list names the caller', async () => {
       mockChannelRepo.findById.mockResolvedValue({
         ...baseChannel,
         type: 'ROLE_GATED',
-        required_permissions: ['alumni:view'],
+        who_can_see: [OFFICERS],
       });
-      mockRbac.getEffectivePermissions.mockResolvedValue(['alumni:view']);
+      mockRbac.getChannelAccessHolder.mockResolvedValue(holderOf(OFFICERS));
       mockMessageRepo.findByChannel.mockResolvedValue([baseMessage]);
 
       const result = await service.getMessages('ch-chan-1', 'ch-1', 'user-1');
       expect(result).toEqual([{ ...baseMessage, sender_blocked: false }]);
     });
 
-    it('should reject reads of a role-gated channel without the permission', async () => {
+    it('should reject reads of a channel whose who-can-see list leaves the caller out', async () => {
       mockChannelRepo.findById.mockResolvedValue({
         ...baseChannel,
         type: 'ROLE_GATED',
-        required_permissions: ['alumni:view'],
+        who_can_see: [OFFICERS],
       });
-      mockRbac.getEffectivePermissions.mockResolvedValue(['events:create']);
+      mockRbac.getChannelAccessHolder.mockResolvedValue(
+        holderOf('role:00000000-0000-4000-8000-0000000000aa'),
+      );
 
       await expect(
         service.getMessages('ch-chan-1', 'ch-1', 'user-1'),
@@ -2705,14 +3034,18 @@ describe('ChatService', () => {
         ...baseChannel,
         name: 'chapter-audit',
         is_read_only: true,
+        who_can_post: [OFFICERS],
         is_audit_log: true,
       };
 
-      it.each([['*'], ['announcements:post']])(
+      it.each([
+        ['the wildcard', WILDCARD],
+        ['a tier on its who-can-post list', holderOf(OFFICERS)],
+      ])(
         'refuses a top-level message from a member holding %s',
-        async (permission) => {
+        async (_label, holder) => {
           mockChannelRepo.findById.mockResolvedValue(auditLog);
-          mockRbac.getEffectivePermissions.mockResolvedValue([permission]);
+          mockRbac.getChannelAccessHolder.mockResolvedValue(holder);
 
           await expect(
             service.sendMessage({
@@ -2726,12 +3059,13 @@ describe('ChatService', () => {
         },
       );
 
-      it('refuses it even with read-only switched off on the row', async () => {
+      it('refuses it even with no who-can-post list on the row', async () => {
         mockChannelRepo.findById.mockResolvedValue({
           ...auditLog,
           is_read_only: false,
+          who_can_post: null,
         });
-        mockRbac.getEffectivePermissions.mockResolvedValue(['*']);
+        mockRbac.getChannelAccessHolder.mockResolvedValue(WILDCARD);
 
         await expect(
           service.sendMessage({
@@ -2745,91 +3079,57 @@ describe('ChatService', () => {
       });
     });
 
-    // #734: a read-only channel is a broadcast surface. `canAccessChannel`
-    // decides who may author a top-level announcement; these cover the separate
-    // invariant that nobody threads one, whatever they hold.
-    describe('in-thread replies in a read-only channel', () => {
-      const announcements: ChatChannel = {
+    // #3722: a quote reply is a post. Whoever may post in a channel with a
+    // who-can-post list may quote there; whoever may not is refused at the
+    // post gate, before the replied-to message is looked up.
+    describe('quote replies in a channel with a who-can-post list', () => {
+      const listed: ChatChannel = {
         ...baseChannel,
-        name: 'announcements',
+        name: 'actives',
         is_read_only: true,
+        who_can_post: [OFFICERS],
       };
 
-      it('rejects a reply from a sender holding announcements:post', async () => {
-        mockChannelRepo.findById.mockResolvedValue(announcements);
-        mockRbac.getEffectivePermissions.mockResolvedValue([
-          'announcements:post',
-        ]);
-
-        await expect(
-          service.sendMessage({
-            chapter_id: 'ch-1',
-            channel_id: 'ch-chan-1',
-            sender_id: 'user-1',
-            content: 'Threading a broadcast',
-            reply_to_id: 'msg-same',
-          }),
-        ).rejects.toThrow(BadRequestException);
-        expect(mockMessageRepo.create).not.toHaveBeenCalled();
-      });
-
-      it('rejects a reply from the President wildcard too', async () => {
-        mockChannelRepo.findById.mockResolvedValue(announcements);
-        mockRbac.getEffectivePermissions.mockResolvedValue(['*']);
-
-        await expect(
-          service.sendMessage({
-            chapter_id: 'ch-1',
-            channel_id: 'ch-chan-1',
-            sender_id: 'user-1',
-            content: 'Threading a broadcast',
-            reply_to_id: 'msg-same',
-          }),
-        ).rejects.toThrow(BadRequestException);
-        expect(mockMessageRepo.create).not.toHaveBeenCalled();
-      });
-
-      it('rejects before spending a lookup on the replied-to message', async () => {
-        mockChannelRepo.findById.mockResolvedValue(announcements);
-        mockRbac.getEffectivePermissions.mockResolvedValue([
-          'announcements:post',
-        ]);
-
-        await expect(
-          service.sendMessage({
-            chapter_id: 'ch-1',
-            channel_id: 'ch-chan-1',
-            sender_id: 'user-1',
-            content: 'Threading a broadcast',
-            reply_to_id: 'msg-same',
-          }),
-        ).rejects.toThrow(BadRequestException);
-        expect(mockMessageRepo.findById).not.toHaveBeenCalled();
-      });
-
-      it('still accepts a top-level announcement from an authorized officer', async () => {
-        mockChannelRepo.findById.mockResolvedValue(announcements);
-        mockRbac.getEffectivePermissions.mockResolvedValue([
-          'announcements:post',
-        ]);
+      it('accepts a quote reply from a sender on the list', async () => {
+        mockChannelRepo.findById.mockResolvedValue(listed);
+        mockRbac.getChannelAccessHolder.mockResolvedValue(holderOf(OFFICERS));
+        mockMessageRepo.findById.mockResolvedValue({
+          ...baseMessage,
+          id: 'msg-same',
+          channel_id: 'ch-chan-1',
+        });
         mockMessageRepo.create.mockResolvedValue(baseMessage);
 
         const result = await service.sendMessage({
           chapter_id: 'ch-1',
           channel_id: 'ch-chan-1',
           sender_id: 'user-1',
-          content: 'Chapter meeting moved to 7pm',
+          content: 'Agreed',
+          reply_to_id: 'msg-same',
         });
 
         expect(result).toEqual({ message: baseMessage, deduplicated: false });
-        expect(mockMessageRepo.create).toHaveBeenCalled();
+        expect(mockMessageRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ reply_to_id: 'msg-same' }),
+        );
       });
 
-      // No "reply in a normal channel still works" case here: "should accept a
-      // reply targeting a message in the same channel" above already covers it
-      // with the same channel, payload, and assertions. No mutation of this
-      // guard fails one without failing the other, so a read-only-specific copy
-      // would assert nothing new while implying the split is covered twice.
+      it('refuses a quote reply from a reader not on the list', async () => {
+        mockChannelRepo.findById.mockResolvedValue(listed);
+        mockRbac.getChannelAccessHolder.mockResolvedValue(holderOf());
+
+        await expect(
+          service.sendMessage({
+            chapter_id: 'ch-1',
+            channel_id: 'ch-chan-1',
+            sender_id: 'user-1',
+            content: 'Agreed',
+            reply_to_id: 'msg-same',
+          }),
+        ).rejects.toThrow(ForbiddenException);
+        expect(mockMessageRepo.findById).not.toHaveBeenCalled();
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
     });
   });
 
@@ -2928,7 +3228,7 @@ describe('ChatService', () => {
     // instead of sending a new one.
     it('blocks an alumni member from rewriting their own message in an operational channel', async () => {
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
-      mockRbac.hasAlumniRole.mockResolvedValue(true);
+      mockRbac.getChannelAccessHolder.mockResolvedValue(ALUMNUS);
 
       await expect(
         service.editMessage('msg-1', 'ch-1', 'user-1', 'Rewritten'),
@@ -3958,8 +4258,7 @@ describe('ChatService', () => {
     const cases: {
       name: string;
       channel: Partial<ChatChannel>;
-      permissions?: string[];
-      isAlumni?: boolean;
+      holder?: ChannelAccessHolder;
       expected: Verdict;
     }[] = [
       {
@@ -3988,20 +4287,20 @@ describe('ChatService', () => {
         expected: 'allowed',
       },
       {
-        name: 'a member without announcements:post in a read-only channel',
-        channel: { is_read_only: true },
+        name: "a member left off a channel's who-can-post list",
+        channel: { is_read_only: true, who_can_post: [OFFICERS] },
         expected: 'denied',
       },
       {
-        name: 'an officer holding announcements:post in a read-only channel',
-        channel: { is_read_only: true },
-        permissions: ['announcements:post'],
+        name: "an officer on a channel's who-can-post list",
+        channel: { is_read_only: true, who_can_post: [OFFICERS] },
+        holder: holderOf(OFFICERS),
         expected: 'allowed',
       },
       {
-        name: 'the President in a read-only channel',
-        channel: { is_read_only: true },
-        permissions: ['*'],
+        name: 'the President in a channel with a who-can-post list',
+        channel: { is_read_only: true, who_can_post: [OFFICERS] },
+        holder: WILDCARD,
         expected: 'allowed',
       },
       {
@@ -4010,105 +4309,98 @@ describe('ChatService', () => {
         expected: 'denied',
       },
       {
-        // Read-only as well as archived, so the wildcard actually reaches the
-        // predicate: on a plain PUBLIC channel `assertChannelAccess` skips the
-        // permission lookup entirely, and the row would prove nothing about `*`
-        // beating the archive freeze because `*` would never be loaded.
-        name: 'the President in an archived read-only channel (no override exists)',
+        // With a who-can-post list, so the wildcard actually reaches the
+        // predicate and the row proves `*` does not beat the archive freeze.
+        name: 'the President in an archived channel (no override exists)',
         channel: {
           is_read_only: true,
+          who_can_post: [OFFICERS],
           archived_at: '2026-01-02T00:00:00.000Z',
         },
-        permissions: ['*'],
+        holder: WILDCARD,
         expected: 'denied',
       },
       {
-        name: 'a member lacking the permission a role-gated channel requires',
-        channel: { type: 'ROLE_GATED', required_permissions: ['exec:manage'] },
+        name: "a member left off a channel's who-can-see list",
+        channel: { type: 'ROLE_GATED', who_can_see: [OFFICERS] },
         expected: 'denied',
       },
       {
-        name: 'a member holding the permission a role-gated channel requires',
-        channel: { type: 'ROLE_GATED', required_permissions: ['exec:manage'] },
-        permissions: ['exec:manage'],
+        name: "a member on a channel's who-can-see list",
+        channel: { type: 'ROLE_GATED', who_can_see: [OFFICERS] },
+        holder: holderOf(OFFICERS),
         expected: 'allowed',
       },
       {
         name: 'an alumni member in an operational channel',
         channel: {},
-        isAlumni: true,
+        holder: ALUMNUS,
         expected: 'denied',
       },
       {
-        // A private channel is operational too. This row is what would catch
-        // `ALUMNI_POSTABLE_CHANNEL_TYPES` being widened to PRIVATE: the rows
-        // below cannot, because a channel that is alumni-postable by type
-        // short-circuits the alumni lookup before the predicate ever sees it.
+        // A private channel is operational too: only a DM, a group DM or a
+        // channel whose lists name the Alumni role takes their posts.
         name: 'an alumni member in a private channel they belong to',
         channel: { type: 'PRIVATE', member_ids: ['user-1', 'user-2'] },
-        isAlumni: true,
+        holder: ALUMNUS,
         expected: 'denied',
       },
       {
         name: 'an alumni member in a DM',
         channel: { type: 'DM', member_ids: ['user-1', 'user-2'] },
-        isAlumni: true,
+        holder: ALUMNUS,
         expected: 'allowed',
       },
       {
         name: 'an alumni member in the alumni channel',
         channel: {
           type: 'ROLE_GATED',
-          required_permissions: ['alumni:post'],
+          who_can_see: [OFFICERS, `role:${ALUMNI_ROLE}`],
         },
-        permissions: ['alumni:post'],
-        isAlumni: true,
+        holder: ALUMNUS,
         expected: 'allowed',
       },
       {
         name: 'an alumni member who is also President',
         channel: {},
-        permissions: ['*'],
-        isAlumni: true,
+        holder: { ...ALUMNUS, wildcard: true },
         expected: 'allowed',
       },
     ];
 
-    it.each(cases)(
-      'agrees on $name',
-      async ({ channel, permissions, isAlumni, expected }) => {
-        mockChannelRepo.findById.mockResolvedValue({
-          ...baseChannel,
-          ...channel,
-        });
-        mockRbac.getEffectivePermissions.mockResolvedValue(permissions ?? []);
-        mockRbac.hasAlumniRole.mockResolvedValue(isAlumni ?? false);
-        mockStorageProvider.getSignedUploadUrl.mockResolvedValue(
-          'https://storage.example.com/signed-url',
-        );
-        mockMessageRepo.create.mockResolvedValue(baseMessage);
+    it.each(cases)('agrees on $name', async ({ channel, holder, expected }) => {
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        ...channel,
+      });
+      mockRbac.getChannelAccessHolder.mockResolvedValue(
+        holder ?? EMPTY_ACCESS_HOLDER,
+      );
+      mockStorageProvider.getSignedUploadUrl.mockResolvedValue(
+        'https://storage.example.com/signed-url',
+      );
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
 
-        const mint = await verdictOf(() =>
-          attachments.requestChatUploadUrl(
-            'ch-chan-1',
-            'ch-1',
-            'user-1',
-            'photo.png',
-            'image/png',
-          ),
-        );
-        const send = await verdictOf(() =>
-          service.sendMessage({
-            chapter_id: 'ch-1',
-            channel_id: 'ch-chan-1',
-            sender_id: 'user-1',
-            content: 'Hello world',
-          }),
-        );
+      const mint = await verdictOf(() =>
+        attachments.requestChatUploadUrl(
+          'ch-chan-1',
+          'ch-1',
+          'user-1',
+          'photo.png',
+          'image/png',
+        ),
+      );
+      const send = await verdictOf(() =>
+        service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'Hello world',
+        }),
+      );
 
-        expect({ mint, send }).toEqual({ mint: expected, send: expected });
-      },
-    );
+      expect({ mint, send }).toEqual({ mint: expected, send: expected });
+    });
   });
 
   // ── Notification triggers ──────────────────────────────────────────

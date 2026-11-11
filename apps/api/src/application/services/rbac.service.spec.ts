@@ -1,3 +1,4 @@
+import { EMPTY_ACCESS_HOLDER } from '#domain/utils/channel-access';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
@@ -1736,6 +1737,67 @@ describe('RbacService', () => {
     });
   });
 
+  describe('getChannelAccessHolder (#3722)', () => {
+    const TIER = '00000000-0000-4000-8000-0000000000e1';
+
+    it('holds each role, its tier, and marks the Alumni role and the wildcard', async () => {
+      mockRoleRepo.findByIds.mockResolvedValue([
+        roleFixture({ id: 'r-officer', chapter_id: 'ch-1', tier_id: TIER }),
+        roleFixture({
+          id: 'r-alumni',
+          chapter_id: 'ch-1',
+          system_key: 'ALUMNI',
+          tier_id: null,
+        }),
+        roleFixture({ id: 'r-pres', chapter_id: 'ch-1', permissions: ['*'] }),
+      ]);
+
+      const holder = await service.getChannelAccessHolder('ch-1', [
+        'r-officer',
+        'r-alumni',
+        'r-pres',
+      ]);
+
+      expect(mockRoleRepo.findByIds).toHaveBeenCalledWith(
+        ['r-officer', 'r-alumni', 'r-pres'],
+        'ch-1',
+      );
+      expect(holder.entries).toEqual(
+        new Set([
+          'role:r-officer',
+          `tier:${TIER}`,
+          'role:r-alumni',
+          'role:r-pres',
+        ]),
+      );
+      expect(holder.wildcard).toBe(true);
+      expect(holder.alumniEntries).toEqual(new Set(['role:r-alumni']));
+    });
+
+    it('drops a role the repository returns from another chapter', async () => {
+      mockRoleRepo.findByIds.mockResolvedValue([
+        roleFixture({
+          id: 'r-foreign',
+          chapter_id: 'ch-2',
+          permissions: ['*'],
+        }),
+      ]);
+
+      const holder = await service.getChannelAccessHolder('ch-1', [
+        'r-foreign',
+      ]);
+
+      expect(holder).toEqual(EMPTY_ACCESS_HOLDER);
+    });
+
+    it('reads nothing for a member with no roles', async () => {
+      await expect(service.getChannelAccessHolder('ch-1', [])).resolves.toBe(
+        EMPTY_ACCESS_HOLDER,
+      );
+      expect(mockRoleRepo.findByIds).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getChapterMemberAccess', () => {
     const role = (
       id: string,
@@ -1774,13 +1836,41 @@ describe('RbacService', () => {
           permissions: new Set([SystemPermissions.CHANNELS_MANAGE]),
           top_role_order: 2,
           top_role: { id: 'role-officer', name: 'role-role-officer' },
+          channel_access: {
+            entries: new Set(['role:role-member', 'role:role-officer']),
+            wildcard: false,
+            alumniEntries: null,
+          },
         },
         {
           user_id: 'user-none',
           permissions: new Set(),
           top_role_order: null,
           top_role: null,
+          channel_access: EMPTY_ACCESS_HOLDER,
         },
+      ]);
+    });
+
+    // `role_ids` isn't foreign-keyed; the per-member read and the database
+    // match an uppercase id, so the push audience must too.
+    it('matches a role id stored in uppercase', async () => {
+      mockRoleRepo.findByChapter.mockResolvedValue([role('role-officer', 2)]);
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        memberFixture({
+          user_id: 'user-1',
+          role_ids: ['ROLE-OFFICER', 'role-officer'],
+        }),
+      ]);
+
+      const [entry] = await service.getChapterMemberAccess('ch-1');
+
+      expect(entry?.top_role).toEqual({
+        id: 'role-officer',
+        name: 'role-role-officer',
+      });
+      expect([...(entry?.channel_access.entries ?? [])]).toEqual([
+        'role:role-officer',
       ]);
     });
 
@@ -1799,6 +1889,8 @@ describe('RbacService', () => {
         permissions: new Set(),
         top_role_order: null,
         top_role: null,
+        // A foreign role's `*` must not pass a channel's lists either.
+        channel_access: EMPTY_ACCESS_HOLDER,
       });
     });
 
@@ -1823,6 +1915,11 @@ describe('RbacService', () => {
           ]),
           top_role_order: 1,
           top_role: { id: 'role-b', name: 'role-role-b' },
+          channel_access: {
+            entries: new Set(['role:role-a', 'role:role-b']),
+            wildcard: false,
+            alumniEntries: null,
+          },
         },
       ]);
     });

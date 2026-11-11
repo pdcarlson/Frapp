@@ -237,9 +237,9 @@ Not every paid module has a slash command: a module gets one only when it has a 
 | Reports | `reports` | Health dashboard, nationals export, advisor digest |
 | Onboarding | `onboarding` | Structured new-member pathway |
 | Geofences | `geofences` | Geo-fenced check-in zones |
-| Meetings | `meetings` | Audio transcription + AI summary + single-template per type ([`spec/behavior/meetings.md`](../behavior/meetings.md)) |
+| Meetings | `meetings` | AI-drafted minutes from notes or a recording, with suggested tasks + single-template per type ([`spec/behavior/meetings.md`](../behavior/meetings.md)) |
 | Vault | `vault` | Encrypted private storage for risk / standards content ([`spec/behavior/vault.md`](../behavior/vault.md)) |
-| AI Q&A | `ai` | Ask-anything over meeting minutes, documents, structured data, announcements ([`spec/behavior/ai.md`](../behavior/ai.md)) |
+| AI Q&A | `ai` | Ask-anything over meeting minutes, documents, structured data, announcements, and channel messages from members who agreed ([`spec/behavior/ai.md`](../behavior/ai.md)) |
 
 ## Archetype-specific extras (prototype extras carried forward)
 

@@ -2,12 +2,17 @@ import { Module } from '@nestjs/common';
 import { ChatService } from '../../application/services/chat.service';
 import { ChatAttachmentService } from '../../application/services/chat-attachment.service';
 import { ChatNotificationPreferenceService } from '../../application/services/chat-notification-preference.service';
+import { ChannelAccessListService } from '../../application/services/channel-access-list.service';
 import { ChatCategoryService } from '../../application/services/chat-category.service';
 import { ChatReactionService } from '../../application/services/chat-reaction.service';
 import { ChatBookmarkService } from '../../application/services/chat-bookmark.service';
 import { ChatReportService } from '../../application/services/chat-report.service';
 import { ChatSidebarService } from '../../application/services/chat-sidebar.service';
 import { ChatThreadService } from '../../application/services/chat-thread.service';
+import { ChatImportantService } from '../../application/services/chat-important.service';
+import { ChatImportantController } from '../../interface/controllers/chat-important.controller';
+import { SupabaseChatImportantSeenRepository } from '../../infrastructure/supabase/repositories/supabase-chat-important-seen.repository';
+import { CHAT_IMPORTANT_SEEN_REPOSITORY } from '#domain/repositories/chat-important.repository.interface';
 import { ChatThreadController } from '../../interface/controllers/chat-thread.controller';
 import { SupabaseChatThreadRepository } from '../../infrastructure/supabase/repositories/supabase-chat-thread.repository';
 import { CHAT_THREAD_REPOSITORY } from '#domain/repositories/chat-thread.repository.interface';
@@ -97,6 +102,8 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
     // Chat backgrounds (#3973), at their own root for the reason bookmarks are.
     ChatBackgroundController,
     ChatOrderController,
+    // The Important strip (#4186), for the reason bookmarks are separate.
+    ChatImportantController,
   ],
   providers: [
     // Provided directly rather than by importing `ChatPushWorkerModule`, which
@@ -119,6 +126,9 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
     // Step 2 (#1380): channel categories, and reactions/actions on a message.
     // Neither is on the send path; both are called only by `ChatController`.
     ChatCategoryService,
+    // Who can see and post in each channel (#3722): the lists' checks and
+    // the editor's options.
+    ChannelAccessListService,
     // The chapter's channel and category order (owner, 2026-11-11).
     ChatChannelOrderService,
     ChatReactionService,
@@ -141,6 +151,12 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
     },
     // Chat backgrounds (#3973): the chapter default and channel overrides.
     ChatBackgroundService,
+    // The Important strip (#4186): what a member has seen.
+    ChatImportantService,
+    {
+      provide: CHAT_IMPORTANT_SEEN_REPOSITORY,
+      useClass: SupabaseChatImportantSeenRepository,
+    },
     {
       provide: CHAT_CHANNEL_REPOSITORY,
       useClass: SupabaseChatChannelRepository,

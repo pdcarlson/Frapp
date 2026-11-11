@@ -27,6 +27,7 @@ const task = (overrides: Partial<TaskView>): TaskView => ({
   assignee_id: ME,
   created_by: OTHER,
   due_date: '2026-11-20',
+  due_at: null,
   status: TaskStatus.TODO,
   stored_status: TaskStatus.TODO,
   point_reward: 5,
@@ -87,8 +88,6 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     findByChapter: jest.fn().mockResolvedValue([]),
     findCreatedBy: jest.fn().mockResolvedValue([]),
   };
-  const documentService = { findByChapter: jest.fn().mockResolvedValue([]) };
-  const backworkService = { findByChapter: jest.fn().mockResolvedValue([]) };
   const chatService = {
     getChannels: jest
       .fn()
@@ -129,8 +128,6 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     taskService as never,
     serviceEntryService as never,
     eventService as never,
-    documentService as never,
-    backworkService as never,
     chatService as never,
     chatBlocks as never,
     rbacService as never,
@@ -151,8 +148,6 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     attendanceRepo,
     memberRepo,
     rbacService,
-    documentService,
-    backworkService,
     chatService,
     chatBlocks,
     messageRepo,
@@ -432,6 +427,45 @@ describe('ActivityService', () => {
       ]);
       // Your own poll is not something waiting on you.
       expect(view.needs_you_count).toBe(0);
+    });
+
+    it('caps the caller’s open and closed polls apart, so closed ones never push an open one out (#4258)', async () => {
+      const { service, messageRepo } = build();
+      const closedPayload = {
+        ...pollCard({ id: 'x' }).payload,
+        closed_at: iso(-HOUR),
+      };
+      // Thirty newer polls, all closed, then one older poll still open.
+      const closed = Array.from({ length: 30 }, (_, index) =>
+        pollCard({
+          id: `closed-${index}`,
+          sender_id: ME,
+          payload: closedPayload,
+          created_at: iso(-(index + 1) * HOUR),
+        }),
+      );
+      const open = pollCard({
+        id: 'old-open',
+        sender_id: ME,
+        payload: { ...pollCard({ id: 'y' }).payload, closes_at: null },
+        created_at: iso(-100 * HOUR),
+      });
+      servePolls(messageRepo, [], [...closed, open]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+      const ids = view.made_by_you.polls.map((poll) => poll.message_id);
+
+      expect(ids).toContain('old-open');
+      expect(ids.filter((id) => id.startsWith('closed-'))).toEqual(
+        closed.slice(0, 25).map((poll) => poll.id),
+      );
+      // Newest first, the open one last since it is the oldest.
+      expect(ids.at(-1)).toBe('old-open');
+      expect(messageRepo.findPollCardsByChapter).toHaveBeenCalledWith(CHAPTER, {
+        senderId: ME,
+        limit: 100,
+      });
+      expect(view.made_by_you.files).toEqual([]);
     });
 
     it('reads no polls while the Polls module is off', async () => {
@@ -1079,70 +1113,6 @@ describe('ActivityService', () => {
       expect(view.needs_you.polls).toHaveLength(25);
       expect(view.needs_you.task_confirmations).toHaveLength(25);
       expect(view.needs_you_count).toBe(57);
-    });
-  });
-
-  describe('files', () => {
-    it('lists only the caller’s own uploads, newest first', async () => {
-      const { service, documentService, backworkService } = build([
-        SystemPermissions.MEMBERS_VIEW,
-        SystemPermissions.BACKWORK_UPLOAD,
-      ]);
-      documentService.findByChapter.mockResolvedValue([
-        {
-          id: 'doc-mine',
-          title: 'Bylaws',
-          uploaded_by: ME,
-          created_at: iso(-HOUR),
-        },
-      ]);
-      backworkService.findByChapter.mockResolvedValue([
-        {
-          id: 'bw-mine',
-          title: null,
-          uploader_id: ME,
-          created_at: iso(-HOUR / 2),
-        },
-      ]);
-
-      const view = await service.getActivity(CHAPTER, ME, null);
-
-      expect(view.made_by_you.files).toEqual([
-        {
-          id: 'bw-mine',
-          source: 'backwork',
-          title: '',
-          created_at: iso(-HOUR / 2),
-        },
-        {
-          id: 'doc-mine',
-          source: 'document',
-          title: 'Bylaws',
-          created_at: iso(-HOUR),
-        },
-      ]);
-      // Narrowed to the uploader in the query, not after a chapter-wide read.
-      expect(documentService.findByChapter).toHaveBeenCalledWith(CHAPTER, {
-        uploaded_by: ME,
-      });
-      expect(backworkService.findByChapter).toHaveBeenCalledWith(CHAPTER, {
-        uploader_id: ME,
-      });
-    });
-
-    it('does not read backwork for a member who cannot open it, or either module while it is off', async () => {
-      const member = build();
-      await member.service.getActivity(CHAPTER, ME, null);
-      expect(member.backworkService.findByChapter).not.toHaveBeenCalled();
-      expect(member.documentService.findByChapter).toHaveBeenCalled();
-
-      const off = build([SystemPermissions.BACKWORK_ADMIN]);
-      await off.service.getActivity(CHAPTER, ME, {
-        backwork: false,
-        documents: false,
-      });
-      expect(off.backworkService.findByChapter).not.toHaveBeenCalled();
-      expect(off.documentService.findByChapter).not.toHaveBeenCalled();
     });
   });
 

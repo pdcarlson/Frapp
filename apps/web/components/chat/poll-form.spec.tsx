@@ -2,20 +2,20 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { emptyPollDraft, pollDraftFromArgs } from "@repo/chat-core/poll-draft";
-import { NewPollDialog } from "./new-poll-dialog";
+import { PollForm } from "./poll-form";
 
 const NOW = new Date("2026-11-09T12:00:00Z");
 
-describe("NewPollDialog (#3865)", () => {
+describe("PollForm (#3865, #3983)", () => {
   it("posts the card /poll would, closing a day out by default", async () => {
     const user = userEvent.setup();
     const onPost = vi.fn(async () => ({ ok: true as const }));
-    const onOpenChange = vi.fn();
+    const onDone = vi.fn();
     render(
-      <NewPollDialog
+      <PollForm
         canCloseEarly
-        open
-        onOpenChange={onOpenChange}
+        onDone={onDone}
+        onDiscard={vi.fn()}
         initialDraft={emptyPollDraft()}
         onPost={onPost}
         now={() => NOW}
@@ -28,7 +28,7 @@ describe("NewPollDialog (#3865)", () => {
     await user.type(screen.getByLabelText("Option 2"), "Alex");
     await user.click(post);
 
-    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
     const [poll] = onPost.mock.calls[0] as unknown as [
       { content: string; payload: { options: { label: string }[]; closes_at: string } },
     ];
@@ -43,12 +43,12 @@ describe("NewPollDialog (#3865)", () => {
   it("posts a poll with no deadline for Doesn't close (#3896)", async () => {
     const user = userEvent.setup();
     const onPost = vi.fn(async () => ({ ok: true as const }));
-    const onOpenChange = vi.fn();
+    const onDone = vi.fn();
     render(
-      <NewPollDialog
+      <PollForm
         canCloseEarly
-        open
-        onOpenChange={onOpenChange}
+        onDone={onDone}
+        onDiscard={vi.fn()}
         initialDraft={pollDraftFromArgs('"Standing lunch?" Subs Pizza')}
         onPost={onPost}
         now={() => NOW}
@@ -61,7 +61,7 @@ describe("NewPollDialog (#3865)", () => {
     await user.click(screen.getByRole("option", { name: "Doesn't close" }));
     await user.click(screen.getByRole("button", { name: "Post poll" }));
 
-    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
     const [poll] = onPost.mock.calls[0] as unknown as [
       { payload: { closes_at: string | null } },
     ];
@@ -73,9 +73,9 @@ describe("NewPollDialog (#3865)", () => {
     const onPost = vi.fn(async () => ({ ok: true as const }));
     const draft = () => pollDraftFromArgs('"Which days?" Fri Sat');
     const { unmount } = render(
-      <NewPollDialog
-        open
-        onOpenChange={vi.fn()}
+      <PollForm
+        onDone={vi.fn()}
+        onDiscard={vi.fn()}
         initialDraft={draft()}
         onPost={onPost}
         canCloseEarly
@@ -90,9 +90,9 @@ describe("NewPollDialog (#3865)", () => {
     unmount();
 
     render(
-      <NewPollDialog
-        open
-        onOpenChange={vi.fn()}
+      <PollForm
+        onDone={vi.fn()}
+        onDiscard={vi.fn()}
         initialDraft={draft()}
         onPost={onPost}
         canCloseEarly
@@ -113,9 +113,9 @@ describe("NewPollDialog (#3865)", () => {
 
   it("withholds Doesn't close from a member who couldn't close the poll", async () => {
     render(
-      <NewPollDialog
-        open
-        onOpenChange={vi.fn()}
+      <PollForm
+        onDone={vi.fn()}
+        onDiscard={vi.fn()}
         initialDraft={emptyPollDraft()}
         onPost={vi.fn()}
         canCloseEarly={false}
@@ -132,10 +132,10 @@ describe("NewPollDialog (#3865)", () => {
 
   it("opens on what was typed after /poll", () => {
     render(
-      <NewPollDialog
+      <PollForm
         canCloseEarly
-        open
-        onOpenChange={vi.fn()}
+        onDone={vi.fn()}
+        onDiscard={vi.fn()}
         initialDraft={pollDraftFromArgs('"Who drives?" Sam')}
         onPost={vi.fn()}
       />,
@@ -149,10 +149,10 @@ describe("NewPollDialog (#3865)", () => {
   it("refuses two options that say the same thing", async () => {
     const user = userEvent.setup();
     render(
-      <NewPollDialog
+      <PollForm
         canCloseEarly
-        open
-        onOpenChange={vi.fn()}
+        onDone={vi.fn()}
+        onDiscard={vi.fn()}
         initialDraft={pollDraftFromArgs('"Q" Yes yes')}
         onPost={vi.fn()}
       />,
@@ -166,12 +166,12 @@ describe("NewPollDialog (#3865)", () => {
 
   it("keeps the draft and says why when the outbox refuses the card", async () => {
     const user = userEvent.setup();
-    const onOpenChange = vi.fn();
+    const onDone = vi.fn();
     render(
-      <NewPollDialog
+      <PollForm
         canCloseEarly
-        open
-        onOpenChange={onOpenChange}
+        onDone={onDone}
+        onDiscard={vi.fn()}
         initialDraft={pollDraftFromArgs('"Q" A B')}
         onPost={async () => ({ ok: false as const, error: "Couldn't post that poll. Try again." })}
       />,
@@ -180,7 +180,7 @@ describe("NewPollDialog (#3865)", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Couldn't post that poll",
     );
-    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(onDone).not.toHaveBeenCalled();
     expect(screen.getByPlaceholderText("Ask a question")).toHaveValue("Q");
   });
 });

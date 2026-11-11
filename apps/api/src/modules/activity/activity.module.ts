@@ -20,8 +20,6 @@ import {
   CHAT_MESSAGE_REPOSITORY,
 } from '#domain/repositories/chat.repository.interface';
 import { AuthModule } from '../auth/auth.module';
-import { BackworkModule } from '../backwork/backwork.module';
-import { ChapterDocumentModule } from '../chapter-document/chapter-document.module';
 import { ChatBlockModule } from '../chat-block/chat-block.module';
 import { ChannelAccessModule } from '../channel-access/channel-access.module';
 import { ChatModule } from '../chat/chat.module';
@@ -40,8 +38,6 @@ import { TaskModule } from '../task/task.module';
     TaskModule,
     ServiceEntryModule,
     EventModule,
-    ChapterDocumentModule,
-    BackworkModule,
     ChatModule,
     ChatBlockModule,
     // `ChannelAccessService`, for the read check behind a member's Done or Hide.

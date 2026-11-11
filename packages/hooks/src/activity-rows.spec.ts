@@ -7,6 +7,7 @@ import {
   activityLinkKind,
   activityNeedsYouHeadline,
   activityNextUpLine,
+  activityPollIsOpen,
   activityRowIsNow,
   activitySummary,
   type Activity,
@@ -84,7 +85,7 @@ const activity = (overrides: Partial<Record<string, unknown>> = {}) =>
     },
     coming_up: [],
     links: [],
-    made_by_you: { polls: [], tasks: [], files: [], events: [] },
+    made_by_you: { polls: [], tasks: [], events: [] },
     needs_you_count: 0,
     unavailable: [],
     ...overrides,
@@ -195,7 +196,6 @@ describe("activityGroups", () => {
               confirmed_at: "2026-11-02T00:00:00.000Z",
             }),
           ],
-          files: [],
           events: [],
         },
       }),
@@ -210,7 +210,7 @@ describe("activityGroups", () => {
 
   it("names each section that could not be read, under every group that draws it", () => {
     const groups = activityGroups(
-      activity({ unavailable: ["tasks", "hours_approvals", "files"] }),
+      activity({ unavailable: ["tasks", "hours_approvals", "made_events"] }),
       "all",
     );
 
@@ -218,7 +218,7 @@ describe("activityGroups", () => {
       ["tasks", "hours_approvals"],
       [],
       [],
-      ["tasks", "files"],
+      ["made_events", "tasks"],
     ]);
   });
 
@@ -229,7 +229,6 @@ describe("activityGroups", () => {
         "hours_approvals",
         "polls",
         "coming_up",
-        "files",
         "made_events",
       ],
     });
@@ -245,14 +244,13 @@ describe("activityGroups", () => {
       [],
       ["made_events"],
     ]);
-    expect(under("file")).toEqual([[], [], [], ["files"]]);
   });
 
   it("lists an event the member made under Made by you, apart from the same event under Coming up", () => {
     const mine = event({ id: "mine", name: "Formal" });
     const data = activity({
       coming_up: [mine],
-      made_by_you: { polls: [], tasks: [], files: [], events: [mine] },
+      made_by_you: { polls: [], tasks: [], events: [mine] },
     });
 
     expect(rowsOf(data)).toMatchObject({
@@ -301,7 +299,7 @@ describe("activityGroups", () => {
           hours_approvals: [],
           polls: [],
         },
-        made_by_you: { polls: [], tasks: [shared], files: [], events: [] },
+        made_by_you: { polls: [], tasks: [shared], events: [] },
       }),
       "all",
     );
@@ -321,18 +319,8 @@ describe("activityGroups", () => {
       },
       coming_up: [event()],
       made_by_you: {
-        polls: [
-          poll({ message_id: "mine", question: "Mine", is_closed: true }),
-        ],
+        polls: [poll({ message_id: "mine", question: "Mine" })],
         tasks: [],
-        files: [
-          {
-            id: "f1",
-            source: "document",
-            title: "Bylaws",
-            created_at: "2026-11-01T00:00:00.000Z",
-          },
-        ],
         events: [],
       },
     });
@@ -341,7 +329,126 @@ describe("activityGroups", () => {
       "needs-you": ["poll:Formal venue?:Vote"],
       "coming-up": [],
       links: [],
-      "made-by-you": ["poll:Mine:Closed"],
+      "made-by-you": ["poll:Mine:Vote"],
+    });
+  });
+
+  describe("closed polls (#4258)", () => {
+    const NOW = new Date("2026-11-11T12:00:00.000Z");
+    const data = activity({
+      needs_you: {
+        tasks: [],
+        task_confirmations: [],
+        hours_approvals: [],
+        polls: [
+          // Open at the read; its time ran out before `NOW`.
+          poll({
+            message_id: "lapsed",
+            question: "Lapsed",
+            closes_at: "2026-11-11T11:00:00.000Z",
+          }),
+          poll({
+            message_id: "open",
+            question: "Open",
+            closes_at: "2026-11-11T13:00:00.000Z",
+          }),
+        ],
+      },
+      made_by_you: {
+        polls: [
+          poll({
+            message_id: "m-open",
+            question: "Still open",
+            closes_at: null,
+          }),
+          poll({
+            message_id: "m-by-hand",
+            question: "Closed by hand",
+            is_closed: true,
+            closed_at: "2026-11-10T09:00:00.000Z",
+            closes_at: "2026-11-20T00:00:00.000Z",
+            created_at: "2026-11-09T00:00:00.000Z",
+          }),
+          poll({
+            message_id: "m-by-time",
+            question: "Ran out",
+            closes_at: "2026-11-11T10:00:00.000Z",
+            created_at: "2026-11-08T00:00:00.000Z",
+          }),
+        ],
+        tasks: [],
+        events: [],
+      },
+      needs_you_count: 2,
+    });
+
+    it("lists open polls only, and keeps the closed ones behind Archived polls, newest closed first", () => {
+      const groups = activityGroups(data, "all", NOW);
+      const needs = groups.find((group) => group.id === "needs-you");
+      const made = groups.find((group) => group.id === "made-by-you");
+
+      expect(needs?.rows.map((row) => row.title)).toEqual(["Open"]);
+      expect(made?.rows.map((row) => row.title)).toEqual(["Still open"]);
+      expect(made?.archive?.label).toBe("Archived polls");
+      expect(
+        made?.archive?.rows.map((row) => [row.title, row.badge?.label]),
+      ).toEqual([
+        ["Ran out", "Closed"],
+        ["Closed by hand", "Closed"],
+      ]);
+      expect(groups.filter((group) => group.archive).map((g) => g.id)).toEqual([
+        "made-by-you",
+      ]);
+    });
+
+    it("keeps the archive under the Polls chip, and drops it under any other", () => {
+      const made = (filter: Parameters<typeof activityGroups>[1]) =>
+        activityGroups(data, filter, NOW).find(
+          (group) => group.id === "made-by-you",
+        );
+      expect(made("poll")?.archive?.rows).toHaveLength(2);
+      expect(made("task")?.archive).toBeNull();
+    });
+
+    it("has no archive while every poll is open", () => {
+      const made = activityGroups(
+        activity({
+          made_by_you: {
+            polls: [poll({ message_id: "m", closes_at: null })],
+            tasks: [],
+            events: [],
+          },
+        }),
+        "all",
+        NOW,
+      ).find((group) => group.id === "made-by-you");
+      expect(made?.archive).toBeNull();
+    });
+
+    it("counts open polls only in the tile and the headline", () => {
+      const summary = activitySummary(
+        data,
+        { canConfirmTasks: false, canApproveHours: false },
+        NOW,
+      );
+      expect(summary.tiles.find((tile) => tile.id === "polls")?.count).toBe(
+        "1",
+      );
+      expect(summary.needsYou).toBe(1);
+    });
+
+    it("reads a poll as open until its closing time and closed from then on", () => {
+      const at = { is_closed: false, closes_at: "2026-11-11T12:00:00.000Z" };
+      expect(activityPollIsOpen(at, new Date("2026-11-11T11:59:59.000Z"))).toBe(
+        true,
+      );
+      expect(activityPollIsOpen(at, NOW)).toBe(false);
+      expect(
+        activityPollIsOpen({ is_closed: true, closes_at: null }, NOW),
+      ).toBe(false);
+      expect(
+        activityPollIsOpen({ is_closed: false, closes_at: null }, NOW),
+      ).toBe(true);
     });
   });
 
@@ -537,7 +644,6 @@ describe("Now and Later, and Made by you by kind (#4173)", () => {
         polls: [],
         events: [],
         tasks: [task({ id: "m", title: "Assigned" })],
-        files: [],
       },
       unavailable: ["tasks"],
     });
@@ -610,7 +716,6 @@ describe("Now and Later, and Made by you by kind (#4173)", () => {
         tasks: [1, 2, 3, 4].map((n) =>
           task({ id: `t${n}`, title: `Task ${n}` }),
         ),
-        files: [],
       },
     });
     expect(partsOf(data)["made-by-you"]).toEqual([
@@ -631,7 +736,6 @@ describe("Now and Later, and Made by you by kind (#4173)", () => {
         tasks: [1, 2, 3, 4].map((n) =>
           task({ id: `t${n}`, title: `Task ${n}` }),
         ),
-        files: [],
       },
     });
     expect(partsOf(data, "task")["made-by-you"]?.[0]?.limit).toBeNull();

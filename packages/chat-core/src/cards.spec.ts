@@ -40,6 +40,7 @@ const TASK = {
   assignee_user_id: "user-b",
   assignee_name: "Elias Brandt",
   due_date: "2026-11-07",
+  due_at: null,
   status: "TODO",
   point_reward: 15,
   created_at: "2026-11-01T12:00:00.000Z",
@@ -145,6 +146,16 @@ describe("readTaskPayload", () => {
       );
     }
     expect(readTaskPayload(withPayload(undefined))).toBe(null);
+  });
+
+  it("reads a due time, and none from a card posted before times", () => {
+    const at = "2026-11-07T22:00:00.000Z";
+    expect(readTaskPayload(withPayload({ ...TASK, due_at: at }))?.due_at).toBe(
+      at,
+    );
+    const older: Record<string, unknown> = { ...TASK };
+    delete older.due_at;
+    expect(readTaskPayload(withPayload(older))?.due_at).toBe(null);
   });
 
   it("always reports the creation-time status, whatever the row says", () => {

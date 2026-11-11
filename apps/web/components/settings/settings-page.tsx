@@ -113,7 +113,13 @@ function SettingsPageContent() {
     enabled: !!activeChapterId,
   });
   const orgConfigQuery = useOrgConfig();
-  const { data: permissionsPayload } = useMyPermissions({
+  const {
+    data: permissionsPayload,
+    isError: permissionsFailed,
+    error: permissionsError,
+    fetchStatus: permissionsFetchStatus,
+    refetch: refetchPermissions,
+  } = useMyPermissions({
     enabled: !!activeChapterId,
   });
   const isModuleEnabled = useChapterModuleGate();
@@ -239,12 +245,18 @@ function SettingsPageContent() {
   const chapterPaused =
     chapterQuery.isPending && chapterQuery.fetchStatus === "paused";
   let stateBanner: React.ReactNode = null;
-  if (isOffline && anyReadUncached(chapterQuery)) {
+  if (
+    isOffline &&
+    (anyReadUncached(chapterQuery) || permissionsPayload === undefined)
+  ) {
     stateBanner = (
       <OfflineState
         title="Chapter settings unavailable offline"
         description="Reconnect to load this chapter's identity, modules, and branding."
-        onRetry={() => void chapterQuery.refetch()}
+        onRetry={() => {
+          void chapterQuery.refetch();
+          void refetchPermissions();
+        }}
       />
     );
   } else if (chapterQuery.isLoading || chapterPaused) {
@@ -257,6 +269,24 @@ function SettingsPageContent() {
         onRetry={() => void chapterQuery.refetch()}
       />
     );
+  } else if (permissionsPayload === undefined) {
+    /*
+      The tabs and tools below are filtered by the viewer's permissions, and
+      while those are unknown there is nothing to draw: not an officer's rail
+      for a member who arrived by URL (#3854), and not "Nothing in Chapter
+      settings" for an officer whose read is still in flight. So the page holds
+      its skeleton until the read answers. A failed read refuses to guess.
+    */
+    stateBanner =
+      permissionsFailed && permissionsFetchStatus !== "fetching" ? (
+        <ErrorState
+          title="Couldn't load chapter settings"
+          description={`${describeLoadFailure(permissionsError)} Your role decides what this page shows.`}
+          onRetry={() => void refetchPermissions()}
+        />
+      ) : (
+        <SettingsBodySkeleton />
+      );
   }
 
   if (stateBanner) {

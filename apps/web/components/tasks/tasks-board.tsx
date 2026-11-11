@@ -2,7 +2,7 @@
 
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useMemo, useState } from "react";
-import { CheckCircle2, Trash2, Undo2 } from "lucide-react";
+import { CheckCircle2, Pencil, Trash2, Undo2 } from "lucide-react";
 import {
   useConfirmTask,
   useCreateTask,
@@ -17,9 +17,9 @@ import {
   useTasks,
   useUpdateTaskStatus,
 } from "@repo/hooks";
-import type { TaskStatus } from "@repo/hooks";
+import type { TaskStatus, TaskSubtask } from "@repo/hooks";
 import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
-import { formatWeekdayDay, nextUpLine } from "@repo/formatting";
+import { formatDayTime, formatWeekdayDay, nextUpLine } from "@repo/formatting";
 import { can } from "@repo/validation";
 import { ToastAction } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
@@ -45,8 +45,10 @@ import {
   actionStatus,
   canReopenOwnTask,
 } from "@repo/hooks";
-import { asArray, getErrorMessage } from "@/lib/utils";
+import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import { taskDueClause } from "./task-due";
+import { TaskSubtaskList, TaskSubtasksToggle } from "./task-subtasks";
+import { TaskEditForm } from "./task-edit-form";
 import { AddTaskRow, type TaskDraft } from "./add-task-row";
 import { TasksPageSkeleton } from "@/components/tasks/tasks-skeleton";
 
@@ -58,6 +60,10 @@ type Task = {
   assignee_id: string;
   created_by: string;
   due_date: string;
+  /** The moment it is due, when it has a time of day (#4003). */
+  due_at?: string | null;
+  /** Its checklist, in order (#4003). */
+  subtasks?: TaskSubtask[];
   /** Display status — `OVERDUE` when derived. Drives the column grouping. */
   status: TaskStatus;
   /**
@@ -210,9 +216,13 @@ export function TasksBoard() {
     recent.sort((a, b) => confirmedAt(b) - confirmedAt(a));
     for (const [, list] of grouped) {
       list.sort((a, b) => {
-        const aMs = new Date(a.due_date).getTime();
-        const bMs = new Date(b.due_date).getTime();
-        return aMs - bMs;
+        // By day, then by time within the day, a task with no time last
+        // (it is due by the end of the day).
+        const byDay = a.due_date.localeCompare(b.due_date);
+        if (byDay !== 0) return byDay;
+        const aMs = a.due_at ? Date.parse(a.due_at) : Number.POSITIVE_INFINITY;
+        const bMs = b.due_at ? Date.parse(b.due_at) : Number.POSITIVE_INFINITY;
+        return aMs === bMs ? 0 : aMs < bMs ? -1 : 1;
       });
     }
     return { columns: grouped, confirmed: recent };
@@ -504,6 +514,7 @@ export function TasksBoard() {
                           memberFallbackLabel(task.assignee_id)
                         }
                         myUserId={myUserId}
+                        canManage={canManage}
                         gate={gate}
                         lifecycleWritePending={lifecycleWritePending}
                         onChangeStatus={(next) => void changeStatus(task, next)}
@@ -545,6 +556,7 @@ export function TasksBoard() {
                   memberFallbackLabel(task.assignee_id)
                 }
                 myUserId={myUserId}
+                canManage={canManage}
                 gate={gate}
                 lifecycleWritePending={lifecycleWritePending}
                 onChangeStatus={(next) => void changeStatus(task, next)}
@@ -561,9 +573,7 @@ export function TasksBoard() {
               className="justify-self-start"
               onClick={() => setShowAllConfirmed((open) => !open)}
             >
-              {showAllConfirmed
-                ? "Show fewer"
-                : `Show all ${confirmed.length}`}
+              {showAllConfirmed ? "Show fewer" : `Show all ${confirmed.length}`}
             </Button>
           ) : null}
         </section>
@@ -578,6 +588,7 @@ function TaskTile({
   task,
   assigneeName,
   myUserId,
+  canManage,
   gate,
   lifecycleWritePending,
   onChangeStatus,
@@ -588,6 +599,8 @@ function TaskTile({
   task: Task;
   assigneeName: string;
   myUserId: string;
+  /** Holds `tasks:manage`: may check off and edit anyone's subtasks. */
+  canManage: boolean;
   gate: SubscriptionGate;
   lifecycleWritePending: boolean;
   onChangeStatus: (next: TaskStatus) => void;
@@ -611,6 +624,36 @@ function TaskTile({
   const cannotConfirm = isMine || viewerUnknown;
   const due = taskDueClause(task);
   const status = actionStatus(task);
+  const [subtasksOpen, setSubtasksOpen] = useState(false);
+  // An officer's edit replaces the tile with the task form until it saves or
+  // is cancelled (#4296). A confirmed task's points were paid on it as it
+  // stood, so it has no Edit.
+  const [editing, setEditing] = useState(false);
+  const editable = canManage && !task.points_awarded;
+
+  if (editing && editable) {
+    return (
+      <li
+        aria-label={`Editing ${task.title}`}
+        className="rounded-[14px] border border-ring/60 p-3"
+        // Escape puts the tile back unsaved, like the + card's Escape. A
+        // picker open inside handles its own Escape in its portal first.
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && !event.defaultPrevented) {
+            event.stopPropagation();
+            setEditing(false);
+          }
+        }}
+      >
+        <TaskEditForm
+          task={task}
+          assigneeName={assigneeName}
+          gate={gate}
+          onClose={() => setEditing(false)}
+        />
+      </li>
+    );
+  }
 
   return (
     <li className="rounded-[14px] border border-border p-3">
@@ -629,7 +672,11 @@ function TaskTile({
           <>
             <span
               className={due.overdue ? "text-destructive-text" : undefined}
-              title={formatWeekdayDay(task.due_date) ?? undefined}
+              title={
+                (task.due_at
+                  ? formatDayTime(task.due_at)
+                  : formatWeekdayDay(task.due_date)) ?? undefined
+              }
             >
               {due.text}
             </span>
@@ -637,10 +684,30 @@ function TaskTile({
           </>
         ) : null}
         <span className="min-w-0 truncate">{assigneeName}</span>
+        {/* No `·` before it: its checklist icon separates it, the way
+            Todoist's sub-task count sits, so a wrapped line never starts or
+            ends on a dangling dot. */}
+        {task.subtasks && task.subtasks.length > 0 ? (
+          <TaskSubtasksToggle
+            subtasks={task.subtasks}
+            open={subtasksOpen}
+            onToggle={() => setSubtasksOpen((open) => !open)}
+          />
+        ) : null}
         {task.point_reward ? (
           <Badge className="ml-1">+{task.point_reward} pts</Badge>
         ) : null}
       </div>
+      {subtasksOpen && task.subtasks && task.subtasks.length > 0 ? (
+        <TaskSubtaskList
+          taskId={task.id}
+          subtasks={task.subtasks}
+          canCheck={isMine || canManage}
+          canEdit={canManage}
+          closed={task.points_awarded}
+          gate={gate}
+        />
+      ) : null}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {/*
           The inline status controls are writes too
@@ -728,10 +795,25 @@ function TaskTile({
             Reject and Delete fit one row of a narrow column. Named for the
             task, since every tile has one.
           */}
+          {editable ? (
+            <Button
+              size="toolbar"
+              variant="ghost"
+              className="ml-auto w-9 px-0 pointer-coarse:w-11 pointer-coarse:px-0"
+              aria-label={`Edit ${task.title}`}
+              {...gate.controlProps()}
+              onClick={() => setEditing(true)}
+            >
+              <Pencil className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          ) : null}
           <Button
             size="toolbar"
             variant="ghost"
-            className="ml-auto w-9 px-0 pointer-coarse:w-11 pointer-coarse:px-0"
+            className={cn(
+              "w-9 px-0 pointer-coarse:w-11 pointer-coarse:px-0",
+              !editable && "ml-auto",
+            )}
             aria-label={`Delete ${task.title}`}
             {...gate.controlProps()}
             onClick={onDelete}

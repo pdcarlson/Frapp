@@ -109,10 +109,54 @@ describe("isNavItemVisible", () => {
     expect(isNavItemVisible(permissionItem, ["*"])).toBe(true);
   });
 
-  it("fails open while the permission set is unresolved", async () => {
+  it("fails closed for a gated row while the permission set is unresolved (#3854)", async () => {
     const { isNavItemVisible } = await import("./protected-nav-item");
-    expect(isNavItemVisible(permissionItem, undefined)).toBe(true);
+    expect(isNavItemVisible(permissionItem, undefined)).toBe(false);
+    const anyOfItem: NavItem = {
+      ...moduleItem,
+      requireAnyOf: ["backwork:upload", "backwork:admin"],
+    };
+    expect(isNavItemVisible(anyOfItem, undefined, () => true)).toBe(false);
+    const showWhenItem: NavItem = { ...coreItem, showWhen: () => true };
+    expect(isNavItemVisible(showWhenItem, undefined)).toBe(false);
+  });
+
+  it("shows a gated row when the offline dashboard can't ask (null)", async () => {
+    const { isNavItemVisible } = await import("./protected-nav-item");
     expect(isNavItemVisible(permissionItem, null)).toBe(true);
+    // The module gate still applies.
+    expect(
+      isNavItemVisible({ ...moduleItem, requirePermission: "x" }, null, () => false),
+    ).toBe(false);
+  });
+
+  it("keeps a row with no permission rule while permissions are unresolved", async () => {
+    const { isNavItemVisible } = await import("./protected-nav-item");
+    expect(isNavItemVisible(coreItem, undefined)).toBe(true);
+    expect(isNavItemVisible(moduleItem, undefined, undefined)).toBe(true);
+  });
+
+  it("hides the real Directory and Chapter settings rows until permissions resolve", async () => {
+    const { isNavItemVisible } = await import("./protected-nav-item");
+    const { DASHBOARD_NAV_ITEMS } = await import("./nav-config");
+    for (const id of ["members", "settings", "backwork"]) {
+      const row = DASHBOARD_NAV_ITEMS.find((item) => item.id === id);
+      expect(row, id).toBeDefined();
+      expect(isNavItemVisible(row!, undefined, () => true), id).toBe(false);
+      expect(isNavItemVisible(row!, ["*"], () => true), id).toBe(true);
+    }
+  });
+
+  it("renders nothing, so nothing is clickable, while permissions are unresolved", () => {
+    const { container } = render(
+      <ProtectedNavItem
+        item={{ ...coreItem, requirePermission: "members:view" }}
+        permissions={undefined}
+        iconClassName="h-4 w-4"
+        focusClassName=""
+      />,
+    );
+    expect(container).toBeEmptyDOMElement();
   });
 
   it("hides an item whose module the chapter disabled", async () => {

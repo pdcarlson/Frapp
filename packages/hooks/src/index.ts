@@ -74,6 +74,7 @@ export {
   type SidebarFilterChange,
   type SidebarWriteOptions,
 } from "./use-chat-sidebar";
+export * from "./use-important-messages";
 export * from "./use-discord-author-link";
 export * from "./field-reveal";
 export * from "./open-chat-transport";

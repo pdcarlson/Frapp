@@ -197,6 +197,15 @@ export interface MessageItemProps {
    */
   onOpenThread?: (message: ChatMessage) => void;
   /**
+   * The thread card's faces (#4297): a replier's photo, and their top role
+   * color for their initials' tint. Optional; without them the card draws
+   * initials in each member's hashed hue.
+   */
+  avatarFor?: (userId: string) => string | null;
+  roleColorFor?: (userId: string) => string | null;
+  /** Replies in this message's thread new to the viewer (#4297). */
+  threadUnread?: number;
+  /**
    * The message this one replies to, when `message.reply_to_id` is set and that
    * parent is inside the loaded window; `null` or absent when it is not.
    *
@@ -383,6 +392,9 @@ export function MessageItem({
   onReply,
   onJumpToParent,
   onOpenThread,
+  avatarFor,
+  roleColorFor,
+  threadUnread = 0,
   replyParent,
   onRetry,
   onDiscard,
@@ -813,9 +825,20 @@ export function MessageItem({
   const trailingOnOwnLine =
     !message.is_deleted &&
     (isCardMessage(message) || message.content.trim().length === 0);
+  // The flag rides the author line, right of the time (#4288). Grouping gives
+  // every flagged message one (`decorateThread`), so only a row that never
+  // draws an author line (an audit line) keeps the caption above its body.
+  const flagOnAuthorLine = !!flagView && drawsHeader;
   // Compact leads a text body's first line with the name. A card, an
-  // attachment-only message and the open editor have no line to lead.
-  const inlineName = compact && drawsHeader && !isEditing && !trailingOnOwnLine;
+  // attachment-only message and the open editor have no line to lead, and a
+  // flagged message takes its name to a line of its own so the flag sits
+  // beside it rather than inside the sentence.
+  const inlineName =
+    compact &&
+    drawsHeader &&
+    !isEditing &&
+    !trailingOnOwnLine &&
+    !flagOnAuthorLine;
 
   // The run's first row draws the author's 32px photo in the cozy gutter.
   const authorAvatar = (
@@ -865,7 +888,16 @@ export function MessageItem({
     ) : (
       renderer
     );
-  const flagCaption = flagView ? <MessageFlagCaption view={flagView} /> : null;
+  // Where there is no author line to carry it, the flag's caption sits above
+  // the body on a line of its own.
+  const flagCaption =
+    flagView && !flagOnAuthorLine ? (
+      <MessageFlagCaption view={flagView} />
+    ) : null;
+  const authorLineFlag =
+    flagView && flagOnAuthorLine ? (
+    <MessageFlagCaption view={flagView} inline />
+  ) : null;
   const body = flagCaption ? (
     <>
       {flagCaption}
@@ -1323,7 +1355,8 @@ export function MessageItem({
     ) : isEditing ? (
       editForm
     ) : (
-      // The caption is drawn above the bubble column, not in it (#3921).
+      // The flag is never drawn in the bubble's fill: it rides the author
+      // line above the stack, or, with none, its own caption (#3921, #4288).
       bodyCore
     );
     /*
@@ -1439,6 +1472,7 @@ export function MessageItem({
                     >
                       {formatTimeOfDay(message.created_at)}
                     </time>
+                    {authorLineFlag}
                   </div>
                 ) : null}
                 {replyQuote ? (
@@ -1482,6 +1516,9 @@ export function MessageItem({
                     <ThreadChip
                       summary={message.thread}
                       nameFor={nameFor}
+                      avatarFor={avatarFor}
+                      roleColorFor={roleColorFor}
+                      unread={threadUnread}
                       onOpen={
                         onOpenThread ? () => onOpenThread(message) : undefined
                       }
@@ -1579,7 +1616,26 @@ export function MessageItem({
               The gutter, held open on every row of a run: 32px for the avatar
               in cozy, 56px for the time in compact (§11 § Density).
             */}
-            <div className={cn("shrink-0", compact ? "w-14" : "w-8")}>
+            <div
+              className={cn("relative shrink-0", compact ? "w-14" : "w-8")}
+            >
+              {message.thread && !compact && !auditLine ? (
+                /*
+                  The thread card's connector (#4297, after Discord's): from
+                  under the photo (or the follow-on's time) down the gutter's
+                  middle, curving into the card's left edge. The card is the
+                  column's last item on a confirmed row, so the line ends at
+                  its middle: half its 36px height up from the bottom.
+                */
+                <span
+                  aria-hidden="true"
+                  data-slot="thread-spine"
+                  className={cn(
+                    "pointer-events-none absolute bottom-[18px] left-[15px] w-[29px] rounded-bl-[10px] border-b-2 border-l-2 border-border",
+                    drawsHeader ? "top-10" : "top-7",
+                  )}
+                />
+              ) : null}
               {auditLine ? (
                 <div
                   className={cn(
@@ -1677,12 +1733,13 @@ export function MessageItem({
                   >
                     {formatTimeOfDay(message.created_at)}
                   </time>
+                  {authorLineFlag}
                 </div>
               ) : null}
               {compact && drawsHeader && !inlineName ? (
-                // A card, an attachment-only message, or the editor: nothing
-                // to lead with the name, so it takes a line of its own.
-                <div className="flex min-w-0">
+                // A card, an attachment-only message, the editor, or a flagged
+                // message: the name takes a line of its own, the flag beside it.
+                <div className="flex min-w-0 items-baseline gap-2">
                   <AuthorName
                     openProfile={openAuthor}
                     slot="author-line"
@@ -1691,11 +1748,11 @@ export function MessageItem({
                   >
                     {authorLabel}
                   </AuthorName>
+                  {authorLineFlag}
                 </div>
               ) : null}
               {inlineName ? (
                 <>
-                  {flagCaption}
                   {/*
                   Compact's name leads the body's first line, floated so the
                   text flows beside it and wraps back under it, the way a
@@ -1730,6 +1787,9 @@ export function MessageItem({
                 <ThreadChip
                   summary={message.thread}
                   nameFor={nameFor}
+                  avatarFor={avatarFor}
+                  roleColorFor={roleColorFor}
+                  unread={threadUnread}
                   onOpen={
                     onOpenThread ? () => onOpenThread(message) : undefined
                   }
@@ -1769,9 +1829,10 @@ export function MessageItem({
  * danger bar on its leading edge, the shape the mention row takes in the
  * chapter accent (§11 § A row that mentions you). It is information, so it
  * stays on under a pointer and deepens rather than giving way to the lift.
- * Chapter-accent text on the row (the thread chip's reply count is the one
- * that sits straight on the tint) reads in `--foreground` here: the accent
- * misses AA on the red for most chapter seeds.
+ * Chapter-accent text on the row reads in `--foreground` here: the accent
+ * misses AA on the red for most chapter seeds. The thread card's count sits
+ * on the card's own fill since #4297, but keeps the foreground too, so an
+ * Important row reads the same on web and mobile.
  */
 const IMPORTANT_ROW =
   "bg-destructive-tint shadow-[inset_2px_0_0_var(--destructive)] hover:bg-destructive-tint-hover has-[:focus-visible]:bg-destructive-tint-hover [&_.text-primary]:text-foreground";
@@ -1783,30 +1844,98 @@ function rowTapClass(important: boolean, mentionsViewer: boolean): string {
 }
 
 /**
- * The flag's caption above the body: "Important", or "Funny · flagged by
- * Marcus". Important is danger red with its alert glyph; a lighter flag is
- * muted, with no glyph, so it reads as a note rather than an alarm.
+ * The flag's caption: "Important", or "Funny · flagged by Marcus". Important
+ * is danger red with its alert glyph; a lighter flag is muted, with no glyph,
+ * so it reads as a note rather than an alarm.
+ *
+ * `inline` draws it on the author line, right of the time (#4288): its parts
+ * join the line's own flex row, and on a narrow row "· flagged by" drops out
+ * first, then the name truncates, while the label and the time hold. Without it, it is
+ * a line of its own above the body, for a row with no author line.
  */
-function MessageFlagCaption({ view }: { view: MessageFlagView }) {
+function MessageFlagCaption({
+  view,
+  inline = false,
+}: {
+  view: MessageFlagView;
+  inline?: boolean;
+}) {
+  const tone = view.important ? "text-destructive-text" : "text-muted-foreground";
+  if (inline) {
+    return (
+      <span data-slot="message-flag" className="contents">
+        <span className="sr-only">{messageFlagCaption(view)}</span>
+        <span
+          aria-hidden="true"
+          title={messageFlagCaption(view)}
+          className={cn(
+            "flex h-5 shrink-0 items-center gap-1.5 self-center text-caption font-semibold leading-5",
+            tone,
+          )}
+        >
+          <MessageFlagLabel view={view} />
+        </span>
+        {view.flaggedBy ? (
+          /*
+            All or nothing: a one-line wrapping box that clips its second
+            line, so where "· flagged by Name" doesn't fit it drops out whole
+            rather than leaving a stray "·…". It counts toward the line's width
+            (Bubbles sizes its column by it) but shrinks so much faster than
+            the name that it is gone before the name loses even a fraction of
+            a pixel, which would draw the name's ellipsis. The label's title
+            and the screen-reader text keep it.
+          */
+          <span
+            aria-hidden="true"
+            className="-ml-1 flex h-5 min-w-0 shrink-[100000] flex-wrap self-center overflow-hidden"
+          >
+            {/* A line's first item never wraps, so a zero-width one leads. */}
+            <span className="h-5 w-0" />
+            <span
+              data-slot="message-flag-by"
+              className="shrink-0 whitespace-nowrap text-caption leading-5 text-muted-foreground"
+            >
+              · flagged by {view.flaggedBy}
+            </span>
+          </span>
+        ) : null}
+      </span>
+    );
+  }
   return (
     <div
       data-slot="message-flag"
       className={cn(
         "flex items-center gap-1.5 text-caption font-semibold leading-5",
-        view.important ? "text-destructive-text" : "text-muted-foreground",
+        tone,
       )}
     >
-      {view.important ? (
-        <CircleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-      ) : null}
       <span className="sr-only">{messageFlagCaption(view)}</span>
-      <span aria-hidden="true">{view.label}</span>
+      <MessageFlagLabel view={view} aria-hidden />
       {view.flaggedBy ? (
         <span aria-hidden="true" className="font-normal text-muted-foreground">
           · flagged by {view.flaggedBy}
         </span>
       ) : null}
     </div>
+  );
+}
+
+/** The glyph and label both forms of `MessageFlagCaption` draw. */
+function MessageFlagLabel({
+  view,
+  "aria-hidden": ariaHidden,
+}: {
+  view: MessageFlagView;
+  "aria-hidden"?: boolean;
+}) {
+  return (
+    <>
+      {view.important ? (
+        <CircleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+      ) : null}
+      <span aria-hidden={ariaHidden || undefined}>{view.label}</span>
+    </>
   );
 }
 

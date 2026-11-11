@@ -33,29 +33,40 @@ vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 
-const { NewTaskDialog } = await import("./new-task-dialog");
+const { TaskForm, taskDraftFrom } = await import("./task-form");
 
 const chapter = chapterSubscription(mockCurrentChapter);
 
 function renderDialog(
-  props: Partial<React.ComponentProps<typeof NewTaskDialog>> = {},
+  props: Partial<React.ComponentProps<typeof TaskForm>> & {
+    prefill?: Parameters<typeof taskDraftFrom>[0];
+    initialAssigneeId?: string;
+  } = {},
 ) {
   const onOpenChange = vi.fn();
+  const onDraftChange = vi.fn();
   const onPost = vi.fn().mockResolvedValue({ ok: true });
+  const { prefill, initialAssigneeId, ...rest } = props;
   render(
-    <NewTaskDialog
-      open
-      onOpenChange={onOpenChange}
+    <TaskForm
+      initialDraft={taskDraftFrom(prefill, initialAssigneeId)}
+      onDone={() => onOpenChange(false)}
+      onDiscard={vi.fn()}
+      onDraftChange={onDraftChange}
       onPost={onPost}
-      {...props}
+      {...rest}
     />,
   );
-  return { onOpenChange, onPost: (props.onPost ?? onPost) as typeof onPost };
+  return {
+    onOpenChange,
+    onDraftChange,
+    onPost: (props.onPost ?? onPost) as typeof onPost,
+  };
 }
 
 const create = () => screen.getByRole("button", { name: "Create task" });
 
-describe("NewTaskDialog (#3865)", () => {
+describe("TaskForm (#3865, #3983)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     chapter.active();
@@ -71,7 +82,8 @@ describe("NewTaskDialog (#3865)", () => {
     expect(screen.getByLabelText("Due date")).toHaveValue(
       formatDueEntry("2026-11-12", new Date()),
     );
-    expect(screen.getByLabelText("Points (optional)")).toHaveValue(5);
+    // Points live behind More options, open because the command set them.
+    expect(screen.getByLabelText("Points")).toHaveValue(5);
     expect(screen.getByLabelText("Assignee")).toHaveTextContent("Social Chair");
   });
 
@@ -80,6 +92,11 @@ describe("NewTaskDialog (#3865)", () => {
     fireEvent.click(create());
     expect(await screen.findByText("Pick an assignee.")).toBeInTheDocument();
     expect(screen.getByText("Pick a due date.")).toBeInTheDocument();
+    // Outlined like the fields beside it, not only named under it (#3983).
+    expect(screen.getByLabelText("Assignee")).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
     expect(onPost).not.toHaveBeenCalled();
   });
 
@@ -88,7 +105,8 @@ describe("NewTaskDialog (#3865)", () => {
       prefill: { title: "Sweep", dueDate: "2026-11-12" },
       initialAssigneeId: "u-1",
     });
-    fireEvent.change(screen.getByLabelText("Description (optional)"), {
+    fireEvent.click(screen.getByRole("button", { name: /More options/ }));
+    fireEvent.change(screen.getByLabelText("Description"), {
       target: { value: "Front and back" },
     });
     fireEvent.click(create());
@@ -161,6 +179,17 @@ describe("NewTaskDialog (#3865)", () => {
     expect(create()).toBeDisabled();
     expect(screen.getByLabelText("Title")).toBeDisabled();
     expect(screen.getByLabelText("Due date")).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Discard draft" })).toBeEnabled();
+  });
+
+  it("reports each edit to its host, so a closed card keeps the draft", () => {
+    const { onDraftChange } = renderDialog();
+    expect(onDraftChange).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("Title"), {
+      target: { value: "Sweep" },
+    });
+    expect(onDraftChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ title: "Sweep" }),
+    );
   });
 });

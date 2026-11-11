@@ -31,9 +31,10 @@ export interface ThreadChipProps {
 /**
  * Under a message that has thread replies (#3785, `spec/behavior/chat/README.md`
  * § Message threads): up to three repliers, "N replies" in the chapter accent
- * and "last reply 5m ago". A tap pushes the thread. Web's twin is
- * `apps/web/components/chat/thread-chip.tsx`; the words are chat-core's
- * `threadChipLabel`, so the two read the same.
+ * and "last reply 5m ago". A tap pushes the thread. Web's
+ * `apps/web/components/chat/thread-chip.tsx` became a card with a connector
+ * and "N new" in #4297; this one follows in that issue's mobile slice. The
+ * words are chat-core's `threadChipLabel`, so the two read the same.
  */
 export function ThreadChip({
   summary,

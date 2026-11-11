@@ -114,8 +114,6 @@ export const SERVER_MESSAGE_COPY: Readonly<Record<string, string>> = {
     "You can only delete your own messages.",
   "This message has been deleted and can no longer be reported":
     "That message was deleted.",
-  "Messages in a read-only channel cannot be replied to in-thread":
-    "This channel is read-only.",
   "A message needs content or at least one attachment":
     "Write a message or attach a file.",
   "A private channel must keep at least one member of the chapter. Delete the channel instead.":

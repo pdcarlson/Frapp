@@ -12,6 +12,7 @@ import {
 import {
   applyThreadRealtimeRow,
   backfillThreadReplies,
+  chatFollowedThreadsKey,
   chatThreadKey,
   chatThreadRepliesKey,
   discardThreadReply,
@@ -188,8 +189,15 @@ export function useMessageThread(
   const metaLoaded = !!meta.data;
   useEffect(() => {
     if (!metaLoaded) return;
-    void markThreadRead(api, channelId, rootId).catch(() => undefined);
-  }, [api, channelId, rootId, metaLoaded, newestId]);
+    void markThreadRead(api, channelId, rootId)
+      // The thread card's "2 new" re-reads once the server has the cursor.
+      .then(() =>
+        queryClient.invalidateQueries({
+          queryKey: chatFollowedThreadsKey(channelId),
+        }),
+      )
+      .catch(() => undefined);
+  }, [api, queryClient, channelId, rootId, metaLoaded, newestId]);
 
   // The parent with its reactions and votes folded in, as a cache row is.
   const root = useMemo<ChatMessage | null>(() => {

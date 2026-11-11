@@ -20,8 +20,8 @@ Frapp publishes a **system permissions catalog** — these are the strings the A
 | `roles:manage`        | Create, edit, delete roles; assign roles to members; edit the chapter's pledge classes and any member's class and order number ([`members.md`](members.md#pledge-class-and-order-number)) |
 | `channels:create`     | Create chat channels                                   |
 | `channels:manage`     | Edit/delete channels, pin messages, manage permissions |
-| `announcements:post`  | Post in the #announcements channel                     |
-| `alumni:post`         | Channel marker: names a ROLE_GATED channel alumni may write in (read off the channel's `required_permissions`, not the caller's) |
+| `announcements:post`  | No longer decides who posts (#3722): a channel's who-can-post list does ([chat](chat/README.md#who-can-see-and-post)). Still read once, when the Discord importer creates a read-only channel (its posters start as this permission's holders), until [#4286](https://github.com/pdcarlson/Frapp/issues/4286) removes it |
+| `alumni:post`         | No longer read (#3722): a channel is alumni-writable when its posting list names the Alumni role ([alumni.md](alumni.md)). Kept until [#4286](https://github.com/pdcarlson/Frapp/issues/4286) |
 | `billing:view`        | View subscription and invoice status                   |
 | `billing:manage`      | Manage subscription, create member invoices            |
 | `backwork:upload`     | Upload resources to Backwork                           |
@@ -72,7 +72,7 @@ The same resolution backs `GET /v1/users/me/permissions` (the effective-permissi
 
 A permission answers "may this member do X?"; a **lifecycle rule** answers "is this member still an active participant?". The two are enforced independently, and passing the permission check above does not imply a lifecycle rule allows the action.
 
-The only lifecycle rule today is the **Alumni** role (see [`alumni.md`](alumni.md)), which blocks study-hour accrual, event check-in, and posting outside `#alumni` / DMs. It is deliberately not modelled as a permission: the seeded Alumni permission set is `members:view` (exactly what active members hold) plus `alumni:post`, which is a *channel* marker rather than a capability — the posting gate tests it against the channel's `required_permissions`, not the caller's — so widening or narrowing the caller's permissions could not express the rule — and the study controller's `members:view` requirement is satisfied by alumni, which is why the rule is enforced in the domain services rather than in `PermissionsGuard`. Holding the role is what restricts, so a member who still needs to act operationally should not carry it.
+The only lifecycle rule today is the **Alumni** role (see [`alumni.md`](alumni.md)), which blocks study-hour accrual, event check-in, and posting outside `#alumni` / DMs. It is deliberately not modelled as a permission: the seeded Alumni permission set is `members:view` (exactly what active members hold) plus `alumni:post`, which was a *channel* marker rather than a capability and since #3722 is replaced by naming the Alumni role on a channel's posting list — so widening or narrowing the caller's permissions could not express the rule — and the study controller's `members:view` requirement is satisfied by alumni, which is why the rule is enforced in the domain services rather than in `PermissionsGuard`. Holding the role is what restricts, so a member who still needs to act operationally should not carry it.
 
 ## Role Lifecycle
 

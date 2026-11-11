@@ -27,6 +27,7 @@ import type {
   ChatMessageAction,
   ChatMessageAttachment,
   ChatMessageBookmark,
+  ChatMessageImportantSeen,
   ChatMessageLink,
   ChatLinkMemberState,
   ChatThreadFollow,
@@ -67,6 +68,7 @@ import type {
   StudyGeofence,
   StudySession,
   Task,
+  TaskSubtask,
   PledgeClass,
   EventType,
   PledgeClassAssignment,
@@ -145,6 +147,7 @@ export interface Database {
       message_reactions: TableDefinition<MessageReaction>;
       channel_read_receipts: TableDefinition<ChannelReadReceipt>;
       chat_message_bookmarks: TableDefinition<ChatMessageBookmark>;
+      chat_message_important_seen: TableDefinition<ChatMessageImportantSeen>;
       chat_message_links: TableDefinition<ChatMessageLink>;
       chat_link_member_states: TableDefinition<ChatLinkMemberState>;
       activity_item_reads: TableDefinition<ActivityItemRead>;
@@ -163,6 +166,7 @@ export interface Database {
       financial_transactions: TableDefinition<FinancialTransaction>;
       service_entries: TableDefinition<ServiceEntry>;
       tasks: TableDefinition<Task>;
+      task_subtasks: TableDefinition<TaskSubtask>;
       chapter_pledge_classes: TableDefinition<PledgeClass>;
       event_types: TableDefinition<EventType>;
       rush_candidates: TableDefinition<RushCandidate>;
@@ -468,6 +472,21 @@ export interface Database {
           p_category_ids: string[];
         };
         Returns: ChatChannelCategory[];
+      };
+      /**
+       * `20261111233000` (#3722). Sets a category's who-can-see and
+       * who-can-post lists, and the same lists on every channel in it that
+       * matched the category before, in one transaction. Returns the ids of
+       * the channels that followed.
+       */
+      set_chat_category_access: {
+        Args: {
+          p_chapter_id: string;
+          p_category_id: string;
+          p_who_can_see: string[] | null;
+          p_who_can_post: string[] | null;
+        };
+        Returns: string[];
       };
       leave_group_dm: {
         Args: {

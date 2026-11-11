@@ -558,16 +558,28 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
         },
         {
           assigned_to_self: true,
+          has_due_time: false,
           has_point_reward: false,
+          has_subtasks: false,
           posted_to_chat: true,
         },
       ],
       [
         'an assigned task with points',
-        { result: { assignee_id: 'u2', created_by: 'u1', point_reward: 5 } },
+        {
+          body: { subtasks: ['Mop the floor'] },
+          result: {
+            assignee_id: 'u2',
+            created_by: 'u1',
+            point_reward: 5,
+            due_at: '2026-11-14T22:00:00.000Z',
+          },
+        },
         {
           assigned_to_self: false,
+          has_due_time: true,
           has_point_reward: true,
+          has_subtasks: true,
           posted_to_chat: false,
         },
       ],

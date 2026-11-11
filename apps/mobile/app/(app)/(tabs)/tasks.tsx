@@ -35,6 +35,8 @@ import {
 import { InlineNote } from "@/components/inline-note";
 import { TaskRow, TaskRowSkeleton } from "@/components/tasks/task-row";
 import { TaskDetailSheet } from "@/components/tasks/task-detail-sheet";
+import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
+import type { TaskEditTarget } from "@/lib/tasks/create-task";
 import { UNDO_WINDOW_MS, UndoBar } from "@/components/tasks/undo-bar";
 import { PointsSummaryCard } from "@/components/tasks/points-summary-card";
 import {
@@ -149,8 +151,7 @@ export default function TasksScreen() {
   const chapterQuery = useCurrentChapter();
   const enabledModules = (
     chapterQuery.data as
-      | { enabled_modules?: Record<string, boolean> }
-      | undefined
+      { enabled_modules?: Record<string, boolean> } | undefined
   )?.enabled_modules;
   const eventsOn =
     chapterQuery.isSuccess && isModuleEnabled(enabledModules, "events");
@@ -376,6 +377,34 @@ export default function TasksScreen() {
     return memberLabel(match?.display_name, createdBy);
   }, [createdBy, rosterQuery.data, viewerUserId]);
 
+  // An officer's edit (#4296): the New task sheet, opened on the task. One
+  // sheet per task edited, mounted for the edit and gone once it closes, so
+  // its fields always start from the task as it stands.
+  const editRef = useRef<BottomSheetModal>(null);
+  const [editing, setEditing] = useState<TaskEditTarget | null>(null);
+  useEffect(() => {
+    if (editing) editRef.current?.present();
+  }, [editing]);
+  const startEdit =
+    canManageTasks &&
+    openRow &&
+    !openRow.pointsAwarded &&
+    openRow.assigneeId &&
+    openRow.dueDay
+      ? () => {
+          sheetRef.current?.dismiss();
+          setEditing({
+            id: openRow.id,
+            title: openRow.title,
+            assigneeId: openRow.assigneeId!,
+            dueDay: openRow.dueDay!,
+            dueAt: openRow.dueAt,
+            pointReward: openRow.pointReward,
+            storedStatus: openRow.storedStatus,
+          });
+        }
+      : undefined;
+
   const canToggle = useCallback(
     (row: TaskRowModel) =>
       pendingId !== row.id &&
@@ -525,8 +554,19 @@ export default function TasksScreen() {
               }
             : undefined
         }
+        onEdit={startEdit}
         onDismiss={() => setOpenId(null)}
       />
+
+      {editing ? (
+        <NewTaskSheet
+          key={editing.id}
+          ref={editRef}
+          now={now}
+          editing={editing}
+          onClosed={() => setEditing(null)}
+        />
+      ) : null}
     </View>
   );
 }
