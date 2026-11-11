@@ -1,4 +1,17 @@
-import { expect, test } from "@playwright/test";
+import { expect, test as base } from "@playwright/test";
+
+/*
+ * Browse the dev server as `localhost`, the hostname it was started with. Next
+ * serves its client code only to that hostname and ones in `allowedDevOrigins`,
+ * so from `127.0.0.1` (the config's `baseURL`) the page never hydrates: it is
+ * server-rendered HTML whose permission read never runs, and the stubs below
+ * would never be asked.
+ */
+const test = base.extend({
+  baseURL: async ({ baseURL }, provide) => {
+    await provide(baseURL?.replace("//127.0.0.1", "//localhost"));
+  },
+});
 
 /**
  * The sidebar fits a 1024×768 window, asserted rather than eyeballed (#2946).
