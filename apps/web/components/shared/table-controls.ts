@@ -57,11 +57,6 @@ import { FOCUS_RING } from "@/components/ui/focus";
  * spec gives it are the only difference between the pair below, so the fill,
  * border, type and focus recipe are written once.
  */
-const NATIVE_SELECT = [
-  "rounded-md border border-input bg-surface-1 px-3.5 text-sm text-foreground transition-colors",
-  FOCUS_RING,
-  "disabled:cursor-not-allowed disabled:border-border disabled:text-disabled",
-].join(" ");
 
 /**
  * A toolbar row's height: 36 to a mouse, 44 to a finger. The same rule the
@@ -72,27 +67,12 @@ const NATIVE_SELECT = [
 export const dashboardToolbarHeightClassName = "h-9 pointer-coarse:h-11";
 const TOOLBAR_HEIGHT = dashboardToolbarHeightClassName;
 
-/** A dashboard filter toolbar's `<select>`, per `components.md` §4. */
-export const dashboardFilterSelectClassName = `${TOOLBAR_HEIGHT} ${NATIVE_SELECT}`;
-
 /** The search field in a toolbar row, leaving room for its glyph. */
 export const dashboardToolbarSearchClassName = `${TOOLBAR_HEIGHT} pl-9`;
 
 /** The search glyph inside {@link dashboardToolbarSearchClassName}, centred at either height. */
 export const dashboardToolbarSearchGlyphClassName =
   "pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground";
-
-/**
- * A `<select>` that is a **form field** rather than filter chrome, at §4's
- * field height: 40 to a mouse, 44 to a finger, the same as `Input`.
- *
- * §4's toolbar height (36, 44 to a finger) is a carve-out for filter rows specifically — "secondary chrome
- * sitting above the thing it filters" — and reading it as the height for every
- * native select gets the same defect §4 was written about, one context over:
- * the event editor put two of these in a `sm:grid-cols-2` beside `Input`s,
- * so one form row rendered at two heights.
- */
-export const dashboardFormSelectClassName = `h-10 pointer-coarse:h-11 ${NATIVE_SELECT}`;
 
 /**
  * A native checkbox drawn as `components.md` § Checkbox: `.signet-checkbox`

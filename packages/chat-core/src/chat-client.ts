@@ -29,6 +29,7 @@ import {
 import {
   CHAT_MESSAGE_KINDS,
   chatMessagesKey,
+  messageCacheKey,
   optimisticMessage,
   reactionActionType,
   type ChannelCache,
@@ -163,6 +164,21 @@ function patchCache(
 ): void {
   qc.setQueryData<ChannelCache>(chatMessagesKey(channelId), (prev) =>
     updater(prev ?? emptyCache()),
+  );
+}
+
+/**
+ * `patchCache` for a row write: the thread's reply cache when the row is a
+ * thread reply (`threadRootId`, #4034), else the channel's.
+ */
+function patchRowCache(
+  qc: QueryClient,
+  target: { channelId: string; threadRootId?: string | null },
+  updater: (cache: ChannelCache) => ChannelCache,
+): void {
+  qc.setQueryData<ChannelCache>(
+    messageCacheKey(target.channelId, target.threadRootId),
+    (prev) => updater(prev ?? emptyCache()),
   );
 }
 
@@ -975,8 +991,17 @@ export async function hydrateOutboxIntoCache(
   });
 }
 
-export interface ReactArgs {
+/**
+ * Where a row write lands: `threadRootId` names the thread when the message is
+ * one of its replies, which live in the thread's own cache (#4034). Omitted
+ * (or `null`) for a channel message, a thread's parent included.
+ */
+interface RowTarget {
   channelId: string;
+  threadRootId?: string | null;
+}
+
+export interface ReactArgs extends RowTarget {
   messageId: string;
   emoji: string;
 }
@@ -989,7 +1014,7 @@ export async function react(
   if (!ctx.userId) return;
   const actionType = reactionActionType(args.emoji);
 
-  patchCache(ctx.queryClient, args.channelId, (cache) =>
+  patchRowCache(ctx.queryClient, args, (cache) =>
     toggleReactionLocal(cache, args.messageId, actionType, ctx.userId!, true),
   );
 
@@ -1006,12 +1031,12 @@ export async function react(
     }
     const action = (data as { action?: RawChatMessageAction }).action;
     if (action) {
-      patchCache(ctx.queryClient, args.channelId, (cache) =>
+      patchRowCache(ctx.queryClient, args, (cache) =>
         applyReactionInsert(cache, action),
       );
     }
   } catch (err) {
-    patchCache(ctx.queryClient, args.channelId, (cache) =>
+    patchRowCache(ctx.queryClient, args, (cache) =>
       toggleReactionLocal(
         cache,
         args.messageId,
@@ -1042,7 +1067,7 @@ export async function unreact(
   if (!ctx.userId) return;
   const actionType = reactionActionType(args.emoji);
 
-  patchCache(ctx.queryClient, args.channelId, (cache) =>
+  patchRowCache(ctx.queryClient, args, (cache) =>
     toggleReactionLocal(cache, args.messageId, actionType, ctx.userId!, false),
   );
 
@@ -1057,7 +1082,7 @@ export async function unreact(
       });
     if (error) throw error;
   } catch (err) {
-    patchCache(ctx.queryClient, args.channelId, (cache) =>
+    patchRowCache(ctx.queryClient, args, (cache) =>
       toggleReactionLocal(cache, args.messageId, actionType, ctx.userId!, true),
     );
     const { message } = classifyChatError(err);
@@ -1081,7 +1106,7 @@ export async function unreact(
  */
 async function writeHeldRow(
   ctx: ChatActionContext,
-  channelId: string,
+  target: RowTarget,
   title: string,
   request: () => Promise<{
     data?: unknown;
@@ -1093,7 +1118,7 @@ async function writeHeldRow(
   try {
     const { data, error, response } = await request();
     if (error || !data) throwApiError(error, response, title);
-    patchCache(ctx.queryClient, channelId, (cache) =>
+    patchRowCache(ctx.queryClient, target, (cache) =>
       mergeHeldServerRow(cache, data as RawChatMessage),
     );
   } catch (err) {
@@ -1104,8 +1129,7 @@ async function writeHeldRow(
   }
 }
 
-export interface EditMessageArgs {
-  channelId: string;
+export interface EditMessageArgs extends RowTarget {
   messageId: string;
   content: string;
 }
@@ -1126,7 +1150,7 @@ export async function editMessage(
   ctx: ChatActionContext,
   args: EditMessageArgs,
 ): Promise<void> {
-  await writeHeldRow(ctx, args.channelId, "Couldn't edit message", () =>
+  await writeHeldRow(ctx, args, "Couldn't edit message", () =>
     ctx.apiClient.PATCH("/v1/channels/messages/{messageId}", {
       params: { path: { messageId: args.messageId } },
       body: { content: args.content },
@@ -1134,8 +1158,7 @@ export async function editMessage(
   );
 }
 
-export interface SetMessageFlagArgs {
-  channelId: string;
+export interface SetMessageFlagArgs extends RowTarget {
   messageId: string;
   /** The flag to put on, or `null` to take the message's flag off. */
   flag: ChatMessageFlag | null;
@@ -1160,7 +1183,7 @@ export async function setMessageFlag(
   const flag = args.flag;
   await writeHeldRow(
     ctx,
-    args.channelId,
+    args,
     flag ? "Couldn't flag message" : "Couldn't remove flag",
     () =>
       flag
@@ -1172,8 +1195,7 @@ export async function setMessageFlag(
   );
 }
 
-export interface DeleteMessageArgs {
-  channelId: string;
+export interface DeleteMessageArgs extends RowTarget {
   messageId: string;
 }
 
@@ -1191,15 +1213,14 @@ export async function deleteMessage(
   ctx: ChatActionContext,
   args: DeleteMessageArgs,
 ): Promise<void> {
-  await writeHeldRow(ctx, args.channelId, "Couldn't delete message", () =>
+  await writeHeldRow(ctx, args, "Couldn't delete message", () =>
     ctx.apiClient.DELETE("/v1/channels/messages/{messageId}", {
       params: { path: { messageId: args.messageId } },
     }),
   );
 }
 
-export interface ClosePollArgs {
-  channelId: string;
+export interface ClosePollArgs extends RowTarget {
   messageId: string;
 }
 
@@ -1218,7 +1239,7 @@ export async function closePoll(
   ctx: ChatActionContext,
   args: ClosePollArgs,
 ): Promise<void> {
-  await writeHeldRow(ctx, args.channelId, "Couldn't close poll", () =>
+  await writeHeldRow(ctx, args, "Couldn't close poll", () =>
     ctx.apiClient.POST("/v1/polls/{messageId}/close", {
       params: { path: { messageId: args.messageId } },
     }),
@@ -1310,8 +1331,7 @@ export async function closeDetachedPoll(
   return row;
 }
 
-export interface CardActionArgs {
-  channelId: string;
+export interface CardActionArgs extends RowTarget {
   messageId: string;
   actionType: string;
   payload?: Record<string, unknown>;
@@ -1352,7 +1372,7 @@ export async function actOnCard(
     };
     if (body.action) {
       const action = body.action;
-      patchCache(ctx.queryClient, args.channelId, (cache) =>
+      patchRowCache(ctx.queryClient, args, (cache) =>
         body.updated
           ? applyActionUpdate(cache, action)
           : applyReactionInsert(cache, action),

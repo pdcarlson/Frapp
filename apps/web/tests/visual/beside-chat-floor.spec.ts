@@ -47,23 +47,20 @@ const DEMO_PASSWORD = "DemoShowcase!2026";
 const DEMO_CHAPTER_ID = "c0ffee00-0000-4000-8000-000000000001";
 
 /**
- * Every dashboard route but `/chat` (chat alone, no tool page), plus the tool
- * surfaces `routes.ts` reaches only as a tab or not at all: Roles is a Settings
- * tab, Alumni a Directory tab, and Chat admin opens from Settings.
+ * Every dashboard route but `/chat` (chat alone, no tool page) and `/settings`,
+ * plus the tool surfaces `routes.ts` reaches only as a tab or not at all:
+ * Alumni is a Directory tab, and Chat admin opens from Settings. Chapter
+ * settings never sits beside chat: it takes the whole width and hides chat
+ * while it is open (#4068 decision 3, `isFullWidthToolRoute`), so there is no
+ * beside-chat floor to hold there; `dashboard-shell.spec.tsx` pins that.
  */
 const TOOL_ROUTES = [
-  ...DASHBOARD_ROUTES.filter((route) => route !== "/chat"),
+  ...DASHBOARD_ROUTES.filter(
+    (route) => route !== "/chat" && route !== "/settings",
+  ),
   "/chat-admin",
-  "/settings?tab=roles",
   "/members?tab=alumni",
 ];
-
-/**
- * Still on viewport breakpoints until the Settings rebuild (#3856, open as
- * #4106) lands: Settings' 200px rail sits beside its content at `lg`, so a
- * populated Settings overflows beside chat. Expected to fail signed in.
- */
-const NOT_YET_CONVERTED = new Set(["/settings", "/settings?tab=roles"]);
 
 function escapeRegExp(text: string) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -141,10 +138,6 @@ test.describe("tool pages hold the 375px floor beside chat", () => {
 
   for (const route of TOOL_ROUTES) {
     test(`${route} does not scroll sideways beside chat`, async ({ page }) => {
-      test.fixme(
-        SIGN_IN && NOT_YET_CONVERTED.has(route),
-        "Settings still follows the window until #3856 lands (#4033)",
-      );
       await page.goto(route);
       await page.waitForLoadState("networkidle");
       // The same guard as the viewport suite: a redirect to `/sign-in`

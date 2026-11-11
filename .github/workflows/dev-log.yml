@@ -1,0 +1,91 @@
+name: Dev log
+
+# Posts to the team's Dev log channel in Frapp (#4145), so everyone working on
+# the project can see what is being worked on and what merged:
+#
+#   - an issue gets the `in-progress` label  → "<who> started: <title>", with
+#     its area labels and who else is in progress in the same area
+#   - a pull request merges to `main`        → "Merged: <title> by <who>"
+#   - once a day                              → what merged in the last day and
+#     what is in progress now
+#
+#   - a Deploy production run finishes        → "Update pushed: please
+#     update", with the What's new entry the API now serves, so the channel and
+#     the app say the same thing. Only a run that shipped posts: never a dry
+#     run, a migrations-only run, or a failed deploy. It posts when the whole
+#     run ends, which is hours after the web went live when the run also
+#     builds for the stores.
+#     Read from outside that workflow on purpose: nothing here can fail, slow
+#     or gate the only path to production.
+#
+# What each post says, what is skipped (bots, `routine-state`, `incident`), and
+# the exit codes: scripts/ci/dev-log.mjs. The API side, and why the token can
+# reach one channel only: apps/api/src/application/services/dev-log.service.ts.
+#
+# Until `DEV_LOG_TOKEN` exists in the `automation` environment, and while the
+# API answers 404 (the Dev log is off there), the script says so and exits 0,
+# so this is green before it is set up and after the token is revoked
+# (docs/internal/environment/ENV_REFERENCE.md § Dev log channel).
+#
+# A merge is read off the `push` to `main`, not `pull_request: closed`: a
+# pull_request run's ref is `refs/pull/N/merge`, which the `automation`
+# environment's `main`-only rule refuses, so it could never read the secret.
+# `issues`, `schedule` and `workflow_run` run as `main`.
+#
+# No concurrency group: each event is its own post, and the API drops a repeat
+# of the same event, so a re-run posts nothing twice.
+
+on:
+  issues:
+    types: [labeled]
+  push:
+    branches: [main]
+  workflow_run:
+    workflows: ["Deploy production"]
+    types: [completed]
+    branches: [main]
+  schedule:
+    # 13:07 UTC daily: the start of the US working day, when the summary is
+    # read before anyone picks up work.
+    - cron: "7 13 * * *"
+  # A manual run posts today's summary (the scheduled one is then a repeat).
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+  # The finished Deploy production run's jobs.
+  actions: read
+
+jobs:
+  post:
+    name: Post to the Dev log channel
+    # Skips the runner for every label but the one that means "work started".
+    if: github.event_name != 'issues' || github.event.label.name == 'in-progress'
+    runs-on: ubuntu-latest
+    # `DEV_LOG_TOKEN` is an `automation` secret: `main` only, no reviewers.
+    environment:
+      name: automation
+      deployment: false
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: ./.github/actions/node-setup
+        with:
+          install: none
+
+      # Dependency-free (global fetch), so no npm ci. Titles and names reach
+      # the script through the event file and the API, never through shell.
+      - name: Post
+        env:
+          DEV_LOG_EVENT: ${{ github.event_name == 'issues' && 'work_started' || github.event_name == 'push' && 'pr_merged' || github.event_name == 'workflow_run' && 'update_pushed' || 'daily_summary' }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          DEV_LOG_TOKEN: ${{ secrets.DEV_LOG_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/ci/dev-log.mjs

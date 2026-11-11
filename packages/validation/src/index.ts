@@ -1005,6 +1005,9 @@ export {
   CHAT_BACKGROUND_KEYS,
   CHAT_BACKGROUND_LABELS,
   CHAT_BACKGROUND_PHOTO,
+  CHAT_BACKGROUND_PHOTO_NOTE,
+  channelTakesBackground,
+  chatBackgroundDefaultLabel,
   isChatBackgroundKey,
 } from "./chat-backgrounds";
 export type {

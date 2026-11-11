@@ -73,14 +73,14 @@ describe("the Settings page keeps unsaved drafts across tab switches", () => {
     const user = userEvent.setup();
     render(<SettingsPage />);
 
-    await user.click(screen.getByRole("tab", { name: /accent/i }));
+    await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
     const hex = screen.getByLabelText(/accent color hex value/i);
     await user.clear(hex);
     await user.type(hex, "#5AA9E6");
 
     await user.click(screen.getByRole("tab", { name: /^modules$/i }));
     expect(screen.queryByLabelText(/accent color hex value/i)).toBeNull();
-    await user.click(screen.getByRole("tab", { name: /accent/i }));
+    await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
 
     expect(screen.getByLabelText(/accent color hex value/i)).toHaveValue(
       "#5AA9E6",
@@ -104,7 +104,7 @@ describe("the Settings page keeps unsaved drafts across tab switches", () => {
     const user = userEvent.setup();
     render(<SettingsPage />);
 
-    await user.click(screen.getByRole("tab", { name: /accent/i }));
+    await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
     const org = screen.getByRole("group", {
       name: "Your organization's colors",
     });
@@ -118,7 +118,7 @@ describe("the Settings page keeps unsaved drafts across tab switches", () => {
     expect(purple).toHaveAttribute("aria-pressed", "true");
 
     await user.click(screen.getByRole("tab", { name: /^modules$/i }));
-    await user.click(screen.getByRole("tab", { name: /accent/i }));
+    await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
     expect(screen.getByLabelText(/accent color hex value/i)).toHaveValue(
       "#4F2683",
     );

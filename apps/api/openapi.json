@@ -12359,6 +12359,62 @@
           "Client policy"
         ]
       }
+    },
+    "/v1/integrations/dev-log": {
+      "post": {
+        "operationId": "DevLogController_post_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DevLogPostDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevLogPostResultDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong token."
+          },
+          "404": {
+            "description": "The Dev log is not configured on this deployment."
+          },
+          "409": {
+            "description": "The configured channel is gone or archived."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Post to the team's Dev log channel (GitHub Actions only)",
+        "tags": [
+          "Integrations"
+        ]
+      }
     }
   },
   "info": {
@@ -19532,6 +19588,150 @@
         "required": [
           "update_required",
           "update_url"
+        ]
+      },
+      "DevLogItemDto": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "number",
+            "description": "The issue or pull request number."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "actor": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "areas": {
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "number",
+          "title"
+        ]
+      },
+      "DevLogMergeCountDto": {
+        "type": "object",
+        "properties": {
+          "actor": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "count": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "actor",
+          "count"
+        ]
+      },
+      "DevLogPostDto": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "type": "string",
+            "enum": [
+              "work_started",
+              "pr_merged",
+              "daily_summary",
+              "update_pushed"
+            ]
+          },
+          "number": {
+            "type": "number",
+            "description": "work_started: the issue number. pr_merged: the pull request number."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 300,
+            "description": "work_started, pr_merged: the issue or pull request title."
+          },
+          "actor": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "work_started, pr_merged: who did it, as a name or a login."
+          },
+          "areas": {
+            "maxItems": 10,
+            "description": "work_started: the issue's area labels, without the prefix.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "also_in_area": {
+            "maxItems": 5,
+            "description": "work_started: other issues in progress that share one of the areas.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DevLogItemDto"
+            }
+          },
+          "date": {
+            "type": "string",
+            "example": "2026-11-11",
+            "description": "daily_summary: the day it is posted. One post per day."
+          },
+          "merged_total": {
+            "type": "number",
+            "description": "daily_summary: how many pull requests merged in the last day."
+          },
+          "merged_by": {
+            "maxItems": 30,
+            "description": "daily_summary: that total, per person.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DevLogMergeCountDto"
+            }
+          },
+          "in_progress": {
+            "maxItems": 60,
+            "description": "daily_summary: issues in progress now.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DevLogItemDto"
+            }
+          },
+          "run_id": {
+            "type": "string",
+            "description": "work_started: the id of the workflow run that saw the label. update_pushed: the id of the Deploy production run that shipped."
+          },
+          "store_build": {
+            "type": "boolean",
+            "description": "update_pushed: that run also uploaded a store build for testers."
+          },
+          "ota_update": {
+            "type": "boolean",
+            "description": "update_pushed: that run also published an over-the-air update."
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "DevLogPostResultDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "posted",
+              "duplicate"
+            ],
+            "description": "duplicate: this event was already posted (the same label event, pull request, day or deploy run), so nothing was written."
+          }
+        },
+        "required": [
+          "status"
         ]
       }
     }
