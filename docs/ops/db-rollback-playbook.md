@@ -3464,9 +3464,9 @@ alter table public.chat_notification_preferences
         or (scope = 'kind' and scope_kind is not null and scope_id is null));
 ```
 
-## Rollback message flags (20261111150000)
+## Rollback message flags (20261111170000)
 
-* **Migration**: `20261111150000_chat_message_flags.sql`
+* **Migration**: `20261111170000_chat_message_flags.sql`
 
 Three columns on `chat_messages`, `flag`, `flagged_by` and `flagged_at`, with the `chat_messages_flag_known` and `chat_messages_flag_cleared` checks and the `chat_messages_flagged_by_fk` foreign key. No existing row changed.
 

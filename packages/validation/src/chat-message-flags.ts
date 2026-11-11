@@ -3,7 +3,7 @@
  * sent. One flag per message. `important` draws the row in danger red and
  * raises the channel's "important message" strip; the rest are a quiet
  * caption. The set is fixed, not chapter-defined, and the CHECK constraint in
- * `supabase/migrations/20261111150000_chat_message_flags.sql` mirrors it.
+ * `supabase/migrations/20261111170000_chat_message_flags.sql` mirrors it.
  *
  * The flag is stored on the message itself, beside who added it and when, so
  * a later reader (Ask, in Paul's words of 2026-11-11, "pre-classification")
