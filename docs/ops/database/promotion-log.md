@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-10: Recruitment permissions backfill (#4070)
+
+### 20261111010000_rush_permissions_backfill.sql
+
+- **Purpose**: A data backfill, no schema change. The rush routes now require `rush:view`, `rush:add`, `rush:vote` and `rush:bid` on top of `members:view`. This appends the six member recruitment keys (`rush:view`, `rush:add`, `rush:notes`, `rush:vote`, `rush:view_results`, `rush:bid`) to `roles.permissions`, and to `chapter_custom_roles.capabilities`, for every role that holds `members:view`, does not hold `*`, and belongs to a chapter whose `enabled_modules.rush` is not false. Nobody loses what they could do before. The rule is [`spec/behavior/rush.md` § Permissions](../../../spec/behavior/rush.md#permissions).
+- **Checks**: After `db push`, `select count(*) from roles r join chapters c on c.id = r.chapter_id where 'members:view' = any (r.permissions) and not ('*' = any (r.permissions)) and coalesce(c.enabled_modules ->> 'rush', 'true') <> 'false' and not (r.permissions @> array['rush:view','rush:add','rush:notes','rush:vote','rush:view_results','rush:bid']);` returns `0`, and the same query against `chapter_custom_roles` (`capabilities` for `permissions`, without the `*` clause) returns `0`.
+- **Promoter notes**: **This changes production role data.** Ship it before, or with, the API from the same PR; a deploy applies migrations first. The newer API against an unmigrated database refuses every rush route for everyone but a `*` holder. The older API ignores the new strings. The roles matrix shows the new keys as granted on the backfilled roles. It is safe to run twice: only missing keys are appended and a role holding all six is skipped. A role created, or a chapter that turns the module on, between the migration and the API deploy is not covered; grant the keys on the roles matrix. Row count is one update per qualifying role, with no lock beyond the row locks. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-recruitment-permissions-backfill-20261111010000) § Rollback Recruitment permissions backfill.
+
 ## 2026-11-10: Always formal channel lock (#3787)
 
 ### 20261111000000_chat_channels_display_locked.sql
