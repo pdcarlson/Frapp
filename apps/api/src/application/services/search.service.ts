@@ -485,10 +485,9 @@ export class SearchService {
     const member = await this.members.findByUserAndChapter(userId, chapterId);
     if (!member) return [];
 
-    // Resolve through RbacService so custom-role capabilities count here
-    // exactly as they do for chat channel access (bridge model,
-    // spec/behavior/rbac.md) — search must never disagree with chat about
-    // which role-gated channels a member can read.
+    // Resolve through RbacService, as chat channel access does: search must
+    // never disagree with chat about which role-gated channels a member can
+    // read.
     const permissions = await this.rbacService.getEffectivePermissions(
       chapterId,
       userId,

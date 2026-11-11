@@ -24,10 +24,6 @@ interface RolePermissionRow {
   permissions: string[];
 }
 
-interface CustomRoleCapabilityRow {
-  capabilities: string[];
-}
-
 @Injectable()
 export class PermissionsGuard implements CanActivate {
   constructor(
@@ -58,9 +54,8 @@ export class PermissionsGuard implements CanActivate {
     const chapterId = request.chapterId;
 
     const roleIds = member?.role_ids ?? [];
-    const customRoleIds = member?.custom_role_ids ?? [];
 
-    if (!roleIds.length && !customRoleIds.length) {
+    if (!roleIds.length) {
       throw new ForbiddenException('No roles assigned');
     }
 
@@ -71,52 +66,36 @@ export class PermissionsGuard implements CanActivate {
       throw new ForbiddenException('No active chapter');
     }
 
-    // Both role models are chapter-scoped, so filter on the active chapter as
-    // well as the id list: a stale or cross-chapter id left on the member row
-    // then resolves to no row instead of silently granting that other
-    // chapter's permissions here.
-    const [rolesResult, customRolesResult] = (await Promise.all([
-      roleIds.length
-        ? this.supabase
-            .from('roles')
-            .select('permissions')
-            .in('id', roleIds)
-            .eq('chapter_id', chapterId)
-        : Promise.resolve({ data: [], error: null }),
-      customRoleIds.length
-        ? this.supabase
-            .from('chapter_custom_roles')
-            .select('capabilities')
-            .in('id', customRoleIds)
-            .eq('chapter_id', chapterId)
-        : Promise.resolve({ data: [], error: null }),
-    ])) as [
-      { data: RolePermissionRow[] | null; error: PostgrestError | null },
-      { data: CustomRoleCapabilityRow[] | null; error: PostgrestError | null },
-    ];
+    // Filter on the active chapter as well as the id list: a stale or
+    // cross-chapter id left on the member row then resolves to no row instead
+    // of silently granting that other chapter's permissions here.
+    const { data: roles, error } = (await this.supabase
+      .from('roles')
+      .select('permissions')
+      .in('id', roleIds)
+      .eq('chapter_id', chapterId)) as {
+      data: RolePermissionRow[] | null;
+      error: PostgrestError | null;
+    };
 
     // A failed lookup must surface as a server fault, not a permission
     // denial — otherwise a transient DB error reads as a terminal 403. A 503,
     // like the auth and chapter guards' (#3143), so clients retry it. The
     // query error rides along as the cause, so Sentry gets its code and the
     // query's stack (#1264); the client still gets only the generic body.
-    const lookupError = rolesResult.error ?? customRolesResult.error;
-    if (lookupError) {
+    if (error) {
       throw lookupUnavailable(
         'Failed to resolve permissions',
-        new SupabaseQueryError(lookupError),
+        new SupabaseQueryError(error),
       );
     }
-    const roles = rolesResult.data;
-    const customRoles = customRolesResult.data;
 
-    if (!roles?.length && !customRoles?.length) {
+    if (!roles?.length) {
       throw new ForbiddenException('No valid roles found');
     }
 
     const userPermissions = flattenPermissionSets(
-      (roles ?? []).map((role) => role.permissions),
-      (customRoles ?? []).map((row) => row.capabilities),
+      roles.map((role) => role.permissions),
     );
 
     if (userPermissions.has(WILDCARD)) {

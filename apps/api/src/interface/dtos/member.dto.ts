@@ -11,14 +11,12 @@ export class UpdateMemberRolesDto {
 
   @ApiPropertyOptional({
     type: [String],
+    deprecated: true,
     description:
-      'Assigned chapter_custom_roles ids. Omit to leave custom-role assignment unchanged; an empty array clears it.',
+      'Deprecated. Custom roles were folded into ordinary roles (#4075); assign them through role_ids. Still accepted, as [], so a web page loaded before that deploy can save; a non-empty list means the page read the member before the fold, so its role_ids would drop the folded roles, and the save is refused with 409.',
   })
   @IsOptional()
   @IsArray()
-  // UUID-validated (unlike role_ids, which is validated in memory against the
-  // chapter's roles): a malformed id would otherwise hit the uuid PK filter
-  // and surface as a 500 instead of a 400.
   @IsUUID(undefined, { each: true })
   custom_role_ids?: string[];
 }

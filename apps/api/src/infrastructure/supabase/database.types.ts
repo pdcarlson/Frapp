@@ -10,7 +10,6 @@ import type {
   ChapterActivationMilestone,
   ChapterAuditLog,
   ChapterCustomField,
-  ChapterCustomRole,
   ChapterDirectoryEntry,
   ChapterDirectoryRequest,
   ChapterDocument,
@@ -172,7 +171,6 @@ export interface Database {
       chapter_document_folders: TableDefinition<ChapterDocumentFolder>;
       chapter_document_stars: TableDefinition<ChapterDocumentStar>;
       semester_archives: TableDefinition<SemesterArchive>;
-      chapter_custom_roles: TableDefinition<ChapterCustomRole>;
       stripe_webhook_events: TableDefinition<StripeWebhookEvent>;
       chapter_audit_log: TableDefinition<ChapterAuditLog>;
       chapter_custom_fields: TableDefinition<ChapterCustomField>;

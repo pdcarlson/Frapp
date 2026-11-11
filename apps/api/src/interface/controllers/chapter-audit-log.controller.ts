@@ -24,8 +24,8 @@ import type { Member } from '#domain/entities/member.entity';
 @ApiTags('Chapter Audit Log')
 @ApiBearerAuth()
 @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
-// Same base gate as the other settings/trust surfaces (custom-role,
-// custom-field, chapter-config): `chapter-config:view`. The route additionally
+// Same base gate as the other settings/trust surfaces (custom-field,
+// chapter-config): `chapter-config:view`. The route additionally
 // requires `members:view` below — PermissionsGuard merges class-level and
 // route-level @RequirePermissions as an AND, not an OR — because this log now
 // carries member_removed entries (actor + target user id), and a custom role
