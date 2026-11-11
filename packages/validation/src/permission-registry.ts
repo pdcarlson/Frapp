@@ -132,14 +132,14 @@ export const PERMISSION_REGISTRY: readonly PermissionDefinition[] = [
     "alumni:post",
     "chat",
     "Post in the alumni channel",
-    "Marks a channel alumni can write in. The Alumni role holds it.",
+    "No longer used. Who can post in a channel is set in that channel's settings.",
   ),
 
   chapterPermission(
     "announcements:post",
     "announcements",
     "Post announcements",
-    "Post in the announcements channel.",
+    "No longer used. Who can post in a channel is set in that channel's settings.",
   ),
 
   chapterPermission(

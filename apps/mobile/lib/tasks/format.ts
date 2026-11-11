@@ -21,6 +21,8 @@
 
 import {
   dayDelta,
+  formatDueLabel,
+  formatDueOn,
   parseInstant,
   parseInstantOrBareLocalNoon,
 } from "@repo/formatting";
@@ -68,6 +70,10 @@ export function formatDueSubtitle(
   now: Date,
 ): string | null {
   if (!dueDate) return null;
+  // A task due at a time of day carries its `due_at` instant (#4003): the
+  // shared countdown names the time ("Due today at 5 PM") and counts an
+  // overdue one by the minute or hour.
+  if (isTimed(dueDate)) return formatDueLabel(dueDate, now);
   const due = parseTaskDate(dueDate);
   if (!due) return null;
 
@@ -92,8 +98,14 @@ export function formatDueSubtitle(
  */
 export function formatDueDate(dueDate: string | null): string | null {
   if (!dueDate) return null;
+  if (isTimed(dueDate)) return formatDueOn(dueDate);
   const due = parseTaskDate(dueDate);
   return due ? dueOn(due) : null;
+}
+
+/** A full timestamp (a task's `due_at`) rather than a bare `YYYY-MM-DD`. */
+function isTimed(value: string): boolean {
+  return value.length > 10;
 }
 
 function dueOn(due: Date): string {

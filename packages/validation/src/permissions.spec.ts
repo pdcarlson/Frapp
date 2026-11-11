@@ -144,15 +144,11 @@ describe("member access (#3670)", () => {
     { id: "president", permissions: ["*"] },
     { id: "cabinet", permissions: ["channels:read:cabinet"] },
     { id: "bare" },
-  ];
-  const custom = [
-    { id: "rush", capabilities: ["members:view"] },
-    // The guard drops `*` from custom roles, so it grants nothing here.
-    { id: "wild", capabilities: ["*"] },
+    { id: "rush", permissions: ["members:view", "rush:view"] },
   ];
 
-  test("live roles with members:view or *, custom roles with members:view", () => {
-    expect([...memberAccessRoleIds(roles, custom)].sort()).toEqual([
+  test("roles with members:view or *", () => {
+    expect([...memberAccessRoleIds(roles)].sort()).toEqual([
       "member",
       "president",
       "rush",
@@ -161,7 +157,7 @@ describe("member access (#3670)", () => {
   });
 
   test("flags only the change that takes access away", () => {
-    const ids = memberAccessRoleIds(roles, custom);
+    const ids = memberAccessRoleIds(roles);
     expect(removesMemberAccess(["member", "cabinet"], ["cabinet"], ids)).toBe(true);
     expect(removesMemberAccess(["member"], ["cabinet", "rush"], ids)).toBe(false);
     expect(removesMemberAccess(["cabinet"], [], ids)).toBe(false);

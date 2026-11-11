@@ -421,6 +421,9 @@ describe("Placeholder rows sit on their real row's frame", () => {
           storedStatus: "TODO",
           displayStatus: "TODO",
           dueDate: null,
+          dueDay: null,
+          dueAt: null,
+          assigneeId: null,
           completedAt: null,
           confirmedAt: null,
           pointReward: 5,
@@ -429,6 +432,7 @@ describe("Placeholder rows sit on their real row's frame", () => {
           description: null,
           createdBy: null,
           isOverdue: false,
+          subtasks: [],
         }}
         now={new Date("2026-11-05T12:00:00Z")}
       />,

@@ -68,6 +68,8 @@ const permissionsRef: { current: string[] } = {
 };
 
 vi.mock("@repo/hooks", () => ({
+  useCalendarTasks: () => ({ items: [], hasMine: false, hasAssigned: false }),
+  useChapterRoster: () => ({ data: [] }),
   useCurrentChapter: () => ({
     data: { subscription_status: "active", past_due_since: null },
     isPending: false,

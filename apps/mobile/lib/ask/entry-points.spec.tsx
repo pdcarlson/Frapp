@@ -76,9 +76,14 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useCurrentUser: () => empty,
     useTasks: () => empty,
     useViewerUserId: () => "viewer-1",
+    // s06's Calendar draws the member's tasks (#4144); none here.
+    useCalendarTasks: () => ({ items: [], hasMine: false, hasAssigned: false }),
     useOwnAvatarTint: () => null,
     useMemberDisplayNames: () => ({
-      avatarTintFor: () => null, byId: {}, nameFor: () => null }),
+      avatarTintFor: () => null,
+      byId: {},
+      nameFor: () => null,
+    }),
     useChapterRoster: () => empty,
     useMentionRoles: () => empty,
     useChapterSetupChecklist: () => ({

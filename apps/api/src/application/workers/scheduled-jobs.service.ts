@@ -86,6 +86,15 @@ const EVENT_REMINDER_LEAD_MINUTES = 30;
 const DUE_SOON_LEAD_DAYS = 1;
 
 /**
+ * How long before a timed task's `due_at` its assignee is reminded (#4003).
+ * Long enough to still do a chore ("Take out the trash" due at 9 PM nudges at
+ * 7), short enough that the push is about today. The day-based lead above
+ * doesn't fit a task due at 9 AM, which a 9 AM daily sweep would remind about
+ * as it falls due.
+ */
+const TIMED_TASK_DUE_SOON_LEAD_MINUTES = 120;
+
+/**
  * How recently an entity must have *become* overdue to still earn a
  * notification.
  *
@@ -201,6 +210,16 @@ export class ScheduledJobsService {
   @ReportedCron(CronExpression.EVERY_DAY_AT_9AM)
   async handleTaskReminderSweep(): Promise<void> {
     await this.sweepTaskReminders(new Date());
+  }
+
+  /**
+   * Five-minutely, like the event reminder: a task due at a time of day is
+   * reminded a couple of hours ahead and flagged overdue at that minute, which
+   * a daily tick can't do.
+   */
+  @ReportedCron(CronExpression.EVERY_5_MINUTES)
+  async handleTimedTaskReminderSweep(): Promise<void> {
+    await this.sweepTimedTaskReminders(new Date());
   }
 
   /**
@@ -804,6 +823,72 @@ export class ScheduledJobsService {
 
     if (sent > 0) this.logger.log(`task sweep: sent ${sent} reminders`);
     return { sent };
+  }
+
+  /**
+   * The same two reminders for tasks due at a time of day (#4003): due soon
+   * inside {@link TIMED_TASK_DUE_SOON_LEAD_MINUTES} of `due_at`, overdue once
+   * it has passed, within the same lookback. Claimed under the same keys as
+   * the daily sweep's (`DUE_SOON` / `OVERDUE` on `due_date`), so each still
+   * goes out at most once per task.
+   */
+  async sweepTimedTaskReminders(now: Date): Promise<{ sent: number }> {
+    const tasks = await this.repository.findIncompleteTimedTasksDueBetween(
+      addDays(now, -OVERDUE_LOOKBACK_DAYS),
+      new Date(now.getTime() + TIMED_TASK_DUE_SOON_LEAD_MINUTES * 60_000),
+    );
+
+    let sent = 0;
+    for (const task of tasks) {
+      try {
+        const dueAt = task.due_at ? new Date(task.due_at) : null;
+        if (!dueAt || Number.isNaN(dueAt.getTime())) continue;
+        if (dueAt.getTime() > now.getTime()) {
+          if (await this.notifyTimedTaskDueSoon(task, dueAt, now)) sent += 1;
+        } else if (await this.notifyTaskOverdue(task)) {
+          sent += 1;
+        }
+      } catch (error) {
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'task-sweep-task',
+          message: `timed task sweep: task ${task.id} failed`,
+          error,
+        });
+      }
+    }
+
+    if (sent > 0) this.logger.log(`timed task sweep: sent ${sent} reminders`);
+    return { sent };
+  }
+
+  /**
+   * How far out the task actually is, like {@link startsInPhrase}: a task
+   * created inside its own window is closer than the lead.
+   */
+  private dueInPhrase(dueAt: Date, now: Date): string {
+    const minutes = Math.round((dueAt.getTime() - now.getTime()) / 60_000);
+    if (minutes < 1) return 'Due now';
+    if (minutes < 60) {
+      return `Due in ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
+    }
+    const hours = Math.round(minutes / 60);
+    return `Due in ${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+  }
+
+  private notifyTimedTaskDueSoon(task: SweepTaskRow, dueAt: Date, now: Date) {
+    return this.claimAndNotify({
+      chapterId: task.chapter_id,
+      entityType: 'TASK',
+      entityId: task.id,
+      threshold: 'DUE_SOON',
+      dueDate: task.due_date,
+      recipients: [task.assignee_id],
+      title: task.title,
+      body: this.dueInPhrase(dueAt, now),
+      category: 'tasks',
+      target: { screen: 'tasks', taskId: task.id },
+    });
   }
 
   /**

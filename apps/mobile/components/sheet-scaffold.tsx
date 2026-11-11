@@ -349,8 +349,10 @@ export function SheetPrimaryButton({
 
 /**
  * Which visit of a sheet is on screen. Any sheet whose save can settle after
- * the member closed it uses it; search for the hook to find them. Sheets that
- * still dismiss unguarded after a write are tracked in #3405.
+ * the member closed it uses it, and so does one that something outside it can
+ * dismiss whether or not it is up (the message menu, when its message is
+ * deleted: #3795); search for the hook to find them. Sheets that still dismiss
+ * unguarded after a write are tracked in #3405.
  *
  * Wire `onAnimate` and call `markClosed` first thing in the modal's
  * `onDismiss`. Then:
@@ -368,25 +370,54 @@ export function SheetPrimaryButton({
  *   doesn't close it under them.
  * - `isOpen()` tells a write that settles whether any visit is on screen, for
  *   a message that matters only to a member who is looking.
+ * - `willPresent()`, called just before `present()`, covers the frames before
+ *   the first `onAnimate`, when the sheet is neither up nor safe to dismiss:
+ *   a `dismiss()` then is held and runs as the sheet starts to move. Only a
+ *   sheet dismissed from outside needs it (the message menu, whose message
+ *   can be deleted as it opens: #3795); a Cancel inside a sheet can't be
+ *   pressed before the sheet is drawn.
  */
 export function useSheetVisit(ref: ForwardedRef<BottomSheetModal>) {
   const presented = useRef(false);
   const closes = useRef(0);
+  const opening = useRef(false);
+  const held = useRef(false);
 
-  const onAnimate = useCallback((_from: number, to: number) => {
-    if (to >= 0) presented.current = true;
-  }, []);
-
-  const markClosed = useCallback(() => {
-    presented.current = false;
-    closes.current += 1;
-  }, []);
-
-  const dismiss = useCallback(() => {
-    if (!presented.current) return;
+  const dismissNow = useCallback(() => {
     if (typeof ref === "function" || !ref?.current) return;
     ref.current.dismiss();
   }, [ref]);
+
+  const onAnimate = useCallback(
+    (_from: number, to: number) => {
+      if (to < 0) return;
+      presented.current = true;
+      if (!opening.current) return;
+      opening.current = false;
+      if (!held.current) return;
+      held.current = false;
+      dismissNow();
+    },
+    [dismissNow],
+  );
+
+  const markClosed = useCallback(() => {
+    presented.current = false;
+    opening.current = false;
+    held.current = false;
+    closes.current += 1;
+  }, []);
+
+  const willPresent = useCallback(() => {
+    if (presented.current) return;
+    opening.current = true;
+    held.current = false;
+  }, []);
+
+  const dismiss = useCallback(() => {
+    if (presented.current) dismissNow();
+    else if (opening.current) held.current = true;
+  }, [dismissNow]);
 
   const isOpen = useCallback(() => presented.current, []);
   const visit = useCallback(() => closes.current, []);
@@ -395,7 +426,15 @@ export function useSheetVisit(ref: ForwardedRef<BottomSheetModal>) {
     [],
   );
 
-  return { onAnimate, markClosed, dismiss, isOpen, visit, isSameVisit };
+  return {
+    onAnimate,
+    markClosed,
+    willPresent,
+    dismiss,
+    isOpen,
+    visit,
+    isSameVisit,
+  };
 }
 
 /**

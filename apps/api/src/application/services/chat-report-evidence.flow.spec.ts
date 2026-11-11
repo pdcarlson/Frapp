@@ -194,6 +194,7 @@ describe('Reported attachment evidence, end to end (#2481)', () => {
       unused,
       unused,
       unused,
+      unused,
       attachments,
       unused,
       unused,

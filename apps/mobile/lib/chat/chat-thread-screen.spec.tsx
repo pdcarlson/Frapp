@@ -95,6 +95,14 @@ vi.mock("react-native", async () => {
 // The reaction tick. Mocked so a spec can count it: one per tap, never per
 // render.
 const selectionHaptic = vi.hoisted(() => vi.fn());
+// The Important strip (#4186): the hook is the server's answer, driven here.
+const importantState = vi.hoisted(() => ({
+  total: 0,
+  next: null as null | { id: string },
+  markSeen: vi.fn(),
+  reportVisible: vi.fn(),
+  dismiss: vi.fn(),
+}));
 /** The actions sheet's `dismiss`, as the screen calls it through its ref. */
 const dismissSheet = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/haptics", () => ({
@@ -461,6 +469,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useRequestChatUploadUrl: () => requestUploadUrl,
   useChannelNotificationPreferences: () => ({ data: NOTIFICATION_PREFS }),
   useSetChannelNotificationLevel: () => setNotificationLevel,
+  useImportantMessages: () => importantState,
   useBlockedUserIds: () => BLOCK_LIST,
   // The viewer reads the message's images through the row's query.
   useMessageAttachments: () => ({ data: [IMAGE] }),
@@ -2470,6 +2479,64 @@ describe("chat thread flags from the actions sheet", () => {
       expect.any(String),
     );
     alert.mockRestore();
+    act(() => tree.unmount());
+  });
+});
+
+describe("chat thread Important strip (#4186)", () => {
+  afterEach(() => {
+    importantState.total = 0;
+    importantState.next = null;
+    importantState.markSeen.mockClear();
+    importantState.dismiss.mockClear();
+    importantState.reportVisible.mockClear();
+  });
+
+  it("draws no strip while nothing is unseen", () => {
+    const tree = render();
+    expect(
+      tree.root.findAll((node) => node.props.testID === "important-strip"),
+    ).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("reports the rows on screen, never a tombstone, through one callback", () => {
+    const tree = render();
+    const [list] = lists(tree);
+    const report = list!.props.onViewableItemsChanged;
+    expect(list!.props.viewabilityConfig).toEqual({
+      itemVisiblePercentThreshold: 50,
+    });
+
+    act(() =>
+      report({
+        viewableItems: [
+          { item: { message: { id: "m1" }, visibility: "visible" } },
+          { item: { message: { id: "m2" }, visibility: "tombstone" } },
+          { item: null },
+        ],
+      }),
+    );
+    expect(importantState.reportVisible).toHaveBeenLastCalledWith(["m1"]);
+
+    // FlatList throws when this changes after mount.
+    rerender(tree);
+    expect(lists(tree)[0]!.props.onViewableItemsChanged).toBe(report);
+    act(() => tree.unmount());
+  });
+
+  it("shows the count, and Show marks the oldest seen", () => {
+    importantState.total = 2;
+    importantState.next = { id: "m1" };
+    const tree = render();
+
+    act(() =>
+      byLabel(tree, "2 important messages. Jump to the oldest").props.onPress(),
+    );
+    expect(importantState.markSeen).toHaveBeenCalledWith(["m1"]);
+
+    act(() => byLabel(tree, "Dismiss important messages").props.onPress());
+    expect(importantState.dismiss).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
   });
 });

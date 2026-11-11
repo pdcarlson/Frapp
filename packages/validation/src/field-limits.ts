@@ -16,9 +16,8 @@
  */
 
 /**
- * Chapter-authored role names and labels (`roles.name`,
- * `chapter_custom_roles.label`). Both columns are unconstrained `text` and both
- * render in member lists and the role picker, so the cap is about keeping an
+ * Chapter-authored role names (`roles.name`). The column is unconstrained
+ * `text` and renders in member lists and the role picker, so the cap is about keeping an
  * unbounded string out of every surface that displays it. Far above any real
  * role name — the longest in staging is 14 characters.
  */
@@ -114,6 +113,18 @@ export const DOCUMENT_TITLE_MAX_LENGTH = 255;
  * longer one; the form and the one-liner say so first.
  */
 export const TASK_TITLE_MAX_LENGTH = 255;
+
+/**
+ * A subtask's title (`task_subtasks.title`, #4003): one step of a chore,
+ * "Wipe the counters". The table's check refuses a longer one.
+ */
+export const TASK_SUBTASK_TITLE_MAX_LENGTH = 200;
+
+/**
+ * Subtasks on one task. A checklist longer than this is a project, not a
+ * chore, and a list that size stops reading at a glance.
+ */
+export const TASK_SUBTASKS_MAX = 20;
 
 /**
  * What a member says they did on a service entry

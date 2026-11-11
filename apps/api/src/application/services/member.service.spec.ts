@@ -16,7 +16,6 @@ import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface'
 import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
 import { SystemRoleKeys } from '#domain/constants/permissions';
 import { CustomFieldService } from './custom-field.service';
-import { CustomRoleService } from './custom-role.service';
 import { RbacService } from './rbac.service';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
 import {
@@ -42,7 +41,6 @@ describe('MemberService', () => {
     findFieldIdsByVisibility: jest.Mock;
     findValuesByFieldIds: jest.Mock;
   };
-  let mockCustomRoleService: { findByIds: jest.Mock };
   let mockRbacService: {
     getEffectivePermissions: jest.Mock;
     flagIfPresidentRemoved: jest.Mock;
@@ -100,9 +98,6 @@ describe('MemberService', () => {
       findFieldIdsByVisibility: jest.fn().mockResolvedValue([]),
       findValuesByFieldIds: jest.fn().mockResolvedValue([]),
     };
-    mockCustomRoleService = {
-      findByIds: jest.fn().mockResolvedValue([]),
-    };
     mockRbacService = {
       getEffectivePermissions: jest.fn().mockResolvedValue([]),
       flagIfPresidentRemoved: jest.fn().mockResolvedValue(undefined),
@@ -139,7 +134,6 @@ describe('MemberService', () => {
         { provide: USER_REPOSITORY, useValue: mockUserRepo },
         { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
         { provide: CustomFieldService, useValue: mockCustomFieldService },
-        { provide: CustomRoleService, useValue: mockCustomRoleService },
         { provide: RbacService, useValue: mockRbacService },
         { provide: ChapterAuditLogService, useValue: mockAuditLogService },
         { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
@@ -640,89 +634,9 @@ describe('MemberService', () => {
       expect(result).toEqual(updated);
     });
 
-    it('persists custom_role_ids after validating them against the chapter', async () => {
-      mockRepo.findById.mockResolvedValue(existingMember);
-      mockRoleRepo.findByChapter.mockResolvedValue([presidentRole, memberRole]);
-      mockCustomRoleService.findByIds.mockResolvedValue([
-        {
-          id: 'custom-1',
-          chapter_id: 'chapter-1',
-          key: 'historian',
-          label: 'Historian',
-          rank: 9,
-          capabilities: ['chapter_docs:upload'],
-          core: false,
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
-      ]);
-      const updated = {
-        ...existingMember,
-        custom_role_ids: ['custom-1'],
-      };
-      mockRepo.update.mockResolvedValue(updated);
-
-      const result = await service.updateRoles(
-        'member-1',
-        ['role-1'],
-        'chapter-1',
-        ['custom-1'],
-      );
-
-      expect(mockCustomRoleService.findByIds).toHaveBeenCalledWith(
-        ['custom-1'],
-        'chapter-1',
-      );
-      expect(mockRepo.update).toHaveBeenCalledWith('member-1', {
-        role_ids: ['role-1'],
-        custom_role_ids: ['custom-1'],
-      });
-      expect(result).toEqual(updated);
-    });
-
-    it('rejects custom role IDs that do not belong to the chapter', async () => {
-      mockRepo.findById.mockResolvedValue(existingMember);
-      mockRoleRepo.findByChapter.mockResolvedValue([presidentRole, memberRole]);
-      // The chapter-scoped lookup drops the foreign/fabricated id.
-      mockCustomRoleService.findByIds.mockResolvedValue([]);
-
-      await expect(
-        service.updateRoles('member-1', ['role-1'], 'chapter-1', [
-          'custom-foreign',
-        ]),
-      ).rejects.toThrow(BadRequestException);
-      expect(mockRepo.update).not.toHaveBeenCalled();
-    });
-
-    it('tolerates a stale custom role id the member already holds', async () => {
-      // Deleting a custom role leaves its id on member rows by design (spec
-      // fail-safe); a client echoing that leftover back must not have its
-      // whole save rejected.
-      mockRepo.findById.mockResolvedValue({
-        ...existingMember,
-        custom_role_ids: ['custom-deleted'],
-      });
-      mockRoleRepo.findByChapter.mockResolvedValue([presidentRole, memberRole]);
-      mockCustomRoleService.findByIds.mockResolvedValue([]);
-      const updated = {
-        ...existingMember,
-        custom_role_ids: ['custom-deleted'],
-      };
-      mockRepo.update.mockResolvedValue(updated);
-
-      await service.updateRoles('member-1', ['role-1'], 'chapter-1', [
-        'custom-deleted',
-      ]);
-
-      expect(mockRepo.update).toHaveBeenCalledWith('member-1', {
-        role_ids: ['role-1'],
-        custom_role_ids: ['custom-deleted'],
-      });
-    });
-
     it('tolerates a stale live-role id the member already holds', async () => {
       // Deleting a live role leaves its id on member rows (spec Edge Cases);
-      // echoing it back must not fail the save — mirrors the custom-role rule.
+      // echoing it back must not fail the save.
       mockRepo.findById.mockResolvedValue({
         ...existingMember,
         role_ids: ['role-1', 'role-deleted'],
@@ -827,22 +741,7 @@ describe('MemberService', () => {
       expect(mockRepo.update).not.toHaveBeenCalled();
     });
 
-    it('clears custom roles with an explicit empty array without a lookup', async () => {
-      mockRepo.findById.mockResolvedValue(existingMember);
-      mockRoleRepo.findByChapter.mockResolvedValue([presidentRole, memberRole]);
-      const updated = { ...existingMember, custom_role_ids: [] };
-      mockRepo.update.mockResolvedValue(updated);
-
-      await service.updateRoles('member-1', ['role-1'], 'chapter-1', []);
-
-      expect(mockCustomRoleService.findByIds).not.toHaveBeenCalled();
-      expect(mockRepo.update).toHaveBeenCalledWith('member-1', {
-        role_ids: ['role-1'],
-        custom_role_ids: [],
-      });
-    });
-
-    it('leaves custom_role_ids unchanged when the field is omitted', async () => {
+    it('writes role_ids and never custom_role_ids (#4075)', async () => {
       mockRepo.findById.mockResolvedValue(existingMember);
       mockRoleRepo.findByChapter.mockResolvedValue([presidentRole, memberRole]);
       const updated = { ...existingMember };
@@ -850,7 +749,6 @@ describe('MemberService', () => {
 
       await service.updateRoles('member-1', ['role-1'], 'chapter-1');
 
-      expect(mockCustomRoleService.findByIds).not.toHaveBeenCalled();
       expect(mockRepo.update).toHaveBeenCalledWith('member-1', {
         role_ids: ['role-1'],
       });
