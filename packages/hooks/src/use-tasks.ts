@@ -407,6 +407,40 @@ export function useCreateTask() {
   });
 }
 
+/** The fields an officer can change on a task after it is made (#4296). */
+export type TaskEdit = components["schemas"]["UpdateTaskDto"];
+
+/**
+ * An officer edits a task (#4296). Send only the fields that changed; `null`
+ * clears the description, the time or the points. Not optimistic: a new
+ * assignee resets the task's status on the server, and the edit forms wait
+ * on the save before they close, so the row changes once, to what was saved.
+ */
+export function useUpdateTask() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["tasks", "update-task"],
+    mutationFn: async ({ id, body }: { id: string; body: TaskEdit }) => {
+      const { error } = await client.PATCH("/v1/tasks/{id}", {
+        params: { path: { id } },
+        body,
+      });
+      if (error) throw error;
+    },
+    // Returned, so a form awaiting the save closes onto the saved values
+    // rather than the old ones for a refetch's length.
+    onSettled: (_data, _error, { id }) =>
+      Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: taskKeys.detail(chapterId, id),
+        }),
+        queryClient.invalidateQueries({ queryKey: taskKeys.lists(chapterId) }),
+      ]),
+  });
+}
+
 /**
  * Move a task through its lifecycle, optimistically.
  *

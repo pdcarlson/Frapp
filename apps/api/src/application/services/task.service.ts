@@ -89,6 +89,16 @@ export interface CreateTaskInput {
   client_message_id?: string;
 }
 
+/** An officer's edit (#4296). Omitted fields stay as they are. */
+export interface UpdateTaskInput {
+  title?: string | null;
+  description?: string | null;
+  assignee_id?: string | null;
+  due_date?: string | null;
+  due_at?: string | null;
+  point_reward?: number | null;
+}
+
 /**
  * The created task row, plus whether the chat card that accompanies it was
  * posted.
@@ -316,48 +326,7 @@ export class TaskService {
       }
     }
 
-    // Assigning yourself a task is a note to self; the push would only echo
-    // the tap that made it.
-    if (input.assignee_id !== input.created_by) {
-      const [assigner, creatorZone] = await Promise.all([
-        this.displayNameOf(input.created_by),
-        // Only a timed task's push names a clock, so only it needs a zone.
-        task.due_at
-          ? this.notificationService
-              .timeZoneFor(input.created_by)
-              .catch(() => null)
-          : null,
-      ]);
-      // A task with a time reads in the assignee's zone; one who has not
-      // reported a zone reads it in the creator's, labelled (push-copy.ts).
-      const body = (timeZone: string | null, labelZone: boolean) =>
-        joinFacts(
-          assigner ? `From ${assigner}` : 'Assigned to you',
-          `due ${formatTaskDue(task.due_date, task.due_at, { timeZone, labelZone })}`,
-          task.point_reward ? `${task.point_reward} points` : null,
-        );
-      await this.safeNotifyUser(
-        input.assignee_id,
-        input.chapter_id,
-        {
-          // Named for the task, like every task push (notifications.md § What
-          // a push says): "Book the venue" / "From Paul · due Fri, Nov 14".
-          title: task.title,
-          body: body(creatorZone, true),
-          personalize: (recipient) => ({
-            title: task.title,
-            body: recipient.timeZone
-              ? body(recipient.timeZone, false)
-              : body(creatorZone, true),
-          }),
-          priority: 'NORMAL',
-          category: 'tasks',
-          data: { target: { screen: 'tasks', taskId: task.id } },
-        },
-        task.id,
-        'assignment',
-      );
-    }
+    await this.notifyAssigned(task, input.created_by);
 
     // The `/task` slash command asks us to surface an interactive assignment
     // card in chat. The card is server-originated (a client cannot forge
@@ -378,6 +347,167 @@ export class TaskService {
     return cardPosted === undefined
       ? task
       : { ...task, card_posted: cardPosted };
+  }
+
+  /**
+   * Tell a task's assignee it is theirs, named for the task with who assigned
+   * it, when it is due and its points. Assigning yourself a task is a note to
+   * self, so the push would only echo the tap that made it.
+   */
+  private async notifyAssigned(task: Task, assignerId: string): Promise<void> {
+    if (task.assignee_id === assignerId) return;
+    const [assigner, creatorZone] = await Promise.all([
+      this.displayNameOf(assignerId),
+      // Only a timed task's push names a clock, so only it needs a zone.
+      task.due_at
+        ? this.notificationService.timeZoneFor(assignerId).catch(() => null)
+        : null,
+    ]);
+    // A task with a time reads in the assignee's zone; one who has not
+    // reported a zone reads it in the assigner's, labelled (push-copy.ts).
+    const body = (timeZone: string | null, labelZone: boolean) =>
+      joinFacts(
+        assigner ? `From ${assigner}` : 'Assigned to you',
+        `due ${formatTaskDue(task.due_date, task.due_at, { timeZone, labelZone })}`,
+        task.point_reward ? `${task.point_reward} points` : null,
+      );
+    await this.safeNotifyUser(
+      task.assignee_id,
+      task.chapter_id,
+      {
+        // Named for the task, like every task push (notifications.md § What
+        // a push says): "Book the venue" / "From Paul · due Fri, Nov 14".
+        title: task.title,
+        body: body(creatorZone, true),
+        personalize: (recipient) => ({
+          title: task.title,
+          body: recipient.timeZone
+            ? body(recipient.timeZone, false)
+            : body(creatorZone, true),
+        }),
+        priority: 'NORMAL',
+        category: 'tasks',
+        data: { target: { screen: 'tasks', taskId: task.id } },
+      },
+      task.id,
+      'assignment',
+    );
+  }
+
+  /**
+   * An officer edits a task after it is made (#4296): title, description,
+   * assignee, due date and time, points. Any of them, until the task is
+   * confirmed; after that its points are paid on the task as it stood, so it
+   * is a record and stays as it is.
+   *
+   * - A new assignee starts the task over: back to To do with no completion
+   *   and no send-back, since the old assignee's progress isn't theirs. They
+   *   get the assignment push. It is also how a single-officer chapter clears
+   *   a completed self-assigned task no one may confirm (#1340).
+   * - A new due date or time, or a new assignee, releases the task's reminder
+   *   claims so the sweeps remind about it afresh.
+   * - The chat card posted at creation is a snapshot and stays as posted; its
+   *   live status line reads the task.
+   */
+  async update(
+    id: string,
+    chapterId: string,
+    actorId: string,
+    input: UpdateTaskInput,
+  ): Promise<TaskView> {
+    const task = await this.taskRepo.findById(id, chapterId);
+    if (!task) throw new NotFoundException('Task not found');
+    if (task.points_awarded) {
+      throw new BadRequestException(
+        'This task is already confirmed, so it can no longer change',
+      );
+    }
+
+    const patch: Partial<Task> = {};
+
+    if (input.title !== undefined) {
+      const title = input.title?.trim();
+      if (!title) throw new BadRequestException('A task needs a title');
+      if (title !== task.title) patch.title = title;
+    }
+
+    if (input.description !== undefined) {
+      const description = input.description?.trim() || null;
+      if (description !== task.description) patch.description = description;
+    }
+
+    if (input.point_reward !== undefined) {
+      const reward = input.point_reward || null;
+      if (reward !== task.point_reward) patch.point_reward = reward;
+    }
+
+    if (input.due_date !== undefined || input.due_at !== undefined) {
+      if (input.due_date === null) {
+        throw new BadRequestException('A task needs a due date');
+      }
+      const dueDate = (input.due_date ?? task.due_date).slice(0, 10);
+      if (Number.isNaN(new Date(dueDate).getTime())) {
+        throw new BadRequestException('due_date must be a valid date');
+      }
+      const dueAt = this.checkedDueAt(
+        dueDate,
+        input.due_at === undefined ? task.due_at : input.due_at,
+      );
+      const storedAt = task.due_at ? new Date(task.due_at).toISOString() : null;
+      if (dueDate !== task.due_date.slice(0, 10)) patch.due_date = dueDate;
+      if (dueAt !== storedAt) patch.due_at = dueAt;
+    }
+
+    const reassigned =
+      input.assignee_id !== undefined && input.assignee_id !== task.assignee_id;
+    if (reassigned) {
+      if (!input.assignee_id) {
+        throw new BadRequestException('A task needs an assignee');
+      }
+      const member = await this.memberRepo.findByUserAndChapter(
+        input.assignee_id,
+        chapterId,
+      );
+      if (!member) {
+        throw new BadRequestException(
+          'Assignee must be a member of the chapter',
+        );
+      }
+      patch.assignee_id = input.assignee_id;
+      patch.status = TaskStatus.TODO;
+      patch.completed_at = null;
+      patch.sent_back_at = null;
+    }
+
+    if (Object.keys(patch).length === 0) return this.findById(id, chapterId);
+
+    const updated = await this.taskRepo.updateUnconfirmed(id, chapterId, patch);
+    if (!updated) {
+      throw new BadRequestException(
+        'This task was confirmed while you were editing it, so it can no longer change',
+      );
+    }
+
+    if (reassigned || 'due_date' in patch || 'due_at' in patch) {
+      try {
+        await this.taskRepo.releaseReminderClaims(chapterId, id);
+      } catch (error) {
+        // The edit stands; the cost is a reminder that may not go out again.
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'task-edit-release-reminders',
+          message: `reminder release failed for task ${id}`,
+          error,
+        });
+      }
+    }
+
+    if (reassigned) await this.notifyAssigned(updated, actorId);
+
+    const [view] = await this.withSubtasks(chapterId, [
+      toDisplayStatus(updated),
+    ]);
+    return view;
   }
 
   /**

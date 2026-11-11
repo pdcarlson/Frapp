@@ -71,6 +71,7 @@ export function TaskSubtaskList({
   canEdit,
   closed,
   gate,
+  embedded = false,
 }: {
   taskId: string;
   subtasks: TaskSubtask[];
@@ -81,6 +82,8 @@ export function TaskSubtaskList({
   /** Confirmed: nothing moves. */
   closed: boolean;
   gate: SubscriptionGate;
+  /** Inside a form under its own label (#4296): no rule above it. */
+  embedded?: boolean;
 }) {
   const setDone = useSetSubtaskDone();
   const addSubtask = useAddSubtask();
@@ -112,8 +115,8 @@ export function TaskSubtaskList({
 
   const writable = !closed;
   return (
-    <div className="mt-2 border-t border-border pt-2">
-      <ul aria-label="Subtasks" className="space-y-0.5">
+    <div className={embedded ? undefined : "mt-2 border-t border-border pt-2"}>
+      <ul aria-label="Subtasks" className="space-y-0.5 empty:hidden">
         {subtasks.map((subtask) => {
           const done = subtask.done_at !== null;
           return (

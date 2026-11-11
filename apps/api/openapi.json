@@ -8902,6 +8902,53 @@
           "Tasks"
         ]
       },
+      "patch": {
+        "operationId": "TaskController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTaskDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Edit a task: title, description, assignee, due date and time, points (#4296). Refused once confirmed.",
+        "tags": [
+          "Tasks"
+        ]
+      },
       "delete": {
         "operationId": "TaskController_delete_v1",
         "parameters": [
@@ -18421,6 +18468,37 @@
           "sent_back_at",
           "created_at"
         ]
+      },
+      "UpdateTaskDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "assignee_id": {
+            "type": "string",
+            "description": "User ID of the new assignee. A new assignee starts the task over: it goes back to To do and they are notified."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date (YYYY-MM-DD)"
+          },
+          "due_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "The moment the task is due, or null to take its time off. Send it with `due_date`: the pair must agree, as on create."
+          },
+          "point_reward": {
+            "type": "number",
+            "nullable": true
+          }
+        }
       },
       "UpdateTaskStatusDto": {
         "type": "object",

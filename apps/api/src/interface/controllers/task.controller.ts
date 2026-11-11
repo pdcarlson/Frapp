@@ -36,6 +36,7 @@ import {
   CreateTaskResponseDto,
   CreateTaskSubtaskDto,
   TaskSubtaskDto,
+  UpdateTaskDto,
   UpdateTaskSubtaskDto,
   UpdateTaskStatusDto,
   RejectTaskCompletionDto,
@@ -124,6 +125,21 @@ export class TaskController {
       channel_id: dto.channel_id,
       client_message_id: dto.client_message_id,
     });
+  }
+
+  @Patch(':id')
+  @RequirePermissions(SystemPermissions.TASKS_MANAGE)
+  @ApiOperation({
+    summary:
+      'Edit a task: title, description, assignee, due date and time, points (#4296). Refused once confirmed.',
+  })
+  async update(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateTaskDto,
+  ) {
+    return this.taskService.update(id, chapterId, userId, dto);
   }
 
   @Patch(':id/status')

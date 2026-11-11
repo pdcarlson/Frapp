@@ -2648,7 +2648,8 @@ export interface paths {
         delete: operations["TaskController_delete_v1"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Edit a task: title, description, assignee, due date and time, points (#4296). Refused once confirmed. */
+        patch: operations["TaskController_update_v1"];
         trace?: never;
     };
     "/v1/tasks/{id}/status": {
@@ -5849,6 +5850,20 @@ export interface components {
             created_at: string;
             /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the task row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
             card_posted?: boolean;
+        };
+        UpdateTaskDto: {
+            title?: string;
+            description?: string | null;
+            /** @description User ID of the new assignee. A new assignee starts the task over: it goes back to To do and they are notified. */
+            assignee_id?: string;
+            /** @description Due date (YYYY-MM-DD) */
+            due_date?: string;
+            /**
+             * Format: date-time
+             * @description The moment the task is due, or null to take its time off. Send it with `due_date`: the pair must agree, as on create.
+             */
+            due_at?: string | null;
+            point_reward?: number | null;
         };
         UpdateTaskStatusDto: {
             /** @enum {string} */
@@ -12894,6 +12909,38 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    TaskController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTaskDto"];
+            };
+        };
         responses: {
             200: {
                 headers: {
