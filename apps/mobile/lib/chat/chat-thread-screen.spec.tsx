@@ -987,6 +987,21 @@ describe("chat thread typing indicator after the block list (#2496)", () => {
   });
 });
 
+describe("chat thread typing broadcasts", () => {
+  it("announces typing only while the box holds text, never for the clear after a send", () => {
+    const emitTyping = vi.fn();
+    channel = channelState({ emitTyping });
+    const tree = render();
+    const composer = () => tree.root.findByType(ChatComposer);
+    act(() => composer().props.onChangeText(""));
+    act(() => composer().props.onChangeText("   "));
+    expect(emitTyping).not.toHaveBeenCalled();
+    act(() => composer().props.onChangeText("on my way"));
+    expect(emitTyping).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+});
+
 describe("chat thread typing line holds its place", () => {
   // Mounting and unmounting in flow between the list and the composer moved
   // every row, and the jump control, by a line each time.

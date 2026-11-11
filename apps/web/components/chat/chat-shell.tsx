@@ -73,6 +73,7 @@ import {
 } from "@repo/hooks";
 import { setChannelLocked, syncLockedChannels } from "@repo/chat-core/density";
 import { typingLabel } from "@repo/chat-core/typing-label";
+import { TypingLine } from "./typing-line";
 import {
   can,
   canAll,
@@ -3243,22 +3244,7 @@ export function ChatShell({
                 />
               </MentionChipTargetsContext.Provider>
             </div>
-            {/*
-          Directly above the composer, where mobile draws it too, naming who is
-          typing the way Discord does ("Winston is typing…"). Always mounted,
-          one caption line tall, so someone starting or stopping typing moves
-          nothing: it used to mount only while someone typed, and every
-          keystroke pause slid the whole timeline up and down a line (Paul,
-          2026-11-11). Not a live region, as it never was: a line that changes
-          with every pause would talk over the channel.
-        */}
-            <p
-              data-testid="typing-line"
-              aria-hidden={typingLine ? undefined : true}
-              className="h-5 shrink-0 truncate px-4 text-caption leading-5 text-muted-foreground"
-            >
-              {typingLine}
-            </p>
+            <TypingLine label={typingLine} />
           </>
         ) : null}
         {activeChannel ? (

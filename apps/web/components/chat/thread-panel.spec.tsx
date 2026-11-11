@@ -242,6 +242,26 @@ describe("ThreadPanel (#3785)", () => {
     expect(screen.getByText("Paul and Shawn are typing…")).toBeInTheDocument();
   });
 
+  it("keeps the typing line's place when nobody types, so the reply box never moves", () => {
+    thread.typingUsers = [];
+    renderPanel();
+    const line = screen.getByTestId("typing-line");
+    expect(line).toBeEmptyDOMElement();
+    expect(line.className).toContain("h-5");
+    expect(line).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("announces typing only while the reply box holds text", async () => {
+    const user = userEvent.setup();
+    thread.emitTyping.mockClear();
+    renderPanel();
+    const box = screen.getByRole("textbox", { name: "Reply in thread" });
+    await user.type(box, "  ");
+    expect(thread.emitTyping).not.toHaveBeenCalled();
+    await user.type(box, "hi");
+    expect(thread.emitTyping).toHaveBeenCalled();
+  });
+
   it("disables the composer offline and says why", () => {
     offline = true;
     renderPanel();

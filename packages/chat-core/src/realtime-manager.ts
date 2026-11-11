@@ -288,6 +288,28 @@ export type ThreadReplyListener = (
   event: "INSERT" | "UPDATE",
 ) => void;
 
+/** How long a typist stays on the line after their last broadcast. */
+const TYPING_TTL_MS = 4000;
+
+/**
+ * A broadcast this recent outlives a message from the same typist. Broadcast
+ * and the message's row reach each client by different paths, so a typist who
+ * sends and starts their next message at once (their throttle reset by their
+ * own copy of the row, `endTyping`) can have that new broadcast land here
+ * before the row it follows. Ending them on the late row would blank the line
+ * for the 3s their throttle then holds while they are typing.
+ */
+const TYPING_FRESH_MS = 500;
+
+/** Drop `userId` from `users` unless their broadcast just arrived; true when dropped. */
+function endTypist(users: Map<string, number>, userId: string): boolean {
+  const expires = users.get(userId);
+  if (expires === undefined) return false;
+  const heardAt = expires - TYPING_TTL_MS;
+  if (Date.now() - heardAt < TYPING_FRESH_MS) return false;
+  return users.delete(userId);
+}
+
 /** The live list in `users`, reusing `previous` while its membership holds. */
 function liveTypists(
   users: Map<string, number>,
@@ -713,11 +735,11 @@ class ChatRealtimeManager {
       const thread = state.threadTyping.get(threadRootId);
       if (!thread) return;
       if (userId === state.typingSelf) thread.lastEmit = 0;
-      if (thread.users.delete(userId)) this.emitStatus();
+      if (endTypist(thread.users, userId)) this.emitStatus();
       return;
     }
     if (userId === state.typingSelf) state.typingLastEmit = 0;
-    if (state.typingUsers.delete(userId)) this.emitStatus();
+    if (endTypist(state.typingUsers, userId)) this.emitStatus();
   }
 
   private threadTypingState(
@@ -1024,7 +1046,7 @@ class ChatRealtimeManager {
       const payload = msg.payload as
         { userId?: string; displayName?: string | null } | undefined;
       if (!payload?.userId) return;
-      state.typingUsers.set(payload.userId, Date.now() + 4000);
+      state.typingUsers.set(payload.userId, Date.now() + TYPING_TTL_MS);
       this.emitStatus();
     });
     channel.on("broadcast", { event: THREAD_TYPING_EVENT }, (msg) => {
@@ -1034,7 +1056,7 @@ class ChatRealtimeManager {
       if (!payload.threadRootId) return;
       this.threadTypingState(state, payload.threadRootId).users.set(
         payload.userId,
-        Date.now() + 4000,
+        Date.now() + TYPING_TTL_MS,
       );
       this.emitStatus();
     });

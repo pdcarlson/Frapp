@@ -1519,9 +1519,20 @@ describe("ChatRealtimeManager — typing list identity (#1004)", () => {
     ch.emitBroadcast("typing", { userId: A, displayName: null });
     ch.emitBroadcast("typing", { userId: B, displayName: null });
     expect(chatRealtime.getTypingUsers("c1")).toEqual([A, B]);
+    vi.advanceTimersByTime(1000);
     insert(ch, A);
     // B is still typing; A's message landed, so A is not.
     expect(chatRealtime.getTypingUsers("c1")).toEqual([B]);
+  });
+
+  test("a broadcast that just beat the message it follows survives the message", () => {
+    // A sent, their own copy of the row reset their throttle, and they started
+    // the next message at once: here that broadcast lands before the row.
+    const ch = joined("c1");
+    ch.emitBroadcast("typing", { userId: A, displayName: null });
+    vi.advanceTimersByTime(100);
+    insert(ch, A);
+    expect(chatRealtime.getTypingUsers("c1")).toEqual([A]);
   });
 
   test("a thread reply ends its sender's typing in that thread only", () => {
@@ -1532,6 +1543,7 @@ describe("ChatRealtimeManager — typing list identity (#1004)", () => {
       displayName: null,
       threadRootId: "root-1",
     });
+    vi.advanceTimersByTime(1000);
     insert(ch, A, { thread_root_id: "root-1" });
     expect(chatRealtime.getTypingUsers("c1", "root-1")).toEqual([]);
     expect(chatRealtime.getTypingUsers("c1")).toEqual([A]);
@@ -1550,6 +1562,17 @@ describe("ChatRealtimeManager — typing list identity (#1004)", () => {
     // Someone else's message does not reset it.
     insert(ch, B);
     chatRealtime.emitTyping("c1", A);
+    expect(ch.send).toHaveBeenCalledTimes(2);
+  });
+
+  test("the viewer's own thread reply resets that thread's throttle", () => {
+    const ch = joined("c1");
+    ch.send.mockClear();
+    chatRealtime.emitTyping("c1", A, undefined, "root-1");
+    chatRealtime.emitTyping("c1", A, undefined, "root-1");
+    expect(ch.send).toHaveBeenCalledTimes(1);
+    insert(ch, A, { thread_root_id: "root-1" });
+    chatRealtime.emitTyping("c1", A, undefined, "root-1");
     expect(ch.send).toHaveBeenCalledTimes(2);
   });
 

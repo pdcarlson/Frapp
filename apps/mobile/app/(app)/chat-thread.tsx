@@ -579,8 +579,8 @@ function ChannelThreadScreen() {
     (next: string) => {
       setDraft(next);
       // The manager throttles to one broadcast per 3s, so this can ride every
-      // keystroke without flooding the channel. An emptied box is nobody
-      // typing, as in the thread composer.
+      // keystroke without flooding the channel. An emptied box (the clear
+      // after a send, the last character erased) is nobody typing.
       if (next.trim().length > 0) emitTyping();
     },
     [setDraft, emitTyping],

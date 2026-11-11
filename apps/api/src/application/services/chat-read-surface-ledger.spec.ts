@@ -491,7 +491,7 @@ const DIRECT_READ_LEDGER: Record<string, Entry & { creates: number }> = {
     creates: 2,
     status: 'open',
     issues: [2725],
-    why: "Authorizes Broadcast and Presence on `chat:channel:<id>`. Neither carries message content, and no client renders chat-topic presence (the push worker reads it). The one thing drawn is the anonymous typing indicator, and both clients drop a blocked member's `typing` from it (`visibleTypingUsers`, #2496). Open because that rule trusts the payload's client-written `userId`, which the insert policy does not check: a modified client can put another id in it (#2725).",
+    why: "Authorizes Broadcast and Presence on `chat:channel:<id>`. Neither carries message content, and no client renders chat-topic presence (the push worker reads it). The one thing drawn is the typing indicator, which names the typist from that `userId` (#4325), and both clients drop a blocked member's `typing` from it (`visibleTypingUsers`, #2496). Open because that rule trusts the payload's client-written `userId`, which the insert policy does not check: a modified client can put another id in it, and so another member's name on the line (#2725).",
     proof: {
       clientSpec: 'packages/chat-core/src/realtime-manager.spec.ts',
       test: "a blocked member's typing broadcast leaves the indicator empty",
