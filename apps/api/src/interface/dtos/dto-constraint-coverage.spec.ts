@@ -180,9 +180,6 @@ describe('DTO constraint coverage (#849)', () => {
     ['CreateRoleDto', 'name', 'oversized role name', 'x'.repeat(101)],
     ['CreateRoleDto', 'name', 'empty role name', ''],
     ['UpdateRoleDto', 'name', 'oversized role name', 'x'.repeat(101)],
-    ['CreateCustomRoleDto', 'label', 'oversized role label', 'x'.repeat(101)],
-    ['UpdateCustomRoleDto', 'label', 'oversized role label', 'x'.repeat(101)],
-    ['CreateCustomRoleDto', 'key', 'oversized role key', 'x'.repeat(65)],
     // Every path that writes point_transactions.amount, not just the manual one.
     ['CreateEventDto', 'point_value', 'ledger write above the ceiling', 2e9],
     ['UpdateEventDto', 'point_value', 'ledger write above the ceiling', 2e9],
@@ -234,8 +231,6 @@ describe('DTO constraint coverage (#849)', () => {
     ['UpdateCategoryDto', 'display_order', 'int4 overflow', 3_000_000_000],
     ['CreateCustomFieldDto', 'sort', 'int4 overflow', 3_000_000_000],
     ['UpdateCustomFieldDto', 'sort', 'int4 overflow', 3_000_000_000],
-    ['CreateCustomRoleDto', 'rank', 'int4 overflow', 3_000_000_000],
-    ['UpdateCustomRoleDto', 'rank', 'int4 overflow', 3_000_000_000],
     [
       'DiscordImportUploadFileDto',
       'part_index',

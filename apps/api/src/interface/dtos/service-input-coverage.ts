@@ -34,10 +34,6 @@ import type {
   CreateCustomFieldInput,
   UpdateCustomFieldInput,
 } from '../../application/services/custom-field.service';
-import type {
-  CreateCustomRoleInput,
-  UpdateCustomRoleInput,
-} from '../../application/services/custom-role.service';
 import type { ChapterBrandingInput } from '../../application/services/chapter-palette';
 import type {
   PatchChapterConfigDto,
@@ -50,10 +46,6 @@ import type {
   CreateCustomFieldDto,
   UpdateCustomFieldDto,
 } from './custom-field.dto';
-import type {
-  CreateCustomRoleDto,
-  UpdateCustomRoleDto,
-} from './custom-role.dto';
 import type { FileChatReportInput } from '../../application/services/chat-report.service';
 import type { CreateChatReportDto } from './chat-moderation.dto';
 
@@ -77,8 +69,6 @@ export const dtoKeysAreCoveredByServiceInputs: {
   chapterOnboarding: Covers<ChapterOnboardingDto, ChapterOnboardingInput>;
   createCustomField: Covers<CreateCustomFieldDto, CreateCustomFieldInput>;
   updateCustomField: Covers<UpdateCustomFieldDto, UpdateCustomFieldInput>;
-  createCustomRole: Covers<CreateCustomRoleDto, CreateCustomRoleInput>;
-  updateCustomRole: Covers<UpdateCustomRoleDto, UpdateCustomRoleInput>;
   fileChatReport: Covers<CreateChatReportDto, FileChatReportInput>;
 } = {
   patchChapterConfig: true,
@@ -88,7 +78,5 @@ export const dtoKeysAreCoveredByServiceInputs: {
   chapterOnboarding: true,
   createCustomField: true,
   updateCustomField: true,
-  createCustomRole: true,
-  updateCustomRole: true,
   fileChatReport: true,
 };

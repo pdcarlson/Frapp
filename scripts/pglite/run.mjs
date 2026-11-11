@@ -210,9 +210,12 @@ await import("./tiers/transfer-presidency-keeps-member-access.mjs");
 await import("./tiers/check-in-once.mjs");
 await import("./tiers/activity-links.mjs");
 await import("./tiers/role-tiers.mjs");
+await import("./tiers/fold-custom-roles.mjs");
 await import("./tiers/document-stars.mjs");
 await import("./tiers/channel-order.mjs");
 await import("./tiers/event-types.mjs");
+await import("./tiers/activity-item-reads.mjs");
+await import("./tiers/chat-channel-access-lists.mjs");
 
 const tableCount = await db.query(
   `select count(*)::int as n from information_schema.tables where table_schema = 'public'`,

@@ -434,3 +434,144 @@ describe("message flags (#3921)", () => {
     });
   });
 });
+
+// #3879: a message carries its photos' geometry so a reader can draw their
+// boxes before the attachments read returns. It has to survive the round trip
+// a persisted cache makes, and an untrustworthy stamp must read as none.
+describe("photo geometry (#3879)", () => {
+  const photo = {
+    width: 1200,
+    height: 800,
+    thumbhash: "1QcSHQRnh493V4dIh4eXh1h4kJUI",
+  };
+
+  test("reads metadata.attachment_photos beside the count", () => {
+    const message = normalizeRow(
+      row({
+        kind: "text",
+        metadata: {
+          attachment_count: 2,
+          attachment_photos: [photo, { width: null, height: null }],
+        },
+      }),
+    );
+
+    expect(message.attachment_photos).toEqual([
+      photo,
+      { width: null, height: null, thumbhash: null },
+    ]);
+  });
+
+  test("survives toRawRow and back, as a persisted cache restores it", () => {
+    const message = normalizeRow(
+      row({
+        kind: "text",
+        metadata: { attachment_count: 1, attachment_photos: [photo] },
+      }),
+    );
+
+    expect(normalizeRow(toRawRow(message)).attachment_photos).toEqual([photo]);
+  });
+
+  test("is absent on a message sent before it existed, and stays absent", () => {
+    const message = normalizeRow(
+      row({ kind: "text", metadata: { attachment_count: 1 } }),
+    );
+
+    expect(message.attachment_photos).toBeUndefined();
+    expect(toRawRow(message).metadata).toEqual({ attachment_count: 1 });
+  });
+
+  test.each([
+    [
+      "more photos than files",
+      { attachment_count: 1, attachment_photos: [photo, photo] },
+    ],
+    ["not a list", { attachment_count: 1, attachment_photos: "big" }],
+    [
+      "an entry that is not an object",
+      { attachment_count: 1, attachment_photos: [7] },
+    ],
+  ])("reads %s as no geometry", (_, metadata) => {
+    expect(
+      normalizeRow(row({ kind: "text", metadata })).attachment_photos,
+    ).toBeUndefined();
+  });
+
+  test("reads a count past the API's 10 as no geometry, so a forged row draws one caption", () => {
+    expect(
+      normalizeRow(
+        row({
+          kind: "text",
+          metadata: { attachment_count: 10_000_000, attachment_photos: [] },
+        }),
+      ).attachment_photos,
+    ).toBeUndefined();
+  });
+
+  test("drops a ThumbHash a decoder can't read in full, which crashes iOS", () => {
+    const message = normalizeRow(
+      row({
+        kind: "text",
+        metadata: {
+          attachment_count: 2,
+          attachment_photos: [
+            { ...photo, thumbhash: "AAAA" },
+            { ...photo, thumbhash: "!!" },
+          ],
+        },
+      }),
+    );
+
+    expect(message.attachment_photos?.map((p) => p.thumbhash)).toEqual([
+      null,
+      null,
+    ]);
+  });
+
+  test("drops an edge past the API's 20000 px", () => {
+    const message = normalizeRow(
+      row({
+        kind: "text",
+        metadata: {
+          attachment_count: 1,
+          attachment_photos: [{ width: 1, height: 20_001, thumbhash: null }],
+        },
+      }),
+    );
+
+    expect(message.attachment_photos).toEqual([
+      { width: null, height: null, thumbhash: null },
+    ]);
+  });
+
+  test("keeps both edges or neither", () => {
+    const message = normalizeRow(
+      row({
+        kind: "text",
+        metadata: {
+          attachment_count: 1,
+          attachment_photos: [{ width: 1200, height: 0, thumbhash: "" }],
+        },
+      }),
+    );
+
+    expect(message.attachment_photos).toEqual([
+      { width: null, height: null, thumbhash: null },
+    ]);
+  });
+
+  test("is gone from a deleted message", () => {
+    const cache = mergeServerRow(
+      emptyCache(),
+      row({
+        kind: "text",
+        metadata: { attachment_count: 1, attachment_photos: [photo] },
+      }),
+    );
+
+    expect(
+      markMessageDeleted(cache, "m1").byId["m1"]!.attachment_photos,
+    ).toBeUndefined();
+  });
+});

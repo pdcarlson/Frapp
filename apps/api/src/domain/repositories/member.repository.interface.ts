@@ -15,8 +15,8 @@ export interface IMemberRepository {
    * one query (`role_ids` since 2026-11-06, for role mentions).
    *
    * Kept separate from {@link findByChapter} rather than narrowing it: that one
-   * returns `Member` rows and a dozen callers depend on `role_ids`,
-   * `custom_role_ids` and onboarding state. This exists for the chat mention
+   * returns `Member` rows and a dozen callers depend on `role_ids` and
+   * onboarding state. This exists for the chat mention
    * path, which needs the opposite: only the `roles` ids a role mention expands
    * through, and the display name that lives on `users`.
    *

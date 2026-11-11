@@ -89,12 +89,19 @@ export function TaskRow({
   const started = row.storedStatus === "IN_PROGRESS";
   const confirmed = row.isDone && row.pointsAwarded;
 
-  const subtitle = row.isDone
+  const statusLine = row.isDone
     ? taskStatusLabel({
         status: "COMPLETED",
         points_awarded: row.pointsAwarded,
       })
     : formatDueSubtitle(row.dueDate, now);
+  // How far through its checklist it is, beside the due: "Due today · 2 of
+  // 5" (#4003). A finished task drops it; its status says enough.
+  const progress =
+    !row.isDone && row.subtasks.length > 0
+      ? `${row.subtasks.filter((subtask) => subtask.done).length} of ${row.subtasks.length}`
+      : null;
+  const subtitle = [statusLine, progress].filter(Boolean).join(" · ") || null;
 
   // `semantic.destructive`, never `semantic.mention` — `foundations.md:67`
   // reserves the mention red for direct address, and an overdue task is not

@@ -28,7 +28,6 @@ import {
   removeBaseAccessBody,
   removeBaseAccessTitle,
   removesBaseAccess,
-  customRolesCaption,
   ROLES_LOCKED_CAPTION,
   rolesSaveFailedBody,
   ROLES_SAVE_FAILED_TITLE,
@@ -56,8 +55,6 @@ export interface MemberRolesSession {
   memberId: string;
   name: string;
   heldIds: string[];
-  /** Custom-role labels the member holds, which this editor leaves alone. */
-  customRoleNames: string[];
   /** When the profile holding `heldIds` was fetched (ms since epoch). */
   fetchedAt: number;
 }
@@ -252,7 +249,6 @@ export const MemberRolesSheet = forwardRef<
         : // A no-break space holds the line, so "Saving…" never shifts the list.
           "\u00a0";
 
-  const customCaption = customRolesCaption(session?.customRoleNames ?? []);
 
   return (
     <BottomSheetModal
@@ -298,9 +294,6 @@ export const MemberRolesSheet = forwardRef<
             >
               {statusText}
             </Text>
-            {customCaption ? (
-              <Text style={styles.status}>{customCaption}</Text>
-            ) : null}
           </View>
         }
         ListEmptyComponent={

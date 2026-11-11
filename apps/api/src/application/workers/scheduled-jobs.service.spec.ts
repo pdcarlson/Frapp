@@ -50,6 +50,7 @@ describe('ScheduledJobsService', () => {
   let findEventsPendingAutoAbsent: jest.Mock;
   let findOpenInvoicesDueBetween: jest.Mock;
   let findIncompleteTasksDueBetween: jest.Mock;
+  let findIncompleteTimedTasksDueBetween: jest.Mock;
   let sweepExpiredReports: jest.Mock;
   let findExpiredPollsPendingNotice: jest.Mock;
   let announceExpiry: jest.Mock;
@@ -91,6 +92,7 @@ describe('ScheduledJobsService', () => {
     findEventsPendingAutoAbsent = jest.fn().mockResolvedValue([]);
     findOpenInvoicesDueBetween = jest.fn().mockResolvedValue([]);
     findIncompleteTasksDueBetween = jest.fn().mockResolvedValue([]);
+    findIncompleteTimedTasksDueBetween = jest.fn().mockResolvedValue([]);
     sweepExpiredReports = jest
       .fn()
       .mockResolvedValue({ deleted: 0, failed: 0 });
@@ -115,6 +117,7 @@ describe('ScheduledJobsService', () => {
             findEventsPendingAutoAbsent,
             findOpenInvoicesDueBetween,
             findIncompleteTasksDueBetween,
+            findIncompleteTimedTasksDueBetween,
             findExpiredPollsPendingNotice,
             findEventsStartingBetween,
             claimDispatch,
@@ -736,6 +739,73 @@ describe('ScheduledJobsService', () => {
         'inv-1',
         'DUE_SOON',
         TOMORROW,
+      );
+    });
+  });
+
+  describe('sweepTimedTaskReminders (#4003)', () => {
+    const at = (minutesFromNow: number) =>
+      new Date(NOW.getTime() + minutesFromNow * 60_000).toISOString();
+
+    it('reads the window from the lookback to two hours out', async () => {
+      await service.sweepTimedTaskReminders(NOW);
+      const [from, to] = findIncompleteTimedTasksDueBetween.mock.calls[0]!;
+      expect((to as Date).getTime() - NOW.getTime()).toBe(120 * 60_000);
+      expect(NOW.getTime() - (from as Date).getTime()).toBe(7 * 86_400_000);
+    });
+
+    it('reminds the assignee how far out the time is', async () => {
+      findIncompleteTimedTasksDueBetween.mockResolvedValue([
+        { ...TASK, due_date: TODAY, due_at: at(95) },
+      ]);
+
+      const result = await service.sweepTimedTaskReminders(NOW);
+
+      expect(result).toEqual({ sent: 1 });
+      expect(notifyUser).toHaveBeenCalledWith(
+        'user-1',
+        'chap-1',
+        expect.objectContaining({
+          title: 'Book the venue',
+          body: 'Due in 2 hours',
+        }),
+      );
+      expect(claimDispatch).toHaveBeenCalledWith(
+        'chap-1',
+        'TASK',
+        'task-1',
+        'DUE_SOON',
+        TODAY,
+      );
+    });
+
+    it('says minutes inside the last hour', async () => {
+      findIncompleteTimedTasksDueBetween.mockResolvedValue([
+        { ...TASK, due_date: TODAY, due_at: at(25) },
+      ]);
+      await service.sweepTimedTaskReminders(NOW);
+      expect(notifyUser).toHaveBeenCalledWith(
+        'user-1',
+        'chap-1',
+        expect.objectContaining({ body: 'Due in 25 minutes' }),
+      );
+    });
+
+    it('flags it overdue to both once the minute has passed', async () => {
+      findIncompleteTimedTasksDueBetween.mockResolvedValue([
+        { ...TASK, due_date: TODAY, due_at: at(-3) },
+      ]);
+
+      const result = await service.sweepTimedTaskReminders(NOW);
+
+      expect(result).toEqual({ sent: 1 });
+      expect(notifyUser).toHaveBeenCalledTimes(2);
+      expect(claimDispatch).toHaveBeenCalledWith(
+        'chap-1',
+        'TASK',
+        'task-1',
+        'OVERDUE',
+        TODAY,
       );
     });
   });

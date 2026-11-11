@@ -14,6 +14,7 @@ import {
   fileKind,
   isFiltering,
   kindOptions,
+  isMarkFiltering,
 } from "./document-library";
 
 type ChapterDocument = {
@@ -29,6 +30,7 @@ type ChapterDocument = {
   byte_size: number | null;
   document_type: string | null;
   effective_date: string | null;
+  pinned_at?: string | null;
 };
 
 function doc(id: string, title: string, uploaded_by: string, created_at: string, extra: Partial<ChapterDocument> = {}): ChapterDocument {
@@ -110,13 +112,13 @@ describe("queryDocuments", () => {
 
   it("filters by uploader and by date", () => {
     expect(
-      titles(queryDocuments(ROWS, "", { uploader: "u2", date: null, kind: null }, "name", DATES)),
+      titles(queryDocuments(ROWS, "", { ...NO_DOCUMENT_FILTERS, uploader: "u2", date: null, kind: null }, "name", DATES)),
     ).toEqual(["FY2026 Operating Budget"]);
     expect(
-      titles(queryDocuments(ROWS, "", { uploader: null, date: { preset: "semester" }, kind: null }, "name", DATES)),
+      titles(queryDocuments(ROWS, "", { ...NO_DOCUMENT_FILTERS, uploader: null, date: { preset: "semester" }, kind: null }, "name", DATES)),
     ).toEqual(["FY2026 Operating Budget", "Recruitment Handbook"]);
     expect(
-      titles(queryDocuments(ROWS, "", { uploader: null, date: { preset: "30d" }, kind: null }, "name", DATES)),
+      titles(queryDocuments(ROWS, "", { ...NO_DOCUMENT_FILTERS, uploader: null, date: { preset: "30d" }, kind: null }, "name", DATES)),
     ).toEqual([]);
   });
 });
@@ -180,7 +182,7 @@ describe("date filters", () => {
     const rows = queryDocuments(
       ROWS,
       "",
-      { uploader: null, date: { preset: "semester" }, kind: null },
+      { ...NO_DOCUMENT_FILTERS, uploader: null, date: { preset: "semester" }, kind: null },
       "name",
       { now: NOW, semesterSince: undefined },
     );
@@ -281,6 +283,83 @@ describe("file type (#3938)", () => {
 
   it("counts a group as a filter", () => {
     expect(isFiltering("", { ...NO_DOCUMENT_FILTERS, kind: "pdf" }, true)).toBe(true);
+  });
+});
+
+describe("the Pinned and Starred filters (#4290)", () => {
+  const rows = toLibraryDocuments(
+    [
+      doc("p", "Bylaws", "u1", "2026-11-01T12:00:00Z", { pinned_at: "2026-11-02T00:00:00Z" }),
+      doc("s", "Rush deck", "u2", "2026-11-03T12:00:00Z", {
+        storage_path: "c/d/s/rush.pptx",
+        content_type: null,
+      }),
+      doc("ps", "Budget", "u1", "2026-06-01T12:00:00Z", { pinned_at: "2026-11-02T00:00:00Z" }),
+      doc("n", "Minutes", "u2", "2026-11-04T12:00:00Z"),
+      doc("old", "Old starred PDF", "u1", "2026-01-04T12:00:00Z"),
+    ],
+    (id) => NAMES[id] ?? null,
+  );
+  const starred = new Set(["s", "ps", "old"]);
+  const ids = (
+    marks: { pinned: boolean; starred: boolean },
+    extra: Partial<typeof NO_DOCUMENT_FILTERS> = {},
+    query = "",
+  ) =>
+    queryDocuments(rows, query, { ...NO_DOCUMENT_FILTERS, ...extra, marks }, "name", {
+      ...DATES,
+      starred,
+    }).map((row) => row.doc.id);
+
+  it("Pinned keeps what an officer pinned, Starred what this member starred", () => {
+    expect(ids({ pinned: true, starred: false })).toEqual(["ps", "p"]);
+    expect(ids({ pinned: false, starred: true })).toEqual(["ps", "old", "s"]);
+  });
+
+  it("with both on, keeps a file that is either, once", () => {
+    expect(ids({ pinned: true, starred: true })).toEqual(["ps", "p", "old", "s"]);
+  });
+
+  it("combines with search and the other filters: starred PDFs from the last 30 days", () => {
+    expect(ids({ pinned: false, starred: true }, { kind: "pdf", date: { preset: "30d" } })).toEqual(
+      [],
+    );
+    expect(ids({ pinned: false, starred: true }, { kind: "slides", date: { preset: "30d" } })).toEqual(
+      ["s"],
+    );
+    expect(ids({ pinned: false, starred: true }, { kind: "pdf" })).toEqual(["ps", "old"]);
+    expect(ids({ pinned: true, starred: false }, {}, "budget")).toEqual(["ps"]);
+  });
+
+  it("finds nothing starred before the stars have loaded, rather than everything", () => {
+    expect(
+      queryDocuments(
+        rows,
+        "",
+        { ...NO_DOCUMENT_FILTERS, marks: { pinned: false, starred: true } },
+        "name",
+        DATES,
+      ),
+    ).toEqual([]);
+  });
+
+  it("keeps a held file whatever its marks, only while the filter is on", () => {
+    const run = (marks: { pinned: boolean; starred: boolean }) =>
+      queryDocuments(rows, "", { ...NO_DOCUMENT_FILTERS, marks }, "name", {
+        ...DATES,
+        starred,
+        keep: new Set(["n"]),
+      }).map((row) => row.doc.id);
+    expect(run({ pinned: true, starred: false })).toEqual(["ps", "p", "n"]);
+    expect(run({ pinned: false, starred: false })).toHaveLength(5);
+  });
+
+  it("counts as a filter only when one is on", () => {
+    expect(isMarkFiltering({ pinned: false, starred: false })).toBe(false);
+    expect(isFiltering("", NO_DOCUMENT_FILTERS, true)).toBe(false);
+    expect(
+      isFiltering("", { ...NO_DOCUMENT_FILTERS, marks: { pinned: true, starred: false } }, true),
+    ).toBe(true);
   });
 });
 

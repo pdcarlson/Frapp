@@ -253,6 +253,54 @@ describe('SupabaseChatMessageRepository — tenant scope', () => {
     ).toContainEqual(['thread_root_id', null]);
   });
 
+  it('findImportantInChannel reads one channel’s live, recent, Important timeline messages (#4186)', async () => {
+    await repo.findImportantInChannel(CHANNEL_A, '2026-10-28T00:00:00.000Z', {
+      offset: 0,
+      limit: 200,
+    });
+
+    const op = harness.ops[0];
+    expect(op.filters.map((f) => [f.column, f.op, f.value])).toEqual(
+      expect.arrayContaining([
+        ['channel_id', 'eq', CHANNEL_A],
+        ['flag', 'eq', 'important'],
+        ['is_deleted', 'eq', false],
+        ['thread_root_id', 'is', null],
+        ['flagged_at', 'gte', '2026-10-28T00:00:00.000Z'],
+      ]),
+    );
+  });
+
+  it('findImportantInChannel pages newest flag first, ties by id', async () => {
+    const order = jest.fn().mockReturnThis();
+    const range = jest.fn().mockResolvedValue({ data: [], error: null });
+    const builder = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      is: jest.fn().mockReturnThis(),
+      gte: jest.fn().mockReturnThis(),
+      order,
+      range,
+    };
+    const client = { from: jest.fn(() => builder) };
+    const paged = new SupabaseChatMessageRepository(
+      client as unknown as ConstructorParameters<
+        typeof SupabaseChatMessageRepository
+      >[0],
+    );
+
+    await paged.findImportantInChannel(CHANNEL_A, '2026-10-28T00:00:00.000Z', {
+      offset: 200,
+      limit: 200,
+    });
+
+    expect(order.mock.calls).toEqual([
+      ['flagged_at', { ascending: false }],
+      ['id', { ascending: false }],
+    ]);
+    expect(range).toHaveBeenCalledWith(200, 399);
+  });
+
   it('update stays inside the caller chapter subtree', async () => {
     // `chat_messages` has no chapter, so the guard leans entirely on
     // `parentTenant` resolving through the channel. An edit matched on

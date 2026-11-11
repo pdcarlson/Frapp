@@ -20,7 +20,6 @@ import { Member } from '#domain/entities/member.entity';
 import { User } from '#domain/entities/user.entity';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { CustomFieldService } from './custom-field.service';
-import { CustomRoleService } from './custom-role.service';
 import { RbacService } from './rbac.service';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
 import { ProfilePhotoUrlService } from './profile-photo-url.service';
@@ -116,7 +115,6 @@ export class MemberService {
     @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
     @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
     private readonly customFieldService: CustomFieldService,
-    private readonly customRoleService: CustomRoleService,
     private readonly rbacService: RbacService,
     private readonly auditLogService: ChapterAuditLogService,
     @Inject(STORAGE_PROVIDER)
@@ -285,7 +283,6 @@ export class MemberService {
     memberId: string,
     roleIds: string[],
     chapterId: string,
-    customRoleIds?: string[],
   ): Promise<Member> {
     const member = await this.memberRepo.findById(memberId);
     if (!member) throw new NotFoundException('Member not found');
@@ -293,16 +290,9 @@ export class MemberService {
       throw new ForbiddenException('Member not in current chapter');
     }
 
-    // Both validation fetches depend only on the chapter, so run them together.
-    const [roles, customRoles] = await Promise.all([
-      this.roleRepo.findByChapter(chapterId),
-      customRoleIds !== undefined && customRoleIds.length > 0
-        ? this.customRoleService.findByIds(customRoleIds, chapterId)
-        : Promise.resolve([]),
-    ]);
+    const roles = await this.roleRepo.findByChapter(chapterId);
 
-    // Ids the member ALREADY holds are exempt from validation on both role
-    // models: deleting a role leaves its id on member rows by design (spec
+    // Ids the member ALREADY holds are exempt from validation: deleting a role leaves its id on member rows by design (spec
     // fail-safe — it resolves to no row and grants nothing), and a client
     // echoing that leftover back must not have its whole save rejected.
     const validRoleIds = new Set(roles.map((r) => r.id));
@@ -314,22 +304,6 @@ export class MemberService {
       throw new BadRequestException(
         `Role IDs do not belong to this chapter: ${unknownRoleIds.join(', ')}`,
       );
-    }
-
-    // Custom-role ids get the same cross-chapter validation and held-id
-    // exemption as live-role ids. The exemption cannot smuggle a foreign id:
-    // the held set only ever contains ids that passed this validation before.
-    if (customRoleIds !== undefined && customRoleIds.length > 0) {
-      const validCustomRoleIds = new Set(customRoles.map((r) => r.id));
-      const heldCustomRoleIds = new Set(member.custom_role_ids ?? []);
-      const unknownCustomRoleIds = customRoleIds.filter(
-        (id) => !validCustomRoleIds.has(id) && !heldCustomRoleIds.has(id),
-      );
-      if (unknownCustomRoleIds.length > 0) {
-        throw new BadRequestException(
-          `Custom role IDs do not belong to this chapter: ${unknownCustomRoleIds.join(', ')}`,
-        );
-      }
     }
 
     // Wildcard-carrying roles move only through the presidency-transfer flow
@@ -360,14 +334,7 @@ export class MemberService {
       }
     }
 
-    return this.memberRepo.update(memberId, {
-      role_ids: roleIds,
-      // Omitted → unchanged, so pre-bridge clients that send only `role_ids`
-      // never strip a member's custom roles.
-      ...(customRoleIds !== undefined
-        ? { custom_role_ids: customRoleIds }
-        : {}),
-    });
+    return this.memberRepo.update(memberId, { role_ids: roleIds });
   }
 
   async updateOnboarding(

@@ -42,14 +42,16 @@ export interface EmojiPickerSheetProps {
   /** The viewer's reactions on the message, drawn selected. */
   selected: readonly string[];
   onPick: (emoji: string, mine: boolean) => void;
-  /** Cleared on close so the next open starts on the full list. */
+  /** After the picker has closed (its search is cleared first). */
   onDismiss?: () => void;
+  /** gorhom's `onAnimate`, for a caller tracking whether it is up (`useSheetVisit`). */
+  onAnimate?: (fromIndex: number, toIndex: number) => void;
 }
 
 export const EmojiPickerSheet = forwardRef<
   BottomSheetModal,
   EmojiPickerSheetProps
->(function EmojiPickerSheet({ selected, onPick, onDismiss }, ref) {
+>(function EmojiPickerSheet({ selected, onPick, onDismiss, onAnimate }, ref) {
   const { tokens } = useFrappTheme();
   const { accent, accentSubtle } = useChapterBranding();
   const styles = useMemo(() => createStyles(tokens, accent), [tokens, accent]);
@@ -110,6 +112,7 @@ export const EmojiPickerSheet = forwardRef<
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}
       backdropComponent={SheetScrim}
+      onAnimate={onAnimate}
       onDismiss={() => {
         setSearch("");
         onDismiss?.();

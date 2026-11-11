@@ -798,6 +798,7 @@ async function dispatchTask(
     title: parsed.value.title,
     assignee_id: member.user_id,
     due_date: parsed.value.dueDate,
+    due_at: parsed.value.dueAt ?? undefined,
     point_reward: parsed.value.pointReward ?? undefined,
   });
 }
@@ -809,6 +810,10 @@ export interface TaskInput {
   assignee_id: string;
   /** `YYYY-MM-DD`. */
   due_date: string;
+  /** The moment it is due, when it has a time of day (#4003). */
+  due_at?: string;
+  /** Subtask titles, in order (#4003). */
+  subtasks?: string[];
   point_reward?: number;
 }
 
@@ -841,6 +846,8 @@ export async function postTask(
         description: input.description,
         assignee_id: input.assignee_id,
         due_date: input.due_date,
+        due_at: input.due_at,
+        subtasks: input.subtasks,
         point_reward: input.point_reward,
         channel_id: channelId,
         client_message_id: clientMessageId,
@@ -904,7 +911,7 @@ export async function postTask(
  * an invalid event. The conversion happens on the client (which knows the
  * timezone), keeping the shared parser timezone-pure.
  */
-function localDateTimeToIso(date: string, time: string): string | null {
+export function localDateTimeToIso(date: string, time: string): string | null {
   const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
   const timeMatch = /^(\d{1,2}):(\d{2})$/.exec(time);
   if (!dateMatch || !timeMatch) return null;
@@ -952,23 +959,54 @@ async function dispatchEvent(
     return { ok: false, error: "Couldn't read the event date or time" };
   }
 
+  return postEvent(ctx, channelId, {
+    name: parsed.value.name,
+    start_time: startIso,
+    end_time: endIso,
+    location: parsed.value.location ?? undefined,
+    point_value: parsed.value.pointValue ?? undefined,
+  });
+}
+
+/** What {@link postEvent} creates: the one-liner's fields, read or typed. */
+export interface EventInput {
+  name: string;
+  /** ISO instants. */
+  start_time: string;
+  end_time: string;
+  location?: string;
+  /** 10 when omitted, the spec default. */
+  point_value?: number;
+}
+
+/**
+ * Create an event and post its card in `channelId`: the write `/event` makes,
+ * shared with web's + card (#3983) so the two can't drift. A `loading`
+ * placeholder until the card's echo, dropped on a refusal, and the durable
+ * `recorded` row when the event committed without its card.
+ */
+export async function postEvent(
+  ctx: ChatActionContext,
+  channelId: string,
+  input: EventInput,
+): Promise<DispatchResult> {
   // The same placeholder and recorded-row bookkeeping the event form uses
   // from chat (#3773), so the two paths can't drift apart.
-  const card = trackEventCard(ctx, channelId, parsed.value.name);
+  const card = trackEventCard(ctx, channelId, input.name);
 
   try {
     const result = await ctx.apiClient.POST("/v1/events", {
       body: {
-        name: parsed.value.name,
-        start_time: startIso,
-        end_time: endIso,
-        location: parsed.value.location ?? undefined,
+        name: input.name,
+        start_time: input.start_time,
+        end_time: input.end_time,
+        location: input.location,
         // point_value and is_mandatory are required in the generated SDK type
         // (their DTO `@default` makes them non-optional); send the spec defaults
         // (10 points, not mandatory) when the command omits them — the
         // one-liner creates non-mandatory events by design (a required event
         // goes through the event form).
-        point_value: parsed.value.pointValue ?? 10,
+        point_value: input.point_value ?? 10,
         is_mandatory: false,
         channel_id: channelId,
         client_message_id: card.clientMessageId,

@@ -20,6 +20,7 @@ export * from "./event-series";
 export * from "./use-activity-feed";
 export * from "./use-attendance";
 export * from "./task-card";
+export * from "./calendar-tasks";
 export * from "./service-entry-card";
 export * from "./rush-card";
 export * from "./use-points";
@@ -56,7 +57,6 @@ export * from "./error-copy";
 export * from "./join-errors";
 export * from "./pay-errors";
 export * from "./use-org-config";
-export * from "./use-custom-roles";
 export * from "./use-custom-fields";
 export * from "./use-discord-import";
 export * from "./use-discord-connection";
@@ -74,6 +74,7 @@ export {
   type SidebarFilterChange,
   type SidebarWriteOptions,
 } from "./use-chat-sidebar";
+export * from "./use-important-messages";
 export * from "./use-discord-author-link";
 export * from "./field-reveal";
 export * from "./open-chat-transport";

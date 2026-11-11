@@ -107,6 +107,11 @@ export interface TaskPayload {
   assignee_name: string;
   /** `tasks.due_date` (YYYY-MM-DD). */
   due_date: string;
+  /**
+   * `tasks.due_at`: the moment it is due when it has a time of day (#4003).
+   * Absent on a card posted before times existed, and null without one.
+   */
+  due_at?: string | null;
   /** Creation-time status; always `"TODO"`. Live status comes from the task query. */
   status: "TODO";
   /** Points awarded on confirmed completion, or `null` when none. */

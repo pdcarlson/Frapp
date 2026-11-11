@@ -688,54 +688,71 @@ describe('ChapterService', () => {
     });
 
     expect(mockChannelRepo.createMany).toHaveBeenCalledTimes(1);
-    expect(mockChannelRepo.createMany).toHaveBeenCalledWith(
-      DEFAULT_CHANNELS.map((channelDef) => ({
-        chapter_id: chapter.id,
-        name: channelDef.name,
-        description: channelDef.description,
-        type: channelDef.type,
-        is_read_only: channelDef.is_read_only,
-        // Spelled out rather than read off `channelDef`, so the test pins
-        // which channel the seeder flags (#3909) instead of echoing it.
-        is_audit_log: channelDef.name === 'chapter-audit',
-        required_permissions: channelDef.required_permissions
-          ? [...channelDef.required_permissions]
-          : null,
-      })),
-    );
+    // Spelled out rather than read off `DEFAULT_CHANNELS`, so the test pins
+    // who can see and post in each seeded channel (#3722) and which one the
+    // seeder flags as the audit log (#3909), instead of echoing the constant.
+    const alumni = `role:${mockRoleIdForName('Alumni').toLowerCase()}`;
+    const base = { chapter_id: chapter.id };
+    expect(mockChannelRepo.createMany).toHaveBeenCalledWith([
+      expect.objectContaining({
+        ...base,
+        name: 'general',
+        type: 'PUBLIC',
+        who_can_see: null,
+        who_can_post: null,
+        is_read_only: false,
+        is_audit_log: false,
+      }),
+      expect.objectContaining({
+        ...base,
+        name: 'announcements',
+        type: 'PUBLIC',
+        who_can_see: null,
+        // The top two starting tiers: officers announce, everyone reads.
+        who_can_post: ['tier:tier-1', 'tier:tier-2'],
+        is_read_only: true,
+        is_audit_log: false,
+      }),
+      expect.objectContaining({
+        ...base,
+        name: 'chapter-audit',
+        type: 'PUBLIC',
+        who_can_see: null,
+        who_can_post: [],
+        is_read_only: true,
+        is_audit_log: true,
+      }),
+      expect.objectContaining({
+        ...base,
+        name: 'alumni',
+        type: 'ROLE_GATED',
+        // Every starting tier and the Alumni role, which is what lets alumni
+        // post there.
+        who_can_see: [
+          alumni,
+          'tier:tier-1',
+          'tier:tier-2',
+          'tier:tier-3',
+          'tier:tier-4',
+        ].sort(),
+        who_can_post: null,
+        is_read_only: false,
+        is_audit_log: false,
+      }),
+    ]);
+    for (const row of mockChannelRepo.createMany.mock.calls[0][0]) {
+      expect(row).not.toHaveProperty('required_permissions');
+    }
   });
 
   // #1008: the chapter seeder inserts DEFAULT_CHANNELS straight into
-  // `chat_channels`, bypassing `ChatService.createChannel` — so the creator seed
-  // that makes a PRIVATE channel readable does not run on this path, and there
-  // is no DB default, CHECK or trigger behind it either. A PRIVATE entry added
-  // here would give every newly created chapter a channel readable by nobody,
-  // with no repair path, which is #1008 verbatim. Assert the invariant that
-  // makes the omission safe rather than the seed itself.
-  it('should not seed a PRIVATE default channel, which the seeder cannot make readable', () => {
-    expect(DEFAULT_CHANNELS.map((channelDef) => channelDef.type)).not.toContain(
-      'PRIVATE',
-    );
-  });
-
-  // FRA-321: the seeder used to drop `required_permissions` entirely, leaving
-  // #alumni ROLE_GATED but gating on nothing — which `canAccessChannel` then
-  // read as "any chapter member". Asserted against the persisted payload rather
-  // than the constant so a seeder that silently stops writing the field fails.
-  it('should persist required_permissions for the seeded ROLE_GATED channel', () => {
-    const alumniChannel = DEFAULT_CHANNELS.find(
-      (channelDef) => channelDef.type === 'ROLE_GATED',
-    );
-
-    expect(alumniChannel).toBeDefined();
-    expect(alumniChannel?.required_permissions).toEqual([
-      'members:view',
-      'alumni:post',
-    ]);
-
+  // `chat_channels`, bypassing `ChatService.createChannel`, so the creator
+  // seed that makes a PRIVATE channel readable does not run on this path. The
+  // seeds carry who-can-see lists, never member lists, so none is PRIVATE.
+  it('should seed no channel a member list decides', () => {
     for (const channelDef of DEFAULT_CHANNELS) {
-      if (channelDef.type !== 'ROLE_GATED') continue;
-      expect(channelDef.required_permissions?.length ?? 0).toBeGreaterThan(0);
+      expect(channelDef).not.toHaveProperty('type');
+      expect(channelDef).not.toHaveProperty('member_ids');
     }
   });
 

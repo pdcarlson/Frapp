@@ -38,15 +38,6 @@ const {
   rolesState: { isError: false, refetch: vi.fn() },
 }));
 
-// Custom-role assignment (bridge model): the list read is stubbed per-test via
-// this holder; default mirrors "no custom roles defined".
-const customRolesState: {
-  data: unknown;
-  isSuccess: boolean;
-  isError: boolean;
-  isPending: boolean;
-} = { data: [], isSuccess: true, isError: false, isPending: false };
-
 vi.mock("@repo/hooks", () => ({
   useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
   useMemberByUserId: (userId: string) => {
@@ -68,7 +59,6 @@ vi.mock("@repo/hooks", () => ({
   useUpdateMemberRoles: () => ({ mutateAsync: updateRolesMutateAsync, isPending: false }),
   useGetOrCreateDm: () => ({ mutateAsync: dmMutateAsync, isPending: false }),
   useMyPermissions: () => ({ data: { permissions: mockPermissions.current } }),
-  useCustomRoles: () => customRolesState,
   // The pledge class section (#3939) has its own spec; here it only has to
   // mount with the member's values.
   usePledgeClasses: () => ({
@@ -145,10 +135,6 @@ beforeEach(() => {
   rolesState.refetch.mockReset();
   mockCurrentUserId.current = "viewer-1";
   mockCurrentUserLoading.current = false;
-  customRolesState.data = [];
-  customRolesState.isSuccess = true;
-  customRolesState.isError = false;
-  customRolesState.isPending = false;
 });
 
 describe("MemberDetailSheet loads by user id (#3726)", () => {
@@ -257,11 +243,9 @@ describe("MemberDetailSheet layout follows mobile's order", () => {
       { id: "r-member", name: "Member", color: null, display_order: 9 },
       { id: "r-pres", name: "President", color: "#F2994A", display_order: 1 },
     ];
-    customRolesState.data = [{ id: "cr1", key: "historian", label: "Historian" }];
     renderProfile({
       ...baseMember,
       role_ids: ["r-member", "r-pres"],
-      custom_role_ids: ["cr1"],
     });
 
     const chips = within(
@@ -270,7 +254,6 @@ describe("MemberDetailSheet layout follows mobile's order", () => {
     expect(chips.map((chip) => chip.textContent)).toEqual([
       "President",
       "Member",
-      "Historian",
     ]);
     const dot = chips[0]!.querySelector("span");
     expect(dot).toHaveStyle({ backgroundColor: "#F2994A" });
@@ -437,20 +420,13 @@ describe("MemberDetailSheet role editor", () => {
       { id: "r-member", name: "Member", permissions: ["members:view"] },
       { id: "r-cabinet", name: "Cabinet", permissions: [] },
     ];
-    customRolesState.data = [
-      { id: "cr1", key: "historian", label: "Historian", rank: 5, capabilities: [], core: false },
-      { id: "cr2", key: "social_chair", label: "Social Chair", rank: 6, capabilities: [], core: false },
-    ];
-    renderProfile({ ...baseMember, role_ids: ["r-member"], custom_role_ids: ["cr1"] });
+    renderProfile({ ...baseMember, role_ids: ["r-member"] });
     openRoleEditor();
 
     const checkbox = (name: string) =>
       screen.getByText(name, { selector: "p" }).closest("label")!.querySelector("input")!;
     expect(checkbox("Member").checked).toBe(true);
     expect(checkbox("Cabinet").checked).toBe(false);
-    expect(screen.getByText("Custom roles")).toBeInTheDocument();
-    expect(checkbox("Historian").checked).toBe(true);
-    expect(checkbox("Social Chair").checked).toBe(false);
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
@@ -480,57 +456,30 @@ describe("MemberDetailSheet role editor", () => {
     ).toBe(true);
   });
 
-  it("omits the custom-roles checklist when the list cannot load (no config access)", () => {
-    customRolesState.data = undefined;
-    customRolesState.isSuccess = false;
-    customRolesState.isError = true;
-    renderProfile();
-    openRoleEditor();
-    expect(screen.queryByText("Custom roles")).not.toBeInTheDocument();
-  });
 });
 
 describe("MemberDetailSheet save payload", () => {
   it("sends the selection as-is, including ids of since-deleted roles", async () => {
-    customRolesState.data = [
-      { id: "cr1", key: "historian", label: "Historian", rank: 5, capabilities: [], core: false },
-    ];
-    // cr-deleted no longer exists in the chapter catalog. It is still sent
+    mockRoles.current = [{ id: "r-cabinet", name: "Cabinet", permissions: [] }];
+    // r-deleted no longer exists in the chapter's roles. It is still sent
     // (the server exempts held ids): filtering against the possibly-stale
-    // catalog would silently strip freshly assigned roles instead.
-    renderProfile({ ...baseMember, custom_role_ids: ["cr-deleted"] });
+    // list would silently strip roles the officer never touched.
+    renderProfile({ ...baseMember, role_ids: ["r-deleted"] });
     openRoleEditor();
 
     fireEvent.click(
-      screen.getByText("Historian", { selector: "p" }).closest("label")!.querySelector("input")!,
+      screen.getByText("Cabinet", { selector: "p" }).closest("label")!.querySelector("input")!,
     );
     fireEvent.click(screen.getByRole("button", { name: "Save roles" }));
 
     await waitFor(() => expect(updateRolesMutateAsync).toHaveBeenCalledTimes(1));
+    // Never custom_role_ids: custom roles are ordinary roles now (#4075).
     expect(updateRolesMutateAsync).toHaveBeenCalledWith({
       id: "m1",
-      role_ids: [],
-      custom_role_ids: ["cr-deleted", "cr1"],
+      role_ids: ["r-deleted", "r-cabinet"],
     });
   });
 
-  it("omits custom_role_ids entirely when the list could not load", async () => {
-    customRolesState.data = undefined;
-    customRolesState.isSuccess = false;
-    customRolesState.isError = true;
-    renderProfile({ ...baseMember, custom_role_ids: ["cr1"] });
-    openRoleEditor();
-
-    fireEvent.click(screen.getByRole("button", { name: "Save roles" }));
-
-    await waitFor(() => expect(updateRolesMutateAsync).toHaveBeenCalledTimes(1));
-    // Omission tells the server "leave the assignment unchanged": the sheet
-    // must never strip custom roles it could not display.
-    expect(updateRolesMutateAsync).toHaveBeenCalledWith({
-      id: "m1",
-      role_ids: [],
-    });
-  });
 
   it("closes the editor once the save lands", async () => {
     renderProfile();
@@ -558,8 +507,8 @@ describe("MemberDetailSheet member-access warning", () => {
     mockRoles.current = [];
   });
 
-  function renderHolding(roleIds: string[], customRoleIds: string[] = []) {
-    renderProfile({ ...baseMember, role_ids: roleIds, custom_role_ids: customRoleIds });
+  function renderHolding(roleIds: string[]) {
+    renderProfile({ ...baseMember, role_ids: roleIds });
     openRoleEditor();
   }
 
@@ -596,23 +545,9 @@ describe("MemberDetailSheet member-access warning", () => {
     expect(updateRolesMutateAsync).toHaveBeenCalledWith({
       id: "m1",
       role_ids: ["r-cabinet"],
-      custom_role_ids: [],
     });
   });
 
-  it("counts a custom role carrying members:view as access", async () => {
-    customRolesState.data = [
-      { id: "cr-rush", key: "rush", label: "Rush", rank: 5, capabilities: ["members:view"], core: false },
-    ];
-    renderHolding(["r-cabinet"], ["cr-rush"]);
-    untick("Rush");
-    fireEvent.click(screen.getByRole("button", { name: "Save roles" }));
-
-    expect(
-      await screen.findByText("Take away Jane Smith's access?"),
-    ).toBeInTheDocument();
-    expect(updateRolesMutateAsync).not.toHaveBeenCalled();
-  });
 
   it("saves without asking when the member keeps access", async () => {
     renderHolding(["r-member", "r-cabinet"]);

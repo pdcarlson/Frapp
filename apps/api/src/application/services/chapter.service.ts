@@ -12,6 +12,8 @@ import {
   fileExtension,
   isAllowedUploadExtension,
   isAllowedUploadMime,
+  channelAccessEntry,
+  normalizeChannelAccessList,
 } from '@repo/validation';
 import { assertSafeStoragePath } from '#domain/utils/storage-path';
 import {
@@ -25,6 +27,7 @@ import {
   type ChapterMemberView,
 } from './chapter-member-view';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
+import { channelAccessColumns } from './channel-access-list.service';
 import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
 import type { IChapterRepository } from '#domain/repositories/chapter.repository.interface';
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
@@ -43,6 +46,7 @@ import type { Member } from '#domain/entities/member.entity';
 import {
   DEFAULT_SYSTEM_ROLES,
   DEFAULT_CHANNELS,
+  type SeededChannelAccess,
   STARTING_ROLE_TIERS,
   SystemRoleKeys,
 } from '#domain/constants/permissions';
@@ -340,20 +344,38 @@ export class ChapterService {
       has_completed_onboarding: true,
     });
 
-    // `required_permissions` must be persisted, not defaulted: a ROLE_GATED
-    // channel seeded without one is denied by `canAccessChannel`, and before
-    // that gate closed it fell open to every chapter member instead (FRA-321).
+    // Who can see and post in each seeded channel, named by the tiers and
+    // the Alumni role just created (#3722). `type` and `is_read_only` are
+    // written to match; the database checks they do.
+    const alumniRole = roles.find(
+      (r) => r.system_key === SystemRoleKeys.ALUMNI,
+    );
+    const seededList = (access: SeededChannelAccess): string[] | null => {
+      if (access === null) return null;
+      const entries = access.tiers.map((position) => {
+        const tierId = tierIdByPosition.get(position + 1);
+        if (!tierId) {
+          throw new InternalServerErrorException(
+            'Failed to create the starting role tiers',
+          );
+        }
+        return channelAccessEntry('tier', tierId);
+      });
+      if ('alumni' in access && access.alumni && alumniRole) {
+        entries.push(channelAccessEntry('role', alumniRole.id));
+      }
+      return normalizeChannelAccessList(entries);
+    };
     const defaultChannels: Partial<ChatChannel>[] = DEFAULT_CHANNELS.map(
       (channelDef) => ({
         chapter_id: chapter.id,
         name: channelDef.name,
         description: channelDef.description,
-        type: channelDef.type,
-        is_read_only: channelDef.is_read_only,
         is_audit_log: 'is_audit_log' in channelDef && channelDef.is_audit_log,
-        required_permissions: channelDef.required_permissions
-          ? [...channelDef.required_permissions]
-          : null,
+        ...channelAccessColumns(
+          seededList(channelDef.who_can_see),
+          seededList(channelDef.who_can_post),
+        ),
       }),
     );
 

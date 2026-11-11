@@ -468,7 +468,8 @@ describe('ChatPushWorkerService — presence channels and the fan-out span', () 
       is_read_only: false,
       type: 'PUBLIC' as const,
       member_ids: null,
-      required_permissions: null,
+      who_can_see: null,
+      who_can_post: null,
     };
 
     let spans: Array<{

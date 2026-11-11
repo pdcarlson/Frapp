@@ -1,46 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
-import { useAdjustPoints, useMembers } from "@repo/hooks";
-import { memberLabel } from "@repo/hooks/display-names";
-import { useToast } from "@/lib/hooks/use-toast";
-import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  SubscriptionNotice,
-  useSubscriptionGate,
-} from "@/components/shared/subscription-gate";
-import { getErrorMessage } from "@/lib/utils";
-import {
-  POINTS_ADJUSTMENT_MAX,
-  POINTS_REASON_MAX_LENGTH,
-} from "@repo/validation";
-import type {
-  DispatchResult,
-  PointsAdjustmentInput,
-} from "@repo/chat-core/dispatch";
-
-type MemberOption = {
-  userId: string;
-  label: string;
-};
+import { PointsAdjustmentForm } from "./points-adjustment-form";
 
 type PointsAdjustmentDialogProps = {
   open: boolean;
@@ -55,188 +21,20 @@ type PointsAdjustmentDialogProps = {
    * therefore drops focus to `<body>`. Pass `contentProps.onCloseAutoFocus`.
    */
   onCloseAutoFocus?: (event: Event) => void;
-  /**
-   * The chat composer's + menu (#3865): adjust through chat, so the points
-   * card lands in the channel the form was opened in, as `/points` does, with
-   * its placeholder and unconfirmed-retry row. `{ ok: false }` keeps the
-   * dialog open; anything else closes it, and the host reports a warning.
-   * Without it the dialog writes through `useAdjustPoints`, with no card.
-   */
-  submitToChannel?: (input: PointsAdjustmentInput) => Promise<DispatchResult>;
 };
 
+/**
+ * The Points page's Adjust points dialog. The form is `PointsAdjustmentForm`,
+ * which the chat composer's + card hosts too (#3983); this only draws the
+ * dialog around it. The form unmounts with the dialog, so each open starts a
+ * new adjustment with a fresh idempotency key.
+ */
 export function PointsAdjustmentDialog({
   open,
   onOpenChange,
   onAdjusted,
   onCloseAutoFocus,
-  submitToChannel,
 }: PointsAdjustmentDialogProps) {
-  // `POST /v1/points/adjust` carries no `@FreeTier`, so it is paid-ops and this
-  // dialog has to mirror the subscription gate (#841). No `useGatedDialog`
-  // here: `open` is owned by the points page, so the trigger — and the refusal
-  // to open onto a doomed form (§5 rule 1) — has to be gated there.
-  const gate = useSubscriptionGate();
-  const adjustPointsMutation = useAdjustPoints();
-  const membersQuery = useMembers();
-  const { toast } = useToast();
-  const [targetUserId, setTargetUserId] = useState("");
-  const [amount, setAmount] = useState("10");
-  const [category, setCategory] = useState<"MANUAL" | "FINE">("MANUAL");
-  const [reason, setReason] = useState("");
-  const [postingToChannel, setPostingToChannel] = useState(false);
-  const submitting = adjustPointsMutation.isPending || postingToChannel;
-
-  const memberOptions = useMemo(() => {
-    return (membersQuery.data ?? [])
-      .map((member) => {
-        const userId = String(member.user_id ?? "");
-        if (!userId) return null;
-        // The full id stays beside the label: this picker names the target of
-        // a fine, so two members who share a name must still be told apart.
-        const label = memberLabel(member.display_name, userId);
-        return { userId, label: `${label} (${userId})` };
-      })
-      .filter((option): option is MemberOption => option !== null);
-  }, [membersQuery.data]);
-
-  /* eslint-disable react-hooks/set-state-in-effect -- reset the adjustment draft each time the dialog opens */
-  useEffect(() => {
-    if (!open) return;
-    setTargetUserId((previous) =>
-      memberOptions.some((option) => option.userId === previous)
-        ? previous
-        : memberOptions[0]?.userId || "",
-    );
-    setAmount("10");
-    setCategory("MANUAL");
-    setReason("");
-  }, [open, memberOptions]);
-  /* eslint-enable react-hooks/set-state-in-effect */
-
-  // Opening starts a new adjustment, so it drops the idempotency key the hook
-  // held for the last one (#1906). Resubmitting from a still-open dialog after
-  // a failure reuses that key and replays; reopening and re-entering the same
-  // grant is a new one, as re-typing `/points` is. Its own effect, keyed on
-  // `open` alone: a members refetch while the dialog is open must not drop a
-  // key a retry still needs.
-  const { reset: resetAdjustment } = adjustPointsMutation;
-  useEffect(() => {
-    if (open) resetAdjustment();
-  }, [open, resetAdjustment]);
-
-  const submitLabel = submitting
-    ? "Submitting..."
-    : "Submit adjustment";
-
-  async function handleSubmit() {
-    const parsedAmount = Number(amount);
-    if (!targetUserId) {
-      toast({
-        title: "Member required",
-        description: "Select a member before submitting an adjustment.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!memberOptions.some((option) => option.userId === targetUserId)) {
-      toast({
-        title: "Member selection expired",
-        description: "Pick a current member before submitting.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!Number.isInteger(parsedAmount) || parsedAmount === 0) {
-      toast({
-        title: "Valid amount required",
-        description: "Use a non-zero whole number for point adjustments.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // `AdjustPointsDto`'s bounds, checked here so a refusal names the field:
-    // through chat a 4xx comes back as one generic "nothing was recorded".
-    if (Math.abs(parsedAmount) > POINTS_ADJUSTMENT_MAX) {
-      toast({
-        title: "Amount too large",
-        description: `Adjust by at most ${POINTS_ADJUSTMENT_MAX.toLocaleString()} points at a time.`,
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (reason.trim().length < 8) {
-      toast({
-        title: "Reason required",
-        description: "Add a reason with at least 8 characters for audit clarity.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (submitToChannel) {
-      if (postingToChannel) return;
-      setPostingToChannel(true);
-      try {
-        const result = await submitToChannel({
-          target_user_id: targetUserId,
-          amount: parsedAmount,
-          category,
-          reason: reason.trim(),
-        });
-        if (!result.ok) {
-          toast({
-            title: "Could not adjust points",
-            description: result.error ?? "Something went wrong. Please retry.",
-            variant: "destructive",
-          });
-          return;
-        }
-      } finally {
-        setPostingToChannel(false);
-      }
-      onOpenChange(false);
-      return;
-    }
-
-    try {
-      await adjustPointsMutation.mutateAsync({
-        target_user_id: targetUserId,
-        amount: parsedAmount,
-        category,
-        reason: reason.trim(),
-      });
-    } catch (error) {
-      toast({
-        title: "Could not adjust points",
-        description: getErrorMessage(error, "Something went wrong. Please retry."),
-        variant: "destructive",
-      });
-      return;
-    }
-
-    toast({
-      title: "Points adjusted",
-      description: `${parsedAmount > 0 ? "+" : ""}${parsedAmount} points applied successfully.`,
-    });
-
-    try {
-      await onAdjusted();
-    } catch {
-      toast({
-        title: "Points adjusted, but refresh failed",
-        description: "Reload the page to fetch the latest balances.",
-        variant: "destructive",
-      });
-    }
-
-    onOpenChange(false);
-  }
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/*
@@ -250,118 +48,14 @@ export function PointsAdjustmentDialog({
         aria-describedby={undefined}
       >
         <DialogHeader>
-          <DialogTitle>
-            Adjust points
-          </DialogTitle>
+          <DialogTitle>Adjust points</DialogTitle>
         </DialogHeader>
-
-        {/*
-          Disable, don't hide (§5 rule 4): the lapse is recoverable, so the form
-          stays visible with the reason stated above it. Until the page gates
-          its trigger a blocked chapter can still open this dialog, which makes
-          the notice the only thing explaining why nothing here accepts input.
-        */}
-        <SubscriptionNotice gate={gate} feature="adjusting points" />
-
-        <div className="grid gap-3">
-          <div className="space-y-1 text-sm">
-            <Label
-              htmlFor="points-adjust-member"
-              className="font-normal text-muted-foreground"
-            >
-              Member
-            </Label>
-            {/*
-              The fields are gated alongside the submit, not just next to it:
-              this dialog can be opened while blocked, and an editable form
-              behind a dead Submit is the exact wasted-effort failure §5 names.
-            */}
-            <Select value={targetUserId} onValueChange={setTargetUserId}>
-              <SelectTrigger
-                id="points-adjust-member"
-                {...gate.controlProps()}
-              >
-                <SelectValue placeholder="Pick a member" />
-              </SelectTrigger>
-              <SelectContent>
-                {memberOptions.map((option) => (
-                  <SelectItem key={option.userId} value={option.userId}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="space-y-1 text-sm">
-              <span className="text-muted-foreground">Amount</span>
-              <Input
-                type="number"
-                step={1}
-                value={amount}
-                onChange={(event) => setAmount(event.target.value)}
-                placeholder="10"
-                {...gate.controlProps()}
-              />
-            </label>
-            <div className="space-y-1 text-sm">
-              <Label
-                htmlFor="points-adjust-category"
-                className="font-normal text-muted-foreground"
-              >
-                Category
-              </Label>
-              <Select
-                value={category}
-                onValueChange={(value) => setCategory(value as "MANUAL" | "FINE")}
-              >
-                <SelectTrigger
-                  id="points-adjust-category"
-                  {...gate.controlProps()}
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="MANUAL">Manual adjustment</SelectItem>
-                  <SelectItem value="FINE">Fine</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <label className="space-y-1 text-sm">
-            <span className="text-muted-foreground">Reason (required)</span>
-            <Textarea
-              rows={4}
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              placeholder="Explain why this adjustment is needed and what policy it references."
-              maxLength={POINTS_REASON_MAX_LENGTH}
-              {...gate.controlProps()}
-            />
-          </label>
-        </div>
-
-        <DialogFooter>
-          {/*
-            Cancel stays live regardless: it closes the dialog rather than
-            writing anything, and gating the way out would trap a blocked
-            member in a form they cannot submit.
-          */}
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSubmit}
-            {...gate.controlProps(submitting)}
-          >
-            {submitting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : null}
-            {submitLabel}
-          </Button>
-        </DialogFooter>
+        <PointsAdjustmentForm
+          layout="dialog"
+          onAdjusted={onAdjusted}
+          onDone={() => onOpenChange(false)}
+          onCancel={() => onOpenChange(false)}
+        />
       </DialogContent>
     </Dialog>
   );

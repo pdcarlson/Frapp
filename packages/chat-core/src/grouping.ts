@@ -62,6 +62,8 @@ export interface GroupableMessage extends MessageAuthorKey {
   kind?: string | null;
   reply_to_id?: string | null;
   is_deleted?: boolean;
+  /** A flag a member put on the message (#3921), which rides its author line. */
+  flag?: string | null;
   /** Read only to tell an audit line (`isAuditLine`) from a card. */
   payload?: unknown;
 }
@@ -135,6 +137,12 @@ function startsRun(
     isAuditLine(prev.message)
   ) {
     return false;
+  }
+  // A flag sits on the author line, right of the time (#4288), so a flagged
+  // message draws one even inside a run. A deleted message and a tombstone
+  // draw no flag, so they don't need one for it.
+  if (message.flag && !message.is_deleted && row.visibility === "visible") {
+    return true;
   }
   // A card is its own object in the channel; its author line says who ran it.
   // An audit line draws no author line, but still breaks the run around it,
