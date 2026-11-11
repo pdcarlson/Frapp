@@ -11,14 +11,7 @@ import {
   previewInkFor,
 } from "@/components/settings/accent-preview-ink";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { ProfileSection } from "@/components/profile/profile-section";
 import { Input } from "@/components/ui/input";
 import { AccentSwatches } from "@/components/settings/accent-swatches";
 import { EYEBROW } from "@/components/ui/typography";
@@ -210,69 +203,68 @@ export function SettingsAccentTab({
 
   const accentContrastWarning = draft.contrastWarning;
 
+  /*
+  The accent section's hint.
+
+  Every clause of the copy this replaces was false, and the last
+  one had become false by being delivered.
+
+  - **"branded PDF reports"** — the accent has never reached a
+    PDF. `report-pdf.renderer.ts` draws from five fixed
+    constants (`INK`, `MUTED`, `RULE`, `HEAD_FILL`,
+    `ZEBRA_FILL`) and the branding payload
+    `report-export.service.ts` hands it is
+    `{ chapterName, university, logo }` — no colour of any kind.
+  - **"against white"** — #1157 moved the check to the dark card
+    it actually renders on (`resolveChapterAccentColor` is
+    called with `background: surface.card` above). The code
+    moved; the sentence did not.
+  - **"invalid colors fall back to the [design system's]
+    default"** —
+    conflates two different outcomes. A hex the engine cannot
+    parse falls back to `HOUSE_SEED`; a parseable colour that
+    fails §8 contrast is **saved anyway** and disclosed by the
+    server contrast warning below, because `chapter.service.ts` removed
+    that gate deliberately ("gating it would reject 49 of the 50
+    real chapters in the directory seed").
+  - **"arrives in Chunk 07"** — this is chunk 07
+    ([#2147](https://github.com/pdcarlson/Frapp/issues/2147)).
+
+  An earlier draft of the replacement also claimed the accent
+  paints "selected text". It does not, and the review is what
+  caught it: `::selection` is deliberately the neutral ladder's
+  two ends, because an accent-derived highlight is invisible on
+  accent-painted fills (the chat self bubble when this was
+  written, gone since #2873; primary buttons still). See the
+  rule's own comment in
+  `packages/theme/src/signet.css`.
+
+  "Lightened where it needs to stand out" covers two engine
+  steps, in order. The generator swaps in its own lighter step
+  9 for a seed near the dark background (accent-engine.md §2),
+  and then the §8 floor (#2541, #2586) lifts any scale whose
+  fill, hover or label still falls short, swapped or not. So
+  `#800000` paints its swapped `#F42F22` as is, `#003087`'s
+  swapped `#1C6CFE` is lifted on to `#2D7BFF`, `#8B0000` is
+  lifted to `#D75748`, and some vivid mid-tones move too
+  (`#3366FF` paints `#4479FF`). Without the clause this card
+  would promise a colour the save does not paint. The wording
+  is mobile's Preferences row's.
+
+  The closing sentence is board `2e`'s own preview caption
+  (the mark and ✦ Ask never change), moved into the
+  product. It is the one place an admin is choosing a colour, so
+  it is the one place worth saying what the colour cannot reach.
+  `settings-accent.spec.tsx` pins it against the tokens.
+  */
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Accent color</CardTitle>
-        {/*
-          Every clause of the copy this replaces was false, and the last
-          one had become false by being delivered.
-
-          - **"branded PDF reports"** — the accent has never reached a
-            PDF. `report-pdf.renderer.ts` draws from five fixed
-            constants (`INK`, `MUTED`, `RULE`, `HEAD_FILL`,
-            `ZEBRA_FILL`) and the branding payload
-            `report-export.service.ts` hands it is
-            `{ chapterName, university, logo }` — no colour of any kind.
-          - **"against white"** — #1157 moved the check to the dark card
-            it actually renders on (`resolveChapterAccentColor` is
-            called with `background: surface.card` above). The code
-            moved; the sentence did not.
-          - **"invalid colors fall back to the [design system's]
-            default"** —
-            conflates two different outcomes. A hex the engine cannot
-            parse falls back to `HOUSE_SEED`; a parseable colour that
-            fails §8 contrast is **saved anyway** and disclosed by the
-            server contrast warning below, because `chapter.service.ts` removed
-            that gate deliberately ("gating it would reject 49 of the 50
-            real chapters in the directory seed").
-          - **"arrives in Chunk 07"** — this is chunk 07
-            ([#2147](https://github.com/pdcarlson/Frapp/issues/2147)).
-
-          An earlier draft of the replacement also claimed the accent
-          paints "selected text". It does not, and the review is what
-          caught it: `::selection` is deliberately the neutral ladder's
-          two ends, because an accent-derived highlight is invisible on
-          accent-painted fills (the chat self bubble when this was
-          written, gone since #2873; primary buttons still). See the
-          rule's own comment in
-          `packages/theme/src/signet.css`.
-
-          "Lightened where it needs to stand out" covers two engine
-          steps, in order. The generator swaps in its own lighter step
-          9 for a seed near the dark background (accent-engine.md §2),
-          and then the §8 floor (#2541, #2586) lifts any scale whose
-          fill, hover or label still falls short, swapped or not. So
-          `#800000` paints its swapped `#F42F22` as is, `#003087`'s
-          swapped `#1C6CFE` is lifted on to `#2D7BFF`, `#8B0000` is
-          lifted to `#D75748`, and some vivid mid-tones move too
-          (`#3366FF` paints `#4479FF`). Without the clause this card
-          would promise a colour the save does not paint. The wording
-          is mobile's Preferences row's.
-
-          The closing sentence is board `2e`'s own preview caption
-          (the mark and ✦ Ask never change), moved into the
-          product. It is the one place an admin is choosing a colour, so
-          it is the one place worth saying what the colour cannot reach.
-          `settings-accent.spec.tsx` pins it against the tokens.
-        */}
-        <CardDescription>
-          Paints primary buttons, your own name in chat and the active nav
-          item. The Frapp mark and the Ask pill keep their own colors.
-        </CardDescription>
-      </CardHeader>
+    <ProfileSection
+      id="settings-accent"
+      title="Accent color"
+      hint="Paints primary buttons, your own name in chat and the active nav item. The Frapp mark and the Ask pill keep their own colors."
+    >
       <form onSubmit={saveAccent}>
-        <CardContent className="space-y-4">
+        <div className="space-y-4">
           <AccentSwatches
             value={accentDraftHex}
             orgName={orgName}
@@ -385,8 +377,8 @@ export function SettingsAccentTab({
               Try a lighter or darker shade of this hue and save again.
             </p>
           ) : null}
-        </CardContent>
-        <CardFooter className="flex justify-end">
+        </div>
+        <div className="mt-4 flex justify-end">
           <Button
             type="submit"
             disabled={
@@ -401,8 +393,8 @@ export function SettingsAccentTab({
             ) : null}
             Save accent color
           </Button>
-        </CardFooter>
+        </div>
       </form>
-    </Card>
+    </ProfileSection>
   );
 }

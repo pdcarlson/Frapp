@@ -40,78 +40,113 @@ const RAIL_ROW_RESET =
 
 const RAIL_TRIGGER_CLASS = `${RAIL_ROW_RESET} h-[34px] justify-start rounded-[10px] px-[10px] text-sm text-muted-foreground enabled:hover:bg-card data-[state=active]:bg-accent-subtle data-[state=active]:font-semibold data-[state=active]:text-accent-text data-[state=active]:shadow-none enabled:data-[state=active]:text-accent-text lg:w-full lg:flex-none`;
 
-const RAIL_DANGER_TRIGGER_CLASS = `${RAIL_ROW_RESET} h-[34px] justify-start rounded-[10px] px-[10px] text-sm text-destructive enabled:hover:bg-card data-[state=active]:bg-destructive-tint data-[state=active]:font-semibold data-[state=active]:text-destructive-text data-[state=active]:shadow-none enabled:data-[state=active]:text-destructive-text lg:mt-auto lg:w-full lg:flex-none`;
+const RAIL_DANGER_TRIGGER_CLASS = `${RAIL_ROW_RESET} h-[34px] justify-start rounded-[10px] px-[10px] text-sm text-destructive enabled:hover:bg-card data-[state=active]:bg-destructive-tint data-[state=active]:font-semibold data-[state=active]:text-destructive-text data-[state=active]:shadow-none enabled:data-[state=active]:text-destructive-text lg:w-full lg:flex-none`;
 
-// Valid `?tab=` deep-link targets — mirrors the rail triggers below.
-//
-// Order is board `4d`'s: Chapter, Accent, Subscription, Modules, Roles, Join
-// code, Semester, Fields, Privacy, then Danger zone pinned last. Three
-// departures, each forced by what this product actually has:
-//
-// - **No `joincode`.** The board draws a Join code tab. `apps/web` has no
-//   join-code surface at all — a repo-wide grep for `join_code`, `joinCode`
-//   and `invite_code` returns nothing outside the API SDK. Building one is a
-//   capability, and this lane is chrome (`spec/ui/web-dashboard/README.md`
-//   § Settings).
-// - **No `subscription`.** The board puts plan status behind this rail, but
-//   `/billing` is a route a member reaches to pay their own invoice — see the
-//   note in `billing-page.tsx`, which is why `4d`'s "Members never see this
-//   page" was already refused there. A tab would hide it from the members it
-//   is for. `/billing` stays a route; Danger zone links to the Stripe portal.
-// - **`dues`, `workflows` and `classes` are ours.** The board draws none of
-//   them. Each is live chapter configuration with no other home, so each
-//   keeps a rail entry: the first two slotted after Fields, where the board's
-//   own knob tabs sit, and `classes` after Roles.
-//
-// `beta` and `audit` are gone rather than reordered. They rendered
-// `SettingsComingSoon` stubs naming "Chunk 08" — generated chrome advertising
-// unbuilt work, which is exactly what this epic deletes.
-export const SETTINGS_TABS: readonly { value: string; label: string }[] = [
-  { value: "org", label: "Chapter" },
-  { value: "theme", label: "Accent" },
-  { value: "modules", label: "Modules" },
-  { value: "roles", label: "Roles" },
-  // Ours, like `dues` and `workflows`: the chapter's pledge classes (#3939),
-  // beside Roles because `roles:manage` gates both. The page replaces this
-  // label with the chapter's own word for a class, as typed.
-  { value: "classes", label: "Pledge class" },
-  { value: "semester", label: "Semester" },
-  { value: "fields", label: "Fields" },
-  { value: "dues", label: "Dues" },
-  { value: "workflows", label: "Workflows" },
-  { value: "privacy", label: "Privacy" },
-  { value: "danger", label: "Danger zone" },
+/** The rail's groups, in order. Danger zone sits under all of them. */
+export type SettingsTabGroup = "chapter" | "people" | "modules" | "danger";
+
+export const SETTINGS_TAB_GROUP_LABELS: Readonly<
+  Record<Exclude<SettingsTabGroup, "danger">, string>
+> = {
+  chapter: "Chapter",
+  people: "People",
+  modules: "Modules",
+};
+
+export type SettingsTab = {
+  value: string;
+  label: string;
+  group: SettingsTabGroup;
+};
+
+/*
+  The rail, grouped (#3827, slice 5 of #4068): Chapter, People and Modules,
+  the grouping the settings design settled (#4065), then Danger zone last in
+  normal flow. It used to be one flat list of eleven rows with Danger zone
+  pushed to the bottom of a rail stretched to the panel's height
+  (`lg:mt-auto`), so on a long tab it fell below the fold and moved every time
+  the tab changed (#3713).
+
+  - **Accent is not a row any more.** It is a section of Chapter, under the
+    chapter mark: both decide how the chapter looks. `?tab=theme` still lands
+    there (`SETTINGS_TAB_ALIASES`).
+  - **No `joincode` and no `subscription`.** The board `4d` rail drew both.
+    `apps/web` has no join-code surface, and billing moves in as its own
+    section in the second #3827 PR (decision 8 of #4068), not here.
+  - **`dues`, `workflows` and `classes` are ours.** Each is live chapter
+    configuration with no other home. `classes` takes the chapter's own word
+    for a class, which the page sets.
+
+  `beta` and `audit` are gone rather than reordered. They rendered
+  `SettingsComingSoon` stubs naming "Chunk 08", generated chrome advertising
+  unbuilt work.
+*/
+export const SETTINGS_TABS: readonly SettingsTab[] = [
+  { value: "org", label: "Chapter", group: "chapter" },
+  { value: "semester", label: "Semester", group: "chapter" },
+  { value: "privacy", label: "Privacy", group: "chapter" },
+  { value: "roles", label: "Roles", group: "people" },
+  { value: "classes", label: "Pledge class", group: "people" },
+  { value: "fields", label: "Member fields", group: "people" },
+  { value: "modules", label: "Modules", group: "modules" },
+  { value: "dues", label: "Dues", group: "modules" },
+  { value: "workflows", label: "Workflows", group: "modules" },
+  { value: "danger", label: "Danger zone", group: "danger" },
 ];
-export const SETTINGS_TAB_VALUES: readonly string[] = SETTINGS_TABS.map(
-  (tab) => tab.value,
-);
+
+/**
+ * Old `?tab=` values that now open another row: Accent folded into Chapter.
+ * Old links and bookmarks to `?tab=theme` keep working.
+ */
+export const SETTINGS_TAB_ALIASES: Readonly<Record<string, string>> = {
+  theme: "org",
+};
+
+/** Resolves a `?tab=` value to a row, or `null` when it names none. */
+export function resolveSettingsTabParam(
+  param: string | null | undefined,
+): string | null {
+  if (!param) return null;
+  const value = SETTINGS_TAB_ALIASES[param] ?? param;
+  return SETTINGS_TABS.some((tab) => tab.value === value) ? value : null;
+}
 
 // The officer tools (`settings-access.ts`) are links, not tabs: each keeps its
 // own full-width page, so they take the link row (`RAIL_LINK_CLASS`), since
 // clicking one leaves this page rather than switching a tab.
 
 /**
- * The left rail: officer-tool links above the setup tabs. Renders inside the
- * page's `<Tabs>`, since its `TabsList` drives the panels beside it.
+ * The left rail: officer-tool links, then the setup rows in their groups, then
+ * Danger zone. Renders inside the page's `<Tabs>`, since its lists drive the
+ * panels beside it.
+ *
+ * **Sticky, at a fixed width.** The page scrolls inside the shell's tool pane,
+ * and the rail stays where it is while a long section (Roles, Chapter) scrolls
+ * under it, the way Discord's and Slack's settings rails do. It scrolls on its
+ * own only on a window too short to hold it.
  */
 export function SettingsRail({
   tools,
   visibleTabs,
 }: {
   tools: readonly SettingsTool[];
-  visibleTabs: readonly { value: string; label: string }[];
+  visibleTabs: readonly SettingsTab[];
 }) {
+  const groups = (
+    Object.keys(SETTINGS_TAB_GROUP_LABELS) as Exclude<
+      SettingsTabGroup,
+      "danger"
+    >[]
+  )
+    .map((group) => ({
+      group,
+      label: SETTINGS_TAB_GROUP_LABELS[group],
+      tabs: visibleTabs.filter((tab) => tab.group === group),
+    }))
+    .filter((entry) => entry.tabs.length > 0);
+  const danger = visibleTabs.filter((tab) => tab.group === "danger");
   return (
-    /*
-      Board `4d`: `width:200px`, `padding:12px 8px`, `gap:2px`, a right
-      hairline. `lg:w-[200px]` is that width exactly rather than the `w-56`
-      (224px) this rail used to take.
-
-      The officer tools sit above the tabs (#2946). They were the nav's
-      Admin group until it folded into Settings, and they are what an
-      officer comes here for most often; setup is occasional.
-    */
-    <div className="flex w-full flex-col gap-3 lg:w-[200px] lg:self-stretch lg:border-r lg:border-border lg:px-2 lg:py-3">
+    <div className="flex w-full flex-col gap-4 lg:sticky lg:top-0 lg:max-h-[calc(100dvh-7rem)] lg:w-[200px] lg:shrink-0 lg:self-start lg:overflow-y-auto lg:py-1">
       {tools.length > 0 ? (
         <nav aria-label="Officer tools" className="flex flex-col gap-0.5">
           <p className={cn(EYEBROW, "px-[10px] pb-1 text-muted")}>Tools</p>
@@ -124,29 +159,46 @@ export function SettingsRail({
           </div>
         </nav>
       ) : null}
-      {tools.length > 0 ? (
-        <p className={cn(EYEBROW, "px-[10px] pb-1 text-muted lg:mt-2")}>
-          Chapter setup
-        </p>
-      ) : null}
-      <TabsList
-        aria-label="Chapter setup"
-        className="flex h-auto w-full flex-row flex-wrap justify-start gap-0.5 border-b-0 bg-transparent p-0 lg:flex-1 lg:flex-col lg:flex-nowrap lg:items-stretch"
-      >
-        {visibleTabs.map((tab) => (
-          <TabsTrigger
-            key={tab.value}
-            value={tab.value}
-            className={
-              tab.value === "danger"
-                ? RAIL_DANGER_TRIGGER_CLASS
-                : RAIL_TRIGGER_CLASS
-            }
+      {groups.map((entry) => (
+        <div key={entry.group} className="flex flex-col gap-0.5">
+          <p
+            id={`settings-rail-${entry.group}`}
+            className={cn(EYEBROW, "px-[10px] pb-1 text-muted")}
           >
-            {tab.label}
-          </TabsTrigger>
-        ))}
-      </TabsList>
+            {entry.label}
+          </p>
+          <TabsList
+            aria-labelledby={`settings-rail-${entry.group}`}
+            className="flex h-auto w-full flex-row flex-wrap justify-start gap-0.5 border-b-0 bg-transparent p-0 lg:flex-col lg:flex-nowrap lg:items-stretch"
+          >
+            {entry.tabs.map((tab) => (
+              <TabsTrigger
+                key={tab.value}
+                value={tab.value}
+                className={RAIL_TRIGGER_CLASS}
+              >
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
+      ))}
+      {danger.length > 0 ? (
+        <TabsList
+          aria-label="Danger zone"
+          className="flex h-auto w-full flex-row flex-wrap justify-start gap-0.5 border-b-0 border-t border-border bg-transparent p-0 pt-3 lg:flex-col lg:flex-nowrap lg:items-stretch"
+        >
+          {danger.map((tab) => (
+            <TabsTrigger
+              key={tab.value}
+              value={tab.value}
+              className={RAIL_DANGER_TRIGGER_CLASS}
+            >
+              {tab.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      ) : null}
     </div>
   );
 }

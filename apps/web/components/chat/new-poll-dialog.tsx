@@ -34,7 +34,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { dashboardFormSelectClassName } from "@/components/shared/table-controls";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 /**
  * The composer's New poll form (#3865, #3773 step 2): opened from the **+**
@@ -245,26 +251,35 @@ export function NewPollDialog({
             )}
           </fieldset>
 
-          <label className="space-y-1 text-sm">
-            <span className="text-muted-foreground">Voting closes in</span>
-            <select
+          <div className="space-y-1 text-sm">
+            <Label
+              htmlFor="new-poll-closes"
+              className="font-normal text-muted-foreground"
+            >
+              Voting closes in
+            </Label>
+            <Select
               value={draft.closes}
-              onChange={(event) =>
+              onValueChange={(value) =>
                 edit((current) => ({
                   ...current,
-                  closes: event.target.value as PollCloseChoice,
+                  closes: value as PollCloseChoice,
                 }))
               }
-              className={`${dashboardFormSelectClassName} w-full`}
               disabled={posting}
             >
-              {pollCloseChoicesFor(canCloseEarly).map((choice) => (
-                <option key={choice.id} value={choice.id}>
-                  {choice.label}
-                </option>
-              ))}
-            </select>
-          </label>
+              <SelectTrigger id="new-poll-closes">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {pollCloseChoicesFor(canCloseEarly).map((choice) => (
+                  <SelectItem key={choice.id} value={choice.id}>
+                    {choice.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
           <div className="flex items-center justify-between gap-4">
             <Label htmlFor="new-poll-multiple">{POLL_MULTIPLE_LABEL}</Label>

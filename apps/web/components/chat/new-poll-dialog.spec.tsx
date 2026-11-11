@@ -54,10 +54,11 @@ describe("NewPollDialog (#3865)", () => {
         now={() => NOW}
       />,
     );
-    const closes = screen.getByLabelText("Voting closes in");
+    const closes = screen.getByRole("combobox", { name: "Voting closes in" });
     // A day stays the default; Doesn't close is the last choice offered.
-    expect(closes).toHaveValue("1d");
-    await user.selectOptions(closes, "Doesn't close");
+    expect(closes).toHaveTextContent("1 day");
+    await user.click(closes);
+    await user.click(screen.getByRole("option", { name: "Doesn't close" }));
     await user.click(screen.getByRole("button", { name: "Post poll" }));
 
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
@@ -110,7 +111,7 @@ describe("NewPollDialog (#3865)", () => {
     expect(payloads[1]!.choice_mode).toBe("multi");
   });
 
-  it("withholds Doesn't close from a member who couldn't close the poll", () => {
+  it("withholds Doesn't close from a member who couldn't close the poll", async () => {
     render(
       <NewPollDialog
         open
@@ -120,9 +121,12 @@ describe("NewPollDialog (#3865)", () => {
         canCloseEarly={false}
       />,
     );
-    const choices = Array.from(
-      (screen.getByLabelText("Voting closes in") as HTMLSelectElement).options,
-    ).map((option) => option.text);
+    await userEvent.click(
+      screen.getByRole("combobox", { name: "Voting closes in" }),
+    );
+    const choices = screen
+      .getAllByRole("option")
+      .map((option) => option.textContent);
     expect(choices).toEqual(["1 hour", "1 day", "3 days", "1 week"]);
   });
 

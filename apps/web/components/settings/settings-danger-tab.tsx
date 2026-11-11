@@ -1,15 +1,9 @@
 "use client";
 
-import { AlertTriangle, Loader2, Trash2 } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 import { type useCreatePortal } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { ProfileSection } from "@/components/profile/profile-section";
 import { BillingGlyph } from "@/components/layout/nav-glyphs";
 import { Can } from "@/components/shared/can";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -57,17 +51,12 @@ export function SettingsDangerTab({
   }
 
   return (
-    <Card className="border-destructive/30">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-destructive">
-          <AlertTriangle className="h-4 w-4" />
-          Danger zone
-        </CardTitle>
-        <CardDescription>
-          Cancel or change the subscription in Stripe.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <ProfileSection
+      id="settings-danger"
+      title="Danger zone"
+      hint="Cancel or change the subscription in Stripe."
+    >
+      <div className="space-y-4">
         <Can
           permission="billing:manage"
           deniedFallback={
@@ -87,9 +76,6 @@ export function SettingsDangerTab({
               // Names the destination, not the verb — §6.2 keeps
               // Lucide for control furniture, and the billing intent
               // is already a Signet duotone in `nav-glyphs.tsx`.
-              // `AlertTriangle` above stays Lucide: it is the danger
-              // marker `async-states.tsx` draws for the same tone, not
-              // a domain intent.
               <BillingGlyph className="h-4 w-4" />
             )}
             Open Stripe billing portal
@@ -101,7 +87,7 @@ export function SettingsDangerTab({
           from the billing portal. Data is preserved indefinitely in read-only
           mode (see privacy policy).
         </p>
-      </CardContent>
-    </Card>
+      </div>
+    </ProfileSection>
   );
 }

@@ -21,13 +21,7 @@ import {
   PLEDGE_CLASSES_MAX,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { ProfileSection } from "@/components/profile/profile-section";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -187,15 +181,17 @@ export function SettingsClassesTab({ canManage, classTerm, orderTerm }: Props) {
   } else {
     body = (
       <>
-        <Card>
-          <CardHeader>
-            <CardTitle>{classTerm}</CardTitle>
-            <CardDescription>
+        <ProfileSection
+          id="settings-classes"
+          title={classTerm}
+          hint={
+            <>
               The chapter&apos;s list, oldest first.
               {canManage && classes.length > 1 ? " Drag to reorder." : ""}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+            </>
+          }
+        >
+          <div>
             {classes.length === 0 ? (
               <InlineNote>Nothing here yet. Add the oldest one first.</InlineNote>
             ) : (
@@ -230,8 +226,8 @@ export function SettingsClassesTab({ canManage, classTerm, orderTerm }: Props) {
                 </InlineNoteAction>
               </InlineNote>
             ) : null}
-          </CardContent>
-        </Card>
+          </div>
+        </ProfileSection>
 
         {canManage ? (
           <AddClassForm full={classes.length >= PLEDGE_CLASSES_MAX} />
@@ -245,7 +241,7 @@ export function SettingsClassesTab({ canManage, classTerm, orderTerm }: Props) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
       {confirmDialog}
       {body}
       <Sheet
@@ -457,16 +453,18 @@ function AddClassForm({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Add to the list</CardTitle>
-        <CardDescription>
+    <ProfileSection
+      id="settings-add-to-the-list"
+      title="Add to the list"
+      hint={
+        <>
           {full
             ? `This chapter has ${PLEDGE_CLASSES_MAX}, the most it can hold.`
             : "It goes at the end, as the newest."}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+        </>
+      }
+    >
+      <div>
         <form
           onSubmit={handleCreate}
           className="flex flex-wrap items-end gap-3"
@@ -494,8 +492,8 @@ function AddClassForm({
             Add
           </Button>
         </form>
-      </CardContent>
-    </Card>
+      </div>
+    </ProfileSection>
   );
 }
 

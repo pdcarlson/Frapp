@@ -2,7 +2,10 @@
 
 Behavior rules for the customization-heavy settings tabs (Accent, Roles, Fields, Workflows, Dues). The settings rail, Org/Modules tabs, and cross-cutting audit rules live in [`README.md`](README.md). Saves in these tabs write `chapter_audit_log` rows mirrored to `#chapter-audit`. On the Roles tab that covers creating, editing, recolouring, reordering or deleting any role in the Manage roles section, every permission-matrix toggle, a presidency transfer, the `chapter_custom_roles` section (`/custom-roles`), the default invite role and a presidency claim. Which verbs and diffs the role routes write, and which writes skip a save that changes nothing, is in the README's [audit rules](README.md#audit-rules).
 
-## Accent Tab (`?tab=theme`)
+## Accent (a section of Chapter, `?tab=theme`)
+
+Accent is a section of the Chapter row, under the chapter mark, since #3827 (2026-11-11); `?tab=theme` opens Chapter.
+
 
 - A chapter sets **one colour**: the accent seed. Every accent role is derived from it, and the neutral ladder — backgrounds, borders, sidebar, text — is fixed rather than branded ([`../../ui/design-system/accent-engine.md`](../../ui/design-system/accent-engine.md) §1 and §5). A second **dark** colour existed until the #920 slice-9 cutover, which deleted the legacy engine it fed; #541 tracked building a picker for it and is obsolete. Accent-color rules, brand boundaries, and logo upload (the shared `image` kind in `@repo/validation`, not an Accent-tab-specific allowlist) are canon in [`../branding.md`](../branding.md).
 - Saving recomputes the chapter's `theme_palette` **server-side** and the client refetches and re-applies the accent roles immediately — no full reload.
