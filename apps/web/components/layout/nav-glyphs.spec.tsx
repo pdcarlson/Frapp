@@ -11,6 +11,7 @@ import { InviteGlyph } from "@/components/members/directory-glyphs";
 import { ProfileGlyph } from "@/components/profile/profile-glyphs";
 import type { DuotoneGlyphComponent } from "@/components/ui/duotone";
 import {
+  ActivityGlyph,
   BackworkGlyph,
   BillingGlyph,
   ChatGlyph,
@@ -36,6 +37,7 @@ import {
  */
 const SHAPES: ReadonlyArray<[string, DuotoneGlyphComponent, NavGlyphName]> = [
   ["Chat", ChatGlyph, "chat"],
+  ["Activity", ActivityGlyph, "activity"],
   ["Events", EventsGlyph, "events"],
   ["Tasks", TasksGlyph, "tasks"],
   ["Points", PointsGlyph, "points"],

@@ -306,6 +306,7 @@ This table is the intent → glyph map; it MUST change in the same PR as
 | Semantic intent | Glyph | Shape (nav set key, Phosphor name) |
 |---|---|---|
 | Chat | `ChatGlyph` | `chat`, `chat-circle-dots` |
+| Activity (what needs you, what you made) | `ActivityGlyph` | `activity`, `tray` |
 | Events | `EventsGlyph` | `events`, `calendar-dots` |
 | Tasks | `TasksGlyph` | `tasks`, `seal-check` |
 | Points | `PointsGlyph` | `points`, `trophy` |

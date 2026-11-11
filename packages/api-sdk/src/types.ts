@@ -4067,7 +4067,7 @@ export interface components {
              * @description The module the permission belongs to: a module catalog key, or `chapter` for a chapter-level permission.
              * @enum {string}
              */
-            module: "chapter" | "members" | "chat" | "announcements" | "events" | "tasks" | "points" | "hours" | "polls" | "backwork" | "documents" | "geofences" | "reports" | "billing";
+            module: "chapter" | "members" | "chat" | "announcements" | "events" | "tasks" | "points" | "hours" | "polls" | "rush" | "backwork" | "documents" | "geofences" | "reports" | "billing";
             /** @description The module's display name. */
             module_label: string;
             /** @description What the permission lets a role do. */
@@ -5668,6 +5668,11 @@ export interface components {
             point_reward: number | null;
             /** Format: date-time */
             completed_at: string | null;
+            /**
+             * Format: date-time
+             * @description When an officer confirmed the completion; null until then. A completed task with no confirmation is still waiting on one.
+             */
+            confirmed_at: string | null;
             /** Format: date-time */
             created_at: string;
         };

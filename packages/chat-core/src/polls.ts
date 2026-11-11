@@ -163,7 +163,8 @@ export function readPollPayload(message: ChatMessage): PollPayload | null {
   return {
     question,
     options: parsed,
-    closes_at: typeof closesAt === "string" && closesAt !== "" ? closesAt : null,
+    closes_at:
+      typeof closesAt === "string" && closesAt !== "" ? closesAt : null,
     // Only on a card closed early (#3794), so an open card reads back exactly
     // as `buildPollMessage` built it.
     ...(typeof closedAt === "string" && closedAt !== ""

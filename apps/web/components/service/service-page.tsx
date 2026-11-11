@@ -7,7 +7,6 @@ import {
   useDeleteServiceEntry,
   useGetServiceProofUrl,
   useMembers,
-  useReviewServiceEntry,
   useMyPermissions,
   useServiceEntries,
   useServicePointsRate,
@@ -16,6 +15,7 @@ import { can } from "@repo/validation";
 import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
 import { Button } from "@/components/ui/button";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { useServiceReview } from "@/components/service/use-service-review";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { serviceStatusKind } from "@/components/service/service-status";
 import type { ServiceStatus } from "@/components/service/service-status";
@@ -83,14 +83,15 @@ export function ServiceHoursPage() {
   const { confirm, confirmDialog } = useConfirmDialog();
   const entriesQuery = useServiceEntries();
   const membersQuery = useMembers();
-  const reviewEntry = useReviewServiceEntry();
+  // Approve and Reject, with Reject's own prompt: shared with the Activity
+  // page, which reviews the same queue (`use-service-review.tsx`).
+  const review = useServiceReview();
   const deleteEntry = useDeleteServiceEntry();
   // The viewer's `users.id` — the id space `service_entries.user_id` references
   // (`users(id)`, not the Supabase auth uid). `null` until it resolves, which
   // the approval gate below treats as "might be me".
   const { userId: viewerUserId, isLoading: viewerLoading } = useFrappUser();
   const viewerUnknown = viewerUserId === null;
-
 
   const entries = useMemo(
     () => asArray<ServiceEntry>(entriesQuery.data),
@@ -156,63 +157,6 @@ export function ServiceHoursPage() {
   );
   const pointsRate = useServicePointsRate({ enabled: canApprove });
   const minutesPerPoint = pointsRate.data?.minutes_per_point;
-  async function approve(entry: ServiceEntry) {
-    try {
-      await reviewEntry.mutateAsync({
-        id: entry.id,
-        body: { status: "APPROVED" },
-      });
-      toast({
-        title: "Entry approved",
-        description: "Points will be awarded per the chapter rate.",
-      });
-    } catch (error) {
-      toast({
-        title: "Couldn't approve entry",
-        description: getErrorMessage(
-          error,
-          "Only a pending entry someone else submitted can be approved.",
-        ),
-        variant: "destructive",
-      });
-    }
-  }
-
-  async function reject(entry: ServiceEntry) {
-    const result = await confirm({
-      title: `Reject "${entry.description || "this entry"}"?`,
-      description:
-        "The member is notified, and the hours are not credited. They can submit the entry again.",
-      confirmLabel: "Reject entry",
-      tone: "destructive",
-      comment: {
-        label: "Comment for the member",
-        placeholder: "Optional. Why was this rejected?",
-      },
-    });
-    // `null` is cancel; a confirmed empty box is still a rejection.
-    if (result === null) return;
-    try {
-      await reviewEntry.mutateAsync({
-        id: entry.id,
-        body: {
-          status: "REJECTED",
-          review_comment: result.comment || undefined,
-        },
-      });
-      toast({
-        title: "Entry rejected",
-        description: "The member was notified with your comment.",
-      });
-    } catch (error) {
-      toast({
-        title: "Couldn't reject entry",
-        description: getErrorMessage(error, "Try again in a moment."),
-        variant: "destructive",
-      });
-    }
-  }
-
   const getProofUrl = useGetServiceProofUrl();
 
   async function viewProof(entry: ServiceEntry) {
@@ -447,9 +391,9 @@ export function ServiceHoursPage() {
                       <Button
                         size="toolbar"
                         variant="secondary"
-                        onClick={() => void approve(entry)}
+                        onClick={() => void review.approve(entry)}
                         {...gate.controlProps(
-                          reviewEntry.isPending || cannotApprove,
+                          review.isPending || cannotApprove,
                         )}
                         {...(showApproveReason
                           ? { "aria-describedby": approveReasonId }
@@ -466,8 +410,8 @@ export function ServiceHoursPage() {
                       <Button
                         size="toolbar"
                         variant="ghost"
-                        onClick={() => void reject(entry)}
-                        {...gate.controlProps(reviewEntry.isPending)}
+                        onClick={() => void review.reject(entry)}
+                        {...gate.controlProps(review.isPending)}
                       >
                         <XCircle className="h-4 w-4" />
                         Reject
@@ -616,6 +560,7 @@ export function ServiceHoursPage() {
         </section>
       ) : null}
       {confirmDialog}
+      {review.confirmDialog}
     </div>
   );
 }

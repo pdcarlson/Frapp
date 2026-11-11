@@ -95,9 +95,9 @@ describe("readEventPayload", () => {
 
   it("returns null without an id, a name or either time", () => {
     for (const key of ["event_id", "name", "start_time", "end_time"]) {
-      expect(readEventPayload(withPayload({ ...EVENT, [key]: undefined }))).toBe(
-        null,
-      );
+      expect(
+        readEventPayload(withPayload({ ...EVENT, [key]: undefined })),
+      ).toBe(null);
     }
     expect(readEventPayload(withPayload(null))).toBe(null);
     expect(readEventPayload(withPayload("event"))).toBe(null);
@@ -183,7 +183,9 @@ describe("readPointsPayload", () => {
       ).toBe(null);
     }
     expect(
-      readPointsPayload(withPayload({ ...POINTS, amount: Number.POSITIVE_INFINITY })),
+      readPointsPayload(
+        withPayload({ ...POINTS, amount: Number.POSITIVE_INFINITY }),
+      ),
     ).toBe(null);
     expect(readPointsPayload(withPayload("5"))).toBe(null);
   });
@@ -257,9 +259,9 @@ describe("readHoursPayload", () => {
       "date",
       "duration_minutes",
     ]) {
-      expect(readHoursPayload(withPayload({ ...HOURS, [key]: undefined }))).toBe(
-        null,
-      );
+      expect(
+        readHoursPayload(withPayload({ ...HOURS, [key]: undefined })),
+      ).toBe(null);
     }
     expect(
       readHoursPayload(withPayload({ ...HOURS, duration_minutes: "150" })),
@@ -296,7 +298,11 @@ describe("readSystemAuditPayload", () => {
       readSystemAuditPayload(
         withPayload({ action: "chapter_config_updated", diff: ["name"] }),
       ),
-    ).toEqual({ action: "chapter_config_updated", actor_user_id: null, diff: {} });
+    ).toEqual({
+      action: "chapter_config_updated",
+      actor_user_id: null,
+      diff: {},
+    });
     expect(
       readSystemAuditPayload(withPayload({ ...AUDIT, diff: "name" }))?.diff,
     ).toEqual({});
@@ -308,9 +314,9 @@ describe("readAnnouncementBody", () => {
     ({ content, payload }) as unknown as ChatMessage;
 
   it("prefers content, what the push and the preview show", () => {
-    expect(readAnnouncementBody(message("Dues are due", { body: "Other" }))).toBe(
-      "Dues are due",
-    );
+    expect(
+      readAnnouncementBody(message("Dues are due", { body: "Other" })),
+    ).toBe("Dues are due");
   });
 
   it("falls back to the body when content is blank", () => {
@@ -335,7 +341,10 @@ describe("auditLineText", () => {
   it("says what a known action did in words, and lists the fields as words", () => {
     expect(
       auditLineText(audit("chapter_profile_updated", { accent_color: {} })),
-    ).toEqual({ phrase: "updated the chapter profile", detail: "accent color" });
+    ).toEqual({
+      phrase: "updated the chapter profile",
+      detail: "accent color",
+    });
     expect(
       auditLineText(audit("role_updated", { permissions: {}, name: {} })),
     ).toEqual({ phrase: "edited a role", detail: "permissions, name" });
