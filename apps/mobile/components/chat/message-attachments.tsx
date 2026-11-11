@@ -9,7 +9,9 @@ import {
 import { Image, type ImageStyle } from "expo-image";
 import * as WebBrowser from "expo-web-browser";
 import { useMessageAttachments } from "@repo/hooks";
+import type { AttachmentPhoto } from "@repo/chat-core/types";
 import { formatBytes } from "@repo/formatting";
+import { isDecodableThumbhash } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useOpenImageViewer, viewerImages } from "./image-viewer";
@@ -49,9 +51,13 @@ import { chatPhotoCacheKey } from "@/lib/chat/photo-cache";
  * to 256pt tall then replaced, pushing the thread with every one that landed
  * (components.md §10: the skeleton mirrors the layout it becomes).
  *
- * The count is all the row knows yet, not which files are photos: the message
- * carries only `metadata.attachment_count`, and type, name and dimensions
- * arrive with this query. So the tile is a bet, and it is placed on photos.
+ * A message sent since #3879 also carries its photos' geometry
+ * (`photos`, from `metadata.attachment_photos`): how many of its files are
+ * photos, and each one's size and blur. Then a lone photo's tile is the
+ * photo's own box with its blur, and each file is a file row, so nothing
+ * moves when the read lands. An older message carries only the count, and
+ * type, name and dimensions arrive with this query. So the tile is a bet, and
+ * it is placed on photos.
  * Mobile's composer attaches only photos; web's attaches photos and documents
  * (a PDF, say), and a document resolves to a one-line file row, so a web-sent
  * document shrinks by about 150pt when it lands. A file-row-height placeholder
@@ -92,6 +98,8 @@ export interface MessageAttachmentsProps {
    * yet, so nothing is fetched and the local photos (if any) draw alone.
    */
   confirmed?: boolean;
+  /** `message.attachment_photos`: each photo's size and blur (#3879). */
+  photos?: readonly AttachmentPhoto[];
   /**
    * The message's own long-press (its actions sheet — #2257), forwarded to each
    * file. A file row is a `Pressable` that claims the touch, so without it a
@@ -107,6 +115,7 @@ export function MessageAttachments({
   count,
   clientMessageId,
   confirmed = true,
+  photos,
   onLongPress,
 }: MessageAttachmentsProps) {
   const { tokens } = useFrappTheme();
@@ -145,9 +154,17 @@ export function MessageAttachments({
   if (!confirmed) return null;
 
   if (query.isPending) {
-    // Two or more files are bet to be photos, drawn as the grid they become
-    // (components.md §10: the skeleton mirrors the layout it becomes).
-    const tiles = Math.min(count, GRID_MAX_TILES);
+    // With the message's geometry (#3879), the photos and files are known and
+    // a lone photo's size too. Without it, every file is bet to be a photo,
+    // and two or more draw as the grid they become (components.md §10: the
+    // skeleton mirrors the layout it becomes).
+    const known = photos && photos.length <= count ? photos : undefined;
+    const photoCount = known ? known.length : count;
+    const fileCount = count - photoCount;
+    const tiles = Math.min(photoCount, GRID_MAX_TILES);
+    const lone = known?.length === 1 ? known[0]! : undefined;
+    const loneAspect =
+      lone?.width && lone.height ? lone.width / lone.height : null;
     return (
       <View
         accessible
@@ -157,7 +174,19 @@ export function MessageAttachments({
         }
         style={styles.list}
       >
-        {count === 1 ? (
+        {photoCount === 0 ? null : photoCount === 1 && loneAspect !== null ? (
+          // The lone photo's own box, as `SinglePhoto` sizes it, with its blur.
+          <View
+            testID="attachment-loading-tile"
+            style={sizedPhotoRow(loneAspect, styles)}
+          >
+            <PendingBlur
+              thumbhash={lone?.thumbhash}
+              fit="fill"
+              styles={styles}
+            />
+          </View>
+        ) : photoCount === 1 ? (
           <View testID="attachment-loading-tile" style={styles.imageRow}>
             <View style={styles.loadingTile} />
           </View>
@@ -171,10 +200,35 @@ export function MessageAttachments({
                   styles.tile,
                   tiles === 3 && index === 2 ? styles.tileWide : null,
                 ]}
-              />
+              >
+                {/* The blur of the photo stamped at this place. The read may
+                    order the photos differently, so a tile's blur can change
+                    when it lands; its size can't, the tiles being squares. */}
+                {known?.[index]?.thumbhash ? (
+                  <PendingBlur
+                    thumbhash={known[index]!.thumbhash}
+                    fit="cover"
+                    styles={styles}
+                  />
+                ) : null}
+              </View>
             ))}
           </View>
         )}
+        {Array.from({ length: fileCount }, (_, index) => (
+          // A file row's frame and type, so it is as tall as the row it becomes.
+          <View
+            key={`file-${index}`}
+            testID="attachment-loading-file"
+            style={styles.row}
+          >
+            <View style={styles.fileRow}>
+              <Text style={styles.size} numberOfLines={1}>
+                Loading file…
+              </Text>
+            </View>
+          </View>
+        ))}
       </View>
     );
   }
@@ -233,7 +287,12 @@ export function MessageAttachments({
         key: attachment.id,
         source,
         fallback: source !== original ? original : undefined,
-        thumbhash: mine ? null : (attachment.thumbhash ?? null),
+        // A hash the decoder can't read in full would crash it on iOS; the
+        // API refuses those since #3879, and older rows are checked here.
+        thumbhash:
+          !mine && isDecodableThumbhash(attachment.thumbhash)
+            ? attachment.thumbhash
+            : null,
         width: mine?.width ?? attachment.width ?? null,
         height: mine?.height ?? attachment.height ?? null,
         label: attachment.filename,
@@ -420,15 +479,7 @@ function SinglePhoto({
       disabled={!photo.onPress}
       onPress={photo.onPress}
       onLongPress={onLongPress}
-      style={
-        aspect !== null
-          ? [
-              styles.imageRow,
-              styles.imageRowSized,
-              { maxWidth: PREVIEW_MAX_HEIGHT * aspect, aspectRatio: aspect },
-            ]
-          : styles.imageRow
-      }
+      style={aspect !== null ? sizedPhotoRow(aspect, styles) : styles.imageRow}
     >
       <PhotoImage
         photo={photo}
@@ -450,6 +501,57 @@ function SinglePhoto({
         }
       />
     </Pressable>
+  );
+}
+
+/**
+ * A lone sized photo's row: full column width at its aspect ratio, narrowed
+ * to the width at which it reaches the height cap. One rule for the loaded
+ * photo and the box that holds its place while the read is out (#3879), so
+ * the two can't drift apart.
+ */
+function sizedPhotoRow(
+  aspect: number,
+  styles: ReturnType<typeof createStyles>,
+): ViewStyle[] {
+  return [
+    styles.imageRow,
+    styles.imageRowSized,
+    { maxWidth: PREVIEW_MAX_HEIGHT * aspect, aspectRatio: aspect },
+  ];
+}
+
+/**
+ * What fills a photo's place while the read is out: its ThumbHash blur, or the
+ * skeleton's neutral fill without one. `expo-image` draws a placeholder when
+ * it has no source. The hash reaching here has passed `isDecodableThumbhash`
+ * in `normalizeRow`.
+ */
+function PendingBlur({
+  thumbhash,
+  fit,
+  styles,
+}: {
+  thumbhash: string | null | undefined;
+  fit: "fill" | "cover";
+  styles: ReturnType<typeof createStyles>;
+}) {
+  return thumbhash ? (
+    <Image
+      source={null}
+      placeholder={{ thumbhash }}
+      placeholderContentFit={fit}
+      accessibilityIgnoresInvertColors
+      // A grid tile's photo has no radius of its own (the grid clips it), a
+      // lone photo's does; the blur matches what it stands in for.
+      style={
+        (fit === "cover"
+          ? styles.previewFill
+          : [styles.preview, styles.previewFill]) as ImageStyle
+      }
+    />
+  ) : (
+    <View style={[styles.loadingTile, styles.previewFill]} />
   );
 }
 

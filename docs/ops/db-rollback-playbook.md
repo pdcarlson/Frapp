@@ -1299,9 +1299,10 @@ After any rollback event:
   ) x
   WHERE m.id = x.message_id;
 
+  -- `attachment_photos` (#3879) describes the same rows, so it goes too.
   UPDATE chat_messages
-  SET metadata = metadata - 'attachment_count'
-  WHERE metadata ? 'attachment_count';
+  SET metadata = metadata - 'attachment_count' - 'attachment_photos'
+  WHERE metadata ? 'attachment_count' OR metadata ? 'attachment_photos';
   ```
   Rows written *after* the migration are also restored by this — they were never
   in the sigil format, but the pre-change composer produced exactly that format,
