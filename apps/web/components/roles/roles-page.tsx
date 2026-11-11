@@ -409,7 +409,7 @@ export function RolesAndPermissionsPage() {
     body = (
       <SectionSkeleton label="Loading roles and permissions">
         <Skeleton className="h-4 w-32" />
-        <div className="grid gap-6 lg:grid-cols-[1fr_1.3fr]">
+        <div className="grid gap-6 @3xl:grid-cols-[1fr_1.3fr]">
           <SettingsListCard rows={4} />
           <SettingsListCard rows={2} />
         </div>
@@ -437,7 +437,7 @@ export function RolesAndPermissionsPage() {
         */}
         <h3 className="text-base font-bold">Manage roles</h3>
 
-        <div className="grid gap-6 lg:grid-cols-[1fr_1.3fr]">
+        <div className="grid gap-6 @3xl:grid-cols-[1fr_1.3fr]">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
@@ -529,8 +529,10 @@ export function RolesAndPermissionsPage() {
               </CardDescription>
             </CardHeader>
             {activeRole ? (
-              <CardContent className="space-y-4">
-                <div className="grid gap-3 sm:grid-cols-2">
+              // Its own container: the fields count the card's width, which is
+              // half the page once the two cards sit side by side.
+              <CardContent className="@container space-y-4">
+                <div className="grid gap-3 @md:grid-cols-2">
                   <div className="grid gap-1">
                     <Label htmlFor="role-name">Name</Label>
                     <Input
@@ -552,7 +554,7 @@ export function RolesAndPermissionsPage() {
                       }}
                     />
                   </div>
-                  <div className="grid gap-1 sm:col-span-2">
+                  <div className="grid gap-1 @md:col-span-2">
                     <Label id="role-color-label">Color</Label>
                     <RoleColorSwatches
                       labelId="role-color-label"
@@ -569,7 +571,7 @@ export function RolesAndPermissionsPage() {
                     manage channels or roles can @ it (spec/behavior/chat/
                     README.md § Role mentions).
                   */}
-                  <div className="flex items-start justify-between gap-4 sm:col-span-2">
+                  <div className="flex items-start justify-between gap-4 @md:col-span-2">
                     <div className="grid gap-1">
                       <Label htmlFor="role-mentionable">
                         Anyone can @mention this role
@@ -637,9 +639,9 @@ export function RolesAndPermissionsPage() {
             </CardDescription>
           </CardHeader>
           <form onSubmit={handleCreateRole}>
-            <CardContent className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="grid gap-1 sm:col-span-2">
+            <CardContent className="@container space-y-4">
+              <div className="grid gap-3 @md:grid-cols-3">
+                <div className="grid gap-1 @md:col-span-2">
                   <Label htmlFor="create-role-name">Role name</Label>
                   <Input
                     id="create-role-name"
@@ -702,8 +704,8 @@ export function RolesAndPermissionsPage() {
               president can do this.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="grid gap-3 sm:grid-cols-[2fr_auto]">
+          <CardContent className="@container">
+            <div className="grid gap-3 @md:grid-cols-[2fr_auto]">
               <Select
                 value={transferTargetMemberId}
                 onValueChange={setTransferTargetMemberId}
@@ -742,7 +744,9 @@ export function RolesAndPermissionsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    // A container (#4033): beside chat (#3779) the page is narrow while the
+    // window is wide, so the two cards stack by the page's own width.
+    <div className="@container space-y-6">
       {/*
         Deliberately outside `<Can permission="roles:manage">` below — see
         `PresidencyClaimBanner`'s own doc comment for why.

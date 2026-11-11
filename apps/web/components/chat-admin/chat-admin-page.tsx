@@ -630,7 +630,9 @@ function ChatAdminBody({
     (catalogQuery.isPending && catalogQuery.fetchStatus === "paused");
 
   return (
-    <div className="space-y-8">
+    // A container (#4033): beside chat (#3779) the page is narrow while the
+    // window is wide, so the list and edit pane sit side by side by its width.
+    <div className="@container space-y-8">
       {confirmDialog}
       {/*
         The channels and categories below are the last good read when a
@@ -839,7 +841,7 @@ function ChatAdminBody({
         {channels.length === 0 ? (
           <InlineNote>No channels yet. Create the first one above.</InlineNote>
         ) : (
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
+          <div className="grid gap-6 @3xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
             {/*
               Each row is itself a control (it selects the channel), so it
               takes the Directory's row height: 36 for a pointer, 44 for a
@@ -908,7 +910,8 @@ function ChatAdminBody({
               creation and can't be changed here"; the create panel, where
               the type is chosen, now says it is final.
             */}
-            <div className="lg:border-l lg:border-border lg:pl-6">
+            {/* Its own container too: the form's fields count the pane's width. */}
+            <div className="@container @3xl:border-l @3xl:border-border @3xl:pl-6">
               {selectedChannel ? (
                 <section aria-labelledby="ca-edit-label" className="space-y-4">
                   <div className="flex min-h-9 min-w-0 flex-wrap items-center gap-2">
@@ -922,7 +925,7 @@ function ChatAdminBody({
                       {CHANNEL_TYPE_LABEL[selectedChannel.type]}
                     </Badge>
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-3 @md:grid-cols-2">
                     <div className="grid gap-1">
                       <Label htmlFor="ca-name">Name</Label>
                       <Input

@@ -189,7 +189,7 @@ export function AlumniDirectory() {
           onSubmit={applyFilters}
           aria-label="Filter alumni"
         >
-          <div className="flex w-full min-w-0 flex-col gap-1 sm:w-auto">
+          <div className="flex w-full min-w-0 flex-col gap-1 @md:w-auto">
             <Label
               htmlFor="alumni-grad-year"
               className={`${EYEBROW} text-muted-foreground`}
@@ -202,10 +202,10 @@ export function AlumniDirectory() {
               onChange={(event) => setGraduationYear(event.target.value)}
               placeholder="e.g. 2018"
               inputMode="numeric"
-              className={`${dashboardToolbarHeightClassName} w-full sm:w-40`}
+              className={`${dashboardToolbarHeightClassName} w-full @md:w-40`}
             />
           </div>
-          <div className="flex w-full min-w-0 flex-col gap-1 sm:w-auto">
+          <div className="flex w-full min-w-0 flex-col gap-1 @md:w-auto">
             <Label
               htmlFor="alumni-city"
               className={`${EYEBROW} text-muted-foreground`}
@@ -217,10 +217,10 @@ export function AlumniDirectory() {
               value={cityFilter}
               onChange={(event) => setCityFilter(event.target.value)}
               placeholder="Austin, Chicago, …"
-              className={`${dashboardToolbarHeightClassName} w-full sm:w-40`}
+              className={`${dashboardToolbarHeightClassName} w-full @md:w-40`}
             />
           </div>
-          <div className="flex w-full min-w-0 flex-col gap-1 sm:w-auto">
+          <div className="flex w-full min-w-0 flex-col gap-1 @md:w-auto">
             <Label
               htmlFor="alumni-company"
               className={`${EYEBROW} text-muted-foreground`}
@@ -232,7 +232,7 @@ export function AlumniDirectory() {
               value={companyFilter}
               onChange={(event) => setCompanyFilter(event.target.value)}
               placeholder="Employer or industry"
-              className={`${dashboardToolbarHeightClassName} w-full sm:w-40`}
+              className={`${dashboardToolbarHeightClassName} w-full @md:w-40`}
             />
           </div>
           <Button type="submit" size="sm" className="gap-2">
@@ -337,7 +337,7 @@ export function AlumniDirectory() {
                     </AvatarFallback>
                   </Avatar>
                   {/*
-                    Name over meta below `sm`, side by side above it. Never
+                    Name over meta below the page's `@xl` (576px), side by side above it. Never
                     `hidden sm:block` on the meta line, which an earlier draft
                     did: on the screen whose entire purpose is class year,
                     company and city, that put all three in no visible form
@@ -348,11 +348,11 @@ export function AlumniDirectory() {
                     content, the same reason the actives row is built of spans.
                   */}
                   <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="flex min-w-0 flex-col sm:flex-row sm:items-center sm:gap-3">
-                      <span className="min-w-0 truncate text-sm font-semibold sm:flex-1">
+                    <span className="flex min-w-0 flex-col @xl:flex-row @xl:items-center @xl:gap-3">
+                      <span className="min-w-0 truncate text-sm font-semibold @xl:flex-1">
                         {name}
                       </span>
-                      <span className="min-w-0 truncate text-caption text-muted sm:flex-1">
+                      <span className="min-w-0 truncate text-caption text-muted @xl:flex-1">
                         {meta}
                       </span>
                     </span>
