@@ -143,7 +143,7 @@ describe("settings semester rollover subscription gating", () => {
     const user = userEvent.setup();
     render(<SettingsPage />);
 
-    await user.click(screen.getByRole("tab", { name: /accent/i }));
+    await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
     // A savable draft first: an empty one disables Save for its own reason
     // (see "the accent save sends the colour the preview shows" below).
     await user.type(
@@ -230,7 +230,7 @@ describe("the accent preview reports its own legibility", () => {
   it("warns when label text on the typed accent misses AA", async () => {
     const user = userEvent.setup();
     render(<SettingsPage />);
-    await user.click(screen.getByRole("tab", { name: /accent/i }));
+    await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
     const hex = screen.getByLabelText(/accent color hex value/i);
     await user.clear(hex);
     await user.type(hex, "#0086FE");
@@ -244,7 +244,7 @@ describe("the accent preview reports its own legibility", () => {
     // "4.5:1, under the 4.5:1 minimum".
     const user = userEvent.setup();
     render(<SettingsPage />);
-    await user.click(screen.getByRole("tab", { name: /accent/i }));
+    await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
     const hex = screen.getByLabelText(/accent color hex value/i);
     await user.clear(hex);
     await user.type(hex, "#008AF1");
@@ -274,7 +274,7 @@ describe("the accent preview reports its own legibility", () => {
     try {
       const user = userEvent.setup();
       render(<SettingsPage />);
-      await user.click(screen.getByRole("tab", { name: /accent/i }));
+      await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
       const hex = screen.getByLabelText(/accent color hex value/i);
       await user.clear(hex);
       await user.type(hex, "#0086FE");
@@ -290,7 +290,7 @@ describe("the accent preview reports its own legibility", () => {
   it("stays quiet for an accent whose label text is legible", async () => {
     const user = userEvent.setup();
     render(<SettingsPage />);
-    await user.click(screen.getByRole("tab", { name: /accent/i }));
+    await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
     const hex = screen.getByLabelText(/accent color hex value/i);
     await user.clear(hex);
     await user.type(hex, "#F2B72E");
@@ -325,7 +325,7 @@ describe("the accent save sends the colour the preview shows", () => {
   it("saves a shorthand or padded hex as the #RRGGBB it previewed", async () => {
     const user = userEvent.setup();
     render(<SettingsPage />);
-    await user.click(screen.getByRole("tab", { name: /accent/i }));
+    await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
     const hex = screen.getByLabelText(/accent color hex value/i);
 
     for (const [draft, saved] of [
@@ -344,7 +344,7 @@ describe("the accent save sends the colour the preview shows", () => {
   it("disables Save and says why for a draft that is not a hex code", async () => {
     const user = userEvent.setup();
     render(<SettingsPage />);
-    await user.click(screen.getByRole("tab", { name: /accent/i }));
+    await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
     const hex = screen.getByLabelText(/accent color hex value/i);
 
     for (const draft of ["#8B00", "crimson", "   "]) {
@@ -377,7 +377,7 @@ describe("the accent save sends the colour the preview shows", () => {
     // would look like a colour that can't be saved for no stated reason.
     const user = userEvent.setup();
     render(<SettingsPage />);
-    await user.click(screen.getByRole("tab", { name: /accent/i }));
+    await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
     await user.clear(screen.getByLabelText(/accent color hex value/i));
 
     expect(saveButton()).toBeDisabled();
@@ -401,7 +401,7 @@ describe("the accent form surfaces the server's own §8 disclosure (#1183)", () 
   });
 
   async function saveAccent(user: ReturnType<typeof userEvent.setup>) {
-    await user.click(screen.getByRole("tab", { name: /accent/i }));
+    await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
     const hex = screen.getByLabelText(/accent color hex value/i);
     await user.clear(hex);
     await user.type(hex, "#222222");

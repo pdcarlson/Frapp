@@ -46,7 +46,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Can } from "@/components/shared/can";
-import { dashboardFormSelectClassName } from "@/components/shared/table-controls";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -151,10 +150,14 @@ type PickerFieldProps = {
 };
 
 /**
- * A named-entity filter: a picker `<select>` backed by a live list. Blank is a
- * chapter-wide report. There is no typed-id fallback: an officer picks a
+ * A named-entity filter: the app's Select backed by a live list. Blank is a
+ * chapter-wide report (`ALL_VALUE` in the picker, since a Radix item can't
+ * carry an empty value). There is no typed-id fallback: an officer picks a
  * name, never an id (principles.md P2.2).
  */
+/** The picker's "everyone" row; the field's value stays `""` for it. */
+const ALL_VALUE = "__all__";
+
 function PickerField({
   idPrefix,
   label,
@@ -170,20 +173,23 @@ function PickerField({
   return (
     <div className="grid gap-1">
       <Label htmlFor={selectId}>{label}</Label>
-      <select
-        id={selectId}
-        value={value}
-        onChange={(event) => onValueChange(event.target.value)}
+      <Select
+        value={value === "" ? ALL_VALUE : value}
+        onValueChange={(next) => onValueChange(next === ALL_VALUE ? "" : next)}
         disabled={query.isPending}
-        className={`${dashboardFormSelectClassName} w-full`}
       >
-        <option value="">{allLabel}</option>
-        {options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+        <SelectTrigger id={selectId}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={ALL_VALUE}>{allLabel}</SelectItem>
+          {options.map((option) => (
+            <SelectItem key={option.id} value={option.id}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       {query.isError ? (
         <p className="text-xs text-destructive">
           Couldn&apos;t load {noun}. Leave it blank for a chapter-wide report,

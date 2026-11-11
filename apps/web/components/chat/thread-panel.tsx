@@ -1,35 +1,105 @@
 "use client";
 
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useMemo, useState, type KeyboardEvent } from "react";
 import { ArrowLeft } from "lucide-react";
-import { formatTimeOfDay } from "@repo/formatting";
 import {
+  applyBlockList,
   classifyMessage,
+  tombstoneCanUnblock,
   visibleTypingUsers,
   type BlockState,
 } from "@repo/chat-core/blocks";
 import { typingLabel } from "@repo/chat-core/typing-label";
-import { TOMBSTONE_TEXT } from "@repo/chat-core/block-copy";
 import type { ChatMessage } from "@repo/chat-core/types";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { resolveAuthorAvatar } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/lib/hooks/use-toast";
+import { useTapRevealedMessage } from "@/lib/hooks/use-tap-revealed-message";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useMessageThread } from "@/lib/chat/use-message-thread";
-import { cn, initials } from "@/lib/utils";
-import { TextRenderer } from "./renderers/text-renderer";
+import { cn } from "@/lib/utils";
+import { BlockedMessageTombstone } from "./blocked-message-tombstone";
 import { ChatBackground } from "./chat-background";
+import {
+  ImageViewer,
+  ImageViewerProvider,
+  useImageViewer,
+} from "./image-viewer";
+import { MessageItem } from "./message-item";
+import { MessageTimeline, type MessageTimelineProps } from "./message-timeline";
 
-export interface ThreadPanelProps {
+/**
+ * The row writes the shell's channel hook makes (`useChatChannel`), each
+ * taking the thread a reply belongs to: `null` for the parent, which is a
+ * channel message, and the root's id for a reply, whose row lives in the
+ * thread's own cache (#4034). Delete and Close poll come already wrapped in
+ * the shell's confirm.
+ */
+export interface ThreadRowWrites {
+  react: (
+    messageId: string,
+    emoji: string,
+    threadRootId: string | null,
+  ) => Promise<void>;
+  unreact: (
+    messageId: string,
+    emoji: string,
+    threadRootId: string | null,
+  ) => Promise<void>;
+  /** Rejects on failure, so the row keeps its draft. */
+  edit: (
+    messageId: string,
+    content: string,
+    threadRootId: string | null,
+  ) => Promise<void>;
+  /** Settles once the member has answered the confirm and the write is done. */
+  delete: (messageId: string, threadRootId: string | null) => Promise<void>;
+  closePoll: (messageId: string, threadRootId: string | null) => Promise<void>;
+  act: (
+    messageId: string,
+    actionType: string,
+    payload: Record<string, unknown>,
+    threadRootId: string | null,
+  ) => Promise<void>;
+}
+
+export interface ThreadPanelProps extends Pick<
+  MessageTimelineProps,
+  | "nameFor"
+  | "avatarFor"
+  | "roleColorFor"
+  | "onUnblock"
+  | "onReloadMasked"
+  | "maskedRefresh"
+  | "bookmarkedMessageIds"
+  | "onToggleBookmark"
+  | "canManageChannel"
+  | "onReport"
+  | "onBlock"
+  | "onOpenProfile"
+  | "isMember"
+> {
   channelId: string;
   channelName: string | null;
   rootId: string;
   viewerId: string | null;
-  nameFor: (userId: string) => string | null;
   blockState: BlockState;
+  /**
+   * The parent as the open channel's cache holds it, or `null` when it is
+   * outside the loaded window. Preferred over the thread read's copy, because
+   * the channel's realtime keeps it current (reactions, edits, votes).
+   */
+  heldRoot: ChatMessage | null;
+  writes: ThreadRowWrites;
   /** Whether the viewer may reply here (`can_post`, or a read-only channel's thread rule). */
   canReply: boolean;
+  /**
+   * Whether the viewer may post in the channel itself (`can_post`). The
+   * parent's Edit authorizes as a post; a reply's as a thread reply, so it
+   * follows `canReply` (`ChatService.editMessage`).
+   */
+  canPost: boolean;
   onClose: () => void;
   className?: string;
 }
@@ -39,6 +109,14 @@ export interface ThreadPanelProps {
  * the parent at the top, a reply divider, the replies, Follow and a
  * "Reply in thread…" composer. Inside the docked chat it replaces the message
  * list and Back returns to it.
+ *
+ * The replies are the channel's own rows (#4034): `MessageTimeline` draws
+ * them, so a reply carries everything a timeline row does (attachments,
+ * cards, reactions, the edited marker, Edit and Delete, photos, a blocked
+ * sender's tombstone with Unblock) in the channel's display, Bubbles and
+ * Always formal included. The parent is a `MessageItem` in the timeline's
+ * `header`, drawn from the first frame above whatever older replies remain
+ * to page in, and it shares the list's tap-reveal state.
  */
 export function ThreadPanel({
   channelId,
@@ -46,8 +124,23 @@ export function ThreadPanel({
   rootId,
   viewerId,
   nameFor,
+  avatarFor,
+  roleColorFor,
   blockState,
+  heldRoot,
+  writes,
+  onUnblock,
+  onReloadMasked,
+  maskedRefresh,
+  bookmarkedMessageIds,
+  onToggleBookmark,
+  canManageChannel,
+  onReport,
+  onBlock,
+  onOpenProfile,
+  isMember,
   canReply,
+  canPost,
   onClose,
   className,
 }: ThreadPanelProps) {
@@ -55,21 +148,20 @@ export function ThreadPanel({
   const { toast } = useToast();
   const { isOffline } = useNetwork();
   const [draft, setDraft] = useState("");
-  const listEnd = useRef<HTMLDivElement | null>(null);
   const [followBusy, setFollowBusy] = useState(false);
+  const [olderError, setOlderError] = useState(false);
 
-  // Follow the newest reply into view as replies arrive.
-  const replyCount = thread.messages.length;
+  // The channel's copy while it holds one: its realtime keeps the parent's
+  // reactions, edits and reply count current.
+  const root = heldRoot ?? thread.root;
+
   // The divider's count: the thread's own while older replies are still
   // unread here, the confirmed rows once they're all held. Unsent rows never
   // count (mobile's `message-thread-screen.tsx` reads it the same way).
   const shownReplies = Math.max(
     thread.messages.filter((m) => m._status === "confirmed").length,
-    thread.root?.thread?.reply_count ?? 0,
+    root?.thread?.reply_count ?? 0,
   );
-  useEffect(() => {
-    listEnd.current?.scrollIntoView({ block: "end" });
-  }, [replyCount]);
 
   // Escape inside the panel returns to the channel, like Back, and goes no
   // further: the shell's own Escape (back to the channel list below `lg`)
@@ -88,18 +180,24 @@ export function ThreadPanel({
   const typing = typingLabel(typists, nameFor);
   const following = thread.followState === "following";
 
-  async function submit() {
-    const content = draft.trim();
-    if (!content) return;
-    setDraft("");
-    const { error } = await thread.send(content);
-    if (error) {
+  const notSent = useCallback(
+    (error: string | null) => {
+      if (!error) return;
       toast({
         title: "Reply not sent",
         description: error,
         variant: "destructive",
       });
-    }
+    },
+    [toast],
+  );
+
+  async function submit() {
+    const content = draft.trim();
+    if (!content) return;
+    setDraft("");
+    const { error } = await thread.send(content);
+    notSent(error);
   }
 
   function onComposerKey(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -127,6 +225,179 @@ export function ThreadPanel({
       setFollowBusy(false);
     }
   }
+
+  const { loadOlder, refreshRoot } = thread;
+  const onLoadOlder = useCallback(() => {
+    void loadOlder().then(({ error }) => setOlderError(!!error));
+  }, [loadOlder]);
+
+  // A write's target: the parent is a channel message, so its writes patch
+  // the timeline's cache; a reply's patch this thread's cache.
+  const targetOf = useCallback(
+    (messageId: string) => (messageId === rootId ? null : rootId),
+    [rootId],
+  );
+  // While the timeline doesn't hold the parent (it is outside the loaded
+  // window), a write to it patches nothing the panel draws, so the parent is
+  // read again once the write has settled. Settled, not sent: a read in the
+  // same tick could land before the write commits. A failed write was already
+  // toasted by its action, and the parent is unchanged.
+  const parentUnheld = !heldRoot;
+  const settle = useCallback(
+    (messageId: string, write: Promise<void>) => {
+      if (messageId !== rootId || !parentUnheld) return write;
+      return write.then(refreshRoot, () => undefined);
+    },
+    [rootId, parentUnheld, refreshRoot],
+  );
+  const onReact = useCallback(
+    (messageId: string, emoji: string) => {
+      void settle(
+        messageId,
+        writes.react(messageId, emoji, targetOf(messageId)),
+      );
+    },
+    [writes, targetOf, settle],
+  );
+  const onUnreact = useCallback(
+    (messageId: string, emoji: string) => {
+      void settle(
+        messageId,
+        writes.unreact(messageId, emoji, targetOf(messageId)),
+      );
+    },
+    [writes, targetOf, settle],
+  );
+  const { edit } = writes;
+  const editRow = useCallback(
+    async (messageId: string, content: string) => {
+      // Rejects on failure, so the row stays in edit mode with the draft.
+      await edit(messageId, content, targetOf(messageId));
+      if (messageId === rootId && parentUnheld) refreshRoot();
+    },
+    [edit, targetOf, rootId, parentUnheld, refreshRoot],
+  );
+  const onDelete = useCallback(
+    (messageId: string) => {
+      void settle(messageId, writes.delete(messageId, targetOf(messageId)));
+    },
+    [writes, targetOf, settle],
+  );
+  const onClosePoll = useCallback(
+    (messageId: string) => {
+      void settle(messageId, writes.closePoll(messageId, targetOf(messageId)));
+    },
+    [writes, targetOf, settle],
+  );
+  const onAct = useCallback(
+    (
+      messageId: string,
+      actionType: string,
+      payload: Record<string, unknown>,
+    ) => {
+      void settle(
+        messageId,
+        writes.act(messageId, actionType, payload, targetOf(messageId)),
+      );
+    },
+    [writes, targetOf, settle],
+  );
+  const { retry, discard } = thread;
+  const onRetry = useCallback(
+    (clientMessageId: string) => {
+      void retry(clientMessageId).then(({ error }) => notSent(error));
+    },
+    [retry, notSent],
+  );
+
+  // The replies as the block list leaves them; the shell's `blockState` is
+  // the channel's, already settled, so this only classifies.
+  const blockedReplies = useMemo(
+    () => applyBlockList(thread.messages, blockState, viewerId),
+    [thread.messages, blockState, viewerId],
+  );
+  // A quote lookup over every row the panel holds, the parent included.
+  const lookup = useMemo(
+    () => (root ? [root, ...thread.messages] : thread.messages),
+    [root, thread.messages],
+  );
+
+  // One tap-reveal state for the parent and the replies, so tapping one row
+  // closes the other's action bar (`components.md` § Per-message actions).
+  // The parent's image viewer is its own: the timeline's closes on any image
+  // that isn't one of its rows.
+  const rootReveal = useTapRevealedMessage();
+  const rootViewer = useImageViewer();
+  const rootVisibility = root
+    ? classifyMessage(root, blockState, viewerId)
+    : "held";
+  const rootStart =
+    root && viewerId ? (
+      <ImageViewerProvider value={rootViewer.open}>
+        <div className="pb-1">
+          <div role="list" aria-label="Thread parent">
+            {rootVisibility === "visible" ? (
+              <MessageItem
+                // Its own chip would repeat the divider below it.
+                message={{ ...root, thread: null }}
+                viewerId={viewerId}
+                blockState={blockState}
+                showHeader
+                nameFor={nameFor}
+                avatarUrl={
+                  resolveAuthorAvatar(root, avatarFor, undefined) ?? undefined
+                }
+                authorColor={
+                  root.sender_id ? roleColorFor?.(root.sender_id) : null
+                }
+                onReact={onReact}
+                onUnreact={onUnreact}
+                onAct={onAct}
+                onEdit={canPost ? editRow : undefined}
+                onDelete={onDelete}
+                onClosePoll={onClosePoll}
+                isBookmarked={bookmarkedMessageIds?.has(root.id)}
+                onToggleBookmark={onToggleBookmark}
+                canManageChannel={canManageChannel}
+                onReport={onReport}
+                onBlock={onBlock}
+                onOpenProfile={onOpenProfile}
+                isMember={isMember}
+                isTapRevealed={rootReveal.isRevealed(root)}
+                onToggleTapReveal={() => rootReveal.toggle(root)}
+              />
+            ) : rootVisibility === "tombstone" ? (
+              <BlockedMessageTombstone
+                channelId={channelId}
+                senderName={root.sender_id ? nameFor(root.sender_id) : null}
+                canUnblock={tombstoneCanUnblock(root, blockState)}
+                onUnblock={() => {
+                  if (root.sender_id) onUnblock(root.sender_id);
+                }}
+                reload={
+                  root.sender_id
+                    ? (maskedRefresh.get(root.sender_id) ?? null)
+                    : null
+                }
+                onReload={() => {
+                  if (root.sender_id) onReloadMasked(root.sender_id);
+                }}
+                showHeader
+              />
+            ) : null}
+          </div>
+          <div
+            className="mt-3 flex items-center gap-2 px-5 text-caption text-muted-foreground"
+            role="separator"
+          >
+            <span>
+              {shownReplies === 1 ? "1 reply" : `${shownReplies} replies`}
+            </span>
+            <span className="h-px flex-1 bg-border" />
+          </div>
+        </div>
+      </ImageViewerProvider>
+    ) : null;
 
   return (
     <section
@@ -159,7 +430,7 @@ export function ThreadPanel({
             </p>
           ) : null}
         </div>
-        {thread.root ? (
+        {root ? (
           <Button
             variant="ghost"
             size="sm"
@@ -172,84 +443,47 @@ export function ThreadPanel({
         ) : null}
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        {thread.metaError || thread.repliesError ? (
-          <div className="space-y-2 text-body">
-            <p>Couldn&apos;t load this thread.</p>
-            <Button variant="secondary" size="sm" onClick={thread.retryLoad}>
-              Try again
-            </Button>
-          </div>
-        ) : thread.isLoading || !thread.root ? (
-          <p className="text-caption text-muted-foreground">Loading thread…</p>
-        ) : (
-          <>
-            <ThreadRow
-              message={thread.root}
-              nameFor={nameFor}
-              viewerId={viewerId}
-              blockState={blockState}
-            />
-            <div
-              className="my-3 flex items-center gap-2 text-caption text-muted-foreground"
-              role="separator"
-            >
-              <span>
-                {shownReplies === 1 ? "1 reply" : `${shownReplies} replies`}
-              </span>
-              <span className="h-px flex-1 bg-border" />
-            </div>
-            {thread.hasOlder ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="mb-2"
-                disabled={thread.isLoadingOlder}
-                onClick={() =>
-                  void thread.loadOlder().then(({ error }) => {
-                    if (error) {
-                      toast({
-                        title: "Couldn't load earlier replies",
-                        description: error,
-                        variant: "destructive",
-                      });
-                    }
-                  })
-                }
-              >
-                {thread.isLoadingOlder ? "Loading…" : "Load earlier replies"}
-              </Button>
-            ) : null}
-            <ol className="space-y-3">
-              {thread.messages.map((message) => (
-                <li key={message.client_message_id}>
-                  <ThreadRow
-                    message={message}
-                    nameFor={nameFor}
-                    viewerId={viewerId}
-                    blockState={blockState}
-                    onRetry={() => {
-                      void thread
-                        .send(message.content, message.client_message_id)
-                        .then(({ error }) => {
-                          if (error) {
-                            toast({
-                              title: "Reply not sent",
-                              description: error,
-                              variant: "destructive",
-                            });
-                          }
-                        });
-                    }}
-                    onDiscard={() => thread.discard(message.client_message_id)}
-                  />
-                </li>
-              ))}
-            </ol>
-            <div ref={listEnd} />
-          </>
-        )}
+      <div className="min-h-0 flex-1 pb-2">
+        <MessageTimeline
+          channelId={channelId}
+          messages={lookup}
+          blockList={{ blockState, thread: blockedReplies }}
+          onUnblock={onUnblock}
+          onReloadMasked={onReloadMasked}
+          maskedRefresh={maskedRefresh}
+          viewerId={viewerId}
+          nameFor={nameFor}
+          avatarFor={avatarFor}
+          roleColorFor={roleColorFor}
+          isLoading={thread.isLoading || !root}
+          loadError={thread.metaError ?? thread.repliesError ?? null}
+          onRetryLoad={thread.retryLoad}
+          hasOlder={thread.hasOlder}
+          isLoadingOlder={thread.isLoadingOlder}
+          olderError={olderError}
+          onLoadOlder={onLoadOlder}
+          // The parent heads the list from the first frame, whatever is
+          // left to page in above the loaded replies.
+          header={rootStart}
+          tapRevealed={rootReveal}
+          onReact={onReact}
+          onUnreact={onUnreact}
+          onRetry={onRetry}
+          onDiscard={discard}
+          onAct={onAct}
+          onEdit={canReply ? editRow : undefined}
+          onDelete={onDelete}
+          onClosePoll={onClosePoll}
+          bookmarkedMessageIds={bookmarkedMessageIds}
+          onToggleBookmark={onToggleBookmark}
+          canManageChannel={canManageChannel}
+          onReport={onReport}
+          onBlock={onBlock}
+          onOpenProfile={onOpenProfile}
+          isMember={isMember}
+        />
       </div>
+      <ImageViewer viewer={rootViewer} />
 
       {typing ? (
         <p className="shrink-0 px-4 pb-1 text-caption text-muted-foreground">
@@ -284,84 +518,5 @@ export function ThreadPanel({
         )}
       </div>
     </section>
-  );
-}
-
-function ThreadRow({
-  message,
-  nameFor,
-  viewerId,
-  blockState,
-  onRetry,
-  onDiscard,
-}: {
-  message: ChatMessage;
-  nameFor: (userId: string) => string | null;
-  viewerId: string | null;
-  blockState: BlockState;
-  onRetry?: () => void;
-  onDiscard?: () => void;
-}) {
-  const visibility = classifyMessage(message, blockState, viewerId);
-  // A row the block list can't vouch for yet is not drawn (`classifyMessage`'s
-  // held contract); it shows once the list answers.
-  if (visibility === "held") return null;
-  const name =
-    (message.sender_id ? nameFor(message.sender_id) : null) ??
-    message.author_name ??
-    "Member";
-  const failed = message._status === "failed";
-  const pending = message._status === "pending";
-  return (
-    <article className="flex gap-3">
-      <Avatar className="h-8 w-8 shrink-0">
-        <AvatarFallback className="text-caption">
-          {initials(name)}
-        </AvatarFallback>
-      </Avatar>
-      <div className="min-w-0 flex-1">
-        <p className="flex items-baseline gap-2">
-          <span className="truncate text-body font-semibold">{name}</span>
-          <time
-            className="shrink-0 text-caption text-muted-foreground"
-            dateTime={message.created_at}
-          >
-            {formatTimeOfDay(message.created_at)}
-          </time>
-        </p>
-        {visibility === "visible" ? (
-          <TextRenderer message={message} muted={pending || failed} />
-        ) : (
-          <p className="text-body italic text-muted-foreground">
-            {TOMBSTONE_TEXT}
-          </p>
-        )}
-        {failed ? (
-          <p className="mt-1 flex flex-wrap items-center gap-2 text-caption text-destructive">
-            <span>Not sent{message._error ? `: ${message._error}` : ""}</span>
-            {onRetry ? (
-              <Button
-                variant="link"
-                size="sm"
-                className="h-auto p-0"
-                onClick={onRetry}
-              >
-                Retry
-              </Button>
-            ) : null}
-            {onDiscard ? (
-              <Button
-                variant="link"
-                size="sm"
-                className="h-auto p-0"
-                onClick={onDiscard}
-              >
-                Delete
-              </Button>
-            ) : null}
-          </p>
-        ) : null}
-      </div>
-    </article>
   );
 }

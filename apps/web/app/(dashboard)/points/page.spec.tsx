@@ -1,4 +1,5 @@
 import { render, screen, fireEvent, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { formatDay, formatTimestampFull } from "@repo/formatting";
@@ -441,7 +442,7 @@ describe("PointsPage success state", () => {
     expect(time).toHaveAttribute("datetime", at);
   });
 
-  it("filters by every ledger category, Academic included", () => {
+  it("filters by every ledger category, Academic included", async () => {
     setQueries({
       summary: {
         data: {
@@ -467,18 +468,13 @@ describe("PointsPage success state", () => {
     });
 
     render(<PointsPage />);
-    fireEvent.change(
-      screen.getByLabelText(/filter transactions by category/i),
-      {
-        target: { value: "ACADEMIC" },
-      },
-    );
+    await pickFilter(/filter transactions by category/i, "Category: Academic");
 
     expect(screen.getByText("Dean's list")).toBeInTheDocument();
     expect(screen.queryByText("Library session")).not.toBeInTheDocument();
   });
 
-  it("says filters matched nothing, apart from a quiet period, and clears them", () => {
+  it("says filters matched nothing, apart from a quiet period, and clears them", async () => {
     setQueries({
       summary: {
         data: {
@@ -500,13 +496,8 @@ describe("PointsPage success state", () => {
     fireEvent.change(screen.getByPlaceholderText("Search transactions"), {
       target: { value: "library" },
     });
-    fireEvent.change(
-      screen.getByLabelText(/filter transactions by category/i),
-      { target: { value: "ACADEMIC" } },
-    );
-    fireEvent.change(screen.getByLabelText(/filter transactions by amount/i), {
-      target: { value: "negative" },
-    });
+    await pickFilter(/filter transactions by category/i, "Category: Academic");
+    await pickFilter(/filter transactions by amount/i, "Amount: Negative");
 
     expect(
       screen.getByText(/No transactions match these filters/),
@@ -519,11 +510,11 @@ describe("PointsPage success state", () => {
     expect(screen.getByText("Library session")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Search transactions")).toHaveValue("");
     expect(
-      screen.getByLabelText(/filter transactions by category/i),
-    ).toHaveValue("all");
-    expect(screen.getByLabelText(/filter transactions by amount/i)).toHaveValue(
-      "all",
-    );
+      screen.getByRole("combobox", { name: /filter transactions by category/i }),
+    ).toHaveTextContent("Category: All");
+    expect(
+      screen.getByRole("combobox", { name: /filter transactions by amount/i }),
+    ).toHaveTextContent("Amount: All");
   });
 
   it("says in one line when a period has no activity, rather than a card", () => {
@@ -727,7 +718,7 @@ describe("PointsPage leaderboard naming (#1197)", () => {
     ).toBeInTheDocument();
   });
 
-  it("keeps the tied-at-0 line out of a search miss and an archived semester", () => {
+  it("keeps the tied-at-0 line out of a search miss and an archived semester", async () => {
     const tied = [
       { user_id: ALICE, total: 0 },
       { user_id: BOB, total: 0 },
@@ -746,9 +737,7 @@ describe("PointsPage leaderboard naming (#1197)", () => {
     expect(screen.getByText(/Everyone is tied at 0/)).toBeInTheDocument();
 
     // A closed period has no first points to come.
-    fireEvent.change(screen.getByLabelText(/view an archived semester/i), {
-      target: { value: "sa-1" },
-    });
+    await pickArchive("Fall 2025");
     expect(screen.queryByText(/Everyone is tied at 0/)).not.toBeInTheDocument();
   });
 
@@ -966,7 +955,7 @@ describe("PointsPage transaction bulk actions", () => {
     });
   });
 
-  it("drops the selection when the category filter changes, so a stale count can't export the wrong rows", () => {
+  it("drops the selection when the category filter changes, so a stale count can't export the wrong rows", async () => {
     setQueries({
       summary: {
         data: {
@@ -988,18 +977,25 @@ describe("PointsPage transaction bulk actions", () => {
     selectFirstTransaction();
     expect(screen.getByText(/1 transaction selected/i)).toBeInTheDocument();
 
-    fireEvent.change(
-      screen.getByLabelText(/filter transactions by category/i),
-      {
-        target: { value: "FINE" },
-      },
-    );
+    await pickFilter(/filter transactions by category/i, "Category: Fine");
 
     expect(
       screen.queryByText(/transaction.*selected/i),
     ).not.toBeInTheDocument();
   });
 });
+
+async function pickFilter(label: RegExp, option: string) {
+  await userEvent.click(screen.getByRole("combobox", { name: label }));
+  await userEvent.click(screen.getByRole("option", { name: option }));
+}
+
+async function pickArchive(name: string) {
+  await userEvent.click(
+    screen.getByRole("combobox", { name: /view an archived semester/i }),
+  );
+  await userEvent.click(screen.getByRole("option", { name }));
+}
 
 describe("PointsPage archived period picker (#377)", () => {
   it("renders no picker for a chapter with no archived semesters", () => {
@@ -1010,7 +1006,7 @@ describe("PointsPage archived period picker (#377)", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("renders a picker option per archive once the chapter has rolled over", () => {
+  it("renders a picker option per archive once the chapter has rolled over", async () => {
     setQueries({
       semesters: {
         data: [
@@ -1022,23 +1018,24 @@ describe("PointsPage archived period picker (#377)", () => {
 
     render(<PointsPage />);
 
-    const picker = screen.getByLabelText(/view an archived semester/i);
+    const picker = screen.getByRole("combobox", {
+      name: /view an archived semester/i,
+    });
+    expect(picker).toHaveTextContent("Archived period");
+    await userEvent.click(picker);
     expect(
       screen.getByRole("option", { name: "Fall 2025" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("option", { name: "Spring 2026" }),
     ).toBeInTheDocument();
-    expect(picker).toHaveValue("");
   });
 
-  it("selecting an archive queries the leaderboard and summary by its id, overriding the window buttons", () => {
+  it("selecting an archive queries the leaderboard and summary by its id, overriding the window buttons", async () => {
     setQueries({ semesters: { data: [{ id: "sa-1", label: "Fall 2025" }] } });
     render(<PointsPage />);
 
-    fireEvent.change(screen.getByLabelText(/view an archived semester/i), {
-      target: { value: "sa-1" },
-    });
+    await pickArchive("Fall 2025");
 
     // Last call after the selection — the leaderboard/summary hooks are
     // called on every render, so this is the one made with the new value.
@@ -1061,17 +1058,19 @@ describe("PointsPage archived period picker (#377)", () => {
     );
   });
 
-  it("reselecting a window button clears the archive selection", () => {
+  it("reselecting a window button clears the archive selection", async () => {
     setQueries({ semesters: { data: [{ id: "sa-1", label: "Fall 2025" }] } });
     render(<PointsPage />);
 
-    const picker = screen.getByLabelText(/view an archived semester/i);
-    fireEvent.change(picker, { target: { value: "sa-1" } });
-    expect(picker).toHaveValue("sa-1");
+    await pickArchive("Fall 2025");
+    const picker = screen.getByRole("combobox", {
+      name: /view an archived semester/i,
+    });
+    expect(picker).toHaveTextContent("Fall 2025");
 
     fireEvent.click(screen.getByRole("button", { name: "Month" }));
 
-    expect(picker).toHaveValue("");
+    expect(picker).toHaveTextContent("Archived period");
     const lastLeaderboardArgs =
       useLeaderboardSpy.mock.calls[useLeaderboardSpy.mock.calls.length - 1];
     expect(lastLeaderboardArgs).toEqual(["month", undefined]);

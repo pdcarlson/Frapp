@@ -21,8 +21,10 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   CHAT_CHAPTER_LEVELS,
   CHAT_MESSAGE_CONTENT_MAX_LENGTH,
+  CHAT_MESSAGE_FLAGS,
   CHAT_NOTIFICATION_LEVELS,
   type ChatChapterLevel,
+  type ChatMessageFlag,
 } from '@repo/validation';
 import { POSITION_MAX } from '#domain/constants/field-limits';
 import {
@@ -455,6 +457,16 @@ export class EditMessageDto {
   content: string;
 }
 
+export class SetMessageFlagDto {
+  @ApiProperty({
+    enum: CHAT_MESSAGE_FLAGS,
+    description:
+      'One flag per message (#3921). Anyone who can read the channel may flag an unflagged message; replacing a flag takes its sender, whoever added it, or `channels:manage`.',
+  })
+  @IsIn(CHAT_MESSAGE_FLAGS)
+  flag: ChatMessageFlag;
+}
+
 export class ReactionDto {
   @ApiProperty({ description: 'Emoji string (e.g. "👍")' })
   @IsString()
@@ -845,6 +857,28 @@ export class ChatMessageDto {
 
   @ApiProperty({ type: String, nullable: true })
   pinned_at: string | null;
+
+  @ApiProperty({
+    enum: CHAT_MESSAGE_FLAGS,
+    nullable: true,
+    required: false,
+    description:
+      'The flag a member added after the message was sent (#3921), or null. Null on a masked row: a tombstone draws no flag.',
+  })
+  flag?: ChatMessageFlag | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    required: false,
+    description:
+      'Who added the flag. Null when there is no flag, and also when the viewer blocked the member who added it: the flag stays, the name is withheld.',
+  })
+  flagged_by?: string | null;
+
+  @ApiProperty({ type: String, nullable: true, required: false })
+  flagged_at?: string | null;
 
   @ApiProperty({ type: String, nullable: true })
   edited_at: string | null;

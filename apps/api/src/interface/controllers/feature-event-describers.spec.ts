@@ -246,6 +246,16 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
       ],
     ],
   },
+  'ChatController.setMessageFlag': {
+    'message-flagged': [
+      [
+        'an Important flag',
+        { body: { flag: 'important' } },
+        { flag: 'important' },
+      ],
+      ['a lighter flag', { body: { flag: 'funny' } }, { flag: 'funny' }],
+    ],
+  },
   'ChatController.recordMessageAction': {
     'message-reacted': [
       [

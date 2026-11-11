@@ -113,6 +113,7 @@ describe('PollService', () => {
       findByClientMessageId: jest.fn(),
       findAuthorAvatarPaths: jest.fn(),
       insertIdempotent: jest.fn(),
+      compareAndSetFlag: jest.fn(),
     };
 
     mockChannelRepo = {

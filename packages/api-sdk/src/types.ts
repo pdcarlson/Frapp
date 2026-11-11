@@ -1348,6 +1348,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/messages/{messageId}/flag": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Flag a message (anyone on an unflagged message; sender, flagger or channels:manage to replace) */
+        put: operations["ChatController_setMessageFlag_v1"];
+        post?: never;
+        /** Remove a message's flag (its sender, whoever added it, or channels:manage) */
+        delete: operations["ChatController_clearMessageFlag_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/channels/messages/{messageId}/actions": {
         parameters: {
             query?: never;
@@ -3803,6 +3821,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/integrations/dev-log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post to the team's Dev log channel (GitHub Actions only) */
+        post: operations["DevLogController_post_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4742,6 +4777,17 @@ export interface components {
             metadata: Record<string, never>;
             is_pinned: boolean;
             pinned_at: string | null;
+            /**
+             * @description The flag a member added after the message was sent (#3921), or null. Null on a masked row: a tombstone draws no flag.
+             * @enum {string|null}
+             */
+            flag?: "important" | "funny" | "interesting" | "question" | "hype" | "fyi" | null;
+            /**
+             * Format: uuid
+             * @description Who added the flag. Null when there is no flag, and also when the viewer blocked the member who added it: the flag stays, the name is withheld.
+             */
+            flagged_by?: string | null;
+            flagged_at?: string | null;
             edited_at: string | null;
             is_deleted: boolean;
             /** @description `users.id` of everyone mentioned, plus a reply's quoted author, resolved server-side at send time. Null on a masked row: a mention overrides a per-channel mute, so leaving it would let a blocked member keep poking the blocker through a masked row. */
@@ -4793,6 +4839,13 @@ export interface components {
         };
         EditMessageDto: {
             content: string;
+        };
+        SetMessageFlagDto: {
+            /**
+             * @description One flag per message (#3921). Anyone who can read the channel may flag an unflagged message; replacing a flag takes its sender, whoever added it, or `channels:manage`.
+             * @enum {string}
+             */
+            flag: "important" | "funny" | "interesting" | "question" | "hype" | "fyi";
         };
         ChatMessageActionDto: {
             /** @description Action discriminator. `reaction:<emoji>` for emoji reactions, `vote` for poll votes (UPSERT), free-form for card actions. */
@@ -6388,6 +6441,55 @@ export interface components {
              * @example https://apps.apple.com/app/id6812025642
              */
             update_url: string | null;
+        };
+        DevLogItemDto: {
+            /** @description The issue or pull request number. */
+            number: number;
+            title: string;
+            actor?: string;
+            areas?: string[];
+        };
+        DevLogMergeCountDto: {
+            actor: string;
+            count: number;
+        };
+        DevLogPostDto: {
+            /** @enum {string} */
+            event: "work_started" | "pr_merged" | "daily_summary" | "update_pushed";
+            /** @description work_started: the issue number. pr_merged: the pull request number. */
+            number?: number;
+            /** @description work_started, pr_merged: the issue or pull request title. */
+            title?: string;
+            /** @description work_started, pr_merged: who did it, as a name or a login. */
+            actor?: string;
+            /** @description work_started: the issue's area labels, without the prefix. */
+            areas?: string[];
+            /** @description work_started: other issues in progress that share one of the areas. */
+            also_in_area?: components["schemas"]["DevLogItemDto"][];
+            /**
+             * @description daily_summary: the day it is posted. One post per day.
+             * @example 2026-11-11
+             */
+            date?: string;
+            /** @description daily_summary: how many pull requests merged in the last day. */
+            merged_total?: number;
+            /** @description daily_summary: that total, per person. */
+            merged_by?: components["schemas"]["DevLogMergeCountDto"][];
+            /** @description daily_summary: issues in progress now. */
+            in_progress?: components["schemas"]["DevLogItemDto"][];
+            /** @description work_started: the id of the workflow run that saw the label. update_pushed: the id of the Deploy production run that shipped. */
+            run_id?: string;
+            /** @description update_pushed: that run also uploaded a store build for testers. */
+            store_build?: boolean;
+            /** @description update_pushed: that run also published an over-the-air update. */
+            ota_update?: boolean;
+        };
+        DevLogPostResultDto: {
+            /**
+             * @description duplicate: this event was already posted (the same label event, pull request, day or deploy run), so nothing was written.
+             * @enum {string}
+             */
+            status: "posted" | "duplicate";
         };
     };
     responses: never;
@@ -9502,6 +9604,70 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_setMessageFlag_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetMessageFlagDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatMessageDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_clearMessageFlag_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatMessageDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -14947,6 +15113,59 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ClientPolicyDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    DevLogController_post_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DevLogPostDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DevLogPostResultDto"];
+                };
+            };
+            /** @description Missing or wrong token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The Dev log is not configured on this deployment. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The configured channel is gone or archived. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

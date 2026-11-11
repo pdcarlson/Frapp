@@ -3510,6 +3510,32 @@ alter table public.chat_notification_preferences
         or (scope = 'kind' and scope_kind is not null and scope_id is null));
 ```
 
+## Rollback message flags (20261111170000)
+
+* **Migration**: `20261111170000_chat_message_flags.sql`
+
+Three columns on `chat_messages`, `flag`, `flagged_by` and `flagged_at`, with the `chat_messages_flag_known` and `chat_messages_flag_cleared` checks and the `chat_messages_flagged_by_fk` foreign key. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API names its message columns explicitly, so it neither serves nor writes the flag. Flags set before the revert stay in the table, unseen, and come back when the API ships again. One thing does not wait: the reverted API's delete doesn't clear a flag, so a flagged message deleted during the revert keeps it, and the re-shipped API would draw it on the tombstone. Before re-shipping, clear those:
+
+```sql
+update public.chat_messages
+   set flag = null, flagged_by = null, flagged_at = null
+ where is_deleted and flag is not null;
+```
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. Dropping the columns loses every flag members set since this shipped:
+
+```sql
+alter table public.chat_messages
+  drop constraint if exists chat_messages_flagged_by_fk,
+  drop constraint if exists chat_messages_flag_cleared,
+  drop constraint if exists chat_messages_flag_known,
+  drop column if exists flagged_at,
+  drop column if exists flagged_by,
+  drop column if exists flag;
+```
+
 ## Rollback Pinned and starred documents (20261111180000)
 
 * **Migration**: `20261111180000_document_pins_and_stars.sql`

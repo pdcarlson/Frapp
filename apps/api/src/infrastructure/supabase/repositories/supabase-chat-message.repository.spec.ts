@@ -477,3 +477,110 @@ describe('SupabaseChatMessageRepository — insertIdempotent', () => {
     ).rejects.toBeInstanceOf(SupabaseQueryError);
   });
 });
+
+// #3921: the flag write is a compare-and-set. Who may change a flag depends
+// on the flag and on who added it, and a deleted message must not take one,
+// so each of those is part of the match, not just the flag's value.
+describe('SupabaseChatMessageRepository — compareAndSetFlag', () => {
+  const FLAGGED = 'c0ffee00-0000-4000-8000-0000000f1a90';
+  const DELETED = 'c0ffee00-0000-4000-8000-0000000f1a91';
+  const UNFLAGGED = 'c0ffee00-0000-4000-8000-0000000f1a92';
+  const FLAGGER = 'c0ffee00-0000-4000-8000-0000000f1a93';
+  const OTHER = 'c0ffee00-0000-4000-8000-0000000f1a94';
+  let harness: TenantHarness;
+  let repo: SupabaseChatMessageRepository;
+
+  beforeEach(() => {
+    harness = createTenantHarness({
+      tables: {
+        chat_channels: [
+          inA({ id: CHANNEL_A, name: 'general', type: 'PUBLIC' }),
+          inB({ id: CHANNEL_B, name: 'general', type: 'PUBLIC' }),
+        ],
+        chat_messages: [
+          message(POLL_B, CHANNEL_B, CHAPTER_B, AVATAR_B),
+          {
+            ...message(FLAGGED, CHANNEL_A, CHAPTER_A, null, 'TEXT'),
+            flag: 'important',
+            flagged_by: FLAGGER,
+            flagged_at: '2026-01-02T00:00:00.000Z',
+          },
+          {
+            ...message(DELETED, CHANNEL_A, CHAPTER_A, null, 'TEXT'),
+            is_deleted: true,
+            flag: null,
+            flagged_by: null,
+            flagged_at: null,
+          },
+          {
+            ...message(UNFLAGGED, CHANNEL_A, CHAPTER_A, null, 'TEXT'),
+            flag: null,
+            flagged_by: null,
+            flagged_at: null,
+          },
+        ],
+      },
+      untenantedTables: ['chat_messages'],
+      parentTenant: {
+        chat_messages: { column: 'channel_id', table: 'chat_channels' },
+      },
+    });
+    repo = new SupabaseChatMessageRepository(harness.client);
+  });
+
+  const stored = (id: string) =>
+    harness.rows('chat_messages').find((row) => row.id === id);
+  const replacement = {
+    flag: 'funny' as const,
+    flagged_by: OTHER,
+    flagged_at: '2026-01-03T00:00:00.000Z',
+  };
+
+  it('writes when the flag and the flagger are still the ones read', async () => {
+    const updated = await repo.compareAndSetFlag(
+      FLAGGED,
+      { flag: 'important', flagged_by: FLAGGER, requireLive: true },
+      replacement,
+    );
+
+    expect(updated).toMatchObject(replacement);
+    expect(stored(FLAGGED)).toMatchObject(replacement);
+  });
+
+  it('misses when the same flag was re-added by someone else', async () => {
+    const updated = await repo.compareAndSetFlag(
+      FLAGGED,
+      { flag: 'important', flagged_by: OTHER, requireLive: true },
+      replacement,
+    );
+
+    expect(updated).toBeNull();
+    expect(stored(FLAGGED)).toMatchObject({
+      flag: 'important',
+      flagged_by: FLAGGER,
+    });
+  });
+
+  it('misses when the flag changed', async () => {
+    expect(
+      await repo.compareAndSetFlag(
+        UNFLAGGED,
+        { flag: 'important', flagged_by: FLAGGER, requireLive: true },
+        replacement,
+      ),
+    ).toBeNull();
+    expect(stored(UNFLAGGED)).toMatchObject({ flag: null });
+  });
+
+  it('flags an unflagged live message, and refuses a deleted one when asked to', async () => {
+    const unflagged = { flag: null, flagged_by: null, requireLive: true };
+
+    expect(
+      await repo.compareAndSetFlag(UNFLAGGED, unflagged, replacement),
+    ).toMatchObject(replacement);
+    expect(
+      await repo.compareAndSetFlag(DELETED, unflagged, replacement),
+    ).toBeNull();
+    expect(stored(DELETED)).toMatchObject({ flag: null, is_deleted: true });
+  });
+});

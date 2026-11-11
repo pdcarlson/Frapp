@@ -12,13 +12,7 @@ import {
   type PatchChapterConfig,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { ProfileSection } from "@/components/profile/profile-section";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -139,16 +133,16 @@ export function SettingsChapterMarkCard({
   const logoDisabled = !canEditLogo || logoPending;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Chapter mark</CardTitle>
-        <CardDescription>
-          {lettersHidden
-            ? "Shown in the nav and on mobile's Chat home: your logo, or else your short name."
-            : "Shown in the nav and on mobile's Chat home: your logo, or else your short name, or else your Greek letters."}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-5">
+    <ProfileSection
+      id="settings-chapter-mark"
+      title="Chapter mark"
+      hint={
+        lettersHidden
+          ? "Shown in the nav and on mobile's Chat home: your logo, or else your short name."
+          : "Shown in the nav and on mobile's Chat home: your logo, or else your short name, or else your Greek letters."
+      }
+    >
+      <div className="space-y-5">
         <div className="flex flex-wrap items-center gap-3">
           <CrestTile mark={mark} />
           <span className="text-sm font-bold text-foreground">{name}</span>
@@ -243,7 +237,7 @@ export function SettingsChapterMarkCard({
             </Button>
           </div>
         </form>
-      </CardContent>
-    </Card>
+      </div>
+    </ProfileSection>
   );
 }

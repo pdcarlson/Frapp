@@ -100,6 +100,7 @@ export const FEATURE_EVENTS = {
   },
   'announcement-posted': { feature: 'announcements', properties: [] },
   'message-reacted': { feature: 'chat', properties: [] },
+  'message-flagged': { feature: 'chat', properties: ['flag'] },
   'dm-opened': { feature: 'chat', properties: [] },
   'channel-created': {
     feature: 'chat',

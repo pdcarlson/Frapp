@@ -225,6 +225,30 @@ export function ThreadGlyph({ className }: ChatGlyphProps) {
 }
 
 /**
+ * Start a thread (#3785, #4034): a side conversation off a message, where
+ * {@link ThreadGlyph}'s Reply quotes it in the channel. A speech bubble
+ * (filled when `active`) with a reply branching from under it and running on
+ * to the right. One bubble, so it doesn't read as {@link DirectMessageGlyph}'s
+ * overlapping pair, and no bell: Follow stays text, since the bell is the
+ * notification inbox's (#3362).
+ */
+export function StartThreadGlyph({ className, active }: ChatGlyphProps) {
+  return (
+    <Svg className={className}>
+      <path
+        d="M6.5 3.5h9A2.5 2.5 0 0118 6v3.5a2.5 2.5 0 01-2.5 2.5H10l-3.5 2.6V12A2.5 2.5 0 014 9.5V6a2.5 2.5 0 012.5-2.5z"
+        {...stroke}
+        {...fillProps(active)}
+      />
+      <path
+        d="M13.5 12v3a3 3 0 003 3h3.5M18 15.8l2.2 2.2-2.2 2.2"
+        {...detail}
+      />
+    </Svg>
+  );
+}
+
+/**
  * Notification level (#296). A speaker (a box and its cone, split by a detail
  * stroke) with two sound waves; `active` means muted, and an × replaces the
  * waves so the muted state reads at a glance rather than only through the

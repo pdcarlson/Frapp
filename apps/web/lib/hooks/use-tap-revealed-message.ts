@@ -18,9 +18,11 @@ export function messageRevealKey(message: RevealableMessage): string {
  * One reveal id per list — tapping a message row toggles *that* row's action
  * cluster and dismisses any other's (#1193).
  *
- * It has one caller today, `message-timeline.tsx`; it had two until #2142
- * old `thread-panel.tsx` (deleted in #2142), which is why the toggle logic and the key
- * derivation above are here rather than inline in the list that uses them. Kept
+ * Its caller is `message-timeline.tsx`. The message-thread panel (#4034)
+ * calls it too and hands the result to its timeline (`tapRevealed`), so the
+ * parent it draws above the list shares the replies' one reveal id. That is
+ * why the toggle logic and the key derivation above are here rather than
+ * inline in the list that uses them. Kept
  * as a hook rather than folded back in: the value of "one reveal id per list"
  * is that a second list cannot get it subtly wrong, and the instant a second
  * list exists it needs this, not a copy.
