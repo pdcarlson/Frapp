@@ -34,6 +34,10 @@ const state = vi.hoisted(() => ({
   dmOptions: [] as unknown[],
   permissions: [] as string[],
   roles: [] as unknown[],
+  // `GET /v1/pledge-classes` and the options the sheet reads it with (#3939).
+  classes: [] as { id: string; name: string }[],
+  vocabulary: undefined as Record<string, string> | undefined,
+  classReads: [] as ({ enabled?: boolean } | undefined)[],
 }));
 
 function profile(userId: string, name: string) {
@@ -78,7 +82,15 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useRoles: () => ({ data: state.roles, isPending: false, isSuccess: true }),
   useCustomRoles: () => ({ data: [], isPending: false }),
   usePermissionList: () => state.permissions,
-  useCurrentChapter: () => ({ data: undefined }),
+  useCurrentChapter: () => ({
+    data: state.vocabulary ? { vocabulary: state.vocabulary } : undefined,
+  }),
+  usePledgeClasses: (options?: { enabled?: boolean }) => {
+    state.classReads.push(options);
+    return options?.enabled === false
+      ? { data: undefined, isPending: true, isSuccess: false }
+      : { data: state.classes, isPending: false, isSuccess: true };
+  },
   useUpdateMemberRoles: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useViewerUserId: () => state.viewer,
   useBlockedUserIds: () => ({
@@ -561,6 +573,81 @@ describe("MemberDetailSheet fact rows", () => {
     expect(rowOf("Member since")?.props.value).toMatch(/August/);
     expect(rowOf(LONG_LABEL)?.props.variant).toBe("detail");
     expect(rowOf(LONG_LABEL)?.props.value).toBe("Jordan Lee, 555-0100");
+    act(() => tree.unmount());
+  });
+
+  // #3939, read-only on mobile: each row only when an officer has set it.
+  it("draws the member's pledge class and order number between Email and Member since", () => {
+    PROFILES[CARA] = {
+      ...profile(CARA, "Cara"),
+      pledge_class_id: "pc-1",
+      order_number: 9,
+    } as never;
+    state.classes = [{ id: "pc-1", name: "Alpha" }];
+    const tree = render(CARA);
+
+    expect(
+      tree.root
+        .findAllByType(ListRow)
+        .map((row) => [row.props.label, row.props.value])
+        .slice(0, 4),
+    ).toEqual([
+      ["Email", "cara@example.edu"],
+      ["Pledge class", "Alpha"],
+      ["Fraternal order", "9"],
+      ["Member since", "August 21, 2026"],
+    ]);
+    act(() => tree.unmount());
+  });
+
+  it("labels both rows with the chapter's own words, as typed", () => {
+    PROFILES[CARA] = {
+      ...profile(CARA, "Cara"),
+      pledge_class_id: "pc-1",
+      order_number: 9,
+    } as never;
+    state.classes = [{ id: "pc-1", name: "Alpha" }];
+    state.vocabulary = { class: "Line", order: "line number" };
+    const tree = render(CARA);
+    const rows = tree.root
+      .findAllByType(ListRow)
+      .map((row) => [row.props.label, row.props.value]);
+    state.vocabulary = undefined;
+
+    expect(rows.slice(1, 3)).toEqual([
+      ["Line", "Alpha"],
+      ["line number", "9"],
+    ]);
+    act(() => tree.unmount());
+  });
+
+  it("says Not available for a class the chapter's list no longer holds", () => {
+    PROFILES[CARA] = {
+      ...profile(CARA, "Cara"),
+      pledge_class_id: "pc-gone",
+    } as never;
+    state.classes = [{ id: "pc-1", name: "Alpha" }];
+    const tree = render(CARA);
+
+    expect(
+      tree.root.findAllByType(ListRow).find((r) => r.props.label === "Pledge class")
+        ?.props.value,
+    ).toBe("Not available");
+    act(() => tree.unmount());
+  });
+
+  it("draws neither row, and reads no class list, for a member with none set", () => {
+    state.classReads = [];
+    const tree = render(CARA);
+    const labels = tree.root
+      .findAllByType(ListRow)
+      .map((row) => row.props.label);
+
+    expect(labels).not.toContain("Pledge class");
+    expect(labels).not.toContain("Fraternal order");
+    expect(state.classReads.every((read) => read?.enabled === false)).toBe(
+      true,
+    );
     act(() => tree.unmount());
   });
 });

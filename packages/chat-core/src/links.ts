@@ -165,8 +165,7 @@ export function bareUrls(text: string): BareUrl[] {
       const href = text.slice(i, end);
       const hasHost = URL_PREFIXES.some(
         (prefix) =>
-          href.length > prefix.length &&
-          href.toLowerCase().startsWith(prefix),
+          href.length > prefix.length && href.toLowerCase().startsWith(prefix),
       );
       if (hasHost && isOpenableHref(href)) {
         found.push({ start: i, end, href });

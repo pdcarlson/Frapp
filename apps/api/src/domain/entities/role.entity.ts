@@ -26,7 +26,7 @@ export interface Role {
   /**
    * Permission key to `true` (on for this role whatever its tier says) or
    * `false` (off). `permissions` is always the tier's list with these applied;
-   * the database keeps it so (`20261111010000_role_tiers.sql`).
+   * the database keeps it so (`20261111020000_role_tiers.sql`).
    */
   permission_overrides: Record<string, boolean>;
   created_at: string;

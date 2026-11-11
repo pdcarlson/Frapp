@@ -106,7 +106,7 @@ create trigger trg_role_tiers_updated_at
   for each row execute function update_updated_at();
 
 comment on table public.role_tiers is
-  'A chapter''s ordered tiers of roles; position 1 is highest. permissions is what every role in the tier gets before its own overrides. See 20261111010000_role_tiers.sql.';
+  'A chapter''s ordered tiers of roles; position 1 is highest. permissions is what every role in the tier gets before its own overrides. See 20261111020000_role_tiers.sql.';
 
 alter table public.roles
   add column if not exists tier_id uuid,
@@ -168,7 +168,7 @@ as $$
 $$;
 
 comment on function public.role_effective_permissions(text[], jsonb) is
-  'A role''s effective permissions: its tier''s, plus overrides that are true, minus overrides that are false. Sorted, distinct. See 20261111010000_role_tiers.sql.';
+  'A role''s effective permissions: its tier''s, plus overrides that are true, minus overrides that are false. Sorted, distinct. See 20261111020000_role_tiers.sql.';
 
 -- ── Existing chapters: the starting tiers, and each role's place ──────────
 --
@@ -361,7 +361,7 @@ end;
 $$;
 
 comment on function public.roles_sync_permissions() is
-  'Trigger: keeps roles.permissions equal to role_effective_permissions(tier, overrides); a write of permissions alone is recorded as overrides. See 20261111010000_role_tiers.sql.';
+  'Trigger: keeps roles.permissions equal to role_effective_permissions(tier, overrides); a write of permissions alone is recorded as overrides. See 20261111020000_role_tiers.sql.';
 
 create or replace function public.role_tiers_sync_roles()
 returns trigger
@@ -379,7 +379,7 @@ end;
 $$;
 
 comment on function public.role_tiers_sync_roles() is
-  'Trigger: after a tier''s permissions change, rewrites roles.permissions on every role in it. See 20261111010000_role_tiers.sql.';
+  'Trigger: after a tier''s permissions change, rewrites roles.permissions on every role in it. See 20261111020000_role_tiers.sql.';
 
 create trigger trg_roles_sync_permissions
   before insert or update on public.roles

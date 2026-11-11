@@ -190,9 +190,7 @@ function transform(
     const next: MdastNode[] = [];
     for (const child of node.children) {
       if (!opaque && child.type === "text" && child.value !== undefined) {
-        next.push(
-          ...splitTextNode(child.value, addressed, properties, names),
-        );
+        next.push(...splitTextNode(child.value, addressed, properties, names));
         continue;
       }
       stack.push({

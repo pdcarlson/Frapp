@@ -36,7 +36,11 @@ describe("remarkBareUrls", () => {
     run({ type: "root", children: [paragraph] });
     expect(paragraph.children).toEqual([
       text("see "),
-      { type: "link", url: "https://x.test/a", children: [text("https://x.test/a")] },
+      {
+        type: "link",
+        url: "https://x.test/a",
+        children: [text("https://x.test/a")],
+      },
       text(". or "),
       { type: "link", url: "http://y.test", children: [text("http://y.test")] },
     ]);
@@ -44,15 +48,26 @@ describe("remarkBareUrls", () => {
 
   it("links inside emphasis", () => {
     const strong: Node = { type: "strong", children: [text("https://x.test")] };
-    run({ type: "root", children: [{ type: "paragraph", children: [strong] }] });
+    run({
+      type: "root",
+      children: [{ type: "paragraph", children: [strong] }],
+    });
     expect(strong.children).toEqual([
-      { type: "link", url: "https://x.test", children: [text("https://x.test")] },
+      {
+        type: "link",
+        url: "https://x.test",
+        children: [text("https://x.test")],
+      },
     ]);
   });
 
   it("leaves a link's label alone", () => {
     const label = text("https://shown.test");
-    const link: Node = { type: "link", url: "https://real.test", children: [label] };
+    const link: Node = {
+      type: "link",
+      url: "https://real.test",
+      children: [label],
+    };
     run({ type: "root", children: [{ type: "paragraph", children: [link] }] });
     expect(link.children).toEqual([label]);
   });
@@ -84,7 +99,11 @@ describe("remarkBareUrls", () => {
       type: "paragraph",
       children: [
         at(text(content.slice(0, open)), 0, open),
-        at({ type: "strong", children: [at(text("init"), open + 2, close - 2)] }, open, close),
+        at(
+          { type: "strong", children: [at(text("init"), open + 2, close - 2)] },
+          open,
+          close,
+        ),
         at(text(content.slice(close)), close, content.length),
       ],
     };
@@ -109,13 +128,19 @@ describe("remarkBareUrls", () => {
       type: "paragraph",
       children: [
         at(text(content.slice(0, open)), 0, open),
-        at({ type: "emphasis", children: [at(text("a"), open + 1, close - 1)] }, open, close),
+        at(
+          { type: "emphasis", children: [at(text("a"), open + 1, close - 1)] },
+          open,
+          close,
+        ),
         at(text(content.slice(close)), close, content.length),
       ],
     };
     run({ type: "root", children: [paragraph] }, content);
     expect(
-      paragraph.children!.filter((node) => node.type === "link").map((node) => node.url),
+      paragraph
+        .children!.filter((node) => node.type === "link")
+        .map((node) => node.url),
     ).toEqual(["https://x.test/*a*b", "https://y.test"]);
   });
 
@@ -128,36 +153,54 @@ describe("remarkBareUrls", () => {
       type: "paragraph",
       children: [
         at(text(content.slice(0, open)), 0, open),
-        at({ type: "strong", children: [at(text("init"), open + 2, open + 6)] }, open, content.length),
+        at(
+          { type: "strong", children: [at(text("init"), open + 2, open + 6)] },
+          open,
+          content.length,
+        ),
       ],
     };
     run({ type: "root", children: [paragraph] }, content);
     const url = "https://x.test/pkg/__init";
-    expect(paragraph.children!.map((node) => ({ ...node, position: undefined }))).toEqual([
-      { type: "link", url, children: [text(url)] },
-      text("__"),
-    ]);
+    expect(
+      paragraph.children!.map((node) => ({ ...node, position: undefined })),
+    ).toEqual([{ type: "link", url, children: [text(url)] }, text("__")]);
   });
 
   it.each([
     ["inline code", { type: "inlineCode", value: "x" }, "`x`"],
-    ["a link", { type: "link", url: "https://y.test", children: [text("docs")] }, "[docs](https://y.test)"],
-  ])("stops the URL before %s, which keeps its own meaning", (_label, sibling, source) => {
-    const content = `https://x.test/*a*${source}`;
-    const open = content.indexOf("*");
-    const code = open + 3;
-    const paragraph: Node = {
-      type: "paragraph",
-      children: [
-        at(text(content.slice(0, open)), 0, open),
-        at({ type: "emphasis", children: [at(text("a"), open + 1, open + 2)] }, open, code),
-        at(sibling as Node, code, content.length),
-      ],
-    };
-    run({ type: "root", children: [paragraph] }, content);
-    expect(paragraph.children!.map((node) => node.type)).toEqual(["link", "text", sibling.type]);
-    expect(paragraph.children![0]!.url).toBe("https://x.test/*a");
-  });
+    [
+      "a link",
+      { type: "link", url: "https://y.test", children: [text("docs")] },
+      "[docs](https://y.test)",
+    ],
+  ])(
+    "stops the URL before %s, which keeps its own meaning",
+    (_label, sibling, source) => {
+      const content = `https://x.test/*a*${source}`;
+      const open = content.indexOf("*");
+      const code = open + 3;
+      const paragraph: Node = {
+        type: "paragraph",
+        children: [
+          at(text(content.slice(0, open)), 0, open),
+          at(
+            { type: "emphasis", children: [at(text("a"), open + 1, open + 2)] },
+            open,
+            code,
+          ),
+          at(sibling as Node, code, content.length),
+        ],
+      };
+      run({ type: "root", children: [paragraph] }, content);
+      expect(paragraph.children!.map((node) => node.type)).toEqual([
+        "link",
+        "text",
+        sibling.type,
+      ]);
+      expect(paragraph.children![0]!.url).toBe("https://x.test/*a");
+    },
+  );
 
   it("stops the URL before text that isn't its source verbatim", () => {
     // `&#95;` decodes to `_`: an href built from the source would carry the
@@ -169,13 +212,20 @@ describe("remarkBareUrls", () => {
       type: "paragraph",
       children: [
         at(text(content.slice(0, open)), 0, open),
-        at({ type: "emphasis", children: [at(text("1"), open + 1, open + 2)] }, open, close),
+        at(
+          { type: "emphasis", children: [at(text("1"), open + 1, open + 2)] },
+          open,
+          close,
+        ),
         at(text("_r=2"), close, content.length),
       ],
     };
     run({ type: "root", children: [paragraph] }, content);
     expect(paragraph.children![0]!.url).toBe("https://x.test/?q=*1");
-    expect(paragraph.children!.slice(1).map((node) => node.value)).toEqual(["*", "_r=2"]);
+    expect(paragraph.children!.slice(1).map((node) => node.value)).toEqual([
+      "*",
+      "_r=2",
+    ]);
   });
 
   it("measures a URL whose node dropped a line's indent, from the node's end", () => {
@@ -188,12 +238,19 @@ describe("remarkBareUrls", () => {
       type: "paragraph",
       children: [
         at(text("see\nhttps://x.test/"), 0, open),
-        at({ type: "strong", children: [at(text("a"), open + 2, open + 3)] }, open, close),
+        at(
+          { type: "strong", children: [at(text("a"), open + 2, open + 3)] },
+          open,
+          close,
+        ),
         at(text(".py"), close, content.length),
       ],
     };
     run({ type: "root", children: [paragraph] }, content);
-    expect(paragraph.children![1]).toMatchObject({ type: "link", url: "https://x.test/__a__.py" });
+    expect(paragraph.children![1]).toMatchObject({
+      type: "link",
+      url: "https://x.test/__a__.py",
+    });
   });
 
   it("links by the value when the URL's own text isn't its source", () => {
@@ -206,7 +263,11 @@ describe("remarkBareUrls", () => {
       type: "paragraph",
       children: [
         at(text("http://http://x.test/_"), 0, strong),
-        at({ type: "strong", children: [at(text("a"), strong + 2, strong + 3)] }, strong, strong + 5),
+        at(
+          { type: "strong", children: [at(text("a"), strong + 2, strong + 3)] },
+          strong,
+          strong + 5,
+        ),
         at(text(".py"), strong + 5, content.length),
       ],
     };
@@ -222,19 +283,30 @@ describe("remarkBareUrls", () => {
     // `a&amp;` reads `a&`: the decoded text is a prefix of its source, which
     // is not the same as being it.
     const content = "https://x.test/p*a&amp;*";
-    const emphasis = at({ type: "emphasis", children: [at(text("a&"), 17, 23)] }, 16, 24);
+    const emphasis = at(
+      { type: "emphasis", children: [at(text("a&"), 17, 23)] },
+      16,
+      24,
+    );
     const paragraph: Node = {
       type: "paragraph",
       children: [at(text("https://x.test/p"), 0, 16), emphasis],
     };
     run({ type: "root", children: [paragraph] }, content);
-    expect(paragraph.children![0]).toMatchObject({ type: "link", url: "https://x.test/p" });
+    expect(paragraph.children![0]).toMatchObject({
+      type: "link",
+      url: "https://x.test/p",
+    });
     expect(paragraph.children![1]).toBe(emphasis);
   });
 
   it.each([
     ["inline code", { type: "inlineCode", value: "c" }, "`c`"],
-    ["a link", { type: "link", url: "https://y.test", children: [text("l")] }, "[l](https://y.test)"],
+    [
+      "a link",
+      { type: "link", url: "https://y.test", children: [text("l")] },
+      "[l](https://y.test)",
+    ],
   ])("ends the URL before an emphasis holding %s", (_label, inner, source) => {
     const content = `https://x.test/*a${source}* d`;
     const close = 16 + 1 + source.length + 1;
@@ -248,10 +320,17 @@ describe("remarkBareUrls", () => {
     );
     const paragraph: Node = {
       type: "paragraph",
-      children: [at(text("https://x.test/"), 0, 15), emphasis, at(text(" d"), close, close + 2)],
+      children: [
+        at(text("https://x.test/"), 0, 15),
+        emphasis,
+        at(text(" d"), close, close + 2),
+      ],
     };
     run({ type: "root", children: [paragraph] }, content);
-    expect(paragraph.children![0]).toMatchObject({ type: "link", url: "https://x.test/" });
+    expect(paragraph.children![0]).toMatchObject({
+      type: "link",
+      url: "https://x.test/",
+    });
     expect(paragraph.children![1]).toBe(emphasis);
   });
 
@@ -274,7 +353,10 @@ describe("remarkBareUrls", () => {
       children: [at(text("https://x.test/a"), 0, 16), emphasis],
     };
     run({ type: "root", children: [paragraph] }, content);
-    expect(paragraph.children![0]).toMatchObject({ type: "link", url: "https://x.test/a" });
+    expect(paragraph.children![0]).toMatchObject({
+      type: "link",
+      url: "https://x.test/a",
+    });
     expect(paragraph.children![1]).toBe(emphasis);
   });
 
@@ -303,7 +385,13 @@ describe("remarkBareUrls", () => {
     const content = unit.repeat(3_000);
     const children: Node[] = [at(text("http://a"), 0, 8)];
     for (let i = 0; i < content.length; i += unit.length) {
-      children.push(at({ type: "emphasis", children: [at(text("b"), i + 9, i + 10)] }, i + 8, i + 11));
+      children.push(
+        at(
+          { type: "emphasis", children: [at(text("b"), i + 9, i + 10)] },
+          i + 8,
+          i + 11,
+        ),
+      );
       const next = i + unit.length < content.length ? " http://a" : " ";
       children.push(at(text(next), i + 11, i + 11 + next.length));
     }
@@ -320,7 +408,13 @@ describe("remarkBareUrls", () => {
     const children: Node[] = [];
     for (let i = 0; i < content.length; i += unit.length) {
       children.push(at(text("http://a"), i, i + 8));
-      children.push(at({ type: "emphasis", children: [at(text("b"), i + 9, i + 10)] }, i + 8, i + 11));
+      children.push(
+        at(
+          { type: "emphasis", children: [at(text("b"), i + 9, i + 10)] },
+          i + 8,
+          i + 11,
+        ),
+      );
     }
     const started = performance.now();
     run({ type: "root", children: [{ type: "paragraph", children }] }, content);
@@ -331,7 +425,8 @@ describe("remarkBareUrls", () => {
     // The cap runs first in both renderers, but the walk must not be the
     // thing that overflows if it ever doesn't.
     let deepest: Node = text("https://x.test");
-    for (let i = 0; i < 20_000; i += 1) deepest = { type: "emphasis", children: [deepest] };
+    for (let i = 0; i < 20_000; i += 1)
+      deepest = { type: "emphasis", children: [deepest] };
     expect(() => run({ type: "root", children: [deepest] })).not.toThrow();
   });
 });

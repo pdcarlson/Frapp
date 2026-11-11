@@ -539,10 +539,9 @@ describe("closePoll (#3794)", () => {
 
     await closePoll(ctx, { channelId: "chan-1", messageId: "msg-1" });
 
-    expect(apiClient.POST).toHaveBeenCalledWith(
-      "/v1/polls/{messageId}/close",
-      { params: { path: { messageId: "msg-1" } } },
-    );
+    expect(apiClient.POST).toHaveBeenCalledWith("/v1/polls/{messageId}/close", {
+      params: { path: { messageId: "msg-1" } },
+    });
     expect(toast).not.toHaveBeenCalled();
     const cache = queryClient.getQueryData(chatMessagesKey("chan-1")) as
       ReturnType<typeof emptyCache> | undefined;
@@ -2235,7 +2234,9 @@ describe("sendMessage and the saved draft", () => {
 
   it("keeps it on a reconnect flush", async () => {
     const outbox = stubOutbox({
-      listQueued: vi.fn().mockResolvedValue([{ ...failedRow, status: "queued" }]),
+      listQueued: vi
+        .fn()
+        .mockResolvedValue([{ ...failedRow, status: "queued" }]),
     });
     const ctx = buildCtx({
       apiClient: okPost(),

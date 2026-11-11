@@ -39,7 +39,10 @@ export const ALUMNUS: EvalCaller = {
   permissions: ['members:view', 'alumni:post'],
 };
 
-/** Seeded Member role: members:view, backwork:upload, service:log, polls:create. */
+/**
+ * Seeded Member role: members:view, backwork:upload, service:log,
+ * polls:create, and the six member recruitment keys (#4070).
+ */
 export const MEMBER: EvalCaller = {
   memberId: 'member-rank-and-file',
   chapterId: CHAPTER,
@@ -49,6 +52,12 @@ export const MEMBER: EvalCaller = {
     'backwork:upload',
     'service:log',
     'polls:create',
+    'rush:view',
+    'rush:add',
+    'rush:notes',
+    'rush:vote',
+    'rush:view_results',
+    'rush:bid',
   ],
 };
 

@@ -18,7 +18,8 @@ describe('DEFAULT_SYSTEM_ROLES', () => {
 });
 
 // #4071: tiers arrived without changing what a new chapter's roles can do.
-// The lists are spelled out as they stood before tiers so that a change to a
+// The lists are spelled out as they stood before tiers (Member with the
+// recruitment keys #4070 gave it) so that a change to a
 // starting tier or a seeded role fails here and has to be meant. Beside its
 // wildcard the President now also lists its tier's two permissions, which the
 // wildcard already covered.
@@ -50,6 +51,12 @@ describe('DEFAULT_SYSTEM_ROLES permissions', () => {
         'backwork:upload',
         'members:view',
         'polls:create',
+        'rush:add',
+        'rush:bid',
+        'rush:notes',
+        'rush:view',
+        'rush:view_results',
+        'rush:vote',
         'service:log',
       ],
       NEW_MEMBER: ['backwork:upload', 'members:view'],

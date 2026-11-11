@@ -1,6 +1,7 @@
 import {
   ALUMNI_CHANNEL_PERMISSION,
   roleColor,
+  RUSH_MEMBER_PERMISSIONS,
   type PermissionDefinition,
 } from '@repo/validation';
 import { ANNOUNCEMENTS_POST_PERMISSION } from '../utils/channel-access';
@@ -49,6 +50,17 @@ export const SystemPermissions = {
   POLLS_VIEW_ALL: 'polls:view_all',
 
   TASKS_MANAGE: 'tasks:manage',
+
+  // Recruitment (#4070). `RUSH_NOTES`, `RUSH_VIEW_RESULTS` and `RUSH_MANAGE`
+  // gate no route yet: notes, delete and export are not built, and the vote
+  // count still travels with the prospect (#4084).
+  RUSH_VIEW: 'rush:view',
+  RUSH_ADD: 'rush:add',
+  RUSH_NOTES: 'rush:notes',
+  RUSH_VOTE: 'rush:vote',
+  RUSH_VIEW_RESULTS: 'rush:view_results',
+  RUSH_BID: 'rush:bid',
+  RUSH_MANAGE: 'rush:manage',
 
   CHAPTER_DOCS_UPLOAD: 'chapter_docs:upload',
   CHAPTER_DOCS_MANAGE: 'chapter_docs:manage',
@@ -129,7 +141,7 @@ export const ALUMNI_ROLE_NAME = 'Alumni';
  * once a holder cannot edit their own tier.
  *
  * Chapters that existed before tiers were placed into the same four names by
- * migration `20261111010000_role_tiers.sql`. Changing this list changes new
+ * migration `20261111020000_role_tiers.sql`. Changing this list changes new
  * chapters and nothing else.
  */
 export const STARTING_ROLE_TIERS = [
@@ -151,6 +163,9 @@ export const STARTING_ROLE_TIERS = [
       SystemPermissions.BACKWORK_UPLOAD,
       SystemPermissions.SERVICE_LOG,
       SystemPermissions.POLLS_CREATE,
+      // What any member could do in recruitment before it had permissions
+      // (#4070); a chapter tightens it from here.
+      ...RUSH_MEMBER_PERMISSIONS,
     ],
   },
   {

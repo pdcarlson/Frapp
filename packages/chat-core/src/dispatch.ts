@@ -209,8 +209,7 @@ export async function postPoll(
   channelId: string,
   poll: { content: string; payload: PollPayload },
 ): Promise<
-  | { ok: true; warning?: string }
-  | { ok: false; error: string; cause?: unknown }
+  { ok: true; warning?: string } | { ok: false; error: string; cause?: unknown }
 > {
   if (!ctx.userId) {
     return { ok: false, error: SIGNED_OUT_POST_COPY };
@@ -859,7 +858,12 @@ export async function postTask(
     const ok = typeof status === "number" && status >= 200 && status < 300;
     if (!ok) {
       if (!isTerminalStatus(status)) {
-        return lostResponse(ctx, channelId, clientMessageId, TASK_UNCONFIRMED_WARNING);
+        return lostResponse(
+          ctx,
+          channelId,
+          clientMessageId,
+          TASK_UNCONFIRMED_WARNING,
+        );
       }
       removeLocalPlaceholder(ctx, channelId, clientMessageId);
       return {
@@ -878,7 +882,12 @@ export async function postTask(
       return { ok: true, warning: TASK_CARD_LOST_WARNING };
     }
   } catch {
-    return lostResponse(ctx, channelId, clientMessageId, TASK_UNCONFIRMED_WARNING);
+    return lostResponse(
+      ctx,
+      channelId,
+      clientMessageId,
+      TASK_UNCONFIRMED_WARNING,
+    );
   }
 
   // Success: the server posts the `task` card (same client_message_id); the
@@ -1130,7 +1139,12 @@ export async function postHours(
     const ok = typeof status === "number" && status >= 200 && status < 300;
     if (!ok) {
       if (!isTerminalStatus(status)) {
-        return lostResponse(ctx, channelId, clientMessageId, HOURS_UNCONFIRMED_WARNING);
+        return lostResponse(
+          ctx,
+          channelId,
+          clientMessageId,
+          HOURS_UNCONFIRMED_WARNING,
+        );
       }
       removeLocalPlaceholder(ctx, channelId, clientMessageId);
       return {
@@ -1149,7 +1163,12 @@ export async function postHours(
       return { ok: true, warning: HOURS_CARD_LOST_WARNING };
     }
   } catch {
-    return lostResponse(ctx, channelId, clientMessageId, HOURS_UNCONFIRMED_WARNING);
+    return lostResponse(
+      ctx,
+      channelId,
+      clientMessageId,
+      HOURS_UNCONFIRMED_WARNING,
+    );
   }
 
   return { ok: true };

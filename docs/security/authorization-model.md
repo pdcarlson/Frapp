@@ -179,7 +179,7 @@ select c.relname
 That returns **59** rows. The "API only" row of that table is those 59 plus the three `*`-marked
 tables (`members`, `users`, `member_custom_field_values`), which carry
 non-widening policies and are therefore listed there rather than in a row of
-their own — **62**. `20261111010000` added `role_tiers` (#4071) on 2026-11-10, added
+their own — **62**. `20261111020000` added `role_tiers` (#4071) on 2026-11-10, added
 to the list by hand. The count was re-derived 2026-11-10 against a local stack at
 migration `20261110220000`, which added `chat_thread_follows` (#3785); the names in
 the row were not re-checked one by one. `20261110170000` added `chapter_pledge_classes` (#3939) the same day. `20261109230000` added `backwork_courses`

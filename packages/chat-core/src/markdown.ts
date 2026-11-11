@@ -170,7 +170,11 @@ function offsetsOf(node: MdastNode): [number, number] | null {
 }
 
 /** How many of a text node's leading characters are its source verbatim. */
-function verbatimLength(node: MdastNode, start: number, content: string): number {
+function verbatimLength(
+  node: MdastNode,
+  start: number,
+  content: string,
+): number {
   const value = node.value ?? "";
   let length = 0;
   while (length < value.length && content[start + length] === value[length]) {
@@ -221,8 +225,13 @@ function linkBareUrls(
   let run: SourceRun | null = null;
   urls.forEach(({ start, end, href }, n) => {
     if (start > at) parts.push({ type: "text", value: value.slice(at, start) });
-    run = n === urls.length - 1 ? measureInSource(siblings, index, start, end, content) : null;
-    const label = run ? content.slice(run.start, run.end) : value.slice(start, end);
+    run =
+      n === urls.length - 1
+        ? measureInSource(siblings, index, start, end, content)
+        : null;
+    const label = run
+      ? content.slice(run.start, run.end)
+      : value.slice(start, end);
     parts.push({
       type: "link",
       url: run ? label : href,
@@ -284,7 +293,10 @@ function measureInSource(
       const same = verbatimLength(sibling, where[0], content);
       span.push({ node: sibling, start: where[0], stop: where[1] });
       limit = where[0] + same;
-      if (same < (sibling.value ?? "").length || /[\s<]/.test(sibling.value ?? "")) {
+      if (
+        same < (sibling.value ?? "").length ||
+        /[\s<]/.test(sibling.value ?? "")
+      ) {
         break;
       }
       continue;

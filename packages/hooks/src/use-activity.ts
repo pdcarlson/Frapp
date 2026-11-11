@@ -29,7 +29,12 @@ export function useActivity(options: { enabled?: boolean } = {}) {
       if (error) throw error;
       return data;
     },
-    staleTime: 30_000,
+    // Never fresh: the page gathers records other surfaces change (a vote in
+    // chat, a task finished on the board, hours approved on the Service
+    // page), and none of those writers knows about this read. So it is
+    // re-read whenever the page mounts or the window regains focus, instead
+    // of every writer being taught to invalidate it.
+    staleTime: 0,
     enabled: !!chapterId && (options.enabled ?? true),
   });
 }

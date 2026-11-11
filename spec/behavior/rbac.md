@@ -30,6 +30,13 @@ Frapp publishes a **system permissions catalog** — these are the strings the A
 | `polls:create`        | Create polls in channels                               |
 | `polls:view_all`      | List polls chapter-wide with aggregate vote tallies    |
 | `tasks:manage`        | Create, assign, and confirm tasks                      |
+| `rush:view`           | Look up a recruitment prospect and see their bid status ([`rush.md`](rush.md#permissions) owns the recruitment rows and their default grant) |
+| `rush:add`            | Add a prospect                                         |
+| `rush:notes`          | Write notes on a prospect (gates nothing until notes are built) |
+| `rush:vote`           | Vote on a prospect                                     |
+| `rush:view_results`   | See a prospect's vote count (gates nothing yet, [#4084](https://github.com/pdcarlson/Frapp/issues/4084)) |
+| `rush:bid`            | Record a bid                                           |
+| `rush:manage`         | Delete prospects and export the list (gates nothing until those are built) |
 | `chapter_docs:upload` | Upload documents to Chapter Files                      |
 | `chapter_docs:manage` | Delete/organize documents in Chapter Files             |
 | `service:log`         | Log service hours (typically all members)              |
@@ -73,7 +80,7 @@ The only lifecycle rule today is the **Alumni** role (see [`alumni.md`](alumni.m
 - **Seeded permissions** (`STARTING_ROLE_TIERS` and `DEFAULT_SYSTEM_ROLES` in `apps/api/src/domain/constants/permissions.ts` own the lists; this is what they give a chapter created today, and each role can do what it could before tiers existed):
   - **Exec board** (tier 1) gives its roles `members:view` and `polls:view_all` (baseline chapter API access plus `GET /v1/polls`, the chapter-wide poll list, whose web page was retired in #3871; the permission's fate is #3887). In it: **President** (also `*`, as an override), **Vice President** and **Secretary** (nothing beyond the tier), and **Treasurer** (also `billing:view`, `billing:manage`, `points:adjust`, `points:view_all`, `reports:export`, `events:create`, `events:update`, as overrides).
   - **Officers and chairs** (tier 2) gives `members:view`. No role is seeded into it; it is where a chapter puts its chairs.
-  - **Members** (tier 3) gives `members:view`, `backwork:upload`, `service:log`, `polls:create`. In it: **Member**.
+  - **Members** (tier 3) gives `members:view`, `backwork:upload`, `service:log`, `polls:create`, and the six member recruitment keys (`rush:view`, `rush:add`, `rush:notes`, `rush:vote`, `rush:view_results`, `rush:bid`; [`rush.md`](rush.md#permissions)). In it: **Member**.
   - **New members** (tier 4) gives `members:view`, `backwork:upload`. In it: **New Member**.
   - **Alumni** sits outside the tiers and holds `members:view`, `alumni:post` as overrides.
   - The officer defaults for new chapters (Paul, 2026-11-10, #4068 decision 9: the top two starting tiers approve service hours, post announcements and manage tasks and channels; the top tier also manages roles and chapter settings) are not seeded yet. They land with the rank rules in the next slice of #4071, and will reach new chapters only.
@@ -100,14 +107,14 @@ Roles are grouped into **tiers** (#4071, Paul 2026-11-10). A tier does two jobs:
 - **A role sits in one tier or outside them.** `roles.tier_id` is null for a role outside the tiers, as Alumni is. A role outside the tiers gets nothing from any tier and ranks below every tier.
 - **An override switches one permission on or off for one role, and beats the tier.** `roles.permission_overrides` maps a permission key to `true` or `false`. A role's effective permissions are its tier's permissions, plus its overrides that are `true`, minus its overrides that are `false`. An override stays until it is cleared, whatever the tier later does.
 - **A person still holds the union of their roles.** Overrides act on one role. An "off" override on one role does not remove a permission another of the member's roles grants: there is no deny across roles and no per-person override.
-- **The effective list is written back.** `roles.permissions` always holds the role's effective list, so the [Permission Check Algorithm](#permission-check-algorithm) reads exactly the column it always read and `PermissionsGuard` knows nothing about tiers. The database keeps it true inside the writer's own transaction (migration `20261111010000`): a change to a role's tier or overrides rewrites that role's list, and a change to a tier's permissions rewrites the list of every role in it.
+- **The effective list is written back.** `roles.permissions` always holds the role's effective list, so the [Permission Check Algorithm](#permission-check-algorithm) reads exactly the column it always read and `PermissionsGuard` knows nothing about tiers. The database keeps it true inside the writer's own transaction (migration `20261111020000`): a change to a role's tier or overrides rewrites that role's list, and a change to a tier's permissions rewrites the list of every role in it.
 - **A write of `permissions` alone still works.** `PATCH /v1/roles/:id` with a `permissions` list, the Roles page's matrix and a Discord import all write the list and nothing else. The role then holds exactly that list, and the difference from its tier is recorded as overrides, changing as few as possible.
 - **A tier never carries `*`.** The wildcard moves only through [Presidency Transfer](#presidency-transfer); a tier holding it would hand it to every role moved in. The President role holds `*` as an override.
 - **A tier that still has roles cannot be deleted**, and a role can only sit in a tier of its own chapter. Both are database constraints.
 
 ### Chapters that existed before tiers
 
-Migration `20261111010000` gave every existing chapter the four starting tier names and placed its roles without changing what any role can do: no role's `permissions` was written, and `scripts/pglite/tiers/role-tiers.mjs` proves the lists are byte-for-byte the same before and after.
+Migration `20261111020000` gave every existing chapter the four starting tier names and placed its roles without changing what any role can do: no role's `permissions` was written, and `scripts/pglite/tiers/role-tiers.mjs` proves the lists are byte-for-byte the same before and after.
 
 - A role holding `*`, and the seeded President, Vice President, Treasurer and Secretary, went to the first tier; the seeded Member to the third; the seeded New Member to the fourth.
 - The seeded Alumni, and any role with no permissions at all (most roles a Discord import made), stayed outside the tiers.

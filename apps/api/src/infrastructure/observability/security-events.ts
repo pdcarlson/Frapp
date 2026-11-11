@@ -26,13 +26,101 @@ export const SECURITY_EVENT_KINDS: Readonly<Record<number, SecurityEventKind>> =
     429: 'rate_limit_rejected',
   };
 
+/**
+ * Which of the auth guard's 401s a failure was (#3907). An auth-failure spike
+ * reads the same from outside whichever it is, and the fix differs:
+ *
+ *  - `no_bearer`: no `Authorization: Bearer …` header at all, so a client
+ *    calling a guarded route signed out, or something that isn't our client.
+ *  - `token_rejected`: a bearer token Supabase Auth refused, usually one that
+ *    expired while a client kept using it.
+ *
+ * Any other 401 (the Stripe webhook's signature check) carries no reason.
+ */
+export type AuthFailureReason = 'no_bearer' | 'token_rejected';
+
+/**
+ * What the guard knew about a refused credential. Never the token, and never
+ * anything from inside it but its expiry.
+ */
+export interface AuthFailureDetail {
+  reason: AuthFailureReason;
+  /**
+   * Supabase Auth's error code for a `token_rejected` (`bad_jwt`,
+   * `session_not_found`, `user_not_found`, …), when it sent a well-formed one.
+   */
+  authErrorCode?: string;
+  /**
+   * Whether the refused token's own `exp` had passed, read without verifying
+   * it. Absent when there was no token or its payload didn't parse. A label,
+   * not a verdict: Auth's refusal is the verdict.
+   */
+  tokenExpired?: boolean;
+}
+
+/** What a security record knows about the refusal and the client (#3907). */
+export interface AuthFailureContext {
+  /** Why a 401 was refused, when the guard said. */
+  authFailure?: AuthFailureDetail;
+  /** `mobile` or `web`, from what the client already sends (`requestApp`). */
+  clientApp?: string;
+  /** The mobile build, normalized by `clientVersionForLog`. */
+  clientVersion?: string;
+}
+
+/**
+ * That context as record fields, camelCase, each omitted when unknown. The one
+ * builder every sink starts from: the JSON log records use it as is, and
+ * {@link authFailureAttributes} renames it for PostHog and Sentry, so a new
+ * field or a redaction lands once.
+ */
+export function authFailureFields(context: AuthFailureContext): {
+  reason?: AuthFailureReason;
+  authErrorCode?: string;
+  tokenExpired?: boolean;
+  clientApp?: string;
+  clientVersion?: string;
+} {
+  const { authFailure, clientApp, clientVersion } = context;
+  return {
+    ...(authFailure ? { reason: authFailure.reason } : {}),
+    ...(authFailure?.authErrorCode
+      ? { authErrorCode: authFailure.authErrorCode }
+      : {}),
+    ...(authFailure?.tokenExpired !== undefined
+      ? { tokenExpired: authFailure.tokenExpired }
+      : {}),
+    ...(clientApp ? { clientApp } : {}),
+    ...(clientVersion ? { clientVersion } : {}),
+  };
+}
+
+const ATTRIBUTE_NAMES = {
+  reason: 'reason',
+  authErrorCode: 'auth_error_code',
+  tokenExpired: 'token_expired',
+  clientApp: 'client_app',
+  clientVersion: 'client_version',
+} as const;
+
+/** {@link authFailureFields} with the snake_case keys PostHog and Sentry use. */
+export function authFailureAttributes(
+  context: AuthFailureContext,
+): Record<string, string | boolean> {
+  const attributes: Record<string, string | boolean> = {};
+  for (const [field, value] of Object.entries(authFailureFields(context))) {
+    attributes[ATTRIBUTE_NAMES[field as keyof typeof ATTRIBUTE_NAMES]] = value;
+  }
+  return attributes;
+}
+
 export function securityEventKind(
   statusCode: number,
 ): SecurityEventKind | undefined {
   return SECURITY_EVENT_KINDS[statusCode];
 }
 
-export interface SecurityEventInput {
+export interface SecurityEventInput extends AuthFailureContext {
   kind: SecurityEventKind;
   statusCode: number;
   method?: string;
@@ -59,6 +147,11 @@ export interface SecurityEventRecord {
   userId?: string;
   chapterId?: string;
   originHash?: string;
+  reason?: AuthFailureReason;
+  authErrorCode?: string;
+  tokenExpired?: boolean;
+  clientApp?: string;
+  clientVersion?: string;
   timestamp: string;
 }
 
@@ -92,6 +185,7 @@ export function buildSecurityEvent(
     ...(input.userId ? { userId: input.userId } : {}),
     ...(input.chapterId ? { chapterId: input.chapterId } : {}),
     ...(input.originHash ? { originHash: input.originHash } : {}),
+    ...authFailureFields(input),
     timestamp: input.timestamp ?? new Date().toISOString(),
   };
 }
