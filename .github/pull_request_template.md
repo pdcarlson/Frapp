@@ -32,6 +32,7 @@
 - [ ] If I changed API source, I regenerated `openapi.json` and `packages/api-sdk/src/types.ts`.
 - [ ] If I moved a heading other docs deep-link into, `npm run check:links` still passes (`npm run install:lychee` first).
 - [ ] If I changed `supabase/migrations/**`, the change set also updates the promotion log or the rollback playbook, and every migration it adds has an entry in both (CI's `check:migration-safety` fails otherwise).
+- [ ] If this PR changes what members see or can do, it adds its What's new line as a file in `packages/validation/release-notes/` (rules: that folder's README).
 - [ ] No secrets committed (`.env*`, credentials, private keys).
 - [ ] No placeholder secrets in CI/CD workflows.
 

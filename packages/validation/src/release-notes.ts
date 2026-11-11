@@ -12,6 +12,12 @@
  * Newest first. Each entry is one batch of changes that reached members on
  * `date` (a store build or an over-the-air update; members never see which).
  *
+ * A PR doesn't edit this list to add a line: it leaves the line in its own
+ * file in `packages/validation/release-notes/`, and the What's new fold bot
+ * moves it here after merge (`scripts/release-notes-fold.mjs`), so parallel
+ * PRs never conflict on this file. Rewording what's already here is a direct
+ * edit, as before.
+ *
  * How to write a line: say what a member can now do or will notice, the way
  * you'd tell a friend. No feature codes, issue numbers, version strings,
  * screen ids, emojis, or em dashes. A bit vague is fine; wrong is not, so

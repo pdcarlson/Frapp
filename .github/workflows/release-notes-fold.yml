@@ -1,0 +1,101 @@
+name: What's new fold
+
+# Moves the What's new lines that PRs leave in packages/validation/release-notes/
+# into RELEASE_NOTES, so the notes are written when a change is built, not at
+# deploy time (the folder's README; the script's header owns where a line goes).
+#
+# After a merge to main that adds lines, this folds every waiting line on main
+# into the notes, force-pushes that one commit to the bot-owned branch
+# `bot/whats-new` (no person ever commits there), opens its PR if none is open,
+# and turns on auto-merge, so it lands once CI is green. A later merge re-runs
+# it from main and replaces the branch, so the PR always holds every waiting
+# line. Its own merge deletes the line files, which re-runs this with nothing
+# to fold.
+#
+# AUTO_MERGE below is the one switch: "false" leaves the PR for a person to
+# merge like any other.
+#
+# The token is the base-sync GitHub App's (pr-base-sync.yml mints the same
+# one): a GITHUB_TOKEN push or PR starts no CI, so required checks would never
+# report. No npm ci: the script needs only the runner's Node, and with no
+# install the repo's pre-push hook isn't installed either.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/validation/release-notes/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-notes-fold
+  cancel-in-progress: false
+
+jobs:
+  fold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The App's secrets belong to the `automation` environment: `main` only, no
+    # required reviewers (docs/ci-cd/agent-infra.md § GitHub environments and
+    # bootstrap secrets), as in pr-base-sync.yml.
+    environment:
+      name: automation
+      deployment: false
+    env:
+      BRANCH: bot/whats-new
+      AUTO_MERGE: "true"
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Fold the waiting lines
+        id: fold
+        run: |
+          set -euo pipefail
+          node scripts/release-notes-fold.mjs
+          if git diff --quiet && [ -z "$(git status --porcelain)" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mint base-sync app token
+        id: app-token
+        if: steps.fold.outputs.changed == 'true'
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.PR_BASE_SYNC_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PR_BASE_SYNC_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Push the fold and open its PR
+        if: steps.fold.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          git config user.name "frapp-base-sync[bot]"
+          git config user.email "319542062+frapp-base-sync[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git add -A packages/validation
+          git commit -q -m "What's new: fold the waiting lines into the notes"
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$BRANCH"
+
+          PR="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [ -z "$PR" ]; then
+            gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$BRANCH" \
+              --title "What's new: fold the waiting lines into the notes" \
+              --body "Moves the What's new lines that merged PRs left in \`packages/validation/release-notes/\` into the notes, under today's date, and deletes their files. Opened by the What's new fold workflow (\`.github/workflows/release-notes-fold.yml\`); a later merge with more lines replaces this branch. Reword a line or the entry's title here if it reads badly; the next fold keeps your edit only if this PR merges first."
+            PR="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json number --jq '.[0].number')"
+          fi
+          echo "PR #$PR" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$AUTO_MERGE" = "true" ]; then
+            gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --auto --squash
+          fi
