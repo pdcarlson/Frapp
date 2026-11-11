@@ -120,6 +120,7 @@ describe('PollService', () => {
       findById: jest.fn(),
       findByChannel: jest.fn(),
       findPinnedByChannel: jest.fn(),
+      findImportantInChannel: jest.fn(),
       findLatestPerChannel: jest.fn(),
       countPinnedByChannel: jest.fn(),
       findPollsByChapter: jest.fn(),
