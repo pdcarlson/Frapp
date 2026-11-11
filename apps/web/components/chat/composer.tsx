@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type MutableRefObject,
 } from "react";
 import dynamic from "next/dynamic";
 import { errorCopy } from "@repo/hooks/error-copy";
@@ -448,6 +449,13 @@ interface ComposerBaseProps {
    * response goes through the list projection.
    */
   canPost?: boolean;
+  /**
+   * Where the chat column's drop target (#4143, `ChatDropTarget`) finds this
+   * composer's attach path. Set while the composer is live and cleared when it
+   * unmounts or can't post, so a drop only attaches when the member could have
+   * picked the same files with the attach button.
+   */
+  dropAttachRef?: MutableRefObject<((files: File[]) => void) | null>;
   draft: string;
   onChangeDraft: (body: string) => void;
   /**
@@ -998,6 +1006,7 @@ export function Composer({
   onCancelReply,
   onRestoreReply,
   claimShellFocus,
+  dropAttachRef,
 }: ComposerProps) {
   const { toast } = useToast();
   const requestUploadUrl = useRequestChatUploadUrl();
@@ -1609,8 +1618,8 @@ export function Composer({
     },
     [onOpenCommandForm],
   );
-  // One path for a picked file and a pasted one (#2246): the same type and
-  // size checks, the same per-message limit, the same toasts.
+  // One path for a picked, pasted (#2246) or dropped (#4143) file: the same
+  // type and size checks, the same per-message limit, the same toasts.
   const attachFiles = useCallback(
     (files: File[]) => {
       if (files.length === 0) return;
@@ -1652,6 +1661,15 @@ export function Composer({
   useLayoutEffect(() => {
     attachFilesRef.current = attachFiles;
   }, [attachFiles]);
+  // One path for a dropped file too (#4143). Set only while the composer is
+  // live: a read-only channel's drop target refuses instead.
+  useLayoutEffect(() => {
+    if (!dropAttachRef || !resolvedCanPost) return;
+    dropAttachRef.current = attachFiles;
+    return () => {
+      if (dropAttachRef.current === attachFiles) dropAttachRef.current = null;
+    };
+  }, [attachFiles, dropAttachRef, resolvedCanPost]);
   const handleAttach = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(event.target.files ?? []);
