@@ -5,6 +5,7 @@ import { TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { EYEBROW } from "@/components/ui/typography";
 import { FOCUS_RING } from "@/components/ui/focus";
+import { RAIL_LINK_CLASS } from "@/components/settings/settings-nav-rail";
 import { type SettingsTool } from "@/components/settings/settings-access";
 import { InlineNote } from "@/components/shared/inline-note";
 
@@ -86,12 +87,8 @@ export const SETTINGS_TAB_VALUES: readonly string[] = SETTINGS_TABS.map(
 );
 
 // The officer tools (`settings-access.ts`) are links, not tabs: each keeps its
-// own full-width page. Same row geometry as a rail trigger, with the nav's
-// hover step, since clicking one leaves this page rather than switching a tab.
-const RAIL_LINK_CLASS = cn(
-  "flex h-[34px] items-center rounded-[10px] px-[10px] text-sm text-muted-foreground transition hover:bg-card hover:text-foreground pointer-coarse:h-11 lg:w-full",
-  FOCUS_RING,
-);
+// own full-width page, so they take the link row (`RAIL_LINK_CLASS`), since
+// clicking one leaves this page rather than switching a tab.
 
 /**
  * The left rail: officer-tool links above the setup tabs. Renders inside the
