@@ -8,6 +8,7 @@ import {
   type DeliveryChrome,
 } from "@/lib/chat/delivery-status";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { eyebrowStyle } from "@/components/eyebrow";
 import type { TabGlyphProps } from "@/components/tab-glyphs";
 import {
   groupReactions,
@@ -456,7 +457,8 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     // The body column's full width: a card in the row, under its author line.
     card: {
       marginTop: tokens.spacing.xs,
-      padding: tokens.spacing.md,
+      // components.md's card padding, the 16 web's MESSAGE_CARD draws.
+      padding: tokens.spacing.lg,
       borderRadius: tokens.radius.card,
       backgroundColor: tokens.color.surface.card,
       borderWidth: 1,
@@ -476,11 +478,10 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       gap: tokens.spacing.xs + 2,
       flexShrink: 1,
     },
+    // The eyebrow recipe web's EYEBROW draws.
     eyebrow: {
-      ...typeRole(tokens.typography.role.caption),
+      ...eyebrowStyle(tokens),
       color: tokens.color.text.mutedForeground,
-      textTransform: "uppercase",
-      letterSpacing: 0.5,
     },
     title: {
       ...typeRole({
@@ -632,12 +633,20 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       borderWidth: 1,
       borderColor: brand.accentBorder,
     },
+    // The reacted chip is the Accent badge recipe (components.md §5), so both
+    // states carry its 12.5 / 600.
     reactionText: {
-      ...typeRole(tokens.typography.role.caption),
+      ...typeRole({
+        ...tokens.typography.role.caption,
+        weight: tokens.typography.weight.semibold,
+      }),
       color: tokens.color.text.mutedForeground,
     },
     reactionTextMine: {
-      ...typeRole(tokens.typography.role.caption),
+      ...typeRole({
+        ...tokens.typography.role.caption,
+        weight: tokens.typography.weight.semibold,
+      }),
       color: brand.accent,
     },
   });
