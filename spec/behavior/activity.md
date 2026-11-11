@@ -61,9 +61,15 @@ member's own answer, not the event's default:
   that opens to a refusal is worse than no row.
 - **Files:** chapter documents and backwork the caller uploaded, newest first. Backwork only
   while the caller can still open Backwork (`backwork:upload` or `backwork:admin`).
-
-Events are not under "Made by you": an event does not record who created it (#3897 tracks adding
-that).
+- **Events:** events the caller made that invite them and whose check-in has not closed (15
+  minutes after the end, as for Coming up), soonest first, whatever their date. A recurring series
+  is one row, its next meeting. Making an event grants nothing: it lists only under the rules
+  Coming up applies, so an event that leaves its maker out is not here (an `events:update` holder
+  finds it on the Events page). That keeps every row's card honest, since chat's event card offers
+  Check in from the event's times alone. A row opens the event; editing it there needs
+  `events:update`, whoever made it ([`events.md`](events.md)). Events record their maker only since
+  2026-11-11 (`events.created_by`, [`events.md` § Event Creation](events.md#event-creation)); older
+  events have none and are never listed here.
 
 **`needs_you_count`** is every "Needs you" row plus each event the member can check in to right
 now and hasn't. It is counted before the list cap, so a badge built from it does not stop at 25.

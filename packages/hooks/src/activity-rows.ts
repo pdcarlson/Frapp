@@ -69,6 +69,7 @@ export const ACTIVITY_SECTION_NAMES: Record<ActivitySection, string> = {
   polls: "polls",
   coming_up: "events",
   files: "files",
+  made_events: "events you made",
 };
 
 function channelLabel(poll: ActivityPoll): string {
@@ -156,11 +157,11 @@ function hoursRow(entry: ActivityHours): ActivityRow {
   };
 }
 
-function eventRow(event: ActivityEvent): ActivityRow {
+function eventRow(event: ActivityEvent, group: string): ActivityRow {
   const needsCheckIn = event.check_in_open && !event.checked_in;
   return {
     kind: "event",
-    key: `event:${event.id}`,
+    key: `${group}:event:${event.id}`,
     event,
     title: event.name,
     detail: [formatRelativeDayTime(event.start_time), event.location]
@@ -225,7 +226,7 @@ export function activityGroups(
       label: "Needs you",
       empty: "Nothing is waiting on you.",
       rows: keep([
-        ...checkInNow.map(eventRow),
+        ...checkInNow.map((event) => eventRow(event, "needs")),
         ...activity.needs_you.tasks.map((task) =>
           taskRow(task, "needs", "mine"),
         ),
@@ -244,24 +245,25 @@ export function activityGroups(
       id: "coming-up",
       label: "Coming up",
       empty: "No events in the next two weeks.",
-      rows: keep(later.map(eventRow)),
+      rows: keep(later.map((event) => eventRow(event, "coming"))),
       unavailable: downFor(["coming_up"], ["event"]),
     },
     {
       id: "made-by-you",
       label: "Made by you",
       empty:
-        "Polls you post, tasks you assign and files you upload show up here.",
+        "Polls you post, events you make, tasks you assign and files you upload show up here.",
       rows: keep([
         ...activity.made_by_you.polls.map((poll) => pollRow(poll, "made")),
+        ...activity.made_by_you.events.map((event) => eventRow(event, "made")),
         ...activity.made_by_you.tasks.map((task) =>
           taskRow(task, "made", "assigned"),
         ),
         ...activity.made_by_you.files.map(fileRow),
       ]),
       unavailable: downFor(
-        ["polls", "tasks", "files"],
-        ["poll", "task", "file"],
+        ["polls", "made_events", "tasks", "files"],
+        ["poll", "event", "task", "file"],
       ),
     },
   ];

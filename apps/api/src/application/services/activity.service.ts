@@ -1,5 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { can, checkInWindowBounds, isModuleEnabled } from '@repo/validation';
+import {
+  CHECK_IN_GRACE_MINUTES,
+  can,
+  checkInWindowBounds,
+  isModuleEnabled,
+} from '@repo/validation';
 import { ATTENDANCE_REPOSITORY } from '#domain/repositories/attendance.repository.interface';
 import type { IAttendanceRepository } from '#domain/repositories/attendance.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
@@ -48,6 +53,7 @@ export const ACTIVITY_SECTIONS = [
   'polls',
   'coming_up',
   'files',
+  'made_events',
 ] as const;
 export type ActivitySection = (typeof ACTIVITY_SECTIONS)[number];
 
@@ -173,6 +179,12 @@ export interface ActivityView {
     polls: ActivityPoll[];
     tasks: ActivityTask[];
     files: ActivityFile[];
+    /**
+     * Events the caller made that have not ended, soonest first. A recurring
+     * series is one row, its next meeting. Events made before creators were
+     * recorded are not here.
+     */
+    events: ActivityEvent[];
   };
   /**
    * How many things wait on the caller: every `needs_you` row, counted before
@@ -190,6 +202,11 @@ const POLL_SCAN_LIMIT = 100;
 /** How far ahead "coming up" looks. */
 const COMING_UP_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 const COMING_UP_LIMIT = 10;
+/**
+ * Rows of the caller's own events read before a series is folded to its next
+ * meeting: enough for a weekly series or two to sit beside one-off events.
+ */
+const MADE_EVENTS_SCAN_LIMIT = 200;
 
 interface PollCardFields {
   question: string;
@@ -257,6 +274,12 @@ function byNewest<T extends { created_at: string }>(a: T, b: T): number {
 
 type Settled<T> = { ok: true; value: T } | { ok: false };
 
+/** What the event sections need to know about the caller, read once per request. */
+interface EventViewer {
+  roleIds: string[];
+  isAlumni: boolean;
+}
+
 /**
  * The Activity page's read (`spec/behavior/activity.md`): what waits on one
  * member and what they made, gathered from the modules that own each record.
@@ -319,8 +342,19 @@ export class ActivityService {
     const on = (moduleKey: string) =>
       isModuleEnabled(enabledModules, moduleKey);
     const now = Date.now();
+    // Read once and shared by both event sections, and only when one of them
+    // has an event to answer for.
+    let viewerRead: Promise<EventViewer> | null = null;
+    const viewer = () =>
+      (viewerRead ??= Promise.all([
+        this.memberRepo.findByUserAndChapter(userId, chapterId),
+        this.rbacService.isAlumni(chapterId, userId),
+      ]).then(([member, isAlumni]) => ({
+        roleIds: member?.role_ids ?? [],
+        isAlumni,
+      })));
 
-    const [tasks, hours, polls, events, files] = await Promise.all([
+    const [tasks, hours, polls, events, files, madeEvents] = await Promise.all([
       this.settle('tasks', chapterId, () =>
         on('tasks')
           ? this.readTasks(chapterId, userId, permissions)
@@ -338,11 +372,16 @@ export class ActivityService {
       ),
       this.settle('coming_up', chapterId, () =>
         on('events')
-          ? this.readComingUp(chapterId, userId, now)
+          ? this.readComingUp(chapterId, userId, now, viewer)
           : Promise.resolve([]),
       ),
       this.settle('files', chapterId, () =>
         this.readFiles(chapterId, userId, permissions, on),
+      ),
+      this.settle('made_events', chapterId, () =>
+        on('events')
+          ? this.readMadeEvents(chapterId, userId, now, viewer)
+          : Promise.resolve([]),
       ),
     ]);
 
@@ -366,6 +405,7 @@ export class ActivityService {
     const pollLists = valueOf('polls', polls, { unvoted: [], mine: [] });
     const comingUp = valueOf('coming_up', events, []);
     const myFiles = valueOf('files', files, []);
+    const myEvents = valueOf('made_events', madeEvents, []);
 
     const needsYouCount =
       taskLists.mine.length +
@@ -387,6 +427,7 @@ export class ActivityService {
         polls: pollLists.mine.slice(0, LIST_LIMIT),
         tasks: taskLists.assigned.slice(0, LIST_LIMIT),
         files: myFiles.slice(0, LIST_LIMIT),
+        events: myEvents.slice(0, LIST_LIMIT),
       },
       needs_you_count: needsYouCount,
       unavailable,
@@ -610,6 +651,7 @@ export class ActivityService {
     chapterId: string,
     userId: string,
     now: number,
+    viewer: () => Promise<EventViewer>,
   ): Promise<ActivityEvent[]> {
     const horizon = now + COMING_UP_WINDOW_MS;
     // With the viewer, always: the row carries the event's name and location,
@@ -617,24 +659,75 @@ export class ActivityService {
     // out (`spec/behavior/events.md` § Attendance by role). Bounded to the
     // window in SQL, with a day's margin behind for the check-in grace, so
     // the chapter's whole event history is not read to keep ten rows.
-    const [events, member, isAlumni] = await Promise.all([
-      this.eventService.findByChapter(chapterId, userId, {
-        endsAfter: new Date(now - 24 * 60 * 60 * 1000).toISOString(),
-        startsBefore: new Date(horizon).toISOString(),
-      }),
-      this.memberRepo.findByUserAndChapter(userId, chapterId),
-      this.rbacService.isAlumni(chapterId, userId),
-    ]);
-    const roleIds = member?.role_ids ?? [];
+    const events = await this.eventService.findByChapter(chapterId, userId, {
+      endsAfter: new Date(now - 24 * 60 * 60 * 1000).toISOString(),
+      startsBefore: new Date(horizon).toISOString(),
+    });
+    return this.toEventRows(userId, now, events, viewer, {
+      startsBefore: horizon,
+      limit: COMING_UP_LIMIT,
+    });
+  }
 
-    const upcoming = events
+  /**
+   * Events the caller made whose check-in has not closed, soonest first, with
+   * a recurring series folded to its next meeting: a weekly meeting is one
+   * thing they made, not fifteen rows.
+   */
+  private async readMadeEvents(
+    chapterId: string,
+    userId: string,
+    now: number,
+    viewer: () => Promise<EventViewer>,
+  ): Promise<ActivityEvent[]> {
+    // From the check-in grace behind now, so an event stays here for as long
+    // as it stays in Coming up: its maker opens it to take attendance just
+    // after it ends.
+    const events = await this.eventService.findCreatedBy(
+      chapterId,
+      userId,
+      new Date(now - CHECK_IN_GRACE_MINUTES * 60 * 1000).toISOString(),
+      MADE_EVENTS_SCAN_LIMIT,
+    );
+    const seenSeries = new Set<string>();
+    const nextOfEach = events.filter((event) => {
+      const series = event.parent_event_id ?? event.id;
+      if (seenSeries.has(series)) return false;
+      seenSeries.add(series);
+      return true;
+    });
+    return this.toEventRows(userId, now, nextOfEach, viewer, {
+      startsBefore: Number.POSITIVE_INFINITY,
+      limit: LIST_LIMIT,
+    });
+  }
+
+  /**
+   * Events as this member's rows: what the event asks of them, and whether
+   * they can check in now. Keeps events that invite the member, whose
+   * check-in has not closed and that start before `startsBefore`, soonest
+   * first, at most `limit`.
+   *
+   * Only events that invite them, in both sections. The event reads exempt an
+   * `events:update` holder from the role gate so they can find any event to
+   * edit it; that is not an invitation. And a row opens chat's event card,
+   * which offers Check in from the event's times alone, so an event that
+   * leaves the member out would offer a check-in the server refuses.
+   */
+  private async toEventRows(
+    userId: string,
+    now: number,
+    events: Event[],
+    viewer: () => Promise<EventViewer>,
+    options: { startsBefore: number; limit: number },
+  ): Promise<ActivityEvent[]> {
+    if (events.length === 0) return [];
+    const { roleIds, isAlumni } = await viewer();
+
+    const kept = events
       .map((event) => ({
         event,
         window: this.checkInWindowOf(event),
-        // The viewer's own answer. The list read above exempts an
-        // `events:update` holder from the role gate so they can find any
-        // event to edit it; that is not an invitation, so an event that
-        // leaves them out is not "coming up" for them.
         answer: attendanceFor(event, roleIds),
       }))
       .filter(
@@ -642,47 +735,45 @@ export class ActivityService {
           answer.status !== 'not_invited' &&
           window !== null &&
           window.closesAt > now &&
-          new Date(event.start_time).getTime() <= horizon,
+          new Date(event.start_time).getTime() <= options.startsBefore,
       )
       .sort(
         (a, b) =>
           new Date(a.event.start_time).getTime() -
           new Date(b.event.start_time).getTime(),
       )
-      .slice(0, COMING_UP_LIMIT);
+      .slice(0, options.limit);
 
     return Promise.all(
-      upcoming.map(
-        async ({ event, window, answer }): Promise<ActivityEvent> => {
-          // `AttendanceService.checkIn` refuses an alumnus unless a role of
-          // theirs is listed on the event (`spec/behavior/alumni.md`), and the
-          // absence sweep never holds them to the default. So for them the
-          // event is optional and is not something to check in to.
-          const alumniByDefault = isAlumni && !answer.byRole;
-          const checkInOpen =
-            window !== null && window.opensAt <= now && !alumniByDefault;
-          return {
-            id: event.id,
-            name: event.name,
-            location: event.location,
-            start_time: event.start_time,
-            end_time: event.end_time,
-            attendance:
-              answer.status === 'required' && !alumniByDefault
-                ? 'required'
-                : 'optional',
-            point_value: event.point_value,
-            check_in_opens_minutes: event.check_in_opens_minutes,
-            check_in_open: checkInOpen,
-            // Only for an event the member can check in to right now, which
-            // is rarely more than one: the answer is what decides whether it
-            // still needs them.
-            checked_in: checkInOpen
-              ? await this.hasCheckedIn(event.id, userId)
-              : null,
-          };
-        },
-      ),
+      kept.map(async ({ event, window, answer }): Promise<ActivityEvent> => {
+        // `AttendanceService.checkIn` refuses an alumnus unless a role of
+        // theirs is listed on the event (`spec/behavior/alumni.md`), and the
+        // absence sweep never holds them to the default. So for them the
+        // event is optional and is not something to check in to.
+        const alumniByDefault = isAlumni && !answer.byRole;
+        const checkInOpen =
+          window !== null && window.opensAt <= now && !alumniByDefault;
+        return {
+          id: event.id,
+          name: event.name,
+          location: event.location,
+          start_time: event.start_time,
+          end_time: event.end_time,
+          attendance:
+            answer.status === 'required' && !alumniByDefault
+              ? 'required'
+              : 'optional',
+          point_value: event.point_value,
+          check_in_opens_minutes: event.check_in_opens_minutes,
+          check_in_open: checkInOpen,
+          // Only for an event the member can check in to right now, which
+          // is rarely more than one: the answer is what decides whether it
+          // still needs them.
+          checked_in: checkInOpen
+            ? await this.hasCheckedIn(event.id, userId)
+            : null,
+        };
+      }),
     );
   }
 

@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-11: Events record their maker (#3897)
+
+### 20261111020000_events_created_by.sql
+
+- **Purpose**: Adds `events.created_by` (nullable, FK to `users (id)` on delete set null), the member who called `POST /v1/events`; a series' generated occurrences copy their head's. Activity's "Made by you" lists the caller's events from it. Adds a partial index `events_chapter_created_by_start_idx` on `(chapter_id, created_by, start_time) where created_by is not null` for that read. Account deletion tombstones the `users` row rather than deleting it, so a deleted maker's id stays. No existing row changes: every event made before this has no recorded maker. The rule is [`spec/behavior/events.md` § Event Creation](../../../spec/behavior/events.md#event-creation).
+- **Checks**: After `db push`, `select column_name from information_schema.columns where table_name = 'events' and column_name = 'created_by';` returns one row, `select convalidated from pg_constraint where conname = 'events_created_by_fk';` returns `true`, and `select indexname from pg_indexes where indexname = 'events_chapter_created_by_start_idx';` returns one row.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API reads events with `select('*')`, so once this is applied it returns `created_by` (null) on every event and never writes it. The newer API against an unmigrated database fails every event create (its insert names `created_by`) and serves Activity's events-made section as unavailable. Adding a nullable column is metadata-only, under a brief ACCESS EXCLUSIVE lock and no rewrite; the foreign key is added `not valid` and then validated against all-null values. The index is built without `concurrently`, inside the migration's transaction, and holds a SHARE lock on `events` (writes wait) while it builds; it only covers rows with a maker, which are none at apply time. `add column if not exists`, the guarded constraint and `create index if not exists` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-events-record-their-maker-20261111020000) § Rollback Events record their maker.
+
 ## 2026-11-10: Recruitment permissions backfill (#4070)
 
 ### 20261111010000_rush_permissions_backfill.sql
