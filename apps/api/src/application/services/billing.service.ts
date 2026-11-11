@@ -1137,8 +1137,15 @@ export class BillingService {
         category: 'billing',
         data: { target: { screen: 'billing' } },
       });
-    } catch {
-      this.logger.warn(`Failed to notify president for chapter ${chapterId}`);
+    } catch (error) {
+      // `error`: the URGENT notice to the one person who acts on a
+      // subscription change is lost, and nothing sends it again (#4096).
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'billing-president-notify',
+        message: `Failed to notify president for chapter ${chapterId}`,
+        error,
+      });
     }
   }
 

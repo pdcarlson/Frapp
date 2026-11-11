@@ -26,7 +26,7 @@ import {
   isPollClosed,
 } from '#domain/utils/poll-vote-rules';
 import type { CardPollPayload } from '#domain/utils/poll-vote-rules';
-import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { BackworkService } from './backwork.service';
 import { ChapterDocumentService } from './chapter-document.service';
 import { maskBlockedMessages } from './chat-block-mask';
@@ -392,7 +392,14 @@ export class ActivityService {
     };
   }
 
-  /** Run one section; a failure is logged and reported, never thrown. */
+  /**
+   * Run one section; a failure is logged and reported, never thrown.
+   *
+   * At `error` level: the member sees the section named in `unavailable`
+   * instead of its rows, the read a 5xx would have reported had it
+   * propagated. A broken query behind one section (#4087) otherwise reads
+   * as a quiet gap on the page for as long as it stays broken (#4096).
+   */
   private async settle<T>(
     section: ActivitySection,
     chapterId: string,
@@ -401,12 +408,12 @@ export class ActivityService {
     try {
       return { ok: true, value: await read() };
     } catch (error) {
-      logThrowable(
-        this.logger,
-        'warn',
-        `Activity section '${section}' failed for chapter ${chapterId}`,
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: `activity-section:${section.replace(/_/g, '-')}`,
+        message: `Activity section '${section}' failed for chapter ${chapterId}`,
         error,
-      );
+      });
       return { ok: false };
     }
   }
@@ -707,12 +714,14 @@ export class ActivityService {
       );
       return attendance !== null;
     } catch (error) {
-      logThrowable(
-        this.logger,
-        'warn',
-        `Activity could not read attendance for event ${eventId}`,
+      // Per event, and the event still lists: a best-effort step the page
+      // absorbs, so `warning`.
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'activity-attendance-read',
+        message: `Activity could not read attendance for event ${eventId}`,
         error,
-      );
+      });
       return null;
     }
   }

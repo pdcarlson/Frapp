@@ -113,6 +113,90 @@ describe("createQueryErrorReporter", () => {
     });
   });
 
+  describe("a client-contract 4xx (#4096)", () => {
+    it("is reported at error level, named and grouped as a contract bug", () => {
+      const h = harness();
+      h.query(apiBody(400, { code: "chapter.context.required" }), [
+        "tasks",
+        CHAPTER_ID,
+      ]);
+
+      expect(h.reports).toHaveLength(1);
+      const [report] = h.reports;
+      expect(report!.level).toBe("error");
+      expect(report!.error.name).toBe("ClientContractError");
+      expect(report!.error.message).toBe(
+        'query "tasks" answered 400 (chapter.context.required)',
+      );
+      expect(report!.fingerprint).toEqual([
+        "react-query",
+        "query",
+        "tasks",
+        "4xx",
+        "chapter.context.required",
+        "client-contract",
+      ]);
+      expect(report!.tags).toMatchObject({
+        query_key_root: "tasks",
+        error_code: "chapter.context.required",
+        api_error_class: "client-contract",
+      });
+    });
+
+    it("covers a request-validation refusal from a mutation", () => {
+      const h = harness();
+      h.mutation(apiBody(400, { code: "request.validation_failed" }), [
+        "events",
+        "update",
+      ]);
+      expect(h.reports[0]!.level).toBe("error");
+      expect(h.reports[0]!.fingerprint).toEqual([
+        "react-query",
+        "mutation",
+        "events",
+        "4xx",
+        "request.validation_failed",
+        "client-contract",
+      ]);
+    });
+
+    it("keeps a member-caused or uncoded 4xx at warning", () => {
+      const h = harness();
+      h.query(apiBody(404), ["channels"]);
+      h.query(apiBody(400, { code: "service_entry.receipt_required" }), [
+        "service",
+      ]);
+      h.query(apiBody(400), ["events"]);
+      h.query(apiBody(410), ["invites"]);
+
+      expect(h.reports.map((report) => report.level)).toEqual([
+        "warning",
+        "warning",
+        "warning",
+        "warning",
+      ]);
+      for (const report of h.reports) {
+        expect(report.error.name).toBe("ApiError");
+        expect(report.tags.api_error_class).toBeUndefined();
+        expect(report.fingerprint).not.toContain("client-contract");
+      }
+    });
+
+    it("keeps a 5xx at warning even when its code is a client-contract one", () => {
+      const h = harness();
+      h.query(apiBody(503, { code: "chapter.context.required" }));
+      expect(h.reports[0]!.level).toBe("warning");
+      expect(h.reports[0]!.error.name).toBe("ApiError");
+    });
+
+    it("still drops a 401 or 403, whatever its code", () => {
+      const h = harness();
+      h.query(apiBody(403, { code: "chapter.context.mismatch" }));
+      h.query(apiBody(401, { code: "request.validation_failed" }));
+      expect(h.reports).toHaveLength(0);
+    });
+  });
+
   describe("what is not reported", () => {
     it("skips a 401 and a 403, and reports the 4xx answers around them", () => {
       const h = harness();

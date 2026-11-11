@@ -308,6 +308,28 @@ describe('PollService', () => {
         choice_mode: 'multi',
       });
     });
+
+    it('stores the deadline in UTC, the form the expiry sweep compares (#3498)', async () => {
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockMessageRepo.create.mockResolvedValue(basePollMessage);
+
+      await service.createPoll({
+        channelId: 'ch-1',
+        chapterId: 'ch-1',
+        senderId: 'user-1',
+        question: 'Q?',
+        options: ['A', 'B'],
+        expiresAt: '2026-12-31T23:59:59+05:00',
+      });
+
+      expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            expires_at: '2026-12-31T18:59:59.000Z',
+          }),
+        }),
+      );
+    });
   });
 
   describe('vote', () => {

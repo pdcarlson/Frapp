@@ -2,9 +2,11 @@ import {
   IsArray,
   IsIn,
   IsInt,
+  IsISO8601,
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -20,6 +22,10 @@ import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBooleanQueryString } from '../decorators/is-boolean-query-string.decorator';
 import type { BooleanStringQueryValue } from '../utils/query-boolean';
+
+/** A calendar date and time with a zone: what `Date` parses on every runtime. */
+const EXPIRES_AT_FORMAT =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 export class CreatePollDto {
   @ApiProperty({ description: 'Poll question' })
@@ -43,7 +49,19 @@ export class CreatePollDto {
     description: 'Expiration time (ISO 8601)',
   })
   @IsOptional()
-  @IsString()
+  // A string the expiry sweep can't parse used to be stored, then logged as
+  // `poll-expiry-sweep-unparseable-expires-at` every five minutes for a day
+  // (#3498). Refused here instead. ISO 8601 alone isn't enough: week dates
+  // (`2026-W46-4`), ordinal dates (`2026-316`) and the basic format
+  // (`20261201`) are ISO 8601 that `Date` can't parse, so the value must be a
+  // calendar date and time with a zone, and a real date (`strict` refuses
+  // `2026-02-30`). `PollService` stores it in UTC, the form the sweep's text
+  // comparison needs.
+  @IsISO8601({ strict: true, strictSeparator: true })
+  @Matches(EXPIRES_AT_FORMAT, {
+    message:
+      'expires_at must be a date and time with a time zone, such as 2026-11-12T18:00:00Z',
+  })
   expires_at?: string;
 
   @ApiPropertyOptional({ enum: ['single', 'multi'], default: 'single' })

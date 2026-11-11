@@ -1,3 +1,4 @@
+import * as caughtFailure from '../../infrastructure/observability/report-caught-failure';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   Logger,
@@ -1390,17 +1391,26 @@ describe('BillingService', () => {
         new Error('Notification failed'),
       );
 
-      const loggerWarnSpy = jest
-        .spyOn(service['logger'], 'warn')
+      const loggerErrorSpy = jest
+        .spyOn(service['logger'], 'error')
         .mockImplementation(() => {});
+      const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
 
       await service.handleWebhookEvent(event);
 
-      expect(loggerWarnSpy).toHaveBeenCalledWith(
-        'Failed to notify president for chapter ch-1',
+      // Reported, not only logged (#4096).
+      expect(reported).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          level: 'error',
+          site: 'billing-president-notify',
+          message: 'Failed to notify president for chapter ch-1',
+          error: expect.objectContaining({ message: 'Notification failed' }),
+        }),
       );
 
-      loggerWarnSpy.mockRestore();
+      reported.mockRestore();
+      loggerErrorSpy.mockRestore();
     });
 
     // #1710. Three separate contracts live on this branch, and the bug was that
@@ -3654,17 +3664,18 @@ describe('BillingService', () => {
         new Error('Database error'),
       );
 
-      const loggerWarnSpy = jest
-        .spyOn(service['logger'], 'warn')
+      const loggerErrorSpy = jest
+        .spyOn(service['logger'], 'error')
         .mockImplementation(() => {});
 
       await service.handleWebhookEvent(event);
 
-      expect(loggerWarnSpy).toHaveBeenCalledWith(
-        'Failed to notify president for chapter ch-1',
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to notify president for chapter ch-1'),
+        expect.anything(),
       );
 
-      loggerWarnSpy.mockRestore();
+      loggerErrorSpy.mockRestore();
     });
 
     it('should notify chapter president on subscription deletion', async () => {

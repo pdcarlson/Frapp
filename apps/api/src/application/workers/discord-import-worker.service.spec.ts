@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import * as caughtFailure from '../../infrastructure/observability/report-caught-failure';
 import { join } from 'node:path';
 import { Test } from '@nestjs/testing';
 import * as Sentry from '@sentry/nestjs';
@@ -543,6 +544,30 @@ describe('DiscordImportWorkerService — telling the admin it ended', () => {
       category: 'admin',
       data: { target: { screen: 'discord_import' } },
     });
+  });
+
+  it('finishes the import and reports a notice that could not be sent (#4096)', async () => {
+    const notifications = {
+      notifyUser: jest.fn(async () => {
+        throw new Error('notifications insert failed');
+      }),
+    };
+    const { worker } = await buildWorker(repoRef, makeStorage(part000()), {
+      notifications,
+    });
+    const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.state().status).toBe('completed');
+    expect(reported).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        level: 'warning',
+        site: 'discord-import-finished-notify',
+      }),
+    );
+    reported.mockRestore();
   });
 
   it('sends nothing to an admin who no longer manages channels', async () => {
