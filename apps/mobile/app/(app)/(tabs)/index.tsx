@@ -29,6 +29,7 @@ import {
   lastChannelLandingId,
   useActiveChapterId,
   useChannels,
+  useChapterScope,
   canSetChannelDisplayLock,
   useSetChannelDisplayLock,
   useChapterSetupChecklist,
@@ -84,7 +85,7 @@ import {
   UnreadBadge,
 } from "@/components/chat/channel-row";
 import { gutterBleed, PressableRow } from "@/components/list-section";
-import { ErrorState } from "@/components/state-block";
+import { ErrorState, NoChapterState } from "@/components/state-block";
 import {
   MOBILE_SETUP_CHECKLIST_OMIT,
   SetupChecklistView,
@@ -167,6 +168,9 @@ export default function ChatHomeScreen() {
   const { chapterName } = useChapterBranding();
 
   const channelsQuery = useChannels();
+  // `none` when the server can't scope a chat read (#4094): the reads then
+  // never go out, so the list would otherwise sit on its skeleton.
+  const chapterScope = useChapterScope();
   const setDisplayLock = useSetChannelDisplayLock();
   const channelsError = channelsErrorCopy(channelsQuery.error, chapterName);
   useEffect(() => {
@@ -657,7 +661,12 @@ export default function ChatHomeScreen() {
         </Text>
       ) : null}
 
-      {channelsQuery.isPending || holdingForLaunch ? (
+      {chapterScope === "none" ? (
+        // A member with no membership is on their way to `/join`
+        // (`useOnboardingRedirect`); this is what a member of several
+        // chapters with no chapter claim sees.
+        <NoChapterState noun="its channels" />
+      ) : channelsQuery.isPending || holdingForLaunch ? (
         <ChannelListSkeleton />
       ) : channelsQuery.isError ? (
         // An explicit retry as well as the pull (#3385): this tab stays

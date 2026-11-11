@@ -3318,8 +3318,9 @@ describe("ChatShell cold load, before anything resolves (#2145)", () => {
  *
  * The first cut of `channelsPaneState` short-circuited on `!activeChapterId`
  * ahead of everything else, which read as harmless and was not. `useChannels()`
- * takes no chapter argument — no `enabled` gate, `["channels"]` as its whole
- * query key — and the API resolves a sole membership server-side, so the list
+ * takes no chapter argument — no `chapterId` gate (`useChapterScope` opens it
+ * for a sole listed membership; mocked here as `chapter`), `["channels"]` as
+ * its whole query key — and the API resolves a sole membership server-side, so the list
  * arrives while the store field is still `null`. Ordering the state on the field
  * therefore hid the rail and the timeline over the top of data that had already
  * loaded, while `activeChannel` (derived from `channels`) resolved anyway.

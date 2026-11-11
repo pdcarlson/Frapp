@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { createFrappClient } from "@repo/api-sdk";
 import { resolveChapterScope, useChapterScope } from "./chapter-scope";
@@ -68,6 +68,26 @@ describe("resolveChapterScope", () => {
         chapterId: null,
         memberships: [],
         membershipsFailed: false,
+      }),
+    ).toBe("none");
+  });
+
+  it("is none for two memberships and no chapter id, which the server can't pick between", () => {
+    expect(
+      resolveChapterScope({
+        chapterId: null,
+        memberships: [{ chapter_id: "chapter-1" }, { chapter_id: "chapter-2" }],
+        membershipsFailed: false,
+      }),
+    ).toBe("none");
+  });
+
+  it("keeps an answered empty list when a refetch of it fails", () => {
+    expect(
+      resolveChapterScope({
+        chapterId: null,
+        memberships: [],
+        membershipsFailed: true,
       }),
     ).toBe("none");
   });
@@ -176,6 +196,52 @@ describe("chapter-scoped reads with no chapter (#4094)", () => {
         expect(paths).toContain(path);
       }
     });
+  });
+
+  it("sends them once the user joins a chapter (the invite path)", async () => {
+    let memberships: unknown[] = [];
+    const GET = vi.fn(async (path: string) =>
+      path === "/v1/chapters"
+        ? { data: memberships, error: undefined }
+        : { data: [], error: undefined },
+    );
+    const client = { GET };
+    const scope = renderHook(() => useChapterScope(), {
+      wrapper: wrapper(client, null),
+    });
+    renderHook(() => useChatHomeReads(), { wrapper: wrapper(client, null) });
+    await waitFor(() => expect(scope.result.current).toBe("none"));
+    expect(requestedPaths(client)).not.toContain("/v1/channels");
+
+    // Redeeming an invite invalidates `["chapters"]` (`useRedeemInvite`).
+    memberships = [{ chapter_id: "chapter-1" }];
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ["chapters"] });
+    });
+
+    await waitFor(() => {
+      const paths = requestedPaths(client);
+      for (const path of CHAPTER_SCOPED_PATHS) {
+        expect(paths).toContain(path);
+      }
+    });
+  });
+
+  it("sends none of them for a member of two chapters with no chapter id", async () => {
+    const client = fakeClient([
+      { chapter_id: "chapter-1" },
+      { chapter_id: "chapter-2" },
+    ]);
+    const scope = renderHook(() => useChapterScope(), {
+      wrapper: wrapper(client, null),
+    });
+    renderHook(() => useChatHomeReads(), { wrapper: wrapper(client, null) });
+
+    await waitFor(() => expect(scope.result.current).toBe("none"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    for (const path of CHAPTER_SCOPED_PATHS) {
+      expect(requestedPaths(client)).not.toContain(path);
+    }
   });
 
   it("sends them when the chapters list fails, leaving the server to decide", async () => {

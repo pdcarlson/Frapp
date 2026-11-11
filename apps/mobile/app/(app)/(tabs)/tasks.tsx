@@ -101,9 +101,9 @@ export default function TasksScreen() {
   const tasksQuery = useTasks();
   const pointsQuery = useMyPoints("semester");
   const leaderboardQuery = useLeaderboard("semester");
-  // `useTasks` waits for a chapter on its own (`useChapterScope`), but a
-  // pull's `refetch()` runs a query whatever its `enabled` says, so the pull
-  // leaves the board out until there is a chapter to scope it to.
+  // The board is drawn only with a chapter id (see `renderBoard`), so the pull
+  // leaves it out without one. `useTasks`' own gate (`useChapterScope`) opens
+  // for a claim-less sole member too, whose board this screen doesn't show.
   const refresh = useRefetchAll([
     viewerQuery,
     chapterId ? tasksQuery : null,
@@ -370,9 +370,10 @@ export default function TasksScreen() {
   );
 
   function renderBoard() {
-    // With no chapter id, "pick a chapter" is the honest answer. `useTasks`
-    // sends nothing for a member with no membership (#4094), but its query
-    // then sits pending, which would otherwise draw a skeleton that never ends.
+    // With no chapter id, "pick a chapter" is the honest answer: the points
+    // and leaderboard reads beside the board wait on a chapter id, and for a
+    // member with no membership `useTasks` sends nothing (#4094) and sits
+    // pending, which would otherwise draw a skeleton that never ends.
     if (!chapterId) return <NoChapterState noun="your tasks" />;
 
     // Checked before the pending gate below, because `useViewerUserId` reports a

@@ -776,11 +776,13 @@ export function ChatShell({
   // legitimately be absent from that cached read — declaring it "not found"
   // on a stale list would be a false alarm, not an honest one. A forced
   // refetch per target keeps the "missing" verdict below trustworthy.
+  // Only once the read can be scoped: `refetch()` ignores the hook's own
+  // `enabled`, so without this a link with no chapter sent the 400 (#4094).
   const refetchChannels = channelsQuery.refetch;
   useEffect(() => {
-    if (initialChannelId === null) return;
+    if (initialChannelId === null || chapterScope !== "chapter") return;
     void refetchChannels();
-  }, [initialChannelId, refetchChannels]);
+  }, [initialChannelId, refetchChannels, chapterScope]);
 
   // A caller can pass a channel *name* (onboarding's completion redirect
   // uses the literal `general`) as well as an id, and `activeChannelId`
@@ -2200,8 +2202,10 @@ export function ChatShell({
     list itself.
   */
   /*
-    `no-chapter` is LAST, and the ordering is the whole correctness of this
-    variable.
+    `no-chapter` from the store field is LAST, and the ordering is the whole
+    correctness of this variable. (The `chapterScope === "none"` branch above
+    it is the server's own answer, not the store's guess: see the end of this
+    comment.)
 
     The state exists because `/chat` used to server-render a lone 208px "No
     chapter selected" card with no channel column at all — `activeChapterId`

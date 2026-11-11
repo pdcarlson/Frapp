@@ -62,6 +62,8 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useNowDate: () => now,
     // s06 gates its list on an active chapter (no chapter, no query).
     useActiveChapterId: () => "chapter-1",
+    // A member the server can scope chat for (#4094).
+    useChapterScope: () => "chapter",
     useChannels: () => empty,
     useCategories: () => empty,
     useChannelUnreadCounts: () => empty,
