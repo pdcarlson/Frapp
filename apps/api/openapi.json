@@ -11660,7 +11660,7 @@
     },
     "/v1/activity": {
       "get": {
-        "description": "The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, the tasks they assigned and the files they uploaded. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.",
+        "description": "The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.",
         "operationId": "ActivityController_getActivity_v1",
         "parameters": [],
         "responses": {
@@ -19877,12 +19877,10 @@
             "enum": [
               "document",
               "backwork"
-            ],
-            "description": "Which module holds it: a chapter document or a backwork resource."
+            ]
           },
           "title": {
-            "type": "string",
-            "description": "Empty for a backwork resource with no title."
+            "type": "string"
           },
           "created_at": {
             "type": "string",
@@ -19900,7 +19898,7 @@
         "type": "object",
         "properties": {
           "polls": {
-            "description": "Poll cards the caller posted, newest first.",
+            "description": "Poll cards the caller posted, newest first: up to 25 open and the 25 most recently posted closed ones, so closed polls never push an open one out. A client lists the open ones and keeps the closed ones behind an archive (#4258).",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ActivityPollDto"
@@ -19914,7 +19912,8 @@
             }
           },
           "files": {
-            "description": "Documents and backwork the caller uploaded, newest first.",
+            "deprecated": true,
+            "description": "Always empty: uploads left Activity (#4291). Served only so a client built before that does not fail on its absence; to be removed.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ActivityFileDto"
@@ -19972,7 +19971,6 @@
                 "hours_approvals",
                 "polls",
                 "coming_up",
-                "files",
                 "made_events",
                 "links"
               ]
