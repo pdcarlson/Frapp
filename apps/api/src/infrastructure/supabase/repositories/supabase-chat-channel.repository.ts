@@ -96,7 +96,7 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
     const { data, error } = await this.supabase
       .from('chat_channels')
       .select(
-        'id, chapter_id, name, is_read_only, type, member_ids, required_permissions, default_notification_level',
+        'id, chapter_id, name, is_read_only, type, member_ids, who_can_see, who_can_post, default_notification_level',
       )
       .eq('id', channelId)
       .maybeSingle();

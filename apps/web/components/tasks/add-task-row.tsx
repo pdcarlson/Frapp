@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { Plus } from "lucide-react";
+import { dueEntryFields } from "@repo/formatting";
 import { memberLabel } from "@repo/hooks/display-names";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { DueDateField } from "@/components/tasks/due-date-field";
+import { SubtaskListEditor } from "@/components/tasks/subtask-list-editor";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import { cn, guardIntDraft, parseGuardedInt } from "@/lib/utils";
 
@@ -24,6 +26,10 @@ export type TaskDraft = {
   description?: string;
   assignee_id: string;
   due_date: string;
+  /** Present only when the task has a time of day (#4003). */
+  due_at?: string;
+  /** Subtask titles, in order (#4003). */
+  subtasks?: string[];
   point_reward?: number;
 };
 
@@ -35,6 +41,7 @@ const EMPTY = {
   assignee_id: "",
   due_date: "",
   point_reward: "",
+  subtasks: [] as string[],
 };
 
 type Missing = { assignee?: boolean; due?: boolean };
@@ -104,8 +111,9 @@ export function AddTaskRow({
       title,
       description: draft.description.trim() || undefined,
       assignee_id: draft.assignee_id,
-      due_date: draft.due_date,
+      ...dueEntryFields(draft.due_date),
       point_reward: parseGuardedInt(draft.point_reward),
+      subtasks: draft.subtasks.length > 0 ? draft.subtasks : undefined,
     });
     if (!created) return;
     setDraft(EMPTY);
@@ -160,7 +168,9 @@ export function AddTaskRow({
           setDraft((prev) => ({ ...prev, title: event.target.value }))
         }
       />
-      <div className="grid grid-cols-2 gap-2">
+      {/* Stacked, not side by side: a column is narrow, and a due field
+          holding a time ("Fri, Nov 13 · 7 PM") doesn't fit half of one. */}
+      <div className="grid grid-cols-1 gap-2">
         <div className="min-w-0">
           <Select
             value={draft.assignee_id}
@@ -203,7 +213,7 @@ export function AddTaskRow({
           <DueDateField
             ref={dueRef}
             aria-label="Due date"
-            placeholder="Due: Nov 14"
+            placeholder="Due: Fri 5pm"
             missing={missing.due}
             value={draft.due_date}
             onChange={(value) => {
@@ -224,6 +234,11 @@ export function AddTaskRow({
           if (next === undefined) return;
           setDraft((prev) => ({ ...prev, point_reward: next }));
         }}
+      />
+      <SubtaskListEditor
+        items={draft.subtasks}
+        disabled={pending}
+        onChange={(subtasks) => setDraft((prev) => ({ ...prev, subtasks }))}
       />
       <Textarea
         rows={2}

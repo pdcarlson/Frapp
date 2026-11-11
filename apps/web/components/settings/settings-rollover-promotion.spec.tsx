@@ -70,7 +70,9 @@ vi.mock("@/components/shared/can", () => ({
     ) : null,
 }));
 
-vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({
+  useToast: () => ({ toast: vi.fn() }),
+}));
 
 const { SettingsPage } = await import("./settings-page");
 
@@ -238,7 +240,9 @@ describe("semester rollover — New Member promotion (#285)", () => {
   // must still name the chapter's own role, read from the member view.
   it("names the chapter's own role when the config read is refused", () => {
     permissions = ["semester:rollover", "roles:manage"];
-    mockOrgConfig.mockReturnValue(undefined as unknown as Record<string, unknown>);
+    mockOrgConfig.mockReturnValue(
+      undefined as unknown as Record<string, unknown>,
+    );
     const base = mockCurrentChapter() as { data: Record<string, unknown> };
     mockCurrentChapter.mockReturnValue({
       ...base,
@@ -260,7 +264,9 @@ describe("semester rollover — New Member promotion (#285)", () => {
   // under it.
   it("names the archetype's role when the config read is refused and no word is stored", () => {
     permissions = ["semester:rollover", "roles:manage"];
-    mockOrgConfig.mockReturnValue(undefined as unknown as Record<string, unknown>);
+    mockOrgConfig.mockReturnValue(
+      undefined as unknown as Record<string, unknown>,
+    );
     const base = mockCurrentChapter() as { data: Record<string, unknown> };
     mockCurrentChapter.mockReturnValue({
       ...base,

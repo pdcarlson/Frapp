@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { displayNameOrNull } from "./display-names";
 import {
   DOCUMENT_LIST_CAP,
@@ -11,6 +11,7 @@ import {
   toLibraryDocuments,
   uploaderOptions,
   type DocumentFilters,
+  type DocumentMarkFilter,
   type DocumentSort,
   type FileKind,
   type LibraryDocument,
@@ -71,6 +72,8 @@ export function useDocumentLibrary<D extends LibrarySourceDocument>({
   sort,
   namesById,
   semesters,
+  starred,
+  keep,
   paused = false,
 }: {
   documents: readonly D[];
@@ -81,6 +84,10 @@ export function useDocumentLibrary<D extends LibrarySourceDocument>({
   search: string;
   filters: DocumentFilters;
   sort: DocumentSort;
+  /** The ids of the files this member starred, for the Starred filter (#4290). */
+  starred?: ReadonlySet<string>;
+  /** Files the Pinned and Starred filters keep regardless (`useMarkFilterHold`). */
+  keep?: ReadonlySet<string>;
   paused?: boolean;
 }): DocumentLibrary<D> {
   const library = useMemo(
@@ -156,8 +163,10 @@ export function useDocumentLibrary<D extends LibrarySourceDocument>({
       queryDocuments(inFolder, search, applied, sort, {
         now,
         semesterSince: since,
+        starred,
+        keep,
       }),
-    [inFolder, search, applied, sort, now, since],
+    [inFolder, search, applied, sort, now, since, starred, keep],
   );
 
   return {
@@ -171,6 +180,49 @@ export function useDocumentLibrary<D extends LibrarySourceDocument>({
     filtering: isFiltering(search, applied, since !== undefined),
     truncated: documents.length >= DOCUMENT_LIST_CAP,
   };
+}
+
+const NOTHING_HELD: ReadonlySet<string> = new Set();
+
+/**
+ * The files the Pinned and Starred filters hold on to (#4290). Under Starred,
+ * unstarring a file would otherwise drop its row under the member's finger,
+ * taking keyboard focus with it, as Gmail's Starred view avoids by keeping the
+ * row until you leave it. `hold(id)` before a mark changes keeps that file
+ * listed until the Pinned or Starred filter itself changes; then the holds
+ * clear. Pass `held` to `useDocumentLibrary` as `keep`.
+ */
+export function useMarkFilterHold(marks: DocumentMarkFilter): {
+  held: ReadonlySet<string>;
+  hold: (id: string) => void;
+} {
+  const [state, setState] = useState<{
+    pinned: boolean;
+    starred: boolean;
+    ids: ReadonlySet<string>;
+  }>({ ...marks, ids: NOTHING_HELD });
+  // A changed filter drops the holds at once, so turning Starred off and on
+  // again doesn't bring them back (React's adjust-state-during-render).
+  if (state.pinned !== marks.pinned || state.starred !== marks.starred) {
+    setState({ ...marks, ids: NOTHING_HELD });
+  }
+  const current =
+    state.pinned === marks.pinned && state.starred === marks.starred;
+  const hold = useCallback(
+    (id: string) =>
+      setState((prev) => {
+        // Holds from an earlier filter don't carry over.
+        const same =
+          prev.pinned === marks.pinned && prev.starred === marks.starred;
+        if (!marks.pinned && !marks.starred) {
+          return same ? prev : { ...marks, ids: NOTHING_HELD };
+        }
+        if (same && prev.ids.has(id)) return prev;
+        return { ...marks, ids: new Set(same ? [...prev.ids, id] : [id]) };
+      }),
+    [marks],
+  );
+  return { held: current ? state.ids : NOTHING_HELD, hold };
 }
 
 /** `GET /v1/semesters` is untyped at the wire (`use-semesters.ts`). */

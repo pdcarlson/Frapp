@@ -22,7 +22,11 @@ import {
   type PermissionCatalogEntry,
 } from '#domain/constants/permissions';
 import { flattenPermissionSets } from '#domain/utils/permissions';
-import { CustomRoleService } from './custom-role.service';
+import {
+  accessHolderFromRoles,
+  EMPTY_ACCESS_HOLDER,
+  type ChannelAccessHolder,
+} from '#domain/utils/channel-access';
 import {
   ChapterAuditLogService,
   type AuditDiff,
@@ -65,6 +69,8 @@ export interface ChapterMemberAccess {
    * groups readers under it.
    */
   top_role: { id: string; name: string } | null;
+  /** What the member holds for a channel's who-can-see and who-can-post lists (#3722). */
+  channel_access: ChannelAccessHolder;
 }
 
 /**
@@ -94,7 +100,6 @@ export class RbacService {
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
     @Inject(CHAPTER_REPOSITORY)
     private readonly chapterRepo: IChapterRepository,
-    private readonly customRoleService: CustomRoleService,
     private readonly chapterAuditLogService: ChapterAuditLogService,
   ) {}
 
@@ -646,6 +651,24 @@ export class RbacService {
   }
 
   /**
+   * What a member holds for channel lists (#3722): their roles in this chapter,
+   * their tiers, `*`, and whether one is the Alumni role. One read of
+   * `roles`, re-scoped to the chapter, so a stale or foreign id in
+   * `role_ids` contributes nothing. The chat hot path calls it only when a
+   * list or the Alumni rule can decide (`needsAccessHolder`).
+   */
+  async getChannelAccessHolder(
+    chapterId: string,
+    roleIds: readonly string[] | null | undefined,
+  ): Promise<ChannelAccessHolder> {
+    if (!roleIds?.length) return EMPTY_ACCESS_HOLDER;
+    const roles = await this.roleRepo.findByIds([...roleIds], chapterId);
+    return accessHolderFromRoles(
+      roles.filter((role) => role.chapter_id === chapterId),
+    );
+  }
+
+  /**
    * The `users.id` of every member of `chapterId` whose effective permissions
    * satisfy **all** of `permissions` — the wildcard satisfies any list — for
    * addressing a notification to "whoever in this chapter can act on it"
@@ -695,18 +718,17 @@ export class RbacService {
 
   /**
    * Every member of `chapterId` with their flattened effective permissions and
-   * the rank of their highest role, from three reads (roster, roles, custom
-   * roles) rather than ~2N. The one place a chapter-wide permission resolve is
+   * the rank of their highest role, from two reads (roster and roles) rather
+   * than ~2N. The one place a chapter-wide permission resolve is
    * built, so {@link findUserIdsWithPermissions} and the channel member list
    * (`ChannelAccessService.listChannelMembers`) cannot disagree about who holds
    * what.
    *
    * `top_role_order` is the smallest `display_order` among the member's live
    * roles in this chapter (lower ranks higher, as on the Roles page), or `null`
-   * for a member who holds none. Custom roles rank on their own scale
-   * (`chapter_custom_roles.rank`) and do not count toward it.
+   * for a member who holds none.
    *
-   * **Re-scoped to the chapter twice over.** All three reads filter on
+   * **Re-scoped to the chapter twice over.** Both reads filter on
    * `chapter_id`, and the role maps below additionally drop any row whose
    * `chapter_id` is not this one: a member's `role_ids` array is not
    * foreign-keyed, so a stale or cross-chapter id in it must contribute
@@ -717,78 +739,65 @@ export class RbacService {
   async getChapterMemberAccess(
     chapterId: string,
   ): Promise<ChapterMemberAccess[]> {
-    const [members, roles, customRoles] = await Promise.all([
+    const [members, roles] = await Promise.all([
       this.memberRepo.findByChapter(chapterId),
       this.roleRepo.findByChapter(chapterId),
-      this.customRoleService.findByChapter(chapterId),
     ]);
 
     const roleById = new Map(
       roles
         .filter((role) => role.chapter_id === chapterId)
-        .map((role) => [role.id, role] as const),
-    );
-    const customRoleCapabilities = new Map(
-      customRoles
-        .filter((role) => role.chapter_id === chapterId)
-        .map((role) => [role.id, role.capabilities] as const),
+        .map((role) => [role.id.toLowerCase(), role] as const),
     );
 
-    const held = new Map<string, { roleIds: string[]; customIds: string[] }>();
+    const held = new Map<string, string[]>();
     for (const member of members) {
       if (member.chapter_id !== chapterId) continue;
-      const entry = held.get(member.user_id) ?? { roleIds: [], customIds: [] };
-      entry.roleIds.push(...(member.role_ids ?? []));
-      entry.customIds.push(...(member.custom_role_ids ?? []));
-      held.set(member.user_id, entry);
+      const roleIds = held.get(member.user_id) ?? [];
+      roleIds.push(...(member.role_ids ?? []));
+      held.set(member.user_id, roleIds);
     }
 
-    return [...held].map(([userId, { roleIds, customIds }]) => {
-      const liveRoles = roleIds
-        .map((id) => roleById.get(id))
-        .filter((role): role is Role => role !== undefined);
+    return [...held].map(([userId, roleIds]) => {
+      // `role_ids` is not foreign-keyed and may hold an uppercase id; the
+      // per-member read (`findByIds`, a uuid `in`) and `can_read_chat_channel`
+      // match it case-insensitively, so this does too, or the push audience
+      // would drift from the read audience.
+      const liveRoles = [
+        ...new Set(
+          roleIds
+            .map((id) => roleById.get(id.toLowerCase()))
+            .filter((role): role is Role => role !== undefined),
+        ),
+      ];
       const top = topRole(liveRoles);
       return {
         user_id: userId,
         permissions: flattenPermissionSets(
           liveRoles.map((role) => role.permissions),
-          customIds.map((id) => customRoleCapabilities.get(id)),
         ),
         top_role_order: top?.display_order ?? null,
         top_role: top ? { id: top.id, name: top.name } : null,
+        channel_access: accessHolderFromRoles(liveRoles),
       };
     });
   }
 
   /**
-   * Flatten a member's live-role permissions and custom-role capabilities
-   * (bridge model, spec/behavior/rbac.md) into one set. Both lookups resolve
+   * Flatten a member's role permissions into one set. The lookup resolves
    * within `chapterId`, so stale or cross-chapter ids contribute nothing.
-   * The flatten policy itself (union + wildcard only from live roles) lives
-   * in `flattenPermissionSets`, shared with `PermissionsGuard` so the two
-   * can never drift.
+   * The flatten policy itself lives in `flattenPermissionSets`, shared with
+   * `PermissionsGuard` so the two can never drift.
    */
   private async resolvePermissionSet(
     chapterId: string,
     member: Member | null,
   ): Promise<Set<string>> {
     const roleIds = member?.role_ids ?? [];
-    const customRoleIds = member?.custom_role_ids ?? [];
-    if (!roleIds.length && !customRoleIds.length) return new Set();
+    if (!roleIds.length) return new Set();
 
-    const [roles, customRoles] = await Promise.all([
-      roleIds.length
-        ? this.roleRepo.findByIds(roleIds, chapterId)
-        : Promise.resolve([]),
-      customRoleIds.length
-        ? this.customRoleService.findByIds(customRoleIds, chapterId)
-        : Promise.resolve([]),
-    ]);
-
-    return flattenPermissionSets(
-      roles.map((r) => r.permissions),
-      customRoles.map((r) => r.capabilities),
-    );
+    const roles = await this.roleRepo.findByIds(roleIds, chapterId);
+    return flattenPermissionSets(roles.map((r) => r.permissions));
   }
 }
 

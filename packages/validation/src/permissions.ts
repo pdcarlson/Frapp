@@ -183,32 +183,22 @@ export const EVENT_CREATE_PERMISSIONS = [
 ] as const;
 
 /**
- * The ids, live and custom, whose holder can open chat, the roster and events
- * (#3670): a live role whose permissions grant `members:view` (so `*` counts),
- * or a custom role whose capabilities carry `members:view` itself, since the
- * server's `PermissionsGuard` drops `*` from custom roles. The seeded flag
+ * The role ids whose holder can open chat, the roster and events (#3670): a
+ * role whose permissions grant `members:view` (so `*` counts). The seeded flag
  * doesn't count on its own, because a seeded role's permissions are editable.
- * Live and custom ids are both uuids, so one set holds them without
- * collisions. Web's member sheet calls it with live and custom roles; mobile's
- * roles sheet calls it per live role (`parseRoleOptions`), since it edits no
- * custom roles. `transfer_presidency` applies the same rule in SQL.
+ * Web's member sheet calls it with the chapter's roles; mobile's roles sheet
+ * calls it per role (`parseRoleOptions`). `transfer_presidency` applies the
+ * same rule in SQL.
  */
 export function memberAccessRoleIds(
   roles: readonly {
     id: string;
     permissions?: readonly string[] | null;
   }[],
-  customRoles: readonly {
-    id: string;
-    capabilities?: readonly string[] | null;
-  }[] = [],
 ): Set<string> {
   const ids = new Set<string>();
   for (const role of roles) {
     if (can("members:view", role.permissions)) ids.add(role.id);
-  }
-  for (const role of customRoles) {
-    if (role.capabilities?.includes("members:view")) ids.add(role.id);
   }
   return ids;
 }

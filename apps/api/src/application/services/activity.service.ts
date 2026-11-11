@@ -5,6 +5,12 @@ import {
   checkInWindowBounds,
   isModuleEnabled,
 } from '@repo/validation';
+import { ACTIVITY_ITEM_READ_REPOSITORY } from '#domain/repositories/activity-item-read.repository.interface';
+import type {
+  ActivityItemRef,
+  IActivityItemReadRepository,
+} from '#domain/repositories/activity-item-read.repository.interface';
+import type { ActivityItemKind } from '#domain/entities/activity-item-read.entity';
 import { ATTENDANCE_REPOSITORY } from '#domain/repositories/attendance.repository.interface';
 import type { IAttendanceRepository } from '#domain/repositories/attendance.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
@@ -35,9 +41,7 @@ import type { CardPollPayload } from '#domain/utils/poll-vote-rules';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { ActivityLinkService } from './activity-link.service';
 import type { ActivityLink, ChatReads } from './activity-link.service';
-import { BackworkService } from './backwork.service';
 import { displayNamesById } from './display-names';
-import { ChapterDocumentService } from './chapter-document.service';
 import { maskBlockedMessages } from './chat-block-mask';
 import type { MaskedChatMessage } from './chat-block-mask';
 import { ChatBlockService } from './chat-block.service';
@@ -55,7 +59,6 @@ export const ACTIVITY_SECTIONS = [
   'hours_approvals',
   'polls',
   'coming_up',
-  'files',
   'made_events',
   'links',
 ] as const;
@@ -70,6 +73,8 @@ export interface ActivityTask {
   id: string;
   title: string;
   due_date: string;
+  /** The moment it is due, when it has a time of day (#4003). */
+  due_at: string | null;
   /** Display status: `OVERDUE` for an open task past its due date. */
   status: TaskStatus;
   /** The status actually stored; what the next transition is checked against. */
@@ -84,7 +89,14 @@ export interface ActivityTask {
   completed_at: string | null;
   /** When an officer confirmed the completion; `null` until then. */
   confirmed_at: string | null;
+  /** When an officer last sent the completion back; `null` if never. */
+  sent_back_at: string | null;
   created_at: string;
+  /**
+   * Whether the caller hasn't opened it since it appeared
+   * (`spec/behavior/activity.md` § Unread). Always false in `made_by_you`.
+   */
+  unread: boolean;
 }
 
 /** A pending service entry, for a member who can approve it. */
@@ -97,6 +109,11 @@ export interface ActivityHoursEntry {
   duration_minutes: number;
   description: string;
   created_at: string;
+  /**
+   * Whether the caller hasn't opened it since it appeared
+   * (`spec/behavior/activity.md` § Unread). Always false in `made_by_you`.
+   */
+  unread: boolean;
 }
 
 /**
@@ -122,6 +139,11 @@ export interface ActivityPoll {
   is_closed: boolean;
   has_voted: boolean;
   created_at: string;
+  /**
+   * Whether the caller hasn't opened it since it appeared
+   * (`spec/behavior/activity.md` § Unread). Always false in `made_by_you`.
+   */
+  unread: boolean;
   /**
    * The poll's chat message, as `GET /v1/channels/{id}/messages` serves it,
    * so a client can hand it to chat's own poll card. Its votes are not in it:
@@ -156,14 +178,18 @@ export interface ActivityEvent {
    * is open; `null` otherwise, and when that read failed.
    */
   checked_in: boolean | null;
-}
-
-/** A file the member uploaded: a chapter document or a backwork resource. */
-export interface ActivityFile {
-  id: string;
-  source: 'document' | 'backwork';
-  title: string;
+  /**
+   * Who made it; `null` for an event made before makers were recorded
+   * (`spec/behavior/events.md` § Event Creation).
+   */
+  created_by: string | null;
+  /** When the event was made, which is when it appeared on Activity. */
   created_at: string;
+  /**
+   * Whether the caller hasn't opened it since it appeared
+   * (`spec/behavior/activity.md` § Unread). Always false in `made_by_you`.
+   */
+  unread: boolean;
 }
 
 export interface ActivityView {
@@ -185,9 +211,19 @@ export interface ActivityView {
    */
   links: ActivityLink[];
   made_by_you: {
+    /**
+     * The caller's poll cards, newest first: up to 25 open and the 25 most
+     * recent closed, so a run of closed polls never pushes an open one out
+     * (#4258). A client lists the open ones and archives the closed.
+     */
     polls: ActivityPoll[];
     tasks: ActivityTask[];
-    files: ActivityFile[];
+    /**
+     * Always empty. Uploads left Activity (#4291); the field stays only so a
+     * client built before that, an open web tab or a phone's over-the-air
+     * bundle, does not fail on its absence. Removal is tracked separately.
+     */
+    files: unknown[];
     /**
      * Events the caller made that have not ended, soonest first. A recurring
      * series is one row, its next meeting. Events made before creators were
@@ -202,6 +238,12 @@ export interface ActivityView {
   needs_you_count: number;
   /** Sections that could not be read this time and are served empty. */
   unavailable: ActivitySection[];
+  /**
+   * When the caller's unread dots began in this chapter; `null` until a
+   * client that draws them calls {@link ActivityService.startUnread}, and
+   * every row is read until then.
+   */
+  unread_since: string | null;
 }
 
 /** Rows each list carries. The count in `needs_you_count` is taken before it. */
@@ -273,6 +315,12 @@ function pollCardClosed(card: PollCardFields, now: Date): boolean {
   return card.closed_at !== null || isPollClosed(card.closes_at, now);
 }
 
+/** The later of two timestamps; one that is null or doesn't parse loses. */
+function latest(a: string, b: string | null): string {
+  if (b === null || Number.isNaN(new Date(b).getTime())) return a;
+  return new Date(b).getTime() > new Date(a).getTime() ? b : a;
+}
+
 function byAscending<T>(keyOf: (row: T) => string): (a: T, b: T) => number {
   return (a, b) => keyOf(a).localeCompare(keyOf(b));
 }
@@ -307,8 +355,6 @@ interface EventViewer {
  *   read, and never when the caller has blocked its author.
  * - **Events** come through `EventService.findByChapter` with the viewer, so
  *   an event that leaves the member out contributes nothing.
- * - **Files** are the caller's own uploads, read only while they can still
- *   open that module.
  * - **Links** are read by {@link ActivityLinkService}, under chat's channel
  *   list and the block list, as polls are.
  *
@@ -324,8 +370,6 @@ export class ActivityService {
     private readonly taskService: TaskService,
     private readonly serviceEntryService: ServiceEntryService,
     private readonly eventService: EventService,
-    private readonly documentService: ChapterDocumentService,
-    private readonly backworkService: BackworkService,
     private readonly chatService: ChatService,
     private readonly chatBlocks: ChatBlockService,
     private readonly rbacService: RbacService,
@@ -340,6 +384,8 @@ export class ActivityService {
     private readonly memberRepo: IMemberRepository,
     @Inject(ATTENDANCE_REPOSITORY)
     private readonly attendanceRepo: IAttendanceRepository,
+    @Inject(ACTIVITY_ITEM_READ_REPOSITORY)
+    private readonly readRepo: IActivityItemReadRepository,
   ) {}
 
   async getActivity(
@@ -376,43 +422,39 @@ export class ActivityService {
         this.chatBlocks.listBlockedUserIds(chapterId, userId),
       ]).then(([channels, blockedUserIds]) => ({ channels, blockedUserIds })));
 
-    const [tasks, hours, polls, events, files, madeEvents, links] =
-      await Promise.all([
-        this.settle('tasks', chapterId, () =>
-          on('tasks')
-            ? this.readTasks(chapterId, userId, permissions)
-            : Promise.resolve({ mine: [], confirmations: [], assigned: [] }),
+    const [tasks, hours, polls, events, madeEvents, links] = await Promise.all([
+      this.settle('tasks', chapterId, () =>
+        on('tasks')
+          ? this.readTasks(chapterId, userId, permissions)
+          : Promise.resolve({ mine: [], confirmations: [], assigned: [] }),
+      ),
+      this.settle('hours_approvals', chapterId, () =>
+        on('hours') && can(SystemPermissions.SERVICE_APPROVE, permissions)
+          ? this.readHoursApprovals(chapterId, userId)
+          : Promise.resolve([]),
+      ),
+      this.settle('polls', chapterId, () =>
+        on('polls')
+          ? this.readPolls(chapterId, userId, now, chatReads)
+          : Promise.resolve({ unvoted: [], mine: [] }),
+      ),
+      this.settle('coming_up', chapterId, () =>
+        on('events')
+          ? this.readComingUp(chapterId, userId, now, viewer)
+          : Promise.resolve([]),
+      ),
+      this.settle('made_events', chapterId, () =>
+        on('events')
+          ? this.readMadeEvents(chapterId, userId, now, viewer)
+          : Promise.resolve([]),
+      ),
+      // Chat has no module switch, so neither does this section.
+      this.settle('links', chapterId, () =>
+        chatReads().then((reads) =>
+          this.linkService.listFor(chapterId, userId, now, reads),
         ),
-        this.settle('hours_approvals', chapterId, () =>
-          on('hours') && can(SystemPermissions.SERVICE_APPROVE, permissions)
-            ? this.readHoursApprovals(chapterId, userId)
-            : Promise.resolve([]),
-        ),
-        this.settle('polls', chapterId, () =>
-          on('polls')
-            ? this.readPolls(chapterId, userId, now, chatReads)
-            : Promise.resolve({ unvoted: [], mine: [] }),
-        ),
-        this.settle('coming_up', chapterId, () =>
-          on('events')
-            ? this.readComingUp(chapterId, userId, now, viewer)
-            : Promise.resolve([]),
-        ),
-        this.settle('files', chapterId, () =>
-          this.readFiles(chapterId, userId, permissions, on),
-        ),
-        this.settle('made_events', chapterId, () =>
-          on('events')
-            ? this.readMadeEvents(chapterId, userId, now, viewer)
-            : Promise.resolve([]),
-        ),
-        // Chat has no module switch, so neither does this section.
-        this.settle('links', chapterId, () =>
-          chatReads().then((reads) =>
-            this.linkService.listFor(chapterId, userId, now, reads),
-          ),
-        ),
-      ]);
+      ),
+    ]);
 
     const unavailable: ActivitySection[] = [];
     const valueOf = <T>(
@@ -433,7 +475,6 @@ export class ActivityService {
     const hoursApprovals = valueOf('hours_approvals', hours, []);
     const pollLists = valueOf('polls', polls, { unvoted: [], mine: [] });
     const comingUp = valueOf('coming_up', events, []);
-    const myFiles = valueOf('files', files, []);
     const myEvents = valueOf('made_events', madeEvents, []);
     const myLinks = valueOf('links', links, []);
 
@@ -445,7 +486,7 @@ export class ActivityService {
       comingUp.filter((event) => event.check_in_open && !event.checked_in)
         .length;
 
-    return {
+    return this.withUnread(chapterId, userId, {
       needs_you: {
         tasks: taskLists.mine.slice(0, LIST_LIMIT),
         task_confirmations: taskLists.confirmations.slice(0, LIST_LIMIT),
@@ -455,14 +496,199 @@ export class ActivityService {
       coming_up: comingUp,
       links: myLinks,
       made_by_you: {
-        polls: pollLists.mine.slice(0, LIST_LIMIT),
+        // Capped per state in `readPolls`: 25 open and 25 closed.
+        polls: pollLists.mine,
         tasks: taskLists.assigned.slice(0, LIST_LIMIT),
-        files: myFiles.slice(0, LIST_LIMIT),
+        files: [],
         events: myEvents.slice(0, LIST_LIMIT),
       },
       needs_you_count: needsYouCount,
       unavailable,
+      unread_since: null,
+    });
+  }
+
+  /**
+   * Begins the caller's unread dots now, unless they already began. A client
+   * that draws dots calls it when `unread_since` is null. Until then nothing
+   * could have recorded the caller's opens, so every row they had already
+   * seen would otherwise come back as unread (`spec/behavior/activity.md` §
+   * Unread).
+   */
+  async startUnread(chapterId: string, userId: string): Promise<void> {
+    await this.readRepo.startUnread(
+      chapterId,
+      userId,
+      new Date().toISOString(),
+    );
+  }
+
+  /**
+   * Records that the caller opened these items from Activity, so their rows
+   * read as seen (`spec/behavior/activity.md` § Unread). The read is the
+   * caller's own and names no one else, so an id the caller can't see, or
+   * one that doesn't exist, is stored and never matters: it is never served.
+   */
+  async markRead(
+    chapterId: string,
+    userId: string,
+    items: ActivityItemRef[],
+  ): Promise<void> {
+    // One upsert can't touch a row twice, so a repeated item is sent once.
+    const unique = new Map(
+      items.map((item) => [`${item.kind}:${item.item_id}`, item]),
+    );
+    await this.readRepo.markRead(
+      chapterId,
+      userId,
+      [...unique.values()],
+      new Date().toISOString(),
+    );
+  }
+
+  /**
+   * Sets `unread` on the rows that wait on the caller: everything in
+   * `needs_you`, Coming up and Links, and `unread_since`. A row is unread
+   * when it appeared at or after the caller's dots began and they haven't
+   * opened it from Activity since. When it appeared is the moment it started
+   * waiting on them: a task confirmation from its completion, the caller's
+   * own task from when it was assigned or an officer last sent it back,
+   * everything else from when its record was made. So a task an officer
+   * opened before it was completed is unread again in their confirmations. A
+   * row the caller made themselves (a task assigned to themselves, an event
+   * they made) is never unread, and nothing in `made_by_you` is. Before the
+   * caller's dots begin every row is read.
+   *
+   * The dots are a hint, not a list: when the caller's opens can't be read
+   * every row is served as read, and the failure is reported, rather than
+   * failing the page or dotting everything.
+   */
+  private async withUnread(
+    chapterId: string,
+    userId: string,
+    view: ActivityView,
+  ): Promise<ActivityView> {
+    let unreadSince: string | null;
+    try {
+      unreadSince = await this.readRepo.findUnreadStart(chapterId, userId);
+    } catch (error) {
+      this.reportUnreadFailure(chapterId, error);
+      return view;
+    }
+    if (unreadSince === null) return view;
+    const since = new Date(unreadSince).getTime();
+    const started: ActivityView = { ...view, unread_since: unreadSince };
+
+    const candidates: {
+      kind: ActivityItemKind;
+      id: string;
+      appearedAt: number;
+    }[] = [];
+    const consider = (
+      kind: ActivityItemKind,
+      id: string,
+      appearedAt: string | null,
+      madeByCaller = false,
+    ) => {
+      const at = appearedAt ? new Date(appearedAt).getTime() : NaN;
+      if (madeByCaller || Number.isNaN(at) || at < since) return;
+      candidates.push({ kind, id, appearedAt: at });
     };
+    const { needs_you } = view;
+    for (const task of needs_you.tasks) {
+      consider(
+        'task',
+        task.id,
+        latest(task.created_at, task.sent_back_at),
+        // A task for themselves is theirs, until an officer sends it back.
+        task.created_by === userId && task.sent_back_at === null,
+      );
+    }
+    for (const task of needs_you.task_confirmations) {
+      consider('task', task.id, task.completed_at ?? task.created_at);
+    }
+    for (const entry of needs_you.hours_approvals) {
+      consider('hours_entry', entry.id, entry.created_at);
+    }
+    for (const poll of needs_you.polls) {
+      consider('poll', poll.message_id, poll.created_at);
+    }
+    for (const event of view.coming_up) {
+      consider(
+        'event',
+        event.id,
+        event.created_at,
+        event.created_by === userId,
+      );
+    }
+    for (const link of view.links) {
+      consider('link', link.id, link.posted_at);
+    }
+    if (candidates.length === 0) return started;
+
+    let readAt: Map<string, number>;
+    try {
+      const reads = await this.readRepo.findReads(chapterId, userId, [
+        ...new Set(candidates.map((candidate) => candidate.id)),
+      ]);
+      readAt = new Map(
+        reads.map((read) => [
+          `${read.kind}:${read.item_id}`,
+          new Date(read.read_at).getTime(),
+        ]),
+      );
+    } catch (error) {
+      this.reportUnreadFailure(chapterId, error);
+      return view;
+    }
+
+    const unread = new Set(
+      candidates
+        .filter(({ kind, id, appearedAt }) => {
+          const opened = readAt.get(`${kind}:${id}`);
+          return opened === undefined || opened < appearedAt;
+        })
+        .map(({ kind, id }) => `${kind}:${id}`),
+    );
+    if (unread.size === 0) return started;
+    // New row objects, so a row shared with `made_by_you` (one task in two
+    // lists) is never dotted there.
+    const mark = <T extends { unread: boolean }>(
+      kind: ActivityItemKind,
+      rows: T[],
+      idOf: (row: T) => string,
+    ): T[] =>
+      rows.map((row) =>
+        unread.has(`${kind}:${idOf(row)}`) ? { ...row, unread: true } : row,
+      );
+    return {
+      ...started,
+      needs_you: {
+        tasks: mark('task', needs_you.tasks, (row) => row.id),
+        task_confirmations: mark(
+          'task',
+          needs_you.task_confirmations,
+          (row) => row.id,
+        ),
+        hours_approvals: mark(
+          'hours_entry',
+          needs_you.hours_approvals,
+          (row) => row.id,
+        ),
+        polls: mark('poll', needs_you.polls, (row) => row.message_id),
+      },
+      coming_up: mark('event', view.coming_up, (row) => row.id),
+      links: mark('link', view.links, (row) => row.id),
+    };
+  }
+
+  private reportUnreadFailure(chapterId: string, error: unknown): void {
+    reportCaughtFailure(this.logger, {
+      level: 'warning',
+      site: 'activity-unread',
+      message: `Activity unread state failed for chapter ${chapterId}; serving every row as read`,
+      error,
+    });
   }
 
   /**
@@ -514,7 +740,9 @@ export class ActivityService {
 
     const mine = own
       .filter((task) => task.stored_status !== TaskStatus.COMPLETED)
-      .sort(byAscending((task) => task.due_date));
+      // By day, and within a day by time, a task with no time last: it is
+      // due by the end of the day.
+      .sort(byAscending((task) => `${task.due_date} ${task.due_at ?? '~'}`));
     // Confirming your own completion is refused (`TaskService.confirmCompletion`,
     // the no-self-award rule), so it is not offered as waiting on you.
     const confirmations = canManage
@@ -544,6 +772,7 @@ export class ActivityService {
       id: task.id,
       title: task.title,
       due_date: task.due_date,
+      due_at: task.due_at,
       status: task.status,
       stored_status: task.stored_status,
       assignee_id: task.assignee_id,
@@ -553,7 +782,9 @@ export class ActivityService {
       point_reward: task.point_reward,
       completed_at: task.completed_at,
       confirmed_at: task.confirmed_at,
+      sent_back_at: task.sent_back_at ?? null,
       created_at: task.created_at,
+      unread: false,
     });
     return {
       mine: mine.map(toRow),
@@ -583,6 +814,7 @@ export class ActivityService {
       duration_minutes: entry.duration_minutes,
       description: entry.description,
       created_at: entry.created_at,
+      unread: false,
     }));
   }
 
@@ -608,7 +840,9 @@ export class ActivityService {
       }),
       this.messageRepo.findPollCardsByChapter(chapterId, {
         senderId: userId,
-        limit: LIST_LIMIT,
+        // Wider than the list: the open and closed lists are cut apart below,
+        // so closed polls can't crowd an open one out of the read.
+        limit: POLL_SCAN_LIMIT,
       }),
     ]);
     const nowDate = new Date(now);
@@ -661,6 +895,7 @@ export class ActivityService {
         is_closed: pollCardClosed(card, nowDate),
         has_voted: votedIds.has(message.id),
         created_at: message.created_at,
+        unread: false,
         // Through the mask every chat read uses, with the block list read
         // above. A blocked author's poll never reaches this line; the mask is
         // what gives the row chat's own shape (`sender_blocked` set).
@@ -674,7 +909,15 @@ export class ActivityService {
       unvoted: rowsOf(openOthers)
         .filter((row) => !row.has_voted)
         .sort((a, b) => closesAtMs(a) - closesAtMs(b)),
-      mine: rowsOf(mine),
+      // Newest first, as read: the open ones, then the closed, 25 of each.
+      mine: [
+        ...rowsOf(mine)
+          .filter((row) => !row.is_closed)
+          .slice(0, LIST_LIMIT),
+        ...rowsOf(mine)
+          .filter((row) => row.is_closed)
+          .slice(0, LIST_LIMIT),
+      ].sort(byNewest),
     };
   }
 
@@ -803,6 +1046,11 @@ export class ActivityService {
           checked_in: checkInOpen
             ? await this.hasCheckedIn(event.id, userId)
             : null,
+          created_by: event.created_by,
+          created_at: event.created_at,
+          // Set for Coming up once the caller's reads are in
+          // (`withUnread`); an event in Made by you is never unread.
+          unread: false,
         };
       }),
     );
@@ -853,46 +1101,6 @@ export class ActivityService {
       });
       return null;
     }
-  }
-
-  private async readFiles(
-    chapterId: string,
-    userId: string,
-    permissions: string[],
-    on: (moduleKey: string) => boolean,
-  ): Promise<ActivityFile[]> {
-    const canBackwork =
-      can(SystemPermissions.BACKWORK_UPLOAD, permissions) ||
-      can(SystemPermissions.BACKWORK_ADMIN, permissions);
-    const [documents, backwork] = await Promise.all([
-      // Filtered to the uploader in SQL: a chapter-wide read is cut at the
-      // database's row cap, and the caller's files could fall outside it.
-      on('documents')
-        ? this.documentService.findByChapter(chapterId, {
-            uploaded_by: userId,
-          })
-        : Promise.resolve([]),
-      on('backwork') && canBackwork
-        ? this.backworkService.findByChapter(chapterId, {
-            uploader_id: userId,
-          })
-        : Promise.resolve([]),
-    ]);
-    const files: ActivityFile[] = [
-      ...documents.map((document) => ({
-        id: document.id,
-        source: 'document' as const,
-        title: document.title,
-        created_at: document.created_at,
-      })),
-      ...backwork.map((resource) => ({
-        id: resource.id,
-        source: 'backwork' as const,
-        title: resource.title ?? '',
-        created_at: resource.created_at,
-      })),
-    ];
-    return files.sort(byNewest);
   }
 
   /** Display names by user id. An id with no user row is simply absent. */

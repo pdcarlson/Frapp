@@ -9,6 +9,7 @@ import {
 import {
   AccessibilityInfo,
   Alert,
+  Keyboard,
   Pressable,
   StyleSheet,
   Text,
@@ -38,6 +39,7 @@ import {
   useSheetBackgroundStyle,
   SheetBackToClose,
   useSheetClose,
+  useSheetVisit,
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import * as Clipboard from "expo-clipboard";
@@ -288,18 +290,49 @@ export const MessageActionsSheet = forwardRef<
   const pickerRef = useRef<BottomSheetModal>(null);
   const closeMenu = useSheetClose(menuRef);
   const closeReport = useSheetClose(reportRef);
+  // Whether each modal is up, so the thread's dismiss (its message was
+  // deleted) never reaches one that isn't: gorhom 5.2 wedges a modal
+  // dismissed while closed, and its next `present()` draws nothing (#3795).
+  const menuVisit = useSheetVisit(menuRef);
+  const pickerVisit = useSheetVisit(pickerRef);
+  const reportVisit = useSheetVisit(reportRef);
+  const {
+    visit: menuVisitNow,
+    isSameVisit: isSameMenuVisit,
+    dismiss: dismissMenu,
+    willPresent: willPresentMenu,
+  } = menuVisit;
+  const { dismiss: dismissPicker, willPresent: willPresentPicker } =
+    pickerVisit;
+  const {
+    visit: reportVisitNow,
+    isSameVisit: isSameReportVisit,
+    dismiss: dismissOpenReport,
+  } = reportVisit;
 
   useImperativeHandle(
     ref,
     () => ({
-      present: () => menuRef.current?.present(),
+      // The keyboard goes first (#4142). gorhom lifts a sheet over the
+      // keyboard only for a focus inside the sheet (a `BottomSheetTextInput`),
+      // so with the composer focused the menu opened at the bottom of the
+      // screen, under the iOS keyboard, and only the scrim showed over the
+      // chat. Every other sheet in the thread closes the keyboard the same way.
+      present: () => {
+        Keyboard.dismiss();
+        willPresentMenu();
+        menuRef.current?.present();
+      },
       // The picker too: it replaced the menu and acts on the same message.
+      // Each only while presented. The thread calls this whenever the
+      // long-pressed message is deleted, which can be long after the menu
+      // closed, and usually while the picker was never opened (#3795).
       dismiss: () => {
-        menuRef.current?.dismiss();
-        pickerRef.current?.dismiss();
+        dismissMenu();
+        dismissPicker();
       },
     }),
-    [],
+    [dismissMenu, dismissPicker, willPresentMenu],
   );
 
   const report = useReportMessage();
@@ -372,21 +405,25 @@ export const MessageActionsSheet = forwardRef<
     const text = target?.copyText;
     const messageId = target?.messageId;
     if (!text || !messageId) return;
+    // The visit the copy was tapped in: a clipboard write that settles after
+    // the menu closed arms no timer, since nothing would clear it (#3795).
+    const visit = menuVisitNow();
     void Clipboard.setStringAsync(text)
       .then(() => {
+        if (!isSameMenuVisit(visit)) return;
         selectionHaptic();
         setCopiedFor(messageId);
         announce(COPIED_LABEL);
         if (copyTimer.current) clearTimeout(copyTimer.current);
         copyTimer.current = setTimeout(() => {
           copyTimer.current = null;
-          menuRef.current?.dismiss();
+          dismissMenu();
         }, COPIED_HOLD_MS);
       })
       .catch(() => {
         Alert.alert("Couldn't copy", "Try again in a moment.");
       });
-  }, [target]);
+  }, [dismissMenu, isSameMenuVisit, menuVisitNow, target]);
 
   const senderLabel = target?.senderName ?? UNNAMED_MEMBER;
   const canBlock = !!target?.blockUserId;
@@ -427,8 +464,9 @@ export const MessageActionsSheet = forwardRef<
 
   /** Opens every emoji in place of the menu (`stackBehavior="replace"`). */
   const openPicker = useCallback(() => {
+    willPresentPicker();
     pickerRef.current?.present();
-  }, []);
+  }, [willPresentPicker]);
   const pickFromPicker = useCallback(
     (emoji: string, mine: boolean) => {
       const messageId = target?.messageId;
@@ -457,14 +495,27 @@ export const MessageActionsSheet = forwardRef<
   const startBlock = useCallback(() => {
     const userId = target?.blockUserId;
     if (!userId) return;
+    // The block settles after a network call, by which time the member may
+    // have closed the form, or closed it and opened another (#3795).
+    const visit = reportVisitNow();
     confirmBlockMember({
       name: target?.senderName ?? null,
       inDirectory: senderInDirectory,
       run: () => block(userId),
-      onDone: () => reportRef.current?.dismiss(),
+      onDone: () => {
+        if (isSameReportVisit(visit)) dismissOpenReport();
+      },
       onNotAMember: () => onSenderDeparted?.(userId),
     });
-  }, [block, onSenderDeparted, senderInDirectory, target]);
+  }, [
+    block,
+    dismissOpenReport,
+    isSameReportVisit,
+    onSenderDeparted,
+    reportVisitNow,
+    senderInDirectory,
+    target,
+  ]);
 
   const submitReport = useCallback(() => {
     if (!target || !reason) return;
@@ -512,7 +563,11 @@ export const MessageActionsSheet = forwardRef<
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}
         backdropComponent={SheetScrim}
-        onDismiss={resetCopy}
+        onAnimate={menuVisit.onAnimate}
+        onDismiss={() => {
+          menuVisit.markClosed();
+          resetCopy();
+        }}
       >
         <SheetBackToClose onClose={closeMenu} />
         <BottomSheetView onAccessibilityEscape={closeMenu} style={styles.body}>
@@ -695,7 +750,11 @@ export const MessageActionsSheet = forwardRef<
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}
         backdropComponent={SheetScrim}
-        onDismiss={resetReport}
+        onAnimate={reportVisit.onAnimate}
+        onDismiss={() => {
+          reportVisit.markClosed();
+          resetReport();
+        }}
       >
         <SheetBackToClose onClose={closeReport} />
         <BottomSheetScrollView
@@ -816,6 +875,8 @@ export const MessageActionsSheet = forwardRef<
       {onReact && onUnreact ? (
         <EmojiPickerSheet
           ref={pickerRef}
+          onAnimate={pickerVisit.onAnimate}
+          onDismiss={pickerVisit.markClosed}
           selected={target?.reactedWith ?? []}
           onPick={pickFromPicker}
         />

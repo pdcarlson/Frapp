@@ -6,7 +6,7 @@ export type ModuleTier = "free" | "paid";
 /**
  * A module's pricing tier → the §5 badge kind that states it.
  *
- * `settings-modules-tab.tsx` rendered this as a ternary between
+ * The old Modules tab (`settings-modules-tab.tsx`, gone with #4073) rendered this as a ternary between
  * `border-primary/40 text-primary` and `border-success/50 text-success` — the
  * chapter accent on one chip and a hand-spelled tint on the other, neither of
  * them a §5 kind. The accent half is #1202's defect reached by an inline

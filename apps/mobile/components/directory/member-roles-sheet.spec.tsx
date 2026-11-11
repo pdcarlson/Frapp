@@ -50,7 +50,6 @@ const SESSION = {
   memberId: "m-ada",
   name: "Ada",
   heldIds: ["r-brothers", "r-member"],
-  customRoleNames: [] as string[],
   // A profile fetched before any save in a test.
   fetchedAt: 0,
 };

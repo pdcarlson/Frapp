@@ -1,5 +1,9 @@
 import { Logger, Inject, Injectable } from '@nestjs/common';
-import { canAccessChannel } from '#domain/utils/channel-access';
+import {
+  canAccessChannel,
+  EMPTY_ACCESS_HOLDER,
+  needsAccessHolder,
+} from '#domain/utils/channel-access';
 import { RbacService } from './rbac.service';
 import { ChatBlockService } from './chat-block.service';
 import { maskBlockedMessages, type MaskedChatMessage } from './chat-block-mask';
@@ -485,14 +489,18 @@ export class SearchService {
     const member = await this.members.findByUserAndChapter(userId, chapterId);
     if (!member) return [];
 
-    // Resolve through RbacService so custom-role capabilities count here
-    // exactly as they do for chat channel access (bridge model,
-    // spec/behavior/rbac.md) — search must never disagree with chat about
-    // which role-gated channels a member can read.
-    const permissions = await this.rbacService.getEffectivePermissions(
-      chapterId,
-      userId,
-    );
+    // Resolved through RbacService exactly as chat resolves it, so search
+    // never disagrees with chat about which listed channels a member can read.
+    // Only when a channel has a who-can-see list: everything else is decided
+    // by membership or `member_ids`.
+    const holder = channels.some((channel) =>
+      needsAccessHolder({ ...channel, who_can_post: null }, 'read'),
+    )
+      ? await this.rbacService.getChannelAccessHolder(
+          chapterId,
+          member.role_ids,
+        )
+      : EMPTY_ACCESS_HOLDER;
 
     return channels
       .filter((channel) =>
@@ -500,11 +508,13 @@ export class SearchService {
           channel: {
             type: channel.type,
             member_ids: channel.member_ids,
-            required_permissions: channel.required_permissions,
+            who_can_see: channel.who_can_see ?? null,
+            // A read never consults who can post.
+            who_can_post: null,
           },
           userId,
           isChapterMember: true,
-          permissions,
+          holder,
         }),
       )
       .map((channel) => channel.id);

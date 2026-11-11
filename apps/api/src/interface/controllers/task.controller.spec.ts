@@ -143,6 +143,7 @@ describe('TaskController', () => {
         assignee_id: dto.assignee_id,
         created_by: userId,
         due_date: dto.due_date,
+        due_at: null,
         point_reward: dto.point_reward,
       });
       expect(result).toBe(expectedTask);
@@ -167,6 +168,7 @@ describe('TaskController', () => {
         assignee_id: dto.assignee_id,
         created_by: userId,
         due_date: dto.due_date,
+        due_at: null,
         point_reward: null,
       });
     });

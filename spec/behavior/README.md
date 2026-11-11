@@ -43,7 +43,7 @@ the targets resolve — so add the row in the same change that adds the topic fi
 | Chapter branding                                     | [`branding.md`](branding.md)               |
 | Settings shell, customization, audit                 | [`settings/`](settings/README.md)          |
 | Ops integrations                                     | [`integrations.md`](integrations.md)       |
-| Meetings (transcription + AI summary)                | [`meetings.md`](meetings.md)               |
+| Meetings (AI-drafted minutes, suggested tasks)       | [`meetings.md`](meetings.md)               |
 | Vault (encrypted private storage)                    | [`vault.md`](vault.md)                     |
 | AI features (corpus scope, citations, non-goals)     | [`ai.md`](ai.md)                           |
 | Chapter config endpoints                             | [`chapter-config.md`](chapter-config.md)   |

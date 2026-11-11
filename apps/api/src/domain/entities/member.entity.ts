@@ -3,7 +3,10 @@ export interface Member {
   user_id: string;
   chapter_id: string;
   role_ids: string[];
-  /** Assigned `chapter_custom_roles` ids; capabilities flatten into the permission set alongside `role_ids`. */
+  /**
+   * Always empty since #4075 folded custom roles into `role_ids`. The column
+   * stays until the table drop (#4194); nothing writes or reads it for access.
+   */
   custom_role_ids: string[];
   has_completed_onboarding: boolean;
   /**

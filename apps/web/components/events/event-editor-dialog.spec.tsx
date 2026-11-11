@@ -141,7 +141,7 @@ describe("EventEditorDialog form shape and attendance by role", () => {
     expect(screen.queryByLabelText("Repeat")).toBeNull();
     expect(
       screen.getByRole("button", { name: /More options/ }),
-    ).toHaveTextContent("10 pts · Optional for everyone · Doesn't repeat");
+    ).toHaveTextContent("10 points · Optional for everyone · Doesn't repeat");
   });
 
   it("keeps meeting minutes to an edit, after the event exists", () => {
@@ -747,7 +747,7 @@ describe("EventEditorDialog opened from chat (#3773)", () => {
     expect(screen.getByLabelText("End")).toHaveValue("2026-11-12T20:00");
     expect(
       screen.getByRole("button", { name: /More options/ }),
-    ).toHaveTextContent("5 pts");
+    ).toHaveTextContent("5 points");
   });
 
   it("posts the card in the channel it came from", async () => {
@@ -916,7 +916,7 @@ describe("EventEditorDialog event types (#3730)", () => {
     expect(screen.getByLabelText("Event name")).toHaveValue("Chapter meeting");
     expect(
       screen.getByRole("button", { name: /More options/ }),
-    ).toHaveTextContent("10 pts · Required for everyone");
+    ).toHaveTextContent("10 points · Required for everyone");
 
     fillTimes();
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));

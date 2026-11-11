@@ -10,6 +10,7 @@ import { AccountMenu } from "@/components/layout/account-menu";
 import { ConnectionPill } from "@/components/shared/connection-pill";
 import { NotificationsGlyph } from "@/components/layout/nav-glyphs";
 import type { PageTitle } from "@/components/layout/page-title";
+import { useChatHasUnread } from "@/components/layout/use-chat-has-unread";
 
 /**
  * The 48px top bar: page title, find, notifications, Ask, account.
@@ -93,27 +94,7 @@ export function TopBar({
         the find field keeps the rest of a phone-width bar.
       */}
       <div className="flex min-w-0 shrink-0 items-center gap-1.5 sm:flex-1 sm:basis-0">
-        <button
-          type="button"
-          onClick={onOpenMobileNav}
-          aria-label="Open navigation menu"
-          title="Open navigation menu"
-          /*
-           * `lg:hidden` means this control exists ONLY on the touch tier, where
-           * the 44px floor binds - and below `lg` it is the only route to
-           * navigation at all. It is the one top-bar control that cannot take
-           * the board's 34px pointer geometry.
-           */
-          className={cn(
-            topBarButtonClassName,
-            // `min-h-touch`/`min-w-touch`, not `h-touch`: only the min-* keys
-            // are bound to `--touch-min` in the Tailwind config, and an unknown
-            // key compiles to nothing at all rather than erroring (#1145).
-            "min-h-touch min-w-touch lg:min-h-0 lg:min-w-0 lg:hidden",
-          )}
-        >
-          <Menu className="h-[18px] w-[18px]" aria-hidden="true" />
-        </button>
+        <MobileNavTrigger onOpen={onOpenMobileNav} />
         {pageTitle ? (
           <PageTitleText
             pageTitle={pageTitle}
@@ -188,6 +169,67 @@ export function TopBar({
         <AccountMenu variant="topbar" />
       </div>
     </header>
+  );
+}
+
+/**
+ * The drawer trigger, the only route to navigation below `lg`. It carries the
+ * nav's unread mark (#3900): the Chat row lights on every page when a message
+ * arrives (#3824), but below `lg` that row sits in a closed drawer, so without
+ * a mark here a message landing while the member is on Events showed nothing.
+ * Slack's and Discord's phone layouts mark the collapsed nav the same way, on
+ * the menu button.
+ *
+ * - **The same mark as the row it leads to**: a plain dot in `foreground`, not
+ *   a count. Red stays reserved for direct address and gold for the
+ *   notifications badge beside it (foundations §5), and the drawer then shows
+ *   the same dot on the Chat row, so the trail reads as one thing.
+ * - **8px, not the row's 6px, with a 2px cutout** in the bar's own surface.
+ *   It sits on the glyph's corner, over the top line's end, and the cutout is
+ *   what keeps it a separate mark rather than a blob on the line; it tracks
+ *   the button's hover fill so the cutout never shows as a ring.
+ * - **Named**: "Open navigation menu, unread messages", the way the collapsed
+ *   rail names its lit Chat row.
+ *
+ * Its own component so the unread reads redraw this button, not the bar or
+ * the shell (the counts change with every message the inbox reports).
+ */
+function MobileNavTrigger({ onOpen }: { onOpen: () => void }) {
+  const hasUnread = useChatHasUnread();
+  const label = hasUnread
+    ? "Open navigation menu, unread messages"
+    : "Open navigation menu";
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={label}
+      title={label}
+      /*
+       * `lg:hidden` means this control exists ONLY on the touch tier, where
+       * the 44px floor binds - and below `lg` it is the only route to
+       * navigation at all. It is the one top-bar control that cannot take
+       * the board's 34px pointer geometry.
+       */
+      className={cn(
+        topBarButtonClassName,
+        // `min-h-touch`/`min-w-touch`, not `h-touch`: only the min-* keys
+        // are bound to `--touch-min` in the Tailwind config, and an unknown
+        // key compiles to nothing at all rather than erroring (#1145).
+        "group min-h-touch min-w-touch lg:min-h-0 lg:min-w-0 lg:hidden",
+      )}
+    >
+      <span className="relative">
+        <Menu className="block h-[18px] w-[18px]" aria-hidden="true" />
+        {hasUnread ? (
+          <span
+            aria-hidden="true"
+            data-menu-unread=""
+            className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-foreground ring-2 ring-surface-1 group-hover:ring-card"
+          />
+        ) : null}
+      </span>
+    </button>
   );
 }
 

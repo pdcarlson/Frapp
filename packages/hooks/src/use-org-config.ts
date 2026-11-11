@@ -15,6 +15,7 @@ import { CHAPTER_POINTS_CONFIG_DEFAULTS } from "@repo/validation";
 import type {
   ChapterDuesConfig,
   ChapterPointsConfig,
+  ChapterServiceConfig,
   PatchChapterConfig,
 } from "@repo/validation";
 
@@ -66,6 +67,8 @@ export interface OrgConfig {
   workflows?: OrgWorkflow[];
   dues?: OrgDues;
   points?: OrgPoints;
+  /** The service-hours rate (`chapter_service_config`). */
+  service?: ChapterServiceConfig;
   /** When true, this chapter has opted out of pseudonymous product analytics. */
   analytics_opt_out?: boolean;
   /**

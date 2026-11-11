@@ -5,8 +5,16 @@ import { AccentSwatches } from "./accent-swatches";
 
 describe("AccentSwatches", () => {
   it("leads with the organization's own colors, named", () => {
-    render(<AccentSwatches value="#4F2683" orgName="Phi Gamma Delta" onPick={() => {}} />);
-    const org = screen.getByRole("group", { name: "Your organization's colors" });
+    render(
+      <AccentSwatches
+        value="#4F2683"
+        orgName="Phi Gamma Delta"
+        onPick={() => {}}
+      />,
+    );
+    const org = screen.getByRole("group", {
+      name: "Your organization's colors",
+    });
     const purple = within(org).getByRole("button", { name: "Royal Purple" });
     expect(purple).toHaveAttribute("aria-pressed", "true");
     expect(org).toHaveTextContent("Royal Purple");
@@ -15,10 +23,20 @@ describe("AccentSwatches", () => {
   });
 
   it("offers the common colors when the organization is unknown", () => {
-    render(<AccentSwatches value="#000000" orgName="Test Chapter" onPick={() => {}} />);
-    expect(screen.queryByRole("group", { name: "Your organization's colors" })).toBeNull();
+    render(
+      <AccentSwatches
+        value="#000000"
+        orgName="Test Chapter"
+        onPick={() => {}}
+      />,
+    );
+    expect(
+      screen.queryByRole("group", { name: "Your organization's colors" }),
+    ).toBeNull();
     const more = screen.getByRole("group", { name: "More colors" });
-    expect(within(more).getAllByRole("button")).toHaveLength(ACCENT_PRESETS.length);
+    expect(within(more).getAllByRole("button")).toHaveLength(
+      ACCENT_PRESETS.length,
+    );
     for (const button of within(more).getAllByRole("button")) {
       expect(button).toHaveAttribute("aria-pressed", "false");
     }

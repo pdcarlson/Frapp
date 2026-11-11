@@ -17,7 +17,7 @@ export type UpdateCustomFieldInput = UpdateCustomField;
 
 /**
  * Lists the chapter's `chapter_custom_fields` (Settings → Fields), ordered by
- * sort. Mirrors the custom-roles hook: scoped to the active chapter, query key
+ * sort. Scoped to the active chapter, query key
  * `["custom-fields", chapterId]`.
  */
 export function useCustomFields() {

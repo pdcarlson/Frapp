@@ -237,9 +237,9 @@ Not every paid module has a slash command: a module gets one only when it has a 
 | Reports | `reports` | Health dashboard, nationals export, advisor digest |
 | Onboarding | `onboarding` | Structured new-member pathway |
 | Geofences | `geofences` | Geo-fenced check-in zones |
-| Meetings | `meetings` | Audio transcription + AI summary + single-template per type ([`spec/behavior/meetings.md`](../behavior/meetings.md)) |
+| Meetings | `meetings` | AI-drafted minutes from notes or a recording, with suggested tasks + single-template per type ([`spec/behavior/meetings.md`](../behavior/meetings.md)) |
 | Vault | `vault` | Encrypted private storage for risk / standards content ([`spec/behavior/vault.md`](../behavior/vault.md)) |
-| AI Q&A | `ai` | Ask-anything over meeting minutes, documents, structured data, announcements ([`spec/behavior/ai.md`](../behavior/ai.md)) |
+| AI Q&A | `ai` | Ask-anything over meeting minutes, documents, structured data, announcements, and channel messages from members who agreed ([`spec/behavior/ai.md`](../behavior/ai.md)) |
 
 ## Archetype-specific extras (prototype extras carried forward)
 
@@ -276,7 +276,7 @@ The rule is shared by both clients (`useHiddenUnsetFeatures` in `@repo/hooks`), 
 
 ## Module disabling behavior
 
-The control surface is **Settings → Modules**, driven by the `@repo/org-archetypes` `MODULE_CATALOG`. Toggling a paid module writes `chapter_config.enabled_modules[key]` through `usePatchOrgConfig()` (optimistic cache update + audited PATCH).
+The control surface is each module's page in **Chapter settings** ([`settings/README.md` § Module pages](../behavior/settings/README.md#module-pages-tabmodule-key), [#4073](https://github.com/pdcarlson/Frapp/issues/4073)), driven by the `@repo/org-archetypes` `MODULE_CATALOG`. Settings reads a module's state the way `ChapterGuard` enforces it, so the two can't disagree ([#3028](https://github.com/pdcarlson/Frapp/issues/3028)): archetype seeds reach `enabled_modules` when onboarding or an archetype switch writes them, and a key the column lacks reads as on everywhere. Toggling a paid module writes `chapter_config.enabled_modules[key]` through `usePatchOrgConfig()` (optimistic cache update + audited PATCH).
 
 Disabling a paid module: removes its slash commands from the chat palette (`filterSlashCommands`) and refuses them when typed out in full, and hides its dashboard nav item (module-gated `ProtectedNavItem`). Turning Polls off also withdraws the Vote control on chat poll cards, web and mobile, which keep their question, options and tally ([#3012](https://github.com/pdcarlson/Frapp/issues/3012)). Turning Recruitment off withdraws Vote and Extend bid on chat candidate cards, web and mobile, which keep their tally ([#3383](https://github.com/pdcarlson/Frapp/issues/3383)), and turning Tasks off withdraws a mobile chat task card's controls ([#3185](https://github.com/pdcarlson/Frapp/issues/3185)). Where those gates read their state on web, and how each behaves before the read answers (the nav gates nothing; the slash gate and the poll card's Vote refuse, and the card says why: [`writing.md` § Module off](../ui/design-system/writing.md#module-off-mobile-cross-surface)): [`spec/ui/web-dashboard/README.md` § Gating & routing semantics](../ui/web-dashboard/README.md#gating--routing-semantics) and § [Surviving data contracts](../ui/web-dashboard/README.md#surviving-data-contracts) ("Slash palette fails closed"). A module is treated as enabled unless `enabled_modules[key]` is explicitly `false`. Data is preserved — re-enabling restores access.
 

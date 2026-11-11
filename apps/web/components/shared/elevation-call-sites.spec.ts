@@ -388,11 +388,9 @@ describe("a filled row hover stays inside its rounded list", () => {
    * painting square corners past the card's curve. The list doesn't clip with
    * `overflow-hidden`, which would clip the rows' focus ring too.
    */
-  const settings = codeWithoutComments(
-    join(WEB, "components", "settings", "settings-rail.tsx"),
+  const tools = codeWithoutComments(
+    join(WEB, "components", "settings", "settings-tool-list.tsx"),
   );
-  const tools =
-    /function SettingsToolsOnly[\s\S]*?\n}\n/.exec(settings)?.[0] ?? "";
 
   it("finds the tools list", () => {
     expect(tools).toMatch(/hover:bg-card-hover/);

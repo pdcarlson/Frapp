@@ -589,6 +589,7 @@ export function createTenantHarness(
     let mode: RecordedOp['mode'] = 'select';
     let payload: Row[] = [];
     let conflictColumns: string[] = ['id'];
+    let ignoreDuplicates = false;
     let head = false;
     let limit: number | null = null;
     let range: [number, number] | null = null;
@@ -651,7 +652,11 @@ export function createTenantHarness(
             mode === 'upsert'
               ? stored.find((candidate) => conflictMatch(candidate, row))
               : undefined;
-          if (existing) {
+          if (existing && ignoreDuplicates) {
+            // ON CONFLICT DO NOTHING: the stored row stays as it was, and
+            // PostgREST returns nothing for it.
+            continue;
+          } else if (existing) {
             Object.assign(existing, row);
             matched.push(existing);
           } else {
@@ -710,14 +715,20 @@ export function createTenantHarness(
         payload = Array.isArray(value) ? value : [value];
         return builder;
       }),
-      upsert: jest.fn((value: Row | Row[], opts?: { onConflict?: string }) => {
-        mode = 'upsert';
-        payload = Array.isArray(value) ? value : [value];
-        conflictColumns = opts?.onConflict
-          ? opts.onConflict.split(',').map((column) => column.trim())
-          : ['id'];
-        return builder;
-      }),
+      upsert: jest.fn(
+        (
+          value: Row | Row[],
+          opts?: { onConflict?: string; ignoreDuplicates?: boolean },
+        ) => {
+          mode = 'upsert';
+          payload = Array.isArray(value) ? value : [value];
+          conflictColumns = opts?.onConflict
+            ? opts.onConflict.split(',').map((column) => column.trim())
+            : ['id'];
+          ignoreDuplicates = opts?.ignoreDuplicates === true;
+          return builder;
+        },
+      ),
       update: jest.fn((value: Row) => {
         mode = 'update';
         payload = [value];

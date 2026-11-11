@@ -40,6 +40,12 @@ export interface TaskRowModel {
   /** What the server wants rendered — may be the synthesized `OVERDUE`. */
   displayStatus: string | null;
   dueDate: string | null;
+  /** The stored `due_date`, the creator's calendar day, for an edit (#4296). */
+  dueDay: string | null;
+  /** The stored `due_at`, when it has a time, for an edit (#4296). */
+  dueAt: string | null;
+  /** Whom it is assigned to. */
+  assigneeId: string | null;
   completedAt: string | null;
   /** When an officer confirmed it; `null` while it waits on one. */
   confirmedAt: string | null;
@@ -47,6 +53,28 @@ export interface TaskRowModel {
   pointsAwarded: boolean;
   isDone: boolean;
   isOverdue: boolean;
+  /** Its checklist, in order (#4003); empty for none. */
+  subtasks: TaskRowSubtask[];
+}
+
+export interface TaskRowSubtask {
+  id: string;
+  title: string;
+  done: boolean;
+}
+
+function toSubtasks(value: unknown): TaskRowSubtask[] {
+  if (!Array.isArray(value)) return [];
+  const rows: TaskRowSubtask[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const record = entry as Record<string, unknown>;
+    const id = str(record, "id");
+    const title = str(record, "title");
+    if (!id || !title) continue;
+    rows.push({ id, title, done: typeof record.done_at === "string" });
+  }
+  return rows;
 }
 
 export interface TaskBoard {
@@ -58,7 +86,8 @@ export interface TaskBoard {
 
 const EMPTY_BOARD: TaskBoard = { dueThisWeek: [], later: [], total: 0 };
 
-function toRow(row: Record<string, unknown>): TaskRowModel | null {
+/** One `GET /v1/tasks` row as the board draws it, or `null` if it can't be. */
+export function toTaskRow(row: Record<string, unknown>): TaskRowModel | null {
   const id = str(row, "id");
   const title = str(row, "title");
   if (!id || !title) return null;
@@ -73,7 +102,12 @@ function toRow(row: Record<string, unknown>): TaskRowModel | null {
     createdBy: str(row, "created_by"),
     storedStatus,
     displayStatus,
-    dueDate: str(row, "due_date"),
+    // A task due at a time carries its instant here, so the subtitle, the
+    // urgency and the order all read the time (#4003).
+    dueDate: str(row, "due_at") ?? str(row, "due_date"),
+    dueDay: str(row, "due_date"),
+    dueAt: str(row, "due_at"),
+    assigneeId: str(row, "assignee_id"),
     completedAt: str(row, "completed_at"),
     confirmedAt: str(row, "confirmed_at"),
     pointReward: num(row, "point_reward"),
@@ -84,6 +118,7 @@ function toRow(row: Record<string, unknown>): TaskRowModel | null {
     // a task due today.
     isDone: !isOpenTask(storedStatus ?? displayStatus),
     isOverdue: displayStatus === "OVERDUE",
+    subtasks: toSubtasks(row.subtasks),
   };
 }
 
@@ -155,7 +190,7 @@ export function selectTaskRows(
 
   for (const raw of records(data)) {
     if (str(raw, "assignee_id") !== viewerUserId) continue;
-    const row = toRow(raw);
+    const row = toTaskRow(raw);
     if (!row) continue;
 
     const days = dueInDays(row, now);

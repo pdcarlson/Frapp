@@ -103,6 +103,8 @@ const CHAT_ATTACHMENT_SERVICE_SPEC =
 const CHAT_REACTION_SERVICE_SPEC =
   'application/services/chat-reaction.service.spec.ts';
 const POLL_SERVICE_SPEC = 'application/services/poll.service.spec.ts';
+const CHAT_IMPORTANT_SERVICE_SPEC =
+  'application/services/chat-important.service.spec.ts';
 
 const OWN_PREFERENCES: Entry = {
   status: 'no-foreign-content',
@@ -126,6 +128,7 @@ const CHAT_CONTROLLERS = [
   'ChatBookmarkController',
   'ChatReportController',
   'ChatBlockController',
+  'ChatImportantController',
   'PollController',
 ];
 
@@ -152,6 +155,10 @@ const HTTP_LEDGER: Record<string, Entry> = {
   ChatController_createCategory_v1: CHANNEL_METADATA,
   ChatController_updateCategory_v1: CHANNEL_METADATA,
   ChatController_deleteCategory_v1: CHANNEL_METADATA,
+  // What a who-can-see or who-can-post list can name (#3722): tiers, roles
+  // and the user ids each reaches, to a `channels:manage` holder. Who holds
+  // a role is not hidden by a block, as the Directory shows it.
+  ChatController_getChannelAccessOptions_v1: CHANNEL_METADATA,
   // Counts only, but a count is still a signal: `get_channel_unread_counts`
   // skips a sender the caller blocked in the chapter, so a blocked member's
   // messages and @-mentions don't move the blocker's badges (#2521).
@@ -199,6 +206,26 @@ const HTTP_LEDGER: Record<string, Entry> = {
       spec: CHAT_SERVICE_SPEC,
       test: 'masks messages from a member the caller has blocked',
     },
+  },
+  // The Important strip (#4186) serves each message's first words, so a
+  // blocked sender's message is left out of all three answers.
+  ChatImportantController_listUnseen_v1: {
+    status: 'masked',
+    proof: {
+      spec: CHAT_IMPORTANT_SERVICE_SPEC,
+      test: 'leaves out a message whose sender the caller blocked',
+    },
+  },
+  ChatImportantController_markSeen_v1: {
+    status: 'masked',
+    proof: {
+      spec: CHAT_IMPORTANT_SERVICE_SPEC,
+      test: 'answers markSeen with the same exclusions as the list',
+    },
+  },
+  ChatImportantController_dismissAll_v1: {
+    status: 'no-foreign-content',
+    why: 'Marks the caller’s own rows seen and answers an empty strip.',
   },
   ChatController_getPinnedMessages_v1: {
     status: 'masked',
@@ -606,9 +633,9 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     calls: 2,
     entries: [MEMBER_TEXT],
   },
-  'application/services/task.service.ts': { calls: 6, entries: [MEMBER_TEXT] },
+  'application/services/task.service.ts': { calls: 8, entries: [MEMBER_TEXT] },
   'application/workers/scheduled-jobs.service.ts': {
-    calls: 12,
+    calls: 15,
     entries: [MEMBER_TEXT],
   },
   'application/workers/discord-import-worker.service.ts': {

@@ -555,7 +555,7 @@ export default function JoinChapter() {
       style={styles.safeArea}
       edges={["top", "right", "bottom", "left"]}
     >
-      <KeyboardAvoidingArea style={styles.flex}>
+      <KeyboardAvoidingArea style={styles.flex} atScreenBottom>
         {/*
           The column scrolls: on a 375x667 phone with the keyboard up the
           invite step does not fit, and a non-scrolling column would clip its

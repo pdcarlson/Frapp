@@ -33,7 +33,7 @@ import type { PointTransaction } from '#domain/entities/point-transaction.entity
 const ADJUSTABLE_CATEGORIES = ['MANUAL', 'FINE'] as const;
 
 export class AdjustPointsDto {
-  // UUID-validated for the reason UpdateMemberRolesDto.custom_role_ids is: the
+  // UUID-validated because the
   // ledger insert puts this straight into a uuid FK, so a malformed id fails in
   // Postgres and surfaces as a 500 instead of the 400 it is.
   @ApiProperty({ format: 'uuid' })
