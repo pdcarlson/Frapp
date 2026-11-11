@@ -797,14 +797,15 @@ button, not while typing.
 ### Display step (onboarding)
 
 The chat display pick while setting up (#3787): web's tutorial slide and
-mobile s03's beat after the profile one. Copy in
+mobile s03's beat after the profile one, and for a founder, who skips both,
+the step after create in each setup (#4056). Copy in
 `apps/mobile/lib/onboarding/display-step.ts` and
-`apps/web/components/onboarding/onboarding-tutorial.tsx`.
+`apps/web/components/onboarding/display-step.ts`.
 
 | Surface | Title | Copy |
 |---|---|---|
-| Web | `Pick your chat display` | `Choose how messages look on this browser. You can change it anytime in your profile.` Then Profile's three Chat density cards. |
-| Mobile | `Pick your chat display` | `Choose how messages look on this phone. You can change it anytime in Settings.` Then Settings' three cards; gold `Continue` when the notifications beat follows, else `Go to chat`. |
+| Web | `Pick your chat display` | `Choose how messages look on this browser. You can change it anytime in your profile.` Then Profile's three Chat density cards. In the setup wizard, `Continue` (the tutorial's `Next`). |
+| Mobile | `Pick your chat display` | `Choose how messages look on this phone. You can change it anytime in Settings.` Then Settings' three cards; gold `Continue` when the notifications beat follows, else `Go to chat`. In chapter setup, always gold `Continue`. |
 
 ### Always formal
 

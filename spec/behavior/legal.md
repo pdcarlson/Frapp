@@ -4,7 +4,7 @@
 
 - Displayed on the landing site (frapp.live/terms) and linked from the app footer.
 - **No one is added to a chapter until they accept them** (#2302), and a member from before that is asked before anything else in the app. One checkbox, "I'm 18 or older and agree to the Terms of Service and Privacy Policy." (`LEGAL_ACCEPTANCE_LABEL` in `@repo/validation`), appears in three places:
-  - **Chapter creation**, where the officer must tick it before **Create chapter**. There is no payment step in the wizard, whose steps are `find → archetype → identity → invite`. This one tick is the officer's acceptance for the chapter and for themselves.
+  - **Chapter creation**, where the officer must tick it before **Create chapter**. There is no payment step in the wizard, whose steps are `find → archetype → identity → display → invite`. This one tick is the officer's acceptance for the chapter and for themselves.
   - **Joining by invite**, where a user who hasn't accepted the current version must tick it before **Join chapter**. A user who already has isn't asked again.
   - **The Terms prompt**, which asks a member who hasn't accepted the current version before they reach anything else, on mobile and web. A version change asks every member once.
 - Covers:
