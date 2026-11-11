@@ -3400,3 +3400,27 @@ alter table public.events
   drop constraint if exists events_created_by_fk,
   drop column if exists created_by;
 ```
+
+## Rollback Chapter-wide chat level (20261111120000)
+
+* **Migration**: `20261111120000_chat_notif_prefs_chapter_scope.sql`
+
+Widens two CHECKs on `chat_notification_preferences` to admit `scope = 'chapter'` rows and adds the `idx_chat_notif_prefs_chapter_unique` index. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The push worker reads every row for a member, so a reverted `resolveLevel` simply ignores `scope = 'chapter'` rows (it matches only `channel` and `kind`), and those members get each channel's default again.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. Deleting the rows loses each member's "Mentions and DMs only" choice; nothing else depends on them:
+
+```sql
+delete from public.chat_notification_preferences where scope = 'chapter';
+drop index if exists public.idx_chat_notif_prefs_chapter_unique;
+alter table public.chat_notification_preferences
+  drop constraint chat_notif_prefs_scope_id_when_channel,
+  drop constraint chat_notification_preferences_scope_check;
+alter table public.chat_notification_preferences
+  add constraint chat_notification_preferences_scope_check
+    check (scope in ('channel', 'kind')),
+  add constraint chat_notif_prefs_scope_id_when_channel
+    check ((scope = 'channel' and scope_id is not null and scope_kind is null)
+        or (scope = 'kind' and scope_kind is not null and scope_id is null));
+```

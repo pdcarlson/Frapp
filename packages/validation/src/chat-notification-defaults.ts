@@ -14,6 +14,22 @@
 export const CHAT_NOTIFICATION_LEVELS = ["all", "mentions", "off"] as const;
 export type ChatNotificationLevel = (typeof CHAT_NOTIFICATION_LEVELS)[number];
 
+/**
+ * A member's chapter-wide chat level (#3840), set in Settings → Notifications.
+ *
+ * - `all`: "All messages", each channel at its own default.
+ * - `mentions`: "Mentions and DMs only". Every ordinary channel acts as
+ *   `mentions` (a quote reply counts as a mention, #4121); DMs, group DMs and
+ *   the announcements channel keep notifying. A level the member set on one
+ *   channel still wins.
+ *
+ * No `off`: the owner dropped the switch that silenced all of chat on
+ * 2026-11-06 (`notification-categories.ts` says why), and quiet hours are how
+ * a member goes silent.
+ */
+export const CHAT_CHAPTER_LEVELS = ["all", "mentions"] as const;
+export type ChatChapterLevel = (typeof CHAT_CHAPTER_LEVELS)[number];
+
 /** The channel fields the default reads. Structural, so any channel row fits. */
 export interface NotificationDefaultChannel {
   name: string;

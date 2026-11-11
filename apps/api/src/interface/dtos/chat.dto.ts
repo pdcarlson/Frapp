@@ -19,8 +19,10 @@ import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  CHAT_CHAPTER_LEVELS,
   CHAT_MESSAGE_CONTENT_MAX_LENGTH,
   CHAT_NOTIFICATION_LEVELS,
+  type ChatChapterLevel,
 } from '@repo/validation';
 import { POSITION_MAX } from '#domain/constants/field-limits';
 import {
@@ -653,6 +655,28 @@ export class ChannelNotificationPreferenceDto {
 
   @ApiProperty({ enum: CHAT_NOTIFICATION_LEVELS })
   level: (typeof CHAT_NOTIFICATION_LEVELS)[number];
+
+  @ApiProperty({
+    required: false,
+    description:
+      'True when the level comes from the member\'s chapter-wide chat level (GET /v1/channels/notification-preferences/chapter), not from this channel\'s own setting or default, so a client can label it "your default".',
+  })
+  from_chapter_level?: boolean;
+}
+
+export class SetChapterChatLevelDto {
+  @ApiProperty({
+    enum: CHAT_CHAPTER_LEVELS,
+    description:
+      'all = each channel at its own default; mentions = "Mentions and DMs only": every ordinary channel acts as mentions, while DMs, group DMs and the announcements channel keep notifying. A level the member set on one channel, or on a message kind, still wins.',
+  })
+  @IsIn(CHAT_CHAPTER_LEVELS)
+  level: ChatChapterLevel;
+}
+
+export class ChapterChatLevelDto {
+  @ApiProperty({ enum: CHAT_CHAPTER_LEVELS })
+  level: ChatChapterLevel;
 }
 
 export class SetKindNotificationLevelDto {

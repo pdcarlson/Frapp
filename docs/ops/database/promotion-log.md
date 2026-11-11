@@ -29,6 +29,17 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-11: Chapter-wide chat level (#3840)
+
+### 20261111120000_chat_notif_prefs_chapter_scope.sql
+
+- **Purpose**: Adds a third arm to `chat_notification_preferences`: `scope = 'chapter'` with `scope_id` and `scope_kind` both null, a member's "Mentions and DMs only" choice. Widens the `scope` CHECK and the `chat_notif_prefs_scope_id_when_channel` CHECK, and adds `idx_chat_notif_prefs_chapter_unique` (`nulls not distinct`) as the chapter arm's upsert target. No existing row changes; both CHECKs only admit more.
+- **Checks**:
+  - `select indexname from pg_indexes where indexname = 'idx_chat_notif_prefs_chapter_unique';` should return 1 row.
+  - `select pg_get_constraintdef(oid) from pg_constraint where conname = 'chat_notification_preferences_scope_check';` should name `'chapter'`.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-chapter-wide-chat-level-20261111120000) § Rollback Chapter-wide chat level.
+
 ## 2026-11-11: Events record their maker (#3897)
 
 ### 20261111020000_events_created_by.sql

@@ -15,7 +15,8 @@ import {
   type IChatNotificationPreferenceRepository,
 } from '#domain/repositories/chat-notification-preference.repository.interface';
 import type { ChatNotificationLevel } from '#domain/entities/chat-notification-preference.entity';
-import { resolveLevel } from './push-rules';
+import type { ChatChapterLevel } from '@repo/validation';
+import { resolveLevelWithSource } from './push-rules';
 
 /**
  * A member's own chat notification levels: per channel (#296) and per message
@@ -91,12 +92,19 @@ export class ChatNotificationPreferenceService {
     // while the worker pushed nothing, which is exactly the "UI that disagrees
     // with the worker about whether you are muted" this method's contract
     // exists to prevent.
-    const [channelRows, kindRows, channels] = await Promise.all([
+    //
+    // The chapter-wide row (#3840) joins them for the same reason: it decides
+    // a channel the member has not set, and the UI labels that "your default".
+    const [channelRows, kindRows, chapterRows, channels] = await Promise.all([
       this.chatNotificationPrefs.findChannelPreferencesForUser(
         userId,
         chapterId,
       ),
       this.chatNotificationPrefs.findKindPreferencesForUser(userId, chapterId),
+      this.chatNotificationPrefs.findChapterPreferencesForUser(
+        userId,
+        chapterId,
+      ),
       this.channelRepo.findByChapter(chapterId),
     ]);
 
@@ -107,7 +115,7 @@ export class ChatNotificationPreferenceService {
     );
     if (accessible.length === 0) return [];
 
-    const preferences = [...channelRows, ...kindRows];
+    const preferences = [...channelRows, ...kindRows, ...chapterRows];
 
     // Delegated to the worker's own `resolveLevel` rather than reimplementing
     // channel-pref ▶ kind-pref ▶ default here. The previous local version
@@ -118,10 +126,56 @@ export class ChatNotificationPreferenceService {
     // `'text'` is the ordinary-message kind: this endpoint answers "what does
     // this channel do for an ordinary message", not "what would this one
     // message do".
-    return accessible.map((channel) => ({
-      channel_id: channel.id,
-      level: resolveLevel(channel, 'text', preferences),
-    }));
+    return accessible.map((channel) => {
+      const { level, source } = resolveLevelWithSource(
+        channel,
+        'text',
+        preferences,
+      );
+      return {
+        channel_id: channel.id,
+        level,
+        from_chapter_level: source === 'chapter',
+      };
+    });
+  }
+
+  /**
+   * The caller's chapter-wide chat level (#3840). No row is `all`: "All
+   * messages" means each channel at its own default, which is what a member
+   * who never chose has.
+   */
+  async getChapterChatLevel(
+    chapterId: string,
+    userId: string,
+  ): Promise<{ level: ChatChapterLevel }> {
+    const rows = await this.chatNotificationPrefs.findChapterPreferencesForUser(
+      userId,
+      chapterId,
+    );
+    return { level: rows[0]?.level === 'mentions' ? 'mentions' : 'all' };
+  }
+
+  /**
+   * Set it. `all` deletes the row rather than storing one, so "All messages"
+   * is exactly the never-chosen state and no stored `all` can outrank
+   * anything. Keyed on the authenticated `userId`, like every setter here.
+   */
+  async setChapterChatLevel(
+    chapterId: string,
+    userId: string,
+    level: ChatChapterLevel,
+  ): Promise<{ level: ChatChapterLevel }> {
+    if (level === 'all') {
+      await this.chatNotificationPrefs.deleteChapterLevel(userId, chapterId);
+    } else {
+      await this.chatNotificationPrefs.upsertChapterLevel(
+        userId,
+        chapterId,
+        level,
+      );
+    }
+    return { level };
   }
 
   /**

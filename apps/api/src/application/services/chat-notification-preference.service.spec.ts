@@ -42,7 +42,10 @@ describe('ChatNotificationPreferenceService', () => {
         'ch-chan-1',
         'off',
       );
-      expect(result).toEqual({ channel_id: 'ch-chan-1', level: 'off' });
+      expect(result).toEqual({
+        channel_id: 'ch-chan-1',
+        level: 'off',
+      });
     });
 
     /**
@@ -131,9 +134,9 @@ describe('ChatNotificationPreferenceService', () => {
 
       expect(result).toEqual([
         // `baseChannel` is #general, which defaults to `all` (#2771).
-        { channel_id: 'ch-chan-1', level: 'all' },
-        { channel_id: 'ch-ann', level: 'all' },
-        { channel_id: 'ch-audit', level: 'off' },
+        { channel_id: 'ch-chan-1', level: 'all', from_chapter_level: false },
+        { channel_id: 'ch-ann', level: 'all', from_chapter_level: false },
+        { channel_id: 'ch-audit', level: 'off', from_chapter_level: false },
       ]);
     });
 
@@ -164,8 +167,8 @@ describe('ChatNotificationPreferenceService', () => {
       // `announcements` defaults to `all`; the stored `off` must win.
       expect(result).toEqual([
         // `baseChannel` is #general, which defaults to `all` (#2771).
-        { channel_id: 'ch-chan-1', level: 'all' },
-        { channel_id: 'ch-ann', level: 'off' },
+        { channel_id: 'ch-chan-1', level: 'all', from_chapter_level: false },
+        { channel_id: 'ch-ann', level: 'off', from_chapter_level: false },
       ]);
     });
 
@@ -212,7 +215,9 @@ describe('ChatNotificationPreferenceService', () => {
           'user-1',
         );
 
-      expect(result).toEqual([{ channel_id: 'ch-chan-1', level: 'all' }]);
+      expect(result).toEqual([
+        { channel_id: 'ch-chan-1', level: 'all', from_chapter_level: false },
+      ]);
       expect(result.some((r) => r.channel_id === 'ch-secret')).toBe(false);
     });
 
@@ -261,7 +266,9 @@ describe('ChatNotificationPreferenceService', () => {
           'user-1',
         );
 
-      expect(result).toEqual([{ channel_id: baseChannel.id, level: 'off' }]);
+      expect(result).toEqual([
+        { channel_id: baseChannel.id, level: 'off', from_chapter_level: false },
+      ]);
     });
 
     /** Precedence is channel-pref ▶ kind-pref ▶ default, not the reverse. */
@@ -296,7 +303,9 @@ describe('ChatNotificationPreferenceService', () => {
           'user-1',
         );
 
-      expect(result).toEqual([{ channel_id: baseChannel.id, level: 'all' }]);
+      expect(result).toEqual([
+        { channel_id: baseChannel.id, level: 'all', from_chapter_level: false },
+      ]);
     });
   });
 
@@ -530,6 +539,77 @@ describe('ChatNotificationPreferenceService', () => {
       ).rejects.toThrow(BadRequestException);
 
       expect(mockChatNotificationPrefs.deleteKindLevel).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('chapter-wide chat level (#3840)', () => {
+    const chapterRow = {
+      user_id: 'user-1',
+      chapter_id: 'chapter-1',
+      scope: 'chapter' as const,
+      scope_id: null,
+      scope_kind: null,
+      level: 'mentions' as const,
+    };
+
+    it('reads no row as all', async () => {
+      await expect(
+        notificationPreferences.getChapterChatLevel('chapter-1', 'user-1'),
+      ).resolves.toEqual({ level: 'all' });
+    });
+
+    it('reads a stored mentions row', async () => {
+      mockChatNotificationPrefs.findChapterPreferencesForUser.mockResolvedValue(
+        [chapterRow],
+      );
+      await expect(
+        notificationPreferences.getChapterChatLevel('chapter-1', 'user-1'),
+      ).resolves.toEqual({ level: 'mentions' });
+    });
+
+    it('stores mentions and deletes the row for all', async () => {
+      await notificationPreferences.setChapterChatLevel(
+        'chapter-1',
+        'user-1',
+        'mentions',
+      );
+      expect(mockChatNotificationPrefs.upsertChapterLevel).toHaveBeenCalledWith(
+        'user-1',
+        'chapter-1',
+        'mentions',
+      );
+      await expect(
+        notificationPreferences.setChapterChatLevel(
+          'chapter-1',
+          'user-1',
+          'all',
+        ),
+      ).resolves.toEqual({ level: 'all' });
+      expect(mockChatNotificationPrefs.deleteChapterLevel).toHaveBeenCalledWith(
+        'user-1',
+        'chapter-1',
+      );
+    });
+
+    it('marks a channel the chapter level lowered', async () => {
+      mockChatNotificationPrefs.findChapterPreferencesForUser.mockResolvedValue(
+        [chapterRow],
+      );
+      // `baseChannel` is #general, all by default, so the chapter row lowers it.
+      mockChannelRepo.findByChapter.mockResolvedValue([baseChannel]);
+
+      await expect(
+        notificationPreferences.getChannelNotificationPreferences(
+          'ch-1',
+          'user-1',
+        ),
+      ).resolves.toEqual([
+        {
+          channel_id: baseChannel.id,
+          level: 'mentions',
+          from_chapter_level: true,
+        },
+      ]);
     });
   });
 });

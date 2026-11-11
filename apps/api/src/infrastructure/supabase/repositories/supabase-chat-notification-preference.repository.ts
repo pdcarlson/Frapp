@@ -251,6 +251,60 @@ export class SupabaseChatNotificationPreferenceRepository implements IChatNotifi
     return this.findPreferencesForUserByScope(userId, chapterId, 'kind');
   }
 
+  async findChapterPreferencesForUser(
+    userId: string,
+    chapterId: string,
+  ): Promise<ChatNotificationPreferenceRow[]> {
+    return this.findPreferencesForUserByScope(userId, chapterId, 'chapter');
+  }
+
+  /**
+   * The chapter arm's upsert target is `idx_chat_notif_prefs_chapter_unique`,
+   * which is `nulls not distinct`: both scope columns are null here, so only
+   * that index makes a second write update the row instead of adding one.
+   */
+  async upsertChapterLevel(
+    userId: string,
+    chapterId: string,
+    level: ChatNotificationLevel,
+  ): Promise<ChatNotificationPreferenceRow> {
+    const row: TablesInsert<'chat_notification_preferences'> = {
+      user_id: userId,
+      chapter_id: chapterId,
+      scope: 'chapter',
+      scope_id: null,
+      scope_kind: null,
+      level,
+    };
+
+    const { data, error } = await this.supabase
+      .from('chat_notification_preferences')
+      .upsert(row, {
+        onConflict: 'user_id,chapter_id,scope,scope_id,scope_kind',
+      })
+      .select('user_id, chapter_id, scope, scope_id, scope_kind, level')
+      .maybeSingle();
+
+    if (error) throw new SupabaseQueryError(error);
+    if (!data) {
+      throw new Error(
+        `chat-prefs: upsert returned no chapter row for user ${userId}`,
+      );
+    }
+    return data;
+  }
+
+  async deleteChapterLevel(userId: string, chapterId: string): Promise<void> {
+    const { error } = await this.supabase
+      .from('chat_notification_preferences')
+      .delete()
+      .eq('user_id', userId)
+      .eq('chapter_id', chapterId)
+      .eq('scope', 'chapter');
+
+    if (error) throw new SupabaseQueryError(error);
+  }
+
   /**
    * Drop the caller's kind-scoped row, returning that kind to its default.
    *
@@ -286,7 +340,7 @@ export class SupabaseChatNotificationPreferenceRepository implements IChatNotifi
   private async findPreferencesForUserByScope(
     userId: string,
     chapterId: string,
-    scope: 'channel' | 'kind',
+    scope: 'channel' | 'kind' | 'chapter',
   ): Promise<ChatNotificationPreferenceRow[]> {
     const { data, error } = await this.supabase
       .from('chat_notification_preferences')
