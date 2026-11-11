@@ -38,6 +38,7 @@ This is the **behavior** part of the #4192 design. Three sibling designs own the
   - `apps/api/src/interface/controllers/rush.controller.ts`;
   - `RushService`.
 - Issues #4070, #4084, #3953 and #3926.
+- Sibling drafts: the legal/compliance draft ([#4271](https://github.com/pdcarlson/Frapp/pull/4271)), campus spaces ([#4276](https://github.com/pdcarlson/Frapp/pull/4276)) and council types ([#4264](https://github.com/pdcarlson/Frapp/pull/4264)).
 
 ## Contents
 
@@ -82,8 +83,10 @@ This is the **behavior** part of the #4192 design. Three sibling designs own the
 | `council:recruitment_view` | Read the master list: PNM fields, interest **counts**, eligibility verdicts, acceptances. Contact details, per-chapter detail and bids follow [§ Officers in a chapter](#council-officers-are-also-chapter-members) |
 | `council:recruitment_manage` | The council's registration form, roster imports, merges, season dates and rules, bid-day release |
 | `council:grades_import` | Upload grade files and see the import summary. Nothing else |
-| `council:eligibility_manage` | Set the eligibility rule, override a verdict, read the reason behind a verdict. Read GPA and credits only if a later decision stores them ([§ Eligibility](#eligibility)). Includes `council:grades_import` |
+| `council:eligibility_manage` | Set the eligibility rule, override a verdict, read the reason behind a verdict. **Never reads GPA or credits.** If a later decision stores them, reading them is its own explicit grant ([§ Eligibility](#eligibility)). Includes `council:grades_import` |
 | `council:recruitment_reports` | Export reports for the Greek life office |
+
+`council:grades_import` and `council:eligibility_manage` are **explicit-grant only**: `*` doesn't reach them ([#4222](https://github.com/pdcarlson/Frapp/pull/4222)).
 
 **When a council's master list exists.** Under ADR-27, a new council starts **Unverified** and sees nothing. Two things must happen first:
 1. Chapters accept its link.
@@ -542,7 +545,7 @@ A holder of `council:eligibility_manage` sets the rule once per season. Any part
 
 **Signing**
 - The PNM signs in their own view.
-- The signature is their verified email session, their typed full name and the date. The hub's research says electronic signing is accepted when the signer is authenticated.
+- **The e-signature:** a **fresh** one-time code sent to their school email at the moment of signing (not just an existing session), plus their typed full name and the date. The hub's research says electronic signing is accepted when the signer is authenticated. The method and the stored record follow the legal/compliance draft ([#4271](https://github.com/pdcarlson/Frapp/pull/4271)).
 
 **The release text names:**
 - the school, as the source;
@@ -555,7 +558,7 @@ A holder of `council:eligibility_manage` sets the rule once per season. Any part
 The research's examples (CU Boulder, Michigan, MSU, CMU, unverified) name the office and the chapter, but no vendor. Ours names Frapp explicitly.
 
 **What is stored:**
-- the text version and its hash;
+- the text version, and the hash of the release text, stored with the signature;
 - the typed name;
 - the signed and revoked times;
 - the season.
@@ -610,7 +613,7 @@ The research's examples (CU Boulder, Michigan, MSU, CMU, unverified) name the of
 | --- | --- |
 | Chapters | The verdict only, never the reason. "Not eligible: GPA" would tell them which side of the line the GPA fell |
 | The PNM | Their own verdict, data and reason |
-| Holders of `council:eligibility_manage` | The reason and the data |
+| Holders of `council:eligibility_manage` | The verdict and the reason (which clause failed), never the raw GPA |
 | Everyone else on the council | The verdict |
 
 **Overrides.** A holder of `council:eligibility_manage` can override a verdict, for an appeal or a grade change the import missed. A reason is required and the override is logged. The next import doesn't silently undo it: the officer is shown the conflict.
@@ -627,7 +630,7 @@ The research's examples (CU Boulder, Michigan, MSU, CMU, unverified) name the of
 **Where it never goes:**
 - logs, Sentry or analytics;
 - chat payloads, push text or emails;
-- any export except the eligibility officer's own.
+- any export. **No export ever contains a raw GPA.** The eligibility verdict may appear, and only for roles that can already see it.
 
 **Logging reads.** Every read of a PNM's grades is logged with who and when, and the PNM sees that log in their own view.
 - The duty to record disclosures sits with the school.
@@ -636,7 +639,7 @@ The research's examples (CU Boulder, Michigan, MSU, CMU, unverified) name the of
 
 **Encryption.** Grade values are encrypted at rest beyond disk encryption, with the key outside the database. The mechanism is the data-model design's.
 
-**Deletion.** Raw grades are deleted when the season closes, at most 30 days after (a council setting). The verdict and the release record stay until [retention](#retention-and-deletion) removes them.
+**Deletion.** Raw grades are purged **within 30 days of season close**, matching [#4222](https://github.com/pdcarlson/Frapp/pull/4222). The verdict and the release record stay until [retention](#retention-and-deletion) removes them.
 
 ### The MVP: verdict only
 
@@ -668,7 +671,8 @@ A holder of `council:recruitment_manage` defines each season's dates:
 **Where they appear:**
 - as all-day markers on the council's calendar (its events, which it has as a tenant);
 - on each member chapter's dashboard, pushed down;
-- in PNMs' own view.
+- in PNMs' own view;
+- **optionally, on the campus calendar.** A holder of `council:recruitment_manage` can publish the season's dates there ([#4276](https://github.com/pdcarlson/Frapp/pull/4276)). It's a push-up of the dates only, and nothing else about recruitment.
 
 Council kickoffs and info nights are council events with "Open to PNMs" on.
 
@@ -846,7 +850,8 @@ Each of these is on the [AGENTS.md raise-first list](../../AGENTS.md#adr-discipl
    - The Privacy Policy must cover people without accounts (form submitters) and eligibility data.
 3. **The consent text and the release text,** both drafted here. **Paul approves the wording before any form goes live.**
 4. **PNMs under 18. Decided: keep 18 and older for now** (the Terms, decision 2026-09-23, #2261). Some first-year PNMs are 17, so they're turned away.
-   - Whether to allow them goes on the lawyer's list with decision 1: it means a Terms change and parental-consent questions.
+   - Whether to allow them goes on the lawyer's list with decision 1: it means a Terms change and parental-consent questions. The legal/compliance draft ([#4271](https://github.com/pdcarlson/Frapp/pull/4271)) recommends limited, PNM-only participation for them. That stays open.
+   - Campus verification ([#4276](https://github.com/pdcarlson/Frapp/pull/4276)) uses the same 18+ Terms checkbox.
    - The council's or school's own rules may also bar recruiting minors.
 5. **Council billing. Decided: free for our IFC's pilot, priced later.** Winston says someone on the IFC pays; the price is set after the pilot. The SMS phase would add a cost.
 6. **Revisiting [#4068 decision 12](rush.md#permissions). Decided: no further tightening.**
