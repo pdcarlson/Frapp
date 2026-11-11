@@ -860,6 +860,20 @@ export {
   assertProductionSupabaseUrl,
 } from "./invite-token";
 
+// The native app's identifiers, store listings and invite hand-off (#4002),
+// shared so web's "Get the app", the API's update-screen default and the
+// app-link files name one app. See ./native-app.
+export {
+  APP_LINK_PATHS,
+  APP_STORE_APP_ID,
+  NATIVE_APP_ID,
+  NATIVE_APP_SCHEME,
+  STORE_LISTING_URLS,
+  openInAppUrl,
+  phonePlatform,
+} from "./native-app";
+export type { NativePlatform } from "./native-app";
+
 // Event recurrence: the rule catalog the DTOs validate against and the child
 // counts the series generator materializes. One source so the generated series
 // and what the Repeat pickers promise cannot describe different meetings.

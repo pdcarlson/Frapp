@@ -23,6 +23,7 @@ import {
   extractInviteTokenFromQuery,
 } from "@repo/validation";
 import { AuthNote, AuthScreen } from "@/components/auth/auth-screen";
+import { AppHandoff } from "@/components/auth/app-handoff";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import { LinkGlyph } from "@/components/profile/profile-glyphs";
 import { CrestTile } from "@/components/layout/crest-tile";
@@ -39,6 +40,7 @@ import { useToast } from "@/lib/hooks/use-toast";
 import { getLiveSessionUser } from "@/lib/auth/rejected-session";
 import { useSelectChapter } from "@/lib/auth/select-chapter";
 import { useNetwork } from "@/lib/providers/network-provider";
+import { usePhonePlatform } from "@/lib/use-phone-platform";
 import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confirm-drop-bulk-uploads";
 import { asArray } from "@/lib/utils";
 import { isLockedOutOfChapter } from "@/lib/auth/no-access";
@@ -112,8 +114,13 @@ function JoinPageContent() {
   const [editedToken, setEditedToken] = useState<string | null>(null);
   const token = editedToken ?? initialToken;
   const [sessionState, setSessionState] = useState<
-    "checking" | "ready" | "failed"
+    "checking" | "signed-out" | "ready" | "failed"
   >("checking");
+  // An invite link opened on a phone offers the app before anything else
+  // (#4002), signed in or not; `proxy.ts` lets it here signed out for that.
+  const phone = usePhonePlatform();
+  const [continueInBrowser, setContinueInBrowser] = useState(false);
+  const offerApp = phone !== null && initialToken !== "" && !continueInBrowser;
   const [account, setAccount] = useState<{
     id: string;
     email: string | null;
@@ -189,12 +196,7 @@ function JoinPageContent() {
         }
 
         if (!user) {
-          const signInUrl = new URL("/sign-in", window.location.origin);
-          signInUrl.searchParams.set(
-            "redirectTo",
-            `/join${window.location.search}`,
-          );
-          router.replace(signInUrl.pathname + signInUrl.search);
+          setSessionState("signed-out");
           return;
         }
 
@@ -213,7 +215,16 @@ function JoinPageContent() {
     return () => {
       isMounted = false;
     };
-  }, [router, attempt]);
+  }, [attempt]);
+
+  // Signed out, the page goes on to sign-in, unless it is offering the app:
+  // then only once the visitor picks Continue in the browser.
+  useEffect(() => {
+    if (sessionState !== "signed-out" || offerApp) return;
+    const signInUrl = new URL("/sign-in", window.location.origin);
+    signInUrl.searchParams.set("redirectTo", `/join${window.location.search}`);
+    router.replace(signInUrl.pathname + signInUrl.search);
+  }, [sessionState, offerApp, router]);
 
   // Decided while rendering (React's "adjusting state when a prop changes"),
   // once the reads it needs have settled; the effect below only navigates.
@@ -316,8 +327,19 @@ function JoinPageContent() {
     }
   }
 
+  if (phone !== null && offerApp) {
+    return (
+      <AppHandoff
+        platform={phone}
+        token={initialToken}
+        onContinueInBrowser={() => setContinueInBrowser(true)}
+      />
+    );
+  }
+
   if (
     sessionState === "checking" ||
+    sessionState === "signed-out" ||
     awaitingSkipDecision ||
     skipDecision === "skip"
   ) {

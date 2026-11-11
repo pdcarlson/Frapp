@@ -82,6 +82,13 @@ vi.mock("next/navigation", () => ({
 const searchParams = vi.hoisted(() => ({
   current: new URLSearchParams(),
 }));
+/** `usePhonePlatform`'s answer: the phone this browser runs on (#4002). */
+const device = vi.hoisted(() => ({
+  phone: null as "ios" | "android" | null,
+}));
+vi.mock("@/lib/use-phone-platform", () => ({
+  usePhonePlatform: () => device.phone,
+}));
 vi.mock("@/lib/auth/session", () => ({
   signOutCurrentSession: signOut,
 }));
@@ -153,6 +160,111 @@ beforeEach(() => {
   perms.isLoading = false;
   pending.isLoading = false;
   searchParams.current = new URLSearchParams();
+  device.phone = null;
+});
+
+describe("web join — an invite link opened on a phone (#4002)", () => {
+  function renderPage() {
+    legal.data = { required: false };
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <FrappClientProvider
+          client={
+            statusClient as unknown as ComponentProps<
+              typeof FrappClientProvider
+            >["client"]
+          }
+          chapterId={null}
+        >
+          <JoinPage />
+        </FrappClientProvider>
+      </QueryClientProvider>,
+    );
+  }
+
+  it("offers the app first to a signed-out visitor, and holds sign-in until they continue in the browser", async () => {
+    device.phone = "ios";
+    sessionUser.mockResolvedValue(null);
+    searchParams.current = new URLSearchParams("token=abc");
+    renderPage();
+
+    expect(await screen.findByText("Join in the Frapp app")).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Open in the app" }).getAttribute("href"),
+    ).toBe("frapp://join?token=abc");
+    expect(
+      screen
+        .getByRole("link", { name: "Get Frapp on the App Store" })
+        .getAttribute("href"),
+    ).toBe("https://apps.apple.com/app/id6812025642");
+    await waitFor(() => expect(sessionUser).toHaveBeenCalled());
+    expect(replace).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Continue in the browser" }),
+    );
+    await waitFor(() =>
+      expect(replace).toHaveBeenCalledWith(
+        expect.stringMatching(/^\/sign-in\?redirectTo=%2Fjoin/),
+      ),
+    );
+  });
+
+  it("hands Android the intent link, which falls back to Play by itself", async () => {
+    device.phone = "android";
+    sessionUser.mockResolvedValue(null);
+    searchParams.current = new URLSearchParams("token=abc");
+    renderPage();
+
+    expect(
+      (
+        await screen.findByRole("link", { name: "Open in the app" })
+      ).getAttribute("href"),
+    ).toBe("intent://join?token=abc#Intent;scheme=frapp;package=live.frapp.mobile;end");
+    expect(
+      screen
+        .getByRole("link", { name: "Get Frapp on Google Play" })
+        .getAttribute("href"),
+    ).toBe("https://play.google.com/store/apps/details?id=live.frapp.mobile");
+  });
+
+  it("offers the app to a signed-in visitor too, then shows the filled form in the browser", async () => {
+    device.phone = "ios";
+    searchParams.current = new URLSearchParams("token=abc");
+    renderPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Continue in the browser" }),
+    );
+    expect(
+      ((await screen.findByLabelText("Invite")) as HTMLInputElement).value,
+    ).toBe("abc");
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("goes straight to the form on a phone with no invite in the link", async () => {
+    device.phone = "ios";
+    renderPage();
+
+    expect(await screen.findByLabelText("Invite")).toBeTruthy();
+    expect(screen.queryByText("Join in the Frapp app")).toBeNull();
+  });
+
+  it("sends a signed-out desktop visitor straight to sign-in, as before", async () => {
+    sessionUser.mockResolvedValue(null);
+    searchParams.current = new URLSearchParams("token=abc");
+    renderPage();
+
+    await waitFor(() =>
+      expect(replace).toHaveBeenCalledWith(
+        expect.stringMatching(/^\/sign-in\?redirectTo=%2Fjoin/),
+      ),
+    );
+    expect(screen.queryByText("Join in the Frapp app")).toBeNull();
+  });
 });
 
 describe("web join — a member already in a chapter (#3850)", () => {

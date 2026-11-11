@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { extractInviteTokenFromQuery, phonePlatform } from "@repo/validation";
 import { assignResolvedRedirect } from "./lib/auth/redirect";
 
 export const AUTH_ROUTES = ["/sign-in", "/sign-up"];
@@ -61,6 +62,23 @@ export function buildSignInRedirectUrl(requestUrl: URL): URL {
   destination.hash = "";
   destination.searchParams.set("redirectTo", redirectTo);
   return destination;
+}
+
+/**
+ * An invite link opened on a phone (#4002). It reaches `/join` signed out
+ * instead of `/sign-in`, so the page can offer the app first: the member
+ * signs in once, in the app, rather than once here and again there. The page
+ * sends the visitor on to `/sign-in` itself if they continue in the browser
+ * (`app/(auth)/join/page.tsx`); it renders no member data before then.
+ */
+export function isPhoneInviteVisit(request: NextRequest): boolean {
+  return (
+    request.nextUrl.pathname === "/join" &&
+    phonePlatform(request.headers.get("user-agent")) !== null &&
+    extractInviteTokenFromQuery((key) =>
+      request.nextUrl.searchParams.get(key),
+    ) !== null
+  );
 }
 
 type CookieTuple = { name: string; value: string; options: CookieOptions };
@@ -157,7 +175,7 @@ export async function proxy(request: NextRequest) {
     data: { session },
   } = await supabase.auth.getSession();
 
-  if (needsAuth(pathname) && !session) {
+  if (needsAuth(pathname) && !session && !isPhoneInviteVisit(request)) {
     const signInUrl = buildSignInRedirectUrl(request.nextUrl);
     return NextResponse.redirect(signInUrl, {
       headers: responseHolder.current.headers,
