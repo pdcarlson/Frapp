@@ -333,7 +333,7 @@ describe("Screen skeletons sit on their screen's frames", () => {
             categoryLabel: "Dues",
             time: "9:41 PM",
             isUnread: false,
-            href: "/dues",
+            target: { pathname: "/dues" },
           } as never
         }
         onPress={() => {}}

@@ -64,7 +64,6 @@ import {
 } from "@repo/hooks";
 import { useAuthSession } from "../auth-session";
 import { useIsApiAuthenticated } from "../use-is-api-authenticated";
-import { asRoute, openHref } from "../href";
 import {
   addNotificationResponseListener,
   addPushTokenListener,
@@ -88,8 +87,8 @@ import {
 } from "./push-token-lifecycle";
 import {
   NOTIFICATION_FALLBACK_PATHNAME,
-  notificationHref,
   notificationIdFrom,
+  openNotificationTarget,
   replaceablePathname,
   resolveNotificationTarget,
 } from "./targets";
@@ -102,7 +101,9 @@ export function usePushRuntime(): void {
   const router = useRouter();
   // The focused screen's path, so a tap for a channel while one is open
   // replaces it rather than stacking a second (`openHref`). Never a message
-  // thread, which shares the channel's path (`replaceablePathname`).
+  // thread, which shares the channel's path (`replaceablePathname`). A thread
+  // reply's tap opens its channel the same way, then the thread over it
+  // (`openNotificationTarget`, #4054).
   const { threadRootId } = useGlobalSearchParams<{
     threadRootId?: string | string[];
   }>();
@@ -227,7 +228,7 @@ export function usePushRuntime(): void {
     // unrecognized payload resolves to the notification list, and pushing that
     // from a tap that arrived *as* a notification stacks the list on itself.
     if (target.pathname !== NOTIFICATION_FALLBACK_PATHNAME || target.params) {
-      openHref(router, asRoute(notificationHref(target)), pathnameRef.current);
+      openNotificationTarget(router, target, pathnameRef.current);
     }
   }, [pendingTap, status, isChapterResolving, isAuthenticated, router]);
 

@@ -37,8 +37,10 @@ import {
   selectNotificationGroups,
   selectUnreadIds,
 } from "@/lib/more/notifications";
-import { NOTIFICATION_FALLBACK_PATHNAME } from "@/lib/notifications/targets";
-import { asRoute, openHref } from "@/lib/href";
+import {
+  NOTIFICATION_FALLBACK_PATHNAME,
+  openNotificationTarget,
+} from "@/lib/notifications/targets";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import {
   type ChapterBranding,
@@ -146,8 +148,8 @@ export default function NotificationsScreen() {
               // Resolves to this screen when the target is unrecognized, so
               // the tap marks the row read and stays put rather than pushing
               // the notification list on top of itself.
-              if (row.href !== NOTIFICATION_FALLBACK_PATHNAME) {
-                openHref(router, asRoute(row.href));
+              if (row.target.pathname !== NOTIFICATION_FALLBACK_PATHNAME) {
+                openNotificationTarget(router, row.target);
               }
             }}
           />

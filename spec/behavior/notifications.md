@@ -56,7 +56,8 @@ Every notification payload includes a `target` object with screen and parameters
 `notificationId` — the id of the `notifications` row it has just written — onto every
 push (`apps/api/src/application/services/notification.service.ts`), which is what lets
 a tap mark the row read without a lookup. The `target` itself carries **only** the keys
-its emitter sets: `chat` sends `channelId`, `events` sends `eventId`, `tasks` sends
+its emitter sets: `chat` sends `channelId`, plus `threadRootId` for a thread reply,
+which opens the thread over its channel ([`chat/README.md`](./chat/README.md#messages), Message threads), `events` sends `eventId`, `tasks` sends
 `taskId`, and `billing` / `points` / `service` / `members` / `chat_reports` /
 `discord_import` send a bare `screen`. `chat_reports` names the officer report queue
 (the new-report notification, [`chat/README.md`](./chat/README.md#report)); web
