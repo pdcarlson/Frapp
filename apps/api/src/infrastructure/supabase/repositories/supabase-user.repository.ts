@@ -111,6 +111,25 @@ export class SupabaseUserRepository implements IUserRepository {
     return data;
   }
 
+  async compareAndSetWhatsNewSeen(
+    id: string,
+    expected: string | null,
+    next: string,
+  ): Promise<boolean> {
+    const base = this.supabase
+      .from('users')
+      .update({ whats_new_seen_version: next })
+      .eq('id', id)
+      .is('deleted_at', null);
+    const guarded =
+      expected === null
+        ? base.is('whats_new_seen_version', null)
+        : base.eq('whats_new_seen_version', expected);
+    const { data, error } = await guarded.select('id');
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).length > 0;
+  }
+
   async anonymize(id: string, rescanCards = false): Promise<User | null> {
     const { data, error } = await this.supabase.rpc('anonymize_user', {
       p_user_id: id,

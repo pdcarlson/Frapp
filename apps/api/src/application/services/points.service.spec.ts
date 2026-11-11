@@ -200,6 +200,7 @@ describe('PointsService', () => {
       create: jest.fn(),
       update: jest.fn(),
       anonymize: jest.fn(),
+      compareAndSetWhatsNewSeen: jest.fn(),
     };
 
     // Default posture: every target is a member of the chapter it is adjusted

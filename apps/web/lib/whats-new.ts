@@ -8,9 +8,12 @@
  * the dialog.
  *
  * The marker is per browser ({@link WHATS_NEW_SEEN_STORAGE_KEY} in
- * `localStorage`), as the phone's is per phone. Nothing on the account says
- * which entry a member has read, so an entry read on the phone shows once
- * more on the web (#3943 names the choice).
+ * `localStorage`), as the phone's is per phone, and the account records the
+ * newest entry any device has shown (#4043, `useAccountWhatsNewSeen` in
+ * `@repo/hooks`). When the account has seen the entry this browser would open,
+ * the browser records it without opening and marks the account menu's row
+ * instead ({@link markWhatsNewQuiet}); the mark lasts until What's new is
+ * opened here. Offline, the browser's own marker decides, as it did before.
  *
  * A browser can't tell a fresh install from an old one the way a phone can,
  * so "were they here before this entry" is the account's age instead
@@ -20,14 +23,20 @@
 import { useSyncExternalStore } from "react";
 import {
   RELEASE_NOTES,
-  isNewerReleaseNoteVersion,
-  parseReleaseNoteVersion,
+  isLaterReleaseNoteVersion,
   releaseNoteVersion,
   type ReleaseNote,
 } from "@repo/validation";
 
 /** `releaseNoteVersion` of the newest entry this browser has shown or skipped. */
 export const WHATS_NEW_SEEN_STORAGE_KEY = "frapp.web.whats-new-seen";
+
+/**
+ * Set while the account menu's row carries the quiet mark: another device
+ * showed the newest entry, and this browser hasn't opened What's new since.
+ * Holds that entry's `releaseNoteVersion`.
+ */
+export const WHATS_NEW_QUIET_STORAGE_KEY = "frapp.web.whats-new-quiet";
 
 export function readWhatsNewSeen(): string | null {
   try {
@@ -45,16 +54,7 @@ export function readWhatsNewSeen(): string | null {
  * the newer entry would open a second time.
  */
 function recordWhatsNewSeen(version: string): void {
-  const stored = readWhatsNewSeen();
-  if (
-    stored !== null &&
-    !isNewerReleaseNoteVersion(
-      parseReleaseNoteVersion(version),
-      parseReleaseNoteVersion(stored),
-    )
-  ) {
-    return;
-  }
+  if (!isLaterReleaseNoteVersion(version, readWhatsNewSeen())) return;
   try {
     window.localStorage.setItem(WHATS_NEW_SEEN_STORAGE_KEY, version);
   } catch {
@@ -81,10 +81,12 @@ export function accountPredatesNote(
 }
 
 // ── Unread ──────────────────────────────────────────────────────────────────
-// Set while the host has found entries this browser hasn't shown and hasn't
-// opened them yet (something was in the way, or the open delay is running).
-// The account menu's row carries a mark meanwhile, and the host reads it back
-// to know there is something to open.
+// Two marks light the account menu's row. `pending`: the host has found
+// entries this browser hasn't shown and hasn't opened them yet (something was
+// in the way, or the open delay is running); the host reads it back to know
+// there is something to open. `quiet`: another device already showed them
+// (#4043), so nothing opens and the row stays marked until What's new is
+// opened here, across reloads.
 
 export interface WhatsNewPending {
   /** What the host fed the rule, kept for its open-time check. */
@@ -92,12 +94,23 @@ export interface WhatsNewPending {
 }
 
 let pending: WhatsNewPending | null = null;
+let quiet = false;
 const listeners = new Set<() => void>();
+
+function notify(): void {
+  for (const listener of listeners) listener();
+}
 
 function setPending(next: WhatsNewPending | null): void {
   if (pending === next) return;
   pending = next;
-  for (const listener of listeners) listener();
+  notify();
+}
+
+function setQuiet(next: boolean): void {
+  if (quiet === next) return;
+  quiet = next;
+  notify();
 }
 
 function subscribe(listener: () => void): () => void {
@@ -111,12 +124,67 @@ export function markWhatsNewUnread(existingInstall: boolean): void {
 }
 
 /**
- * The member has the notes in front of them (the dialog opened, or they went
- * to the What's new page): record the newest entry and clear the mark.
+ * Another device showed the notes up to `version`: record it here so they
+ * never open by themselves in this browser, and keep the row marked until
+ * What's new is opened.
  */
-export function markWhatsNewSeen(): void {
+export function markWhatsNewQuiet(version: string): void {
+  recordWhatsNewSeen(version);
+  try {
+    window.localStorage.setItem(WHATS_NEW_QUIET_STORAGE_KEY, version);
+  } catch {
+    // The mark lasts this page load only.
+  }
+  setPending(null);
+  setQuiet(true);
+}
+
+/**
+ * Drops the quiet mark without recording anything: the signed-in account
+ * hasn't seen the newest entry, so a mark left by another account (a shared
+ * browser), or by a rolled-back account version, isn't backed by anything.
+ */
+export function clearWhatsNewQuiet(): void {
+  try {
+    window.localStorage.removeItem(WHATS_NEW_QUIET_STORAGE_KEY);
+  } catch {
+    // Nothing to clear.
+  }
+  setQuiet(false);
+}
+
+/** Brings a quiet mark set on an earlier page load back. */
+export function restoreWhatsNewQuiet(): void {
+  try {
+    if (window.localStorage.getItem(WHATS_NEW_QUIET_STORAGE_KEY) !== null) {
+      setQuiet(true);
+    }
+  } catch {
+    // Unreadable storage holds no mark.
+  }
+}
+
+/**
+ * The member has the notes in front of them (the dialog opened, or they went
+ * to the What's new page): record the newest entry, clear both marks, and
+ * return the version recorded, for the account (`useRecordWhatsNewSeen`).
+ */
+export function markWhatsNewSeen(): string | null {
   const newest = RELEASE_NOTES[0];
-  if (newest) recordWhatsNewSeen(releaseNoteVersion(newest));
+  const version = newest ? releaseNoteVersion(newest) : null;
+  if (version) recordWhatsNewSeen(version);
+  try {
+    window.localStorage.removeItem(WHATS_NEW_QUIET_STORAGE_KEY);
+  } catch {
+    // Nothing to clear.
+  }
+  setPending(null);
+  setQuiet(false);
+  return version;
+}
+
+/** The entries were read elsewhere before the host could open them. */
+export function clearWhatsNewPending(): void {
   setPending(null);
 }
 
@@ -135,10 +203,17 @@ export function useWhatsNewPending(): WhatsNewPending | null {
 }
 
 export function useWhatsNewUnread(): boolean {
-  return useWhatsNewPending() !== null;
+  const isPending = useWhatsNewPending() !== null;
+  const isQuiet = useSyncExternalStore(
+    subscribe,
+    () => quiet,
+    () => false,
+  );
+  return isPending || isQuiet;
 }
 
 /** Test seam: a fresh page load. */
 export function resetWhatsNewForTests(): void {
   pending = null;
+  quiet = false;
 }
