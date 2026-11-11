@@ -2,6 +2,7 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
+import * as expoRouter from "expo-router";
 import { useRouter } from "expo-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -114,20 +115,26 @@ vi.mock("@/components/activity/activity-sheet", () => ({
 import ActivityScreen from "@/app/(app)/activity";
 import { FilterChips } from "@/components/filter-chips";
 import { ListRow } from "@/components/list-section";
+import { ScreenShell } from "@/components/screen-shell";
 
 const mounted: ReactTestRenderer[] = [];
 let queryClient: QueryClient;
 
+const screen = () => (
+  <QueryClientProvider client={queryClient}>
+    <FrappThemeProvider>
+      <ActivityScreen />
+    </FrappThemeProvider>
+  </QueryClientProvider>
+);
+
+/** Every mounted focus effect, run again: the member came back. */
+const refocus = (expoRouter as unknown as { __refocus: () => void }).__refocus;
+
 function render(): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
-    tree = create(
-      <QueryClientProvider client={queryClient}>
-        <FrappThemeProvider>
-          <ActivityScreen />
-        </FrappThemeProvider>
-      </QueryClientProvider>,
-    );
+    tree = create(screen());
   });
   mounted.push(tree);
   return tree;
@@ -206,16 +213,52 @@ describe("Activity screen (#3897)", () => {
       }),
     };
     act(() => {
-      tree.update(
-        <QueryClientProvider client={queryClient}>
-          <FrappThemeProvider>
-            <ActivityScreen />
-          </FrappThemeProvider>
-        </QueryClientProvider>,
-      );
+      tree.update(screen());
     });
     expect(rowLabels(tree)).not.toContain("Food bank");
     expect(sheet.props?.row?.key).toBe("needs:hours:entry-1");
+  });
+
+  it("hands the sheet the row as the latest read has it", () => {
+    const tree = render();
+    act(() => {
+      row(tree, "Book the venue").props.onPress();
+    });
+    activity.value = {
+      ...activity.value,
+      data: read({
+        needs_you: {
+          ...read().needs_you,
+          tasks: [task({ title: "Book the venue (moved)" })],
+        },
+      }),
+    };
+    act(() => {
+      tree.update(screen());
+    });
+    expect(
+      (sheet.props?.row as unknown as { title: string } | null)?.title,
+    ).toBe("Book the venue (moved)");
+  });
+
+  it("reads again when the member comes back to the screen", () => {
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    render();
+    expect(invalidate).not.toHaveBeenCalled();
+    act(() => refocus());
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: activityKeys.chapter("chapter-1"),
+      exact: true,
+    });
+  });
+
+  it("re-reads on a pull, the gesture its couldn't-load note names", async () => {
+    const tree = render();
+    const refetch = vi.mocked(activity.value.refetch);
+    await act(async () => {
+      await tree.root.findByType(ScreenShell).props.refresh();
+    });
+    expect(refetch).toHaveBeenCalledTimes(1);
   });
 
   it("reads again when the sheet closes, and after an action the sheet made", () => {

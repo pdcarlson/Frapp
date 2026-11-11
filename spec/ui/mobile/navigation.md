@@ -76,7 +76,7 @@ Study hours leaves the list while the chapter has no active study zone, and Docu
 
 The admin section renders only for members whose role grants the underlying permissions; ordinary members never see it. The board captions it with the viewer's role ("ADMIN · PRESIDENT") and draws a role chip on the profile card; neither is drawn, because no role name is readable on mobile (`/v1/users/me/permissions` returns permissions only).
 
-Two rows above are not drawn in Canvas and exist for reachability:
+Two rows above are not drawn in Canvas and exist for reachability (Activity is undrawn too, but is a feature of its own, [#3897](https://github.com/pdcarlson/Frapp/issues/3897)):
 
 - **Service hours** — `service-hours.tsx` is a live route hosting the s20 sheet, and without a row it would be unreachable.
 - **Switch chapter** — the only in-app entry to `(auth)/chapter-picker.tsx` (a `frapp://chapter-picker` link also opens it). The picker is deliberately *not* forced on members whose token lacks an `active_chapter_id` claim (`apps/mobile/lib/auth-gate.ts` explains why claim-absence is not a destination), so it needs a door.
@@ -133,7 +133,7 @@ The row names the screen it pops to, so these are the rows a member sees arrivin
 | Screen | Usual way in | Row |
 | ------ | ------------ | --- |
 | s07 Event detail | Events | `‹ Events` |
-| s10 Study hours, s11 Dues, s12 Documents, s13 Directory, s15 Profile, s16 Settings, Service hours | More | `‹ More` |
+| s10 Study hours, s11 Dues, s12 Documents, s13 Directory, s15 Profile, s16 Settings, Service hours, Activity | More | `‹ More` |
 | s14 Notifications | The avatar menu on Chat home | `‹ Chat` |
 | Messages | The Messages door on Chat home | `‹ Chat` |
 

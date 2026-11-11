@@ -35,6 +35,8 @@ import {
 } from "@/components/more/more-glyphs";
 import { ProfileCard } from "@/components/more/profile-card";
 import { StatusChip } from "@/components/status-chip";
+import { activityCountChip } from "@/lib/activity/count-chip";
+import { useActivityReread } from "@/lib/activity/use-activity-reread";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { selectEventRows } from "@/lib/events/select";
 import { formatPointsLabel } from "@/lib/more/hub";
@@ -214,8 +216,12 @@ export default function MoreScreen() {
   // The Activity row's count: what is waiting on the member right now
   // (`needs_you_count`, counted server-side before the list cap). Nothing is
   // drawn until the read answers or while nothing waits: a "0" chip would
-  // be noise, and a stale one a false alarm.
-  const needsYouCount = useActivity().data?.needs_you_count ?? 0;
+  // be noise. This tab is never unmounted, so the count is read again on
+  // every return to it (`useActivityReread`), or it would keep counting a
+  // task the member has since finished on the Tasks tab.
+  useActivityReread();
+  const activity = useActivity().data;
+  const needsYou = activityCountChip(activity);
 
   const duesDue = useMemo(() => {
     if (!invoicesQuery.data || !viewerUserId) return null;
@@ -241,13 +247,11 @@ export default function MoreScreen() {
           label="Activity"
           leading={<ActivityGlyph color={glyphColor} />}
           accessibilityHint="Opens what is waiting on you and what you made."
-          accessibilityValue={
-            needsYouCount > 0 ? `${needsYouCount} waiting on you` : undefined
-          }
+          accessibilityValue={needsYou?.spoken}
           trailing={
-            needsYouCount > 0 ? (
+            needsYou ? (
               <StatusChip
-                label={String(needsYouCount)}
+                label={needsYou.label}
                 // Something to do, not yet settled: the warning role, as the
                 // rows it counts wear on the screen itself.
                 hue={tokens.color.semantic.warning}

@@ -33,7 +33,11 @@ let invoices: unknown[] = [];
 let notifications: unknown[] = [];
 let hiddenFeatures = new Set<string>();
 /** `GET /v1/activity`: `undefined` is "not answered yet". */
-let activity: { needs_you_count: number } | undefined;
+let activity: { needs_you_count: number; unavailable: string[] } | undefined;
+const activityReread = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/activity/use-activity-reread", () => ({
+  useActivityReread: activityReread,
+}));
 /** True while `/v1/users/me/permissions` hasn't answered. */
 let permissionsLoading = false;
 const hiddenFeatureCalls: unknown[][] = [];
@@ -572,14 +576,33 @@ describe("More hub anatomy (#1048)", () => {
     });
 
     it("carries the count of what is waiting on the member", () => {
-      activity = { needs_you_count: 3 };
+      activity = { needs_you_count: 3, unavailable: [] };
       const row = activityRow(render());
       expect(row.props.accessibilityValue).toBe("3 waiting on you");
       expect(screenText(render())).toMatch(/(^|\n)3(\n|$)/);
     });
 
+    it("says at least when a section it counts couldn't be read", () => {
+      activity = { needs_you_count: 2, unavailable: ["tasks"] };
+      const tree = render();
+      expect(activityRow(tree).props.accessibilityValue).toBe(
+        "at least 2 waiting on you",
+      );
+      expect(screenText(tree)).toMatch(/(^|\n)2\+(\n|$)/);
+    });
+
+    it("reads the count again on every return to the tab", () => {
+      activityReread.mockClear();
+      render();
+      // The hook that re-reads on focus (`use-activity-reread.spec.tsx`).
+      expect(activityReread).toHaveBeenCalled();
+    });
+
     it("draws no count while nothing waits, or before the read answers", () => {
-      for (const value of [undefined, { needs_you_count: 0 }]) {
+      for (const value of [
+        undefined,
+        { needs_you_count: 0, unavailable: [] },
+      ]) {
         activity = value;
         const row = activityRow(render());
         expect(row.props.trailing).toBeUndefined();

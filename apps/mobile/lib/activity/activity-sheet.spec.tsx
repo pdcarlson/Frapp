@@ -7,6 +7,8 @@ import { useRouter } from "expo-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { activityGroups, type Activity } from "@repo/hooks";
 import { FrappThemeProvider } from "@/lib/theme";
+import { moduleDisabledMessage } from "@repo/validation";
+import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { screenText } from "@/test/screen-text";
 
@@ -160,22 +162,36 @@ const mounted: ReactTestRenderer[] = [];
 const onActed = vi.fn();
 const onClosed = vi.fn();
 
+const present = vi.fn();
+const dismiss = vi.fn();
+
+function sheetElement(row: ActivitySheetRow | null, viewerId: string | null) {
+  return (
+    <FrappThemeProvider>
+      <ActivitySheet
+        row={row}
+        viewerId={viewerId}
+        onActed={onActed}
+        onClosed={onClosed}
+      />
+    </FrappThemeProvider>
+  );
+}
+
 function render(
   row: ActivitySheetRow | null,
   viewerId: string | null = "me",
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
-    tree = create(
-      <FrappThemeProvider>
-        <ActivitySheet
-          row={row}
-          viewerId={viewerId}
-          onActed={onActed}
-          onClosed={onClosed}
-        />
-      </FrappThemeProvider>,
-    );
+    tree = create(sheetElement(row, viewerId), {
+      // `vitest.setup.ts` mocks `BottomSheetModal` as a host string, so the
+      // sheet's ref lands on whatever this returns for it.
+      createNodeMock: (element) =>
+        (element.type as unknown) === "BottomSheetModal"
+          ? { present, dismiss }
+          : null,
+    });
   });
   mounted.push(tree);
   return tree;
@@ -208,6 +224,47 @@ describe("Activity sheet (#3897)", () => {
       for (const tree of mounted.splice(0)) tree.unmount();
     });
     vi.restoreAllMocks();
+  });
+
+  describe("opening and closing", () => {
+    const modal = (tree: ReactTestRenderer) =>
+      tree.root.find((node) => (node.type as unknown) === "BottomSheetModal");
+
+    it("stays down with no row, and presents once when a row is opened", () => {
+      const tree = render(null);
+      expect(present).not.toHaveBeenCalled();
+      act(() => tree.update(sheetElement(rowOf("task"), "me")));
+      expect(present).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not present again when a re-read hands the same row down as a new object", () => {
+      const tree = render(rowOf("task"));
+      expect(present).toHaveBeenCalledTimes(1);
+      act(() => tree.update(sheetElement({ ...rowOf("task") }, "me")));
+      expect(present).toHaveBeenCalledTimes(1);
+    });
+
+    it("presents again for a different row", () => {
+      const tree = render(rowOf("task"));
+      act(() => tree.update(sheetElement(rowOf("hours"), "me")));
+      expect(present).toHaveBeenCalledTimes(2);
+    });
+
+    it("tells the screen when the sheet has gone", () => {
+      const tree = render(rowOf("task"));
+      act(() => {
+        modal(tree).props.onDismiss();
+      });
+      expect(onClosed).toHaveBeenCalledTimes(1);
+    });
+
+    it("closes from the header's X", () => {
+      const tree = render(rowOf("task"));
+      act(() => {
+        button(tree, "Close").props.onPress();
+      });
+      expect(dismiss).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("draws chat's task card from the row, as a confirmed message of the viewer's", () => {
@@ -289,6 +346,8 @@ describe("Activity sheet (#3897)", () => {
         pathname: "/chat-thread",
         params: { channelId: "chan-1" },
       });
+      // The sheet goes first, or it would sit over the thread.
+      expect(dismiss).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -362,6 +421,19 @@ describe("Activity sheet (#3897)", () => {
       expect(screenText(tree)).toContain(
         SUBSCRIPTION_REFUSAL_COPY.serviceReview,
       );
+    });
+
+    it("says a switched-off module in a member's words", async () => {
+      review.mutateAsync.mockRejectedValue({
+        statusCode: 403,
+        error: "Forbidden",
+        message: moduleDisabledMessage("hours"),
+      });
+      const tree = render(rowOf("hours"));
+      await act(async () => {
+        button(tree, "Approve").props.onPress();
+      });
+      expect(screenText(tree)).toContain(MODULE_REFUSAL_COPY.serviceReview);
     });
 
     it("holds the review while a write would be lost", () => {

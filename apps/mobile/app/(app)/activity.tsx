@@ -1,13 +1,10 @@
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
-import { useQueryClient } from "@tanstack/react-query";
 import {
   ACTIVITY_FILTERS,
   ACTIVITY_SECTION_NAMES,
   activityGroups,
-  activityKeys,
-  useActiveChapterId,
   useActivity,
   useViewerUserId,
   type ActivityFilter,
@@ -33,6 +30,7 @@ import { ScreenShell } from "@/components/screen-shell";
 import { ErrorState, SkeletonRegion } from "@/components/state-block";
 import { StatusChip } from "@/components/status-chip";
 import { activityBadgeHue } from "@/lib/activity/badge-hue";
+import { useActivityReread } from "@/lib/activity/use-activity-reread";
 import { useFrappTheme } from "@/lib/theme";
 
 /** The chips: `null` is "All", as `FilterChips` spells it. */
@@ -54,16 +52,18 @@ const CHIPS = ACTIVITY_FILTERS.map((option) => ({
  * (`components/activity/activity-sheet.tsx`). A document row opens Documents;
  * a backwork row is a record only, since the phone has no Backwork screen.
  *
- * The read is never served fresh from cache (`useActivity`), and it is read
+ * The read is never served fresh from cache (`useActivity`). It is read
  * again when the sheet closes, because the cards write through their own
- * hooks, which this read does not hear about.
+ * hooks, which this read does not hear about, and whenever the member comes
+ * back to this screen (`useActivityReread`).
  */
 export default function ActivityScreen() {
   const router = useRouter();
   const activity = useActivity();
   const viewerId = useViewerUserId();
-  const chapterId = useActiveChapterId();
-  const queryClient = useQueryClient();
+  // Also on every return to this screen: it stays mounted under the thread
+  // or Documents it pushes, and a vote cast there is not heard here.
+  const reread = useActivityReread();
   const [filter, setFilter] = useState<ActivityFilter>("all");
   const [openedKey, setOpenedKey] = useState<string | null>(null);
   const refresh = useRefetchAll([activity]);
@@ -85,14 +85,6 @@ export default function ActivityScreen() {
   }, [groups, openedKey]);
   const [opened, setOpened] = useState<ActivitySheetRow | null>(null);
   const sheetRow = openedKey === null ? null : (openRow ?? opened);
-
-  const reread = useCallback(() => {
-    if (!chapterId) return;
-    void queryClient.invalidateQueries({
-      queryKey: activityKeys.chapter(chapterId),
-      exact: true,
-    });
-  }, [chapterId, queryClient]);
 
   const open = (row: ActivityRow) => {
     if (row.kind === "file") {
