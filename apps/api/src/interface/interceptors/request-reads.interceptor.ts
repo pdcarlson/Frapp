@@ -19,7 +19,10 @@ import { sealRequestReadsForWrites } from '../../infrastructure/supabase/request
  */
 @Injectable()
 export class RequestReadsInterceptor implements NestInterceptor {
-  intercept(_context: ExecutionContext, next: CallHandler): Observable<unknown> {
+  intercept(
+    _context: ExecutionContext,
+    next: CallHandler,
+  ): Observable<unknown> {
     sealRequestReadsForWrites();
     return next.handle();
   }

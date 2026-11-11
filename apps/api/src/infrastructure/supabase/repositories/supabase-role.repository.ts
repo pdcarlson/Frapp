@@ -24,7 +24,10 @@ export function readRolesByIds(
 ): Promise<Role[]> {
   const key = `roles:${chapterId ?? '*'}:${[...ids].sort().join(',')}`;
   return readOncePerRequest(key, async () => {
-    let query = supabase.from('roles').select('*').in('id', [...ids]);
+    let query = supabase
+      .from('roles')
+      .select('*')
+      .in('id', [...ids]);
 
     // Callers resolving a member's permissions pass their active chapter, so an
     // id that no longer belongs to it (stale membership, cross-chapter id)

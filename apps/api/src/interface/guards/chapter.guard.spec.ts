@@ -1201,9 +1201,9 @@ describe('ChapterGuard', () => {
         await settle();
         expect(reads.sort()).toEqual(['chapters', 'members', 'roles', 'users']);
 
-        await expect(guard.canActivate(mockExecutionContext(req))).resolves.toBe(
-          true,
-        );
+        await expect(
+          guard.canActivate(mockExecutionContext(req)),
+        ).resolves.toBe(true);
       });
 
       expect(reads).toHaveLength(4);
@@ -1255,7 +1255,12 @@ describe('ChapterGuard', () => {
     it('starts only the user lookup when no chapter is named', async () => {
       const reads = tables();
       await runWithRequestReads('GET', async () => {
-        prefetchChapterContext({ from: mockFrom } as never, 'auth-p3', undefined, {});
+        prefetchChapterContext(
+          { from: mockFrom } as never,
+          'auth-p3',
+          undefined,
+          {},
+        );
         await settle();
       });
       expect(reads).toEqual(['users']);
@@ -1275,9 +1280,9 @@ describe('ChapterGuard', () => {
           req.headers,
         );
         await settle();
-        await expect(guard.canActivate(mockExecutionContext(req))).resolves.toBe(
-          true,
-        );
+        await expect(
+          guard.canActivate(mockExecutionContext(req)),
+        ).resolves.toBe(true);
       });
 
       expect(reads.filter((t) => t === 'members')).toHaveLength(2);

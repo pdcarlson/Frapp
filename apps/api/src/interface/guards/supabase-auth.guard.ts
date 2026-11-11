@@ -52,7 +52,12 @@ export class SupabaseAuthGuard implements CanActivate {
 
     const claims = await this.readClaims(token);
     if (claims?.sub && this.chapterGuardFollows(context)) {
-      prefetchChapterContext(this.supabase, claims.sub, claims, request.headers);
+      prefetchChapterContext(
+        this.supabase,
+        claims.sub,
+        claims,
+        request.headers,
+      );
     }
 
     const { data, error } = await sessionCheck;

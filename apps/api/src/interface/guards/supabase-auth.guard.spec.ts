@@ -25,7 +25,11 @@ describe('SupabaseAuthGuard', () => {
 
   /** A route guarded by this guard alone, as `GET /v1/users/me` is. */
   class AuthOnlyController {}
-  Reflect.defineMetadata(GUARDS_METADATA, [SupabaseAuthGuard], AuthOnlyController);
+  Reflect.defineMetadata(
+    GUARDS_METADATA,
+    [SupabaseAuthGuard],
+    AuthOnlyController,
+  );
 
   /** A chapter route: the usual class-level chain. */
   class ChapterController {}
