@@ -39,8 +39,8 @@ const api = await import(
  * The API's `resolveClientPolicy`, loaded from its source. It sits in a Nest
  * service, which plain Node can't load as written: `@Injectable()` is not
  * erasable syntax and `#domain/...` resolves through Nest's build. So the
- * test loads a copy with exactly those two things changed, the decorator and
- * its import dropped and the alias pointed at the file. If the service grows
+ * test loads a copy with exactly those things changed: the decorator and its
+ * import dropped, and the alias and `@repo/validation` pointed at their files. If the service grows
  * another import this can't follow, this fails loudly rather than skipping.
  */
 async function loadPolicyService() {
@@ -67,7 +67,17 @@ async function loadPolicyService() {
       "'#domain/constants/client-version'",
       domainFile("constants", "client-version.ts"),
     )
-    .replace("'#domain/utils/env-value'", domainFile("utils", "env-value.ts"));
+    .replace("'#domain/utils/env-value'", domainFile("utils", "env-value.ts"))
+    // `STORE_LISTING_URLS` (#4002) lives in a module with no imports of its
+    // own, so the barrel's extensionless re-exports never need resolving.
+    .replace(
+      "'@repo/validation'",
+      JSON.stringify(
+        pathToFileURL(
+          join(REPO_ROOT, "packages", "validation", "src", "native-app.ts"),
+        ).href,
+      ),
+    );
   const imports = [
     ...rewritten.matchAll(/^import[^;]*?from\s+['"]([^'"]+)['"]/gms),
   ].map((m) => m[1]);
