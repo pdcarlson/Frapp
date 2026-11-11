@@ -14,6 +14,7 @@ import Stripe from 'stripe';
 import { ThrottlerException } from '@nestjs/throttler';
 import { AllExceptionsFilter } from './all-exceptions.filter';
 import { THROTTLED_MESSAGE } from '../guards/custom-throttler.guard';
+import { authRejected } from '../guards/auth-rejected.exception';
 import { AuthFailureSpikeDetector } from '../../infrastructure/observability/auth-failure-spike';
 import { runWithRequestLogStore } from '../../infrastructure/observability/request-als';
 import {
@@ -246,10 +247,136 @@ describe('AllExceptionsFilter', () => {
       origin: expect.stringMatching(/^[0-9a-f]{64}$/),
       failure_count: '3',
       window_ms: '60000',
+      // A bare 401 isn't the auth guard's, so it has no reason of its own.
+      auth_failure_reason: 'other',
+      auth_failure_reasons: 'other:3',
+      client_app: 'unknown',
     });
     expect(context.tags?.origin).not.toContain(CLIENT_IP);
     const spike = securityEvents().find((e) => e.kind === 'auth_failure_spike');
     expect(spike).toMatchObject({ count: 3, threshold: 3 });
+  });
+
+  describe('401 reason (#3907)', () => {
+    const TOKEN = 'header.payload.signature-never-logged';
+    const mobile = {
+      headers: {
+        'x-client-version': 'ios/0.10.3+15',
+        authorization: `Bearer ${TOKEN}`,
+      },
+    };
+
+    it('records which refusal it was, and the client, never the token', () => {
+      new AllExceptionsFilter().catch(
+        authRejected('Invalid or expired token', 'token_rejected', {
+          authErrorCode: 'bad_jwt',
+          tokenExpired: true,
+        }),
+        host(mobile),
+      );
+
+      const [event] = securityEvents();
+      expect(event).toMatchObject({
+        kind: 'auth_failure',
+        reason: 'token_rejected',
+        authErrorCode: 'bad_jwt',
+        tokenExpired: true,
+        clientApp: 'mobile',
+        clientVersion: 'ios/0.10.3+15',
+      });
+      expect(JSON.stringify(event)).not.toContain(TOKEN);
+
+      const [record] = jest.mocked(enqueueSanitizedLog).mock.calls[0] as [
+        { attributes: Record<string, unknown> },
+      ];
+      expect(record.attributes).toMatchObject({
+        reason: 'token_rejected',
+        auth_error_code: 'bad_jwt',
+        token_expired: true,
+        client_app: 'mobile',
+        client_version: 'ios/0.10.3+15',
+      });
+      expect(JSON.stringify(record)).not.toContain(TOKEN);
+      // The response body is the guard's, unchanged: no reason, no code.
+      expect(captured.json).toEqual({
+        statusCode: 401,
+        error: 'UNAUTHORIZED',
+        message: 'Invalid or expired token',
+        requestId: 'req-abc',
+      });
+    });
+
+    it('names a web dashboard tab by its origin', () => {
+      new AllExceptionsFilter().catch(
+        authRejected('Missing or invalid authorization header', 'no_bearer'),
+        host({ headers: { origin: 'https://app.frapp.live' } }),
+      );
+
+      const [event] = securityEvents();
+      expect(event).toMatchObject({ reason: 'no_bearer', clientApp: 'web' });
+      expect(event).not.toHaveProperty('tokenExpired');
+      expect(event).not.toHaveProperty('clientVersion');
+    });
+
+    it('says on the spike which 401s tripped it', () => {
+      const filter = new AllExceptionsFilter(
+        new AuthFailureSpikeDetector({ threshold: 4, windowMs: 60_000 }),
+      );
+      filter.catch(authRejected('Missing', 'no_bearer'), host(mobile));
+      for (let i = 0; i < 3; i++) {
+        filter.catch(
+          authRejected('Invalid or expired token', 'token_rejected', {
+            authErrorCode: 'bad_jwt',
+            tokenExpired: true,
+          }),
+          host(mobile),
+        );
+      }
+
+      expect(Sentry.captureMessage).toHaveBeenCalledTimes(1);
+      const [, context] = jest.mocked(Sentry.captureMessage).mock.calls[0] as [
+        string,
+        { tags?: Record<string, string> },
+      ];
+      expect(context.tags).toMatchObject({
+        auth_failure_reason: 'mixed',
+        auth_failure_reasons: 'token_rejected:3,no_bearer:1',
+        auth_error_code: 'bad_jwt',
+        token_expired: 'true',
+        client_app: 'mobile',
+        client_version: 'ios/0.10.3+15',
+      });
+      expect(JSON.stringify(context)).not.toContain(TOKEN);
+      const spike = securityEvents().find(
+        (e) => e.kind === 'auth_failure_spike',
+      );
+      expect(spike).toMatchObject({
+        reason: 'mixed',
+        reasons: { token_rejected: 3, no_bearer: 1 },
+        clientApp: 'mobile',
+      });
+    });
+
+    it('names one reason when the whole window shared it', () => {
+      const filter = new AllExceptionsFilter(
+        new AuthFailureSpikeDetector({ threshold: 2, windowMs: 60_000 }),
+      );
+      for (let i = 0; i < 2; i++) {
+        filter.catch(authRejected('Missing', 'no_bearer'), host());
+      }
+
+      const [, context] = jest.mocked(Sentry.captureMessage).mock.calls[0] as [
+        string,
+        { tags?: Record<string, string> },
+      ];
+      expect(context.tags).toMatchObject({
+        auth_failure_reason: 'no_bearer',
+        auth_failure_reasons: 'no_bearer:2',
+        client_app: 'unknown',
+      });
+      expect(context.tags).not.toHaveProperty('token_expired');
+      expect(context.tags).not.toHaveProperty('auth_error_code');
+    });
   });
 
   it('reports 5xx to Sentry with a pseudonymous user, never the raw id', () => {

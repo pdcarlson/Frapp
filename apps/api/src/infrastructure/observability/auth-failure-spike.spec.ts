@@ -29,7 +29,26 @@ describe('AuthFailureSpikeDetector', () => {
     for (let i = 0; i < 4; i++) d.record('origin-a', T0 + i * 1_000);
 
     const trip = d.record('origin-a', T0 + 4_000);
-    expect(trip).toEqual({ count: 5, windowMs: 60_000, threshold: 5 });
+    expect(trip).toEqual({
+      count: 5,
+      windowMs: 60_000,
+      threshold: 5,
+      labels: { unlabelled: 5 },
+    });
+  });
+
+  it('counts the tripping window by label, and only that window (#3907)', () => {
+    const d = detector();
+    // One failure that falls out of the window before the trip.
+    d.record('origin-a', T0, 'no_bearer');
+    const later = T0 + 120_000;
+    d.record('origin-a', later, 'no_bearer');
+    for (let i = 1; i < 4; i++)
+      d.record('origin-a', later + i, 'token_rejected');
+
+    const trip = d.record('origin-a', later + 4, 'token_rejected');
+    expect(trip?.count).toBe(5);
+    expect(trip?.labels).toEqual({ no_bearer: 1, token_rejected: 4 });
   });
 
   it('does not trip when the failures fall outside one window', () => {

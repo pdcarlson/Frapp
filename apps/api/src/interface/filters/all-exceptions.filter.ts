@@ -24,7 +24,14 @@ import {
 import {
   buildSecurityEvent,
   securityEventKind,
+  type AuthFailureDetail,
 } from '../../infrastructure/observability/security-events';
+import {
+  CLIENT_VERSION_HEADER,
+  clientVersionForLog,
+} from '#domain/constants/client-version';
+import { authFailureDetail } from '../guards/auth-rejected.exception';
+import { requestApp } from '../http/request-app';
 import { AuthFailureSpikeDetector } from '../../infrastructure/observability/auth-failure-spike';
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
@@ -186,7 +193,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
       this.reportToSentry(exception, request, status, requestId);
       this.enqueueSanitizedErrorLog(request, status, requestId);
     } else {
-      this.recordSecurityEvent(request, status, requestId);
+      this.recordSecurityEvent(
+        request,
+        status,
+        requestId,
+        authFailureDetail(exception),
+      );
       this.enqueueUnmatchedClientErrorLog(request, status);
     }
 
@@ -213,12 +225,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
     request: RequestContext,
     status: number,
     requestId: string,
+    authFailure: AuthFailureDetail | undefined,
   ): void {
     const kind = securityEventKind(status);
     if (!kind) return;
 
     try {
       const originHash = pseudonymizeIp(clientIp(request));
+      // Which app, from what the clients already send (#3907): enough to tell
+      // a stale mobile build from a dashboard tab. Never the raw header.
+      const clientApp = request.headers ? requestApp(request) : undefined;
+      const clientVersion = clientVersionForLog(
+        request.headers?.[CLIENT_VERSION_HEADER],
+      );
       this.logger.warn(
         JSON.stringify(
           buildSecurityEvent({
@@ -232,17 +251,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
             userId: request.appUser?.id,
             chapterId: request.chapterId,
             originHash,
+            authFailure,
+            clientApp,
+            clientVersion,
           }),
         ),
       );
 
-      this.enqueueSanitizedSecurityLog(
-        request,
-        kind,
-        status,
-        requestId,
+      this.enqueueSanitizedSecurityLog(request, kind, status, requestId, {
         originHash,
-      );
+        authFailure,
+        clientApp,
+        clientVersion,
+      });
 
       if (kind !== 'auth_failure') return;
 
@@ -256,9 +277,16 @@ export class AllExceptionsFilter implements ExceptionFilter {
       // unauthenticated request into one bucket.
       const originKey =
         request.appUser?.id ?? originHash ?? clientIp(request) ?? 'unknown';
-      const trip = this.spikeDetector.record(originKey);
+      const trip = this.spikeDetector.record(
+        originKey,
+        undefined,
+        authFailure?.reason ?? 'other',
+      );
       if (!trip) return;
 
+      // Which 401s tripped it (#3907): the window's mix, and the tripping
+      // request's detail and client, which a burst from one origin shares.
+      const reasons = describeReasons(trip.labels);
       this.logger.warn(
         JSON.stringify({
           event: 'security_event',
@@ -267,6 +295,16 @@ export class AllExceptionsFilter implements ExceptionFilter {
           threshold: trip.threshold,
           windowMs: trip.windowMs,
           originHash,
+          reason: reasons.reason,
+          reasons: trip.labels,
+          ...(authFailure?.authErrorCode
+            ? { authErrorCode: authFailure.authErrorCode }
+            : {}),
+          ...(authFailure?.tokenExpired !== undefined
+            ? { tokenExpired: authFailure.tokenExpired }
+            : {}),
+          ...(clientApp ? { clientApp } : {}),
+          ...(clientVersion ? { clientVersion } : {}),
           timestamp: new Date().toISOString(),
         }),
       );
@@ -281,6 +319,16 @@ export class AllExceptionsFilter implements ExceptionFilter {
           ...(originHash ? { origin: originHash } : {}),
           failure_count: String(trip.count),
           window_ms: String(trip.windowMs),
+          auth_failure_reason: reasons.reason,
+          auth_failure_reasons: reasons.summary,
+          ...(authFailure?.authErrorCode
+            ? { auth_error_code: authFailure.authErrorCode }
+            : {}),
+          ...(authFailure?.tokenExpired !== undefined
+            ? { token_expired: String(authFailure.tokenExpired) }
+            : {}),
+          client_app: clientApp ?? 'unknown',
+          ...(clientVersion ? { client_version: clientVersion } : {}),
         },
         fingerprint: ['auth-failure-spike'],
       }));
@@ -421,8 +469,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
     kind: string,
     status: number,
     requestId: string,
-    originHash: string | undefined,
+    context: {
+      originHash: string | undefined;
+      authFailure: AuthFailureDetail | undefined;
+      clientApp: string | undefined;
+      clientVersion: string | undefined;
+    },
   ): void {
+    const { originHash, authFailure, clientApp, clientVersion } = context;
     const userHash = pseudonymizeUserId(request.appUser?.id);
     const chapterHash = pseudonymizeChapterId(request.chapterId);
     const statusClass = httpStatusClass(status);
@@ -439,9 +493,37 @@ export class AllExceptionsFilter implements ExceptionFilter {
         ...(originHash ? { origin_hash: originHash } : {}),
         ...(userHash ? { user_hash: userHash } : {}),
         ...(chapterHash ? { chapter_hash: chapterHash } : {}),
+        ...(authFailure ? { reason: authFailure.reason } : {}),
+        ...(authFailure?.authErrorCode
+          ? { auth_error_code: authFailure.authErrorCode }
+          : {}),
+        ...(authFailure?.tokenExpired !== undefined
+          ? { token_expired: authFailure.tokenExpired }
+          : {}),
+        ...(clientApp ? { client_app: clientApp } : {}),
+        ...(clientVersion ? { client_version: clientVersion } : {}),
       },
     });
   }
+}
+
+/**
+ * A spike's reason mix as Sentry tags (#3907). `reason` is the one reason when
+ * every failure in the window shared it, else `mixed`; `summary` lists each
+ * with its count, largest first (`token_rejected:18,no_bearer:2`). The labels
+ * are the guard's two reasons plus `other`, so the summary stays short.
+ */
+function describeReasons(labels: Readonly<Record<string, number>>): {
+  reason: string;
+  summary: string;
+} {
+  const entries = Object.entries(labels).sort(
+    ([a, countA], [b, countB]) => countB - countA || a.localeCompare(b),
+  );
+  return {
+    reason: entries.length === 1 ? entries[0][0] : 'mixed',
+    summary: entries.map(([label, count]) => `${label}:${count}`).join(','),
+  };
 }
 
 /** Client address as Express resolved it — hashed before it goes anywhere. */

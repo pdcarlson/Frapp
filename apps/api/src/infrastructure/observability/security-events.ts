@@ -26,6 +26,38 @@ export const SECURITY_EVENT_KINDS: Readonly<Record<number, SecurityEventKind>> =
     429: 'rate_limit_rejected',
   };
 
+/**
+ * Which of the auth guard's 401s a failure was (#3907). An auth-failure spike
+ * reads the same from outside whichever it is, and the fix differs:
+ *
+ *  - `no_bearer`: no `Authorization: Bearer …` header at all, so a client
+ *    calling a guarded route signed out, or something that isn't our client.
+ *  - `token_rejected`: a bearer token Supabase Auth refused, usually one that
+ *    expired while a client kept using it.
+ *
+ * Any other 401 (the Stripe webhook's signature check) carries no reason.
+ */
+export type AuthFailureReason = 'no_bearer' | 'token_rejected';
+
+/**
+ * What the guard knew about a refused credential. Never the token, and never
+ * anything from inside it but its expiry.
+ */
+export interface AuthFailureDetail {
+  reason: AuthFailureReason;
+  /**
+   * Supabase Auth's error code for a `token_rejected` (`bad_jwt`,
+   * `session_not_found`, `user_not_found`, …), when it sent a well-formed one.
+   */
+  authErrorCode?: string;
+  /**
+   * Whether the refused token's own `exp` had passed, read without verifying
+   * it. Absent when there was no token or its payload didn't parse. A label,
+   * not a verdict: Auth's refusal is the verdict.
+   */
+  tokenExpired?: boolean;
+}
+
 export function securityEventKind(
   statusCode: number,
 ): SecurityEventKind | undefined {
@@ -46,6 +78,12 @@ export interface SecurityEventInput {
    * **Pseudonymized** origin — never a raw address. See `originHash` below.
    */
   originHash?: string;
+  /** Why a 401 was refused, when the guard said. */
+  authFailure?: AuthFailureDetail;
+  /** `mobile` or `web`, from what the client already sends (`requestApp`). */
+  clientApp?: string;
+  /** The mobile build, normalized by `clientVersionForLog`. */
+  clientVersion?: string;
   timestamp?: string;
 }
 
@@ -59,6 +97,11 @@ export interface SecurityEventRecord {
   userId?: string;
   chapterId?: string;
   originHash?: string;
+  reason?: AuthFailureReason;
+  authErrorCode?: string;
+  tokenExpired?: boolean;
+  clientApp?: string;
+  clientVersion?: string;
   timestamp: string;
 }
 
@@ -92,6 +135,15 @@ export function buildSecurityEvent(
     ...(input.userId ? { userId: input.userId } : {}),
     ...(input.chapterId ? { chapterId: input.chapterId } : {}),
     ...(input.originHash ? { originHash: input.originHash } : {}),
+    ...(input.authFailure ? { reason: input.authFailure.reason } : {}),
+    ...(input.authFailure?.authErrorCode
+      ? { authErrorCode: input.authFailure.authErrorCode }
+      : {}),
+    ...(input.authFailure?.tokenExpired !== undefined
+      ? { tokenExpired: input.authFailure.tokenExpired }
+      : {}),
+    ...(input.clientApp ? { clientApp: input.clientApp } : {}),
+    ...(input.clientVersion ? { clientVersion: input.clientVersion } : {}),
     timestamp: input.timestamp ?? new Date().toISOString(),
   };
 }

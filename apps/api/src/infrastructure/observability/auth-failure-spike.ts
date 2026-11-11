@@ -47,9 +47,15 @@ export interface AuthFailureSpikeOptions {
   maxTrackedOrigins?: number;
 }
 
+interface Hit {
+  at: number;
+  /** What the caller says this failure was (#3907): a 401 reason. */
+  label: string;
+}
+
 interface OriginState {
-  /** Failure timestamps inside the current window, ascending. */
-  hits: number[];
+  /** Failures inside the current window, ascending by `at`. */
+  hits: Hit[];
   /** When the last alert fired, or 0. */
   alertedAt: number;
 }
@@ -64,7 +70,16 @@ export interface SpikeTrip {
   count: number;
   windowMs: number;
   threshold: number;
+  /**
+   * How many of `count` carried each label, so the report says which failure
+   * tripped it (#3907). Callers keep the label set small and fixed: it is
+   * stored per hit, and it is reported verbatim.
+   */
+  labels: Readonly<Record<string, number>>;
 }
+
+/** The label a failure carries when the caller gives none. */
+export const UNLABELLED = 'unlabelled';
 
 export class AuthFailureSpikeDetector {
   private readonly threshold: number;
@@ -89,16 +104,21 @@ export class AuthFailureSpikeDetector {
    * follows a trip. Callers treat a non-null return as "emit the alert now".
    *
    * `now` is injected rather than read from the clock so the window arithmetic
-   * is testable without timer mocking.
+   * is testable without timer mocking. `label` names the kind of failure; a
+   * trip counts its window's hits per label.
    */
-  record(originKey: string, now: number = Date.now()): SpikeTrip | null {
+  record(
+    originKey: string,
+    now: number = Date.now(),
+    label: string = UNLABELLED,
+  ): SpikeTrip | null {
     const state = this.origins.get(originKey) ?? { hits: [], alertedAt: 0 };
 
     const cutoff = now - this.windowMs;
     // Timestamps arrive ascending, so the survivors are always a suffix.
-    const firstLive = state.hits.findIndex((at) => at > cutoff);
+    const firstLive = state.hits.findIndex((hit) => hit.at > cutoff);
     state.hits = firstLive === -1 ? [] : state.hits.slice(firstLive);
-    state.hits.push(now);
+    state.hits.push({ at: now, label });
 
     this.origins.delete(originKey);
     this.origins.set(originKey, state);
@@ -112,8 +132,17 @@ export class AuthFailureSpikeDetector {
     // its full width after a trip, and the cooldown would be the only thing
     // preventing a re-alert on the very next failure.
     const count = state.hits.length;
+    const labels: Record<string, number> = {};
+    for (const hit of state.hits) {
+      labels[hit.label] = (labels[hit.label] ?? 0) + 1;
+    }
     state.hits = [];
-    return { count, windowMs: this.windowMs, threshold: this.threshold };
+    return {
+      count,
+      windowMs: this.windowMs,
+      threshold: this.threshold,
+      labels,
+    };
   }
 
   /** Tracked-origin count. Exposed for tests and diagnostics. */
@@ -132,7 +161,7 @@ export class AuthFailureSpikeDetector {
 
     for (const [key, state] of this.origins) {
       const newest = state.hits[state.hits.length - 1];
-      if (newest === undefined || newest <= cutoff) {
+      if (newest === undefined || newest.at <= cutoff) {
         this.origins.delete(key);
       }
     }
