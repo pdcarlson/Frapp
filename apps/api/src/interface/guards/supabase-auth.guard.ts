@@ -3,13 +3,17 @@ import {
   ExecutionContext,
   Inject,
   Injectable,
-  UnauthorizedException,
 } from '@nestjs/common';
 import type { JwtPayload } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { RequestContext, getHeaderValue } from '../types/request-context.types';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { isAuthOutage, lookupUnavailable } from './guard-lookup';
+import {
+  authRejected,
+  safeAuthErrorCode,
+  tokenExpired,
+} from './auth-rejected.exception';
 
 @Injectable()
 export class SupabaseAuthGuard implements CanActivate {
@@ -21,9 +25,12 @@ export class SupabaseAuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<RequestContext>();
     const authHeader = getHeaderValue(request.headers, 'authorization');
 
+    // Each refusal names its reason for the security record (#3907); the
+    // response body is unchanged.
     if (!authHeader?.startsWith('Bearer ')) {
-      throw new UnauthorizedException(
+      throw authRejected(
         'Missing or invalid authorization header',
+        'no_bearer',
       );
     }
 
@@ -36,7 +43,10 @@ export class SupabaseAuthGuard implements CanActivate {
       throw lookupUnavailable('Could not verify your session right now', error);
     }
     if (error || !data.user) {
-      throw new UnauthorizedException('Invalid or expired token');
+      throw authRejected('Invalid or expired token', 'token_rejected', {
+        authErrorCode: safeAuthErrorCode(error?.code),
+        tokenExpired: tokenExpired(token),
+      });
     }
 
     request.supabaseUser = data.user;
