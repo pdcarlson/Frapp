@@ -38,11 +38,17 @@ describe("screens with a low text field avoid the keyboard (#3346)", () => {
   // #4010: the chat composer sits at the bottom inset, so on Android it
   // rises by the keyboard's reported height less that inset, rather than
   // through the library's view, which stopped short of the keyboard on
-  // production.
+  // production. #4080: the auth screens have the same shape (the area runs to
+  // the bottom of a SafeAreaView that pads every edge), so they rise the same
+  // way and keep their focused field and pinned Continue above the keyboard.
   it.each([
     join(APP_DIR, "(app)/chat-thread.tsx"),
     join(APP_DIR, "..", "components/chat/message-thread-screen.tsx"),
-  ])("%s rises from the screen's bottom (#4010)", (path) => {
+    join(APP_DIR, "(auth)/sign-in.tsx"),
+    join(APP_DIR, "(auth)/welcome.tsx"),
+    join(APP_DIR, "(auth)/join.tsx"),
+    join(APP_DIR, "(auth)/create-chapter.tsx"),
+  ])("%s rises from the screen's bottom (#4010, #4080)", (path) => {
     const source = readFileSync(path, "utf8");
     // Bare, so `atScreenBottom={false}` or a condition can't pass.
     expect(source).toMatch(

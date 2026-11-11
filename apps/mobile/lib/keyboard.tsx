@@ -104,7 +104,8 @@ export function KeyboardProviderGuarded({ children }: { children: ReactNode }) {
  *
  * **`atScreenBottom`** (#4010). For a screen whose area runs to the bottom of
  * the window, inside a `SafeAreaView` that pads the bottom inset (the chat
- * thread and a message thread). On Android store builds the area pads by
+ * thread, a message thread, and the auth screens with a field: sign-in,
+ * welcome, join and create-chapter, #4080). On Android store builds the area pads by
  * `keyboardLift`: the keyboard's current height, as the library last reported
  * it, less that inset. In steady state that is the same number the library's
  * view below computes, but the library's view takes the keyboard's height from
