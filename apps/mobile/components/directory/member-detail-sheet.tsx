@@ -12,7 +12,6 @@ import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   useBlockedUserIds,
-  useCustomRoles,
   useGetOrCreateDm,
   useMemberByUserId,
   useMemberDisplayNames,
@@ -22,9 +21,7 @@ import {
 } from "@repo/hooks";
 import {
   can,
-  resolveCustomRoleNames,
   resolveRoleChips,
-  type MemberRoleChip,
 } from "@repo/validation";
 import { usePledgeClassRows } from "@/lib/directory/pledge-class";
 import { MemberAvatar } from "@/components/member-avatar";
@@ -162,15 +159,7 @@ export const MemberDetailSheet = forwardRef<
   const statusLine =
     presence.isReady && userId ? presence.lineOf(userId) : null;
 
-  // Custom roles (`chapter_custom_roles` — chapter-specific titles like
-  // "Rush Chair", distinct from the seven seeded system roles `useRoles`
-  // returns) need `chapter-config:view` to list, same gate `preferences.tsx`
-  // already applies for its Chapter · Admin section. A viewer who lacks it
-  // simply doesn't get custom-role names resolved, rather than firing a
-  // request that comes back 403.
   const permissions = usePermissionList();
-  const canViewCustomRoles = can("chapter-config:view", permissions);
-  const customRolesQuery = useCustomRoles({ enabled: canViewCustomRoles });
 
   const detail = useMemo(
     () => selectMemberDetail(memberQuery.data),
@@ -183,24 +172,6 @@ export const MemberDetailSheet = forwardRef<
     () => resolveRoleChips(rolesQuery.data, detail?.roleIds ?? []),
     [rolesQuery.data, detail?.roleIds],
   );
-  const customRoleNames = useMemo(
-    () =>
-      resolveCustomRoleNames(
-        canViewCustomRoles ? customRolesQuery.data : undefined,
-        detail?.customRoleIds ?? [],
-      ),
-    [canViewCustomRoles, customRolesQuery.data, detail?.customRoleIds],
-  );
-  // Custom titles carry no color or rank in this read, so they follow the
-  // ranked roles as plain chips.
-  const allRoleChips: MemberRoleChip[] = [
-    ...roleChips,
-    ...customRoleNames.map((name) => ({
-      id: `custom:${name}`,
-      name,
-      color: null,
-    })),
-  ];
 
   const canEditRoles = can("roles:manage", permissions);
   const roleOptions = useMemo(
@@ -211,11 +182,10 @@ export const MemberDetailSheet = forwardRef<
   const [rolesSession, setRolesSession] = useState<MemberRolesSession | null>(
     null,
   );
-  // Distinct from "no role" (`[]` once both reads have settled): while either
-  // read is still in flight, an empty list would otherwise flash a wrong
-  // "—" that then flips to the real value a moment later.
-  const rolesStillLoading =
-    rolesQuery.isPending || (canViewCustomRoles && customRolesQuery.isPending);
+  // Distinct from "no role" (`[]` once the read has settled): while it is
+  // still in flight, an empty list would otherwise flash a wrong "—" that
+  // then flips to the real value a moment later.
+  const rolesStillLoading = rolesQuery.isPending;
 
   // Block/Unblock (#2257). The spec keeps a blocked member in the directory —
   // blocking is a chat control, not a membership one — so this is also where
@@ -428,7 +398,6 @@ export const MemberDetailSheet = forwardRef<
                           memberId: detail.memberId ?? "",
                           name: detail.displayName,
                           heldIds: detail.roleIds,
-                          customRoleNames,
                           fetchedAt: memberQuery.dataUpdatedAt,
                         });
                         rolesSheetRef.current?.present();
@@ -450,9 +419,9 @@ export const MemberDetailSheet = forwardRef<
                 </View>
                 {rolesStillLoading ? (
                   <Text style={styles.meta}>Loading roles</Text>
-                ) : allRoleChips.length > 0 ? (
+                ) : roleChips.length > 0 ? (
                   <View style={styles.chips}>
-                    {allRoleChips.map((chip) => (
+                    {roleChips.map((chip) => (
                       <View key={chip.id} style={styles.chip}>
                         <View
                           style={[

@@ -280,48 +280,6 @@ export const ChapterWorkflowConfigSchema = z.object({
 });
 
 /**
- * A chapter custom role (Settings → Roles → Custom), persisted to
- * `chapter_custom_roles`. `key` is a lowercase slug unique per chapter;
- * `capabilities` are arbitrary permission strings from the catalog. `core`
- * roles are protected from deletion.
- */
-export const ChapterCustomRoleSchema = z.object({
-  id: z.string(),
-  chapter_id: z.string(),
-  key: z.string(),
-  label: z.string(),
-  rank: z.number().int().nonnegative(),
-  capabilities: z.array(z.string()),
-  core: z.boolean(),
-  created_at: z.string(),
-  updated_at: z.string(),
-});
-
-/**
- * Body for `POST /custom-roles`. `core` is intentionally absent — only system
- * seeding marks a role core; user-created roles are always non-core.
- */
-export const CreateCustomRoleSchema = z.object({
-  key: z
-    .string()
-    .min(1)
-    .regex(
-      /^[a-z0-9_]+$/,
-      "key must be lowercase letters, numbers, underscores",
-    ),
-  label: z.string().min(1),
-  rank: z.number().int().nonnegative().optional(),
-  capabilities: z.array(z.string()).optional(),
-});
-
-/** Body for `PATCH /custom-roles/:id` (key and core are immutable). */
-export const UpdateCustomRoleSchema = z.object({
-  label: z.string().min(1).optional(),
-  rank: z.number().int().nonnegative().optional(),
-  capabilities: z.array(z.string()).optional(),
-});
-
-/**
  * A chapter custom *field* (Settings → Fields), persisted to
  * `chapter_custom_fields`. The set of field types and visibility tiers mirrors
  * the table's CHECK constraints (`supabase/migrations/20260523120000`).
@@ -585,9 +543,6 @@ export type ChapterBranding = z.infer<typeof ChapterBrandingSchema>;
 export type ChapterDuesConfig = z.infer<typeof ChapterDuesConfigSchema>;
 export type ChapterPointsConfig = z.infer<typeof ChapterPointsConfigSchema>;
 export type PatchChapterConfig = z.infer<typeof PatchChapterConfigSchema>;
-export type ChapterCustomRole = z.infer<typeof ChapterCustomRoleSchema>;
-export type CreateCustomRole = z.infer<typeof CreateCustomRoleSchema>;
-export type UpdateCustomRole = z.infer<typeof UpdateCustomRoleSchema>;
 export type CustomFieldType = z.infer<typeof CustomFieldTypeSchema>;
 export type CustomFieldVisibility = z.infer<typeof CustomFieldVisibilitySchema>;
 export type ChapterCustomField = z.infer<typeof ChapterCustomFieldSchema>;
@@ -961,7 +916,6 @@ export type { SidebarFixedSectionKey, SidebarSectionKey } from "./chat-sidebar";
 export {
   ROLE_COLOR_HEXES,
   ROLE_COLOR_PALETTE,
-  resolveCustomRoleNames,
   resolveRoleChips,
   roleColor,
   roleColorOrNull,

@@ -11,7 +11,6 @@ import {
   useOrgConfig,
   usePatchOrgConfig,
   usePendingConfigKeys,
-  usePermissionsCatalog,
   useSemesterRollover,
   useSemesters,
   useRemoveChapterLogo,
@@ -111,7 +110,6 @@ function SettingsPageContent() {
     enabled: !!activeChapterId,
   });
   const isModuleEnabled = useChapterModuleGate();
-  const catalogQuery = usePermissionsCatalog();
   const semestersQuery = useSemesters();
   const updateChapter = useUpdateChapter();
   const uploadLogo = useUploadChapterLogo();
@@ -343,9 +341,6 @@ function SettingsPageContent() {
   const workflows = config?.workflows ?? [];
   const dues = config?.dues ?? DEFAULT_DUES;
   const semesters = asArray<SemesterArchive>(semestersQuery.data);
-  const permissionsCatalog = asArray<{ key: string; permission: string }>(
-    catalogQuery.data,
-  );
 
   async function saveProfile(next: {
     name: string;
@@ -595,7 +590,6 @@ function SettingsPageContent() {
           <TabsContent value="roles" className="mt-0">
             <SettingsRolesTab
               canManage={canManage}
-              catalog={permissionsCatalog}
               // Pending as well as error. `renderConfigGated` used to block on
               // both; covering only the error case would render the
               // default-invite-role picker as "No default" while the config

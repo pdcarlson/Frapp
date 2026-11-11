@@ -55,7 +55,6 @@ export * from "./error-copy";
 export * from "./join-errors";
 export * from "./pay-errors";
 export * from "./use-org-config";
-export * from "./use-custom-roles";
 export * from "./use-custom-fields";
 export * from "./use-discord-import";
 export * from "./use-discord-connection";

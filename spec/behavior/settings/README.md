@@ -74,7 +74,7 @@ Chapter settings is the one door to officer setup and officer tools (the web nav
 
 ## Audit Rules
 
-- **Audit-write on save:** the core-profile and config PATCHes, the logo routes, custom roles (`chapter_custom_roles`), custom fields and the Roles tab's role routes write a row to `chapter_audit_log` when they **change something**. Each audit row is created `member_visible = true` and is mirrored to the `#chapter-audit` channel via the audit bridge. Not every writer keeps to one row per *effective change*: the next two bullets say where they differ. The Roles tab's rows ([#2599](https://github.com/pdcarlson/Frapp/issues/2599)):
+- **Audit-write on save:** the core-profile and config PATCHes, the logo routes, custom fields and the Roles tab's role routes write a row to `chapter_audit_log` when they **change something**. Each audit row is created `member_visible = true` and is mirrored to the `#chapter-audit` channel via the audit bridge. Not every writer keeps to one row per *effective change*: the next two bullets say where they differ. The Roles tab's rows ([#2599](https://github.com/pdcarlson/Frapp/issues/2599)):
   - `POST /v1/roles`, `PATCH /v1/roles/:id` and `DELETE /v1/roles/:id` write `role_created`, `role_updated` and `role_deleted`, with `target_type` `role`. They cover the non-system roles the Manage roles section calls custom roles, and every permission-matrix toggle.
   - Create and delete record the role row under `role`. An update records one `from`/`to` pair per changed `name`, `color` or `display_order`, and records `permissions` as `{ added, removed }` rather than both arrays.
   - A Discord import that creates roles or grants them its channels' read permissions writes the same rows, as the member who started it.

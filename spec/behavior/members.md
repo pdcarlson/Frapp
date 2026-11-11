@@ -49,11 +49,7 @@ Added for [#3939](https://github.com/pdcarlson/Frapp/issues/3939) (asked by shaw
   - `self` → only the member themselves (the owner). Not overridden by the president — private fields stay private.
   - `exec` → viewers with member/role management authority (`roles:manage` or `members:remove`) or the wildcard.
   - `president` → only the wildcard (`*`) holder.
-- The read-only `GET /custom-fields` endpoint lists a chapter's full field-definition set for the **settings Fields tab** (gated by `chapter-config:view`, matching the custom-roles read); definition write CRUD also belongs to that tab. The member directory does not call it — it renders each member's values from the tier-filtered profile read (`GET /members/:id` on web, `GET /members/by-user/:userId` on mobile), so the existence of higher-tier/sensitive fields is never exposed to baseline members.
-
-## Custom Role Assignment
-
-- A member's custom roles (defined in the settings Roles tab) can be assigned from the directory. An assigned custom role appears on the member's detail view.
+- The read-only `GET /custom-fields` endpoint lists a chapter's full field-definition set for the **settings Fields tab** (gated by `chapter-config:view`); definition write CRUD also belongs to that tab. The member directory does not call it — it renders each member's values from the tier-filtered profile read (`GET /members/:id` on web, `GET /members/by-user/:userId` on mobile), so the existence of higher-tier/sensitive fields is never exposed to baseline members.
 
 ## Invite Flow
 

@@ -308,11 +308,8 @@ The board lists the whole roster, at 0 until a member earns points ([`points.md`
 | Offline | `Roles unavailable offline` | `Reconnect to load the chapter's roles and edit their permissions.` |
 | Delete role confirmation | `Delete <name>?` | `Members assigned this role lose its permissions immediately. This cannot be undone.` · confirm `Delete role` |
 | Transfer presidency confirmation | `Transfer presidency?` | `The President role moves to the selected member immediately and is removed from you. Only the current president can undo it.` · confirm `Transfer presidency` |
-| Custom roles offline | `Custom roles unavailable offline` | `Reconnect to load this chapter's custom roles and edit their capabilities.` |
-| Custom roles empty | — | `No custom roles yet.` (one line; the create form sits right under it) |
-| Custom roles error | `Couldn't load custom roles` | `Retry to fetch this chapter's custom roles.` |
 
-The confirmation rows below and under Roles & Permissions are the five `window.confirm` strings the Settings & Roles slice converted to [`confirm-dialog.tsx`](../../../apps/web/components/shared/confirm-dialog.tsx). A browser dialog's text was never in this table because it was never the product's; an in-product one is, and `writing.md` §2's verb-plus-object CTA rule governs the button. The rollover is the one that is **not** destructive-toned — it archives rather than deletes, and a red button would state a loss the API does not perform.
+The confirmation rows below and under Roles & Permissions are what is left of the five `window.confirm` strings the Settings & Roles slice converted (the custom-role delete went with #4075) to [`confirm-dialog.tsx`](../../../apps/web/components/shared/confirm-dialog.tsx). A browser dialog's text was never in this table because it was never the product's; an in-product one is, and `writing.md` §2's verb-plus-object CTA rule governs the button. The rollover is the one that is **not** destructive-toned — it archives rather than deletes, and a red button would state a loss the API does not perform.
 
 ### Settings (dashboard)
 
@@ -331,7 +328,6 @@ The confirmation rows below and under Roles & Permissions are the five `window.c
 | Accent server contrast disclosure | — | `<Accent text on the app background\|Accent text on its own tinted background\|Text on the accent's solid fill\|Text on the accent's hover shade> reads at <n>:1, under the 4.5:1 minimum. Try a lighter or darker shade of this hue and save again.` |
 | Rollover confirmation | `Start a new semester labelled "<label>"?` | `The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves.` · confirm `Start new semester` |
 | Delete field confirmation | `Delete the field "<label>"?` | `Members lose the values they have entered for it, and the column disappears from the directory. This cannot be undone.` · confirm `Delete field` |
-| Delete custom role confirmation | `Delete the custom role "<label>"?` | `Members holding it lose its capabilities on their next request. This cannot be undone.` · confirm `Delete custom role` |
 | Number field refused at save | `<Field> needs a number` (empty) · `<Field> starts at <min>` (under its floor) | `Enter a whole number of <min> or more.` Dues grace days and installment count, a workflow threshold. `<Field>` is the input's own label, or `The threshold for “<workflow>”` for a workflow threshold. |
 | Dues amount refused at save | `<Field> needs an amount` | `Enter an amount in dollars, like 425 or 42.50.` Amounts are typed in dollars and stored in cents (2026-11-05; they were typed in cents). |
 
@@ -1025,7 +1021,6 @@ roles are edited. Who gets it, and what it changes, is owned by
 |---|---|---|---|
 | The sheet | `<name>'s roles` | Search field `Search roles`; under it one fixed-height status line, blank until `Saving…` and `Saved` (it said `Tap a role to add or remove it.` until 2026-11-07) | mobile `components/directory/member-roles-sheet.tsx` |
 | President's row | — | `Changes with Transfer presidency` under the name; the row can't be tapped | mobile `lib/directory/role-editor.ts` (`ROLES_LOCKED_CAPTION`) |
-| Custom roles held | — | `<names> is a custom role, changed on the web.` (`are custom roles` for several) | mobile `lib/directory/role-editor.ts` (`customRolesCaption`) |
 | Empty | — | `This chapter has no roles yet.`, or `No roles match that search.` while searching | mobile `components/directory/member-roles-sheet.tsx` |
 | Removing the last role carrying `members:view` | `Take away <name>'s access?` | `Without a role like Member, <name> can't open chat, the member list or events.` Buttons `Cancel` and `Remove <role>` | mobile `lib/directory/role-editor.ts` (`removeBaseAccessTitle`, `removeBaseAccessBody`) |
 | Save failed: a role was deleted (400) | `Couldn't save roles` | `One of those roles was just deleted. The change was put back and the list refreshed.` | mobile `lib/directory/role-editor.ts` (`rolesSaveFailedBody`) |

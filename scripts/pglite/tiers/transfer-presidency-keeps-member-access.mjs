@@ -11,8 +11,9 @@ import { db, miss } from "../harness.mjs";
 //   - `{President, Cabinet}` (Cabinet without `members:view`) → `{Cabinet, Member}`;
 //   - `{President, Treasurer}` keeps `{Treasurer}`: it already grants access;
 //   - a legacy live role carrying `*` counts as access;
-//   - a custom role whose capabilities carry `members:view` counts as access,
-//     but not another chapter's;
+//   - a leftover `custom_role_ids` entry no longer counts as access: #4075
+//     folded custom roles into `role_ids` (20261111200000), and the RPC
+//     reads only `roles`;
 //   - a role id in upper case still matches, as the guard compares uuids;
 //   - a Member role stripped of `members:view` is not appended a second time;
 //   - another chapter's Member role id doesn't count, the way the guard reads it;
@@ -135,8 +136,8 @@ console.log(
 
     r = await scenario({ outRoles: [PRES_A], outCustom: [CUSTOM_VIEW_A] });
     check(
-      "a custom role carrying members:view counts as access",
-      same(r.out, []),
+      "a leftover custom role id no longer counts as access (#4075)",
+      same(r.out, [MEMBER_A]),
       r,
     );
 

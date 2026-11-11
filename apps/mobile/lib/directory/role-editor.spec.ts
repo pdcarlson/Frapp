@@ -3,7 +3,6 @@ import {
   filterRoleOptions,
   orderRoleOptions,
   parseRoleOptions,
-  customRolesCaption,
   removesBaseAccess,
   rolesSaveFailedBody,
   toggleRole,
@@ -154,15 +153,6 @@ describe("rolesSaveFailedBody", () => {
     expect(rolesSaveFailedBody(undefined)).toContain("Try again");
     expect(rolesSaveFailedBody(undefined, "Ada")).toMatch(
       /^Your change to Ada's roles didn't reach the server/,
-    );
-  });
-});
-
-describe("customRolesCaption", () => {
-  it("names the custom roles this editor leaves alone", () => {
-    expect(customRolesCaption([])).toBeNull();
-    expect(customRolesCaption(["Rush Chair"])).toBe(
-      "Rush Chair is a custom role, changed on the web.",
     );
   });
 });
