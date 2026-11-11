@@ -96,13 +96,21 @@ export class SupabaseTaskRepository implements ITaskRepository {
     return rows.length > 0 ? rows[0] : null;
   }
 
-  async reopenCompletion(id: string, chapterId: string): Promise<Task | null> {
+  async reopenCompletion(
+    id: string,
+    chapterId: string,
+    sentBackAt?: string,
+  ): Promise<Task | null> {
     // The filters are the compare-and-set: a confirm that lands first sets
     // `points_awarded`, and then this matches no row rather than leaving a
     // confirmed, point-awarded task back in progress.
     const { data, error } = await this.supabase
       .from('tasks')
-      .update({ status: TaskStatus.IN_PROGRESS, completed_at: null })
+      .update({
+        status: TaskStatus.IN_PROGRESS,
+        completed_at: null,
+        ...(sentBackAt ? { sent_back_at: sentBackAt } : {}),
+      })
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .eq('status', TaskStatus.COMPLETED)

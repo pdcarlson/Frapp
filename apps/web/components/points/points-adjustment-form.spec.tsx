@@ -21,6 +21,11 @@ const MEMBERS_QUERY = {
     // `users.display_name` is NOT NULL DEFAULT '', so this is what a member
     // who never set a name actually looks like on the wire.
     { user_id: "u-2", display_name: "" },
+    // The officer filling the form in: the API refuses their own points.
+    { user_id: "u-viewer", display_name: "Viewer Officer" },
+    // Two members who share a name are told apart by email, never by id.
+    { user_id: "u-3", display_name: "Sam Lee", email: "sam.lee@example.com" },
+    { user_id: "u-4", display_name: "Sam Lee", email: "slee@example.com" },
   ],
 };
 
@@ -37,6 +42,7 @@ vi.mock("@repo/hooks", () => ({
   // One array for every render, as React Query hands back: a fresh one each
   // render would re-run the dialog's reset effect and wipe a typed draft.
   useMembers: () => MEMBERS_QUERY,
+  useViewerUserId: () => "u-viewer",
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -50,15 +56,16 @@ vi.mock("@/components/shared/can", () => ({
 
 vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
-const { PointsAdjustmentDialog } = await import("./points-adjustment-dialog");
+const { PointsAdjustmentForm } = await import("./points-adjustment-form");
 
 const chapter = chapterSubscription(mockCurrentChapter);
 
 function renderDialog() {
   return render(
-    <PointsAdjustmentDialog
-      open
-      onOpenChange={vi.fn()}
+    <PointsAdjustmentForm
+      layout="dialog"
+      onDone={vi.fn()}
+      onCancel={vi.fn()}
       onAdjusted={vi.fn()}
     />,
   );
@@ -73,7 +80,7 @@ const categorySelect = () =>
 const reasonField = () => screen.getByLabelText(/reason/i);
 const cancel = () => screen.getByRole("button", { name: /cancel/i });
 
-describe("PointsAdjustmentDialog member labels", () => {
+describe("PointsAdjustmentForm member labels", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -91,19 +98,32 @@ describe("PointsAdjustmentDialog member labels", () => {
       .getAllByRole("option")
       .map((option) => option.textContent ?? "");
 
-    expect(labels).toContain("Rush Chair (u-1)");
-    // The shared no-name label (#2422), never the bare id in the name slot:
-    // `Member u-2` here is what the directory and leaderboard call this member.
-    expect(labels).toContain("Member u-2 (u-2)");
+    // Names only, no user ids (#3983), sorted, and never the officer's own
+    // row, which the API would refuse after submit.
+    expect(labels).toEqual([
+      "Member u-2",
+      "Rush Chair",
+      "Sam Lee (sam.lee@example.com)",
+      "Sam Lee (slee@example.com)",
+    ]);
     for (const label of labels) {
       expect(label.trimStart()).toBe(label);
-      expect(label).not.toMatch(/^\s*\(/);
-      expect(label.split(" (")[0]).not.toBe("");
+      expect(label).not.toBe("");
     }
+  });
+
+  it("picks nobody until the officer does, and says so in place on submit", async () => {
+    chapter.active();
+    renderDialog();
+    expect(memberSelect()).toHaveTextContent("Pick a member");
+    fireEvent.click(submit());
+    expect(await screen.findByText("Pick a member.")).toBeInTheDocument();
+    expect(memberSelect()).toHaveAttribute("aria-invalid", "true");
+    expect(mockAdjustMutate).not.toHaveBeenCalled();
   });
 });
 
-describe("PointsAdjustmentDialog subscription gating", () => {
+describe("PointsAdjustmentForm subscription gating", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -210,7 +230,7 @@ describe("PointsAdjustmentDialog subscription gating", () => {
   });
 });
 
-describe("PointsAdjustmentDialog idempotency key", () => {
+describe("PointsAdjustmentForm idempotency key", () => {
   beforeEach(() => {
     chapter.active();
     mockAdjustReset.mockClear();
@@ -219,23 +239,14 @@ describe("PointsAdjustmentDialog idempotency key", () => {
   // Opening is a new adjustment, so the key the hook held for the last one
   // goes (#1906); otherwise a later identical grant would replay a stale key.
   it("starts each opening under a fresh key", () => {
-    const view = render(
-      <PointsAdjustmentDialog
-        open={false}
-        onOpenChange={vi.fn()}
-        onAdjusted={vi.fn()}
-      />,
-    );
-    expect(mockAdjustReset).not.toHaveBeenCalled();
-
-    view.rerender(
-      <PointsAdjustmentDialog open onOpenChange={vi.fn()} onAdjusted={vi.fn()} />,
-    );
+    // The form mounts with each opening (the dialog's content, or the +
+    // card's view), so mounting is the opening.
+    renderDialog();
     expect(mockAdjustReset).toHaveBeenCalledTimes(1);
   });
 });
 
-describe("PointsAdjustmentDialog posting into a chat channel (#3865)", () => {
+describe("PointsAdjustmentForm posting into a chat channel (#3865)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     chapter.active();
@@ -246,10 +257,10 @@ describe("PointsAdjustmentDialog posting into a chat channel (#3865)", () => {
     onOpenChange = vi.fn(),
   ) {
     render(
-      <PointsAdjustmentDialog
-        open
-        onOpenChange={onOpenChange}
-        onAdjusted={vi.fn()}
+      <PointsAdjustmentForm
+        layout="card"
+        onDone={() => onOpenChange(false)}
+        onCancel={vi.fn()}
         submitToChannel={submitToChannel}
       />,
     );
@@ -257,6 +268,8 @@ describe("PointsAdjustmentDialog posting into a chat channel (#3865)", () => {
   }
 
   async function fillAndSubmit() {
+    await userEvent.click(memberSelect());
+    await userEvent.click(screen.getByRole("option", { name: "Rush Chair" }));
     fireEvent.change(amountInput(), { target: { value: "-5" } });
     await userEvent.click(categorySelect());
     await userEvent.click(screen.getByRole("option", { name: "Fine" }));
@@ -281,10 +294,16 @@ describe("PointsAdjustmentDialog posting into a chat channel (#3865)", () => {
   it("names an amount past the API's bound before anything is sent", async () => {
     const submitToChannel = vi.fn().mockResolvedValue({ ok: true });
     renderInChat(submitToChannel);
+    await userEvent.click(memberSelect());
+    await userEvent.click(screen.getByRole("option", { name: "Rush Chair" }));
     fireEvent.change(amountInput(), { target: { value: "200000" } });
     fireEvent.change(reasonField(), { target: { value: "Missed chapter" } });
     fireEvent.click(submit());
-    await waitFor(() => expect(submit()).toBeEnabled());
+    // Named in place, under the field, not in a toast (#3983).
+    expect(
+      await screen.findByText(/Adjust by at most/),
+    ).toBeInTheDocument();
+    expect(amountInput()).toHaveAttribute("aria-invalid", "true");
     expect(submitToChannel).not.toHaveBeenCalled();
   });
 

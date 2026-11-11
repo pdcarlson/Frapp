@@ -21,9 +21,14 @@ export interface ITaskRepository {
    * and `points_awarded`). Returns the updated task, or `null` when nothing
    * was updated: an officer confirmed it, or another write moved it first.
    * Backs both an officer's reject and the assignee taking back their own
-   * "done" before it is confirmed.
+   * "done" before it is confirmed. `sentBackAt` is set only for the reject:
+   * it is when the task started waiting on the assignee again.
    */
-  reopenCompletion(id: string, chapterId: string): Promise<Task | null>;
+  reopenCompletion(
+    id: string,
+    chapterId: string,
+    sentBackAt?: string,
+  ): Promise<Task | null>;
   delete(id: string, chapterId: string): Promise<void>;
   /** Subtasks of these tasks, ordered by task then position (#4003). */
   findSubtasks(chapterId: string, taskIds: string[]): Promise<TaskSubtask[]>;

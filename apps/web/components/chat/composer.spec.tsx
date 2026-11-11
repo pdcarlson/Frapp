@@ -1025,7 +1025,7 @@ describe("Composer send failure (#1728)", () => {
  * idempotency index (#1719) does not dedupe it — it writes a second ledger row.
  */
 describe("notifyDispatchOutcome (#544)", () => {
-  const cmd = "points";
+  const cmd = "/points";
 
   it("toasts destructively when the command failed", () => {
     const toast = vi.fn();
@@ -1155,7 +1155,7 @@ describe("runDispatch (#1718)", () => {
  * #1733 review — an UNKNOWN outcome must not borrow either neighbour's title.
  */
 describe("notifyDispatchOutcome — unconfirmed (#1733)", () => {
-  const cmd = "points";
+  const cmd = "/points";
 
   it("does not title an unknown outcome as a failure", () => {
     const toast = vi.fn();

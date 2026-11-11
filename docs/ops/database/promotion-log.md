@@ -31,7 +31,7 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 ## 2026-11-11: Task due times and subtasks (#4003)
 
-### 20261111214500_task_due_time_and_subtasks.sql
+### 20261111230000_task_due_time_and_subtasks.sql
 
 - **Purpose**: Adds `tasks.due_at timestamptz` (nullable, no default): the moment a task is due when it has a time of day. `due_date` stays required and still names the day. A task with no `due_at` behaves as before. Adds `task_subtasks` (`task_id`, `chapter_id`, `title` 1 to 200 characters trimmed, `position`, `done_at`, `created_at`), a task's checklist steps, with an index on `(task_id, position)`. Both foreign keys cascade. RLS on, no policies (API only, service role). No existing row changes. The rules are [`spec/behavior/tasks.md` § Task Lifecycle](../../../spec/behavior/tasks.md#task-lifecycle).
 - **Checks**:
@@ -39,7 +39,17 @@ date — is welcome; inventing a date to turn the gate green is not.
   - `select relrowsecurity from pg_class where relname = 'task_subtasks';` returns `true`, and `select count(*) from pg_policies where tablename = 'task_subtasks';` returns `0`.
 - **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API reads tasks with `select('*')` and returns `due_at` (null) as a field clients ignore. The newer API against an unmigrated database fails task creates that send a time and both task reminder sweeps, which filter on `due_at` (each failure is reported), and every task list and detail read, which reads `task_subtasks`; the older API never touches the table. A nullable column with no default is metadata-only, under a brief lock, and the new table is empty. `add column if not exists`, `create table if not exists` and `create index if not exists` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-task-due-times-and-subtasks-20261111214500) § Rollback Task due times and subtasks.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-task-due-times-and-subtasks-20261111230000) § Rollback Task due times and subtasks.
+
+## 2026-11-11: Unread dots on Activity (#4173)
+
+### 20261111220000_activity_item_reads.sql
+
+- **Purpose**: Adds `activity_item_reads` (one row per member per chapter per Activity item they opened: `kind` in `task`, `hours_entry`, `poll`, `event`, `link`, the module's `item_id` with no foreign key, and `read_at`; primary key `(user_id, chapter_id, kind, item_id)`; cascades with the user and the chapter) and `activity_unread_starts` (when a member's dots began, one row per member per chapter, primary key `(user_id, chapter_id)`), both RLS on with no policies. `GET /v1/activity` reads both to set each row's `unread`; `PUT /v1/activity/unread-since` and `POST /v1/activity/reads` write them. Adds `tasks.sent_back_at timestamptz` (nullable), stamped when an officer rejects a completion. Redefines `anonymize_user` in full from `20261111180000_document_pins_and_stars.sql` with two added lines deleting the member's `activity_item_reads` and `activity_unread_starts`. No existing row changes. The rule is [`spec/behavior/activity.md` § Unread](../../../spec/behavior/activity.md#unread).
+- **Checks**: After `db push`, `select count(*) from activity_item_reads;` and `select count(*) from activity_unread_starts;` return `0`, `select count(*) from information_schema.columns where table_name = 'tasks' and column_name = 'sent_back_at';` returns `1`, and `select prosrc like '%activity_unread_starts%' from pg_proc where proname = 'anonymize_user';` returns `t`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never reads or writes the tables and reads tasks with `select('*')`, returning `sent_back_at` (null) as a field clients ignore. The newer API against an unmigrated database serves every Activity row as read (the read is caught and reported), fails `PUT /v1/activity/unread-since` and `POST /v1/activity/reads` (500), and fails an officer's reject of a task completion (its update names `sent_back_at`); the Activity page itself still loads. The new tables take no lock on an existing one; the nullable `tasks` column with no default is metadata-only, under a brief lock. `if not exists` and `create or replace` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-unread-dots-on-activity-20261111220000) § Rollback Unread dots on Activity.
 
 ## 2026-11-11: Custom roles fold into ordinary roles (#4075)
 

@@ -145,6 +145,15 @@ export class CreateTaskResponseDto implements Task {
   @ApiProperty({ type: String, format: 'date-time', nullable: true })
   confirmed_at: string | null;
 
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'When an officer last sent the completion back to the assignee; null if never. The assignee taking back their own completion doesn’t set it.',
+  })
+  sent_back_at: string | null;
+
   @ApiProperty({ format: 'date-time' })
   created_at: string;
 

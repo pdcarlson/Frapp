@@ -64,6 +64,9 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "On the web you can paste an image straight into a message, on Android the message box now sits right on top of the keyboard, and on your phone Events shows a repeating event as one row, lists the next two weeks by day, and remembers whether you last used the list or the calendar.",
       "On the web, creating, editing, or opening an event now happens right in the Events page beside chat, so you can keep reading the conversation while you fill it in.",
       "Events now have types like Chapter meeting, Philanthropy, and Social, and picking one fills in its points and whether everyone has to come.",
+      "New photos in chat now hold their place while they load, so the messages around them stay put.",
+      "The calendar now shows your tasks on their due dates, and the tasks you've handed out with how many are done.",
+      "On your phone, a message being deleted no longer stops the long-press menu or the emoji picker from opening for the rest of that chat.",
     ],
   },
   {
