@@ -6,6 +6,7 @@ This doc is one part of #4192's design. It covers the tables, isolation, permiss
 
 - **URLs and tenant context:** [ADR-27](adr/README.md) (PR [#4213](https://github.com/pdcarlson/Frapp/pull/4213)). It settles `/c/<slug>` and `/s/<school>`, the `tenant_slugs` and `school_slugs` registries, the header-first `ChapterGuard`, route-declared tenant kinds (`@TenantKinds`), `SchoolGuard` and `x-school-id`.
 - **The screens.**
+- **Council types:** [`council-types.md`](https://github.com/pdcarlson/Frapp/pull/4264) (PR #4264). It checks the design against Panhellenic, NPHC, MGC and other councils; its requests to this doc are folded in below.
 - **The IFC recruitment module:** pipeline stages, form fields, bids, the master-list rules and screens. It is [`spec/behavior/ifc-recruitment.md`](https://github.com/pdcarlson/Frapp/pull/4218) (PR #4218), and this doc stores what that one specifies: where the two touch, the recruitment doc owns behavior and this one owns tables, keys and isolation.
 
 The concept this builds on is [#4192 § Concept](https://github.com/pdcarlson/Frapp/issues/4192#issuecomment-6804509311), with Winston's answers in [#4192 § answers](https://github.com/pdcarlson/Frapp/issues/4192#issuecomment-6804810927).
@@ -187,9 +188,17 @@ alter table chapters
     check (council_type in ('ifc', 'panhellenic', 'nphc', 'mgc', 'other')),
   add column council_verified_at timestamptz,
   add column council_verified_by uuid references users(id) on delete set null,
+  add column recruitment_model text
+    check (recruitment_model in ('open_bidding', 'formal', 'none')),
   add constraint chapters_council_fields_kind check (
     (kind = 'council') = (council_type is not null)
+    and (kind = 'council') = (recruitment_model is not null)
     and (kind = 'council' or council_verified_at is null)
+    and (council_type is null
+      or (council_type = 'ifc'            and recruitment_model in ('open_bidding', 'none'))
+      or (council_type = 'panhellenic'    and recruitment_model in ('formal', 'none'))
+      or (council_type in ('nphc', 'mgc') and recruitment_model = 'none')
+      or (council_type = 'other'          and recruitment_model in ('open_bidding', 'none')))
   ) not valid;
 alter table chapters validate constraint chapters_council_fields_kind;
 ```
@@ -200,8 +209,15 @@ alter table chapters validate constraint chapters_council_fields_kind;
 
 **The archetype is not the council type.**
 - `chapters.org_archetype` already uses `ifc` to mean *an IFC member fraternity*: it's the default in `20260523120000_chapter_customization.sql`, and `packages/org-archetypes/src/index.ts` defines it.
-- A council gets a new archetype key, `council`, and `council_type` says which council it is.
-- `Archetype.council` already names each chapter archetype's council ("Interfraternity Council" for `ifc`, "Panhellenic Council" for `npc`). That's the default for which council type a chapter is offered to join ([§ 2.4](#24-affiliations)).
+- A council row's `org_archetype` is `council`, a marker only. Its **council profile** comes from `council_type`. Profiles are code data beside the chapter archetypes (`COUNCIL_PROFILES`, keyed by type), never a branch on a name. Each sets the module map, role pack, allowed recruitment models and link offers ([`council-types.md`](https://github.com/pdcarlson/Frapp/pull/4264) (PR #4264) § Council profiles).
+- **Link offers are an explicit map,** not `Archetype.council`: `ifc` → `ifc`, `colony`; `panhellenic` → `npc`, `colony`; `nphc` → `nphc`; `mgc` → `mgc`, `nphc`; `other` → any archetype. A council can still accept any chapter that asks ([§ 2.4](#24-affiliations)).
+
+**The recruitment model** decides whether a council handles PNMs at all.
+- `open_bidding` is the IFC flow. `formal` adds Panhellenic rounds and matching. `none` means no master list, no PNM records and no Recruitment area.
+- The check constraint above pins what each type allows: IFC `open_bidding` or `none`, Panhellenic `formal` or `none`, NPHC and MGC `none` only, `other` `none` or `open_bidding`. The profile sets the default.
+- **A switch to `none` is refused while a season is open.** After it, the deletion, retention, season-close and export routes keep serving the council's existing data until its last PNM record is gone.
+- **Every other `council-recruitment` route checks the model** beside ADR-27's `@TenantKinds`. A module map can't lock anything (below), so the model check is on the API.
+- **An `nphc`-archetype chapter never pushes anything up and never has a public form,** whatever its council's model. `record_pnm_interest` and every push-up function refuse such a chapter.
 
 **Keeping archetype and kind apart.** The code doesn't do this on its own, so the build must:
 - **Hide the council archetype from chapter founders.** Every client builds its archetype list from `Object.values(ARCHETYPES)`: the web wizard (`chapter-wizard.tsx`), web Settings (`settings-org-tab.tsx`) and mobile create-chapter (`create-chapter.tsx`). Those lists filter `council` out, and council creation picks it for you.
@@ -210,14 +226,14 @@ alter table chapters validate constraint chapters_council_fields_kind;
 **Modules don't keep a council away from chapter features. Route kinds do.**
 - `enabled_modules` is deep-merged on every config patch, and `isModuleEnabled` reads a missing key as on (`packages/validation/src/index.ts`).
 - So a module map can't lock anything. What keeps points, dues, study zones, backwork, tasks and rush away from a council is ADR-27's default: those routes serve the `chapter` kind only.
-- The council archetype's module map just decides what the council's nav shows.
+- The council profile's module map just decides what the council's nav shows. Polls serve the council kind too.
 - The new `council-recruitment` module key gets an explicit `false` in every chapter archetype. Its routes serve `council` only, so a chapter can't reach them whatever its map says.
 
 **Councils start unverified** ([§ 5.3](#53-creating-a-council-picking-a-role-renaming-titles)). An unverified council can set itself up and propose links, but it sees no chapter or PNM data until the conditions below hold. Grade import and FERPA releases also wait for `council_verified_at`.
 
 **`chapters.university`** is `not null` and gets the council's school name. [§ 7](#7-migrating-existing-chapters) step 6 covers its future.
 
-**One council of a type per school**, checked in the creation function. A second IFC at the same school is refused. A dispute over which group is "the" IFC goes to staff, or later to the school's office.
+**One council of a type per school, except `other`**, checked in the creation function. A second IFC at the same school is refused; a school may have several `other` councils. A dispute over which group is "the" IFC goes to staff, or later to the school's office.
 
 ### 2.4 Affiliations
 
@@ -382,7 +398,7 @@ There is no `chapter_added` source. A chapter that adds someone by hand gets a c
 
 **When a hand-added person later submits that chapter's form,** the officer is offered to link the two. The match is by email, and only against that chapter's own candidates. The officer confirms, and that's the only way a hand-added row gains a `pnm_id`.
 
-**Interest and the chapter candidate are written together.** Function `record_pnm_interest(pnm_id, chapter_id, source)` inserts the `pnm_interests` row and creates or links the chapter's `rush_candidates` row in one transaction. It also writes the council registration when the chapter's form names a council for the term.
+**Interest and the chapter candidate are written together.** Function `record_pnm_interest(pnm_id, chapter_id, source)` refuses a council whose model is `none` and an `nphc`-archetype chapter, then inserts the `pnm_interests` row and creates or links the chapter's `rush_candidates` row in one transaction. It also writes the council registration when the chapter's form names a council for the term.
 
 **The name rule covers hand-added candidates only.** Two different PNMs can share a name, so `rush_candidates_chapter_name_key` (`20260910020000_rush_candidates.sql`) is rebuilt as partial, `where origin = 'manual'`.
 - **Why `origin` and not `pnm_id is null`.** `origin` never changes. A candidate created from a PNM stays `pnm` after the PNM is deleted and `pnm_id` goes null, so a deletion can't make it collide with a hand-added row and roll back.
@@ -419,6 +435,39 @@ create table pnm_recruitment_events (
 Nothing a chapter writes in its pipeline reaches this table except through those named actions. The council reads it subject to the in-season limits in [§ 3.3](#33-who-sees-what).
 
 **Cross-space unread** (ADR-27's `GET /v1/me/unread`) adds no table here. Council chat is ordinary chat in the council tenant, so counts come from the existing per-tenant chat tables, keyed by the caller's `members` rows (indexed on `user_id`, initial schema).
+
+### 2.6 What other council types add
+
+From [`council-types.md`](https://github.com/pdcarlson/Frapp/pull/4264) (PR #4264), which owns the behavior.
+
+```sql
+create table council_disaffiliations (     -- pending Paul: ⚑ Q12
+  id           uuid primary key default gen_random_uuid(),
+  council_id   uuid not null references chapters(id) on delete cascade,
+  user_id      uuid not null references users(id) on delete cascade,
+  chapter_id   uuid not null references chapters(id) on delete cascade,   -- the member's own chapter
+  starts_at    timestamptz not null,
+  ends_at      timestamptz not null,
+  published_by uuid references users(id) on delete set null,              -- a council:counselors_manage holder
+  created_at   timestamptz not null default now()
+);
+
+create table council_service_totals (      -- a push-up: one total per chapter per term, never member detail
+  council_id  uuid not null references chapters(id) on delete cascade,
+  chapter_id  uuid not null references chapters(id) on delete cascade,
+  term        text not null,
+  hours_total numeric(10, 2) not null,
+  pushed_at   timestamptz not null default now(),
+  primary key (council_id, chapter_id, term)
+);
+```
+
+- **Disaffiliation** is a Panhellenic recruitment counselor stepping back from her own chapter's recruitment. The council publishes a record. In the named member's chapter, the permission check applies it **before** the wildcard: while it's in force, that member holds no `rush:*` key there, even with `*`.
+  - Chapter channels gain a recruitment-channel flag. A flagged channel's see list (#3722's see and post lists, not a permission key) excludes disaffiliated members.
+  - Only holders of counselor or Executive board roles can be named, which the publishing function checks against the council's roles. The chapter can dispute a record to staff.
+  - The council reads nothing from the chapter, so this fits decision 11 as written. But a council writing a chapter member's access is a security call, so it's ⚑ [Q12](#8-open-questions-for-paul), and nothing here is built until Paul decides.
+- **Service totals** are a chapter → council push: one number per term, written by the chapter's own action. The council never reads `service_entries`.
+- **Panhellenic `formal` tables come later,** as placeholders: `recruitment_rounds`, `round_release_figures`, `round_invitation_lists`, `pnm_round_preferences`, `pnm_round_schedule`, `preference_bid_lists`, `match_imports`, `match_results`, `chapter_season_totals` (quota and total, pushed down to each chapter) and `binding_agreements`. Everything but the PNM's own schedule is readable only with `council:matching_operate`. They're designed when Panhellenic is scheduled.
 
 ## 3. Eligibility and GPA
 
@@ -623,9 +672,9 @@ Each rule here builds on ADR-27's guard order: `ChapterGuard` resolves the tenan
    - **A chapter's own `council:` strings do nothing.** A chapter role can hold any string ([`rbac.md` § Permission Model](../behavior/rbac.md#permission-model)), so a chapter could grant itself `council:recruitment_view`, but it would never reach a council route.
 
    A contract test fails when a route requires a `council:` key without declaring the council kind ([§ 4.3](#43-tests-that-must-exist)).
-2. **Explicit-grant keys (D9).** `council:grades_import` and `council:eligibility_manage` are explicit-grant keys.
+2. **Explicit-grant keys (D9).** `council:grades_import`, `council:eligibility_manage` and `council:matching_operate` are explicit-grant keys.
    - **`*` doesn't satisfy them.** `PermissionsGuard` today returns `true` on `*` before any key check (`permissions.guard.ts`), and `RbacService` does the same. Both check an `EXPLICIT_GRANT_PERMISSIONS` list first: a route requiring one of these passes only if one of the member's roles lists the key itself.
-   - **Role edits can't grant them.** Role create and update, tier edits, overrides, custom-role capabilities and the Discord import all refuse to add or remove these keys (`400 roles.permission.explicit_grant`). They move only through `PUT /v1/council/eligibility-officers`, which:
+   - **Role edits can't grant them.** Role create and update, tier edits, overrides, custom-role capabilities and the Discord import all refuse to add or remove these keys (`400 roles.permission.explicit_grant`). They move only through the council's explicit-grant page, `PUT /v1/council/explicit-grants/:permission`, one assignment per key, so naming someone a match operator never also grants GPA access. It:
      - takes the council admin (the `PRESIDENT`-key role);
      - needs a verified council;
      - logs `grant` or `ungrant` in the access log;
@@ -652,7 +701,7 @@ These extend the layers [`multi-tenancy.md` § How the invariant is tested](../b
 1. A council officer names an accepted chapter of their council on any chapter route: `403 chapter.context.invalid`, whatever their token's claim says.
 2. A chapter President (`*`) names their own chapter on every council route (enumerated from route metadata): `403 chapter.context.invalid` from the kind check.
 3. **Explicit-grant keys:**
-   - A council admin (`*`) without an explicit grant calls `read_academic_record`'s route and is refused. Granted through the eligibility-officer endpoint, they're served.
+   - A council admin (`*`) without an explicit grant calls `read_academic_record`'s route and is refused. Granted through the explicit-grant page, they're served. Granting `council:matching_operate` grants no eligibility key.
    - A council `roles:manage` holder who tries to add `council:eligibility_manage` to a role gets `400 roles.permission.explicit_grant`, and the role is unchanged.
 4. A chapter role write containing `council:recruitment_view` gets `400 roles.permission.reserved`. This is tested on its own, apart from test 2.
 5. **A chapter can't read a PNM it isn't linked to.**
@@ -671,7 +720,8 @@ These extend the layers [`multi-tenancy.md` § How the invariant is tested](../b
 13. `set_council_chapter_status` refuses a link to a tenant of the wrong kind, or to a pair with no shared active school.
 14. **In-season counts:** while the season is `open`, every council route returns interests and bids as counts, never as PNM-and-chapter pairs (acceptances excepted). After it closes, the per-chapter detail appears. A council `recruitment_view` holder never receives a phone number.
 15. **Grades never match a self-reported ID:** an import row whose student ID matches only a `self_reported` row is dropped, and no record or verdict is written.
-16. **Bid state:** Extend on a candidate whose `bid_state` is `accepted` or `declined` returns 409, and the legacy `bid_status` reads `extended` for `accepted` and `none` for the rest.
+16. **Recruitment model:** a council whose model is `none` is refused on every `council-recruitment` route except deletion, retention, season close and export. `record_pnm_interest` refuses an `nphc`-archetype chapter inside an `open_bidding` council. A switch to `none` during an open season is refused.
+17. **Bid state:** Extend on a candidate whose `bid_state` is `accepted` or `declined` returns 409, and the legacy `bid_status` reads `extended` for `accepted` and `none` for the rest.
 
 **Function and migration level** (`npm run check:pglite-migrations`, which runs SQL against a real Postgres):
 - **Purge:** `purge_academic_records` deletes exactly the rows past `purge_after`, and keeps the one a second short of it.
@@ -709,11 +759,14 @@ New registry entries (`councilPermission(...)`) are mirrored in `SystemPermissio
 | `council:grades_import` | council-recruitment | **Explicit grant.** Upload grade files and see the import summary (counts). Reads no grade |
 | `council:eligibility_manage` | council-recruitment | **Explicit grant.** Read GPA, credits and student ID, set the eligibility rule, override a verdict. Includes `council:grades_import`. Every read is logged |
 | `council:recruitment_reports` | council-recruitment | Export the Greek life office's reports |
+| `council:counselors_manage` | council-recruitment | Panhellenic: assign counselors to PNM groups, publish disaffiliation records |
+| `council:pnm_group_view` | council-recruitment | Panhellenic: a counselor's assigned group's names and schedules only |
+| `council:matching_operate` | council-recruitment | **Explicit grant.** Panhellenic: run the match and read rounds, preferences and results |
 | `council:announce` | council | Announcements to member chapters' council contacts |
 | `council:calendar_manage` | council | The council calendar member chapters see |
 
 - **`PERMISSION_MODULES` gains `council` and `council-recruitment`.** `PermissionDefinition` gains `explicitGrant: boolean`, and `EXPLICIT_GRANT_PERMISSIONS` is derived from it, so the guard and the role editor read one list.
-- **The catalog filters by tenant kind.** `GET /v1/roles/permissions-catalog` returns chapter keys to a chapter. A council gets the council keys, plus the shared chapter keys a council uses: `members:view`, roles, chat, events, documents, billing and the audit log. Explicit-grant keys appear in a council's role editor read-only, with a link to the eligibility-officer page.
+- **The catalog filters by tenant kind.** `GET /v1/roles/permissions-catalog` returns chapter keys to a chapter. A council gets the council keys, plus the shared chapter keys a council uses: `members:view`, roles, chat, events, documents, billing and the audit log. Explicit-grant keys appear in a council's role editor read-only, with a link to the explicit-grant page. The catalog also filters by recruitment model: a `none` council's editor shows no `council-recruitment` keys.
 - **`PermissionsGuard` changes in one place only:** the explicit-grant check ahead of the wildcard (§ 4.2 rule 2). Tenant kind is ADR-27's check.
 - **School-level roles:** none in this design ([§ 5.2](#52-school-level-roles)).
 
@@ -728,7 +781,7 @@ There's no school-scope key and no school tenant.
 
 Winston: any IFC member can create the council, the creator picks their own role, and titles are customizable.
 
-1. **Seed data.** `create_council` seeds a council role pack, which is data beside `STARTING_ROLE_TIERS` and `DEFAULT_SYSTEM_ROLES`: `COUNCIL_STARTING_ROLE_TIERS` and `COUNCIL_SEEDED_ROLES`, chosen by kind. No code branches on a role's name.
+1. **Seed data.** `create_council` seeds a council role pack, which is data beside `STARTING_ROLE_TIERS` and `DEFAULT_SYSTEM_ROLES`: `COUNCIL_STARTING_ROLE_TIERS` and `COUNCIL_SEEDED_ROLES`, keyed by `council_type`. No code branches on a role's name. The IFC pack is below; the other types' titles, and Panhellenic's extra Recruitment counselors tier, are in [`council-types.md`](https://github.com/pdcarlson/Frapp/pull/4264) (PR #4264) § Default role titles. A council whose model is `none` has no `council-recruitment` key on any tier, `council:recruitment_view` included.
    - **Tiers:** Executive board, Officers, Delegates. Every tier carries `members:view`, the baseline every member route needs ([`rbac.md`](../behavior/rbac.md) § Role Lifecycle). The Executive board tier adds `council:recruitment_view`, `council:announce`, `council:calendar_manage` and `council:chapters_manage`.
    - **Roles, each with the `system_key` the shared code resolves:**
      - **Council admin** (`PRESIDENT`, holding `*` as an override, as a chapter's President does);
@@ -813,6 +866,7 @@ Nothing any chapter can do changes. No `chapters`, `members` or `roles` value is
 9. **Q9 ⚑ A PNM's deletion request and chapters' own candidate rows.** When a PNM with no account asks to be deleted, is each chapter's candidate row the chapter's own data, which it keeps with `pnm_id` null as today, or must it go too?
 10. **Q10 ⚑ Council officers and PNM phone numbers.** An officer with `council:recruitment_manage` sees every PNM's phone, and is usually a chapter brother. Accept it with read logging, hide phone from the council, or require a neutrality pledge (the recruitment doc's decision 9).
 11. **Q11 ⚑ PNMs under 18.** The Terms require 18 (#2261), and some first-year PNMs are 17. A `pnms` row needs no account, so the form itself must ask the age question or refuse; allowing minors means a Terms change and parental consent (the recruitment doc's decision 4).
+12. **Q12 ⚑ Disaffiliation reaching into a chapter** ([§ 2.6](#26-what-other-council-types-add)). A council-published record removes a counselor's recruitment access in her own chapter, past her `*`. Build it, have the chapter apply it by hand, or only show it? This is council-types decision 3.
 
 **Lawyer questions** (from the hub's FERPA research), for Q2:
 1. Which path is Frapp on: school official (DPA), the council's agent, or a recipient named in a 99.30 consent?
@@ -830,7 +884,8 @@ If Paul accepts this, the PR that builds each part rewrites these in the same ch
 | Spec | What changes |
 |---|---|
 | [`spec/behavior/multi-tenancy.md`](../behavior/multi-tenancy.md) | Its invariant says every query is scoped to the caller's chapter. The council master list and school pages are the named exceptions: cross-tenant reads through the joins in [§ 4.2](#42-api-guards). ADR-27 rewrites the context sections |
-| [`spec/behavior/rbac.md`](../behavior/rbac.md) | "Any string is valid" gains the reserved `council:` namespace in chapters and the explicit-grant keys. Council role packs join Role Lifecycle |
+| [`spec/behavior/rbac.md`](../behavior/rbac.md) | "Any string is valid" gains the reserved `council:` namespace in chapters and the explicit-grant keys. Council role packs join Role Lifecycle. If Q12 is approved, disaffiliation applies before the wildcard |
+| [`spec/behavior/chat/README.md`](../behavior/chat/README.md) | The recruitment-channel flag on chapter channels, if Q12 is approved |
 | [`spec/behavior/rush.md`](../behavior/rush.md) | Through the recruitment doc (PR #4218), which owns the behavior: candidates link to a PNM, the name rule covers hand-added rows, a name matching several returns 409, `bid_state` beside `bid_status`, stage categories, `rush:read_notes` |
 | [`spec/behavior/data-retention.md`](../behavior/data-retention.md) | Account deletion scrubs `school_members` and `pnms`. Academic records have the retention in [§ 3.5](#35-retention-and-deletion) |
 | [`spec/behavior/legal.md`](../behavior/legal.md) | The FERPA notice (Q2) |
