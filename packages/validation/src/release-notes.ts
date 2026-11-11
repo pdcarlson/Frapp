@@ -81,6 +81,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Sign-up links in Activity now show the form's, sheet's, or booking page's own name, with what kind of link it is underneath, so they no longer all look alike.",
       "Officers can now only change roles ranked below their own and only hand out permissions they hold themselves, so nobody can promote themselves.",
       "Chat now says who is typing, clears it as soon as their message arrives, and no longer nudges the conversation up and down while people type.",
+      "Editing a message on the web keeps its mentions as highlighted names, and typing @ while editing opens the same member list as a new message. On your phone, editing a message that ends in a mention no longer pops the member list open. On the web, pasted lines no longer gain blank lines between them, and typing ** or a dash at the start of a line sends exactly what you typed.",
+      "Opening an invite link on your phone now offers to open it in the Frapp app, so you only sign in once.",
     ],
   },
   {
