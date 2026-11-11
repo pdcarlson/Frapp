@@ -401,9 +401,13 @@ const MENTION_ROLES = [
   { role_id: "r-1", name: "Officers", color: null, mentionable: true },
 ];
 
-const NOTIFICATION_PREFS = [
-  { channel_id: CHANNEL, level: "all" as const },
-  { channel_id: OTHER_CHANNEL, level: "all" as const },
+const NOTIFICATION_PREFS: {
+  channel_id: string;
+  level: "all" | "mentions" | "off";
+  from_chapter_level?: boolean;
+}[] = [
+  { channel_id: CHANNEL, level: "all" },
+  { channel_id: OTHER_CHANNEL, level: "all" },
 ];
 const setNotificationLevel = {
   mutate: vi.fn(),
@@ -705,6 +709,31 @@ describe("chat thread mute menu (#2033)", () => {
   // The menu used to hang off the header as an overflowing absolute child. It
   // drew over the inverted list, but React Native hit-tested the list, so
   // every option tap landed on a thread row and the level never changed.
+
+  it('marks a level from Settings → Chat messages "(your default)" (#3840)', () => {
+    NOTIFICATION_PREFS[0] = {
+      channel_id: CHANNEL,
+      level: "mentions",
+      from_chapter_level: true,
+    };
+    try {
+      const tree = render();
+      act(() =>
+        byLabel(
+          tree,
+          "Notifications: only @mentions. Change notification level",
+        ).props.onPress(),
+      );
+      expect(
+        byLabel(
+          tree,
+          "Only @mentions (your default). Notify me when someone addresses me.",
+        ),
+      ).toBeTruthy();
+    } finally {
+      NOTIFICATION_PREFS[0] = { channel_id: CHANNEL, level: "all" };
+    }
+  });
 
   it("draws the menu as the last child of the container that holds the list", () => {
     const tree = render();

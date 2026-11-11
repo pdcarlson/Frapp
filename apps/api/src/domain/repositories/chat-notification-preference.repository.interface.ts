@@ -38,6 +38,21 @@ export interface IChatNotificationPreferenceRepository {
     userId: string,
     chapterId: string,
   ): Promise<ChatNotificationPreferenceRow[]>;
+  /**
+   * The caller's chapter-wide chat level row (#3840), as a zero- or one-row
+   * list so it can join the others for `resolveLevel`. Throws on a query error.
+   */
+  findChapterPreferencesForUser(
+    userId: string,
+    chapterId: string,
+  ): Promise<ChatNotificationPreferenceRow[]>;
+  upsertChapterLevel(
+    userId: string,
+    chapterId: string,
+    level: ChatNotificationLevel,
+  ): Promise<ChatNotificationPreferenceRow>;
+  /** Back to "All messages". Deleting a missing row succeeds. */
+  deleteChapterLevel(userId: string, chapterId: string): Promise<void>;
   /** Return one kind to its default. Deleting a missing row succeeds. */
   deleteKindLevel(
     userId: string,

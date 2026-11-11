@@ -30,6 +30,7 @@ import {
   NotificationLevelMenu,
   NOTIFICATION_LEVEL_OPTIONS,
   selectChannelNotificationLevel,
+  selectFromChapterLevel,
   triggerAccessibilityLabel,
   useNotificationLevelMenu,
 } from "./notification-level-control";
@@ -50,6 +51,7 @@ type ControlProps = {
   disabled?: boolean;
   isSaving?: boolean;
   writeBlockedReason?: string | null;
+  fromChapterLevel?: boolean;
 };
 
 const ANCHOR = { top: 57, right: 16 };
@@ -76,9 +78,11 @@ function Thread({
   disabled,
   isSaving,
   writeBlockedReason,
+  fromChapterLevel,
 }: ControlProps) {
   const menu = useNotificationLevelMenu({
     level,
+    fromChapterLevel,
     disabled,
     writeBlockedReason,
   });
@@ -195,6 +199,31 @@ describe("selectChannelNotificationLevel", () => {
   it("returns the server-resolved effective level for a known channel", () => {
     expect(selectChannelNotificationLevel(rows, "chan-all")).toBe("all");
     expect(selectChannelNotificationLevel(rows, "chan-off")).toBe("off");
+  });
+});
+
+describe("the chapter-wide level (#3840)", () => {
+  it("reads from_chapter_level for the channel, false when unknown", () => {
+    const rows = [
+      { channel_id: "general", from_chapter_level: true },
+      { channel_id: "rush" },
+    ];
+    expect(selectFromChapterLevel(rows, "general")).toBe(true);
+    expect(selectFromChapterLevel(rows, "rush")).toBe(false);
+    expect(selectFromChapterLevel(undefined, "general")).toBe(false);
+  });
+
+  it('marks the current option "your default"', () => {
+    const tree = renderControl({ level: "mentions", fromChapterLevel: true });
+    press(
+      byLabel(tree, "Notifications: only @mentions. Change notification level"),
+    );
+    expect(
+      byLabel(
+        tree,
+        "Only @mentions (your default). Notify me when someone addresses me.",
+      ).props.accessibilityState.selected,
+    ).toBe(true);
   });
 });
 
