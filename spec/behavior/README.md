@@ -96,6 +96,7 @@ Routes whose cost or blast radius is not proportional to the request. Everything
 | `POST /v1/invites/email` | 5/min | Mints a token and sends an email per address in one call. |
 | `POST /v1/invites/redeem` | 10/min | Token-guessing surface. |
 | `POST /v1/invites/preview` | 10/min | Token-guessing surface, the same as redeem. |
+| `POST /v1/integrations/dev-log` | 10/min | Token-guessing surface, and each call writes a message into a channel. Counted per caller IP: its bearer token is not a member's ([`chat.md`](chat.md#the-teams-dev-log-channel)). |
 | `POST /v1/events`, `PATCH /v1/events/:id` | 10/min | Each one pushes a notification to every member of the chapter. |
 | The signed-upload-URL routes — `POST /v1/documents/upload-url`, `/v1/backwork/upload-url`, `/v1/channels/:id/upload-url`, `/v1/chapters/current/logo-url`, `/v1/service-entries/proof-upload-url`, `/v1/users/me/avatar-url` | 10/min | Mints signed object-storage URLs. The rule is per-mechanism rather than per-module, but it is a convention applied by hand at each handler — nothing inherits it, and `POST /v1/discord-imports/:id/upload-urls` currently mints signed URLs on the default ([#1709](https://github.com/pdcarlson/Frapp/issues/1709)). |
 | `GET /v1/search` | 20/min | One full-text scan per search source, per call, and the message source runs one per 100 channels the caller can read ([`search.md`](search.md#global-search)). A message filter with no text is a wider read than that ([`search.md`](search.md#message-filters)). |
