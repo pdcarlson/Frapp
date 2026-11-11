@@ -3590,7 +3590,7 @@ alter table public.chat_channels drop column if exists display_order;
 
 ## Rollback Task due times (20261111214500)
 
-* **Migration**: `20261111214500_task_due_time.sql`
+* **Migration**: `20261111214500_task_due_time_and_subtasks.sql`
 
 One nullable column on `tasks`, `due_at`. No existing row changed.
 

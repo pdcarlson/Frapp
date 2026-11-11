@@ -31,7 +31,7 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 ## 2026-11-11: Task due times (#4003)
 
-### 20261111214500_task_due_time.sql
+### 20261111214500_task_due_time_and_subtasks.sql
 
 - **Purpose**: Adds `tasks.due_at timestamptz` (nullable, no default): the moment a task is due when it has a time of day. `due_date` stays required and still names the day. A task with no `due_at` behaves as before. The rule is [`spec/behavior/tasks.md` § Task Lifecycle](../../../spec/behavior/tasks.md#task-lifecycle).
 - **Checks**: `select count(*) from information_schema.columns where table_name = 'tasks' and column_name = 'due_at';` returns `1`.

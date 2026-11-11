@@ -12,8 +12,16 @@ import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interf
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
-import type { Task, TaskView } from '#domain/entities/task.entity';
+import type {
+  Task,
+  TaskSubtask,
+  TaskView,
+} from '#domain/entities/task.entity';
 import { TaskStatus } from '#domain/entities/task.entity';
+import {
+  TASK_SUBTASK_TITLE_MAX_LENGTH,
+  TASK_SUBTASKS_MAX,
+} from '@repo/validation';
 import { NotificationService } from './notification.service';
 import type { NotifyPayload } from './notification.service';
 import { ChatService } from './chat.service';
@@ -73,6 +81,8 @@ export interface CreateTaskInput {
   due_date: string;
   /** The moment it is due, when it has a time of day. */
   due_at?: string | null;
+  /** Subtask titles, in order (#4003). */
+  subtasks?: string[];
   point_reward?: number | null;
   /**
    * When set together with `client_message_id`, an interactive task card is
@@ -115,7 +125,122 @@ export class TaskService {
     if (!task) {
       throw new NotFoundException('Task not found');
     }
-    return toDisplayStatus(task);
+    const [view] = await this.withSubtasks(chapterId, [toDisplayStatus(task)]);
+    return view!;
+  }
+
+  /** Each task with its subtasks, in order (#4003). */
+  private async withSubtasks(
+    chapterId: string,
+    tasks: TaskView[],
+  ): Promise<TaskView[]> {
+    if (tasks.length === 0) return tasks;
+    const subtasks = await this.taskRepo.findSubtasks(
+      chapterId,
+      tasks.map((task) => task.id),
+    );
+    const byTask = new Map<string, TaskSubtask[]>();
+    for (const subtask of subtasks) {
+      const list = byTask.get(subtask.task_id) ?? [];
+      list.push(subtask);
+      byTask.set(subtask.task_id, list);
+    }
+    return tasks.map((task) => ({
+      ...task,
+      subtasks: byTask.get(task.id) ?? [],
+    }));
+  }
+
+  /**
+   * Tick or untick one of a task's subtasks (#4003). The assignee, whose
+   * checklist it is, or an officer who can manage tasks. A confirmed task is
+   * closed: its points are paid, so its checklist no longer moves.
+   */
+  async setSubtaskDone(
+    taskId: string,
+    subtaskId: string,
+    chapterId: string,
+    userId: string,
+    isAdmin: boolean,
+    done: boolean,
+  ): Promise<TaskSubtask> {
+    const task = await this.taskRepo.findById(taskId, chapterId);
+    if (!task) throw new NotFoundException('Task not found');
+    if (task.assignee_id !== userId && !isAdmin) {
+      throw new ForbiddenException(
+        'Only the assignee or an admin can check off subtasks',
+      );
+    }
+    if (task.points_awarded) {
+      throw new BadRequestException('This task is already confirmed');
+    }
+    const updated = await this.taskRepo.setSubtaskDone(
+      chapterId,
+      taskId,
+      subtaskId,
+      done ? new Date().toISOString() : null,
+    );
+    if (!updated) throw new NotFoundException('Subtask not found');
+    return updated;
+  }
+
+  /** An officer adds a subtask at the end of a task's list (#4003). */
+  async addSubtask(
+    taskId: string,
+    chapterId: string,
+    title: string,
+  ): Promise<TaskSubtask> {
+    const task = await this.taskRepo.findById(taskId, chapterId);
+    if (!task) throw new NotFoundException('Task not found');
+    if (task.points_awarded) {
+      throw new BadRequestException('This task is already confirmed');
+    }
+    const [clean] = this.checkedSubtaskTitles([title]);
+    const existing = await this.taskRepo.findSubtasks(chapterId, [taskId]);
+    if (existing.length >= TASK_SUBTASKS_MAX) {
+      throw new BadRequestException(
+        `A task can have up to ${TASK_SUBTASKS_MAX} subtasks`,
+      );
+    }
+    const position =
+      existing.reduce((max, row) => Math.max(max, row.position), -1) + 1;
+    const [created] = await this.taskRepo.createSubtasks([
+      { task_id: taskId, chapter_id: chapterId, title: clean!, position },
+    ]);
+    return created!;
+  }
+
+  /** An officer removes one of a task's subtasks (#4003). */
+  async deleteSubtask(
+    taskId: string,
+    subtaskId: string,
+    chapterId: string,
+  ): Promise<void> {
+    const removed = await this.taskRepo.deleteSubtask(
+      chapterId,
+      taskId,
+      subtaskId,
+    );
+    if (!removed) throw new NotFoundException('Subtask not found');
+  }
+
+  /** Trimmed, with blanks dropped; refuses too many or too long. */
+  private checkedSubtaskTitles(titles: string[]): string[] {
+    const clean = titles.map((title) => title.trim()).filter(Boolean);
+    if (clean.length === 0 && titles.length > 0) {
+      throw new BadRequestException('A subtask needs a title');
+    }
+    if (clean.length > TASK_SUBTASKS_MAX) {
+      throw new BadRequestException(
+        `A task can have up to ${TASK_SUBTASKS_MAX} subtasks`,
+      );
+    }
+    if (clean.some((title) => title.length > TASK_SUBTASK_TITLE_MAX_LENGTH)) {
+      throw new BadRequestException(
+        `A subtask can be up to ${TASK_SUBTASK_TITLE_MAX_LENGTH} characters`,
+      );
+    }
+    return clean;
   }
 
   /** A member's display name for a push, or null when it cannot be read. */
@@ -137,7 +262,7 @@ export class TaskService {
     const tasks = isAdmin
       ? await this.taskRepo.findByChapter(chapterId)
       : await this.taskRepo.findByAssignee(chapterId, userId);
-    return toDisplayStatusList(tasks);
+    return this.withSubtasks(chapterId, toDisplayStatusList(tasks));
   }
 
   async create(input: CreateTaskInput): Promise<CreateTaskResult> {
@@ -146,6 +271,7 @@ export class TaskService {
       throw new BadRequestException('due_date must be a valid date');
     }
     const dueAt = this.checkedDueAt(input.due_date, input.due_at);
+    const subtaskTitles = this.checkedSubtaskTitles(input.subtasks ?? []);
 
     const assignee = await this.memberRepo.findByUserAndChapter(
       input.assignee_id,
@@ -169,6 +295,30 @@ export class TaskService {
       completed_at: null,
       confirmed_at: null,
     });
+
+    // The checklist goes in after its task. A failed insert is reported and
+    // the create still succeeds: the task exists, and failing the request
+    // would invite a retry that makes a second one. The officer sees a task
+    // with no subtasks and can add them from it.
+    if (subtaskTitles.length > 0) {
+      try {
+        await this.taskRepo.createSubtasks(
+          subtaskTitles.map((title, position) => ({
+            task_id: task.id,
+            chapter_id: input.chapter_id,
+            title,
+            position,
+          })),
+        );
+      } catch (error) {
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'task-subtasks-create',
+          message: `subtask insert failed for task ${task.id}`,
+          error,
+        });
+      }
+    }
 
     // Assigning yourself a task is a note to self; the push would only echo
     // the tap that made it.

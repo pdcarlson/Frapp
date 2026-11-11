@@ -70,6 +70,10 @@ describe('TaskService', () => {
       confirmCompletionAtomic: jest.fn(),
       reopenCompletion: jest.fn(),
       delete: jest.fn(),
+      findSubtasks: jest.fn().mockResolvedValue([]),
+      createSubtasks: jest.fn().mockResolvedValue([]),
+      setSubtaskDone: jest.fn(),
+      deleteSubtask: jest.fn(),
     };
 
     mockMemberRepo = {
@@ -149,6 +153,35 @@ describe('TaskService', () => {
         confirmed_at: null,
       });
       expect(result).toEqual(baseTask);
+    });
+
+    it('adds the subtasks in order after the task (#4003)', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+      mockTaskRepo.create.mockResolvedValue(baseTask);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        title: 'Clean the kitchen',
+        assignee_id: 'user-1',
+        created_by: 'admin-1',
+        due_date: '2099-03-15',
+        subtasks: [' Wipe the counters ', '', 'Mop the floor'],
+      });
+
+      expect(mockTaskRepo.createSubtasks).toHaveBeenCalledWith([
+        {
+          task_id: 'task-1',
+          chapter_id: 'ch-1',
+          title: 'Wipe the counters',
+          position: 0,
+        },
+        {
+          task_id: 'task-1',
+          chapter_id: 'ch-1',
+          title: 'Mop the floor',
+          position: 1,
+        },
+      ]);
     });
 
     describe('with a due time (#4003)', () => {
@@ -888,7 +921,7 @@ describe('TaskService', () => {
       expect(mockTaskRepo.findByChapter).toHaveBeenCalledWith('ch-1');
       expect(mockTaskRepo.findByAssignee).not.toHaveBeenCalled();
       expect(result).toHaveLength(1);
-      expect(result[0]).toEqual(asView(baseTask));
+      expect(result[0]).toEqual({ ...asView(baseTask), subtasks: [] });
     });
 
     it('should list tasks by assignee when not admin', async () => {
@@ -902,7 +935,7 @@ describe('TaskService', () => {
       );
       expect(mockTaskRepo.findByChapter).not.toHaveBeenCalled();
       expect(result).toHaveLength(1);
-      expect(result[0]).toEqual(asView(baseTask));
+      expect(result[0]).toEqual({ ...asView(baseTask), subtasks: [] });
     });
 
     it('should display OVERDUE status for past-due tasks', async () => {
@@ -1019,7 +1052,7 @@ describe('TaskService', () => {
       const result = await service.findById('task-1', 'ch-1');
 
       expect(mockTaskRepo.findById).toHaveBeenCalledWith('task-1', 'ch-1');
-      expect(result).toEqual(asView(baseTask));
+      expect(result).toEqual({ ...asView(baseTask), subtasks: [] });
     });
 
     it('should throw NotFoundException when task not found', async () => {
@@ -1319,6 +1352,112 @@ describe('TaskService', () => {
         expect(result.status).toBe(TaskStatus.COMPLETED);
         expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
       });
+    });
+  });
+
+  describe('subtasks (#4003)', () => {
+    const subtask = {
+      id: 'sub-1',
+      task_id: 'task-1',
+      chapter_id: 'ch-1',
+      title: 'Mop the floor',
+      position: 0,
+      done_at: null,
+      created_at: '2026-02-26T00:00:00.000Z',
+    };
+
+    it('lists each task with its own subtasks', async () => {
+      mockTaskRepo.findByChapter.mockResolvedValue([
+        baseTask,
+        { ...baseTask, id: 'task-2' },
+      ]);
+      mockTaskRepo.findSubtasks.mockResolvedValue([subtask]);
+
+      const result = await service.list('ch-1', 'admin-1', true);
+
+      expect(mockTaskRepo.findSubtasks).toHaveBeenCalledWith('ch-1', [
+        'task-1',
+        'task-2',
+      ]);
+      expect(result.map((task) => task.subtasks)).toEqual([[subtask], []]);
+    });
+
+    it('lets the assignee check one off', async () => {
+      mockTaskRepo.findById.mockResolvedValue(baseTask);
+      mockTaskRepo.setSubtaskDone.mockResolvedValue({
+        ...subtask,
+        done_at: 'now',
+      });
+
+      await service.setSubtaskDone(
+        'task-1',
+        'sub-1',
+        'ch-1',
+        'user-1',
+        false,
+        true,
+      );
+
+      expect(mockTaskRepo.setSubtaskDone).toHaveBeenCalledWith(
+        'ch-1',
+        'task-1',
+        'sub-1',
+        expect.any(String),
+      );
+    });
+
+    it('refuses anyone else without tasks:manage', async () => {
+      mockTaskRepo.findById.mockResolvedValue(baseTask);
+      await expect(
+        service.setSubtaskDone(
+          'task-1',
+          'sub-1',
+          'ch-1',
+          'user-9',
+          false,
+          true,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockTaskRepo.setSubtaskDone).not.toHaveBeenCalled();
+    });
+
+    it('keeps a confirmed task closed', async () => {
+      mockTaskRepo.findById.mockResolvedValue({
+        ...baseTask,
+        points_awarded: true,
+      });
+      await expect(
+        service.setSubtaskDone(
+          'task-1',
+          'sub-1',
+          'ch-1',
+          'user-1',
+          false,
+          false,
+        ),
+      ).rejects.toThrow('This task is already confirmed');
+    });
+
+    it('adds one at the end, up to the limit', async () => {
+      mockTaskRepo.findById.mockResolvedValue(baseTask);
+      mockTaskRepo.findSubtasks.mockResolvedValue([
+        subtask,
+        { ...subtask, id: 'sub-2', position: 3 },
+      ]);
+      mockTaskRepo.createSubtasks.mockResolvedValue([subtask]);
+
+      await service.addSubtask('task-1', 'ch-1', 'Take out the trash');
+
+      expect(mockTaskRepo.createSubtasks).toHaveBeenCalledWith([
+        expect.objectContaining({ title: 'Take out the trash', position: 4 }),
+      ]);
+
+      mockTaskRepo.findSubtasks.mockResolvedValue(
+        Array.from({ length: 20 }, (_, i) => ({ ...subtask, id: `s${i}` })),
+      );
+      await expect(
+        service.addSubtask('task-1', 'ch-1', 'One more'),
+      ).rejects.toThrow('up to 20 subtasks');
     });
   });
 });

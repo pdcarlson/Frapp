@@ -608,7 +608,7 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
   },
   'application/services/task.service.ts': { calls: 6, entries: [MEMBER_TEXT] },
   'application/workers/scheduled-jobs.service.ts': {
-    calls: 12,
+    calls: 15,
     entries: [MEMBER_TEXT],
   },
   'application/workers/discord-import-worker.service.ts': {
