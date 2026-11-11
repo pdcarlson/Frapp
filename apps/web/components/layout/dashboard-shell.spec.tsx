@@ -474,7 +474,6 @@ describe("DashboardShell", () => {
     ).toBeInTheDocument();
   });
 
-
   describe("chat beside the chapter tools (#3779)", () => {
     const nav = () => screen.getByRole("navigation", { name: "Primary" });
     const column = (container: HTMLElement) =>
@@ -623,7 +622,11 @@ describe("DashboardShell", () => {
         const divider = screen.getByRole("separator");
         divider.setPointerCapture = () => {};
         divider.hasPointerCapture = () => false;
-        fireEvent.pointerDown(divider, { button: 0, pointerId: 1, clientX: 900 });
+        fireEvent.pointerDown(divider, {
+          button: 0,
+          pointerId: 1,
+          clientX: 900,
+        });
         fireEvent.pointerMove(divider, { pointerId: 1, clientX: 1430 });
         // The page fades first, so the release is no surprise.
         expect(container.querySelector("[data-tool-column]")).toHaveClass(
@@ -705,9 +708,7 @@ describe("DashboardShell", () => {
         fireEvent.click(within(nav()).getByRole("button", { name: /^Chat/ }));
         const anim = chatPanel(container)!.style.animation;
         expect(anim).toContain("shell-panel-in");
-        expect(anim).toContain(
-          `${signetDarkTokens.motion.duration.context}ms`,
-        );
+        expect(anim).toContain(`${signetDarkTokens.motion.duration.context}ms`);
         expect(anim).toContain(signetDarkTokens.motion.easing.entrance);
         expect(anim).not.toContain(signetDarkTokens.motion.easing.settle);
         // jsdom has no AnimationEvent, so React listens for the prefixed
@@ -1061,12 +1062,39 @@ describe("DashboardShell", () => {
         within(rail).getByRole("link", { name: "Chat, unread messages" }),
       ).toBeInTheDocument();
       fireEvent.click(
-        screen.getByRole("button", { name: "Open navigation menu" }),
+        screen.getByRole("button", {
+          name: "Open navigation menu, unread messages",
+        }),
       );
       const drawer = screen.getByRole("dialog");
       expect(
         within(drawer).getByRole("link", { name: /^Chat.*unread messages/ }),
       ).toBeInTheDocument();
+    });
+
+    it("marks the drawer trigger below lg until the counts clear (#3900)", () => {
+      mockLevels.value = [];
+      mockChannels.value = [{ id: "d1", type: "DM" }];
+      mockUnread.value = [
+        { channel_id: "d1", unread_count: 2, mention_count: 0 },
+      ];
+      const { container, rerender } = render(
+        <DashboardShell>content</DashboardShell>,
+      );
+      const trigger = screen.getByRole("button", {
+        name: "Open navigation menu, unread messages",
+      });
+      expect(trigger).toHaveClass("lg:hidden");
+      expect(trigger.querySelector("[data-menu-unread]")).toBeInTheDocument();
+
+      mockUnread.value = [];
+      rerender(<DashboardShell>content</DashboardShell>);
+      expect(
+        screen.getByRole("button", { name: "Open navigation menu" }),
+      ).toBeInTheDocument();
+      expect(
+        container.querySelector("[data-menu-unread]"),
+      ).not.toBeInTheDocument();
     });
   });
 });
