@@ -3916,8 +3916,12 @@ describe("ChatShell as the shell's chat panel (#3779)", () => {
     const header = screen.getByRole("button", { name: "Show members" })
       .closest("header") as HTMLElement;
     const close = within(header).getByRole("button", { name: "Close chat" });
-    // The tool page header's X, the same 36px control in the same place.
-    expect(close).toHaveClass("h-9", "w-9", "-mr-2");
+    // The tool page header's X, the same 36px control. No pull into the
+    // gutter: against this header's 16px it sits 16px from the panel's edge,
+    // where the page's sits against its 24px gutter.
+    expect(close).toHaveClass("h-9", "w-9");
+    expect(close).not.toHaveClass("-mr-2");
+    expect(header).toHaveClass("px-4");
     expect(header.lastElementChild?.lastElementChild).toBe(close);
     fireEvent.click(close);
     expect(onClose).toHaveBeenCalledTimes(1);

@@ -19,6 +19,7 @@ import { useTapRevealedMessage } from "@/lib/hooks/use-tap-revealed-message";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useMessageThread } from "@/lib/chat/use-message-thread";
 import { cn } from "@/lib/utils";
+import { PanelCloseButton } from "@/components/layout/tool-page-header";
 import { BlockedMessageTombstone } from "./blocked-message-tombstone";
 import { ChatBackground } from "./chat-background";
 import {
@@ -101,6 +102,11 @@ export interface ThreadPanelProps extends Pick<
    */
   canPost: boolean;
   onClose: () => void;
+  /**
+   * Closes the whole chat panel (#4223): the channel header's X, which the
+   * thread covers, so the thread carries its own. Only beside a tool page.
+   */
+  onClosePanel?: () => void;
   className?: string;
 }
 
@@ -142,6 +148,7 @@ export function ThreadPanel({
   canReply,
   canPost,
   onClose,
+  onClosePanel,
   className,
 }: ThreadPanelProps) {
   const thread = useMessageThread(channelId, rootId, viewerId);
@@ -440,6 +447,13 @@ export function ThreadPanel({
           >
             {following ? "Following" : "Follow"}
           </Button>
+        ) : null}
+        {onClosePanel ? (
+          <PanelCloseButton
+            label="Close chat"
+            onClick={onClosePanel}
+            className="mr-2"
+          />
         ) : null}
       </header>
 

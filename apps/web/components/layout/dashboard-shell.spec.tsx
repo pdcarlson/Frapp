@@ -626,6 +626,12 @@ describe("DashboardShell", () => {
         expect(barCopy.tagName).toBe("P");
         expect(barCopy.parentElement).toHaveClass("min-[1056px]:hidden");
 
+        // 16px from the page's edge: -8px into its 24px gutter (#4223 puts
+        // chat's X in the same place).
+        expect(header).toHaveClass("sm:px-6");
+        expect(
+          within(header).getByRole("button", { name: "Close Chat admin" }),
+        ).toHaveClass("-mr-2");
         fireEvent.click(
           within(header).getByRole("button", { name: "Close Chat admin" }),
         );

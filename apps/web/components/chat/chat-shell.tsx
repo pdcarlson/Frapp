@@ -3323,6 +3323,7 @@ export function ChatShell({
             <ThreadPanel
               key={threadRootId}
               className="absolute inset-0 z-10"
+              onClosePanel={onClose}
               channelId={activeChannel.id}
               channelName={activeChannel.name ?? null}
               rootId={threadRootId}
