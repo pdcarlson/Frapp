@@ -56,6 +56,15 @@ export interface FilterChip {
   label: string;
   /** Appended as `· N` when present, as drawn on s13. */
   count?: number | null;
+  /** A small glyph before the label, e.g. s12's pin or star (#3934). */
+  mark?: ReactNode;
+  /**
+   * A long press's action, e.g. s12's folder actions (#3934). Also offered
+   * as a named accessibility action, so it is never press-and-hold only.
+   */
+  onLongPress?: () => void;
+  /** The spoken name of `onLongPress`'s action. */
+  longPressLabel?: string;
 }
 
 /**
@@ -76,6 +85,9 @@ export function Chip({
   accessibilityState,
   accessibilityLabel,
   accessibilityHint,
+  mark,
+  onLongPress,
+  longPressLabel,
 }: {
   label: string;
   on: boolean;
@@ -84,6 +96,9 @@ export function Chip({
   accessibilityState: AccessibilityState;
   accessibilityLabel?: string;
   accessibilityHint?: string;
+  mark?: ReactNode;
+  onLongPress?: () => void;
+  longPressLabel?: string;
 }) {
   const { tokens } = useFrappTheme();
   const { accentPrimary, accentOnPrimary } = useChapterBranding();
@@ -101,12 +116,27 @@ export function Chip({
       accessibilityHint={accessibilityHint}
       hitSlop={{ top: slop, bottom: slop }}
       onPress={onPress}
+      onLongPress={onLongPress}
+      accessibilityActions={
+        onLongPress
+          ? [{ name: "longpress", label: longPressLabel ?? "More actions" }]
+          : undefined
+      }
+      onAccessibilityAction={
+        onLongPress
+          ? (event) => {
+              if (event.nativeEvent.actionName === "longpress") onLongPress();
+            }
+          : undefined
+      }
       lifts={!on}
       style={[
         styles.chip,
+        mark ? styles.chipWithMark : null,
         on ? { backgroundColor: accentPrimary } : styles.chipIdle,
       ]}
     >
+      {mark}
       <Text style={[styles.chipText, on ? { color: accentOnPrimary } : null]}>
         {label}
       </Text>
@@ -197,6 +227,9 @@ export function FilterChips({
             accessibilityState={{ selected: selected === chip.value }}
             on={selected === chip.value}
             onPress={() => onSelect(chip.value)}
+            mark={chip.mark}
+            onLongPress={chip.onLongPress}
+            longPressLabel={chip.longPressLabel}
             // A count is omitted rather than shown as `· 0` while its query
             // is still loading — a populated tab must not advertise empty.
             label={
@@ -296,6 +329,12 @@ function createStyles(tokens: SignetTokens) {
       justifyContent: "center",
       paddingHorizontal: tokens.spacing.md,
       borderRadius: tokens.radius.chipLarge,
+    },
+    // A chip with a pin or star before its label (#3934): the two sit in a
+    // row with the label, a hair apart.
+    chipWithMark: {
+      flexDirection: "row",
+      gap: tokens.spacing.xs,
     },
     chipIdle: {
       backgroundColor: tokens.color.surface.surface1,

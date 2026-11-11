@@ -32,6 +32,7 @@ describe("selectDocuments", () => {
           uploaded_by: "u-1",
           created_at: "2026-08-12T14:00:00.000Z",
           storage_path: "chapters/c/documents/x/bylaws.pdf",
+          pinned_at: "2026-11-11T00:00:00.000Z",
         },
       ]),
     ).toEqual([
@@ -45,6 +46,7 @@ describe("selectDocuments", () => {
         created_at: "2026-08-12T14:00:00.000Z",
         content_type: null,
         storage_path: "chapters/c/documents/x/bylaws.pdf",
+        pinned_at: "2026-11-11T00:00:00.000Z",
       },
     ]);
   });
@@ -115,13 +117,18 @@ describe("selectDocumentFolders", () => {
     expect(
       selectDocumentFolders([
         { id: "f-2", name: "Finance", sort_order: 2 },
-        { id: "f-1", name: "Governance", sort_order: 1 },
+        {
+          id: "f-1",
+          name: "Governance",
+          sort_order: 1,
+          pinned_at: "2026-11-11T00:00:00.000Z",
+        },
         { id: "f-3", name: "Alumni", sort_order: 2 },
       ]),
     ).toEqual([
-      { id: "f-1", name: "Governance" },
-      { id: "f-3", name: "Alumni" },
-      { id: "f-2", name: "Finance" },
+      { id: "f-1", name: "Governance", pinned_at: "2026-11-11T00:00:00.000Z" },
+      { id: "f-3", name: "Alumni", pinned_at: null },
+      { id: "f-2", name: "Finance", pinned_at: null },
     ]);
   });
 

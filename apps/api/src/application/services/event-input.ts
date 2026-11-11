@@ -20,6 +20,8 @@ export interface CreateEventInput {
   check_in_zone?: GeofenceCoordinate[] | null;
   check_in_zone_name?: string | null;
   check_in_opens_minutes?: number;
+  /** One of the chapter's event types, or omitted for none (#3730). */
+  event_type_id?: string | null;
   /** Creator user id — used as the chat card sender when posting via `/event`. */
   created_by?: string;
   /**
@@ -65,6 +67,8 @@ export interface UpdateEventInput {
   check_in_zone?: GeofenceCoordinate[] | null;
   check_in_zone_name?: string | null;
   check_in_opens_minutes?: number;
+  /** `null` clears the type; omitted leaves it. */
+  event_type_id?: string | null;
 }
 
 /**

@@ -563,7 +563,10 @@ sidebar links to Documents as a whole); it draws the nav set's `folder` entry
 (Phosphor `folder`, §1.1) so the folder rail's rows stay one family.
 `PinGlyph` is re-exported from the chat family (§6.2.2), since pinning a
 message, a channel and a document is one idea. `StarGlyph` is drawn here on
-the §1 recipe, because no set entry covers a personal star (#3934).
+the §1 recipe, because no set entry covers a personal star (#3934). Both
+draw their path data from `MARK_GLYPH_PATHS` (`@repo/theme/nav-glyphs`), which
+mobile's s12 draws too (`apps/mobile/components/documents/document-glyphs.tsx`,
+in the More family's paint), so the two apps keep one pin and one star.
 
 [`canvas-screens.dc.html`](reference/canvas-screens.dc.html) marks every
 document row on **s12** (the Documents screen) and **s21** (the upload sheet)
@@ -601,7 +604,11 @@ Two of the swaps were corrections rather than a pack change, in §6.2.4's sense:
 Since #4173 (2026-11-11) every `/activity` row leads with a 40px neutral tile
 holding its kind's glyph at 20px in `--muted-foreground`
 ([`apps/web/components/activity/activity-row-lead.tsx`](../../../apps/web/components/activity/activity-row-lead.tsx)),
-or, for an event, its month and day in place of a glyph. The glyphs are
+or, for an event, its month and day in place of a glyph. The phone's Activity
+rows draw the same lead at the same sizes in `text.mutedForeground`
+([`apps/mobile/components/activity/activity-row.tsx`](../../../apps/mobile/components/activity/activity-row.tsx),
+#4173 step 2), and both read which shape a kind takes from one map,
+`ACTIVITY_GLYPH_NAV` in `@repo/hooks`. The glyphs are
 the nav set's (§1.1), so a row draws the shape of the place its record lives;
 `link` and `confirm` were added for the two kinds that have no place of their own.
 They stay neutral: the page's colour is for asks and status.

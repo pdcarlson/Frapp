@@ -1,4 +1,5 @@
 import type { components } from "@repo/api-sdk";
+import type { NavGlyphName } from "@repo/theme/nav-glyphs";
 import { TASK_CONFIRMED_LABEL, TASK_STATUS_LABELS } from "./task-card";
 import {
   dayDelta,
@@ -72,6 +73,23 @@ export type ActivityGlyph =
   | "document"
   | "backwork"
   | "link";
+
+/**
+ * The shared nav glyph each kind draws (`@repo/theme/nav-glyphs`), so a row
+ * draws the same shape as the place its record lives (`iconography.md` §6.2):
+ * a task the Tasks glyph, hours the Service glyph. One map for web and the
+ * phone, so the two can't name different shapes for one kind.
+ */
+export const ACTIVITY_GLYPH_NAV: Record<ActivityGlyph, NavGlyphName> = {
+  task: "tasks",
+  confirm: "confirm",
+  hours: "service",
+  poll: "polls",
+  event: "events",
+  document: "documents",
+  backwork: "backwork",
+  link: "link",
+};
 
 /**
  * An event row's date, for a calendar-style block beside the row (#4173):
@@ -497,8 +515,11 @@ export function activityGroups(
                 cap(ACTIVITY_NEEDS_YOU_LIMIT),
               ),
             ]
-          : part(
-              "all",
+          : // The lone part keeps the id of the side it holds, so a client
+            // that keys its Show all state by part id keeps it open when
+            // the other side empties (the last Now row acted on) or fills.
+            part(
+              needsNow.length > 0 ? "now" : "later",
               null,
               [...needsNow, ...needsLater],
               cap(ACTIVITY_NEEDS_YOU_LIMIT),
@@ -695,6 +716,21 @@ export function activitySummary(
     tiles,
     nextEvent,
   };
+}
+
+/**
+ * The line under the headline: "Next up: Exec Board Sync · Tomorrow · 5:00
+ * PM", or `null` when nothing is ahead.
+ */
+export function activityNextUpLine(
+  summary: Pick<ActivitySummary, "nextEvent">,
+): string | null {
+  const next = summary.nextEvent;
+  if (!next) return null;
+  const when = formatRelativeDayTime(next.start_time);
+  return ["Next up:", next.name, when ? `· ${when}` : null]
+    .filter(Boolean)
+    .join(" ");
 }
 
 /**

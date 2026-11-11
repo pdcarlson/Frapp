@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   tierByMarks,
+  markedItems,
+  tierRows,
   NO_DOCUMENT_FILTERS,
   isActiveDateFilter,
   semesterSince,
@@ -315,5 +317,42 @@ describe("tierByMarks (#3934)", () => {
       starred: [],
       rest: items,
     });
+  });
+});
+
+describe("markedItems and tierRows (#3934)", () => {
+  const folders = [
+    { id: "f-1", name: "Finance", pinned_at: null },
+    { id: "f-2", name: "Rush", pinned_at: "2026-11-11" },
+  ];
+  const docs = [
+    { id: "d-1", folder: "Finance", pinned_at: "2026-11-11" },
+    { id: "d-2", folder: "Finance", pinned_at: null },
+    { id: "d-3", folder: null, pinned_at: null },
+  ];
+
+  it("splits folders then files into Pinned and Starred, counting loaded files", () => {
+    const { pinned, starred } = markedItems({
+      folders,
+      library: docs,
+      shown: docs,
+      starredFolders: new Set(["f-1"]),
+      starredDocuments: new Set(["d-3", "d-1"]),
+    });
+    expect(pinned).toEqual([
+      { kind: "folder", folder: folders[1], count: 0 },
+      { kind: "document", doc: docs[0] },
+    ]);
+    expect(starred).toEqual([
+      { kind: "folder", folder: folders[0], count: 2 },
+      { kind: "document", doc: docs[2] },
+    ]);
+  });
+
+  it("leads rows with pinned, then starred, keeping each tier's order", () => {
+    const rows = docs.map((doc) => ({ doc }));
+    expect(
+      tierRows([...rows].reverse(), new Set(["d-2"])).map((row) => row.doc.id),
+    ).toEqual(["d-1", "d-2", "d-3"]);
   });
 });

@@ -459,6 +459,68 @@ describe("send() failure", () => {
   });
 });
 
+describe("send() and typing during a pending send (#4141)", () => {
+  it("keeps text typed while the earlier send was still out", async () => {
+    // The member sends, then starts the next message before the POST lands.
+    // When it lands, that new text stays in the composer, and its saved copy
+    // is not deleted from under it.
+    const gate = deferred();
+    mocks.sendMessage.mockImplementation(async () => {
+      await gate.promise;
+    });
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+
+    act(() => {
+      result.current.setDraft("first message");
+    });
+    let inFlight!: Promise<boolean>;
+    act(() => {
+      inFlight = result.current.send("first message");
+    });
+    expect(result.current.draft).toBe("");
+
+    act(() => {
+      result.current.setDraft("and the se");
+    });
+
+    await act(async () => {
+      gate.resolve();
+      await inFlight;
+    });
+
+    expect(result.current.draft).toBe("and the se");
+    expect(mocks.draftClear).not.toHaveBeenCalled();
+  });
+
+  it("does not overwrite the new text when the earlier send fails", async () => {
+    const gate = deferred();
+    mocks.sendMessage.mockImplementation(async () => {
+      await gate.promise;
+    });
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+
+    let inFlight!: Promise<boolean>;
+    act(() => {
+      inFlight = result.current.send("first message");
+    });
+    act(() => {
+      result.current.setDraft("and the se");
+    });
+
+    await act(async () => {
+      gate.reject(new Error("storage full"));
+      await inFlight;
+    });
+
+    expect(result.current.draft).toBe("and the se");
+    expect(result.current.sendError).toBe(
+      "Your last message couldn't be queued and was discarded. Re-enter it to try again.",
+    );
+  });
+});
+
 describe("send() and the draft debounce", () => {
   it("cancels the pending draft write before clearing the composer", async () => {
     // The regression: `setDraft` schedules a 400ms write. Send without

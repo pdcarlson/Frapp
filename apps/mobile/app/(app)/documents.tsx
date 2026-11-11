@@ -1,4 +1,10 @@
-import { useDeferredValue, useMemo, useRef, useState } from "react";
+import {
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { AccessibilityInfo, Alert, StyleSheet, Text, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import * as WebBrowser from "expo-web-browser";
@@ -9,7 +15,10 @@ import {
   useDocumentFolders,
   useDocumentLibrary,
   useDocuments,
+  useDocumentStars,
   useMemberDisplayNames,
+  useSetDocumentPin,
+  useSetDocumentStar,
   usePermissionList,
   useSemesters,
 } from "@repo/hooks";
@@ -20,6 +29,9 @@ import {
   SORT_OPTIONS,
   deleteDocumentTitle,
   isActiveDateFilter,
+  markedItems,
+  tierByMarks,
+  tierRows,
   type DocumentSort,
   type FileKind,
 } from "@repo/hooks/document-library";
@@ -34,6 +46,13 @@ import {
   type PendingDocumentUpload,
 } from "@/components/documents/upload-document-sheet";
 import { Chip, FilterChips, SearchField } from "@/components/filter-chips";
+import {
+  DocumentActionsSheet,
+  type DocumentActionsTarget,
+} from "@/components/documents/document-actions-sheet";
+import { PinGlyph, StarGlyph } from "@/components/documents/document-glyphs";
+import { MarkedCards } from "@/components/documents/marked-cards";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   ListRow,
   ListRowSkeleton,
@@ -65,11 +84,18 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * point at a picker that would not change the outcome. A member who genuinely
  * has no resolvable chapter gets a `400` instead, which the error state covers.
  *
- * ## No PINNED section
+ * ## Pinned and starred (#3934)
  *
- * Canvas draws PINNED above RECENT. Nothing on `chapter_documents` marks a
- * document pinned, and promoting "the two newest" into that slot would dress an
- * arbitrary choice up as a chapter decision. Filed.
+ * Canvas draws PINNED above the list. An officer's pin is `pinned_at` on a
+ * folder or a document, and each member's stars come from
+ * `GET /v1/documents/stars` (`spec/behavior/chapter-docs.md` § Pinned and
+ * starred). On All with no search or filter, PINNED and then STARRED cards
+ * (`components/documents/marked-cards.tsx`) sit above the list, folders and
+ * files together, as web's cards do. Anywhere else the same tiers lead the
+ * list. The folder chips run pinned, then starred, then the rest, each
+ * wearing its pin or star. A long press on a chip, a card or a row opens the
+ * actions sheet (`components/documents/document-actions-sheet.tsx`): Star for
+ * everyone, Pin for the chapter for `chapter_docs:manage`.
  *
  * ## Upload, for whoever may
  *
@@ -105,9 +131,10 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * ## Delete, for whoever may
  *
  * A viewer holding `chapter_docs:manage` (the guard on `DELETE
- * /v1/documents/{id}`) deletes a document by long-pressing its row, or
- * through the row's named screen-reader action, then confirming in a system
- * alert, as Invited's Revoke and chat's channel actions do. The row shows
+ * /v1/documents/{id}`) deletes a document from its row's actions sheet (a
+ * long press, or the row's named screen-reader action; Star and Pin share
+ * the sheet since #3934), then confirms in a system alert, as Invited's
+ * Revoke and chat's channel actions do. The row shows
  * its spinner while the request runs and takes no second press.
  *
  * ## Opening a document
@@ -186,12 +213,35 @@ export default function DocumentsScreen() {
     message: string;
   } | null>(null);
   const canManage = can("chapter_docs:manage", usePermissionList());
+  const { accent, accentOnPrimary } = useChapterBranding();
+
+  // Pins and stars (#3934). A star moves on the tap and settles on the
+  // server's answer (`useSetDocumentStar`); a pin moves once the server has it.
+  const starsQuery = useDocumentStars();
+  const setStar = useSetDocumentStar();
+  const setPin = useSetDocumentPin();
+  const actionsSheetRef = useRef<BottomSheetModal>(null);
+  const [actionsTarget, setActionsTarget] =
+    useState<DocumentActionsTarget | null>(null);
+  // Held with the chapter it failed in, as `deleteFailure` is.
+  const [markFailure, setMarkFailure] = useState<{
+    chapterId: string | null;
+    message: string;
+  } | null>(null);
+  const starredFolders = useMemo(
+    () => new Set(starsQuery.data?.folder_ids ?? []),
+    [starsQuery.data],
+  );
+  const starredDocuments = useMemo(
+    () => new Set(starsQuery.data?.document_ids ?? []),
+    [starsQuery.data],
+  );
 
   const foldersQuery = useDocumentFolders();
   const documentsQuery = useDocuments();
   const openDocument = useDocumentDownloadUrl();
   const deleteDocument = useDeleteDocument();
-  const refresh = useRefetchAll([foldersQuery, documentsQuery]);
+  const refresh = useRefetchAll([foldersQuery, documentsQuery, starsQuery]);
 
   const folders = useMemo(
     () => selectDocumentFolders(foldersQuery.data),
@@ -232,6 +282,129 @@ export default function DocumentsScreen() {
     namesById: useMemberDisplayNames().byId,
     semesters: useSemesters().data,
   });
+  // On All with no search or filter the tiers are cards above the list, and
+  // the list keeps its order; anywhere else they lead the list (#3934).
+  const showCards = folder === null && !filtering && deferredSearch === "";
+  // The tiers and the cards come from the builders web's `/documents` uses
+  // too (`@repo/hooks/document-library`), so the two apps can't disagree.
+  const rows = useMemo(
+    () => (showCards ? visible : tierRows(visible, starredDocuments)),
+    [visible, showCards, starredDocuments],
+  );
+  const cards = useMemo(
+    () =>
+      markedItems({
+        folders,
+        library: documents,
+        shown: visible.map((row) => row.doc),
+        starredFolders,
+        starredDocuments,
+      }),
+    [documents, folders, visible, starredFolders, starredDocuments],
+  );
+  const chipFolders = useMemo(() => {
+    const tiers = tierByMarks(
+      folders,
+      (entry) => !!entry.pinned_at,
+      (entry) => starredFolders.has(entry.id),
+    );
+    return [
+      ...tiers.pinned,
+      ...tiers.starred,
+      ...tiers.rest,
+    ];
+  }, [folders, starredFolders]);
+  const markFailed =
+    markFailure && markFailure.chapterId === (chapterId ?? null)
+      ? markFailure.message
+      : null;
+
+  // The sheet presents once its target is set, so a press only sets state.
+  // Each press makes a new target object, so the same row twice reopens it.
+  function openActions(target: DocumentActionsTarget) {
+    setActionsTarget(target);
+  }
+  useEffect(() => {
+    if (actionsTarget) actionsSheetRef.current?.present();
+  }, [actionsTarget]);
+
+  function folderTarget(entry: {
+    id: string;
+    name: string;
+    pinned_at?: string | null;
+  }) {
+    return {
+      kind: "folder" as const,
+      id: entry.id,
+      name: entry.name,
+      pinned: !!entry.pinned_at,
+      starred: starredFolders.has(entry.id),
+    };
+  }
+
+  function documentTarget(doc: {
+    id: string;
+    title: string;
+    pinned_at: string | null;
+  }) {
+    return {
+      kind: "document" as const,
+      id: doc.id,
+      name: doc.title,
+      pinned: !!doc.pinned_at,
+      starred: starredDocuments.has(doc.id),
+    };
+  }
+
+  // `mutateAsync`, not `mutate` with per-call callbacks: TanStack runs a
+  // `mutate` call's own `onError` only for the latest call on the hook, so a
+  // star that failed while a second was in flight would fail silently.
+  async function toggleStar(target: DocumentActionsTarget) {
+    setMarkFailure(null);
+    const next = !target.starred;
+    try {
+      await setStar.mutateAsync({
+        target: { kind: target.kind, id: target.id },
+        starred: next,
+      });
+      AccessibilityInfo.announceForAccessibility(
+        next ? `Starred “${target.name}”.` : `Unstarred “${target.name}”.`,
+      );
+    } catch (caught) {
+      setMarkFailure({
+        chapterId: chapterId ?? null,
+        message: errorCopy(
+          caught,
+          `Couldn't ${next ? "star" : "unstar"} “${target.name}”. Try again in a moment.`,
+        ),
+      });
+    }
+  }
+
+  async function togglePin(target: DocumentActionsTarget) {
+    setMarkFailure(null);
+    const next = !target.pinned;
+    try {
+      await setPin.mutateAsync({
+        target: { kind: target.kind, id: target.id },
+        pinned: next,
+      });
+      AccessibilityInfo.announceForAccessibility(
+        next
+          ? `Pinned “${target.name}” for the chapter.`
+          : `Unpinned “${target.name}”.`,
+      );
+    } catch (caught) {
+      setMarkFailure({
+        chapterId: chapterId ?? null,
+        message: errorCopy(
+          caught,
+          `Couldn't ${next ? "pin" : "unpin"} “${target.name}”. Try again in a moment.`,
+        ),
+      });
+    }
+  }
+
   const uploader = applied.uploader;
   const dateActive = isActiveDateFilter(applied.date, semesterKnown);
   const filterCount =
@@ -386,7 +559,7 @@ export default function DocumentsScreen() {
         />
       );
     }
-    if (visible.length === 0 && !pendingRow) {
+    if (rows.length === 0 && !pendingRow) {
       // Empty-states plan rule 7: one line where the rows would be. A search
       // or filter that matched nothing says so and offers the way out: inside
       // a folder chip, widening to every folder (the search and filters
@@ -430,7 +603,7 @@ export default function DocumentsScreen() {
     return (
       <ListSection>
         {pendingRow}
-        {visible.map((row) => (
+        {rows.map((row) => (
           <ListRow
             key={row.doc.id}
             label={row.doc.title}
@@ -441,12 +614,32 @@ export default function DocumentsScreen() {
             // them (`open`).
             busy={row.doc.id === openingId || deletingIds.has(row.doc.id)}
             onPress={() => void open(row.doc.id)}
-            onLongPress={
-              canManage
-                ? () => confirmDelete(row.doc.id, row.doc.title)
-                : undefined
+            // Star for everyone; Pin and Delete for `chapter_docs:manage`
+            // (#3934). The row's pin or star shows in its label's tail.
+            onLongPress={() => openActions(documentTarget(row.doc))}
+            longPressLabel={
+              canManage ? "Star, pin or delete" : "Star or unstar"
             }
-            longPressLabel={canManage ? "Delete document" : undefined}
+            trailing={
+              row.doc.pinned_at || starredDocuments.has(row.doc.id) ? (
+                <View style={styles.marks}>
+                  {row.doc.pinned_at ? (
+                    <PinGlyph color={accent} on size={14} />
+                  ) : null}
+                  {starredDocuments.has(row.doc.id) ? (
+                    <StarGlyph color={accent} on size={14} />
+                  ) : null}
+                </View>
+              ) : undefined
+            }
+            accessibilityValue={
+              [
+                row.doc.pinned_at ? "Pinned for the chapter" : null,
+                starredDocuments.has(row.doc.id) ? "Starred" : null,
+              ]
+                .filter(Boolean)
+                .join(", ") || undefined
+            }
           />
         ))}
       </ListSection>
@@ -500,9 +693,33 @@ export default function DocumentsScreen() {
           onSelect={setFolder}
           chips={[
             { value: null, label: "All" },
-            ...folders.map((entry) => ({
+            // Pinned, then starred, then the rest (#3934); a long press
+            // opens the folder's Star and Pin sheet.
+            // A folder both pinned and starred wears both marks.
+            ...chipFolders.map((entry) => ({
               value: entry.name,
               label: entry.name,
+              mark:
+                entry.pinned_at || starredFolders.has(entry.id) ? (
+                  <View style={styles.marks}>
+                    {entry.pinned_at ? (
+                      <PinGlyph
+                        color={folder === entry.name ? accentOnPrimary : accent}
+                        on
+                        size={14}
+                      />
+                    ) : null}
+                    {starredFolders.has(entry.id) ? (
+                      <StarGlyph
+                        color={folder === entry.name ? accentOnPrimary : accent}
+                        on
+                        size={14}
+                      />
+                    ) : null}
+                  </View>
+                ) : undefined,
+              onLongPress: () => openActions(folderTarget(entry)),
+              longPressLabel: canManage ? "Star or pin" : "Star or unstar",
             })),
           ]}
           trailing={filtersChip}
@@ -575,6 +792,16 @@ export default function DocumentsScreen() {
           That document couldn&apos;t be opened. Try again in a moment.
         </Text>
       ) : null}
+      {starsQuery.isError ? (
+        <Text accessibilityLiveRegion="polite" style={styles.errorNote}>
+          Couldn&apos;t load your stars. Pull down to try again.
+        </Text>
+      ) : null}
+      {markFailed ? (
+        <Text accessibilityLiveRegion="polite" style={styles.errorNote}>
+          {markFailed}
+        </Text>
+      ) : null}
       {deleteFailed ? (
         <Text accessibilityLiveRegion="polite" style={styles.errorNote}>
           {deleteFailed}
@@ -584,12 +811,45 @@ export default function DocumentsScreen() {
         <InlineNote>{DOCUMENT_CAP_NOTICE}</InlineNote>
       ) : null}
 
+      {showCards && !documentsQuery.isPending && !documentsQuery.isError ? (
+        <MarkedCards
+          pinned={cards.pinned}
+          starred={cards.starred}
+          isStarred={(item) =>
+            item.kind === "folder"
+              ? starredFolders.has(item.folder.id)
+              : starredDocuments.has(item.doc.id)
+          }
+          openingId={openingId}
+          deletingIds={deletingIds}
+          actionsLabel={canManage ? "Star, pin or delete" : "Star or unstar"}
+          onOpenFolder={setFolder}
+          onOpenDocument={(id) => void open(id)}
+          onActions={(item) =>
+            openActions(
+              item.kind === "folder"
+                ? folderTarget(item.folder)
+                : documentTarget(item.doc),
+            )
+          }
+        />
+      ) : null}
+
       <SectionHeader>
         {documentsQuery.isSuccess
           ? `${visible.length} ${visible.length === 1 ? "document" : "documents"}`
           : "Documents"}
       </SectionHeader>
       {renderList()}
+
+      <DocumentActionsSheet
+        ref={actionsSheetRef}
+        target={actionsTarget}
+        canManage={canManage}
+        onToggleStar={(target) => void toggleStar(target)}
+        onTogglePin={(target) => void togglePin(target)}
+        onDelete={(target) => confirmDelete(target.id, target.name)}
+      />
 
       {canUpload ? (
         <UploadDocumentSheet
@@ -612,6 +872,10 @@ function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     chipAlone: {
       flexDirection: "row",
+    },
+    marks: {
+      flexDirection: "row",
+      gap: tokens.spacing.xs,
     },
     panel: {
       gap: tokens.spacing.xs,

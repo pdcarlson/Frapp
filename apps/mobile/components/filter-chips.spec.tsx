@@ -50,6 +50,42 @@ const FOLDERS = [
 ];
 
 describe("FilterChips", () => {
+  it("offers a chip's long press as a named screen-reader action (#3934)", () => {
+    const onLongPress = vi.fn();
+    const tree = render(
+      <FilterChips
+        chips={[
+          { value: null, label: "All" },
+          {
+            value: "Rush",
+            label: "Rush",
+            mark: <Text>pin</Text>,
+            onLongPress,
+            longPressLabel: "Star or pin",
+          },
+        ]}
+        selected={null}
+        onSelect={vi.fn()}
+      />,
+    );
+    const rush = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        Array.isArray(node.props.accessibilityActions),
+    );
+    expect(rush.props.accessibilityActions).toEqual([
+      { name: "longpress", label: "Star or pin" },
+    ]);
+    act(() =>
+      rush.props.onAccessibilityAction({
+        nativeEvent: { actionName: "longpress" },
+      }),
+    );
+    expect(onLongPress).toHaveBeenCalledTimes(1);
+    act(() => rush.props.onLongPress());
+    expect(onLongPress).toHaveBeenCalledTimes(2);
+  });
+
   it("scrolls one row sideways when asked, bleeding to the screen's edge", () => {
     const tree = render(
       <FilterChips chips={FOLDERS} selected={null} onSelect={vi.fn()} scroll />,

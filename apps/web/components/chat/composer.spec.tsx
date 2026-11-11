@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { AUDIT_LOG_COMPOSER_NOTE } from "@repo/chat-core/audit-log-copy";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import { act } from "react";
+import { act, useRef } from "react";
 import { renderToString } from "react-dom/server";
 import { hydrateRoot } from "react-dom/client";
 
@@ -110,6 +110,7 @@ import {
   type CommandFormOutcome,
 } from "./composer";
 import { UNAVAILABLE_QUOTE } from "./reply-quote";
+import { ChatDropTarget } from "./chat-drop-target";
 import type { SlashCommand } from "@repo/chat-core/integrations";
 
 type ComposerProps = Parameters<typeof Composer>[0];
@@ -2437,5 +2438,178 @@ describe("Composer in the audit log", () => {
     expect(
       screen.queryByText("This channel is read-only for your role."),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("Composer takes files dropped on the chat column (#4143)", () => {
+  /*
+    The column as chat-shell builds it: a section with the drop target and
+    the composer inside, sharing one attach ref. jsdom has no `DataTransfer`;
+    the target reads only `types` and `files`.
+  */
+  function Column(props: {
+    composer?: Partial<ComposerProps>;
+    disabled?: boolean;
+  }) {
+    const column = useRef<HTMLElement | null>(null);
+    const attach = useRef<((files: File[]) => void) | null>(null);
+    return (
+      <section ref={column} data-testid="column">
+        <ChatDropTarget
+          containerRef={column}
+          attachRef={attach}
+          label="#general"
+          disabled={props.disabled}
+        />
+        <Composer {...baseProps(props.composer)} dropAttachRef={attach} />
+      </section>
+    );
+  }
+
+  const transfer = (files: File[]) =>
+    ({
+      types: ["Files"],
+      files,
+      dropEffect: "none",
+    }) as unknown as DataTransfer;
+
+  function dragIn(files: File[]) {
+    const column = screen.getByTestId("column");
+    const dataTransfer = transfer(files);
+    fireEvent.dragEnter(column, { dataTransfer });
+    fireEvent.dragOver(column, { dataTransfer });
+    return dataTransfer;
+  }
+
+  function drop(files: File[]) {
+    const dataTransfer = dragIn(files);
+    // The target covers the column once shown, so the drop lands on it.
+    fireEvent.drop(
+      screen.queryByTestId("chat-drop-target") ?? screen.getByTestId("column"),
+      { dataTransfer },
+    );
+  }
+
+  beforeEach(() => {
+    mockToast.mockClear();
+    mockUploadSignedUrl.mockClear();
+    mockRequestUploadUrl.mockClear();
+    Object.assign(URL, {
+      createObjectURL: vi.fn(() => "blob:preview"),
+      revokeObjectURL: vi.fn(),
+    });
+  });
+
+  it("shows where the files will go while they are dragged over", () => {
+    render(<Column />);
+    const dataTransfer = dragIn([
+      new File(["png"], "photo.png", { type: "image/png" }),
+    ]);
+
+    expect(screen.getByText("Attach to #general")).toBeInTheDocument();
+    expect(dataTransfer.dropEffect).toBe("copy");
+
+    fireEvent.dragLeave(screen.getByTestId("column"), { dataTransfer });
+    expect(screen.queryByTestId("chat-drop-target")).not.toBeInTheDocument();
+  });
+
+  it("ignores a drag that carries no files, like selected text", () => {
+    render(<Column />);
+    fireEvent.dragEnter(screen.getByTestId("column"), {
+      dataTransfer: { types: ["text/plain"], files: [] },
+    });
+    expect(screen.queryByTestId("chat-drop-target")).not.toBeInTheDocument();
+  });
+
+  it("leaves alone a drag that began on the page, like a photo in a message", () => {
+    render(<Column />);
+    fireEvent.dragStart(window);
+    dragIn([new File(["png"], "photo.png", { type: "image/png" })]);
+    expect(screen.queryByTestId("chat-drop-target")).not.toBeInTheDocument();
+    fireEvent.dragEnd(window);
+
+    dragIn([new File(["png"], "photo.png", { type: "image/png" })]);
+    expect(screen.getByTestId("chat-drop-target")).toBeInTheDocument();
+  });
+
+  it("attaches a dropped image through the attach path", async () => {
+    render(<Column />);
+    drop([new File(["png"], "photo.png", { type: "image/png" })]);
+
+    await waitFor(() => expect(mockUploadSignedUrl).toHaveBeenCalledTimes(1));
+    expect(mockRequestUploadUrl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          content_type: "image/png",
+          filename: "photo.png",
+        }),
+      }),
+    );
+    expect(screen.queryByTestId("chat-drop-target")).not.toBeInTheDocument();
+    expect(mockToast).not.toHaveBeenCalled();
+  });
+
+  it("attaches a dropped PDF, a file that is not an image", async () => {
+    render(<Column />);
+    drop([new File(["%PDF"], "minutes.pdf", { type: "application/pdf" })]);
+
+    await waitFor(() => expect(mockUploadSignedUrl).toHaveBeenCalledTimes(1));
+    expect(mockRequestUploadUrl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          content_type: "application/pdf",
+          filename: "minutes.pdf",
+        }),
+      }),
+    );
+  });
+
+  it("refuses a dropped file the picker would refuse, with the same toast", () => {
+    render(<Column />);
+    drop([new File(["<svg/>"], "logo.svg", { type: "image/svg+xml" })]);
+
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "File type not allowed" }),
+    );
+    expect(mockRequestUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it("caps a drop at the per-message limit", async () => {
+    render(<Column />);
+    drop(
+      Array.from(
+        { length: CHAT_FILE_LIMIT + 2 },
+        (_, i) => new File(["png"], `shot-${i}.png`, { type: "image/png" }),
+      ),
+    );
+
+    await waitFor(() =>
+      expect(mockUploadSignedUrl).toHaveBeenCalledTimes(CHAT_FILE_LIMIT),
+    );
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: `Up to ${CHAT_FILE_LIMIT} files per message`,
+      }),
+    );
+  });
+
+  it("refuses the drop, with no target, where the member can't post", () => {
+    render(<Column composer={{ isReadOnly: true }} />);
+    const dataTransfer = dragIn([
+      new File(["png"], "photo.png", { type: "image/png" }),
+    ]);
+
+    expect(screen.queryByTestId("chat-drop-target")).not.toBeInTheDocument();
+    expect(dataTransfer.dropEffect).toBe("none");
+    fireEvent.drop(screen.getByTestId("column"), { dataTransfer });
+    expect(mockRequestUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it("refuses the drop while a thread covers the column", () => {
+    render(<Column disabled />);
+    drop([new File(["png"], "photo.png", { type: "image/png" })]);
+
+    expect(screen.queryByTestId("chat-drop-target")).not.toBeInTheDocument();
+    expect(mockRequestUploadUrl).not.toHaveBeenCalled();
   });
 });

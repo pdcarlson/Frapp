@@ -1,25 +1,12 @@
-import { NAV_GLYPHS, type DuotoneGlyphPaths } from "@repo/theme/nav-glyphs";
-import type { ActivityGlyph, ActivityRow } from "@repo/hooks";
+import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
+// The pure row model, not the hooks barrel: nothing here reads the API.
+import {
+  ACTIVITY_GLYPH_NAV,
+  type ActivityRow,
+} from "@repo/hooks/activity-rows";
 import { NavGlyph } from "@/components/layout/nav-glyphs";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-
-/**
- * Each kind's glyph, from the shared nav set, so a row draws the same shape as
- * the place its record lives (`iconography.md` §6.2): a task the Tasks glyph,
- * hours the Service glyph. `confirm` and `link` were added for Activity
- * (#4173).
- */
-const GLYPH_PATHS: Record<ActivityGlyph, DuotoneGlyphPaths> = {
-  task: NAV_GLYPHS.tasks,
-  confirm: NAV_GLYPHS.confirm,
-  hours: NAV_GLYPHS.service,
-  poll: NAV_GLYPHS.polls,
-  event: NAV_GLYPHS.events,
-  document: NAV_GLYPHS.documents,
-  backwork: NAV_GLYPHS.backwork,
-  link: NAV_GLYPHS.link,
-};
 
 /** The tile both leads share: 40px, so a row with either is the same height. */
 const LEAD_TILE =
@@ -27,7 +14,8 @@ const LEAD_TILE =
 
 /**
  * What leads an Activity row (#4173): the date for an event, month over day
- * as a calendar draws it, else its kind's glyph, the way Teams' Activity marks each row.
+ * as a calendar draws it, else its kind's glyph (`ACTIVITY_GLYPH_NAV`, from the
+ * shared nav set), the way Teams' Activity marks each row.
  * Both are neutral: colour on this page is for what asks something of the
  * member (`ActivityAsk`) and for status, never for a kind.
  */
@@ -54,7 +42,10 @@ export function ActivityRowLead({ row }: { row: ActivityRow }) {
       aria-hidden="true"
       data-glyph={row.glyph}
     >
-      <NavGlyph paths={GLYPH_PATHS[row.glyph]} className="h-5 w-5" />
+      <NavGlyph
+        paths={NAV_GLYPHS[ACTIVITY_GLYPH_NAV[row.glyph]]}
+        className="h-5 w-5"
+      />
     </span>
   );
 }
