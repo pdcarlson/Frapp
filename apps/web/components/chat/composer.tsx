@@ -18,8 +18,6 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import type { JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
-import Mention from "@tiptap/extension-mention";
-import { Extension } from "@tiptap/core";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING_WITHIN } from "@/components/ui/focus";
 import {
@@ -35,10 +33,8 @@ import {
 import { AUDIT_LOG_COMPOSER_NOTE } from "@repo/chat-core/audit-log-copy";
 import { cn } from "@/lib/utils";
 import { compactControlClassName } from "@/components/shared/table-controls";
-import { MENTION_CHIP } from "./chip";
+import { chatMentionExtension, createKeymap, useMentionSourceRefs } from "./chat-editor";
 import {
-  useChapterRoster,
-  useMentionRoles,
   useRequestChatUploadUrl,
   useUploadSignedUrl,
 } from "@repo/hooks";
@@ -77,11 +73,6 @@ import {
   type PlusMenuForm,
 } from "@repo/chat-core/plus-menu";
 import { QuotedMessage } from "./reply-quote";
-import {
-  createMentionSuggestion,
-  type MentionRoleEntry,
-  type MentionRosterEntry,
-} from "./mention-suggestion";
 import {
   getSlashCommand,
   paletteCommandArgs,
@@ -300,8 +291,8 @@ export function ComposerShell({
             /*
               Never during IME composition. There, Enter commits the candidate
               the member is composing — swallowing it makes Japanese, Chinese
-              and Korean input impossible to complete. `createSubmitKeymap`
-              below avoids this by being a ProseMirror extension with real
+              and Korean input impossible to complete. The real composer's
+              Enter keymap (`createKeymap` in `./chat-editor`) avoids this by being a ProseMirror extension with real
               composition state; a DOM `keydown` is the "flaky" path its comment
               warns about, so it has to ask.
             */
@@ -575,27 +566,6 @@ interface ComposerBaseProps {
  * same fact, free to disagree with the strip the member can see.
  */
 type ComposerProps = ComposerBaseProps & ComposerReplyProps;
-
-/**
- * Submit on Enter; let Shift+Enter fall through to StarterKit's default
- * hard-break. Bound as a Tiptap extension so we get full ProseMirror context
- * (composition state, etc.) instead of a flaky DOM keydown. The extension
- * reads a ref that holds the latest submit handler, so the keymap always calls
- * the current one without re-binding the extension.
- */
-function createSubmitKeymap(sendRef: { current: () => void }) {
-  return Extension.create({
-    name: "submit-on-enter",
-    addKeyboardShortcuts() {
-      return {
-        Enter: () => {
-          sendRef.current();
-          return true;
-        },
-      };
-    },
-  });
-}
 
 /**
  * Build a Tiptap doc JSON from plain text so chars like `<`, `&`, and
@@ -1030,27 +1000,10 @@ export function Composer({
   const { toast } = useToast();
   const requestUploadUrl = useRequestChatUploadUrl();
   const uploadSignedUrl = useUploadSignedUrl();
-  const chapterRoster = useChapterRoster();
   const fileInput = useRef<HTMLInputElement | null>(null);
-  /**
-   * Live roster for `@`-mention autocomplete, read through a ref rather than
-   * closed over directly. `useEditor`'s extensions array is only evaluated
-   * once (this composer passes no deps array), so a plain closure would see
-   * whichever roster page had loaded — usually none — at first render and
-   * never again. The `suggestion.items()` callback inside
-   * `createMentionSuggestion` reads `rosterRef.current` on every keystroke
-   * instead, so it always sees the latest fetched roster.
-   */
-  const rosterRef = useRef<MentionRosterEntry[]>([]);
-  useEffect(() => {
-    rosterRef.current = chapterRoster.data ?? [];
-  }, [chapterRoster.data]);
-  // The roles this member may `@`, read through a ref for the same reason.
-  const mentionRoles = useMentionRoles();
-  const rolesRef = useRef<MentionRoleEntry[]>([]);
-  useEffect(() => {
-    rolesRef.current = mentionRoles.data ?? [];
-  }, [mentionRoles.data]);
+  // The `@` list's roster and roles (`useMentionSourceRefs`, shared with the
+  // inline editor a message turns into on Edit).
+  const { rosterRef, rolesRef } = useMentionSourceRefs();
   /**
    * Files uploaded and waiting to be claimed by the next send.
    *
@@ -1131,23 +1084,19 @@ export function Composer({
       Placeholder.configure({
         placeholder: composerPlaceholder(channelName, isDirect),
       }),
-      Mention.configure({
-        // The same chip the timeline paints (`chip.ts`), not a second recipe.
-        // It used to be an accent tint here, which meant a handle changed
-        // colour the instant you pressed Enter — and worse, the accent tint was
-        // exactly the paint the old self bubble's fill was derived from, so the
-        // authored mention and the sent one could not both read.
-        HTMLAttributes: { class: MENTION_CHIP },
-        // Same shape as the submit keymap below: `createMentionSuggestion`
-        // only reads `rosterRef.current` later, inside `items()` callbacks
-        // invoked from keystroke events — never synchronously during render.
-        // eslint-disable-next-line react-hooks/refs -- suggestion.items() reads the ref from a keystroke callback, not render
-        suggestion: createMentionSuggestion(rosterRef, rolesRef),
-      }),
-      // Tiptap registers this shortcut while constructing the editor. The
-      // closure reads `sendRef.current` only on Enter, not during render.
+      // The same chip the timeline paints (`chip.ts`), not a second recipe.
+      // It used to be an accent tint here, which meant a handle changed
+      // colour the instant you pressed Enter. `createMentionSuggestion`
+      // only reads the refs later, inside `items()` callbacks invoked from
+      // keystroke events, never synchronously during render.
+      chatMentionExtension(rosterRef, rolesRef),
+      // Submit on Enter; Shift+Enter falls through to StarterKit's hard
+      // break. Tiptap registers this shortcut while constructing the editor;
+      // the handler reads `sendRef.current` only on Enter, not during render.
       // eslint-disable-next-line react-hooks/refs -- Enter keymap; latest submit lives in a ref
-      createSubmitKeymap(sendRef),
+      createKeymap("submit-on-enter", {
+        current: { Enter: () => sendRef.current() },
+      }),
     ],
     content: buildDocFromPlainText(draft),
     editorProps: {

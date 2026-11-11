@@ -420,12 +420,32 @@ describe("ChatComposer @-mention picker", () => {
     const input = result.tree.root.findByType("TextInput" as never);
     act(() => {
       input.props.onFocus?.();
+      // From the keyboard: the list opens only on text the member typed.
+      input.props.onChangeText?.(value);
       input.props.onSelectionChange?.({
         nativeEvent: { selection: { start: caret, end: caret } },
       });
     });
     return result;
   }
+
+  it("stays shut on text put in the box for the member: an edit, a restored draft", () => {
+    // Tapping Edit on "@Paul Carlson @shawn" used to pop the list up over the
+    // message at once, the caret landing after `@shawn` (tester report
+    // 2026-11-11). Discord's edit box opens it only once you type.
+    const result = renderComposer({
+      value: "@Paul Carlson @pa",
+      mentionCandidates: ROSTER,
+    });
+    const input = result.tree.root.findByType("TextInput" as never);
+    act(() => {
+      input.props.onFocus?.();
+      input.props.onSelectionChange?.({
+        nativeEvent: { selection: { start: 17, end: 17 } },
+      });
+    });
+    expect(offered(result.tree)).toEqual([]);
+  });
 
   const offered = (tree: ReactTestRenderer) =>
     tree.root

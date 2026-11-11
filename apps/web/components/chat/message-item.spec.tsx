@@ -18,6 +18,63 @@ import { SYSTEM_SENDER_ID } from "@repo/validation";
 // The real list resolves signed URLs through `useFrappClient`, a provider this
 // suite does not stand up; a stand-in is enough to say where the list sits.
 const attachmentProps = vi.hoisted(() => [] as Record<string, unknown>[]);
+// The inline editor is Tiptap (`inline-message-editor.tsx`), whose
+// ProseMirror view renders no document into jsdom here (see composer.spec's
+// note). The row's contract with it is props: the text, Enter to save, Escape
+// to cancel, disabled while saving, focus handed back, and a reload when a
+// newer copy arrives untouched. This double keeps that contract on a textarea
+// so the row's own behavior stays testable; the editor's document and keys
+// are tested in `inline-message-editor.spec.tsx`.
+vi.mock("./inline-message-editor", async () => {
+  const React = await import("react");
+  type Props = {
+    value: string;
+    resetKey?: number;
+    disabled?: boolean;
+    onChange: (text: string) => void;
+    onSave: () => void;
+    onCancel: () => void;
+  };
+  const InlineMessageEditor = React.forwardRef<
+    { focus: () => void },
+    Props
+  >(function InlineMessageEditorDouble(props, ref) {
+    const field = React.useRef<HTMLTextAreaElement | null>(null);
+    const [text, setText] = React.useState(props.value);
+    const [loaded, setLoaded] = React.useState(props.resetKey ?? 0);
+    if ((props.resetKey ?? 0) !== loaded) {
+      setLoaded(props.resetKey ?? 0);
+      setText(props.value);
+    }
+    React.useImperativeHandle(ref, () => ({
+      focus: () => field.current?.focus(),
+    }));
+    return (
+      <textarea
+        ref={field}
+        aria-label="Edit message"
+        autoFocus
+        value={text}
+        disabled={props.disabled}
+        onChange={(event) => {
+          setText(event.target.value);
+          props.onChange(event.target.value);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            props.onCancel();
+          }
+          if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            props.onSave();
+          }
+        }}
+      />
+    );
+  });
+  return { InlineMessageEditor };
+});
 vi.mock("./message-attachments", () => ({
   MessageAttachments: (props: Record<string, unknown>) => {
     attachmentProps.push(props);
@@ -1883,13 +1940,8 @@ describe("MessageItem inline editor", () => {
     await openEditor();
 
     expect(editSurface().className).not.toContain("rounded-[18px]");
-    // Grows with the draft instead of scrolling a fixed box, on the body's
-    // 25px line box so the draft wraps near where the message wrapped.
-    expect(screen.getByRole("textbox").className).toContain(
-      "field-sizing-content",
-    );
-    expect(screen.getByRole("textbox").className).toContain("leading-[25px]");
-    expect(screen.getByRole("textbox").className).toContain("max-h-40");
+    // The field's own type and growth are the editor's:
+    // `inline-message-editor.spec.tsx`.
   });
 
   it("gives the body back when the editor closes", async () => {
