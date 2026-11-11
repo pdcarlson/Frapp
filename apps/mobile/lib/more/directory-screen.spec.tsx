@@ -90,6 +90,7 @@ const state = vi.hoisted(() => ({
   vocabulary: undefined as Record<string, string> | undefined,
   // `GET /v1/roles`, for the Actives filters (#3971).
   roles: [] as unknown[],
+  rolesError: false,
 }));
 
 // One refetch per read, so a pull can be checked against each of them.
@@ -106,7 +107,17 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
   useActiveChapterId: () => "c-1",
   usePermissionList: () => state.permissions,
-  useRoles: () => read(state.roles, refetches.roles),
+  useRoles: () =>
+    state.rolesError
+      ? {
+          data: undefined,
+          isPending: false,
+          isError: true,
+          isSuccess: false,
+          isFetching: false,
+          refetch: refetches.roles,
+        }
+      : read(state.roles, refetches.roles),
   useMembers: () => read(state.members ?? MEMBERS, refetches.members),
   usePledgeClasses: () =>
     state.classesPending
@@ -301,6 +312,7 @@ beforeEach(() => {
   state.classesPending = false;
   state.vocabulary = undefined;
   state.roles = [];
+  state.rolesError = false;
   for (const refetch of Object.values(refetches)) {
     refetch.mockReset().mockResolvedValue(undefined);
   }
@@ -489,6 +501,8 @@ describe("s13's Actives filters (#3971)", () => {
       roles: { id: string; name: string }[];
       years: number[];
       classes: { id: string; name: string }[];
+      classWord: string;
+      rolesStatus: string;
     };
   }
 
@@ -578,6 +592,33 @@ describe("s13's Actives filters (#3971)", () => {
     ) as { onChangeText: (text: string) => void };
     act(() => field.onChangeText("a"));
     expect(listed(tree)).toHaveLength(3);
+  });
+
+  it("offers the chapter's classes under its own word, and narrows by one", () => {
+    state.classes = [
+      { id: "pc-alpha", name: "Alpha" },
+      { id: "pc-beta", name: "Beta" },
+    ];
+    state.vocabulary = { class: "Line" };
+    state.members = [
+      { ...ACTIVES[0]!, pledge_class_id: "pc-alpha" },
+      { ...ACTIVES[1]!, pledge_class_id: "pc-beta" },
+      CHARLES,
+      DANIEL,
+    ];
+    const tree = render();
+
+    expect(sheet(tree).classes.map((c) => c.name)).toEqual(["Alpha", "Beta"]);
+    expect(sheet(tree).classWord).toBe("Line");
+    pick(tree, { pledgeClassId: "pc-beta" });
+    expect(listed(tree)).toEqual(["Andre Silva"]);
+  });
+
+  it("tells the sheet whether the role list has answered", () => {
+    expect(sheet(render()).rolesStatus).toBe("ready");
+
+    state.rolesError = true;
+    expect(sheet(render()).rolesStatus).toBe("error");
   });
 
   it("refreshes the role list on a pull", async () => {

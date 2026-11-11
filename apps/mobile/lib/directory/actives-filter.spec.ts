@@ -4,6 +4,7 @@ import {
   effectiveActivesFilter,
   filterActives,
   graduationYearOptions,
+  hasRoleQuery,
   NO_ACTIVES_FILTER,
   parseFilterRoles,
   searchFilterRoles,
@@ -60,12 +61,17 @@ describe("the filter's options", () => {
   it("leaves the Alumni system role and unnamed rows out of the roles", () => {
     expect(
       parseFilterRoles([
-        { id: "r-1", name: "Member", color: "#123456" },
+        { id: "r-1", name: "Member", color: "#f2994a" },
+        { id: "r-2", name: "Off palette", color: "#123456" },
         { id: "r-al", name: "Alumni", system_key: "ALUMNI" },
         { id: "r-x", name: "" },
         "junk",
       ]),
-    ).toEqual([{ id: "r-1", name: "Member", color: "#123456" }]);
+    ).toEqual([
+      // Palette colors only, as every other role-color path paints them.
+      { id: "r-1", name: "Member", color: "#F2994A" },
+      { id: "r-2", name: "Off palette", color: null },
+    ]);
   });
 
   it("matches a typed role by word starts, case and accents ignored, as web does", () => {
@@ -83,6 +89,12 @@ describe("the filter's options", () => {
     expect(searchFilterRoles(roles, "rec").map((r) => r.id)).toEqual(["5"]);
     expect(searchFilterRoles(roles, "exec").map((r) => r.id)).toEqual(["6"]);
     expect(searchFilterRoles(roles, "  ")).toHaveLength(6);
+  });
+
+  it("counts punctuation alone as no role query", () => {
+    expect(hasRoleQuery("(")).toBe(false);
+    expect(hasRoleQuery(" / ")).toBe(false);
+    expect(hasRoleQuery("(e")).toBe(true);
   });
 });
 

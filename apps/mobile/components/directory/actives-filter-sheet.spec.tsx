@@ -28,13 +28,18 @@ import { ActivesFilterSheet } from "./actives-filter-sheet";
 
 const ROLES: FilterRole[] = [
   { id: "r-member", name: "Member", color: null },
-  { id: "r-rush", name: "Rush/Recruitment Chair", color: "#ff0000" },
+  { id: "r-rush", name: "Rush/Recruitment Chair", color: "#F2994A" },
   { id: "r-social", name: "Social Chair", color: null },
 ];
 
 function render(
   filter: ActivesFilter = NO_ACTIVES_FILTER,
   onChange = vi.fn(),
+  more: {
+    classes?: { id: string; name: string }[];
+    rolesStatus?: "loading" | "error" | "ready";
+    onRetryRoles?: () => void;
+  } = {},
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
@@ -45,8 +50,10 @@ function render(
           onChange={onChange}
           roles={ROLES}
           years={[2028, 2027]}
-          classes={[]}
+          classes={more.classes ?? []}
           classWord="Pledge class"
+          rolesStatus={more.rolesStatus ?? "ready"}
+          onRetryRoles={more.onRetryRoles ?? vi.fn()}
         />
       </FrappThemeProvider>,
     );
@@ -159,5 +166,101 @@ describe("ActivesFilterSheet (#3971)", () => {
     expect(
       inHeader(tree, (p) => p.accessibilityLabel === "Graduation year"),
     ).not.toBeNull();
+  });
+
+  /** A section's chip row, whose `onSelect` the screen relies on. */
+  function section(tree: ReactTestRenderer, label: string) {
+    return inHeader(tree, (p) => p.accessibilityLabel === label) as {
+      onSelect: (value: string | null) => void;
+      selected: string | null;
+    };
+  }
+
+  it("hands the screen each section's pick in the filter's own types", () => {
+    const onChange = vi.fn();
+    const tree = render(NO_ACTIVES_FILTER, onChange, {
+      classes: [{ id: "pc-a", name: "Alpha" }],
+    });
+
+    act(() => section(tree, "Status").onSelect("pending"));
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...NO_ACTIVES_FILTER,
+      status: "pending",
+    });
+    // A number, which is what the year options and the filter compare.
+    act(() => section(tree, "Graduation year").onSelect("2028"));
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...NO_ACTIVES_FILTER,
+      graduationYear: 2028,
+    });
+    act(() => section(tree, "Pledge class").onSelect("pc-a"));
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...NO_ACTIVES_FILTER,
+      pledgeClassId: "pc-a",
+    });
+  });
+
+  it("reads each section's Any chip as no pick", () => {
+    const onChange = vi.fn();
+    const set = {
+      roleId: null,
+      graduationYear: 2028,
+      pledgeClassId: "pc-a",
+      status: "active" as const,
+    };
+    const tree = render(set, onChange, {
+      classes: [{ id: "pc-a", name: "Alpha" }],
+    });
+    expect(section(tree, "Graduation year").selected).toBe("2028");
+
+    act(() => section(tree, "Status").onSelect("__any"));
+    expect(onChange).toHaveBeenLastCalledWith({ ...set, status: null });
+    act(() => section(tree, "Graduation year").onSelect("__any"));
+    expect(onChange).toHaveBeenLastCalledWith({ ...set, graduationYear: null });
+    act(() => section(tree, "Pledge class").onSelect("__any"));
+    expect(onChange).toHaveBeenLastCalledWith({ ...set, pledgeClassId: null });
+  });
+
+  it("keeps Any role while only punctuation is typed", () => {
+    const tree = render();
+    search(tree, "(");
+    expect(shown(tree)[0]).toBe("any");
+  });
+
+  it("shows the whole role list again after Clear filters", () => {
+    const tree = render({ ...NO_ACTIVES_FILTER, roleId: "r-rush" });
+    search(tree, "rec");
+    expect(shown(tree)).toEqual(["r-rush"]);
+
+    const clear = inHeader(
+      tree,
+      (p) => p.accessibilityLabel === "Clear filters",
+    )!;
+    act(() => (clear.onPress as () => void)());
+    expect(shown(tree)).toEqual(["any", "r-member", "r-rush", "r-social"]);
+  });
+
+  it("says the role list is loading, or failed with Retry, never that there are none", () => {
+    const empty = (tree: ReactTestRenderer) =>
+      list(tree).props.ListEmptyComponent as React.ReactElement<{
+        children: React.ReactNode;
+        action?: { label: string; onPress: () => void };
+      }>;
+
+    const loading = render(NO_ACTIVES_FILTER, vi.fn(), {
+      rolesStatus: "loading",
+    });
+    expect(shown(loading)).toEqual([]);
+    expect(empty(loading).props.children).toBe("Loading roles…");
+
+    const onRetryRoles = vi.fn();
+    const failed = render(NO_ACTIVES_FILTER, vi.fn(), {
+      rolesStatus: "error",
+      onRetryRoles,
+    });
+    expect(shown(failed)).toEqual([]);
+    expect(empty(failed).props.children).toBe("Couldn't load roles.");
+    act(() => empty(failed).props.action!.onPress());
+    expect(onRetryRoles).toHaveBeenCalled();
   });
 });

@@ -11,6 +11,7 @@ import { useChapterBranding } from "@/lib/chapter-branding";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import { FilterChips } from "@/components/filter-chips";
 import { SectionHeader } from "@/components/list-section";
+import { InlineNote } from "@/components/inline-note";
 import {
   SheetBackToClose,
   SheetGrabber,
@@ -24,6 +25,7 @@ import {
 } from "@/components/sheet-scaffold";
 import {
   countActivesFilters,
+  hasRoleQuery,
   NO_ACTIVES_FILTER,
   searchFilterRoles,
   STATUS_OPTIONS,
@@ -58,6 +60,13 @@ export interface ActivesFilterSheetProps {
   classes: readonly { id: string; name: string }[];
   /** The chapter's word for a pledge class ("Pledge class", "Line"). */
   classWord: string;
+  /**
+   * Where `GET /v1/roles` stands. Until it has answered, `roles` is empty for
+   * want of a read, not because the chapter has none, so the sheet says so
+   * (and offers a retry once it has failed) instead of claiming no roles.
+   */
+  rolesStatus: "loading" | "error" | "ready";
+  onRetryRoles: () => void;
 }
 
 const ANY = "__any";
@@ -66,7 +75,16 @@ export const ActivesFilterSheet = forwardRef<
   BottomSheetModal,
   ActivesFilterSheetProps
 >(function ActivesFilterSheet(
-  { filter, onChange, roles, years, classes, classWord },
+  {
+    filter,
+    onChange,
+    roles,
+    years,
+    classes,
+    classWord,
+    rolesStatus,
+    onRetryRoles,
+  },
   ref,
 ) {
   const { tokens } = useFrappTheme();
@@ -77,16 +95,21 @@ export const ActivesFilterSheet = forwardRef<
   const closeSheet = useSheetClose(ref);
   const [search, setSearch] = useState("");
 
-  const searching = search.trim().length > 0;
+  const searching = hasRoleQuery(search);
+  const rolesReady = rolesStatus === "ready";
   const visibleRoles = useMemo(
     () => searchFilterRoles(roles, search),
     [roles, search],
   );
   // "Any role" leads the list and steps aside while a search is typed, as
   // web's searchable chip does.
-  const rows: readonly (FilterRole | typeof ANY)[] = searching
-    ? visibleRoles
-    : [ANY, ...visibleRoles];
+  // No rows at all until the list has answered: the status line under the
+  // search stands in for them.
+  const rows: readonly (FilterRole | typeof ANY)[] = !rolesReady
+    ? []
+    : searching
+      ? visibleRoles
+      : [ANY, ...visibleRoles];
   const setCount = countActivesFilters(filter);
 
   const set = (patch: Partial<ActivesFilter>) =>
@@ -119,7 +142,11 @@ export const ActivesFilterSheet = forwardRef<
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Clear filters"
-                onPress={() => onChange(NO_ACTIVES_FILTER)}
+                onPress={() => {
+                  onChange(NO_ACTIVES_FILTER);
+                  // The whole list again, Any role leading it.
+                  setSearch("");
+                }}
                 hitSlop={tokens.spacing.sm}
                 style={styles.clear}
               >
@@ -216,11 +243,19 @@ export const ActivesFilterSheet = forwardRef<
           </View>
         }
         ListEmptyComponent={
-          <Text style={styles.empty}>
-            {roles.length === 0
-              ? "This chapter has no roles yet."
-              : "No roles match that search."}
-          </Text>
+          rolesStatus === "error" ? (
+            <InlineNote action={{ label: "Retry", onPress: onRetryRoles }}>
+              {"Couldn't load roles."}
+            </InlineNote>
+          ) : (
+            <Text style={styles.empty}>
+              {rolesStatus === "loading"
+                ? "Loading roles…"
+                : roles.length === 0
+                  ? "This chapter has no roles yet."
+                  : "No roles match that search."}
+            </Text>
+          )
         }
         renderItem={({ item }: { item: FilterRole | typeof ANY }) => {
           const isAny = item === ANY;

@@ -547,6 +547,15 @@ export default function DirectoryScreen() {
           years={yearOptions}
           classes={pledgeClasses ?? []}
           classWord={classTerm}
+          // Data first: a failed refresh keeps the list it already read.
+          rolesStatus={
+            rolesQuery.data !== undefined
+              ? "ready"
+              : rolesQuery.isError
+                ? "error"
+                : "loading"
+          }
+          onRetryRoles={() => void rolesQuery.refetch()}
         />
       </SafeAreaView>
     </View>

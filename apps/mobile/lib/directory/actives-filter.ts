@@ -8,7 +8,8 @@
  * Client-side, as web's are: the Actives tab already holds the whole list, and
  * `GET /v1/members` takes no filter params.
  */
-import { normalizeWords } from "@repo/hooks/fuzzy-match";
+import { matchesWordStarts, normalizeWords } from "@repo/hooks/fuzzy-match";
+import { roleColorOrNull } from "@repo/validation";
 import { num, records, str } from "../more/narrow";
 
 export type ActivesStatus = "active" | "pending";
@@ -53,29 +54,30 @@ export function parseFilterRoles(rolesData: unknown): FilterRole[] {
     const id = str(row, "id");
     const name = str(row, "name");
     if (!id || !name || row.system_key === "ALUMNI") return [];
-    return [{ id, name, color: str(row, "color") }];
+    // Palette colors only, as every other role-color path paints them
+    // (`roleColorOrNull`): a legacy or free-typed value paints no dot.
+    return [{ id, name, color: roleColorOrNull(row.color) }];
   });
 }
 
 /**
- * The role list for a typed query, matched as web's searchable role chip
- * matches (`matchesWordStarts` in `apps/web/components/shared/filter-chip.tsx`):
- * every word typed starts a word of the name, case and accents ignored, with
- * words split on anything that isn't a letter or digit, so "rec" finds
- * "Rush/Recruitment Chair" and "exec" finds "(Exec) Treasurer". Not
- * `filterChannelMembers`, which splits on a person's name separators only and
- * would miss both.
+ * The role list for a typed query, matched by `matchesWordStarts`, the rule
+ * web's searchable role chip uses: every word typed starts a word of the name,
+ * case and accents ignored, so "rec" finds "Rush/Recruitment Chair".
  */
 export function searchFilterRoles(
   roles: readonly FilterRole[],
   query: string,
 ): FilterRole[] {
-  const terms = normalizeWords(query);
-  if (!terms.length) return [...roles];
-  return roles.filter((role) => {
-    const words = normalizeWords(role.name);
-    return terms.every((term) => words.some((word) => word.startsWith(term)));
-  });
+  return roles.filter((role) => matchesWordStarts(role.name, query));
+}
+
+/**
+ * Whether a typed role query narrows anything. Punctuation alone doesn't (the
+ * matcher drops it), so "(" on the way to "(Exec)" still shows Any role.
+ */
+export function hasRoleQuery(query: string): boolean {
+  return normalizeWords(query).length > 0;
 }
 
 /** The actives' graduation years, newest first, as web lists them. */
