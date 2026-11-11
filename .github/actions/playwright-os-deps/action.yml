@@ -1,0 +1,135 @@
+name: Playwright OS deps
+description: >
+  Installs the OS packages Playwright's Chromium needs, from cached .debs when
+  it can, so a run does not depend on the Ubuntu apt mirrors. Those mirrors have
+  failed CI three ways: Hash Sum mismatches, a two-hour hang (#3129), and a DNS
+  outage on 2026-11-11 that held both Playwright jobs red on every PR for about
+  12 minutes. Call it from a step with its own `timeout-minutes`, which a
+  composite action's steps cannot set.
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve the cache key
+      id: key
+      shell: bash
+      run: |
+        version="$(node -p "require('@playwright/test/package.json').version")"
+        echo "prefix=playwright-os-debs-${ImageOS:-unknown}-" >> "$GITHUB_OUTPUT"
+        echo "key=playwright-os-debs-${ImageOS:-unknown}-${version}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+
+    # A runner image version or Playwright bump misses the exact key but still
+    # restores the newest entry under the prefix, and the install step checks
+    # that it covers everything, so a weekly image update needs no apt.
+    - name: Restore cached OS packages
+      id: restore
+      uses: actions/cache/restore@v6
+      with:
+        path: ~/.cache/pw-os-debs
+        key: ${{ steps.key.outputs.key }}
+        restore-keys: ${{ steps.key.outputs.prefix }}
+
+    # Order: cached .debs, then Playwright's own offline check (`--dry-run` runs
+    # `apt-get install -s` against what is installed, and exits nonzero when a
+    # package is missing), then apt only if that check still fails.
+    - name: Install Playwright OS deps
+      id: install
+      shell: bash
+      run: |
+        DEBS="$HOME/.cache/pw-os-debs"
+        # Never empty, so the save step always has a path to save.
+        mkdir -p "$DEBS" && touch "$DEBS/.keep"
+        shopt -s nullglob
+        # Only packages this image lacks entirely, newest cached version first:
+        # never downgrade a package the image already ships.
+        declare -A seen=()
+        todo=()
+        for deb in $(printf '%s\n' "$DEBS"/*.deb | sort -rV); do
+          pkg="$(dpkg-deb -f "$deb" Package)"
+          [ -n "${seen[$pkg]:-}" ] && continue
+          seen[$pkg]=1
+          if ! dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -qx 'install ok installed'; then
+            todo+=("$deb")
+          fi
+        done
+        if [ "${#todo[@]}" -gt 0 ]; then
+          # apt plans the whole set before it changes anything, so a cached
+          # package that no longer fits this image fails here cleanly instead
+          # of leaving dpkg half-configured. --no-download keeps it offline.
+          sudo apt-get install -y --no-download --no-install-recommends "${todo[@]}" \
+            || echo "::warning::cached Playwright OS packages did not install; apt will fetch them."
+        fi
+        if check="$(npx playwright install-deps --dry-run chromium 2>&1)"; then
+          echo "$check"
+          echo "Every Playwright OS dependency is installed; apt not needed."
+          exit 0
+        fi
+        echo "$check"
+        # What is still missing, in either form the check prints. When it is
+        # only fonts, Chromium's libraries are all here and it runs without them.
+        missing="$(printf '%s\n' "$check" | sed -nE 's/^  ([a-z0-9][a-z0-9.+-]*)$/\1/p; s/.*Unable to locate package ([^ ]+).*/\1/p')"
+        fonts_only=false
+        if [ -n "$missing" ] && ! printf '%s\n' "$missing" | grep -qvE '^x?fonts-'; then
+          fonts_only=true
+        fi
+        without_fonts() {
+          # Not cached, so the next run with apt reachable fetches and caches them.
+          echo "::warning::apt is unreachable and only fonts are missing ($(echo $missing)); running without them."
+          echo "save=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        }
+        # One quick request to the runner's first Ubuntu mirror. Any HTTP answer
+        # counts as reachable. apt's own timeouts did not bound a DNS outage:
+        # one attempt ran past 10 minutes on 2026-11-11.
+        mirror="$(awk 'NF { print $1; exit }' /etc/apt/apt-mirrors.txt 2>/dev/null || true)"
+        mirror="${mirror:-http://archive.ubuntu.com/ubuntu/}"
+        code="$(curl -sS -o /dev/null --max-time 15 -w '%{http_code}' "$mirror" 2>/dev/null || true)"
+        if [ "${code:-000}" = "000" ]; then
+          echo "The Ubuntu mirror $mirror did not answer."
+          if [ "$fonts_only" = true ]; then without_fonts; fi
+        fi
+
+        # Drop Google's apt source, whose Hash Sum mismatches retries can't absorb.
+        sudo rm -f /etc/apt/sources.list.d/google-chrome.list \
+          /etc/apt/sources.list.d/google-chrome.list.save \
+          /etc/apt/sources.list.d/google-chrome.sources \
+          /etc/apt/sources.list.d/google.list
+        # Keep what apt downloads, so the save step can cache it, and bound each
+        # fetch so an unreachable mirror fails in seconds rather than minutes.
+        printf '%s\n' \
+          'Binary::apt-get::APT::Keep-Downloaded-Packages "true";' \
+          'APT::Keep-Downloaded-Packages "true";' \
+          'Acquire::Retries "2";' \
+          'Acquire::http::Timeout "20";' \
+          'Acquire::https::Timeout "20";' \
+          | sudo tee /etc/apt/apt.conf.d/99-playwright-os-deps > /dev/null
+        sudo rm -f /var/cache/apt/archives/*.deb
+        for i in 1 2 3; do
+          if npx playwright install-deps chromium; then
+            break
+          fi
+          if [ "$fonts_only" = true ]; then without_fonts; fi
+          if [ "$i" -eq 3 ]; then
+            echo "::error::playwright install-deps failed after 3 attempts (see prior apt output)."
+            exit 1
+          fi
+          echo "Attempt $i/3 failed — retrying in 20s..."
+          sudo rm -rf /var/lib/apt/lists/* || true
+          sleep 20
+        done
+        # Add what apt fetched to the cached set. Older versions stay beside
+        # newer ones; the loop above installs the newest of each.
+        fetched=(/var/cache/apt/archives/*.deb)
+        if [ "${#fetched[@]}" -gt 0 ]; then cp "${fetched[@]}" "$DEBS/"; fi
+        npx playwright install-deps --dry-run chromium
+
+    # Saves under this image version's key whenever it wasn't an exact hit, so
+    # the next run on this image restores it exactly. Runs only when the
+    # install succeeded, and never for a run that went without fonts, whose
+    # entry would hold this image's key without them.
+    - name: Save cached OS packages
+      if: steps.restore.outputs.cache-hit != 'true' && steps.install.outputs.save != 'false'
+      uses: actions/cache/save@v6
+      with:
+        path: ~/.cache/pw-os-debs
+        key: ${{ steps.key.outputs.key }}
