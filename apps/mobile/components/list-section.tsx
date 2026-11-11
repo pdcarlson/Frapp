@@ -37,10 +37,28 @@ import { eyebrowStyle } from "@/components/eyebrow";
  * none, and nothing documents which is canonical.
  */
 
-export function SectionHeader({ children }: { children: string }) {
+export function SectionHeader({
+  children,
+  count,
+}: {
+  children: string;
+  /**
+   * How many rows the section holds, drawn after the caption as a separate
+   * muted count, as web's `SectionLabel` draws it, rather than inside the
+   * caption's own text. Omit it (or pass `null`) for nothing to count.
+   */
+  count?: number | null;
+}) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  return <Text style={styles.sectionHeader}>{children}</Text>;
+  if (count == null)
+    return <Text style={styles.sectionHeader}>{children}</Text>;
+  return (
+    <View style={styles.sectionHeaderRow}>
+      <Text style={styles.sectionHeader}>{children}</Text>
+      <Text style={styles.sectionHeaderCount}>{String(count)}</Text>
+    </View>
+  );
 }
 
 /**
@@ -501,6 +519,18 @@ function createStyles(tokens: SignetTokens) {
       ...eyebrowStyle(tokens),
       color: tokens.color.text.mutedForeground,
       marginTop: sectionHeaderMarginTop,
+    },
+    // The caption and its count on one baseline. The caption keeps its own
+    // top margin, so a counted header sits where an uncounted one does.
+    sectionHeaderRow: {
+      flexDirection: "row",
+      alignItems: "baseline",
+      gap: tokens.spacing.sm,
+    },
+    sectionHeaderCount: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+      fontVariant: ["tabular-nums"],
     },
     // The caption's line box with its top margin; the uppercase tracking
     // doesn't change its height.

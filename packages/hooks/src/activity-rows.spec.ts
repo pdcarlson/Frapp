@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import {
+  ACTIVITY_GLYPH_NAV,
   activityBadgeIsAsk,
   activityGroups,
   activityLinkKind,
   activityNeedsYouHeadline,
+  activityNextUpLine,
   activityRowIsNow,
   activitySummary,
   type Activity,
@@ -797,5 +800,31 @@ describe("activityLinkKind", () => {
     ["example.org", "https://example.org/x", "example.org"],
   ])("names %s (%s) as %s", (host, url, expected) => {
     expect(activityLinkKind({ host, url })).toBe(expected);
+  });
+});
+
+describe("ACTIVITY_GLYPH_NAV", () => {
+  it("names a shape in the shared nav set for every kind", () => {
+    for (const name of Object.values(ACTIVITY_GLYPH_NAV)) {
+      expect(NAV_GLYPHS[name]).toBeDefined();
+    }
+    // A task and a confirmation read apart at a glance.
+    expect(ACTIVITY_GLYPH_NAV.confirm).not.toBe(ACTIVITY_GLYPH_NAV.task);
+  });
+});
+
+describe("activityNextUpLine", () => {
+  it("names the next event and when it starts", () => {
+    const line = activityNextUpLine({
+      nextEvent: {
+        name: "Exec Board Sync",
+        start_time: "2099-03-07T19:00:00.000Z",
+      } as never,
+    });
+    expect(line).toMatch(/^Next up: Exec Board Sync · \S/);
+  });
+
+  it("is nothing when no event is ahead", () => {
+    expect(activityNextUpLine({ nextEvent: null })).toBeNull();
   });
 });

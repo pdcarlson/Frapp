@@ -23,15 +23,22 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 export function InlineNote({
   children,
   action,
+  tone = "default",
 }: {
   children: ReactNode;
   action?: { label: string; onPress: () => void };
+  /**
+   * `warning` for a line that says part of the list couldn't load (Activity's
+   * "Couldn't load polls"), in the warning hue as web's `text-warning` note,
+   * so a failed read never reads like an empty one.
+   */
+  tone?: "default" | "warning";
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
   return (
-    <Text style={styles.note}>
+    <Text style={[styles.note, tone === "warning" ? styles.noteWarning : null]}>
       {children}
       {action ? (
         <>
@@ -57,6 +64,9 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
       paddingVertical: tokens.spacing.xs,
+    },
+    noteWarning: {
+      color: tokens.color.semantic.warning,
     },
     action: {
       textDecorationLine: "underline",

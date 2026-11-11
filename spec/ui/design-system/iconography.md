@@ -601,7 +601,11 @@ Two of the swaps were corrections rather than a pack change, in §6.2.4's sense:
 Since #4173 (2026-11-11) every `/activity` row leads with a 40px neutral tile
 holding its kind's glyph at 20px in `--muted-foreground`
 ([`apps/web/components/activity/activity-row-lead.tsx`](../../../apps/web/components/activity/activity-row-lead.tsx)),
-or, for an event, its month and day in place of a glyph. The glyphs are
+or, for an event, its month and day in place of a glyph. The phone's Activity
+rows draw the same lead at the same sizes in `text.mutedForeground`
+([`apps/mobile/components/activity/activity-row.tsx`](../../../apps/mobile/components/activity/activity-row.tsx),
+#4173 step 2), and both read which shape a kind takes from one map,
+`ACTIVITY_GLYPH_NAV` in `@repo/hooks`. The glyphs are
 the nav set's (§1.1), so a row draws the shape of the place its record lives;
 `link` and `confirm` were added for the two kinds that have no place of their own.
 They stay neutral: the page's colour is for asks and status.
