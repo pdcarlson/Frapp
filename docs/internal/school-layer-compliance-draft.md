@@ -25,12 +25,18 @@
 
 The IFC recruitment design needs a council to check whether a potential new member (PNM) meets the school's grade rule before a chapter extends a bid. Grades are **education records** under FERPA. FERPA binds the school, not Frapp, but Frapp is reached through it twice: by the consent the student signs, and by the redisclosure limits that follow the data ([school-layer § 6](https://github.com/pdcarlson/Frapp/pull/4222)).
 
-Paul has three options for storage (school-layer § 3.1). This file is written for **option B**, the design's recommendation: GPA stored encrypted and purged after the recruitment term. Where option A (verdict only) or C (kept across terms) changes a draft, it says so.
+**Paul's calls on #4218 (2026-11-11, its § Decisions for Paul):**
+
+- **The MVP is verdict only** (decision 1, option A below). The import computes each verdict in memory and discards the grades. Storing GPA (option B) waits for counsel's answers to lawyer questions 1–4, which apply to the verdict-only MVP too.
+- **18 and older stays** for now (decision 4). Under-18 participation stays open on the lawyer list (§ 3).
+- **Paul approves the FERPA notice, Privacy Policy, consent and release wording** before any form goes live (decisions 2 and 3). Everything in §§ 1–2 is input to that approval, not final text.
+
+So this file drafts **for the MVP (A)** first, and keeps option B's material, marked **later, if counsel says yes**, so it's ready if the answer is yes.
 
 | Option | Stores | What changes in this file |
 |---|---|---|
-| A. Verdict only | Eligible / Pending / Not eligible, plus the release | The release and the redlines still apply: a verdict is derived from an education record. The encryption controls in § 5 mostly fall away |
-| **B. GPA, encrypted, purged after recruitment closes or on revocation** | A, plus the grade values | As written |
+| **A. Verdict only (the MVP, Paul 2026-11-11)** | Eligible / Pending / Not eligible, plus the release | The release and the redlines still apply: a verdict is derived from an education record, and the grades pass through Frapp's API. Each text below gives the MVP wording; § 5 says which controls apply now |
+| B. GPA, encrypted, purged after recruitment closes or on revocation | A, plus the grade values | Later, if counsel says yes. Marked "later" wherever it differs |
 | C. GPA kept across terms | B without the term purge | Duration in § 1 becomes "while you are a member"; retention redlines and the DPA deletion schedule lengthen; the lawyer question on retention gets harder |
 
 **The released records, once, for every section below.** The release (§ 1), every policy redline (§ 2) and DPA Schedule A (§ 4) name exactly this list, and the import refuses a column the signed release doesn't name:
@@ -112,13 +118,13 @@ Placeholders are in `{braces}`. The text is shown in full on its own screen in t
 >
 > **Why.** To decide whether I meet {Council}'s and {School}'s academic requirements to receive a bid and join a fraternity during {Season} recruitment ({rule summary, e.g. "a cumulative GPA of at least 2.50 and at least 12 credit hours"}).
 >
-> **How long.** From the date I sign until {Season end date}, unless I revoke it sooner. Frapp deletes my grades from its live systems {N} days after {Season} recruitment closes, and at once if I revoke. Encrypted backup copies are overwritten within {backup window} after that. My eligibility result is kept until {retention period} so chapters and {Council} can see bids were valid. A new season needs a new release.
+> **How long.** From the date I sign until {Season end date}, unless I revoke it sooner. **{MVP:}** Frapp uses my grades only to work out my eligibility when they're uploaded, and doesn't keep them. **{Later, if Frapp stores grades:}** Frapp deletes my grades from its live systems {N} days after {Season} recruitment closes, and at once if I revoke. Encrypted backup copies are overwritten within {backup window} after that. My eligibility result is kept until {retention period} so chapters and {Council} can see bids were valid. A new season needs a new release.
 >
-> **Revoking.** I can revoke this consent at any time in Frapp ({path, e.g. "Grade release → Revoke"}) or by writing to {Council contact} or {FSL office contact}. Revoking stops any further release from the date I revoke. It does not undo a release already made. When I revoke in Frapp, Frapp deletes the grades it holds and my result goes back to *Pending*, which may stop chapters from extending me a bid.
+> **Revoking.** I can revoke this consent at any time in Frapp ({path, e.g. "Grade release → Revoke"}) or by writing to {Council contact} or {FSL office contact}. Revoking stops any further release from the date I revoke. It does not undo a release already made. When I revoke in Frapp, my result goes back to *Pending* {later: and Frapp deletes the grades it holds}, which may stop chapters from extending me a bid.
 >
 > **I don't have to sign.** I can refuse. If I refuse, my result stays *Pending*, and {Council}'s rules decide whether I can still receive a bid. Refusing does not affect my enrollment or anything else at {School}.
 >
-> **Who has seen my grades.** Frapp records every time someone views my grades in Frapp, and I can see that record in Frapp.
+> **{Later, if Frapp stores grades:} Who has seen my grades.** Frapp records every time someone views my grades in Frapp, and I can see that record in Frapp.
 >
 > **Copy.** I can see and download a copy of this release in Frapp at any time.
 >
@@ -139,7 +145,9 @@ As #4218 § The FERPA release lists it, with #4222's table to gain the missing c
 
 ## 2. Redlines for `legal.md`, the FERPA notice, the Privacy Policy and the Terms
 
-Proposed diffs, **not applied**. Removed lines are `-`, added lines are `+`. Text in `{braces}` depends on Paul's choices.
+Proposed diffs, **not applied**. Removed lines are `-`, added lines are `+`. Text in `{braces}` depends on Paul's choices. Paul approves this wording before any form goes live (#4218 decisions 2 and 3).
+
+**The MVP wording.** The diffs below are written for stored grades (later). For the verdict-only MVP, every sentence about how long Frapp keeps grades, encrypting them, backups of them, or who can view them becomes one sentence: *"Frapp uses your grades only to work out whether you're eligible when your school or council uploads them, and does not keep them. It keeps only the result (Eligible, Pending or Not eligible) and the date."* Everything else (what's received, from whom, under which release, what chapters see, your rights) stands as written, because the grades still reach Frapp and the verdict is still derived from them.
 
 **What applying them would set off.** The Privacy Policy and Terms are accepted, so a material change moves their "Last updated" date and bumps `LEGAL_POLICY_VERSION`, and every member is asked to accept again; the FERPA notice is not accepted, so only its date and pin move. `scripts/ci/__tests__/legal-policy-version.test.mjs` enforces both ([`legal.md` § Acceptance record](../../spec/behavior/legal.md#acceptance-record)). These redlines are material. Shipping them before the feature exists would describe something Frapp doesn't do, so they ship **with** the feature, not before.
 
@@ -276,7 +284,7 @@ Section 6 (Contact) renumbers. One existing gap this narrows, already recorded i
 
 ### 2.4 Terms (`apps/landing/app/terms/page.tsx`)
 
-Only if Paul picks § 3's option B or C for minors. Under option B:
+**Not now:** Paul kept 18 and older on 2026-11-11 (#4218 decision 4). This applies only if he later picks § 3's option B. Under option B:
 
 ```diff
    {
@@ -293,6 +301,8 @@ Only if Paul picks § 3's option B or C for minors. Under option B:
 **The 18 is stated in more places than the Terms.** Option B also needs, in the same change: a participant version of `LEGAL_ACCEPTANCE_LABEL` (`packages/validation/src/index.ts`, "I'm 18 or older and agree…", shown on every acceptance surface), so a 17-year-old never ticks a false box; `legal.md` § Terms of Service's eligibility bullet ("18 is the one authoritative age"); the checkbox rows in `spec/ui/design-system/writing.md`; the API contract's descriptions that quote the label; and the audience notes in `apps/mobile/store/README.md`.
 
 ## 3. PNMs under 18
+
+**Decided for now (Paul, 2026-11-11, #4218 decision 4): keep 18 and older.** A 17-year-old is turned away at the form, as the Terms already require. The options below stay open, on the lawyer list (question 12), for when Paul revisits it.
 
 ### The facts
 
@@ -314,7 +324,7 @@ Only if Paul picks § 3's option B or C for minors. Under option B:
 | **What it costs** | The council's list is incomplete, and a 17-year-old who ticks the box anyway is now a minor Frapp doesn't know about. Councils keep a spreadsheet beside Frapp for them | A second, narrower set of terms to keep correct. A 17-year-old who gets a bid can accept it in Frapp but joins the chapter in Frapp only at 18 | Real friction for college students. Parents have no FERPA role, so it buys nothing for the release. Verifying a parent is its own hard problem |
 | **Privacy posture** | Frapp holds no known minors | Frapp knows who is a minor and applies stricter defaults: phone not shared with the council, no 180-day carry-over (deleted at season close), no marketing email, grades purged at the shortest setting | Same as B, plus parental records |
 
-**Recommendation: B.** It matches what a recruitment participant actually does in Frapp (a form, a verdict, a bid), keeps the 18+ rule for everything social, and turns an unknown minor (option A's failure mode) into a known one with protective defaults. It needs counsel to draft the participant terms and confirm the state-law notes (lawyer question 12). **If counsel can't clear B before the season, ship A for the season** and say so on the form: it's the current Terms, unchanged. C is not recommended: it adds a parent where FERPA has none, for a population that is mostly adults within months.
+**Recommendation, for when Paul revisits it: B.** It matches what a recruitment participant actually does in Frapp (a form, a verdict, a bid), keeps the 18+ rule for everything social, and turns an unknown minor (option A's failure mode) into a known one with protective defaults. It needs counsel to draft the participant terms and confirm the state-law notes (lawyer question 12). Until then, A is what ships: it's the current Terms, unchanged, and the form should say so plainly ("You must be 18 to sign up through Frapp. Contact {Chapter} directly."). C is not recommended: it adds a parent where FERPA has none, for a population that is mostly adults within months.
 
 What B asks for on the form: a date of birth is the honest gate, but it's more data. "Are you 18 or older?" Yes / No, followed by "Are you enrolled at {School}?" for a No, collects less. The draft prefers the yes/no, with the minor flag cleared at the next season or on request.
 
@@ -335,7 +345,7 @@ There are two lawful paths, and they decide who Frapp's customer is for grade da
 2. **Designation.** {School} designates Frapp a school official with a legitimate educational interest, for the service in clause 4, under the criteria in {School}'s annual FERPA notice. {School} confirms its notice covers contractors.
 3. **Direct control.** Frapp uses and maintains the records only as {School} directs in this agreement. {School} decides which officers may see grades (or approves the council's choice), the rule applied, the retention period and when records are deleted. Frapp's configuration for {School} (eligibility officers, retention, rule) is visible to {School} on request. **Not yet buildable:** in #4222 only the council admin grants eligibility officers (§ 4.2 rule 2), with no school approval step and no school tenant (Q8). Frapp can't sign this clause until one exists (§ 5).
 4. **Purpose limitation.** Determining recruitment and membership eligibility for {Council} under {School}'s rules. No other use: not for analytics, product improvement, model training, advertising, profiling or sale. Aggregate, de-identified counts only for {School}'s own reports.
-5. **Data elements (Schedule A).** Student ID, cumulative GPA, term GPA, credit hours, enrollment status, the `as_of` date; {optional: high-school GPA}. Not conduct records unless both sides add them.
+5. **Data elements (Schedule A).** Student ID, cumulative GPA, term GPA, credit hours, enrollment status, the `as_of` date; {optional: high-school GPA}. Not conduct records unless both sides add them. **{MVP:}** Frapp receives these only to compute the verdict and keeps only the verdict, its date and which rule clauses passed; clauses 7, 8 and 11 then apply to the uploaded file while it's processed and to the verdicts.
 6. **Redisclosure.** Grades go only to the council officers {School} approves and to {School}. Chapters receive a verdict only, and only where {the student's release names them / School directs}. No other disclosure without {School}'s written consent, except as law requires, with notice to {School} where lawful.
 7. **Subprocessors (Schedule B).** The providers that touch grade data: Supabase (database and its daily backups, `us-east-2`), Render (API runtime), Infisical (encryption keys), and, for the nightly offsite backup, GitHub Actions (runs the dump) and Cloudflare R2 (stores it). Today's offsite dump skips a `restricted` schema (§ 5), so whether R2 holds grade ciphertext depends on that fix; it holds the PNM records and verdicts in `public` either way. Schedule B links the Privacy Policy's provider list rather than copying it, because a copy drifted before (#2305). Providers that never receive grade data, listed for completeness: Vercel, Sentry, PostHog, Resend, Expo, Stripe. Frapp gives {30} days' notice of a new subprocessor for grade data, and {School} may object and terminate. Each subprocessor is under written terms at least as protective.
 8. **Security (Schedule C).** The controls in § 5 of this file, stated as commitments: encryption in transit and at rest, application-layer encryption of grades with keys outside the database, least privilege, access logging, MFA for staff with production access, US data residency {once the Render, Vercel and R2 regions are confirmed: only Supabase's is recorded}, no grade data in non-production environments {which needs the separate production backup bucket: today a staging token reaches production dumps}.
@@ -386,6 +396,8 @@ Status key: **Yes** (exists, with evidence), **Partial**, **No**, **Designed** (
 
 Each control, where the data-model design (school-layer, [#4222](https://github.com/pdcarlson/Frapp/pull/4222)) covers it, and what's missing. "Gap" means nothing in the proposed designs covers it yet.
 
+**What applies to the verdict-only MVP, and what's later.** The grades still pass through Frapp's API in the MVP, so these apply **now**: never in logs, telemetry or messages; data minimization at import, including deleting the uploaded file once the import is confirmed or cancelled (#4218 § The MVP: verdict only); MFA for whoever imports grades; least privilege for who may import; verdict as disclosure; council verification; non-production environments; the release record; breach detection and response. The rest (encryption and keys, the access log and the PNM's view of it, export, grade retention and backups, revocation's purge, operator access to stored grades) is **later, if counsel says yes** to storing grades.
+
 | Control | What it requires | Where school-layer covers it | Gap |
 |---|---|---|---|
 | **Column (application-layer) encryption** | Grade values encrypted before they reach the database, so a dump, backup, leaked service-role key or support login sees ciphertext | § 3.2 layer 3: AES-256-GCM in the API, `ciphertext` + `key_id`, never filtered in SQL | None in design. Build must prove plaintext never appears in a query log, error or Sentry breadcrumb |
@@ -414,7 +426,7 @@ Each control, where the data-model design (school-layer, [#4222](https://github.
 
 ## 6. Questions for a lawyer
 
-Consolidated from #4192, #4218 (decisions 1–4, 7, 9) and #4222 (§ 8's seven questions), plus the ones this draft raised. Numbered for reference; the first six gate any real grade import. "#4222 lawyer question N" means the numbered lawyer list at the end of school-layer § 8, not Paul's Q1–Q9 above it.
+Consolidated from #4192, #4218 (decisions 1–4, 7, 9) and #4222 (§ 8's seven questions), plus the ones this draft raised. Numbered for reference; the first six gate any real grade import, including the verdict-only MVP's (questions 1–4 are the ones #4218 decision 1 names). "#4222 lawyer question N" means the numbered lawyer list at the end of school-layer § 8, not Paul's Q1–Q9 above it.
 
 **Which legal path**
 1. **School official, agent or named recipient?** Is Frapp a school official under a DPA (99.31(a)(1)(i)(B)), the council's agent, or a party named in the student's 99.30 consent? Which party does Frapp contract with for grade data: the school, the council, or both? (#4222 lawyer question 1)
@@ -434,7 +446,7 @@ Consolidated from #4192, #4218 (decisions 1–4, 7, 9) and #4222 (§ 8's seven q
 11. **Self-reported GPA.** May a council accept it where the school won't send grades, and what notice and accuracy disclaimers does it need? Is it an education record (the design says no)? (#4222 lawyer question 6; Paul's Q6)
 
 **Retention, minors and copy**
-12. **Minors.** Can a 17-year-old accept Recruitment Participant Terms, and are they enforceable? Do any state minors' privacy laws apply to a known 17-year-old college user, and what defaults do they require? Is parental consent ever needed? (#4218 decision 4; § 3)
+12. **Minors** (Paul kept 18+ for now; this is for when he revisits it). Can a 17-year-old accept Recruitment Participant Terms, and are they enforceable? Do any state minors' privacy laws apply to a known 17-year-old college user, and what defaults do they require? Is parental consent ever needed? (#4218 decision 4; § 3)
 13. **Conduct standing.** Should the release cover a yes/no conduct status at all? Is a disciplinary record treated differently?
 14. **Retention periods.** Are grades at recruitment close + up to 30 days (or #4222's council cap of 90), non-joining PNMs at season close + 180 days, chapter notes at 30 days, and an access log kept indefinitely defensible? (#4222 lawyer question 7; #4218 decision 7, which says grades go at season close)
 15. **Backups.** Is it acceptable that purged ciphertext persists in backups for 7 to 30 days, if stated in the release?
