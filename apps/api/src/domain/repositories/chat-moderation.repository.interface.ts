@@ -18,6 +18,8 @@ export const CHAT_MEMBER_BLOCK_REPOSITORY = 'CHAT_MEMBER_BLOCK_REPOSITORY';
 export interface CreateChatReportInput {
   chapter_id: string;
   message_id: string;
+  /** The reported message's channel, snapshotted with the evidence. */
+  channel_id: string;
   reporter_user_id: string;
   reported_content: string | null;
   reported_sender_id: string | null;
@@ -154,6 +156,8 @@ export interface IChatMessageReportRepository {
     chapterId: string,
     status: ChatReportStatus,
     reviewerUserId: string,
+    /** One channel's reports only (Chat admin's per-channel view). */
+    channelId?: string,
   ): Promise<ChatMessageReportView[]>;
 
   /**

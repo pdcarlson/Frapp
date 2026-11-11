@@ -57,9 +57,13 @@ const REPORT_B_IMPORTED = '0b000000-0000-4000-8000-000000000214';
 const REPORT_A_DISMISSED_SIBLING = '0a000000-0000-4000-8000-000000000215';
 const REPORT_B_DISMISSED_SIBLING = '0b000000-0000-4000-8000-000000000215';
 
+const CHANNEL_GENERAL = '0d000000-0000-4000-8000-000000000201';
+const CHANNEL_EXEC = '0d000000-0000-4000-8000-000000000202';
+
 const openRow = () => ({
   reporter_user_id: USER_SHARED,
   message_id: MESSAGE_ONE,
+  channel_id: CHANNEL_GENERAL,
   reported_content: 'the reported message',
   reported_sender_id: USER_A,
   reported_author_name: null,
@@ -106,6 +110,7 @@ const importedRow = () => ({
   ...openRow(),
   reporter_user_id: USER_A,
   message_id: MESSAGE_FOUR,
+  channel_id: CHANNEL_EXEC,
   reported_sender_id: null,
   reported_author_name: 'imported-handle',
   created_at: '2026-02-02T03:00:00.000Z',
@@ -168,6 +173,14 @@ describe('SupabaseChatMessageReportRepository — tenant scope', () => {
     );
 
     expect(rows.map((r) => r.id)).toEqual([REPORT_A_REVIEWED]);
+  });
+
+  it("findByChapterAndStatus narrows to one channel's reports, still in the caller's chapter", async () => {
+    const rows = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.findByChapterAndStatus(CHAPTER_A, 'open', USER_B, CHANNEL_EXEC),
+    );
+
+    expect(rows.map((r) => r.id)).toEqual([REPORT_A_IMPORTED]);
   });
 
   it('findByChapterAndStatus leaves out reports about the reviewer, and keeps the imported one', async () => {
@@ -469,6 +482,7 @@ describe('SupabaseChatMessageReportRepository — tenant scope', () => {
         repo.create({
           chapter_id: CHAPTER_B,
           message_id: '0c000000-0000-4000-8000-000000000203',
+          channel_id: 'chan-b',
           reporter_user_id: USER_A,
           reported_content: 'something new',
           reported_sender_id: USER_SHARED,
@@ -488,6 +502,7 @@ describe('SupabaseChatMessageReportRepository — tenant scope', () => {
     await repo.create({
       chapter_id: CHAPTER_A,
       message_id: '0c000000-0000-4000-8000-000000000204',
+      channel_id: 'chan-a',
       reporter_user_id: USER_A,
       reported_content: 'go away',
       reported_sender_id: null,
@@ -595,6 +610,7 @@ describe('SupabaseChatMessageReportRepository — evidence (#2481)', () => {
     const { report } = await repo.create({
       chapter_id: CHAPTER_A,
       message_id: '0c000000-0000-4000-8000-000000000307',
+      channel_id: 'chan-a',
       reporter_user_id: USER_A,
       reported_content: '',
       reported_sender_id: USER_SHARED,
@@ -935,6 +951,7 @@ describe('SupabaseChatMessageReportRepository — duplicate open report', () => 
     id: REPORT_A_OPEN,
     chapter_id: CHAPTER_A,
     message_id: MESSAGE_ONE,
+    channel_id: 'chan-a',
     reporter_user_id: USER_SHARED,
     reported_content: 'the reported message',
     reported_sender_id: USER_A,
@@ -950,6 +967,7 @@ describe('SupabaseChatMessageReportRepository — duplicate open report', () => 
   const input = {
     chapter_id: CHAPTER_A,
     message_id: MESSAGE_ONE,
+    channel_id: 'chan-a',
     reporter_user_id: USER_SHARED,
     reported_content: 'the reported message',
     reported_sender_id: USER_A,
