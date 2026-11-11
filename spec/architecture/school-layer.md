@@ -6,6 +6,8 @@ This doc is one part of #4192's design. It covers the tables, isolation, permiss
 
 - **URLs and tenant context:** [ADR-27](adr/README.md) (PR [#4213](https://github.com/pdcarlson/Frapp/pull/4213)). It settles `/c/<slug>` and `/s/<school>`, the `tenant_slugs` and `school_slugs` registries, the header-first `ChapterGuard`, route-declared tenant kinds (`@TenantKinds`), `SchoolGuard` and `x-school-id`.
 - **The screens.**
+- **Legal and compliance:** [`school-layer-compliance-draft.md`](https://github.com/pdcarlson/Frapp/pull/4271) (PR #4271), a draft for counsel. Its fixes to this doc are folded into § 3.
+- **Campus spaces:** [`campus-spaces.md`](https://github.com/pdcarlson/Frapp/pull/4276) (PR #4276). Its tables are listed in [§ 2.7](#27-what-campus-spaces-add).
 - **Council types:** [`council-types.md`](https://github.com/pdcarlson/Frapp/pull/4264) (PR #4264). It checks the design against Panhellenic, NPHC, MGC and other councils; its requests to this doc are folded in below.
 - **The IFC recruitment module:** pipeline stages, form fields, bids, the master-list rules and screens. It is [`spec/behavior/ifc-recruitment.md`](https://github.com/pdcarlson/Frapp/pull/4218) (PR #4218), and this doc stores what that one specifies: where the two touch, the recruitment doc owns behavior and this one owns tables, keys and isolation.
 
@@ -143,7 +145,7 @@ create table school_members (
   school_id        uuid not null references schools(id) on delete cascade,
   user_id          uuid not null references users(id) on delete cascade,
   status           text not null
-                   check (status in ('pnm', 'member', 'alum', 'staff')),
+                   check (status in ('pnm', 'member', 'alum')),
   verified_via     text not null check (verified_via in ('email_code', 'sso', 'staff')),
   verified_email   text,                  -- the school address the code went to
   verified_at      timestamptz not null,
@@ -159,7 +161,7 @@ create unique index school_members_verified_email_key
 
 **A row exists only once a person with a Frapp account has proved they're at the school.** That means a one-time code sent to an address on a verified domain, or SSO later. A chapter membership never creates one. If it did, any chapter founder could enrol a roster in a school of their choosing.
 
-**Statuses** (ADR-27 names `pnm`):
+**Statuses** (ADR-27 names `pnm`; there is no `staff` status, see below):
 
 | From | To | When |
 |---|---|---|
@@ -169,6 +171,8 @@ create unique index school_members_verified_email_key
 | `member` | `member` | They leave a chapter. **The row stays**: leaving deletes a `members` row, and nothing here references `members` (Winston's D4) |
 | `member`, `pnm` | `alum` | Graduation, by hand or from class year once there's a field for it |
 | any | (`left_at` set) | They transfer out. The row is kept for history and grants nothing |
+
+**Frapp staff aren't school members.** They're a platform identity that `SchoolGuard` admits at every school, as the campus-spaces doc has it. `verified_via = 'staff'` still means a staff member verified someone by hand.
 
 **A PNM without an account is not a school member.** `user_id` is required, so a form submitter with no account exists only as a `pnms` row ([§ 2.5](#25-pnms-and-interest)). When they make an account and verify the same school email, the API creates their `school_members` row with status `pnm` and sets `pnms.user_id`. This is how this doc reads ADR-27's "the submitter becomes a school member with status `pnm`". The two agree for every submitter who has an account.
 
@@ -469,6 +473,19 @@ create table council_service_totals (      -- a push-up: one total per chapter p
 - **Service totals** are a chapter → council push: one number per term, written by the chapter's own action. The council never reads `service_entries`.
 - **Panhellenic `formal` tables come later,** as placeholders: `recruitment_rounds`, `round_release_figures`, `round_invitation_lists`, `pnm_round_preferences`, `pnm_round_schedule`, `preference_bid_lists`, `match_imports`, `match_results`, `chapter_season_totals` (quota and total, pushed down to each chapter) and `binding_agreements`. Everything but the PNM's own schedule is readable only with `council:matching_operate`. They're designed when Panhellenic is scheduled.
 
+### 2.7 What campus spaces add
+
+From [`campus-spaces.md`](https://github.com/pdcarlson/Frapp/pull/4276) (PR #4276), which owns the behavior. Listed here so the data model has one inventory:
+
+| Change | What it holds |
+|---|---|
+| `chat_channels.school_id` | A school-scoped channel (campus chat, interest channels, messages between chapters), with `chapter_id` null |
+| `chat_message_reports.school_id`, `notifications.school_id` | Reports and notifications from campus surfaces |
+| `school_member_chapters(school_member_id, chapter_id, shown_on_campus, created_at)` | **A person → chapter push-up.** Written by the chapter's own events (joining, verifying a school email, the chapter's school link becoming active) and deleted when the membership or link ends. Campus rules that need someone's chapter read this, never `members`, which keeps decision 11 |
+| `campus_role_holders` | Holders of a role a chapter chose to publish on campus, pushed up when the role is assigned or removed. Never a `MEMBER`, `NEW_MEMBER` or `ALUMNI` role |
+
+Campus posts, events and RSVPs are campus-owned tables in that doc. The keys it needs (`council:campus_post`, `council:campus_moderate`) are in [§ 5.1](#51-council-scope).
+
 ## 3. Eligibility and GPA
 
 ### 3.1 The call for Paul
@@ -486,32 +503,39 @@ Holding raw GPA is a security and legal decision, so it's Paul's (AGENTS.md § A
 ### 3.2 Storage
 
 ```sql
-create schema restricted;            -- PostgREST doesn't expose it ([api] schemas = ["public"])
+create schema restricted;            -- PostgREST doesn't expose it ([api] schemas = ["public"]); holds only encrypted values
 revoke all on schema restricted from public, anon, authenticated;
 
-create table restricted.ferpa_releases (
+-- ferpa_releases and the access log hold no grade value. They live in public (RLS on, no policies) so the
+-- offsite backup carries them; the restricted schema's encrypted values are deliberately left out of it (below).
+
+create table ferpa_releases (
   id              uuid primary key default gen_random_uuid(),
   pnm_id          uuid not null references public.pnms(id) on delete cascade,
   school_id       uuid not null references public.schools(id) on delete cascade,
   council_id      uuid not null references public.chapters(id) on delete cascade,
+  term            text not null,     -- the season the release was signed in
   release_version text not null,     -- which approved text was shown; versioned in code like LEGAL_POLICY_VERSION
+  release_text_sha256 text not null, -- hash of the exact text the signer saw, so a later edit can't change what was agreed
   records         text[] not null,   -- e.g. {gpa_cumulative, gpa_term, credits, enrollment}
   purpose         text not null,     -- "recruitment and membership eligibility"
   recipients      text[] not null,   -- e.g. {"Example State IFC", "Example State Office of FSL",
                                      --       "Frapp, as the council's service provider",
                                      --       "chapters you register interest with: eligibility status only"}
   signer_name     text not null,     -- typed full name
-  authenticated_via text not null,   -- 'school_email_code': the verified address the form already requires
+  authenticated_via text not null
+    check (authenticated_via in ('fresh_school_email_code')),  -- a code sent at signing, plus the typed name and date
   signed_at       timestamptz not null,
   revoked_at      timestamptz,
-  revoked_via     text
+  revoked_via     text,
+  foreign key (council_id, term) references council_recruitment_seasons (council_id, term) on delete cascade
 );
 
 create table restricted.pnm_academic_records (     -- options B and C only
   id               uuid primary key default gen_random_uuid(),
   pnm_id           uuid not null references public.pnms(id) on delete cascade,
   council_id       uuid not null references public.chapters(id) on delete cascade,
-  release_id       uuid not null references restricted.ferpa_releases(id) on delete cascade,
+  release_id       uuid not null references ferpa_releases(id) on delete cascade,
   term             text not null,
   student_id_hash  text,             -- HMAC of the student ID, for matching an import
   ciphertext       bytea not null,   -- AES-256-GCM of {student_id, gpa_cumulative, gpa_term, credits, enrolled}
@@ -542,7 +566,8 @@ create table public.pnm_eligibility (
 
 **Layers, from the outside in:**
 
-1. **No client reaches it.** `restricted` isn't exposed, `anon` and `authenticated` have no grant, RLS is on with no policies, and Realtime never publishes it.
+1. **No client reaches it.** `restricted` isn't exposed, `anon` and `authenticated` have no grant, RLS is on with no policies, and Realtime never publishes it. `ferpa_releases` and the access log sit in `public` with the house posture (RLS on, no policies) because they hold no grade value and must survive a restore.
+   - **Backups (⚑ [Q13](#8-open-questions-for-paul)).** `scripts/db-backup.sh` dumps data only for `public`, `auth` and `supabase_migrations`, so it already leaves `restricted`'s rows out. This design keeps it that way. Raw grades live at most 30 days past a season, and a backup carrying them would outlive the purge and the revocation promises. A restore therefore loses grades still inside their window, and the council re-imports them. Releases, verdicts and the access log are in `public`, so they're backed up.
 2. **Only security-definer functions read or write it, and each logs as it goes.** The functions are `import_academic_records`, `read_academic_record`, `purge_academic_records`, `record_ferpa_release`, `revoke_ferpa_release` and `delete_pnm`. Each writes its access-log row ([§ 3.4](#34-access-log)) in the same transaction, so a read whose log write fails returns nothing.
    - **Execute rights.** `execute` is granted to `service_role` only.
    - **The function rechecks scope.** It takes the acting tenant id and user id and checks them itself: the council is verified, the record belongs to that council, and a release is live. So a caller bug in the API can't widen what it returns.
@@ -599,7 +624,7 @@ Chapters see only a verdict, computed by the server. That's stricter than the re
 ### 3.4 Access log
 
 ```sql
-create table restricted.academic_record_access_log (
+create table academic_record_access_log (
   id              bigint generated always as identity primary key,
   record_id       uuid,              -- null for an import row that matched nothing
   pnm_id          uuid,
@@ -612,11 +637,11 @@ create table restricted.academic_record_access_log (
   at              timestamptz not null default now()
 );
 
-create function restricted.refuse_access_log_change() returns trigger
+create function refuse_access_log_change() returns trigger
   language plpgsql as $$ begin raise exception 'academic_record_access_log is append-only'; end $$;
 create trigger academic_record_access_log_append_only
-  before update or delete on restricted.academic_record_access_log
-  for each row execute function restricted.refuse_access_log_change();
+  before update or delete on academic_record_access_log
+  for each row execute function refuse_access_log_change();
 ```
 
 **Append-only is a trigger, not a policy.** `chapter_audit_log`'s `using (false)` policies (`20260523130000_audit_log.sql`) don't bind the service role, which bypasses RLS. The trigger binds everyone except a superuser running `alter table … disable trigger`, and that's on the migration record.
@@ -625,7 +650,9 @@ create trigger academic_record_access_log_append_only
 
 **What it holds.** No grade value. Its rows have no foreign keys and outlive the record they describe, so "was this seen?" can be answered after a purge.
 
-**Who sees it.** The council's admin, and later the school office, see it on a council settings page, and eligibility officers know their reads are on it.
+**Who sees it.**
+- The council's admin and the school office's council role see it on a council settings page, and eligibility officers know their reads are on it.
+- **The PNM sees their own.** Function `read_my_record_access(pnm_id)` returns, for the PNM's own rows only, each entry's action, date, council and the actor's role title. It's called from the PNM's own view, which the recruitment doc authenticates with the PNM's verified email, and it's how a PNM answers "who saw my grades" (the compliance draft's FERPA-rights section). Test 18 covers it.
 
 **Export.** A council can't export GPA (`export_denied` is logged). Exporting verdicts is fine.
 
@@ -633,7 +660,7 @@ create trigger academic_record_access_log_append_only
 
 | Event | What happens |
 |---|---|
-| The season closes | An hourly scheduled sweep, the pattern of `ReportRetentionService` (`apps/api/src/application/services/report-retention.service.ts`), calls `purge_academic_records`. It deletes rows where `purge_after < now()`: the season's `closes_at` plus a council setting of 0 to 30 days (the recruitment doc's default). Verdicts stay, and a `purge` row is logged per record. The same sweep copies each candidate's vote count to `final_vote_count` and then deletes the season's ballots |
+| The season closes | An hourly scheduled sweep, the pattern of `ReportRetentionService` (`apps/api/src/application/services/report-retention.service.ts`), calls `purge_academic_records`. It deletes rows where `purge_after < now()`: the season's `closes_at` plus a council setting of 0 to 30 days, never more (the stricter rule, agreed with the recruitment and compliance drafts). Verdicts stay, and a `purge` row is logged per record. The same sweep copies each candidate's vote count to `final_vote_count` and then deletes the season's ballots |
 | 30 days after the season closes | The chapter's notes, ratings, contact logs, form answers and follow-ups are deleted. Stage, bid outcome and dates stay (the recruitment doc's rule) |
 | The season closes plus N days, for a PNM who never joined | `delete_pnm` runs for them. N is a council setting, default 180, so someone who rushes again next term keeps their history. These defaults are the recruitment doc's decision 7 for Paul |
 | PNM revokes their release | Revocation is immediate and prospective. `revoke_ferpa_release` deletes the record, resets the verdict to `pending` with `release_id` null, and logs `revoke_purge`. The council's eligibility officers are notified. Deleting rather than keeping is the hub's "safest default"; whether the law requires it is lawyer question 4 |
@@ -658,7 +685,8 @@ create trigger academic_record_access_log_append_only
 | `school_chapters`, `council_chapters` | On | None | No |
 | `pnms`, `pnm_council_registrations`, `pnm_interests`, `pnm_eligibility` | On | None | No |
 | `rush_candidates` (new column) | On (today) | None (today) | No |
-| `restricted.*` | On | None, and no schema grant. The access log adds an append-only trigger | Never |
+| `ferpa_releases`, `academic_record_access_log` | On | None. The access log adds an append-only trigger | Never |
+| `restricted.*` (encrypted grades, student IDs) | On | None, and no schema grant | Never |
 
 - **Council chat and events need no new RLS.** A council is a `chapters` row, so `realtime_can_read_chapter_scope(council_id)` already checks council membership.
 - **RLS work starts with campus-wide channels (phase 5).** They'd need a `realtime_can_read_school_scope` over `school_members`. That's out of scope here, and recorded so it isn't assumed.
@@ -691,7 +719,7 @@ Each rule here builds on ADR-27's guard order: `ChapterGuard` resolves the tenan
 
      It never reads `rush_candidates`. An unverified council, or one with no accepted chapter, gets an empty list.
    - **A council reaching a chapter's officers** (phase 2). This is a council write that delivers into each accepted chapter's notifications, for the roles the chapter has marked as council contacts. It isn't a read of the chapter.
-   - **School pages.** They resolve a school through `x-school-id` and ADR-27's `SchoolGuard`, which checks for a live `school_members` row. They read only `schools`, the school's active `school_chapters` and the public fields of those tenants.
+   - **School pages.** They resolve a school through `x-school-id` and ADR-27's `SchoolGuard`, which checks for a live `school_members` row. They read `schools`, the school's active `school_chapters`, the public fields of those tenants, and what campus spaces owns or chapters push up: `campus_posts`, `campus_events` and their RSVPs, opted-in `school_members` rows, `school_member_chapters` and `campus_role_holders` ([§ 2.7](#27-what-campus-spaces-add)). Never `members`.
 
 ### 4.3 Tests that must exist
 
@@ -722,6 +750,7 @@ These extend the layers [`multi-tenancy.md` § How the invariant is tested](../b
 15. **Grades never match a self-reported ID:** an import row whose student ID matches only a `self_reported` row is dropped, and no record or verdict is written.
 16. **Recruitment model:** a council whose model is `none` is refused on every `council-recruitment` route except deletion, retention, season close and export. `record_pnm_interest` refuses an `nphc`-archetype chapter inside an `open_bidding` council. A switch to `none` during an open season is refused.
 17. **Bid state:** Extend on a candidate whose `bid_state` is `accepted` or `declined` returns 409, and the legacy `bid_status` reads `extended` for `accepted` and `none` for the rest.
+18. **A PNM's own access log:** `read_my_record_access` returns that PNM's entries and no one else's, and a PNM session can't pass another PNM's id.
 
 **Function and migration level** (`npm run check:pglite-migrations`, which runs SQL against a real Postgres):
 - **Purge:** `purge_academic_records` deletes exactly the rows past `purge_after`, and keeps the one a second short of it.
@@ -759,6 +788,8 @@ New registry entries (`councilPermission(...)`) are mirrored in `SystemPermissio
 | `council:grades_import` | council-recruitment | **Explicit grant.** Upload grade files and see the import summary (counts). Reads no grade |
 | `council:eligibility_manage` | council-recruitment | **Explicit grant.** Read GPA, credits and student ID, set the eligibility rule, override a verdict. Includes `council:grades_import`. Every read is logged |
 | `council:recruitment_reports` | council-recruitment | Export the Greek life office's reports |
+| `council:campus_post` | council | Post to the school's campus feed. Needs a verified council |
+| `council:campus_moderate` | council | Moderate campus spaces at the council's school: hide posts and messages, act on reports. A campus ban needs a second moderator from a different chapter, or staff |
 | `council:counselors_manage` | council-recruitment | Panhellenic: assign counselors to PNM groups, publish disaffiliation records |
 | `council:pnm_group_view` | council-recruitment | Panhellenic: a counselor's assigned group's names and schedules only |
 | `council:matching_operate` | council-recruitment | **Explicit grant.** Panhellenic: run the match and read rounds, preferences and results |
@@ -775,7 +806,7 @@ New registry entries (`councilPermission(...)`) are mirrored in `SystemPermissio
 There's no school-scope key and no school tenant.
 - **Greek life office staff are members of the council** with a role holding `council:grades_import` and `council:recruitment_reports`, as the recruitment doc has it. They read GPA only if the council admin grants them `council:eligibility_manage`.
 - **The school-level duties** (names, domains, duplicate councils, council verification) are Frapp staff's until a school asks for more. A school tenant of its own stays possible later ([Q8](#8-open-questions-for-paul)).
-- **Campus moderation is not office work.** Winston: council officers moderate school-wide spaces. That's a council key (`council:campus_moderate`) added with phase 5.
+- **Campus moderation is not office work.** Winston: council officers moderate school-wide spaces, with the council keys below.
 
 ### 5.3 Creating a council, picking a role, renaming titles
 
@@ -862,11 +893,12 @@ Nothing any chapter can do changes. No `chapters`, `members` or `roles` value is
 5. **Q5 ⚑ What do other chapters see on the master list?** Winston deferred it. Proposed: nothing, until a council turns on "chapters see all registrants' shared fields", a per-council setting, off by default.
 6. **Q6 ⚑ Self-reported GPA:** allow it as a fallback where a school won't send grades, or refuse it? This is also lawyer question 6.
 7. **Q7 Bids pushed up.** The recruitment doc sends bid events to the council (`pnm_recruitment_events`), shown as counts while the season is open. Decision 11 allows a push, never a read; is that push wanted?
-8. **Q8 School office staff** are a role on the council for now ([§ 5.2](#52-school-level-roles)). Is that enough, or should a school get a tenant of its own when one asks?
+8. **Q8 School office staff** are a role on the council for now ([§ 5.2](#52-school-level-roles)). The compliance draft's DPA clause has the **school approve council officers**, and a council role can't do that: the council admin controls the council's roles. So if Paul wants that clause, the school needs an actor outside the council. The proposal: assignments of explicit-grant keys wait for confirmation by a staff-verified FSL contact, and Frapp staff confirm until one exists. Is that enough, or should a school get a tenant of its own?
 9. **Q9 ⚑ A PNM's deletion request and chapters' own candidate rows.** When a PNM with no account asks to be deleted, is each chapter's candidate row the chapter's own data, which it keeps with `pnm_id` null as today, or must it go too?
 10. **Q10 ⚑ Council officers and PNM phone numbers.** An officer with `council:recruitment_manage` sees every PNM's phone, and is usually a chapter brother. Accept it with read logging, hide phone from the council, or require a neutrality pledge (the recruitment doc's decision 9).
 11. **Q11 ⚑ PNMs under 18.** The Terms require 18 (#2261), and some first-year PNMs are 17. A `pnms` row needs no account, so the form itself must ask the age question or refuse; allowing minors means a Terms change and parental consent (the recruitment doc's decision 4).
 12. **Q12 ⚑ Disaffiliation reaching into a chapter** ([§ 2.6](#26-what-other-council-types-add)). A council-published record removes a counselor's recruitment access in her own chapter, past her `*`. Build it, have the chapter apply it by hand, or only show it? This is council-types decision 3.
+13. **Q13 ⚑ Grades in backups** ([§ 3.2](#32-storage)). Proposed: the offsite backup never carries the `restricted` schema's encrypted grades and student IDs, so a restore loses grades still inside their 30-day window and the council re-imports them. The alternative is backing them up with the same retention, which means expiring backups on the purge schedule.
 
 **Lawyer questions** (from the hub's FERPA research), for Q2:
 1. Which path is Frapp on: school official (DPA), the council's agent, or a recipient named in a 99.30 consent?
@@ -885,7 +917,8 @@ If Paul accepts this, the PR that builds each part rewrites these in the same ch
 |---|---|
 | [`spec/behavior/multi-tenancy.md`](../behavior/multi-tenancy.md) | Its invariant says every query is scoped to the caller's chapter. The council master list and school pages are the named exceptions: cross-tenant reads through the joins in [§ 4.2](#42-api-guards). ADR-27 rewrites the context sections |
 | [`spec/behavior/rbac.md`](../behavior/rbac.md) | "Any string is valid" gains the reserved `council:` namespace in chapters and the explicit-grant keys. Council role packs join Role Lifecycle. If Q12 is approved, disaffiliation applies before the wildcard |
-| [`spec/behavior/chat/README.md`](../behavior/chat/README.md) | The recruitment-channel flag on chapter channels, if Q12 is approved |
+| [`spec/behavior/chat/README.md`](../behavior/chat/README.md) | School-scoped channels (`chat_channels.school_id`) and their reports, from campus spaces. The recruitment-channel flag on chapter channels, if Q12 is approved |
+| [`spec/behavior/notifications.md`](../behavior/notifications.md) | `notifications.school_id` for campus notifications |
 | [`spec/behavior/rush.md`](../behavior/rush.md) | Through the recruitment doc (PR #4218), which owns the behavior: candidates link to a PNM, the name rule covers hand-added rows, a name matching several returns 409, `bid_state` beside `bid_status`, stage categories, `rush:read_notes` |
 | [`spec/behavior/data-retention.md`](../behavior/data-retention.md) | Account deletion scrubs `school_members` and `pnms`. Academic records have the retention in [§ 3.5](#35-retention-and-deletion) |
 | [`spec/behavior/legal.md`](../behavior/legal.md) | The FERPA notice (Q2) |
