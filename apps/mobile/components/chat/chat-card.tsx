@@ -546,20 +546,15 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     metaSeparator: {
       marginHorizontal: tokens.spacing.xs + 2,
     },
-    // The Chip step (components.md §5): 24 tall, padding-x 8, 12.5 / 600.
     pointsChip: {
-      height: 24,
-      justifyContent: "center",
       borderRadius: tokens.radius.chip,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
       paddingHorizontal: tokens.spacing.sm,
+      paddingVertical: 2,
     },
     pointsText: {
-      ...typeRole({
-        ...tokens.typography.role.caption,
-        weight: tokens.typography.weight.semibold,
-      }),
+      ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
     },
     actions: {
