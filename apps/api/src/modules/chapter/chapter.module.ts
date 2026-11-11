@@ -61,6 +61,11 @@ import { ChapterConfigModule } from '../chapter-config/chapter-config.module';
       useClass: SupabaseChapterDirectoryRepository,
     },
   ],
-  exports: [CHAPTER_REPOSITORY, ROLE_REPOSITORY, MEMBER_REPOSITORY],
+  exports: [
+    CHAPTER_REPOSITORY,
+    ROLE_REPOSITORY,
+    ROLE_TIER_REPOSITORY,
+    MEMBER_REPOSITORY,
+  ],
 })
 export class ChapterModule {}

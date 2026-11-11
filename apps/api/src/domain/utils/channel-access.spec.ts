@@ -1,650 +1,396 @@
 import {
+  accessHolderFromRoles,
   allowsInThreadReplies,
   canAccessChannel,
   channelAllowsThreads,
+  EMPTY_ACCESS_HOLDER,
+  isAlumniPostableChannel,
+  needsAccessHolder,
+  type ChannelAccessHolder,
+  type ChannelAccessRecord,
 } from './channel-access';
 
-describe('canAccessChannel', () => {
-  const base = {
-    userId: 'user-1',
-    isChapterMember: true,
-    permissions: [] as string[],
-  };
+const EXEC_TIER = '00000000-0000-4000-8000-0000000000e1';
+const MEMBERS_TIER = '00000000-0000-4000-8000-0000000000e3';
+const PRESIDENT = '00000000-0000-4000-8000-000000000001';
+const TREASURER = '00000000-0000-4000-8000-000000000002';
+const BROTHER = '00000000-0000-4000-8000-000000000005';
+const ALUMNI = '00000000-0000-4000-8000-000000000007';
+const PLEDGE_CLASS = '00000000-0000-4000-8000-000000000009';
 
+const roles = {
+  president: {
+    id: PRESIDENT,
+    tier_id: EXEC_TIER,
+    permissions: ['*'],
+    system_key: 'PRESIDENT',
+  },
+  treasurer: {
+    id: TREASURER,
+    tier_id: EXEC_TIER,
+    permissions: ['members:view'],
+    system_key: 'TREASURER',
+  },
+  brother: {
+    id: BROTHER,
+    tier_id: MEMBERS_TIER,
+    permissions: ['members:view'],
+    system_key: 'MEMBER',
+  },
+  alumni: {
+    id: ALUMNI,
+    tier_id: null,
+    permissions: ['members:view', 'alumni:post'],
+    system_key: 'ALUMNI',
+  },
+  pledgeClass: {
+    id: PLEDGE_CLASS,
+    tier_id: null,
+    permissions: ['members:view'],
+    system_key: null,
+  },
+};
+
+const holding = (...held: (typeof roles)[keyof typeof roles][]) =>
+  accessHolderFromRoles(held);
+
+const channel = (
+  overrides: Partial<ChannelAccessRecord> = {},
+): ChannelAccessRecord => ({
+  type: 'PUBLIC',
+  member_ids: null,
+  who_can_see: null,
+  who_can_post: null,
+  ...overrides,
+});
+
+const check = (
+  record: ChannelAccessRecord,
+  holder: ChannelAccessHolder,
+  operation?: 'read' | 'post' | 'vote' | 'thread',
+  extra: { userId?: string; isChapterMember?: boolean } = {},
+) =>
+  canAccessChannel({
+    channel: record,
+    userId: extra.userId ?? 'user-1',
+    isChapterMember: extra.isChapterMember ?? true,
+    holder,
+    operation,
+  });
+
+const execOnly = channel({
+  type: 'ROLE_GATED',
+  who_can_see: [`tier:${EXEC_TIER}`],
+});
+const announcements = channel({ who_can_post: [`tier:${EXEC_TIER}`] });
+
+describe('accessHolderFromRoles', () => {
+  it('holds each role and the tier it sits in', () => {
+    const holder = holding(roles.treasurer, roles.pledgeClass);
+    expect([...holder.entries].sort()).toEqual(
+      [`role:${TREASURER}`, `tier:${EXEC_TIER}`, `role:${PLEDGE_CLASS}`].sort(),
+    );
+    expect(holder.wildcard).toBe(false);
+    expect(holder.alumniEntries).toBeNull();
+  });
+
+  it('marks the wildcard and the Alumni role', () => {
+    expect(holding(roles.president).wildcard).toBe(true);
+    expect([...(holding(roles.alumni).alumniEntries ?? [])]).toEqual([
+      `role:${ALUMNI}`,
+    ]);
+  });
+});
+
+describe('canAccessChannel', () => {
   it('denies anyone who is not a member of the owning chapter', () => {
     expect(
-      canAccessChannel({
-        ...base,
+      check(channel(), holding(roles.president), 'read', {
         isChapterMember: false,
-        channel: {
-          type: 'PUBLIC',
-          member_ids: null,
-          required_permissions: null,
-        },
       }),
     ).toBe(false);
   });
 
-  it('allows any chapter member into a PUBLIC channel', () => {
-    expect(
-      canAccessChannel({
-        ...base,
-        channel: {
-          type: 'PUBLIC',
-          member_ids: null,
-          required_permissions: null,
-        },
-      }),
-    ).toBe(true);
+  describe('who can see', () => {
+    it('null lets every member read', () => {
+      expect(check(channel(), EMPTY_ACCESS_HOLDER)).toBe(true);
+    });
+
+    it('a list lets in a holder of a named tier', () => {
+      expect(check(execOnly, holding(roles.treasurer))).toBe(true);
+      expect(check(execOnly, holding(roles.brother))).toBe(false);
+    });
+
+    it('a list lets in a holder of a named role, outside any tier', () => {
+      const pledges = channel({
+        type: 'ROLE_GATED',
+        who_can_see: [`role:${PLEDGE_CLASS}`, `tier:${EXEC_TIER}`],
+      });
+      expect(check(pledges, holding(roles.brother, roles.pledgeClass))).toBe(
+        true,
+      );
+      expect(check(pledges, holding(roles.brother))).toBe(false);
+    });
+
+    it('the wildcard passes any list, an empty one included', () => {
+      expect(check(execOnly, holding(roles.president))).toBe(true);
+      expect(
+        check(
+          channel({ type: 'ROLE_GATED', who_can_see: [] }),
+          holding(roles.president),
+        ),
+      ).toBe(true);
+      expect(
+        check(
+          channel({ type: 'ROLE_GATED', who_can_see: [] }),
+          holding(roles.treasurer),
+        ),
+      ).toBe(false);
+    });
   });
 
   describe.each(['PRIVATE', 'DM', 'GROUP_DM'] as const)(
     '%s channel',
     (type) => {
-      it('allows a listed participant', () => {
+      it('allows a listed participant and no one else', () => {
         expect(
-          canAccessChannel({
-            ...base,
-            channel: {
-              type,
-              member_ids: ['user-1', 'user-2'],
-              required_permissions: null,
-            },
-          }),
+          check(
+            channel({ type, member_ids: ['user-1', 'user-2'] }),
+            EMPTY_ACCESS_HOLDER,
+          ),
         ).toBe(true);
-      });
-
-      it('denies a non-participant', () => {
         expect(
-          canAccessChannel({
-            ...base,
-            channel: {
-              type,
-              member_ids: ['user-2'],
-              required_permissions: null,
-            },
-          }),
+          check(channel({ type, member_ids: ['user-2'] }), EMPTY_ACCESS_HOLDER),
         ).toBe(false);
       });
 
-      it('denies when the member list is null/empty', () => {
+      it('gives the wildcard no way in', () => {
         expect(
-          canAccessChannel({
-            ...base,
-            channel: { type, member_ids: null, required_permissions: null },
-          }),
+          check(channel({ type, member_ids: null }), holding(roles.president)),
         ).toBe(false);
       });
     },
   );
 
-  describe('ROLE_GATED channel', () => {
-    it('allows when the caller holds a required permission', () => {
-      expect(
-        canAccessChannel({
-          ...base,
-          permissions: ['alumni:view'],
-          channel: {
-            type: 'ROLE_GATED',
-            member_ids: null,
-            required_permissions: ['alumni:view'],
-          },
-        }),
-      ).toBe(true);
-    });
-
-    it('allows the wildcard permission', () => {
-      expect(
-        canAccessChannel({
-          ...base,
-          permissions: ['*'],
-          channel: {
-            type: 'ROLE_GATED',
-            member_ids: null,
-            required_permissions: ['alumni:view'],
-          },
-        }),
-      ).toBe(true);
-    });
-
-    it('denies when the caller lacks the required permission', () => {
-      expect(
-        canAccessChannel({
-          ...base,
-          permissions: ['events:create'],
-          channel: {
-            type: 'ROLE_GATED',
-            member_ids: null,
-            required_permissions: ['alumni:view'],
-          },
-        }),
-      ).toBe(false);
-    });
-
-    // FRA-321: these two previously returned true, which made a ROLE_GATED
-    // channel that gates on nothing functionally PUBLIC — and, because the
-    // alumni post rule keyed on channel type, alumni-postable as well.
-    it('denies a member when the requirement list is empty', () => {
-      expect(
-        canAccessChannel({
-          ...base,
-          channel: {
-            type: 'ROLE_GATED',
-            member_ids: null,
-            required_permissions: [],
-          },
-        }),
-      ).toBe(false);
-    });
-
-    it('denies a member when required_permissions is null', () => {
-      expect(
-        canAccessChannel({
-          ...base,
-          channel: {
-            type: 'ROLE_GATED',
-            member_ids: null,
-            required_permissions: null,
-          },
-        }),
-      ).toBe(false);
-    });
-
-    it('still allows the wildcard through an empty requirement list', () => {
-      expect(
-        canAccessChannel({
-          ...base,
-          permissions: ['*'],
-          channel: {
-            type: 'ROLE_GATED',
-            member_ids: null,
-            required_permissions: [],
-          },
-        }),
-      ).toBe(true);
-    });
-  });
-
   it('denies an unknown channel type (guarded default, never falls open)', () => {
     expect(
-      canAccessChannel({
-        ...base,
-        permissions: ['*'],
-        channel: {
-          type: 'SOMETHING_NEW',
-          member_ids: ['user-1'],
-          required_permissions: ['*'],
-        },
-      }),
+      check(channel({ type: 'SOMETHING_NEW' }), holding(roles.president)),
     ).toBe(false);
   });
 
-  // #3909: `#chapter-audit` is system-write only. A President once posted
-  // there because the read-only gate lets `*` through.
+  describe('who can post', () => {
+    it('null lets everyone who can see post', () => {
+      expect(check(channel(), EMPTY_ACCESS_HOLDER, 'post')).toBe(true);
+      expect(check(execOnly, holding(roles.treasurer), 'post')).toBe(true);
+    });
+
+    it('a list lets only its holders post, and reads are unaffected', () => {
+      expect(check(announcements, holding(roles.brother))).toBe(true);
+      expect(check(announcements, holding(roles.brother), 'post')).toBe(false);
+      expect(check(announcements, holding(roles.treasurer), 'post')).toBe(true);
+      expect(check(announcements, holding(roles.president), 'post')).toBe(true);
+    });
+
+    it('a poster who cannot see the channel still cannot post', () => {
+      const odd = channel({
+        type: 'ROLE_GATED',
+        who_can_see: [`tier:${EXEC_TIER}`],
+        who_can_post: [`tier:${MEMBERS_TIER}`],
+      });
+      expect(check(odd, holding(roles.brother), 'post')).toBe(false);
+    });
+
+    it('decides a vote as it decides a post', () => {
+      expect(check(announcements, holding(roles.brother), 'vote')).toBe(false);
+      expect(check(announcements, holding(roles.treasurer), 'vote')).toBe(true);
+    });
+
+    it('lets any reader write in a message thread', () => {
+      expect(check(announcements, holding(roles.brother), 'thread')).toBe(true);
+    });
+
+    it('defaults the operation to read', () => {
+      expect(check(announcements, holding(roles.brother))).toBe(true);
+    });
+  });
+
   describe('the audit log channel', () => {
-    const auditLog = {
-      type: 'PUBLIC' as const,
-      member_ids: null,
-      required_permissions: null,
-      is_read_only: true,
-      is_audit_log: true,
-    };
+    const audit = channel({ is_audit_log: true, who_can_post: [] });
 
     it('every member can read it', () => {
-      expect(
-        canAccessChannel({ ...base, channel: auditLog, operation: 'read' }),
-      ).toBe(true);
+      expect(check(audit, EMPTY_ACCESS_HOLDER)).toBe(true);
     });
 
-    it.each([
-      ['the wildcard', ['*']],
-      ['announcements:post', ['announcements:post']],
-      ['no permission', []],
-    ])('refuses a post from a member holding %s', (_label, permissions) => {
-      expect(
-        canAccessChannel({
-          ...base,
-          permissions,
-          channel: auditLog,
-          operation: 'post',
-        }),
-      ).toBe(false);
-    });
-
-    it('refuses a post even when read-only has been switched off', () => {
-      expect(
-        canAccessChannel({
-          ...base,
-          permissions: ['*'],
-          channel: { ...auditLog, is_read_only: false },
-          operation: 'post',
-        }),
-      ).toBe(false);
-    });
-
-    it('refuses a vote', () => {
-      expect(
-        canAccessChannel({
-          ...base,
-          permissions: ['*'],
-          channel: auditLog,
-          operation: 'vote',
-        }),
-      ).toBe(false);
-    });
-  });
-
-  describe('operation: "post" on a read-only channel', () => {
-    const readOnly = {
-      type: 'PUBLIC' as const,
-      member_ids: null,
-      required_permissions: null,
-      is_read_only: true,
-    };
-
-    it('reads are unaffected by the read-only flag', () => {
-      expect(
-        canAccessChannel({ ...base, channel: readOnly, operation: 'read' }),
-      ).toBe(true);
-    });
-
-    it('denies a post without announcements:post', () => {
-      expect(
-        canAccessChannel({ ...base, channel: readOnly, operation: 'post' }),
-      ).toBe(false);
-    });
-
-    it('allows a post with announcements:post', () => {
-      expect(
-        canAccessChannel({
-          ...base,
-          permissions: ['announcements:post'],
-          channel: readOnly,
-          operation: 'post',
-        }),
-      ).toBe(true);
-    });
-
-    it('allows a post with the wildcard', () => {
-      expect(
-        canAccessChannel({
-          ...base,
-          permissions: ['*'],
-          channel: readOnly,
-          operation: 'post',
-        }),
-      ).toBe(true);
-    });
-
-    it('non-read-only channels accept posts from any chapter member', () => {
-      expect(
-        canAccessChannel({
-          ...base,
-          channel: {
-            type: 'PUBLIC',
-            member_ids: null,
-            required_permissions: null,
-            is_read_only: false,
-          },
-          operation: 'post',
-        }),
-      ).toBe(true);
-    });
-
-    it('defaults operation to "read" when omitted (backward-compat)', () => {
-      expect(canAccessChannel({ ...base, channel: readOnly })).toBe(true);
-    });
-  });
-
-  // Alumni keep read access everywhere they can see, but may only write in the
-  // alumni channel and direct conversations. See spec/behavior/alumni.md.
-  describe('isAlumni posting restrictions', () => {
-    const alumni = { ...base, isAlumni: true };
-
-    it.each(['PUBLIC', 'PRIVATE'] as const)(
-      'denies an alumni post in an operational %s channel',
-      (type) => {
+    it.each(['post', 'vote', 'thread'] as const)(
+      'refuses a %s even from the wildcard and with no post list',
+      (operation) => {
         expect(
-          canAccessChannel({
-            ...alumni,
-            channel: {
-              type,
-              member_ids: ['user-1'],
-              required_permissions: null,
-              is_read_only: false,
-            },
-            operation: 'post',
-          }),
+          check(
+            { ...audit, who_can_post: null },
+            holding(roles.president),
+            operation,
+          ),
         ).toBe(false);
       },
     );
+  });
 
-    it.each(['PUBLIC', 'PRIVATE'] as const)(
-      'still allows an alumni member to read a %s channel',
-      (type) => {
-        expect(
-          canAccessChannel({
-            ...alumni,
-            channel: {
-              type,
-              member_ids: ['user-1'],
-              required_permissions: null,
-              is_read_only: false,
-            },
-            operation: 'read',
-          }),
-        ).toBe(true);
-      },
-    );
-
-    it.each(['DM', 'GROUP_DM'] as const)(
-      'allows an alumni post in a %s channel',
-      (type) => {
-        expect(
-          canAccessChannel({
-            ...alumni,
-            channel: {
-              type,
-              member_ids: ['user-1'],
-              required_permissions: null,
-              is_read_only: false,
-            },
-            operation: 'post',
-          }),
-        ).toBe(true);
-      },
-    );
-
-    // FRA-321: the seeded #alumni channel. `alumni:post` in the *channel's*
-    // requirement list is what makes it alumni-writable.
-    it('allows an alumni post in a ROLE_GATED channel requiring alumni:post', () => {
-      expect(
-        canAccessChannel({
-          ...alumni,
-          permissions: ['members:view', 'alumni:post'],
-          channel: {
-            type: 'ROLE_GATED',
-            member_ids: null,
-            required_permissions: ['members:view', 'alumni:post'],
-            is_read_only: false,
-          },
-          operation: 'post',
-        }),
-      ).toBe(true);
+  describe('archived channel (#348)', () => {
+    const archived = channel({
+      type: 'GROUP_DM',
+      member_ids: ['user-1'],
+      archived_at: '2026-01-01T00:00:00Z',
     });
 
-    // The regression this issue was filed for: a chapter's #exec-board gated on
-    // members:view — the Alumni role's own permission — used to be postable
-    // purely because its type was ROLE_GATED.
-    it('denies an alumni post in a ROLE_GATED channel that does not require alumni:post', () => {
+    it('still lets a remaining member read it', () => {
+      expect(check(archived, EMPTY_ACCESS_HOLDER)).toBe(true);
+    });
+
+    it.each(['post', 'vote', 'thread'] as const)(
+      'refuses a %s from anyone',
+      (operation) => {
+        expect(check(archived, holding(roles.president), operation)).toBe(
+          false,
+        );
+      },
+    );
+  });
+
+  describe('the Alumni rule', () => {
+    const alumniChannel = channel({
+      type: 'ROLE_GATED',
+      who_can_see: [`tier:${MEMBERS_TIER}`, `role:${ALUMNI}`],
+    });
+
+    it('lets alumni read where they can see, but not post in #general', () => {
+      expect(check(channel(), holding(roles.alumni))).toBe(true);
+      expect(check(channel(), holding(roles.alumni), 'post')).toBe(false);
+      expect(check(channel(), holding(roles.alumni), 'thread')).toBe(false);
+    });
+
+    it('lets alumni post where who can see names them and anyone who sees may post', () => {
+      expect(check(alumniChannel, holding(roles.alumni), 'post')).toBe(true);
+    });
+
+    it('lets alumni post where who can post names them', () => {
+      const alumniAnnouncements = channel({
+        who_can_post: [`role:${ALUMNI}`],
+      });
+      expect(check(alumniAnnouncements, holding(roles.alumni), 'post')).toBe(
+        true,
+      );
+    });
+
+    it('refuses alumni where who can post leaves them out, even if who can see names them', () => {
+      const readOnlyForAlumni = channel({
+        ...alumniChannel,
+        who_can_post: [`tier:${MEMBERS_TIER}`],
+      });
+      expect(check(readOnlyForAlumni, holding(roles.alumni))).toBe(true);
+      expect(check(readOnlyForAlumni, holding(roles.alumni), 'post')).toBe(
+        false,
+      );
+    });
+
+    it('applies to an alumnus who also holds an active role', () => {
       expect(
-        canAccessChannel({
-          ...alumni,
-          permissions: ['members:view', 'alumni:post'],
-          channel: {
-            type: 'ROLE_GATED',
-            member_ids: null,
-            required_permissions: ['members:view'],
-            is_read_only: false,
-          },
-          operation: 'post',
-        }),
+        check(channel(), holding(roles.alumni, roles.brother), 'post'),
       ).toBe(false);
     });
 
-    it('still lets an alumni read a ROLE_GATED channel it may not post in', () => {
+    it('lets alumni post in DMs and group DMs, not in a private channel', () => {
+      const members = { member_ids: ['user-1'] };
       expect(
-        canAccessChannel({
-          ...alumni,
-          permissions: ['members:view', 'alumni:post'],
-          channel: {
-            type: 'ROLE_GATED',
-            member_ids: null,
-            required_permissions: ['members:view'],
-            is_read_only: false,
-          },
-          operation: 'read',
-        }),
+        check(
+          channel({ type: 'DM', ...members }),
+          holding(roles.alumni),
+          'post',
+        ),
       ).toBe(true);
-    });
-
-    it('exempts votes from the alumni rule in a ROLE_GATED channel', () => {
       expect(
-        canAccessChannel({
-          ...alumni,
-          permissions: ['members:view', 'alumni:post'],
-          channel: {
-            type: 'ROLE_GATED',
-            member_ids: null,
-            required_permissions: ['members:view'],
-            is_read_only: false,
-          },
-          operation: 'vote',
-        }),
+        check(
+          channel({ type: 'GROUP_DM', ...members }),
+          holding(roles.alumni),
+          'post',
+        ),
       ).toBe(true);
-    });
-
-    it('still applies the read-only gate inside an alumni-postable channel', () => {
       expect(
-        canAccessChannel({
-          ...alumni,
-          permissions: ['members:view', 'alumni:post'],
-          channel: {
-            type: 'ROLE_GATED',
-            member_ids: null,
-            required_permissions: ['members:view', 'alumni:post'],
-            is_read_only: true,
-          },
-          operation: 'post',
-        }),
+        check(
+          channel({ type: 'PRIVATE', ...members }),
+          holding(roles.alumni),
+          'post',
+        ),
       ).toBe(false);
     });
 
-    it('lets a wildcard holder bypass the alumni restriction', () => {
-      expect(
-        canAccessChannel({
-          ...alumni,
-          permissions: ['*'],
-          channel: {
-            type: 'PUBLIC',
-            member_ids: null,
-            required_permissions: null,
-            is_read_only: false,
-          },
-          operation: 'post',
-        }),
-      ).toBe(true);
+    it('exempts votes', () => {
+      expect(check(channel(), holding(roles.alumni), 'vote')).toBe(true);
     });
 
-    it('does not affect active members (isAlumni omitted)', () => {
+    it('lets the wildcard bypass it', () => {
       expect(
-        canAccessChannel({
-          ...base,
-          channel: {
-            type: 'PUBLIC',
-            member_ids: null,
-            required_permissions: null,
-            is_read_only: false,
-          },
-          operation: 'post',
-        }),
+        check(channel(), holding(roles.alumni, roles.president), 'post'),
       ).toBe(true);
     });
+  });
+});
+
+describe('isAlumniPostableChannel', () => {
+  const alumni = new Set([`role:${ALUMNI}`]);
+
+  it('reads who can post first, then who can see', () => {
+    expect(
+      isAlumniPostableChannel(
+        channel({ who_can_see: [`role:${ALUMNI}`], who_can_post: [] }),
+        alumni,
+      ),
+    ).toBe(false);
+    expect(
+      isAlumniPostableChannel(
+        channel({ who_can_see: [`role:${ALUMNI}`] }),
+        alumni,
+      ),
+    ).toBe(true);
+    expect(isAlumniPostableChannel(channel(), alumni)).toBe(false);
+  });
+});
+
+describe('needsAccessHolder', () => {
+  it('skips the lookup where no list or Alumni rule can decide', () => {
+    expect(needsAccessHolder(channel(), 'read')).toBe(false);
+    expect(needsAccessHolder(channel({ type: 'DM' }), 'post')).toBe(false);
+    expect(needsAccessHolder(channel({ type: 'PRIVATE' }), 'read')).toBe(false);
+    expect(needsAccessHolder(channel(), 'vote')).toBe(false);
+  });
+
+  it('asks for it where a list or the Alumni rule decides', () => {
+    expect(needsAccessHolder(execOnly, 'read')).toBe(true);
+    expect(needsAccessHolder(announcements, 'vote')).toBe(true);
+    expect(needsAccessHolder(channel(), 'post')).toBe(true);
+    expect(needsAccessHolder(channel(), 'thread')).toBe(true);
+    expect(needsAccessHolder(channel({ type: 'PRIVATE' }), 'post')).toBe(true);
   });
 });
 
 describe('allowsInThreadReplies', () => {
-  const channel = {
-    type: 'PUBLIC' as const,
-    member_ids: null,
-    required_permissions: null,
-  };
-
-  it('allows replies in a normal channel', () => {
-    expect(allowsInThreadReplies({ ...channel, is_read_only: false })).toBe(
-      true,
-    );
+  it('allows quote replies where everyone who can see may post', () => {
+    expect(allowsInThreadReplies(channel())).toBe(true);
+    expect(allowsInThreadReplies(execOnly)).toBe(true);
   });
 
-  it('rejects replies in a read-only channel', () => {
-    expect(allowsInThreadReplies({ ...channel, is_read_only: true })).toBe(
-      false,
-    );
-  });
-
-  // The flag is optional on `ChannelAccessRecord` because read checks never
-  // consult it, so the predicate has to answer for an absent one. No *real*
-  // channel reaches this branch — `ChatChannel.is_read_only` is a required
-  // `boolean` and the column is `not null default false` — it exists only so a
-  // caller hand-building a record for a read check gets the same default
-  // `canAccessChannel` uses. Do not cite it as evidence the open default is
-  // load-bearing for DMs; it is not.
-  it('treats an absent or null flag as replyable', () => {
-    expect(allowsInThreadReplies(channel)).toBe(true);
-    expect(allowsInThreadReplies({ ...channel, is_read_only: null })).toBe(
-      true,
-    );
-  });
-
-  // `is_read_only` is the only field that may decide this. Keying off channel
-  // type or `required_permissions` instead would let a renamed or re-typed
-  // announcements channel silently start accepting threads.
+  // Who can post is the only field that may decide this. Keying off the
+  // channel's type or name instead would let a renamed announcements channel
+  // silently start taking replies.
   it.each(['PUBLIC', 'PRIVATE', 'ROLE_GATED', 'DM', 'GROUP_DM'] as const)(
-    'ignores every other channel field on a read-only %s channel',
+    'refuses them on a %s channel with a who-can-post list',
     (type) => {
       expect(
-        allowsInThreadReplies({
-          type,
-          member_ids: ['user-1'],
-          required_permissions: ['announcements:post'],
-          is_read_only: true,
-        }),
+        allowsInThreadReplies(
+          channel({ type, member_ids: ['user-1'], who_can_post: [] }),
+        ),
       ).toBe(false);
     },
   );
-});
-
-// #348: an archived Group DM (chat_channels.archived_at set once membership
-// drops to <= 1 via the leave endpoint) is frozen for writes.
-describe('canAccessChannel — archived channel', () => {
-  const archivedGroupDm = {
-    type: 'GROUP_DM' as const,
-    member_ids: ['user-1'],
-    required_permissions: null,
-    archived_at: '2026-01-02T00:00:00.000Z',
-  };
-
-  it('still allows a remaining member to read it', () => {
-    expect(
-      canAccessChannel({
-        channel: archivedGroupDm,
-        userId: 'user-1',
-        isChapterMember: true,
-        permissions: [],
-        operation: 'read',
-      }),
-    ).toBe(true);
-  });
-
-  it('denies posting into it unconditionally — even a wildcard permission holder', () => {
-    expect(
-      canAccessChannel({
-        channel: archivedGroupDm,
-        userId: 'user-1',
-        isChapterMember: true,
-        permissions: ['*'],
-        operation: 'post',
-      }),
-    ).toBe(false);
-  });
-
-  it('does not archive a live (non-archived) channel of the same shape', () => {
-    expect(
-      canAccessChannel({
-        channel: { ...archivedGroupDm, archived_at: null },
-        userId: 'user-1',
-        isChapterMember: true,
-        permissions: [],
-        operation: 'post',
-      }),
-    ).toBe(true);
-  });
-});
-
-// Message threads (#3785, spec/behavior/chat/README.md § Message threads).
-describe('the thread operation', () => {
-  const announcements = {
-    type: 'PUBLIC',
-    member_ids: null,
-    required_permissions: null,
-    is_read_only: true,
-  };
-  const member = {
-    userId: 'user-1',
-    isChapterMember: true,
-    permissions: [] as string[],
-  };
-
-  it('lets a member without announcements:post thread under an announcement', () => {
-    expect(
-      canAccessChannel({
-        ...member,
-        channel: announcements,
-        operation: 'thread',
-      }),
-    ).toBe(true);
-    // The timeline itself stays officer-only.
-    expect(
-      canAccessChannel({
-        ...member,
-        channel: announcements,
-        operation: 'post',
-      }),
-    ).toBe(false);
-  });
-
-  it('refuses the audit log and an archived channel', () => {
-    expect(
-      canAccessChannel({
-        ...member,
-        permissions: ['*'],
-        channel: { ...announcements, is_audit_log: true },
-        operation: 'thread',
-      }),
-    ).toBe(false);
-    expect(
-      canAccessChannel({
-        ...member,
-        channel: { ...announcements, archived_at: '2026-01-01' },
-        operation: 'thread',
-      }),
-    ).toBe(false);
-  });
-
-  it('applies the alumni rule, as a post does', () => {
-    expect(
-      canAccessChannel({
-        ...member,
-        isAlumni: true,
-        channel: { ...announcements, is_read_only: false },
-        operation: 'thread',
-      }),
-    ).toBe(false);
-  });
-
-  it('does not let a non-reader thread', () => {
-    expect(
-      canAccessChannel({
-        ...member,
-        channel: {
-          type: 'PRIVATE',
-          member_ids: ['someone-else'],
-          required_permissions: null,
-        },
-        operation: 'thread',
-      }),
-    ).toBe(false);
-  });
 });
 
 describe('channelAllowsThreads', () => {

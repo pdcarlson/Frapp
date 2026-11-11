@@ -467,6 +467,21 @@ export interface Database {
         };
         Returns: ChatChannelCategory[];
       };
+      /**
+       * `20261111230000` (#3722). Sets a category's who-can-see and
+       * who-can-post lists, and the same lists on every channel in it that
+       * matched the category before, in one transaction. Returns the ids of
+       * the channels that followed.
+       */
+      set_chat_category_access: {
+        Args: {
+          p_chapter_id: string;
+          p_category_id: string;
+          p_who_can_see: string[] | null;
+          p_who_can_post: string[] | null;
+        };
+        Returns: string[];
+      };
       leave_group_dm: {
         Args: {
           p_channel_id: string;

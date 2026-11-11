@@ -204,6 +204,18 @@ export interface IChatCategoryRepository {
     chapterId: string,
     categoryIds: string[],
   ): Promise<ChatChannelCategory[]>;
+  /**
+   * Set a category's who-can-see and who-can-post lists (#3722), and the same
+   * lists on every channel in it that matched the category's old lists, in
+   * one transaction (`set_chat_category_access`). Returns the ids of the
+   * channels that followed, for the channel cache.
+   */
+  setAccess(
+    chapterId: string,
+    categoryId: string,
+    whoCanSee: string[] | null,
+    whoCanPost: string[] | null,
+  ): Promise<string[]>;
 }
 
 export interface IChatMessageRepository {

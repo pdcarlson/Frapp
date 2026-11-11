@@ -334,7 +334,7 @@ export class SupabaseSearchRepository implements ISearchRepository {
   ): Promise<SearchChannelAccessRow[]> {
     const channelQuery = this.supabase
       .from('chat_channels')
-      .select('id, type, member_ids, required_permissions')
+      .select('id, type, member_ids, who_can_see')
       .eq('chapter_id', chapterId);
     // Only push the id down when it could actually BE one. `chat_channels.id`
     // is a `uuid` column, so PostgREST rejects a malformed value with 22P02,

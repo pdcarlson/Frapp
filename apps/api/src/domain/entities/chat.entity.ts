@@ -101,6 +101,15 @@ export interface ChatChannelCategory {
   name: string;
   display_order: number;
   created_at: string;
+  /**
+   * Who can see its channels (#3722): what a new channel in it copies, and
+   * what a channel that matches it follows when it changes
+   * (`set_chat_category_access`). `null` is everyone in the chapter; a list
+   * holds `tier:<id>` / `role:<id>` entries.
+   */
+  who_can_see: string[] | null;
+  /** Who can post in them: `null` is everyone who can see. As `who_can_see`. */
+  who_can_post: string[] | null;
 }
 
 export interface ChatChannel {
@@ -108,10 +117,33 @@ export interface ChatChannel {
   chapter_id: string;
   name: string;
   description: string | null;
+  /**
+   * PUBLIC and ROLE_GATED are one kind of channel now (#3722): `who_can_see`
+   * decides it, and `type` is kept equal to it (ROLE_GATED exactly when
+   * `who_can_see` is a list, a database check) for clients that draw a lock.
+   */
   type: ChannelType;
+  /**
+   * The gate before #3722. Read by nothing in the API for access; kept for one
+   * release because the Discord importer still writes it (a trigger turns it
+   * into lists) and shipped clients receive it. Dropped in #FOLLOWUP.
+   */
   required_permissions: string[] | null;
   member_ids: string[] | null;
   category_id: string | null;
+  /**
+   * Who can see a PUBLIC or ROLE_GATED channel: `null` is everyone in the
+   * chapter, a list holds `tier:<id>` / `role:<id>` entries
+   * (`canAccessChannel`). Always `null` on PRIVATE, DM and GROUP_DM.
+   */
+  who_can_see: string[] | null;
+  /** Who can post there: `null` is everyone who can see it. As `who_can_see`. */
+  who_can_post: string[] | null;
+  /**
+   * Kept equal to "has a who-can-post list" (a database check), which is
+   * still what turns off quote replies (`allowsInThreadReplies`) and makes a
+   * channel an announcements channel for push. Never written on its own.
+   */
   is_read_only: boolean;
   created_at: string;
   /**
@@ -201,7 +233,8 @@ export type ChatChannelPushRouting = Pick<
   | 'is_read_only'
   | 'type'
   | 'member_ids'
-  | 'required_permissions'
+  | 'who_can_see'
+  | 'who_can_post'
   | 'default_notification_level'
 >;
 

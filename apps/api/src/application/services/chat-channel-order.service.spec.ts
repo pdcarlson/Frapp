@@ -53,6 +53,8 @@ describe('ChatChannelOrderService', () => {
       name: 'Officers',
       display_order: 0,
       created_at: '',
+      who_can_see: null,
+      who_can_post: null,
     });
     await service.reorderChannels(CHAPTER, 'cat', ['a', 'b']);
     expect(categories.findById).toHaveBeenCalledWith('cat', CHAPTER);
@@ -103,6 +105,8 @@ describe('ChatChannelOrderService', () => {
         name: 'A',
         display_order: 0,
         created_at: '',
+        who_can_see: null,
+        who_can_post: null,
       },
       {
         id: 'b',
@@ -110,6 +114,8 @@ describe('ChatChannelOrderService', () => {
         name: 'B',
         display_order: 1,
         created_at: '',
+        who_can_see: null,
+        who_can_post: null,
       },
     ]);
     await service.reorderCategories(CHAPTER, ['b', 'a']);

@@ -36,7 +36,12 @@ import {
   isDirectChannel,
   SYSTEM_SENDER_ID,
 } from '@repo/validation';
-import { canAccessChannel } from '#domain/utils/channel-access';
+import {
+  canAccessChannel,
+  EMPTY_ACCESS_HOLDER,
+  needsAccessHolder,
+  type ChannelAccessHolder,
+} from '#domain/utils/channel-access';
 import { RbacService } from '../services/rbac.service';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { ChatBlockService } from '../services/chat-block.service';
@@ -260,9 +265,9 @@ export class ChatPushWorkerService
      * Channel rows, cached to keep a hot channel from re-querying per message.
      * Shared with `ChatService` (see `ChannelCacheModule`), which evicts an
      * entry when its `updateChannel` write can change `member_ids` or
-     * `required_permissions` — both are push-audience authorization inputs, not
+     * `who_can_see` — both are push-audience authorization inputs, not
      * display data, so a stale entry lets the worker decide from a permission
-     * set or membership list that no longer applies. `ChannelCacheService`'s
+     * list or membership list that no longer applies. `ChannelCacheService`'s
      * TTL is a backstop for entries nothing invalidates, not the primary
      * correctness mechanism.
      */
@@ -606,13 +611,14 @@ export class ChatPushWorkerService
 
   /**
    * Reduce candidates to those allowed to `read` the channel, via the shared
-   * `canAccessChannel` predicate — the same one the chat and poll surfaces
+   * `canAccessChannel` predicate: the same one the chat and poll surfaces
    * authorize through, so the push audience cannot drift from the read
    * audience.
    *
-   * Permissions are fetched only for a ROLE_GATED channel, and only then per
-   * candidate; PUBLIC short-circuits and DM/GROUP_DM/PRIVATE are decided by
-   * `member_ids` alone.
+   * What members hold is read only for a channel with a who-can-see list, and
+   * then once for the whole chapter (`getChapterMemberAccess`, three reads)
+   * rather than once per candidate. A channel everyone sees short-circuits,
+   * and DM / GROUP_DM / PRIVATE are decided by `member_ids` alone.
    */
   private async filterCanReadChannel(
     channel: ChannelRow,
@@ -622,62 +628,51 @@ export class ChatPushWorkerService
       id: channel.id,
       type: channel.type,
       member_ids: channel.member_ids,
-      required_permissions: channel.required_permissions,
+      who_can_see: channel.who_can_see ?? null,
+      who_can_post: channel.who_can_post ?? null,
     };
 
-    if (shape.type === 'PUBLIC') return candidateIds;
-
-    // Only ROLE_GATED needs permissions, and then one lookup per candidate.
-    // Resolved concurrently: awaiting inside the loop made a single message
-    // into a role-gated channel cost one sequential round trip per member,
-    // on a realtime handler with no backpressure.
-    const permissionsByUser = new Map<string, string[] | null>();
-    if (shape.type === 'ROLE_GATED') {
-      const resolved = await Promise.all(
-        candidateIds.map(async (userId) => {
-          try {
-            return [
-              userId,
-              await this.rbac.getEffectivePermissions(
-                channel.chapter_id,
-                userId,
-              ),
-            ] as const;
-          } catch (err) {
-            // Fail closed: an unresolved permission set must not become a push.
-            reportCaughtFailure(this.logger, {
-              level: 'warning',
-              site: 'chat-push-permission-lookup',
-              message: `chat-push: permission lookup failed for ${userId}; skipping`,
-              error: err,
-            });
-            return [userId, null] as const;
-          }
-        }),
-      );
-      for (const [userId, permissions] of resolved) {
-        permissionsByUser.set(userId, permissions);
-      }
-    }
-
-    const allowed: string[] = [];
-    for (const userId of candidateIds) {
-      const permissions =
-        shape.type === 'ROLE_GATED' ? permissionsByUser.get(userId) : [];
-      if (permissions == null) continue;
-      if (
+    if (!needsAccessHolder(shape, 'read')) {
+      return candidateIds.filter((userId) =>
         canAccessChannel({
           channel: shape,
           userId,
           isChapterMember: true,
-          permissions,
+          holder: EMPTY_ACCESS_HOLDER,
           operation: 'read',
-        })
-      ) {
-        allowed.push(userId);
-      }
+        }),
+      );
     }
-    return allowed;
+
+    let holders: Map<string, ChannelAccessHolder>;
+    try {
+      const access = await this.rbac.getChapterMemberAccess(channel.chapter_id);
+      holders = new Map(
+        access.map((member) => [member.user_id, member.channel_access]),
+      );
+    } catch (err) {
+      // Fail closed: an unresolved list of holders must not become a push.
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'chat-push-permission-lookup',
+        message: `chat-push: member access lookup failed for channel ${channel.id}; skipping`,
+        error: err,
+      });
+      return [];
+    }
+
+    return candidateIds.filter((userId) => {
+      const holder = holders.get(userId);
+      // Not in the chapter's roster: not a reader.
+      if (!holder) return false;
+      return canAccessChannel({
+        channel: shape,
+        userId,
+        isChapterMember: true,
+        holder,
+        operation: 'read',
+      });
+    });
   }
 
   private async resolveChannel(channelId: string): Promise<ChannelRow | null> {
