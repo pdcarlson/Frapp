@@ -31,14 +31,20 @@ import {
  *   addressed" reads identically in every chapter.
  * - **Channel unread is neutral — never red, never accent, and has no
  *   number** (2026-11-07). A plain unread channel is a bold title alone; only
- *   a mention or an unread DM draws the badge. A read row keeps a bright
- *   regular-weight title.
+ *   a mention or an unread DM draws the badge. A read row draws a grey
+ *   regular-weight title (below).
  *
- * **A read name stays bright** (owner, 2026-11-07). The emphasis is weight,
- * the sigil and the badge: a 700 title against a read row's 400, both in
- * `text.foreground`, as Slack, iMessage and Telegram draw it. Read titles used
- * to drop to `text.mutedForeground`, so a chapter with nothing unread was a
- * screen of grey with nothing white on it. Only a muted row dims its title.
+ * **Read is grey, unread is white and bold** (owner, 2026-11-08, after a
+ * tester: "it needs to be clearer that you have unread messages"). A read row
+ * draws its name in `text.mutedForeground` at 400 and its sigil in
+ * `text.muted`; an unread row draws both in `text.foreground`, the name at 700,
+ * with a short white pip at the row's start, as Discord does. A mention or an
+ * unread DM adds the red badge. This reverses the 2026-11-07 "a read name
+ * stays bright" call, which made read and unread differ by weight alone and
+ * read too alike on a busy list; since the 2026-11-09 text lift (#3826) a grey
+ * read name is `#C4C4C4`, no longer the dim grey that call fixed. Shipped
+ * 2026-11-11 (#4147). A muted row dims one step further (`text.muted`, sigil
+ * `text.disabled`).
  * Chat home's rows are one line (no preview, no time, owner 2026-11-07); the
  * preview line is for the Messages list, where a DM's last line is the point.
  *
@@ -214,6 +220,9 @@ export function ChannelRow({
       }
       style={[styles.row, preview == null ? styles.rowOneLine : null]}
     >
+      {looksUnread ? (
+        <View testID="channel-row-unread-pip" style={styles.unreadPip} />
+      ) : null}
       {isDirect ? (
         <MemberAvatar
           uri={avatarUrl}
@@ -430,13 +439,26 @@ function createStyles(tokens: SignetTokens) {
     },
     sigil: {
       ...typeRole(tokens.typography.role.title),
-      color: tokens.color.text.mutedForeground,
+      color: tokens.color.text.muted,
     },
     sigilUnread: {
       color: tokens.color.text.foreground,
     },
     sigilMuted: {
-      color: tokens.color.text.muted,
+      color: tokens.color.text.disabled,
+    },
+    // Discord's unread pip: a short white half-pill on the row's leading
+    // edge, in the bleed before the sigil, so it needs no room of its own.
+    unreadPip: {
+      position: "absolute",
+      left: 0,
+      top: "50%",
+      marginTop: -4,
+      width: 4,
+      height: 8,
+      borderTopRightRadius: 4,
+      borderBottomRightRadius: 4,
+      backgroundColor: tokens.color.text.foreground,
     },
     titleLine: {
       flexDirection: "row",
@@ -462,8 +484,7 @@ function createStyles(tokens: SignetTokens) {
       flex: 1,
       gap: 2,
     },
-    // Weight carries unread: 700 over a read row's 400, both bright
-    // (2026-11-07). A muted row is the one that dims.
+    // Unread is white at 700, read is grey at 400 (2026-11-08).
     titleUnread: {
       ...typeRole({
         ...tokens.typography.role.body,
@@ -473,7 +494,7 @@ function createStyles(tokens: SignetTokens) {
     },
     titleRead: {
       ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.foreground,
+      color: tokens.color.text.mutedForeground,
     },
     titleMuted: {
       ...typeRole(tokens.typography.role.body),
