@@ -51,6 +51,17 @@ import type { PageTitle } from "@/components/layout/page-title";
 type TopBarProps = {
   /** The open route's title; `null` leaves the cell empty (an unmapped route). */
   pageTitle: PageTitle | null;
+  /**
+   * The title moves to the tool page's own header from the side-by-side
+   * width up (`tool-page-header.tsx`): hidden here by CSS there, so the first
+   * paint is right before the width is known.
+   */
+  titleMovesBesideChat?: boolean;
+  /**
+   * Whether this copy is the route's `<h1>`. The shell hands the heading to
+   * the tool header once it knows the window is wide, so there is one.
+   */
+  titleIsHeading?: boolean;
   unreadNotifications: number;
   onOpenNotifications: () => void;
   onOpenMobileNav: () => void;
@@ -64,6 +75,8 @@ const topBarButtonClassName = cn(
 
 export function TopBar({
   pageTitle,
+  titleMovesBesideChat = false,
+  titleIsHeading = true,
   unreadNotifications,
   onOpenNotifications,
   onOpenMobileNav,
@@ -101,7 +114,16 @@ export function TopBar({
         >
           <Menu className="h-[18px] w-[18px]" aria-hidden="true" />
         </button>
-        {pageTitle ? <TopBarTitle pageTitle={pageTitle} /> : null}
+        {pageTitle ? (
+          <PageTitleText
+            pageTitle={pageTitle}
+            asHeading={titleIsHeading}
+            className={cn(
+              "sr-only sm:not-sr-only lg:pl-3",
+              titleMovesBesideChat && "min-[1056px]:hidden",
+            )}
+          />
+        ) : null}
       </div>
 
       {/*
@@ -170,35 +192,47 @@ export function TopBar({
 }
 
 /**
- * The title, with its parent when it has one.
+ * The title, with its parent when it has one. The top bar draws it, and from
+ * the side-by-side width up the tool page's own header does
+ * (`tool-page-header.tsx`).
  *
  * The parent is a quiet link (muted, `label` at 500) and the title the anchor
  * (`label` at 700): the board's 15/700 rounds onto the `label` step and keeps
- * only the weight (#2842). `lg:pl-3` lines the title up with the page body's
- * 24px inset below it (12 of bar padding plus 12).
+ * only the weight (#2842). In the top bar `lg:pl-3` lines the title up with
+ * the page body's 24px inset below it (12 of bar padding plus 12).
  *
- * **Below `sm` it is visually hidden**, and stays the `<h1>` for a screen
- * reader. The `sr-only` sits on the wrapper, not the `<h1>`: `not-sr-only`
- * resets `overflow` and `white-space`, which on the `<h1>` would undo
- * `truncate` from `sm` up and let a long name wrap the bar. A 390px bar holds the drawer trigger, the find field and the right
- * cluster, and nothing else: sharing it cut the title to "Stud…" and the find
- * field to a bare glyph (measured 2026-11-05). On a phone the drawer marks the
- * open row, and the mobile app, which has its own titles, is the phone surface.
- * Everything is `nowrap` and the title truncates from `sm` up, so a long name
- * never wraps the 48px bar onto a second line.
+ * **Below `sm` the top bar's copy is visually hidden**, and stays the `<h1>`
+ * for a screen reader. The `sr-only` sits on the wrapper, not the `<h1>`:
+ * `not-sr-only` resets `overflow` and `white-space`, which on the `<h1>` would
+ * undo `truncate` from `sm` up and let a long name wrap the bar. A 390px bar
+ * holds the drawer trigger, the find field and the right cluster, and nothing
+ * else: sharing it cut the title to "Stud…" and the find field to a bare
+ * glyph (measured 2026-11-05). On a phone the drawer marks the open row, and
+ * the mobile app, which has its own titles, is the phone surface. Everything
+ * is `nowrap` and the title truncates from `sm` up, so a long name never wraps
+ * the 48px bar onto a second line.
+ *
+ * `asHeading` false draws the same words without the `<h1>`, for the copy
+ * the shell is not using as the route's heading.
  */
-function TopBarTitle({ pageTitle }: { pageTitle: PageTitle }) {
+export function PageTitleText({
+  pageTitle,
+  asHeading = true,
+  className,
+}: {
+  pageTitle: PageTitle;
+  asHeading?: boolean;
+  className?: string;
+}) {
   const { title, parent } = pageTitle;
+  const Title = asHeading ? "h1" : "p";
   return (
-    <div className="sr-only flex min-w-0 items-center gap-1 sm:not-sr-only lg:pl-3">
+    <div className={cn("flex min-w-0 items-center gap-1", className)}>
       {parent ? (
         <>
           <Link
             href={parent.href}
             className={cn(
-              // `hidden` below `sm`, not just inside the `sr-only` wrapper: a
-              // visually hidden link is still a tab stop, and a keyboard user
-              // would land on a focus ring they cannot see.
               "hidden shrink-0 rounded-[6px] px-0.5 text-label font-medium text-muted-foreground transition hover:text-foreground sm:inline",
               FOCUS_RING_SHELL,
             )}
@@ -211,9 +245,9 @@ function TopBarTitle({ pageTitle }: { pageTitle: PageTitle }) {
           />
         </>
       ) : null}
-      <h1 className="min-w-0 truncate text-label font-bold text-foreground">
+      <Title className="min-w-0 truncate text-label font-bold text-foreground">
         {title}
-      </h1>
+      </Title>
     </div>
   );
 }

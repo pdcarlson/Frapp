@@ -86,6 +86,73 @@ describe("SplitDivider (#3779)", () => {
     expect(moved).toBeCloseTo((1200 - 700) / (1200 - 241), 3);
     expect(onCommit).toHaveBeenCalledWith(moved);
   });
+
+  describe("dragged to an edge, it closes that side (Paul, 2026-11-11)", () => {
+    function setupCollapse(share = 0.5, width = 1200) {
+      const onChange = vi.fn();
+      const onCommit = vi.fn();
+      const onCollapse = vi.fn();
+      const onCollapsePreview = vi.fn();
+      render(
+        <SplitDivider
+          share={share}
+          onChange={onChange}
+          onCommit={onCommit}
+          rowRef={rowOf(width)}
+          onCollapse={onCollapse}
+          onCollapsePreview={onCollapsePreview}
+        />,
+      );
+      const divider = screen.getByRole("separator");
+      divider.setPointerCapture = () => {};
+      divider.hasPointerCapture = () => false;
+      return { divider, onChange, onCommit, onCollapse, onCollapsePreview };
+    }
+
+    it("closes the page when let go at the right edge, keeping the split from before", () => {
+      const { divider, onChange, onCommit, onCollapse, onCollapsePreview } =
+        setupCollapse(0.4, 1200);
+      fireEvent.pointerDown(divider, { button: 0, pointerId: 1, clientX: 600 });
+      // Past the page's floor but not yet half of it: only the floor holds.
+      fireEvent.pointerMove(divider, { pointerId: 1, clientX: 1200 - 300 });
+      expect(onCollapsePreview).not.toHaveBeenCalledWith("page");
+      // Past half the floor: the page fades to say a release closes it.
+      fireEvent.pointerMove(divider, { pointerId: 1, clientX: 1190 });
+      expect(onCollapsePreview).toHaveBeenLastCalledWith("page");
+      fireEvent.pointerUp(divider, { pointerId: 1, clientX: 1190 });
+      expect(onCollapse).toHaveBeenCalledWith("page");
+      expect(onCollapsePreview).toHaveBeenLastCalledWith(null);
+      // The floor-clamped split is not remembered; the one before the drag is.
+      expect(onChange).toHaveBeenLastCalledWith(0.4);
+      expect(onCommit).not.toHaveBeenCalled();
+    });
+
+    it("closes chat when let go at the left edge", () => {
+      const { divider, onCollapse } = setupCollapse(0.5, 1200);
+      fireEvent.pointerDown(divider, { button: 0, pointerId: 1, clientX: 600 });
+      fireEvent.pointerMove(divider, {
+        pointerId: 1,
+        clientX: CHANNELS_WIDTH + 20,
+      });
+      fireEvent.pointerUp(divider, {
+        pointerId: 1,
+        clientX: CHANNELS_WIDTH + 20,
+      });
+      expect(onCollapse).toHaveBeenCalledWith("chat");
+    });
+
+    it("cancels when dragged back from the edge before letting go", () => {
+      const { divider, onCollapse, onCommit, onCollapsePreview } =
+        setupCollapse(0.5, 1200);
+      fireEvent.pointerDown(divider, { button: 0, pointerId: 1, clientX: 600 });
+      fireEvent.pointerMove(divider, { pointerId: 1, clientX: 1190 });
+      fireEvent.pointerMove(divider, { pointerId: 1, clientX: 700 });
+      expect(onCollapsePreview).toHaveBeenLastCalledWith(null);
+      fireEvent.pointerUp(divider, { pointerId: 1, clientX: 700 });
+      expect(onCollapse).not.toHaveBeenCalled();
+      expect(onCommit).toHaveBeenCalled();
+    });
+  });
 });
 
 describe("shell layout constants and cookies (#3779)", () => {
