@@ -41,25 +41,27 @@ export interface ThreadRowWrites {
     messageId: string,
     emoji: string,
     threadRootId: string | null,
-  ) => void;
+  ) => Promise<void>;
   unreact: (
     messageId: string,
     emoji: string,
     threadRootId: string | null,
-  ) => void;
+  ) => Promise<void>;
+  /** Rejects on failure, so the row keeps its draft. */
   edit: (
     messageId: string,
     content: string,
     threadRootId: string | null,
   ) => Promise<void>;
-  delete: (messageId: string, threadRootId: string | null) => void;
-  closePoll: (messageId: string, threadRootId: string | null) => void;
+  /** Settles once the member has answered the confirm and the write is done. */
+  delete: (messageId: string, threadRootId: string | null) => Promise<void>;
+  closePoll: (messageId: string, threadRootId: string | null) => Promise<void>;
   act: (
     messageId: string,
     actionType: string,
     payload: Record<string, unknown>,
     threadRootId: string | null,
-  ) => void;
+  ) => Promise<void>;
 }
 
 export interface ThreadPanelProps extends Pick<
@@ -113,8 +115,8 @@ export interface ThreadPanelProps extends Pick<
  * cards, reactions, the edited marker, Edit and Delete, photos, a blocked
  * sender's tombstone with Unblock) in the channel's display, Bubbles and
  * Always formal included. The parent is a `MessageItem` in the timeline's
- * start slot, where a channel draws its start; like a channel's start it
- * shows once no older replies remain to load.
+ * `header`, drawn from the first frame above whatever older replies remain
+ * to page in, and it shares the list's tap-reveal state.
  */
 export function ThreadPanel({
   channelId,
@@ -230,52 +232,75 @@ export function ThreadPanel({
   }, [loadOlder]);
 
   // A write's target: the parent is a channel message, so its writes patch
-  // the timeline's cache (and re-read the parent, which that cache may not
-  // hold); a reply's patch this thread's cache.
+  // the timeline's cache; a reply's patch this thread's cache.
   const targetOf = useCallback(
     (messageId: string) => (messageId === rootId ? null : rootId),
     [rootId],
   );
-  const afterWrite = useCallback(
-    (messageId: string) => {
-      if (messageId === rootId) refreshRoot();
+  // While the timeline doesn't hold the parent (it is outside the loaded
+  // window), a write to it patches nothing the panel draws, so the parent is
+  // read again once the write has settled. Settled, not sent: a read in the
+  // same tick could land before the write commits. A failed write was already
+  // toasted by its action, and the parent is unchanged.
+  const parentUnheld = !heldRoot;
+  const settle = useCallback(
+    (messageId: string, write: Promise<void>) => {
+      if (messageId !== rootId || !parentUnheld) return write;
+      return write.then(refreshRoot, () => undefined);
     },
-    [rootId, refreshRoot],
+    [rootId, parentUnheld, refreshRoot],
   );
   const onReact = useCallback(
     (messageId: string, emoji: string) => {
-      writes.react(messageId, emoji, targetOf(messageId));
-      afterWrite(messageId);
+      void settle(
+        messageId,
+        writes.react(messageId, emoji, targetOf(messageId)),
+      );
     },
-    [writes, targetOf, afterWrite],
+    [writes, targetOf, settle],
   );
   const onUnreact = useCallback(
     (messageId: string, emoji: string) => {
-      writes.unreact(messageId, emoji, targetOf(messageId));
-      afterWrite(messageId);
+      void settle(
+        messageId,
+        writes.unreact(messageId, emoji, targetOf(messageId)),
+      );
     },
-    [writes, targetOf, afterWrite],
+    [writes, targetOf, settle],
   );
   const { edit } = writes;
   const editRow = useCallback(
     async (messageId: string, content: string) => {
+      // Rejects on failure, so the row stays in edit mode with the draft.
       await edit(messageId, content, targetOf(messageId));
-      afterWrite(messageId);
+      if (messageId === rootId && parentUnheld) refreshRoot();
     },
-    [edit, targetOf, afterWrite],
+    [edit, targetOf, rootId, parentUnheld, refreshRoot],
   );
   const onDelete = useCallback(
-    (messageId: string) => writes.delete(messageId, targetOf(messageId)),
-    [writes, targetOf],
+    (messageId: string) => {
+      void settle(messageId, writes.delete(messageId, targetOf(messageId)));
+    },
+    [writes, targetOf, settle],
   );
   const onClosePoll = useCallback(
-    (messageId: string) => writes.closePoll(messageId, targetOf(messageId)),
-    [writes, targetOf],
+    (messageId: string) => {
+      void settle(messageId, writes.closePoll(messageId, targetOf(messageId)));
+    },
+    [writes, targetOf, settle],
   );
   const onAct = useCallback(
-    (messageId: string, actionType: string, payload: Record<string, unknown>) =>
-      writes.act(messageId, actionType, payload, targetOf(messageId)),
-    [writes, targetOf],
+    (
+      messageId: string,
+      actionType: string,
+      payload: Record<string, unknown>,
+    ) => {
+      void settle(
+        messageId,
+        writes.act(messageId, actionType, payload, targetOf(messageId)),
+      );
+    },
+    [writes, targetOf, settle],
   );
   const { retry, discard } = thread;
   const onRetry = useCallback(
@@ -297,8 +322,10 @@ export function ThreadPanel({
     [root, thread.messages],
   );
 
-  // The parent, a full row of its own above the replies. Its tap reveal and
-  // image viewer are its own: the timeline's sit inside its list.
+  // One tap-reveal state for the parent and the replies, so tapping one row
+  // closes the other's action bar (`components.md` § Per-message actions).
+  // The parent's image viewer is its own: the timeline's closes on any image
+  // that isn't one of its rows.
   const rootReveal = useTapRevealedMessage();
   const rootViewer = useImageViewer();
   const rootVisibility = root
@@ -306,8 +333,6 @@ export function ThreadPanel({
     : "held";
   const rootStart =
     root && viewerId ? (
-      // Its own image viewer: the timeline's closes on any image that isn't
-      // one of its rows, and the parent isn't.
       <ImageViewerProvider value={rootViewer.open}>
         <div className="pb-1">
           <div role="list" aria-label="Thread parent">
@@ -437,7 +462,10 @@ export function ThreadPanel({
           isLoadingOlder={thread.isLoadingOlder}
           olderError={olderError}
           onLoadOlder={onLoadOlder}
-          channelStart={rootStart}
+          // The parent heads the list from the first frame, whatever is
+          // left to page in above the loaded replies.
+          header={rootStart}
+          tapRevealed={rootReveal}
           onReact={onReact}
           onUnreact={onUnreact}
           onRetry={onRetry}

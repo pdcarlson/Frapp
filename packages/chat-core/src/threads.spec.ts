@@ -246,6 +246,94 @@ describe("thread reads carry their actions (#4034)", () => {
     expect(cacheOf(queryClient)?.order).toEqual(["a"]);
   });
 
+  test("an older page whose actions came back incomplete is refused", async () => {
+    const queryClient = new QueryClient();
+    const api = {
+      GET: vi.fn(async () => ({ data: [reply("a")], error: null })),
+    } as unknown as FrappApiClient;
+
+    await expect(
+      loadThreadReplies(
+        queryClient,
+        api,
+        CH,
+        ROOT,
+        "2026-11-10T13:00:00.000Z",
+        supabaseWith([thumbs], true).client,
+      ),
+    ).rejects.toThrow(/reactions and votes/);
+    // Merged, it would never be read again.
+    expect(cacheOf(queryClient)).toBeUndefined();
+  });
+
+  test("a gap read puts held replies' reactions right", async () => {
+    const queryClient = new QueryClient();
+    const api = {
+      GET: vi.fn(async () => ({ data: [reply("a")], error: null })),
+    } as unknown as FrappApiClient;
+    await loadThreadReplies(
+      queryClient,
+      api,
+      CH,
+      ROOT,
+      undefined,
+      supabaseWith([thumbs]).client,
+    );
+    expect(cacheOf(queryClient)?.byId["a"]?.reactions["reaction:👍"]).toEqual([
+      "user-3",
+    ]);
+
+    // During a gap user-3 took the 👍 back and user-4 added 🎉. The gap
+    // read brings no new rows, and still reads the held reply's actions.
+    const party = {
+      ...thumbs,
+      id: "act-2",
+      user_id: "user-4",
+      action_type: "reaction:🎉",
+    };
+    const gap = {
+      GET: vi.fn(async () => ({ data: [], error: null })),
+    } as unknown as FrappApiClient;
+    const { client, inIds } = supabaseWith([party]);
+    await backfillThreadReplies(queryClient, gap, CH, ROOT, client);
+
+    expect(inIds).toHaveBeenCalledWith("message_id", ["a"]);
+    expect(cacheOf(queryClient)!.byId["a"]!.reactions).toEqual({
+      "reaction:🎉": ["user-4"],
+    });
+    expect(cacheOf(queryClient)!.actionIndex["act-1"]).toBeUndefined();
+  });
+
+  test("a gap read whose actions come back incomplete keeps what was held", async () => {
+    const queryClient = new QueryClient();
+    const api = {
+      GET: vi.fn(async () => ({ data: [reply("a")], error: null })),
+    } as unknown as FrappApiClient;
+    await loadThreadReplies(
+      queryClient,
+      api,
+      CH,
+      ROOT,
+      undefined,
+      supabaseWith([thumbs]).client,
+    );
+    const gap = {
+      GET: vi.fn(async () => ({ data: [], error: null })),
+    } as unknown as FrappApiClient;
+
+    await backfillThreadReplies(
+      queryClient,
+      gap,
+      CH,
+      ROOT,
+      supabaseWith([], true).client,
+    );
+
+    expect(cacheOf(queryClient)?.byId["a"]?.reactions["reaction:👍"]).toEqual([
+      "user-3",
+    ]);
+  });
+
   test("the parent comes back with its actions", async () => {
     const api = {
       GET: vi.fn(async () => ({

@@ -747,8 +747,33 @@ describe("ChatRealtimeManager — channel reopen (#783)", () => {
     handler("DELETE")({ old: { id: "act-1" } });
     expect(reactions()).toHaveLength(0);
 
-    // The parent's meta is not a reply cache and is left alone, and no
-    // thread cache is made for a thread nobody opened.
+    // A changed vote is an UPDATE of the member's one vote row.
+    handler("INSERT")({
+      new: {
+        id: "vote-1",
+        message_id: "reply-1",
+        user_id: "user-2",
+        action_type: "vote",
+        payload: { option_id: ["fri"] },
+        created_at: "2026-11-10T00:00:02.000Z",
+      },
+    });
+    handler("UPDATE")({
+      new: {
+        id: "vote-1",
+        message_id: "reply-1",
+        user_id: "user-2",
+        action_type: "vote",
+        payload: { option_id: ["sat"] },
+        created_at: "2026-11-10T00:00:03.000Z",
+      },
+    });
+    expect(reactions().map((action) => action.payload)).toEqual([
+      { option_id: ["sat"] },
+    ]);
+
+    // A frame for another message leaves the parent's read as it was, and
+    // no thread cache is made for a thread nobody opened.
     expect(
       queryClient.getQueryData(chatThreadKey("channel-1", "root-1")),
     ).toEqual({
@@ -759,6 +784,49 @@ describe("ChatRealtimeManager — channel reopen (#783)", () => {
     expect(
       queryClient.getQueryData(chatThreadRepliesKey("channel-1", "root-2")),
     ).toBeUndefined();
+  });
+
+  test("a reaction on a thread's parent reaches the panel's read of it (#4034)", () => {
+    chatRealtime.subscribe("channel-1");
+    current("channel-1").trigger("SUBSCRIBED");
+    const key = chatThreadKey("channel-1", "root-1");
+    // The parent is outside the timeline's window, so the panel draws it from
+    // its own read; the timeline cache does not hold it.
+    queryClient.setQueryData(key, {
+      root: {
+        id: "root-1",
+        channel_id: "channel-1",
+        sender_id: "user-9",
+        kind: "text",
+        content: "who has the tent",
+        created_at: "2026-11-01T00:00:00.000Z",
+      },
+      follow_state: null,
+      last_read_at: null,
+    });
+    const actions = channels.get("chat:actions:global")!;
+    const handler = (event: string) =>
+      (actions.on as unknown as ReturnType<typeof vi.fn>).mock.calls.find(
+        (call) => (call[1] as { event?: string }).event === event,
+      )![2] as (payload: { new?: unknown; old?: unknown }) => void;
+    const rootActions = () =>
+      (queryClient.getQueryData(key) as { root_actions?: { id: string }[] })
+        .root_actions ?? [];
+
+    handler("INSERT")({
+      new: {
+        id: "act-9",
+        message_id: "root-1",
+        user_id: "user-2",
+        action_type: "reaction:🔥",
+        payload: null,
+        created_at: "2026-11-10T00:00:01.000Z",
+      },
+    });
+    expect(rootActions().map((action) => action.id)).toEqual(["act-9"]);
+
+    handler("DELETE")({ old: { id: "act-9" } });
+    expect(rootActions()).toEqual([]);
   });
 
   test("an imported archive row never enters the live cache", () => {

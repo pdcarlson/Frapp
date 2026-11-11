@@ -1453,8 +1453,10 @@ export function ChatShell({
     (
       copy: { title: string; description: string; confirmLabel: string },
       action: () => Promise<void>,
-    ) => {
-      void (async () => {
+    ): Promise<void> =>
+      // Resolves once the member has answered and the write is done, so the
+      // thread panel can re-read a parent it acted on (#4034). Never rejects.
+      (async () => {
         const confirmed = await confirm({ ...copy, tone: "destructive" });
         if (!confirmed) return;
         try {
@@ -1462,8 +1464,7 @@ export function ChatShell({
         } catch {
           // The chat-core action already toasted the failure.
         }
-      })();
-    },
+      })(),
     [confirm],
   );
   const deleteMessage = channel.delete;
@@ -2020,15 +2021,12 @@ export function ChatShell({
   } = channel;
   const threadWrites = useMemo<ThreadRowWrites>(
     () => ({
-      react: (messageId, emoji, rootId) =>
-        void channelReact(messageId, emoji, rootId),
-      unreact: (messageId, emoji, rootId) =>
-        void channelUnreact(messageId, emoji, rootId),
+      react: channelReact,
+      unreact: channelUnreact,
       edit: channelEdit,
       delete: handleDeleteMessage,
       closePoll: handleClosePoll,
-      act: (messageId, actionType, payload, rootId) =>
-        void channelAct(messageId, actionType, payload, rootId),
+      act: channelAct,
     }),
     [
       channelReact,

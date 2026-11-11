@@ -102,8 +102,32 @@ export function useMessageThread(
           supabase,
         );
         // Reopened over a cache this mount didn't page: older replies may
-        // remain, and one read of them settles it.
-        if (first) setHasOlder(true);
+        // remain. One read of them settles it now, rather than leaving the
+        // timeline to page them in, which it does only once the list has
+        // scrolled, and a short thread never scrolls (#4034).
+        if (first) {
+          const cache = queryClient.getQueryData<ChannelCache>(repliesKey);
+          const oldest = cache?.order
+            .map((key) => cache.byId[key])
+            .find((message) => message?._status === "confirmed");
+          if (oldest) {
+            try {
+              const page = await loadThreadReplies(
+                queryClient,
+                api,
+                channelId,
+                rootId,
+                oldest.created_at,
+                supabase,
+              );
+              setHasOlder(page.hasMore);
+            } catch {
+              // The held replies still show; the timeline offers the rest
+              // once the member scrolls to the top.
+              setHasOlder(true);
+            }
+          }
+        }
       }
       return queryClient.getQueryData<ChannelCache>(repliesKey) ?? emptyCache();
     },
@@ -130,8 +154,11 @@ export function useMessageThread(
     previousConnection.current = connection;
     if (connection === "live" && before !== "live") {
       void queryClient.invalidateQueries({ queryKey: repliesKey, exact: true });
+      // And the parent, whose read the panel draws while the timeline
+      // doesn't hold it: its edits and reactions in the gap missed it.
+      void queryClient.invalidateQueries({ queryKey: metaKey, exact: true });
     }
-  }, [connection, queryClient, repliesKey]);
+  }, [connection, queryClient, repliesKey, metaKey]);
 
   // Who is typing in this thread, re-read on each status ping like the
   // channel's line; the manager hands back the same array while unchanged.
@@ -267,9 +294,10 @@ export function useMessageThread(
       void replies.refetch();
     },
     /**
-     * Re-reads the parent after a write to it (a reaction, an edit, a vote).
-     * The parent is a channel message, so the write patched the timeline's
-     * cache, which holds it only while it is in the loaded window.
+     * Re-reads the parent after a write to it. The parent is a channel
+     * message, so the write patched the timeline's cache, which holds it only
+     * while it is in the loaded window; the panel calls this, once the write
+     * has settled, only when it doesn't.
      */
     refreshRoot: () => {
       void meta.refetch();

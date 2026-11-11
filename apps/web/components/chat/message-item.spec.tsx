@@ -2528,3 +2528,60 @@ describe("MessageItem attachments on an unsent row", () => {
     });
   });
 });
+
+/**
+ * Threads (#3785; tests from #4034): the row's Start thread control and the
+ * parent's chip are the two ways into a thread, and both hand the row's
+ * message to `onOpenThread`.
+ */
+describe("MessageItem thread entry points", () => {
+  it("offers Start thread right after Reply, and opens the row's thread", async () => {
+    const onOpenThread = vi.fn();
+    const msg = message();
+    renderItemWithProps({ message: msg, onReply: vi.fn(), onOpenThread });
+
+    const actions = screen.getByRole("group", { name: "Message actions" });
+    const names = Array.from(actions.querySelectorAll("button")).map((b) =>
+      b.getAttribute("aria-label"),
+    );
+    expect(names.indexOf("Start thread")).toBe(names.indexOf("Reply") + 1);
+
+    await userEvent.click(screen.getByRole("button", { name: "Start thread" }));
+    expect(onOpenThread).toHaveBeenCalledWith(msg);
+  });
+
+  it("opens the thread from the parent's chip, which replaces Start thread", async () => {
+    const onOpenThread = vi.fn();
+    const parent = message({
+      thread: {
+        reply_count: 3,
+        last_reply_at: null,
+        recent_sender_ids: [OTHER],
+      },
+    } as Partial<ChatMessage>);
+    renderItemWithProps({ message: parent, onOpenThread });
+
+    expect(
+      screen.queryByRole("button", { name: "Start thread" }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: /3 replies.*Open thread/ }),
+    );
+    expect(onOpenThread).toHaveBeenCalledWith(parent);
+  });
+
+  it("offers neither where threads aren't (no onOpenThread)", () => {
+    renderItemWithProps({
+      message: message({
+        thread: { reply_count: 2, last_reply_at: null, recent_sender_ids: [] },
+      } as Partial<ChatMessage>),
+    });
+    expect(
+      screen.queryByRole("button", { name: "Start thread" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Open thread/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("2 replies")).toBeInTheDocument();
+  });
+});

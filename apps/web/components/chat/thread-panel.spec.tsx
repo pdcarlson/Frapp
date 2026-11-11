@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
@@ -116,12 +116,12 @@ const readyBlocks: BlockState = {
 
 function makeWrites() {
   return {
-    react: vi.fn(),
-    unreact: vi.fn(),
+    react: vi.fn(async () => undefined),
+    unreact: vi.fn(async () => undefined),
     edit: vi.fn(async () => undefined),
-    delete: vi.fn(),
-    closePoll: vi.fn(),
-    act: vi.fn(),
+    delete: vi.fn(async () => undefined),
+    closePoll: vi.fn(async () => undefined),
+    act: vi.fn(async () => undefined),
   } satisfies ThreadRowWrites;
 }
 
@@ -283,6 +283,7 @@ describe("ThreadPanel full rows (#4034)", () => {
     thread.typingUsers = [];
     thread.refreshRoot.mockClear();
     thread.retry.mockClear();
+    thread.hasOlder = false;
   });
 
   it("routes a reply's reaction to the thread's cache", async () => {
@@ -314,7 +315,69 @@ describe("ThreadPanel full rows (#4034)", () => {
       }),
     );
     expect(writes.react).toHaveBeenCalledWith("root", "👍", null);
-    expect(thread.refreshRoot).toHaveBeenCalled();
+    // The timeline doesn't hold this parent, so it is read again once the
+    // write has settled.
+    await waitFor(() => expect(thread.refreshRoot).toHaveBeenCalled());
+  });
+
+  it("re-reads an unheld parent only once its write settles", async () => {
+    thread.root = {
+      ...row("root", "paul", "Who's driving Saturday?"),
+      reactions: { [thumbs]: ["shawn"] },
+    };
+    let settle!: () => void;
+    const { writes } = renderPanel();
+    writes.react.mockImplementationOnce(
+      () =>
+        new Promise<undefined>((resolve) => {
+          settle = () => resolve(undefined);
+        }),
+    );
+    await userEvent.setup().click(
+      within(rowOf("Who's driving Saturday?")).getByRole("button", {
+        name: /^👍 reaction, 1/,
+      }),
+    );
+    expect(writes.react).toHaveBeenCalled();
+    expect(thread.refreshRoot).not.toHaveBeenCalled();
+    settle();
+    await waitFor(() => expect(thread.refreshRoot).toHaveBeenCalledTimes(1));
+  });
+
+  it("deletes an unheld parent and reads it again", async () => {
+    thread.root = row("root", "me", "My question");
+    const { writes } = renderPanel();
+    await userEvent
+      .setup()
+      .click(
+        within(rowOf("My question")).getByRole("button", { name: "Delete" }),
+      );
+    expect(writes.delete).toHaveBeenCalledWith("root", null);
+    await waitFor(() => expect(thread.refreshRoot).toHaveBeenCalled());
+  });
+
+  it("leaves a parent the timeline holds to the timeline's live copy", async () => {
+    const held = {
+      ...row("root", "paul", "Who's driving Saturday?"),
+      reactions: { [thumbs]: ["shawn"] },
+    };
+    const { writes } = renderPanel({ heldRoot: held });
+    await userEvent.setup().click(
+      within(rowOf("Who's driving Saturday?")).getByRole("button", {
+        name: /^👍 reaction, 1/,
+      }),
+    );
+    expect(writes.react).toHaveBeenCalledWith("root", "👍", null);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(thread.refreshRoot).not.toHaveBeenCalled();
+  });
+
+  it("shows the parent while older replies are still to load", () => {
+    thread.hasOlder = true;
+    renderPanel();
+    expect(screen.getByText("Who's driving Saturday?")).toBeInTheDocument();
+    expect(screen.getByText("1 reply")).toBeInTheDocument();
+    expect(screen.getByText("I can take four")).toBeInTheDocument();
   });
 
   it("draws the edited marker and the author's photo on a reply", () => {

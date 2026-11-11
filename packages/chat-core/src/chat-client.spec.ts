@@ -2350,4 +2350,39 @@ describe("row writes on a thread reply", () => {
     expect(reply().is_deleted).toBe(true);
     expect(queryClient.getQueryData(chatMessagesKey("chan-1"))).toBeUndefined();
   });
+
+  it("records a vote on a poll reply in the thread's cache", async () => {
+    const queryClient = seeded();
+    const vote = {
+      id: "vote-1",
+      message_id: "reply-1",
+      user_id: "user-1",
+      action_type: "vote",
+      payload: { option_id: ["fri"] },
+      created_at: "2026-01-01T00:01:00.000Z",
+    };
+    const apiClient = {
+      POST: vi.fn().mockResolvedValue({
+        data: { action: vote, updated: false },
+        error: null,
+        response: { status: 201 },
+      }),
+    };
+    const ctx = buildCtx({
+      queryClient,
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+    });
+
+    await actOnCard(ctx, {
+      channelId: "chan-1",
+      messageId: "reply-1",
+      actionType: "vote",
+      payload: { option_id: ["fri"] },
+      threadRootId: "root-1",
+    });
+
+    const held = queryClient.getQueryData<ChannelCache>(threadKey)!;
+    expect(held.byId["reply-1"]!.actions).toEqual([vote]);
+    expect(queryClient.getQueryData(chatMessagesKey("chan-1"))).toBeUndefined();
+  });
 });

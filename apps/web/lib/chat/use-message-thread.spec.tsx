@@ -307,3 +307,49 @@ describe("useMessageThread's parent", () => {
     expect(result.current.root!.reactions["reaction:👍"]).toEqual(["shawn"]);
   });
 });
+
+describe("useMessageThread reopened over a held cache (#4034)", () => {
+  it("settles whether older replies remain with one read", async () => {
+    // A thread opened before, its replies still cached.
+    queryClient.setQueryData(["chat", "c1", "thread", "root", "replies"], {
+      byId: {
+        r1: {
+          ...ROOT,
+          id: "r1",
+          client_message_id: "c-r1",
+          thread_root_id: "root",
+          created_at: "2026-11-10T12:05:00.000Z",
+          _status: "confirmed",
+          reactions: {},
+          actions: [],
+        },
+      },
+      order: ["r1"],
+      actionIndex: {},
+    });
+    mocks.loadThreadReplies.mockResolvedValue({ hasMore: false });
+
+    const { result } = open();
+
+    await waitFor(() =>
+      expect(mocks.loadThreadReplies).toHaveBeenCalledWith(
+        queryClient,
+        expect.anything(),
+        "c1",
+        "root",
+        "2026-11-10T12:05:00.000Z",
+        SUPABASE,
+      ),
+    );
+    expect(mocks.backfillThreadReplies).toHaveBeenCalled();
+    await waitFor(() => expect(result.current.hasOlder).toBe(false));
+  });
+
+  it("re-reads the parent too once the connection comes back", async () => {
+    open();
+    await waitFor(() => expect(mocks.fetchThread).toHaveBeenCalledTimes(1));
+    act(() => mocks.emit("reconnecting"));
+    act(() => mocks.emit("live"));
+    await waitFor(() => expect(mocks.fetchThread).toHaveBeenCalledTimes(2));
+  });
+});
