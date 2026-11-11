@@ -181,7 +181,7 @@ That returns **61** rows. The "API only" row of that table is those 61 plus the 
 tables (`members`, `users`, `member_custom_field_values`), which carry
 non-widening policies and are therefore listed there rather than in a row of
 their own — **64**. Re-derived 2026-11-11 against a local stack at migration
-`20261111150000`, which added `chapter_document_stars` (#3934). Before that,
+`20261111180000`, which added `chapter_document_stars` (#3934). Before that,
 re-derived 2026-11-11 at migration
 `20261111030000`, which added `chat_message_links` and `chat_link_member_states`
 (#3897). The count was re-derived 2026-11-10 against a local stack at
