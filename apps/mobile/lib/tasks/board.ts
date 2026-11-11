@@ -47,6 +47,28 @@ export interface TaskRowModel {
   pointsAwarded: boolean;
   isDone: boolean;
   isOverdue: boolean;
+  /** Its checklist, in order (#4003); empty for none. */
+  subtasks: TaskRowSubtask[];
+}
+
+export interface TaskRowSubtask {
+  id: string;
+  title: string;
+  done: boolean;
+}
+
+function toSubtasks(value: unknown): TaskRowSubtask[] {
+  if (!Array.isArray(value)) return [];
+  const rows: TaskRowSubtask[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const record = entry as Record<string, unknown>;
+    const id = str(record, "id");
+    const title = str(record, "title");
+    if (!id || !title) continue;
+    rows.push({ id, title, done: typeof record.done_at === "string" });
+  }
+  return rows;
 }
 
 export interface TaskBoard {
@@ -74,7 +96,9 @@ export function toTaskRow(row: Record<string, unknown>): TaskRowModel | null {
     createdBy: str(row, "created_by"),
     storedStatus,
     displayStatus,
-    dueDate: str(row, "due_date"),
+    // A task due at a time carries its instant here, so the subtitle, the
+    // urgency and the order all read the time (#4003).
+    dueDate: str(row, "due_at") ?? str(row, "due_date"),
     completedAt: str(row, "completed_at"),
     confirmedAt: str(row, "confirmed_at"),
     pointReward: num(row, "point_reward"),
@@ -85,6 +109,7 @@ export function toTaskRow(row: Record<string, unknown>): TaskRowModel | null {
     // a task due today.
     isDone: !isOpenTask(storedStatus ?? displayStatus),
     isOverdue: displayStatus === "OVERDUE",
+    subtasks: toSubtasks(row.subtasks),
   };
 }
 

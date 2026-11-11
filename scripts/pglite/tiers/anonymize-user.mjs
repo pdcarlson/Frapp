@@ -246,7 +246,7 @@ console.log("\n=== Functional smoke: anonymize_user ===");
         ok: (rows) => rows.length === 1 && rows[0].leftovers === 0,
       },
       {
-        // #4186. Its line in the delete block (20261111230000).
+        // #4186. Its line in the delete block (20261111233000).
         name: "current-state purged: Important messages seen",
         sql: `select count(*)::int as leftovers from chat_message_important_seen where user_id = '${U}'`,
         ok: (rows) => rows.length === 1 && rows[0].leftovers === 0,

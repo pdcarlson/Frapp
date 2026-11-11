@@ -1,4 +1,4 @@
-import { Task } from '../entities/task.entity';
+import { Task, TaskSubtask } from '../entities/task.entity';
 
 export const TASK_REPOSITORY = 'TASK_REPOSITORY';
 
@@ -30,4 +30,23 @@ export interface ITaskRepository {
     sentBackAt?: string,
   ): Promise<Task | null>;
   delete(id: string, chapterId: string): Promise<void>;
+  /** Subtasks of these tasks, ordered by task then position (#4003). */
+  findSubtasks(chapterId: string, taskIds: string[]): Promise<TaskSubtask[]>;
+  /** Adds subtasks at the given positions. */
+  createSubtasks(
+    rows: Pick<TaskSubtask, 'task_id' | 'chapter_id' | 'title' | 'position'>[],
+  ): Promise<TaskSubtask[]>;
+  /** Ticks or unticks one. `null` when it isn't under that task. */
+  setSubtaskDone(
+    chapterId: string,
+    taskId: string,
+    subtaskId: string,
+    doneAt: string | null,
+  ): Promise<TaskSubtask | null>;
+  /** Removes one. `false` when it isn't under that task. */
+  deleteSubtask(
+    chapterId: string,
+    taskId: string,
+    subtaskId: string,
+  ): Promise<boolean>;
 }

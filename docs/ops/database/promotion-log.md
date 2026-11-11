@@ -31,13 +31,25 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 ## 2026-11-11: The Important strip (#4186)
 
-### 20261111230000_chat_important_seen.sql
+### 20261111233000_chat_important_seen.sql
 
 - **Purpose**: Adds the partial index `idx_chat_messages_channel_important` on `chat_messages (channel_id, flagged_at) where flag = 'important' and not is_deleted and thread_root_id is null`, for `GET /v1/channels/{id}/important`. Adds `chat_message_important_seen`: one row per member per Important message they have seen (`user_id`, `message_id`, `chapter_id`, `seen_at`; primary key `(user_id, message_id)`; cascading with the user, the message and the chapter). RLS on, no policies (API only, service role). Redefines `anonymize_user` in full from `20261111220000_activity_item_reads.sql` with one added line deleting the member's `chat_message_important_seen` rows. No existing row changes. The rule is [`spec/behavior/chat/README.md` § Message flags](../../../spec/behavior/chat/README.md#message-flags).
 - **Checks**: After `db push`, `select relrowsecurity from pg_class where relname = 'chat_message_important_seen';` returns `true`, `select count(*) from pg_policies where tablename = 'chat_message_important_seen';` returns `0`, `select count(*) from pg_indexes where indexname = 'idx_chat_messages_channel_important';` returns `1`, and `select prosrc like '%chat_message_important_seen%' from pg_proc where proname = 'anonymize_user';` returns `t`.
 - **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never reads the table or uses the index. The newer API against an unmigrated database fails the three `/important` routes (500), so the strip doesn't draw; the timeline and flags are unaffected. The file runs in one transaction, so every lock holds until commit. The index comes first and is built without `CONCURRENTLY` (not possible inside one), so its `SHARE` lock on `chat_messages` blocks every send, edit, delete and flag (reads go on) for one scan of `chat_messages` plus a sort of its few Important rows, and then for the rest of the file. The table's three foreign keys then take `SHARE ROW EXCLUSIVE` on `users`, `chat_messages` and `chapters`, so writes to `users` and `chapters` also wait, but only for the table and function statements, which touch no rows. Promote it outside the chapters' busy evening hours. `if not exists` and `create or replace` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-important-strip-20261111230000) § Rollback the Important strip.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-important-strip-20261111233000) § Rollback the Important strip.
+
+## 2026-11-11: Task due times and subtasks (#4003)
+
+### 20261111230000_task_due_time_and_subtasks.sql
+
+- **Purpose**: Adds `tasks.due_at timestamptz` (nullable, no default): the moment a task is due when it has a time of day. `due_date` stays required and still names the day. A task with no `due_at` behaves as before. Adds `task_subtasks` (`task_id`, `chapter_id`, `title` 1 to 200 characters trimmed, `position`, `done_at`, `created_at`), a task's checklist steps, with an index on `(task_id, position)`. Both foreign keys cascade. RLS on, no policies (API only, service role). No existing row changes. The rules are [`spec/behavior/tasks.md` § Task Lifecycle](../../../spec/behavior/tasks.md#task-lifecycle).
+- **Checks**:
+  - `select count(*) from information_schema.columns where table_name = 'tasks' and column_name = 'due_at';` returns `1`.
+  - `select relrowsecurity from pg_class where relname = 'task_subtasks';` returns `true`, and `select count(*) from pg_policies where tablename = 'task_subtasks';` returns `0`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API reads tasks with `select('*')` and returns `due_at` (null) as a field clients ignore. The newer API against an unmigrated database fails task creates that send a time and both task reminder sweeps, which filter on `due_at` (each failure is reported), and every task list and detail read, which reads `task_subtasks`; the older API never touches the table. A nullable column with no default is metadata-only, under a brief lock, and the new table is empty. `add column if not exists`, `create table if not exists` and `create index if not exists` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-task-due-times-and-subtasks-20261111230000) § Rollback Task due times and subtasks.
 
 ## 2026-11-11: Unread dots on Activity (#4173)
 

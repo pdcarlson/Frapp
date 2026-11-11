@@ -12,12 +12,16 @@ import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interf
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
-import type { Task, TaskView } from '#domain/entities/task.entity';
+import type { Task, TaskSubtask, TaskView } from '#domain/entities/task.entity';
 import { TaskStatus } from '#domain/entities/task.entity';
+import {
+  TASK_SUBTASK_TITLE_MAX_LENGTH,
+  TASK_SUBTASKS_MAX,
+} from '@repo/validation';
 import { NotificationService } from './notification.service';
 import type { NotifyPayload } from './notification.service';
 import { ChatService } from './chat.service';
-import { formatDueDate, joinFacts } from './push-copy';
+import { formatTaskDue, joinFacts } from './push-copy';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
@@ -37,19 +41,31 @@ const VALID_ASSIGNEE_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
  * value, so a client holding only `status` cannot tell which transition is
  * legal — and therefore cannot offer the assignee any action at all (#1051).
  */
-function toDisplayStatus(task: Task): TaskView {
-  const today = new Date().toISOString().slice(0, 10);
+export function toDisplayStatus(task: Task, now: Date = new Date()): TaskView {
   const displayStatus =
     (task.status === TaskStatus.TODO ||
       task.status === TaskStatus.IN_PROGRESS) &&
-    task.due_date < today
+    isPastDue(task, now)
       ? TaskStatus.OVERDUE
       : task.status;
   return { ...task, status: displayStatus, stored_status: task.status };
 }
 
+/**
+ * A task with a time is past due from that minute; one without is past due
+ * from the day after `due_date` (UTC), as it always was (#4003).
+ */
+function isPastDue(
+  task: Pick<Task, 'due_date' | 'due_at'>,
+  now: Date,
+): boolean {
+  const dueAt = task.due_at ? Date.parse(task.due_at) : Number.NaN;
+  if (!Number.isNaN(dueAt)) return dueAt <= now.getTime();
+  return task.due_date < now.toISOString().slice(0, 10);
+}
+
 function toDisplayStatusList(tasks: Task[]): TaskView[] {
-  return tasks.map(toDisplayStatus);
+  return tasks.map((task) => toDisplayStatus(task));
 }
 
 export interface CreateTaskInput {
@@ -59,6 +75,10 @@ export interface CreateTaskInput {
   assignee_id: string;
   created_by: string;
   due_date: string;
+  /** The moment it is due, when it has a time of day. */
+  due_at?: string | null;
+  /** Subtask titles, in order (#4003). */
+  subtasks?: string[];
   point_reward?: number | null;
   /**
    * When set together with `client_message_id`, an interactive task card is
@@ -101,7 +121,122 @@ export class TaskService {
     if (!task) {
       throw new NotFoundException('Task not found');
     }
-    return toDisplayStatus(task);
+    const [view] = await this.withSubtasks(chapterId, [toDisplayStatus(task)]);
+    return view;
+  }
+
+  /** Each task with its subtasks, in order (#4003). */
+  private async withSubtasks(
+    chapterId: string,
+    tasks: TaskView[],
+  ): Promise<TaskView[]> {
+    if (tasks.length === 0) return tasks;
+    const subtasks = await this.taskRepo.findSubtasks(
+      chapterId,
+      tasks.map((task) => task.id),
+    );
+    const byTask = new Map<string, TaskSubtask[]>();
+    for (const subtask of subtasks) {
+      const list = byTask.get(subtask.task_id) ?? [];
+      list.push(subtask);
+      byTask.set(subtask.task_id, list);
+    }
+    return tasks.map((task) => ({
+      ...task,
+      subtasks: byTask.get(task.id) ?? [],
+    }));
+  }
+
+  /**
+   * Tick or untick one of a task's subtasks (#4003). The assignee, whose
+   * checklist it is, or an officer who can manage tasks. A confirmed task is
+   * closed: its points are paid, so its checklist no longer moves.
+   */
+  async setSubtaskDone(
+    taskId: string,
+    subtaskId: string,
+    chapterId: string,
+    userId: string,
+    isAdmin: boolean,
+    done: boolean,
+  ): Promise<TaskSubtask> {
+    const task = await this.taskRepo.findById(taskId, chapterId);
+    if (!task) throw new NotFoundException('Task not found');
+    if (task.assignee_id !== userId && !isAdmin) {
+      throw new ForbiddenException(
+        'Only the assignee or an admin can check off subtasks',
+      );
+    }
+    if (task.points_awarded) {
+      throw new BadRequestException('This task is already confirmed');
+    }
+    const updated = await this.taskRepo.setSubtaskDone(
+      chapterId,
+      taskId,
+      subtaskId,
+      done ? new Date().toISOString() : null,
+    );
+    if (!updated) throw new NotFoundException('Subtask not found');
+    return updated;
+  }
+
+  /** An officer adds a subtask at the end of a task's list (#4003). */
+  async addSubtask(
+    taskId: string,
+    chapterId: string,
+    title: string,
+  ): Promise<TaskSubtask> {
+    const task = await this.taskRepo.findById(taskId, chapterId);
+    if (!task) throw new NotFoundException('Task not found');
+    if (task.points_awarded) {
+      throw new BadRequestException('This task is already confirmed');
+    }
+    const [clean] = this.checkedSubtaskTitles([title]);
+    const existing = await this.taskRepo.findSubtasks(chapterId, [taskId]);
+    if (existing.length >= TASK_SUBTASKS_MAX) {
+      throw new BadRequestException(
+        `A task can have up to ${TASK_SUBTASKS_MAX} subtasks`,
+      );
+    }
+    const position =
+      existing.reduce((max, row) => Math.max(max, row.position), -1) + 1;
+    const [created] = await this.taskRepo.createSubtasks([
+      { task_id: taskId, chapter_id: chapterId, title: clean, position },
+    ]);
+    return created;
+  }
+
+  /** An officer removes one of a task's subtasks (#4003). */
+  async deleteSubtask(
+    taskId: string,
+    subtaskId: string,
+    chapterId: string,
+  ): Promise<void> {
+    const removed = await this.taskRepo.deleteSubtask(
+      chapterId,
+      taskId,
+      subtaskId,
+    );
+    if (!removed) throw new NotFoundException('Subtask not found');
+  }
+
+  /** Trimmed, with blanks dropped; refuses too many or too long. */
+  private checkedSubtaskTitles(titles: string[]): string[] {
+    const clean = titles.map((title) => title.trim()).filter(Boolean);
+    if (clean.length === 0 && titles.length > 0) {
+      throw new BadRequestException('A subtask needs a title');
+    }
+    if (clean.length > TASK_SUBTASKS_MAX) {
+      throw new BadRequestException(
+        `A task can have up to ${TASK_SUBTASKS_MAX} subtasks`,
+      );
+    }
+    if (clean.some((title) => title.length > TASK_SUBTASK_TITLE_MAX_LENGTH)) {
+      throw new BadRequestException(
+        `A subtask can be up to ${TASK_SUBTASK_TITLE_MAX_LENGTH} characters`,
+      );
+    }
+    return clean;
   }
 
   /** A member's display name for a push, or null when it cannot be read. */
@@ -123,7 +258,7 @@ export class TaskService {
     const tasks = isAdmin
       ? await this.taskRepo.findByChapter(chapterId)
       : await this.taskRepo.findByAssignee(chapterId, userId);
-    return toDisplayStatusList(tasks);
+    return this.withSubtasks(chapterId, toDisplayStatusList(tasks));
   }
 
   async create(input: CreateTaskInput): Promise<CreateTaskResult> {
@@ -131,6 +266,8 @@ export class TaskService {
     if (Number.isNaN(dueDate.getTime())) {
       throw new BadRequestException('due_date must be a valid date');
     }
+    const dueAt = this.checkedDueAt(input.due_date, input.due_at);
+    const subtaskTitles = this.checkedSubtaskTitles(input.subtasks ?? []);
 
     const assignee = await this.memberRepo.findByUserAndChapter(
       input.assignee_id,
@@ -147,6 +284,7 @@ export class TaskService {
       assignee_id: input.assignee_id,
       created_by: input.created_by,
       due_date: input.due_date,
+      due_at: dueAt,
       status: TaskStatus.TODO,
       point_reward: input.point_reward ?? null,
       points_awarded: false,
@@ -154,10 +292,50 @@ export class TaskService {
       confirmed_at: null,
     });
 
+    // The checklist goes in after its task. A failed insert is reported and
+    // the create still succeeds: the task exists, and failing the request
+    // would invite a retry that makes a second one. The officer sees a task
+    // with no subtasks and can add them from it.
+    if (subtaskTitles.length > 0) {
+      try {
+        await this.taskRepo.createSubtasks(
+          subtaskTitles.map((title, position) => ({
+            task_id: task.id,
+            chapter_id: input.chapter_id,
+            title,
+            position,
+          })),
+        );
+      } catch (error) {
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'task-subtasks-create',
+          message: `subtask insert failed for task ${task.id}`,
+          error,
+        });
+      }
+    }
+
     // Assigning yourself a task is a note to self; the push would only echo
     // the tap that made it.
     if (input.assignee_id !== input.created_by) {
-      const assigner = await this.displayNameOf(input.created_by);
+      const [assigner, creatorZone] = await Promise.all([
+        this.displayNameOf(input.created_by),
+        // Only a timed task's push names a clock, so only it needs a zone.
+        task.due_at
+          ? this.notificationService
+              .timeZoneFor(input.created_by)
+              .catch(() => null)
+          : null,
+      ]);
+      // A task with a time reads in the assignee's zone; one who has not
+      // reported a zone reads it in the creator's, labelled (push-copy.ts).
+      const body = (timeZone: string | null, labelZone: boolean) =>
+        joinFacts(
+          assigner ? `From ${assigner}` : 'Assigned to you',
+          `due ${formatTaskDue(task.due_date, task.due_at, { timeZone, labelZone })}`,
+          task.point_reward ? `${task.point_reward} points` : null,
+        );
       await this.safeNotifyUser(
         input.assignee_id,
         input.chapter_id,
@@ -165,11 +343,13 @@ export class TaskService {
           // Named for the task, like every task push (notifications.md § What
           // a push says): "Book the venue" / "From Paul · due Fri, Nov 14".
           title: task.title,
-          body: joinFacts(
-            assigner ? `From ${assigner}` : 'Assigned to you',
-            `due ${formatDueDate(task.due_date)}`,
-            task.point_reward ? `${task.point_reward} points` : null,
-          ),
+          body: body(creatorZone, true),
+          personalize: (recipient) => ({
+            title: task.title,
+            body: recipient.timeZone
+              ? body(recipient.timeZone, false)
+              : body(creatorZone, true),
+          }),
           priority: 'NORMAL',
           category: 'tasks',
           data: { target: { screen: 'tasks', taskId: task.id } },
@@ -198,6 +378,29 @@ export class TaskService {
     return cardPosted === undefined
       ? task
       : { ...task, card_posted: cardPosted };
+  }
+
+  /**
+   * `due_at` as stored, or null for a task with no time. `due_date` is the day
+   * of `due_at` in the creator's zone, which the server does not know, but no
+   * zone is more than 14 hours from UTC: a pair further apart than that is a
+   * client bug, refused rather than stored as a task due on two days.
+   */
+  private checkedDueAt(
+    dueDate: string,
+    dueAt: string | null | undefined,
+  ): string | null {
+    if (!dueAt) return null;
+    const at = Date.parse(dueAt);
+    if (Number.isNaN(at)) {
+      throw new BadRequestException('due_at must be a valid date and time');
+    }
+    const dayStart = Date.parse(`${dueDate.slice(0, 10)}T00:00:00Z`);
+    const hour = 60 * 60 * 1000;
+    if (at < dayStart - 14 * hour || at >= dayStart + 38 * hour) {
+      throw new BadRequestException('due_at must fall on due_date');
+    }
+    return new Date(at).toISOString();
   }
 
   /**
@@ -254,6 +457,7 @@ export class TaskService {
       assignee_user_id: input.assignee_id,
       assignee_name: assigneeName,
       due_date: task.due_date,
+      due_at: task.due_at,
       status: 'TODO' as const,
       point_reward: task.point_reward,
       created_at: task.created_at,

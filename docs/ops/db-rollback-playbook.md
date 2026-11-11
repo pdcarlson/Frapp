@@ -3537,9 +3537,9 @@ alter table public.chat_messages
   drop column if exists flag;
 ```
 
-## Rollback the Important strip (20261111230000)
+## Rollback the Important strip (20261111233000)
 
-* **Migration**: `20261111230000_chat_important_seen.sql`
+* **Migration**: `20261111233000_chat_important_seen.sql`
 
 The table `chat_message_important_seen`, the partial index `idx_chat_messages_channel_important` on `chat_messages`, and `anonymize_user` redefined to also delete `chat_message_important_seen`. No existing row changed.
 
@@ -3631,3 +3631,18 @@ Two new columns, `chapter_custom_roles.folded_role_id` and `folded_at`; a new `r
 **Moving the assignments back into `custom_role_ids` is not needed** for a rollback and is not offered as SQL: the folded roles already grant exactly what the custom roles did. Each custom role's role is `chapter_custom_roles.folded_role_id` if it is ever wanted.
 
 If `transfer_presidency` itself must go back, its earlier body is the one in `20261108200000_transfer_presidency_keeps_member_access.sql`; with `custom_role_ids` empty its extra clause never matches, so the two behave the same.
+
+## Rollback Task due times and subtasks (20261111230000)
+
+* **Migration**: `20261111230000_task_due_time_and_subtasks.sql`
+
+One nullable column on `tasks`, `due_at`, and one new table, `task_subtasks`. No existing row changed.
+
+**Revert the code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API reads tasks with `select('*')` and returns the column as a plain field clients ignore; tasks created with a time keep their `due_date` and fall back to day-based overdue and reminders, and the reverted API never reads `task_subtasks`, so steps stay stored but unseen.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. Dropping the column loses the time on every timed task, their days stay; dropping the table loses every task's steps:
+
+```sql
+drop table if exists public.task_subtasks;
+alter table public.tasks drop column if exists due_at;
+```
