@@ -1,12 +1,7 @@
 import { describe, expect, it } from "vitest";
-import {
-  replyPreviewText,
-  type MessagePreviewSource,
-} from "./reply-preview";
+import { replyPreviewText, type MessagePreviewSource } from "./reply-preview";
 
-function preview(
-  overrides: MessagePreviewSource = {},
-): MessagePreviewSource {
+function preview(overrides: MessagePreviewSource = {}): MessagePreviewSource {
   return { content: "hello", is_deleted: false, ...overrides };
 }
 
@@ -109,16 +104,14 @@ describe("replyPreviewText", () => {
 
   it("collapses newlines, so a multi-paragraph parent stays one line", () => {
     expect(
-      replyPreviewText(
-        preview({ content: "first line\n\n  second line " }),
-      ),
+      replyPreviewText(preview({ content: "first line\n\n  second line " })),
     ).toBe("first line second line");
   });
 
   it("says a deleted parent is deleted rather than quoting its blanked body", () => {
-    expect(
-      replyPreviewText(preview({ is_deleted: true, content: "" })),
-    ).toBe("[message deleted]");
+    expect(replyPreviewText(preview({ is_deleted: true, content: "" }))).toBe(
+      "[message deleted]",
+    );
   });
 
   it("prefers the tombstone even when a deleted row still carries content", () => {
@@ -152,8 +145,8 @@ describe("replyPreviewText", () => {
   });
 
   it("falls back to a generic label for a kind the map does not name", () => {
-    expect(
-      replyPreviewText(preview({ content: "", kind: "imported" })),
-    ).toBe("Message");
+    expect(replyPreviewText(preview({ content: "", kind: "imported" }))).toBe(
+      "Message",
+    );
   });
 });

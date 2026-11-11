@@ -8,14 +8,12 @@ import type { OutboxRow, OutboxStore } from "../adapters";
  */
 export function stubOutbox(overrides: Partial<OutboxStore> = {}): OutboxStore {
   return {
-    enqueue: vi.fn().mockImplementation(
-      async (row): Promise<OutboxRow> => ({
-        attempts: 0,
-        status: "queued",
-        queuedAt: Date.now(),
-        ...row,
-      }),
-    ),
+    enqueue: vi.fn().mockImplementation(async (row): Promise<OutboxRow> => ({
+      attempts: 0,
+      status: "queued",
+      queuedAt: Date.now(),
+      ...row,
+    })),
     dequeue: vi.fn().mockResolvedValue(undefined),
     requeue: vi.fn().mockResolvedValue(undefined),
     markFailed: vi.fn().mockResolvedValue(undefined),

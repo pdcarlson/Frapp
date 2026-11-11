@@ -66,7 +66,11 @@ describe("buildPollMessage (#3701)", () => {
   it("puts the question in content and the card in payload, options in order", () => {
     let n = 0;
     const built = buildPollMessage(
-      { question: "Who's driving Saturday?", options: ["Me", "Not me"], closesAt },
+      {
+        question: "Who's driving Saturday?",
+        options: ["Me", "Not me"],
+        closesAt,
+      },
       () => `o${++n}`,
     );
     expect(built).toEqual({
@@ -107,7 +111,9 @@ describe("buildPollMessage (#3701)", () => {
     expect(pollCardEyebrow(payload, farFuture)).toBe("Poll · No end date");
     const timed = { ...payload, closes_at: "2026-11-10T18:30:00.000Z" };
     expect(pollCardEyebrow(timed, closesAt.getTime() - 1)).toBe("Poll");
-    expect(pollCardEyebrow(timed, closesAt.getTime() + 1)).toBe("Poll · Closed");
+    expect(pollCardEyebrow(timed, closesAt.getTime() + 1)).toBe(
+      "Poll · Closed",
+    );
     // Closed early by its creator, it reads closed like any other.
     expect(
       pollCardEyebrow(

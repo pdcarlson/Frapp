@@ -5668,6 +5668,11 @@ export interface components {
             point_reward: number | null;
             /** Format: date-time */
             completed_at: string | null;
+            /**
+             * Format: date-time
+             * @description When an officer confirmed the completion; null until then. A completed task with no confirmation is still waiting on one.
+             */
+            confirmed_at: string | null;
             /** Format: date-time */
             created_at: string;
         };

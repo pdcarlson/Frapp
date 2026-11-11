@@ -60,6 +60,10 @@ describe("Activity card messages", () => {
       name: "Chapter meeting",
       start_time: row.start_time,
       end_time: row.end_time,
+      // What the card needs to offer Check in and to say what it is worth.
+      location: null,
+      point_value: 10,
+      check_in_opens_minutes: 10,
       is_mandatory: true,
     });
     expect(

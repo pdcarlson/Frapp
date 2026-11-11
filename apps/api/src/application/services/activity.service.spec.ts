@@ -373,6 +373,7 @@ describe('ActivityService', () => {
         expect.objectContaining({
           assignee_name: 'Me Member',
           created_by_name: 'Other Member',
+          confirmed_at: null,
         }),
       );
       expect(view.needs_you.task_confirmations).toEqual([]);

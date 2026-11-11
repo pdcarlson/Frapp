@@ -13,6 +13,7 @@ const task = (overrides: Record<string, unknown> = {}) => ({
   created_by_name: "Olive",
   point_reward: null,
   completed_at: null,
+  confirmed_at: null,
   created_at: "2026-11-01T00:00:00.000Z",
   ...overrides,
 });
@@ -147,17 +148,23 @@ describe("activityGroups", () => {
     ]);
   });
 
-  it("gives a finished task no due countdown", () => {
+  it("gives a finished task no due countdown, and the shared word for where it stands", () => {
+    const done = {
+      due_date: "2020-01-01",
+      status: "COMPLETED",
+      stored_status: "COMPLETED",
+      assignee_name: "Ada",
+    };
     const [, , made] = activityGroups(
       activity({
         made_by_you: {
           polls: [],
           tasks: [
+            task({ id: "waiting", ...done }),
             task({
-              due_date: "2020-01-01",
-              status: "COMPLETED",
-              stored_status: "COMPLETED",
-              assignee_name: "Ada",
+              id: "confirmed",
+              ...done,
+              confirmed_at: "2026-11-02T00:00:00.000Z",
             }),
           ],
           files: [],
@@ -166,8 +173,37 @@ describe("activityGroups", () => {
       "all",
     );
 
-    expect(made?.rows[0]?.detail).toBe("Ada");
-    expect(made?.rows[0]?.badge?.label).toBe("Done");
+    expect(made?.rows.map((row) => [row.detail, row.badge?.label])).toEqual([
+      ["Ada", "Waiting on an officer"],
+      ["Ada", "Confirmed"],
+    ]);
+  });
+
+  it("names each section that could not be read, under every group that draws it", () => {
+    const groups = activityGroups(
+      activity({ unavailable: ["tasks", "hours_approvals", "files"] }),
+      "all",
+    );
+
+    expect(groups.map((group) => group.unavailable)).toEqual([
+      ["tasks", "hours_approvals"],
+      [],
+      ["tasks", "files"],
+    ]);
+  });
+
+  it("keeps a failed section's notice under its own chip, and only there", () => {
+    const data = activity({
+      unavailable: ["tasks", "hours_approvals", "polls", "coming_up", "files"],
+    });
+    const under = (filter: Parameters<typeof activityGroups>[1]) =>
+      activityGroups(data, filter).map((group) => group.unavailable);
+
+    expect(under("task")).toEqual([["tasks"], [], ["tasks"]]);
+    expect(under("hours")).toEqual([["hours_approvals"], [], []]);
+    expect(under("poll")).toEqual([["polls"], [], ["polls"]]);
+    expect(under("event")).toEqual([["coming_up"], ["coming_up"], []]);
+    expect(under("file")).toEqual([[], [], ["files"]]);
   });
 
   it("labels a direct-message poll without its server-made channel name", () => {

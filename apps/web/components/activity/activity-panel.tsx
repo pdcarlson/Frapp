@@ -67,7 +67,11 @@ export function ActivityPanel({
 }: {
   row: ActivityRow | null;
   viewerId: string | null;
-  onClose: () => void;
+  /**
+   * Close the panel. With a row key, only if that row is still the open one:
+   * an action's answer can arrive after the member has moved to another row.
+   */
+  onClose: (key?: string) => void;
   onActed: () => void;
 }) {
   return (
@@ -78,6 +82,8 @@ export function ActivityPanel({
           <PanelBody>
             {viewerId ? (
               <PanelCard
+                // A different row is a different card: no state carries over.
+                key={row.key}
                 row={row}
                 viewerId={viewerId}
                 onClose={onClose}
@@ -103,7 +109,7 @@ function PanelCard({
 }: {
   row: ActivityRow;
   viewerId: string;
-  onClose: () => void;
+  onClose: (key?: string) => void;
   onActed: () => void;
 }) {
   switch (row.kind) {
@@ -205,7 +211,7 @@ function HoursPanel({
 }: {
   row: Extract<ActivityRow, { kind: "hours" }>;
   viewerId: string;
-  onClose: () => void;
+  onClose: (key?: string) => void;
   onActed: () => void;
 }) {
   const message = useMemo(() => activityHoursMessage(row.entry), [row.entry]);
@@ -213,10 +219,13 @@ function HoursPanel({
   // Reviewing is a paid-ops write (`ServiceEntryController`), as on the
   // Service hours page.
   const gate = useSubscriptionGate();
+  // Closing re-reads the page, so the row leaves the list; it closes only this
+  // row's panel. If the member has already moved on, the close is a no-op and
+  // `onActed` does the re-read instead.
   const settle = (recorded: boolean) => {
     if (!recorded) return;
     onActed();
-    onClose();
+    onClose(row.key);
   };
   return (
     <>

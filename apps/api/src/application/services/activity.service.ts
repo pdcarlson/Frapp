@@ -71,6 +71,8 @@ export interface ActivityTask {
   created_by_name: string;
   point_reward: number | null;
   completed_at: string | null;
+  /** When an officer confirmed the completion; `null` until then. */
+  confirmed_at: string | null;
   created_at: string;
 }
 
@@ -470,6 +472,7 @@ export class ActivityService {
       created_by_name: names.get(task.created_by) ?? '',
       point_reward: task.point_reward,
       completed_at: task.completed_at,
+      confirmed_at: task.confirmed_at,
       created_at: task.created_at,
     });
     return {

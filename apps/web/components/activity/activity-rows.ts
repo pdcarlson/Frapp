@@ -1,4 +1,5 @@
 import type { components } from "@repo/api-sdk";
+import { TASK_CONFIRMED_LABEL, TASK_STATUS_LABELS } from "@repo/hooks";
 import {
   formatDueLabel,
   formatMinutesRounded,
@@ -110,13 +111,19 @@ function taskRow(
   const badge: RowBase["badge"] =
     role === "confirm"
       ? { label: "Confirm", variant: "warning" }
-      : task.status === "OVERDUE"
-        ? { label: "Overdue", variant: "destructive" }
-        : task.status === "COMPLETED"
-          ? { label: "Done", variant: "success" }
-          : task.status === "IN_PROGRESS"
-            ? { label: "In progress", variant: "outline" }
-            : { label: "To do", variant: "outline" };
+      : {
+          // The shared words every task surface uses (`@repo/hooks`).
+          label:
+            task.status === "COMPLETED" && task.confirmed_at
+              ? TASK_CONFIRMED_LABEL
+              : TASK_STATUS_LABELS[task.status],
+          variant:
+            task.status === "OVERDUE"
+              ? "destructive"
+              : task.status === "COMPLETED" && task.confirmed_at
+                ? "success"
+                : "outline",
+        };
   return {
     kind: "task",
     key: `${group}:task:${task.id}`,

@@ -37,10 +37,7 @@
  * `spec/behavior/chat/integrations.md` § Slash command dispatch.
  */
 
-import {
-  browserKeyValueStore,
-  type KeyValueStore,
-} from "./adapters";
+import { browserKeyValueStore, type KeyValueStore } from "./adapters";
 import {
   locateRow,
   markRecorded,
@@ -294,12 +291,7 @@ export function applyNotice(
   }
   return notice.status === "recorded"
     ? markRecorded(next, notice.clientMessageId, notice.note)
-    : markUnconfirmed(
-        next,
-        notice.clientMessageId,
-        notice.replay,
-        notice.note,
-      );
+    : markUnconfirmed(next, notice.clientMessageId, notice.replay, notice.note);
 }
 
 /**

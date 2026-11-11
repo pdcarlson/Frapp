@@ -173,7 +173,10 @@ export function ActivityPage() {
     );
   }
   if (activity.isPending) return <ActivityPageSkeleton />;
-  if (activity.isError) {
+  // Only with nothing to show: a refetch that fails (this page refetches after
+  // every action) keeps the list it already has rather than replacing it, and
+  // the open panel with it, by an error page. The same guard as the task board.
+  if (activity.isError && !activity.data) {
     return (
       <ErrorState
         title="Couldn't load your activity"
@@ -232,12 +235,17 @@ export function ActivityPage() {
       <ActivityPanel
         row={openRow}
         viewerId={userId}
-        onClose={() => {
-          setOpened(null);
+        onClose={(key) => {
+          // A late answer from one row's action must not close another row
+          // the member has since opened.
+          setOpened((current) =>
+            key === undefined || current?.key === key ? null : current,
+          );
           // The cards write through their own hooks (a task's status, a
           // check-in), which this page's read does not hear about, so it is
-          // re-read when the panel closes.
-          refresh();
+          // re-read when the panel closes by hand. An action's own close
+          // (`key` given) has already re-read through `onActed`.
+          if (key === undefined) refresh();
         }}
         onActed={refresh}
       />

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { MAX_MESSAGE_MARKDOWN_DEPTH, opensTooManyContainers } from "./markdown-depth-cap";
+import {
+  MAX_MESSAGE_MARKDOWN_DEPTH,
+  opensTooManyContainers,
+} from "./markdown-depth-cap";
 
 // #2209. The scan decides, before remark parses anything, that a body would
 // nest past the depth cap. It exists because remark's parse is quadratic in
@@ -42,15 +45,24 @@ describe("opensTooManyContainers", () => {
   });
 
   it("skips a leading byte-order mark, which the parser drops", () => {
-    expect(opensTooManyContainers("\uFEFF" + "- ".repeat(cap + 1) + "hi")).toBe(true);
+    expect(opensTooManyContainers("\uFEFF" + "- ".repeat(cap + 1) + "hi")).toBe(
+      true,
+    );
   });
 
   it.each([
     ["dashes", "- "],
     ["stars", "* "],
-  ])("exempts a divider line of spaced %s, a thematic break", (_label, marker) => {
-    expect(opensTooManyContainers(`**bold** above\n${marker.repeat(cap + 8)}\nand below`)).toBe(false);
-  });
+  ])(
+    "exempts a divider line of spaced %s, a thematic break",
+    (_label, marker) => {
+      expect(
+        opensTooManyContainers(
+          `**bold** above\n${marker.repeat(cap + 8)}\nand below`,
+        ),
+      ).toBe(false);
+    },
+  );
 
   it("does not exempt a marker line that mixes dashes and stars, or ends in text", () => {
     expect(opensTooManyContainers("- * ".repeat(cap))).toBe(true);
@@ -60,7 +72,9 @@ describe("opensTooManyContainers", () => {
   it("counts a marker line inside a fenced code block, deliberately", () => {
     // Over-counting costs this message its formatting. Tracking fences from the
     // source would let a fence the parser closes early hide a marker line.
-    expect(opensTooManyContainers("```\n" + "> ".repeat(cap + 1) + "\n```")).toBe(true);
+    expect(
+      opensTooManyContainers("```\n" + "> ".repeat(cap + 1) + "\n```"),
+    ).toBe(true);
   });
 
   it("stops counting at the first character that is not a marker", () => {

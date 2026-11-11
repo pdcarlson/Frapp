@@ -1186,6 +1186,91 @@ export async function closePoll(
   );
 }
 
+/**
+ * What a card action or a poll close needs when it is taken outside the
+ * card's thread (the Activity page, #3897): no outbox, no optimistic row, and
+ * no toast of its own, since the surface says what failed in its own words.
+ */
+export interface DetachedCardContext {
+  queryClient: QueryClient;
+  apiClient: FrappApiClient;
+}
+
+/**
+ * Merge into the channel's cache only when that channel is already loaded.
+ * `patchCache` seeds an empty cache for a channel that has none, which is
+ * right inside a thread (the thread is about to fill it) and wrong from
+ * outside one: it would leave a cache holding nothing for a channel the
+ * member has not opened.
+ */
+function patchLoadedCache(
+  qc: QueryClient,
+  channelId: string,
+  updater: (cache: ChannelCache) => ChannelCache,
+): void {
+  qc.setQueryData<ChannelCache>(chatMessagesKey(channelId), (prev) =>
+    prev ? updater(prev) : prev,
+  );
+}
+
+/**
+ * {@link actOnCard}'s route and cache contract for a card drawn outside its
+ * thread: the same `POST …/actions`, and the same merge of the answer into
+ * the channel's cache (when the channel is loaded), so the thread shows the
+ * vote the moment the member goes back to it rather than a stale tally. The
+ * thread's cache never goes stale by itself, so skipping the merge would
+ * leave it wrong until a reload.
+ *
+ * Throws on a refusal; the caller words the failure.
+ */
+export async function actOnDetachedCard(
+  ctx: DetachedCardContext,
+  args: CardActionArgs,
+): Promise<void> {
+  const { data, error, response } = await ctx.apiClient.POST(
+    "/v1/channels/messages/{messageId}/actions",
+    {
+      params: { path: { messageId: args.messageId } },
+      body: {
+        action_type: args.actionType,
+        // See `actOnCard` for the cast.
+        payload: (args.payload ?? undefined) as unknown as undefined,
+      },
+    },
+  );
+  if (error || !data) throwApiError(error, response, "Couldn't record action");
+  const body = data as { action?: RawChatMessageAction; updated?: boolean };
+  if (body.action) {
+    const action = body.action;
+    patchLoadedCache(ctx.queryClient, args.channelId, (cache) =>
+      body.updated
+        ? applyActionUpdate(cache, action)
+        : applyReactionInsert(cache, action),
+    );
+  }
+}
+
+/**
+ * {@link closePoll} for a card drawn outside its thread: the same route, and
+ * the closed row merged into the channel's cache when it is loaded. Returns
+ * the row the server stamped. Throws on a refusal.
+ */
+export async function closeDetachedPoll(
+  ctx: DetachedCardContext,
+  args: ClosePollArgs,
+): Promise<RawChatMessage> {
+  const { data, error, response } = await ctx.apiClient.POST(
+    "/v1/polls/{messageId}/close",
+    { params: { path: { messageId: args.messageId } } },
+  );
+  if (error || !data) throwApiError(error, response, "Couldn't close poll");
+  const row = data as RawChatMessage;
+  patchLoadedCache(ctx.queryClient, args.channelId, (cache) =>
+    mergeHeldServerRow(cache, row),
+  );
+  return row;
+}
+
 export interface CardActionArgs {
   channelId: string;
   messageId: string;

@@ -72,6 +72,15 @@ export class ActivityTaskDto implements ActivityTask {
   @ApiProperty({ type: String, format: 'date-time', nullable: true })
   completed_at: string | null;
 
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'When an officer confirmed the completion; null until then. A completed task with no confirmation is still waiting on one.',
+  })
+  confirmed_at: string | null;
+
   @ApiProperty({ format: 'date-time' })
   created_at: string;
 }

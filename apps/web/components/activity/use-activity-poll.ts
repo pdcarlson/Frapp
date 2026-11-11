@@ -3,13 +3,14 @@
 import { useCallback, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { activityPollMessage } from "@repo/chat-core/activity-cards";
-import { classifyChatError } from "@repo/chat-core/chat-client";
+import {
+  actOnDetachedCard,
+  classifyChatError,
+  closeDetachedPoll,
+} from "@repo/chat-core/chat-client";
+import { readMessageActions } from "@repo/chat-core/history";
 import { memberFacingRefusal } from "@repo/chat-core/polls";
-import type {
-  ChatMessage,
-  RawChatMessage,
-  RawChatMessageAction,
-} from "@repo/chat-core/types";
+import type { ChatMessage, RawChatMessage } from "@repo/chat-core/types";
 import { activityKeys, useActiveChapterId, useFrappClient } from "@repo/hooks";
 import { getRealtimeClient } from "@/lib/realtime/supabase-realtime";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -27,8 +28,11 @@ const VOTES_REFRESH_MS = 15_000;
  * `chat_message_actions` for this one message, under the member's own session
  * (the table's read policy is the channel-access rule, so a poll the member
  * cannot read returns no votes), re-read on an interval while the card is
- * open and after each vote. The vote and the close go to the same routes
- * chat's card uses.
+ * open and after each vote, through chat's own paged read
+ * (`readMessageActions`). The vote and the close are chat-core's
+ * (`actOnDetachedCard`, `closeDetachedPoll`): the same routes chat's card
+ * uses, with the answer merged into the channel's chat cache when that
+ * channel is loaded, so the thread is not left showing a stale tally.
  */
 export function useActivityPoll(poll: ActivityPoll | null) {
   const client = useFrappClient();
@@ -36,6 +40,7 @@ export function useActivityPoll(poll: ActivityPoll | null) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const messageId = poll?.message_id ?? "";
+  const channelId = poll?.channel_id ?? "";
 
   const votesKey = useMemo(
     () => [...activityKeys.chapter(chapterId ?? ""), "poll-votes", messageId],
@@ -44,13 +49,14 @@ export function useActivityPoll(poll: ActivityPoll | null) {
   const votes = useQuery({
     queryKey: votesKey,
     queryFn: async () => {
-      const { data, error } = await getRealtimeClient()
-        .from("chat_message_actions")
-        .select("*")
-        .eq("message_id", messageId)
-        .order("id");
-      if (error) throw error;
-      return (data ?? []) as RawChatMessageAction[];
+      // Chat's own paged read of a message's actions. A partial set would
+      // draw a wrong tally, so it is a failed read here.
+      const { actions, incomplete } = await readMessageActions(
+        getRealtimeClient(),
+        [messageId],
+      );
+      if (incomplete) throw new Error("Couldn't read this poll's votes");
+      return actions;
     },
     enabled: !!chapterId && !!messageId,
     refetchInterval: poll && !poll.is_closed ? VOTES_REFRESH_MS : false,
@@ -97,39 +103,31 @@ export function useActivityPoll(poll: ActivityPoll | null) {
       payload: Record<string, unknown>,
     ) => {
       try {
-        const { error } = await client.POST(
-          "/v1/channels/messages/{messageId}/actions",
-          {
-            params: { path: { messageId: votedMessageId } },
-            body: {
-              action_type: actionType,
-              // `payload` is `object` in the OpenAPI schema; see `actOnCard`.
-              payload: payload as unknown as undefined,
-            },
-          },
+        await actOnDetachedCard(
+          { queryClient, apiClient: client },
+          { channelId, messageId: votedMessageId, actionType, payload },
         );
-        if (error) throw error;
         await refresh();
       } catch (error) {
         fail("Couldn't record your vote", error);
       }
     },
-    [client, refresh, fail],
+    [client, queryClient, channelId, refresh, fail],
   );
 
   const close = useCallback(
     async (closedMessageId: string) => {
       try {
-        const { error } = await client.POST("/v1/polls/{messageId}/close", {
-          params: { path: { messageId: closedMessageId } },
-        });
-        if (error) throw error;
+        await closeDetachedPoll(
+          { queryClient, apiClient: client },
+          { channelId, messageId: closedMessageId },
+        );
         await refresh();
       } catch (error) {
         fail("Couldn't close poll", error);
       }
     },
-    [client, refresh, fail],
+    [client, queryClient, channelId, refresh, fail],
   );
 
   return {
