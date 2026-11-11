@@ -429,3 +429,27 @@ export function uploaderOptions(rows: readonly LibraryDocument[]): UploaderOptio
     .map(([value, label]) => ({ value, label }))
     .sort((a, b) => a.label.localeCompare(b.label));
 }
+
+/**
+ * The three tiers Documents lists folders and files in (#3934,
+ * `spec/behavior/chapter-docs.md` § Pinned and starred): what officers pinned
+ * for the whole chapter, then what this member starred, then the rest. Each
+ * tier keeps the order it was given, so the officers' folder order and the
+ * member's chosen sort still apply inside it. A pinned item the member also
+ * starred sits in Pinned only, so nothing is listed twice.
+ */
+export type MarkTiers<T> = { pinned: T[]; starred: T[]; rest: T[] };
+
+export function tierByMarks<T>(
+  items: readonly T[],
+  isPinned: (item: T) => boolean,
+  isStarred: (item: T) => boolean,
+): MarkTiers<T> {
+  const tiers: MarkTiers<T> = { pinned: [], starred: [], rest: [] };
+  for (const item of items) {
+    if (isPinned(item)) tiers.pinned.push(item);
+    else if (isStarred(item)) tiers.starred.push(item);
+    else tiers.rest.push(item);
+  }
+  return tiers;
+}

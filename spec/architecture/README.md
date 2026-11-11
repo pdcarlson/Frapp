@@ -226,7 +226,11 @@ Member invoice payments are applied by the `apply_invoice_payment` RPC — compa
 
 ### Chapter Documents
 
-**chapter_documents** — `id`, `chapter_id` (FK chapters), `title` (text), `description` (text, nullable), `folder` (text, nullable — single-level folder name), `storage_path` (text — Supabase Storage path), `uploaded_by` (FK users), `content_type` (text, nullable), `byte_size` (bigint, nullable), `document_type` (text, nullable — free text), `effective_date` (date, nullable), `created_at`. Unique on (storage_path), so a retried confirm cannot file one object twice (#3399; [`behavior/chapter-docs.md`](../behavior/chapter-docs.md#storage)).
+**chapter_documents** — `id`, `chapter_id` (FK chapters), `title` (text), `description` (text, nullable), `folder` (text, nullable — single-level folder name), `storage_path` (text — Supabase Storage path), `uploaded_by` (FK users), `content_type` (text, nullable), `byte_size` (bigint, nullable), `document_type` (text, nullable — free text), `effective_date` (date, nullable), `pinned_at` (timestamptz, nullable — an officer's pin for the whole chapter, #3934), `created_at`. Unique on (storage_path), so a retried confirm cannot file one object twice (#3399; [`behavior/chapter-docs.md`](../behavior/chapter-docs.md#storage)).
+
+**chapter_document_folders** — `id`, `chapter_id` (FK chapters), `name` (text, unique per chapter), `sort_order` (int), `pinned_at` (timestamptz, nullable — an officer's pin for the whole chapter, #3934), `created_at`. A document names its folder by `name`, not by id.
+
+**chapter_document_stars** — `id`, `user_id` (FK users), `chapter_id` (FK chapters), `folder_id` (FK chapter_document_folders, nullable), `document_id` (FK chapter_documents, nullable), `created_at`. Exactly one of the two targets is set; deleting the folder or document deletes its stars. Unique on (user_id, folder_id) and (user_id, document_id). Private to each member: RLS on with no policies, and `anonymize_user` deletes a member's rows (#3934; [`behavior/chapter-docs.md`](../behavior/chapter-docs.md#pinned-and-starred)).
 
 ### Semester Archives
 

@@ -9992,7 +9992,17 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChapterDocumentDto"
+                  }
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -10022,7 +10032,17 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DocumentFolderDto"
+                  }
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -10079,6 +10099,43 @@
           }
         ],
         "summary": "Create a document folder",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/documents/stars": {
+      "get": {
+        "operationId": "ChapterDocumentController_listStars_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentStarsDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own starred folders and documents",
         "tags": [
           "Documents"
         ]
@@ -10170,6 +10227,172 @@
         ]
       }
     },
+    "/v1/documents/folders/{id}/pin": {
+      "put": {
+        "operationId": "ChapterDocumentController_pinFolder_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentFolderDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Pin a folder for the whole chapter (idempotent)",
+        "tags": [
+          "Documents"
+        ]
+      },
+      "delete": {
+        "operationId": "ChapterDocumentController_unpinFolder_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentFolderDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Unpin a folder (idempotent)",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/documents/folders/{id}/star": {
+      "put": {
+        "operationId": "ChapterDocumentController_starFolder_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Star a folder for yourself (idempotent)",
+        "tags": [
+          "Documents"
+        ]
+      },
+      "delete": {
+        "operationId": "ChapterDocumentController_unstarFolder_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove your star from a folder (idempotent)",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
     "/v1/documents/{id}": {
       "get": {
         "operationId": "ChapterDocumentController_getOne_v1",
@@ -10241,6 +10464,172 @@
           }
         ],
         "summary": "Delete a document",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/documents/{id}/pin": {
+      "put": {
+        "operationId": "ChapterDocumentController_pinDocument_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterDocumentDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Pin a document for the whole chapter (idempotent)",
+        "tags": [
+          "Documents"
+        ]
+      },
+      "delete": {
+        "operationId": "ChapterDocumentController_unpinDocument_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterDocumentDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Unpin a document (idempotent)",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/documents/{id}/star": {
+      "put": {
+        "operationId": "ChapterDocumentController_starDocument_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Star a document for yourself (idempotent)",
+        "tags": [
+          "Documents"
+        ]
+      },
+      "delete": {
+        "operationId": "ChapterDocumentController_unstarDocument_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove your star from a document (idempotent)",
         "tags": [
           "Documents"
         ]
@@ -18032,6 +18421,129 @@
         "required": [
           "storage_path",
           "title"
+        ]
+      },
+      "ChapterDocumentDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "chapter_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "folder": {
+            "type": "string",
+            "nullable": true
+          },
+          "storage_path": {
+            "type": "string"
+          },
+          "uploaded_by": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string",
+            "nullable": true
+          },
+          "byte_size": {
+            "type": "number",
+            "nullable": true
+          },
+          "document_type": {
+            "type": "string",
+            "nullable": true
+          },
+          "effective_date": {
+            "type": "string",
+            "nullable": true
+          },
+          "pinned_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "When an officer pinned it for the whole chapter, or null"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "title",
+          "description",
+          "folder",
+          "storage_path",
+          "uploaded_by",
+          "created_at",
+          "content_type",
+          "byte_size",
+          "document_type",
+          "effective_date",
+          "pinned_at"
+        ]
+      },
+      "DocumentFolderDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "chapter_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sort_order": {
+            "type": "number"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "pinned_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "When an officer pinned it for the whole chapter, or null"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "name",
+          "sort_order",
+          "created_at",
+          "pinned_at"
+        ]
+      },
+      "DocumentStarsDto": {
+        "type": "object",
+        "properties": {
+          "folder_ids": {
+            "description": "Ids of the folders the caller starred, oldest star first",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "document_ids": {
+            "description": "Ids of the documents the caller starred, oldest star first",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "folder_ids",
+          "document_ids"
         ]
       },
       "CreateDocumentFolderDto": {

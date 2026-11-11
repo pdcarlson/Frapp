@@ -210,6 +210,7 @@ await import("./tiers/transfer-presidency-keeps-member-access.mjs");
 await import("./tiers/check-in-once.mjs");
 await import("./tiers/activity-links.mjs");
 await import("./tiers/role-tiers.mjs");
+await import("./tiers/document-stars.mjs");
 await import("./tiers/channel-order.mjs");
 
 const tableCount = await db.query(
