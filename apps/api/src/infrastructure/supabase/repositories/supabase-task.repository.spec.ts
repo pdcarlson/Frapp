@@ -117,9 +117,38 @@ describe('SupabaseTaskRepository — tenant scope', () => {
       status: 'IN_PROGRESS',
       completed_at: null,
     });
+    // The assignee's own take-back is not a send-back.
+    expect(reopened).not.toHaveProperty('sent_back_at', expect.any(String));
     expect(harness.rows('tasks').find((r) => r.id === TASK_A)?.status).toBe(
       'COMPLETED',
     );
+  });
+
+  it('reopenCompletion stamps an officer’s send-back', async () => {
+    harness = createTenantHarness({
+      tables: {
+        tasks: seed().tasks.map((row) => ({
+          ...row,
+          status: 'COMPLETED',
+          completed_at: '2026-08-30T00:00:00Z',
+          points_awarded: false,
+        })),
+      },
+    });
+    repo = new SupabaseTaskRepository(harness.client);
+
+    const reopened = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.reopenCompletion(TASK_B, CHAPTER_B, '2026-08-31T00:00:00.000Z'),
+    );
+
+    expect(reopened).toMatchObject({
+      id: TASK_B,
+      status: 'IN_PROGRESS',
+      sent_back_at: '2026-08-31T00:00:00.000Z',
+    });
+    expect(
+      harness.rows('tasks').find((r) => r.id === TASK_A)?.sent_back_at,
+    ).toBeUndefined();
   });
 
   it('reopenCompletion leaves a confirmed task alone', async () => {

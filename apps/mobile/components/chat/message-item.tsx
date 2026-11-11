@@ -754,6 +754,7 @@ export function MessageItem({
         count={message.attachment_count}
         clientMessageId={message.client_message_id}
         confirmed={isConfirmed}
+        photos={message.attachment_photos}
         onLongPress={onOpenActions}
       />
     ) : null;

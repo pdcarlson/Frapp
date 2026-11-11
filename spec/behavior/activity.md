@@ -90,6 +90,40 @@ now and hasn't. It is counted before the list cap, so a badge built from it does
 - **Names are never invented.** A task's or entry's member who can no longer be resolved has an
   empty name, the same convention as the roster.
 
+## Unread
+
+Each row that waits on the member carries `unread`, so a client can mark what is new with a dot,
+the way Slack and Linear mark their inboxes (#4173; Shawn picked "unread until opened" over "new
+since your last visit", 2026-11-11). **Status 2026-11-11: the API serves it; the web and phone
+dots are follow-up steps of #4173.**
+
+- **Which rows.** Everything in Needs you, Coming up and Links. Nothing in Made by you: the member
+  made it, so it never waited on them. For the same reason a task they assigned to themselves and
+  an event they made (`created_by`, served on each event row) are never unread.
+- **Until opened.** A row stays unread until the member opens that item from Activity: the client
+  records it with `POST /v1/activity/reads`, naming the item's kind and id (`task`, `hours_entry`,
+  `poll` by its message id, `event`, `link`), up to 100 at a time. Scrolling past a row doesn't
+  clear it, and neither does opening the same item elsewhere in Frapp (voting on the poll in its
+  channel); acting on an item usually takes it off the list anyway.
+- **Since it appeared.** A row is unread when it appeared after the member last opened it. It
+  appears when it starts waiting on them: a task confirmation when the task was completed, the
+  member's own task when it was assigned or an officer last sent it back (`sent_back_at`,
+  [`tasks.md`](tasks.md)), anything else when its record was made (an entry submitted, a poll or
+  link posted, an event made). So a task an officer opened before its assignee finished it is
+  unread again in their confirmations, and a task its assignee opened is unread again when an
+  officer sends it back. Taking back one's own completion is not a send-back.
+- **Nothing older than the member's dots.** Until a client that draws dots opens Activity for
+  them, no open of theirs could be recorded, so every row is read and `unread_since` is null. That
+  client then calls `PUT /v1/activity/unread-since`, which records the moment once per member per
+  chapter; a row that appeared before it is never unread. So a member's first visit with dots is
+  not a page of them for things they had already seen, whenever their client gained dots.
+- **Per member, never shared.** A member's opens live in `activity_item_reads` and their start in
+  `activity_unread_starts`, which only the API reads, filtered on the member. The route checks no access: a read names an item for its member
+  alone, and an item they can't see is never served to them, so recording one reveals and changes
+  nothing. Deleting an account deletes both ([`data-retention.md`](data-retention.md)).
+- **A hint, not a section.** When the opens can't be read, every row is served as read and the
+  failure is reported; the page doesn't fail and nothing lands in `unavailable`.
+
 ## Polls and channel access
 
 A poll card is a chat message, so the page must not become a way around a channel's access rule,

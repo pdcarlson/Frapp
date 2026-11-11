@@ -3,6 +3,8 @@ import { ActivityService } from '../../application/services/activity.service';
 import { ActivityLinkService } from '../../application/services/activity-link.service';
 import { SupabaseChatMessageLinkRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message-link.repository';
 import { CHAT_MESSAGE_LINK_REPOSITORY } from '#domain/repositories/chat-message-link.repository.interface';
+import { SupabaseActivityItemReadRepository } from '../../infrastructure/supabase/repositories/supabase-activity-item-read.repository';
+import { ACTIVITY_ITEM_READ_REPOSITORY } from '#domain/repositories/activity-item-read.repository.interface';
 import { ActivityController } from '../../interface/controllers/activity.controller';
 import { LinkTitleSweepService } from '../../application/workers/link-title-sweep.service';
 import { HttpsLinkTitleFetcher } from '../../infrastructure/link-title/https-link-title.fetcher';
@@ -59,13 +61,19 @@ import { TaskModule } from '../task/task.module';
       useClass: SupabaseChatMessageLinkRepository,
     },
     // Link titles (#4187): the background sweep that reads each link's page
-    // title once, through the one guarded fetcher in the API that opens a
+    // title, through the one guarded fetcher in the API that opens a
     // URL a member posted. Built by a factory, since a spec passes its own
     // DNS and request in place of the network.
     LinkTitleSweepService,
     {
       provide: LINK_TITLE_FETCHER,
       useFactory: () => new HttpsLinkTitleFetcher(),
+    },
+    // Which items each member opened, for unread dots (#4173). This module
+    // is the table's only reader and writer.
+    {
+      provide: ACTIVITY_ITEM_READ_REPOSITORY,
+      useClass: SupabaseActivityItemReadRepository,
     },
     // The two chat repositories are provided here, as `ChannelAccessModule`
     // does, rather than exported from `ChatModule`: they are stateless query

@@ -103,6 +103,8 @@ describe('ActivityLinkService', () => {
           posted_by: OTHER,
           posted_by_name: 'Other Member',
           posted_at: '2026-11-10T12:00:00.000Z',
+          // Set by `ActivityService`, which reads every section's opens.
+          unread: false,
         },
       ]);
     });

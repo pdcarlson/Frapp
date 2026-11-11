@@ -848,7 +848,7 @@ export class ChatMessageDto {
   @ApiProperty({
     type: Object,
     description:
-      'Free-form annotations; carries `attachment_count`. Empty on a masked row, which is what stops a masked message pulling the blocked member’s uploads.',
+      'Free-form annotations; carries `attachment_count`, and `attachment_photos` (one `{width, height, thumbhash}` per photo) so a reader can size each photo before the attachments read returns. Empty on a masked row, which is what stops a masked message pulling the blocked member’s uploads.',
   })
   metadata: Record<string, any>;
 

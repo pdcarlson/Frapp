@@ -66,6 +66,12 @@ export interface ActivityLink {
   /** Empty when the poster cannot be resolved. */
   posted_by_name: string;
   posted_at: string;
+  /**
+   * Whether the caller hasn't opened it since it was posted
+   * (`spec/behavior/activity.md` § Unread). Set by `ActivityService`, which
+   * reads every section's opens at once.
+   */
+  unread: boolean;
 }
 
 /**
@@ -151,6 +157,7 @@ export class ActivityLinkService {
         posted_by: link.posted_by,
         posted_by_name: link.posted_by ? (names.get(link.posted_by) ?? '') : '',
         posted_at: link.posted_at,
+        unread: false,
       };
     });
   }

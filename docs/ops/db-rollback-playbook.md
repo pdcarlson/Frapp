@@ -1299,9 +1299,10 @@ After any rollback event:
   ) x
   WHERE m.id = x.message_id;
 
+  -- `attachment_photos` (#3879) describes the same rows, so it goes too.
   UPDATE chat_messages
-  SET metadata = metadata - 'attachment_count'
-  WHERE metadata ? 'attachment_count';
+  SET metadata = metadata - 'attachment_count' - 'attachment_photos'
+  WHERE metadata ? 'attachment_count' OR metadata ? 'attachment_photos';
   ```
   Rows written *after* the migration are also restored by this — they were never
   in the sigil format, but the pre-change composer produced exactly that format,
@@ -3588,6 +3589,22 @@ drop function if exists public.reorder_chat_categories(uuid, uuid[]);
 alter table public.chat_channels drop column if exists display_order;
 ```
 
+## Rollback Unread dots on Activity (20261111220000)
+
+* **Migration**: `20261111220000_activity_item_reads.sql`
+
+The tables `activity_item_reads` and `activity_unread_starts`, the nullable column `tasks.sent_back_at`, and `anonymize_user` redefined to also delete both tables' rows. No existing row changed.
+
+**Revert the code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API never reads or writes the tables or the column (it reads tasks with `select('*')` and returns `sent_back_at` as a plain field older clients ignore) and serves no `unread`; the reverted clients draw no dots.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses which items every member opened and when their dots began, and when tasks were sent back. First redefine `anonymize_user` without its two deletes (the `20261111180000_document_pins_and_stars.sql` body), or account deletion fails once the tables are gone:
+
+```sql
+drop table if exists public.activity_item_reads;
+drop table if exists public.activity_unread_starts;
+alter table public.tasks drop column if exists sent_back_at;
+```
+
 ## Rollback custom roles fold (20261111210000)
 
 * **Migration**: `20261111210000_fold_custom_roles.sql`
@@ -3600,9 +3617,9 @@ Two new columns, `chapter_custom_roles.folded_role_id` and `folded_at`; a new `r
 
 If `transfer_presidency` itself must go back, its earlier body is the one in `20261108200000_transfer_presidency_keeps_member_access.sql`; with `custom_role_ids` empty its extra clause never matches, so the two behave the same.
 
-## Rollback Link titles on Activity (20261111220000)
+## Rollback Link titles on Activity (20261111230000)
 
-* **Migration**: `20261111220000_activity_link_titles.sql`
+* **Migration**: `20261111230000_activity_link_titles.sql`
 
 Three columns on `chat_message_links`, `title`, `title_attempts` and `title_checked_at`, and the partial index `idx_chat_message_links_title_pending`. No existing row changed.
 
