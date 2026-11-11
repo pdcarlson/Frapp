@@ -29,6 +29,18 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-11: Task due times and subtasks (#4003)
+
+### 20261111230000_task_due_time_and_subtasks.sql
+
+- **Purpose**: Adds `tasks.due_at timestamptz` (nullable, no default): the moment a task is due when it has a time of day. `due_date` stays required and still names the day. A task with no `due_at` behaves as before. Adds `task_subtasks` (`task_id`, `chapter_id`, `title` 1 to 200 characters trimmed, `position`, `done_at`, `created_at`), a task's checklist steps, with an index on `(task_id, position)`. Both foreign keys cascade. RLS on, no policies (API only, service role). No existing row changes. The rules are [`spec/behavior/tasks.md` § Task Lifecycle](../../../spec/behavior/tasks.md#task-lifecycle).
+- **Checks**:
+  - `select count(*) from information_schema.columns where table_name = 'tasks' and column_name = 'due_at';` returns `1`.
+  - `select relrowsecurity from pg_class where relname = 'task_subtasks';` returns `true`, and `select count(*) from pg_policies where tablename = 'task_subtasks';` returns `0`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API reads tasks with `select('*')` and returns `due_at` (null) as a field clients ignore. The newer API against an unmigrated database fails task creates that send a time and both task reminder sweeps, which filter on `due_at` (each failure is reported), and every task list and detail read, which reads `task_subtasks`; the older API never touches the table. A nullable column with no default is metadata-only, under a brief lock, and the new table is empty. `add column if not exists`, `create table if not exists` and `create index if not exists` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-task-due-times-and-subtasks-20261111230000) § Rollback Task due times and subtasks.
+
 ## 2026-11-11: Unread dots on Activity (#4173)
 
 ### 20261111220000_activity_item_reads.sql

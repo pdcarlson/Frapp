@@ -1,4 +1,6 @@
 import {
+  ArrayMaxSize,
+  IsArray,
   IsDateString,
   IsEnum,
   IsInt,
@@ -10,8 +12,18 @@ import {
   Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { POINTS_ADJUSTMENT_MAX, TASK_TITLE_MAX_LENGTH } from '@repo/validation';
-import { TaskStatus, type Task } from '#domain/entities/task.entity';
+import {
+  POINTS_ADJUSTMENT_MAX,
+  TASK_SUBTASK_TITLE_MAX_LENGTH,
+  TASK_SUBTASKS_MAX,
+  TASK_TITLE_MAX_LENGTH,
+} from '@repo/validation';
+import {
+  TaskStatus,
+  type Task,
+  type TaskSubtask,
+} from '#domain/entities/task.entity';
+import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 
 export class CreateTaskDto {
   @ApiProperty()
@@ -31,6 +43,28 @@ export class CreateTaskDto {
   @ApiProperty({ description: 'Due date (YYYY-MM-DD)' })
   @IsDateString()
   due_date: string;
+
+  @ApiPropertyOptional({
+    description:
+      'The moment the task is due, when it has a time of day (ISO 8601 with an offset). `due_date` must be the calendar day of this moment as the creator sees it. Omit for a task due on `due_date` with no time.',
+    format: 'date-time',
+  })
+  @IsOptional()
+  @IsDateString({ strict: true })
+  due_at?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Subtasks, in order: a checklist of steps the assignee ticks off (#4003). Blank lines are dropped.',
+    type: [String],
+    maxItems: TASK_SUBTASKS_MAX,
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(TASK_SUBTASKS_MAX)
+  @IsString({ each: true })
+  @MaxLength(TASK_SUBTASK_TITLE_MAX_LENGTH, { each: true })
+  subtasks?: string[];
 
   @ApiPropertyOptional({ description: 'Points to award on completion' })
   @IsOptional()
@@ -93,6 +127,9 @@ export class CreateTaskResponseDto implements Task {
   @ApiProperty({ format: 'date' })
   due_date: string;
 
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
+  due_at: string | null;
+
   @ApiProperty({ enum: TaskStatus })
   status: TaskStatus;
 
@@ -125,6 +162,47 @@ export class CreateTaskResponseDto implements Task {
       'Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the task row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch.',
   })
   card_posted?: boolean;
+}
+
+export class TaskSubtaskDto implements TaskSubtask {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ format: 'uuid' })
+  task_id: string;
+
+  @ApiProperty({ format: 'uuid' })
+  chapter_id: string;
+
+  @ApiProperty()
+  title: string;
+
+  @ApiProperty({ description: 'Order under the task, 0 first.' })
+  position: number;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description: 'When it was checked off; null while it is still to do.',
+  })
+  done_at: string | null;
+
+  @ApiProperty({ format: 'date-time' })
+  created_at: string;
+}
+
+export class CreateTaskSubtaskDto {
+  @ApiProperty({ maxLength: TASK_SUBTASK_TITLE_MAX_LENGTH })
+  @IsString()
+  @MaxLength(TASK_SUBTASK_TITLE_MAX_LENGTH)
+  title: string;
+}
+
+export class UpdateTaskSubtaskDto {
+  @ApiProperty({ description: 'True to check it off, false to uncheck it.' })
+  @IsStrictBoolean()
+  done: boolean;
 }
 
 export class UpdateTaskStatusDto {

@@ -259,7 +259,9 @@ function taskRow(
   // A finished task has no countdown: "Overdue by 2 days" under a task that is
   // done would be wrong.
   const due =
-    task.stored_status === "COMPLETED" ? null : formatDueLabel(task.due_date);
+    task.stored_status === "COMPLETED"
+      ? null
+      : formatDueLabel(task.due_at ?? task.due_date);
   const who =
     role === "mine"
       ? task.created_by_name
@@ -400,7 +402,9 @@ export function activityRowIsNow(row: ActivityRow, now: Date): boolean {
       if (row.glyph === "confirm" || row.task.status === "OVERDUE") {
         return true;
       }
-      const due = parseInstantOrBareLocalNoon(row.task.due_date);
+      const due = parseInstantOrBareLocalNoon(
+        row.task.due_at ?? row.task.due_date,
+      );
       return due === null || dayDelta(now, due) <= 1;
     }
     case "poll": {

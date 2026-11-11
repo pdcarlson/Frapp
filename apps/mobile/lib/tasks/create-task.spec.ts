@@ -122,6 +122,17 @@ describe("validateNewTask", () => {
     expect(validateNewTask({ ...draft, title: "a".repeat(256) })).toBeNull();
   });
 
+  it("sends the typed steps in order, dropping blank ones (#4003)", () => {
+    expect(
+      validateNewTask({
+        ...draft,
+        subtasks: ["  Counters ", "", "Floor", "   "],
+      })?.subtasks,
+    ).toEqual(["Counters", "Floor"]);
+    const none = validateNewTask({ ...draft, subtasks: ["", " "] });
+    expect(none && "subtasks" in none).toBe(false);
+  });
+
   it("refuses a draft the server would reject", () => {
     expect(validateNewTask({ ...draft, title: "   " })).toBeNull();
     expect(validateNewTask({ ...draft, assigneeId: null })).toBeNull();

@@ -12,6 +12,7 @@ import {
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiOkResponse,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
@@ -33,6 +34,9 @@ import {
 import {
   CreateTaskDto,
   CreateTaskResponseDto,
+  CreateTaskSubtaskDto,
+  TaskSubtaskDto,
+  UpdateTaskSubtaskDto,
   UpdateTaskStatusDto,
   RejectTaskCompletionDto,
 } from '../dtos/task.dto';
@@ -91,8 +95,13 @@ export class TaskController {
   // user), so self-assignment is a comparison of the two, not an id sent.
   @FeatureEvent(
     'task-created',
-    ({ result }: FeatureEventInput<CreateTaskDto, CreateTaskResponseDto>) => ({
+    ({
+      body,
+      result,
+    }: FeatureEventInput<CreateTaskDto, CreateTaskResponseDto>) => ({
       assigned_to_self: result.assignee_id === result.created_by,
+      has_due_time: !!result.due_at,
+      has_subtasks: (body?.subtasks?.length ?? 0) > 0,
       has_point_reward: (result.point_reward ?? 0) > 0,
       posted_to_chat: result.card_posted === true,
     }),
@@ -109,6 +118,8 @@ export class TaskController {
       assignee_id: dto.assignee_id,
       created_by: createdBy,
       due_date: dto.due_date,
+      due_at: dto.due_at ?? null,
+      subtasks: dto.subtasks,
       point_reward: dto.point_reward ?? null,
       channel_id: dto.channel_id,
       client_message_id: dto.client_message_id,
@@ -171,6 +182,57 @@ export class TaskController {
       chapterId,
       dto.comment ?? null,
     );
+  }
+
+  @Post(':id/subtasks')
+  @RequirePermissions(SystemPermissions.TASKS_MANAGE)
+  @ApiOperation({ summary: 'Add a subtask to the end of a task (#4003)' })
+  @ApiCreatedResponse({ type: TaskSubtaskDto })
+  async addSubtask(
+    @CurrentChapterId() chapterId: string,
+    @Param('id') id: string,
+    @Body() dto: CreateTaskSubtaskDto,
+  ): Promise<TaskSubtaskDto> {
+    return this.taskService.addSubtask(id, chapterId, dto.title);
+  }
+
+  @Patch(':id/subtasks/:subtaskId')
+  @ApiOperation({
+    summary: 'Check off or uncheck a subtask (assignee or admin, #4003)',
+  })
+  @ApiOkResponse({ type: TaskSubtaskDto })
+  async updateSubtask(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+    @Param('subtaskId') subtaskId: string,
+    @Body() dto: UpdateTaskSubtaskDto,
+  ): Promise<TaskSubtaskDto> {
+    const isAdmin = await this.rbacService.memberHasAnyPermission(
+      chapterId,
+      userId,
+      [SystemPermissions.TASKS_MANAGE],
+    );
+    return this.taskService.setSubtaskDone(
+      id,
+      subtaskId,
+      chapterId,
+      userId,
+      isAdmin,
+      dto.done,
+    );
+  }
+
+  @Delete(':id/subtasks/:subtaskId')
+  @RequirePermissions(SystemPermissions.TASKS_MANAGE)
+  @ApiOperation({ summary: 'Remove a subtask (#4003)' })
+  async deleteSubtask(
+    @CurrentChapterId() chapterId: string,
+    @Param('id') id: string,
+    @Param('subtaskId') subtaskId: string,
+  ) {
+    await this.taskService.deleteSubtask(id, subtaskId, chapterId);
+    return { success: true };
   }
 
   @Delete(':id')

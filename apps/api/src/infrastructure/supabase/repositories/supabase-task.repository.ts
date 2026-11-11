@@ -6,8 +6,15 @@ import type {
   TablesUpdate,
 } from '../database.types';
 import { ITaskRepository } from '#domain/repositories/task.repository.interface';
-import { Task, TaskStatus } from '#domain/entities/task.entity';
+import {
+  Task,
+  TaskStatus,
+  type TaskSubtask,
+} from '#domain/entities/task.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
+
+/** Task ids per subtask read: 100 uuids keep the URL near 4 KB. */
+const SUBTASK_READ_BATCH = 100;
 
 @Injectable()
 export class SupabaseTaskRepository implements ITaskRepository {
@@ -123,5 +130,73 @@ export class SupabaseTaskRepository implements ITaskRepository {
       .eq('chapter_id', chapterId);
 
     if (error) throw new SupabaseQueryError(error);
+  }
+
+  async findSubtasks(
+    chapterId: string,
+    taskIds: string[],
+  ): Promise<TaskSubtask[]> {
+    // In batches, so a chapter-wide list of hundreds of tasks never builds a
+    // request URL past what PostgREST accepts.
+    const rows: TaskSubtask[] = [];
+    for (let i = 0; i < taskIds.length; i += SUBTASK_READ_BATCH) {
+      const { data, error } = await this.supabase
+        .from('task_subtasks')
+        .select('*')
+        .eq('chapter_id', chapterId)
+        .in('task_id', taskIds.slice(i, i + SUBTASK_READ_BATCH))
+        .order('task_id', { ascending: true })
+        .order('position', { ascending: true })
+        .order('created_at', { ascending: true });
+      if (error) throw new SupabaseQueryError(error);
+      rows.push(...(data || []));
+    }
+    return rows;
+  }
+
+  async createSubtasks(
+    rows: Pick<TaskSubtask, 'task_id' | 'chapter_id' | 'title' | 'position'>[],
+  ): Promise<TaskSubtask[]> {
+    if (rows.length === 0) return [];
+    const { data, error } = await this.supabase
+      .from('task_subtasks')
+      .insert(rows)
+      .select();
+    if (error) throw new SupabaseQueryError(error);
+    return (data || []).sort((a, b) => a.position - b.position);
+  }
+
+  async setSubtaskDone(
+    chapterId: string,
+    taskId: string,
+    subtaskId: string,
+    doneAt: string | null,
+  ): Promise<TaskSubtask | null> {
+    const { data, error } = await this.supabase
+      .from('task_subtasks')
+      .update({ done_at: doneAt })
+      .eq('id', subtaskId)
+      .eq('task_id', taskId)
+      .eq('chapter_id', chapterId)
+      .select()
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
+  async deleteSubtask(
+    chapterId: string,
+    taskId: string,
+    subtaskId: string,
+  ): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('task_subtasks')
+      .delete()
+      .eq('id', subtaskId)
+      .eq('task_id', taskId)
+      .eq('chapter_id', chapterId)
+      .select('id');
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).length > 0;
   }
 }

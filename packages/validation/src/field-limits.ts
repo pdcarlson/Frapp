@@ -115,6 +115,18 @@ export const DOCUMENT_TITLE_MAX_LENGTH = 255;
 export const TASK_TITLE_MAX_LENGTH = 255;
 
 /**
+ * A subtask's title (`task_subtasks.title`, #4003): one step of a chore,
+ * "Wipe the counters". The table's check refuses a longer one.
+ */
+export const TASK_SUBTASK_TITLE_MAX_LENGTH = 200;
+
+/**
+ * Subtasks on one task. A checklist longer than this is a project, not a
+ * chore, and a list that size stops reading at a glance.
+ */
+export const TASK_SUBTASKS_MAX = 20;
+
+/**
  * What a member says they did on a service entry
  * (`service_entries.description`), on web and mobile s20. The API's
  * `CreateServiceEntryDto` refuses a longer one, and s20's field stops at it.

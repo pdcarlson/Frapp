@@ -22,6 +22,7 @@ import {
 import { PressableRow } from "@/components/list-section";
 import { formatDueDate, formatPointsChip } from "@/lib/tasks/format";
 import type { TaskRowModel } from "@/lib/tasks/board";
+import { SubtaskChecklist } from "@/components/tasks/subtask-checklist";
 
 /**
  * A task, opened: what the row has no room for (owner audit 2026-11-06, P6.1,
@@ -144,6 +145,14 @@ export const TaskDetailSheet = forwardRef<
               <Text style={styles.description} selectable>
                 {row.description}
               </Text>
+            ) : null}
+
+            {row.subtasks.length > 0 ? (
+              <SubtaskChecklist
+                taskId={row.id}
+                subtasks={row.subtasks}
+                readOnly={row.pointsAwarded}
+              />
             ) : null}
 
             {meaning ? <Text style={styles.meaning}>{meaning}</Text> : null}

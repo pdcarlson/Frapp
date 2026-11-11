@@ -3,6 +3,7 @@
 import { useId, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useMembers } from "@repo/hooks";
+import { dueEntryFields } from "@repo/formatting";
 import { memberLabel } from "@repo/hooks/display-names";
 import type { DispatchResult, TaskInput } from "@repo/chat-core/dispatch";
 import { TASK_TITLE_MAX_LENGTH } from "@repo/validation";
@@ -30,6 +31,7 @@ import {
   useReportDraft,
 } from "@/components/shared/short-form";
 import { DueDateField } from "@/components/tasks/due-date-field";
+import { SubtaskListEditor } from "@/components/tasks/subtask-list-editor";
 import { pointsLabel } from "@/components/events/event-labels";
 import { useToast } from "@/lib/hooks/use-toast";
 import { guardIntDraft, parseGuardedInt } from "@/lib/utils";
@@ -48,6 +50,8 @@ export interface TaskDraft {
   dueDate: string;
   points: string;
   description: string;
+  /** The steps typed so far (#4003). */
+  subtasks: string[];
   showMore: boolean;
 }
 
@@ -62,6 +66,7 @@ export function taskDraftFrom(
     points:
       prefill.pointReward !== undefined ? String(prefill.pointReward) : "",
     description: "",
+    subtasks: [],
     // Open when the typed command set something that lives there.
     showMore: prefill.pointReward !== undefined,
   };
@@ -143,7 +148,9 @@ export function TaskForm({
         title: trimmed,
         description: draft.description.trim() || undefined,
         assignee_id: draft.assigneeId,
-        due_date: draft.dueDate,
+        // "YYYY-MM-DD", or with a time "YYYY-MM-DDTHH:MM" (#4003).
+        ...dueEntryFields(draft.dueDate),
+        subtasks: draft.subtasks.length > 0 ? draft.subtasks : undefined,
         point_reward: parseGuardedInt(draft.points),
       });
       if (!result.ok) {
@@ -247,7 +254,7 @@ export function TaskForm({
               ref={dueRef}
               id={`${ids}-due`}
               className={field}
-              placeholder="Friday"
+              placeholder="Friday 5pm"
               missing={missing.due}
               value={draft.dueDate}
               onChange={(value) => {
@@ -259,6 +266,11 @@ export function TaskForm({
           </div>
         </div>
       </div>
+      <SubtaskListEditor
+        items={draft.subtasks}
+        onChange={(subtasks) => edit({ subtasks })}
+        disabled={posting}
+      />
       <MoreOptionsToggle
         open={draft.showMore}
         onToggle={() => edit({ showMore: !draft.showMore })}
