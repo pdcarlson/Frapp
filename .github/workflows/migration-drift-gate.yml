@@ -86,12 +86,16 @@ concurrency:
   # on that runner, which is thrown away with it. Nothing in this workflow ever
   # sends SQL to a deployed database, so a superseded run has no cleanup to do
   # and no reason to finish.
-  # On main, one group per commit, so no main run ever waits in this group.
-  # GitHub keeps one running and ONE pending run per group and cancels any
-  # older pending run when a newer one queues, whatever cancel-in-progress
-  # says. Keyed on the ref, three merges in a few minutes drop the middle
-  # commit's run before it starts: its required checks never report and
-  # Deploy production can't pick it. scripts/ci/__tests__/workflow-concurrency.test.mjs.
+  #
+  # On a PR ref the group is the ref. On main it is the commit, so main runs
+  # never share a group (2026-11-11). GitHub keeps one running and ONE pending
+  # run per group, and cancels the older pending run when a newer one queues,
+  # whatever `cancel-in-progress` says. Keyed on the ref, a burst of merges
+  # dropped the waiting runs before they started: `migration-order` and
+  # `migration-replay` never reported on 14 of 15 commits, and Deploy
+  # production's empty-`sha` pick found nothing (run 43110385644). Running in
+  # parallel is safe for the reason above: no job here writes anything shared.
+  # ci.yml keeps its per-ref group on purpose; its comment says why.
   group: migration-drift-gate-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   # Cancellable on a PR ref, NEVER on main.
   #

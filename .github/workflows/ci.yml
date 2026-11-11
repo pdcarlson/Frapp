@@ -7,13 +7,15 @@ on:
     branches: [main]
 
 concurrency:
-  # On main, one group per commit, so no main run ever waits in this group.
-  # GitHub keeps one running and ONE pending run per group and cancels any
-  # older pending run when a newer one queues, whatever cancel-in-progress
-  # says. Keyed on the ref, three merges in a few minutes drop the middle
-  # commit's run before it starts: its required checks never report and
-  # Deploy production can't pick it. scripts/ci/__tests__/workflow-concurrency.test.mjs.
-  group: ci-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  # Keyed on the ref on main too, unlike migration-drift-gate.yml, and on
+  # purpose. Main runs here therefore go one at a time, and GitHub drops a
+  # waiting run when a newer one queues, so in a burst of merges some commits
+  # get no CI and no staging deploy. Those commits can't be picked by Deploy
+  # production, which ships the newest one that can. Running main CI in
+  # parallel would fix that but let CI finish out of order, and Deploy staging
+  # fires on CI completion: an older commit's run would then apply migrations
+  # from a tree that lacks ones a newer run already applied, and fail.
+  group: ci-${{ github.ref }}
   # Never cancel on main: a cancelled push run leaves required checks
   # `cancelled`, which validate-deploy-sha.mjs refuses (§ CANCELLED_CONCLUSIONS).
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
