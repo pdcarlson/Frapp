@@ -113,7 +113,8 @@ export function normalizeSha(value) {
  * GitHub keeps one running and one pending run per concurrency group, and
  * cancels the older pending run when a newer one queues, whatever
  * `cancel-in-progress` says. Such a run's checks never report, so they land in
- * `missing`, not here. On 2026-11-11 that dropped `migration-order` and
+ * `missing`, not here; re-running the dropped run from the Actions UI is the
+ * remedy, as for a cancelled one. On 2026-11-11 that dropped `migration-order` and
  * `migration-replay` from 14 of 15 commits on `main`, and Deploy production's
  * empty-`sha` pick found nothing. `migration-drift-gate.yml` now keys a main
  * run's group on the commit; `ci.yml` deliberately does not, so a commit in a

@@ -101,6 +101,16 @@ Action:
 > Actions UI (GitHub keeps them 30 days), then retry the deploy. The failure
 > message reports cancelled checks apart from genuine failures and names this
 > remedy, so you should not have to reach this page to find it.
+>
+> **A third door: a dropped run.** A commit can be refused with a check whose
+> job it defines reported as `never reported`. GitHub keeps one running and one
+> pending run per concurrency group and cancels the pending one when a newer
+> one queues, so a run can be dropped before any job starts. In the Actions UI
+> that commit's run of the workflow shows as cancelled with no jobs. The remedy
+> is the same re-run, then retry the deploy. `migration-drift-gate.yml` keys a
+> `main` run's group on the commit, so its runs are no longer dropped
+> (2026-11-11); `ci.yml` keeps its per-ref group on purpose, so a commit merged
+> in a burst can still have no CI run.
 
 ### 2) Full rollback to backup/snapshot
 

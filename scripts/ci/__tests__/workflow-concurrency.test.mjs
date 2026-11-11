@@ -121,10 +121,11 @@ describe("workflow concurrency — a main push run must never cancel another", (
     // `cancel-in-progress: false` stops a RUNNING run from being cancelled, not
     // a PENDING one: GitHub keeps one running and one pending run per group and
     // cancels the older pending run when a newer one queues. Keyed on the bare
-    // ref, a burst of merges dropped migration-drift-gate's waiting runs, so
+    // ref, merges arriving while one run waited dropped migration-drift-gate's
+    // pending runs, so
     // `migration-order` and `migration-replay` never reported on 14 of 15
     // commits and Deploy production's empty-`sha` pick found nothing
-    // (2026-11-11, run 43110385644). Nothing in that workflow writes anything
+    // (2026-11-11, run 43110385644 attempt 1). Nothing in that workflow writes anything
     // shared, so its main runs go in parallel, one group per commit.
     const gate = workflows.find((w) => w.name === "migration-drift-gate.yml");
     assert.ok(gate, "migration-drift-gate.yml must exist");

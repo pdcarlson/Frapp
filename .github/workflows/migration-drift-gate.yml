@@ -80,37 +80,28 @@ permissions:
   contents: read
 
 concurrency:
-  # Per-ref, and cancellable. Neither job here can leave anything half-done
-  # outside its own runner: `migration-drift` is a read-only assertion, and
-  # `migration-replay` writes only to the disposable Supabase stack it started
-  # on that runner, which is thrown away with it. Nothing in this workflow ever
-  # sends SQL to a deployed database, so a superseded run has no cleanup to do
-  # and no reason to finish.
+  # Neither job here can leave anything half-done outside its own runner:
+  # `migration-drift` is a read-only assertion, and `migration-replay` writes
+  # only to the disposable Supabase stack it started on that runner, which is
+  # thrown away with it. Nothing in this workflow ever sends SQL to a deployed
+  # database, so a superseded PR run has no cleanup to do and no reason to
+  # finish, and main runs are safe to run side by side.
   #
-  # On a PR ref the group is the ref. On main it is the commit, so main runs
-  # never share a group (2026-11-11). GitHub keeps one running and ONE pending
-  # run per group, and cancels the older pending run when a newer one queues,
-  # whatever `cancel-in-progress` says. Keyed on the ref, a burst of merges
-  # dropped the waiting runs before they started: `migration-order` and
+  # On a PR ref the group is the ref, and a new push cancels the old run. On
+  # main the group is the commit, so main runs never share one (2026-11-11).
+  # GitHub keeps one running and ONE pending run per group, and cancels the
+  # pending run when a newer one queues, whatever `cancel-in-progress` says.
+  # Keyed on `github.ref`, every push to main shared one group: while one run
+  # waited (its jobs sat over an hour for a runner that afternoon), each merge
+  # replaced the previous waiting run before it started. `migration-order` and
   # `migration-replay` never reported on 14 of 15 commits, and Deploy
-  # production's empty-`sha` pick found nothing (run 43110385644). Running in
-  # parallel is safe for the reason above: no job here writes anything shared.
+  # production's empty-`sha` pick found nothing (run 43110385644, attempt 1).
   # ci.yml keeps its per-ref group on purpose; its comment says why.
   group: migration-drift-gate-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
-  # Cancellable on a PR ref, NEVER on main.
-  #
-  # `github.ref` is `refs/heads/main` for every push to main, so an unguarded
-  # `cancel-in-progress: true` puts every merge's push run in one group — and
-  # two merges a few minutes apart (routine here) means the first commit's run
-  # is cancelled by the second's. Its required checks conclude `cancelled`,
-  # nothing re-runs them, and `validate-deploy-sha.mjs` then refuses to deploy
-  # that commit: a cancelled check asserted nothing, and `jobIdsAtRef` cannot
-  # excuse it because the run exists. The commit is undeployable, which lands on
-  # exactly the operation that needs it — a code-only rollback redeploys an
-  # older commit.
-  #
-  # Cancelling a PR run costs a re-push. Cancelling a main push run costs a
-  # commit's deployability. Only the first is worth the minutes.
+  # Cancellable on a PR ref, never on main. With a per-commit group a main run
+  # has nothing to cancel, but a main run cancelled for any reason leaves its
+  # checks `cancelled`, which `validate-deploy-sha.mjs` refuses, so the guard
+  # stays (#1378).
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
