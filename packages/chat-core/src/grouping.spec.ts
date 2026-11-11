@@ -136,6 +136,58 @@ describe("decorateThread — runs", () => {
     ).toEqual([true, true]);
   });
 
+  it("starts a run on a flagged message, so its flag has an author line (#4288)", () => {
+    expect(
+      runs([
+        visible(msg({ created_at: at(28, 17, 15) })),
+        visible(msg({ flag: "important", created_at: at(28, 17, 16) })),
+        // The row after a flagged one joins it as usual.
+        visible(msg({ created_at: at(28, 17, 17) })),
+      ]),
+    ).toEqual([true, true, false]);
+  });
+
+  it("does not break a run for a flag that draws nowhere", () => {
+    expect(
+      runs([
+        visible(msg({ created_at: at(28, 17, 15) })),
+        // A deleted message draws no flag.
+        visible(
+          msg({ flag: "funny", is_deleted: true, created_at: at(28, 17, 16) }),
+        ),
+      ]),
+    ).toEqual([true, false]);
+    expect(
+      runs([
+        visible(msg({ created_at: at(28, 17, 15) })),
+        // Nor does a blocked member's tombstone.
+        {
+          message: msg({ flag: "important", created_at: at(28, 17, 16) }),
+          visibility: "tombstone",
+        },
+      ]),
+    ).toEqual([true, false]);
+  });
+
+  it("keeps a flagged audit line in its stack", () => {
+    // The client offers no flag on an audit line, but the server accepts one.
+    const audit = (minute: number, flag: string | null = null) =>
+      visible(
+        msg({
+          sender_id: "system",
+          kind: "system_audit",
+          payload: { action: "chapter_config_updated", diff: {} },
+          created_at: at(28, 17, minute),
+          flag,
+        }),
+      );
+    expect(runs([audit(11), audit(12, "important"), audit(13)])).toEqual([
+      true,
+      false,
+      false,
+    ]);
+  });
+
   it("starts a run on a card, and after one", () => {
     expect(
       runs([
