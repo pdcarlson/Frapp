@@ -295,8 +295,20 @@ export const MessageActionsSheet = forwardRef<
   // dismissed while closed, and its next `present()` draws nothing (#3795).
   const menuVisit = useSheetVisit(menuRef);
   const pickerVisit = useSheetVisit(pickerRef);
-  const { dismiss: dismissMenu } = menuVisit;
-  const { dismiss: dismissPicker } = pickerVisit;
+  const reportVisit = useSheetVisit(reportRef);
+  const {
+    visit: menuVisitNow,
+    isSameVisit: isSameMenuVisit,
+    dismiss: dismissMenu,
+    willPresent: willPresentMenu,
+  } = menuVisit;
+  const { dismiss: dismissPicker, willPresent: willPresentPicker } =
+    pickerVisit;
+  const {
+    visit: reportVisitNow,
+    isSameVisit: isSameReportVisit,
+    dismiss: dismissOpenReport,
+  } = reportVisit;
 
   useImperativeHandle(
     ref,
@@ -308,6 +320,7 @@ export const MessageActionsSheet = forwardRef<
       // chat. Every other sheet in the thread closes the keyboard the same way.
       present: () => {
         Keyboard.dismiss();
+        willPresentMenu();
         menuRef.current?.present();
       },
       // The picker too: it replaced the menu and acts on the same message.
@@ -319,7 +332,7 @@ export const MessageActionsSheet = forwardRef<
         dismissPicker();
       },
     }),
-    [dismissMenu, dismissPicker],
+    [dismissMenu, dismissPicker, willPresentMenu],
   );
 
   const report = useReportMessage();
@@ -392,21 +405,25 @@ export const MessageActionsSheet = forwardRef<
     const text = target?.copyText;
     const messageId = target?.messageId;
     if (!text || !messageId) return;
+    // The visit the copy was tapped in: a clipboard write that settles after
+    // the menu closed arms no timer, since nothing would clear it (#3795).
+    const visit = menuVisitNow();
     void Clipboard.setStringAsync(text)
       .then(() => {
+        if (!isSameMenuVisit(visit)) return;
         selectionHaptic();
         setCopiedFor(messageId);
         announce(COPIED_LABEL);
         if (copyTimer.current) clearTimeout(copyTimer.current);
         copyTimer.current = setTimeout(() => {
           copyTimer.current = null;
-          menuRef.current?.dismiss();
+          dismissMenu();
         }, COPIED_HOLD_MS);
       })
       .catch(() => {
         Alert.alert("Couldn't copy", "Try again in a moment.");
       });
-  }, [target]);
+  }, [dismissMenu, isSameMenuVisit, menuVisitNow, target]);
 
   const senderLabel = target?.senderName ?? UNNAMED_MEMBER;
   const canBlock = !!target?.blockUserId;
@@ -447,8 +464,9 @@ export const MessageActionsSheet = forwardRef<
 
   /** Opens every emoji in place of the menu (`stackBehavior="replace"`). */
   const openPicker = useCallback(() => {
+    willPresentPicker();
     pickerRef.current?.present();
-  }, []);
+  }, [willPresentPicker]);
   const pickFromPicker = useCallback(
     (emoji: string, mine: boolean) => {
       const messageId = target?.messageId;
@@ -477,14 +495,27 @@ export const MessageActionsSheet = forwardRef<
   const startBlock = useCallback(() => {
     const userId = target?.blockUserId;
     if (!userId) return;
+    // The block settles after a network call, by which time the member may
+    // have closed the form, or closed it and opened another (#3795).
+    const visit = reportVisitNow();
     confirmBlockMember({
       name: target?.senderName ?? null,
       inDirectory: senderInDirectory,
       run: () => block(userId),
-      onDone: () => reportRef.current?.dismiss(),
+      onDone: () => {
+        if (isSameReportVisit(visit)) dismissOpenReport();
+      },
       onNotAMember: () => onSenderDeparted?.(userId),
     });
-  }, [block, onSenderDeparted, senderInDirectory, target]);
+  }, [
+    block,
+    dismissOpenReport,
+    isSameReportVisit,
+    onSenderDeparted,
+    reportVisitNow,
+    senderInDirectory,
+    target,
+  ]);
 
   const submitReport = useCallback(() => {
     if (!target || !reason) return;
@@ -719,7 +750,11 @@ export const MessageActionsSheet = forwardRef<
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}
         backdropComponent={SheetScrim}
-        onDismiss={resetReport}
+        onAnimate={reportVisit.onAnimate}
+        onDismiss={() => {
+          reportVisit.markClosed();
+          resetReport();
+        }}
       >
         <SheetBackToClose onClose={closeReport} />
         <BottomSheetScrollView

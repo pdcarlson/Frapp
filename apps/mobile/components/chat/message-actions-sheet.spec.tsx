@@ -562,6 +562,9 @@ describe("MessageActionsSheet — dismissed for a deleted message (#3795)", () =
   const isPicker = (props: ModalProps) =>
     props.stackBehavior === "replace" &&
     JSON.stringify(props.snapPoints) === JSON.stringify(["100%"]);
+  const isReport = (props: ModalProps) =>
+    props.stackBehavior === "replace" &&
+    JSON.stringify(props.snapPoints) === JSON.stringify(["85%"]);
 
   /**
    * gorhom 5.2's modal as far as this bug goes: `dismiss()` on a modal that
@@ -583,9 +586,10 @@ describe("MessageActionsSheet — dismissed for a deleted message (#3795)", () =
     return modal;
   }
 
-  function mount() {
+  function mount(target: MessageActionsTarget = TARGET) {
     const menu = fakeModal();
     const picker = fakeModal();
+    const report = fakeModal();
     const handle = createRef<MessageActionsSheetHandle>();
     let tree!: ReactTestRenderer;
     act(() => {
@@ -593,7 +597,7 @@ describe("MessageActionsSheet — dismissed for a deleted message (#3795)", () =
         <FrappThemeProvider>
           <MessageActionsSheet
             ref={handle}
-            target={TARGET}
+            target={target}
             onReact={vi.fn()}
             onUnreact={vi.fn()}
           />
@@ -604,6 +608,7 @@ describe("MessageActionsSheet — dismissed for a deleted message (#3795)", () =
             const props = element.props as ModalProps;
             if (isMenu(props)) return menu;
             if (isPicker(props)) return picker;
+            if (isReport(props)) return report;
             return fakeModal();
           },
         },
@@ -619,7 +624,7 @@ describe("MessageActionsSheet — dismissed for a deleted message (#3795)", () =
       act(() => modal(which).props.onAnimate?.(-1, 0));
     const closed = (which: (props: ModalProps) => boolean) =>
       act(() => modal(which).props.onDismiss?.());
-    return { menu, picker, handle, tree, opened, closed };
+    return { menu, picker, report, handle, tree, opened, closed };
   }
 
   it("leaves both modals alone when the message is deleted after the menu closed", () => {
@@ -666,6 +671,83 @@ describe("MessageActionsSheet — dismissed for a deleted message (#3795)", () =
     expect(picker.dismiss).toHaveBeenCalledTimes(1);
     expect(menu.dismiss).not.toHaveBeenCalled();
     expect(picker.wedged).toBe(false);
+  });
+  it("leaves the picker alone when it was opened and closed before the delete", () => {
+    const { menu, picker, handle, tree, opened, closed } = mount();
+    act(() => handle.current?.present());
+    opened(isMenu);
+    pressByLabel(tree, "Add a reaction");
+    opened(isPicker);
+    closed(isMenu);
+    closed(isPicker);
+
+    act(() => handle.current?.dismiss());
+    expect(picker.dismiss).not.toHaveBeenCalled();
+    expect(menu.dismiss).not.toHaveBeenCalled();
+
+    pressByLabel(tree, "Add a reaction");
+    expect(picker.wedged).toBe(false);
+    expect(picker.shown).toBe(true);
+  });
+
+  it("closes the menu once it starts to open when the delete lands first", () => {
+    const { menu, handle, opened } = mount();
+    // Deleted between the long-press and gorhom's first frame: not up yet,
+    // so dismissing now would wedge it, and dropping it would open the menu
+    // on a deleted message.
+    act(() => handle.current?.present());
+    act(() => handle.current?.dismiss());
+    expect(menu.dismiss).not.toHaveBeenCalled();
+
+    opened(isMenu);
+    expect(menu.dismiss).toHaveBeenCalledTimes(1);
+    expect(menu.wedged).toBe(false);
+  });
+
+  it("arms no Copied close for a copy that settles after the menu closed", async () => {
+    vi.useFakeTimers();
+    try {
+      const write = deferred<boolean>();
+      vi.mocked(Clipboard.setStringAsync).mockReturnValueOnce(write.promise);
+      const { menu, handle, tree, opened, closed } = mount({
+        ...TARGET,
+        copyText: "hi",
+      });
+      act(() => handle.current?.present());
+      opened(isMenu);
+      pressByLabel(tree, "Copy text");
+      closed(isMenu);
+
+      write.resolve(true);
+      await flush();
+      act(() => vi.runAllTimers());
+      expect(menu.dismiss).not.toHaveBeenCalled();
+      expect(menu.wedged).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leaves a closed report form alone when a block settles late", async () => {
+    const request = deferred<undefined>();
+    blockActions.block.mockReturnValueOnce(request.promise);
+    const { report, tree, opened, closed } = mount({
+      ...TARGET,
+      blockUserId: BLOCKED,
+    });
+    opened(isReport);
+    pressByLabel(tree, "Block Blake");
+    const [, , buttons] = vi.mocked(Alert.alert).mock.calls[0]!;
+    act(() => buttons!.find((b) => b.style === "destructive")!.onPress!());
+    // The member swipes the form away while the block is in flight.
+    closed(isReport);
+
+    request.resolve(undefined);
+    await flush();
+    await flush();
+    expect(blockActions.block).toHaveBeenCalledWith(BLOCKED);
+    expect(report.dismiss).not.toHaveBeenCalled();
+    expect(report.wedged).toBe(false);
   });
 });
 
