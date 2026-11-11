@@ -5,7 +5,7 @@ import {
   CHAPTER_CONFIG_REPOSITORY,
   type IChapterConfigRepository,
 } from '#domain/repositories/chapter-config.repository.interface';
-import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 /**
  * DI token for the workflow catalog (`WORKFLOWS_SEED`), bound in
@@ -85,12 +85,14 @@ export class ChapterWorkflowsService {
       // degrades one decision rather than 500ing it. `ChapterPointsConfigService`
       // models the same split explicitly as `getConfig` / `getConfigOrThrow`.
       // Do not "restore consistency" by making either side match the other.
-      logThrowable(
-        this.logger,
-        'warn',
-        `chapter_workflows read failed for chapter ${chapterId} key ${key}; applying seed default (enabled=${seed?.enabled ?? false})`,
-        err,
-      );
+      // Reported (#4096), so a read that keeps failing isn't a silent policy
+      // swap.
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'chapter-workflows-read',
+        message: `chapter_workflows read failed for chapter ${chapterId} key ${key}; applying seed default (enabled=${seed?.enabled ?? false})`,
+        error: err,
+      });
     }
     if (!row) {
       return {

@@ -1,3 +1,4 @@
+import * as caughtFailure from '../../infrastructure/observability/report-caught-failure';
 import {
   NotFoundException,
   BadRequestException,
@@ -668,6 +669,8 @@ describe('ChatService', () => {
           new Error('function get_hidden_channel_ids does not exist'),
         );
 
+        const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
+
         const result = await service.getChannelList('ch-1', 'user-1');
 
         expect(result.map((channel) => [channel.id, channel.hidden])).toEqual([
@@ -675,6 +678,14 @@ describe('ChatService', () => {
           ['ch-dm-mine', false],
           ['ch-priv-mine', false],
         ]);
+        expect(reported).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({
+            level: 'warning',
+            site: 'chat-hidden-channels-read',
+          }),
+        );
+        reported.mockRestore();
       });
 
       it('skips the hidden lookup when the caller has no DM in the list', async () => {

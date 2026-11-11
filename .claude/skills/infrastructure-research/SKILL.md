@@ -159,12 +159,31 @@ From a session, use the Supabase MCP (`list_projects`, `list_migrations`). A ref
 project it belongs to, so look up refs by project name with `list_projects`. Never use one from
 memory.
 
-## Render: API deployment status
+## Render: API deployment status and logs
 
-From a session, use the Render MCP (`list_services`, `list_deploys`, `get_deploy`) and pass
-`workspaceId` on every call: it starts with none selected, and
-[`AGENT_CREDENTIALS.md`](../../../docs/internal/environment/AGENT_CREDENTIALS.md#provider--research-credentials)
-names the workspace. On a laptop, with a Render API key of your own in `RENDER_API_KEY`:
+From a session, use the Render MCP (`list_services`, `list_deploys`, `get_deploy`, `list_logs`)
+and pass `workspaceId` on every call. It starts with no workspace selected, and `list_workspaces`
+returns two: Frapp's is **Paul's workspace**, `tea-d6lqqdpaae7s73f60uj0`; the other (`Web Sci 2G`)
+is unrelated, so never pick one by position. Frapp's services in it:
+
+| Service | Id |
+| --- | --- |
+| `frapp-api-prod` | `srv-d6lqu41aae7s73f62df0` |
+| `frapp-api-staging` | `srv-d6lqsq75r7bs73c2fdc0` |
+
+(Read 2026-11-11 with `list_workspaces` and `list_services`.)
+
+**Logs** ([#4096](https://github.com/pdcarlson/Frapp/issues/4096)). `list_logs` takes
+`resource: [<service id>]` and the same `workspaceId`. Narrow it with `type: ["app"]` (the API's
+own lines), `text` (a Sentry event's `request_id` tag, such as `req_…`, finds that request's line),
+`level`, `statusCode`, `path`, and `startTime` / `endTime` (RFC 3339, within the last 30 days);
+`limit` is at most 100, and while `hasMore` is true, pass back `nextStartTime` / `nextEndTime` for
+the next page. A request line carries `requestId`, `method`, `path`, `statusCode` and `latencyMs`,
+not the error's message. Lines hold raw user and chapter ids, so quote ids from them only in this
+chat, never in an issue or PR. Checked 2026-11-11: a `text` filter on four production request ids
+returned their four lines.
+
+On a laptop, with a Render API key of your own in `RENDER_API_KEY`:
 
 ```bash
 curl -s -H "Authorization: Bearer $RENDER_API_KEY" \

@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { CronExpression } from '@nestjs/schedule';
+import { ReportedCron } from './reported-cron.decorator';
 import { randomUUID } from 'node:crypto';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
@@ -283,7 +284,7 @@ export class DiscordImportWorkerService {
    * `consumeState` refuses it on `expires_at` regardless of whether it is still
    * on disk. This is housekeeping, not a control.
    */
-  @Cron(CronExpression.EVERY_HOUR)
+  @ReportedCron(CronExpression.EVERY_HOUR)
   async handleOAuthStateSweep(): Promise<void> {
     try {
       const reaped = await this.connectionRepo.deleteExpiredStates(new Date());
@@ -291,8 +292,9 @@ export class DiscordImportWorkerService {
         this.logger.log(`Reaped ${reaped} expired Discord OAuth handshakes.`);
       }
     } catch (error) {
-      // Same reasoning as the import sweep: a rejection out of a `@Cron`
-      // reaches only Nest's raw `logger.error`, never Sentry.
+      // Same reasoning as the import sweep: `@ReportedCron` would report a
+      // rejection, but only as `cron:handle-oauth-state-sweep` at `error`;
+      // this names the sweep, at the level a reaping miss deserves.
       reportCaughtFailure(this.logger, {
         level: 'warning',
         site: 'discord-oauth-state-sweep',
@@ -306,12 +308,12 @@ export class DiscordImportWorkerService {
    * The tick.
    *
    * The try/catch is not decoration: this handler reaches storage and the
-   * database. `@nestjs/schedule` catches a rejected `@Cron` and hands the raw
-   * throwable to Nest's `logger.error`, which reaches no alert and can print a
-   * PostgREST `details`. Caught here, a failed sweep costs one tick and reports
-   * to Sentry as `discord-import-sweep-tick`.
+   * database. `@ReportedCron` would report a rejection under the handler's
+   * name (#3498); caught here, a failed sweep costs one tick and reports to
+   * Sentry as `discord-import-sweep-tick`, the site its alerts and specs
+   * know.
    */
-  @Cron(CronExpression.EVERY_MINUTE)
+  @ReportedCron(CronExpression.EVERY_MINUTE)
   async handleImportSweep(): Promise<void> {
     try {
       await this.sweepImports(new Date());
@@ -613,12 +615,14 @@ export class DiscordImportWorkerService {
         importFinishedNotification(row),
       );
     } catch (error) {
-      logThrowable(
-        this.logger,
-        'warn',
-        `Could not send the finished notice for import ${row.id}`,
+      // One notice to one officer: `warning`, reported so it isn't silent
+      // (#4096).
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'discord-import-finished-notify',
+        message: `Could not send the finished notice for import ${row.id}`,
         error,
-      );
+      });
     }
   }
 

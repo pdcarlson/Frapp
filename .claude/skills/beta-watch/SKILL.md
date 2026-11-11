@@ -130,7 +130,11 @@ at or before the mark.
 File (or update) an issue for:
 
 - A Sentry production issue at level error or above that isn't already tracked, unless it is
-  clearly noise (a bot, a browser extension, a single event from a dev build).
+  clearly noise (a bot, a browser extension, a single event from a dev build). That includes a
+  `ClientContractError` in `frapp-web` or `frapp-mobile` (tag `api_error_class: client-contract`):
+  the API refused a request a correct client never sends, so it is a client bug however few users
+  hit it ([`observability.md` § Error Tracking](../../../spec/behavior/observability.md#error-tracking)).
+  Name the `error_code` and `query_key_root` tags in the title's symptom.
 - A server failure the API never saw: a `frapp-web` or `frapp-mobile` issue tagged
   `query_failure:http` and `status_class:5xx` (these arrive at `warning`,
   [#3377](https://github.com/pdcarlson/Frapp/issues/3377)) whose events carry no `request_id`, or
@@ -143,7 +147,9 @@ File (or update) an issue for:
     as Supabase Storage on an upload: the chat file PUT reports as `mutation "storage"`, and the
     chapter logo upload, whose PUT is one step of `mutation "chapters"`, carries no `request_id`
     when Storage refused it. Check the event's breadcrumbs.
-  - Other client warnings (4xx, network drops, `query_failure:exception`) stay unfiled.
+  - Other client warnings (a 4xx `ApiError`, network drops, `query_failure:exception`) stay
+    unfiled. A client-contract 4xx is not a warning: it arrives at `error` as a
+    `ClientContractError` and is filed under the first bullet.
 
   Owner decision, 2026-11-08: under the error-only bar, the apps' warnings were never filed,
   including a 504 on the sign-in screen's client-policy query.

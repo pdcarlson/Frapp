@@ -27,10 +27,8 @@ them with the `mcp__Render__*`, `mcp__Vercel__*` and `mcp__Supabase__*` tools, w
 through the sandbox allowlist. A key would buy nothing, because the sandbox blocks all three
 providers' APIs ([`CLOUD_SANDBOX.md` § What this does not unlock](./CLOUD_SANDBOX.md#what-this-does-not-unlock)).
 The Render MCP starts with no workspace selected, so pass `workspaceId` on each
-call. Frapp's services (`frapp-api-staging`, `frapp-api-prod`) are in **Paul's workspace**
-(`tea-d6lqqdpaae7s73f60uj0`), and `list_workspaces` also returns an unrelated one (checked
-2026-09-24 with `list_workspaces` and `list_services`). Recipes:
-[`infrastructure-research`](../../../.claude/skills/infrastructure-research/SKILL.md).
+call. Which workspace and service ids are Frapp's, and how to read deploys and logs:
+[`infrastructure-research` § Render](../../../.claude/skills/infrastructure-research/SKILL.md#render-api-deployment-status-and-logs).
 
 **Retired.** Don't use these from a session. If one is still set, tell Paul so he can remove it
 from the Claude Code environment.

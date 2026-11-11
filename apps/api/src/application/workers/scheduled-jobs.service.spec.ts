@@ -208,6 +208,33 @@ describe('ScheduledJobsService', () => {
       expect(markAutoAbsent).toHaveBeenCalledWith('evt-ok', 'chap-1');
     });
 
+    it('skips an event with no valid end_time and sweeps the rest (#3498)', async () => {
+      findEventsPendingAutoAbsent.mockResolvedValue([
+        { id: 'evt-null', chapter_id: 'chap-1', end_time: null },
+        { id: 'evt-junk', chapter_id: 'chap-1', end_time: 'not a date' },
+        {
+          id: 'evt-ok',
+          chapter_id: 'chap-1',
+          end_time: '2026-08-05T10:00:00Z',
+        },
+      ]);
+
+      const result = await service.sweepAutoAbsent(NOW);
+
+      expect(result).toEqual({ events: 1 });
+      expect(markAutoAbsent).toHaveBeenCalledTimes(1);
+      expect(markAutoAbsent).toHaveBeenCalledWith('evt-ok', 'chap-1');
+      // One report for the site, however many rows share the fault.
+      expect(captureMessage).toHaveBeenCalledTimes(1);
+      expect(captureMessage).toHaveBeenCalledWith(
+        'caught failure: auto-absent-sweep-invalid-end-time',
+        expect.objectContaining({
+          level: 'warning',
+          fingerprint: ['caught-failure', 'auto-absent-sweep-invalid-end-time'],
+        }),
+      );
+    });
+
     it('does not log PostgREST details when marking throws a plain object', async () => {
       const details =
         'Key (email)=(alice@example.com) is not present in table "users".';
@@ -267,6 +294,32 @@ describe('ScheduledJobsService', () => {
       is_mandatory: true,
       required_role_ids: null,
     };
+
+    it('skips an event with no valid start_time and reminds the rest (#3498)', async () => {
+      findEventsStartingBetween.mockResolvedValue([
+        { ...UPCOMING, id: 'evt-bad', start_time: 'not a date' },
+        UPCOMING,
+      ]);
+      resolveRequiredMembers.mockResolvedValue([
+        { user_id: 'user-1', role_ids: [] },
+      ]);
+
+      await expect(service.sweepEventReminders(NOW)).resolves.toEqual({
+        sent: 1,
+      });
+      expect(notifyUser).toHaveBeenCalledTimes(1);
+      // The guard's own error, not `toISOString`'s RangeError, so the event
+      // that failed is the one named.
+      expect(captureException).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'event evt-bad has no valid start_time',
+        }),
+        expect.objectContaining({
+          level: 'warning',
+          fingerprint: expect.arrayContaining(['event-reminder-sweep-event']),
+        }),
+      );
+    });
 
     it('notifies every required member that the event is starting soon', async () => {
       findEventsStartingBetween.mockResolvedValue([UPCOMING]);

@@ -50,6 +50,15 @@ export const LEGAL_ACCEPTANCE_REQUIRED_MESSAGE =
   "Agree to the Terms of Service and Privacy Policy to continue.";
 
 /**
+ * The code on every 400 the API's global `ValidationPipe` answers with: a
+ * body, query or path DTO it refuses (#4096). The `message` stays the pipe's
+ * array of field failures. Clients don't word it (`copyForErrorCode`), since
+ * a member's form is validated before it is sent; `@repo/observability`
+ * classes it as client-contract, so a client that sends one reports a bug.
+ */
+export const REQUEST_VALIDATION_FAILED_CODE = "request.validation_failed";
+
+/**
  * The 404 code on `GET /v1/channels/{id}/messages` when its `since` cursor
  * names no message in the channel (#2807). Chat clients read it
  * (`readMessageRows` in `@repo/chat-core/history`) to tell a cursor they should

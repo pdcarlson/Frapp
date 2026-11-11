@@ -1,3 +1,4 @@
+import * as caughtFailure from '../../infrastructure/observability/report-caught-failure';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
@@ -1198,6 +1199,7 @@ describe('TaskService', () => {
         mockNotificationService.notifyUser.mockRejectedValueOnce(
           new Error('push provider down'),
         );
+        const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
 
         const result = await service.updateStatus(
           'task-1',
@@ -1208,6 +1210,12 @@ describe('TaskService', () => {
         );
 
         expect(result.status).toBe(TaskStatus.COMPLETED);
+        // Reported, not only logged (#4096).
+        expect(reported).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ level: 'warning', site: 'task-notify' }),
+        );
+        reported.mockRestore();
         expect(mockTaskRepo.update).toHaveBeenCalledWith(
           'task-1',
           'ch-1',

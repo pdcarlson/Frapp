@@ -333,12 +333,16 @@ export class NotificationService {
         category,
       );
     } catch (err) {
-      logThrowable(
-        this.logger,
-        'warn',
-        `Push delivery failed for user ${userId}`,
-        err,
-      );
+      // The provider reports its own transport failures, and a failed prune
+      // is caught below, so what lands here is the token lookup. `error`: a
+      // lookup that keeps failing sends no push to anyone, and nothing
+      // retries one (#4096).
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'notify-user-push-tokens-read',
+        message: `Push delivery failed for user ${userId}`,
+        error: err,
+      });
     }
   }
 
