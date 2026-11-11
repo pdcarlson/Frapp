@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-11: Unread dots on Activity (#4173)
+
+### 20261111200000_activity_item_reads.sql
+
+- **Purpose**: Adds `activity_item_reads` (one row per member per chapter per Activity item they opened: `kind` in `task`, `hours_entry`, `poll`, `event`, `link`, the module's `item_id` with no foreign key, and `read_at`; primary key `(user_id, chapter_id, kind, item_id)`; cascades with the user and the chapter), RLS on with no policies. `GET /v1/activity` reads it to set each row's `unread`, and `POST /v1/activity/reads` writes it. Redefines `anonymize_user` in full from `20261111180000_document_pins_and_stars.sql` with one added line deleting the member's `activity_item_reads`. No existing row changes. The rule is [`spec/behavior/activity.md` § Unread](../../../spec/behavior/activity.md#unread).
+- **Checks**: After `db push`, `select count(*) from activity_item_reads;` returns `0`, and `select prosrc like '%activity_item_reads%' from pg_proc where proname = 'anonymize_user';` returns `t`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never reads or writes the table. The newer API against an unmigrated database serves every Activity row as read (the read is caught and reported) and fails `POST /v1/activity/reads` (500); the page itself still loads. A new table takes no lock on an existing one. `if not exists` and `create or replace` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-unread-dots-on-activity-20261111200000) § Rollback Unread dots on Activity.
+
 ## 2026-11-11: Chapter channel order (#4178)
 
 ### 20261111190000_chat_channels_display_order.sql

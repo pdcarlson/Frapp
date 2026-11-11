@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
+  ActivityItemRead,
   BackworkCourse,
   BackworkDepartment,
   BackworkProfessor,
@@ -145,6 +146,7 @@ export interface Database {
       chat_message_bookmarks: TableDefinition<ChatMessageBookmark>;
       chat_message_links: TableDefinition<ChatMessageLink>;
       chat_link_member_states: TableDefinition<ChatLinkMemberState>;
+      activity_item_reads: TableDefinition<ActivityItemRead>;
       chat_thread_follows: TableDefinition<ChatThreadFollow>;
       chat_message_reports: TableDefinition<ChatMessageReport>;
       chat_member_blocks: TableDefinition<ChatMemberBlock>;

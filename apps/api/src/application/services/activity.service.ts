@@ -5,6 +5,12 @@ import {
   checkInWindowBounds,
   isModuleEnabled,
 } from '@repo/validation';
+import { ACTIVITY_ITEM_READ_REPOSITORY } from '#domain/repositories/activity-item-read.repository.interface';
+import type {
+  ActivityItemRef,
+  IActivityItemReadRepository,
+} from '#domain/repositories/activity-item-read.repository.interface';
+import type { ActivityItemKind } from '#domain/entities/activity-item-read.entity';
 import { ATTENDANCE_REPOSITORY } from '#domain/repositories/attendance.repository.interface';
 import type { IAttendanceRepository } from '#domain/repositories/attendance.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
@@ -85,6 +91,11 @@ export interface ActivityTask {
   /** When an officer confirmed the completion; `null` until then. */
   confirmed_at: string | null;
   created_at: string;
+  /**
+   * Whether the caller hasn't opened it since it appeared
+   * (`spec/behavior/activity.md` § Unread). Always false in `made_by_you`.
+   */
+  unread: boolean;
 }
 
 /** A pending service entry, for a member who can approve it. */
@@ -97,6 +108,11 @@ export interface ActivityHoursEntry {
   duration_minutes: number;
   description: string;
   created_at: string;
+  /**
+   * Whether the caller hasn't opened it since it appeared
+   * (`spec/behavior/activity.md` § Unread). Always false in `made_by_you`.
+   */
+  unread: boolean;
 }
 
 /**
@@ -122,6 +138,11 @@ export interface ActivityPoll {
   is_closed: boolean;
   has_voted: boolean;
   created_at: string;
+  /**
+   * Whether the caller hasn't opened it since it appeared
+   * (`spec/behavior/activity.md` § Unread). Always false in `made_by_you`.
+   */
+  unread: boolean;
   /**
    * The poll's chat message, as `GET /v1/channels/{id}/messages` serves it,
    * so a client can hand it to chat's own poll card. Its votes are not in it:
@@ -156,6 +177,18 @@ export interface ActivityEvent {
    * is open; `null` otherwise, and when that read failed.
    */
   checked_in: boolean | null;
+  /**
+   * Who made it; `null` for an event made before makers were recorded
+   * (`spec/behavior/events.md` § Event Creation).
+   */
+  created_by: string | null;
+  /** When the event was made, which is when it appeared on Activity. */
+  created_at: string;
+  /**
+   * Whether the caller hasn't opened it since it appeared
+   * (`spec/behavior/activity.md` § Unread). Always false in `made_by_you`.
+   */
+  unread: boolean;
 }
 
 /** A file the member uploaded: a chapter document or a backwork resource. */
@@ -203,6 +236,13 @@ export interface ActivityView {
   /** Sections that could not be read this time and are served empty. */
   unavailable: ActivitySection[];
 }
+
+/**
+ * Rows that appeared before this are never unread: the day unread dots
+ * shipped (#4173), so a member's first visit after it isn't a page of dots
+ * for things they had already seen there.
+ */
+export const ACTIVITY_UNREAD_SINCE = '2026-11-11T00:00:00.000Z';
 
 /** Rows each list carries. The count in `needs_you_count` is taken before it. */
 const LIST_LIMIT = 25;
@@ -340,6 +380,8 @@ export class ActivityService {
     private readonly memberRepo: IMemberRepository,
     @Inject(ATTENDANCE_REPOSITORY)
     private readonly attendanceRepo: IAttendanceRepository,
+    @Inject(ACTIVITY_ITEM_READ_REPOSITORY)
+    private readonly readRepo: IActivityItemReadRepository,
   ) {}
 
   async getActivity(
@@ -445,7 +487,7 @@ export class ActivityService {
       comingUp.filter((event) => event.check_in_open && !event.checked_in)
         .length;
 
-    return {
+    return this.withUnread(chapterId, userId, {
       needs_you: {
         tasks: taskLists.mine.slice(0, LIST_LIMIT),
         task_confirmations: taskLists.confirmations.slice(0, LIST_LIMIT),
@@ -462,6 +504,152 @@ export class ActivityService {
       },
       needs_you_count: needsYouCount,
       unavailable,
+    });
+  }
+
+  /**
+   * Records that the caller opened these items from Activity, so their rows
+   * read as seen (`spec/behavior/activity.md` § Unread). The read is the
+   * caller's own and names no one else, so an id the caller can't see, or
+   * one that doesn't exist, is stored and never matters: it is never served.
+   */
+  async markRead(
+    chapterId: string,
+    userId: string,
+    items: ActivityItemRef[],
+  ): Promise<void> {
+    // One upsert can't touch a row twice, so a repeated item is sent once.
+    const unique = new Map(
+      items.map((item) => [`${item.kind}:${item.item_id}`, item]),
+    );
+    await this.readRepo.markRead(
+      chapterId,
+      userId,
+      [...unique.values()],
+      new Date().toISOString(),
+    );
+  }
+
+  /**
+   * Sets `unread` on the rows that wait on the caller: everything in
+   * `needs_you`, Coming up and Links. A row is unread when it appeared on or
+   * after {@link ACTIVITY_UNREAD_SINCE} and the caller hasn't opened it from
+   * Activity since. When it appeared is the moment it started waiting on
+   * them: a task confirmation from its completion, everything else from when
+   * its record was made. So a task the caller opened before it was
+   * completed is unread again in their confirmations. A row the caller made
+   * themselves (a task assigned to themselves, an event they made) is never
+   * unread, and nothing in `made_by_you` is.
+   *
+   * The dots are a hint, not a list: when the reads can't be loaded every row
+   * is served as read, and the failure is reported, rather than failing the
+   * page or dotting everything.
+   */
+  private async withUnread(
+    chapterId: string,
+    userId: string,
+    view: ActivityView,
+  ): Promise<ActivityView> {
+    const since = new Date(ACTIVITY_UNREAD_SINCE).getTime();
+    const candidates: {
+      kind: ActivityItemKind;
+      id: string;
+      appearedAt: number;
+    }[] = [];
+    const consider = (
+      kind: ActivityItemKind,
+      id: string,
+      appearedAt: string | null,
+      madeByCaller = false,
+    ) => {
+      const at = appearedAt ? new Date(appearedAt).getTime() : NaN;
+      if (madeByCaller || Number.isNaN(at) || at < since) return;
+      candidates.push({ kind, id, appearedAt: at });
+    };
+    const { needs_you } = view;
+    for (const task of needs_you.tasks) {
+      consider('task', task.id, task.created_at, task.created_by === userId);
+    }
+    for (const task of needs_you.task_confirmations) {
+      consider('task', task.id, task.completed_at ?? task.created_at);
+    }
+    for (const entry of needs_you.hours_approvals) {
+      consider('hours_entry', entry.id, entry.created_at);
+    }
+    for (const poll of needs_you.polls) {
+      consider('poll', poll.message_id, poll.created_at);
+    }
+    for (const event of view.coming_up) {
+      consider(
+        'event',
+        event.id,
+        event.created_at,
+        event.created_by === userId,
+      );
+    }
+    for (const link of view.links) {
+      consider('link', link.id, link.posted_at);
+    }
+    if (candidates.length === 0) return view;
+
+    let readAt: Map<string, number>;
+    try {
+      const reads = await this.readRepo.findReads(chapterId, userId, [
+        ...new Set(candidates.map((candidate) => candidate.id)),
+      ]);
+      readAt = new Map(
+        reads.map((read) => [
+          `${read.kind}:${read.item_id}`,
+          new Date(read.read_at).getTime(),
+        ]),
+      );
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'activity-unread',
+        message: `Activity reads failed for chapter ${chapterId}; serving every row as read`,
+        error,
+      });
+      return view;
+    }
+
+    const unread = new Set(
+      candidates
+        .filter(({ kind, id, appearedAt }) => {
+          const opened = readAt.get(`${kind}:${id}`);
+          return opened === undefined || opened < appearedAt;
+        })
+        .map(({ kind, id }) => `${kind}:${id}`),
+    );
+    if (unread.size === 0) return view;
+    // New row objects, so a row shared with `made_by_you` (one task in two
+    // lists) is never dotted there.
+    const mark = <T extends { unread: boolean }>(
+      kind: ActivityItemKind,
+      rows: T[],
+      idOf: (row: T) => string,
+    ): T[] =>
+      rows.map((row) =>
+        unread.has(`${kind}:${idOf(row)}`) ? { ...row, unread: true } : row,
+      );
+    return {
+      ...view,
+      needs_you: {
+        tasks: mark('task', needs_you.tasks, (row) => row.id),
+        task_confirmations: mark(
+          'task',
+          needs_you.task_confirmations,
+          (row) => row.id,
+        ),
+        hours_approvals: mark(
+          'hours_entry',
+          needs_you.hours_approvals,
+          (row) => row.id,
+        ),
+        polls: mark('poll', needs_you.polls, (row) => row.message_id),
+      },
+      coming_up: mark('event', view.coming_up, (row) => row.id),
+      links: mark('link', view.links, (row) => row.id),
     };
   }
 
@@ -554,6 +742,7 @@ export class ActivityService {
       completed_at: task.completed_at,
       confirmed_at: task.confirmed_at,
       created_at: task.created_at,
+      unread: false,
     });
     return {
       mine: mine.map(toRow),
@@ -583,6 +772,7 @@ export class ActivityService {
       duration_minutes: entry.duration_minutes,
       description: entry.description,
       created_at: entry.created_at,
+      unread: false,
     }));
   }
 
@@ -661,6 +851,7 @@ export class ActivityService {
         is_closed: pollCardClosed(card, nowDate),
         has_voted: votedIds.has(message.id),
         created_at: message.created_at,
+        unread: false,
         // Through the mask every chat read uses, with the block list read
         // above. A blocked author's poll never reaches this line; the mask is
         // what gives the row chat's own shape (`sender_blocked` set).
@@ -803,6 +994,11 @@ export class ActivityService {
           checked_in: checkInOpen
             ? await this.hasCheckedIn(event.id, userId)
             : null,
+          created_by: event.created_by,
+          created_at: event.created_at,
+          // Set for Coming up once the caller's reads are in
+          // (`withUnread`); an event in Made by you is never unread.
+          unread: false,
         };
       }),
     );

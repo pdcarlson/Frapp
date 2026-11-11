@@ -6,6 +6,7 @@ import {
   HttpCode,
   Param,
   ParseUUIDPipe,
+  Post,
   Put,
   UseGuards,
 } from '@nestjs/common';
@@ -29,7 +30,11 @@ import {
   CurrentUser,
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
-import { ActivityDto, SetActivityLinkStateDto } from '../dtos/activity.dto';
+import {
+  ActivityDto,
+  MarkActivityReadDto,
+  SetActivityLinkStateDto,
+} from '../dtos/activity.dto';
 
 // No `@RequireModule`: the page spans modules, so no one key gates it. Each
 // section checks its own module and its own permission in the service, and a
@@ -59,6 +64,22 @@ export class ActivityController {
     @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
   ): Promise<ActivityView> {
     return this.activityService.getActivity(chapterId, userId, enabledModules);
+  }
+
+  @Post('reads')
+  @HttpCode(204)
+  @ApiOperation({
+    summary: 'Record that the caller opened these items from Activity',
+    description:
+      'Clears their `unread` on `GET /v1/activity` until the item starts waiting on the caller again (a task they opened, then completed by its assignee, is unread again in their confirmations). Per member and idempotent; opening an item again moves its time. Opening an item anywhere else in Frapp doesn’t count. Nothing checks that the caller can see an item: a read is theirs alone and an item they can’t see is never served to them. `spec/behavior/activity.md` § Unread.',
+  })
+  @ApiNoContentResponse()
+  async markRead(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: MarkActivityReadDto,
+  ): Promise<void> {
+    await this.activityService.markRead(chapterId, userId, dto.items);
   }
 
   @Put('links/:id/state')

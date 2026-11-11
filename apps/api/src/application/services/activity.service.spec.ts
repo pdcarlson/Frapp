@@ -1,5 +1,6 @@
 import * as caughtFailure from '../../infrastructure/observability/report-caught-failure';
-import { ActivityService } from './activity.service';
+import { ACTIVITY_UNREAD_SINCE, ActivityService } from './activity.service';
+import type { ActivityLink } from './activity-link.service';
 import { TaskStatus } from '#domain/entities/task.entity';
 import type { TaskView } from '#domain/entities/task.entity';
 import type { ChatMessage } from '#domain/entities/chat.entity';
@@ -116,6 +117,10 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
   const attendanceRepo = {
     findByEventAndUser: jest.fn().mockResolvedValue(null),
   };
+  const readRepo = {
+    findReads: jest.fn().mockResolvedValue([]),
+    markRead: jest.fn().mockResolvedValue(undefined),
+  };
   const service = new ActivityService(
     taskService as never,
     serviceEntryService as never,
@@ -131,9 +136,11 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     userRepo as never,
     memberRepo as never,
     attendanceRepo as never,
+    readRepo,
   );
   return {
     service,
+    readRepo,
     taskService,
     serviceEntryService,
     eventService,
@@ -1132,6 +1139,265 @@ describe('ActivityService', () => {
       });
       expect(off.backworkService.findByChapter).not.toHaveBeenCalled();
       expect(off.documentService.findByChapter).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('unread', () => {
+    // Two days after dots shipped, so rows can fall either side of the floor.
+    const LATER = new Date('2026-11-13T18:00:00.000Z');
+    const at = (offsetMs: number) =>
+      new Date(LATER.getTime() + offsetMs).toISOString();
+    const MANAGER = [
+      SystemPermissions.MEMBERS_VIEW,
+      SystemPermissions.TASKS_MANAGE,
+      SystemPermissions.SERVICE_APPROVE,
+    ];
+    const link = (overrides: Partial<ActivityLink>): ActivityLink => ({
+      id: 'link-1',
+      url: 'https://forms.gle/abc',
+      host: 'forms.gle',
+      message_id: 'link-msg-1',
+      thread_root_id: null,
+      channel_id: READABLE,
+      channel_name: 'general',
+      channel_type: 'PUBLIC',
+      posted_by: OTHER,
+      posted_by_name: 'Other Member',
+      posted_at: at(-HOUR),
+      unread: false,
+      ...overrides,
+    });
+    const upcoming = (overrides: Partial<Event>) =>
+      event({
+        start_time: at(48 * HOUR),
+        end_time: at(49 * HOUR),
+        created_at: at(-HOUR),
+        ...overrides,
+      });
+
+    beforeEach(() => {
+      jest.setSystemTime(LATER);
+    });
+
+    /** Every section with one row that appeared an hour ago. */
+    function buildEverySection() {
+      const built = build(MANAGER);
+      serveTasks(
+        built.taskService,
+        [task({ id: 'mine', created_at: at(-HOUR) })],
+        [
+          task({
+            id: 'to-confirm',
+            assignee_id: OTHER,
+            created_by: ME,
+            status: TaskStatus.COMPLETED,
+            stored_status: TaskStatus.COMPLETED,
+            created_at: at(-72 * HOUR),
+            completed_at: at(-HOUR),
+          }),
+        ],
+      );
+      built.serviceEntryService.findByChapterFiltered.mockResolvedValue([
+        {
+          id: 'entry-1',
+          chapter_id: CHAPTER,
+          user_id: OTHER,
+          date: '2026-11-12',
+          duration_minutes: 60,
+          description: 'Food bank',
+          status: 'PENDING',
+          created_at: at(-HOUR),
+        },
+      ]);
+      servePolls(built.messageRepo, [
+        pollCard({
+          id: 'poll-1',
+          created_at: at(-HOUR),
+          payload: {
+            question: 'Formal venue?',
+            options: [
+              { id: 'a', label: 'Downtown' },
+              { id: 'b', label: 'Campus' },
+            ],
+            closes_at: at(24 * HOUR),
+          },
+        }),
+      ]);
+      built.eventService.findByChapter.mockResolvedValue([
+        upcoming({ id: 'event-1' }),
+      ]);
+      built.linkService.listFor.mockResolvedValue([link({})]);
+      return built;
+    }
+
+    it('marks every row that waits on the caller and that they have not opened', async () => {
+      const { service, readRepo } = buildEverySection();
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.needs_you.tasks.map((row) => row.unread)).toEqual([true]);
+      expect(
+        view.needs_you.task_confirmations.map((row) => row.unread),
+      ).toEqual([true]);
+      expect(view.needs_you.hours_approvals.map((row) => row.unread)).toEqual([
+        true,
+      ]);
+      expect(view.needs_you.polls.map((row) => row.unread)).toEqual([true]);
+      expect(view.coming_up.map((row) => row.unread)).toEqual([true]);
+      expect(view.links.map((row) => row.unread)).toEqual([true]);
+      // One read for the whole page, of the caller's own opens.
+      expect(readRepo.findReads).toHaveBeenCalledTimes(1);
+      expect(readRepo.findReads).toHaveBeenCalledWith(
+        CHAPTER,
+        ME,
+        expect.arrayContaining([
+          'mine',
+          'to-confirm',
+          'entry-1',
+          'poll-1',
+          'event-1',
+          'link-1',
+        ]),
+      );
+    });
+
+    it('clears a row the caller opened after it appeared, by kind and id', async () => {
+      const { service, readRepo } = buildEverySection();
+      readRepo.findReads.mockResolvedValue([
+        { kind: 'task', item_id: 'mine', read_at: at(-30 * 60 * 1000) },
+        { kind: 'hours_entry', item_id: 'entry-1', read_at: at(-HOUR) },
+        { kind: 'poll', item_id: 'poll-1', read_at: at(-30 * 60 * 1000) },
+        { kind: 'event', item_id: 'event-1', read_at: at(-30 * 60 * 1000) },
+        // The right id under the wrong kind is not a read of this link.
+        { kind: 'poll', item_id: 'link-1', read_at: at(-30 * 60 * 1000) },
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.needs_you.tasks[0].unread).toBe(false);
+      // Opened at the very moment it was submitted still counts as seen.
+      expect(view.needs_you.hours_approvals[0].unread).toBe(false);
+      expect(view.needs_you.polls[0].unread).toBe(false);
+      expect(view.coming_up[0].unread).toBe(false);
+      expect(view.links[0].unread).toBe(true);
+    });
+
+    it('dots a confirmation again when the task was completed after the caller last opened it', async () => {
+      const { service, readRepo } = buildEverySection();
+      // Opened the day it was assigned, two days before it was completed.
+      readRepo.findReads.mockResolvedValue([
+        { kind: 'task', item_id: 'to-confirm', read_at: at(-70 * HOUR) },
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.needs_you.task_confirmations[0].unread).toBe(true);
+    });
+
+    it('never dots what appeared before dots shipped, and does not read for it', async () => {
+      const { service, readRepo, taskService, linkService } = build();
+      const before = new Date(
+        new Date(ACTIVITY_UNREAD_SINCE).getTime() - 1,
+      ).toISOString();
+      serveTasks(taskService, [task({ id: 'old', created_at: before })]);
+      linkService.listFor.mockResolvedValue([link({ posted_at: before })]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.needs_you.tasks[0].unread).toBe(false);
+      expect(view.links[0].unread).toBe(false);
+      expect(readRepo.findReads).not.toHaveBeenCalled();
+    });
+
+    it('never dots what the caller made: a task for themselves, their own event, anything in Made by you', async () => {
+      const { service, readRepo, taskService, eventService } = build(MANAGER);
+      const selfAssigned = task({
+        id: 'self',
+        created_by: ME,
+        created_at: at(-HOUR),
+      });
+      // A task the caller assigned to themselves sits in both lists.
+      serveTasks(taskService, [selfAssigned], [selfAssigned]);
+      eventService.findByChapter.mockResolvedValue([
+        upcoming({ id: 'mine', created_by: ME }),
+      ]);
+      eventService.findCreatedBy.mockResolvedValue([
+        upcoming({ id: 'mine', created_by: ME }),
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.needs_you.tasks[0].unread).toBe(false);
+      expect(view.coming_up[0]).toMatchObject({
+        created_by: ME,
+        unread: false,
+      });
+      expect(view.made_by_you.tasks.map((row) => row.unread)).toEqual([false]);
+      expect(view.made_by_you.events.map((row) => row.unread)).toEqual([false]);
+      expect(readRepo.findReads).not.toHaveBeenCalled();
+    });
+
+    it('keeps Made by you undotted when the same task is unread in Needs you', async () => {
+      const { service, taskService } = build(MANAGER);
+      // A completion waiting on the caller's confirm, for a task they
+      // assigned: one task, in Needs you and in Made by you.
+      const completed = task({
+        id: 'shared',
+        assignee_id: OTHER,
+        created_by: ME,
+        status: TaskStatus.COMPLETED,
+        stored_status: TaskStatus.COMPLETED,
+        created_at: at(-72 * HOUR),
+        completed_at: at(-HOUR),
+      });
+      serveTasks(taskService, [], [completed]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.needs_you.task_confirmations[0].unread).toBe(true);
+      expect(view.made_by_you.tasks.map((row) => row.unread)).toEqual([false]);
+    });
+
+    it('serves every row as read, and reports it, when the reads cannot be loaded', async () => {
+      const report = jest
+        .spyOn(caughtFailure, 'reportCaughtFailure')
+        .mockImplementation(() => undefined);
+      const { service, readRepo } = buildEverySection();
+      readRepo.findReads.mockRejectedValue(new Error('db down'));
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.unavailable).toEqual([]);
+      expect(view.needs_you.tasks[0].unread).toBe(false);
+      expect(view.links[0].unread).toBe(false);
+      expect(report).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          level: 'warning',
+          site: 'activity-unread',
+        }),
+      );
+      report.mockRestore();
+    });
+
+    it('records the caller’s opens now, sending a repeated item once', async () => {
+      const { service, readRepo } = build();
+
+      await service.markRead(CHAPTER, ME, [
+        { kind: 'poll', item_id: 'poll-1' },
+        { kind: 'poll', item_id: 'poll-1' },
+        { kind: 'task', item_id: 'poll-1' },
+      ]);
+
+      expect(readRepo.markRead).toHaveBeenCalledWith(
+        CHAPTER,
+        ME,
+        [
+          { kind: 'poll', item_id: 'poll-1' },
+          { kind: 'task', item_id: 'poll-1' },
+        ],
+        LATER.toISOString(),
+      );
     });
   });
 

@@ -3374,6 +3374,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/activity/reads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record that the caller opened these items from Activity
+         * @description Clears their `unread` on `GET /v1/activity` until the item starts waiting on the caller again (a task they opened, then completed by its assignee, is unread again in their confirmations). Per member and idempotent; opening an item again moves its time. Opening an item anywhere else in Frapp doesn’t count. Nothing checks that the caller can see an item: a read is theirs alone and an item they can’t see is never served to them. `spec/behavior/activity.md` § Unread.
+         */
+        post: operations["ActivityController_markRead_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/activity/links/{id}/state": {
         parameters: {
             query?: never;
@@ -6024,6 +6044,8 @@ export interface components {
             confirmed_at: string | null;
             /** Format: date-time */
             created_at: string;
+            /** @description Whether the caller hasn’t opened it from Activity since it started waiting on them: since it was made, or for a confirmation since it was completed (`POST /v1/activity/reads`). Always false in `made_by_you`, and for a task the caller assigned to themselves. */
+            unread: boolean;
         };
         ActivityHoursEntryDto: {
             /** Format: uuid */
@@ -6041,6 +6063,8 @@ export interface components {
             description: string;
             /** Format: date-time */
             created_at: string;
+            /** @description Whether the caller hasn’t opened it from Activity since it was submitted (`POST /v1/activity/reads`). */
+            unread: boolean;
         };
         ActivityPollDto: {
             /**
@@ -6072,6 +6096,8 @@ export interface components {
             has_voted: boolean;
             /** Format: date-time */
             created_at: string;
+            /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false in `made_by_you`. */
+            unread: boolean;
             /** @description The poll’s chat message, as `GET /v1/channels/{id}/messages` serves it, for chat’s own poll card. Its votes are read from `chat_message_actions`, as chat reads them. */
             message: components["schemas"]["ChatMessageDto"];
         };
@@ -6105,6 +6131,15 @@ export interface components {
             check_in_open: boolean;
             /** @description Whether the caller has an attendance row for it. Read only while check-in is open; null otherwise, and when that read failed. */
             checked_in: boolean | null;
+            /**
+             * Format: uuid
+             * @description Who made it. Null for an event made before makers were recorded (2026-11-11).
+             */
+            created_by: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** @description Whether the caller hasn’t opened it from Activity since it was made (`POST /v1/activity/reads`). Always false in `made_by_you`, and for an event the caller made. */
+            unread: boolean;
         };
         ActivityLinkDto: {
             /** Format: uuid */
@@ -6141,6 +6176,8 @@ export interface components {
             posted_by_name: string;
             /** Format: date-time */
             posted_at: string;
+            /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). */
+            unread: boolean;
         };
         ActivityFileDto: {
             /** Format: uuid */
@@ -6176,6 +6213,19 @@ export interface components {
             needs_you_count: number;
             /** @description Sections that could not be read this time. Each is served empty; the others are unaffected. */
             unavailable: ("tasks" | "hours_approvals" | "polls" | "coming_up" | "files" | "made_events" | "links")[];
+        };
+        ActivityItemRefDto: {
+            /**
+             * @description Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`.
+             * @enum {string}
+             */
+            kind: "task" | "hours_entry" | "poll" | "event" | "link";
+            /** Format: uuid */
+            item_id: string;
+        };
+        MarkActivityReadDto: {
+            /** @description The items the caller opened. At most 100. */
+            items: components["schemas"]["ActivityItemRefDto"][];
         };
         SetActivityLinkStateDto: {
             /**
@@ -14293,6 +14343,36 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ActivityDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_markRead_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkActivityReadDto"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

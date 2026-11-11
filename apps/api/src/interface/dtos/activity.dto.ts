@@ -1,5 +1,16 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsIn } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsIn,
+  IsUUID,
+  ValidateNested,
+} from 'class-validator';
+import { ACTIVITY_ITEM_KINDS } from '#domain/entities/activity-item-read.entity';
+import type { ActivityItemKind } from '#domain/entities/activity-item-read.entity';
+import type { ActivityItemRef } from '#domain/repositories/activity-item-read.repository.interface';
 import { CHAT_LINK_MEMBER_STATES } from '#domain/entities/chat.entity';
 import type { ChatLinkMemberStateValue } from '#domain/entities/chat.entity';
 import type { ActivityLink } from '../../application/services/activity-link.service';
@@ -16,6 +27,13 @@ import type {
   ActivityTask,
   ActivityView,
 } from '../../application/services/activity.service';
+
+/**
+ * Items one `POST /v1/activity/reads` may carry: every row Activity serves
+ * that can be unread is at most 135, so a client marking a whole page read
+ * sends two.
+ */
+const ACTIVITY_READ_BATCH_LIMIT = 100;
 
 /** Every channel type, direct messages included: a poll can be posted in any. */
 const ACTIVITY_EVENT_ATTENDANCE: ActivityEvent['attendance'][] = [
@@ -87,6 +105,12 @@ export class ActivityTaskDto implements ActivityTask {
 
   @ApiProperty({ format: 'date-time' })
   created_at: string;
+
+  @ApiProperty({
+    description:
+      'Whether the caller hasn’t opened it from Activity since it started waiting on them: since it was made, or for a confirmation since it was completed (`POST /v1/activity/reads`). Always false in `made_by_you`, and for a task the caller assigned to themselves.',
+  })
+  unread: boolean;
 }
 
 export class ActivityHoursEntryDto implements ActivityHoursEntry {
@@ -112,6 +136,12 @@ export class ActivityHoursEntryDto implements ActivityHoursEntry {
 
   @ApiProperty({ format: 'date-time' })
   created_at: string;
+
+  @ApiProperty({
+    description:
+      'Whether the caller hasn’t opened it from Activity since it was submitted (`POST /v1/activity/reads`).',
+  })
+  unread: boolean;
 }
 
 export class ActivityPollDto implements ActivityPoll {
@@ -170,6 +200,12 @@ export class ActivityPollDto implements ActivityPoll {
   created_at: string;
 
   @ApiProperty({
+    description:
+      'Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false in `made_by_you`.',
+  })
+  unread: boolean;
+
+  @ApiProperty({
     type: ChatMessageDto,
     description:
       'The poll’s chat message, as `GET /v1/channels/{id}/messages` serves it, for chat’s own poll card. Its votes are read from `chat_message_actions`, as chat reads them.',
@@ -219,6 +255,24 @@ export class ActivityEventDto implements ActivityEvent {
       'Whether the caller has an attendance row for it. Read only while check-in is open; null otherwise, and when that read failed.',
   })
   checked_in: boolean | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Who made it. Null for an event made before makers were recorded (2026-11-11).',
+  })
+  created_by: string | null;
+
+  @ApiProperty({ format: 'date-time' })
+  created_at: string;
+
+  @ApiProperty({
+    description:
+      'Whether the caller hasn’t opened it from Activity since it was made (`POST /v1/activity/reads`). Always false in `made_by_you`, and for an event the caller made.',
+  })
+  unread: boolean;
 }
 
 const ACTIVITY_FILE_SOURCES: ActivityFile['source'][] = [
@@ -299,6 +353,12 @@ export class ActivityLinkDto implements ActivityLink {
 
   @ApiProperty({ format: 'date-time' })
   posted_at: string;
+
+  @ApiProperty({
+    description:
+      'Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`).',
+  })
+  unread: boolean;
 }
 
 /** `PUT /v1/activity/links/{id}/state`. */
@@ -310,6 +370,37 @@ export class SetActivityLinkStateDto {
   })
   @IsIn(CHAT_LINK_MEMBER_STATES)
   state: ChatLinkMemberStateValue;
+}
+
+/** One item in `POST /v1/activity/reads`. */
+export class ActivityItemRefDto implements ActivityItemRef {
+  @ApiProperty({
+    enum: ACTIVITY_ITEM_KINDS,
+    description:
+      'Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`.',
+  })
+  @IsIn(ACTIVITY_ITEM_KINDS)
+  kind: ActivityItemKind;
+
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID()
+  item_id: string;
+}
+
+/** `POST /v1/activity/reads`. */
+export class MarkActivityReadDto {
+  @ApiProperty({
+    type: [ActivityItemRefDto],
+    minItems: 1,
+    maxItems: ACTIVITY_READ_BATCH_LIMIT,
+    description: `The items the caller opened. At most ${ACTIVITY_READ_BATCH_LIMIT}.`,
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(ACTIVITY_READ_BATCH_LIMIT)
+  @ValidateNested({ each: true })
+  @Type(() => ActivityItemRefDto)
+  items: ActivityItemRefDto[];
 }
 
 export class ActivityNeedsYouDto {
