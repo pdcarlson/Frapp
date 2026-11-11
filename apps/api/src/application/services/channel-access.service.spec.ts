@@ -98,6 +98,7 @@ describe('ChannelAccessService', () => {
       removePrivateChannelMember: jest.fn(),
       removeUserFromPrivateChannels: jest.fn(),
       setDefault: jest.fn(),
+      reorder: jest.fn(),
     };
     mockMessageRepo = {
       findById: jest.fn(),
@@ -601,6 +602,7 @@ describe('ChannelAccessService', () => {
       id: 'report-1',
       chapter_id: 'chap-1',
       message_id: 'msg-reported',
+      channel_id: 'chan-1',
       reported_content: 'reported text',
       reported_sender_id: 'user-b',
       reported_author_name: null,

@@ -4,6 +4,8 @@ import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory'
 import { ChapterDocumentController } from './chapter-document.controller';
 import { ChapterDocumentService } from '../../application/services/chapter-document.service';
 import { RequestDocumentUploadUrlDto } from '../dtos/chapter-document.dto';
+import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import { SystemPermissions } from '#domain/constants/permissions';
 
 describe('ChapterDocumentController', () => {
   let controller: ChapterDocumentController;
@@ -70,6 +72,43 @@ describe('ChapterDocumentController', () => {
       await expect(
         controller.requestUploadUrl(chapterId, dto),
       ).rejects.toBeInstanceOf(InternalServerErrorException);
+    });
+  });
+
+  describe('pins and stars (#3934)', () => {
+    // `PermissionsGuard` enforces whatever the metadata says; what can
+    // silently regress is the metadata. Without `chapter_docs:manage` here,
+    // any member holding the class floor (`members:view`) could pin for the
+    // whole chapter.
+    it.each([
+      'pinFolder',
+      'unpinFolder',
+      'pinDocument',
+      'unpinDocument',
+    ] as const)(
+      '%s requires chapter_docs:manage on top of the class floor',
+      (handler) => {
+        expect(
+          Reflect.getMetadata(PERMISSIONS_KEY, controller[handler] as object),
+        ).toEqual([SystemPermissions.CHAPTER_DOCS_MANAGE]);
+      },
+    );
+
+    // A star is the member's own, so it needs only the class floor: a
+    // method-level permission here would lock ordinary members out.
+    it.each([
+      'listStars',
+      'starFolder',
+      'unstarFolder',
+      'starDocument',
+      'unstarDocument',
+    ] as const)('%s adds no permission beyond the class floor', (handler) => {
+      expect(
+        Reflect.getMetadata(PERMISSIONS_KEY, controller[handler] as object),
+      ).toBeUndefined();
+      expect(
+        Reflect.getMetadata(PERMISSIONS_KEY, ChapterDocumentController),
+      ).toEqual([SystemPermissions.MEMBERS_VIEW]);
     });
   });
 });

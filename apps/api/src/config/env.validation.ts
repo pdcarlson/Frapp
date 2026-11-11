@@ -3,6 +3,7 @@ import {
   isProductionSupabaseUrl,
 } from '@repo/validation';
 import { validateClientPolicyEnv } from '../application/services/client-policy.service';
+import { validateDevLogEnv } from '../application/services/dev-log.service';
 import { classifySupabaseKey } from './supabase-key';
 
 const REQUIRED_ENV_VARS = [
@@ -75,6 +76,11 @@ const REQUIRED_ENV_VARS = [
 //   - MOBILE_MIN_VERSION_IOS / MOBILE_MIN_VERSION_ANDROID
 //   - MOBILE_UPDATE_URL_IOS / MOBILE_UPDATE_URL_ANDROID
 //
+// Also optional (#4145): the team's Dev log channel. Unset, the route answers
+// 404. Set, all three are checked here, because a half-set trio would read as
+// "off" and hide the typo. Rules: validateDevLogEnv.
+//   - DEV_LOG_TOKEN_SHA256 / DEV_LOG_CHAPTER_ID / DEV_LOG_CHANNEL_ID
+//
 // NOT here, and deliberately absent rather than merely unlisted:
 // SUPABASE_ANON_KEY. The API holds exactly one Supabase client and it is
 // built from SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
@@ -111,6 +117,11 @@ export function validateEnv(config: Record<string, unknown>) {
   const clientPolicyProblems = validateClientPolicyEnv(config);
   if (clientPolicyProblems.length > 0) {
     throw new Error(clientPolicyProblems.join(' '));
+  }
+
+  const devLogProblems = validateDevLogEnv(config);
+  if (devLogProblems.length > 0) {
+    throw new Error(devLogProblems.join(' '));
   }
 
   // Production invite emails are built from APP_URL. https: alone still

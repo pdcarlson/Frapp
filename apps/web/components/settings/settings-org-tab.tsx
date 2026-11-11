@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import {
   ARCHETYPES,
@@ -17,14 +17,7 @@ import {
 } from "@repo/hooks/chapter-identity";
 import { useFieldReveal } from "@repo/hooks/field-reveal";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { ProfileSection } from "@/components/profile/profile-section";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -84,6 +77,12 @@ type Props = {
   onPatchConfig: (diff: PatchChapterConfig) => Promise<void> | void;
   savingProfile?: boolean;
   savingConfig?: boolean;
+  /**
+   * The chapter's accent, drawn under the chapter mark. Accent was its own
+   * rail row until #3827 folded it into the chapter's profile, beside the
+   * other thing that decides how the chapter looks.
+   */
+  accentSection?: ReactNode;
 };
 
 export function SettingsOrgTab({
@@ -98,6 +97,7 @@ export function SettingsOrgTab({
   onPatchConfig,
   savingProfile,
   savingConfig,
+  accentSection,
 }: Props) {
   const current = getArchetype(archetypeKey);
 
@@ -244,9 +244,8 @@ export function SettingsOrgTab({
   function confirmArchetypeSwitch() {
     if (!pendingArchetype) return;
     const next = getArchetype(pendingArchetype);
-    // Reset modules + vocabulary to the new archetype's defaults. The
-    // `role_pack` label follows `org_archetype` server-side, but it is only a
-    // label: no role changes. Identity/branding are preserved.
+    // Reset modules + vocabulary to the new archetype's defaults. No role
+    // changes. Identity/branding are preserved.
     void onPatchConfig({
       org_archetype: next.key,
       vocabulary: { ...VOCABULARY_DEFAULTS[next.key] },
@@ -265,14 +264,11 @@ export function SettingsOrgTab({
   const profileHint = canEditProfile ? null : readOnlyHint;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
       {/* Chapter profile (core chapter record) */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Chapter profile</CardTitle>
-        </CardHeader>
+      <ProfileSection id="settings-chapter-profile" title="Chapter profile">
         <form onSubmit={saveProfile}>
-          <CardContent className="space-y-4">
+          <div className="space-y-4">
             <div className="grid gap-3 md:grid-cols-2">
               <div className="grid gap-1">
                 <Label htmlFor="chapter-name">Chapter name</Label>
@@ -316,8 +312,8 @@ export function SettingsOrgTab({
                 placeholder="https://give.youruniversity.edu/..."
               />
             </div>
-          </CardContent>
-          <CardFooter className="flex items-center justify-between gap-3">
+          </div>
+          <div className="mt-4 flex items-center justify-between gap-3">
             {profileHint ?? <span />}
             <Button type="submit" disabled={!canEditProfile || savingProfile}>
               {savingProfile ? (
@@ -325,9 +321,9 @@ export function SettingsOrgTab({
               ) : null}
               Save profile
             </Button>
-          </CardFooter>
+          </div>
         </form>
-      </Card>
+      </ProfileSection>
 
       <SettingsChapterMarkCard
         name={profile.name}
@@ -344,18 +340,20 @@ export function SettingsOrgTab({
         profileHint={profileHint}
       />
 
+      {accentSection}
+
       {/* Identity & founding (branding config — audited) */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Identity &amp; founding</CardTitle>
-          <CardDescription>
-            {lettersHidden
-              ? "Saving writes an entry to the chapter audit log."
-              : "Whether the letters show is set under Chapter mark. Saving writes an entry to the chapter audit log."}
-          </CardDescription>
-        </CardHeader>
+      <ProfileSection
+        id="settings-identity"
+        title="Identity & founding"
+        hint={
+          lettersHidden
+            ? "Saving writes an entry to the chapter audit log."
+            : "Whether the letters show is set under Chapter mark. Saving writes an entry to the chapter audit log."
+        }
+      >
         <form onSubmit={saveIdentity}>
-          <CardContent className="space-y-4">
+          <div className="space-y-4">
             <div className="grid gap-3 md:grid-cols-2">
               {/*
                 FIJI never displays its letters, so Settings doesn't draw
@@ -422,8 +420,8 @@ export function SettingsOrgTab({
                 ) : null}
               </div>
             </div>
-          </CardContent>
-          <CardFooter className="flex items-center justify-between gap-3">
+          </div>
+          <div className="mt-4 flex items-center justify-between gap-3">
             {manageHint ?? <span />}
             <Button type="submit" disabled={!canManage || savingConfig}>
               {savingConfig ? (
@@ -431,24 +429,26 @@ export function SettingsOrgTab({
               ) : null}
               Save identity
             </Button>
-          </CardFooter>
+          </div>
         </form>
-      </Card>
+      </ProfileSection>
 
       {/* Archetype */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+      <ProfileSection
+        id="settings-archetype"
+        title={
+          <>
             Organization archetype
-            <span className="rounded-xs border border-border px-1.5 py-0.5 text-caption font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="ml-2 rounded-xs border border-border px-1.5 py-0.5 text-caption font-medium uppercase tracking-wide text-muted-foreground">
               {current.short}
             </span>
-          </CardTitle>
-          <CardDescription>
-            {current.description} Sets defaults for modules and vocabulary.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+          </>
+        }
+        hint={
+          <>{current.description} Sets defaults for modules and vocabulary.</>
+        }
+      >
+        <div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {Object.values(ARCHETYPES).map((option) => {
               const isCurrent = option.key === current.key;
@@ -503,19 +503,17 @@ export function SettingsOrgTab({
             })}
           </div>
           {manageHint ? <div className="mt-3">{manageHint}</div> : null}
-        </CardContent>
-      </Card>
+        </div>
+      </ProfileSection>
 
       {/* Vocabulary */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Vocabulary</CardTitle>
-          <CardDescription>
-            Defaults follow the {current.short} archetype.
-          </CardDescription>
-        </CardHeader>
+      <ProfileSection
+        id="settings-vocabulary"
+        title="Vocabulary"
+        hint={<>Defaults follow the {current.short} archetype.</>}
+      >
         <form onSubmit={saveVocabulary}>
-          <CardContent className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-2">
             <div className="grid gap-1">
               <Label htmlFor="vocab-recruitment">Recruitment process</Label>
               <Input
@@ -552,8 +550,8 @@ export function SettingsOrgTab({
                 placeholder={current.orderLanguage}
               />
             </div>
-          </CardContent>
-          <CardFooter className="flex items-center justify-between gap-3">
+          </div>
+          <div className="mt-4 flex items-center justify-between gap-3">
             {manageHint ?? <span />}
             <Button type="submit" disabled={!canManage || savingConfig}>
               {savingConfig ? (
@@ -561,9 +559,9 @@ export function SettingsOrgTab({
               ) : null}
               Save vocabulary
             </Button>
-          </CardFooter>
+          </div>
         </form>
-      </Card>
+      </ProfileSection>
 
       {/* Archetype-change confirmation */}
       <Dialog

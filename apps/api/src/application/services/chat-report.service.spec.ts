@@ -68,6 +68,7 @@ describe('ChatReportService', () => {
     id: 'report-1',
     chapter_id: CHAPTER,
     message_id: MESSAGE_ID,
+    channel_id: 'chan-1',
     reported_content: 'go away',
     reported_sender_id: 'user-abuser',
     reported_author_name: null,
@@ -1835,6 +1836,7 @@ describe('ChatReportService', () => {
         CHAPTER,
         'open',
         OFFICER,
+        undefined,
       );
     });
 
@@ -1845,6 +1847,18 @@ describe('ChatReportService', () => {
         CHAPTER,
         'dismissed',
         OFFICER,
+        undefined,
+      );
+    });
+
+    it("narrows to one channel's reports for Chat admin's per-channel view", async () => {
+      await service.listReports(CHAPTER, OFFICER, 'open', 'chan-1');
+
+      expect(reportRepo.findByChapterAndStatus).toHaveBeenCalledWith(
+        CHAPTER,
+        'open',
+        OFFICER,
+        'chan-1',
       );
     });
   });

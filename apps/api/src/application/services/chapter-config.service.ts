@@ -347,7 +347,6 @@ export class ChapterConfigService {
       dues,
       service,
       points,
-      role_pack: archetype.rolePack,
     };
   }
 
@@ -759,7 +758,6 @@ export class ChapterConfigService {
 
     let orgArchetype = existing.org_archetype;
     let archetypeMeta = existing.archetype_meta;
-    let rolePack = existing.role_pack;
     if (update.org_archetype !== undefined) {
       orgArchetype = update.org_archetype;
       const archetype = getArchetype(orgArchetype);
@@ -769,7 +767,6 @@ export class ChapterConfigService {
         description: archetype.description,
         council: archetype.council,
       };
-      rolePack = archetype.rolePack;
     }
 
     const workflowByKey = new Map(
@@ -796,7 +793,6 @@ export class ChapterConfigService {
       ...existing,
       org_archetype: orgArchetype,
       archetype_meta: archetypeMeta,
-      role_pack: rolePack,
       enabled_modules:
         update.enabled_modules !== undefined
           ? update.enabled_modules

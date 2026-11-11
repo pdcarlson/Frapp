@@ -49,7 +49,7 @@ import { NestedError } from "@/components/shared/nested-states";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 import {
   dashboardCheckboxHitAreaClassName,
-  dashboardFilterSelectClassName,
+  dashboardToolbarHeightClassName,
   dashboardTableCheckboxClassName,
   dashboardToolbarSearchClassName,
   dashboardToolbarSearchGlyphClassName,
@@ -449,29 +449,28 @@ export function InvoiceList({ id }: { id?: string }) {
               className={dashboardToolbarSearchClassName}
             />
           </div>
-          <select
-            aria-label="Invoice status filter"
+          <Select
             value={statusFilter}
-            onChange={(event) =>
-              setStatusFilter(event.target.value as StatusFilter)
-            }
-            className={dashboardFilterSelectClassName}
+            onValueChange={(value) => setStatusFilter(value as StatusFilter)}
           >
-            {STATUS_FILTERS.map((option) => (
-              <option
-                key={option.value}
-                value={option.value}
-                disabled={option.value === "overdue" && overdueUnavailable}
-                title={
-                  option.value === "overdue" && overdueUnavailable
-                    ? "Overdue status is unavailable right now"
-                    : undefined
-                }
-              >
-                {option.label}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger
+              aria-label="Invoice status filter"
+              className={`${dashboardToolbarHeightClassName} w-auto min-w-36 text-sm`}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_FILTERS.map((option) => (
+                <SelectItem
+                  key={option.value}
+                  value={option.value}
+                  disabled={option.value === "overdue" && overdueUnavailable}
+                >
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           {/*
             The create trigger is the **only** officer control that stays a
             `<Can>` rather than reading the `canManage` boolean, and it is

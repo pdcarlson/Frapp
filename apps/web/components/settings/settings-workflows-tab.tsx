@@ -3,14 +3,7 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { ProfileSection } from "@/components/profile/profile-section";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -145,15 +138,13 @@ export function SettingsWorkflowsTab({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Workflows</CardTitle>
-        <CardDescription>
-          Saving writes an entry to the chapter audit log.
-        </CardDescription>
-      </CardHeader>
+    <ProfileSection
+      id="settings-workflows"
+      title="Workflows"
+      hint="Saving writes an entry to the chapter audit log."
+    >
       <form onSubmit={handleSubmit}>
-        <CardContent>
+        <div>
           <ul className="divide-y divide-border rounded-md border border-border">
             {draft.filter(isWorkflowShown).map((wf) => (
               <li key={wf.key} className="flex items-start gap-3 p-4">
@@ -193,14 +184,14 @@ export function SettingsWorkflowsTab({
               </li>
             ))}
           </ul>
-        </CardContent>
-        <CardFooter className="flex justify-end">
+        </div>
+        <div className="mt-4 flex justify-end">
           <Button type="submit" disabled={!canManage || isSaving}>
             {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             Save workflows
           </Button>
-        </CardFooter>
+        </div>
       </form>
-    </Card>
+    </ProfileSection>
   );
 }

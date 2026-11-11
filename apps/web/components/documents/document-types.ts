@@ -11,12 +11,16 @@ export type ChapterDocument = {
   byte_size: number | null;
   document_type: string | null;
   effective_date: string | null;
+  /** When an officer pinned it for the whole chapter (#3934). */
+  pinned_at?: string | null;
 };
 
 export type ChapterDocumentFolder = {
   id: string;
   name: string;
   sort_order: number | null;
+  /** When an officer pinned it for the whole chapter (#3934). */
+  pinned_at?: string | null;
 };
 
 /**
@@ -28,4 +32,5 @@ export type FolderRow = {
   id: string | null;
   name: string;
   sort_order: number | null;
+  pinned_at?: string | null;
 };

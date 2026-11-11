@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { ProfileSection } from "@/components/profile/profile-section";
 import { Switch } from "@/components/ui/switch";
 
 type Props = {
@@ -39,14 +33,12 @@ export function SettingsPrivacyTab({
   isSaving,
 }: Props) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Privacy</CardTitle>
-        <CardDescription>
-          Changes are written to the chapter audit log.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+    <ProfileSection
+      id="settings-privacy"
+      title="Privacy"
+      hint="Changes are written to the chapter audit log."
+    >
+      <div>
         <div className="flex items-start justify-between gap-4 rounded-md border border-border p-4">
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">Chapter analytics</p>
@@ -72,7 +64,7 @@ export function SettingsPrivacyTab({
             Your role can&apos;t change this.
           </p>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </ProfileSection>
   );
 }

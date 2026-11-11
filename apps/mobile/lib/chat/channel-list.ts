@@ -59,6 +59,18 @@ export interface ChannelSummary {
   display_locked?: boolean;
   /** Who created the channel, who may set Always formal; absent when unrecorded. */
   created_by?: string;
+  /**
+   * The chapter's order for this channel inside its section (#4178), set by
+   * an officer dragging it on web. Absent until its section is first
+   * arranged, and then the section sorts A to Z as before
+   * (`compareChannelOrder` in `@repo/hooks`).
+   */
+  display_order?: number;
+  /**
+   * The chapter's audit log (#3909), which takes no background (#4031).
+   * Present, and `true`, only when the row says exactly `true`.
+   */
+  is_audit_log?: boolean;
 }
 
 /**
@@ -106,6 +118,11 @@ export function selectChannels(data: unknown): ChannelSummary[] {
         ...(typeof row.created_by === "string"
           ? { created_by: row.created_by }
           : {}),
+        ...(typeof row.display_order === "number" &&
+        Number.isFinite(row.display_order)
+          ? { display_order: row.display_order }
+          : {}),
+        ...(row.is_audit_log === true ? { is_audit_log: true } : {}),
       },
     ];
   });

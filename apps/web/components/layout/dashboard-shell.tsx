@@ -17,6 +17,7 @@ import { NavColumn } from "@/components/layout/nav-column";
 import {
   FULL_NAV_SPLIT_QUERY,
   isChatRoute,
+  isFullWidthToolRoute,
   PANE_FLOOR,
   CHANNELS_WIDTH,
   OUTSIDE_RAIL_BAND,
@@ -29,7 +30,11 @@ import {
   persistChatOpen,
   persistToolShare,
 } from "@/components/layout/shell-prefs";
-import { SplitDivider } from "@/components/layout/split-divider";
+import {
+  SplitDivider,
+  type SplitSide,
+} from "@/components/layout/split-divider";
+import { ToolPageHeader } from "@/components/layout/tool-page-header";
 import { ChapterHome } from "@/components/layout/chapter-home";
 import { ChatPanelBoundary } from "@/components/layout/chat-panel-boundary";
 import { ChatPage } from "@/components/chat/chat-page";
@@ -227,7 +232,50 @@ export function DashboardShell({
     router.push("/chat");
   }, [router]);
 
-  const chatShown = chatOpen || leaving;
+  /*
+    The side a divider drag will close if released now (dragged to that
+    edge), so the side can fade first and the release is no surprise.
+  */
+  const [collapsing, setCollapsing] = useState<SplitSide | null>(null);
+  const collapseSide = useCallback(
+    (side: SplitSide) => {
+      setCollapsing(null);
+      if (side === "page") closeTool();
+      else if (chatOpen) toggleChat();
+    },
+    [chatOpen, closeTool, toggleChat],
+  );
+
+  /*
+    Escape inside the tool page closes it, from the side-by-side width up.
+    Not from a field, where Escape means "stop typing" and closing would throw
+    the draft away, and not when something inside already used the key: a
+    Radix dialog, menu or popover handles Escape first and marks it handled.
+  */
+  const onToolKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLElement>) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (split !== true) return;
+      const target = event.target as HTMLElement;
+      if (
+        target.closest(
+          "input, textarea, select, [contenteditable=''], [contenteditable='true']",
+        )
+      ) {
+        return;
+      }
+      event.preventDefault();
+      closeTool();
+    },
+    [split, closeTool],
+  );
+
+
+  // A full-width tool (Chapter settings) hides chat without closing it: the
+  // cookie and the Chat row's state stay as they were, so leaving the page
+  // brings chat back beside the next tool.
+  const fullWidthTool = hasTool && isFullWidthToolRoute(pathname);
+  const chatShown = (chatOpen || leaving) && !fullWidthTool;
   // Mounted: alone on `/chat` below the side-by-side width whatever the
   // cookie says (the single page), and beside a tool only when open there.
   const chatMounted = onChatRoute
@@ -307,6 +355,8 @@ export function DashboardShell({
         cn("flex-1", !chatShown && "min-[1056px]:hidden")
       : // Beside a tool: from the side-by-side width up only.
         "hidden shrink min-[1056px]:flex",
+    // A divider drag about to close chat fades it first.
+    collapsing === "chat" && "opacity-40 transition-opacity",
   );
   const chatPanelStyle: React.CSSProperties = {
     // Keyframes in `app/globals.css`, off under reduced motion.
@@ -431,7 +481,10 @@ export function DashboardShell({
               isModuleEnabled={isModuleEnabled}
               pathname={pathname}
               chatRow={
-                split === true
+                // Beside a full-width tool the Chat row is the link to
+                // `/chat` it is below the side-by-side width: a toggle would
+                // open a panel the page has no room for.
+                split === true && !fullWidthTool
                   ? { onSelect: toggleChat, open: chatOpen }
                   : undefined
               }
@@ -454,6 +507,10 @@ export function DashboardShell({
           pageTitle={
             onChatRoute && !chatShown && split === true ? null : pageTitle
           }
+          // A tool page's title is its own header's from the side-by-side
+          // width up (`tool-page-header.tsx`).
+          titleMovesBesideChat={hasTool}
+          titleIsHeading={!(hasTool && split === true)}
           unreadNotifications={unreadNotifications}
           onOpenNotifications={() => setNotificationDrawerOpen(true)}
           onOpenMobileNav={() => setMobileNavOpen(true)}
@@ -505,6 +562,8 @@ export function DashboardShell({
                 onChange={setToolShare}
                 onCommit={persistToolShare}
                 rowRef={splitRowRef}
+                onCollapsePreview={setCollapsing}
+                onCollapse={collapseSide}
               />
             </div>
           ) : null}
@@ -518,13 +577,29 @@ export function DashboardShell({
           */}
           {hasTool ? (
             <div
-              data-tool-page=""
+              data-tool-column=""
+              onKeyDown={onToolKeyDown}
+              // Focusable by click only, so a click on the page's blank space
+              // puts focus in the page and Escape reaches it, rather than
+              // leaving focus on `<body>`. Never a Tab stop.
+              tabIndex={-1}
               className={cn(
-                "flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4 sm:px-6",
+                "flex min-h-0 min-w-0 flex-1 flex-col outline-none transition-opacity",
                 chatShown && "min-[1056px]:min-w-[375px]",
+                collapsing === "page" && "opacity-40",
               )}
             >
-              {children}
+              <ToolPageHeader
+                pageTitle={pageTitle}
+                titleIsHeading={split === true}
+                onClose={closeTool}
+              />
+              <div
+                data-tool-page=""
+                className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4 sm:px-6"
+              >
+                {children}
+              </div>
             </div>
           ) : chatShown ? null : (
             // `/chat` with chat closed: the home view, from the side-by-side

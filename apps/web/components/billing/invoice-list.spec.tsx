@@ -162,8 +162,15 @@ function statusFilter() {
   return screen.getByRole("combobox", { name: "Invoice status filter" });
 }
 
-function overdueOption() {
+/** Opens the status filter and reads its Overdue option. */
+async function overdueOption() {
+  await userEvent.click(statusFilter());
   return screen.getByRole("option", { name: "Overdue" });
+}
+
+async function pickStatus(name: string) {
+  await userEvent.click(statusFilter());
+  await userEvent.click(screen.getByRole("option", { name }));
 }
 
 beforeEach(() => {
@@ -247,24 +254,24 @@ describe("overdue derivation (#707/#1196)", () => {
     overdueQuery.data = [OVERDUE_INVOICE];
     render(<InvoiceList />);
 
-    await userEvent.selectOptions(statusFilter(), "overdue");
+    await pickStatus("Overdue");
 
     expect(screen.getByText("Spring 2026 dues")).toBeInTheDocument();
     expect(screen.queryByText("Fall 2026 dues")).not.toBeInTheDocument();
     expect(screen.queryByText("Winter 2026 dues")).not.toBeInTheDocument();
   });
 
-  it("reports overdue as unknown rather than zero when the read errors", () => {
+  it("reports overdue as unknown rather than zero when the read errors", async () => {
     overdueQuery.data = undefined;
     overdueQuery.isError = true;
     render(<InvoiceList />);
 
     expect(screen.getByText(/overdue unknown/)).toBeInTheDocument();
     expect(screen.queryByText(/\d+ overdue/)).not.toBeInTheDocument();
-    expect(overdueOption()).toBeDisabled();
+    expect(await overdueOption()).toHaveAttribute("aria-disabled", "true");
   });
 
-  it("reports overdue as unknown while the read has not answered", () => {
+  it("reports overdue as unknown while the read has not answered", async () => {
     // Reachable online on every cold load: `overdueQuery` is not in the page's
     // loading gate, so without this the count asserted zero for the duration
     // of the request.
@@ -274,14 +281,14 @@ describe("overdue derivation (#707/#1196)", () => {
     render(<InvoiceList />);
 
     expect(screen.getByText(/overdue unknown/)).toBeInTheDocument();
-    expect(overdueOption()).toBeDisabled();
+    expect(await overdueOption()).toHaveAttribute("aria-disabled", "true");
   });
 
-  it("restores the count and the filter once the read answers", () => {
+  it("restores the count and the filter once the read answers", async () => {
     render(<InvoiceList />);
 
     expect(screen.getByText(/0 overdue/)).toBeInTheDocument();
-    expect(overdueOption()).toBeEnabled();
+    expect(await overdueOption()).not.toHaveAttribute("aria-disabled");
   });
 });
 
@@ -326,7 +333,7 @@ describe("overdue availability, the two thresholds (#1621)", () => {
     expect(screen.getByText(FAILURE_COPY)).toBeInTheDocument();
   });
 
-  it("does not claim failure while a cached read refetches offline", () => {
+  it("does not claim failure while a cached read refetches offline", async () => {
     // A background refetch paused offline still has data in hand, so the query
     // is "success" and `isPending` is false. Without that half of the guard the
     // surface paints a red "couldn't load" over an overdue list it is holding
@@ -338,10 +345,10 @@ describe("overdue availability, the two thresholds (#1621)", () => {
 
     expect(screen.queryByText(FAILURE_COPY)).not.toBeInTheDocument();
     expect(screen.getByText(/1 invoice past due/i)).toBeInTheDocument();
-    expect(overdueOption()).toBeEnabled();
+    expect(await overdueOption()).not.toHaveAttribute("aria-disabled");
   });
 
-  it("does not claim failure for a read that was never started", () => {
+  it("does not claim failure for a read that was never started", async () => {
     // `useOverdueInvoices` is `enabled: !!chapterId`, so a disabled read is
     // `isPending` with nothing in flight: not a failure, but still "we do not
     // know", so the filter must still degrade.
@@ -351,7 +358,7 @@ describe("overdue availability, the two thresholds (#1621)", () => {
     render(<InvoiceList />);
 
     expect(screen.queryByText(FAILURE_COPY)).not.toBeInTheDocument();
-    expect(overdueOption()).toBeDisabled();
+    expect(await overdueOption()).toHaveAttribute("aria-disabled", "true");
   });
 });
 
@@ -405,7 +412,7 @@ describe("bulk selection and CSV export", () => {
     );
     expect(screen.getByText(/1 invoice selected/i)).toBeInTheDocument();
 
-    await userEvent.selectOptions(statusFilter(), "paid");
+    await pickStatus("Paid");
 
     expect(screen.queryByText(/invoice.*selected/i)).not.toBeInTheDocument();
   });

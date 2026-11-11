@@ -5,14 +5,7 @@ import { Loader2 } from "lucide-react";
 import { type SemesterArchive, type useSemesterRollover } from "@repo/hooks";
 import { formatDayRange } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { ProfileSection } from "@/components/profile/profile-section";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -151,7 +144,7 @@ export function SettingsSemesterTab({
   }
 
   return (
-    <>
+    <div className="space-y-10">
       <Can
         permission="semester:rollover"
         deniedFallback={null}
@@ -162,15 +155,13 @@ export function SettingsSemesterTab({
           />
         )}
       >
-        <Card>
-          <CardHeader>
-            <CardTitle>Start a new semester</CardTitle>
-            <CardDescription>
-              Archives the current leaderboard period. Points are kept.
-            </CardDescription>
-          </CardHeader>
+        <ProfileSection
+          id="settings-start-a-new-semester"
+          title="Start a new semester"
+          hint="Archives the current leaderboard period. Points are kept."
+        >
           <form onSubmit={startRollover}>
-            <CardContent className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-3">
               {/*
                 Disable, don't hide (§5 rule 4) — and the notice sits on
                 the rollover card rather than the page header so it never
@@ -250,8 +241,8 @@ export function SettingsSemesterTab({
                   </span>
                 </label>
               </Can>
-            </CardContent>
-            <CardFooter className="flex justify-end">
+            </div>
+            <div className="mt-4 flex justify-end">
               {/*
                 No dialog to gate here, so the submit *is* the entry
                 control — and a disabled default button also suppresses
@@ -266,16 +257,16 @@ export function SettingsSemesterTab({
                 ) : null}
                 Archive current semester
               </Button>
-            </CardFooter>
+            </div>
           </form>
-        </Card>
+        </ProfileSection>
       </Can>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Archived semesters</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <ProfileSection
+        id="settings-archived-semesters"
+        title="Archived semesters"
+      >
+        <div>
           {semestersPending ? (
             <SectionSkeleton label="Loading archives" className="">
               <SkeletonRows
@@ -307,8 +298,8 @@ export function SettingsSemesterTab({
               ))}
             </ul>
           )}
-        </CardContent>
-      </Card>
-    </>
+        </div>
+      </ProfileSection>
+    </div>
   );
 }

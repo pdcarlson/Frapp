@@ -57,9 +57,10 @@ const collapse = (text: string) => text.replace(/\s+/g, " ").trim();
  *    which belongs to the chapter picker, so every negative assertion below ran
  *    against copy it was not about and passed no matter what the Accent card
  *    said. Caught by mutating the real description to re-add "Chunk 07" and
- *    watching all ten tests stay green. It is anchored to `<CardTitle>Accent
- *    color</CardTitle>` now, and `it("is the Accent card's own copy")` fails if
- *    that anchor ever stops finding it.
+ *    watching all ten tests stay green. It is anchored to the section's
+ *    `title="Accent color"` now (a card until #3827), and
+ *    `it("is the Accent card's own copy")` fails if that anchor ever stops
+ *    finding it.
  * 2. **The docstring above the card quotes all four claims it replaced**, by
  *    design: "this sentence used to say X, and X was false" is the only durable
  *    way to stop someone restoring X. So these assertions must not scan the
@@ -67,18 +68,16 @@ const collapse = (text: string) => text.replace(/\s+/g, " ").trim();
  *
  * **What this cannot see.** It reads the source rather than rendering
  * `SettingsPage`, so it pins what the card *says*, not that the card is
- * reachable. The Accent tab is the one tab in its group not wrapped in
- * `renderConfigGated(...)`; if a later change gates it, every assertion here
- * stays green while the copy becomes unreachable. Reachability is the tab
- * suite's job (`settings-module-deeplink.spec.tsx`), not this file's.
+ * reachable. Since #3827 the Accent section renders inside the Chapter row,
+ * under the chapter mark; if a later change drops it from there, every
+ * assertion here stays green while the copy becomes unreachable.
+ * Reachability is the page suites' job, not this file's.
  */
 const description = (() => {
-  const card = settingsPage.indexOf("<CardTitle>Accent color</CardTitle>");
-  if (card === -1) throw new Error("the Accent card's title moved");
-  const block = settingsPage
-    .slice(card)
-    .match(/<CardDescription>([\s\S]*?)<\/CardDescription>/);
-  if (!block?.[1]) throw new Error("the Accent card has no CardDescription");
+  const section = settingsPage.indexOf('title="Accent color"');
+  if (section === -1) throw new Error("the Accent section's title moved");
+  const block = settingsPage.slice(section).match(/hint="([^"]*)"/);
+  if (!block?.[1]) throw new Error("the Accent section has no hint");
   return block[1];
 })();
 

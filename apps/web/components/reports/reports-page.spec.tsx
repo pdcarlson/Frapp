@@ -404,7 +404,7 @@ describe("ReportsPage event and member pickers", () => {
     mockUseMyPermissions.mockReturnValue(grantedPermissions());
   });
 
-  it("lists events by name and start time instead of asking for a raw UUID", () => {
+  it("lists events by name and start time instead of asking for a raw UUID", async () => {
     mockUseEvents.mockReturnValue({
       data: [
         {
@@ -419,10 +419,11 @@ describe("ReportsPage event and member pickers", () => {
     });
 
     render(<ReportsPage />);
+    await userEvent.click(screen.getByRole("combobox", { name: /^event/i }));
 
     expect(
       screen.getByRole("option", { name: /chapter meeting/i }),
-    ).toHaveValue("evt-1");
+    ).toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/uuid/i)).not.toBeInTheDocument();
   });
 
@@ -447,7 +448,8 @@ describe("ReportsPage event and member pickers", () => {
     });
 
     render(<ReportsPage />);
-    await user.selectOptions(screen.getByLabelText(/^event/i), "evt-1");
+    await user.click(screen.getByRole("combobox", { name: /^event/i }));
+    await user.click(screen.getByRole("option", { name: /chapter meeting/i }));
     await user.click(generateButton());
 
     expect(mutateAsync).toHaveBeenCalledWith(
@@ -516,11 +518,12 @@ describe("ReportsPage event and member pickers", () => {
     render(<ReportsPage />);
     await user.click(screen.getByLabelText(/^report$/i));
     await user.click(await screen.findByRole("option", { name: "Points" }));
+    await user.click(screen.getByRole("combobox", { name: /^member/i }));
 
     const option = await screen.findByRole("option", {
       name: /paul carlson \(paul@example\.com\)/i,
     });
-    expect(option).toHaveValue("user-1");
+    expect(option).toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/uuid/i)).not.toBeInTheDocument();
   });
 
@@ -549,6 +552,7 @@ describe("ReportsPage event and member pickers", () => {
     render(<ReportsPage />);
     await user.click(screen.getByLabelText(/^report$/i));
     await user.click(await screen.findByRole("option", { name: "Points" }));
+    await user.click(screen.getByRole("combobox", { name: /^member/i }));
 
     expect(
       await screen.findByRole("option", {

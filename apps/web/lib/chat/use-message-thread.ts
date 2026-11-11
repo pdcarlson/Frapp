@@ -28,7 +28,8 @@ import {
   type ChannelCache,
   type ChatMessage,
 } from "@repo/chat-core/types";
-import { emptyCache } from "@repo/chat-core/cache";
+import { cacheFromPage, emptyCache } from "@repo/chat-core/cache";
+import { getRealtimeClient } from "@/lib/realtime/supabase-realtime";
 
 /**
  * One open message thread (#3785): its parent, its replies, the viewer's
@@ -48,6 +49,9 @@ export function useMessageThread(
 ) {
   const queryClient = useQueryClient();
   const api = useFrappClient();
+  // Reactions and votes are read under the member's own session, as the
+  // timeline reads them (#4034).
+  const supabase = useMemo(() => getRealtimeClient(), []);
   const repliesKey = useMemo(
     () => chatThreadRepliesKey(channelId, rootId),
     [channelId, rootId],
@@ -64,7 +68,7 @@ export function useMessageThread(
 
   const meta = useQuery({
     queryKey: metaKey,
-    queryFn: () => fetchThread(api, channelId, rootId),
+    queryFn: () => fetchThread(api, channelId, rootId, supabase),
     // Every open reads afresh: nothing feeds a closed thread's cache.
     staleTime: 0,
   });
@@ -85,13 +89,45 @@ export function useMessageThread(
           api,
           channelId,
           rootId,
+          undefined,
+          supabase,
         );
         setHasOlder(page.hasMore);
       } else {
-        await backfillThreadReplies(queryClient, api, channelId, rootId);
+        await backfillThreadReplies(
+          queryClient,
+          api,
+          channelId,
+          rootId,
+          supabase,
+        );
         // Reopened over a cache this mount didn't page: older replies may
-        // remain, and one read of them settles it.
-        if (first) setHasOlder(true);
+        // remain. One read of them settles it now, rather than leaving the
+        // timeline to page them in, which it does only once the list has
+        // scrolled, and a short thread never scrolls (#4034).
+        if (first) {
+          const cache = queryClient.getQueryData<ChannelCache>(repliesKey);
+          const oldest = cache?.order
+            .map((key) => cache.byId[key])
+            .find((message) => message?._status === "confirmed");
+          if (oldest) {
+            try {
+              const page = await loadThreadReplies(
+                queryClient,
+                api,
+                channelId,
+                rootId,
+                oldest.created_at,
+                supabase,
+              );
+              setHasOlder(page.hasMore);
+            } catch {
+              // The held replies still show; the timeline offers the rest
+              // once the member scrolls to the top.
+              setHasOlder(true);
+            }
+          }
+        }
       }
       return queryClient.getQueryData<ChannelCache>(repliesKey) ?? emptyCache();
     },
@@ -118,8 +154,11 @@ export function useMessageThread(
     previousConnection.current = connection;
     if (connection === "live" && before !== "live") {
       void queryClient.invalidateQueries({ queryKey: repliesKey, exact: true });
+      // And the parent, whose read the panel draws while the timeline
+      // doesn't hold it: its edits and reactions in the gap missed it.
+      void queryClient.invalidateQueries({ queryKey: metaKey, exact: true });
     }
-  }, [connection, queryClient, repliesKey]);
+  }, [connection, queryClient, repliesKey, metaKey]);
 
   // Who is typing in this thread, re-read on each status ping like the
   // channel's line; the manager hands back the same array while unchanged.
@@ -152,10 +191,14 @@ export function useMessageThread(
     void markThreadRead(api, channelId, rootId).catch(() => undefined);
   }, [api, channelId, rootId, metaLoaded, newestId]);
 
-  const root = useMemo<ChatMessage | null>(
-    () => (meta.data ? normalizeRow(meta.data.root) : null),
-    [meta.data],
-  );
+  // The parent with its reactions and votes folded in, as a cache row is.
+  const root = useMemo<ChatMessage | null>(() => {
+    if (!meta.data) return null;
+    const { root: raw, root_actions: actions } = meta.data;
+    if (!actions?.length) return normalizeRow(raw);
+    const folded = cacheFromPage([raw], actions);
+    return folded.byId[raw.id] ?? normalizeRow(raw);
+  }, [meta.data]);
 
   const loadOlder = useCallback(async () => {
     const oldest = messages.find((message) => message._status === "confirmed");
@@ -170,6 +213,7 @@ export function useMessageThread(
         channelId,
         rootId,
         oldest.created_at,
+        supabase,
       );
       setHasOlder(page.hasMore);
       return { error: null as string | null };
@@ -180,7 +224,7 @@ export function useMessageThread(
     } finally {
       setIsLoadingOlder(false);
     }
-  }, [messages, isLoadingOlder, queryClient, api, channelId, rootId]);
+  }, [messages, isLoadingOlder, queryClient, api, channelId, rootId, supabase]);
 
   const patchFollow = useCallback(
     (state: ThreadMeta["follow_state"]) =>
@@ -215,6 +259,19 @@ export function useMessageThread(
     [viewerId, queryClient, api, channelId, rootId, meta.data, patchFollow],
   );
 
+  // A failed reply's Retry, by the row's client id: the same content under
+  // the same id, so the server dedupes a send that did land.
+  const retry = useCallback(
+    (clientMessageId: string) => {
+      const row = messages.find(
+        (message) => message.client_message_id === clientMessageId,
+      );
+      if (!row) return Promise.resolve({ error: null as string | null });
+      return send(row.content, clientMessageId);
+    },
+    [messages, send],
+  );
+
   const discard = useCallback(
     (clientMessageId: string) =>
       discardThreadReply(queryClient, channelId, rootId, clientMessageId),
@@ -236,6 +293,15 @@ export function useMessageThread(
       void meta.refetch();
       void replies.refetch();
     },
+    /**
+     * Re-reads the parent after a write to it. The parent is a channel
+     * message, so the write patched the timeline's cache, which holds it only
+     * while it is in the loaded window; the panel calls this, once the write
+     * has settled, only when it doesn't.
+     */
+    refreshRoot: () => {
+      void meta.refetch();
+    },
     messages,
     hasOlder,
     isLoadingOlder,
@@ -243,6 +309,7 @@ export function useMessageThread(
     typingUsers,
     setFollow,
     send,
+    retry,
     discard,
     emitTyping,
   };

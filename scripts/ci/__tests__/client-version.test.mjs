@@ -54,25 +54,20 @@ async function loadPolicyService() {
     "client-policy.service.ts",
   );
   const source = readFileSync(path, "utf8");
+  // The service's `#domain/...` imports, each pointed at its file.
+  const domainFile = (...parts) =>
+    JSON.stringify(
+      pathToFileURL(join(REPO_ROOT, "apps", "api", "src", "domain", ...parts))
+        .href,
+    );
   const rewritten = source
     .replace(/^import \{ Injectable \} from '@nestjs\/common';\n/m, "")
     .replace(/^@Injectable\(\)\n/m, "")
     .replace(
       "'#domain/constants/client-version'",
-      JSON.stringify(
-        pathToFileURL(
-          join(
-            REPO_ROOT,
-            "apps",
-            "api",
-            "src",
-            "domain",
-            "constants",
-            "client-version.ts",
-          ),
-        ).href,
-      ),
-    );
+      domainFile("constants", "client-version.ts"),
+    )
+    .replace("'#domain/utils/env-value'", domainFile("utils", "env-value.ts"));
   const imports = [
     ...rewritten.matchAll(/^import[^;]*?from\s+['"]([^'"]+)['"]/gms),
   ].map((m) => m[1]);

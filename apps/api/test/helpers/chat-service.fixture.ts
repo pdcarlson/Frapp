@@ -109,6 +109,7 @@ export async function createChatServiceFixture() {
     findRoleGates: jest.fn(),
     removeUserFromPrivateChannels: jest.fn(),
     setDefault: jest.fn(),
+    reorder: jest.fn(),
   };
 
   const mockCategoryRepo: jest.Mocked<IChatCategoryRepository> = {
@@ -117,6 +118,7 @@ export async function createChatServiceFixture() {
     create: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
+    reorder: jest.fn(),
   };
 
   const mockMessageRepo: jest.Mocked<IChatMessageRepository> = {

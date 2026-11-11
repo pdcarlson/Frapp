@@ -153,6 +153,14 @@ export interface ChatChannel {
    */
   display_locked: boolean;
   /**
+   * The channel's place in its section of the channel list, 0 first, set by
+   * an officer dragging it (`PUT /v1/channels/order`). Null until its section
+   * is first arranged: the list sorts by it, nulls last, then A to Z by title.
+   * Always null on a DM or group DM. `spec/behavior/chat/README.md`
+   * § Sidebar arrangement. Optional because older fixtures predate it.
+   */
+  display_order?: number | null;
+  /**
    * Who created the channel through `POST /v1/channels`, the one member
    * besides `channels:manage` holders who may set `display_locked`. Null for
    * channels from before it was recorded, seeded defaults, Discord-imported

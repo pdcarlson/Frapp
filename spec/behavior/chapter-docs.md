@@ -6,7 +6,7 @@ A "Chapter Files" storage area for organizational documents (bylaws, constitutio
 
 - `chapter_docs:upload` — Upload new documents.
 - `chapter_docs:manage` — Delete documents, create/rename/delete folders.
-- Reads are gated on `members:view`, which every seeded role either holds or clears via the `*` wildcard (President's seeded set is `['*']` alone) — so in practice every member can view and download, but the controller's class-level gate is a permission rather than an all-members bypass. Upload and management need their own `chapter_docs:*` permissions.
+- Reads are gated on `members:view`, which every seeded role holds (the President holds it from its starting tier, beside the `*` wildcard) — so in practice every member can view and download, but the controller's class-level gate is a permission rather than an all-members bypass. Upload and management need their own `chapter_docs:*` permissions.
 
 ## Structure
 
@@ -24,6 +24,29 @@ Officers with `chapter_docs:manage` create, rename, reorder, and delete folders;
 - **Reorder** — folders are listed by sort order, then by name as a tiebreak.
 - **Delete** — see Edge Cases below.
 - **Uploading into an unknown folder still works.** Naming a folder that does not exist on upload registers it, which is how folders came into being before they were manageable. It is not an error.
+
+## Pinned and starred
+
+*(Added 2026-11-11, #3934; Shawn's idea, and his picks of where they show, what can be marked and who pins.)* Documents lists folders and files in three tiers: what officers **pinned** for the whole chapter, then what this member **starred** for themselves, then everything else. Both folders and single files can be pinned and starred. Comparable apps: Google Drive's Starred, Slack's pinned and starred sidebar sections, Microsoft Teams' pinned channels.
+
+- **Pin** is chapter-wide. A member holding `chapter_docs:manage`, the permission that already creates, renames and reorders folders, pins or unpins a folder or a file, and every member sees it at the top. A pin is `pinned_at` on the folder or document row; pinning something already pinned keeps its first pin time.
+- **Star** is personal. Every member who can read the library stars or unstars any folder or file for themselves; nobody else, officers included, can see who starred what. A star is a row in `chapter_document_stars`, which has RLS on and no policies, so only the API reads it, filtering on the member.
+- **Order inside a tier.** The tiers sit on top of the existing orders rather than replacing them: pinned folders keep the officers' folder order among themselves (§ Folder management's Reorder still applies), and pinned or starred files keep the list's chosen sort (§ Search). Something both pinned and starred shows once, under Pinned, still wearing the member's star.
+- **Search and filters** narrow every tier the same way: the tiers order whatever the folder, search and filters leave.
+- **Deleting** a folder or a file removes its pin and every member's star on it. Renaming a folder keeps both, since a star points at the folder's record, not its name. Deleting an account removes that member's stars (`anonymize_user`).
+- **Who sees a pinned folder.** Every member can open every folder today. Restricted folders ([#3642](https://github.com/pdcarlson/Frapp/issues/3642)) are parked; when they land, a pinned or starred folder a member cannot open is not shown to that member.
+- **Routes.** `GET /v1/documents/stars` returns the caller's own `{ folder_ids, document_ids }`. `PUT` stars and `DELETE` unstars `/v1/documents/folders/{id}/star` and `/v1/documents/{id}/star`, each idempotent and answering 204. `PUT` pins and `DELETE` unpins `/v1/documents/folders/{id}/pin` and `/v1/documents/{id}/pin`, behind `chapter_docs:manage`, each idempotent and answering the updated row. Starring something outside the caller's chapter is a 404.
+
+**Web `/documents`** *(2026-11-11, #3934)*:
+
+- **Cards on top of All files.** On All files with no search or filter, a **Pinned** group of cards, then a **Starred** group, sits above the list, folders and files together (as Google Drive's top row and mobile s12's PINNED draw them). A folder card names how many files it holds and opens the folder; a file card opens the viewer. Pinned cards take the chapter accent on their glyph, starred ones the neutral glyph. The list below keeps its own order, each row's Star and Pin lit where they apply. Inside a folder, or with a search or filter, there are no cards: pinned files, then starred files, lead the list instead, each tier in the chosen sort.
+- **The folder rail is grouped** under **Pinned**, **Starred** and **Other folders**, below All files and No folder; with nothing pinned or starred it is one plain list, as before. A star sits beside each folder, drawn on hover or focus (always under a finger) and kept drawn while starred.
+- **Each file row** carries a Star for everyone and, for `chapter_docs:manage`, a Pin, both lit while on. A member who can't pin sees a pinned file's pin as a mark only.
+- **Pinning a folder is an Edit control.** Edit adds Pin to each folder's move, rename and delete controls, and shows the chapter's arrangement, pinned then the rest, without the officer's own stars. Move up and Move down move a folder within its tier and save the arrangement pinned-first, so the stored order and what everyone sees agree.
+- A star failing, or a pin, says so in a toast; a star moves on the tap and settles on what the server holds.
+- The cards, their file counts and the tiers come from the library the page has loaded, so they share § Search's cap: past 1,000 documents, a pinned or starred file older than the newest 1,000 is missing from them, and a folder card counts only the files loaded.
+
+Mobile follows in its own change (#3934).
 
 ## Search
 

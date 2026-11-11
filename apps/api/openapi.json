@@ -4994,6 +4994,16 @@
                 "dismissed"
               ]
             }
+          },
+          {
+            "name": "channel_id",
+            "required": false,
+            "in": "query",
+            "description": "Only the reports filed in this channel, for Chat admin's per-channel view. Omit for the whole chapter's queue, which is the only place a report about a DM or a deleted channel appears.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -6149,6 +6159,100 @@
           }
         ],
         "summary": "Signed upload URL for a chapter default photo",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/order": {
+      "put": {
+        "operationId": "ChatOrderController_reorderChannels_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderChannelsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReorderResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set one section's channel order, moving channels into it",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/categories/order": {
+      "put": {
+        "operationId": "ChatOrderController_reorderCategories_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderCategoriesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReorderResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set the chapter's category order",
         "tags": [
           "Chat"
         ]
@@ -9888,7 +9992,17 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChapterDocumentDto"
+                  }
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -9918,7 +10032,17 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DocumentFolderDto"
+                  }
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -9975,6 +10099,43 @@
           }
         ],
         "summary": "Create a document folder",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/documents/stars": {
+      "get": {
+        "operationId": "ChapterDocumentController_listStars_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentStarsDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own starred folders and documents",
         "tags": [
           "Documents"
         ]
@@ -10066,6 +10227,172 @@
         ]
       }
     },
+    "/v1/documents/folders/{id}/pin": {
+      "put": {
+        "operationId": "ChapterDocumentController_pinFolder_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentFolderDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Pin a folder for the whole chapter (idempotent)",
+        "tags": [
+          "Documents"
+        ]
+      },
+      "delete": {
+        "operationId": "ChapterDocumentController_unpinFolder_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentFolderDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Unpin a folder (idempotent)",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/documents/folders/{id}/star": {
+      "put": {
+        "operationId": "ChapterDocumentController_starFolder_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Star a folder for yourself (idempotent)",
+        "tags": [
+          "Documents"
+        ]
+      },
+      "delete": {
+        "operationId": "ChapterDocumentController_unstarFolder_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove your star from a folder (idempotent)",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
     "/v1/documents/{id}": {
       "get": {
         "operationId": "ChapterDocumentController_getOne_v1",
@@ -10137,6 +10464,172 @@
           }
         ],
         "summary": "Delete a document",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/documents/{id}/pin": {
+      "put": {
+        "operationId": "ChapterDocumentController_pinDocument_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterDocumentDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Pin a document for the whole chapter (idempotent)",
+        "tags": [
+          "Documents"
+        ]
+      },
+      "delete": {
+        "operationId": "ChapterDocumentController_unpinDocument_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterDocumentDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Unpin a document (idempotent)",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/documents/{id}/star": {
+      "put": {
+        "operationId": "ChapterDocumentController_starDocument_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Star a document for yourself (idempotent)",
+        "tags": [
+          "Documents"
+        ]
+      },
+      "delete": {
+        "operationId": "ChapterDocumentController_unstarDocument_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove your star from a document (idempotent)",
         "tags": [
           "Documents"
         ]
@@ -12347,6 +12840,62 @@
         "summary": "Whether the calling mobile build is still supported",
         "tags": [
           "Client policy"
+        ]
+      }
+    },
+    "/v1/integrations/dev-log": {
+      "post": {
+        "operationId": "DevLogController_post_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DevLogPostDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevLogPostResultDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong token."
+          },
+          "404": {
+            "description": "The Dev log is not configured on this deployment."
+          },
+          "409": {
+            "description": "The configured channel is gone or archived."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Post to the team's Dev log channel (GitHub Actions only)",
+        "tags": [
+          "Integrations"
         ]
       }
     }
@@ -15472,6 +16021,12 @@
             "nullable": true,
             "description": "Null once the reported message was hard-deleted (a channel delete, or the Discord import purge). The report outlives it; the reported_* fields are the evidence."
           },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The channel the message was in when the report was filed. Null once that channel is deleted, and for reports filed before it was recorded whose message was already gone. An id only: it grants no read, and a direct message stays closed to the officer."
+          },
           "reported_content": {
             "type": "string",
             "nullable": true,
@@ -15536,6 +16091,7 @@
           "id",
           "chapter_id",
           "message_id",
+          "channel_id",
           "reported_content",
           "reported_sender_id",
           "reported_author_name",
@@ -15608,6 +16164,12 @@
             "nullable": true,
             "description": "Null once the reported message was hard-deleted (a channel delete, or the Discord import purge). The report outlives it; the reported_* fields are the evidence."
           },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The channel the removed message was in, so a client can blank that one timeline's cached copy instead of refetching every timeline. An id only: it grants no read, and a direct message stays closed to the officer. Null when the message row no longer exists."
+          },
           "reported_content": {
             "type": "string",
             "nullable": true,
@@ -15670,18 +16232,13 @@
           "message_already_deleted": {
             "type": "boolean",
             "description": "True when the message was already soft-deleted before this call, so nothing was removed now; the report (and any other open report on the message) is marked actioned either way."
-          },
-          "channel_id": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true,
-            "description": "The channel the removed message was in, so a client can blank that one timeline's cached copy instead of refetching every timeline. An id only: it grants no read, and a direct message stays closed to the officer. Null when the message row no longer exists."
           }
         },
         "required": [
           "id",
           "chapter_id",
           "message_id",
+          "channel_id",
           "reported_content",
           "reported_sender_id",
           "reported_author_name",
@@ -15692,8 +16249,7 @@
           "resolved_at",
           "resolved_by",
           "reported_attachments",
-          "message_already_deleted",
-          "channel_id"
+          "message_already_deleted"
         ]
       },
       "ChatBlockListDto": {
@@ -16036,6 +16592,58 @@
         },
         "required": [
           "background"
+        ]
+      },
+      "ReorderChannelsDto": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The category the channels are filed under, or null for the default Channels section. A channel listed from another section moves here."
+          },
+          "channel_ids": {
+            "maxItems": 500,
+            "description": "Every channel the officer sees in that section, top to bottom. Any other channel already in the section keeps its relative order after them. Never a DM, a group DM or #chapter-audit.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "category_id",
+          "channel_ids"
+        ]
+      },
+      "ReorderResponseDto": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success"
+        ]
+      },
+      "ReorderCategoriesDto": {
+        "type": "object",
+        "properties": {
+          "category_ids": {
+            "maxItems": 500,
+            "description": "The chapter’s categories, top to bottom. A category not listed keeps its relative order after them.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "category_ids"
         ]
       },
       "GeofenceCoordinateDto": {
@@ -17815,6 +18423,129 @@
           "title"
         ]
       },
+      "ChapterDocumentDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "chapter_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "folder": {
+            "type": "string",
+            "nullable": true
+          },
+          "storage_path": {
+            "type": "string"
+          },
+          "uploaded_by": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string",
+            "nullable": true
+          },
+          "byte_size": {
+            "type": "number",
+            "nullable": true
+          },
+          "document_type": {
+            "type": "string",
+            "nullable": true
+          },
+          "effective_date": {
+            "type": "string",
+            "nullable": true
+          },
+          "pinned_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "When an officer pinned it for the whole chapter, or null"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "title",
+          "description",
+          "folder",
+          "storage_path",
+          "uploaded_by",
+          "created_at",
+          "content_type",
+          "byte_size",
+          "document_type",
+          "effective_date",
+          "pinned_at"
+        ]
+      },
+      "DocumentFolderDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "chapter_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sort_order": {
+            "type": "number"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "pinned_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "When an officer pinned it for the whole chapter, or null"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "name",
+          "sort_order",
+          "created_at",
+          "pinned_at"
+        ]
+      },
+      "DocumentStarsDto": {
+        "type": "object",
+        "properties": {
+          "folder_ids": {
+            "description": "Ids of the folders the caller starred, oldest star first",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "document_ids": {
+            "description": "Ids of the documents the caller starred, oldest star first",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "folder_ids",
+          "document_ids"
+        ]
+      },
       "CreateDocumentFolderDto": {
         "type": "object",
         "properties": {
@@ -19515,6 +20246,150 @@
         "required": [
           "update_required",
           "update_url"
+        ]
+      },
+      "DevLogItemDto": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "number",
+            "description": "The issue or pull request number."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "actor": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "areas": {
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "number",
+          "title"
+        ]
+      },
+      "DevLogMergeCountDto": {
+        "type": "object",
+        "properties": {
+          "actor": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "count": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "actor",
+          "count"
+        ]
+      },
+      "DevLogPostDto": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "type": "string",
+            "enum": [
+              "work_started",
+              "pr_merged",
+              "daily_summary",
+              "update_pushed"
+            ]
+          },
+          "number": {
+            "type": "number",
+            "description": "work_started: the issue number. pr_merged: the pull request number."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 300,
+            "description": "work_started, pr_merged: the issue or pull request title."
+          },
+          "actor": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "work_started, pr_merged: who did it, as a name or a login."
+          },
+          "areas": {
+            "maxItems": 10,
+            "description": "work_started: the issue's area labels, without the prefix.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "also_in_area": {
+            "maxItems": 5,
+            "description": "work_started: other issues in progress that share one of the areas.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DevLogItemDto"
+            }
+          },
+          "date": {
+            "type": "string",
+            "example": "2026-11-11",
+            "description": "daily_summary: the day it is posted. One post per day."
+          },
+          "merged_total": {
+            "type": "number",
+            "description": "daily_summary: how many pull requests merged in the last day."
+          },
+          "merged_by": {
+            "maxItems": 30,
+            "description": "daily_summary: that total, per person.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DevLogMergeCountDto"
+            }
+          },
+          "in_progress": {
+            "maxItems": 60,
+            "description": "daily_summary: issues in progress now.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DevLogItemDto"
+            }
+          },
+          "run_id": {
+            "type": "string",
+            "description": "work_started: the id of the workflow run that saw the label. update_pushed: the id of the Deploy production run that shipped."
+          },
+          "store_build": {
+            "type": "boolean",
+            "description": "update_pushed: that run also uploaded a store build for testers."
+          },
+          "ota_update": {
+            "type": "boolean",
+            "description": "update_pushed: that run also published an over-the-air update."
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "DevLogPostResultDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "posted",
+              "duplicate"
+            ],
+            "description": "duplicate: this event was already posted (the same label event, pull request, day or deploy run), so nothing was written."
+          }
+        },
+        "required": [
+          "status"
         ]
       }
     }

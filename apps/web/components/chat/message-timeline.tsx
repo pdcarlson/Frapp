@@ -351,6 +351,11 @@ interface TimelineHeaderContext {
    * message is the channel's first, so the history begins with it.
    */
   start?: React.ReactNode;
+  /**
+   * Drawn first, whatever the older-history state: a thread's parent, which
+   * heads the list from the first frame (#4034), unlike a channel's start.
+   */
+  header?: React.ReactNode;
 }
 
 /**
@@ -363,6 +368,18 @@ interface TimelineHeaderContext {
  * so there the bar clips.)
  */
 function TimelineHeader({ context }: { context?: TimelineHeaderContext }) {
+  if (context?.header) {
+    return (
+      <>
+        {context.header}
+        <OlderHistoryRow context={{ ...context, header: undefined }} />
+      </>
+    );
+  }
+  return <OlderHistoryRow context={context} />;
+}
+
+function OlderHistoryRow({ context }: { context?: TimelineHeaderContext }) {
   if (context?.olderStatus === "loading") {
     return (
       <p
@@ -527,6 +544,19 @@ export interface MessageTimelineProps {
    * `hasOlder` says there is nothing earlier.
    */
   channelStart?: React.ReactNode;
+  /**
+   * Heads the list from the first frame, above the older-history row and the
+   * channel start, and above an empty list's start too: a thread's parent
+   * (#4034), which must not wait for every older reply to load.
+   */
+  header?: React.ReactNode;
+  /**
+   * The list's tap-reveal state (`useTapRevealedMessage`), when a row outside
+   * the list shares it: the thread panel's parent in `header`, so tapping it
+   * and then a reply leaves one action bar open, not two (#4034). Omitted, the
+   * timeline keeps its own.
+   */
+  tapRevealed?: ReturnType<typeof useTapRevealedMessage>;
 }
 
 /**
@@ -580,6 +610,8 @@ export const MessageTimeline = forwardRef<
     onLoadOlder,
     holdFollow = false,
     channelStart,
+    header,
+    tapRevealed: sharedTapRevealed,
   },
   ref,
 ) {
@@ -655,7 +687,8 @@ export const MessageTimeline = forwardRef<
   // Which row's action cluster a tap revealed — one id for the whole list, so
   // tapping a second row dismisses the first's, matching the reference
   // affordance (#1193). Same key basis as `computeItemKey` below.
-  const tapRevealed = useTapRevealedMessage();
+  const ownTapRevealed = useTapRevealedMessage();
+  const tapRevealed = sharedTapRevealed ?? ownTapRevealed;
 
   // Parent lookup for reply quotes (#489), built once per message list rather
   // than scanned per row: the timeline is virtualized but `decorated` is mapped
@@ -831,8 +864,9 @@ export const MessageTimeline = forwardRef<
       olderStatus: isLoadingOlder ? "loading" : olderError ? "error" : "idle",
       onRetryOlder: onLoadOlder,
       start: hasOlder ? undefined : channelStart,
+      header,
     }),
-    [isLoadingOlder, olderError, onLoadOlder, hasOlder, channelStart],
+    [isLoadingOlder, olderError, onLoadOlder, hasOlder, channelStart, header],
   );
 
   useImperativeHandle(
@@ -974,7 +1008,7 @@ export const MessageTimeline = forwardRef<
     // Counted after the block list, held rows included: a channel whose only
     // messages are being held is not an empty channel, so it gets no channel
     // start either. `BlockListNotice` above the timeline says they are held.
-    if (thread.heldCount > 0) return <div className="h-full" />;
+    if (thread.heldCount > 0) return <div className="h-full">{header}</div>;
     // Not an empty-state card: the channel's start, at the bottom where its
     // first message will land (`writing.md` § Chat (dashboard), Channel start).
     // The box scrolls and the inner column is at least its height, so a start
@@ -982,6 +1016,7 @@ export const MessageTimeline = forwardRef<
     return (
       <div className="h-full overflow-y-auto">
         <div className="flex min-h-full flex-col justify-end">
+          {header}
           {channelStart}
         </div>
       </div>

@@ -238,6 +238,26 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
     return data?.[0] ?? null;
   }
 
+  /**
+   * Via the `reorder_chat_channels` RPC, so the whole section is renumbered
+   * in one transaction, serialized per chapter (see its migration). One
+   * update per row would leave a half-renumbered section, with two rows on
+   * one number, when a later one failed or a second officer dragged at once.
+   */
+  async reorder(
+    chapterId: string,
+    categoryId: string | null,
+    channelIds: string[],
+  ): Promise<ChatChannel[]> {
+    const { data, error } = await this.supabase.rpc('reorder_chat_channels', {
+      p_chapter_id: chapterId,
+      p_category_id: categoryId,
+      p_channel_ids: channelIds,
+    });
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
+  }
+
   async delete(id: string, chapterId: string): Promise<void> {
     const { error } = await this.supabase
       .from('chat_channels')

@@ -38,7 +38,11 @@ import {
   moduleDisabledMessage,
 } from "@repo/validation";
 import { memberFacingRefusal, POLLS_OFF_COPY } from "./polls";
-import { chatMessagesKey, type ChannelCache } from "./types";
+import {
+  chatMessagesKey,
+  chatThreadRepliesKey,
+  type ChannelCache,
+} from "./types";
 import { emptyCache, mergeServerRows, selectMessages } from "./cache";
 import { memoryStore } from "./test/memory-store";
 import { stubOutbox } from "./test/outbox-stub";
@@ -2245,5 +2249,140 @@ describe("sendMessage and the saved draft", () => {
     });
     await flushOutbox(ctx);
     expect(outbox.clearDraft).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A thread reply's writes (#4034): its row lives in the thread's own cache
+ * (`chatThreadRepliesKey`), never the channel's, so each write names the
+ * thread and patches that cache.
+ */
+describe("row writes on a thread reply", () => {
+  const REPLY = {
+    id: "reply-1",
+    channel_id: "chan-1",
+    sender_id: "user-1",
+    content: "first draft",
+    created_at: "2026-01-01T00:00:00.000Z",
+    thread_root_id: "root-1",
+  };
+  const threadKey = chatThreadRepliesKey("chan-1", "root-1");
+
+  function seeded() {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(threadKey, mergeServerRows(emptyCache(), [REPLY]));
+    return queryClient;
+  }
+
+  it("reacts in the thread's cache and leaves the channel's alone", async () => {
+    const queryClient = seeded();
+    const apiClient = {
+      POST: vi.fn().mockResolvedValue({
+        data: {
+          action: {
+            id: "act-1",
+            message_id: "reply-1",
+            user_id: "user-1",
+            action_type: "reaction:👍",
+            payload: null,
+            created_at: "2026-01-01T00:01:00.000Z",
+          },
+        },
+        error: null,
+        response: { status: 201 },
+      }),
+    };
+    const ctx = buildCtx({
+      queryClient,
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+    });
+
+    await react(ctx, {
+      channelId: "chan-1",
+      messageId: "reply-1",
+      emoji: "👍",
+      threadRootId: "root-1",
+    });
+
+    const held = queryClient.getQueryData<ChannelCache>(threadKey)!;
+    expect(held.byId["reply-1"]!.reactions["reaction:👍"]).toEqual(["user-1"]);
+    expect(queryClient.getQueryData(chatMessagesKey("chan-1"))).toBeUndefined();
+  });
+
+  it("merges an edit and a delete into the thread's cache", async () => {
+    const queryClient = seeded();
+    const apiClient = {
+      PATCH: vi.fn().mockResolvedValue({
+        data: {
+          ...REPLY,
+          content: "fixed",
+          edited_at: "2026-01-01T00:02:00.000Z",
+        },
+        error: null,
+        response: { status: 200 },
+      }),
+      DELETE: vi.fn().mockResolvedValue({
+        data: { ...REPLY, content: "[message deleted]", is_deleted: true },
+        error: null,
+        response: { status: 200 },
+      }),
+    };
+    const ctx = buildCtx({
+      queryClient,
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+    });
+    const reply = () =>
+      queryClient.getQueryData<ChannelCache>(threadKey)!.byId["reply-1"]!;
+
+    await editMessage(ctx, {
+      channelId: "chan-1",
+      messageId: "reply-1",
+      content: "fixed",
+      threadRootId: "root-1",
+    });
+    expect(reply().content).toBe("fixed");
+
+    await deleteMessage(ctx, {
+      channelId: "chan-1",
+      messageId: "reply-1",
+      threadRootId: "root-1",
+    });
+    expect(reply().is_deleted).toBe(true);
+    expect(queryClient.getQueryData(chatMessagesKey("chan-1"))).toBeUndefined();
+  });
+
+  it("records a vote on a poll reply in the thread's cache", async () => {
+    const queryClient = seeded();
+    const vote = {
+      id: "vote-1",
+      message_id: "reply-1",
+      user_id: "user-1",
+      action_type: "vote",
+      payload: { option_id: ["fri"] },
+      created_at: "2026-01-01T00:01:00.000Z",
+    };
+    const apiClient = {
+      POST: vi.fn().mockResolvedValue({
+        data: { action: vote, updated: false },
+        error: null,
+        response: { status: 201 },
+      }),
+    };
+    const ctx = buildCtx({
+      queryClient,
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+    });
+
+    await actOnCard(ctx, {
+      channelId: "chan-1",
+      messageId: "reply-1",
+      actionType: "vote",
+      payload: { option_id: ["fri"] },
+      threadRootId: "root-1",
+    });
+
+    const held = queryClient.getQueryData<ChannelCache>(threadKey)!;
+    expect(held.byId["reply-1"]!.actions).toEqual([vote]);
+    expect(queryClient.getQueryData(chatMessagesKey("chan-1"))).toBeUndefined();
   });
 });

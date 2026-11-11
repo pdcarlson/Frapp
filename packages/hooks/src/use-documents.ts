@@ -232,3 +232,144 @@ export function useDeleteDocument() {
     },
   });
 }
+
+// ---------------------------------------------------------------------------
+// Pins (chapter-wide) and stars (each member's own), #3934.
+// `spec/behavior/chapter-docs.md` § Pinned and starred.
+// ---------------------------------------------------------------------------
+
+/** What a pin or a star points at. */
+export type DocumentMarkTarget =
+  { kind: "folder"; id: string } | { kind: "document"; id: string };
+
+/** The caller's own starred folder and document ids. */
+export interface DocumentStarIds {
+  folder_ids: string[];
+  document_ids: string[];
+}
+
+const NO_STARS: DocumentStarIds = { folder_ids: [], document_ids: [] };
+
+function starsKey(chapterId: string | null | undefined) {
+  return ["documents", chapterId, "stars"] as const;
+}
+
+/**
+ * The caller's starred folders and documents in the active chapter. Private to
+ * the caller: the server answers with their stars alone.
+ */
+export function useDocumentStars() {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: starsKey(chapterId),
+    queryFn: async (): Promise<DocumentStarIds> => {
+      const { data, error } = await client.GET("/v1/documents/stars");
+      if (error) throw error;
+      return data ?? NO_STARS;
+    },
+    staleTime: 300_000,
+  });
+}
+
+/** `stars` with `target` starred or not, leaving the input unchanged. */
+export function withStar(
+  stars: DocumentStarIds,
+  target: DocumentMarkTarget,
+  starred: boolean,
+): DocumentStarIds {
+  const field = target.kind === "folder" ? "folder_ids" : "document_ids";
+  const rest = stars[field].filter((id) => id !== target.id);
+  return { ...stars, [field]: starred ? [...rest, target.id] : rest };
+}
+
+/**
+ * Stars or unstars a folder or a document for the caller.
+ *
+ * Optimistic, because a star is the caller's own: the mark moves on the tap.
+ * Two rules from `useSidebarWrite` (`use-chat-sidebar.ts`), which met the
+ * same hazards first:
+ *
+ * - The chapter is captured when the write starts. TanStack pushes each
+ *   render's options onto a write still in flight, so a key read at settle
+ *   time would file a write sent in one chapter under the next.
+ * - Every write ends by re-reading the server, and a failure re-reads rather
+ *   than restoring a snapshot: a snapshot taken before a second tap would
+ *   undo that tap's star along with the failed one.
+ */
+export function useSetDocumentStar() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["documents", "set-document-star"],
+    mutationFn: async ({
+      target,
+      starred,
+    }: {
+      target: DocumentMarkTarget;
+      starred: boolean;
+    }) => {
+      const params = { params: { path: { id: target.id } } };
+      const { error } =
+        target.kind === "folder"
+          ? starred
+            ? await client.PUT("/v1/documents/folders/{id}/star", params)
+            : await client.DELETE("/v1/documents/folders/{id}/star", params)
+          : starred
+            ? await client.PUT("/v1/documents/{id}/star", params)
+            : await client.DELETE("/v1/documents/{id}/star", params);
+      if (error) throw error;
+    },
+    onMutate: async ({ target, starred }) => {
+      const key = starsKey(chapterId);
+      await queryClient.cancelQueries({ queryKey: key });
+      queryClient.setQueryData<DocumentStarIds>(key, (current) =>
+        withStar(current ?? NO_STARS, target, starred),
+      );
+      return { key };
+    },
+    onSettled: (_data, _error, _vars, context) => {
+      if (!context) return;
+      void queryClient.invalidateQueries({ queryKey: context.key });
+    },
+  });
+}
+
+/**
+ * Pins or unpins a folder or a document for the whole chapter. Needs
+ * `chapter_docs:manage`. Not optimistic: a pin changes what everyone sees,
+ * so the mark moves when the server has it. Re-reads the folder and document
+ * lists, which carry `pinned_at`, before it settles.
+ */
+export function useSetDocumentPin() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["documents", "set-document-pin"],
+    mutationFn: async ({
+      target,
+      pinned,
+    }: {
+      target: DocumentMarkTarget;
+      pinned: boolean;
+    }) => {
+      const params = { params: { path: { id: target.id } } };
+      const { error } =
+        target.kind === "folder"
+          ? pinned
+            ? await client.PUT("/v1/documents/folders/{id}/pin", params)
+            : await client.DELETE("/v1/documents/folders/{id}/pin", params)
+          : pinned
+            ? await client.PUT("/v1/documents/{id}/pin", params)
+            : await client.DELETE("/v1/documents/{id}/pin", params);
+      if (error) throw error;
+    },
+    // Returned, so the pin stays pending until the lists carry the new
+    // `pinned_at`: a folder move worked out from the old one would save an
+    // arrangement the pin contradicts.
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["documents", chapterId] }),
+  });
+}

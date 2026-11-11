@@ -8,13 +8,25 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
+import { tierByMarks } from "@repo/hooks/document-library";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { Can } from "@/components/shared/can";
 import {
   DocumentsGlyph,
   FolderGlyph,
+  PinGlyph,
+  StarGlyph,
 } from "@/components/documents/resources-glyphs";
-import type { FolderManagement } from "@/components/documents/folder-management";
+import {
+  splitPinned,
+  type FolderManagement,
+} from "@/components/documents/folder-management";
+import type { DocumentMarks } from "@/components/documents/use-document-marks";
+import {
+  KEEP_FOCUS_ATTRIBUTE,
+  useKeepFocus,
+} from "@/components/documents/use-keep-focus";
 import type { FolderRow } from "@/components/documents/document-types";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
@@ -52,8 +64,8 @@ function folderRowClassName(isActive: boolean): string {
 }
 
 /**
- * The four management icons. A disabled one (the first folder's Move up, the
- * last one's Move down) keeps the quiet look rather than `button.tsx`'s
+ * The five management icons (pin, up, down, rename, delete). A disabled one
+ * (the first folder's Move up, the last one's Move down) keeps the quiet look rather than `button.tsx`'s
  * disabled card fill, which drew a boxed arrow in the middle of the rail.
  */
 const MANAGE_CONTROL =
@@ -65,6 +77,7 @@ export function FolderRail({
   setActiveFolder,
   gate,
   management,
+  marks,
   loadFailed,
   onRetryLoad,
 }: {
@@ -73,25 +86,59 @@ export function FolderRail({
   setActiveFolder: (folder: string | null) => void;
   gate: SubscriptionGate;
   management: FolderManagement;
+  /** Pins and the member's own stars (#3934). */
+  marks: DocumentMarks;
   /** The folder endpoint failed, so `railFolders` is the derived fallback. */
   loadFailed: boolean;
   onRetryLoad: () => void;
 }) {
-  const { folderBusy, openFolderDialog, handleMoveFolder, handleDeleteFolder } =
-    management;
+  const { folderBusy, openFolderDialog } = management;
   /*
     Folder management is a mode, not furniture. Every named folder used to
     carry a second line of four icon buttons (up, down, rename, delete), so an
     officer's rail read as a toolbar repeated six times and a member's rail
     could never look like the navigation it is. Edit shows those lines; Done
-    puts them away. Toggling is not a write, so it is not gated; the four
+    puts them away. Toggling is not a write, so it is not gated; the five
     controls it reveals still are, each with its own explanation.
   */
   const [editing, setEditing] = useState(false);
   const manageable = railFolders.some((folder) => folder.id);
+  const { rootRef, remember } = useKeepFocus<HTMLElement>();
+
+  /*
+    The three tiers (#3934, `chapter-docs.md` § Pinned and starred): pinned
+    for the chapter, then this member's stars, then the rest, each in the
+    officers' order. Edit shows the chapter's arrangement instead, pinned and
+    the rest, because that is what Move up and Move down change for everyone;
+    one officer's stars are not part of it.
+  */
+  const groups: { label: string | null; folders: FolderRow[] }[] = (() => {
+    if (editing) {
+      const { pinned, rest } = splitPinned(railFolders);
+      if (pinned.length === 0) return [{ label: null, folders: rest }];
+      return [
+        { label: "Pinned", folders: pinned },
+        { label: "Other folders", folders: rest },
+      ].filter((group) => group.folders.length > 0);
+    }
+    const { pinned, starred, rest } = tierByMarks(
+      railFolders,
+      (folder) => !!folder.pinned_at,
+      (folder) =>
+        !!folder.id && marks.isStarred({ kind: "folder", id: folder.id }),
+    );
+    if (pinned.length === 0 && starred.length === 0) {
+      return [{ label: null, folders: rest }];
+    }
+    return [
+      { label: "Pinned", folders: pinned },
+      { label: "Starred", folders: starred },
+      { label: "Other folders", folders: rest },
+    ].filter((group) => group.folders.length > 0);
+  })();
 
   return (
-    <nav aria-labelledby="doc-folders-label">
+    <nav ref={rootRef} aria-labelledby="doc-folders-label">
       <div className="flex min-h-9 items-center justify-between gap-2">
         <h2
           id="doc-folders-label"
@@ -130,7 +177,8 @@ export function FolderRail({
         The two filter rows stay ungated — they are client-side filters over
         the loaded list, not writes. The per-folder management controls
         beside each named row are gated, because those *are* the folder
-        write routes (`chapter_docs:manage`, no `@FreeTier`).
+        write routes (`chapter_docs:manage`, no `@FreeTier`). A star is a
+        write too, the member's own, so it takes the same gate.
       */}
       <div className="space-y-0.5 pt-1">
         <button
@@ -149,82 +197,35 @@ export function FolderRail({
           <DocumentsGlyph className="h-4 w-4" active={activeFolder === ""} /> No
           folder
         </button>
-        {railFolders.map((folder, index) => (
-          <div key={folder.id ?? `derived:${folder.name}`}>
-            <button
-              type="button"
-              onClick={() => setActiveFolder(folder.name)}
-              className={folderRowClassName(activeFolder === folder.name)}
-            >
-              <FolderGlyph
-                className="h-4 w-4 shrink-0"
-                active={activeFolder === folder.name}
-              />
-              <span className="truncate">{folder.name}</span>
-            </button>
-            {/*
-              `id === null` means this name was recovered from the documents
-              because the folder endpoint is down — there is no record to
-              rename, reorder or delete, so the row filters and nothing more.
-            */}
-            {folder.id && editing ? (
-              <Can permission="chapter_docs:manage">
-                {/*
-                  A second line under the name rather than a trailing cluster
-                  on the same row: at the rail's 200px these four controls
-                  cannot sit beside a folder name and still clear §2's
-                  44px touch floor, and shrinking them below it is what
-                  `button.tsx`'s `icon` size exists to prevent. Four controls
-                  also do not earn a popover, and hiding them behind one
-                  gated trigger would lose the per-control disabled
-                  explanation §5 rule 4 asks for.
-                */}
-                <div className="flex items-center justify-end gap-0.5 pb-1 pl-6">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={MANAGE_CONTROL}
-                    aria-label={`Move ${folder.name} up`}
-                    onClick={() => void handleMoveFolder(index, -1)}
-                    {...gate.controlProps(folderBusy || index === 0)}
-                  >
-                    <ChevronUp className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={MANAGE_CONTROL}
-                    aria-label={`Move ${folder.name} down`}
-                    onClick={() => void handleMoveFolder(index, 1)}
-                    {...gate.controlProps(
-                      folderBusy || index === railFolders.length - 1,
-                    )}
-                  >
-                    <ChevronDown className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={MANAGE_CONTROL}
-                    aria-label={`Rename ${folder.name}`}
-                    onClick={() => openFolderDialog(folder)}
-                    {...gate.controlProps(folderBusy)}
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={MANAGE_CONTROL}
-                    aria-label={`Delete folder ${folder.name}`}
-                    onClick={() => void handleDeleteFolder(folder)}
-                    {...gate.controlProps(folderBusy)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </Can>
+        {groups.map((group) => (
+          <div
+            key={group.label ?? "folders"}
+            role={group.label ? "group" : undefined}
+            aria-label={group.label ?? undefined}
+          >
+            {group.label ? (
+              <p
+                aria-hidden
+                className={`${EYEBROW} px-2 pb-0.5 pt-3 text-muted-foreground`}
+              >
+                {group.label}
+              </p>
             ) : null}
+            {group.folders.map((folder, index) => (
+              <FolderItem
+                key={folder.id ?? `derived:${folder.name}`}
+                folder={folder}
+                active={activeFolder === folder.name}
+                onSelect={() => setActiveFolder(folder.name)}
+                editing={editing}
+                first={index === 0}
+                last={index === group.folders.length - 1}
+                gate={gate}
+                management={management}
+                marks={marks}
+                remember={remember}
+              />
+            ))}
           </div>
         ))}
         {/*
@@ -249,5 +250,171 @@ export function FolderRail({
         ) : null}
       </div>
     </nav>
+  );
+}
+
+/**
+ * One named folder: the row that filters to it, the member's star beside it,
+ * and, in Edit, the officer's management line under it.
+ */
+function FolderItem({
+  folder,
+  active,
+  onSelect,
+  editing,
+  first,
+  last,
+  gate,
+  management,
+  marks,
+  remember,
+}: {
+  folder: FolderRow;
+  active: boolean;
+  onSelect: () => void;
+  editing: boolean;
+  first: boolean;
+  last: boolean;
+  gate: SubscriptionGate;
+  management: FolderManagement;
+  marks: DocumentMarks;
+  /** Keeps focus on a Star or Pin whose folder changes group. */
+  remember: (key: string) => void;
+}) {
+  const { folderBusy, openFolderDialog, handleMoveFolder, handleDeleteFolder } =
+    management;
+  /*
+    Moves wait for a pin to settle: the move works out the pinned group from
+    `pinned_at`, which a pin in flight hasn't changed yet, so moving then
+    would save an arrangement the pin is about to contradict.
+  */
+  const moveBusy = folderBusy || marks.pinBusy;
+  const id = folder.id;
+  const pinned = !!folder.pinned_at;
+  const starred = !!id && marks.isStarred({ kind: "folder", id });
+  return (
+    <div>
+      <div className="group/folder flex items-center gap-0.5">
+        <button
+          type="button"
+          onClick={onSelect}
+          className={`${folderRowClassName(active)} min-w-0 flex-1`}
+        >
+          <FolderGlyph className="h-4 w-4 shrink-0" active={active} />
+          <span className="truncate">{folder.name}</span>
+        </button>
+        {/*
+          The star sits beside the row, not inside it: a button in a button
+          is invalid, and the row's click is "open this folder". It shows on
+          hover or focus, as Slack's sidebar star does, and stays drawn while
+          the folder is starred so the mark reads at a glance. A finger has
+          no hover, so a coarse pointer always sees it. A derived row (no
+          record, `id === null`) has nothing to star.
+        */}
+        {id && !editing ? (
+          <IconButton
+            label={starred ? `Unstar ${folder.name}` : `Star ${folder.name}`}
+            aria-pressed={starred}
+            className={
+              starred
+                ? "text-accent-text"
+                : "opacity-0 focus-visible:opacity-100 group-hover/folder:opacity-100 pointer-coarse:opacity-100"
+            }
+            {...{ [KEEP_FOCUS_ATTRIBUTE]: `star:${id}` }}
+            onClick={() => {
+              remember(`star:${id}`);
+              marks.toggleStar({ kind: "folder", id }, folder.name);
+            }}
+            {...gate.controlProps()}
+          >
+            <StarGlyph active={starred} />
+          </IconButton>
+        ) : null}
+      </div>
+      {/*
+        `id === null` means this name was recovered from the documents
+        because the folder endpoint is down — there is no record to
+        rename, reorder or delete, so the row filters and nothing more.
+      */}
+      {id && editing ? (
+        <Can permission="chapter_docs:manage">
+          {/*
+            A second line under the name rather than a trailing cluster
+            on the same row: at the rail's 200px these controls cannot sit
+            beside a folder name and still clear §2's 44px touch floor, and
+            shrinking them below it is what `button.tsx`'s `icon` size exists
+            to prevent. It wraps to a second line under a finger, where five
+            44px controls are wider than the rail. Five controls also do not
+            earn a popover, and hiding them behind one gated trigger would
+            lose the per-control disabled explanation §5 rule 4 asks for.
+          */}
+          <div className="flex flex-wrap items-center justify-end gap-0.5 pb-1 pl-6">
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`${MANAGE_CONTROL} ${pinned ? "text-accent-text" : ""}`}
+              aria-label={
+                pinned
+                  ? `Unpin ${folder.name} for the chapter`
+                  : `Pin ${folder.name} for the chapter`
+              }
+              aria-pressed={pinned}
+              {...{ [KEEP_FOCUS_ATTRIBUTE]: `pin:${id}` }}
+              onClick={() => {
+                remember(`pin:${id}`);
+                void marks.setPinned(
+                  { kind: "folder", id },
+                  folder.name,
+                  !pinned,
+                );
+              }}
+              {...gate.controlProps(folderBusy || marks.pinBusy)}
+            >
+              <PinGlyph className="h-4 w-4" active={pinned} />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={MANAGE_CONTROL}
+              aria-label={`Move ${folder.name} up`}
+              onClick={() => void handleMoveFolder(id, -1)}
+              {...gate.controlProps(moveBusy || first)}
+            >
+              <ChevronUp className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={MANAGE_CONTROL}
+              aria-label={`Move ${folder.name} down`}
+              onClick={() => void handleMoveFolder(id, 1)}
+              {...gate.controlProps(moveBusy || last)}
+            >
+              <ChevronDown className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={MANAGE_CONTROL}
+              aria-label={`Rename ${folder.name}`}
+              onClick={() => openFolderDialog(folder)}
+              {...gate.controlProps(folderBusy)}
+            >
+              <Pencil className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={MANAGE_CONTROL}
+              aria-label={`Delete folder ${folder.name}`}
+              onClick={() => void handleDeleteFolder(folder)}
+              {...gate.controlProps(folderBusy)}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        </Can>
+      ) : null}
+    </div>
   );
 }

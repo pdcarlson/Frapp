@@ -183,6 +183,7 @@ describeIntegration('Reported attachments against live storage', () => {
     const { report } = await reports.create({
       chapter_id: chapterId,
       message_id: reportedId,
+      channel_id: channelId,
       reporter_user_id: reporterId,
       reported_content: '',
       reported_sender_id: authorId,

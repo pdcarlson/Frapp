@@ -32,6 +32,7 @@ import {
   useChannels,
   useChapterScope,
   useSetChannelNotificationLevel,
+  canSetChannelBackground,
   useChatBackground,
   useChapterChatBackground,
   useSetChannelBackground,
@@ -59,11 +60,10 @@ import {
   landingChannelId,
   canSetChannelDisplayLock,
   useSetChannelDisplayLock,
+  useReorderCategories,
+  useReorderChannels,
 } from "@repo/hooks";
-import {
-  setChannelLocked,
-  syncLockedChannels,
-} from "@repo/chat-core/density";
+import { setChannelLocked, syncLockedChannels } from "@repo/chat-core/density";
 import {
   can,
   canAll,
@@ -102,7 +102,7 @@ import { vocab } from "@repo/org-archetypes";
 import * as Sentry from "@sentry/nextjs";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useDeleteChannelFlow } from "./use-delete-channel-flow";
-import { ThreadPanel } from "./thread-panel";
+import { ThreadPanel, type ThreadRowWrites } from "./thread-panel";
 import {
   classifyMessage,
   hiddenQuoteText,
@@ -114,6 +114,9 @@ import { FOCUS_RING, SKIP_LINK_CLASSES } from "@/components/ui/focus";
 import {
   ChannelFilters,
   ChannelList,
+  REORDER_SAVE_FAILED_BODY,
+  REORDER_SAVE_FAILED_TITLE,
+  type ChannelReorderControls,
   type ChannelSidebarControls,
   type ChannelCategory,
   type ChatChannel,
@@ -1453,8 +1456,10 @@ export function ChatShell({
     (
       copy: { title: string; description: string; confirmLabel: string },
       action: () => Promise<void>,
-    ) => {
-      void (async () => {
+    ): Promise<void> =>
+      // Resolves once the member has answered and the write is done, so the
+      // thread panel can re-read a parent it acted on (#4034). Never rejects.
+      (async () => {
         const confirmed = await confirm({ ...copy, tone: "destructive" });
         if (!confirmed) return;
         try {
@@ -1462,33 +1467,34 @@ export function ChatShell({
         } catch {
           // The chat-core action already toasted the failure.
         }
-      })();
-    },
+      })(),
     [confirm],
   );
   const deleteMessage = channel.delete;
+  // `threadRootId`: a thread reply's, so the write lands in its thread's
+  // cache (#4034); omitted for a timeline row.
   const handleDeleteMessage = useCallback(
-    (messageId: string) =>
+    (messageId: string, threadRootId?: string | null) =>
       confirmThen(
         {
           title: DELETE_MESSAGE_CONFIRM_TITLE,
           description: DELETE_MESSAGE_CONFIRM_BODY,
           confirmLabel: DELETE_MESSAGE_CONFIRM_LABEL,
         },
-        () => deleteMessage(messageId),
+        () => deleteMessage(messageId, threadRootId),
       ),
     [confirmThen, deleteMessage],
   );
   const closePoll = channel.closePoll;
   const handleClosePoll = useCallback(
-    (messageId: string) =>
+    (messageId: string, threadRootId?: string | null) =>
       confirmThen(
         {
           title: CLOSE_POLL_CONFIRM_TITLE,
           description: CLOSE_POLL_CONFIRM_BODY,
           confirmLabel: CLOSE_POLL_CONFIRM_LABEL,
         },
-        () => closePoll(messageId),
+        () => closePoll(messageId, threadRootId),
       ),
     [confirmThen, closePoll],
   );
@@ -1665,6 +1671,29 @@ export function ChatShell({
       deleteChannelFlow,
     ],
   );
+
+  // Drag to reorder the rail (#4178), for `channels:manage` only. Each write
+  // shows at once and goes back if it fails; the toast says so, per call.
+  const reorderChannelsAsync = useReorderChannels().mutateAsync;
+  const reorderCategoriesAsync = useReorderCategories().mutateAsync;
+  const railReorder = useMemo<ChannelReorderControls | undefined>(() => {
+    if (!canManageChannel) return undefined;
+    const failed = () =>
+      toast({
+        variant: "destructive",
+        title: REORDER_SAVE_FAILED_TITLE,
+        description: REORDER_SAVE_FAILED_BODY,
+      });
+    return {
+      onReorderChannels: (categoryId, channelIds) =>
+        void reorderChannelsAsync({
+          category_id: categoryId,
+          channel_ids: channelIds,
+        }).catch(failed),
+      onReorderCategories: (categoryIds) =>
+        void reorderCategoriesAsync(categoryIds).catch(failed),
+    };
+  }, [canManageChannel, reorderChannelsAsync, reorderCategoriesAsync, toast]);
 
   // Unread and mention counts come from `GET /v1/channels/unread`, never from a
   // local re-derivation: the server excludes the viewer's own and deleted
@@ -2008,6 +2037,41 @@ export function ChatShell({
     [activeChannel],
   );
   const closeThread = useCallback(() => setOpenThread(null), []);
+  // The thread panel's row writes (#4034): the timeline's own, each told
+  // which thread a reply belongs to.
+  const {
+    react: channelReact,
+    unreact: channelUnreact,
+    edit: channelEdit,
+    act: channelAct,
+  } = channel;
+  const threadWrites = useMemo<ThreadRowWrites>(
+    () => ({
+      react: channelReact,
+      unreact: channelUnreact,
+      edit: channelEdit,
+      delete: handleDeleteMessage,
+      closePoll: handleClosePoll,
+      act: channelAct,
+    }),
+    [
+      channelReact,
+      channelUnreact,
+      channelEdit,
+      channelAct,
+      handleDeleteMessage,
+      handleClosePoll,
+    ],
+  );
+  // The parent as the timeline's cache holds it, kept live by its realtime.
+  const heldThreadRoot = useMemo(
+    () =>
+      threadRootId
+        ? (channel.messages.find((message) => message.id === threadRootId) ??
+          null)
+        : null,
+    [channel.messages, threadRootId],
+  );
 
   const startReply = useCallback((message: ChatMessage) => {
     setReplyTarget({
@@ -2252,12 +2316,12 @@ export function ChatShell({
       : chapterScope === "none"
         ? "no-chapter"
         : channelsQuery.isPending
-        ? "loading"
-        : channelsQuery.isError
-          ? "error"
-          : !activeChapterId
-            ? "no-chapter"
-            : "empty";
+          ? "loading"
+          : channelsQuery.isError
+            ? "error"
+            : !activeChapterId
+              ? "no-chapter"
+              : "empty";
   // `Esc`, where nothing else takes it (#3824; the history half is above).
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -2354,6 +2418,7 @@ export function ChatShell({
               onHide={hideFromRail}
               rowActions={rowActions}
               sidebar={sidebarControls}
+              reorder={railReorder}
               onPick={(ch) => {
                 if (ch.hidden) {
                   const memberId = otherMemberId(ch, userId);
@@ -2561,7 +2626,8 @@ export function ChatShell({
                         setDisplayLock.mutate(
                           { id: channelId, locked },
                           {
-                            onSuccess: () => setChannelLocked(channelId, locked),
+                            onSuccess: () =>
+                              setChannelLocked(channelId, locked),
                             onError: () =>
                               toast({
                                 title: "Couldn't change Always formal",
@@ -2576,9 +2642,10 @@ export function ChatShell({
               }
               background={
                 activeChannel &&
-                canManageChannel &&
-                activeChannel.type !== "DM" &&
-                activeChannel.type !== "GROUP_DM"
+                canSetChannelBackground(
+                  activeChannel,
+                  permissionsPayload?.permissions,
+                )
                   ? {
                       value:
                         channelBackground.data?.source === "channel"
@@ -3076,18 +3143,36 @@ export function ChatShell({
           its place, so the timeline keeps its scroll position underneath.
         */}
         {activeChannel && threadRootId ? (
-          <ThreadPanel
-            key={threadRootId}
-            className="absolute inset-0 z-10"
-            channelId={activeChannel.id}
-            channelName={activeChannel.name ?? null}
-            rootId={threadRootId}
-            viewerId={userId}
-            nameFor={nameFor}
-            blockState={blockState}
-            canReply={channelAllowsThreadReplies(activeChannel)}
-            onClose={closeThread}
-          />
+          <MentionChipTargetsContext.Provider value={mentionChipTargets}>
+            <ThreadPanel
+              key={threadRootId}
+              className="absolute inset-0 z-10"
+              channelId={activeChannel.id}
+              channelName={activeChannel.name ?? null}
+              rootId={threadRootId}
+              viewerId={userId}
+              nameFor={nameFor}
+              avatarFor={avatarFor}
+              roleColorFor={roleColorFor}
+              blockState={blockState}
+              heldRoot={heldThreadRoot}
+              writes={threadWrites}
+              onUnblock={handleUnblock}
+              onReloadMasked={handleReloadMasked}
+              maskedRefresh={maskedRefresh}
+              bookmarkedMessageIds={bookmarkedMessageIds}
+              onToggleBookmark={handleToggleBookmark}
+              canManageChannel={canManageChannel}
+              onReport={handleReport}
+              onBlock={handleBlock}
+              onOpenProfile={openProfile}
+              isMember={isMember}
+              canReply={channelAllowsThreadReplies(activeChannel)}
+              // An edit authorizes as a post (#2775), the timeline's gate.
+              canPost={activeChannel.can_post !== false}
+              onClose={closeThread}
+            />
+          </MentionChipTargetsContext.Provider>
         ) : null}
       </section>
 

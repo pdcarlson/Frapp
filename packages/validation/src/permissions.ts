@@ -78,12 +78,10 @@ export function canAny(
  *   `chat-report.service.ts` is this constant), so nobody is told about a queue
  *   that answers them 403;
  * - the web queue's `<Can allOf>` gate (`chat-reports-card.tsx`), so an officer
- *   holding one half is shown why rather than a Retry that can only ever 403.
+ *   holding one half gets no queue rather than a Retry that can only ever 403
+ *   (it draws nothing for them: reports stay out of the way, Paul 2026-11-11).
  *
- * Prose that restates it in words, and changes with it by hand: the card's
- * permission-denied copy (`chatReportCopy.deniedDescription` in
- * `chat-report-copy.ts`, pinned against this list by its spec), `writing.md`
- * §7's Chat Admin row, the Status line, § Report and § Officer action of
+ * Prose that restates it in words, and changes with it by hand: the Status line, § Report and § Officer action of
  * `spec/behavior/chat/README.md`, and the `chat/reports` row of
  * `docs/security/authorization-model.md`.
  */

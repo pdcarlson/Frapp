@@ -536,10 +536,102 @@ describe("DashboardShell", () => {
       expect(screen.getByRole("separator")).toBeInTheDocument();
       expect(screen.getByText("events page")).toBeInTheDocument();
       // Both floors: the page keeps 375px, and chat its channels plus 375px.
-      expect(container.querySelector("[data-tool-page]")).toHaveClass(
+      expect(container.querySelector("[data-tool-column]")).toHaveClass(
         "min-[1056px]:min-w-[375px]",
       );
       expect(chatPanel(container)!.style.minWidth).toBe("615px");
+    });
+
+    describe("closing the tool page from the page itself (Paul, 2026-11-11)", () => {
+      it("gives every tool page a close button and its title in its own header", () => {
+        setWindowWidth(1440);
+        // Chat admin has no nav row of its own to click closed.
+        mockPathname.value = "/chat-admin";
+        mockPermissions.value = ["chat:manage"];
+        const { container } = render(<DashboardShell>admin</DashboardShell>);
+        const header = container.querySelector(
+          "[data-tool-page-header]",
+        ) as HTMLElement;
+        expect(header).toHaveClass("hidden", "min-[1056px]:flex");
+        // One h1, and once the window is known to be wide it is the page's.
+        const headings = screen.getAllByRole("heading", { level: 1 });
+        expect(headings).toHaveLength(1);
+        expect(header).toContainElement(headings[0]!);
+        expect(headings[0]).toHaveTextContent("Chat admin");
+        // The top bar's copy steps aside at the same width, by CSS.
+        const barCopy = within(screen.getByRole("banner")).getByText(
+          "Chat admin",
+        );
+        expect(barCopy.tagName).toBe("P");
+        expect(barCopy.parentElement).toHaveClass("min-[1056px]:hidden");
+
+        fireEvent.click(
+          within(header).getByRole("button", { name: "Close Chat admin" }),
+        );
+        expect(routerPush).toHaveBeenCalledWith("/chat");
+      });
+
+      it("keeps the title the top bar's h1 until the window is known to be wide", () => {
+        setWindowWidth(null);
+        mockPathname.value = "/events";
+        render(<DashboardShell>events</DashboardShell>);
+        expect(
+          within(screen.getByRole("banner")).getByRole("heading", { level: 1 }),
+        ).toHaveTextContent("Events");
+        expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+      });
+
+      it("closes on Escape inside the page, but not from a field or below the side-by-side width", () => {
+        setWindowWidth(1440);
+        mockPathname.value = "/events";
+        const { rerender } = render(
+          <DashboardShell>
+            <button type="button">page button</button>
+            <input aria-label="page field" />
+          </DashboardShell>,
+        );
+        fireEvent.keyDown(screen.getByRole("textbox", { name: "page field" }), {
+          key: "Escape",
+        });
+        expect(routerPush).not.toHaveBeenCalled();
+        fireEvent.keyDown(screen.getByRole("button", { name: "page button" }), {
+          key: "Escape",
+        });
+        expect(routerPush).toHaveBeenCalledWith("/chat");
+
+        routerPush.mockClear();
+        setWindowWidth(1024);
+        mockPathname.value = "/tasks";
+        rerender(
+          <DashboardShell>
+            <button type="button">page button</button>
+          </DashboardShell>,
+        );
+        fireEvent.keyDown(screen.getByRole("button", { name: "page button" }), {
+          key: "Escape",
+        });
+        expect(routerPush).not.toHaveBeenCalled();
+      });
+
+      it("closes the page when the divider is let go at the right edge", () => {
+        setWindowWidth(1440);
+        mockPathname.value = "/events";
+        const { container } = render(<DashboardShell>events</DashboardShell>);
+        const main = screen.getByRole("main");
+        main.getBoundingClientRect = () =>
+          ({ width: 1200, left: 240, right: 1440 }) as DOMRect;
+        const divider = screen.getByRole("separator");
+        divider.setPointerCapture = () => {};
+        divider.hasPointerCapture = () => false;
+        fireEvent.pointerDown(divider, { button: 0, pointerId: 1, clientX: 900 });
+        fireEvent.pointerMove(divider, { pointerId: 1, clientX: 1430 });
+        // The page fades first, so the release is no surprise.
+        expect(container.querySelector("[data-tool-column]")).toHaveClass(
+          "opacity-40",
+        );
+        fireEvent.pointerUp(divider, { pointerId: 1, clientX: 1430 });
+        expect(routerPush).toHaveBeenCalledWith("/chat");
+      });
     });
 
     it("mounts chat beside the tool once the window is known to be wide", () => {
@@ -548,6 +640,26 @@ describe("DashboardShell", () => {
       render(<DashboardShell>events</DashboardShell>);
       expect(screen.getByTestId("chat-stub")).toHaveTextContent(
         "beside a tool",
+      );
+    });
+
+    it("gives Chapter settings the whole width, chat open or not (#4068 decision 3)", () => {
+      setWindowWidth(1440);
+      mockPathname.value = "/settings";
+      const { container } = render(
+        <DashboardShell defaultChatOpen>
+          <p>settings page</p>
+        </DashboardShell>,
+      );
+      expect(chatPanel(container)).toBeNull();
+      expect(screen.queryByRole("separator")).not.toBeInTheDocument();
+      expect(container.querySelector("[data-tool-page]")).not.toHaveClass(
+        "min-[1056px]:min-w-[375px]",
+      );
+      // The Chat row goes to chat rather than toggling a panel with no room.
+      expect(within(nav()).getByRole("link", { name: "Chat" })).toHaveAttribute(
+        "href",
+        "/chat",
       );
     });
 

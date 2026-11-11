@@ -1031,6 +1031,153 @@ export function useDeleteCategory() {
   });
 }
 
+// ── Channel order (#4178) ───────────────────────────────────────────────────
+//
+// An officer drags a channel or a category heading in the web rail; every
+// member then sees that order (`spec/behavior/chat/README.md` § Sidebar
+// arrangement). Both writes show at once: the cache takes the new order before
+// the request goes, goes back to what it held if the request fails, and is
+// re-read once it settles, since the server also renumbers rows the officer
+// can't see.
+
+/** A cached channel row, as far as the order writes touch it. */
+interface OrderableChannelRow {
+  id: string;
+  category_id?: string | null;
+  display_order?: number | null;
+}
+
+/** A cached category row, as far as the order writes touch it. */
+interface OrderableCategoryRow {
+  id: string;
+  display_order?: number;
+}
+
+const CATEGORY_LIST_KEY = ["channels", "categories"] as const;
+
+/**
+ * The channel list with `channelIds` filed under `categoryId` in that order.
+ * Rows not listed are untouched. Exported for its spec.
+ */
+export function applyChannelOrder<R extends OrderableChannelRow>(
+  rows: readonly R[],
+  categoryId: string | null,
+  channelIds: readonly string[],
+): R[] {
+  const position = new Map(channelIds.map((id, index) => [id, index]));
+  return rows.map((row) => {
+    const index = position.get(row.id);
+    return index === undefined
+      ? row
+      : { ...row, category_id: categoryId, display_order: index };
+  });
+}
+
+/**
+ * The category list in `categoryIds` order, any category not listed after
+ * them in its old order, as the server's RPC leaves it. Exported for its spec.
+ */
+export function applyCategoryOrder<R extends OrderableCategoryRow>(
+  rows: readonly R[],
+  categoryIds: readonly string[],
+): R[] {
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const listed = categoryIds.flatMap((id) => {
+    const row = byId.get(id);
+    return row ? [row] : [];
+  });
+  const listedIds = new Set(categoryIds);
+  const rest = rows.filter((row) => !listedIds.has(row.id));
+  return [...listed, ...rest].map((row, index) => ({
+    ...row,
+    display_order: index,
+  }));
+}
+
+/** `PUT /v1/channels/order`: one section's channels, top to bottom. */
+export function useReorderChannels() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["channels", "reorder"],
+    mutationFn: async (body: {
+      category_id: string | null;
+      channel_ids: string[];
+    }) => {
+      const { data, error } = await client.PUT("/v1/channels/order", {
+        body,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onMutate: async (body) => {
+      await queryClient.cancelQueries({
+        queryKey: CHANNEL_LIST_KEY,
+        exact: true,
+      });
+      const previous = queryClient.getQueryData(CHANNEL_LIST_KEY);
+      if (Array.isArray(previous)) {
+        queryClient.setQueryData(
+          CHANNEL_LIST_KEY,
+          applyChannelOrder(
+            previous as OrderableChannelRow[],
+            body.category_id,
+            body.channel_ids,
+          ),
+        );
+      }
+      return { previous };
+    },
+    onError: (_error, _body, context) => {
+      if (context && context.previous !== undefined) {
+        queryClient.setQueryData(CHANNEL_LIST_KEY, context.previous);
+      }
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({
+        queryKey: CHANNEL_LIST_KEY,
+        exact: true,
+      });
+    },
+  });
+}
+
+/** `PUT /v1/channels/categories/order`: the chapter's categories, top to bottom. */
+export function useReorderCategories() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["channels", "reorder-categories"],
+    mutationFn: async (categoryIds: string[]) => {
+      const { data, error } = await client.PUT(
+        "/v1/channels/categories/order",
+        { body: { category_ids: categoryIds } },
+      );
+      if (error) throw error;
+      return data;
+    },
+    onMutate: async (categoryIds) => {
+      await queryClient.cancelQueries({ queryKey: CATEGORY_LIST_KEY });
+      const previous = queryClient.getQueryData(CATEGORY_LIST_KEY);
+      if (Array.isArray(previous)) {
+        queryClient.setQueryData(
+          CATEGORY_LIST_KEY,
+          applyCategoryOrder(previous as OrderableCategoryRow[], categoryIds),
+        );
+      }
+      return { previous };
+    },
+    onError: (_error, _ids, context) => {
+      if (context && context.previous !== undefined) {
+        queryClient.setQueryData(CATEGORY_LIST_KEY, context.previous);
+      }
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: CATEGORY_LIST_KEY });
+    },
+  });
+}
+
 // ── Bookmarks (#462) ────────────────────────────────────────────────────────
 //
 // Personal and private, per `spec/behavior/chat/README.md` § Bookmarks. The API

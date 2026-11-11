@@ -653,7 +653,7 @@ The officer report queue ([`../../behavior/chat/README.md`](../../behavior/chat/
 | No chapter | — | `Pick an active chapter to review its reports.` (one line) |
 | Offline | `Reports unavailable offline` | `Reconnect to review reported messages.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can review reported messages.` |
-| Permission denied | `Reported messages` | `Reviewing reported messages needs a role that can see the full directory and manage channels and pins. Ask your chapter president for access.` |
+| Permission denied | `Reported messages` | Nothing: the queue is left out for a role that can't review it (Paul, 2026-11-11: reports stay out of the way). |
 | Nothing to remove | — | `This message no longer exists, so there's nothing to remove. Mark actioned to close the report.` (hard-deleted; the row offers `Mark actioned` in place of `Remove message`) |
 | Attachments (open report) | — | `1 attachment` / `<n> attachments`, then `Kept while this report is open, even if the sender deletes the message.`, each file's name (`Unnamed file` for none) and size, and `Show attachments` to load them (#2481). Loading: `Loading attachments...`. Failed: `Couldn't load the attachments.` with `Retry`. Fewer loaded than the report holds: `1 attachment couldn't be loaded.` / `<n> attachments couldn't be loaded.` |
 | Attachments (resolved report) | — | `1 attachment` / `<n> attachments`, then `Attachments are kept only while a report is open.` and the file names, with nothing to open |
@@ -981,6 +981,7 @@ and both import it from `@repo/hooks`. The filter note below is web's alone and 
 | Filters | — | `Unread only`, `Hide muted`: two switches in a menu behind the first section heading's filter button, named `Filter channels`, or `Filter channels, filters on` while one is on, with `Showing unread only.`, `Muted channels hidden.` or `Showing unread only, muted hidden.` and `Show all` under the heading (mobile, 2026-11-06); two switches behind the Channels header's filter control, named `Filter channels`, or `Filter channels, filters on` while one is on (web) | `UNREAD_ONLY_LABEL`, `HIDE_MUTED_LABEL`, `FILTER_CHANNELS_LABEL`, `FILTER_CHANNELS_ON_LABEL` |
 | Filtered to nothing | — | `No channels match your filters.` with the action `Show all channels`, which turns both filters off | `NO_MATCHING_CHANNELS`, `SHOW_ALL_CHANNELS_LABEL` |
 | Save failed | `Couldn't save your channel list` | `Nothing changed. Check your connection and try again.` A mobile alert; a toast on web | `SIDEBAR_SAVE_FAILED_TITLE`, `SIDEBAR_SAVE_FAILED_BODY` |
+| Chapter order (web, `channels:manage`, #4178) | — | An empty category's heading carries `Drag channels here`; a drag or an Alt+Arrow move is announced as `<name> moved to <n> of <total> in <section>`; a failed save toasts `Couldn't save the channel order` with `Nothing changed. Check your connection and try again.` and the rows go back | `EMPTY_CATEGORY_HINT`, `REORDER_SAVE_FAILED_TITLE`, `REORDER_SAVE_FAILED_BODY` in `apps/web/components/chat/channel-list.tsx` |
 
 **"Pin to top", never a bare "Pin".** The channel menu already has a `Pinned` panel for
 pinned *messages*, which the chapter shares. A pin on the channel list is the member's own,

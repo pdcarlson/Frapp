@@ -204,6 +204,13 @@ const railRowActions = vi.hoisted(() => ({
   value: undefined as
     import("./channel-row-menu").ChannelRowActions | undefined,
 }));
+// The rail's drag-to-reorder controls (#4178), captured like the row actions.
+const railReorder = vi.hoisted(() => ({
+  value: undefined as
+    import("./channel-list").ChannelReorderControls | undefined,
+  channels: vi.fn(),
+  categories: vi.fn(),
+}));
 const mockSetChannelPinned = vi.fn();
 const mockSetSectionCollapsed = vi.fn();
 const mockSetSidebarFilter = vi.fn();
@@ -437,6 +444,7 @@ vi.mock("@repo/hooks", async () => ({
     .importActual<typeof import("@repo/hooks")>("@repo/hooks")
     .then(
       ({
+        canSetChannelBackground,
         claimViewedChannel,
         HIDE_SETUP_CHECKLIST_LABEL,
         landingChannelId,
@@ -450,6 +458,7 @@ vi.mock("@repo/hooks", async () => ({
         DELETE_CHANNEL_CONFIRM_BODY,
         DELETE_CHANNEL_LABEL,
       }) => ({
+        canSetChannelBackground,
         claimViewedChannel,
         deleteChannelConfirmTitle,
         DELETE_CHANNEL_CONFIRM_BODY,
@@ -597,6 +606,8 @@ vi.mock("@repo/hooks", async () => ({
     isPending: false,
     mutate: displayLockState.mutate,
   }),
+  useReorderChannels: () => ({ mutateAsync: railReorder.channels }),
+  useReorderCategories: () => ({ mutateAsync: railReorder.categories }),
   otherMemberId: (
     channel: { member_ids?: string[] | null },
     viewerId: string | null,
@@ -678,6 +689,9 @@ vi.mock("./channel-list-skeleton", () => ({
   ChannelListSkeleton: () => <div data-testid="channel-list-skeleton" />,
 }));
 vi.mock("./channel-list", () => ({
+  REORDER_SAVE_FAILED_TITLE: "Couldn't save the channel order",
+  REORDER_SAVE_FAILED_BODY:
+    "Nothing changed. Check your connection and try again.",
   ChannelFilters: ({
     onChange,
   }: {
@@ -697,8 +711,10 @@ vi.mock("./channel-list", () => ({
     sidebar,
     unreadByChannelId,
     rowActions,
+    reorder,
   }: {
     rowActions?: import("./channel-row-menu").ChannelRowActions;
+    reorder?: import("./channel-list").ChannelReorderControls;
     unreadByChannelId?: Map<string, unknown>;
     sidebar?: {
       mutedChannelIds: ReadonlySet<string> | undefined;
@@ -716,7 +732,10 @@ vi.mock("./channel-list", () => ({
   }) => (
     <div
       data-testid="channel-list"
-      ref={() => void (railRowActions.value = rowActions)}
+      ref={() => {
+        railRowActions.value = rowActions;
+        railReorder.value = reorder;
+      }}
     >
       {/* The rail's pin control and the muted set it filters with (#2877). */}
       <button
@@ -1108,9 +1127,11 @@ vi.mock("./message-timeline", async () => {
       holdFollow?: boolean;
       channelStart?: React.ReactNode;
       onOpenProfile?: (userId: string) => void;
+      onOpenThread?: (message: { id: string }) => void;
     }
   >(function MessageTimeline(
     {
+      onOpenThread,
       onOpenProfile,
       messages,
       onDelete,
@@ -1169,6 +1190,19 @@ vi.mock("./message-timeline", async () => {
             reply to {m.id}
           </button>
         ))}
+        {/* The row's Start thread and the parent's chip both call
+            `onOpenThread` (#3785); withheld where threads aren't offered. */}
+        {onOpenThread
+          ? (messages ?? []).map((m) => (
+              <button
+                key={m.id}
+                data-testid={`trigger-thread-${m.id}`}
+                onClick={() => onOpenThread(m)}
+              >
+                thread on {m.id}
+              </button>
+            ))
+          : null}
       </div>
     );
   });
@@ -1177,6 +1211,46 @@ vi.mock("./message-timeline", async () => {
   );
   return { MessageTimeline, MessageTimelineSkeleton };
 });
+
+// The panel's own rows and reads are `thread-panel.spec.tsx`'s and
+// `use-message-thread.spec.tsx`'s; here it echoes what the shell hands it,
+// with Back and one of each row write a reply or the parent can make.
+vi.mock("./thread-panel", () => ({
+  ThreadPanel: ({
+    rootId,
+    heldRoot,
+    writes,
+    canReply,
+    canPost,
+    onClose,
+  }: import("./thread-panel").ThreadPanelProps) => (
+    <section aria-label="Thread" data-testid="thread-panel">
+      <span data-testid="thread-root">{rootId}</span>
+      <span data-testid="thread-held-root">{heldRoot?.content ?? "none"}</span>
+      <span data-testid="thread-can-reply">{String(canReply)}</span>
+      <span data-testid="thread-can-post">{String(canPost)}</span>
+      <button onClick={onClose}>Back to channel</button>
+      <button onClick={() => writes.delete("reply-1", rootId)}>
+        thread-delete-reply
+      </button>
+      <button onClick={() => writes.react("reply-1", "👍", rootId)}>
+        thread-react-reply
+      </button>
+      <button onClick={() => writes.react(rootId, "👍", null)}>
+        thread-react-root
+      </button>
+      <button onClick={() => void writes.edit("reply-1", "fixed", rootId)}>
+        thread-edit-reply
+      </button>
+      <button onClick={() => writes.act("reply-1", "vote", { i: 0 }, rootId)}>
+        thread-act-reply
+      </button>
+      <button onClick={() => writes.closePoll("reply-1", rootId)}>
+        thread-close-poll-reply
+      </button>
+    </section>
+  ),
+}));
 
 import { blockClearance } from "@repo/chat-core/blocks";
 import {
@@ -2453,7 +2527,7 @@ describe("ChatShell Close poll wiring (#3794)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close poll" }));
 
     await waitFor(() => {
-      expect(channel.closePoll).toHaveBeenCalledWith("poll-1");
+      expect(channel.closePoll).toHaveBeenCalledWith("poll-1", undefined);
     });
   });
 
@@ -2470,7 +2544,7 @@ describe("ChatShell Close poll wiring (#3794)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close poll" }));
 
     await waitFor(() => {
-      expect(channel.closePoll).toHaveBeenCalledWith("poll-1");
+      expect(channel.closePoll).toHaveBeenCalledWith("poll-1", undefined);
     });
     await waitFor(() => {
       expect(screen.queryByText("Close this poll?")).not.toBeInTheDocument();
@@ -2534,7 +2608,7 @@ describe("ChatShell delete-message wiring", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete message" }));
 
     await waitFor(() => {
-      expect(channel.delete).toHaveBeenCalledWith("msg-1");
+      expect(channel.delete).toHaveBeenCalledWith("msg-1", undefined);
     });
   });
 
@@ -2554,7 +2628,7 @@ describe("ChatShell delete-message wiring", () => {
     // normally — the failure was already surfaced by `channel.delete` itself
     // (it toasts before rejecting; see `chat-client.ts`'s `deleteMessage`).
     await waitFor(() => {
-      expect(channel.delete).toHaveBeenCalledWith("msg-1");
+      expect(channel.delete).toHaveBeenCalledWith("msg-1", undefined);
     });
     await waitFor(() => {
       expect(
@@ -4575,6 +4649,48 @@ describe("ChatShell member list", () => {
   });
 });
 
+describe("ChatShell rail reorder (#4178)", () => {
+  beforeEach(() => {
+    railReorder.value = undefined;
+    railReorder.channels.mockReset();
+    railReorder.categories.mockReset();
+    mockToast.mockClear();
+  });
+
+  it("offers no drag to a member without channels:manage", () => {
+    mockUseMyPermissions.mockReturnValue({ data: { permissions: [] } });
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(screen.getByTestId("channel-list")).toBeTruthy();
+    expect(railReorder.value).toBeUndefined();
+  });
+
+  it("saves an officer's drop and says so when the save fails", async () => {
+    mockUseMyPermissions.mockReturnValue({
+      data: { permissions: ["channels:manage"] },
+    });
+    railReorder.channels.mockRejectedValue(new Error("nope"));
+    railReorder.categories.mockResolvedValue({ success: true });
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    act(() => railReorder.value!.onReorderChannels("cat-1", ["a", "b"]));
+    expect(railReorder.channels).toHaveBeenCalledWith({
+      category_id: "cat-1",
+      channel_ids: ["a", "b"],
+    });
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          variant: "destructive",
+          title: "Couldn't save the channel order",
+        }),
+      ),
+    );
+
+    act(() => railReorder.value!.onReorderCategories(["c2", "c1"]));
+    expect(railReorder.categories).toHaveBeenCalledWith(["c2", "c1"]);
+  });
+});
+
 describe("ChatShell rail row menu (owner, 2026-11-06)", () => {
   beforeEach(() => {
     railRowActions.value = undefined;
@@ -5122,5 +5238,100 @@ describe("prefillLocalInput", () => {
   it("is undefined without both", () => {
     expect(prefillLocalInput("2026-11-12", undefined)).toBeUndefined();
     expect(prefillLocalInput(undefined, "18:00")).toBeUndefined();
+  });
+});
+
+/**
+ * The thread panel's wiring (#3785, tests from #4034): what opens it, what
+ * closes it, and that a reply's writes reach the channel hook naming the
+ * thread, so they land in the thread's cache.
+ */
+describe("ChatShell thread panel", () => {
+  it("opens a thread from a row's Start thread or its chip", () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(screen.queryByTestId("thread-panel")).toBeNull();
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-2"));
+    expect(screen.getByTestId("thread-root")).toHaveTextContent("msg-2");
+    // The parent as the channel's cache holds it, for its live updates.
+    expect(screen.getByTestId("thread-held-root")).toHaveTextContent("world");
+  });
+
+  it("opens Start thread after a Reply was staged, and keeps the staged reply", () => {
+    mockUseChatChannel.mockReturnValue({
+      ...chatChannelResult(),
+      // A staged reply is keyed to its message's channel.
+      messages: MESSAGES.map((m) => ({ ...m, channel_id: "chan-general" })),
+    });
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("trigger-reply-msg-1"));
+    expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("msg-1");
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
+    expect(screen.getByTestId("thread-root")).toHaveTextContent("msg-1");
+    // Back in the channel, the reply the member staged is still there.
+    fireEvent.click(screen.getByRole("button", { name: "Back to channel" }));
+    expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("msg-1");
+  });
+
+  it("returns to the timeline on Back", () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
+    fireEvent.click(screen.getByRole("button", { name: "Back to channel" }));
+    expect(screen.queryByTestId("thread-panel")).toBeNull();
+    expect(screen.getByTestId("message-timeline")).toBeInTheDocument();
+  });
+
+  it("closes on a channel switch, and stays closed on the way back", () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
+    expect(screen.getByTestId("thread-panel")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("pick-random"));
+    expect(screen.queryByTestId("thread-panel")).toBeNull();
+    fireEvent.click(screen.getByTestId("pick-general"));
+    expect(screen.queryByTestId("thread-panel")).toBeNull();
+  });
+
+  it("names the thread on a reply's writes, and none on the parent's", async () => {
+    const channel = chatChannelResult();
+    mockUseChatChannel.mockReturnValue(channel);
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
+
+    fireEvent.click(screen.getByText("thread-react-reply"));
+    expect(channel.react).toHaveBeenCalledWith("reply-1", "👍", "msg-1");
+    fireEvent.click(screen.getByText("thread-react-root"));
+    expect(channel.react).toHaveBeenCalledWith("msg-1", "👍", null);
+    fireEvent.click(screen.getByText("thread-edit-reply"));
+    expect(channel.edit).toHaveBeenCalledWith("reply-1", "fixed", "msg-1");
+    fireEvent.click(screen.getByText("thread-act-reply"));
+    expect(channel.act).toHaveBeenCalledWith(
+      "reply-1",
+      "vote",
+      { i: 0 },
+      "msg-1",
+    );
+
+    // Delete still asks first, as on the timeline.
+    fireEvent.click(screen.getByText("thread-delete-reply"));
+    await waitFor(() => {
+      expect(screen.getByText("Delete this message?")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Delete message" }));
+    await waitFor(() => {
+      expect(channel.delete).toHaveBeenCalledWith("reply-1", "msg-1");
+    });
+  });
+
+  it("hands the panel the channel's post and thread-reply gates", () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
+    expect(screen.getByTestId("thread-can-reply")).toHaveTextContent("true");
+    expect(screen.getByTestId("thread-can-post")).toHaveTextContent("true");
+  });
+
+  it("withholds the parent's Edit where the member can't post (#2775)", () => {
+    render(<ChatShell initialChannelId="chan-alumni-readable" />);
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
+    expect(screen.getByTestId("thread-can-post")).toHaveTextContent("false");
+    expect(screen.getByTestId("thread-can-reply")).toHaveTextContent("false");
   });
 });

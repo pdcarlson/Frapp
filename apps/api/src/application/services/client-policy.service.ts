@@ -6,6 +6,7 @@ import {
   parseClientVersionHeader,
   parseVersionWithBuild,
 } from '#domain/constants/client-version';
+import { type Env, envValue } from '#domain/utils/env-value';
 
 /**
  * The minimum mobile build this deployment serves, per platform (#2526).
@@ -48,15 +49,6 @@ export const DEFAULT_UPDATE_URLS: Readonly<Record<ClientPlatform, string>> = {
 export interface ClientPolicy {
   updateRequired: boolean;
   updateUrl: string | null;
-}
-
-type Env = Record<string, unknown>;
-
-function envValue(env: Env, name: string): string | undefined {
-  const value = env[name];
-  if (typeof value !== 'string') return undefined;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 /**

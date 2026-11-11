@@ -1800,6 +1800,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set one section's channel order, moving channels into it */
+        put: operations["ChatOrderController_reorderChannels_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/categories/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set the chapter's category order */
+        put: operations["ChatOrderController_reorderCategories_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events": {
         parameters: {
             query?: never;
@@ -2967,6 +3001,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/documents/stars": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's own starred folders and documents */
+        get: operations["ChapterDocumentController_listStars_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/documents/folders/{id}": {
         parameters: {
             query?: never;
@@ -2985,6 +3036,42 @@ export interface paths {
         patch: operations["ChapterDocumentController_updateFolder_v1"];
         trace?: never;
     };
+    "/v1/documents/folders/{id}/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Pin a folder for the whole chapter (idempotent) */
+        put: operations["ChapterDocumentController_pinFolder_v1"];
+        post?: never;
+        /** Unpin a folder (idempotent) */
+        delete: operations["ChapterDocumentController_unpinFolder_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/folders/{id}/star": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Star a folder for yourself (idempotent) */
+        put: operations["ChapterDocumentController_starFolder_v1"];
+        post?: never;
+        /** Remove your star from a folder (idempotent) */
+        delete: operations["ChapterDocumentController_unstarFolder_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/documents/{id}": {
         parameters: {
             query?: never;
@@ -2998,6 +3085,42 @@ export interface paths {
         post?: never;
         /** Delete a document */
         delete: operations["ChapterDocumentController_delete_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/{id}/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Pin a document for the whole chapter (idempotent) */
+        put: operations["ChapterDocumentController_pinDocument_v1"];
+        post?: never;
+        /** Unpin a document (idempotent) */
+        delete: operations["ChapterDocumentController_unpinDocument_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/{id}/star": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Star a document for yourself (idempotent) */
+        put: operations["ChapterDocumentController_starDocument_v1"];
+        post?: never;
+        /** Remove your star from a document (idempotent) */
+        delete: operations["ChapterDocumentController_unstarDocument_v1"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3726,6 +3849,23 @@ export interface paths {
         get: operations["ClientPolicyController_get_v1"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/dev-log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post to the team's Dev log channel (GitHub Actions only) */
+        post: operations["DevLogController_post_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4846,6 +4986,11 @@ export interface components {
              * @description Null once the reported message was hard-deleted (a channel delete, or the Discord import purge). The report outlives it; the reported_* fields are the evidence.
              */
             message_id: string | null;
+            /**
+             * Format: uuid
+             * @description The channel the message was in when the report was filed. Null once that channel is deleted, and for reports filed before it was recorded whose message was already gone. An id only: it grants no read, and a direct message stays closed to the officer.
+             */
+            channel_id: string | null;
             /** @description What the member wrote on the message, as it read when the report was filed, so a sender soft-deleting their own message cannot blank the evidence. Usually the message content; for a poll, the content followed by the card question (when it differs) and one `- label` line per option, newline-separated. */
             reported_content: string | null;
             /**
@@ -4890,6 +5035,11 @@ export interface components {
              * @description Null once the reported message was hard-deleted (a channel delete, or the Discord import purge). The report outlives it; the reported_* fields are the evidence.
              */
             message_id: string | null;
+            /**
+             * Format: uuid
+             * @description The channel the removed message was in, so a client can blank that one timeline's cached copy instead of refetching every timeline. An id only: it grants no read, and a direct message stays closed to the officer. Null when the message row no longer exists.
+             */
+            channel_id: string | null;
             /** @description What the member wrote on the message, as it read when the report was filed, so a sender soft-deleting their own message cannot blank the evidence. Usually the message content; for a poll, the content followed by the card question (when it differs) and one `- label` line per option, newline-separated. */
             reported_content: string | null;
             /**
@@ -4911,11 +5061,6 @@ export interface components {
             reported_attachments: components["schemas"]["ChatReportAttachmentSummaryDto"][];
             /** @description True when the message was already soft-deleted before this call, so nothing was removed now; the report (and any other open report on the message) is marked actioned either way. */
             message_already_deleted: boolean;
-            /**
-             * Format: uuid
-             * @description The channel the removed message was in, so a client can blank that one timeline's cached copy instead of refetching every timeline. An id only: it grants no read, and a direct message stays closed to the officer. Null when the message row no longer exists.
-             */
-            channel_id: string | null;
         };
         ChatBlockListDto: {
             /** @description users.id values the caller has blocked in the active chapter. An empty array means nobody is blocked — a failed request is NOT an empty list, and a client must hold unmaskable messages rather than render them when the read fails. */
@@ -5031,6 +5176,22 @@ export interface components {
             background: "plain" | "gold-glow" | "midnight" | "game-day" | "letters" | "photo";
             /** @description Required with `photo`: the path the photo-url call returned. */
             storage_path?: string;
+        };
+        ReorderChannelsDto: {
+            /**
+             * Format: uuid
+             * @description The category the channels are filed under, or null for the default Channels section. A channel listed from another section moves here.
+             */
+            category_id: string | null;
+            /** @description Every channel the officer sees in that section, top to bottom. Any other channel already in the section keeps its relative order after them. Never a DM, a group DM or #chapter-audit. */
+            channel_ids: string[];
+        };
+        ReorderResponseDto: {
+            success: boolean;
+        };
+        ReorderCategoriesDto: {
+            /** @description The chapter’s categories, top to bottom. A category not listed keeps its relative order after them. */
+            category_ids: string[];
         };
         GeofenceCoordinateDto: {
             lat: number;
@@ -5653,6 +5814,37 @@ export interface components {
             document_type?: string;
             /** @description Date this document took effect (ISO date), distinct from the upload timestamp */
             effective_date?: string;
+        };
+        ChapterDocumentDto: {
+            id: string;
+            chapter_id: string;
+            title: string;
+            description: string | null;
+            folder: string | null;
+            storage_path: string;
+            uploaded_by: string;
+            created_at: string;
+            content_type: string | null;
+            byte_size: number | null;
+            document_type: string | null;
+            effective_date: string | null;
+            /** @description When an officer pinned it for the whole chapter, or null */
+            pinned_at: string | null;
+        };
+        DocumentFolderDto: {
+            id: string;
+            chapter_id: string;
+            name: string;
+            sort_order: number;
+            created_at: string;
+            /** @description When an officer pinned it for the whole chapter, or null */
+            pinned_at: string | null;
+        };
+        DocumentStarsDto: {
+            /** @description Ids of the folders the caller starred, oldest star first */
+            folder_ids: string[];
+            /** @description Ids of the documents the caller starred, oldest star first */
+            document_ids: string[];
         };
         CreateDocumentFolderDto: {
             /** @description Folder name (unique within the chapter) */
@@ -6299,6 +6491,55 @@ export interface components {
              * @example https://apps.apple.com/app/id6812025642
              */
             update_url: string | null;
+        };
+        DevLogItemDto: {
+            /** @description The issue or pull request number. */
+            number: number;
+            title: string;
+            actor?: string;
+            areas?: string[];
+        };
+        DevLogMergeCountDto: {
+            actor: string;
+            count: number;
+        };
+        DevLogPostDto: {
+            /** @enum {string} */
+            event: "work_started" | "pr_merged" | "daily_summary" | "update_pushed";
+            /** @description work_started: the issue number. pr_merged: the pull request number. */
+            number?: number;
+            /** @description work_started, pr_merged: the issue or pull request title. */
+            title?: string;
+            /** @description work_started, pr_merged: who did it, as a name or a login. */
+            actor?: string;
+            /** @description work_started: the issue's area labels, without the prefix. */
+            areas?: string[];
+            /** @description work_started: other issues in progress that share one of the areas. */
+            also_in_area?: components["schemas"]["DevLogItemDto"][];
+            /**
+             * @description daily_summary: the day it is posted. One post per day.
+             * @example 2026-11-11
+             */
+            date?: string;
+            /** @description daily_summary: how many pull requests merged in the last day. */
+            merged_total?: number;
+            /** @description daily_summary: that total, per person. */
+            merged_by?: components["schemas"]["DevLogMergeCountDto"][];
+            /** @description daily_summary: issues in progress now. */
+            in_progress?: components["schemas"]["DevLogItemDto"][];
+            /** @description work_started: the id of the workflow run that saw the label. update_pushed: the id of the Deploy production run that shipped. */
+            run_id?: string;
+            /** @description update_pushed: that run also uploaded a store build for testers. */
+            store_build?: boolean;
+            /** @description update_pushed: that run also published an over-the-air update. */
+            ota_update?: boolean;
+        };
+        DevLogPostResultDto: {
+            /**
+             * @description duplicate: this event was already posted (the same label event, pull request, day or deploy run), so nothing was written.
+             * @enum {string}
+             */
+            status: "posted" | "duplicate";
         };
     };
     responses: never;
@@ -9768,6 +10009,8 @@ export interface operations {
             query?: {
                 /** @description Which slice of the queue to read. Defaults to `open` — the resolved statuses are history. */
                 status?: "open" | "reviewed" | "actioned" | "dismissed";
+                /** @description Only the reports filed in this channel, for Chat admin's per-channel view. Omit for the whole chapter's queue, which is the only place a report about a DM or a deleted channel appears. */
+                channel_id?: string;
             };
             header?: never;
             path?: never;
@@ -10528,6 +10771,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatBackgroundPhotoUrlResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatOrderController_reorderChannels_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderChannelsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReorderResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatOrderController_reorderCategories_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderCategoriesDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReorderResponseDto"];
                 };
             };
             /** @description Error */
@@ -13042,7 +13349,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ChapterDocumentDto"][];
+                };
             };
             /** @description Error */
             default: {
@@ -13098,7 +13407,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DocumentFolderDto"][];
+                };
             };
             /** @description Error */
             default: {
@@ -13129,6 +13440,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_listStars_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentStarsDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -13201,6 +13540,122 @@ export interface operations {
             };
         };
     };
+    ChapterDocumentController_pinFolder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentFolderDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_unpinFolder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentFolderDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_starFolder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_unstarFolder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     ChapterDocumentController_getOne_v1: {
         parameters: {
             query?: never;
@@ -13241,6 +13696,122 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_pinDocument_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterDocumentDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_unpinDocument_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterDocumentDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_starDocument_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_unstarDocument_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14656,6 +15227,59 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ClientPolicyDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    DevLogController_post_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DevLogPostDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DevLogPostResultDto"];
+                };
+            };
+            /** @description Missing or wrong token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The Dev log is not configured on this deployment. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The configured channel is gone or archived. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

@@ -8,6 +8,10 @@ import {
   useRequestDocumentUploadUrl,
   useDocuments,
   useUpdateDocumentFolder,
+  useDocumentStars,
+  useSetDocumentPin,
+  useSetDocumentStar,
+  withStar,
 } from "./use-documents";
 import { FrappClientProvider } from "./use-frapp-client";
 import React from "react";
@@ -367,5 +371,173 @@ describe("document folder mutations", () => {
     await waitFor(() =>
       expect(queryClient.getQueryState(listKey)?.isInvalidated).toBe(true),
     );
+  });
+});
+
+describe("document stars and pins (#3934)", () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = createTestQueryClient();
+  });
+
+  it("withStar adds and removes an id without touching the other list", () => {
+    const stars = { folder_ids: ["f1"], document_ids: ["d1"] };
+    expect(withStar(stars, { kind: "folder", id: "f2" }, true)).toEqual({
+      folder_ids: ["f1", "f2"],
+      document_ids: ["d1"],
+    });
+    expect(withStar(stars, { kind: "document", id: "d1" }, false)).toEqual({
+      folder_ids: ["f1"],
+      document_ids: [],
+    });
+    expect(withStar(stars, { kind: "folder", id: "f1" }, true)).toEqual(stars);
+  });
+
+  it("reads the caller's stars", async () => {
+    const mockGet = vi.fn().mockResolvedValue({
+      data: { folder_ids: ["f1"], document_ids: [] },
+      error: null,
+    });
+    const { result } = renderHook(() => useDocumentStars(), {
+      wrapper: createWrapper(queryClient, { GET: mockGet }),
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockGet).toHaveBeenCalledWith("/v1/documents/stars");
+    expect(result.current.data).toEqual({
+      folder_ids: ["f1"],
+      document_ids: [],
+    });
+  });
+
+  it("stars a folder with PUT and unstars a document with DELETE", async () => {
+    const mockPut = vi.fn().mockResolvedValue({ error: null });
+    const mockDelete = vi.fn().mockResolvedValue({ error: null });
+    const mockGet = vi.fn().mockResolvedValue({
+      data: { folder_ids: [], document_ids: [] },
+      error: null,
+    });
+    const { result } = renderHook(() => useSetDocumentStar(), {
+      wrapper: createWrapper(queryClient, {
+        GET: mockGet,
+        PUT: mockPut,
+        DELETE: mockDelete,
+      }),
+    });
+
+    await result.current.mutateAsync({
+      target: { kind: "folder", id: "f1" },
+      starred: true,
+    });
+    expect(mockPut).toHaveBeenCalledWith("/v1/documents/folders/{id}/star", {
+      params: { path: { id: "f1" } },
+    });
+
+    await result.current.mutateAsync({
+      target: { kind: "document", id: "d1" },
+      starred: false,
+    });
+    expect(mockDelete).toHaveBeenCalledWith("/v1/documents/{id}/star", {
+      params: { path: { id: "d1" } },
+    });
+  });
+
+  it("marks a star at once, and re-reads the server when it refuses", async () => {
+    let refuse: (value: unknown) => void = () => {};
+    const mockPut = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          refuse = resolve;
+        }),
+    );
+    const mockGet = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: { folder_ids: [], document_ids: [] },
+        error: null,
+      })
+      .mockResolvedValue({
+        data: { folder_ids: ["f9"], document_ids: [] },
+        error: null,
+      });
+    const { result } = renderHook(
+      () => ({ stars: useDocumentStars(), star: useSetDocumentStar() }),
+      { wrapper: createWrapper(queryClient, { PUT: mockPut, GET: mockGet }) },
+    );
+    await waitFor(() => expect(result.current.stars.isSuccess).toBe(true));
+
+    const pending = result.current.star
+      .mutateAsync({ target: { kind: "document", id: "d1" }, starred: true })
+      .catch(() => undefined);
+    await waitFor(() =>
+      expect(result.current.stars.data).toEqual({
+        folder_ids: [],
+        document_ids: ["d1"],
+      }),
+    );
+
+    refuse({ error: { message: "nope" } });
+    await pending;
+    // The server's answer, not a snapshot from before the tap.
+    await waitFor(() =>
+      expect(result.current.stars.data).toEqual({
+        folder_ids: ["f9"],
+        document_ids: [],
+      }),
+    );
+  });
+
+  it("re-reads the stars of the chapter the tap was made in", async () => {
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    const mockPut = vi.fn().mockResolvedValue({ error: null });
+    const { result } = renderHook(() => useSetDocumentStar(), {
+      wrapper: createWrapper(queryClient, { PUT: mockPut, GET: vi.fn() }),
+    });
+    await result.current.mutateAsync({
+      target: { kind: "folder", id: "f1" },
+      starred: true,
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["documents", null, "stars"],
+    });
+  });
+
+  it("re-reads the folder and document lists after a pin", async () => {
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    const mockPut = vi.fn().mockResolvedValue({ error: null });
+    const { result } = renderHook(() => useSetDocumentPin(), {
+      wrapper: createWrapper(queryClient, { PUT: mockPut }),
+    });
+    await result.current.mutateAsync({
+      target: { kind: "folder", id: "f1" },
+      pinned: true,
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["documents", null],
+    });
+  });
+
+  it("pins a document with PUT and unpins a folder with DELETE", async () => {
+    const mockPut = vi.fn().mockResolvedValue({ error: null });
+    const mockDelete = vi.fn().mockResolvedValue({ error: null });
+    const { result } = renderHook(() => useSetDocumentPin(), {
+      wrapper: createWrapper(queryClient, { PUT: mockPut, DELETE: mockDelete }),
+    });
+
+    await result.current.mutateAsync({
+      target: { kind: "document", id: "d1" },
+      pinned: true,
+    });
+    expect(mockPut).toHaveBeenCalledWith("/v1/documents/{id}/pin", {
+      params: { path: { id: "d1" } },
+    });
+
+    await result.current.mutateAsync({
+      target: { kind: "folder", id: "f1" },
+      pinned: false,
+    });
+    expect(mockDelete).toHaveBeenCalledWith("/v1/documents/folders/{id}/pin", {
+      params: { path: { id: "f1" } },
+    });
   });
 });

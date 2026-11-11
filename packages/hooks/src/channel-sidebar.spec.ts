@@ -14,6 +14,7 @@ interface Row {
   id: string;
   type: string;
   name: string;
+  display_order?: number | null;
 }
 
 const ch = (id: string, name = id, type = "PUBLIC"): Row => ({
@@ -86,6 +87,43 @@ describe("arrangeChannelSidebar", () => {
         ],
       });
       expect(result.sections.map((s) => s.key)).toEqual(["direct", "channels"]);
+    });
+
+    it("puts a section the chapter arranged in its order, unarranged rows after A–Z (#4178)", () => {
+      const result = arrange({
+        sections: [
+          {
+            key: "channels",
+            label: "Channels",
+            channels: [
+              { ...general, display_order: 1 },
+              { ...zeta, display_order: 0 },
+              social,
+              alumni,
+            ],
+          },
+        ],
+      });
+      expect(layout(result)).toEqual([
+        "channels: zeta, general, alumni, social",
+      ]);
+    });
+
+    it("keeps Pinned A–Z whatever order the chapter set, since pins carry none", () => {
+      const result = arrange({
+        sections: [
+          {
+            key: "channels",
+            label: "Channels",
+            channels: [
+              { ...zeta, display_order: 0 },
+              { ...general, display_order: 1 },
+            ],
+          },
+        ],
+        pinnedIds: new Set(["zeta", "general"]),
+      });
+      expect(layout(result)).toEqual(["pinned: general, zeta"]);
     });
 
     it("breaks a tie between equal titles by id, so the order is stable", () => {

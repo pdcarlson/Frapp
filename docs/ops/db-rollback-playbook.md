@@ -3354,6 +3354,37 @@ alter table public.chat_channels
   drop column if exists display_locked;
 ```
 
+## Rollback role tiers (20261111140000)
+
+* **Migration**: `20261111140000_role_tiers.sql`
+
+One new table, `role_tiers`; two columns on `roles`, `tier_id` and `permission_overrides`, with a check and a composite foreign key; the function `role_effective_permissions`; and two triggers, `trg_roles_sync_permissions` on `roles` and `trg_role_tiers_sync_roles` on `role_tiers`. The migration wrote no role's `permissions`.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API writes `roles.permissions` directly, as it always did; the trigger keeps each list as given and records it as overrides, so nothing a role can do changes. A chapter created by the reverted API has no tiers and its roles sit outside them, which is how every chapter was before.
+
+**If the triggers are themselves the problem**, drop them alone. `roles.permissions` then stands as last written and is what `PermissionsGuard` reads, so every member keeps exactly what they had; tier and override edits stop reaching it until the triggers are back:
+
+```sql
+drop trigger if exists trg_roles_sync_permissions on public.roles;
+drop trigger if exists trg_role_tiers_sync_roles on public.role_tiers;
+```
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses every chapter's tiers and which role sits in which; `roles.permissions` already holds each role's full list, so no permission is lost:
+
+```sql
+drop trigger if exists trg_roles_sync_permissions on public.roles;
+drop trigger if exists trg_role_tiers_sync_roles on public.role_tiers;
+drop function if exists public.roles_sync_permissions();
+drop function if exists public.role_tiers_sync_roles();
+alter table public.roles
+  drop constraint if exists roles_tier_fk,
+  drop constraint if exists roles_permission_overrides_object,
+  drop column if exists tier_id,
+  drop column if exists permission_overrides;
+drop function if exists public.role_effective_permissions(text[], jsonb);
+drop table if exists public.role_tiers;
+```
+
 ## Rollback Recruitment permissions backfill (20261111010000)
 
 * **Migration**: `20261111010000_rush_permissions_backfill.sql`
@@ -3382,6 +3413,21 @@ where capabilities && array[
   'rush:view', 'rush:add', 'rush:notes',
   'rush:vote', 'rush:view_results', 'rush:bid'
 ];
+```
+
+## Rollback Reports remember their channel (20261111150000)
+
+* **Migration**: `20261111150000_chat_report_channel.sql`
+
+One nullable column on `chat_message_reports`, `channel_id`, and its index. Code without it neither reads nor writes the column, so it is harmless left in place.
+
+**Revert the code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). A web client with the per-channel Chat admin page against the reverted API sends `channel_id` to `GET /v1/chat/reports`, which the older DTO rejects (400, unknown property), so the channel page's report list shows its load error; the chapter page's queue is unaffected.
+
+**To remove the column**, in a later forward migration after the code revert has shipped. It holds only an id the report's message already named:
+
+```sql
+drop index if exists public.idx_chat_message_reports_channel_status;
+alter table public.chat_message_reports drop column if exists channel_id;
 ```
 
 ## Rollback What's new seen on the account (20261111130000)
@@ -3464,9 +3510,9 @@ alter table public.chat_notification_preferences
         or (scope = 'kind' and scope_kind is not null and scope_id is null));
 ```
 
-## Rollback message flags (20261111150000)
+## Rollback message flags (20261111170000)
 
-* **Migration**: `20261111150000_chat_message_flags.sql`
+* **Migration**: `20261111170000_chat_message_flags.sql`
 
 Three columns on `chat_messages`, `flag`, `flagged_by` and `flagged_at`, with the `chat_messages_flag_known` and `chat_messages_flag_cleared` checks and the `chat_messages_flagged_by_fk` foreign key. No existing row changed.
 
@@ -3488,4 +3534,36 @@ alter table public.chat_messages
   drop column if exists flagged_at,
   drop column if exists flagged_by,
   drop column if exists flag;
+```
+
+## Rollback Pinned and starred documents (20261111180000)
+
+* **Migration**: `20261111180000_document_pins_and_stars.sql`
+
+`pinned_at` on `chapter_document_folders` and `chapter_documents`, the table `chapter_document_stars`, and `anonymize_user` redefined to also delete `chapter_document_stars`. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API never writes either column or the table, and returns `pinned_at` as a plain field (`select('*')`) that older clients ignore.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses every pin and every member's stars; nothing else depends on them. First redefine `anonymize_user` without its `chapter_document_stars` delete (the `20261111030000_activity_links.sql` body), or account deletion fails once the table is gone:
+
+```sql
+drop table if exists public.chapter_document_stars;
+alter table public.chapter_documents drop column if exists pinned_at;
+alter table public.chapter_document_folders drop column if exists pinned_at;
+```
+
+## Rollback Chapter channel order (20261111190000)
+
+* **Migration**: `20261111190000_chat_channels_display_order.sql`
+
+One nullable column on `chat_channels`, `display_order`, and the functions `reorder_chat_channels` and `reorder_chat_categories`. No existing row changed.
+
+**Revert the code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API never calls the functions and returns the column as a plain field (`select('*')`); the reverted clients sort every section A to Z again and ignore it.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. Dropping the column loses every chapter's channel order; category order stays in `chat_channel_categories.display_order`, which predates this:
+
+```sql
+drop function if exists public.reorder_chat_channels(uuid, uuid, uuid[]);
+drop function if exists public.reorder_chat_categories(uuid, uuid[]);
+alter table public.chat_channels drop column if exists display_order;
 ```
