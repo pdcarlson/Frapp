@@ -121,15 +121,18 @@ the same rule search and the poll list follow
 
 Sign-up links posted in chat, gathered so a member stops scrolling channels for them (#3897:
 Shawn, 2026-11-09). **Status 2026-11-11: the index is in the database
-(`20261111030000_activity_links.sql`) and the API serves it (`links` on `GET /v1/activity`, and
-the routes below); no screen draws it yet (#3897 step 6).**
+(`20261111030000_activity_links.sql`), the API serves it (`links` on `GET /v1/activity`, and
+the routes below), and the Activity page draws it on web and the phone, with the channel switch
+on web ([`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity)).**
 
 - **What counts.** An http(s) URL in a message body whose host is a sign-up host: Google Forms,
   Sheets and Docs (`docs.google.com/forms/…`, `/spreadsheets/…`, `/document/…`, with or without a
   Workspace account's `/a/<domain>` prefix, and `forms.gle`), Microsoft Forms
   (`forms.office.com`, `forms.microsoft.com`, `forms.cloud.microsoft`), Typeform, SignUpGenius and
   Calendly. The list lives once, in `activity_action_links` in the database, and is flagged for
-  Paul to change or widen. Any other link is not gathered, and neither is a URL with a user name
+  Paul to change or widen. The page names each row's kind ("Google Form", "Calendly") from
+  `activityLinkKind` in `@repo/hooks`, which knows the same hosts: a host added to the database
+  alone is gathered and titled by its bare host until it gets a name there. Any other link is not gathered, and neither is a URL with a user name
   in it (`https://calendly.com:1@evil.example/`): a browser opens the host after the `@`, so the
   one before it would be a trusted label on somewhere else.
 - **How they are found.** A trigger on chat messages indexes every write path the same way (a

@@ -40,7 +40,7 @@ export class BeginDiscordAuthorLinkResponseDto {
 export class ConfirmDiscordAuthorLinkDto {
   @ApiProperty({
     description:
-      'The one-time token the OAuth callback put on the redirect to `/profile`. It links the Discord account only for the member who started the handshake, in the chapter it was started in.',
+      'The one-time token the OAuth callback put on the redirect to the Settings page. It links the Discord account only for the member who started the handshake, in the chapter it was started in.',
   })
   @IsUUID()
   handshake: string;

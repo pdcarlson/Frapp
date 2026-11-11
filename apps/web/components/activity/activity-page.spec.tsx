@@ -5,6 +5,9 @@ import type { ActivityRow } from "@repo/hooks";
 const mockActivity = vi.fn();
 const mockInvalidate = vi.fn();
 const mockNetwork = vi.fn(() => ({ isOffline: false }));
+const mockPermissions = vi.fn(() => ({
+  data: { permissions: [] as string[] },
+}));
 
 vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/hooks")>();
@@ -16,6 +19,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     activityKeys: actual.activityKeys,
     useActiveChapterId: () => "chap-1",
     useActivity: () => mockActivity(),
+    useMyPermissions: () => mockPermissions(),
   };
 });
 vi.mock("@tanstack/react-query", () => ({
@@ -51,6 +55,19 @@ vi.mock("./activity-panel", () => ({
         <button onClick={onActed}>acted</button>
       </div>
     ) : null,
+}));
+
+// The link row's actions are its own spec's (`activity-link-row.spec.tsx`);
+// this page owes drawing one per link, with Remove only for an officer.
+vi.mock("./activity-link-row", () => ({
+  useActivityLinkActions: () => ({}),
+  ActivityLinkRow: ({
+    row,
+    canRemove,
+  }: {
+    row: ActivityRow;
+    canRemove: boolean;
+  }) => <li>{`link:${row.title}:${canRemove ? "officer" : "member"}`}</li>,
 }));
 
 const { ActivityPage } = await import("./activity-page");
@@ -93,6 +110,7 @@ const data = (overrides: Record<string, unknown> = {}) => ({
     polls: [poll],
   },
   coming_up: [],
+  links: [],
   made_by_you: {
     polls: [],
     tasks: [],
@@ -121,6 +139,7 @@ const loaded = (overrides: Record<string, unknown> = {}) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   mockNetwork.mockReturnValue({ isOffline: false });
+  mockPermissions.mockReturnValue({ data: { permissions: [] } });
 });
 
 describe("ActivityPage", () => {
@@ -132,6 +151,7 @@ describe("ActivityPage", () => {
     expect(headings.map((heading) => heading.textContent)).toEqual([
       "Needs you",
       "Coming up",
+      "Links",
       "Made by you",
     ]);
     const needs = screen.getByRole("region", { name: "Needs you" });
@@ -273,5 +293,35 @@ describe("ActivityPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "late close" }));
 
     expect(screen.getByText("panel:Formal venue?")).toBeInTheDocument();
+  });
+
+  it("lists sign-up links in their own group, with Remove only for a channels:manage holder", () => {
+    const link = {
+      id: "l1",
+      url: "https://forms.gle/abc",
+      host: "forms.gle",
+      message_id: "m1",
+      thread_root_id: null,
+      channel_id: "c1",
+      channel_name: "rush",
+      channel_type: "PUBLIC",
+      posted_by: "olive",
+      posted_by_name: "Olive",
+      posted_at: "2026-11-10T15:00:00.000Z",
+    };
+    mockActivity.mockReturnValue(loaded({ links: [link] }));
+    const { unmount } = render(<ActivityPage />);
+
+    const links = screen.getByRole("region", { name: "Links" });
+    expect(
+      within(links).getByText("link:Google Form:member"),
+    ).toBeInTheDocument();
+    unmount();
+
+    mockPermissions.mockReturnValue({
+      data: { permissions: ["channels:manage"] },
+    });
+    render(<ActivityPage />);
+    expect(screen.getByText("link:Google Form:officer")).toBeInTheDocument();
   });
 });

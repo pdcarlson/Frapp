@@ -23,13 +23,16 @@ const ROLES = [
     name: "Brothers",
     is_system: false,
     permissions: ["channels:read:brothers"],
-    color: "#3b82f6",
+    // A palette color, in any case.
+    color: "#f2994a",
   },
   {
     id: "r-cabinet",
     name: "cabinet",
     is_system: false,
     permissions: ["channels:read:cabinet"],
+    // Off the palette: paints no dot (`roleColorOrNull`).
+    color: "#ff0000",
   },
   {
     id: "r-rush",
@@ -60,7 +63,8 @@ describe("parseRoleOptions", () => {
     expect(byId["r-member"].grantsBase).toBe(true);
     expect(byId["r-rush"].grantsBase).toBe(true);
     expect(byId["r-brothers"].grantsBase).toBe(false);
-    expect(byId["r-brothers"].color).toBe("#3b82f6");
+    expect(byId["r-brothers"].color).toBe("#F2994A");
+    expect(byId["r-cabinet"].color).toBeNull();
   });
 
   it("reads anything that isn't a list as no roles", () => {

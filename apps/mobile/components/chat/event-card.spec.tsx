@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { EventPayload } from "@repo/chat-core/cards";
 import { moduleDisabledMessage } from "@repo/validation";
+import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { drawnText, screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
@@ -210,6 +211,11 @@ describe("EventCard — the snapshot", () => {
     expect(text).toContain("Great Hall");
     expect(text).toContain("+10 pts");
     expect(text).toContain("Mandatory");
+  });
+
+  it("draws Mandatory red, as every other Mandatory card does (#3830)", () => {
+    const chip = render().root.findByProps({ label: "Mandatory" });
+    expect(chip.props.hue).toBe(signetDarkTokens.color.semantic.destructive);
   });
 
   it("draws when it is in the viewer's own time, not the server's sentence", () => {

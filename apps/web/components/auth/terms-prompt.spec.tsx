@@ -162,7 +162,7 @@ describe("TermsPromptGate", () => {
     vi.unstubAllGlobals();
   });
 
-  it("lets a member who declines delete their account, since the prompt covers /profile", async () => {
+  it("lets a member who declines delete their account, since the prompt covers Settings → Account", async () => {
     deleteMutate.mockResolvedValue(undefined);
     signOut.mockResolvedValue(undefined);
     const assign = vi.fn();

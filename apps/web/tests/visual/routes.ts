@@ -9,7 +9,7 @@
  * route here, and every suite in this directory picks it up.
  *
  * Not derived from `nav-config.ts`: that list deliberately omits `/profile` and
- * reaches the officer tools only through the Settings row, so it answers a
+ * `/preferences`, and reaches the officer tools only through the Settings row, so it answers a
  * different question again.
  */
 
@@ -36,6 +36,7 @@ export const DASHBOARD_ROUTES = [
   "/billing",
   "/reports",
   "/profile",
+  "/preferences",
   "/settings",
 ] as const;
 
@@ -45,12 +46,12 @@ export const DASHBOARD_ROUTES = [
  *
  * `responsive-floor.spec.ts` asserts each route did **not** end up on
  * `/sign-in` — the guard that stops a regressed `SUPABASE_AUTH_BYPASS` from
- * turning all sixteen tests into green measurements of the sign-in card. For a
+ * turning all seventeen tests into green measurements of the sign-in card. For a
  * pre-auth route that assertion is backwards, so these carry their own
  * expected URL each.
  *
  * They are also the routes the sessionless harness renders **correctly**,
- * which is the opposite of its usual limitation: roughly ten of the sixteen
+ * which is the opposite of its usual limitation: roughly ten of the seventeen
  * above render a 160–256px empty-state card because there is no active
  * chapter, while these four are exactly what a signed-out visitor sees.
  *

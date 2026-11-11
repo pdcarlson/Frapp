@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { activityGroups, type Activity } from "./activity-rows";
+import {
+  activityGroups,
+  activityLinkKind,
+  type Activity,
+} from "./activity-rows";
 
 const task = (overrides: Record<string, unknown> = {}) => ({
   id: "task-1",
@@ -47,6 +51,21 @@ const event = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+const link = (overrides: Record<string, unknown> = {}) => ({
+  id: "link-1",
+  url: "https://docs.google.com/forms/d/e/abc/viewform",
+  host: "docs.google.com",
+  message_id: "message-1",
+  thread_root_id: null,
+  channel_id: "channel-1",
+  channel_name: "rush",
+  channel_type: "PUBLIC",
+  posted_by: "olive",
+  posted_by_name: "Olive",
+  posted_at: "2026-11-10T15:00:00.000Z",
+  ...overrides,
+});
+
 const activity = (overrides: Partial<Record<string, unknown>> = {}) =>
   ({
     needs_you: {
@@ -56,6 +75,7 @@ const activity = (overrides: Partial<Record<string, unknown>> = {}) =>
       polls: [],
     },
     coming_up: [],
+    links: [],
     made_by_you: { polls: [], tasks: [], files: [], events: [] },
     needs_you_count: 0,
     unavailable: [],
@@ -76,10 +96,10 @@ const rowsOf = (
   );
 
 describe("activityGroups", () => {
-  it("draws the three groups in order, Needs you first", () => {
+  it("draws the four groups in order, Needs you first", () => {
     expect(
       activityGroups(activity(), "all").map((group) => group.label),
-    ).toEqual(["Needs you", "Coming up", "Made by you"]);
+    ).toEqual(["Needs you", "Coming up", "Links", "Made by you"]);
   });
 
   it("puts an event the member can check in to under Needs you, and not again under Coming up", () => {
@@ -155,7 +175,7 @@ describe("activityGroups", () => {
       stored_status: "COMPLETED",
       assignee_name: "Ada",
     };
-    const [, , made] = activityGroups(
+    const [, , , made] = activityGroups(
       activity({
         made_by_you: {
           polls: [],
@@ -189,6 +209,7 @@ describe("activityGroups", () => {
     expect(groups.map((group) => group.unavailable)).toEqual([
       ["tasks", "hours_approvals"],
       [],
+      [],
       ["tasks", "files"],
     ]);
   });
@@ -207,15 +228,16 @@ describe("activityGroups", () => {
     const under = (filter: Parameters<typeof activityGroups>[1]) =>
       activityGroups(data, filter).map((group) => group.unavailable);
 
-    expect(under("task")).toEqual([["tasks"], [], ["tasks"]]);
-    expect(under("hours")).toEqual([["hours_approvals"], [], []]);
-    expect(under("poll")).toEqual([["polls"], [], ["polls"]]);
+    expect(under("task")).toEqual([["tasks"], [], [], ["tasks"]]);
+    expect(under("hours")).toEqual([["hours_approvals"], [], [], []]);
+    expect(under("poll")).toEqual([["polls"], [], [], ["polls"]]);
     expect(under("event")).toEqual([
       ["coming_up"],
       ["coming_up"],
+      [],
       ["made_events"],
     ]);
-    expect(under("file")).toEqual([[], [], ["files"]]);
+    expect(under("file")).toEqual([[], [], [], ["files"]]);
   });
 
   it("lists an event the member made under Made by you, apart from the same event under Coming up", () => {
@@ -310,6 +332,7 @@ describe("activityGroups", () => {
     expect(rowsOf(data, "poll")).toEqual({
       "needs-you": ["poll:Formal venue?:Vote"],
       "coming-up": [],
+      links: [],
       "made-by-you": ["poll:Mine:Closed"],
     });
   });
@@ -321,6 +344,7 @@ describe("activityGroups", () => {
     expect(all.map((group) => group.unavailable)).toEqual([
       ["polls", "coming_up"],
       ["coming_up"],
+      [],
       ["polls"],
     ]);
 
@@ -328,5 +352,97 @@ describe("activityGroups", () => {
     expect(tasksOnly.every((group) => group.unavailable.length === 0)).toBe(
       true,
     );
+  });
+
+  it("lists sign-up links in their own group, said by what they are, who posted them and where", () => {
+    const data = activity({
+      links: [
+        link(),
+        link({
+          id: "link-2",
+          url: "https://calendly.com/olive/rush",
+          host: "calendly.com",
+          posted_by: null,
+          posted_by_name: "",
+          channel_type: "DM",
+          channel_name: "dm-a-b",
+        }),
+      ],
+    });
+    const group = activityGroups(data, "all").find((g) => g.id === "links")!;
+
+    expect(group.rows.map((row) => row.title)).toEqual([
+      "Google Form",
+      "Calendly",
+    ]);
+    expect(group.rows[0]!.detail).toMatch(/^Olive · #rush · /);
+    // No poster name for an imported author, and no server-made DM name.
+    expect(group.rows[1]!.detail).toMatch(/^Direct message · /);
+    expect(group.rows.every((row) => row.badge === null)).toBe(true);
+  });
+
+  it("narrows to links under the Links chip, and names a links read that failed there", () => {
+    const data = activity({
+      links: [link()],
+      needs_you: {
+        tasks: [task()],
+        task_confirmations: [],
+        hours_approvals: [],
+        polls: [],
+      },
+      unavailable: ["links"],
+    });
+
+    expect(rowsOf(data, "link")).toEqual({
+      "needs-you": [],
+      "coming-up": [],
+      links: ["link:Google Form:-"],
+      "made-by-you": [],
+    });
+    expect(
+      activityGroups(data, "task").find((g) => g.id === "links")!.unavailable,
+    ).toEqual([]);
+    expect(
+      activityGroups(data, "link").find((g) => g.id === "links")!.unavailable,
+    ).toEqual(["links"]);
+  });
+});
+
+describe("activityLinkKind", () => {
+  it.each([
+    [
+      "docs.google.com",
+      "https://docs.google.com/forms/d/e/x/viewform",
+      "Google Form",
+    ],
+    [
+      "docs.google.com",
+      "https://docs.google.com/a/school.edu/forms/d/x",
+      "Google Form",
+    ],
+    [
+      "docs.google.com",
+      "https://docs.google.com/spreadsheets/d/x",
+      "Google Sheet",
+    ],
+    ["docs.google.com", "https://docs.google.com/document/d/x", "Google Doc"],
+    [
+      "docs.google.com",
+      "https://docs.google.com/presentation/d/x",
+      "docs.google.com",
+    ],
+    ["forms.gle", "https://forms.gle/abc", "Google Form"],
+    ["forms.office.com", "https://forms.office.com/r/abc", "Microsoft Form"],
+    [
+      "forms.cloud.microsoft",
+      "https://forms.cloud.microsoft/r/abc",
+      "Microsoft Form",
+    ],
+    ["chapter.typeform.com", "https://chapter.typeform.com/to/abc", "Typeform"],
+    ["signupgenius.com", "https://signupgenius.com/go/abc", "SignUpGenius"],
+    ["calendly.com", "https://calendly.com/olive", "Calendly"],
+    ["example.org", "https://example.org/x", "example.org"],
+  ])("names %s (%s) as %s", (host, url, expected) => {
+    expect(activityLinkKind({ host, url })).toBe(expected);
   });
 });

@@ -362,7 +362,7 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
     */
     <section
       aria-labelledby="plan-panel-heading"
-      className="flex flex-col gap-4 rounded-xl border border-border bg-surface-1 p-5 sm:flex-row sm:items-center sm:gap-6"
+      className="flex flex-col gap-4 rounded-xl border border-border bg-surface-1 p-5 @xl:flex-row @xl:items-center @xl:gap-6"
     >
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">

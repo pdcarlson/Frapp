@@ -1,6 +1,6 @@
 # Dashboard browser suite
 
-Playwright tests that drive the app's routes against a real `next dev`. Five
+Playwright tests that drive the app's routes against a real `next dev`. Six
 suites, all in the **required** `web-responsive-floor` job:
 
 | Suite | Covers |
@@ -10,12 +10,13 @@ suites, all in the **required** `web-responsive-floor` job:
 | `nav-fit.spec.ts` | the sidebar fits a 1024×768 window with every row showing (#2946) |
 | `pre-auth-fit.spec.ts` | `/sign-in` and `/sign-up` fit a 1280×650 window without scrolling |
 | `document-fit.spec.ts` | no `DASHBOARD_ROUTES` entry scrolls the document at 1280×420 (#4000) |
+| `beside-chat-floor.spec.ts` | every tool page (the dashboard routes but `/chat`, plus Chat admin and the Roles and Alumni tabs) holds 375px beside chat in a 1440px window (#4033); its header says how to run it signed in against the demo seed |
 
-The two floor suites and `document-fit.spec.ts` read `routes.ts`. Add a screen
+The floor suites and `document-fit.spec.ts` read `routes.ts`. Add a screen
 there and those specs pick it up. `nav-fit.spec.ts` measures one route, because the sidebar is the
 same on every route.
 
-**Why two floor suites and not one list.** The dashboard suite asserts each route did
+**Why a separate pre-auth floor suite and not one list.** The dashboard suite asserts each route did
 *not* end up on `/sign-in` — the guard that stops a regressed
 `SUPABASE_AUTH_BYPASS` from turning every one of those tests into green measurements
 of the sign-in card. For a pre-auth route that assertion is backwards, so those
@@ -125,7 +126,7 @@ config widens the inferred type past what the package exports. It is not in
 
 ## What the harness does and does not exercise
 
-Every spec here runs with **no session and no active chapter**: Playwright opens
+Every spec here runs in CI with **no session and no active chapter** (`beside-chat-floor.spec.ts` alone has a signed-in local mode, `BESIDE_CHAT_SIGN_IN=1`, that CI doesn't run): Playwright opens
 a fresh context with empty `localStorage`, so the persisted
 `frapp-active-chapter` key is missing and `useChapterStore.activeChapterId` is
 `null` (`apps/web/lib/stores/chapter-store.ts`). Several routes therefore render
@@ -144,8 +145,9 @@ why the floor number for this route is now measuring something worth measuring.
 
 That is a real limit, not a formality: a route whose *populated* table overflows
 at 375px while its empty state does not would still pass. Seeding an active
-chapter would flip every route that gates on `activeChapterId` at once and is its
-own piece of work, not a side effect of a test change.
+chapter in CI would flip every route that gates on `activeChapterId` at once and is its
+own piece of work, not a side effect of a test change; the beside-chat spec's local
+mode shows the sign-in and chapter seeding it would take.
 
 It is not a hole for the defect the floor gate was built for. The shell is
 identical on every route, and it was the shell — one missing `min-w-0` — that

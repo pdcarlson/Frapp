@@ -252,7 +252,9 @@ export function ServiceHoursPage() {
   }
 
   return (
-    <div className="space-y-6">
+    // A container (#4033): beside chat (#3779) the page is narrow while the
+    // window is wide, so the hour rows count the page's own width.
+    <div className="@container space-y-6">
       <PageActions>
         <Can permission="service:log">
           <LogHoursDialog
@@ -329,7 +331,7 @@ export function ServiceHoursPage() {
                 return (
                   <li
                     key={entry.id}
-                    className="flex min-h-11 flex-col gap-2 py-2 md:flex-row md:items-center md:justify-between md:gap-3"
+                    className="flex min-h-11 flex-col gap-2 py-2 @2xl:flex-row @2xl:items-center @2xl:justify-between @2xl:gap-3"
                   >
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold">{name}</p>
@@ -469,7 +471,7 @@ export function ServiceHoursPage() {
               return (
                 <li
                   key={entry.id}
-                  className="flex min-h-11 flex-col gap-1 py-2 md:flex-row md:items-center md:justify-between md:gap-3"
+                  className="flex min-h-11 flex-col gap-1 py-2 @2xl:flex-row @2xl:items-center @2xl:justify-between @2xl:gap-3"
                 >
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold">{name}</p>

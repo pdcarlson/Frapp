@@ -82,7 +82,9 @@ export interface MessageThreadScreenProps {
  * an "N replies" divider, the replies, Follow / Following, and a
  * "Reply in thread…" composer, with who is typing named over it.
  *
- * Opened from the parent's chip or the long-press sheet's Start thread, as
+ * Opened from the parent's chip, the long-press sheet's Start thread, or a
+ * thread reply's push or inbox row (`openNotificationTarget`, which stacks the
+ * channel first, #4054), as
  * `/chat-thread?channelId=…&threadRootId=…`: the channel's own route, pushed
  * again with the root, so the stack's back gesture returns to the channel
  * and the frozen stack layout needs no new route (`spec/ui/mobile/navigation.md`

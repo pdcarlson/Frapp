@@ -87,7 +87,9 @@ function DirectoryPageContent() {
 // requires to sit under a Suspense boundary (matches the settings page).
 export function DirectoryPage() {
   return (
-    <div className="space-y-6">
+    // A container (#4033): beside chat (#3779) the page is narrow while the
+    // window is wide, so both tabs' toolbars and rows count the page's width.
+    <div className="@container space-y-6">
       {/*
         **No `PageActions` row here, and that is a decision rather than an
         omission.** `1f` pin 2 puts a route's primary action in that row, and

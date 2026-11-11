@@ -600,7 +600,11 @@ export function GeofencesAdminPage() {
           lines, plus the shared offline state (§ Chat Admin and Discord
           Import).
         */}
-        <div className="mt-4 space-y-4">
+        {/*
+          A container (#4033): beside chat (#3779) the page is narrow while the
+          window is wide, so the zone rows count the page's own width.
+        */}
+        <div className="@container mt-4 space-y-4">
           {/*
             Disable, don't hide (§5 rule 4): the zones themselves stay readable
             and every write control stays visible, pointing at this one sentence.
@@ -639,7 +643,7 @@ export function GeofencesAdminPage() {
               {geofences.map((zone) => (
                 <li
                   key={zone.id}
-                  className="flex min-h-11 flex-col gap-2 py-2.5 sm:flex-row sm:items-center sm:gap-3"
+                  className="flex min-h-11 flex-col gap-2 py-2.5 @md:flex-row @md:items-center @md:gap-3"
                 >
                   <div className="flex min-w-0 flex-1 items-start gap-3">
                     <StudyZonesGlyph
@@ -667,7 +671,7 @@ export function GeofencesAdminPage() {
                     gate — gating only "New study zone" would have the page
                     claim writes are blocked while still offering three.
                   */}
-                  <div className="flex shrink-0 flex-wrap items-center gap-1 pl-7 sm:pl-0">
+                  <div className="flex shrink-0 flex-wrap items-center gap-1 pl-7 @md:pl-0">
                     <IconButton
                       label={`Edit ${zone.name}`}
                       {...gate.controlProps()}

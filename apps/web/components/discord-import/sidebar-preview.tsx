@@ -32,7 +32,7 @@ export function SidebarPreview({ sections }: { sections: PreviewSection[] }) {
           stay where they are.
         </p>
       </div>
-      <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+      <div className="grid gap-x-6 gap-y-3 @xl:grid-cols-2">
         {sections.map((section) => (
           <PreviewGroup key={section.key} section={section} />
         ))}

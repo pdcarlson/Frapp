@@ -15,7 +15,7 @@ export const DELETE_ACCOUNT_FAILED = {
 
 /**
  * Account deletion on web: confirm, delete, sign out, leave. Shared by
- * `/profile` (`profile-panel.tsx`) and the Terms prompt (`terms-prompt.tsx`),
+ * Settings → Account (`account-section.tsx`) and the Terms prompt (`terms-prompt.tsx`),
  * which covers the dashboard and so has to offer it itself
  * (`spec/behavior/data-retention.md` § Individual Account Deletion). One flow,
  * so the confirm and failure copy and the post-delete navigation can't drift

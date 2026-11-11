@@ -37,7 +37,7 @@ export interface UnblockFlow {
 
 /**
  * Unblock for every web surface that offers it — the timeline's tombstone and
- * `/profile`'s Blocked members list — so the question, the copy and the cache
+ * Settings' Blocked members list — so the question, the copy and the cache
  * choreography exist once (#2313). Block from a message is `useBlockFlow`
  * (#2687).
  *

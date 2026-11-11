@@ -104,6 +104,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/users/me/whats-new": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The newest What's new entry the caller has seen on any device
+         * @description So What's new opens by itself on the first device a member opens after an update, and only marks its entry on the others (#4043). Needs no chapter.
+         */
+        get: operations["UserController_getMyWhatsNewSeen_v1"];
+        /**
+         * Record that a device showed the caller What's new
+         * @description Moves the account's seen version forward to `seen_version`, never back, and answers with the version it holds afterwards. Idempotent.
+         */
+        put: operations["UserController_recordMyWhatsNewSeen_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/users/me/avatar-url": {
         parameters: {
             query?: never;
@@ -3644,7 +3668,7 @@ export interface paths {
         put?: never;
         /**
          * Start linking your Discord account
-         * @description Mints a single-use handshake bound to you and this chapter and returns the Discord authorize URL, which asks for `identify` only. Discord returns the browser to `/profile` with a one-time token that `POST /v1/discord/author-link/confirm` spends.
+         * @description Mints a single-use handshake bound to you and this chapter and returns the Discord authorize URL, which asks for `identify` only. Discord returns the browser to their Settings page with a one-time token that `POST /v1/discord/author-link/confirm` spends.
          */
         post: operations["DiscordAuthorLinkController_begin_v1"];
         delete?: never;
@@ -3765,6 +3789,20 @@ export interface components {
         AcceptLegalTermsDto: {
             /** @description The user ticked "I'm 18 or older and agree to the Terms of Service and Privacy Policy." Must be true. The timestamp and version are recorded server-side, never from this payload. */
             accept_terms_privacy: boolean;
+        };
+        WhatsNewSeenDto: {
+            /**
+             * @description A `releaseNoteVersion` (`YYYY-MM-DD#lines`): the newest entry's date and how many lines it had. Null until one of the caller's devices records one.
+             * @example 2026-11-10#6
+             */
+            seen_version: string | null;
+        };
+        RecordWhatsNewSeenDto: {
+            /**
+             * @description The `releaseNoteVersion` of the newest entry the device just showed. The account keeps the later of this and what it already holds, so an older build never lowers it.
+             * @example 2026-11-10#6
+             */
+            seen_version: string;
         };
         UpdateUserDto: {
             display_name?: string;
@@ -6197,7 +6235,7 @@ export interface components {
             expires_at: string;
         };
         ConfirmDiscordAuthorLinkDto: {
-            /** @description The one-time token the OAuth callback put on the redirect to `/profile`. It links the Discord account only for the member who started the handshake, in the chapter it was started in. */
+            /** @description The one-time token the OAuth callback put on the redirect to the Settings page. It links the Discord account only for the member who started the handshake, in the chapter it was started in. */
             handshake: string;
         };
         ConfirmDiscordAuthorLinkResponseDto: {
@@ -6448,6 +6486,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LegalAcceptanceDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    UserController_getMyWhatsNewSeen_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WhatsNewSeenDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    UserController_recordMyWhatsNewSeen_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecordWhatsNewSeenDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WhatsNewSeenDto"];
                 };
             };
             /** @description Error */
