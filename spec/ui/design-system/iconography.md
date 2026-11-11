@@ -385,6 +385,7 @@ composer controls, 16px in card eyebrows and inline metadata (§2).
 | Show or hide the channel member list (#3536), filled while shown | `MembersGlyph` (the nav set's `DirectoryGlyph`, re-exported); mobile's thread header draws the same shape, `NAV_GLYPHS.directory`, through `NavGlyph` |
 | Direct or group message | `DirectMessageGlyph` |
 | Reply to a message | `ThreadGlyph` |
+| Start a thread off a message (#3785): one speech bubble with a reply branching from under it, not `DirectMessageGlyph`'s overlapping pair. Follow on a thread stays a text button, since the bell is the inbox's (#3362) | `StartThreadGlyph` |
 | Per-channel notification level / mute: a speaker (box and cone, split by a detail stroke) with two waves, an × for the waves when muted. Not a bell, since #3362: the bell is the notification inbox's. The box, split and second wave keep it apart from `AnnouncementGlyph`'s single horn and wave | `MuteGlyph` |
 | Event location | `LocationGlyph` |
 | Event card | `EventsGlyph` (shared with the nav intent) |

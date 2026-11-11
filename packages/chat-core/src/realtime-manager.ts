@@ -77,6 +77,7 @@ import {
   type HistoryPageQuery,
 } from "./history";
 import {
+  CHAT_MESSAGE_QUERY_ROOT,
   chatMessagesKey,
   type ChannelCache,
   type RawChatMessage,
@@ -1258,7 +1259,7 @@ class ChatRealtimeManager {
 
   private dispatchActionInsert(action: RawChatMessageAction): void {
     for (const channelId of this.channels.keys()) {
-      this.patchCache(channelId, (cache) =>
+      this.patchActionCaches(channelId, (cache) =>
         cache.byId[action.message_id]
           ? applyReactionInsert(cache, action)
           : cache,
@@ -1274,7 +1275,7 @@ class ChatRealtimeManager {
    */
   private dispatchActionUpdate(action: RawChatMessageAction): void {
     for (const channelId of this.channels.keys()) {
-      this.patchCache(channelId, (cache) => {
+      this.patchActionCaches(channelId, (cache) => {
         const message = cache.byId[action.message_id];
         if (!message) return cache;
         const held = message.actions.find(
@@ -1291,7 +1292,7 @@ class ChatRealtimeManager {
 
   private dispatchActionDelete(actionId: string): void {
     for (const channelId of this.channels.keys()) {
-      this.patchCache(channelId, (cache) =>
+      this.patchActionCaches(channelId, (cache) =>
         cache.actionIndex[actionId]
           ? applyReactionDelete(cache, actionId)
           : cache,
@@ -1523,6 +1524,29 @@ class ChatRealtimeManager {
     } catch {
       // A missed eviction leaves an entry the next load prunes if the card is
       // in its window; losing the cursor write after it would cost more.
+    }
+  }
+
+  /**
+   * A reaction or vote frame for `channelId` (`chat_message_actions` carries
+   * no channel): its timeline cache, and every thread reply cache of that
+   * channel a panel holds, since a thread's replies never sit in the
+   * timeline's (#4034). A thread cache is only patched, never created.
+   */
+  private patchActionCaches(
+    channelId: string,
+    updater: (cache: ChannelCache) => ChannelCache,
+  ): void {
+    if (!this.ctx) return;
+    this.patchCache(channelId, updater);
+    const threads = this.ctx.queryClient.getQueriesData<ChannelCache>({
+      queryKey: [CHAT_MESSAGE_QUERY_ROOT, channelId, "thread"],
+    });
+    for (const [key, cache] of threads) {
+      if (!cache || key[4] !== "replies") continue;
+      this.ctx.queryClient.setQueryData<ChannelCache>(key, (prev) =>
+        prev ? updater(prev) : prev,
+      );
     }
   }
 

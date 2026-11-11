@@ -17,6 +17,40 @@ export function chatMessagesKey(channelId: string) {
   return [CHAT_MESSAGE_QUERY_ROOT, channelId, "messages"] as const;
 }
 
+/** A message thread's parent and the viewer's follow (#3785). */
+export function chatThreadKey(channelId: string, rootId: string) {
+  return [CHAT_MESSAGE_QUERY_ROOT, channelId, "thread", rootId] as const;
+}
+
+/**
+ * A message thread's reply cache (#3785), in the `ChannelCache` shape. Its
+ * replies are rows of the channel that never sit in the channel's cache.
+ */
+export function chatThreadRepliesKey(channelId: string, rootId: string) {
+  return [
+    CHAT_MESSAGE_QUERY_ROOT,
+    channelId,
+    "thread",
+    rootId,
+    "replies",
+  ] as const;
+}
+
+/**
+ * The cache that holds a message: its thread's when it is a thread reply
+ * (`threadRootId`), else its channel's. Every row write (react, edit, delete,
+ * a card action) patches through this, so a reply's write lands where the
+ * thread panel reads it (#4034).
+ */
+export function messageCacheKey(
+  channelId: string,
+  threadRootId?: string | null,
+) {
+  return threadRootId
+    ? chatThreadRepliesKey(channelId, threadRootId)
+    : chatMessagesKey(channelId);
+}
+
 /** Prefix that marks a `chat_message_actions.action_type` as an emoji reaction. */
 export const REACTION_ACTION_PREFIX = "reaction:";
 

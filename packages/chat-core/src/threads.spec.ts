@@ -4,12 +4,15 @@ import {
   applyThreadRealtimeRow,
   backfillThreadReplies,
   chatThreadRepliesKey,
+  fetchThread,
+  loadThreadReplies,
   sendThreadReply,
   threadChipLabel,
 } from "./threads";
 import { emptyCache } from "./cache";
 import type { ChannelCache, RawChatMessage } from "./types";
 import type { FrappApiClient } from "./chat-client";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 const CH = "channel-1";
 const ROOT = "root-1";
@@ -179,5 +182,86 @@ describe("sendThreadReply (#3785)", () => {
     const row = cacheOf(queryClient)?.byId["client-1"];
     expect(row?._status).toBe("failed");
     expect(row?.thread_root_id).toBe(ROOT);
+  });
+});
+
+/**
+ * A thread's reads bring the reactions and votes on what they read (#4034),
+ * the way the timeline's pages do, so they show on first paint.
+ */
+describe("thread reads carry their actions (#4034)", () => {
+  function supabaseWith(actions: unknown[], fail = false) {
+    const range = vi.fn(async () =>
+      fail
+        ? { data: null, error: { message: "boom" }, count: null }
+        : { data: actions, error: null, count: actions.length },
+    );
+    const inIds = vi.fn(() => ({ order: () => ({ range }) }));
+    return {
+      client: {
+        from: vi.fn(() => ({ select: () => ({ in: inIds }) })),
+      } as unknown as SupabaseClient,
+      inIds,
+    };
+  }
+  const thumbs = {
+    id: "act-1",
+    message_id: "a",
+    user_id: "user-3",
+    action_type: "reaction:👍",
+    payload: {},
+    created_at: "2026-11-10T12:01:00.000Z",
+  };
+
+  test("a page of replies lands with its reactions", async () => {
+    const queryClient = new QueryClient();
+    const api = {
+      GET: vi.fn(async () => ({ data: [reply("a"), reply("b")], error: null })),
+    } as unknown as FrappApiClient;
+    const { client, inIds } = supabaseWith([thumbs]);
+
+    await loadThreadReplies(queryClient, api, CH, ROOT, undefined, client);
+
+    expect(inIds).toHaveBeenCalledWith("message_id", ["a", "b"]);
+    expect(cacheOf(queryClient)?.byId["a"]?.reactions["reaction:👍"]).toEqual([
+      "user-3",
+    ]);
+  });
+
+  test("a failed action read still shows the replies", async () => {
+    const queryClient = new QueryClient();
+    const api = {
+      GET: vi.fn(async () => ({ data: [reply("a")], error: null })),
+    } as unknown as FrappApiClient;
+
+    await loadThreadReplies(
+      queryClient,
+      api,
+      CH,
+      ROOT,
+      undefined,
+      supabaseWith([], true).client,
+    );
+
+    expect(cacheOf(queryClient)?.order).toEqual(["a"]);
+  });
+
+  test("the parent comes back with its actions", async () => {
+    const api = {
+      GET: vi.fn(async () => ({
+        data: { root: reply("root-1"), follow_state: null, last_read_at: null },
+        error: null,
+      })),
+    } as unknown as FrappApiClient;
+    const onRoot = { ...thumbs, message_id: "root-1" };
+
+    const meta = await fetchThread(
+      api,
+      CH,
+      ROOT,
+      supabaseWith([onRoot]).client,
+    );
+
+    expect(meta.root_actions).toEqual([onRoot]);
   });
 });

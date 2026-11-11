@@ -16,14 +16,18 @@
  */
 
 import type { QueryClient } from "@tanstack/react-query";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomClientId } from "@repo/api-sdk";
 import {
-  CHAT_MESSAGE_QUERY_ROOT,
+  chatThreadKey,
+  chatThreadRepliesKey,
   optimisticMessage,
   type ChannelCache,
   type RawChatMessage,
+  type RawChatMessageAction,
 } from "./types";
 import {
+  applyReactionInsert,
   emptyCache,
   markFailed,
   mergeHeldServerRow,
@@ -37,6 +41,11 @@ import {
   RATE_LIMITED_COPY,
   type FrappApiClient,
 } from "./chat-client";
+import { readMessageActions } from "./history";
+
+// The keys live beside `chatMessagesKey` so `chat-client` can route a reply's
+// writes without importing this module (which imports it).
+export { chatThreadKey, chatThreadRepliesKey };
 
 /** How many replies one read brings: the newest page, then older on demand. */
 export const THREAD_PAGE_LIMIT = 50;
@@ -49,22 +58,43 @@ export interface ThreadMeta {
   root: RawChatMessage;
   follow_state: ThreadFollowState | null;
   last_read_at: string | null;
+  /**
+   * The parent's reactions and votes, read beside it on the client (not on
+   * the wire): the parent is drawn from here while the timeline's cache
+   * doesn't hold it (#4034).
+   */
+  root_actions?: readonly RawChatMessageAction[];
 }
 
-/** The thread's parent and the viewer's follow. */
-export function chatThreadKey(channelId: string, rootId: string) {
-  return [CHAT_MESSAGE_QUERY_ROOT, channelId, "thread", rootId] as const;
+/**
+ * The reactions and votes on `rows`, read the way the timeline reads a page's
+ * (`readMessageActions`), so a reply's reactions and a card's tally are on
+ * the first paint, not only after a live frame (#4034). Without a client, or
+ * on a failed read, there are none: the replies still show.
+ */
+async function actionsFor(
+  supabase: SupabaseClient | null | undefined,
+  rows: readonly RawChatMessage[],
+): Promise<readonly RawChatMessageAction[]> {
+  const ids = rows.map((row) => row.id).filter(Boolean);
+  if (!supabase || ids.length === 0) return [];
+  const { actions } = await readMessageActions(supabase, ids);
+  return actions;
 }
 
-/** The thread's reply cache (`ChannelCache` shape). */
-export function chatThreadRepliesKey(channelId: string, rootId: string) {
-  return [
-    CHAT_MESSAGE_QUERY_ROOT,
-    channelId,
-    "thread",
-    rootId,
-    "replies",
-  ] as const;
+/** Merges a read's rows, then their actions (deduped by action id). */
+function mergeReplyPage(
+  queryClient: QueryClient,
+  key: readonly unknown[],
+  rows: readonly RawChatMessage[],
+  actions: readonly RawChatMessageAction[],
+): void {
+  queryClient.setQueryData<ChannelCache>(key, (prev) =>
+    actions.reduce(
+      (cache, action) => applyReactionInsert(cache, action),
+      mergeServerRows(prev ?? emptyCache(), rows),
+    ),
+  );
 }
 
 /** A thread read's answer, beside the replies cache it fills. */
@@ -85,12 +115,15 @@ export async function fetchThread(
   api: FrappApiClient,
   channelId: string,
   rootId: string,
+  supabase?: SupabaseClient | null,
 ): Promise<ThreadMeta> {
   const { data, error } = await api.GET("/v1/channels/{id}/threads/{rootId}", {
     params: { path: { id: channelId, rootId } },
   });
   if (error || !data) throw apiError(error, "Couldn't open this thread");
-  return data as unknown as ThreadMeta;
+  const meta = data as unknown as ThreadMeta;
+  const rootActions = await actionsFor(supabase, [meta.root]);
+  return rootActions.length ? { ...meta, root_actions: rootActions } : meta;
 }
 
 /**
@@ -105,6 +138,7 @@ export async function loadThreadReplies(
   channelId: string,
   rootId: string,
   before?: string,
+  supabase?: SupabaseClient | null,
 ): Promise<ThreadRepliesPage> {
   const { data, error } = await api.GET(
     "/v1/channels/{id}/threads/{rootId}/messages",
@@ -117,9 +151,12 @@ export async function loadThreadReplies(
   );
   if (error || !data) throw apiError(error, "Couldn't load replies");
   const rows = data as unknown as RawChatMessage[];
-  queryClient.setQueryData<ChannelCache>(
+  const actions = await actionsFor(supabase, rows);
+  mergeReplyPage(
+    queryClient,
     chatThreadRepliesKey(channelId, rootId),
-    (prev) => mergeServerRows(prev ?? emptyCache(), rows),
+    rows,
+    actions,
   );
   return { hasMore: rows.length >= THREAD_PAGE_LIMIT };
 }
@@ -138,6 +175,7 @@ export async function backfillThreadReplies(
   api: FrappApiClient,
   channelId: string,
   rootId: string,
+  supabase?: SupabaseClient | null,
 ): Promise<void> {
   const key = chatThreadRepliesKey(channelId, rootId);
   const held = queryClient.getQueryData<ChannelCache>(key);
@@ -148,7 +186,14 @@ export async function backfillThreadReplies(
         .find((m) => m && m._status === "confirmed")
     : undefined;
   if (!newest) {
-    await loadThreadReplies(queryClient, api, channelId, rootId);
+    await loadThreadReplies(
+      queryClient,
+      api,
+      channelId,
+      rootId,
+      undefined,
+      supabase,
+    );
     return;
   }
   let before: string | undefined;
@@ -167,9 +212,7 @@ export async function backfillThreadReplies(
     );
     if (error || !data) throw apiError(error, "Couldn't load replies");
     const rows = data as unknown as RawChatMessage[];
-    queryClient.setQueryData<ChannelCache>(key, (prev) =>
-      mergeServerRows(prev ?? emptyCache(), rows),
-    );
+    mergeReplyPage(queryClient, key, rows, await actionsFor(supabase, rows));
     const oldest = rows.at(-1);
     // A short page, or one that reached back to what we held: the gap is closed.
     if (

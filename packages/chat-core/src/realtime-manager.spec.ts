@@ -26,6 +26,8 @@ import {
 } from "./realtime-manager";
 import {
   chatMessagesKey,
+  chatThreadKey,
+  chatThreadRepliesKey,
   normalizeRow,
   type ChannelCache,
   type RawChatMessage,
@@ -696,6 +698,67 @@ describe("ChatRealtimeManager — channel reopen (#783)", () => {
       chatMessagesKey("channel-1"),
     )!;
     expect(cache.byId["poll-2"]!.actions).toHaveLength(1);
+  });
+
+  test("a reaction on a thread reply reaches the open thread's cache, and nothing creates one (#4034)", () => {
+    chatRealtime.subscribe("channel-1");
+    current("channel-1").trigger("SUBSCRIBED");
+    const reply = normalizeRow({
+      id: "reply-1",
+      channel_id: "channel-1",
+      sender_id: "user-9",
+      kind: "text",
+      content: "I can take four",
+      created_at: "2026-11-10T00:00:00.000Z",
+      thread_root_id: "root-1",
+    } as RawChatMessage);
+    // The open panel's reply cache; a second thread nobody has open has none.
+    queryClient.setQueryData<ChannelCache>(
+      chatThreadRepliesKey("channel-1", "root-1"),
+      mergeServerRows(emptyCache(), [reply as unknown as RawChatMessage]),
+    );
+    queryClient.setQueryData(chatThreadKey("channel-1", "root-1"), {
+      root: { id: "root-1" },
+      follow_state: null,
+      last_read_at: null,
+    });
+    const actions = channels.get("chat:actions:global")!;
+    const handler = (event: string) =>
+      (actions.on as unknown as ReturnType<typeof vi.fn>).mock.calls.find(
+        (call) => (call[1] as { event?: string }).event === event,
+      )![2] as (payload: { new?: unknown; old?: unknown }) => void;
+    const reactions = () =>
+      queryClient.getQueryData<ChannelCache>(
+        chatThreadRepliesKey("channel-1", "root-1"),
+      )!.byId["reply-1"]!.actions;
+
+    handler("INSERT")({
+      new: {
+        id: "act-1",
+        message_id: "reply-1",
+        user_id: "user-2",
+        action_type: "reaction:👍",
+        payload: null,
+        created_at: "2026-11-10T00:00:01.000Z",
+      },
+    });
+    expect(reactions()).toHaveLength(1);
+
+    handler("DELETE")({ old: { id: "act-1" } });
+    expect(reactions()).toHaveLength(0);
+
+    // The parent's meta is not a reply cache and is left alone, and no
+    // thread cache is made for a thread nobody opened.
+    expect(
+      queryClient.getQueryData(chatThreadKey("channel-1", "root-1")),
+    ).toEqual({
+      root: { id: "root-1" },
+      follow_state: null,
+      last_read_at: null,
+    });
+    expect(
+      queryClient.getQueryData(chatThreadRepliesKey("channel-1", "root-2")),
+    ).toBeUndefined();
   });
 
   test("an imported archive row never enters the live cache", () => {

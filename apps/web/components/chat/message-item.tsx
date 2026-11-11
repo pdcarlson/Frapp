@@ -21,13 +21,14 @@ import {
   AuditGlyph,
   BookmarkGlyph,
   PinGlyph,
+  StartThreadGlyph,
   ThreadGlyph,
 } from "./chat-glyphs";
 import { isAuditLine } from "@repo/chat-core/cards";
 import { ImportedReactionChips } from "./imported-reaction-chips";
 import { selectImportedReactions } from "./imported-reactions";
 import { ReactionChips, ReactionQuickPick } from "./reaction-bar";
-import { ThreadChip, StartThreadGlyph } from "./thread-chip";
+import { ThreadChip } from "./thread-chip";
 import { MessageAttachments } from "./message-attachments";
 import { QuotedMessage, replyPreviewText } from "./reply-quote";
 import {
