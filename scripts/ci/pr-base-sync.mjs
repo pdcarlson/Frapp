@@ -46,7 +46,11 @@
 // sweep updates no clean PR and runs no slot: it handles conflicts (the wake,
 // or the registry merge) and clears wakes that no longer apply, and a slot
 // sweep (`mode: "checks"`) does nothing. Points 1 and 3 above, and the slot,
-// are what turning it back on restores.
+// are what turning it back on restores. With nothing updated, the stale
+// `mergeable` race below has no update-branch failure to reroute it, so a push
+// sweep first waits MERGEABLE_SETTLE_MS for GitHub to recompute `mergeable`
+// against the new base; and the token alert is neither raised nor closed,
+// since no sweep calls update-branch to prove anything about the token.
 //
 // Verdicts fail SAFE: a PR whose mergeability cannot be established (API error,
 // mergeable still null after bounded polling) is skipped — never blind-updated
@@ -211,6 +215,10 @@ export const MAX_PRS = 20;
 // runs. Bounded re-polls with a real delay, injectable for tests.
 export const MERGEABLE_POLL_ATTEMPTS = 5;
 export const MERGEABLE_POLL_DELAY_MS = 3000;
+// With the up-to-date rule off, the wait before a push sweep reads any PR, so a
+// PR the push just conflicted reads `mergeable: false` (or null, and is polled)
+// rather than a stale `true` (see the header).
+export const MERGEABLE_SETTLE_MS = 60_000;
 
 const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -793,6 +801,7 @@ export async function processBaseMove({
     );
     return [];
   }
+  if (!requireUpToDate && mode === "push") await sleep(MERGEABLE_SETTLE_MS);
   if (mode === "checks" && !updateToken) {
     logger.log?.(
       "[pr-base-sync] checks completed, but no app token minted — the update slot cannot advance; the next push to main sweeps (and raises the alert)",
@@ -927,14 +936,18 @@ export async function processBaseMove({
     results.push(await runOne(listed.number));
   }
 
-  await reconcileTokenAlert({
-    token,
-    updateToken,
-    repo,
-    results,
-    fetchImpl,
-    logger,
-  });
+  // With the rule off no sweep calls update-branch, so the alert has no
+  // evidence either way (docs/ops/alert-routing.md).
+  if (requireUpToDate) {
+    await reconcileTokenAlert({
+      token,
+      updateToken,
+      repo,
+      results,
+      fetchImpl,
+      logger,
+    });
+  }
 
   return results;
 }

@@ -6,6 +6,7 @@ import {
   BASE_SYNC_MARKER,
   MAX_PRS,
   MERGEABLE_POLL_ATTEMPTS,
+  MERGEABLE_SETTLE_MS,
   UPDATE_BRANCH_STALLS_BEFORE_STOP,
   buildBehindComment,
   buildConflictComment,
@@ -2089,6 +2090,58 @@ test("rule off: a behind, clean PR is left as is, with no update, no compare and
   assert.ok(!calls.some((c) => c.url.includes("/compare/")), "behind or not doesn't matter");
   assert.equal(commentPosts(calls).length, 0);
   assert.equal(filedIssues(calls).length, 0, "nothing blocked, so no alert");
+});
+
+test("rule off: a push sweep waits for mergeable to settle before reading a PR; a slot sweep doesn't", async () => {
+  const pr = makePr(12);
+  const { fetchImpl, calls } = makeFetchMock([listRoute([pr]), detailRoute(pr), emptyCommentsRoute]);
+  const { sleep, sleeps } = makeSleep();
+  const order = [];
+  await processBaseMove({
+    requireUpToDate: false,
+    token: "t",
+    updateToken: "app",
+    repo: REPO,
+    baseRef: BASE_REF,
+    baseSha: BASE_SHA,
+    fetchImpl: (url, init) => (order.push("fetch"), fetchImpl(url, init)),
+    sleep: async (ms) => (order.push(`sleep ${ms}`), sleep(ms)),
+    logger: quiet,
+  });
+  assert.equal(order[0], `sleep ${MERGEABLE_SETTLE_MS}`, "the wait comes before the PR list");
+  assert.ok(calls.length > 0);
+  const slot = makeSleep();
+  await processBaseMove({
+    requireUpToDate: false,
+    mode: "checks",
+    token: "t",
+    updateToken: "app",
+    repo: REPO,
+    baseRef: BASE_REF,
+    baseSha: BASE_SHA,
+    fetchImpl,
+    sleep: slot.sleep,
+    logger: quiet,
+  });
+  assert.deepEqual(slot.sleeps, []);
+  assert.deepEqual(sleeps, [MERGEABLE_SETTLE_MS]);
+});
+
+test("rule off: an open token alert is neither closed nor commented on", async () => {
+  const pr = makePr(12);
+  const { results, calls } = await sweep({
+    routes: [
+      listRoute([pr]),
+      detailRoute(pr),
+      emptyCommentsRoute,
+      { method: "GET", path: "/issues?state=all", body: [{ number: 900, state: "open", title: "PR base sync cannot auto-update PR branches" }] },
+    ],
+    updateToken: "app",
+    requireUpToDate: false,
+  });
+  assert.equal(results[0].verdict, "clean");
+  assert.ok(!calls.some((c) => c.url.includes("/issues?")), "the alert isn't even looked up");
+  assert.ok(!calls.some((c) => c.method === "PATCH"));
 });
 
 test("rule off: no app token is not an alert, because nothing needs updating", async () => {

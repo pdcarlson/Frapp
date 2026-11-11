@@ -45,7 +45,9 @@ export const CI_CHECKS = [
   "mobile-validate",
   // The mobile Vitest suite again with TZ=Asia/Tokyo (#1058), split out of
   // mobile-validate to run beside it. Same `changes.mobile` gate. ROLLOUT: same
-  // caveat as secret-scan.
+  // caveat as secret-scan, plus one: with the up-to-date rule off nothing re-runs
+  // an open PR's CI, so a PR whose last run predates this job never reports it
+  // and needs `main` merged in (Update branch) once after the roster is applied.
   "mobile-tests-tokyo",
   // `node --test` over `scripts/ci/__tests__/` (`npm run test:ci-scripts`),
   // covering the gate and deploy scripts under both `scripts/` and
