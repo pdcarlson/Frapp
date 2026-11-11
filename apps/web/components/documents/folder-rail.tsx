@@ -23,6 +23,10 @@ import {
   type FolderManagement,
 } from "@/components/documents/folder-management";
 import type { DocumentMarks } from "@/components/documents/use-document-marks";
+import {
+  KEEP_FOCUS_ATTRIBUTE,
+  useKeepFocus,
+} from "@/components/documents/use-keep-focus";
 import type { FolderRow } from "@/components/documents/document-types";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
@@ -99,6 +103,7 @@ export function FolderRail({
   */
   const [editing, setEditing] = useState(false);
   const manageable = railFolders.some((folder) => folder.id);
+  const { rootRef, remember } = useKeepFocus<HTMLElement>();
 
   /*
     The three tiers (#3934, `chapter-docs.md` § Pinned and starred): pinned
@@ -110,12 +115,11 @@ export function FolderRail({
   const groups: { label: string | null; folders: FolderRow[] }[] = (() => {
     if (editing) {
       const { pinned, rest } = splitPinned(railFolders);
-      return pinned.length > 0
-        ? [
-            { label: "Pinned", folders: pinned },
-            { label: "Other folders", folders: rest },
-          ]
-        : [{ label: null, folders: rest }];
+      if (pinned.length === 0) return [{ label: null, folders: rest }];
+      return [
+        { label: "Pinned", folders: pinned },
+        { label: "Other folders", folders: rest },
+      ].filter((group) => group.folders.length > 0);
     }
     const { pinned, starred, rest } = tierByMarks(
       railFolders,
@@ -134,7 +138,7 @@ export function FolderRail({
   })();
 
   return (
-    <nav aria-labelledby="doc-folders-label">
+    <nav ref={rootRef} aria-labelledby="doc-folders-label">
       <div className="flex min-h-9 items-center justify-between gap-2">
         <h2
           id="doc-folders-label"
@@ -219,6 +223,7 @@ export function FolderRail({
                 gate={gate}
                 management={management}
                 marks={marks}
+                remember={remember}
               />
             ))}
           </div>
@@ -262,6 +267,7 @@ function FolderItem({
   gate,
   management,
   marks,
+  remember,
 }: {
   folder: FolderRow;
   active: boolean;
@@ -272,9 +278,17 @@ function FolderItem({
   gate: SubscriptionGate;
   management: FolderManagement;
   marks: DocumentMarks;
+  /** Keeps focus on a Star or Pin whose folder changes group. */
+  remember: (key: string) => void;
 }) {
   const { folderBusy, openFolderDialog, handleMoveFolder, handleDeleteFolder } =
     management;
+  /*
+    Moves wait for a pin to settle: the move works out the pinned group from
+    `pinned_at`, which a pin in flight hasn't changed yet, so moving then
+    would save an arrangement the pin is about to contradict.
+  */
+  const moveBusy = folderBusy || marks.pinBusy;
   const id = folder.id;
   const pinned = !!folder.pinned_at;
   const starred = !!id && marks.isStarred({ kind: "folder", id });
@@ -306,9 +320,11 @@ function FolderItem({
                 ? "text-accent-text"
                 : "opacity-0 focus-visible:opacity-100 group-hover/folder:opacity-100 pointer-coarse:opacity-100"
             }
-            onClick={() =>
-              marks.toggleStar({ kind: "folder", id }, folder.name)
-            }
+            {...{ [KEEP_FOCUS_ATTRIBUTE]: `star:${id}` }}
+            onClick={() => {
+              remember(`star:${id}`);
+              marks.toggleStar({ kind: "folder", id }, folder.name);
+            }}
             {...gate.controlProps()}
           >
             <StarGlyph active={starred} />
@@ -343,13 +359,15 @@ function FolderItem({
                   : `Pin ${folder.name} for the chapter`
               }
               aria-pressed={pinned}
-              onClick={() =>
+              {...{ [KEEP_FOCUS_ATTRIBUTE]: `pin:${id}` }}
+              onClick={() => {
+                remember(`pin:${id}`);
                 void marks.setPinned(
                   { kind: "folder", id },
                   folder.name,
                   !pinned,
-                )
-              }
+                );
+              }}
               {...gate.controlProps(folderBusy || marks.pinBusy)}
             >
               <PinGlyph className="h-4 w-4" active={pinned} />
@@ -360,7 +378,7 @@ function FolderItem({
               className={MANAGE_CONTROL}
               aria-label={`Move ${folder.name} up`}
               onClick={() => void handleMoveFolder(id, -1)}
-              {...gate.controlProps(folderBusy || first)}
+              {...gate.controlProps(moveBusy || first)}
             >
               <ChevronUp className="h-4 w-4" />
             </Button>
@@ -370,7 +388,7 @@ function FolderItem({
               className={MANAGE_CONTROL}
               aria-label={`Move ${folder.name} down`}
               onClick={() => void handleMoveFolder(id, 1)}
-              {...gate.controlProps(folderBusy || last)}
+              {...gate.controlProps(moveBusy || last)}
             >
               <ChevronDown className="h-4 w-4" />
             </Button>

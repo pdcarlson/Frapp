@@ -12,6 +12,7 @@ import {
   StarGlyph,
 } from "@/components/documents/resources-glyphs";
 import { OPEN_DOCUMENT_ATTRIBUTE } from "@/components/documents/document-viewer";
+import { KEEP_FOCUS_ATTRIBUTE } from "@/components/documents/use-keep-focus";
 import { useDocumentDownload } from "@/components/documents/use-document-download";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import type { ChapterDocument } from "@/components/documents/document-types";
@@ -146,6 +147,7 @@ export function DocumentRow({
           label={starred ? `Unstar ${doc.title}` : `Star ${doc.title}`}
           aria-pressed={starred}
           className={starred ? "text-accent-text" : undefined}
+          {...{ [KEEP_FOCUS_ATTRIBUTE]: `star:${doc.id}` }}
           onClick={() => onToggleStar(doc)}
           {...gate.controlProps()}
         >
@@ -173,6 +175,7 @@ export function DocumentRow({
             }
             aria-pressed={pinned}
             className={pinned ? "text-accent-text" : undefined}
+            {...{ [KEEP_FOCUS_ATTRIBUTE]: `pin:${doc.id}` }}
             onClick={() => onTogglePin(doc)}
             {...gate.controlProps(pinBusy)}
           >

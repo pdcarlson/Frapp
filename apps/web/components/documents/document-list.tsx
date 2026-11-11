@@ -30,6 +30,7 @@ import {
 } from "@/components/shared/table-controls";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import type { DocumentMarks } from "@/components/documents/use-document-marks";
+import { useKeepFocus } from "@/components/documents/use-keep-focus";
 import { DocumentRowsSkeleton } from "@/components/documents/documents-skeleton";
 
 export type DocumentListState =
@@ -102,10 +103,17 @@ export function DocumentList({
   /** Pins and the member's own stars (#3934). */
   marks: DocumentMarks;
 }) {
+  // Starring a file inside a folder or a search moves its row to the head of
+  // the list; this keeps focus on the Star that moved it (#3934).
+  const { rootRef, remember } = useKeepFocus<HTMLElement>();
   return (
     // Its own container (#4022): the rows break on the list's width, which
     // the folder rail and, beside chat, the chat panel both take from.
-    <section aria-labelledby="doc-list-label" className="@container">
+    <section
+      ref={rootRef}
+      aria-labelledby="doc-list-label"
+      className="@container"
+    >
       {/*
         One toolbar row, not a card header: the list's own name and count
         on the left, its search on the right, sitting directly on the page
@@ -305,16 +313,18 @@ export function DocumentList({
                 pinBusy={marks.pinBusy}
                 onOpen={onOpen}
                 onDelete={onDelete}
-                onToggleStar={(row) =>
-                  marks.toggleStar({ kind: "document", id: row.id }, row.title)
-                }
-                onTogglePin={(row) =>
+                onToggleStar={(row) => {
+                  remember(`star:${row.id}`);
+                  marks.toggleStar({ kind: "document", id: row.id }, row.title);
+                }}
+                onTogglePin={(row) => {
+                  remember(`pin:${row.id}`);
                   void marks.setPinned(
                     { kind: "document", id: row.id },
                     row.title,
                     !row.pinned_at,
-                  )
-                }
+                  );
+                }}
               />
             ))}
           </ul>

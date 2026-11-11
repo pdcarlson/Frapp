@@ -68,7 +68,7 @@ export function useDocumentMarks() {
         title: pinned ? `Pinned ${name}` : `Unpinned ${name}`,
         description: pinned
           ? "It sits at the top of Documents for everyone in the chapter."
-          : "It's back in its usual place for everyone.",
+          : "It's no longer at the top for the chapter.",
       });
     } catch (error) {
       toast({

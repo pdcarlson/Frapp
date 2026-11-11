@@ -1,6 +1,6 @@
 "use client";
 
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useRef, useState } from "react";
 import {
   useDeleteDocument,
   useDocumentFolders,
@@ -150,6 +150,19 @@ function ChapterDocumentsPage() {
   // from `visible`, so it steps through the list as shown and closes when the
   // row leaves it.
   const [openId, setOpenId] = useState<string | null>(null);
+  /*
+    What opened the viewer, so closing goes back to it: a pinned or starred
+    file is both a card and a row on All files (#3934), and the viewer's own
+    lookup by document would always find the card first.
+  */
+  const viewerOpener = useRef<HTMLElement | null>(null);
+  function openDocument(doc: ChapterDocument) {
+    viewerOpener.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    setOpenId(doc.id);
+  }
   const { data: permissionsPayload } = useMyPermissions();
   const canUpload = can(
     "chapter_docs:upload",
@@ -433,14 +446,19 @@ function ChapterDocumentsPage() {
         />
 
         <div className="min-w-0 space-y-6">
-          {showStrip && listState === "ready" ? (
+          {/*
+          Also over an empty library: a folder pinned before anything is filed
+          still gets its card. Not over the loading, error or offline states,
+          which have nothing to say about the cards.
+        */}
+        {showStrip && (listState === "ready" || listState === "empty") ? (
             <MarkedStrip
               pinned={strip.pinned}
               starred={strip.starred}
               marks={marks}
               gate={gate}
               onOpenFolder={setActiveFolder}
-              onOpenDocument={(doc) => setOpenId(doc.id)}
+              onOpenDocument={openDocument}
             />
           ) : null}
           <DocumentList
@@ -468,7 +486,7 @@ function ChapterDocumentsPage() {
             onRetry={() => void documentsQuery.refetch()}
             gate={gate}
             deletingIds={deletingIds}
-            onOpen={(doc) => setOpenId(doc.id)}
+            onOpen={openDocument}
             onDelete={(doc) => void handleDelete(doc)}
             onShowAllFiles={() => setActiveFolder(null)}
             onUpload={canUpload ? () => upload.openPanel() : undefined}
@@ -488,6 +506,7 @@ function ChapterDocumentsPage() {
         documents={visibleDocs}
         openId={openId}
         onOpenChange={setOpenId}
+        openerRef={viewerOpener}
       />
 
       {confirmDialog}

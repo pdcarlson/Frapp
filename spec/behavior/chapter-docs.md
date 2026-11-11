@@ -44,6 +44,7 @@ Officers with `chapter_docs:manage` create, rename, reorder, and delete folders;
 - **Each file row** carries a Star for everyone and, for `chapter_docs:manage`, a Pin, both lit while on. A member who can't pin sees a pinned file's pin as a mark only.
 - **Pinning a folder is an Edit control.** Edit adds Pin to each folder's move, rename and delete controls, and shows the chapter's arrangement, pinned then the rest, without the officer's own stars. Move up and Move down move a folder within its tier and save the arrangement pinned-first, so the stored order and what everyone sees agree.
 - A star failing, or a pin, says so in a toast; a star moves on the tap and settles on what the server holds.
+- The cards, their file counts and the tiers come from the library the page has loaded, so they share § Search's cap: past 1,000 documents, a pinned or starred file older than the newest 1,000 is missing from them, and a folder card counts only the files loaded.
 
 Mobile follows in its own change (#3934).
 

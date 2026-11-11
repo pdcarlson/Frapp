@@ -131,8 +131,13 @@ vi.mock("@/lib/stores/chapter-store", () => ({
 }));
 
 vi.mock("@/components/shared/can", () => ({
-  Can: ({ children }: { children: React.ReactNode }) =>
-    canGate.granted ? <>{children}</> : null,
+  Can: ({
+    children,
+    deniedFallback,
+  }: {
+    children: React.ReactNode;
+    deniedFallback?: React.ReactNode;
+  }) => (canGate.granted ? <>{children}</> : <>{deniedFallback ?? null}</>),
 }));
 
 vi.mock("@/lib/hooks/use-toast", () => ({
@@ -1925,5 +1930,197 @@ describe("DocumentsPage pins and stars (#3934)", () => {
     expect(mockUpdateFolder).toHaveBeenCalledWith({ id: "f-3", sort_order: 0 });
     // Rush already sits at 1 in the new order, so it is not rewritten.
     expect(mockUpdateFolder).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps every Star and Pin behind the subscription gate", async () => {
+    chapter.incomplete();
+    documentsQuery.data = [{ ...BYLAWS, pinned_at: "2026-11-11T00:00:00Z" }];
+    foldersQuery.data = [
+      { id: "f-1", name: "Governance", sort_order: 0, pinned_at: null },
+    ];
+    render(<DocumentsPage />);
+
+    // The card's star and the row's star share a name; both are gated.
+    for (const button of screen.getAllByRole("button", {
+      name: "Star Chapter bylaws",
+    })) {
+      expect(button).toBeDisabled();
+    }
+    expect(
+      screen.getByRole("button", {
+        name: "Unpin Chapter bylaws for the chapter",
+      }),
+    ).toBeDisabled();
+    expect(
+      within(rail()).getByRole("button", { name: "Star Governance" }),
+    ).toBeDisabled();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /^edit folders$/i }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Pin Governance for the chapter" }),
+    ).toBeDisabled();
+  });
+
+  it("says so when a star or a pin fails", async () => {
+    mockSetPin.mockRejectedValueOnce(new Error("network down"));
+    render(<DocumentsPage />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Star Chapter bylaws" }),
+    );
+    const options = mockSetStar.mock.calls[0]![1] as {
+      onError: (error: unknown) => void;
+    };
+    act(() => options.onError(new Error("network down")));
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Couldn't star Chapter bylaws",
+        variant: "destructive",
+      }),
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: "Pin Chapter bylaws for the chapter",
+      }),
+    );
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Couldn't pin Chapter bylaws",
+          variant: "destructive",
+        }),
+      ),
+    );
+  });
+
+  it("shows Edit the chapter's arrangement, without the officer's own stars", async () => {
+    foldersQuery.data = [
+      { id: "f-1", name: "Governance", sort_order: 0, pinned_at: null },
+      {
+        id: "f-2",
+        name: "Rush",
+        sort_order: 1,
+        pinned_at: "2026-11-11T00:00:00Z",
+      },
+      { id: "f-3", name: "Finance", sort_order: 2, pinned_at: null },
+    ];
+    stars.value = { folder_ids: ["f-3"], document_ids: [] };
+    render(<DocumentsPage />);
+    expect(
+      within(rail()).getByRole("group", { name: "Starred" }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /^edit folders$/i }),
+    );
+    expect(
+      within(rail()).queryByRole("group", { name: "Starred" }),
+    ).not.toBeInTheDocument();
+    const other = within(rail()).getByRole("group", { name: "Other folders" });
+    expect(
+      within(other).getByRole("button", { name: "Move Governance up" }),
+    ).toBeDisabled();
+    // Finance moves among the rest, its star notwithstanding.
+    expect(
+      within(other).getByRole("button", { name: "Move Finance up" }),
+    ).toBeEnabled();
+    expect(
+      within(other).getByRole("button", { name: "Move Finance down" }),
+    ).toBeDisabled();
+  });
+
+  it("draws no empty group in Edit when every folder is pinned", async () => {
+    foldersQuery.data = [
+      {
+        id: "f-1",
+        name: "Governance",
+        sort_order: 0,
+        pinned_at: "2026-11-11T00:00:00Z",
+      },
+      {
+        id: "f-2",
+        name: "Rush",
+        sort_order: 1,
+        pinned_at: "2026-11-11T00:00:00Z",
+      },
+    ];
+    render(<DocumentsPage />);
+    await userEvent.click(
+      screen.getByRole("button", { name: /^edit folders$/i }),
+    );
+    expect(
+      within(rail()).getByRole("group", { name: "Pinned" }),
+    ).toBeInTheDocument();
+    expect(
+      within(rail()).queryByRole("group", { name: "Other folders" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows a member who can't pin a pinned file's pin as a mark only", () => {
+    canGate.granted = false;
+    documentsQuery.data = [{ ...BYLAWS, pinned_at: "2026-11-11T00:00:00Z" }];
+    render(<DocumentsPage />);
+    expect(
+      screen.getAllByText("Pinned for the chapter").length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.queryByRole("button", { name: /pin chapter bylaws/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("gives a pinned folder its card before anything is filed", () => {
+    documentsQuery.data = [];
+    foldersQuery.data = [
+      {
+        id: "f-2",
+        name: "Rush",
+        sort_order: 0,
+        pinned_at: "2026-11-11T00:00:00Z",
+      },
+    ];
+    render(<DocumentsPage />);
+    const pinned = screen.getByRole("region", { name: "Pinned" });
+    expect(within(pinned).getByText("Folder · 0 files")).toBeInTheDocument();
+  });
+
+  it("keeps focus on a folder's Star when starring moves it to Starred", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<DocumentsPage />);
+    within(rail()).getByRole("button", { name: "Star Governance" }).focus();
+    await user.keyboard("{Enter}");
+
+    // The optimistic star lands, which moves the folder into its new group.
+    stars.value = { folder_ids: ["f-1"], document_ids: [] };
+    rerender(<DocumentsPage />);
+
+    expect(document.activeElement).toBe(
+      within(rail()).getByRole("button", { name: "Unstar Governance" }),
+    );
+  });
+
+  it("returns focus to the row, not the card, when the viewer opened from the row closes", async () => {
+    const user = userEvent.setup();
+    documentsQuery.data = [{ ...BYLAWS, pinned_at: "2026-11-11T00:00:00Z" }];
+    render(<DocumentsPage />);
+    const list = screen.getByRole("region", { name: /all documents/i });
+    const row = list.querySelector<HTMLElement>(
+      '[data-document-open="doc-1"]',
+    )!;
+    // The card above the list names the same file; it must not take focus.
+    expect(
+      screen
+        .getByRole("region", { name: "Pinned" })
+        .querySelector('[data-document-open="doc-1"]'),
+    ).not.toBeNull();
+
+    row.focus();
+    await user.keyboard("{Enter}");
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+
+    await waitFor(() => expect(document.activeElement).toBe(row));
   });
 });
