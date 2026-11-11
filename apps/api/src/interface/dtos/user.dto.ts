@@ -7,6 +7,7 @@ import {
   Max,
   MaxLength,
   ValidateIf,
+  Matches,
 } from 'class-validator';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -15,6 +16,7 @@ import {
   GRADUATION_YEAR_MIN,
   LEGAL_ACCEPTANCE_LABEL,
   MAJOR_MAX_LENGTH,
+  RELEASE_NOTE_VERSION_PATTERN,
 } from '@repo/validation';
 
 export class MyPermissionsDto {
@@ -71,6 +73,36 @@ export class AcceptLegalTermsDto {
     message: 'Terms of Service and Privacy Policy must be accepted',
   })
   accept_terms_privacy: boolean;
+}
+
+/**
+ * The newest What's new entry any of the caller's devices has shown (#4043).
+ * A device that would open What's new by itself checks this first: when the
+ * account has seen the newest entry, it shows a mark on its What's new entry
+ * instead of opening the notes again.
+ */
+export class WhatsNewSeenDto {
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      "A `releaseNoteVersion` (`YYYY-MM-DD#lines`): the newest entry's date and how many lines it had. Null until one of the caller's devices records one.",
+    example: '2026-11-10#6',
+  })
+  seen_version: string | null;
+}
+
+export class RecordWhatsNewSeenDto {
+  @ApiProperty({
+    description:
+      'The `releaseNoteVersion` of the newest entry the device just showed. The account keeps the later of this and what it already holds, so an older build never lowers it.',
+    example: '2026-11-10#6',
+  })
+  @IsString()
+  @Matches(RELEASE_NOTE_VERSION_PATTERN, {
+    message: 'seen_version must look like YYYY-MM-DD#lines',
+  })
+  seen_version: string;
 }
 
 export class RequestAvatarUploadUrlDto {

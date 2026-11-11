@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RELEASE_NOTES, releaseNoteVersion } from "@repo/validation";
 import {
+  WHATS_NEW_QUIET_STORAGE_KEY,
   WHATS_NEW_SEEN_STORAGE_KEY,
   resetWhatsNewForTests,
   useWhatsNewUnread,
@@ -33,10 +34,17 @@ const data = vi.hoisted(() => ({
   chapters: undefined as
     | { chapter_id: string; has_completed_onboarding: boolean }[]
     | undefined,
+  account: { settled: true, seen: null } as {
+    settled: boolean;
+    seen: string | null | undefined;
+  },
+  recordOnAccount: vi.fn(),
 }));
 vi.mock("@repo/hooks", () => ({
   useCurrentUser: () => ({ data: data.user }),
   useAccessibleChapters: () => ({ data: data.chapters }),
+  useAccountWhatsNewSeen: () => data.account,
+  useRecordWhatsNewSeen: () => ({ mutate: data.recordOnAccount }),
 }));
 vi.mock("@/lib/stores/chapter-store", () => ({
   useChapterStore: (
@@ -79,6 +87,8 @@ describe("WhatsNewHost", () => {
     data.chapters = [
       { chapter_id: "chapter-1", has_completed_onboarding: true },
     ];
+    data.account = { settled: true, seen: null };
+    data.recordOnAccount.mockReset();
   });
   afterEach(() => vi.useRealTimers());
 
@@ -252,5 +262,111 @@ describe("WhatsNewHost", () => {
     wait();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(unreadMark()).toHaveTextContent("read");
+  });
+
+  describe("across devices (#4043)", () => {
+    const quietKey = () =>
+      window.localStorage.getItem(WHATS_NEW_QUIET_STORAGE_KEY);
+
+    it("tells the account when it opens the notes", () => {
+      renderHost();
+      wait();
+      expect(screen.getByRole("dialog")).toBeVisible();
+      expect(data.recordOnAccount).toHaveBeenCalledWith(
+        releaseNoteVersion(NEWEST),
+      );
+    });
+
+    it("doesn't open what another device already showed: it marks the row until What's new is opened", () => {
+      data.account = { settled: true, seen: releaseNoteVersion(NEWEST) };
+      const view = renderHost();
+      wait();
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(seen()).toBe(releaseNoteVersion(NEWEST));
+      expect(unreadMark()).toHaveTextContent("unread");
+      view.unmount();
+
+      // A reload keeps the mark, and still opens nothing.
+      resetWhatsNewForTests();
+      const reloaded = renderHost();
+      wait();
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(unreadMark()).toHaveTextContent("unread");
+
+      const page = render(<WhatsNew />);
+      expect(unreadMark()).toHaveTextContent("read");
+      expect(quietKey()).toBeNull();
+      // Reading the page tells the account too.
+      expect(data.recordOnAccount).toHaveBeenCalledWith(
+        releaseNoteVersion(NEWEST),
+      );
+      page.unmount();
+      reloaded.unmount();
+    });
+
+    it("drops a quiet mark the signed-in account doesn't back (another account's)", () => {
+      window.localStorage.setItem(
+        WHATS_NEW_SEEN_STORAGE_KEY,
+        releaseNoteVersion(NEWEST),
+      );
+      window.localStorage.setItem(
+        WHATS_NEW_QUIET_STORAGE_KEY,
+        releaseNoteVersion(NEWEST),
+      );
+      data.account = { settled: true, seen: null };
+      renderHost();
+      wait();
+      expect(unreadMark()).toHaveTextContent("read");
+      expect(quietKey()).toBeNull();
+    });
+
+    it("keeps a quiet mark offline, when the account can't say", () => {
+      window.localStorage.setItem(
+        WHATS_NEW_SEEN_STORAGE_KEY,
+        releaseNoteVersion(NEWEST),
+      );
+      window.localStorage.setItem(
+        WHATS_NEW_QUIET_STORAGE_KEY,
+        releaseNoteVersion(NEWEST),
+      );
+      data.account = { settled: true, seen: undefined };
+      renderHost();
+      wait();
+      expect(unreadMark()).toHaveTextContent("unread");
+    });
+
+    it("still opens when the account saw only an older entry", () => {
+      data.account = { settled: true, seen: releaseNoteVersion(OLDER) };
+      renderHost();
+      wait();
+      expect(screen.getByRole("dialog")).toHaveTextContent(NEWEST.title);
+    });
+
+    it("waits for the account, then goes by this browser's marker when it can't be read", () => {
+      data.account = { settled: false, seen: undefined };
+      const view = renderHost();
+      wait();
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(seen()).toBeNull();
+
+      data.account = { settled: true, seen: undefined };
+      view.rerender(
+        <>
+          <WhatsNewHost />
+          <Unread />
+        </>,
+      );
+      wait();
+      expect(screen.getByRole("dialog")).toHaveTextContent(NEWEST.title);
+    });
+
+    it("keeps the no-show cases: a new account records without a mark", () => {
+      data.user = { created_at: `${NEWEST.date}T12:00:00.000Z` };
+      data.account = { settled: true, seen: releaseNoteVersion(NEWEST) };
+      renderHost();
+      wait();
+      expect(unreadMark()).toHaveTextContent("read");
+      expect(quietKey()).toBeNull();
+    });
   });
 });

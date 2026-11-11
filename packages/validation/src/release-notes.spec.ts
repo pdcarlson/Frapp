@@ -7,6 +7,9 @@ import {
   parseReleaseNoteVersion,
   isNewerReleaseNoteVersion,
   decideWhatsNew,
+  accountHasSeenNewest,
+  isLaterReleaseNoteVersion,
+  RELEASE_NOTE_VERSION_PATTERN,
   type ReleaseNote,
 } from "./release-notes";
 
@@ -208,5 +211,48 @@ describe("decideWhatsNew", () => {
     expect([...dates].sort().reverse()).toEqual(dates);
     expect(new Set(dates).size).toBe(dates.length);
     for (const date of dates) expect(date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+describe("accountHasSeenNewest", () => {
+  it("holds when the account has seen the newest entry, or a later version", () => {
+    expect(accountHasSeenNewest(NOTES, ID[0])).toBe(true);
+    expect(accountHasSeenNewest(NOTES, "2026-12-01#1")).toBe(true);
+  });
+
+  it("fails when the account saw an older entry, or fewer lines of the newest", () => {
+    expect(accountHasSeenNewest(NOTES, ID[1])).toBe(false);
+    expect(accountHasSeenNewest(NOTES, "2026-11-09#0")).toBe(false);
+  });
+
+  it("leaves the device to its own marker when the account knows nothing or can't be read", () => {
+    expect(accountHasSeenNewest(NOTES, null)).toBe(false);
+    expect(accountHasSeenNewest(NOTES, undefined)).toBe(false);
+    expect(accountHasSeenNewest([], ID[0])).toBe(false);
+  });
+});
+
+describe("RELEASE_NOTE_VERSION_PATTERN", () => {
+  it("accepts what releaseNoteVersion writes and nothing else", () => {
+    for (const n of RELEASE_NOTES) {
+      expect(releaseNoteVersion(n)).toMatch(RELEASE_NOTE_VERSION_PATTERN);
+    }
+    for (const bad of ["", "2026-11-09", "2026-11-09#", "x#1", "2026-11-09#12345"]) {
+      expect(bad).not.toMatch(RELEASE_NOTE_VERSION_PATTERN);
+    }
+  });
+});
+
+describe("isLaterReleaseNoteVersion", () => {
+  it("counts anything as news against nothing, and a later day or more lines against a version", () => {
+    expect(isLaterReleaseNoteVersion("2026-11-09#1", null)).toBe(true);
+    expect(isLaterReleaseNoteVersion("2026-11-10#1", "2026-11-09#9")).toBe(true);
+    expect(isLaterReleaseNoteVersion("2026-11-10#10", "2026-11-10#9")).toBe(true);
+  });
+
+  it("never counts the same version or an older one", () => {
+    expect(isLaterReleaseNoteVersion("2026-11-10#9", "2026-11-10#9")).toBe(false);
+    expect(isLaterReleaseNoteVersion("2026-11-10#8", "2026-11-10#9")).toBe(false);
+    expect(isLaterReleaseNoteVersion("2026-11-09#20", "2026-11-10#1")).toBe(false);
   });
 });

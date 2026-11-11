@@ -1,7 +1,16 @@
+import React, { act } from "react";
+import { create, type ReactTestRenderer } from "react-test-renderer";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  WHATS_NEW_QUIET_STORAGE_KEY,
   WHATS_NEW_SEEN_STORAGE_KEY,
+  clearWhatsNewQuiet,
   hasExistingInstallKey,
+  markWhatsNewQuiet,
+  markWhatsNewRead,
+  resetWhatsNewQuietForTests,
+  useWhatsNewQuiet,
   readWhatsNewSeen,
   recordWhatsNewSeen,
   resetWhatsNewBootReadForTests,
@@ -86,5 +95,44 @@ describe("the seen marker", () => {
     await expect(recordWhatsNewSeen("2026-11-09", broken)).resolves.toBe(
       undefined,
     );
+  });
+});
+
+describe("the quiet mark (#4043)", () => {
+  const storage = vi.mocked(AsyncStorage);
+  let values: Map<string, string>;
+
+  beforeEach(() => {
+    resetWhatsNewQuietForTests();
+    values = new Map();
+    storage.getItem.mockImplementation(async (key: string) => values.get(key) ?? null);
+    storage.setItem.mockImplementation(async (key: string, value: string) => {
+      values.set(key, value);
+    });
+  });
+
+  function Probe() {
+    return <>{useWhatsNewQuiet() ? "quiet" : "none"}</>;
+  }
+
+  it("records the entry another device showed, and keeps the mark until What's new is read here", async () => {
+    await markWhatsNewQuiet(SEEN);
+    expect(values.get(WHATS_NEW_SEEN_STORAGE_KEY)).toBe(SEEN);
+    expect(values.get(WHATS_NEW_QUIET_STORAGE_KEY)).toBe("quiet");
+
+    await markWhatsNewRead(SEEN);
+    expect(values.get(WHATS_NEW_SEEN_STORAGE_KEY)).toBe(SEEN);
+    expect(values.get(WHATS_NEW_QUIET_STORAGE_KEY)).toBe("none");
+  });
+
+  it("reads a mark left by an earlier launch back", async () => {
+    values.set(WHATS_NEW_QUIET_STORAGE_KEY, "quiet");
+    let tree!: ReactTestRenderer;
+    await act(async () => {
+      tree = create(<Probe />);
+    });
+    expect(tree.toJSON()).toBe("quiet");
+    await act(async () => clearWhatsNewQuiet());
+    expect(tree.toJSON()).toBe("none");
   });
 });
