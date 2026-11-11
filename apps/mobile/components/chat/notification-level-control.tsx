@@ -86,11 +86,28 @@ export function selectChannelNotificationLevel(
 }
 
 /**
+ * Whether `channelId`'s level comes from the member's chapter-wide chat level
+ * (#3840, "Mentions and DMs only"), so the menu can mark it "your default".
+ */
+export function selectFromChapterLevel(
+  rows: { channel_id: string; from_chapter_level?: boolean }[] | undefined,
+  channelId: string | null,
+): boolean {
+  if (!channelId || !rows) return false;
+  return (
+    rows.find((row) => row.channel_id === channelId)?.from_chapter_level ===
+    true
+  );
+}
+
+/**
  * What the trigger and the menu share, so the screen hands both one value
  * rather than restating the level and the write-blocked reason at each.
  */
 export type NotificationLevelMenuState = {
   level: ChatNotificationLevel | null;
+  /** `level` comes from the member's chapter-wide chat level (#3840). */
+  fromChapterLevel: boolean;
   /** Queueless-write reason from connection-state.md; `null` when the control may write. */
   writeBlockedReason: string | null;
   /** The control cannot write: disabled, level unknown, or writes blocked. */
@@ -103,10 +120,12 @@ export type NotificationLevelMenuState = {
 
 export function useNotificationLevelMenu({
   level,
+  fromChapterLevel = false,
   disabled = false,
   writeBlockedReason = null,
 }: {
   level: ChatNotificationLevel | null;
+  fromChapterLevel?: boolean;
   disabled?: boolean;
   writeBlockedReason?: string | null;
 }): NotificationLevelMenuState {
@@ -134,7 +153,15 @@ export function useNotificationLevelMenu({
     setIsOpen(!isOpen);
   }, [blocked, isOpen]);
 
-  return { level, writeBlockedReason, blocked, visible, toggle, close };
+  return {
+    level,
+    fromChapterLevel,
+    writeBlockedReason,
+    blocked,
+    visible,
+    toggle,
+    close,
+  };
 }
 
 /**
@@ -253,11 +280,17 @@ export function NotificationLevelMenu({
         </Text>
         {NOTIFICATION_LEVEL_OPTIONS.map((option, index) => {
           const selected = option.level === menu.level;
+          // "Only @mentions (your default)": the level came from Settings →
+          // Chat messages, not from this channel (#3840).
+          const label =
+            selected && menu.fromChapterLevel
+              ? `${option.label} (your default)`
+              : option.label;
           return (
             <Pressable
               key={option.level}
               accessibilityRole="button"
-              accessibilityLabel={`${option.label}. ${option.description}`}
+              accessibilityLabel={`${label}. ${option.description}`}
               accessibilityState={{ selected, disabled: isSaving }}
               disabled={isSaving}
               onPress={() => {
@@ -271,7 +304,7 @@ export function NotificationLevelMenu({
               ]}
             >
               <View style={styles.optionText}>
-                <Text style={styles.optionLabel}>{option.label}</Text>
+                <Text style={styles.optionLabel}>{label}</Text>
                 <Text style={styles.optionDescription}>
                   {option.description}
                 </Text>

@@ -1051,6 +1051,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/notification-preferences/chapter": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's chapter-wide chat level: all (each channel at its default) or mentions (Mentions and DMs only) */
+        get: operations["ChatController_getChapterChatLevel_v1"];
+        /** Set the caller's chapter-wide chat level */
+        put: operations["ChatController_setChapterChatLevel_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/channels/{id}": {
         parameters: {
             query?: never;
@@ -4489,6 +4507,8 @@ export interface components {
             channel_id: string;
             /** @enum {string} */
             level: "all" | "mentions" | "off";
+            /** @description True when the level comes from the member's chapter-wide chat level (GET /v1/channels/notification-preferences/chapter), not from this channel's own setting or default, so a client can label it "your default". */
+            from_chapter_level?: boolean;
         };
         KindNotificationPreferenceDto: {
             /**
@@ -4520,6 +4540,17 @@ export interface components {
              * @enum {string|null}
              */
             level: "all" | "mentions" | "off" | null;
+        };
+        ChapterChatLevelDto: {
+            /** @enum {string} */
+            level: "all" | "mentions";
+        };
+        SetChapterChatLevelDto: {
+            /**
+             * @description all = each channel at its own default; mentions = "Mentions and DMs only": every ordinary channel acts as mentions, while DMs, group DMs and the announcements channel keep notifying. A level the member set on one channel, or on a message kind, still wins.
+             * @enum {string}
+             */
+            level: "all" | "mentions";
         };
         CreateChannelDto: {
             name: string;
@@ -8594,6 +8625,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ClearedKindNotificationPreferenceDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_getChapterChatLevel_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterChatLevelDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_setChapterChatLevel_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetChapterChatLevelDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterChatLevelDto"];
                 };
             };
             /** @description Error */

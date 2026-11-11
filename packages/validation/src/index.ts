@@ -936,12 +936,16 @@ export {
 } from "./signed-upload";
 
 export {
+  CHAT_CHAPTER_LEVELS,
+  CHAT_CHAPTER_LEVEL_OPTIONS,
   CHAT_NOTIFICATION_LEVELS,
   builtInChannelDefault,
+  chatChapterLevelLabel,
   isAnnouncementChannel,
   isDirectChannel,
 } from "./chat-notification-defaults";
 export type {
+  ChatChapterLevel,
   ChatNotificationLevel,
   NotificationDefaultChannel,
 } from "./chat-notification-defaults";

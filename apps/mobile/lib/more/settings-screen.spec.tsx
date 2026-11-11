@@ -72,6 +72,16 @@ vi.mock("react-native", async () => {
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useBlockedUserIds: () => ({ data: [], isPending: false, isError: false }),
+  useChapterChatLevel: () => ({
+    data: "all",
+    isPending: false,
+    isError: false,
+  }),
+  useSetChapterChatLevel: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+    isError: false,
+  }),
   useCurrentChapter: () => ({
     data: undefined,
     isPending: true,
@@ -381,6 +391,19 @@ describe("Settings copy", () => {
       await markWhatsNewRead("2026-11-10#1");
     });
     expect(whatsNewRow(plain).props.accessibilityValue).toBeUndefined();
+  });
+
+  it("names the chapter-wide chat level on its own row (#3840)", () => {
+    // Found by the row's own props: the sheet behind it also draws "Chat
+    // messages" and "All messages", so screen text alone would pass with the
+    // row deleted.
+    const row = render().root.find(
+      (node) =>
+        node.props.label === "Chat messages" &&
+        node.props.value === "All messages" &&
+        typeof node.props.onPress === "function",
+    );
+    expect(row.props.disabled).toBe(false);
   });
 
   it("gives an editor's accent row no narration, and no web footnote", () => {

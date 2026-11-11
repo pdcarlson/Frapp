@@ -5,16 +5,19 @@ import * as WebBrowser from "expo-web-browser";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useBlockedUserIds,
+  useChapterChatLevel,
   useCurrentChapter,
   useDeleteAccount,
   useGeofences,
   usePermissionList,
+  useSetChapterChatLevel,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   can,
   canAll,
   CHAPTER_PROFILE_PERMISSIONS,
+  chatChapterLevelLabel,
   isModuleEnabled,
   shownNotificationCategories,
 } from "@repo/validation";
@@ -26,6 +29,7 @@ import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { AccentSheet } from "@/components/settings/accent-sheet";
 import { BlockedMembersSheet } from "@/components/settings/blocked-members-sheet";
 import { ChatDensitySheet } from "@/components/settings/chat-density-sheet";
+import { ChatLevelSheet } from "@/components/settings/chat-level-sheet";
 import { QuietHoursSection } from "@/components/settings/quiet-hours-section";
 import { Toggle } from "@/components/toggle";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
@@ -201,6 +205,11 @@ export default function PreferencesScreen() {
   const accentSheetRef = useRef<BottomSheetModal>(null);
   const chatDensitySheetRef = useRef<BottomSheetModal>(null);
   const chatDensity = useChatDensity();
+  // The chapter-wide chat level (#3840). Unknown until read, so the row
+  // states no level rather than claiming "All messages" before it knows.
+  const chatLevelSheetRef = useRef<BottomSheetModal>(null);
+  const chatLevel = useChapterChatLevel();
+  const setChatLevel = useSetChapterChatLevel();
   const blockList = useBlockedUserIds();
   const blockedMembersValue =
     blockList.status !== "ready"
@@ -399,6 +408,14 @@ export default function PreferencesScreen() {
       />
 
       <ListSection>
+        <ListRow
+          label="Chat messages"
+          value={chatLevel.data ? chatChapterLevelLabel(chatLevel.data) : "—"}
+          accessibilityHint="Choose whether every message or only mentions and DMs notify you."
+          disabled={!chatLevel.data}
+          busy={setChatLevel.isPending}
+          onPress={() => chatLevelSheetRef.current?.present()}
+        />
         {shownNotificationCategories(permissions).map((category) => (
           // No description. The shared catalog carries one per category for
           // web's Profile card, but on the phone five two-line hints pushed
@@ -421,6 +438,11 @@ export default function PreferencesScreen() {
           level for #announcements, or a block, still stops an announcement
           push (`spec/behavior/chat/README.md`). Why there is no switch: the
           docblock's `announcements` bullet. */}
+      {setChatLevel.isError ? (
+        <Text style={styles.footnoteError}>
+          Couldn&apos;t change chat messages. Try again.
+        </Text>
+      ) : null}
       <Text style={styles.footnote}>
         Mute a channel or DM from the chat itself. Chapter announcements
         can&apos;t be switched off here.
@@ -560,6 +582,11 @@ export default function PreferencesScreen() {
       <BlockedMembersSheet ref={blockedMembersSheetRef} />
       <AccentSheet ref={accentSheetRef} />
       <ChatDensitySheet ref={chatDensitySheetRef} />
+      <ChatLevelSheet
+        ref={chatLevelSheetRef}
+        level={chatLevel.data}
+        onPick={(level) => setChatLevel.mutate(level)}
+      />
     </ScreenShell>
   );
 }

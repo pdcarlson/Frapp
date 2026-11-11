@@ -31,13 +31,24 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 ## 2026-11-11: What's new seen on the account (#4043)
 
-### 20261111120000_user_whats_new_seen.sql
+### 20261111130000_user_whats_new_seen.sql
 
 - **Purpose**: Adds `users.whats_new_seen_version text` (nullable): the newest What's new entry any of a member's devices has shown, as a `releaseNoteVersion` (`YYYY-MM-DD#lines`). `UserService.recordWhatsNewSeen` writes it, only ever forward, through `PUT /v1/users/me/whats-new`; `GET /v1/users/me/whats-new` reads it. A device that would open What's new by itself checks it first and, when the account has seen the entry, marks its What's new entry instead of opening it. No existing row changes. The rule is [`spec/ui/mobile/screens.md`](../../../spec/ui/mobile/screens.md) s16 and [`spec/ui/web-dashboard/README.md` § What's new](../../../spec/ui/web-dashboard/README.md#whats-new).
 - **Checks**: After `db push`, `select count(*) from information_schema.columns where table_name = 'users' and column_name = 'whats_new_seen_version';` returns `1`.
 - **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API reads users with `select('*')` and ignores the column. The newer API against an unmigrated database fails the PUT (500), and its GET answers `null`; both clients treat either as "the account doesn't know" and fall back to the device's own marker, so the cost is What's new opening once per device, as before. Adding a nullable column with no default is metadata-only, under a brief lock. `add column if not exists` makes re-applying idempotent. `anonymize_user` leaves it alone: it isn't PII. Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-whats-new-seen-on-the-account-20261111120000) § Rollback What's new seen on the account.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-whats-new-seen-on-the-account-20261111130000) § Rollback What's new seen on the account.
+
+## 2026-11-11: Chapter-wide chat level (#3840)
+
+### 20261111120000_chat_notif_prefs_chapter_scope.sql
+
+- **Purpose**: Adds a third arm to `chat_notification_preferences`: `scope = 'chapter'` with `scope_id` and `scope_kind` both null, a member's "Mentions and DMs only" choice. Widens the `scope` CHECK and the `chat_notif_prefs_scope_id_when_channel` CHECK, and adds `idx_chat_notif_prefs_chapter_unique` (`nulls not distinct`) as the chapter arm's upsert target. No existing row changes; both CHECKs only admit more.
+- **Checks**:
+  - `select indexname from pg_indexes where indexname = 'idx_chat_notif_prefs_chapter_unique';` should return 1 row.
+  - `select pg_get_constraintdef(oid) from pg_constraint where conname = 'chat_notification_preferences_scope_check';` should name `'chapter'`.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-chapter-wide-chat-level-20261111120000) § Rollback Chapter-wide chat level.
 
 ## 2026-11-11: Links on Activity (#3897)
 
