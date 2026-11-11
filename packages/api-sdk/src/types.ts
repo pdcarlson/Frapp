@@ -4846,6 +4846,11 @@ export interface components {
              * @description Null once the reported message was hard-deleted (a channel delete, or the Discord import purge). The report outlives it; the reported_* fields are the evidence.
              */
             message_id: string | null;
+            /**
+             * Format: uuid
+             * @description The channel the message was in when the report was filed. Null once that channel is deleted, and for reports filed before it was recorded whose message was already gone. An id only: it grants no read, and a direct message stays closed to the officer.
+             */
+            channel_id: string | null;
             /** @description What the member wrote on the message, as it read when the report was filed, so a sender soft-deleting their own message cannot blank the evidence. Usually the message content; for a poll, the content followed by the card question (when it differs) and one `- label` line per option, newline-separated. */
             reported_content: string | null;
             /**
@@ -4890,6 +4895,11 @@ export interface components {
              * @description Null once the reported message was hard-deleted (a channel delete, or the Discord import purge). The report outlives it; the reported_* fields are the evidence.
              */
             message_id: string | null;
+            /**
+             * Format: uuid
+             * @description The channel the removed message was in, so a client can blank that one timeline's cached copy instead of refetching every timeline. An id only: it grants no read, and a direct message stays closed to the officer. Null when the message row no longer exists.
+             */
+            channel_id: string | null;
             /** @description What the member wrote on the message, as it read when the report was filed, so a sender soft-deleting their own message cannot blank the evidence. Usually the message content; for a poll, the content followed by the card question (when it differs) and one `- label` line per option, newline-separated. */
             reported_content: string | null;
             /**
@@ -4911,11 +4921,6 @@ export interface components {
             reported_attachments: components["schemas"]["ChatReportAttachmentSummaryDto"][];
             /** @description True when the message was already soft-deleted before this call, so nothing was removed now; the report (and any other open report on the message) is marked actioned either way. */
             message_already_deleted: boolean;
-            /**
-             * Format: uuid
-             * @description The channel the removed message was in, so a client can blank that one timeline's cached copy instead of refetching every timeline. An id only: it grants no read, and a direct message stays closed to the officer. Null when the message row no longer exists.
-             */
-            channel_id: string | null;
         };
         ChatBlockListDto: {
             /** @description users.id values the caller has blocked in the active chapter. An empty array means nobody is blocked — a failed request is NOT an empty list, and a client must hold unmaskable messages rather than render them when the read fails. */
@@ -9768,6 +9773,8 @@ export interface operations {
             query?: {
                 /** @description Which slice of the queue to read. Defaults to `open` — the resolved statuses are history. */
                 status?: "open" | "reviewed" | "actioned" | "dismissed";
+                /** @description Only the reports filed in this channel, for Chat admin's per-channel view. Omit for the whole chapter's queue, which is the only place a report about a DM or a deleted channel appears. */
+                channel_id?: string;
             };
             header?: never;
             path?: never;

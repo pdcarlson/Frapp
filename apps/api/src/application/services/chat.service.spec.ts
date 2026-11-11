@@ -3419,6 +3419,7 @@ describe('ChatService', () => {
       id: 'report-1',
       chapter_id: 'ch-1',
       message_id: 'msg-reported',
+      channel_id: 'chan-1',
       reported_content: 'you are worthless',
       reported_sender_id: 'user-2',
       reported_author_name: null,

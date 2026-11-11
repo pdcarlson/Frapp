@@ -64,6 +64,15 @@ export class ListChatReportsQueryDto {
   @IsOptional()
   @IsIn(CHAT_REPORT_STATUSES)
   status?: ChatReportStatus;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      "Only the reports filed in this channel, for Chat admin's per-channel view. Omit for the whole chapter's queue, which is the only place a report about a DM or a deleted channel appears.",
+  })
+  @IsOptional()
+  @IsUUID()
+  channel_id?: string;
 }
 
 /**
@@ -121,6 +130,15 @@ export class ChatReportDto {
       'Null once the reported message was hard-deleted (a channel delete, or the Discord import purge). The report outlives it; the reported_* fields are the evidence.',
   })
   message_id: string | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The channel the message was in when the report was filed. Null once that channel is deleted, and for reports filed before it was recorded whose message was already gone. An id only: it grants no read, and a direct message stays closed to the officer.',
+  })
+  channel_id: string | null;
 
   @ApiProperty({
     type: String,

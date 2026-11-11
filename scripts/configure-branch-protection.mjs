@@ -44,7 +44,7 @@ import { fileURLToPath } from "node:url";
 
 import { loadEnvFiles } from "./lib/env-file.mjs";
 import { ghRequest } from "./ci/lib/github.mjs";
-import { ALL_REQUIRED_CHECKS } from "./ci/lib/required-checks.mjs";
+import { ALL_REQUIRED_CHECKS, REQUIRE_UP_TO_DATE } from "./ci/lib/required-checks.mjs";
 import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
 
 // ── CLI argument parsing ────────────────────────────────────────────────────
@@ -197,7 +197,7 @@ function describeError(error) {
 function buildProtectionPayload(branch) {
   return {
     required_status_checks: {
-      strict: true,
+      strict: REQUIRE_UP_TO_DATE,
       contexts: ALL_REQUIRED_CHECKS,
     },
     enforce_admins: true,
