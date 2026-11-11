@@ -4,6 +4,7 @@ import { throwUnlessOk } from "@repo/api-sdk";
 import {
   can,
   isDirectChannel,
+  type ChatChapterLevel,
   type ChatNotificationLevel,
 } from "@repo/validation";
 
@@ -200,6 +201,11 @@ export type { ChatNotificationLevel } from "@repo/validation";
 export interface ChannelNotificationPreference {
   channel_id: string;
   level: ChatNotificationLevel;
+  /**
+   * The level comes from the member's chapter-wide chat level (#3840), so the
+   * control can say "your default". Absent from a server older than #3840.
+   */
+  from_chapter_level?: boolean;
 }
 
 /**
@@ -347,6 +353,77 @@ export function useSetChannelNotificationLevel() {
     onError: () => {
       queryClient.invalidateQueries({
         queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,
+      });
+    },
+  });
+}
+
+/**
+ * The member's chapter-wide chat level (#3840), keyed by chapter: a write that
+ * resolves after a chapter switch lands on its own chapter's entry, never on
+ * the chapter now shown (`chapter-query-keys.ts` says why `clear()` is not
+ * enough).
+ */
+export const chapterChatLevelKeys =
+  createChapterQueryKeys("chapter-chat-level");
+
+/**
+ * The member's chapter-wide chat level (#3840): `all` (each channel at its own
+ * default) or `mentions` ("Mentions and DMs only").
+ */
+export function useChapterChatLevel() {
+  const client = useFrappClient();
+  const scope = useChapterScope();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: chapterChatLevelKeys.chapter(chapterId ?? ""),
+    queryFn: async () => {
+      const { data, error } = await client.GET(
+        "/v1/channels/notification-preferences/chapter",
+      );
+      if (error) throw error;
+      return (data as { level: ChatChapterLevel }).level;
+    },
+    staleTime: 60_000,
+    enabled: scope === "chapter" && Boolean(chapterId),
+  });
+}
+
+/**
+ * Set it. The per-channel levels are refetched too, since every channel the
+ * member has not set resolves through this.
+ */
+export function useSetChapterChatLevel() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["channels", "set-chapter-chat-level"],
+    mutationFn: async (level: ChatChapterLevel) => {
+      // The chapter the write is for, captured before the request leaves.
+      const forChapter = chapterId;
+      const { data, error } = await client.PUT(
+        "/v1/channels/notification-preferences/chapter",
+        { body: { level } },
+      );
+      if (error) throw error;
+      return { level: (data as { level: ChatChapterLevel }).level, forChapter };
+    },
+    onSuccess: ({ level, forChapter }) => {
+      if (forChapter) {
+        queryClient.setQueryData(
+          chapterChatLevelKeys.chapter(forChapter),
+          level,
+        );
+      }
+      void queryClient.invalidateQueries({
+        queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,
+      });
+    },
+    // Re-read rather than keep showing a level the server never stored.
+    onError: () => {
+      void queryClient.invalidateQueries({
+        queryKey: chapterChatLevelKeys.all,
       });
     },
   });

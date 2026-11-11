@@ -69,6 +69,8 @@ import {
   ChannelLatestMessageDto,
   MentionRoleDto,
   SetChannelNotificationLevelDto,
+  SetChapterChatLevelDto,
+  ChapterChatLevelDto,
   ChannelNotificationPreferenceDto,
   SetKindNotificationLevelDto,
   KindNotificationPreferenceDto,
@@ -192,7 +194,8 @@ export class ChatController {
 
   // Two segments, so `@Get(':id')` (a single segment) cannot swallow this the
   // way it would swallow a bare literal. Kept beside the channel-scoped read
-  // above because they answer the same question for the two scope arms, and a
+  // above because they answer the same question for the scope arms (the chapter-wide one is
+  // below), and a
   // reader looking for one should find the other.
   @Get('notification-preferences/kinds')
   @ApiOperation({
@@ -244,6 +247,37 @@ export class ChatController {
       chapterId,
       userId,
       kind,
+    );
+  }
+
+  // Two segments like the kind routes, so `@Get(':id')` cannot swallow it.
+  @Get('notification-preferences/chapter')
+  @ApiOperation({
+    summary:
+      "The caller's chapter-wide chat level: all (each channel at its default) or mentions (Mentions and DMs only)",
+  })
+  @ApiOkResponse({ type: ChapterChatLevelDto })
+  async getChapterChatLevel(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<ChapterChatLevelDto> {
+    return this.notificationPreferences.getChapterChatLevel(chapterId, userId);
+  }
+
+  @Put('notification-preferences/chapter')
+  @ApiOperation({
+    summary: "Set the caller's chapter-wide chat level",
+  })
+  @ApiOkResponse({ type: ChapterChatLevelDto })
+  async setChapterChatLevel(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: SetChapterChatLevelDto,
+  ): Promise<ChapterChatLevelDto> {
+    return this.notificationPreferences.setChapterChatLevel(
+      chapterId,
+      userId,
+      dto.level,
     );
   }
 

@@ -2,7 +2,11 @@ import { BadRequestException, ValidationPipe } from '@nestjs/common';
 
 import { LIST_QUERY_LIMIT_MAX } from '#domain/constants/list-query-limits';
 import { VALIDATION_PIPE_OPTIONS } from '../pipes/validation-pipe.options';
-import { GetChannelMessagesQueryDto, UpdateChannelDto } from './chat.dto';
+import {
+  GetChannelMessagesQueryDto,
+  SetChapterChatLevelDto,
+  UpdateChannelDto,
+} from './chat.dto';
 
 const VALID_UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const VALID_ISO = '2026-04-01T12:00:00.000Z';
@@ -142,6 +146,25 @@ describe('UpdateChannelDto.is_default', () => {
 
   it('refuses null, which would reach a not-null column', async () => {
     await expect(transform({ is_default: null })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+});
+
+describe('SetChapterChatLevelDto (#3840)', () => {
+  const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
+  const transform = (body: Record<string, unknown>) =>
+    pipe.transform(body, { type: 'body', metatype: SetChapterChatLevelDto });
+
+  it('accepts all and mentions', async () => {
+    await expect(transform({ level: 'all' })).resolves.toBeDefined();
+    await expect(transform({ level: 'mentions' })).resolves.toBeDefined();
+  });
+
+  // No "Off" (notifications.md § Chapter-wide chat level): the read could not
+  // report a stored `off`, so the write must refuse it.
+  it('refuses off', async () => {
+    await expect(transform({ level: 'off' })).rejects.toBeInstanceOf(
       BadRequestException,
     );
   });
