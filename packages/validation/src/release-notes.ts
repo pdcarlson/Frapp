@@ -77,6 +77,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Tasks can now be due at a time of day, like Friday at 5 PM, and can carry a checklist of steps the assignee ticks off as they go.",
       "On the web, a message with a thread now shows a card with who replied, how many replies are new to you, and a line joining it to the message.",
       "On the web, officer-only entries like Chapter settings no longer flash in the sidebar for a moment after you reload.",
+      "Mark a sent message Important, Funny, Hype and more, and a channel now shows a strip at the top until you've seen each Important message in it.",
     ],
   },
   {
