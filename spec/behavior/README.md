@@ -18,7 +18,7 @@ the targets resolve — so add the row in the same change that adds the topic fi
 | RBAC, roles, presidency transfer                     | [`rbac.md`](rbac.md)                       |
 | Backwork (academic library)                          | [`backwork.md`](backwork.md)               |
 | Rush / recruitment / intake                          | [`rush.md`](rush.md)                       |
-| IFC recruitment (proposed, pending Paul)             | [`ifc-recruitment.md`](ifc-recruitment.md) |
+| IFC recruitment (proposed)                           | [`ifc-recruitment.md`](ifc-recruitment.md) |
 | Points ledger — security, audit, atomicity           | [`points.md`](points.md)                   |
 | Chapter billing (Stripe), grace periods, dues        | [`billing.md`](billing.md)                 |
 | Chat (channels, DMs, messages, slash commands)       | [`chat/`](chat/README.md)                  |

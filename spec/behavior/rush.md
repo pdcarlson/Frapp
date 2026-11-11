@@ -2,7 +2,7 @@
 
 The recruitment module manages prospective members from first contact through bid/vote to acceptance. Its surfaces follow the shared ops integration pattern — see [`integrations.md`](integrations.md).
 
-A proposed upgrade (a pipeline, interest forms, eligibility and a council master list) is in [`ifc-recruitment.md`](ifc-recruitment.md). It is pending Paul, and this file still owns what recruitment does today.
+A proposed upgrade (a pipeline, interest forms, eligibility and a council master list) is in [`ifc-recruitment.md`](ifc-recruitment.md). Until it is approved, this file owns what recruitment does today.
 
 ## Vocabulary
 
