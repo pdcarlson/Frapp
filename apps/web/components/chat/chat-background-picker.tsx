@@ -4,6 +4,8 @@ import { useRef, useState } from "react";
 import {
   CHAT_BACKGROUND_BUILT_INS,
   CHAT_BACKGROUND_LABELS,
+  CHAT_BACKGROUND_PHOTO_NOTE,
+  chatBackgroundDefaultLabel,
   isAllowedUploadMime,
   acceptAttribute,
   type ChatBackgroundKey,
@@ -86,9 +88,7 @@ export function ChatBackgroundPicker({
         {allowInherit
           ? swatch(
               null,
-              inheritPreview === "photo"
-                ? "Chapter default (photo)"
-                : "Chapter default",
+              chatBackgroundDefaultLabel(inheritPreview),
               paintStyle(
                 inheritPreview === "photo" ? "plain" : inheritPreview,
                 letters,
@@ -140,8 +140,7 @@ export function ChatBackgroundPicker({
         }}
       />
       <p className="text-caption text-muted-foreground">
-        Photos are dimmed and blurred so messages stay readable. Setting one
-        posts a line in chat that anyone can report.
+        {CHAT_BACKGROUND_PHOTO_NOTE}
       </p>
       {saving ? (
         <p role="status" className="text-caption text-muted-foreground">

@@ -93,6 +93,19 @@ export function isChatRoute(pathname: string | null): boolean {
 }
 
 /**
+ * Tool routes that take the whole row: chat closes beside them and comes back
+ * on leaving (decision 3 of #4068, Paul 2026-11-10). Chapter settings is a
+ * grouped rail beside a form; beside chat at a 1280px window its Chapter form
+ * was about 150px wide. Chat's open state is left alone, so the next tool
+ * page finds it where the member left it.
+ */
+export function isFullWidthToolRoute(pathname: string | null): boolean {
+  return (
+    pathname === "/settings" || Boolean(pathname?.startsWith("/settings/"))
+  );
+}
+
+/**
  * The shares a row of `rowWidth` pixels allows: the tool page at least
  * `PANE_FLOOR`, and the messages (the chat panel less its channels column) at
  * least `PANE_FLOOR`. On a row too narrow for both, both bounds meet at 0.5.

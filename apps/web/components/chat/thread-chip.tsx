@@ -1,17 +1,11 @@
 "use client";
 
-import { MessagesSquare } from "lucide-react";
 import { useNow } from "@repo/hooks";
 import { threadChipLabel } from "@repo/chat-core/threads";
 import type { ThreadSummary } from "@repo/chat-core/types";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn, initials } from "@/lib/utils";
-
-/** The row's Start thread icon (#3785). */
-export function StartThreadGlyph({ className }: { className?: string }) {
-  return <MessagesSquare className={className} aria-hidden="true" />;
-}
 
 /**
  * Under a message that has thread replies (#3785): up to three repliers,

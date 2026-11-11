@@ -221,4 +221,31 @@ describe('validateEnv', () => {
       ).toThrow(/MOBILE_MIN_VERSION_IOS[\s\S]*MOBILE_UPDATE_URL_ANDROID/);
     });
   });
+
+  describe("the team's Dev log channel (#4145)", () => {
+    const devLog = {
+      DEV_LOG_TOKEN_SHA256: 'a'.repeat(64),
+      DEV_LOG_CHAPTER_ID: '11111111-1111-4111-8111-111111111111',
+      DEV_LOG_CHANNEL_ID: '22222222-2222-4222-8222-222222222222',
+    };
+
+    it('boots with all three set, and with the hash deleted (revoked)', () => {
+      expect(() => validateEnv({ ...complete, ...devLog })).not.toThrow();
+      expect(() =>
+        validateEnv({ ...complete, ...devLog, DEV_LOG_TOKEN_SHA256: '' }),
+      ).not.toThrow();
+    });
+
+    it('refuses to boot on a hash with no channel, or a malformed value', () => {
+      expect(() =>
+        validateEnv({ ...complete, DEV_LOG_TOKEN_SHA256: 'a'.repeat(64) }),
+      ).toThrow(/DEV_LOG_CHAPTER_ID/);
+      expect(() =>
+        validateEnv({ ...complete, ...devLog, DEV_LOG_TOKEN_SHA256: 'token' }),
+      ).toThrow(/DEV_LOG_TOKEN_SHA256/);
+      expect(() =>
+        validateEnv({ ...complete, ...devLog, DEV_LOG_CHANNEL_ID: 'dev-log' }),
+      ).toThrow(/DEV_LOG_CHANNEL_ID/);
+    });
+  });
 });

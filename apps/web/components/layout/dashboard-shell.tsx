@@ -17,6 +17,7 @@ import { NavColumn } from "@/components/layout/nav-column";
 import {
   FULL_NAV_SPLIT_QUERY,
   isChatRoute,
+  isFullWidthToolRoute,
   PANE_FLOOR,
   CHANNELS_WIDTH,
   OUTSIDE_RAIL_BAND,
@@ -269,7 +270,12 @@ export function DashboardShell({
     [split, closeTool],
   );
 
-  const chatShown = chatOpen || leaving;
+
+  // A full-width tool (Chapter settings) hides chat without closing it: the
+  // cookie and the Chat row's state stay as they were, so leaving the page
+  // brings chat back beside the next tool.
+  const fullWidthTool = hasTool && isFullWidthToolRoute(pathname);
+  const chatShown = (chatOpen || leaving) && !fullWidthTool;
   // Mounted: alone on `/chat` below the side-by-side width whatever the
   // cookie says (the single page), and beside a tool only when open there.
   const chatMounted = onChatRoute
@@ -475,7 +481,10 @@ export function DashboardShell({
               isModuleEnabled={isModuleEnabled}
               pathname={pathname}
               chatRow={
-                split === true
+                // Beside a full-width tool the Chat row is the link to
+                // `/chat` it is below the side-by-side width: a toggle would
+                // open a panel the page has no room for.
+                split === true && !fullWidthTool
                   ? { onSelect: toggleChat, open: chatOpen }
                   : undefined
               }

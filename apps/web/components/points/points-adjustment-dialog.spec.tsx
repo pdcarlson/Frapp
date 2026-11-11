@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import type {
@@ -65,9 +66,10 @@ function renderDialog() {
 
 const submit = () =>
   screen.getByRole("button", { name: /submit adjustment/i });
-const memberSelect = () => screen.getByLabelText(/member/i);
+const memberSelect = () => screen.getByRole("combobox", { name: /member/i });
 const amountInput = () => screen.getByLabelText(/amount/i);
-const categorySelect = () => screen.getByLabelText(/category/i);
+const categorySelect = () =>
+  screen.getByRole("combobox", { name: /category/i });
 const reasonField = () => screen.getByLabelText(/reason/i);
 const cancel = () => screen.getByRole("button", { name: /cancel/i });
 
@@ -76,7 +78,7 @@ describe("PointsAdjustmentDialog member labels", () => {
     vi.clearAllMocks();
   });
 
-  it("never offers an option whose name slot is blank", () => {
+  it("never offers an option whose name slot is blank", async () => {
     // The picker is the only control identifying the target of an adjustment
     // or a fine, so an unlabelled option is unusable rather than untidy. This
     // used to read `display_name ?? userId`, and `??` cannot fire on a field
@@ -84,9 +86,10 @@ describe("PointsAdjustmentDialog member labels", () => {
     chapter.active();
     renderDialog();
 
-    const labels = Array.from(
-      memberSelect().querySelectorAll("option"),
-    ).map((option) => option.textContent ?? "");
+    await userEvent.click(memberSelect());
+    const labels = screen
+      .getAllByRole("option")
+      .map((option) => option.textContent ?? "");
 
     expect(labels).toContain("Rush Chair (u-1)");
     // The shared no-name label (#2422), never the bare id in the name slot:
@@ -253,9 +256,10 @@ describe("PointsAdjustmentDialog posting into a chat channel (#3865)", () => {
     return onOpenChange;
   }
 
-  function fillAndSubmit() {
+  async function fillAndSubmit() {
     fireEvent.change(amountInput(), { target: { value: "-5" } });
-    fireEvent.change(categorySelect(), { target: { value: "FINE" } });
+    await userEvent.click(categorySelect());
+    await userEvent.click(screen.getByRole("option", { name: "Fine" }));
     fireEvent.change(reasonField(), { target: { value: "Missed chapter" } });
     fireEvent.click(submit());
   }
@@ -263,7 +267,7 @@ describe("PointsAdjustmentDialog posting into a chat channel (#3865)", () => {
   it("adjusts through chat, not the dashboard hook, and closes", async () => {
     const submitToChannel = vi.fn().mockResolvedValue({ ok: true });
     const onOpenChange = renderInChat(submitToChannel);
-    fillAndSubmit();
+    await fillAndSubmit();
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
     expect(submitToChannel).toHaveBeenCalledWith({
       target_user_id: "u-1",
@@ -290,7 +294,7 @@ describe("PointsAdjustmentDialog posting into a chat channel (#3865)", () => {
       () => new Promise<DispatchResult>((resolve) => (finish = resolve)),
     );
     renderInChat(submitToChannel);
-    fillAndSubmit();
+    await fillAndSubmit();
     const busy = await screen.findByRole("button", { name: /submitting/i });
     expect(busy).toBeDisabled();
     fireEvent.click(busy);
@@ -304,7 +308,7 @@ describe("PointsAdjustmentDialog posting into a chat channel (#3865)", () => {
       .fn()
       .mockResolvedValue({ ok: false, error: "You can't adjust your own points" });
     const onOpenChange = renderInChat(submitToChannel);
-    fillAndSubmit();
+    await fillAndSubmit();
     await waitFor(() => expect(submitToChannel).toHaveBeenCalled());
     await waitFor(() => expect(submit()).toBeEnabled());
     expect(onOpenChange).not.toHaveBeenCalledWith(false);

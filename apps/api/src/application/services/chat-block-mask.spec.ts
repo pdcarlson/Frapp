@@ -22,6 +22,9 @@ describe('maskBlockedMessages', () => {
     metadata: {},
     is_pinned: false,
     pinned_at: null,
+    flag: null,
+    flagged_by: null,
+    flagged_at: null,
     edited_at: null,
     is_deleted: false,
     created_at: '2026-03-01T00:00:00.000Z',
@@ -58,6 +61,9 @@ describe('maskBlockedMessages', () => {
     thread_recent_sender_ids: [],
     is_pinned: false,
     pinned_at: null,
+    flag: null,
+    flagged_by: null,
+    flagged_at: null,
     edited_at: null,
     is_deleted: false,
     created_at: '2026-03-01T00:00:00.000Z',
@@ -193,6 +199,32 @@ describe('maskBlockedMessages', () => {
     expect(row.author_name).toBeNull();
     expect(row.author_external_id).toBeNull();
     expect(row.author_avatar_path).toBeNull();
+  });
+
+  // #3921: a tombstone draws no flag; a clear row keeps its flag, and loses
+  // only the flagger when the viewer blocked the member who added it.
+  it('drops the flag from a masked row and a blocked flagger from a clear one', () => {
+    const flag = {
+      flag: 'important' as const,
+      flagged_by: BLOCKED,
+      flagged_at: '2026-03-02T00:00:00.000Z',
+    };
+    const [masked, clear, untouched] = maskBlockedMessages(
+      [
+        servedRow({ sender_id: BLOCKED, ...flag, flagged_by: FRIEND }),
+        servedRow(flag),
+        servedRow({ ...flag, flagged_by: FRIEND }),
+      ],
+      [BLOCKED],
+    );
+
+    expect(masked).toMatchObject({
+      flag: null,
+      flagged_by: null,
+      flagged_at: null,
+    });
+    expect(clear).toMatchObject({ flag: 'important', flagged_by: null });
+    expect(untouched).toMatchObject({ flag: 'important', flagged_by: FRIEND });
   });
 
   it('gives a masked row exactly the keys a clear row has', () => {

@@ -68,7 +68,9 @@ warnings don't fail CI, so count them as debt rather than as passing.
 
 1. Controllers carry `@UseGuards(SupabaseAuthGuard, ChapterGuard)` unless there is no chapter
    context to check: `/health` and the mobile `GET /v1/client-policy` (no auth, no tenant data),
-   webhooks (signature verification only), and user-scoped
+   webhooks (signature verification only), the team's Dev log route `POST /v1/integrations/dev-log`
+   (`DevLogTokenGuard`: a workflow's token, no user, and the channel comes from the deployment's
+   configuration), and user-scoped
    routes that come before or outside membership (chapter creation, `chapter-directory`,
    `analytics`). A new exception needs a stated reason.
 2. Every endpoint that reads or writes protected user or chapter data, GET and list included, also

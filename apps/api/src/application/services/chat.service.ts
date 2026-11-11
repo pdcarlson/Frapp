@@ -9,8 +9,10 @@ import {
 } from '@nestjs/common';
 import {
   CHAT_SINCE_NOT_FOUND_CODE,
+  canChangeMessageFlag,
   isDirectChannel,
   isModuleEnabled,
+  type ChatMessageFlag,
 } from '@repo/validation';
 import {
   allowsInThreadReplies,
@@ -1470,6 +1472,11 @@ export class ChatService {
       content: '[message deleted]',
       is_deleted: true,
       metadata: tombstoneMetadata(message),
+      // A flag labels content that is now gone (#3921), and a deleted
+      // message must not keep raising the Important strip.
+      flag: null,
+      flagged_by: null,
+      flagged_at: null,
     });
 
     // Purge after the flag lands, not before. Soft delete leaves the attachment
@@ -1487,6 +1494,129 @@ export class ChatService {
     await this.attachments.purgeRemovedMessageAttachments(messageId, chapterId);
 
     return deleted;
+  }
+
+  // ── Flags (#3921) ────────────────────────────────────────────────────
+
+  /**
+   * Put `flag` on a message, or replace the one it carries.
+   *
+   * Anyone who can read the channel may flag a message that has none; once it
+   * is flagged, only its sender, whoever added the flag, or a
+   * `channels:manage` holder may replace it (`canChangeMessageFlag` in
+   * `@repo/validation`, which the clients share). Authorized as a read, like
+   * a reaction: a flag adds no content, so a read-only channel or an alumnus
+   * may still flag (spec/behavior/chat/README.md § Message flags).
+   *
+   * The write is a compare-and-set on the flag and flagger the check was made
+   * against, and on the message still being live, so two members flagging the
+   * same unflagged message at once cannot both win, and the loser, who may
+   * not be allowed to replace the winner's flag, gets a 409 rather than
+   * silently overwriting it. A delete that lands mid-request is a 409 too.
+   *
+   * The answer is masked for the caller like any message read, since the
+   * caller may have blocked the sender.
+   */
+  async setMessageFlag(
+    messageId: string,
+    chapterId: string,
+    userId: string,
+    hasManagePermission: boolean,
+    flag: ChatMessageFlag,
+  ): Promise<MaskedChatMessage> {
+    const message = await this.assertMessageAccess(
+      messageId,
+      chapterId,
+      userId,
+    );
+    if (message.is_deleted) {
+      throw new BadRequestException('Cannot flag a deleted message');
+    }
+    if (message.flag === flag) {
+      return this.maskOne(message, chapterId, userId);
+    }
+    this.assertMayChangeFlag(message, userId, hasManagePermission);
+
+    const updated = await this.messageRepo.compareAndSetFlag(
+      messageId,
+      {
+        flag: message.flag ?? null,
+        flagged_by: message.flagged_by ?? null,
+        requireLive: true,
+      },
+      { flag, flagged_by: userId, flagged_at: new Date().toISOString() },
+    );
+    if (!updated) throw this.flagRaceConflict();
+    return this.maskOne(updated, chapterId, userId);
+  }
+
+  /** Take a message's flag off. Idempotent; same rule as replacing one. */
+  async clearMessageFlag(
+    messageId: string,
+    chapterId: string,
+    userId: string,
+    hasManagePermission: boolean,
+  ): Promise<MaskedChatMessage> {
+    const message = await this.assertMessageAccess(
+      messageId,
+      chapterId,
+      userId,
+    );
+    if (message.flag == null) {
+      return this.maskOne(message, chapterId, userId);
+    }
+    this.assertMayChangeFlag(message, userId, hasManagePermission);
+
+    // No `requireLive`: a tombstone that still carries a flag (one deleted
+    // while an API without this rule was serving) must stay clearable.
+    const updated = await this.messageRepo.compareAndSetFlag(
+      messageId,
+      {
+        flag: message.flag,
+        flagged_by: message.flagged_by ?? null,
+        requireLive: false,
+      },
+      { flag: null, flagged_by: null, flagged_at: null },
+    );
+    if (!updated) throw this.flagRaceConflict();
+    return this.maskOne(updated, chapterId, userId);
+  }
+
+  private assertMayChangeFlag(
+    message: ChatMessage,
+    userId: string,
+    hasManagePermission: boolean,
+  ): void {
+    if (
+      !canChangeMessageFlag(
+        {
+          sender_id: message.sender_id,
+          flagged_by: message.flagged_by ?? null,
+          flag: message.flag ?? null,
+        },
+        userId,
+        hasManagePermission,
+      )
+    ) {
+      throw new ForbiddenException(
+        'Only the sender, whoever added the flag, or an officer can change it',
+      );
+    }
+  }
+
+  private flagRaceConflict(): ConflictException {
+    return new ConflictException(
+      'This message’s flag changed, or the message was deleted, just now. Reload and try again.',
+    );
+  }
+
+  private async maskOne(
+    message: ChatMessage,
+    chapterId: string,
+    userId: string,
+  ): Promise<MaskedChatMessage> {
+    const blocked = await this.chatBlocks.listBlockedUserIds(chapterId, userId);
+    return maskBlockedMessages([message], blocked)[0];
   }
 
   // ── Pins ─────────────────────────────────────────────────────────────

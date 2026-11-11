@@ -61,6 +61,7 @@ import {
   UpdateCategoryDto,
   SendMessageDto,
   EditMessageDto,
+  SetMessageFlagDto,
   ReactionDto,
   ChatMessageActionDto,
   RequestChatUploadUrlDto,
@@ -755,6 +756,69 @@ export class ChatController {
     @CurrentUser('id') userId: string,
   ) {
     return this.chatService.unpinMessage(messageId, chapterId, userId);
+  }
+
+  // ── Flags (#3921) ────────────────────────────────────────────────────
+
+  /**
+   * Open to every member who can read the channel: the service decides
+   * whether the caller may replace an existing flag, so `channels:manage` is
+   * resolved here rather than required, as `deleteMessage` does.
+   */
+  @Put('messages/:messageId/flag')
+  @ApiOperation({
+    summary:
+      'Flag a message (anyone on an unflagged message; sender, flagger or channels:manage to replace)',
+  })
+  @ApiOkResponse({ type: ChatMessageDto })
+  @FeatureEvent(
+    'message-flagged',
+    ({ body }: FeatureEventInput<SetMessageFlagDto, unknown>) => ({
+      flag: body.flag,
+    }),
+  )
+  async setMessageFlag(
+    @Param('messageId') messageId: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: SetMessageFlagDto,
+  ) {
+    const hasManagePermission = await this.rbacService.memberHasAnyPermission(
+      chapterId,
+      userId,
+      [SystemPermissions.CHANNELS_MANAGE],
+    );
+    return this.chatService.setMessageFlag(
+      messageId,
+      chapterId,
+      userId,
+      hasManagePermission,
+      dto.flag,
+    );
+  }
+
+  @Delete('messages/:messageId/flag')
+  @ApiOperation({
+    summary:
+      "Remove a message's flag (its sender, whoever added it, or channels:manage)",
+  })
+  @ApiOkResponse({ type: ChatMessageDto })
+  async clearMessageFlag(
+    @Param('messageId') messageId: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    const hasManagePermission = await this.rbacService.memberHasAnyPermission(
+      chapterId,
+      userId,
+      [SystemPermissions.CHANNELS_MANAGE],
+    );
+    return this.chatService.clearMessageFlag(
+      messageId,
+      chapterId,
+      userId,
+      hasManagePermission,
+    );
   }
 
   // ── Actions (chat_message_actions hot-path: reactions / votes / RSVPs) ──
