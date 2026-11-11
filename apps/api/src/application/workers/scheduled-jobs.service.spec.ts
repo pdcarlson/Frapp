@@ -212,7 +212,11 @@ describe('ScheduledJobsService', () => {
       findEventsPendingAutoAbsent.mockResolvedValue([
         { id: 'evt-null', chapter_id: 'chap-1', end_time: null },
         { id: 'evt-junk', chapter_id: 'chap-1', end_time: 'not a date' },
-        { id: 'evt-ok', chapter_id: 'chap-1', end_time: '2026-08-05T10:00:00Z' },
+        {
+          id: 'evt-ok',
+          chapter_id: 'chap-1',
+          end_time: '2026-08-05T10:00:00Z',
+        },
       ]);
 
       const result = await service.sweepAutoAbsent(NOW);
@@ -304,7 +308,7 @@ describe('ScheduledJobsService', () => {
         sent: 1,
       });
       expect(notifyUser).toHaveBeenCalledTimes(1);
-      expect(captureException.mock.calls[0]![1]).toMatchObject({
+      expect(captureException.mock.calls[0][1]).toMatchObject({
         level: 'warning',
         fingerprint: expect.arrayContaining(['event-reminder-sweep-event']),
       });

@@ -865,7 +865,10 @@ describe('ServiceEntryService', () => {
       ).resolves.toMatchObject({ status: 'APPROVED' });
       expect(reported).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ level: 'warning', site: 'service-entry-approved-notify' }),
+        expect.objectContaining({
+          level: 'warning',
+          site: 'service-entry-approved-notify',
+        }),
       );
       reported.mockRestore();
     });
@@ -1312,7 +1315,10 @@ describe('ServiceEntryService', () => {
       ).resolves.toMatchObject({ status: 'REJECTED' });
       expect(reported).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ level: 'warning', site: 'service-entry-rejected-notify' }),
+        expect.objectContaining({
+          level: 'warning',
+          site: 'service-entry-rejected-notify',
+        }),
       );
       reported.mockRestore();
     });

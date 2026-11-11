@@ -138,7 +138,10 @@ describe('ChapterWorkflowsService', () => {
       );
       expect(reported).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ level: 'warning', site: 'chapter-workflows-read' }),
+        expect.objectContaining({
+          level: 'warning',
+          site: 'chapter-workflows-read',
+        }),
       );
       reported.mockRestore();
     });

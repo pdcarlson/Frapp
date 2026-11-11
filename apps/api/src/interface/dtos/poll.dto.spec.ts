@@ -8,7 +8,10 @@ import { CreatePollDto } from './poll.dto';
  */
 describe('CreatePollDto.expires_at', () => {
   const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
-  const valid = { question: 'Formal theme?', options: ['Gatsby', 'Masquerade'] };
+  const valid = {
+    question: 'Formal theme?',
+    options: ['Gatsby', 'Masquerade'],
+  };
   const validate = (body: object) =>
     pipe.transform(body, { type: 'body', metatype: CreatePollDto });
 

@@ -725,7 +725,10 @@ describe('PointsService', () => {
         });
         expect(reported).toHaveBeenCalledWith(
           expect.anything(),
-          expect.objectContaining({ level: 'warning', site: 'points-granted-notify' }),
+          expect.objectContaining({
+            level: 'warning',
+            site: 'points-granted-notify',
+          }),
         );
         reported.mockRestore();
       });

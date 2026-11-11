@@ -1293,7 +1293,10 @@ describe('FinancialInvoiceService', () => {
       ).resolves.toBeUndefined();
       expect(reported).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ level: 'warning', site: 'invoice-paid-notify' }),
+        expect.objectContaining({
+          level: 'warning',
+          site: 'invoice-paid-notify',
+        }),
       );
       reported.mockRestore();
     });
@@ -1449,7 +1452,10 @@ describe('FinancialInvoiceService', () => {
   describe('notifications', () => {
     it('opens the invoice when the new-invoice notice fails, and reports it (#4096)', async () => {
       mockInvoiceRepo.findById.mockResolvedValue(baseInvoice);
-      mockInvoiceRepo.update.mockResolvedValue({ ...baseInvoice, status: 'OPEN' });
+      mockInvoiceRepo.update.mockResolvedValue({
+        ...baseInvoice,
+        status: 'OPEN',
+      });
       mockNotificationService.notifyUser.mockRejectedValueOnce(
         new Error('notifications insert failed'),
       );
@@ -1460,7 +1466,10 @@ describe('FinancialInvoiceService', () => {
       ).resolves.toMatchObject({ status: 'OPEN' });
       expect(reported).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ level: 'warning', site: 'invoice-opened-notify' }),
+        expect.objectContaining({
+          level: 'warning',
+          site: 'invoice-opened-notify',
+        }),
       );
       reported.mockRestore();
     });

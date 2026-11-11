@@ -108,7 +108,10 @@ describe('ChapterPointsConfigService', () => {
     );
     expect(reported).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ level: 'warning', site: 'chapter-points-config-read' }),
+      expect.objectContaining({
+        level: 'warning',
+        site: 'chapter-points-config-read',
+      }),
     );
     reported.mockRestore();
   });
