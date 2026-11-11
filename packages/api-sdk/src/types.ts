@@ -6288,6 +6288,10 @@ export interface components {
             actor?: string;
             areas?: string[];
         };
+        DevLogMergeCountDto: {
+            actor: string;
+            count: number;
+        };
         DevLogPostDto: {
             /** @enum {string} */
             event: "work_started" | "pr_merged" | "daily_summary" | "update_pushed";
@@ -6306,12 +6310,14 @@ export interface components {
              * @example 2026-11-11
              */
             date?: string;
-            /** @description daily_summary: pull requests merged in the last day. */
-            merged?: components["schemas"]["DevLogItemDto"][];
+            /** @description daily_summary: how many pull requests merged in the last day. */
+            merged_total?: number;
+            /** @description daily_summary: that total, per person. */
+            merged_by?: components["schemas"]["DevLogMergeCountDto"][];
             /** @description daily_summary: issues in progress now. */
             in_progress?: components["schemas"]["DevLogItemDto"][];
             /** @description update_pushed: the id of the Deploy production run that shipped. One post per run. */
-            run_id?: number;
+            run_id?: string;
             /** @description update_pushed: that run also uploaded a store build for testers. */
             store_build?: boolean;
             /** @description update_pushed: that run also published an over-the-air update. */

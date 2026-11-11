@@ -144,7 +144,7 @@ describe('POST /v1/integrations/dev-log', () => {
       {
         event: 'daily_summary',
         date: '2026-11-11',
-        merged: Array.from({ length: 61 }, (_, i) => ({
+        in_progress: Array.from({ length: 61 }, (_, i) => ({
           number: i + 1,
           title: 't',
         })),
@@ -155,11 +155,14 @@ describe('POST /v1/integrations/dev-log', () => {
       {
         event: 'daily_summary',
         date: '2026-11-11',
-        merged: [{ number: 1, title: 't', url: 'https://example.com' }],
+        in_progress: [{ number: 1, title: 't', url: 'https://example.com' }],
       },
     ],
     ['an update with no run id', { event: 'update_pushed' }],
-    ['an update with a run id of zero', { event: 'update_pushed', run_id: 0 }],
+    [
+      'an update with a run id of zero',
+      { event: 'update_pushed', run_id: '0' },
+    ],
   ])('refuses %s with 400', async (_name, body) => {
     await send(body).expect(400);
     expect(messageRepo.insertIdempotent).not.toHaveBeenCalled();
@@ -174,10 +177,15 @@ describe('POST /v1/integrations/dev-log', () => {
       areas: ['chat'],
       also_in_area: [{ number: 9, title: 'Threads', actor: 'Winston' }],
     }).expect(200);
-    await send({ event: 'daily_summary', date: '2026-11-11' }).expect(200);
+    await send({
+      event: 'daily_summary',
+      date: '2026-11-11',
+      merged_total: 2,
+      merged_by: [{ actor: 'Evan', count: 2 }],
+    }).expect(200);
     await send({
       event: 'update_pushed',
-      run_id: 35722904165,
+      run_id: '35722904165',
       ota_update: true,
     }).expect(200);
     expect(messageRepo.insertIdempotent).toHaveBeenCalledTimes(3);

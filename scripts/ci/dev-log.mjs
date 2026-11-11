@@ -64,6 +64,9 @@ const AREA_MAX = 40;
 const AREAS_MAX = 10;
 const ALSO_IN_AREA_MAX = 5;
 const SUMMARY_ITEMS_MAX = 60;
+const MERGED_BY_MAX = 30;
+/** The search API returns at most 1000 results, 100 a page. */
+const SEARCH_PAGES_MAX = 10;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -185,12 +188,22 @@ export async function buildPrMerged({ sha, repo, gh }) {
 export async function buildDailySummary({ repo, gh, now = new Date() }) {
   const since = new Date(now.getTime() - DAY_MS).toISOString().slice(0, 19) + "Z";
   const query = encodeURIComponent(`repo:${repo} is:pr is:merged base:main merged:>=${since}`);
-  const found = await gh.get(`/search/issues?q=${query}&sort=updated&order=desc&per_page=100`);
-  const merged = [];
-  for (const pr of found?.items ?? []) {
-    if (isBot(pr.user) || isSkipped(pr)) continue;
-    if (merged.length === SUMMARY_ITEMS_MAX) break;
-    merged.push({ number: pr.number, title: clip(pr.title, TITLE_MAX), actor: await gh.displayName(pr.user.login) });
+  // Counts per person, not a list: each merge already has its own post.
+  const counts = new Map();
+  let total = 0;
+  for (let page = 1; page <= SEARCH_PAGES_MAX; page += 1) {
+    const found = await gh.get(`/search/issues?q=${query}&per_page=100&page=${page}`);
+    const items = found?.items ?? [];
+    for (const pr of items) {
+      if (isBot(pr.user) || isSkipped(pr)) continue;
+      total += 1;
+      counts.set(pr.user.login, (counts.get(pr.user.login) ?? 0) + 1);
+    }
+    if (items.length < 100) break;
+  }
+  const mergedBy = [];
+  for (const [login, count] of [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, MERGED_BY_MAX)) {
+    mergedBy.push({ actor: await gh.displayName(login), count });
   }
 
   const inProgress = [];
@@ -198,8 +211,16 @@ export async function buildDailySummary({ repo, gh, now = new Date() }) {
     inProgress.push(await issueItem(gh, issue));
   }
 
-  if (merged.length === 0 && inProgress.length === 0) return { skip: "nothing merged and nothing in progress" };
-  return { payload: { event: "daily_summary", date: now.toISOString().slice(0, 10), merged, in_progress: inProgress } };
+  if (total === 0 && inProgress.length === 0) return { skip: "nothing merged and nothing in progress" };
+  return {
+    payload: {
+      event: "daily_summary",
+      date: now.toISOString().slice(0, 10),
+      merged_total: total,
+      merged_by: mergedBy,
+      in_progress: inProgress,
+    },
+  };
 }
 
 export async function buildUpdatePushed({ runId, repo, gh }) {
@@ -208,7 +229,7 @@ export async function buildUpdatePushed({ runId, repo, gh }) {
   const succeeded = (name) =>
     (found?.jobs ?? []).some((job) => job.conclusion === "success" && String(job.name ?? "").includes(name));
   if (!succeeded(SHIPPED_JOB)) return { skip: "that run did not ship an update" };
-  const payload = { event: "update_pushed", run_id: Number(runId) };
+  const payload = { event: "update_pushed", run_id: String(runId) };
   if (succeeded(STORE_BUILD_JOB)) payload.store_build = true;
   if (succeeded(OTA_UPDATE_JOB)) payload.ota_update = true;
   return { payload };

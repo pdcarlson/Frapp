@@ -28,6 +28,8 @@ const AREA_MAX = 40;
 const AREAS_MAX = 10;
 /** Enough for a busy day; the post is cut at the chat length cap anyway. */
 const SUMMARY_ITEMS_MAX = 60;
+const MERGED_BY_MAX = 30;
+const MERGED_TOTAL_MAX = 10_000;
 const ALSO_IN_AREA_MAX = 5;
 
 const isOneOf =
@@ -61,6 +63,20 @@ export class DevLogItemDto {
   @IsString({ each: true })
   @MaxLength(AREA_MAX, { each: true })
   areas?: string[];
+}
+
+export class DevLogMergeCountDto {
+  @ApiProperty({ maxLength: ACTOR_MAX })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(ACTOR_MAX)
+  actor: string;
+
+  @ApiProperty()
+  @IsInt()
+  @Min(1)
+  @Max(MERGED_TOTAL_MAX)
+  count: number;
 }
 
 /**
@@ -139,16 +155,26 @@ export class DevLogPostDto {
   date?: string;
 
   @ApiPropertyOptional({
-    type: [DevLogItemDto],
-    maxItems: SUMMARY_ITEMS_MAX,
-    description: 'daily_summary: pull requests merged in the last day.',
+    description:
+      'daily_summary: how many pull requests merged in the last day.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(MERGED_TOTAL_MAX)
+  merged_total?: number;
+
+  @ApiPropertyOptional({
+    type: [DevLogMergeCountDto],
+    maxItems: MERGED_BY_MAX,
+    description: 'daily_summary: that total, per person.',
   })
   @IsOptional()
   @IsArray()
-  @ArrayMaxSize(SUMMARY_ITEMS_MAX)
+  @ArrayMaxSize(MERGED_BY_MAX)
   @ValidateNested({ each: true })
-  @Type(() => DevLogItemDto)
-  merged?: DevLogItemDto[];
+  @Type(() => DevLogMergeCountDto)
+  merged_by?: DevLogMergeCountDto[];
 
   @ApiPropertyOptional({
     type: [DevLogItemDto],
@@ -167,10 +193,11 @@ export class DevLogPostDto {
       'update_pushed: the id of the Deploy production run that shipped. One post per run.',
   })
   @ValidateIf(isOneOf('update_pushed'))
-  @IsInt()
-  @Min(1)
-  @Max(Number.MAX_SAFE_INTEGER)
-  run_id?: number;
+  // Digits as a string: run ids are already past what an int4 holds, and
+  // this one is only ever part of the post's dedupe key.
+  @IsString()
+  @Matches(/^[1-9]\d{0,18}$/)
+  run_id?: string;
 
   @ApiPropertyOptional({
     description:

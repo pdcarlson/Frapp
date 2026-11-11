@@ -174,11 +174,13 @@ describe("dev-log: pull request merged", () => {
 describe("dev-log: daily summary", () => {
   const now = new Date("2026-11-11T13:07:00Z");
 
-  it("lists the last day's human merges and what is in progress", async () => {
+  it("counts the last day's human merges per person and lists what is in progress", async () => {
     const { gh, calls } = github({
       "/search/issues": {
         items: [
           { number: 40, title: "Fix the badge", user: human("evan"), labels: [] },
+          { number: 43, title: "Fix the list", user: human("shawn"), labels: [] },
+          { number: 44, title: "Fix the sheet", user: human("shawn"), labels: [] },
           { number: 41, title: "Bump deps", user: { login: "dependabot[bot]", type: "Bot" }, labels: [] },
           { number: 42, title: "Ledger", user: human("paul"), labels: labels("routine-state") },
         ],
@@ -191,7 +193,11 @@ describe("dev-log: daily summary", () => {
     assert.deepEqual(payload, {
       event: "daily_summary",
       date: "2026-11-11",
-      merged: [{ number: 40, title: "Fix the badge", actor: "evan" }],
+      merged_total: 3,
+      merged_by: [
+        { actor: "shawn", count: 2 },
+        { actor: "evan", count: 1 },
+      ],
       // No label event to read, so the assignee.
       in_progress: [{ number: 9, title: "Chat threads", actor: "winston", areas: ["chat"] }],
     });
@@ -214,7 +220,7 @@ describe("dev-log: update pushed", () => {
   };
 
   it("posts for a run that shipped, naming what else it shipped", async () => {
-    assert.deepEqual((await build([SHIP])).payload, { event: "update_pushed", run_id: 35722904165 });
+    assert.deepEqual((await build([SHIP])).payload, { event: "update_pushed", run_id: "35722904165" });
     assert.deepEqual(
       (
         await build([
@@ -223,13 +229,13 @@ describe("dev-log: update pushed", () => {
           job(`Publish the live SHA as an OTA update (does not roll back a live ship) / ${OTA_UPDATE_JOB}`),
         ])
       ).payload,
-      { event: "update_pushed", run_id: 35722904165, store_build: true, ota_update: true },
+      { event: "update_pushed", run_id: "35722904165", store_build: true, ota_update: true },
     );
   });
 
   it("leaves out an app job that failed or was skipped", async () => {
     const { payload } = await build([SHIP, job(`x / ${STORE_BUILD_JOB}`, "failure"), job(`x / ${OTA_UPDATE_JOB}`, "skipped")]);
-    assert.deepEqual(payload, { event: "update_pushed", run_id: 35722904165 });
+    assert.deepEqual(payload, { event: "update_pushed", run_id: "35722904165" });
   });
 
   it("skips a run that did not ship: a dry run, migrations only, a failed deploy", async () => {

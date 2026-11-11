@@ -63,6 +63,11 @@ export interface DevLogItem {
   areas?: string[];
 }
 
+export interface DevLogMergeCount {
+  actor: string;
+  count: number;
+}
+
 export type DevLogPost =
   | {
       event: 'work_started';
@@ -78,13 +83,16 @@ export type DevLogPost =
       event: 'daily_summary';
       /** The day the summary is posted, `YYYY-MM-DD`. One post per day. */
       date: string;
-      merged?: DevLogItem[];
+      /** Pull requests merged in the last day, bots excluded. */
+      merged_total?: number;
+      /** That total, per person. */
+      merged_by?: DevLogMergeCount[];
       in_progress?: DevLogItem[];
     }
   | {
       event: 'update_pushed';
       /** The Deploy production run that shipped it. One post per run. */
-      run_id: number;
+      run_id: string;
       /** That run also uploaded a store build for testers. */
       store_build?: boolean;
       /** That run also published an over-the-air update. */
@@ -233,13 +241,13 @@ export function formatDevLogPost(
         ].join('\n'),
       );
     case 'daily_summary': {
-      const merged = post.merged ?? [];
       const inProgress = post.in_progress ?? [];
       const lines = [`Dev log summary for ${post.date}`];
-      lines.push('', `Merged in the last day (${merged.length}):`);
-      if (merged.length === 0) lines.push('• Nothing merged.');
-      for (const item of merged) {
-        lines.push(itemLine(item, pullUrl(item.number)));
+      // Counts, not titles: each merge already has its own post, and a busy
+      // day is dozens of them.
+      lines.push('', `Merged in the last day: ${post.merged_total ?? 0}`);
+      for (const { actor, count } of post.merged_by ?? []) {
+        lines.push(`• ${oneLine(actor)}: ${count}`);
       }
       lines.push('', `In progress now (${inProgress.length}):`);
       if (inProgress.length === 0) lines.push('• Nothing in progress.');

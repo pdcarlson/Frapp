@@ -40,6 +40,7 @@ on:
   workflow_run:
     workflows: ["Deploy production"]
     types: [completed]
+    branches: [main]
   schedule:
     # 13:07 UTC daily: the start of the US working day, when the summary is
     # read before anyone picks up work.

@@ -19455,6 +19455,22 @@
           "title"
         ]
       },
+      "DevLogMergeCountDto": {
+        "type": "object",
+        "properties": {
+          "actor": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "count": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "actor",
+          "count"
+        ]
+      },
       "DevLogPostDto": {
         "type": "object",
         "properties": {
@@ -19502,12 +19518,16 @@
             "example": "2026-11-11",
             "description": "daily_summary: the day it is posted. One post per day."
           },
-          "merged": {
-            "maxItems": 60,
-            "description": "daily_summary: pull requests merged in the last day.",
+          "merged_total": {
+            "type": "number",
+            "description": "daily_summary: how many pull requests merged in the last day."
+          },
+          "merged_by": {
+            "maxItems": 30,
+            "description": "daily_summary: that total, per person.",
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/DevLogItemDto"
+              "$ref": "#/components/schemas/DevLogMergeCountDto"
             }
           },
           "in_progress": {
@@ -19519,7 +19539,7 @@
             }
           },
           "run_id": {
-            "type": "number",
+            "type": "string",
             "description": "update_pushed: the id of the Deploy production run that shipped. One post per run."
           },
           "store_build": {

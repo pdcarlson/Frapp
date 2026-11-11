@@ -125,17 +125,46 @@ describe('formatDevLogPost', () => {
     );
   });
 
-  it('lists the day, and says so when a section is empty', () => {
+  it('counts the day by person and lists what is in progress', () => {
+    expect(
+      formatDevLogPost({
+        event: 'daily_summary',
+        date: '2026-11-11',
+        merged_total: 5,
+        merged_by: [
+          { actor: 'Shawn', count: 3 },
+          { actor: 'Evan', count: 2 },
+        ],
+        in_progress: [
+          {
+            number: 9,
+            title: 'Chat threads',
+            actor: 'Winston',
+            areas: ['chat'],
+          },
+        ],
+      }),
+    ).toBe(
+      [
+        'Dev log summary for 2026-11-11',
+        '',
+        'Merged in the last day: 5',
+        '• Shawn: 3',
+        '• Evan: 2',
+        '',
+        'In progress now (1):',
+        '• Chat threads (#9) · Winston · chat',
+        '  https://github.com/pdcarlson/Frapp/issues/9',
+      ].join('\n'),
+    );
+  });
+
+  it('says so when a section of the summary is empty', () => {
     const text = formatDevLogPost({
       event: 'daily_summary',
       date: '2026-11-11',
-      merged: [{ number: 40, title: 'Fix the badge', actor: 'Evan' }],
     });
-    expect(text).toContain('Dev log summary for 2026-11-11');
-    expect(text).toContain('Merged in the last day (1):');
-    expect(text).toContain(
-      '• Fix the badge (#40) · Evan\n  https://github.com/pdcarlson/Frapp/pull/40',
-    );
+    expect(text).toContain('Merged in the last day: 0');
     expect(text).toContain('In progress now (0):\n• Nothing in progress.');
   });
 
@@ -144,7 +173,7 @@ describe('formatDevLogPost', () => {
       formatDevLogPost(
         {
           event: 'update_pushed',
-          run_id: 35722904165,
+          run_id: '35722904165',
           store_build: true,
           ota_update: true,
         },
@@ -165,7 +194,10 @@ describe('formatDevLogPost', () => {
   });
 
   it('names only the web when the run shipped nothing for the phone', () => {
-    const text = formatDevLogPost({ event: 'update_pushed', run_id: 1 }, NOTE);
+    const text = formatDevLogPost(
+      { event: 'update_pushed', run_id: '1' },
+      NOTE,
+    );
     expect(text).not.toContain('Phone app');
     expect(text).toContain("What's new (2026-11-10): Threads");
   });
@@ -178,7 +210,6 @@ describe('formatDevLogPost', () => {
     const text = formatDevLogPost({
       event: 'daily_summary',
       date: '2026-11-11',
-      merged: items,
       in_progress: items,
     });
     expect(text.length).toBeLessThanOrEqual(10_000);
@@ -200,7 +231,7 @@ describe('devLogClientMessageId', () => {
       devLogClientMessageId({ event: 'daily_summary', date: '2026-11-11' }),
     ).toBe('devlog:daily_summary:2026-11-11');
     expect(
-      devLogClientMessageId({ event: 'update_pushed', run_id: 35722904165 }),
+      devLogClientMessageId({ event: 'update_pushed', run_id: '35722904165' }),
     ).toBe('devlog:update_pushed:35722904165');
   });
 });

@@ -67,3 +67,16 @@ Member-visible officer changes (dues, modules, roles) surface in chat as a syste
 - Chapters that pre-date the `#chapter-audit` channel have no mirror; the bridge logs and continues. The audit row itself is always the source of truth.
 
 The same `system_audit` message pattern is reused, targeted to a DM, for the invite-accept notification (see [README.md](./README.md) → *Direct Messages*).
+
+## The team's Dev log channel
+
+The Frapp team's own chapter has a channel where GitHub Actions posts what is being worked on and what shipped ([#4145](https://github.com/pdcarlson/Frapp/issues/4145), asked for by Shawn, built on Paul's go, 2026-11-11). It is a tool for the people who build Frapp, not a product feature: no chapter can turn it on, and a deployment without its three variables answers `404` on the route.
+
+- **Four posts.** An issue gets the `in-progress` label ("<who> started: <title>", with the issue's area labels and the other in-progress issues that share one, so someone starting work sees who is already there). A pull request merges to `main`. Once a day: how many pull requests merged in the last day, per person, and what is in progress now. A Deploy production run ships: "Update pushed: please update", with the newest What's new entry of the API that just went live (`RELEASE_NOTES` in `@repo/validation`, the list the apps show), so the channel and the app can't differ.
+- **One route, facts only.** `POST /v1/integrations/dev-log` takes an event name and its facts (a number, a title, a name). The API writes the sentence and builds every link from the number, to this repository only. The body cannot name a channel, a chapter, a sender, or a URL; an unknown key is a `400`.
+- **Message shape.** `sender_id` = system sender, `kind` = `text`, no payload. `text`, not `system_audit`: a `system_audit` notice draws its words unlinked and defaults push to off. As a `text` row it draws as Frapp's (the crest, the name) with tappable links, and follows the channel's notification level like any message.
+- **Nothing posts twice.** Each event has a `client_message_id` (`devlog:<event>:<issue, pull request, day or deploy run>`), so the dedupe index drops a re-run; the route answers `duplicate`.
+- **Skipped.** Anything a bot account did (Dependabot, an App), an issue or pull request labelled `routine-state` or `incident`, a summary with nothing in it, and a Deploy production run that did not ship (a dry run, a migrations-only run, a failed deploy).
+- **Who.** The account that added the label or opened the pull request, by its GitHub profile name, or its login when it has none. Agent sessions act under their user's account, so that is whose chat it was.
+
+The credential, where it lives and how it is revoked: [`authorization-model.md`](../../../docs/security/authorization-model.md) (the route's row) and [`ENV_REFERENCE.md` § Dev log channel](../../../docs/internal/environment/ENV_REFERENCE.md#dev-log-channel). The workflow: `.github/workflows/dev-log.yml`.
