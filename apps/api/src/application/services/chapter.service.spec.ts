@@ -18,6 +18,10 @@ import {
 import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
 import type { IChapterRepository } from '#domain/repositories/chapter.repository.interface';
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import {
+  ROLE_TIER_REPOSITORY,
+  type IRoleTierRepository,
+} from '#domain/repositories/role-tier.repository.interface';
 import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
@@ -29,6 +33,9 @@ import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query
 import {
   DEFAULT_SYSTEM_ROLES,
   DEFAULT_CHANNELS,
+  STARTING_ROLE_TIERS,
+  SystemPermissions,
+  SystemRoleKeys,
 } from '#domain/constants/permissions';
 import type { Chapter } from '#domain/entities/chapter.entity';
 import type { Role } from '#domain/entities/role.entity';
@@ -62,6 +69,7 @@ describe('ChapterService', () => {
   let service: ChapterService;
   let mockChapterRepo: jest.Mocked<IChapterRepository>;
   let mockRoleRepo: jest.Mocked<IRoleRepository>;
+  let mockRoleTierRepo: jest.Mocked<IRoleTierRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
   let mockUserRepo: jest.Mocked<IUserRepository>;
   let mockStorageProvider: {
@@ -121,6 +129,25 @@ describe('ChapterService', () => {
       delete: jest.fn(),
     };
 
+    // Answers as the database does: each tier back with an id, here derived
+    // from its position so a test can name the tier a role landed in.
+    mockRoleTierRepo = {
+      findByChapter: jest.fn(),
+      createMany: jest.fn((tiers) =>
+        Promise.resolve(
+          tiers.map((tier) => ({
+            id: `tier-${tier.position}`,
+            chapter_id: tier.chapter_id!,
+            position: tier.position!,
+            name: tier.name!,
+            permissions: tier.permissions ?? [],
+            created_at: '2026-11-10T00:00:00.000Z',
+            updated_at: '2026-11-10T00:00:00.000Z',
+          })),
+        ),
+      ),
+    };
+
     mockMemberRepo = {
       findById: jest.fn(),
       findByUser: jest.fn(),
@@ -155,6 +182,7 @@ describe('ChapterService', () => {
         ChapterService,
         { provide: CHAPTER_REPOSITORY, useValue: mockChapterRepo },
         { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
+        { provide: ROLE_TIER_REPOSITORY, useValue: mockRoleTierRepo },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
         { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
         { provide: CHAT_CHANNEL_REPOSITORY, useValue: mockChannelRepo },
@@ -441,6 +469,13 @@ describe('ChapterService', () => {
       chapter_id: chapter.id,
       name: roleDef.name,
       system_key: roleDef.system_key,
+      tier_id:
+        roleDef.starting_tier === null
+          ? null
+          : `tier-${roleDef.starting_tier + 1}`,
+      permission_overrides: Object.fromEntries(
+        roleDef.extra_permissions.map((permission) => [permission, true]),
+      ),
       permissions: [...roleDef.permissions],
       is_system: roleDef.is_system,
       display_order: roleDef.display_order,
@@ -448,6 +483,100 @@ describe('ChapterService', () => {
     }));
     expect(mockRoleRepo.createMany).toHaveBeenCalledWith(expectedRolesData);
     expect(result).toEqual(chapter);
+  });
+
+  describe('starting tiers (#4071)', () => {
+    async function createChapter() {
+      const chapter = chapterFixture();
+      mockChapterRepo.create.mockResolvedValue(chapter);
+      mockRoleRepo.createMany.mockResolvedValueOnce(
+        mockSystemRolesForChapter(chapter.id),
+      );
+      await service.create('user-1', {
+        name: 'Alpha',
+        university: 'State U',
+        config: {},
+      });
+      const seeded = mockRoleRepo.createMany.mock.calls[0][0];
+      return {
+        chapter,
+        tiers: mockRoleTierRepo.createMany.mock.calls[0][0],
+        role: (systemKey: string) =>
+          seeded.find((role) => role.system_key === systemKey)!,
+      };
+    }
+
+    it('seeds the starting tiers in order, before the roles that sit in them', async () => {
+      const { chapter, tiers } = await createChapter();
+
+      expect(tiers).toEqual(
+        STARTING_ROLE_TIERS.map((tier, index) => ({
+          chapter_id: chapter.id,
+          position: index + 1,
+          name: tier.name,
+          permissions: [...tier.permissions],
+        })),
+      );
+      expect(
+        mockRoleTierRepo.createMany.mock.invocationCallOrder[0],
+      ).toBeLessThan(mockRoleRepo.createMany.mock.invocationCallOrder[0]);
+    });
+
+    it('puts the Vice President in the first tier with nothing beyond it', async () => {
+      const { role } = await createChapter();
+      const vicePresident = role(SystemRoleKeys.VICE_PRESIDENT);
+
+      expect(vicePresident.tier_id).toBe('tier-1');
+      // From the tier, not an override: what the tier is later given or
+      // loses, the Vice President gets or loses with it.
+      expect(vicePresident.permission_overrides).toEqual({});
+      expect(vicePresident.permissions).toEqual([
+        ...STARTING_ROLE_TIERS[0].permissions,
+      ]);
+    });
+
+    it('keeps what a seeded role held before tiers as overrides on that role', async () => {
+      const { role } = await createChapter();
+      const treasurer = role(SystemRoleKeys.TREASURER);
+
+      expect(treasurer.permission_overrides).toEqual({
+        [SystemPermissions.BILLING_VIEW]: true,
+        [SystemPermissions.BILLING_MANAGE]: true,
+        [SystemPermissions.POINTS_ADJUST]: true,
+        [SystemPermissions.POINTS_VIEW_ALL]: true,
+        [SystemPermissions.REPORTS_EXPORT]: true,
+        [SystemPermissions.EVENTS_CREATE]: true,
+        [SystemPermissions.EVENTS_UPDATE]: true,
+      });
+      expect(role(SystemRoleKeys.PRESIDENT).permission_overrides).toEqual({
+        [SystemPermissions.WILDCARD]: true,
+      });
+    });
+
+    it('leaves Alumni outside the tiers with its own permissions', async () => {
+      const { role } = await createChapter();
+      const alumni = role(SystemRoleKeys.ALUMNI);
+
+      expect(alumni.tier_id).toBeNull();
+      expect(alumni.permissions).toEqual([
+        SystemPermissions.MEMBERS_VIEW,
+        SystemPermissions.ALUMNI_POST,
+      ]);
+    });
+
+    it('fails the create when a starting tier did not come back', async () => {
+      mockChapterRepo.create.mockResolvedValue(chapterFixture());
+      mockRoleTierRepo.createMany.mockResolvedValueOnce([]);
+
+      await expect(
+        service.create('user-1', {
+          name: 'Alpha',
+          university: 'State U',
+          config: {},
+        }),
+      ).rejects.toThrow('Failed to create the starting role tiers');
+      expect(mockRoleRepo.createMany).not.toHaveBeenCalled();
+    });
   });
 
   it('should merge onboarding config columns into the chapter insert', async () => {

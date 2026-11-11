@@ -6,7 +6,6 @@ jest.mock('@repo/org-archetypes', () => ({
   buildChapterConfigFromArchetype: jest.fn(() => ({
     archetype: 'ifc',
     modules: { chat: true },
-    rolePack: 'ifc_standard',
     vocabulary: { recruitment: 'Rush', pledge: 'New member', class: 'Class' },
     customFields: [],
     workflows: [
@@ -22,7 +21,7 @@ jest.mock('@repo/org-archetypes', () => ({
     ],
     dues: {},
   })),
-  getArchetype: jest.fn((key: string) => ({ key, rolePack: 'ifc_standard' })),
+  getArchetype: jest.fn((key: string) => ({ key })),
   // Enough of the real catalog to exercise the activation funnel's paid-module
   // detection (#267): one always-on free module and three paid ones, one of
   // them (`dues`) beta-off.

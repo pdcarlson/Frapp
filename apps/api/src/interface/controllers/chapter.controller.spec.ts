@@ -4,7 +4,6 @@ jest.mock('@repo/org-archetypes', () => ({
   buildChapterConfigFromArchetype: jest.fn(() => ({
     archetype: 'ifc',
     modules: {},
-    rolePack: 'ifc_standard',
     vocabulary: {},
     customFields: [],
     workflows: [],

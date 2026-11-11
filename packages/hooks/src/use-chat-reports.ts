@@ -67,16 +67,25 @@ export const chatReportKeys = createChapterQueryKeys("chat-reports");
  * followed — marks the queue stale at once ({@link useInvalidateChatReports}),
  * so an officer sent here by a report finds it listed.
  */
-export function useChatReports(status: ChatReportStatus = "open") {
+export function useChatReports(
+  status: ChatReportStatus = "open",
+  /** One channel's reports only: Chat admin's per-channel view. */
+  channelId?: string,
+) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   return useQuery({
     // `chapterId!` is safe under `enabled`: the factory refuses a null chapter
     // by design, and the query never runs without one.
-    queryKey: chatReportKeys.list(chapterId!, { status }),
+    queryKey: chatReportKeys.list(
+      chapterId!,
+      channelId ? { status, channelId } : { status },
+    ),
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/chat/reports", {
-        params: { query: { status } },
+        params: {
+          query: channelId ? { status, channel_id: channelId } : { status },
+        },
       });
       if (error) throw error;
       return data;
