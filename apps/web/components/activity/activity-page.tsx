@@ -58,7 +58,6 @@ function fileHref(row: Extract<ActivityRow, { kind: "file" }>): string {
  * member to act draws as the action (`ActivityAsk`); any other is a status.
  */
 function RowContent({ row }: { row: ActivityRow }) {
-  const detail = row.dateBlock?.detail ?? row.detail;
   return (
     <>
       <ActivityRowLead row={row} />
@@ -66,9 +65,9 @@ function RowContent({ row }: { row: ActivityRow }) {
         <span className="block truncate text-sm font-semibold text-foreground">
           {row.title}
         </span>
-        {detail ? (
+        {row.detail ? (
           <span className="block truncate text-caption text-muted-foreground">
-            {detail}
+            {row.detail}
           </span>
         ) : null}
       </span>
@@ -332,19 +331,26 @@ export function ActivityPage() {
         aria-label="Show"
         className="flex flex-wrap items-center gap-2"
       >
-        {ACTIVITY_FILTERS.map((option) => (
-          <Button
-            key={option.value}
-            type="button"
-            size="toolbar"
-            variant={filter === option.value ? "tinted" : "secondary"}
-            className={FILTER_CHIP_CLASS}
-            aria-pressed={filter === option.value}
-            onClick={() => setFilter(option.value)}
-          >
-            {option.label}
-          </Button>
-        ))}
+        {ACTIVITY_FILTERS.map((option) => {
+          // The To confirm tile narrows within Tasks, so the Tasks chip
+          // stays lit under it.
+          const on =
+            filter === option.value ||
+            (filter === "confirm" && option.value === "task");
+          return (
+            <Button
+              key={option.value}
+              type="button"
+              size="toolbar"
+              variant={on ? "tinted" : "secondary"}
+              className={FILTER_CHIP_CLASS}
+              aria-pressed={on}
+              onClick={() => setFilter(option.value)}
+            >
+              {option.label}
+            </Button>
+          );
+        })}
       </div>
 
       {groups.map((group) =>

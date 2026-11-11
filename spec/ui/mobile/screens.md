@@ -57,6 +57,7 @@ Supporting routes with no drawn Canvas screen: `(app)/invite.tsx` — Invite mem
 - **A document row opens Documents. A backwork row opens nothing**, because the phone has no Backwork screen.
 - **A refusal is a line under the card**, since the phone has no toast.
 - **A sign-up link opens a sheet, not the link.** Every other row opens a sheet, and a phone row has no room for web's Done and `⋯` beside it. The sheet names the link's kind, who posted it where, and its address, then **Open link** (the in-app browser, as a link tapped in chat), **Done**, **Hide**, **Open in chat** (a thread reply opens its thread) and, for a `channels:manage` holder, **Remove for everyone**. Done, Hide and Remove close the sheet and float the tasks board's "· Undo" bar for five seconds; a failure is the platform's alert, since the sheet has already gone.
+- **Not on the phone yet: web's summary, count tiles, Now and Later, Made by you by kind, the row's glyph or date, and the ask drawn as an action** ([#4173](https://github.com/pdcarlson/Frapp/issues/4173), 2026-11-11; the phone takes them in that issue's second step). The phone draws each group's rows in the read's order with its badge, as before.
 
 ## Removed screens
 

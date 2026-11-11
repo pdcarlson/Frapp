@@ -472,6 +472,62 @@ describe("Now and Later, and Made by you by kind (#4173)", () => {
     ]);
   });
 
+  it("draws the line at tomorrow for a task and at a day for a poll", () => {
+    const data = activity({
+      needs_you: {
+        tasks: [
+          task({ id: "a", title: "Due tomorrow", due_date: "2026-11-12" }),
+          task({ id: "b", title: "Due in two days", due_date: "2026-11-13" }),
+        ],
+        task_confirmations: [],
+        hours_approvals: [],
+        polls: [
+          poll({
+            message_id: "p1",
+            question: "Closes in 23h",
+            closes_at: "2026-11-12T11:00:00",
+          }),
+          poll({
+            message_id: "p2",
+            question: "Closes in 25h",
+            closes_at: "2026-11-12T13:00:00",
+          }),
+        ],
+      },
+    });
+    expect(partsOf(data)["needs-you"]?.map((p) => p.titles)).toEqual([
+      ["Due tomorrow", "Closes in 23h"],
+      ["Due in two days", "Closes in 25h"],
+    ]);
+  });
+
+  it("narrows to the confirmations alone under the To confirm tile's filter", () => {
+    const data = activity({
+      needs_you: {
+        tasks: [task({ id: "mine", title: "Mine" })],
+        task_confirmations: [task({ id: "c", title: "To confirm" })],
+        hours_approvals: [],
+        polls: [],
+      },
+      made_by_you: {
+        polls: [],
+        events: [],
+        tasks: [task({ id: "m", title: "Assigned" })],
+        files: [],
+      },
+      unavailable: ["tasks"],
+    });
+    const groups = activityGroups(data, "confirm", NOW);
+    expect(groups.map((group) => group.rows.map((row) => row.title))).toEqual([
+      ["To confirm"],
+      [],
+      [],
+      [],
+    ]);
+    // The confirmations come from the tasks read, so its failure shows here.
+    expect(groups[0]!.unavailable).toEqual(["tasks"]);
+  });
+
   it("draws Needs you as one part with no heading when everything is now, or everything later", () => {
     const data = activity({
       needs_you: {
@@ -521,7 +577,7 @@ describe("Now and Later, and Made by you by kind (#4173)", () => {
     expect(partsOf(data, "task")["made-by-you"]?.[0]?.limit).toBeNull();
   });
 
-  it("keeps a group's rows as its parts end to end", () => {
+  it("keeps the read's order in rows, for a client that draws them without the parts", () => {
     const data = activity({
       needs_you: {
         tasks: [
@@ -534,9 +590,14 @@ describe("Now and Later, and Made by you by kind (#4173)", () => {
       },
     });
     const needs = activityGroups(data, "all", NOW)[0]!;
-    expect(needs.rows.map((row) => row.title)).toEqual(
-      needs.parts.flatMap((p) => p.rows.map((row) => row.title)),
-    );
+    expect(needs.rows.map((row) => row.title)).toEqual([
+      "Later one",
+      "Now one",
+    ]);
+    expect(needs.parts.map((p) => p.rows.map((row) => row.title))).toEqual([
+      ["Now one"],
+      ["Later one"],
+    ]);
   });
 
   it("gives each row its kind's glyph, and an event a date block whose detail leaves the day to the block", () => {
@@ -551,14 +612,14 @@ describe("Now and Later, and Made by you by kind (#4173)", () => {
     });
     const groups = activityGroups(data, "all", NOW);
     expect(groups[0]!.rows.map((row) => row.glyph)).toEqual([
-      "confirm",
       "task",
+      "confirm",
     ]);
     const coming = groups[1]!.rows[0]!;
     expect(coming.glyph).toBe("event");
-    expect(coming.dateBlock).toMatchObject({ day: "12" });
-    expect(coming.dateBlock?.detail).toMatch(/Great Room$/);
-    expect(coming.dateBlock?.detail).not.toMatch(/Tomorrow/);
+    expect(coming.dateBlock).toEqual({ month: "NOV", day: "12" });
+    // The block is decoration: the detail says the day in words.
+    expect(coming.detail).toMatch(/^Tomorrow · .* · Great Room$/);
     expect(groups[0]!.rows.every((row) => row.dateBlock === null)).toBe(true);
   });
 
@@ -611,13 +672,19 @@ describe("activitySummary (#4173)", () => {
     );
     expect(summary.needsYou).toBe(6);
     expect(
-      summary.tiles.map((tile) => [tile.id, tile.count, tile.filter]),
+      summary.tiles.map((tile) => [
+        tile.id,
+        tile.count,
+        tile.zero,
+        tile.filter,
+      ]),
     ).toEqual([
-      ["tasks", 2, "task"],
-      ["confirm", 1, "task"],
-      ["approve", 3, "hours"],
-      ["polls", 0, "poll"],
+      ["tasks", "2", false, "task"],
+      ["confirm", "1", false, "confirm"],
+      ["approve", "3", false, "hours"],
+      ["polls", "0", true, "poll"],
     ]);
+    expect(summary.incomplete).toBe(false);
     expect(summary.nextEvent?.name).toBe("Exec sync");
   });
 
@@ -645,14 +712,52 @@ describe("activitySummary (#4173)", () => {
     );
     expect(summary.tiles[0]).toMatchObject({
       id: "check-in",
-      count: 1,
+      count: "1",
       filter: "event",
     });
   });
 
+  it("says 25+ on a tile whose list reached the read's cap", () => {
+    const full = activity({
+      needs_you: {
+        tasks: Array.from({ length: 25 }, (_, n) => task({ id: `t${n}` })),
+        task_confirmations: [],
+        hours_approvals: [],
+        polls: [],
+      },
+    });
+    const summary = activitySummary(
+      full,
+      { canConfirmTasks: false, canApproveHours: false },
+      NOW,
+    );
+    expect(summary.tiles[0]).toMatchObject({ id: "tasks", count: "25+" });
+  });
+
+  it("draws a tile whose section failed as unknown, and never says caught up then", () => {
+    const failed = activity({ unavailable: ["tasks"], needs_you_count: 0 });
+    const summary = activitySummary(
+      failed,
+      { canConfirmTasks: true, canApproveHours: false },
+      NOW,
+    );
+    expect(summary.incomplete).toBe(true);
+    expect(summary.tiles.slice(0, 2)).toMatchObject([
+      { id: "tasks", count: null, zero: false },
+      { id: "confirm", count: null, zero: false },
+    ]);
+    expect(activityNeedsYouHeadline(summary)).toBe(
+      "Some of what needs you couldn't load",
+    );
+  });
+
   it("says how many things need you in words", () => {
-    expect(activityNeedsYouHeadline(1)).toBe("1 thing needs you");
-    expect(activityNeedsYouHeadline(8)).toBe("8 things need you");
+    const says = (needsYou: number, incomplete = false) =>
+      activityNeedsYouHeadline({ needsYou, incomplete });
+    expect(says(0)).toBe("You're all caught up");
+    expect(says(1)).toBe("1 thing needs you");
+    expect(says(8)).toBe("8 things need you");
+    expect(says(8, true)).toBe("At least 8 things need you");
   });
 });
 

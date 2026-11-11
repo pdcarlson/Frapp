@@ -5,6 +5,9 @@ import type { ActivityRow } from "@repo/hooks";
 const mockActivity = vi.fn();
 const mockInvalidate = vi.fn();
 const mockNetwork = vi.fn(() => ({ isOffline: false }));
+const mockModuleGate = vi.fn<() => ((module: string) => boolean) | undefined>(
+  () => undefined,
+);
 const mockPermissions = vi.fn(() => ({
   data: { permissions: [] as string[] },
 }));
@@ -27,7 +30,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
 });
 // The chapter's module switch, unknown here: every tile shows.
 vi.mock("@/lib/hooks/use-chapter-module-gate", () => ({
-  useChapterModuleGate: () => undefined,
+  useChapterModuleGate: () => mockModuleGate(),
 }));
 vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ invalidateQueries: mockInvalidate }),
@@ -465,6 +468,96 @@ describe("ActivityPage", () => {
     expect(
       within(coming).getByTestId("activity-date-block"),
     ).toBeInTheDocument();
-    expect(within(coming).getByText(/Great Room$/)).toBeInTheDocument();
+    // The block is decoration; the detail still says the day in words.
+    expect(
+      within(coming).getByText(/^Jan 1, 2099 · .* · Great Room$/),
+    ).toBeInTheDocument();
+  });
+
+  it("dims a tile with nothing waiting, and shows no tile for a module that is off", () => {
+    mockModuleGate.mockReturnValue((module) => module !== "polls");
+    mockActivity.mockReturnValue(
+      loaded({
+        needs_you: {
+          tasks: [],
+          task_confirmations: [],
+          hours_approvals: [],
+          polls: [poll],
+        },
+      }),
+    );
+    render(<ActivityPage />);
+    const tiles = screen.getByRole("group", { name: "Needs you by kind" });
+    expect(within(tiles).getAllByRole("button")).toHaveLength(1);
+    expect(
+      within(tiles).getByRole("button", { name: /Your tasks/ }).className,
+    ).toContain("opacity-60");
+    mockModuleGate.mockReturnValue(undefined);
+  });
+
+  it("narrows to the confirmations alone from the To confirm tile, under a lit Tasks chip", () => {
+    mockPermissions.mockReturnValue({
+      data: { permissions: ["tasks:manage"] },
+    });
+    mockActivity.mockReturnValue(
+      loaded({
+        needs_you: {
+          tasks: [task],
+          task_confirmations: [{ ...task, id: "c1", title: "Done by Ada" }],
+          hours_approvals: [],
+          polls: [],
+        },
+      }),
+    );
+    render(<ActivityPage />);
+    const tiles = screen.getByRole("group", { name: "Needs you by kind" });
+    fireEvent.click(within(tiles).getByRole("button", { name: /To confirm/ }));
+
+    expect(
+      within(tiles).getByRole("button", { name: /To confirm/ }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      within(tiles).getByRole("button", { name: /Your tasks/ }),
+    ).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Tasks" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByText("Done by Ada")).toBeInTheDocument();
+    expect(screen.queryByText("Book the venue")).not.toBeInTheDocument();
+
+    // Your tasks switches to itself (the Tasks chip) rather than clearing.
+    fireEvent.click(within(tiles).getByRole("button", { name: /Your tasks/ }));
+    expect(
+      within(tiles).getByRole("button", { name: /Your tasks/ }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      within(tiles).getByRole("button", { name: /To confirm/ }),
+    ).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByText("Book the venue")).toBeInTheDocument();
+  });
+
+  it("never says caught up when part of Needs you could not be read", () => {
+    mockActivity.mockReturnValue(
+      loaded({
+        needs_you: {
+          tasks: [],
+          task_confirmations: [],
+          hours_approvals: [],
+          polls: [],
+        },
+        needs_you_count: 0,
+        unavailable: ["tasks"],
+      }),
+    );
+    render(<ActivityPage />);
+    expect(
+      screen.getByText("Some of what needs you couldn't load"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("You're all caught up")).toBeNull();
+    const tiles = screen.getByRole("group", { name: "Needs you by kind" });
+    expect(
+      within(tiles).getByRole("button", { name: /Couldn't load.*Your tasks/ }),
+    ).toBeInTheDocument();
   });
 });

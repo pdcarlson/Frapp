@@ -12,7 +12,8 @@ import { cn } from "@/lib/utils";
  * event, and a count tile per kind of ask (Apple Reminders' tiles). A tile
  * sets the chip of its kind, and pressing the lit one again clears it, as a
  * chip does. A tile at zero dims rather than hides, so the row never jumps as
- * the member clears their list.
+ * the member clears their list; a tile whose section could not be read shows
+ * a dash, never 0, and the headline never says "caught up" then either.
  */
 export function ActivitySummary({
   summary,
@@ -34,9 +35,7 @@ export function ActivitySummary({
     <div className="space-y-4">
       <div className="space-y-1">
         <p className="text-title text-foreground">
-          {summary.needsYou === 0
-            ? "You're all caught up"
-            : activityNeedsYouHeadline(summary.needsYou)}
+          {activityNeedsYouHeadline(summary)}
         </p>
         {nextLine ? (
           <p className="text-caption text-muted-foreground">{nextLine}</p>
@@ -59,12 +58,18 @@ export function ActivitySummary({
                 className={cn(
                   "flex min-h-16 flex-col items-start justify-between gap-1 rounded-md border bg-card px-3 py-2.5 text-left transition-colors hover:bg-card-hover",
                   pressed ? "border-accent-border" : "border-border",
-                  tile.count === 0 && !pressed && "opacity-60",
+                  tile.zero && !pressed && "opacity-60",
                   FOCUS_RING,
                 )}
               >
                 <span className="text-headline tabular-nums text-foreground">
-                  {tile.count}
+                  {tile.count ?? (
+                    // A section that could not be read is unknown, never 0.
+                    <>
+                      <span aria-hidden="true">–</span>
+                      <span className="sr-only">Couldn&apos;t load</span>
+                    </>
+                  )}
                 </span>
                 <span className="text-caption font-semibold text-muted-foreground">
                   {tile.label}

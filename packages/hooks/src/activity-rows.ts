@@ -5,7 +5,6 @@ import {
   formatDueLabel,
   formatMinutesRounded,
   formatRelativeDayTime,
-  formatTimeOfDay,
   parseInstant,
   parseInstantOrBareLocalNoon,
 } from "@repo/formatting";
@@ -29,8 +28,26 @@ export const ACTIVITY_FILTERS = [
   { value: "file", label: "Files" },
   { value: "link", label: "Links" },
 ] as const;
-export type ActivityFilter = (typeof ACTIVITY_FILTERS)[number]["value"];
-export type ActivityKind = Exclude<ActivityFilter, "all">;
+export type ActivityKind = Exclude<
+  (typeof ACTIVITY_FILTERS)[number]["value"],
+  "all"
+>;
+/**
+ * A chip's value, or `confirm`: what the To confirm tile narrows to (the
+ * tasks waiting on the member's confirm), which has no chip of its own
+ * since the Tasks chip already covers it (#4173).
+ */
+export type ActivityFilter = "all" | ActivityKind | "confirm";
+
+/** How many rows each list of the read carries at most (`activity.md`). */
+export const ACTIVITY_LIST_LIMIT = 25;
+
+/** Whether the member can check in to an event right now and hasn't. */
+export function activityEventNeedsCheckIn(
+  event: Pick<ActivityEvent, "check_in_open" | "checked_in">,
+): boolean {
+  return event.check_in_open && !event.checked_in;
+}
 
 /**
  * A row badge's tone. `outline` is quiet metadata that must not read as a
@@ -58,14 +75,14 @@ export type ActivityGlyph =
 
 /**
  * An event row's date, for a calendar-style block beside the row (#4173):
- * `weekday` "THU", `day` "12", `month` "NOV", and `detail`, the row's detail
- * without the day, since the block says it.
+ * `month` "NOV" over `day` "12", as a calendar draws it. It is drawn beside
+ * the row's detail, never instead of it: the detail keeps "Tomorrow · 7:00
+ * PM", which says the day in words (and to a screen reader, since the block
+ * is decoration) and gives the year outside the current one.
  */
 export interface ActivityDateBlock {
-  weekday: string;
-  day: string;
   month: string;
-  detail: string;
+  day: string;
 }
 
 interface RowBase {
@@ -281,19 +298,13 @@ function dateBlock(event: ActivityEvent): ActivityDateBlock | null {
   const at = parseInstant(event.start_time);
   if (!at) return null;
   return {
-    weekday: at
-      .toLocaleDateString(undefined, { weekday: "short" })
-      .toUpperCase(),
-    day: String(at.getDate()),
     month: at.toLocaleDateString(undefined, { month: "short" }).toUpperCase(),
-    detail: [formatTimeOfDay(event.start_time), event.location]
-      .filter(Boolean)
-      .join(" · "),
+    day: String(at.getDate()),
   };
 }
 
 function eventRow(event: ActivityEvent, group: string): ActivityRow {
-  const needsCheckIn = event.check_in_open && !event.checked_in;
+  const needsCheckIn = activityEventNeedsCheckIn(event);
   return {
     kind: "event",
     key: `${group}:event:${event.id}`,
@@ -398,10 +409,11 @@ function part(
  * The page's four groups, in the order it draws them, already narrowed to
  * one kind when a chip is set.
  *
- * "Needs you" leads with what is most pressing: an event the member can check
- * in to right now, then tasks, confirmations, approvals and polls, each in the
- * order the read serves it. It splits into Now and Later
- * (`activityRowIsNow`). An event that needs a check-in is listed under
+ * "Needs you" lists an event the member can check in to right now, then
+ * tasks, confirmations, approvals and polls, each in the order the read
+ * serves it; its parts split that into Now and Later (`activityRowIsNow`),
+ * so a client that draws the parts leads with what is pressing, and one that
+ * draws `rows` keeps the read's order. An event that needs a check-in is listed under
  * "Needs you" and not again under "Coming up". "Made by you" draws one part
  * per kind, a few rows each, so one busy kind doesn't bury the others.
  */
@@ -413,20 +425,24 @@ export function activityGroups(
   const down = new Set(activity.unavailable);
   const filtered = filter !== "all";
   const keep = (rows: ActivityRow[]) =>
-    filtered ? rows.filter((row) => row.kind === filter) : rows;
+    !filtered
+      ? rows
+      : filter === "confirm"
+        ? rows.filter((row) => row.glyph === "confirm")
+        : rows.filter((row) => row.kind === filter);
+  // The confirmations come from the tasks read.
+  const kindFilter = filter === "confirm" ? "task" : filter;
   const downFor = (sections: ActivitySection[], kinds: ActivityKind[]) =>
     sections.filter(
       (section, index) =>
-        down.has(section) && (!filtered || filter === kinds[index]),
+        down.has(section) && (!filtered || kindFilter === kinds[index]),
     );
   // Under a chip the member asked for that kind, so nothing is held back.
   const cap = (limit: number) => (filtered ? null : limit);
 
-  const checkInNow = activity.coming_up.filter(
-    (event) => event.check_in_open && !event.checked_in,
-  );
+  const checkInNow = activity.coming_up.filter(activityEventNeedsCheckIn);
   const later = activity.coming_up.filter(
-    (event) => !(event.check_in_open && !event.checked_in),
+    (event) => !activityEventNeedsCheckIn(event),
   );
 
   const needs = keep([
@@ -460,7 +476,7 @@ export function activityGroups(
       id: "needs-you",
       label: "Needs you",
       empty: "Nothing is waiting on you.",
-      rows: [...needsNow, ...needsLater],
+      rows: needs,
       // One part draws with no heading: "Now" over every row says nothing.
       parts:
         needsNow.length > 0 && needsLater.length > 0
@@ -535,10 +551,14 @@ export function activityGroups(
           cap(ACTIVITY_MADE_BY_YOU_LIMIT),
         ),
       ],
-      unavailable: downFor(
-        ["polls", "made_events", "tasks", "files"],
-        ["poll", "event", "task", "file"],
-      ),
+      // To confirm narrows to Needs you's confirmations: nothing here is one.
+      unavailable:
+        filter === "confirm"
+          ? []
+          : downFor(
+              ["polls", "made_events", "tasks", "files"],
+              ["poll", "event", "task", "file"],
+            ),
     },
   ];
 }
@@ -547,17 +567,44 @@ export function activityGroups(
 export interface ActivityTile {
   id: "check-in" | "tasks" | "confirm" | "approve" | "polls";
   label: string;
-  count: number;
-  /** The chip a tap on the tile sets. */
-  filter: ActivityKind;
+  /**
+   * What the tile draws: the count, `25+` when its list reached the read's
+   * cap (the read cuts each list at 25, so more may be waiting), or `null`
+   * when its section could not be read, which a client draws as unknown,
+   * never as 0.
+   */
+  count: string | null;
+  /** Whether nothing of this kind is waiting, so the tile can dim. */
+  zero: boolean;
+  /** The filter a tap on the tile sets. Each tile's is its own. */
+  filter: ActivityFilter;
 }
 
 export interface ActivitySummary {
   /** Everything waiting on the member, counted before the list cap. */
   needsYou: number;
+  /**
+   * A section behind Needs you could not be read, so `needsYou` may
+   * undercount: the page must not say the member is caught up.
+   */
+  incomplete: boolean;
   tiles: ActivityTile[];
   /** The soonest event still ahead, for "Next up". */
   nextEvent: ActivityEvent | null;
+}
+
+function tileCount(
+  rows: readonly unknown[],
+  down: boolean,
+): Pick<ActivityTile, "count" | "zero"> {
+  if (down) return { count: null, zero: false };
+  return {
+    count:
+      rows.length >= ACTIVITY_LIST_LIMIT
+        ? `${ACTIVITY_LIST_LIMIT}+`
+        : String(rows.length),
+    zero: rows.length === 0,
+  };
 }
 
 /**
@@ -580,15 +627,14 @@ export function activitySummary(
   now: Date = new Date(),
 ): ActivitySummary {
   const on = (module: string) => options.isModuleEnabled?.(module) ?? true;
-  const checkIn = activity.coming_up.filter(
-    (event) => event.check_in_open && !event.checked_in,
-  ).length;
+  const down = new Set(activity.unavailable);
+  const checkIn = activity.coming_up.filter(activityEventNeedsCheckIn);
   const tiles: ActivityTile[] = [];
-  if (checkIn > 0) {
+  if (checkIn.length > 0) {
     tiles.push({
       id: "check-in",
       label: "Check in now",
-      count: checkIn,
+      ...tileCount(checkIn, false),
       filter: "event",
     });
   }
@@ -596,15 +642,15 @@ export function activitySummary(
     tiles.push({
       id: "tasks",
       label: "Your tasks",
-      count: activity.needs_you.tasks.length,
+      ...tileCount(activity.needs_you.tasks, down.has("tasks")),
       filter: "task",
     });
     if (options.canConfirmTasks) {
       tiles.push({
         id: "confirm",
         label: "To confirm",
-        count: activity.needs_you.task_confirmations.length,
-        filter: "task",
+        ...tileCount(activity.needs_you.task_confirmations, down.has("tasks")),
+        filter: "confirm",
       });
     }
   }
@@ -612,7 +658,10 @@ export function activitySummary(
     tiles.push({
       id: "approve",
       label: "Hours to approve",
-      count: activity.needs_you.hours_approvals.length,
+      ...tileCount(
+        activity.needs_you.hours_approvals,
+        down.has("hours_approvals"),
+      ),
       filter: "hours",
     });
   }
@@ -620,7 +669,7 @@ export function activitySummary(
     tiles.push({
       id: "polls",
       label: "Polls to vote on",
-      count: activity.needs_you.polls.length,
+      ...tileCount(activity.needs_you.polls, down.has("polls")),
       filter: "poll",
     });
   }
@@ -629,10 +678,32 @@ export function activitySummary(
       const start = parseInstant(event.start_time);
       return start !== null && start.getTime() > now.getTime();
     }) ?? null;
-  return { needsYou: activity.needs_you_count, tiles, nextEvent };
+  const incomplete = (
+    ["tasks", "hours_approvals", "polls", "coming_up"] as const
+  ).some((section) => down.has(section));
+  return {
+    needsYou: activity.needs_you_count,
+    incomplete,
+    tiles,
+    nextEvent,
+  };
 }
 
-/** "8 things need you", "1 thing needs you". */
-export function activityNeedsYouHeadline(count: number): string {
-  return count === 1 ? "1 thing needs you" : `${count} things need you`;
+/**
+ * The page's headline: "8 things need you", "1 thing needs you", "You're
+ * all caught up" at zero, and never that while part of Needs you could not
+ * be read, since a failed read must not look like an empty one.
+ */
+export function activityNeedsYouHeadline(
+  summary: Pick<ActivitySummary, "needsYou" | "incomplete">,
+): string {
+  const { needsYou, incomplete } = summary;
+  if (needsYou === 0) {
+    return incomplete
+      ? "Some of what needs you couldn't load"
+      : "You're all caught up";
+  }
+  const words =
+    needsYou === 1 ? "1 thing needs you" : `${needsYou} things need you`;
+  return incomplete ? `At least ${words}` : words;
 }

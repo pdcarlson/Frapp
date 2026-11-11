@@ -1,6 +1,7 @@
 import { NAV_GLYPHS, type DuotoneGlyphPaths } from "@repo/theme/nav-glyphs";
 import type { ActivityGlyph, ActivityRow } from "@repo/hooks";
 import { NavGlyph } from "@/components/layout/nav-glyphs";
+import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 /**
@@ -25,8 +26,8 @@ const LEAD_TILE =
   "flex h-10 w-10 shrink-0 items-center justify-center rounded-sm border border-border bg-surface-1";
 
 /**
- * What leads an Activity row (#4173): the date for an event, as a calendar
- * draws it, else its kind's glyph, the way Teams' Activity marks each row.
+ * What leads an Activity row (#4173): the date for an event, month over day
+ * as a calendar draws it, else its kind's glyph, the way Teams' Activity marks each row.
  * Both are neutral: colour on this page is for what asks something of the
  * member (`ActivityAsk`) and for status, never for a kind.
  */
@@ -39,7 +40,7 @@ export function ActivityRowLead({ row }: { row: ActivityRow }) {
         data-testid="activity-date-block"
       >
         <span className="text-caption font-semibold uppercase leading-none text-muted-foreground">
-          {row.dateBlock.weekday}
+          {row.dateBlock.month}
         </span>
         <span className="text-label font-bold leading-none tabular-nums text-foreground">
           {row.dateBlock.day}
@@ -64,11 +65,17 @@ export function ActivityRowLead({ row }: { row: ActivityRow }) {
  * reads apart from `To do` or `Required` (#4173). It is not its own control:
  * the whole row is the hit target, and this names what the row opens to. The
  * tinted button's recipe, since the accent belongs to the one action that
- * matters (`components.md` §3).
+ * matters (`components.md` §3), drawn from `buttonVariants` so it follows the
+ * recipe, at a badge's height so the row keeps its own.
  */
 export function ActivityAsk({ label }: { label: string }) {
   return (
-    <span className="inline-flex h-7 shrink-0 items-center rounded-xs border border-accent-border bg-accent-subtle px-2.5 text-caption font-bold text-accent-text">
+    <span
+      className={cn(
+        buttonVariants({ variant: "tinted", size: "sm" }),
+        "pointer-events-none h-7 shrink-0 px-2.5 text-caption pointer-coarse:h-7",
+      )}
+    >
       {label}
     </span>
   );

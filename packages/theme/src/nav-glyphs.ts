@@ -6,8 +6,8 @@
  * hub (`apps/mobile/components/tab-glyphs.tsx`, `more/more-glyphs.tsx`), so a
  * destination draws the same silhouette on both surfaces. The web in-screen
  * families re-export the nav glyphs, and the few web glyphs drawn right beside
- * them (folder, schedule, invite, profile) live here too, so those lists draw
- * one family. The remaining stroke-recipe glyphs move here under #3491.
+ * them (folder, schedule, invite, profile, and Activity's link and confirm)
+ * live here too, so those lists draw one family. The remaining stroke-recipe glyphs move here under #3491.
  *
  * Each glyph is two filled paths on a 256 grid, from Phosphor's duotone weight:
  * `back` is the silhouette, painted in the glyph's own hue at
