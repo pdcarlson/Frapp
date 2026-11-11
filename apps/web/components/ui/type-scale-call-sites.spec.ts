@@ -105,6 +105,14 @@ const EXCEPTIONS: { file: string; literal: string; count: number; reason: string
       "that fits them at the board's 11px. #3075 decides.",
   },
   {
+    file: "components/events/calendar-tasks.tsx",
+    literal: "text-[11px]",
+    count: 1,
+    reason:
+      "The month grid's task chip (#4144), which shares a day cell with the " +
+      "event chips above and must match their size. #3075 decides both.",
+  },
+  {
     file: "components/billing/pro-chip.tsx",
     literal: "text-[10.5px]",
     count: 1,

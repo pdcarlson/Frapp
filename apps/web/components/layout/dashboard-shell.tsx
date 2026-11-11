@@ -175,7 +175,7 @@ export function DashboardShell({
       (onChatRoute &&
         Boolean(
           searchParams?.get(CHAT_CHANNEL_PARAM) ||
-            searchParams?.get(CHAT_MESSAGE_PARAM),
+          searchParams?.get(CHAT_MESSAGE_PARAM),
         )),
   );
   const [toolShare, setToolShare] = useState(defaultToolShare);
@@ -269,7 +269,6 @@ export function DashboardShell({
     },
     [split, closeTool],
   );
-
 
   // A full-width tool (Chapter settings) hides chat without closing it: the
   // cookie and the Chat row's state stay as they were, so leaving the page
@@ -471,11 +470,17 @@ export function DashboardShell({
                   : (navKey ?? hydratedNavKey)
               }
               className={
-                railByCss ? (rail ? RAIL_BAND_ONLY : OUTSIDE_RAIL_BAND) : undefined
+                railByCss
+                  ? rail
+                    ? RAIL_BAND_ONLY
+                    : OUTSIDE_RAIL_BAND
+                  : undefined
               }
               collapsed={rail}
               onToggleCollapsed={
-                forceRail || (railByCss && rail) ? undefined : toggleNavCollapsed
+                forceRail || (railByCss && rail)
+                  ? undefined
+                  : toggleNavCollapsed
               }
               permissions={permissions}
               isModuleEnabled={isModuleEnabled}
@@ -584,7 +589,8 @@ export function DashboardShell({
               // leaving focus on `<body>`. Never a Tab stop.
               tabIndex={-1}
               className={cn(
-                "flex min-h-0 min-w-0 flex-1 flex-col outline-none transition-opacity",
+                // `relative`: a docked panel (`shared/panel.tsx`) covers the column.
+                "relative flex min-h-0 min-w-0 flex-1 flex-col outline-none transition-opacity",
                 chatShown && "min-[1056px]:min-w-[375px]",
                 collapsing === "page" && "opacity-40",
               )}

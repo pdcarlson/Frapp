@@ -16,9 +16,8 @@
  */
 
 /**
- * Chapter-authored role names and labels (`roles.name`,
- * `chapter_custom_roles.label`). Both columns are unconstrained `text` and both
- * render in member lists and the role picker, so the cap is about keeping an
+ * Chapter-authored role names (`roles.name`). The column is unconstrained
+ * `text` and renders in member lists and the role picker, so the cap is about keeping an
  * unbounded string out of every surface that displays it. Far above any real
  * role name — the longest in staging is 14 characters.
  */

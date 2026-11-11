@@ -42,6 +42,7 @@ describe('TaskService', () => {
     points_awarded: false,
     completed_at: null,
     confirmed_at: null,
+    sent_back_at: null,
     created_at: '2026-02-26T00:00:00.000Z',
   };
 
@@ -773,9 +774,12 @@ describe('TaskService', () => {
         'Needs more work',
       );
 
+      // Stamped with when it was sent back, which Activity reads as the
+      // moment it waits on the assignee again.
       expect(mockTaskRepo.reopenCompletion).toHaveBeenCalledWith(
         'task-1',
         'ch-1',
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       );
       expect(result.status).toBe(TaskStatus.IN_PROGRESS);
     });

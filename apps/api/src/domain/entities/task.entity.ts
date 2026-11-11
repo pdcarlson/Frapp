@@ -18,6 +18,11 @@ export interface Task {
   points_awarded: boolean;
   completed_at: string | null;
   confirmed_at: string | null;
+  /**
+   * When an officer last sent the completion back to the assignee; `null`
+   * if never. The assignee taking back their own completion doesn't set it.
+   */
+  sent_back_at: string | null;
   created_at: string;
 }
 
