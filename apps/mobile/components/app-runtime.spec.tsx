@@ -32,6 +32,10 @@ vi.mock("@/lib/onboarding/use-onboarding-redirect", () => ({
   useOnboardingRedirect: () => calls.push("onboarding"),
 }));
 
+vi.mock("@/lib/onboarding/use-member-invite-handoff", () => ({
+  useMemberInviteHandoff: () => calls.push("member-invite"),
+}));
+
 vi.mock("@/lib/presence/chapter-presence", () => ({
   useChapterPresenceRuntime: () => calls.push("presence"),
 }));
@@ -60,5 +64,11 @@ describe("AppRuntime", () => {
     calls.length = 0;
     renderHook(() => AppRuntime());
     expect(calls).toContain("presence");
+  });
+
+  it("hands a member's invite link to the web app-wide (#4002)", () => {
+    calls.length = 0;
+    renderHook(() => AppRuntime());
+    expect(calls).toContain("member-invite");
   });
 });
