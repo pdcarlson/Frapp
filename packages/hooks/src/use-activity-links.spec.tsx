@@ -16,6 +16,7 @@ const link = (id: string) => ({
   id,
   url: `https://forms.gle/${id}`,
   host: "forms.gle",
+  title: null,
   message_id: `m-${id}`,
   thread_root_id: null,
   channel_id: "c1",

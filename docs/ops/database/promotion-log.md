@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-11: Link titles on Activity (#4187)
+
+### 20261112000000_activity_link_titles.sql
+
+- **Purpose**: Adds three columns to `chat_message_links`: `title text` (nullable), `title_attempts smallint not null default 0` and `title_checked_at timestamptz` (nullable), and the partial index `idx_chat_message_links_title_pending` on `(posted_at desc) where title is null and title_attempts < 3`. The API's link title sweep (`LinkTitleSweepService`, every minute) claims a link by raising `title_attempts` with a compare-and-set, reads its page's title through the guarded fetcher, and stores a definite answer (a name, or none) by setting `title_attempts` to 3; a read that broke on the way is tried again an hour later, three tries at most. `GET /v1/activity` serves `title` on each link. No existing row changes: every link starts unread, so the first ticks after deploy read the titles of the links already indexed that are still inside Activity's 30-day window, 10 a minute across every chapter. The rule is [`spec/behavior/activity.md` § Links](../../../spec/behavior/activity.md#links).
+- **Checks**: After `db push`, `select count(*) from information_schema.columns where table_name = 'chat_message_links' and column_name in ('title', 'title_attempts', 'title_checked_at');` returns `3`, and `select indexname from pg_indexes where indexname = 'idx_chat_message_links_title_pending';` returns 1 row. After the API deploys, `select count(*) from chat_message_links where title is null and title_attempts < 3 and removed_at is null and posted_at > now() - interval '30 days';` falls toward `0` at about 600 an hour.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API reads links with `select('*')` and ignores the three columns. The newer API against an unmigrated database still serves the Activity links read (`select('*')` returns no `title`, which it serves as null, so every row shows its kind), but its sweep fails each tick on the unknown columns and reports `cron:handle-link-title-sweep` to Sentry. Adding nullable columns, and a not-null column with a constant default, is metadata-only, under a brief lock. The partial index is built with a plain `create index`, which blocks inserts into `chat_message_links` (and so the chat-message trigger that indexes links, delaying sends that carry a sign-up link) for the build. Nothing prunes the table: it holds the 30-day backfill from `20261111030000` plus every link posted since, so check `select count(*) from chat_message_links;` first. `if not exists` makes re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-link-titles-on-activity-20261112000000) § Rollback Link titles on Activity.
+
 ## 2026-11-11: The Important strip (#4186)
 
 ### 20261111235900_chat_important_seen.sql
