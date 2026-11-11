@@ -112,7 +112,6 @@ describe("isNavItemVisible", () => {
   it("fails closed for a gated row while the permission set is unresolved (#3854)", async () => {
     const { isNavItemVisible } = await import("./protected-nav-item");
     expect(isNavItemVisible(permissionItem, undefined)).toBe(false);
-    expect(isNavItemVisible(permissionItem, null)).toBe(false);
     const anyOfItem: NavItem = {
       ...moduleItem,
       requireAnyOf: ["backwork:upload", "backwork:admin"],
@@ -120,6 +119,15 @@ describe("isNavItemVisible", () => {
     expect(isNavItemVisible(anyOfItem, undefined, () => true)).toBe(false);
     const showWhenItem: NavItem = { ...coreItem, showWhen: () => true };
     expect(isNavItemVisible(showWhenItem, undefined)).toBe(false);
+  });
+
+  it("shows a gated row when the offline dashboard can't ask (null)", async () => {
+    const { isNavItemVisible } = await import("./protected-nav-item");
+    expect(isNavItemVisible(permissionItem, null)).toBe(true);
+    // The module gate still applies.
+    expect(
+      isNavItemVisible({ ...moduleItem, requirePermission: "x" }, null, () => false),
+    ).toBe(false);
   });
 
   it("keeps a row with no permission rule while permissions are unresolved", async () => {

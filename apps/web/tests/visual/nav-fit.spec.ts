@@ -14,8 +14,9 @@ import { expect, test } from "@playwright/test";
  * `responsive-floor.spec.ts`), seeds an active chapter, and answers the
  * permission read with the owner's `*`, so every permission-gated row shows.
  * The current-chapter read is held unanswered, so the module gate stays open
- * (`isNavItemVisible`) and every module row shows too, beta-off ones included:
- * more rows than any single seeded role sees, the President included.
+ * (`isNavItemVisible`) and every module row shows too, whatever a chapter has
+ * switched off: more rows than any single seeded role sees, the President
+ * included.
  *
  * It used to need no stubs, because both gates failed open while unresolved.
  * The permission gate fails closed since #3854, so a sessionless page draws no
@@ -54,10 +55,13 @@ test("the sidebar fits a 1024×768 window with every row showing", async ({
 
   const nav = page.getByRole("navigation", { name: "Primary" });
   await expect(nav).toBeVisible();
-  // The last row of the list. If the stubs above ever stop reaching the nav,
-  // this is what goes missing, and the test says so instead of passing on a
-  // shorter list.
+  // If either stub above ever stops reaching the nav, rows go missing and the
+  // test says so instead of passing on a shorter list. Chapter settings, the
+  // last row, needs the permissions stub. Backwork needs both: its permission,
+  // and its module, which a failed chapter read would switch off with every
+  // other module row.
   await expect(nav.getByRole("link", { name: "Chapter settings" })).toBeVisible();
+  await expect(nav.getByRole("link", { name: "Backwork" })).toBeVisible();
 
   const measured = await nav.evaluate((el) => ({
     scrollHeight: el.scrollHeight,

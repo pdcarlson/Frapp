@@ -74,15 +74,18 @@ function isGranted(
  * question before it draws a section's heading: a heading is a promise that
  * something the viewer can open sits under it.
  *
- * The permission gate fails CLOSED while `permissions` is unresolved
- * (undefined until the query settles, and left that way if it fails): a row
- * that declares `requirePermission`, `requireAnyOf` or `showWhen` stays hidden
- * until the viewer's grants are known (#3854). It used to fail open, so on
+ * The permission gate fails CLOSED while `permissions` is `undefined` (the
+ * read in flight, or failed online): a row that declares `requirePermission`,
+ * `requireAnyOf` or `showWhen` stays hidden until the viewer's grants are known
+ * (#3854). It used to fail open, so on
  * every reload a member saw officer doors (Chapter settings, Billing before
  * #3827) appear, take a click, and vanish, which read as broken and as "I can
  * get in there". Gated rows all sit at the foot of the list, above the pinned
  * collapse toggle, so an officer's rows arriving a beat late move nothing
- * already drawn. Rows with no permission rule render at once.
+ * already drawn. Rows with no permission rule render at once. `null` is the
+ * other unknown: the read cannot run because the dashboard is offline with
+ * nothing cached (`useNavPermissions`). That is not a denial, so gated rows
+ * show and their pages state the outage.
  *
  * The module gate still fails open: `isModuleEnabled` is undefined until the
  * current-chapter read settles, and a module row is open to every member, so
@@ -107,10 +110,10 @@ export function isNavItemVisible(
     item.requirePermission !== undefined ||
     item.requireAnyOf !== undefined ||
     item.showWhen !== undefined;
-  if (!resolved) {
+  if (permissions === undefined) {
     // Fail closed (#3854): never draw a door before we know it opens.
     if (gated) return false;
-  } else if (!isGranted(item, permissions)) {
+  } else if (resolved && !isGranted(item, permissions)) {
     return false;
   }
   if (item.module && isModuleEnabled && !isModuleEnabled(item.module)) {

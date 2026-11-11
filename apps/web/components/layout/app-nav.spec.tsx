@@ -150,8 +150,8 @@ describe("AppNav", () => {
   it("draws no permission-gated row while permissions are unresolved (#3854)", () => {
     // Failing open drew Chapter settings for every member on every reload,
     // clickable, until the permission read answered and took it back.
-    for (const permissions of [undefined, null]) {
-      const { unmount } = renderNav({ permissions });
+    {
+      const { unmount } = renderNav({ permissions: undefined });
       for (const gated of ["Chapter settings", "Directory", "Backwork"]) {
         expect(
           screen.queryByRole("link", { name: gated }),
@@ -162,6 +162,14 @@ describe("AppNav", () => {
       expect(screen.getByRole("link", { name: "Documents" })).toBeInTheDocument();
       unmount();
     }
+  });
+
+  it("keeps gated rows when the offline dashboard can't ask (null)", () => {
+    // A check that could not run is not a denial (design-system §5 rule 4):
+    // a member keeps the Directory row they hold, and the page states the outage.
+    renderNav({ permissions: null });
+    expect(screen.getByRole("link", { name: "Directory" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Chapter settings" })).toBeInTheDocument();
   });
 
   it("draws the gated rows once an officer's permissions answer", () => {

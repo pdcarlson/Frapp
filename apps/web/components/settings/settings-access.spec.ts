@@ -108,9 +108,9 @@ describe("isSettingsTabVisible", () => {
     expect(isSettingsTabVisible("org", ["semester:rollover"])).toBe(false);
   });
 
-  it("fails open while permissions are unresolved, like the nav", () => {
-    expect(isSettingsTabVisible("org", undefined)).toBe(true);
-    expect(isSettingsTabVisible("org", null)).toBe(true);
+  it("shows no tab while permissions are unresolved, like the nav (#3854)", () => {
+    expect(isSettingsTabVisible("org", undefined)).toBe(false);
+    expect(isSettingsTabVisible("org", null)).toBe(false);
   });
 });
 
@@ -142,6 +142,9 @@ describe("visibleSettingsTools", () => {
 
   it("does not module-gate before the chapter read resolves", () => {
     expect(ids(visibleSettingsTools(["*"], undefined))).toContain("reports");
+    // Unresolved permissions show no tool at all (#3854).
+    expect(visibleSettingsTools(undefined, () => true)).toEqual([]);
+    expect(visibleSettingsTools(null, () => true)).toEqual([]);
   });
 });
 
@@ -175,6 +178,9 @@ describe("hasSettingsDestination", () => {
 
   it("is false while permissions are unresolved, like the nav (#3854)", () => {
     expect(hasSettingsDestination(undefined, () => true)).toBe(false);
-    expect(hasSettingsDestination(null, () => true)).toBe(false);
+  });
+
+  it("is true when the offline dashboard can't ask (null)", () => {
+    expect(hasSettingsDestination(null, () => true)).toBe(true);
   });
 });
