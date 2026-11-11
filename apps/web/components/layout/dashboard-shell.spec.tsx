@@ -249,7 +249,7 @@ describe("DashboardShell", () => {
     );
     // A top-level route has no parent link: no chapter-name prefix.
     expect(
-      within(banner).queryByRole("link", { name: "Settings" }),
+      within(banner).queryByRole("link", { name: "Chapter settings" }),
     ).not.toBeInTheDocument();
   });
 
@@ -266,7 +266,7 @@ describe("DashboardShell", () => {
       "Study zones",
     );
     expect(
-      within(banner).getByRole("link", { name: "Settings" }),
+      within(banner).getByRole("link", { name: "Chapter settings" }),
     ).toHaveAttribute("href", "/settings");
   });
 
@@ -284,7 +284,7 @@ describe("DashboardShell", () => {
       "Reports",
     );
     expect(
-      within(banner).queryByRole("link", { name: "Settings" }),
+      within(banner).queryByRole("link", { name: "Chapter settings" }),
     ).not.toBeInTheDocument();
   });
 
@@ -787,10 +787,10 @@ describe("DashboardShell", () => {
       mockPermissions.value = ["reports:view", "chapter-config:view"];
       render(<DashboardShell>reports</DashboardShell>);
       expect(
-        within(nav()).getByRole("link", { name: "Settings" }),
+        within(nav()).getByRole("link", { name: "Chapter settings" }),
       ).toHaveAttribute("href", "/settings");
       expect(
-        within(nav()).queryByRole("button", { name: "Settings" }),
+        within(nav()).queryByRole("button", { name: "Chapter settings" }),
       ).not.toBeInTheDocument();
     });
 

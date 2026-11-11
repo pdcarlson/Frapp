@@ -3668,7 +3668,7 @@ export interface paths {
         put?: never;
         /**
          * Start linking your Discord account
-         * @description Mints a single-use handshake bound to you and this chapter and returns the Discord authorize URL, which asks for `identify` only. Discord returns the browser to `/profile` with a one-time token that `POST /v1/discord/author-link/confirm` spends.
+         * @description Mints a single-use handshake bound to you and this chapter and returns the Discord authorize URL, which asks for `identify` only. Discord returns the browser to their Settings page with a one-time token that `POST /v1/discord/author-link/confirm` spends.
          */
         post: operations["DiscordAuthorLinkController_begin_v1"];
         delete?: never;
@@ -6235,7 +6235,7 @@ export interface components {
             expires_at: string;
         };
         ConfirmDiscordAuthorLinkDto: {
-            /** @description The one-time token the OAuth callback put on the redirect to `/profile`. It links the Discord account only for the member who started the handshake, in the chapter it was started in. */
+            /** @description The one-time token the OAuth callback put on the redirect to the Settings page. It links the Discord account only for the member who started the handshake, in the chapter it was started in. */
             handshake: string;
         };
         ConfirmDiscordAuthorLinkResponseDto: {
