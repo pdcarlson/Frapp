@@ -9,6 +9,10 @@ Environment reference and the documentation conventions. Grouped by area.
 Which subfolder of `docs/internal/` owns which kind of change is stated once, in
 [`DOCUMENTATION_CONVENTIONS.md` § Where things go](DOCUMENTATION_CONVENTIONS.md#where-things-go).
 This index does not restate it; it only routes: [`environment/`](environment/README.md).
+
+- **Legal drafts:** [`legal/school-layer-compliance-draft.md`](legal/school-layer-compliance-draft.md) — DRAFT,
+  not legal advice: FERPA release text, policy redlines, minors, DPA and HECVAT readiness for the
+  school layer (#4192), pending Paul and counsel.
 Operations runbooks live in [`../ops/`](../ops/), CI and agent-infra notes in [`../ci-cd/`](../ci-cd/),
 security notes in [`../security/`](../security/README.md), and the report-service performance note in
 [`../performance/reports.md`](../performance/reports.md).
