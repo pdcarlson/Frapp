@@ -9,6 +9,7 @@
  */
 
 import type { components } from "@repo/api-sdk/types";
+import { isChatMessageFlag, type ChatMessageFlag } from "@repo/validation";
 
 export const CHAT_MESSAGE_QUERY_ROOT = "chat" as const;
 
@@ -132,6 +133,10 @@ export interface RawChatMessage {
   metadata?: Record<string, unknown> | null;
   is_pinned?: boolean | null;
   pinned_at?: string | null;
+  /** The message's flag (#3921), who added it and when; see `ChatMessage.flag`. */
+  flag?: string | null;
+  flagged_by?: string | null;
+  flagged_at?: string | null;
   edited_at?: string | null;
   is_deleted?: boolean | null;
   deleted_at?: string | null;
@@ -214,6 +219,24 @@ export interface ChatMessage {
   reply_to_id: string | null;
   is_pinned: boolean;
   pinned_at: string | null;
+  /**
+   * The flag a member put on this message after it was sent (#3921), or
+   * `null`. A value outside `CHAT_MESSAGE_FLAGS` (a flag a newer server added)
+   * normalizes to `null`, so an older client draws nothing rather than a
+   * label it cannot name. All three fields are null together.
+   * `spec/behavior/chat/README.md` § Message flags.
+   *
+   * Optional only so a hand-built message (a test fixture) need not name it;
+   * `normalizeRow` always sets all three.
+   */
+  flag?: ChatMessageFlag | null;
+  /**
+   * Who added the flag. `null` with a flag set means the server withheld
+   * them (the viewer blocked them) or their account is gone: draw the flag
+   * with no "flagged by".
+   */
+  flagged_by?: string | null;
+  flagged_at?: string | null;
   edited_at: string | null;
   is_deleted: boolean;
   created_at: string;
@@ -424,6 +447,23 @@ export function threadSummaryOf(row: RawChatMessage): ThreadSummary | null {
   };
 }
 
+/**
+ * A row's flag fields, or all three null when the flag is absent or one this
+ * client does not know (#3921).
+ */
+function flagOf(
+  row: RawChatMessage,
+): Pick<ChatMessage, "flag" | "flagged_by" | "flagged_at"> {
+  if (!isChatMessageFlag(row.flag)) {
+    return { flag: null, flagged_by: null, flagged_at: null };
+  }
+  return {
+    flag: row.flag,
+    flagged_by: row.flagged_by ?? null,
+    flagged_at: row.flagged_at ?? null,
+  };
+}
+
 /** Normalizes a raw row into a confirmed cache message. */
 export function normalizeRow(row: RawChatMessage): ChatMessage {
   const clientId =
@@ -444,6 +484,7 @@ export function normalizeRow(row: RawChatMessage): ChatMessage {
     reply_to_id: row.reply_to_id ?? null,
     is_pinned: Boolean(row.is_pinned),
     pinned_at: row.pinned_at ?? null,
+    ...flagOf(row),
     edited_at: row.edited_at ?? null,
     is_deleted: Boolean(row.is_deleted) || row.deleted_at != null,
     created_at: row.created_at,
@@ -506,6 +547,9 @@ export function toRawRow(message: ChatMessage): RawChatMessage {
     metadata: { attachment_count: message.attachment_count },
     is_pinned: message.is_pinned,
     pinned_at: message.pinned_at,
+    flag: message.flag ?? null,
+    flagged_by: message.flagged_by ?? null,
+    flagged_at: message.flagged_at ?? null,
     edited_at: message.edited_at,
     is_deleted: message.is_deleted,
     client_message_id: message.client_message_id,
@@ -579,6 +623,9 @@ export function optimisticMessage(args: {
     reply_to_id: args.replyToId ?? null,
     is_pinned: false,
     pinned_at: null,
+    flag: null,
+    flagged_by: null,
+    flagged_at: null,
     edited_at: null,
     is_deleted: false,
     created_at: new Date().toISOString(),

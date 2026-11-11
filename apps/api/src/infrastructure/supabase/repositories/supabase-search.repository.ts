@@ -78,7 +78,7 @@ export const EVENT_SEARCH_COLUMNS =
  * on the one read whose result set the archive import grows most.
  */
 const MESSAGE_SEARCH_COLUMNS =
-  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, type, kind, payload, client_message_id, reply_to_id, metadata, mentions, is_pinned, pinned_at, edited_at, is_deleted, created_at';
+  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, type, kind, payload, client_message_id, reply_to_id, metadata, mentions, is_pinned, pinned_at, flag, flagged_by, flagged_at, edited_at, is_deleted, created_at';
 
 /**
  * The order `searchMessages` asks PostgREST for, `created_at desc, id desc`,

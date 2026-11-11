@@ -110,6 +110,7 @@ describe('ChannelAccessService', () => {
       findByClientMessageId: jest.fn(),
       findAuthorAvatarPaths: jest.fn(),
       insertIdempotent: jest.fn(),
+      compareAndSetFlag: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     };
