@@ -64,6 +64,27 @@ describe("ThreadChip (#3785)", () => {
     expect(container.innerHTML).not.toMatch(/-space-x-/);
   });
 
+  it("gives way on a narrow card in order: the time, then the faces (#4297)", () => {
+    // jsdom lays nothing out, so this pins the shrink factors that decide the
+    // order; the widths themselves were measured in Chrome.
+    const { container } = render(
+      <ThreadChip summary={summary} nameFor={nameFor} unread={2} onOpen={vi.fn()} />,
+    );
+    const time = screen.getByText(/last reply/).parentElement!;
+    const faces = screen.getByText("PC").closest("[aria-hidden]")!;
+    // The time takes the shortfall first, by far.
+    expect(time.className).toContain("shrink-[10000]");
+    // The faces shrink by 1: under 1, flex hands out only that fraction of
+    // what is left once the time is gone, and the row overflows the card.
+    expect(faces.className).toMatch(/(^|\s)shrink(\s|$)/);
+    // The count, "2 new" and the chevron never shrink.
+    expect(screen.getByText("3 replies").className).toContain("shrink-0");
+    expect(
+      container.querySelector('[data-slot="thread-unread"]')!.className,
+    ).toContain("shrink-0");
+    expect(container.querySelector("svg.lucide-chevron-right")!.getAttribute("class")).toContain("shrink-0");
+  });
+
   it("is plain text where threads can't open", () => {
     render(<ThreadChip summary={summary} nameFor={nameFor} />);
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
