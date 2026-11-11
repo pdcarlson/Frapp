@@ -438,7 +438,7 @@ export interface Database {
         Returns: ChatChannel[];
       };
       /**
-       * `20261111160000`. Files the listed channels under one section
+       * `20261111190000`. Files the listed channels under one section
        * (`p_category_id` null is the default Channels section) in array
        * order, and renumbers the rest of that section after them. Skips DMs,
        * group DMs and the audit log. Returns the listed rows.
@@ -452,7 +452,7 @@ export interface Database {
         Returns: ChatChannel[];
       };
       /**
-       * `20261111160000`. The chapter's category order in array order; any
+       * `20261111190000`. The chapter's category order in array order; any
        * category not listed keeps its relative order after them. Returns
        * every category of the chapter in its new order.
        */

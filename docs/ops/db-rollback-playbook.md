@@ -3536,9 +3536,9 @@ alter table public.chat_messages
   drop column if exists flag;
 ```
 
-## Rollback Chapter channel order (20261111160000)
+## Rollback Chapter channel order (20261111190000)
 
-* **Migration**: `20261111160000_chat_channels_display_order.sql`
+* **Migration**: `20261111190000_chat_channels_display_order.sql`
 
 One nullable column on `chat_channels`, `display_order`, and the functions `reorder_chat_channels` and `reorder_chat_categories`. No existing row changed.
 
