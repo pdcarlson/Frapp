@@ -1,4 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { IsIn } from 'class-validator';
+import { CHAT_LINK_MEMBER_STATES } from '#domain/entities/chat.entity';
+import type { ChatLinkMemberStateValue } from '#domain/entities/chat.entity';
+import type { ActivityLink } from '../../application/services/activity-link.service';
 import { ChatMessageDto } from './chat.dto';
 import { TaskStatus } from '#domain/entities/task.entity';
 import type { ChannelType } from '#domain/entities/chat.entity';
@@ -240,6 +244,74 @@ export class ActivityFileDto implements ActivityFile {
   created_at: string;
 }
 
+export class ActivityLinkDto implements ActivityLink {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ description: 'The link as posted. Opens outside Frapp.' })
+  url: string;
+
+  @ApiProperty({
+    description: 'The link’s host, lower-cased and without `www.`.',
+    example: 'docs.google.com',
+  })
+  host: string;
+
+  @ApiProperty({
+    format: 'uuid',
+    description: 'The chat message it was posted in, for “Open in chat”.',
+  })
+  message_id: string;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Set when the message is a thread reply, which the channel’s timeline doesn’t show: “Open in chat” opens this thread.',
+  })
+  thread_root_id: string | null;
+
+  @ApiProperty({ format: 'uuid' })
+  channel_id: string;
+
+  @ApiProperty({
+    description:
+      'The channel’s name. A direct message’s is server-generated, so label those from `channel_type`.',
+  })
+  channel_name: string;
+
+  @ApiProperty({ enum: ACTIVITY_CHANNEL_TYPES })
+  channel_type: ChannelType;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: 'Null for an imported author with no Frapp account.',
+  })
+  posted_by: string | null;
+
+  @ApiProperty({
+    description: 'Empty when the poster cannot be resolved.',
+  })
+  posted_by_name: string;
+
+  @ApiProperty({ format: 'date-time' })
+  posted_at: string;
+}
+
+/** `PUT /v1/activity/links/{id}/state`. */
+export class SetActivityLinkStateDto {
+  @ApiProperty({
+    enum: CHAT_LINK_MEMBER_STATES,
+    description:
+      '`done`: the caller filled it in. `hidden`: not chapter business for them. Either takes it off their own list only.',
+  })
+  @IsIn(CHAT_LINK_MEMBER_STATES)
+  state: ChatLinkMemberStateValue;
+}
+
 export class ActivityNeedsYouDto {
   @ApiProperty({
     type: [ActivityTaskDto],
@@ -307,6 +379,13 @@ export class ActivityDto implements ActivityView {
       'Events that invite the caller and start within 14 days, or whose check-in is still open, soonest first. At most 10.',
   })
   coming_up: ActivityEventDto[];
+
+  @ApiProperty({
+    type: [ActivityLinkDto],
+    description:
+      'Sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels the caller can read and an officer has not left out of Activity. Never the caller’s own, a blocked member’s, one an officer removed, or one the caller marked Done or Hidden. Newest first, at most 25. Not counted in `needs_you_count`.',
+  })
+  links: ActivityLinkDto[];
 
   @ApiProperty({ type: ActivityMadeByYouDto })
   made_by_you: ActivityMadeByYouDto;
