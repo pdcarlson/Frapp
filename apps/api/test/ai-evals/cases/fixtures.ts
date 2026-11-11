@@ -77,18 +77,21 @@ export const DOC_UPLOADER: EvalCaller = {
   permissions: ['members:view', 'chapter_docs:upload'],
 };
 
-/** Seeded Treasurer role. */
+/**
+ * Seeded Treasurer role: what its starting tier gives every role in it
+ * (#4071), then the Treasurer's own billing, points, reports and events grants.
+ */
 export const TREASURER: EvalCaller = {
   memberId: 'member-treasurer',
   chapterId: CHAPTER,
   roleName: 'Treasurer',
   permissions: [
+    'members:view',
+    'polls:view_all',
     'billing:view',
     'billing:manage',
     'points:adjust',
     'points:view_all',
-    'polls:view_all',
-    'members:view',
     'reports:export',
     'events:create',
     'events:update',
@@ -96,15 +99,16 @@ export const TREASURER: EvalCaller = {
 };
 
 /**
- * Seeded President role — `['*']`, the wildcard grant.
+ * Seeded President role: the wildcard grant, beside what its starting tier
+ * gives every role in it (#4071).
  *
- * Kept as the real value rather than an expanded list: the ceiling logic has to
- * handle wildcard correctly, and a fixture that quietly avoided it would hide
- * exactly the bug it should catch.
+ * The wildcard is kept as the real value rather than an expanded list: the
+ * ceiling logic has to handle it correctly, and a fixture that quietly avoided
+ * it would hide exactly the bug it should catch.
  */
 export const PRESIDENT: EvalCaller = {
   memberId: 'member-president',
   chapterId: CHAPTER,
   roleName: 'President',
-  permissions: ['*'],
+  permissions: ['members:view', 'polls:view_all', '*'],
 };
