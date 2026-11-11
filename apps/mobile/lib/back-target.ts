@@ -31,6 +31,7 @@ export const SCREEN_TITLES = {
   "chat-thread": "Chat",
   "event-details": "Event",
   notifications: "Notifications",
+  activity: "Activity",
   messages: "Messages",
   preferences: "Settings",
   profile: "Profile",

@@ -86,6 +86,10 @@ export default function AppLayout() {
         options={{ title: SCREEN_TITLES.notifications }}
       />
       <Stack.Screen
+        name="activity"
+        options={{ title: SCREEN_TITLES.activity }}
+      />
+      <Stack.Screen
         name="messages"
         options={{ title: SCREEN_TITLES.messages }}
       />

@@ -58,7 +58,8 @@ The board's Notifications row is not in the app's More: the inbox opens from the
 | Group | Row | Destination | Trailing status |
 | ----- | --- | ----------- | --------------- |
 | — | Profile card (avatar, name, points) | `profile.tsx` (s15) | chevron |
-| Chapter tools | Study hours | `study.tsx` (s10) | this week's total, e.g. "4.0 hrs" |
+| Chapter tools | Activity | `activity.tsx` ([`screens.md`](screens.md), supporting routes) | the count of things waiting on the member (`needs_you_count`), as a warning-hue chip, drawn only when there is one |
+| | Study hours | `study.tsx` (s10) | this week's total, e.g. "4.0 hrs" |
 | | Service hours | `service-hours.tsx` (host of the s20 sheet) | — |
 | | Dues | `dues.tsx` (s11) | the next bill's chip: warning hue for "Due Sept 15", destructive for "Past due Sept 15" |
 | | Documents | `documents.tsx` (s12) | — |
@@ -69,11 +70,13 @@ The board's Notifications row is not in the app's More: the inbox opens from the
 | | Host check-in | `host-check-in.tsx` (s22) | the next hostable event |
 | | Adjust points | s23 sheet — **not rendered** until the sheet ships (#2300) | — |
 
+Activity leads the chapter tools, as it leads web's Chapter group ([#3897](https://github.com/pdcarlson/Frapp/issues/3897), added 2026-11-11; the board drew no such row).
+
 Study hours leaves the list while the chapter has no active study zone, and Documents leaves it for a viewer who can't upload while there are no documents; each comes back once the first one exists ([`modules.md` § Not-set-up features](../../product/modules.md#not-set-up-features)).
 
 The admin section renders only for members whose role grants the underlying permissions; ordinary members never see it. The board captions it with the viewer's role ("ADMIN · PRESIDENT") and draws a role chip on the profile card; neither is drawn, because no role name is readable on mobile (`/v1/users/me/permissions` returns permissions only).
 
-Two rows above are not drawn in Canvas and exist for reachability:
+Two rows above are not drawn in Canvas and exist for reachability (Activity is undrawn too, but is a feature of its own, [#3897](https://github.com/pdcarlson/Frapp/issues/3897)):
 
 - **Service hours** — `service-hours.tsx` is a live route hosting the s20 sheet, and without a row it would be unreachable.
 - **Switch chapter** — the only in-app entry to `(auth)/chapter-picker.tsx` (a `frapp://chapter-picker` link also opens it). The picker is deliberately *not* forced on members whose token lacks an `active_chapter_id` claim (`apps/mobile/lib/auth-gate.ts` explains why claim-absence is not a destination), so it needs a door.
@@ -130,7 +133,7 @@ The row names the screen it pops to, so these are the rows a member sees arrivin
 | Screen | Usual way in | Row |
 | ------ | ------------ | --- |
 | s07 Event detail | Events | `‹ Events` |
-| s10 Study hours, s11 Dues, s12 Documents, s13 Directory, s15 Profile, s16 Settings, Service hours | More | `‹ More` |
+| s10 Study hours, s11 Dues, s12 Documents, s13 Directory, s15 Profile, s16 Settings, Service hours, Activity | More | `‹ More` |
 | s14 Notifications | The avatar menu on Chat home | `‹ Chat` |
 | Messages | The Messages door on Chat home | `‹ Chat` |
 
