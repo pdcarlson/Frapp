@@ -204,6 +204,18 @@ export interface IChatCategoryRepository {
     chapterId: string,
     categoryIds: string[],
   ): Promise<ChatChannelCategory[]>;
+  /**
+   * Set a category's who-can-see and who-can-post lists (#3722), and the same
+   * lists on every channel in it that matched the category's old lists, in
+   * one transaction (`set_chat_category_access`). Returns the ids of the
+   * channels that followed, for the channel cache.
+   */
+  setAccess(
+    chapterId: string,
+    categoryId: string,
+    whoCanSee: string[] | null,
+    whoCanPost: string[] | null,
+  ): Promise<string[]>;
 }
 
 export interface IChatMessageRepository {
@@ -232,6 +244,15 @@ export interface IChatMessageRepository {
   ): Promise<ChatMessage[]>;
   findPinnedByChannel(channelId: string): Promise<ChatMessage[]>;
   countPinnedByChannel(channelId: string): Promise<number>;
+  /**
+   * One page of the live timeline messages in a channel flagged Important
+   * since `flaggedSince`, most recently flagged first, ties by id (#4186).
+   */
+  findImportantInChannel(
+    channelId: string,
+    flaggedSince: string,
+    page: { offset: number; limit: number },
+  ): Promise<ChatMessage[]>;
   /**
    * Newest-first list of POLL messages across every channel in the chapter.
    * Optional `channelId` scopes to a single channel. `limit` caps result size

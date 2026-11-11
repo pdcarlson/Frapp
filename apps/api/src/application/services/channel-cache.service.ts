@@ -21,7 +21,7 @@ export type CachedChannelRow = ChatChannelPushRouting;
  * `SupabaseChatNotificationPreferenceRepository` directly instead of importing
  * `ChatPushWorkerModule` wholesale.
  *
- * `member_ids` and `required_permissions` are authorization inputs, not
+ * `member_ids` and `who_can_see` are authorization inputs, not
  * display data: they decide who receives a push containing message content.
  * The TTL bounds staleness as a backstop, but any write path that can change
  * either field must call {@link invalidate} — see `ChatService.updateChannel`
@@ -82,7 +82,7 @@ export class ChannelCacheService {
   /**
    * Evict a channel's cached authorization inputs and fence out any read
    * already in flight. Call after any write that can change `member_ids` or
-   * `required_permissions`, and on delete — a missed write path restores the
+   * `who_can_see`, and on delete — a missed write path restores the
    * staleness window this cache exists to bound.
    */
   invalidate(channelId: string): void {

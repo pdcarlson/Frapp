@@ -69,6 +69,7 @@ import {
   useSetChannelDisplayLock,
   useReorderCategories,
   useReorderChannels,
+  useImportantMessages,
 } from "@repo/hooks";
 import { setChannelLocked, syncLockedChannels } from "@repo/chat-core/density";
 import {
@@ -173,6 +174,7 @@ import type { ChannelRowActions } from "./channel-row-menu";
 import type { ChatSearchHit } from "./chat-search-popover";
 import type { BookmarkEntry } from "./bookmarks-popover";
 import { BlockListNotice } from "./block-list-notice";
+import { ImportantStrip } from "./important-strip";
 import { useUnblockFlow } from "./use-unblock-flow";
 import { useBlockFlow } from "./use-block-flow";
 import {
@@ -1982,6 +1984,24 @@ export function ChatShell({
     ? (levelByChannelId.get(activeChannelId) ?? null)
     : null;
 
+  // The "1 important message" strip (#4186). The server decides what counts
+  // and what was seen; the timeline reports what scrolled onto the screen.
+  // Below `lg` the channel list can cover the timeline; rows behind it are on
+  // no one's screen.
+  const threadOnScreenRef = useRef(threadOnScreen);
+  useEffect(() => {
+    threadOnScreenRef.current = threadOnScreen;
+  }, [threadOnScreen]);
+  const important = useImportantMessages(activeChannelId, channel.messages, {
+    isOnScreen: () => threadOnScreenRef.current,
+  });
+  const { next: nextImportant, markSeen: markImportantSeen } = important;
+  const jumpToImportant = useCallback(() => {
+    if (!nextImportant || !activeChannelId) return;
+    markImportantSeen([nextImportant.id]);
+    jumpToChannelMessage(activeChannelId, nextImportant.id);
+  }, [nextImportant, activeChannelId, markImportantSeen, jumpToChannelMessage]);
+
   /** Search hit (#469) — the panel carries the channel on every row. */
   const jumpToSearchHit = useCallback(
     (hit: ChatSearchHit) => jumpToChannelMessage(hit.channelId, hit.message.id),
@@ -2260,19 +2280,12 @@ export function ChatShell({
     [activeChannelId],
   );
   /**
-   * Whether to offer Reply on rows in this channel at all. Both `can_post` and
-   * `is_read_only` are load-bearing; `channelAllowsReplies` says which case
-   * each covers.
+   * Whether to offer Reply on rows in this channel at all: where the viewer
+   * may post (`channelAllowsReplies`; a quote reply is a post, #3722).
    *
-   * Read off the two fields the rail actually carries rather than mirroring
-   * the API's `allowsInThreadReplies` (`apps/api/src/domain/utils/
-   * channel-access.ts`). That predicate takes a whole `ChannelAccessRecord`,
-   * and the fields the rail has never loaded would have to be invented —
-   * `required_permissions: null` and no `archived_at`. That is a projection
-   * wearing the full type: the moment the predicate consults a field such a
-   * literal fabricates, a copy silently disagrees with the server while
-   * *looking* like it cannot. This is a UX pre-filter; the server is the
-   * enforcement, and it is the server's copy of the rule that has to be right.
+   * Read off the `can_post` the rail carries, which the server derives from
+   * the same `canAccessChannel` gate the send goes through. This is a UX
+   * pre-filter; the server is the enforcement.
    */
   const canReplyHere = !!activeChannel && channelAllowsReplies(activeChannel);
   /**
@@ -3089,6 +3102,15 @@ export function ChatShell({
               isRetrying={blockList.isRetrying}
               isPaused={blockList.isPaused}
             />
+            <ImportantStrip
+              total={important.total}
+              next={nextImportant}
+              nextSender={
+                nextImportant ? resolveAuthorName(nextImportant, nameFor) : null
+              }
+              onJump={jumpToImportant}
+              onDismiss={important.dismiss}
+            />
             {/*
           `role="log"` alone still carries an ARIA-spec *implicit* default of
           `aria-live="polite"` / `aria-relevant="additions text"` — so making
@@ -3154,6 +3176,7 @@ export function ChatShell({
                   onUnreact={channel.unreact}
                   onReply={canReplyHere ? startReply : undefined}
                   onOpenThread={canThreadHere ? openThreadFor : undefined}
+                  onVisibleMessagesChange={important.reportVisible}
                   // The quote above a reply scrolls to the message it quotes. It used
                   // to open `ThreadPanel` in the Details rail; #2142 deleted both, and
                   // this is the same machinery pins and saved messages already use.

@@ -40,6 +40,12 @@ export interface TaskRowModel {
   /** What the server wants rendered — may be the synthesized `OVERDUE`. */
   displayStatus: string | null;
   dueDate: string | null;
+  /** The stored `due_date`, the creator's calendar day, for an edit (#4296). */
+  dueDay: string | null;
+  /** The stored `due_at`, when it has a time, for an edit (#4296). */
+  dueAt: string | null;
+  /** Whom it is assigned to. */
+  assigneeId: string | null;
   completedAt: string | null;
   /** When an officer confirmed it; `null` while it waits on one. */
   confirmedAt: string | null;
@@ -99,6 +105,9 @@ export function toTaskRow(row: Record<string, unknown>): TaskRowModel | null {
     // A task due at a time carries its instant here, so the subtitle, the
     // urgency and the order all read the time (#4003).
     dueDate: str(row, "due_at") ?? str(row, "due_date"),
+    dueDay: str(row, "due_date"),
+    dueAt: str(row, "due_at"),
+    assigneeId: str(row, "assignee_id"),
     completedAt: str(row, "completed_at"),
     confirmedAt: str(row, "confirmed_at"),
     pointReward: num(row, "point_reward"),

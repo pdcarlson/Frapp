@@ -12,7 +12,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
+import { Virtuoso, type ListRange, type VirtuosoHandle } from "react-virtuoso";
 import { ErrorState, Skeleton } from "@/components/shared/async-states";
 import { Button } from "@/components/ui/button";
 import { useTapRevealedMessage } from "@/lib/hooks/use-tap-revealed-message";
@@ -492,6 +492,12 @@ export interface MessageTimelineProps {
   /** Opens a message's thread (#3785): Start thread, and the parent's chip. */
   onOpenThread?: (message: ChatMessage) => void;
   /**
+   * The ids of the messages drawn in the viewport, each time that set changes
+   * (#4186): what the Important strip counts as scrolled past. A blocked
+   * member's tombstone is left out, since its words aren't on screen.
+   */
+  onVisibleMessagesChange?: (messageIds: string[]) => void;
+  /**
    * Scrolls this timeline to the message a reply quotes — what the quote above
    * a reply does. It opened a Details-rail thread panel until #2142 deleted
    * both.
@@ -594,6 +600,7 @@ export const MessageTimeline = forwardRef<
     onUnreact,
     onReply,
     onOpenThread,
+    onVisibleMessagesChange,
     onJumpToParent,
     onRetry,
     onDiscard,
@@ -875,6 +882,67 @@ export const MessageTimeline = forwardRef<
     [isLoadingOlder, olderError, onLoadOlder, hasOlder, channelStart, header],
   );
 
+  // Virtuoso reports a range in its own index space, which `firstItemIndex`
+  // offsets; `decorated` is indexed from 0.
+  const visibleRange = useRef<ListRange | null>(null);
+  const scroller = useRef<HTMLElement | null>(null);
+  // `useStickToBottom`'s callback is stable, and must stay so: Virtuoso calls
+  // a new `scrollerRef` again, which would re-pin the list to its bottom.
+  const stickScrollerRef = stickToBottom.scrollerRef;
+  const scrollerRef = useCallback(
+    (element: HTMLElement | Window | null) => {
+      scroller.current = element instanceof HTMLElement ? element : null;
+      stickScrollerRef(element);
+    },
+    [stickScrollerRef],
+  );
+  const reportVisible = useCallback(() => {
+    const range = visibleRange.current;
+    if (!onVisibleMessagesChange || !range) return;
+    const view = scroller.current?.getBoundingClientRect();
+    const ids: string[] = [];
+    for (let i = range.startIndex; i <= range.endIndex; i++) {
+      const entry = decorated[i - firstItemIndex];
+      if (!entry || entry.visibility === "tombstone") continue;
+      // Virtuoso's range includes a row with one pixel showing. A row
+      // counts once half of it is on screen (or it fills half the screen),
+      // as mobile's viewability threshold does.
+      const row = view
+        ? scroller.current?.querySelector<HTMLElement>(`[data-index="${i}"]`)
+        : null;
+      if (view && row) {
+        const box = row.getBoundingClientRect();
+        const shown =
+          Math.min(box.bottom, view.bottom) - Math.max(box.top, view.top);
+        if (box.height > 0 && shown < Math.min(box.height, view.height) / 2) {
+          continue;
+        }
+      }
+      ids.push(entry.message.id);
+    }
+    onVisibleMessagesChange(ids);
+  }, [decorated, firstItemIndex, onVisibleMessagesChange]);
+  const handleRangeChanged = useCallback(
+    (range: ListRange) => {
+      visibleRange.current = range;
+      reportVisible();
+    },
+    [reportVisible],
+  );
+  // A channel switch keeps this component and its index space, so the last
+  // channel's range would map onto the new channel's rows: forget it until
+  // Virtuoso reports the new one.
+  const rangeChannel = useRef(channelId);
+  // The rows under an unchanged range can change too: a page landing, or a
+  // row leaving the hold.
+  useEffect(() => {
+    if (rangeChannel.current !== channelId) {
+      rangeChannel.current = channelId;
+      visibleRange.current = null;
+    }
+    reportVisible();
+  }, [reportVisible, channelId]);
+
   useImperativeHandle(
     ref,
     () => ({
@@ -1042,9 +1110,10 @@ export const MessageTimeline = forwardRef<
           followOutput={holdFollow || (prepended && armed) ? false : "smooth"}
           initialTopMostItemIndex={Math.max(decorated.length - 1, 0)}
           atTopStateChange={handleAtTop}
+          rangeChanged={handleRangeChanged}
           // Holds the open on its newest row while rows above it grow: a photo
           // loading after the list settled (#3863).
-          scrollerRef={stickToBottom.scrollerRef}
+          scrollerRef={scrollerRef}
           atBottomThreshold={STICK_TO_BOTTOM_SLACK_PX}
           totalListHeightChanged={stickToBottom.totalListHeightChanged}
           context={headerContext}

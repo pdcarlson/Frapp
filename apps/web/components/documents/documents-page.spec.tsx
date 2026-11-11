@@ -1864,6 +1864,83 @@ describe("DocumentsPage pins and stars (#3934)", () => {
     expect(titles[2]).toContain("Chapter agenda");
   });
 
+  it("filters to Pinned, Starred or either, with the search and the other chips (#4290)", async () => {
+    const AGENDA = {
+      ...BYLAWS,
+      id: "doc-3",
+      title: "Chapter agenda",
+      storage_path: "chap-1/agenda.xlsx",
+      content_type: null,
+    };
+    documentsQuery.data = [
+      AGENDA,
+      BYLAWS,
+      { ...MINUTES, pinned_at: "2026-11-11T00:00:00Z" },
+    ];
+    stars.value = { folder_ids: [], document_ids: ["doc-1", "doc-3"] };
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+    const list = () => screen.getByRole("region", { name: /documents/i });
+    const shown = () =>
+      within(list())
+        .queryAllByRole("listitem")
+        .map((row) => row.querySelector("span.font-semibold")?.textContent);
+
+    const starredChip = screen.getByRole("button", { name: "Starred" });
+    expect(starredChip).toHaveAttribute("aria-pressed", "false");
+    await user.click(starredChip);
+    expect(starredChip).toHaveAttribute("aria-pressed", "true");
+    // The cards give way to the list, as any filter does.
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Starred" })).not.toBeInTheDocument(),
+    );
+    expect(shown()).toEqual(["Chapter agenda", "Chapter bylaws"]);
+
+    await user.click(screen.getByRole("button", { name: "Pinned" }));
+    // Both on: either, pinned leading.
+    expect(shown()).toEqual(["Meeting minutes", "Chapter agenda", "Chapter bylaws"]);
+
+    await user.click(screen.getByRole("button", { name: "Pinned" }));
+    await user.click(screen.getByRole("button", { name: "File type" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Spreadsheet" }));
+    await waitFor(() => expect(shown()).toEqual(["Chapter agenda"]));
+
+    await user.type(screen.getByLabelText("Search documents"), "bylaws");
+    await user.click(await screen.findByRole("button", { name: "Clear filters" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Starred" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      ),
+    );
+  });
+
+  it("keeps a row unstarred under Starred, and its focus, until the filter changes (#4290)", async () => {
+    documentsQuery.data = [BYLAWS, MINUTES];
+    stars.value = { folder_ids: [], document_ids: ["doc-1"] };
+    const user = userEvent.setup();
+    const { rerender } = render(<DocumentsPage />);
+    await user.click(screen.getByRole("button", { name: "Starred" }));
+    const unstar = screen.getByRole("button", { name: "Unstar Chapter bylaws" });
+    await user.click(unstar);
+    expect(mockSetStar).toHaveBeenCalled();
+    // The server's answer: the star is gone.
+    stars.value = { folder_ids: [], document_ids: [] };
+    rerender(<DocumentsPage />);
+
+    const star = await screen.findByRole("button", { name: "Star Chapter bylaws" });
+    expect(star).toHaveFocus();
+    expect(screen.queryByRole("button", { name: /^Meeting minutes/ })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Starred" }));
+    await user.click(screen.getByRole("button", { name: "Starred" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Star Chapter bylaws" }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
   it("pins a file and a folder for the chapter, for whoever manages documents", async () => {
     render(<DocumentsPage />);
 

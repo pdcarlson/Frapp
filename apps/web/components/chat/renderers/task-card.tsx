@@ -14,6 +14,7 @@ import {
   useUpdateTaskStatus,
   useConfirmTask,
   useRejectTask,
+  viewerIsCardAssignee,
 } from "@repo/hooks";
 import type { TaskStatus } from "@repo/hooks";
 import { EYEBROW, MESSAGE_CARD } from "../chip";
@@ -117,7 +118,18 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   const statusLabel = live ? taskStatusLabel(live) : null;
   // No control until the live task is read (#2065): acting on the snapshot
   // offered Start on tasks already in progress or done.
-  const controls = taskCardControls({ live, isAssignee, canManage });
+  // The controls follow whom the task is assigned to now (#4296): an edit
+  // can hand it to someone else after this card was posted.
+  const isAssigneeNow = viewerIsCardAssignee(
+    viewerId,
+    payload.assignee_user_id,
+    live,
+  );
+  const controls = taskCardControls({
+    live,
+    isAssignee: isAssigneeNow,
+    canManage,
+  });
   const memberControls = controls.filter(
     (control) => control === "start" || control === "complete",
   );
@@ -131,7 +143,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   // does before its live task arrives.
   const managerControls = taskCardControls({
     live,
-    isAssignee,
+    isAssignee: isAssigneeNow,
     canManage: true,
   }).filter((control) => control !== "start" && control !== "complete");
   const actionsDisabled =

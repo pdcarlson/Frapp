@@ -122,6 +122,40 @@ export class SupabaseTaskRepository implements ITaskRepository {
     return data;
   }
 
+  async updateUnconfirmed(
+    id: string,
+    chapterId: string,
+    data: TablesUpdate<'tasks'>,
+  ): Promise<Task | null> {
+    // `points_awarded = false` is the compare-and-set: a confirm that lands
+    // between the service's read and this write paid the points on the task
+    // as it stood, so the edit matches no row rather than changing it after.
+    const { data: updated, error } = await this.supabase
+      .from('tasks')
+      .update(data)
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .eq('points_awarded', false)
+      .select()
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return updated;
+  }
+
+  async releaseReminderClaims(
+    chapterId: string,
+    taskId: string,
+  ): Promise<void> {
+    const { error } = await this.supabase
+      .from('scheduled_notification_dispatches')
+      .delete()
+      .eq('chapter_id', chapterId)
+      .eq('entity_type', 'TASK')
+      .eq('entity_id', taskId)
+      .in('threshold', ['DUE_SOON', 'OVERDUE']);
+    if (error) throw new SupabaseQueryError(error);
+  }
+
   async delete(id: string, chapterId: string): Promise<void> {
     const { error } = await this.supabase
       .from('tasks')

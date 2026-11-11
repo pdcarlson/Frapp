@@ -88,6 +88,12 @@ export interface LiveTask {
    */
   stored_status: TaskStatus | undefined;
   points_awarded: boolean;
+  /**
+   * Whom the task is assigned to now. An officer's edit can hand it to
+   * someone else after the card was posted (#4296), so the card's controls
+   * follow this, not the snapshot's assignee.
+   */
+  assignee_id: string | undefined;
   /** Whether each subtask is done, in order (#4003); empty for none. */
   subtasks: { done_at: string | null }[];
 }
@@ -120,6 +126,7 @@ export function readLiveTask(data: unknown): LiveTask | null {
     status: r.status,
     stored_status: isTaskStatus(r.stored_status) ? r.stored_status : undefined,
     points_awarded: r.points_awarded === true,
+    assignee_id: typeof r.assignee_id === "string" ? r.assignee_id : undefined,
     subtasks: Array.isArray(r.subtasks)
       ? r.subtasks
           .filter(
@@ -211,4 +218,18 @@ export function taskCardControls(input: {
   if (stored !== "COMPLETED" || !canManage) return [];
   if (live.points_awarded) return ["confirmed"];
   return isAssignee ? ["reject"] : ["confirm", "reject"];
+}
+
+/**
+ * Whether the viewer is a task card's assignee, for its controls: the live
+ * task's assignee once it is read, since an edit may have reassigned it
+ * (#4296), else the snapshot's. A missing viewer matches no one.
+ */
+export function viewerIsCardAssignee(
+  viewerId: string | null | undefined,
+  snapshotAssigneeId: string | null | undefined,
+  live: Pick<LiveTask, "assignee_id"> | null,
+): boolean {
+  if (!viewerId) return false;
+  return viewerId === (live?.assignee_id ?? snapshotAssigneeId);
 }

@@ -20,7 +20,6 @@ import type { ChannelType } from '#domain/entities/chat.entity';
 import { ACTIVITY_SECTIONS } from '../../application/services/activity.service';
 import type {
   ActivityEvent,
-  ActivityFile,
   ActivityHoursEntry,
   ActivityPoll,
   ActivitySection,
@@ -292,23 +291,15 @@ export class ActivityEventDto implements ActivityEvent {
   unread: boolean;
 }
 
-const ACTIVITY_FILE_SOURCES: ActivityFile['source'][] = [
-  'document',
-  'backwork',
-];
-
-export class ActivityFileDto implements ActivityFile {
+/** A file the caller uploaded. Never served since #4291; see `ActivityMadeByYouDto.files`. */
+export class ActivityFileDto {
   @ApiProperty({ format: 'uuid' })
   id: string;
 
-  @ApiProperty({
-    enum: ACTIVITY_FILE_SOURCES,
-    description:
-      'Which module holds it: a chapter document or a backwork resource.',
-  })
-  source: ActivityFile['source'];
+  @ApiProperty({ enum: ['document', 'backwork'] })
+  source: 'document' | 'backwork';
 
-  @ApiProperty({ description: 'Empty for a backwork resource with no title.' })
+  @ApiProperty()
   title: string;
 
   @ApiProperty({ format: 'date-time' })
@@ -452,7 +443,8 @@ export class ActivityNeedsYouDto {
 export class ActivityMadeByYouDto {
   @ApiProperty({
     type: [ActivityPollDto],
-    description: 'Poll cards the caller posted, newest first.',
+    description:
+      'Poll cards the caller posted, newest first: up to 25 open and the 25 most recently posted closed ones, so closed polls never push an open one out. A client lists the open ones and keeps the closed ones behind an archive (#4258).',
   })
   polls: ActivityPollDto[];
 
@@ -465,7 +457,9 @@ export class ActivityMadeByYouDto {
 
   @ApiProperty({
     type: [ActivityFileDto],
-    description: 'Documents and backwork the caller uploaded, newest first.',
+    deprecated: true,
+    description:
+      'Always empty: uploads left Activity (#4291). Served only so a client built before that does not fail on its absence; to be removed.',
   })
   files: ActivityFileDto[];
 

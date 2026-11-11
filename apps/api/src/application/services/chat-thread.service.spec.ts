@@ -1,5 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { ChatChannel, ChatMessage } from '#domain/entities/chat.entity';
+import { EMPTY_ACCESS_HOLDER } from '#domain/utils/channel-access';
+import type { ChannelAccessHolder } from '#domain/utils/channel-access';
 import {
   baseChannel,
   baseMessage,
@@ -29,10 +31,19 @@ const reply: ChatMessage = {
   created_at: '2026-01-01T12:05:00.000Z',
 };
 
+// Only the officers' tier may post in `#announcements` (#3722).
+const OFFICERS = 'tier:00000000-0000-4000-8000-0000000071e1';
 const announcements: ChatChannel = {
   ...baseChannel,
   name: 'announcements',
   is_read_only: true,
+  who_can_post: [OFFICERS],
+};
+
+/** An ordinary member: holds a role, but nothing on who can post. */
+const MEMBER: ChannelAccessHolder = {
+  ...EMPTY_ACCESS_HOLDER,
+  entries: new Set(['role:00000000-0000-4000-8000-0000000000aa']),
 };
 
 describe('ChatService.sendMessage into a thread', () => {
@@ -144,7 +155,7 @@ describe('ChatService.sendMessage into a thread', () => {
 
   it('lets a member edit their own thread reply under an announcement', async () => {
     f.mockChannelRepo.findById.mockResolvedValue(announcements);
-    f.mockRbac.getEffectivePermissions.mockResolvedValue([]);
+    f.mockRbac.getChannelAccessHolder.mockResolvedValue(MEMBER);
     f.mockMessageRepo.findById.mockResolvedValue(reply);
     f.mockMessageRepo.update.mockResolvedValue({ ...reply, content: 'fixed' });
 
@@ -155,7 +166,7 @@ describe('ChatService.sendMessage into a thread', () => {
 
   it('still refuses a member editing a timeline post in an announcement', async () => {
     f.mockChannelRepo.findById.mockResolvedValue(announcements);
-    f.mockRbac.getEffectivePermissions.mockResolvedValue([]);
+    f.mockRbac.getChannelAccessHolder.mockResolvedValue(MEMBER);
     f.mockMessageRepo.findById.mockResolvedValue({
       ...baseMessage,
       sender_id: 'user-1',
@@ -168,7 +179,7 @@ describe('ChatService.sendMessage into a thread', () => {
 
   it('mints an upload URL for a thread reply under an announcement, and not for the timeline', async () => {
     f.mockChannelRepo.findById.mockResolvedValue(announcements);
-    f.mockRbac.getEffectivePermissions.mockResolvedValue([]);
+    f.mockRbac.getChannelAccessHolder.mockResolvedValue(MEMBER);
 
     await expect(
       f.attachments.requestChatUploadUrl(
@@ -196,9 +207,9 @@ describe('ChatService.sendMessage into a thread', () => {
     ).resolves.toBeDefined();
   });
 
-  it('lets any reader reply in a thread under an announcement, without announcements:post', async () => {
+  it('lets any reader reply in a thread under an announcement, without being on who can post', async () => {
     f.mockChannelRepo.findById.mockResolvedValue(announcements);
-    f.mockRbac.getEffectivePermissions.mockResolvedValue([]);
+    f.mockRbac.getChannelAccessHolder.mockResolvedValue(MEMBER);
 
     await expect(send()).resolves.toEqual({
       message: reply,
@@ -208,7 +219,7 @@ describe('ChatService.sendMessage into a thread', () => {
 
   it('still refuses a member’s top-level post in an announcement', async () => {
     f.mockChannelRepo.findById.mockResolvedValue(announcements);
-    f.mockRbac.getEffectivePermissions.mockResolvedValue([]);
+    f.mockRbac.getChannelAccessHolder.mockResolvedValue(MEMBER);
 
     await expect(send({ thread_root_id: undefined })).rejects.toThrow();
     expect(f.mockMessageRepo.create).not.toHaveBeenCalled();

@@ -11,6 +11,7 @@ import {
   memberFallbackLabel,
   useChapterRoster,
   useCreateTask,
+  useUpdateTask,
   useViewerUserId,
 } from "@repo/hooks";
 import type { DispatchResult, TaskInput } from "@repo/chat-core/dispatch";
@@ -48,6 +49,9 @@ import { TITLE_MAX_LENGTH } from "@/lib/tasks/limits";
 import {
   DEFAULT_DUE_CHOICE,
   dueChoiceOf,
+  editDraftOf,
+  taskEditBody,
+  type TaskEditTarget,
   dueTimePassed,
   duePresets,
   parsePointReward,
@@ -139,6 +143,18 @@ export interface NewTaskSheetProps {
    */
   postToChannel?: (input: TaskInput) => Promise<DispatchResult>;
   onPosted?: (result: DispatchResult) => void;
+  /**
+   * Edit this task instead of making one (#4296): the same fields, opened on
+   * the task as it stands, titled "Edit task" and saved with Save. Steps are
+   * added and removed in the task's own sheet, so the subtask field is left
+   * out. The host mounts one sheet per task edited (`key` on its id), so the
+   * draft starts from the task, and a close gives it up.
+   */
+  editing?: TaskEditTarget;
+  /** Fired after an edit saves. */
+  onSaved?: () => void;
+  /** Fired when the sheet has closed, however it closed. */
+  onClosed?: () => void;
 }
 
 interface RosterMember {
@@ -168,7 +184,10 @@ function selectRoster(
 }
 
 export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
-  function NewTaskSheet({ now, onCreated, postToChannel, onPosted }, ref) {
+  function NewTaskSheet(
+    { now, onCreated, postToChannel, onPosted, editing, onSaved, onClosed },
+    ref,
+  ) {
     const { tokens } = useFrappTheme();
     const brand = useChapterBranding();
     const { accent } = brand;
@@ -184,6 +203,12 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const viewerUserId = useViewerUserId();
     const rosterQuery = useChapterRoster();
     const createTask = useCreateTask();
+    const updateTask = useUpdateTask();
+    // The task as it stands, as the fields start (an edit only).
+    const original = useMemo(
+      () => (editing ? editDraftOf(editing) : null),
+      [editing],
+    );
     // `postToChannel` isn't a mutation, so its flight is held here.
     const [posting, setPosting] = useState(false);
 
@@ -192,17 +217,23 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const at = useMemo(() => now ?? new Date(), [now]);
     const presets = useMemo(() => duePresets(at), [at]);
 
-    const [title, setTitle] = useState("");
-    const [pointsInput, setPointsInput] = useState("");
+    const [title, setTitle] = useState(original?.title ?? "");
+    const [pointsInput, setPointsInput] = useState(original?.pointsInput ?? "");
     // The chip as the draft holds it, resolved against today's below.
-    const [due, setDue] = useState<DueChoice>(DEFAULT_DUE_CHOICE);
+    const [due, setDue] = useState<DueChoice>(
+      original ? { kind: "date", date: original.dueDate } : DEFAULT_DUE_CHOICE,
+    );
     // `HH:MM`, or null for a task due by the day (#4003).
-    const [dueTime, setDueTime] = useState<string | null>(null);
+    const [dueTime, setDueTime] = useState<string | null>(
+      original?.dueTime ?? null,
+    );
     // The steps (#4003), and the one being typed, which sends as the last.
     const [subtasks, setSubtasks] = useState<string[]>([]);
     const [subtaskText, setSubtaskText] = useState("");
     // Defaults to the viewer, so the common case needs no picker interaction.
-    const [assigneeId, setAssigneeId] = useState<string | null>(null);
+    const [assigneeId, setAssigneeId] = useState<string | null>(
+      original?.assigneeId ?? null,
+    );
     const [titleFocused, setTitleFocused] = useState(false);
     const [search, setSearch] = useState("");
     const [submitFailed, setSubmitFailed] = useState(false);
@@ -250,8 +281,18 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           : "Member"));
 
     // See the header: a relative chip re-reads today, a held date stays put.
-    const { date: dueDate, chipId: dueChipId } = resolveDue(due, at);
-    const pending = createTask.isPending || posting;
+    //
+    // An edit keeps a task's own due date even once it has passed: an
+    // overdue task's title or points can change without moving it to today.
+    const keepsPastDue =
+      original !== null &&
+      due.kind === "date" &&
+      due.date === original.dueDate &&
+      due.date < localIsoDate(at);
+    const { date: dueDate, chipId: dueChipId } = keepsPastDue
+      ? { date: original.dueDate, chipId: null }
+      : resolveDue(due, at);
+    const pending = createTask.isPending || updateTask.isPending || posting;
 
     const draft = {
       title,
@@ -261,8 +302,15 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       assigneeId: effectiveAssigneeId,
       pointsInput,
     };
-    const body = validateNewTask(draft, at);
-    const timePassed = dueTimePassed(draft, at);
+    const body = validateNewTask(draft, at, original ?? undefined);
+    const timePassed = dueTimePassed(draft, at, original ?? undefined);
+    // A new assignee starts a task that is under way over (the API resets
+    // it), so the sheet says so before Save rather than after.
+    const restarts =
+      editing !== undefined &&
+      effectiveAssigneeId !== editing.assigneeId &&
+      editing.storedStatus !== null &&
+      editing.storedStatus !== "TODO";
     const pointsInvalid = parsePointReward(pointsInput).kind === "invalid";
     const canSubmit = body !== null && !pending && refusal === null;
 
@@ -298,16 +346,19 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       setSearch("");
       setSubmitFailed(false);
       setRefusal(null);
-    }, [markClosed]);
+      onClosed?.();
+    }, [markClosed, onClosed]);
 
     // Held while a create runs (`cancelDisabled` below; the header says
     // why). `sending` covers a tap in the same batch as Create, before
     // `isPending` reaches a render.
     const cancel = useCallback(() => {
       if (sending.current) return;
-      reset();
+      // An edit's draft goes with its sheet (the host unmounts it on close),
+      // so its fields keep the task's values while the sheet slides away.
+      if (!editing) reset();
       dismiss();
-    }, [reset, dismiss]);
+    }, [reset, dismiss, editing]);
 
     const submit = useCallback(() => {
       // `canSubmit`, not just `body`, as in s20's log sheet: otherwise only the
@@ -357,6 +408,27 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           setSubmitFailed(true);
         },
       };
+      if (editing) {
+        const changes = taskEditBody(editing, body);
+        if (Object.keys(changes).length === 0) {
+          sending.current = false;
+          dismiss();
+          return;
+        }
+        updateTask.mutate(
+          { id: editing.id, body: changes },
+          {
+            onSuccess: () => {
+              sending.current = false;
+              successHaptic();
+              if (isSameVisit(sentFrom)) dismiss();
+              onSaved?.();
+            },
+            onError: handlers.onError,
+          },
+        );
+        return;
+      }
       if (!postToChannel) {
         createTask.mutate(body, {
           onSuccess: () => handlers.onSuccess(),
@@ -392,6 +464,9 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       assigneeName,
       postToChannel,
       onPosted,
+      editing,
+      updateTask,
+      onSaved,
     ]);
 
     const filteredRoster = useMemo(() => {
@@ -421,7 +496,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
             style={styles.body}
           >
             <SheetHeader
-              title="New task"
+              title={editing ? "Edit task" : "New task"}
               onCancel={cancel}
               cancelDisabled={pending}
             />
@@ -498,14 +573,16 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
               />
             </View>
 
-            <SubtaskDraftField
-              items={subtasks}
-              onChange={setSubtasks}
-              text={subtaskText}
-              onTextChange={setSubtaskText}
-              disabled={pending}
-              fieldStyle={styles.field}
-            />
+            {editing ? null : (
+              <SubtaskDraftField
+                items={subtasks}
+                onChange={setSubtasks}
+                text={subtaskText}
+                onTextChange={setSubtaskText}
+                disabled={pending}
+                fieldStyle={styles.field}
+              />
+            )}
 
             <Pressable
               accessibilityRole="button"
@@ -530,6 +607,12 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
               <Text style={styles.assigneeHint}>assignee</Text>
             </Pressable>
 
+            {restarts ? (
+              <Text style={styles.note}>
+                Saving starts it over at To do for {assigneeLabel}.
+              </Text>
+            ) : null}
+
             {timePassed ? (
               <Text style={styles.error}>
                 That time has already passed today. Pick a later time or another
@@ -547,12 +630,22 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
 
             {submitFailed ? (
               <Text style={styles.error}>
-                That didn&apos;t save. Your task is still here — try again.
+                {editing
+                  ? "That didn't save. Your changes are still here. Try again."
+                  : "That didn't save. Your task is still here — try again."}
               </Text>
             ) : null}
 
             <SheetPrimaryButton
-              label={createTask.isPending ? "Creating…" : "Create task"}
+              label={
+                editing
+                  ? updateTask.isPending
+                    ? "Saving…"
+                    : "Save"
+                  : createTask.isPending
+                    ? "Creating…"
+                    : "Create task"
+              }
               onPress={submit}
               disabled={!canSubmit}
               accessibilityHint={refusal ?? undefined}
@@ -743,6 +836,10 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     error: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructive,
+    },
+    note: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
     },
   });
 }

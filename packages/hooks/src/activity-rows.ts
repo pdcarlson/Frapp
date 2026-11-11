@@ -15,7 +15,6 @@ export type ActivityTask = components["schemas"]["ActivityTaskDto"];
 export type ActivityPoll = components["schemas"]["ActivityPollDto"];
 export type ActivityEvent = components["schemas"]["ActivityEventDto"];
 export type ActivityHours = components["schemas"]["ActivityHoursEntryDto"];
-export type ActivityFile = components["schemas"]["ActivityFileDto"];
 export type ActivityLink = components["schemas"]["ActivityLinkDto"];
 export type ActivitySection = Activity["unavailable"][number];
 
@@ -26,7 +25,6 @@ export const ACTIVITY_FILTERS = [
   { value: "poll", label: "Polls" },
   { value: "event", label: "Events" },
   { value: "hours", label: "Hours" },
-  { value: "file", label: "Files" },
   { value: "link", label: "Links" },
 ] as const;
 export type ActivityKind = Exclude<
@@ -65,14 +63,7 @@ export type ActivityBadgeVariant =
  * their own tasks; an event row draws its date instead of a glyph.
  */
 export type ActivityGlyph =
-  | "task"
-  | "confirm"
-  | "hours"
-  | "poll"
-  | "event"
-  | "document"
-  | "backwork"
-  | "link";
+  "task" | "confirm" | "hours" | "poll" | "event" | "link";
 
 /**
  * The shared nav glyph each kind draws (`@repo/theme/nav-glyphs`), so a row
@@ -86,8 +77,6 @@ export const ACTIVITY_GLYPH_NAV: Record<ActivityGlyph, NavGlyphName> = {
   hours: "service",
   poll: "polls",
   event: "events",
-  document: "documents",
-  backwork: "backwork",
   link: "link",
 };
 
@@ -131,7 +120,6 @@ export type ActivityRow = RowBase &
     | { kind: "poll"; poll: ActivityPoll }
     | { kind: "event"; event: ActivityEvent }
     | { kind: "hours"; entry: ActivityHours }
-    | { kind: "file"; file: ActivityFile }
     | { kind: "link"; link: ActivityLink }
   );
 
@@ -163,6 +151,13 @@ export interface ActivityGroup {
   parts: ActivityPart[];
   /** Sections behind this group that could not be read this time. */
   unavailable: ActivitySection[];
+  /**
+   * Rows kept off the group behind one control, which a client draws closed
+   * under the group: the member's closed polls, newest closed first, under
+   * Made by you (#4258). `null` when there are none. Not in `rows`, and not
+   * counted in the group's count.
+   */
+  archive: ActivityPart | null;
 }
 
 /** A name for a section the read could not load, for "Couldn't load …". */
@@ -171,7 +166,6 @@ export const ACTIVITY_SECTION_NAMES: Record<ActivitySection, string> = {
   hours_approvals: "hours waiting for approval",
   polls: "polls",
   coming_up: "events",
-  files: "files",
   made_events: "events you made",
   links: "links",
 };
@@ -228,7 +222,32 @@ export function activityLinkKind(
   return host;
 }
 
-function pollRow(poll: ActivityPoll, group: string): ActivityRow {
+/**
+ * Whether a poll is still open at `now`: not closed when the read was taken,
+ * and its closing time not passed since. The read's `is_closed` is true as of
+ * the read, so a poll whose time runs out while the page is open is closed
+ * here without a re-read (#4258).
+ */
+export function activityPollIsOpen(
+  poll: Pick<ActivityPoll, "is_closed" | "closes_at">,
+  now: Date,
+): boolean {
+  if (poll.is_closed) return false;
+  const closes = poll.closes_at ? parseInstant(poll.closes_at) : null;
+  return closes === null || closes.getTime() > now.getTime();
+}
+
+/**
+ * When a closed poll stopped taking votes, for ordering the archive newest
+ * first: closed by hand, or its closing time; its posting as a last resort.
+ */
+function pollClosedAt(poll: ActivityPoll): number {
+  const at = parseInstant(poll.closed_at ?? poll.closes_at ?? poll.created_at);
+  return at ? at.getTime() : 0;
+}
+
+function pollRow(poll: ActivityPoll, group: string, now: Date): ActivityRow {
+  const closed = !activityPollIsOpen(poll, now);
   const closes = poll.closes_at ? formatRelativeDayTime(poll.closes_at) : null;
   return {
     kind: "poll",
@@ -237,11 +256,11 @@ function pollRow(poll: ActivityPoll, group: string): ActivityRow {
     title: poll.question,
     detail: [
       channelLabel(poll),
-      poll.is_closed ? null : closes ? `closes ${closes}` : "no closing time",
+      closed ? null : closes ? `closes ${closes}` : "no closing time",
     ]
       .filter(Boolean)
       .join(" · "),
-    badge: poll.is_closed
+    badge: closed
       ? { label: "Closed", variant: "outline" }
       : poll.has_voted
         ? { label: "Voted", variant: "success" }
@@ -342,22 +361,6 @@ function eventRow(event: ActivityEvent, group: string): ActivityRow {
           : null,
     glyph: "event",
     dateBlock: dateBlock(event),
-  };
-}
-
-function fileRow(file: ActivityFile): ActivityRow {
-  return {
-    kind: "file",
-    key: `file:${file.source}:${file.id}`,
-    file,
-    title: file.title || "Untitled file",
-    detail: [
-      file.source === "document" ? "Documents" : "Backwork",
-      formatRelativeDayTime(file.created_at),
-    ].join(" · "),
-    badge: null,
-    glyph: file.source === "document" ? "document" : "backwork",
-    dateBlock: null,
   };
 }
 
@@ -474,7 +477,10 @@ export function activityGroups(
       taskRow(task, "needs-confirm", "confirm"),
     ),
     ...activity.needs_you.hours_approvals.map(hoursRow),
-    ...activity.needs_you.polls.map((poll) => pollRow(poll, "needs")),
+    // Open only: a poll whose time ran out since the read leaves at once.
+    ...activity.needs_you.polls
+      .filter((poll) => activityPollIsOpen(poll, now))
+      .map((poll) => pollRow(poll, "needs", now)),
   ]);
   const needsNow = needs.filter((row) => activityRowIsNow(row, now));
   const needsLater = needs.filter((row) => !activityRowIsNow(row, now));
@@ -482,8 +488,21 @@ export function activityGroups(
   const coming = keep(later.map((event) => eventRow(event, "coming")));
   const links = keep(activity.links.map(linkRow));
 
+  // A closed poll, by time or by hand, leaves the list for the archive.
   const madePolls = keep(
-    activity.made_by_you.polls.map((poll) => pollRow(poll, "made")),
+    activity.made_by_you.polls
+      .filter((poll) => activityPollIsOpen(poll, now))
+      .map((poll) => pollRow(poll, "made", now)),
+  );
+  const archivedPolls = keep(
+    activity.made_by_you.polls
+      .filter((poll) => !activityPollIsOpen(poll, now))
+      .sort((a, b) => pollClosedAt(b) - pollClosedAt(a))
+      .map((poll) =>
+        // The same key as when it was listed, so a panel open on the
+        // poll keeps finding it after it closes.
+        pollRow(poll, "made", now),
+      ),
   );
   const madeEvents = keep(
     activity.made_by_you.events.map((event) => eventRow(event, "made")),
@@ -491,7 +510,6 @@ export function activityGroups(
   const madeTasks = keep(
     activity.made_by_you.tasks.map((task) => taskRow(task, "made", "assigned")),
   );
-  const madeFiles = keep(activity.made_by_you.files.map(fileRow));
 
   return [
     {
@@ -524,6 +542,7 @@ export function activityGroups(
         ["tasks", "hours_approvals", "polls", "coming_up"],
         ["task", "hours", "poll", "event"],
       ),
+      archive: null,
     },
     {
       id: "coming-up",
@@ -532,6 +551,7 @@ export function activityGroups(
       rows: coming,
       parts: part("all", null, coming, null),
       unavailable: downFor(["coming_up"], ["event"]),
+      archive: null,
     },
     {
       // Their own group, not "Needs you": a link may or may not be for this
@@ -543,13 +563,14 @@ export function activityGroups(
       rows: links,
       parts: part("all", null, links, null),
       unavailable: downFor(["links"], ["link"]),
+      archive: null,
     },
     {
       id: "made-by-you",
       label: "Made by you",
       empty:
-        "Polls you post, events you make, tasks you assign and files you upload show up here.",
-      rows: [...madePolls, ...madeEvents, ...madeTasks, ...madeFiles],
+        "Open polls you post, events you make and tasks you assign show up here.",
+      rows: [...madePolls, ...madeEvents, ...madeTasks],
       parts: [
         ...part(
           "polls",
@@ -569,21 +590,24 @@ export function activityGroups(
           madeTasks,
           cap(ACTIVITY_MADE_BY_YOU_LIMIT),
         ),
-        ...part(
-          "files",
-          "Files you uploaded",
-          madeFiles,
-          cap(ACTIVITY_MADE_BY_YOU_LIMIT),
-        ),
       ],
       // To confirm narrows to Needs you's confirmations: nothing here is one.
       unavailable:
         filter === "confirm"
           ? []
           : downFor(
-              ["polls", "made_events", "tasks", "files"],
-              ["poll", "event", "task", "file"],
+              ["polls", "made_events", "tasks"],
+              ["poll", "event", "task"],
             ),
+      archive:
+        archivedPolls.length === 0
+          ? null
+          : {
+              id: "archived-polls",
+              label: "Archived polls",
+              rows: archivedPolls,
+              limit: null,
+            },
     },
   ];
 }
@@ -653,6 +677,11 @@ export function activitySummary(
 ): ActivitySummary {
   const on = (module: string) => options.isModuleEnabled?.(module) ?? true;
   const down = new Set(activity.unavailable);
+  // Open only, as the list draws them: a poll whose time ran out since the
+  // read no longer waits on the member (#4258).
+  const openPolls = activity.needs_you.polls.filter((poll) =>
+    activityPollIsOpen(poll, now),
+  );
   const checkIn = activity.coming_up.filter(activityEventNeedsCheckIn);
   const tiles: ActivityTile[] = [];
   if (checkIn.length > 0) {
@@ -694,7 +723,7 @@ export function activitySummary(
     tiles.push({
       id: "polls",
       label: "Polls to vote on",
-      ...tileCount(activity.needs_you.polls, down.has("polls")),
+      ...tileCount(openPolls, down.has("polls")),
       filter: "poll",
     });
   }
@@ -707,7 +736,12 @@ export function activitySummary(
     ["tasks", "hours_approvals", "polls", "coming_up"] as const
   ).some((section) => down.has(section));
   return {
-    needsYou: activity.needs_you_count,
+    // The read's count, less the polls that closed since it was taken.
+    needsYou: Math.max(
+      0,
+      activity.needs_you_count -
+        (activity.needs_you.polls.length - openPolls.length),
+    ),
     incomplete,
     tiles,
     nextEvent,

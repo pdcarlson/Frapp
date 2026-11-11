@@ -1,5 +1,5 @@
 import { forwardRef } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import {
   TASK_ACTION_LABELS,
@@ -33,8 +33,10 @@ import { SubtaskChecklist } from "@/components/tasks/subtask-checklist";
  * is waiting on in the shared words web uses (`TASK_STATUS_LABELS`), so a
  * member never reads "done" where an officer still has to confirm.
  *
- * Read-only apart from that one move: editing and deleting a task stay on the
- * web board, where officers assign work. Short content, so the sheet sizes to
+ * An officer also gets Edit beside the title (#4296), which opens the New
+ * task sheet's fields on the task, and adds or removes its steps in the
+ * checklist here; a confirmed task has neither, its points being paid.
+ * Deleting stays on the web board. Short content, so the sheet sizes to
  * it; the scroller is the modal's direct child, so a long description scrolls
  * inside the sheet rather than pushing the button off screen.
  */
@@ -47,6 +49,11 @@ export interface TaskDetailSheetProps {
   onToggle?: () => void;
   /** Why the move is unavailable, said under the button. */
   refusal?: string | null;
+  /**
+   * An officer's Edit (#4296), omitted for anyone else and for a confirmed
+   * task. Also lets the checklist add and remove steps.
+   */
+  onEdit?: () => void;
   onDismiss?: () => void;
 }
 
@@ -54,7 +61,7 @@ export const TaskDetailSheet = forwardRef<
   BottomSheetModal,
   TaskDetailSheetProps
 >(function TaskDetailSheet(
-  { row, assignedBy, onToggle, refusal, onDismiss },
+  { row, assignedBy, onToggle, refusal, onEdit, onDismiss },
   ref,
 ) {
   const { tokens } = useFrappTheme();
@@ -116,9 +123,25 @@ export const TaskDetailSheet = forwardRef<
         {row ? (
           <>
             <View style={styles.head}>
-              <Text style={styles.title} accessibilityRole="header">
-                {row.title}
-              </Text>
+              <View style={styles.titleRow}>
+                <Text style={styles.title} accessibilityRole="header">
+                  {row.title}
+                </Text>
+                {/* Where Apple Reminders and Calendar put Edit: a word at the
+                    top right, not another button in the sheet's body, where
+                    Mark done is the one thing to do. Neutral, not the accent,
+                    which goes to that one primary action (foundations §6). */}
+                {onEdit ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Edit ${row.title}`}
+                    onPress={onEdit}
+                    hitSlop={{ top: 14, bottom: 14, left: 12, right: 12 }}
+                  >
+                    <Text style={styles.edit}>Edit</Text>
+                  </Pressable>
+                ) : null}
+              </View>
               {status ? (
                 <Text
                   style={[
@@ -147,11 +170,12 @@ export const TaskDetailSheet = forwardRef<
               </Text>
             ) : null}
 
-            {row.subtasks.length > 0 ? (
+            {row.subtasks.length > 0 || (onEdit && !row.pointsAwarded) ? (
               <SubtaskChecklist
                 taskId={row.id}
                 subtasks={row.subtasks}
                 readOnly={row.pointsAwarded}
+                canEdit={onEdit !== undefined}
               />
             ) : null}
 
@@ -216,8 +240,18 @@ function createStyles(tokens: SignetTokens) {
     head: {
       gap: tokens.spacing.xs,
     },
+    titleRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: tokens.spacing.md,
+    },
     title: {
+      flex: 1,
       ...typeRole(tokens.typography.role.title),
+      color: tokens.color.text.foreground,
+    },
+    edit: {
+      ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
     },
     status: {
