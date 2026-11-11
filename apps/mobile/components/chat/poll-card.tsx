@@ -1,14 +1,19 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
   CLOSE_POLL_LABEL,
   POLL_VOTE_ACTION_TYPE,
   canClosePoll,
+  castPollVote,
   isPollCardClosed,
   pollCardEyebrow,
+  pollCardFooter,
+  pollChoiceHint,
+  pollOptionPercent,
   pollsGateReason,
   readPollPayload,
   tallyPollVotes,
+  type PendingPollPicks,
   type PollOption,
 } from "@repo/chat-core/polls";
 import { SignetTokens } from "@repo/theme/signet";
@@ -87,7 +92,7 @@ export function PollCard(props: PollCardProps) {
   // poll's own vote is the viewer's content, and the engine's solid-fill pair
   // (accent-engine.md §8) is what a filled control takes.
   const { accentPrimary, accentOnPrimary } = useChapterBranding();
-  const payload = readPollPayload(message);
+  const payload = useMemo(() => readPollPayload(message), [message]);
   const now = useNow();
   // A card vote is a Polls write, and the server refuses it while Polls is off
   // (#2993). The gate is mirrored here so the member sees that before tapping
@@ -103,14 +108,11 @@ export function PollCard(props: PollCardProps) {
     useMyPermissions().data?.permissions,
   );
 
-  const {
-    byOption,
-    total,
-    myVote: viewerVote,
-  } = useMemo(() => {
-    if (!payload) return { byOption: {}, total: 0, myVote: null };
-    return tallyPollVotes(message, payload.options, viewerId);
-  }, [message, payload, viewerId]);
+  const tally = useMemo(
+    () => tallyPollVotes(message, payload?.options ?? [], viewerId),
+    [message, payload, viewerId],
+  );
+  const pendingPicks = useRef<PendingPollPicks | null>(null);
 
   if (!payload) {
     return (
@@ -137,10 +139,19 @@ export function PollCard(props: PollCardProps) {
     });
   const canVote = isConfirmed && !isClosed && pollsGate === "on";
   const gateReason = pollsGateReason(pollsGate, { isClosed, isConfirmed });
+  const choiceHint = pollChoiceHint(payload, isClosed);
 
   const cast = (option: PollOption) => {
     if (!canVote) return;
-    onVote(message.id, POLL_VOTE_ACTION_TYPE, { option_id: option.id });
+    // A multi-choice card (#3793) adds or clears the tapped option and sends
+    // the member's whole list in their one vote row.
+    // Built on the member's last tap while its answer is still on the way
+    // (`castPollVote`), so two quick taps on a multi-choice card keep both.
+    onVote(
+      message.id,
+      POLL_VOTE_ACTION_TYPE,
+      castPollVote(payload, tally.myVotes, pendingPicks, option.id),
+    );
   };
 
   return (
@@ -150,15 +161,15 @@ export function PollCard(props: PollCardProps) {
         <>
           <CardEyebrow label={pollCardEyebrow(payload, now)} />
           <CardTitle>{payload.question}</CardTitle>
+          {choiceHint ? <Text style={styles.hint}>{choiceHint}</Text> : null}
         </>
       }
     >
       <View style={styles.options}>
         {payload.options.map((option) => {
-          const count = byOption[option.id] ?? 0;
-          const denom = total > 0 ? total : 1;
-          const pct = total > 0 ? Math.round((count / denom) * 100) : 0;
-          const isMyVote = viewerVote === option.id;
+          const count = tally.byOption[option.id] ?? 0;
+          const pct = pollOptionPercent(payload, tally, option.id);
+          const isMyVote = tally.myVotes.includes(option.id);
           return (
             <View key={option.id}>
               <Pressable
@@ -209,9 +220,7 @@ export function PollCard(props: PollCardProps) {
         })}
       </View>
       <Text style={styles.footer}>
-        {total === 0
-          ? `No votes yet${canVote ? " · be the first to vote" : ""}.`
-          : `${total} vote${total === 1 ? "" : "s"}${viewerVote ? " · your vote is highlighted" : ""}`}
+        {pollCardFooter(payload, tally, canVote)}
       </Text>
       {showClose ? (
         <Pressable
@@ -247,6 +256,11 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     malformed: {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
+    },
+    hint: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+      marginTop: tokens.spacing.xs,
     },
     options: {
       marginTop: tokens.spacing.sm + 1,

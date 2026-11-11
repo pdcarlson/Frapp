@@ -7,7 +7,10 @@
  */
 
 export interface PollOption {
-  /** Stable id used as the action `payload.option_id` when a user votes. */
+  /**
+   * Stable id a vote names in its action `payload.option_id`: the one id on a
+   * single-choice card, a list of ids on a multi-choice one (#3793).
+   */
   id: string;
   /** Label shown in the card. */
   label: string;
@@ -23,6 +26,12 @@ export interface PollPayload {
    * (`closed_at`).
    */
   closes_at: string | null;
+  /**
+   * `"multi"` on a poll where a member may pick more than one option (#3793).
+   * Absent on a single-choice card, which is every card posted before it, so
+   * those read and vote exactly as they did.
+   */
+  choice_mode?: "multi";
   /**
    * When the creator closed the poll early (#3794), or absent while it is
    * open. Written only by the API (`POST /v1/polls/{messageId}/close`); a

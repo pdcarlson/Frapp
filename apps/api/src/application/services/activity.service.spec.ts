@@ -95,7 +95,7 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
   const messageRepo = {
     findPollCardsByChapter: jest.fn().mockResolvedValue([]),
   };
-  const actionRepo = { findActedMessageIds: jest.fn().mockResolvedValue([]) };
+  const actionRepo = { findActionsOnMessages: jest.fn().mockResolvedValue([]) };
   const userRepo = {
     findDisplayIdentitiesByIds: jest.fn().mockResolvedValue([
       { id: ME, display_name: 'Me Member', avatar_url: null },
@@ -222,7 +222,7 @@ describe('ActivityService', () => {
       expect(view.made_by_you.polls).toEqual([]);
       expect(view.needs_you_count).toBe(0);
       // Nothing about the hidden polls is even asked of the vote table.
-      expect(actionRepo.findActedMessageIds).toHaveBeenCalledWith(
+      expect(actionRepo.findActionsOnMessages).toHaveBeenCalledWith(
         [],
         ME,
         'vote',
@@ -296,12 +296,29 @@ describe('ActivityService', () => {
         pollCard({ id: 'malformed', payload: { question: 'No options' } }),
         pollCard({ id: 'open' }),
       ]);
-      actionRepo.findActedMessageIds.mockResolvedValue(['voted']);
+      actionRepo.findActionsOnMessages.mockResolvedValue([
+        { message_id: 'voted', payload: { option_id: 'a' } },
+      ]);
 
       const view = await service.getActivity(CHAPTER, ME, null);
 
       expect(view.needs_you.polls.map((poll) => poll.message_id)).toEqual([
         'open',
+      ]);
+    });
+
+    it('counts a cleared multi-choice vote as not voted (#3793)', async () => {
+      const { service, messageRepo, actionRepo } = build();
+      servePolls(messageRepo, [pollCard({ id: 'cleared' })]);
+      // The row outlives the vote: every pick was cleared.
+      actionRepo.findActionsOnMessages.mockResolvedValue([
+        { message_id: 'cleared', payload: { option_id: [] } },
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.needs_you.polls.map((poll) => poll.message_id)).toEqual([
+        'cleared',
       ]);
     });
 
@@ -322,7 +339,9 @@ describe('ActivityService', () => {
           }),
         ],
       );
-      actionRepo.findActedMessageIds.mockResolvedValue(['mine-open']);
+      actionRepo.findActionsOnMessages.mockResolvedValue([
+        { message_id: 'mine-open', payload: { option_id: ['a', 'b'] } },
+      ]);
 
       const view = await service.getActivity(CHAPTER, ME, null);
 
