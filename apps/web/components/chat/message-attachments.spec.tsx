@@ -106,6 +106,39 @@ beforeEach(() => {
   hookState.result = { isPending: true, isError: false, data: undefined };
 });
 
+describe("an unsent message's attachments (#4095)", () => {
+  // A pending, failed or unconfirmed row is the sender's local copy. Its id is
+  // the `client_message_id`; the server mints its own, so asking for files
+  // under this id answered 404 every time (FRAPP-WEB-8).
+  it("asks for nothing and names how many files the row carries", () => {
+    hookState.calls = [];
+    render(
+      <MessageAttachments
+        channelId="chan-1"
+        messageId="client-1"
+        count={2}
+        confirmed={false}
+      />,
+    );
+
+    expect(hookState.calls.length).toBeGreaterThan(0);
+    for (const call of hookState.calls) expect(call[2]).toBe(false);
+    expect(screen.getByText("2 attachments")).toBeInTheDocument();
+    expect(screen.queryByText(/couldn.t be loaded/)).toBeNull();
+    expect(screen.queryByText(/Loading/)).toBeNull();
+  });
+
+  it("asks once the row is the server's", () => {
+    hookState.calls = [];
+    render(
+      <MessageAttachments channelId="chan-1" messageId="msg-1" count={1} />,
+    );
+
+    expect(hookState.calls.at(-1)).toEqual(["chan-1", "msg-1", true]);
+    expect(screen.getByText("Loading attachment…")).toBeInTheDocument();
+  });
+});
+
 describe("the attachment list", () => {
   it("draws an image as a preview that opens the viewer, not a download link", () => {
     show(photo(1));
