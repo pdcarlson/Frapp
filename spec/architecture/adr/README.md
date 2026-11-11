@@ -33,3 +33,4 @@ One file per ADR. [`spec/architecture/README.md`](../README.md) is the system ma
 | ADR-25: The product is named Frapp; "Signet" stays the design system's internal name until after the beta (2026-09-23) | Amended | [adr-25.md](adr-25.md) |
 | ADR-26: Discord bot imports copy attachments inside Supabase, through an Edge Function (2026-09-29) | Amended | [adr-26.md](adr-26.md) |
 | ADR-27: Tenant-scoped URLs; the page's URL, not the token, names the chapter a request acts in (proposed 2026-11-11) | Proposed, pending Paul | [adr-27.md](adr-27.md) |
+| ADR-28: AI platform — two providers behind a port Frapp owns, one model per feature, a bake-off decides (2026-11-11) | Current | [adr-28.md](adr-28.md) |

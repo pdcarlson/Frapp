@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi, afterEach } from "vitest";
 
 // `@repo/validation`'s beta list, emptied so this spec pins the ordinary
@@ -27,7 +27,12 @@ afterEach(() => {
  */
 
 const { permissions, search, currentChapter } = vi.hoisted(() => ({
-  permissions: { current: undefined as string[] | undefined },
+  permissions: {
+    current: undefined as string[] | undefined,
+    failed: false,
+    offline: false,
+    refetch: vi.fn(),
+  },
   search: { current: "" },
   currentChapter: {
     current: {
@@ -52,8 +57,11 @@ vi.mock("@repo/hooks", () => ({
     data: permissions.current
       ? { permissions: permissions.current }
       : undefined,
-    isPending: false,
-    isError: false,
+    isPending: !permissions.current && !permissions.failed,
+    isError: permissions.failed,
+    error: permissions.failed ? new Error("Network down") : null,
+    fetchStatus: "idle",
+    refetch: permissions.refetch,
   }),
   usePermissionsCatalog: () => ({ data: [], isPending: false, isError: false }),
   useSemesters: () => ({ data: [], isPending: false, isError: false }),
@@ -73,6 +81,19 @@ vi.mock("@repo/hooks", () => ({
   useRoles: () => ({ data: [], isPending: false, isError: false }),
   useUpdateRole: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
+
+vi.mock("@/lib/providers/network-provider", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/providers/network-provider")>();
+  return {
+    ...actual,
+    useNetwork: () => ({
+      ...actual.useNetwork(),
+      isOffline: permissions.offline,
+      probeOnce: vi.fn(),
+    }),
+  };
+});
 
 vi.mock("@/lib/stores/chapter-store", () => ({
   useChapterStore: (selector: (s: { activeChapterId: string }) => unknown) =>
@@ -151,6 +172,9 @@ const MODULE_ROWS = [
 describe("Settings shows each viewer what they can use", () => {
   beforeEach(() => {
     permissions.current = undefined;
+    permissions.failed = false;
+    permissions.offline = false;
+    permissions.refetch.mockClear();
     search.current = "";
     currentChapter.current = {
       ...currentChapter.current,
@@ -298,8 +322,30 @@ describe("Settings shows each viewer what they can use", () => {
     expect(tabNames()).toEqual([]);
   });
 
-  it("shows every tab while permissions are still loading, so nothing flashes out", () => {
+  it("draws no tab or tool until permissions answer (#3854)", () => {
+    // A member who reaches /settings by URL, or by the nav's old early click,
+    // used to see an officer's whole rail before it was taken back.
     render(<SettingsPage />);
-    expect(tabNames()).toHaveLength(7 + MODULE_ROWS.length);
+    expect(tabNames()).toEqual([]);
+    expect(tools()).toEqual([]);
+    expect(screen.getByText("Loading chapter settings")).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing in Chapter settings/)).not.toBeInTheDocument();
+  });
+
+  it("says it is offline, and retries the permission read, when only that read is missing (#3854)", () => {
+    // The chapter read is cached; the permission read never answered.
+    permissions.offline = true;
+    render(<SettingsPage />);
+    expect(tabNames()).toEqual([]);
+    expect(screen.getByText("Chapter settings unavailable offline")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry now" }));
+    expect(permissions.refetch).toHaveBeenCalled();
+  });
+
+  it("refuses to guess when the permission read fails", () => {
+    permissions.failed = true;
+    render(<SettingsPage />);
+    expect(tabNames()).toEqual([]);
+    expect(screen.getByText("Couldn't load chapter settings")).toBeInTheDocument();
   });
 });

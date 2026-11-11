@@ -2570,6 +2570,40 @@ describe("MessageItem thread entry points", () => {
     expect(onOpenThread).toHaveBeenCalledWith(parent);
   });
 
+  it("passes the viewer's new replies to the card (#4297)", () => {
+    renderItemWithProps({
+      message: message({
+        thread: { reply_count: 3, last_reply_at: null, recent_sender_ids: [] },
+      } as Partial<ChatMessage>),
+      onOpenThread: vi.fn(),
+      threadUnread: 2,
+    });
+    expect(
+      screen.getByRole("button", { name: "3 replies, 2 new. Open thread" }),
+    ).toBeInTheDocument();
+  });
+
+  it.each([
+    ["cozy", 1],
+    ["compact", 0],
+    ["bubbles", 0],
+  ] as const)(
+    "runs a connector from the photo to the card in %s only (#4297)",
+    (density, spines) => {
+      act(() => setChatDensity(density));
+      const { container } = renderItemWithProps({
+        message: message({
+          thread: { reply_count: 3, last_reply_at: null, recent_sender_ids: [] },
+        } as Partial<ChatMessage>),
+        onOpenThread: vi.fn(),
+      });
+      expect(
+        container.querySelectorAll('[data-slot="thread-spine"]').length,
+      ).toBe(spines);
+      act(() => setChatDensity("cozy"));
+    },
+  );
+
   it("offers neither where threads aren't (no onOpenThread)", () => {
     renderItemWithProps({
       message: message({

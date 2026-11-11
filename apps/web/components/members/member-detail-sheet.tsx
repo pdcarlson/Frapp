@@ -6,7 +6,6 @@ import { Loader2, MessageSquare, Trash2 } from "lucide-react";
 import { SectionSkeleton } from "@/components/shared/page-skeletons";
 import { SkeletonText } from "@/components/shared/async-states";
 import {
-  useCustomRoles,
   useGetOrCreateDm,
   useMemberByUserId,
   useMemberDisplayNames,
@@ -19,7 +18,6 @@ import {
   can,
   memberAccessRoleIds,
   removesMemberAccess,
-  resolveCustomRoleNames,
   resolveRoleChips,
   type MemberRoleChip,
 } from "@repo/validation";
@@ -250,16 +248,8 @@ export function MemberDetailSheet({
   const rolesQuery = useRoles();
   // The same role-color resolution chat's name uses (#3860).
   const { avatarTintFor } = useMemberDisplayNames();
-  // Custom roles are enforced (bridge model): assignment happens here
-  // alongside live roles. The list read needs `chapter-config:view`, so only
-  // fire it for viewers who hold that permission, rather than a guaranteed
-  // 403 on every open. When the list is unavailable their names are not drawn
-  // and saves omit `custom_role_ids` (the server treats omission as "leave
-  // unchanged"), so custom-role assignments are never silently stripped.
   const myPermissionsQuery = useMyPermissions();
   const myPermissions = myPermissionsQuery.data?.permissions;
-  const canViewCustomRoles = can("chapter-config:view", myPermissions);
-  const customRolesQuery = useCustomRoles({ enabled: canViewCustomRoles });
   const updateRolesMutation = useUpdateMemberRoles();
   const removeMemberMutation = useRemoveMember();
   const dmMutation = useGetOrCreateDm();
@@ -270,9 +260,6 @@ export function MemberDetailSheet({
   const { confirm, confirmDialog } = useConfirmDialog();
   const rolesHeadingId = useId();
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
-  const [selectedCustomRoleIds, setSelectedCustomRoleIds] = useState<string[]>(
-    [],
-  );
   // Whose roles are being edited. Keyed by member rather than a boolean, so
   // the editor never carries over to the next member the sheet opens on.
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -299,31 +286,13 @@ export function MemberDetailSheet({
     () => stringIds(member?.role_ids),
     [member?.role_ids],
   );
-  const memberCustomRoleIds = useMemo(
-    () => stringIds(member?.custom_role_ids),
-    [member?.custom_role_ids],
+  const roleChips = useMemo(
+    () => resolveRoleChips(rolesQuery.data, memberRoleIds),
+    [rolesQuery.data, memberRoleIds],
   );
-
-  const roleChips = useMemo(() => {
-    const ranked = resolveRoleChips(rolesQuery.data, memberRoleIds);
-    // Custom titles carry no color or rank in this read, so they follow the
-    // ranked roles as plain chips, as on mobile.
-    const custom = resolveCustomRoleNames(
-      canViewCustomRoles ? customRolesQuery.data : undefined,
-      memberCustomRoleIds,
-    ).map((name) => ({ id: `custom:${name}`, name, color: null }));
-    return [...ranked, ...custom];
-  }, [
-    rolesQuery.data,
-    memberRoleIds,
-    canViewCustomRoles,
-    customRolesQuery.data,
-    memberCustomRoleIds,
-  ]);
-  // Distinct from "no role": while either read is in flight an empty list
-  // would flash a wrong "No roles yet".
-  const rolesLoading =
-    rolesQuery.isPending || (canViewCustomRoles && customRolesQuery.isPending);
+  // Distinct from "no role": while the read is in flight an empty list would
+  // flash a wrong "No roles yet".
+  const rolesLoading = rolesQuery.isPending;
   // A failed roles read resolves no chip, which must not read as a member
   // with no roles: say it failed and offer the read again.
   const rolesFailed =
@@ -335,11 +304,6 @@ export function MemberDetailSheet({
     () => normalizeRoleOptions(rolesQuery.data),
     [rolesQuery.data],
   );
-  const customRoleOptions = useMemo(() => {
-    const data = customRolesQuery.data;
-    if (!Array.isArray(data)) return [];
-    return data.map((role) => ({ id: role.id, label: role.label }));
-  }, [customRolesQuery.data]);
 
   // `memberLabel`, the helper the directory row uses: this sheet opens from
   // that row, so the two must not name an unnamed member two different ways.
@@ -393,7 +357,6 @@ export function MemberDetailSheet({
 
   function startEditingRoles() {
     setSelectedRoleIds(memberRoleIds);
-    setSelectedCustomRoleIds(memberCustomRoleIds);
     setEditingUserId(userId);
   }
 
@@ -402,22 +365,11 @@ export function MemberDetailSheet({
     // Taking away the last role with member access locks the member out of
     // chat, the roster and events, the way the 2026-11-07 testers were
     // (#3670). The API allows it, so ask first, as mobile's editor does.
-    // Custom roles count only when their list loaded. Otherwise the save
-    // leaves them unchanged, and a custom role that does carry
-    // `members:view` can't be seen, so the officer may be asked even though
-    // the member keeps access through it: a harmless extra question, where
-    // skipping it could let a real lockout through.
-    const customAfter = customRolesQuery.isSuccess
-      ? selectedCustomRoleIds
-      : memberCustomRoleIds;
     if (
       removesMemberAccess(
-        [...memberRoleIds, ...memberCustomRoleIds],
-        [...selectedRoleIds, ...customAfter],
-        memberAccessRoleIds(
-          roleAccessRows(rolesQuery.data),
-          customRolesQuery.data ?? [],
-        ),
+        memberRoleIds,
+        selectedRoleIds,
+        memberAccessRoleIds(roleAccessRows(rolesQuery.data)),
       )
     ) {
       const confirmed = await confirm({
@@ -432,15 +384,6 @@ export function MemberDetailSheet({
       await updateRolesMutation.mutateAsync({
         id: memberId,
         role_ids: selectedRoleIds,
-        // Only send the custom-role assignment when the list actually loaded;
-        // omission tells the server to leave it unchanged. The selection is
-        // sent as-is — NOT filtered against the loaded catalog, which can be
-        // up to a minute stale and would silently strip a freshly assigned
-        // role. Leftover ids of since-deleted roles are harmless: the server
-        // exempts ids the member already holds, and they resolve to nothing.
-        ...(customRolesQuery.isSuccess
-          ? { custom_role_ids: selectedCustomRoleIds }
-          : {}),
       });
       toast({
         title: "Roles updated",
@@ -657,28 +600,6 @@ export function MemberDetailSheet({
                         }
                       />
                     ))}
-                    {customRoleOptions.length > 0 ? (
-                      <>
-                        <h4 className="pt-2 text-label font-semibold text-muted-foreground">
-                          Custom roles
-                        </h4>
-                        {customRoleOptions.map((role) => (
-                          <RoleChecklistItem
-                            key={role.id}
-                            title={role.label}
-                            checked={selectedCustomRoleIds.includes(role.id)}
-                            disabled={updateRolesMutation.isPending}
-                            onChange={(isChecked) =>
-                              toggleSelection(
-                                setSelectedCustomRoleIds,
-                                role.id,
-                                isChecked,
-                              )
-                            }
-                          />
-                        ))}
-                      </>
-                    ) : null}
                   </div>
                 ) : rolesLoading ? (
                   <p className="text-caption text-muted-foreground">

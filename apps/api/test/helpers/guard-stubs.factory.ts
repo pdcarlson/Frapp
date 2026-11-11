@@ -30,12 +30,8 @@ import type {
  *   and required here, because every current caller supplies one. A spec that
  *   needs `user_metadata` (`AuthSyncInterceptor` reads it) has to widen this.
  * - **`ChapterGuardStub` writes a subset of `member`.** The real `ChapterGuard`
- *   selects `id, role_ids, custom_role_ids, chapter_id` and assigns the whole
- *   row; this writes `{ id, role_ids }`. `custom_role_ids` is optional on
- *   `MemberContext`, so the canonical type will **not** flag its absence: a spec
- *   that keeps the real `PermissionsGuard` for a custom-role-gated route must
- *   set it itself, or `permissions.guard.ts` resolves zero custom roles and the
- *   route 403s for a reason that has nothing to do with the assertion.
+ *   selects `id, role_ids, chapter_id` and assigns the whole row; this writes
+ *   `{ id, role_ids }`.
  * - **These annotations are a gate, within the limits above.** `npm run
  *   check-types` type-checks `apps/api/test` and every spec (#2821), so a stub
  *   that stops matching these types fails CI. What no type check can catch is a

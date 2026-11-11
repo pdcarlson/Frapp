@@ -198,6 +198,12 @@ export function formatSentLabel(
  * has passed. Mobile's task subtitle (`formatDueSubtitle`) is a separate copy
  * that leaves the year off a date outside the current one, until mobile reads
  * this one (#3420).
+ *
+ * A task due at a time of day passes its `due_at` instant instead of its
+ * `due_date` (#4003), and the countdown names the time: `"Due today at
+ * 5 PM"`, `"Due Friday at 11:59 PM"`, `"Due Nov 14 at 9 AM"`. Once that
+ * minute has passed it is overdue by the minute or hour within the first
+ * day (`"Overdue by 40 minutes"`, `"Overdue by 3 hours"`), then by the day.
  */
 export function formatDueLabel(
   value: unknown,
@@ -205,12 +211,78 @@ export function formatDueLabel(
 ): string | null {
   const due = toDate(value);
   if (!due) return null;
+  if (isInstant(value)) return timedDueLabel(due, now);
   const days = dayDelta(now, due);
   if (days < 0) return `Overdue by ${-days} ${days === -1 ? "day" : "days"}`;
   if (days === 0) return "Due today";
   if (days === 1) return "Due tomorrow";
   if (days < 7) return `Due ${weekdayName(due)}`;
   return `Due ${monthDay(due, now)}`;
+}
+
+/** A full timestamp rather than a bare `YYYY-MM-DD` day. */
+function isInstant(value: unknown): boolean {
+  return typeof value === "string" && value.length > 10;
+}
+
+function timedDueLabel(due: Date, now: Date): string {
+  const minutesLeft = (due.getTime() - now.getTime()) / 60_000;
+  if (minutesLeft <= 0) {
+    const late = -minutesLeft;
+    if (late < 60) {
+      const minutes = Math.max(1, Math.floor(late));
+      return `Overdue by ${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
+    }
+    if (late < 24 * 60) {
+      const hours = Math.floor(late / 60);
+      return `Overdue by ${hours} ${hours === 1 ? "hour" : "hours"}`;
+    }
+    const days = Math.max(1, -dayDelta(now, due));
+    return `Overdue by ${days} ${days === 1 ? "day" : "days"}`;
+  }
+  return `Due ${dueDayWords(due, now)} at ${formatClockShort(due)}`;
+}
+
+/** "today", "tomorrow", "Friday" within the week, else "Nov 14". */
+function dueDayWords(due: Date, now: Date): string {
+  const days = dayDelta(now, due);
+  if (days === 0) return "today";
+  if (days === 1) return "tomorrow";
+  if (days > 1 && days < 7) return weekdayName(due);
+  return monthDay(due, now);
+}
+
+/**
+ * `"5 PM"`, `"5:30 PM"`: a time of day as a calendar writes it, the minutes
+ * only when there are some. For a due time, where `"5:00 PM"` is noise.
+ */
+export function formatClockShort(value: Date | string): string {
+  const at = typeof value === "string" ? toDate(value) : value;
+  if (!at || Number.isNaN(at.getTime())) return "";
+  return at
+    .toLocaleTimeString(undefined, {
+      hour: "numeric",
+      ...(at.getMinutes() === 0 ? {} : { minute: "2-digit" }),
+    })
+    .replace(/\u202f/g, " ");
+}
+
+/**
+ * A task's due without a countdown, for one whose countdown would not be
+ * true (handed in, or read by someone who can't see its status): `"Due Nov
+ * 14"`, or `"Due Nov 14 at 5 PM"` for a task due at a time (#4003). Takes the
+ * task's `due_at` when it has one, else its `due_date`.
+ */
+export function formatDueOn(
+  value: unknown,
+  now: Date = new Date(),
+): string | null {
+  const due = toDate(value);
+  if (!due) return null;
+  const day = monthDay(due, now);
+  return isInstant(value)
+    ? `Due ${day} at ${formatClockShort(due)}`
+    : `Due ${day}`;
 }
 
 /**

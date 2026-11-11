@@ -13,7 +13,8 @@ describe('ChannelCacheService', () => {
     is_read_only: false,
     type: 'PUBLIC',
     member_ids: null,
-    required_permissions: null,
+    who_can_see: null,
+    who_can_post: null,
     default_notification_level: null,
   };
 

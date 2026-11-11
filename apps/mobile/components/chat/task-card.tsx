@@ -2,6 +2,7 @@ import type { TaskPayload } from "@repo/chat-core/cards";
 import {
   canReadCardTask,
   readLiveTask,
+  subtaskProgress,
   taskCardControls,
   TASK_ACTION_LABELS,
   taskStatusLabel,
@@ -12,6 +13,7 @@ import {
   useRejectTask,
   useTask,
   useUpdateTaskStatus,
+  viewerIsCardAssignee,
   type LiveTask,
 } from "@repo/hooks";
 import { can, isModuleEnabled } from "@repo/validation";
@@ -87,7 +89,16 @@ export function TaskCard({
     !isModuleEnabled(chapterQuery.data?.enabled_modules, "tasks");
   const controls = tasksOff
     ? []
-    : taskCardControls({ live, isAssignee, canManage });
+    : taskCardControls({
+        live,
+        // Whom it is assigned to now: an edit may have handed it on (#4296).
+        isAssignee: viewerIsCardAssignee(
+          frame.viewerId,
+          payload.assignee_user_id,
+          live,
+        ),
+        canManage,
+      });
 
   const updateStatus = useUpdateTaskStatus();
   const confirmTask = useConfirmTask();
@@ -124,10 +135,14 @@ export function TaskCard({
           />
           <CardMeta
             items={[
-              dueLine(payload.due_date, live, now),
+              dueLine(payload.due_at ?? payload.due_date, live, now),
               payload.point_reward ? (
                 <PointsChip points={payload.point_reward} />
               ) : null,
+              // The live task's steps (#4003): "2 of 5 subtasks".
+              live && live.subtasks.length > 0
+                ? `${subtaskProgress(live.subtasks)?.label} subtasks`
+                : null,
             ]}
           />
         </>

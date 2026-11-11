@@ -217,9 +217,11 @@ export function selectPostCapability(data: unknown): ChannelPostCapability {
  *
  * Archived comes first, as it does in `canAccessChannel`: it refuses every
  * post, so neither of the other two explains it, and a frozen Group DM shown
- * the alumni sentence was #2199. Read-only and the alumni rule overlap for an
- * alumnus who holds `announcements:post`, which `isReadOnly` can't tell apart
- * (#3074).
+ * the alumni sentence was #2199. Read-only and the alumni rule overlap: an
+ * alumnus in a channel with a who-can-post list is shown the read-only
+ * sentence, which `isReadOnly` can't tell apart (#3074). Since #3722 that
+ * includes a members-only channel the Alumni role reads, whose list leaves
+ * Alumni out.
  */
 export function postRefusalHint(
   capability: ChannelPostCapability,
@@ -229,7 +231,7 @@ export function postRefusalHint(
     return "This conversation is archived because everyone else left. You can still read it.";
   }
   return capability.isReadOnly
-    ? "This channel is read-only. Posting requires the announcements:post permission."
+    ? "This channel is read-only for your role."
     : "Alumni can read this channel but not post. Alumni may post in #alumni and direct messages.";
 }
 
