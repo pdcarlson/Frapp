@@ -9,20 +9,23 @@
  * entry, there and everywhere else; the landing page's own rules bind its page
  * copy, not these lines (spec/ui/landing/README.md § Section inventory).
  *
- * Newest first. Each entry is one batch of changes that reached members on
- * `date` (a store build or an over-the-air update; members never see which).
+ * Newest first. Each entry is one batch of changes, dated the day its lines
+ * joined this list; members get them with the next release (a store build or
+ * an over-the-air update; members never see which), which carries every line
+ * merged before it.
  *
- * A PR doesn't edit this list to add a line: it leaves the line in its own
- * file in `packages/validation/release-notes/`, and the What's new fold bot
- * moves it here after merge (`scripts/release-notes-fold.mjs`), so parallel
- * PRs never conflict on this file. Rewording what's already here is a direct
- * edit, as before.
+ * A PR that changes what members see doesn't edit this list: it leaves its
+ * line in its own file in `packages/validation/release-notes/` (that folder's
+ * README owns how the lines get here), so parallel PRs never conflict on this
+ * file. Rewording or removing a line already here is a direct edit, as before.
  *
  * How to write a line: say what a member can now do or will notice, the way
  * you'd tell a friend. No feature codes, issue numbers, version strings,
- * screen ids, emojis, or em dashes. A bit vague is fine; wrong is not, so
- * only list what is merged and shipped. Five to eight lines a new entry, each
- * one sentence.
+ * screen ids, emojis, or em dashes ({@link releaseNoteLineProblem} checks
+ * what a machine can). A bit vague is fine; wrong is not, so only list what
+ * is merged. One sentence a line. An entry written by hand takes five to
+ * eight lines and a title naming the batch; one the fold starts holds
+ * whatever was waiting, under a plain title anyone may reword.
  *
  * Mobile and the web dashboard open the newest entry by themselves once after
  * an update ({@link decideWhatsNew}; `apps/mobile/lib/whats-new.ts`,
@@ -38,7 +41,7 @@
  * string per line).
  */
 export type ReleaseNote = {
-  /** The day it reached members, as `YYYY-MM-DD`. */
+  /** The day its lines joined this list, as `YYYY-MM-DD`. */
   readonly date: string;
   /** One short line that names the batch. */
   readonly title: string;
@@ -136,6 +139,29 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
  * had, as `date#lines`. Lines appended later (a second release the same day)
  * make a newer version; rewording one doesn't.
  */
+// Pictographic emoji, the product's "no emojis in the UI" rule.
+const EMOJI = /\p{Extended_Pictographic}/u;
+// Leaks members should never read: issue/PR numbers, versions, Signet.
+const INTERNALS = /#\d|\bv?\d+\.\d+\.\d+\b|signet|\bPR\b|\bOTA\b|\bAPI\b/i;
+
+/**
+ * What's wrong with one line (or a title) by the writing rules a machine can
+ * check, or `null`. The one copy of those rules: this file's spec runs it on
+ * every entry, and `scripts/release-notes-fold.mjs` on every waiting line, so
+ * a bad line fails in the PR that adds it. frapp.live/changelog renders these,
+ * and landing copy takes no em dashes (spec/ui/landing/README.md § Marketing
+ * copy rules).
+ */
+export function releaseNoteLineProblem(line: string): string | null {
+  if (line.trim() === "") return "is empty";
+  if (/[\r\n]/.test(line.trim())) return "has more than one line; write one sentence";
+  if (EMOJI.test(line)) return "has an emoji";
+  if (INTERNALS.test(line))
+    return "names an issue number, a version or an internal term";
+  if (line.includes("\u2014")) return "has an em dash";
+  return null;
+}
+
 export function releaseNoteVersion(note: ReleaseNote): string {
   return `${note.date}#${note.changes.length}`;
 }
