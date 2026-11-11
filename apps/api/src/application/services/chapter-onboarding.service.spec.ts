@@ -11,7 +11,6 @@ jest.mock('@repo/org-archetypes', () => ({
   buildChapterConfigFromArchetype: jest.fn((key: string) => ({
     archetype: key,
     modules: { chat: true, members: true, announcements: true },
-    rolePack: 'test_pack',
     vocabulary: {
       recruitment: 'Rush',
       pledge: 'New member',
@@ -568,7 +567,6 @@ describe('ChapterOnboardingService', () => {
       (buildChapterConfigFromArchetype as jest.Mock).mockReturnValueOnce({
         archetype: 'nphc',
         modules: { chat: true },
-        rolePack: 'test_pack',
         vocabulary: { recruitment: 'Rush', pledge: 'NM', class: 'Class' },
         customFields,
         workflows: [],
