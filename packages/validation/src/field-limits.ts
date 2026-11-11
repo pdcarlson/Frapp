@@ -151,3 +151,11 @@ export const PLEDGE_CLASSES_MAX = 200;
 export const MEMBER_ORDER_NUMBER_MAX = 1_000_000;
 /** Members one `PUT /v1/pledge-classes/assignments` may carry. */
 export const PLEDGE_CLASS_ASSIGNMENTS_MAX = 500;
+
+/**
+ * Event types (#3730). The name bound mirrors the CHECK constraint in
+ * `20261111200000_event_types.sql`; the count is an API-side cap on one
+ * chapter's list, which the New event form shows whole.
+ */
+export const EVENT_TYPE_NAME_MAX_LENGTH = 60;
+export const EVENT_TYPES_MAX = 30;

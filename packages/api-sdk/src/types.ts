@@ -1871,6 +1871,42 @@ export interface paths {
         patch: operations["EventController_update_v1"];
         trace?: never;
     };
+    "/v1/event-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the chapter's event types, in its order */
+        get: operations["EventTypeController_list_v1"];
+        put?: never;
+        /** Add an event type at the end of the list */
+        post: operations["EventTypeController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/event-types/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete an event type; its events keep their points and attendance and lose the type */
+        delete: operations["EventTypeController_remove_v1"];
+        options?: never;
+        head?: never;
+        /** Change an event type's name, points or attendance; events already made keep theirs */
+        patch: operations["EventTypeController_update_v1"];
+        trace?: never;
+    };
     "/v1/events/{eventId}/attendance/check-in": {
         parameters: {
             query?: never;
@@ -5224,6 +5260,11 @@ export interface components {
             check_in_zone_name?: string;
             /** @description Minutes before start_time that check-in opens. Omitted on create, it is 10; the window closes 15 minutes after end_time. */
             check_in_opens_minutes?: number;
+            /**
+             * Format: uuid
+             * @description One of the chapter's event types (`GET /v1/event-types`), or null for none. The type only fills the form: the event's own `point_value` and `is_mandatory` are what count. An id that isn't the chapter's is a 400.
+             */
+            event_type_id?: string | null;
             /** @description When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when the event keeps anyone out (`others_invited` false, including its default when `required_role_ids` is non-empty, or a non-empty `excluded_role_ids`), on this key or `client_message_id` alone — the card is broadcast to every reader of the channel, so a create cannot both limit its audience and post one. (`PATCH` can still limit the audience of an event whose card already posted; that card is left as-is.) */
             channel_id?: string;
             /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Rejected with a 400 when the event keeps anyone out, even without `channel_id` — see that field. */
@@ -5257,6 +5298,11 @@ export interface components {
             check_in_zone_name: string | null;
             /** @description Minutes before start_time that check-in opens; it closes 15 minutes after end_time. */
             check_in_opens_minutes: number;
+            /**
+             * Format: uuid
+             * @description The chapter's event type this was made as, or null. Cleared when the type is deleted.
+             */
+            event_type_id: string | null;
             /**
              * Format: uuid
              * @description Who made the event. Null for events made before it was recorded.
@@ -5293,10 +5339,45 @@ export interface components {
             /** @description Minutes before start_time that check-in opens; the window closes 15 minutes after end_time. Omitted leaves it unchanged; null is refused. */
             check_in_opens_minutes?: number;
             /**
+             * Format: uuid
+             * @description One of the chapter's event types (`GET /v1/event-types`), or null to clear it; omitted leaves it. The type only fills the form: the event's own `point_value` and `is_mandatory` are what count. An id that isn't the chapter's is a 400.
+             */
+            event_type_id?: string | null;
+            /**
              * @description Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved.
              * @enum {string}
              */
             scope?: "instance" | "series";
+        };
+        EventTypeDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            name: string;
+            /** @description Points for attending, copied onto an event made as this type. */
+            point_value: number;
+            /** @description Whether everyone must attend, copied onto an event made as this type. */
+            is_mandatory: boolean;
+            /** @description The type's place in the chapter's list, lowest first. */
+            position: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        CreateEventTypeDto: {
+            /** @description The type as the chapter calls it ("Chapter meeting", "Work party"). Stored trimmed; unique within the chapter, ignoring case. */
+            name: string;
+            /** @default 0 */
+            point_value: number;
+            /** @default false */
+            is_mandatory: boolean;
+        };
+        UpdateEventTypeDto: {
+            name?: string;
+            point_value?: number;
+            is_mandatory?: boolean;
         };
         CheckInDto: {
             /** @description Rotating token read from the host QR code (s22). Valid for its 30s window and the one immediately before it. */
@@ -10985,6 +11066,128 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventTypeController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventTypeDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventTypeController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateEventTypeDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventTypeDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventTypeController_remove_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventTypeController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateEventTypeDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventTypeDto"];
+                };
             };
             /** @description Error */
             default: {

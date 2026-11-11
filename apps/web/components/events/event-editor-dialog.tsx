@@ -16,12 +16,15 @@ import {
   StudyZonesGlyph,
 } from "@/components/events/chapter-ops-glyphs";
 import { AttendanceEditor } from "@/components/events/attendance-editor";
+import { EventTypePicker } from "@/components/events/event-type-picker";
 import { MoreOptionsToggle } from "@/components/ui/more-options-toggle";
 import {
   EVENT_CREATE_UNCONFIRMED,
   useCreateEvent,
+  useMyPermissions,
   useRoles,
   useUpdateEvent,
+  type EventType,
 } from "@repo/hooks";
 import {
   RECURRENCE_REPEAT_LABELS,
@@ -30,7 +33,9 @@ import {
   attendanceFromEvent,
   attendanceInvitesNobody,
   attendanceToWire,
+  can,
   othersInvitedForCreate,
+  withEveryone,
   describeAttendance,
   emptyAttendanceDraft,
   eventLimitsAudience,
@@ -294,6 +299,12 @@ export function EventEditorDialog({
     useState<EventAttendanceDraft>(emptyAttendanceDraft);
   const [recurrenceRule, setRecurrenceRule] = useState("NONE");
   const [notes, setNotes] = useState("");
+  // The chapter's event type this is made as, or none (#3730). Picking one
+  // only fills the form; the event keeps its own points and attendance.
+  const [eventTypeId, setEventTypeId] = useState<string | null>(null);
+  // The name the last picked type wrote into the name field, so picking a
+  // different type replaces it but never a name the officer typed.
+  const [typeFilledName, setTypeFilledName] = useState<string | null>(null);
   // Closed on create, so the form opens on the four fields every event needs;
   // open on edit, where the officer came to change something.
   const [showMore, setShowMore] = useState(false);
@@ -301,6 +312,10 @@ export function EventEditorDialog({
   const [checkInZone, setCheckInZone] = useState<ZoneVertexDraft[]>([]);
   const [checkInZoneName, setCheckInZoneName] = useState("");
   const rolesQuery = useRoles();
+  // Adding or changing a type is `events:update` on the server; anyone who
+  // can open this form may pick one.
+  const { data: permissionsPayload } = useMyPermissions();
+  const canManageTypes = can("events:update", permissionsPayload?.permissions);
 
   const eventId = typeof event?.id === "string" ? event.id : "";
   const isSubmitting =
@@ -344,6 +359,10 @@ export function EventEditorDialog({
           : "NONE",
       );
       setNotes(typeof event.notes === "string" ? event.notes : "");
+      setEventTypeId(
+        typeof event.event_type_id === "string" ? event.event_type_id : null,
+      );
+      setTypeFilledName(null);
       setCheckInZone(zoneToDrafts(event.check_in_zone));
       setShowMore(true);
       setShowZone(zoneToDrafts(event.check_in_zone).length > 0);
@@ -364,6 +383,8 @@ export function EventEditorDialog({
     setAttendance(emptyAttendanceDraft());
     setRecurrenceRule("NONE");
     setNotes("");
+    setEventTypeId(null);
+    setTypeFilledName(null);
     setCheckInZone([]);
     setCheckInZoneName("");
     setShowMore(false);
@@ -386,6 +407,27 @@ export function EventEditorDialog({
     }
     return mode === "create" ? "Create event" : "Save changes";
   }, [isSubmitting, mode]);
+
+  /**
+   * Picking a type fills in what it carries: its points, whether everyone
+   * must attend (roles already set apart stay set apart), and its name when
+   * the name is blank or still the one the last pick wrote. Letting the type
+   * go leaves the form as it is.
+   */
+  function handlePickType(type: EventType | null) {
+    setEventTypeId(type?.id ?? null);
+    if (!type) return;
+    setPointValue(String(type.point_value));
+    setAttendance((previous) =>
+      previous.everyone === "not_invited"
+        ? previous
+        : withEveryone(previous, type.is_mandatory ? "required" : "optional"),
+    );
+    if (name.trim() === "" || name === typeFilledName) {
+      setName(type.name);
+      setTypeFilledName(type.name);
+    }
+  }
 
   const handlePointValueChange = (
     event: React.ChangeEvent<HTMLInputElement>,
@@ -504,6 +546,15 @@ export function EventEditorDialog({
       recurrence_rule: recurrenceRule === "NONE" ? undefined : recurrenceRule,
       notes: notes.trim() || undefined,
     };
+    // Sent on create only when one is picked, so a plain event still creates
+    // against an API that predates types; always sent on an edit, so letting
+    // the type go clears it.
+    const typeField =
+      mode === "create"
+        ? eventTypeId
+          ? { event_type_id: eventTypeId }
+          : {}
+        : { event_type_id: eventTypeId };
 
     try {
       if (mode === "create") {
@@ -530,6 +581,7 @@ export function EventEditorDialog({
         try {
           created = await createEventMutation.mutateAsync({
             ...payload,
+            ...(typeField as { event_type_id?: string }),
             ...(card
               ? {
                   channel_id: postToChannelId,
@@ -568,6 +620,7 @@ export function EventEditorDialog({
           id: eventId,
           body: {
             ...payload,
+            ...typeField,
             required_role_ids: wire.required_role_ids,
             optional_role_ids: wire.optional_role_ids,
             excluded_role_ids: wire.excluded_role_ids,
@@ -671,6 +724,13 @@ export function EventEditorDialog({
           <SubscriptionNotice gate={gate} feature="managing events" />
 
           <div className="grid gap-3">
+            <EventTypePicker
+              value={eventTypeId}
+              onPick={handlePickType}
+              canManage={canManageTypes && !usingPreviewData}
+              disabled={usingPreviewData}
+            />
+
             <div className="grid gap-1">
               <Label htmlFor="event-name">Event name</Label>
               <Input

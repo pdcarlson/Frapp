@@ -8,6 +8,7 @@ import {
   describeAttendance,
   emptyAttendanceDraft,
   describeSeriesLength,
+  withEveryone,
   type EventAttendanceDraft,
   type RecurrenceRule,
 } from "@repo/validation";
@@ -47,6 +48,16 @@ export const DEFAULT_POINTS = "10";
 export const MINUTE_INTERVAL = 1;
 
 export interface NewEventDraft {
+  /**
+   * The chapter's event type the event is made as (#3730), or `null`.
+   * Picking one only fills in the fields below ({@link applyEventType}).
+   */
+  eventTypeId: string | null;
+  /**
+   * The name the last picked type wrote into `name`, so picking a different
+   * type replaces it but never a name the officer typed.
+   */
+  typeFilledName: string | null;
   name: string;
   /**
    * `null` until the officer picks a time: the sheet then reads the default
@@ -76,6 +87,8 @@ export interface NewEventDraft {
 /** A fresh draft. */
 export function emptyEventDraft(): NewEventDraft {
   return {
+    eventTypeId: null,
+    typeFilledName: null,
     name: "",
     start: null,
     end: null,
@@ -89,6 +102,44 @@ export function emptyEventDraft(): NewEventDraft {
     description: "",
     showMore: false,
   };
+}
+
+/** What a type carries into the form (`EventTypeDto`). */
+export interface EventTypeChoice {
+  id: string;
+  name: string;
+  point_value: number;
+  is_mandatory: boolean;
+}
+
+/**
+ * The draft after a type chip is tapped (`spec/behavior/events.md` § Event
+ * types). Tapping the held type lets it go and changes nothing else. Picking
+ * one sets its points, whether everyone must attend (roles already set apart
+ * stay set apart, and a draft that invites only some roles keeps doing so),
+ * and its name when the name is blank or still the last pick's.
+ */
+export function applyEventType(
+  draft: NewEventDraft,
+  type: EventTypeChoice,
+): Partial<NewEventDraft> {
+  if (draft.eventTypeId === type.id) return { eventTypeId: null };
+  const patch: Partial<NewEventDraft> = {
+    eventTypeId: type.id,
+    pointsInput: String(type.point_value),
+    attendance:
+      draft.attendance.everyone === "not_invited"
+        ? draft.attendance
+        : withEveryone(
+            draft.attendance,
+            type.is_mandatory ? "required" : "optional",
+          ),
+  };
+  if (draft.name.trim() === "" || draft.name === draft.typeFilledName) {
+    patch.name = type.name;
+    patch.typeFilledName = type.name;
+  }
+  return patch;
 }
 
 /** 7:00 PM today, or tomorrow once today's has passed. */
@@ -157,6 +208,7 @@ export interface ValidatedNewEvent {
   excluded_role_ids?: string[];
   recurrence_rule?: RecurrenceRule;
   check_in_opens_minutes?: number;
+  event_type_id?: string;
 }
 
 export interface NewEventErrors {
@@ -249,6 +301,9 @@ export function validateNewEvent(
     body.excluded_role_ids = wire.excluded_role_ids;
   }
   if (draft.recurrenceRule) body.recurrence_rule = draft.recurrenceRule;
+  // Sent only when one is picked, so a plain event still creates against an
+  // API that predates types.
+  if (draft.eventTypeId) body.event_type_id = draft.eventTypeId;
   // Sent only when it isn't the default the server applies, so an ordinary
   // event still creates against an API that predates the field.
   if (opens !== DEFAULT_CHECK_IN_OPENS_MINUTES) {

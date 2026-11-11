@@ -12,6 +12,7 @@ import type { IMemberRepository } from '#domain/repositories/member.repository.i
 import { Event } from '#domain/entities/event.entity';
 import { RbacService } from './rbac.service';
 import { EventSeriesService } from './event-series.service';
+import { EventTypeService } from './event-type.service';
 import {
   EventAnnouncementService,
   eventChangeOf,
@@ -46,6 +47,7 @@ export class EventService {
     private readonly rbac: RbacService,
     private readonly series: EventSeriesService,
     private readonly announcements: EventAnnouncementService,
+    private readonly eventTypes: EventTypeService,
   ) {}
 
   /**
@@ -215,6 +217,10 @@ export class EventService {
       );
     }
 
+    // Before the write, so a stray id is a 400 rather than the composite
+    // foreign key's 500.
+    await this.eventTypes.assertBelongs(input.event_type_id, input.chapter_id);
+
     const parent = await this.eventRepo.create({
       chapter_id: input.chapter_id,
       name: input.name,
@@ -235,6 +241,7 @@ export class EventService {
       check_in_zone_name: input.check_in_zone_name ?? null,
       check_in_opens_minutes:
         input.check_in_opens_minutes ?? DEFAULT_CHECK_IN_OPENS_MINUTES,
+      event_type_id: input.event_type_id ?? null,
       created_by: input.created_by ?? null,
     });
 
@@ -321,6 +328,8 @@ export class EventService {
         throw new BadRequestException('end_time must be after start_time');
       }
     }
+
+    await this.eventTypes.assertBelongs(input.event_type_id, chapterId);
 
     const patch: UpdateEventInput = input;
 

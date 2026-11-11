@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CHECK_IN_OPENS_ERROR,
   defaultEventStart,
+  applyEventType,
   emptyEventDraft,
   moreOptionsSummary,
   repeatCaption,
@@ -234,5 +235,58 @@ describe("moving times", () => {
 
   it("joins a picked day to a held time", () => {
     expect(withDay(local(6, 21, 15), local(20, 0))).toEqual(local(20, 21, 15));
+  });
+});
+
+describe("applyEventType (#3730)", () => {
+  const meeting = {
+    id: "type-meeting",
+    name: "Chapter meeting",
+    point_value: 10,
+    is_mandatory: true,
+  };
+
+  it("fills points, attendance and a blank name", () => {
+    const patch = applyEventType(emptyEventDraft(), meeting);
+    expect(patch).toMatchObject({
+      eventTypeId: "type-meeting",
+      pointsInput: "10",
+      name: "Chapter meeting",
+      attendance: { everyone: "required", roles: {} },
+    });
+  });
+
+  it("keeps a name the officer typed, and roles set apart", () => {
+    const draft = {
+      ...emptyEventDraft(),
+      name: "Fall kickoff",
+      attendance: {
+        everyone: "optional" as const,
+        roles: { alumni: "not_invited" as const },
+      },
+    };
+    const patch = applyEventType(draft, meeting);
+    expect(patch.name).toBeUndefined();
+    expect(patch.attendance).toEqual({
+      everyone: "required",
+      roles: { alumni: "not_invited" },
+    });
+  });
+
+  it("lets the held type go and changes nothing else", () => {
+    const draft = { ...emptyEventDraft(), eventTypeId: "type-meeting" };
+    expect(applyEventType(draft, meeting)).toEqual({ eventTypeId: null });
+  });
+
+  it("sends the type on create only when one is held", () => {
+    const now = new Date(2026, 10, 5, 14, 0);
+    const base = { ...emptyEventDraft(), name: "Dinner" };
+    const plain = validateNewEvent(base, now);
+    const typed = validateNewEvent(
+      { ...base, eventTypeId: "type-meeting" },
+      now,
+    );
+    expect(plain.ok && plain.body).not.toHaveProperty("event_type_id");
+    expect(typed.ok && typed.body.event_type_id).toBe("type-meeting");
   });
 });
