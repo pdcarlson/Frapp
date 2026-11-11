@@ -1,21 +1,21 @@
 # IFC recruitment: master list, interest forms, chapter pipeline, eligibility
 
-> **Status: Proposed, pending Paul. Nothing here is built.**
+> **Status: Proposed. Paul reviewed it on 2026-11-11 and made the calls in [§ Decisions](#decisions-for-paul). Nothing here is built, and no build date is set.**
 >
 > Part of [#4192](https://github.com/pdcarlson/Frapp/issues/4192). Asked by: Winston (`whewitt-frapp`), 2026-11-11.
 >
-> This is a design Paul has not approved. Until he does:
+> **Not scheduled.** Recruitment is behind the beta (Paul, 2026-11-05: rush is not a beta priority; 2026-11-10: baseline first). No build issues are filed from this file until Paul sets a date. Until then:
 > - [`rush.md`](rush.md) and the code own what recruitment does today, and nothing here overrides them.
 > - Nothing here is drift to file or a rule to build against.
 >
-> [§ Phasing](#phasing) and [§ Decisions for Paul](#decisions-for-paul) are here so Paul can review one page. Once he decides:
+> [§ Phasing](#phasing) and [§ Decisions for Paul](#decisions-for-paul) are here so Paul can review one page. Once he sets a date:
 > - they move to issues;
 > - each approved rule moves into `rush.md` (chapter side) or a council spec;
 > - this file shrinks to what is still proposed.
 
 This is the **behavior** part of the #4192 design. Three sibling designs own the rest, and this file names what it needs from each:
 
-- **URLs and tenant context:** [ADR-27](https://github.com/pdcarlson/Frapp/pull/4213) (open PR). This file uses its decisions:
+- **URLs and tenant context:** [ADR-27](https://github.com/pdcarlson/Frapp/pull/4213) (merged as Proposed, pending Paul). This file uses its decisions:
   - Interest forms are public at `/f/<form-slug>`. The form slug is separate from the chapter slug, so a printed QR code survives a chapter rename, and a chapter can replace its form.
   - A council lives at `/c/<council-slug>` and campus pages at `/s/<school>`.
   - **Needed from it:** the PNM view's URL, and how a PNM with no chapter is routed.
@@ -43,15 +43,16 @@ This is the **behavior** part of the #4192 design. Three sibling designs own the
 
 1. [Words used here](#words-used-here)
 2. [Who does what](#who-does-what)
-3. [The council master list](#the-council-master-list)
-4. [Chapter interest forms](#chapter-interest-forms)
-5. [The chapter Rush module](#the-chapter-rush-module)
-6. [Eligibility](#eligibility)
-7. [Council rules and bid day](#council-rules-and-bid-day)
-8. [The PNM's own view](#the-pnms-own-view)
-9. [Retention and deletion](#retention-and-deletion)
-10. [Phasing](#phasing)
-11. [Decisions for Paul](#decisions-for-paul)
+3. [A recruitment week at real scale](#a-recruitment-week-at-real-scale)
+4. [The council master list](#the-council-master-list)
+5. [Chapter interest forms](#chapter-interest-forms)
+6. [The chapter Rush module](#the-chapter-rush-module)
+7. [Eligibility](#eligibility)
+8. [Council rules and bid day](#council-rules-and-bid-day)
+9. [The PNM's own view](#the-pnms-own-view)
+10. [Retention and deletion](#retention-and-deletion)
+11. [Phasing](#phasing)
+12. [Decisions for Paul](#decisions-for-paul)
 
 ## Words used here
 
@@ -81,7 +82,7 @@ This is the **behavior** part of the #4192 design. Three sibling designs own the
 | `council:recruitment_view` | Read the master list: PNM fields, interest **counts**, eligibility verdicts, acceptances. Contact details, per-chapter detail and bids follow [§ Officers in a chapter](#council-officers-are-also-chapter-members) |
 | `council:recruitment_manage` | The council's registration form, roster imports, merges, season dates and rules, bid-day release |
 | `council:grades_import` | Upload grade files and see the import summary. Nothing else |
-| `council:eligibility_manage` | Read GPA and credits, set the eligibility rule, override a verdict. Includes `council:grades_import` |
+| `council:eligibility_manage` | Set the eligibility rule, override a verdict, read the reason behind a verdict. Read GPA and credits only if a later decision stores them ([§ Eligibility](#eligibility)). Includes `council:grades_import` |
 | `council:recruitment_reports` | Export reports for the Greek life office |
 
 **When a council's master list exists.** Under ADR-27, a new council starts **Unverified** and sees nothing. Two things must happen first:
@@ -89,6 +90,22 @@ This is the **behavior** part of the #4192 design. Three sibling designs own the
 2. The Greek life office (or Frapp staff) clears the badge.
 
 So **a master list exists only for a verified council, and only covers chapters whose link is accepted.** Until then, chapter forms feed only the chapter ([below](#before-the-chapters-council-link-is-accepted)).
+
+## A recruitment week at real scale
+
+Every rule below is checked against this week, not against one PNM and one chapter. **The numbers are assumptions to confirm with our IFC** before building: about 15 IFC chapters, 300 to 500 PNMs in a fall season, and a busy chapter working 60 to 80 prospects with 10 to 20 active recruiters.
+
+| When | Who | What they do | Where | What it needs from this design |
+| --- | --- | --- | --- | --- |
+| Tabling day | 3 or 4 brothers per chapter at a table | 30 to 50 PNMs scan the chapter's QR code and fill in the form on their own phones in under a minute. Brothers glance at who just signed up | PNM's phone; brothers' phones | Verify-first form that works on a phone over campus Wi-Fi; a new candidate appears in the pipeline within seconds; no laptop at the table |
+| The same evening | Recruitment chair | Splits the day's 40 new names among recruiters | Laptop, web | Bulk-assign owners from the list; filter by "New" and by QR label |
+| Every day | Each recruiter | Texts their 5 to 10 prospects outside Frapp, then logs "texted" in two taps | Phone | Log a contact from the candidate row in two taps, with no form to fill |
+| Event night | 2 brothers at the door | Mark 20 to 40 PNMs present as they arrive | Phone | Search the PNM roster by first name and tap; works with one hand; repeat taps are harmless |
+| Chapter meeting | Whole chapter | Talks through the `bid_ready` list and votes | Phones in the room | One-tap vote on each candidate; results only to `rush:view_results` |
+| Bid night | President or recruitment chair | Extends 10 to 20 bids | Phone or laptop | Extend from the board; window and eligibility checks explain themselves in plain words when they block |
+| The whole season | Council VP of Recruitment | Watches registration, verdicts and bid counts | Laptop, web | Counts and totals only while the season is open ([below](#council-officers-are-also-chapter-members)) |
+
+**Phone first.** Logging a contact, marking attendance, voting, moving a stage and reading a candidate's page must all work on mobile in the MVP. Setting up the form, managing stages and tags, merges, imports and reports may be web-only at first. The UI design owns the screens, but it may not move a phone action above to web-only.
 
 ## The council master list
 
@@ -124,7 +141,6 @@ Every route leads to the same record. A PNM is never created twice.
   - That stops a PNM from claiming another student's ID and receiving their grades ([§ Getting the data in](#getting-the-data-in)).
 - **Fuzzy matches are never merged automatically.**
   - These raise a suggestion in the council's merge queue (`council:recruitment_manage`), shown side by side:
-    - the same name and phone;
     - the same name and class year;
     - two verified emails claiming one school-supplied ID.
   - **A merge:**
@@ -140,7 +156,7 @@ Every route leads to the same record. A PNM is never created twice.
 
 | Kind | Fields |
 | --- | --- |
-| **Core, set by the council** | Legal first and last name; preferred name; verified email; school-supplied student ID; class year or entry term; phone (optional); pronouns (optional); major (optional); how they heard about recruitment; source and date |
+| **Core, set by the council** | Legal first and last name; preferred name; verified email; school-supplied student ID; class year or entry term; phone (optional, held by the chapters the PNM gave it to and never shown to the council, so the council's registration form doesn't ask for it); pronouns (optional); major (optional); how they heard about recruitment; source and date |
 | **The council's own questions** | Up to 10, using the same question types as a chapter form |
 | **Derived** | Interests; eligibility verdict; release status; recruitment outcome (none, bid outstanding, accepted at a chapter, or withdrawn) |
 
@@ -154,11 +170,12 @@ The council never reads a chapter's pipeline. It holds only what was sent up.
 
 | Comes from | The event | What it carries |
 | --- | --- | --- |
-| The PNM | Form submission, registration | The core fields, which chapter, the source |
+| The PNM | Form submission, registration | The core fields except phone, which chapter, the source. Phone stays with the chapters the PNM gave it to |
 | The PNM | Acceptance or decline of a bid | Which chapter, when |
 | The PNM | Withdrawal, deletion | The withdrawal or deletion |
 | The chapter | **Bid extended** | PNM, chapter, time, expiry. The chapter emits it when a member extends |
-| The chapter | **Bid recorded, rescinded or expired** | The outcome and time |
+| The chapter | **Bid declined (recorded), rescinded or expired** | The outcome and time |
+| The chapter | **Acceptance recorded and confirmed** | PNM, chapter, time. Sent only once the acceptance is confirmed ([§ Bids](#bids)) |
 | The school office | Grade import | Through the eligibility service only |
 
 **Chapter-private data has no event and never reaches the council:**
@@ -175,10 +192,8 @@ An IFC officer is usually a brother in one of the chapters the council covers. I
 - **Which chapter a PNM chose shows only for acceptances.** An acceptance is public to the chapters anyway, as "Accepted elsewhere".
 - **Held bid-day bids show only as counts per chapter** before release.
 - **Per-PNM, per-chapter detail** (who is interested where, who bid on whom) opens to the council when the season closes, for reports.
-- **Contact details** (phone) on the master list need `council:recruitment_manage`.
+- **Phone numbers are hidden from the council** (Paul, 2026-11-11, [decision 9](#decisions-for-paul)). The master list shows a PNM's verified email only. A council that needs to reach PNMs uses Frapp's own email to them, so no officer holds a list of every PNM's number.
 - **Every council read of a PNM record is logged.** The log is visible to the council president and to the school office.
-
-There's a residual risk: an officer with `council:recruitment_manage` still sees every PNM's phone. That is [decision 9](#decisions-for-paul).
 
 ### What chapters see on the master list
 
@@ -191,7 +206,7 @@ Winston deferred this ([answer 5](https://github.com/pdcarlson/Frapp/issues/4192
 | Comparable | CampusDirector's one-way push of the fields the council enables (unverified research) | The concept's opt-in directory; Discord Student Hubs | A shared spreadsheet passed around |
 | Risk | Chapters miss PNMs who registered but named no one | A new flow (the invitation to connect) | PNM data spreads to every chapter without the PNM choosing it |
 
-**Recommendation: A for MVP, B next, never C by default.** A needs no new flow and keeps interest as the PNM's own act.
+**Decided (Paul, 2026-11-11): A for MVP, B next, never C by default.** A needs no new flow and keeps interest as the PNM's own act.
 
 **Under every option, a chapter never sees:**
 - which other chapters a PNM is interested in;
@@ -278,9 +293,9 @@ All in one transaction, written server-side (ADR-27):
    - If an unlinked candidate in the chapter has the same name, the chapter is asked to confirm a link (`rush:add`).
 4. **Pushes the interest up**, if the chapter's council link is accepted ([above](#before-the-chapters-council-link-is-accepted)).
 5. **Tells the chapter:**
-   - **A push and an inbox item.** These go to holders of `rush:manage` and to the chapter's "recruitment contacts", a list `rush:manage` sets (default: the President).
+   - **A push and an inbox item.** These go to holders of `rush:manage` and to the chapter's **recruitment contacts**, a Group ([#4068 decision 6](https://github.com/pdcarlson/Frapp/issues/4068), #4076) that `rush:manage` picks on the Recruitment settings page (default: a Group holding the President). A Group holds no permissions, so a member of it who lacks `rush:view` is skipped, and the settings page says who that is. Each person's own notification settings still apply.
    - **An optional card.** If a holder of `rush:manage` names a channel, the existing rush candidate card is posted there, marked "from interest form". Two rules govern it:
-     - **Only to a channel restricted to `rush:view`.** The channel is offered only if its access requires `rush:view`, so no one without the key reads the card.
+     - **Only to a channel where everyone who can see it holds `rush:view`.** Channel access is a see list by tier, role and group ([#4068 decision 2](https://github.com/pdcarlson/Frapp/issues/4068), #3722), not a permission key, so the check runs on that list. It runs when the channel is picked, and again at every post, because the see list or someone's roles may have changed since. If the check fails at post time, the card isn't posted: the push and inbox item still go out, and holders of `rush:manage` are told once that the channel is no longer private enough.
      - **Name and stage only.** It carries no contact details and no answers.
 
      If the PNM deletes their information ([below](#the-pnms-own-view)), their name on the card is rewritten to "Withdrawn prospect". That's the same in-place rewrite the account-deletion name scrub does to cards ([`data-retention.md`](data-retention.md#individual-account-deletion)).
@@ -289,7 +304,7 @@ All in one transaction, written server-side (ADR-27):
 
 The text sits above the submit button, never behind a link. **It's a draft.** Legal and privacy copy is Paul's ([AGENTS.md § ADR discipline](../../AGENTS.md#adr-discipline)).
 
-> By submitting, you share this information with **{Chapter}**{ at {School}} so they can contact you about joining. {At a school:} Your name, email, class year and phone also go to the council {Chapter} belongs to on Frapp (today: **{Council}** / none yet), which keeps one recruitment list for {School}. The council sees how many chapters you've signed up with, and which one you join. Other chapters don't see that you signed up here. {Under option B or C, say exactly what other chapters see.} Frapp stores this for them. You can withdraw from this chapter, or delete your recruitment information entirely, at any time from the link we email you. We don't ask for your grades here. If the council checks eligibility, you'll be asked to sign a separate release in Frapp, unless you've already signed one with {School}. Either way, we'll tell you when grades arrive, and you can revoke at any time.
+> By submitting, you share this information with **{Chapter}**{ at {School}} so they can contact you about joining. {At a school:} Your name, email and class year (not your phone number) also go to the council {Chapter} belongs to on Frapp (today: **{Council}** / none yet), which keeps one recruitment list for {School}. The council sees how many chapters you've signed up with, and which one you join. Other chapters don't see that you signed up here. {Under option B or C, say exactly what other chapters see.} Frapp stores this for them. You can withdraw from this chapter, or delete your recruitment information entirely, at any time from the link we email you. We don't ask for your grades here. If the council checks eligibility, you'll be asked to sign a separate release in Frapp, unless you've already signed one with {School}. Either way, we'll tell you when your eligibility is checked, and you can revoke at any time.
 
 **The boxes:**
 - **Required:** "I agree, and I'm 18 or older." The Terms require 18 ([`legal.md`](legal.md)), and some first-year PNMs are 17. That's [decision 4](#decisions-for-paul).
@@ -356,7 +371,9 @@ Chat keeps working, and the card links to the candidate's page.
 **Notes**
 - **Reading needs a new key, `rush:read_notes`.**
   - [#4070's backfill](rush.md#permissions) gave `rush:notes` to every role that held `members:view`, including New Member, Alumni and custom roles. So "take `rush:notes` off Member" can't keep notes to a committee in existing chapters.
-  - A new key starts on nobody's backfilled role. It's seeded on the officer tier only.
+  - A new key starts on nobody's backfilled role. Tiers are each chapter's own ([#4068 decisions 5 and 10](https://github.com/pdcarlson/Frapp/issues/4068)), so there is no fixed "officer tier" to seed. Instead:
+    - **New chapters:** it's on in the top two starting tiers (Exec board, Officers and chairs), as decision 9 does for other officer defaults.
+    - **Existing chapters:** nobody holds it until an officer turns it on, because decision 9 keeps every new grant on an existing chapter opt-in. When the Rush pipeline ships, the Recruitment settings page shows "Nobody can read recruitment notes yet" with a button that turns it on for the top two tiers. Paul's own chapter needs this step too.
   - No one can read notes today, because notes aren't built. So this doesn't change [decision 12](rush.md#permissions)'s "today's behaviour".
 - **Writing stays on `rush:notes`.**
 - **Nobody reads notes about themselves.** A member never sees notes on a candidate linked to their own account or PNM record, whatever keys they hold. That covers a PNM who accepts a bid and joins as a New Member.
@@ -389,6 +406,7 @@ Chat keeps working, and the card links to the candidate's page.
 ### Events and attendance
 
 - **A recruitment event** is an ordinary chapter event ([`events.md`](events.md)) with an "Open to PNMs" switch, which needs `events:update`.
+  - **Event types** (#3730, built in #4198) gain a "Recruitment" type whose default turns "Open to PNMs" on, so a recruitment chair picks the type and doesn't have to find the switch. Like any value an event copies from its type, changing the type later doesn't rewrite past events.
   - It is listed on the chapter's form page with its name, time and location only.
   - **PNM attendance is its own record**, not a row in `event_attendance`. Member check-in awards points through the `check_in_event` RPC, and a PNM is not a member.
 - **MVP: marking from the roster.** A member with `rush:add` marks a candidate present on the event's PNM roster. That also:
@@ -419,14 +437,20 @@ Chat keeps working, and the card links to the candidate's page.
 | --- | --- | --- |
 | **Extend** | `rush:bid` | Allowed only from `none` or `expired`. Any other state returns 409, so an old card can't undo an acceptance ([below](#compatibility-with-shipped-clients)). Blocked outside the council's bid window. For **Not eligible**, blocked or warned, as the council chooses. For **Pending**, warned. Stores the verdict at the time and gets an expiry (the council default, which the chapter can shorten). Pushed up as *bid extended*. Under bid-day release, held until release ([§ Bid day](#bid-day)) |
 | **Accept or decline** | The PNM, in [their own view](#the-pnms-own-view) | While the bid is open. A PNM can accept one bid per season unless the council turns that rule off ([§ Rules](#rules)) |
-| **Record an acceptance or decline** | `rush:bid` | For a paper bid card or a verbal answer. Shown as "Recorded by {member}". Pushed up the same way |
+| **Record a decline** | `rush:bid` | For a paper bid card or a verbal answer. Shown as "Recorded by {member}". Pushed up at once, since a decline changes nothing at other chapters |
+| **Record an acceptance** | `rush:bid` | For a paper bid card or a verbal answer. Shown as "Recorded by {member}, waiting to be confirmed". **It stays inside the chapter until it is confirmed** (below) |
+| **Confirm a recorded acceptance** | The PNM in their own view (one tap, from an email Frapp sends them at once), or a holder of `rush:manage` | Only then is it pushed up and do the [acceptance effects](#bids) run. A recorded acceptance nobody confirms by the bid's expiry stays `extended` and expires as usual |
 | **Rescind** | `rush:manage` | Needs a reason. Pushed up |
 | **Expire** | The system | When the expiry passes with no answer. Pushed up |
 
-**When a PNM accepts:**
+**Why a recorded acceptance waits.** Under [#4068 decision 12](rush.md#permissions), every member holds `rush:bid` by default. An acceptance closes the PNM's bids at other chapters and shows them "Accepted elsewhere", so one member's mistaken tap would reach every other chapter. Confirmation keeps those effects behind the PNM or an officer (Paul, 2026-11-11).
+
+**When a PNM accepts** (or a recorded acceptance is confirmed):
 - Under the one-acceptance rule, their other open bids close as `declined`, reason "accepted elsewhere".
 - Other chapters with an interest see "Accepted elsewhere".
-- The PNM gets this chapter's **invite to join as a New Member**, through today's invite flow and its legal acceptance.
+- The PNM gets this chapter's **invite to join as a new member**, through today's invite flow and its legal acceptance.
+  - **The invite carries the chapter's new-member role,** the role in the starting tier set's New members tier ([#4068 decision 10](https://github.com/pdcarlson/Frapp/issues/4068)), not the chapter's default invite role (`default_invite_role_id`, which in some chapters is a full-member role such as Brothers).
+  - **Picking that role** is a setting on the Recruitment settings page. It defaults to the first role in the New members tier, and the page asks the chapter to pick one when that tier has none or has been renamed away.
 - Joining creates a normal membership. The candidate stays as recruitment history, subject to [retention](#retention-and-deletion).
 
 **After a release is revoked,** a bid's stored verdict reads "Pending (release revoked)" to the chapter. The original is kept only in the eligibility audit, which only `council:eligibility_manage` can read ([§ The FERPA release](#the-ferpa-release)).
@@ -466,6 +490,19 @@ The funnel that [`rush.md` § Funnel](rush.md#funnel) describes but was never bu
 
 All of it needs `rush:view`, except vote counts and rating averages, which need `rush:view_results`.
 
+### Where the chapter's settings live
+
+Every chapter-side setting in this design goes on the **Recruitment module page** in Chapter settings, the one-page-per-module layout from #4073 (switch, rules that save, who can). Nothing here adds a second recruitment settings screen. The page holds:
+
+- the interest form: open or closed, blurb, questions, QR labels, replace form;
+- stages and their categories, tags, and the stale-days setting;
+- the recruitment contacts Group and the card channel;
+- the new-member role an accepted PNM's invite carries;
+- turning on `rush:read_notes` for existing chapters ([§ Notes](#notes-tags-ratings));
+- its "Who can" list, which shows the `rush:*` keys in plain words like every other module page.
+
+Holders of `rush:manage` can edit them; the page is read-only to everyone else who can open Chapter settings.
+
 ### Permission map
 
 This is what each key gates in this design. Today's meaning of each key is in [`rush.md` § Permissions](rush.md#permissions). Every **chapter-side** route keeps today's class gates (the `rush` module on, plus `members:view`). PNM routes and the public form use the PNM's verified session or the one-time code instead (ADR-27).
@@ -475,20 +512,20 @@ This is what each key gates in this design. Today's meaning of each key is in [`
 | `rush:view` | The pipeline, the candidate page, the dashboard, tags, contact details the PNM supplied, the eligibility verdict, the event PNM roster, form answers |
 | `rush:add` | Add a candidate; move stages; log contacts; claim an unowned candidate; mark PNM attendance; set follow-ups; confirm a candidate↔PNM link or a referrer match. **New label: "Add and work prospects"** |
 | `rush:notes` | Write notes; tag candidates |
-| `rush:read_notes` (**new**) | Read notes. Seeded on the officer tier only ([above](#notes-tags-ratings)) |
+| `rush:read_notes` (**new**) | Read notes. On for the top two starting tiers in new chapters; opt-in for existing ones ([above](#notes-tags-ratings)) |
 | `rush:vote` | Vote; rate; cast a formal bid-vote ballot |
 | `rush:view_results` | Vote counts, rating averages, bid-vote results |
-| `rush:bid` | Extend a bid; record an acceptance or decline |
-| `rush:manage` | Open, close, edit or replace the form; QR labels; recruitment contacts; the card channel; stages, tags and the stale-days setting; assign owners; rescind; merge candidates; delete; CSV export; open a formal bid vote |
+| `rush:bid` | Extend a bid; record a decline; record an acceptance (which waits for confirmation) |
+| `rush:manage` | Open, close, edit or replace the form; QR labels; the recruitment contacts Group; the card channel; the new-member role; stages, tags and the stale-days setting; assign owners; confirm a recorded acceptance; rescind; merge candidates; delete; CSV export; open a formal bid vote |
 
 **On the clients:** web and mobile hide what a role can't do, using `can` from `@repo/validation`. That closes #4084's client half for every action here.
 
 ## Eligibility
 
 Eligibility is whether a PNM may receive a bid under the school's and council's rules.
-- **It depends on Paul's GPA-storage decision** ([decision 1](#decisions-for-paul)).
-- Winston's answer is to store GPAs, with extra care.
-- The verdict-only fallback is at the end of this section.
+- **The MVP stores verdicts, not grades** (Paul, 2026-11-11, [decision 1](#decisions-for-paul)). See [§ The MVP: verdict only](#the-mvp-verdict-only).
+- Winston's answer was to store GPAs, with extra care. That stays the later option, and nothing stores a grade until a lawyer has answered decision 1's questions.
+- The sections on stored grades below (care rules, the read log, encryption, raw-grade deletion, showing GPA to `council:eligibility_manage`) apply only if that later decision is yes. Everything else here applies to the MVP.
 
 ### The rule
 
@@ -599,15 +636,17 @@ The research's examples (CU Boulder, Michigan, MSU, CMU, unverified) name the of
 
 **Deletion.** Raw grades are deleted when the season closes, at most 30 days after (a council setting). The verdict and the release record stay until [retention](#retention-and-deletion) removes them.
 
-### If Paul says no to storing GPA
+### The MVP: verdict only
 
-**The verdict-only fallback:**
+**How it works:**
 - The import computes each verdict in memory.
 - It stores only the verdict, its `as_of` date and which clauses passed, and discards the grades.
 - The release still applies, because the verdict is derived from the record.
 - Chapters see no difference.
 
-**What's lost:**
+**Even in memory,** the grade file follows the [care rules](#care-rules-for-grade-data): it never reaches logs, Sentry or analytics, and the uploaded file is deleted as soon as the import is confirmed or cancelled.
+
+**What's lost, accepted for the MVP:**
 - the council can't see a GPA in Frapp;
 - an override can't show the number it overrides;
 - a rule change needs a re-import.
@@ -687,7 +726,7 @@ Per-PNM, per-chapter detail is available only once the season closes ([above](#c
 - **bids**, with Accept and Decline;
 - their eligibility verdict and reason;
 - their release: sign or revoke;
-- who has read their grades.
+- who has read their grades, if grades are ever stored ([§ Eligibility](#eligibility)).
 
 **What they can do:**
 - **Withdraw from one chapter.** The interest is removed. The chapter's candidate moves to Closed with reason "Withdrew" and loses the contact details the PNM supplied.
@@ -724,14 +763,16 @@ Notes about a PNM who became a brother shouldn't follow them into membership. Th
 
 ## Phasing
 
-### MVP: our school's IFC, this cycle
+### MVP: our school's IFC, the first season after Paul sets a date
 
 This builds on the URL and data-model phases 1 and 2 of the concept.
 
 1. **The chapter pipeline.**
    - Stage categories with default stages; notes, tags and ratings.
    - Contacts, owner, follow-ups and the stale alert.
-   - Bid extend, accept, decline, record and expire, with the shipped-client compatibility above.
+   - Bid extend, accept, decline, record and expire, with the shipped-client compatibility above. A recorded acceptance waits for confirmation.
+   - The Recruitment module settings page, including the `rush:read_notes` opt-in for existing chapters and the new-member role.
+   - The [phone-first actions](#a-recruitment-week-at-real-scale) on mobile.
    - Name-lookup disambiguation; the dashboard.
    - Every `rush:*` key wired on the API **and** the clients (#4084), plus `rush:read_notes`.
 2. **PNM attendance, marked from the roster,** because the automatic move to Met needs it.
@@ -747,8 +788,8 @@ This builds on the URL and data-model phases 1 and 2 of the concept.
    - The council-officer limits and "Accepted elsewhere".
 5. **Eligibility.**
    - The rule, the release with revoke, and grade import with minimization.
-   - The verdict, overrides, the read log and deletion.
-   - Or the verdict-only fallback.
+   - The verdict and overrides.
+   - **Verdict only** ([above](#the-mvp-verdict-only)). Storing grades waits for counsel.
 6. **The season, from the council side.**
    - Dates, the bid window, eligibility before bids, and one acceptance.
    - **Rolling** bids.
@@ -788,33 +829,30 @@ Panhellenic formal recruitment needs its own design pass, not settings on the IF
 
 ## Decisions for Paul
 
-Each of these is on the [AGENTS.md raise-first list](../../AGENTS.md#adr-discipline) or is an open product decision.
+Each of these is on the [AGENTS.md raise-first list](../../AGENTS.md#adr-discipline) or is an open product decision. **Paul reviewed them on 2026-11-11** and took the recommendation on each. Where a call still needs a lawyer or his sign-off on exact wording, it says so.
 
-1. **Storing GPA.** Winston says store it, with extra care.
-   - **What's at stake:** the security risk and the legal exposure, including FERPA's limits on redisclosure and state student-privacy laws (many cover K-12, not all).
-   - **Questions for a lawyer before real grades are imported:**
+1. **Storing GPA. Decided: verdict only for the MVP.**
+   - The import computes the verdict and discards the grades ([§ The MVP: verdict only](#the-mvp-verdict-only)). Chapters see no difference.
+   - Winston's preference, storing GPA with extra care, is the later option. It waits for a lawyer's answers to these questions, which also apply to the verdict-only MVP:
      - Is Frapp a school official, the council's agent, or a named recipient under the release?
      - Is the IFC a student organization or a school body for FERPA purposes?
      - May Frapp rely on a school's attestation that a release is on file?
      - Is the e-signature (a verified email code plus a typed name and date) enough?
-2. **The FERPA notice and the Privacy Policy.**
-   - [`legal.md` § FERPA Notice](legal.md#ferpa-notice) says Frapp "does not access student education records". Eligibility makes that untrue.
-   - The Privacy Policy must cover people without accounts (form submitters) and grade data.
-   - Both are legal copy.
-3. **The consent text and the release text,** both drafted here.
-4. **PNMs under 18.** The Terms require 18 (decision 2026-09-23, #2261), and some first-year PNMs are 17, so today they're turned away.
-   - Allowing them means a Terms change and parental-consent questions.
+   - **What's at stake if grades are stored:** the security risk and the legal exposure, including FERPA's limits on redisclosure and state student-privacy laws (many cover K-12, not all).
+2. **The FERPA notice and the Privacy Policy. Paul approves the wording before any form goes live.**
+   - [`legal.md` § FERPA Notice](legal.md#ferpa-notice) says Frapp "does not access student education records". Even a verdict computed from the school's records makes that untrue.
+   - The Privacy Policy must cover people without accounts (form submitters) and eligibility data.
+3. **The consent text and the release text,** both drafted here. **Paul approves the wording before any form goes live.**
+4. **PNMs under 18. Decided: keep 18 and older for now** (the Terms, decision 2026-09-23, #2261). Some first-year PNMs are 17, so they're turned away.
+   - Whether to allow them goes on the lawyer's list with decision 1: it means a Terms change and parental-consent questions.
    - The council's or school's own rules may also bar recruiting minors.
-5. **Council billing.** Winston says someone on the IFC pays. That's a pricing call, and the SMS phase adds a cost.
-6. **Revisiting [#4068 decision 12](rush.md#permissions).** Paul set "today's behaviour" as the recruitment default: every member can vote and bid.
-   - This design leaves that as it is.
-   - It seeds the new `rush:read_notes` on officers only.
-   - **The question is whether he wants votes and bids tightened too, now that a full pipeline sits on them.**
-7. **The retention defaults:** 30 days for chapter notes, grades deleted at season close, 180 days for PNMs who don't join.
-8. **The default master-list option:** A recommended, B next. Winston deferred this.
-9. **Council officers and contact details.**
-   - Even with the [season limits](#council-officers-are-also-chapter-members), an officer with `council:recruitment_manage` sees every PNM's phone. That officer is usually a chapter member.
-   - **Options:**
-     - accept it, with read logging;
-     - hide phone from the council entirely;
-     - require a neutrality pledge, as IFCs often do for recruitment chairs.
+5. **Council billing. Decided: free for our IFC's pilot, priced later.** Winston says someone on the IFC pays; the price is set after the pilot. The SMS phase would add a cost.
+6. **Revisiting [#4068 decision 12](rush.md#permissions). Decided: no further tightening.**
+   - Every member keeps today's vote and bid by default; chapters tighten it themselves.
+   - The one change is that a recorded acceptance waits for the PNM or a holder of `rush:manage` to confirm it ([§ Bids](#bids)), because its effects reach other chapters.
+   - `rush:read_notes` follows decision 9's defaults ([§ Notes](#notes-tags-ratings)).
+7. **The retention defaults. Decided as proposed:** 30 days after season close for chapter notes and other private pipeline data, and 180 days for PNMs who don't join. Raw grades don't arise in the MVP.
+8. **The default master-list option. Decided: A** (interested only) for MVP, B next, never C by default.
+9. **Council officers and contact details. Decided: phone numbers are hidden from the council** ([§ Officers in a chapter](#council-officers-are-also-chapter-members)). The council reaches PNMs through Frapp's own email. Read logging stays.
+
+**Still open:** when to build. Recruitment is behind the beta, and no build issues are filed until Paul sets a date ([status](#ifc-recruitment-master-list-interest-forms-chapter-pipeline-eligibility)). The real-scale numbers in [§ A recruitment week](#a-recruitment-week-at-real-scale) are to be confirmed with our IFC before then.
