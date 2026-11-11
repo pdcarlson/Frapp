@@ -4539,7 +4539,7 @@ export interface components {
             pinned_at: string | null;
             edited_at: string | null;
             is_deleted: boolean;
-            /** @description `users.id` of everyone mentioned, resolved server-side at send time. Null on a masked row: a mention overrides a per-channel mute, so leaving it would let a blocked member keep poking the blocker through a masked row. */
+            /** @description `users.id` of everyone mentioned, plus a reply's quoted author, resolved server-side at send time. Null on a masked row: a mention overrides a per-channel mute, so leaving it would let a blocked member keep poking the blocker through a masked row. */
             mentions?: string[] | null;
             /**
              * Format: uuid
