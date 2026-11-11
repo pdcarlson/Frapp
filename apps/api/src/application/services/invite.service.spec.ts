@@ -154,6 +154,7 @@ describe('InviteService', () => {
       create: jest.fn(),
       update: jest.fn(),
       anonymize: jest.fn(),
+      compareAndSetWhatsNewSeen: jest.fn(),
     };
     mockChatService = {
       getOrCreateDm: jest

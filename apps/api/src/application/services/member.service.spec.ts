@@ -80,6 +80,7 @@ describe('MemberService', () => {
       create: jest.fn(),
       update: jest.fn(),
       anonymize: jest.fn(),
+      compareAndSetWhatsNewSeen: jest.fn(),
     };
 
     mockRoleRepo = {

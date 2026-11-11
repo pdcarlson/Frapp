@@ -13,8 +13,7 @@ import {
   isAllowedUploadExtension,
   isAllowedUploadMime,
   isWithinUploadSizeLimit,
-  isNewerReleaseNoteVersion,
-  parseReleaseNoteVersion,
+  isLaterReleaseNoteVersion,
 } from '@repo/validation';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
@@ -39,6 +38,9 @@ import { reportCaughtFailure } from '../../infrastructure/observability/report-c
  * confirm, so the delete can never race one.
  */
 const STRAY_UPLOAD_AGE_MS = 24 * 60 * 60 * 1000;
+
+/** Rounds of read-then-compare-and-set before {@link UserService.recordWhatsNewSeen} gives up. */
+const WHATS_NEW_CAS_ATTEMPTS = 3;
 
 @Injectable()
 export class UserService {
@@ -81,21 +83,24 @@ export class UserService {
    * rollback, must not lower it, or a device that already showed the newer
    * entry's notes would see them pass for unread elsewhere. Answers with the
    * version the account holds afterwards.
+   *
+   * The write is a compare-and-set against the version just read, so two
+   * devices writing at once can't lower it: the loser reads again and either
+   * stops (the winner was newer) or tries once more.
    */
   async recordWhatsNewSeen(id: string, version: string): Promise<string> {
-    const user = await this.requireLiveUser(id);
-    const stored = user.whats_new_seen_version ?? null;
-    if (
-      stored !== null &&
-      !isNewerReleaseNoteVersion(
-        parseReleaseNoteVersion(version),
-        parseReleaseNoteVersion(stored),
-      )
-    ) {
-      return stored;
+    let user = await this.requireLiveUser(id);
+    for (let attempt = 0; attempt < WHATS_NEW_CAS_ATTEMPTS; attempt++) {
+      const stored = user.whats_new_seen_version ?? null;
+      if (!isLaterReleaseNoteVersion(version, stored)) return stored ?? version;
+      if (await this.userRepo.compareAndSetWhatsNewSeen(id, stored, version)) {
+        return version;
+      }
+      user = await this.requireLiveUser(id);
     }
-    await this.userRepo.update(id, { whats_new_seen_version: version });
-    return version;
+    // Another device kept winning: what it wrote is at least as recent as a
+    // read a moment ago, and losing here only costs one more open elsewhere.
+    return user.whats_new_seen_version ?? version;
   }
 
   /** `avatar_url` made renderable; see {@link ProfilePhotoUrlService}. */

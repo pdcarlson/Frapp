@@ -13,6 +13,7 @@ import { reactNativeStub } from "@/test/react-native-stub";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
+import { markWhatsNewQuiet, markWhatsNewRead } from "@/lib/whats-new";
 
 /**
  * s16 Settings, rendered. It renders `app/(app)/preferences.tsx` but lives
@@ -350,6 +351,26 @@ describe("Settings copy", () => {
     );
     act(() => row.props.onPress());
     expect(densitySheet.present).toHaveBeenCalled();
+  });
+
+  it("marks the What's new row while another device showed the newest entry first (#4043)", async () => {
+    const whatsNewRow = (tree: ReactTestRenderer) =>
+      tree.root.find(
+        (node) =>
+          node.props.accessibilityHint ===
+            "Shows the latest changes to the app." &&
+          typeof node.props.onPress === "function",
+      );
+    const plain = render();
+    expect(whatsNewRow(plain).props.accessibilityValue).toBeUndefined();
+    await act(async () => {
+      await markWhatsNewQuiet("2026-11-10#1");
+    });
+    expect(whatsNewRow(plain).props.accessibilityValue).toBe("New");
+    await act(async () => {
+      await markWhatsNewRead("2026-11-10#1");
+    });
+    expect(whatsNewRow(plain).props.accessibilityValue).toBeUndefined();
   });
 
   it("gives an editor's accent row no narration, and no web footnote", () => {

@@ -23,8 +23,7 @@
 import { useSyncExternalStore } from "react";
 import {
   RELEASE_NOTES,
-  isNewerReleaseNoteVersion,
-  parseReleaseNoteVersion,
+  isLaterReleaseNoteVersion,
   releaseNoteVersion,
   type ReleaseNote,
 } from "@repo/validation";
@@ -55,16 +54,7 @@ export function readWhatsNewSeen(): string | null {
  * the newer entry would open a second time.
  */
 function recordWhatsNewSeen(version: string): void {
-  const stored = readWhatsNewSeen();
-  if (
-    stored !== null &&
-    !isNewerReleaseNoteVersion(
-      parseReleaseNoteVersion(version),
-      parseReleaseNoteVersion(stored),
-    )
-  ) {
-    return;
-  }
+  if (!isLaterReleaseNoteVersion(version, readWhatsNewSeen())) return;
   try {
     window.localStorage.setItem(WHATS_NEW_SEEN_STORAGE_KEY, version);
   } catch {
@@ -149,6 +139,20 @@ export function markWhatsNewQuiet(version: string): void {
   setQuiet(true);
 }
 
+/**
+ * Drops the quiet mark without recording anything: the signed-in account
+ * hasn't seen the newest entry, so a mark left by another account (a shared
+ * browser), or by a rolled-back account version, isn't backed by anything.
+ */
+export function clearWhatsNewQuiet(): void {
+  try {
+    window.localStorage.removeItem(WHATS_NEW_QUIET_STORAGE_KEY);
+  } catch {
+    // Nothing to clear.
+  }
+  setQuiet(false);
+}
+
 /** Brings a quiet mark set on an earlier page load back. */
 export function restoreWhatsNewQuiet(): void {
   try {
@@ -177,6 +181,11 @@ export function markWhatsNewSeen(): string | null {
   setPending(null);
   setQuiet(false);
   return version;
+}
+
+/** The entries were read elsewhere before the host could open them. */
+export function clearWhatsNewPending(): void {
+  setPending(null);
 }
 
 /** Records `version` without the notes having been shown (a new member). */

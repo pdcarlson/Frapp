@@ -296,8 +296,43 @@ describe("WhatsNewHost", () => {
       const page = render(<WhatsNew />);
       expect(unreadMark()).toHaveTextContent("read");
       expect(quietKey()).toBeNull();
+      // Reading the page tells the account too.
+      expect(data.recordOnAccount).toHaveBeenCalledWith(
+        releaseNoteVersion(NEWEST),
+      );
       page.unmount();
       reloaded.unmount();
+    });
+
+    it("drops a quiet mark the signed-in account doesn't back (another account's)", () => {
+      window.localStorage.setItem(
+        WHATS_NEW_SEEN_STORAGE_KEY,
+        releaseNoteVersion(NEWEST),
+      );
+      window.localStorage.setItem(
+        WHATS_NEW_QUIET_STORAGE_KEY,
+        releaseNoteVersion(NEWEST),
+      );
+      data.account = { settled: true, seen: null };
+      renderHost();
+      wait();
+      expect(unreadMark()).toHaveTextContent("read");
+      expect(quietKey()).toBeNull();
+    });
+
+    it("keeps a quiet mark offline, when the account can't say", () => {
+      window.localStorage.setItem(
+        WHATS_NEW_SEEN_STORAGE_KEY,
+        releaseNoteVersion(NEWEST),
+      );
+      window.localStorage.setItem(
+        WHATS_NEW_QUIET_STORAGE_KEY,
+        releaseNoteVersion(NEWEST),
+      );
+      data.account = { settled: true, seen: undefined };
+      renderHost();
+      wait();
+      expect(unreadMark()).toHaveTextContent("unread");
     });
 
     it("still opens when the account saw only an older entry", () => {

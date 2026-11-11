@@ -27,7 +27,9 @@ import { ReleaseNoteCard } from "@/components/whats-new/release-note-card";
 import { isTourDue } from "@/lib/onboarding/tour";
 import { useFrappTheme } from "@/lib/theme";
 import {
+  clearWhatsNewQuiet,
   markWhatsNewQuiet,
+  markWhatsNewRead,
   readWhatsNewSeen,
   recordWhatsNewSeen,
   startWhatsNewBootRead,
@@ -95,6 +97,14 @@ export function WhatsNewHost() {
         readWhatsNewSeen(),
         isTourDue(userId),
       ]);
+      // A known account that hasn't seen the newest entry backs no quiet mark
+      // (another account's, on a shared phone).
+      if (
+        accountSeen.current !== undefined &&
+        !accountHasSeenNewest(RELEASE_NOTES, accountSeen.current)
+      ) {
+        clearWhatsNewQuiet();
+      }
       const decision = decideWhatsNew({
         notes: RELEASE_NOTES,
         seen,
@@ -127,7 +137,8 @@ export function WhatsNewHost() {
   useEffect(() => {
     if (!shown || !sheet.current) return;
     sheet.current.present();
-    void recordWhatsNewSeen(shown.record);
+    // Read here now: a quiet mark from an earlier entry goes too.
+    void markWhatsNewRead(shown.record);
     recordOnAccount(shown.record);
   }, [shown, recordOnAccount]);
 

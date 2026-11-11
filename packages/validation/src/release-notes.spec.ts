@@ -8,6 +8,7 @@ import {
   isNewerReleaseNoteVersion,
   decideWhatsNew,
   accountHasSeenNewest,
+  isLaterReleaseNoteVersion,
   RELEASE_NOTE_VERSION_PATTERN,
   type ReleaseNote,
 } from "./release-notes";
@@ -239,5 +240,19 @@ describe("RELEASE_NOTE_VERSION_PATTERN", () => {
     for (const bad of ["", "2026-11-09", "2026-11-09#", "x#1", "2026-11-09#12345"]) {
       expect(bad).not.toMatch(RELEASE_NOTE_VERSION_PATTERN);
     }
+  });
+});
+
+describe("isLaterReleaseNoteVersion", () => {
+  it("counts anything as news against nothing, and a later day or more lines against a version", () => {
+    expect(isLaterReleaseNoteVersion("2026-11-09#1", null)).toBe(true);
+    expect(isLaterReleaseNoteVersion("2026-11-10#1", "2026-11-09#9")).toBe(true);
+    expect(isLaterReleaseNoteVersion("2026-11-10#10", "2026-11-10#9")).toBe(true);
+  });
+
+  it("never counts the same version or an older one", () => {
+    expect(isLaterReleaseNoteVersion("2026-11-10#9", "2026-11-10#9")).toBe(false);
+    expect(isLaterReleaseNoteVersion("2026-11-10#8", "2026-11-10#9")).toBe(false);
+    expect(isLaterReleaseNoteVersion("2026-11-09#20", "2026-11-10#1")).toBe(false);
   });
 });

@@ -95,7 +95,8 @@ export function AccountMenu({
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [editingLine, setEditingLine] = useState(false);
   const own = useOwnStatus();
-  // Entries this browser hasn't shown yet (`lib/whats-new.ts`). The dot is
+  // Entries this browser hasn't shown yet, or the quiet mark: another device
+  // showed them first (#4043; both in `lib/whats-new.ts`). The dot is
   // neutral, as every unread mark is (components.md § Chrome weight).
   const whatsNewUnread = useWhatsNewUnread();
   const { data } = useCurrentUser();

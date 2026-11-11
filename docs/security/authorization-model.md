@@ -117,6 +117,7 @@ The interesting half. Each takes either **no** chapter id, or a client-supplied 
 | `POST /invites/preview` | A | Reads by opaque invite code, as redeem does, and returns only what joining would show the caller: the chapter's name, school, text mark and color, the inviter's display name and the role. A live code is the capability; a dead one is 410 (#3352) |
 | `GET/PATCH /users/me`, `DELETE /users/me` | A | **D** |
 | `GET/POST /users/me/legal-acceptance` | A | **D** — reads and stamps the caller's own row only; no chapter context, because a user accepts before they join one (#2302) |
+| `GET/PUT /users/me/whats-new` | A | **D** — reads and moves forward the caller's own `whats_new_seen_version` only; no chapter context (#4043) |
 | `GET /users/me/permissions`, `POST /users/me/avatar-url` | A+C | Chapter context needed; guard supplies it |
 | `POST /users/me/avatar` | A+C | **D** — `confirmAvatarUpload` accepts only a path directly in the caller's own `chapters/<active>/profiles/<uid>/` folder, and only once the object exists (#732) |
 | `DELETE /users/me/avatar` | A | **D** — clears the caller's own photo; deletes the object only when the stored path is in the caller's own folder |

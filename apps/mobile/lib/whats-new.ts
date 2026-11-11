@@ -45,9 +45,9 @@
  * disk and look like an old install.
  */
 
-import { useEffect, useSyncExternalStore } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { CHAT_KV_PREFIX } from "@/lib/chat/key-value-store";
+import { createStoredPreference } from "@/lib/stored-preference";
 
 /** `releaseNoteVersion` of the newest entry this phone has shown or skipped. */
 export const WHATS_NEW_SEEN_STORAGE_KEY = "frapp.mobile.whats-new-seen";
@@ -55,7 +55,7 @@ export const WHATS_NEW_SEEN_STORAGE_KEY = "frapp.mobile.whats-new-seen";
 /**
  * Set while Settings → What's new carries the quiet mark: another device
  * showed the newest entry, and this phone hasn't opened What's new since.
- * Holds that entry's `releaseNoteVersion`.
+ * Holds `"quiet"` while set.
  */
 export const WHATS_NEW_QUIET_STORAGE_KEY = "frapp.mobile.whats-new-quiet";
 
@@ -133,25 +133,12 @@ export async function recordWhatsNewSeen(
 
 // ── Quiet mark ──────────────────────────────────────────────────────────────
 
-type QuietStorage = Pick<
-  typeof AsyncStorage,
-  "getItem" | "setItem" | "removeItem"
->;
-
-/** `null` until read from disk this process. */
-let quiet: boolean | null = null;
-const listeners = new Set<() => void>();
-
-function setQuiet(next: boolean): void {
-  if (quiet === next) return;
-  quiet = next;
-  for (const listener of listeners) listener();
-}
-
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
+/** On the shared per-device store; anything but `"quiet"` reads as no mark. */
+const quietMark = createStoredPreference<"quiet" | "none">({
+  key: WHATS_NEW_QUIET_STORAGE_KEY,
+  parse: (raw) => (raw === "quiet" ? "quiet" : "none"),
+  fallback: "none",
+});
 
 /**
  * Another device showed the notes up to `version`: record it here so they
@@ -159,55 +146,39 @@ function subscribe(listener: () => void): () => void {
  */
 export async function markWhatsNewQuiet(
   version: string,
-  storage: QuietStorage = AsyncStorage,
+  storage: Storage = AsyncStorage,
 ): Promise<void> {
-  setQuiet(true);
+  quietMark.set("quiet");
   await recordWhatsNewSeen(version, storage);
-  try {
-    await storage.setItem(WHATS_NEW_QUIET_STORAGE_KEY, version);
-  } catch {
-    // The mark lasts this process only.
-  }
 }
 
-/** What's new was opened on this phone: record the newest entry, drop the mark. */
+/**
+ * What's new was read on this phone (the sheet presented, or the screen
+ * opened): record the newest entry and drop the mark.
+ */
 export async function markWhatsNewRead(
   version: string,
-  storage: QuietStorage = AsyncStorage,
+  storage: Storage = AsyncStorage,
 ): Promise<void> {
-  setQuiet(false);
+  quietMark.set("none");
   await recordWhatsNewSeen(version, storage);
-  try {
-    await storage.removeItem(WHATS_NEW_QUIET_STORAGE_KEY);
-  } catch {
-    // It reappears until the next open at worst.
-  }
 }
 
-async function loadWhatsNewQuiet(storage: QuietStorage): Promise<void> {
-  if (quiet !== null) return;
-  let stored: string | null = null;
-  try {
-    stored = await storage.getItem(WHATS_NEW_QUIET_STORAGE_KEY);
-  } catch {
-    // Unreadable storage holds no mark.
-  }
-  if (quiet === null) setQuiet(stored !== null);
+/**
+ * Drops the mark without recording anything: the signed-in account hasn't
+ * seen the newest entry, so a mark left by another account on this phone, or
+ * by a rolled-back account version, isn't backed by anything.
+ */
+export function clearWhatsNewQuiet(): void {
+  quietMark.set("none");
 }
 
 /** Whether Settings → What's new carries the quiet mark. */
-export function useWhatsNewQuiet(storage: QuietStorage = AsyncStorage): boolean {
-  useEffect(() => {
-    void loadWhatsNewQuiet(storage);
-  }, [storage]);
-  return useSyncExternalStore(
-    subscribe,
-    () => quiet === true,
-    () => false,
-  );
+export function useWhatsNewQuiet(): boolean {
+  return quietMark.use() === "quiet";
 }
 
 /** Test seam: a fresh process. */
 export function resetWhatsNewQuietForTests(): void {
-  quiet = null;
+  quietMark.resetForTests();
 }

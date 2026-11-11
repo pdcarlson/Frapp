@@ -27,6 +27,8 @@ import { ReleaseNoteEntry } from "@/components/whats-new/whats-new";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import {
   accountPredatesNote,
+  clearWhatsNewPending,
+  clearWhatsNewQuiet,
   markWhatsNewQuiet,
   markWhatsNewSeen,
   markWhatsNewUnread,
@@ -110,6 +112,13 @@ export function WhatsNewHost() {
     if (decided.current || !newest || !user || !membership) return;
     if (!account.settled) return;
     decided.current = true;
+    // A known account that hasn't seen the newest entry backs no quiet mark.
+    if (
+      account.seen !== undefined &&
+      !accountHasSeenNewest(RELEASE_NOTES, account.seen)
+    ) {
+      clearWhatsNewQuiet();
+    }
     const existingInstall = accountPredatesNote(user.created_at, newest);
     const decision = decideWhatsNew({
       notes: RELEASE_NOTES,
@@ -147,11 +156,15 @@ export function WhatsNewHost() {
         tourDue: false,
         existingInstall: pending.existingInstall,
       });
-      const version = markWhatsNewSeen();
-      if (decision.show.length > 0) {
-        setShown(decision.show);
-        if (version) recordOnAccount(version);
+      if (decision.show.length === 0) {
+        // Read elsewhere meanwhile (the page, another tab): clear only what
+        // this host set, and leave a quiet mark another tab may have set.
+        clearWhatsNewPending();
+        return;
       }
+      const version = markWhatsNewSeen();
+      setShown(decision.show);
+      if (version) recordOnAccount(version);
     }, WHATS_NEW_OPEN_DELAY_MS);
     return () => clearTimeout(timer);
   }, [pending, pathname, recordOnAccount]);

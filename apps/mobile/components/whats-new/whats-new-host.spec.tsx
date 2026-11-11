@@ -180,7 +180,7 @@ describe("WhatsNewHost", () => {
       expect(present).not.toHaveBeenCalled();
       expect(shown(tree)).toEqual([]);
       expect(values.get(WHATS_NEW_SEEN_STORAGE_KEY)).toBe(NEWEST_ID);
-      expect(values.get(WHATS_NEW_QUIET_STORAGE_KEY)).toBe(NEWEST_ID);
+      expect(values.get(WHATS_NEW_QUIET_STORAGE_KEY)).toBe("quiet");
       expect(account.record).not.toHaveBeenCalled();
     });
 
@@ -209,6 +209,22 @@ describe("WhatsNewHost", () => {
         await vi.advanceTimersByTimeAsync(WHATS_NEW_OPEN_DELAY_MS + 10);
       });
       expect(present).toHaveBeenCalledTimes(1);
+    });
+
+    it("drops an earlier quiet mark once its own sheet shows the notes", async () => {
+      values.set(WHATS_NEW_SEEN_STORAGE_KEY, "2000-01-01#1");
+      values.set(WHATS_NEW_QUIET_STORAGE_KEY, "quiet");
+      await mount();
+      expect(present).toHaveBeenCalledTimes(1);
+      expect(values.get(WHATS_NEW_QUIET_STORAGE_KEY)).toBe("none");
+    });
+
+    it("drops a quiet mark the signed-in account doesn't back (another account's)", async () => {
+      values.set(WHATS_NEW_SEEN_STORAGE_KEY, NEWEST_ID);
+      values.set(WHATS_NEW_QUIET_STORAGE_KEY, "quiet");
+      account.state = { settled: true, seen: null };
+      await mount();
+      expect(values.get(WHATS_NEW_QUIET_STORAGE_KEY)).toBe("none");
     });
 
     it("keeps a fresh install's first launch quiet, with no mark", async () => {

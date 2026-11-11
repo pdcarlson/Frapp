@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
+import { isLaterReleaseNoteVersion } from "@repo/validation";
 import { useFrappClient } from "./use-frapp-client";
 
 /**
@@ -71,20 +72,30 @@ export function useAccountWhatsNewSeen(options?: {
 /**
  * Tells the account a device showed What's new up to `version`. Best effort:
  * a failure only means another device may open the same notes once, as it
- * did before #4043, so it is retried briefly and never surfaced.
+ * did before #4043, so the UI never surfaces it, and it keeps each app's
+ * default retry policy for mutations. A version the cached answer already
+ * holds is not sent again, so reopening What's new costs no request.
  */
 export function useRecordWhatsNewSeen() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (version: string) => {
+    mutationFn: async (version: string): Promise<WhatsNewSeen> => {
+      const cached = queryClient.getQueryData<WhatsNewSeen>(
+        whatsNewSeenQueryKey(),
+      );
+      if (
+        cached &&
+        !isLaterReleaseNoteVersion(version, cached.seen_version ?? null)
+      ) {
+        return cached;
+      }
       const { data, error } = await client.PUT("/v1/users/me/whats-new", {
         body: { seen_version: version },
       });
       if (error) throw error;
       return data;
     },
-    retry: 2,
     onSuccess: (data) => {
       queryClient.setQueryData(whatsNewSeenQueryKey(), data);
     },

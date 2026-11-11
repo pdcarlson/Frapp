@@ -1,11 +1,16 @@
+import React, { act } from "react";
+import { create, type ReactTestRenderer } from "react-test-renderer";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   WHATS_NEW_QUIET_STORAGE_KEY,
   WHATS_NEW_SEEN_STORAGE_KEY,
+  clearWhatsNewQuiet,
   hasExistingInstallKey,
   markWhatsNewQuiet,
   markWhatsNewRead,
   resetWhatsNewQuietForTests,
+  useWhatsNewQuiet,
   readWhatsNewSeen,
   recordWhatsNewSeen,
   resetWhatsNewBootReadForTests,
@@ -94,40 +99,40 @@ describe("the seen marker", () => {
 });
 
 describe("the quiet mark (#4043)", () => {
-  beforeEach(() => resetWhatsNewQuietForTests());
+  const storage = vi.mocked(AsyncStorage);
+  let values: Map<string, string>;
 
-  function memory() {
-    const values = new Map<string, string>();
-    return {
-      values,
-      getItem: vi.fn(async (key: string) => values.get(key) ?? null),
-      setItem: vi.fn(async (key: string, value: string) => {
-        values.set(key, value);
-      }),
-      removeItem: vi.fn(async (key: string) => {
-        values.delete(key);
-      }),
-    };
-  }
-
-  it("records the entry another device showed, and sets the mark until What's new is read here", async () => {
-    const storage = memory();
-    await markWhatsNewQuiet(SEEN, storage);
-    expect(storage.values.get(WHATS_NEW_SEEN_STORAGE_KEY)).toBe(SEEN);
-    expect(storage.values.get(WHATS_NEW_QUIET_STORAGE_KEY)).toBe(SEEN);
-
-    await markWhatsNewRead(SEEN, storage);
-    expect(storage.values.get(WHATS_NEW_SEEN_STORAGE_KEY)).toBe(SEEN);
-    expect(storage.values.has(WHATS_NEW_QUIET_STORAGE_KEY)).toBe(false);
+  beforeEach(() => {
+    resetWhatsNewQuietForTests();
+    values = new Map();
+    storage.getItem.mockImplementation(async (key: string) => values.get(key) ?? null);
+    storage.setItem.mockImplementation(async (key: string, value: string) => {
+      values.set(key, value);
+    });
   });
 
-  it("survives storage that throws", async () => {
-    const broken = {
-      getItem: vi.fn().mockRejectedValue(new Error("x")),
-      setItem: vi.fn().mockRejectedValue(new Error("x")),
-      removeItem: vi.fn().mockRejectedValue(new Error("x")),
-    };
-    await expect(markWhatsNewQuiet(SEEN, broken)).resolves.toBeUndefined();
-    await expect(markWhatsNewRead(SEEN, broken)).resolves.toBeUndefined();
+  function Probe() {
+    return <>{useWhatsNewQuiet() ? "quiet" : "none"}</>;
+  }
+
+  it("records the entry another device showed, and keeps the mark until What's new is read here", async () => {
+    await markWhatsNewQuiet(SEEN);
+    expect(values.get(WHATS_NEW_SEEN_STORAGE_KEY)).toBe(SEEN);
+    expect(values.get(WHATS_NEW_QUIET_STORAGE_KEY)).toBe("quiet");
+
+    await markWhatsNewRead(SEEN);
+    expect(values.get(WHATS_NEW_SEEN_STORAGE_KEY)).toBe(SEEN);
+    expect(values.get(WHATS_NEW_QUIET_STORAGE_KEY)).toBe("none");
+  });
+
+  it("reads a mark left by an earlier launch back", async () => {
+    values.set(WHATS_NEW_QUIET_STORAGE_KEY, "quiet");
+    let tree!: ReactTestRenderer;
+    await act(async () => {
+      tree = create(<Probe />);
+    });
+    expect(tree.toJSON()).toBe("quiet");
+    await act(async () => clearWhatsNewQuiet());
+    expect(tree.toJSON()).toBe("none");
   });
 });

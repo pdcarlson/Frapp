@@ -168,9 +168,25 @@ export function accountHasSeenNewest(
 ): boolean {
   const newest = notes[0];
   if (!newest || typeof accountSeen !== "string") return false;
-  return !isNewerReleaseNoteVersion(
-    { date: newest.date, lines: newest.changes.length },
-    parseReleaseNoteVersion(accountSeen),
+  return !isLaterReleaseNoteVersion(releaseNoteVersion(newest), accountSeen);
+}
+
+/**
+ * Whether the stored version `candidate` is news to someone who has seen
+ * `seen` (`null`: nothing yet), by {@link isNewerReleaseNoteVersion}. The one
+ * forward-only test behind the account's version (the API), the web's marker,
+ * and {@link accountHasSeenNewest}.
+ */
+export function isLaterReleaseNoteVersion(
+  candidate: string,
+  seen: string | null,
+): boolean {
+  return (
+    seen === null ||
+    isNewerReleaseNoteVersion(
+      parseReleaseNoteVersion(candidate),
+      parseReleaseNoteVersion(seen),
+    )
   );
 }
 

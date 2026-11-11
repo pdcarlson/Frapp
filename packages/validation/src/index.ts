@@ -19,6 +19,7 @@ export {
   isNewerReleaseNoteVersion,
   decideWhatsNew,
   accountHasSeenNewest,
+  isLaterReleaseNoteVersion,
   RELEASE_NOTE_VERSION_PATTERN,
   type ReleaseNote,
   type ReleaseNoteVersion,
