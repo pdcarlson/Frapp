@@ -317,12 +317,14 @@ Titles are common ones from campus pages, not a standard: Panhellenic from [Ole 
 | | IFC | Panhellenic | NPHC | MGC | Other |
 | --- | --- | --- | --- | --- | --- |
 | **Web nav** | Home, Chat, Recruitment, Events, Chapters, Officers, Documents | The same; Recruitment adds Rounds, Counselors and Matching in season | Home, Chat, Events, Service, Chapters, Officers, Documents | Home, Chat, Events, Chapters, Officers, Documents | As MGC; Recruitment only if `open_bidding` |
-| **Mobile third tab** | Recruitment | Recruitment | Events | Events | Events, or Recruitment if `open_bidding` |
+| **Mobile tabs** | Chat, Events, Recruitment, More | Chat, Events, Recruitment, More | Chat, Events, Chapters, More | Chat, Events, Chapters, More | Chat, Events, then Recruitment if `open_bidding`, else Chapters; More |
 | **Council home** | Season status, PNM counts, the next council date | The same, plus the current round and counselor groups | Upcoming council events, service totals, open votes | Upcoming events, open votes | Upcoming events |
 | **On campus home** | "Recruitment" card: dates and how to register | The same, with the formal-recruitment schedule | "Meet the Greeks" and council events; each chapter listed with the officer contact it chooses to show | The same as NPHC | Events |
 | **What a student can't do from campus home** | — | — | Register interest with the council or a chapter | Register interest with the council | — |
 
 **ADR-27 and the UI design need one change here:** the council tab set comes from the council's recruitment model, not from `kind` alone ([§ Changes](#changes-the-sibling-designs-need)).
+
+**Why Events stays second everywhere.** A chapter's tabs are Chat, Events, Tasks, More ([`navigation.md`](../ui/mobile/navigation.md)). A council keeps Chat and Events where a member already reaches for them, and swaps only the third: Recruitment where the council runs it, otherwise Chapters, its member list. That's the UI design's council tab bar with Recruitment as the third tab, carried to every type.
 
 ## Phasing
 
@@ -359,7 +361,7 @@ These are requests to the workers who own each design, sent through Winston's hu
 4. **"Matching or integrate with a provider"** becomes the import-first recommendation above.
 
 **URLs and UI (ADR-27, the UI design):**
-1. **The council tab set** reads the recruitment model, not only `kind` (ADR-27's mobile rollout). An NPHC council's third tab is Events.
+1. **The council tab set** reads the recruitment model, not only `kind` (ADR-27's mobile rollout). Every council keeps Chat and Events first and second; the third is Recruitment, or Chapters for a `none` council.
 2. **Council creation:** picking NPHC, MGC or Other skips every recruitment step and seeds that type's role pack. The Unverified badge and link flow are unchanged.
 3. **Campus home** draws each council's card by type ([§ What each council's space shows](#what-each-councils-space-shows)). An NPHC or MGC chapter's entry has no "I'm interested" action, only the officer contact the chapter chooses to show.
 
