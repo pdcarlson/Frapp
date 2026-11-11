@@ -134,24 +134,6 @@ export class ChatBlockService {
   }
 
   /**
-   * Whether either member has blocked the other in this chapter. A reply pings
-   * the author it quotes (#3844), and neither side of a block should be able
-   * to start that ping. Errors propagate, as above; the caller decides which
-   * side failing lands on.
-   */
-  async isBlockedEitherWay(
-    chapterId: string,
-    userA: string,
-    userB: string,
-  ): Promise<boolean> {
-    const [aBlockedByB, bBlockedByA] = await Promise.all([
-      this.blockRepo.findBlockersAmong(chapterId, userA, [userB]),
-      this.blockRepo.findBlockersAmong(chapterId, userB, [userA]),
-    ]);
-    return aBlockedByB.size > 0 || bBlockedByA.size > 0;
-  }
-
-  /**
    * Block a member of this chapter, idempotently.
    *
    * The two refusals here are both about the *target*, and neither is

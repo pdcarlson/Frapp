@@ -66,7 +66,6 @@ import { ChatMentionService } from './chat-mention.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { NotificationService } from './notification.service';
-import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
 
 const MAX_PINNED_MESSAGES = 50;
 const MAX_GROUP_DM_MEMBERS = 10;
@@ -1001,14 +1000,13 @@ export class ChatService {
     // Authoritative, and deliberately not a client responsibility: a mention
     // overrides a per-channel mute in the push rules, so a client-supplied
     // list would let any member force a push to any other member in a channel
-    // they had muted on purpose. `ChatMentionService` owns the rules.
-    const mentions = withReplyMention(
-      await this.mentions.resolveForSend(
-        input.chapter_id,
-        input.sender_id,
-        input.content,
-      ),
-      await this.replyMention(input.chapter_id, input.sender_id, replyTo),
+    // they had muted on purpose. `ChatMentionService` owns the rules,
+    // including that a reply mentions the author it quotes (#3844).
+    const mentions = await this.mentions.resolveForSend(
+      input.chapter_id,
+      input.sender_id,
+      input.content,
+      replyTo,
     );
 
     // Auto-follow BEFORE the insert, so the push worker, which reacts to the
@@ -1244,51 +1242,26 @@ export class ChatService {
   }
 
   /**
-   * The member a reply pings, or `null` (#3844, `spec/behavior/notifications.md`
-   * § Notification triggers). A reply counts as an @mention of the author it
-   * quotes, as Discord's replies do by default, so it rides the `mentions`
-   * column: the push, the red `@ N` badge and the row highlight all read it,
-   * and one id there is one notification however many ways it got in.
-   *
-   * Nobody is pinged for a reply to yourself, to a deleted message, or to a
-   * row with no linked member (an imported row nobody claimed) or the system
-   * actor's. Nor across a block in either direction. The push worker already
-   * drops a recipient who blocked the sender, but a member who blocked the
-   * author they quote should not be able to ping them either.
-   *
-   * Fails closed: an unreadable block list costs the reply its ping, never
-   * the send, the way a failed mention lookup costs only the mention.
+   * Who wrote the message a reply quotes, for an edit to keep the reply's
+   * ping (`ChatMentionService.resolveForEdit`). `null` when it quotes
+   * nothing, and `undefined` when the read fails: an edit must not fail, or
+   * drop a ping it cannot check, for a lookup that only decides the ping.
    */
-  private async replyMention(
-    chapterId: string,
-    senderId: string,
-    replyTo: ChatMessage | null,
-  ): Promise<string | null> {
-    const authorId = replyTo?.sender_id ?? null;
-    if (
-      !replyTo ||
-      !authorId ||
-      authorId === senderId ||
-      authorId === SYSTEM_SENDER_ID ||
-      replyTo.is_deleted
-    ) {
-      return null;
-    }
+  private async quotedAuthorId(
+    replyToId: string | null,
+  ): Promise<string | null | undefined> {
+    if (!replyToId) return null;
     try {
-      const blocked = await this.chatBlocks.isBlockedEitherWay(
-        chapterId,
-        senderId,
-        authorId,
-      );
-      return blocked ? null : authorId;
+      const quoted = await this.messageRepo.findById(replyToId);
+      return quoted?.sender_id ?? null;
     } catch (error) {
       reportCaughtFailure(this.logger, {
         level: 'warning',
-        site: 'chat-reply-mention-blocks',
-        message: `Failed to read blocks for a reply in chapter ${chapterId}; sending without the reply ping`,
+        site: 'chat-edit-quoted-author',
+        message: `Failed to read the message ${replyToId} a reply quotes; the edit keeps its stored mentions`,
         error,
       });
-      return null;
+      return undefined;
     }
   }
 
@@ -1347,15 +1320,15 @@ export class ChatService {
     // but does not notify — the alternative, re-running the push tier on every
     // edit, would make an edit a way to notify someone repeatedly.
     //
-    // The quoted author's reply ping (#3844) is kept through an edit for the
-    // same reason: the reply still quotes them, so it still counts toward
-    // their badge.
-    const replyTo = message.reply_to_id
-      ? await this.messageRepo.findById(message.reply_to_id)
-      : null;
-    const mentions = withReplyMention(
-      await this.mentions.resolveForSend(chapterId, senderId, content),
-      await this.replyMention(chapterId, senderId, replyTo),
+    // A reply's ping of the author it quotes (#3844) is not re-resolved: the
+    // edit keeps it exactly as the send stored it, since the reply still
+    // quotes them (`ChatMentionService.resolveForEdit`).
+    const mentions = await this.mentions.resolveForEdit(
+      chapterId,
+      senderId,
+      content,
+      message.mentions ?? [],
+      await this.quotedAuthorId(message.reply_to_id ?? null),
     );
 
     return this.messageRepo.update(messageId, {
@@ -1721,14 +1694,4 @@ export function tombstoneMetadata(
   if (message.kind !== 'imported') return {};
   const importId: unknown = message.metadata?.discord_import_id;
   return typeof importId === 'string' ? { discord_import_id: importId } : {};
-}
-
-/** The resolved mentions plus a reply's quoted author, once. */
-export function withReplyMention(
-  mentions: string[],
-  replyAuthorId: string | null,
-): string[] {
-  return replyAuthorId && !mentions.includes(replyAuthorId)
-    ? [...mentions, replyAuthorId]
-    : mentions;
 }

@@ -223,7 +223,6 @@ export async function createChatServiceFixture() {
   // tests seed it.
   const mockChatBlocks = {
     listBlockedUserIds: jest.fn().mockResolvedValue([]),
-    isBlockedEitherWay: jest.fn().mockResolvedValue(false),
     // Nobody has blocked anybody: the audience passes through untouched.
     filterOutBlockers: jest.fn(
       (_chapterId: string, _senderId: string, ids: string[]) =>

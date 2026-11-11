@@ -4136,6 +4136,27 @@ describe('ChatService', () => {
         });
       const stored = () =>
         mockMessageRepo.create.mock.calls.at(-1)?.[0]?.mentions;
+      // The reply being edited, and what the quoted message reads as now.
+      const editReply = async (
+        previousMentions: string[],
+        quotedNow: ChatMessage | Error,
+        content = 'agreed, edited',
+      ) => {
+        mockMessageRepo.findById.mockImplementation((id: string) =>
+          id === 'msg-quoted'
+            ? quotedNow instanceof Error
+              ? Promise.reject(quotedNow)
+              : Promise.resolve(quotedNow)
+            : Promise.resolve({
+                ...baseMessage,
+                reply_to_id: 'msg-quoted',
+                mentions: previousMentions,
+              }),
+        );
+        mockMessageRepo.update.mockResolvedValue(baseMessage);
+        await service.editMessage('msg-1', 'ch-1', 'user-1', content);
+        return mockMessageRepo.update.mock.calls.at(-1)?.[1]?.mentions;
+      };
 
       beforeEach(() => {
         seedRoster();
@@ -4146,11 +4167,6 @@ describe('ChatService', () => {
         mockMessageRepo.findById.mockResolvedValue(quoted());
         await reply();
         expect(stored()).toEqual(['user-2']);
-        expect(mockChatBlocks.isBlockedEitherWay).toHaveBeenCalledWith(
-          'ch-1',
-          'user-1',
-          'user-2',
-        );
       });
 
       it('lists the author once when the reply also @mentions them', async () => {
@@ -4173,39 +4189,42 @@ describe('ChatService', () => {
         },
       );
 
-      it('pings nobody across a block, either way', async () => {
+      it('pings through a block, as a typed @mention does', async () => {
+        // Dropping the author would show the replier `mentions: []` where
+        // every other reply shows the author: a "who blocked me" oracle.
+        // Delivery applies blocks instead (push worker, unread counts).
+        mockChatBlocks.listBlockedUserIds.mockResolvedValue(['user-2']);
         mockMessageRepo.findById.mockResolvedValue(quoted());
-        mockChatBlocks.isBlockedEitherWay.mockResolvedValue(true);
         await reply();
-        expect(stored()).toEqual([]);
-      });
-
-      it('still sends, without the ping, when blocks cannot be read', async () => {
-        mockMessageRepo.findById.mockResolvedValue(quoted());
-        mockChatBlocks.isBlockedEitherWay.mockRejectedValue(
-          new Error('pg down'),
-        );
-        await expect(reply()).resolves.toEqual({
-          message: baseMessage,
-          deduplicated: false,
-        });
-        expect(stored()).toEqual([]);
+        expect(stored()).toEqual(['user-2']);
       });
 
       it('keeps the ping through an edit', async () => {
-        mockMessageRepo.findById.mockImplementation((id: string) =>
-          Promise.resolve(
-            id === 'msg-quoted'
-              ? quoted()
-              : { ...baseMessage, reply_to_id: 'msg-quoted' },
-          ),
-        );
-        mockMessageRepo.update.mockResolvedValue(baseMessage);
-        await service.editMessage('msg-1', 'ch-1', 'user-1', 'agreed, edited');
-        expect(mockMessageRepo.update).toHaveBeenCalledWith(
-          'msg-1',
-          expect.objectContaining({ mentions: ['user-2'] }),
-        );
+        await expect(editReply(['user-2'], quoted())).resolves.toEqual([
+          'user-2',
+        ]);
+      });
+
+      it('keeps it even after the quoted message is deleted', async () => {
+        await expect(
+          editReply(['user-2'], quoted({ is_deleted: true })),
+        ).resolves.toEqual(['user-2']);
+      });
+
+      it('does not add a ping the send never stored', async () => {
+        await expect(editReply([], quoted())).resolves.toEqual([]);
+      });
+
+      it('keeps the stored mentions when the quoted message cannot be read', async () => {
+        await expect(
+          editReply(['user-2'], new Error('pg down')),
+        ).resolves.toEqual(['user-2']);
+      });
+
+      it('still drops a body mention the edit removed', async () => {
+        await expect(
+          editReply(['user-3', 'user-2'], quoted(), 'never mind'),
+        ).resolves.toEqual(['user-2']);
       });
     });
 
