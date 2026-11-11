@@ -10,6 +10,7 @@ import {
   type BlockState,
 } from "@repo/chat-core/blocks";
 import { typingLabel } from "@repo/chat-core/typing-label";
+import { TypingLine } from "./typing-line";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { resolveAuthorAvatar } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
@@ -499,11 +500,7 @@ export function ThreadPanel({
       </div>
       <ImageViewer viewer={rootViewer} />
 
-      {typing ? (
-        <p className="shrink-0 px-4 pb-1 text-caption text-muted-foreground">
-          {typing}
-        </p>
-      ) : null}
+      <TypingLine label={typing} />
       <div className="shrink-0 border-t border-border p-3">
         {canReply ? (
           <>
@@ -515,7 +512,8 @@ export function ThreadPanel({
               disabled={isOffline}
               onChange={(event) => {
                 setDraft(event.target.value);
-                if (event.target.value) thread.emitTyping();
+                // An emptied box is nobody typing, as in the channel's.
+                if (event.target.value.trim()) thread.emitTyping();
               }}
               onKeyDown={onComposerKey}
             />

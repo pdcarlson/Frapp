@@ -1,7 +1,6 @@
 /**
- * The typing line's words for a message thread (#3785), built as the one
- * helper #4014 is to move the channel lines onto (both still read "Someone is
- * typing…" today): `Paul is typing…`, `Paul and Shawn are typing…`,
+ * The typing line's words, for a channel and for a message thread (#3785)
+ * alike, on web and mobile: `Paul is typing…`, `Paul and Shawn are typing…`,
  * `Paul, Shawn and Alex are typing…`, then `Several people are typing…` for
  * four or more. `null` when nobody is.
  *

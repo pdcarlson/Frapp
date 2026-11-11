@@ -397,7 +397,9 @@ const BLOCK_LIST = {
 
 const ROSTER = {
   byId: {},
-  nameFor: () => null,
+  // Only the typing specs read a name: the rest of this file draws rows by id.
+  nameFor: (id: string) =>
+    ({ [MEMBER]: "Winston Hewitt", "member-4": "Shawn" })[id] ?? null,
   avatarFor: () => null,
   isPending: false,
   isError: false,
@@ -959,17 +961,18 @@ describe("chat thread image viewer (#2874)", () => {
 });
 
 describe("chat thread typing indicator after the block list (#2496)", () => {
-  // In a two-person DM "Someone is typing…" would tell the blocker that the
+  // In a two-person DM "Winston is typing…" would tell the blocker that the
   // member they blocked is writing to them. `visibleTypingUsers` is the rule;
   // this is the screen applying it to what it draws.
 
   it.each([
-    [[MEMBER], "Someone is typing…"],
+    // Named, as Discord does (2026-11-11).
+    [[MEMBER], "Winston Hewitt is typing…"],
     [[BLOCKED], null],
-    [[MEMBER, BLOCKED], "Someone is typing…"],
+    [[MEMBER, BLOCKED], "Winston Hewitt is typing…"],
     // The viewer's other device is not someone else typing.
     [[VIEWER], null],
-    [[MEMBER, "member-4"], "2 people are typing…"],
+    [[MEMBER, "member-4"], "Winston Hewitt and Shawn are typing…"],
   ])("with %j typing, shows %j", (typingUsers, shown) => {
     channel = channelState({ typingUsers });
     const tree = render();
@@ -980,6 +983,21 @@ describe("chat thread typing indicator after the block list (#2496)", () => {
     } else {
       expect(text).not.toMatch(/typing…/);
     }
+    act(() => tree.unmount());
+  });
+});
+
+describe("chat thread typing broadcasts", () => {
+  it("announces typing only while the box holds text, never for the clear after a send", () => {
+    const emitTyping = vi.fn();
+    channel = channelState({ emitTyping });
+    const tree = render();
+    const composer = () => tree.root.findByType(ChatComposer);
+    act(() => composer().props.onChangeText(""));
+    act(() => composer().props.onChangeText("   "));
+    expect(emitTyping).not.toHaveBeenCalled();
+    act(() => composer().props.onChangeText("on my way"));
+    expect(emitTyping).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
   });
 });
@@ -1028,7 +1046,7 @@ describe("chat thread typing line holds its place", () => {
       expect(slotStyle(typing)).not.toHaveProperty(key);
     }
     const line = caption(typing);
-    expect(line.props.children).toBe("Someone is typing…");
+    expect(line.props.children).toBe("Winston Hewitt is typing…");
     expect(line.props.numberOfLines).toBe(1);
     // Same type and line height as the blank, so the swap moves nothing.
     expect(flat(line.props.style)).toEqual(idleTextStyle);
