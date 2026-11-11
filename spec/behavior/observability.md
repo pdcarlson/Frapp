@@ -266,7 +266,7 @@ What every change is held to (Paul, 2026-11-11: "I need a higher standard for sp
 | API, reads | `http.server` span, p50 / p95 | 150 ms / 600 ms |
 | API, hot-path writes | p50 / p99 | the budget and list in [`architecture` § Hot path vs cold path](../architecture/README.md#hot-path-vs-cold-path) |
 | Mobile | cold start (`ui.load`), p50 / p95 | 1.5 s / 3 s |
-| Mobile | screen ready (time to full display), p50 | chat home 1 s, a channel 500 ms. Not recorded yet: the app has no time-to-full-display spans ([#4342](https://github.com/pdcarlson/Frapp/issues/4342)) |
+| Mobile | screen ready (time to full display, `ui.load.full_display` under the screen's navigation span), p50 | chat home 1 s, a channel 500 ms |
 | Web | first paint, cached channel, CLS above the composer | [`performance-budgets.md` § First paint](../ui/resilience/performance-budgets.md#first-paint), which the framework board owns |
 | Web | LCP / INP, p75 | 2.5 s / 200 ms |
 

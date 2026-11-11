@@ -60,6 +60,7 @@ import { FrappThemeProvider } from "@/lib/theme";
 import { stackScreen } from "@/test/stack-screen";
 import { flatStyle } from "@/test/flat-style";
 import { screenText } from "@/test/screen-text";
+import { ScreenReady } from "@/lib/sentry/screen-ready";
 import { useOpenChatTransport } from "@repo/hooks/open-chat-transport";
 
 /**
@@ -1178,6 +1179,27 @@ describe("chat thread loading state (components.md §10)", () => {
     expect(screenText(tree)).not.toMatch(/Loading/);
     expect(lists(tree)).toHaveLength(0);
     act(() => tree.unmount());
+  });
+
+  it("marks the channel fully shown for Sentry when the shapes give way, to rows or to a failure (#4342)", () => {
+    const ready = (tree: ReactTestRenderer) =>
+      tree.root.findByType(ScreenReady).props.ready as boolean;
+
+    channel = channelState({ isLoading: true });
+    const loading = render();
+    expect(ready(loading)).toBe(false);
+    act(() => loading.unmount());
+
+    channel = channelState({});
+    const loaded = render();
+    expect(skeletons(loaded)).toHaveLength(0);
+    expect(ready(loaded)).toBe(true);
+    act(() => loaded.unmount());
+
+    channel = channelState({ viewerId: null, loadError: new Error("offline") });
+    const failed = render();
+    expect(ready(failed)).toBe(true);
+    act(() => failed.unmount());
   });
 
   it("sits the shapes at the bottom, where an inverted thread's rows land", () => {

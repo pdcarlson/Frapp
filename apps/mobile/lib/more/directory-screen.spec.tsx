@@ -177,6 +177,7 @@ import DirectoryScreen, {
   MemberListSkeleton,
   MemberRow,
 } from "@/app/(app)/directory";
+import { ScreenReady } from "@/lib/sentry/screen-ready";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { InlineNote } from "@/components/inline-note";
 import { ActivesFilterSheet as ActivesFilterSheetStandIn } from "@/components/directory/actives-filter-sheet";
@@ -939,6 +940,18 @@ describe("s13's loading label", () => {
         label: string;
       }>
     ).props.label;
+
+  it("marks the Directory fully shown for Sentry once the members answer (#4342)", () => {
+    state.pending = true;
+    const loading = render();
+    expect(loading.root.findByType(ScreenReady).props.ready).toBe(false);
+    act(() => loading.unmount());
+
+    state.pending = false;
+    const loaded = render();
+    expect(loaded.root.findByType(ScreenReady).props.ready).toBe(true);
+    act(() => loaded.unmount());
+  });
 
   it("names the tab's list, or the search", () => {
     state.pending = true;

@@ -540,6 +540,11 @@ vi.mock("@sentry/react-native", () => ({
   // Chat home's refused-channels warning (`lib/chat/channels-error.ts`).
   captureMessage: vi.fn(),
   mobileReplayIntegration: vi.fn(),
+  // Navigation timing (`app/_layout.tsx`, `lib/sentry/screen-ready.tsx`). A
+  // spy that renders nothing, so a screen spec can read the `record` it was
+  // last given.
+  expoRouterIntegration: vi.fn(),
+  TimeToFullDisplay: vi.fn(() => null),
 }));
 
 // The glass layer's native pieces (`components/glass-surface.tsx`). String

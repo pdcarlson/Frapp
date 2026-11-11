@@ -66,6 +66,13 @@ if (sentryDsn) {
   );
   Sentry.init({
     ...options,
+    // One navigation span per route change, named by route, with the time to
+    // its first frame; screens add time to full display (`ScreenReady`). The
+    // speed budget is measured from these (#4342). Route params stay out of
+    // the spans while `sendDefaultPii` is false.
+    integrations: [
+      Sentry.expoRouterIntegration({ enableTimeToInitialDisplay: true }),
+    ],
     beforeSend: withPostHogSentryCorrelation(options.beforeSend),
   });
 }
