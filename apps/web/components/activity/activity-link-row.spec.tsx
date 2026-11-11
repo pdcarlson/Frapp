@@ -56,6 +56,7 @@ const row = (overrides: Record<string, unknown> = {}) =>
       id: "l1",
       url: "https://forms.gle/abc",
       host: "forms.gle",
+      title: null,
       message_id: "m1",
       thread_root_id: null,
       channel_id: "c1",
@@ -91,6 +92,28 @@ describe("ActivityLinkRow", () => {
     expect(link).toHaveAttribute("href", "https://forms.gle/abc");
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("draws a named link by its name, with its kind leading the detail (#4187)", () => {
+    render(
+      <Page
+        row={{
+          ...row({ title: "5K volunteer shifts" }),
+          title: "5K volunteer shifts",
+          detail: "Google Form · Olive · #rush · Tue 3:00 PM",
+        }}
+        canRemove={false}
+      />,
+    );
+    expect(
+      screen.getByRole("link", { name: /^5K volunteer shifts/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Google Form · Olive · #rush · Tue 3:00 PM"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Done: 5K volunteer shifts" }),
+    ).toBeInTheDocument();
   });
 
   it("marks it done, says so, and offers Undo that clears the state", async () => {

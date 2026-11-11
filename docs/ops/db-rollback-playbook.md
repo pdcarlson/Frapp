@@ -101,6 +101,16 @@ Action:
 > Actions UI (GitHub keeps them 30 days), then retry the deploy. The failure
 > message reports cancelled checks apart from genuine failures and names this
 > remedy, so you should not have to reach this page to find it.
+>
+> **A third door: a dropped run.** A commit can be refused with a check whose
+> job it defines reported as `never reported`. GitHub keeps one running and one
+> pending run per concurrency group and cancels the pending one when a newer
+> one queues, so a run can be dropped before any job starts. In the Actions UI
+> that commit's run of the workflow shows as cancelled with no jobs. The remedy
+> is the same re-run, then retry the deploy. `migration-drift-gate.yml` keys a
+> `main` run's group on the commit, so its runs are no longer dropped
+> (2026-11-11); `ci.yml` keeps its per-ref group on purpose, so a commit merged
+> in a burst can still have no CI run.
 
 ### 2) Full rollback to backup/snapshot
 
@@ -3632,6 +3642,25 @@ Two new columns, `chapter_custom_roles.folded_role_id` and `folded_at`; a new `r
 
 If `transfer_presidency` itself must go back, its earlier body is the one in `20261108200000_transfer_presidency_keeps_member_access.sql`; with `custom_role_ids` empty its extra clause never matches, so the two behave the same.
 
+## Rollback Link titles on Activity (20261112000000)
+
+* **Migration**: `20261112000000_activity_link_titles.sql`
+
+Three columns on `chat_message_links`, `title`, `title_attempts` and `title_checked_at`, and the partial index `idx_chat_message_links_title_pending`. No existing row changed.
+
+**Revert the code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API stops the title sweep, so it opens no more links, and reads the rows with `select('*')`, so the columns are fields it ignores; the reverted clients title every link row by its kind again.
+
+**To stop the outbound reads without a code revert**, nothing in the schema does it: the sweep reads only links with `title is null and title_attempts < 3`, so `update public.chat_message_links set title_attempts = 3 where title is null and title_attempts < 3;` leaves it nothing to read until new links are posted. Use that only as a stopgap while the revert ships.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. Dropping the columns loses the stored titles, which the sweep would read again if it came back:
+
+```sql
+drop index if exists public.idx_chat_message_links_title_pending;
+alter table public.chat_message_links drop column if exists title_checked_at;
+alter table public.chat_message_links drop column if exists title_attempts;
+alter table public.chat_message_links drop column if exists title;
+```
+
 ## Rollback Task due times and subtasks (20261111230000)
 
 * **Migration**: `20261111230000_task_due_time_and_subtasks.sql`
@@ -3688,4 +3717,18 @@ alter table public.chat_channel_categories
   drop column if exists who_can_post;
 drop function if exists public.chat_channel_access_from_legacy(uuid, text, text[], boolean, boolean);
 drop function if exists public.chat_access_list_valid(text[]);
+```
+
+## Rollback role tier reorder (20261112001000)
+
+* **Migration**: `20261112001000_reorder_role_tiers.sql`
+
+One function, `reorder_role_tiers(uuid, uuid[], uuid[])`, which `PUT /v1/role-tiers/order` calls. It writes nothing on apply and changes no table.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The older API never calls the function. A reorder made before the revert stays: tier positions are ordinary rows, and the older API reads none of them.
+
+To remove the function, do it in a later forward migration:
+
+```sql
+drop function if exists public.reorder_role_tiers(uuid, uuid[], uuid[]);
 ```

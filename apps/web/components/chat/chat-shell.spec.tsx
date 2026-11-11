@@ -6,7 +6,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from "vitest";
 import { useEffect, useState, type ReactNode } from "react";
 
 /**
@@ -553,7 +553,7 @@ vi.mock("@repo/hooks", async () => ({
   useCategories: () => ({ data: CATEGORIES, isPending: false }),
   useMemberDisplayNames: () => ({
     byId: sidebarState.memberNames,
-    nameFor: () => null,
+    nameFor: (id: string) => sidebarState.memberNames[id] ?? null,
     avatarFor: () => null,
   }),
   useChannelNotificationPreferences: () => ({
@@ -4534,7 +4534,32 @@ describe("ChatShell block list (#2313)", () => {
     );
     render(<ChatShell initialChannelId="chan-general" />);
 
+    // `nameFor` knows nobody here, so the one typist left reads as Someone.
     expect(screen.getByText("Someone is typing…")).toBeInTheDocument();
+  });
+
+  it("names the typist and keeps the line's space when nobody types", () => {
+    sidebarState.memberNames = { "friend-1": "Winston Hewitt" };
+    onTestFinished(() => {
+      sidebarState.memberNames = {};
+    });
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ typingUsers: ["friend-1"] }),
+    );
+    const { unmount } = render(<ChatShell initialChannelId="chan-general" />);
+    expect(screen.getByTestId("typing-line")).toHaveTextContent(
+      "Winston Hewitt is typing…",
+    );
+    unmount();
+
+    // Nobody typing: the line is still there, one line tall and empty, so
+    // the next typist moves nothing.
+    mockUseChatChannel.mockReturnValue(chatChannelResult({ typingUsers: [] }));
+    render(<ChatShell initialChannelId="chan-general" />);
+    const line = screen.getByTestId("typing-line");
+    expect(line).toBeEmptyDOMElement();
+    expect(line.className).toContain("h-5");
+    expect(line).toHaveAttribute("aria-hidden", "true");
   });
 });
 

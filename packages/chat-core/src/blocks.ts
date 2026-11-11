@@ -314,9 +314,10 @@ export function visibleReactions(
  *
  * `typing` is a Broadcast on `chat:channel:<id>`, and anyone who can read the
  * channel may send one, so the server delivers a blocked member's too. The
- * indicator is anonymous, but in a two-person DM "Someone is typing…" tells
- * the blocker, live, that the member they blocked is writing to them. So both
- * clients pass the manager's list through this before rendering it.
+ * indicator names the typist ("Winston is typing…", `typingLabel`), so it
+ * would tell the blocker, live, that the member they blocked is writing in a
+ * channel they share, and in a two-person DM that they are writing to them.
+ * So both clients pass the manager's list through this before rendering it.
  *
  * Everyone else goes by a reaction chip's rule (`visibleReactions`), for the
  * same reason: against a ready list a blocked member is dropped; while the

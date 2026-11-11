@@ -481,6 +481,7 @@ describe("Activity sheet (#3897)", () => {
         id: "l1",
         url: "https://forms.gle/abc",
         host: "forms.gle",
+        title: null,
         message_id: "m1",
         thread_root_id: null,
         channel_id: "chan-1",

@@ -17,8 +17,19 @@ import type { IUserRepository } from '#domain/repositories/user.repository.inter
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
 import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
 import { Member } from '#domain/entities/member.entity';
+import { Role } from '#domain/entities/role.entity';
+import { flattenPermissionSets } from '#domain/utils/permissions';
+import {
+  canReach,
+  holderRank,
+  permissionsNotHeld,
+  roleRank,
+} from '#domain/utils/role-rank';
 import { User } from '#domain/entities/user.entity';
-import { SystemPermissions } from '#domain/constants/permissions';
+import {
+  SystemPermissions,
+  SystemRoleKeys,
+} from '#domain/constants/permissions';
 import { CustomFieldService } from './custom-field.service';
 import { RbacService } from './rbac.service';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
@@ -279,10 +290,26 @@ export class MemberService {
     return this.buildProfile(member, chapterId, viewerUserId);
   }
 
+  /**
+   * Set a member's roles, behind the rank rules (#4071) for `actorUserId`
+   * unless they hold `*`:
+   *
+   * - every role added or taken away must rank below the caller's own;
+   * - the member must rank below the caller too, unless it is the caller
+   *   themselves, so a chair cannot strip an officer's roles;
+   * - on their own row, the caller may not end up holding a permission they
+   *   did not already hold, so nobody hands themselves a lower role that
+   *   carries more than they have.
+   *
+   * So a chair holding `roles:manage` can give members the roles below the
+   * chairs' tier, and cannot give anyone, least of all themselves, a chair's
+   * or officer's role.
+   */
   async updateRoles(
     memberId: string,
     roleIds: string[],
     chapterId: string,
+    actorUserId: string,
   ): Promise<Member> {
     const member = await this.memberRepo.findById(memberId);
     if (!member) throw new NotFoundException('Member not found');
@@ -334,7 +361,70 @@ export class MemberService {
       }
     }
 
+    await this.assertRolesWithinReach(member, roleIds, roles, actorUserId);
+
     return this.memberRepo.update(memberId, { role_ids: roleIds });
+  }
+
+  /** The rank rules of {@link updateRoles}; see there. */
+  private async assertRolesWithinReach(
+    member: Member,
+    roleIds: readonly string[],
+    roles: readonly Role[],
+    actorUserId: string,
+  ): Promise<void> {
+    const context = await this.rbacService.getRankContext(
+      member.chapter_id,
+      actorUserId,
+    );
+    const { reach, positions } = context;
+    if (reach.wildcard) return;
+
+    const byId = new Map(roles.map((role) => [role.id.toLowerCase(), role]));
+    const resolve = (ids: readonly string[]) =>
+      [...new Set(ids.map((id) => id.toLowerCase()))]
+        .map((id) => byId.get(id))
+        .filter((role): role is Role => role !== undefined);
+    const before = resolve(member.role_ids);
+    const after = resolve(roleIds);
+    const beforeIds = new Set(before.map((role) => role.id));
+    const afterIds = new Set(after.map((role) => role.id));
+    const changed = [
+      ...after.filter((role) => !beforeIds.has(role.id)),
+      ...before.filter((role) => !afterIds.has(role.id)),
+    ];
+    if (changed.length === 0) return;
+
+    const isSelf = reach.memberId === member.id;
+    if (
+      changed.some((role) => !canReach(reach, roleRank(role, positions))) ||
+      (!isSelf && !canReach(reach, holderRank(before, positions)))
+    ) {
+      throw new ForbiddenException(
+        'You can only give or take away roles ranked below your own, and only from members ranked below you.',
+      );
+    }
+    // Nobody hands out a permission they don't hold, to anyone: a lower role
+    // can still carry one (a role outside the tiers, an override), and a
+    // second account would otherwise collect it. What the Member role carries
+    // is exempt, since every member gets it.
+    const base = new Set(
+      roles.find((role) => role.system_key === SystemRoleKeys.MEMBER)
+        ?.permissions ?? [],
+    );
+    const missing = permissionsNotHeld(
+      reach,
+      flattenPermissionSets(
+        after
+          .filter((role) => !beforeIds.has(role.id))
+          .map((role) => role.permissions),
+      ),
+    ).filter((permission) => !base.has(permission));
+    if (missing.length > 0) {
+      throw new ForbiddenException(
+        `You can only give roles whose permissions you hold: ${missing.join(', ')}.`,
+      );
+    }
   }
 
   async updateOnboarding(

@@ -320,6 +320,15 @@ export class ActivityLinkDto implements ActivityLink {
   host: string;
 
   @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'The linked page’s own name (a form’s or sheet’s title), read in the background after the link was posted. Null when the page had none worth showing (a private file’s sign-in page, or a page that names only the product) or has not been read yet: title the row by its kind instead.',
+    example: '5K volunteer shifts',
+  })
+  title: string | null;
+
+  @ApiProperty({
     format: 'uuid',
     description: 'The chat message it was posted in, for “Open in chat”.',
   })

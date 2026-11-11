@@ -57,18 +57,26 @@ export class RbacController {
   }
 
   @Post()
-  @ApiOperation({ summary: 'Create a custom role' })
+  @ApiOperation({
+    summary: 'Create a custom role',
+    description:
+      "Into a tier ranked below the caller's own, or outside the tiers, holding only permissions the caller holds (#4071).",
+  })
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
   async create(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: CreateRoleDto,
   ) {
-    return this.rbacService.create(chapterId, userId, dto);
+    return this.rbacService.createAsMember(chapterId, userId, dto);
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Update a role' })
+  @ApiOperation({
+    summary: 'Update a role',
+    description:
+      "Only a role ranked below the caller's own, and only granting permissions the caller holds (#4071). Send `permissions` (the whole list), or `tier_id` and `permission_overrides`, not both.",
+  })
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
   async update(
     @Param('id') id: string,
@@ -76,18 +84,21 @@ export class RbacController {
     @CurrentUser('id') userId: string,
     @Body() dto: UpdateRoleDto,
   ) {
-    return this.rbacService.update(id, chapterId, userId, dto);
+    return this.rbacService.updateAsMember(id, chapterId, userId, dto);
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Delete a custom role' })
+  @ApiOperation({
+    summary: 'Delete a custom role',
+    description: "Only a role ranked below the caller's own (#4071).",
+  })
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
   async delete(
     @Param('id') id: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
-    await this.rbacService.delete(id, chapterId, userId);
+    await this.rbacService.deleteAsMember(id, chapterId, userId);
     return { success: true };
   }
 

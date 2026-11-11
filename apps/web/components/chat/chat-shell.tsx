@@ -72,6 +72,8 @@ import {
   useImportantMessages,
 } from "@repo/hooks";
 import { setChannelLocked, syncLockedChannels } from "@repo/chat-core/density";
+import { typingLabel } from "@repo/chat-core/typing-label";
+import { TypingLine } from "./typing-line";
 import {
   can,
   canAll,
@@ -472,7 +474,7 @@ export function ChatShell({
   */
   const { userId: liveUserId } = useFrappUser();
   // From the member view, like the slash gate below: `useOrgConfig()` needs
-  // `chapter-config:view`, which no seeded role below President holds (#2957),
+  // `chapter-config:view`, which no seeded role below the Exec board holds (#2957),
   // so members got `/rush` in place of their chapter's recruitment word.
   // `undefined` until the read answers, which the palette shows as `/rush`.
   const chapterVocabulary = useChapterVocabulary();
@@ -1107,6 +1109,7 @@ export function ChatShell({
     blockState,
     userId,
   );
+  const typingLine = typingLabel(typingUsers, nameFor);
   // The rows drawn in full: what every surface beside the timeline that prints
   // a message's author or words reads (the Pinned panel and its count). A
   // tombstoned row carries a blocked member's words whenever an echo put them
@@ -3241,19 +3244,7 @@ export function ChatShell({
                 />
               </MentionChipTargetsContext.Provider>
             </div>
-            {/*
-          Directly above the composer, which is where Discord and Slack both put
-          it and where a 48px header has no room for it. Reserves no space when
-          nobody is typing: it is transient status, and a permanently reserved
-          strip would push the composer down by a line on every channel.
-        */}
-            {typingUsers.length > 0 ? (
-              <p className="shrink-0 px-4 pb-1 text-caption text-muted-foreground">
-                {typingUsers.length === 1
-                  ? "Someone is typing…"
-                  : `${typingUsers.length} people are typing…`}
-              </p>
-            ) : null}
+            <TypingLine label={typingLine} />
           </>
         ) : null}
         {activeChannel ? (

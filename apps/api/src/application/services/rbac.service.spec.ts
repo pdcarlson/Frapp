@@ -7,6 +7,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { RbacService } from './rbac.service';
+import {
+  ROLE_TIER_REPOSITORY,
+  type IRoleTierRepository,
+} from '#domain/repositories/role-tier.repository.interface';
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
 import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
@@ -23,7 +27,7 @@ import {
   createAuditLogServiceMock,
   type AuditLogServiceMock,
 } from '#test/helpers/audit-log.mock';
-import type { Role } from '#domain/entities/role.entity';
+import type { Role, RoleTier } from '#domain/entities/role.entity';
 import type { Member } from '#domain/entities/member.entity';
 import type { Chapter } from '#domain/entities/chapter.entity';
 import {
@@ -40,8 +44,18 @@ describe('RbacService', () => {
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
   let mockChapterRepo: jest.Mocked<IChapterRepository>;
   let mockChapterAuditLogService: AuditLogServiceMock;
+  let mockTierRepo: jest.Mocked<IRoleTierRepository>;
 
   beforeEach(async () => {
+    mockTierRepo = {
+      findByChapter: jest.fn().mockResolvedValue([]),
+      createMany: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      reorder: jest.fn(),
+      delete: jest.fn(),
+    };
+
     mockRoleRepo = {
       findById: jest.fn(),
       findByChapter: jest.fn(),
@@ -88,6 +102,7 @@ describe('RbacService', () => {
         { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
         { provide: CHAPTER_REPOSITORY, useValue: mockChapterRepo },
+        { provide: ROLE_TIER_REPOSITORY, useValue: mockTierRepo },
         {
           provide: ChapterAuditLogService,
           useValue: mockChapterAuditLogService,
@@ -832,6 +847,7 @@ describe('RbacService', () => {
   describe('orphan-president flow', () => {
     const presidentRole: Role = roleFixture({
       id: 'role-president',
+      tier_id: 'tier-exec',
       name: 'President',
       permissions: [SystemPermissions.WILDCARD],
       is_system: true,
@@ -840,6 +856,7 @@ describe('RbacService', () => {
     });
     const treasurerRole: Role = roleFixture({
       id: 'role-treasurer',
+      tier_id: 'tier-exec',
       name: 'Treasurer',
       permissions: [SystemPermissions.BILLING_MANAGE],
       is_system: true,
@@ -847,6 +864,7 @@ describe('RbacService', () => {
     });
     const secretaryRole: Role = roleFixture({
       id: 'role-secretary',
+      tier_id: 'tier-officers',
       name: 'Secretary',
       permissions: [SystemPermissions.MEMBERS_VIEW],
       is_system: true,
@@ -857,11 +875,32 @@ describe('RbacService', () => {
     // claim — see the "does not let an ordinary Member claim" test below.
     const memberRole: Role = roleFixture({
       id: 'role-member',
+      tier_id: 'tier-members',
       name: 'Member',
       system_key: SystemRoleKeys.MEMBER,
       permissions: [SystemPermissions.MEMBERS_VIEW],
       is_system: true,
       display_order: 5,
+    });
+
+    // The claim pool is ranked by tier (#4071), so the roles sit in tiers: the
+    // Treasurer outranks the Secretary by tier, whatever display_order says.
+    const orphanTiers: RoleTier[] = [
+      ['tier-exec', 1],
+      ['tier-officers', 2],
+      ['tier-members', 3],
+    ].map(([id, position]) => ({
+      id: id as string,
+      chapter_id: 'ch-1',
+      position: position as number,
+      name: id as string,
+      permissions: [],
+      created_at: '2026-11-11T00:00:00Z',
+      updated_at: '2026-11-11T00:00:00Z',
+    }));
+
+    beforeEach(() => {
+      mockTierRepo.findByChapter.mockResolvedValue(orphanTiers);
     });
 
     const makeMember = (overrides: Partial<Member>): Member =>
@@ -1003,6 +1042,40 @@ describe('RbacService', () => {
         expect(result).toEqual({
           needs_president: true,
           eligible: true,
+          next_role_name: 'Treasurer',
+        });
+      });
+
+      it('ranks claimants by tier, so an empty role outside the tiers listed first makes no one a claimant (#4071)', async () => {
+        // A roles:manage holder could make this role and give it to themselves.
+        const planted = roleFixture({
+          id: 'role-planted',
+          name: 'Planted',
+          display_order: 0,
+        });
+        mockChapterRepo.findById.mockResolvedValue(
+          makeChapter({ needs_president: true }),
+        );
+        mockRoleRepo.findByChapter.mockResolvedValue([
+          planted,
+          presidentRole,
+          treasurerRole,
+          secretaryRole,
+          memberRole,
+        ]);
+        mockMemberRepo.findByChapter.mockResolvedValue([
+          makeMember({ id: 'member-1', role_ids: [treasurerRole.id] }),
+          makeMember({
+            id: 'member-2',
+            role_ids: [secretaryRole.id, planted.id],
+          }),
+        ]);
+
+        await expect(
+          service.getPresidencyClaimStatus('ch-1', 'member-2'),
+        ).resolves.toEqual({
+          needs_president: true,
+          eligible: false,
           next_role_name: 'Treasurer',
         });
       });

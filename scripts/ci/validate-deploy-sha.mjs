@@ -108,6 +108,17 @@ export function normalizeSha(value) {
  *
  * Naming it is the fix that generalises. A cancelled run can be re-run from the
  * Actions UI for 30 days, which turns a dead end into one click.
+ *
+ * A run can also be dropped before it starts, which this set does not cover:
+ * GitHub keeps one running and one pending run per concurrency group, and
+ * cancels the older pending run when a newer one queues, whatever
+ * `cancel-in-progress` says. Such a run's checks never report, so they land in
+ * `missing`, not here; re-running the dropped run from the Actions UI is the
+ * remedy, as for a cancelled one. On 2026-11-11 that dropped `migration-order` and
+ * `migration-replay` from 14 of 15 commits on `main`, and Deploy production's
+ * empty-`sha` pick found nothing. `migration-drift-gate.yml` now keys a main
+ * run's group on the commit; `ci.yml` deliberately does not, so a commit in a
+ * burst of merges can still go without CI (`workflow-concurrency.test.mjs`).
  */
 export const CANCELLED_CONCLUSIONS = new Set(["cancelled", "timed_out", "stale"]);
 

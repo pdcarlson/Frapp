@@ -29,6 +29,11 @@ import {
 import { isSubscriptionHardLocked } from '#domain/constants/subscription-grace';
 import { NotificationService } from './notification.service';
 import { RbacService } from './rbac.service';
+import {
+  permissionsNotHeld,
+  ranksAtOrAbove,
+  roleRank,
+} from '#domain/utils/role-rank';
 import { ActivationService } from './activation.service';
 import { ChatService } from './chat.service';
 import { LegalAcceptanceService } from './legal-acceptance.service';
@@ -244,6 +249,73 @@ export class InviteService {
    */
   private async resolveInviteRole(
     chapterId: string,
+    requested: string | undefined,
+    inviterUserId: string,
+  ): Promise<string> {
+    const role = await this.resolveInviteRoleName(chapterId, requested);
+    await this.assertInviteRoleWithinReach(chapterId, inviterUserId, role);
+    return role;
+  }
+
+  /**
+   * The rank rule for invites (#4071): an invite may grant a role ranked at
+   * or below the inviter, so a member brings in a peer or someone junior and
+   * never a superior. A chair holding `members:invite` cannot mint a
+   * Vice President's invite and redeem it on a second account. The rule
+   * applies to the default role too, which a `chapter-config:manage` holder
+   * may have set above the inviter.
+   *
+   * A role carrying `*` is never granted by an invite, the President's
+   * included: the President role moves only through Transfer presidency, and
+   * the redeem refuses it as well ({@link resolveRedeemRoles}).
+   *
+   * The inviter must also hold every permission the role carries, so an
+   * invite into a peer's role cannot bring in what the inviter lacks (a Vice
+   * President inviting a second account as Treasurer for `billing:manage`).
+   * What the chapter's Member role carries is exempt: every member gets it.
+   *
+   * The role checked is the one the redeem grants: a name no role carries is
+   * checked as the Member role it falls back to.
+   */
+  private async assertInviteRoleWithinReach(
+    chapterId: string,
+    inviterUserId: string,
+    roleName: string,
+  ): Promise<void> {
+    const { reach, roles, positions } = await this.rbac.getRankContext(
+      chapterId,
+      inviterUserId,
+    );
+    const member = roles.find((r) => r.system_key === SystemRoleKeys.MEMBER);
+    const role =
+      roles.find((candidate) => candidate.name === roleName) ?? member;
+    if (!role) return;
+    if (role.permissions.includes(WILDCARD)) {
+      throw new ForbiddenException(
+        'An invite cannot grant the President role; use Transfer presidency',
+      );
+    }
+    if (
+      !reach.wildcard &&
+      !ranksAtOrAbove(reach.rank, roleRank(role, positions))
+    ) {
+      throw new ForbiddenException(
+        'You can only invite people into a role ranked at or below your own.',
+      );
+    }
+    const base = new Set(member?.permissions ?? []);
+    const missing = permissionsNotHeld(reach, role.permissions).filter(
+      (permission) => !base.has(permission),
+    );
+    if (missing.length > 0) {
+      throw new ForbiddenException(
+        `You can only invite people into a role whose permissions you hold: ${missing.join(', ')}.`,
+      );
+    }
+  }
+
+  private async resolveInviteRoleName(
+    chapterId: string,
     requested?: string,
   ): Promise<string> {
     const explicit = requested?.trim();
@@ -291,7 +363,11 @@ export class InviteService {
     // `incomplete` chapter may mint, per the Chunk 03 wedge) but this route is
     // also @GraceBlocked(), which blocks minting on `past_due` even inside the
     // 3-day grace window. `canceled` blocks it too.
-    const role = await this.resolveInviteRole(chapterId, requestedRole);
+    const role = await this.resolveInviteRole(
+      chapterId,
+      requestedRole,
+      createdBy,
+    );
     const data = this.prepareInviteData(chapterId, createdBy, role);
     const invite = await this.inviteRepo.create(data);
     // Funnel step 2 (#267). Recorded after the write so an invite that failed
@@ -308,7 +384,11 @@ export class InviteService {
     requestedRole: string | undefined,
     count: number,
   ): Promise<Invite[]> {
-    const role = await this.resolveInviteRole(chapterId, requestedRole);
+    const role = await this.resolveInviteRole(
+      chapterId,
+      requestedRole,
+      createdBy,
+    );
     const inviteData: Partial<Invite>[] = Array.from({ length: count }, () =>
       this.prepareInviteData(chapterId, createdBy, role),
     );
@@ -339,7 +419,11 @@ export class InviteService {
     requestedRole: string | undefined,
     emails: string[],
   ): Promise<BulkEmailInviteResult> {
-    const role = await this.resolveInviteRole(chapterId, requestedRole);
+    const role = await this.resolveInviteRole(
+      chapterId,
+      requestedRole,
+      createdBy,
+    );
     const uniqueEmails = dedupeEmails(emails);
 
     // The address rides on the row so the inviter's list can name who each
@@ -486,7 +570,12 @@ export class InviteService {
   private async resolveRedeemRoles(invite: Invite) {
     const roles = await this.roleRepo.findByChapter(invite.chapter_id);
     const member = roles.find((r) => r.system_key === SystemRoleKeys.MEMBER);
-    const role = roles.find((r) => r.name === invite.role) ?? member;
+    // A role carrying `*` is never granted by a redeem, even by an invite
+    // minted before invites refused it (#4071): presidency moves only through
+    // Transfer presidency. The redeem grants the Member role instead.
+    const named = roles.find((r) => r.name === invite.role);
+    const role =
+      named && !named.permissions.includes(WILDCARD) ? named : member;
     if (!role) return { role, roleIds: [] as string[] };
     const roleIds = [role.id];
     if (member && member.id !== role.id && lacksBaseAccess(role)) {
