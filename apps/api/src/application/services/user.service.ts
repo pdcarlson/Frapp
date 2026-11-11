@@ -13,6 +13,8 @@ import {
   isAllowedUploadExtension,
   isAllowedUploadMime,
   isWithinUploadSizeLimit,
+  isNewerReleaseNoteVersion,
+  parseReleaseNoteVersion,
 } from '@repo/validation';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
@@ -63,6 +65,37 @@ export class UserService {
   /** {@link findById} with `avatar_url` made renderable, for the caller's own profile. */
   async findProfile(id: string): Promise<User> {
     return this.withSignedPhoto(await this.findById(id));
+  }
+
+  /**
+   * The newest What's new entry any of the caller's devices has shown (#4043),
+   * a `releaseNoteVersion`, or null when none has recorded one.
+   */
+  async whatsNewSeen(id: string): Promise<string | null> {
+    return (await this.findById(id)).whats_new_seen_version ?? null;
+  }
+
+  /**
+   * Record that one of the caller's devices showed What's new up to `version`.
+   * Only ever moves forward: a device still on an older build, or a web
+   * rollback, must not lower it, or a device that already showed the newer
+   * entry's notes would see them pass for unread elsewhere. Answers with the
+   * version the account holds afterwards.
+   */
+  async recordWhatsNewSeen(id: string, version: string): Promise<string> {
+    const user = await this.requireLiveUser(id);
+    const stored = user.whats_new_seen_version ?? null;
+    if (
+      stored !== null &&
+      !isNewerReleaseNoteVersion(
+        parseReleaseNoteVersion(version),
+        parseReleaseNoteVersion(stored),
+      )
+    ) {
+      return stored;
+    }
+    await this.userRepo.update(id, { whats_new_seen_version: version });
+    return version;
   }
 
   /** `avatar_url` made renderable; see {@link ProfilePhotoUrlService}. */

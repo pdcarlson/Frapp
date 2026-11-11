@@ -59,6 +59,12 @@ export interface User {
    */
   legal_accepted_at?: string | null;
   legal_policy_version?: string | null;
+  /**
+   * The newest What's new entry any of this member's devices has shown, as a
+   * `releaseNoteVersion` (#4043). Moved forward only, by `UserService`.
+   * Optional so fixtures that predate it still type-check.
+   */
+  whats_new_seen_version?: string | null;
   created_at: string;
   updated_at: string;
 }

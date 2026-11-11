@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  WHATS_NEW_QUIET_STORAGE_KEY,
   WHATS_NEW_SEEN_STORAGE_KEY,
   hasExistingInstallKey,
+  markWhatsNewQuiet,
+  markWhatsNewRead,
+  resetWhatsNewQuietForTests,
   readWhatsNewSeen,
   recordWhatsNewSeen,
   resetWhatsNewBootReadForTests,
@@ -86,5 +90,44 @@ describe("the seen marker", () => {
     await expect(recordWhatsNewSeen("2026-11-09", broken)).resolves.toBe(
       undefined,
     );
+  });
+});
+
+describe("the quiet mark (#4043)", () => {
+  beforeEach(() => resetWhatsNewQuietForTests());
+
+  function memory() {
+    const values = new Map<string, string>();
+    return {
+      values,
+      getItem: vi.fn(async (key: string) => values.get(key) ?? null),
+      setItem: vi.fn(async (key: string, value: string) => {
+        values.set(key, value);
+      }),
+      removeItem: vi.fn(async (key: string) => {
+        values.delete(key);
+      }),
+    };
+  }
+
+  it("records the entry another device showed, and sets the mark until What's new is read here", async () => {
+    const storage = memory();
+    await markWhatsNewQuiet(SEEN, storage);
+    expect(storage.values.get(WHATS_NEW_SEEN_STORAGE_KEY)).toBe(SEEN);
+    expect(storage.values.get(WHATS_NEW_QUIET_STORAGE_KEY)).toBe(SEEN);
+
+    await markWhatsNewRead(SEEN, storage);
+    expect(storage.values.get(WHATS_NEW_SEEN_STORAGE_KEY)).toBe(SEEN);
+    expect(storage.values.has(WHATS_NEW_QUIET_STORAGE_KEY)).toBe(false);
+  });
+
+  it("survives storage that throws", async () => {
+    const broken = {
+      getItem: vi.fn().mockRejectedValue(new Error("x")),
+      setItem: vi.fn().mockRejectedValue(new Error("x")),
+      removeItem: vi.fn().mockRejectedValue(new Error("x")),
+    };
+    await expect(markWhatsNewQuiet(SEEN, broken)).resolves.toBeUndefined();
+    await expect(markWhatsNewRead(SEEN, broken)).resolves.toBeUndefined();
   });
 });

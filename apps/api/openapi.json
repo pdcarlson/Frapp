@@ -284,6 +284,90 @@
         ]
       }
     },
+    "/v1/users/me/whats-new": {
+      "get": {
+        "description": "So What's new opens by itself on the first device a member opens after an update, and only marks its entry on the others (#4043). Needs no chapter.",
+        "operationId": "UserController_getMyWhatsNewSeen_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhatsNewSeenDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The newest What's new entry the caller has seen on any device",
+        "tags": [
+          "Users"
+        ]
+      },
+      "put": {
+        "description": "Moves the account's seen version forward to `seen_version`, never back, and answers with the version it holds afterwards. Idempotent.",
+        "operationId": "UserController_recordMyWhatsNewSeen_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordWhatsNewSeenDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhatsNewSeenDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Record that a device showed the caller What's new",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
     "/v1/users/me/avatar-url": {
       "post": {
         "operationId": "UserController_requestAvatarUploadUrl_v1",
@@ -12090,6 +12174,33 @@
         },
         "required": [
           "accept_terms_privacy"
+        ]
+      },
+      "WhatsNewSeenDto": {
+        "type": "object",
+        "properties": {
+          "seen_version": {
+            "type": "string",
+            "nullable": true,
+            "description": "A `releaseNoteVersion` (`YYYY-MM-DD#lines`): the newest entry's date and how many lines it had. Null until one of the caller's devices records one.",
+            "example": "2026-11-10#6"
+          }
+        },
+        "required": [
+          "seen_version"
+        ]
+      },
+      "RecordWhatsNewSeenDto": {
+        "type": "object",
+        "properties": {
+          "seen_version": {
+            "type": "string",
+            "description": "The `releaseNoteVersion` of the newest entry the device just showed. The account keeps the later of this and what it already holds, so an older build never lowers it.",
+            "example": "2026-11-10#6"
+          }
+        },
+        "required": [
+          "seen_version"
         ]
       },
       "UpdateUserDto": {

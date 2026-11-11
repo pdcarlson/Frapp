@@ -32,17 +32,32 @@
  * build that ships the feature would show nobody anything. It gets the newest
  * entry only; what it saw before is unknown.
  *
+ * Across devices (#4043): the account records the newest entry any of the
+ * member's devices has shown (`useAccountWhatsNewSeen` in `@repo/hooks`). When
+ * it already holds the entry this phone would open, the phone records it
+ * without opening and marks Settings → What's new instead
+ * ({@link markWhatsNewQuiet}) until that screen is opened. Offline, the
+ * phone's own marker decides, as it did before.
+ *
  * "Chat state at launch" is read once, at module load, which the root layout
  * triggers ({@link startWhatsNewBootRead}). Read later, a fresh install's own
  * first minutes of chat (read cursors, the last channel) would already be on
  * disk and look like an old install.
  */
 
+import { useEffect, useSyncExternalStore } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { CHAT_KV_PREFIX } from "@/lib/chat/key-value-store";
 
 /** `releaseNoteVersion` of the newest entry this phone has shown or skipped. */
 export const WHATS_NEW_SEEN_STORAGE_KEY = "frapp.mobile.whats-new-seen";
+
+/**
+ * Set while Settings → What's new carries the quiet mark: another device
+ * showed the newest entry, and this phone hasn't opened What's new since.
+ * Holds that entry's `releaseNoteVersion`.
+ */
+export const WHATS_NEW_QUIET_STORAGE_KEY = "frapp.mobile.whats-new-quiet";
 
 /**
  * Keys only a phone that has been in a chapter's chat holds: the read cursor
@@ -114,4 +129,85 @@ export async function recordWhatsNewSeen(
   } catch {
     // It shows once more at worst.
   }
+}
+
+// ── Quiet mark ──────────────────────────────────────────────────────────────
+
+type QuietStorage = Pick<
+  typeof AsyncStorage,
+  "getItem" | "setItem" | "removeItem"
+>;
+
+/** `null` until read from disk this process. */
+let quiet: boolean | null = null;
+const listeners = new Set<() => void>();
+
+function setQuiet(next: boolean): void {
+  if (quiet === next) return;
+  quiet = next;
+  for (const listener of listeners) listener();
+}
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+/**
+ * Another device showed the notes up to `version`: record it here so they
+ * never open by themselves on this phone, and mark Settings → What's new.
+ */
+export async function markWhatsNewQuiet(
+  version: string,
+  storage: QuietStorage = AsyncStorage,
+): Promise<void> {
+  setQuiet(true);
+  await recordWhatsNewSeen(version, storage);
+  try {
+    await storage.setItem(WHATS_NEW_QUIET_STORAGE_KEY, version);
+  } catch {
+    // The mark lasts this process only.
+  }
+}
+
+/** What's new was opened on this phone: record the newest entry, drop the mark. */
+export async function markWhatsNewRead(
+  version: string,
+  storage: QuietStorage = AsyncStorage,
+): Promise<void> {
+  setQuiet(false);
+  await recordWhatsNewSeen(version, storage);
+  try {
+    await storage.removeItem(WHATS_NEW_QUIET_STORAGE_KEY);
+  } catch {
+    // It reappears until the next open at worst.
+  }
+}
+
+async function loadWhatsNewQuiet(storage: QuietStorage): Promise<void> {
+  if (quiet !== null) return;
+  let stored: string | null = null;
+  try {
+    stored = await storage.getItem(WHATS_NEW_QUIET_STORAGE_KEY);
+  } catch {
+    // Unreadable storage holds no mark.
+  }
+  if (quiet === null) setQuiet(stored !== null);
+}
+
+/** Whether Settings → What's new carries the quiet mark. */
+export function useWhatsNewQuiet(storage: QuietStorage = AsyncStorage): boolean {
+  useEffect(() => {
+    void loadWhatsNewQuiet(storage);
+  }, [storage]);
+  return useSyncExternalStore(
+    subscribe,
+    () => quiet === true,
+    () => false,
+  );
+}
+
+/** Test seam: a fresh process. */
+export function resetWhatsNewQuietForTests(): void {
+  quiet = null;
 }

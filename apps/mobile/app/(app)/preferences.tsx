@@ -48,6 +48,7 @@ import {
 } from "@/lib/notifications/push-state";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useLatestTrack } from "@/lib/use-latest-track";
+import { useWhatsNewQuiet } from "@/lib/whats-new";
 import {
   deviceTimeZone,
   useNotificationPreferencesSync,
@@ -152,6 +153,7 @@ export default function PreferencesScreen() {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
+  const whatsNewQuiet = useWhatsNewQuiet();
   const { signOut } = useAuthSession();
   const [linkFailed, setLinkFailed] = useState<string | null>(null);
   const deleteAccount = useDeleteAccount();
@@ -501,6 +503,13 @@ export default function PreferencesScreen() {
         <ListRow
           label="What's new"
           accessibilityHint="Shows the latest changes to the app."
+          // Another device showed the newest entry first (#4043). Neutral, as
+          // every unread mark is (components.md § Chrome weight), and the
+          // same dot web's account menu draws.
+          trailing={
+            whatsNewQuiet ? <View style={styles.unreadDot} /> : undefined
+          }
+          accessibilityValue={whatsNewQuiet ? "New" : undefined}
           onPress={() => router.push("/whats-new")}
         />
         <ListRow
@@ -566,6 +575,12 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructive,
       paddingHorizontal: tokens.spacing.xs,
+    },
+    unreadDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: tokens.color.text.foreground,
     },
     swatch: {
       width: tokens.spacing.xl,

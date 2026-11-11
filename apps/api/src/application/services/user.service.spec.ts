@@ -134,6 +134,56 @@ describe('UserService', () => {
     expect(mockRepo.update).not.toHaveBeenCalled();
   });
 
+  describe("What's new seen version (#4043)", () => {
+    it('reads null until a device records one', async () => {
+      mockRepo.findById.mockResolvedValue(userFixture({ id: 'user-1' }));
+      await expect(service.whatsNewSeen('user-1')).resolves.toBeNull();
+    });
+
+    it('moves the version forward', async () => {
+      mockRepo.findById.mockResolvedValue(
+        userFixture({ id: 'user-1', whats_new_seen_version: '2026-11-09#3' }),
+      );
+      await expect(
+        service.recordWhatsNewSeen('user-1', '2026-11-10#1'),
+      ).resolves.toBe('2026-11-10#1');
+      expect(mockRepo.update).toHaveBeenCalledWith('user-1', {
+        whats_new_seen_version: '2026-11-10#1',
+      });
+    });
+
+    it('counts lines added to the same day as newer', async () => {
+      mockRepo.findById.mockResolvedValue(
+        userFixture({ id: 'user-1', whats_new_seen_version: '2026-11-10#3' }),
+      );
+      await expect(
+        service.recordWhatsNewSeen('user-1', '2026-11-10#5'),
+      ).resolves.toBe('2026-11-10#5');
+    });
+
+    it('never moves it back: an older build answers with what the account holds', async () => {
+      mockRepo.findById.mockResolvedValue(
+        userFixture({ id: 'user-1', whats_new_seen_version: '2026-11-10#5' }),
+      );
+      for (const older of ['2026-11-10#5', '2026-11-10#4', '2026-11-09#9']) {
+        await expect(service.recordWhatsNewSeen('user-1', older)).resolves.toBe(
+          '2026-11-10#5',
+        );
+      }
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a deleted account', async () => {
+      mockRepo.findById.mockResolvedValue(
+        userFixture({ id: 'user-1', deleted_at: '2026-11-01T00:00:00Z' }),
+      );
+      await expect(
+        service.recordWhatsNewSeen('user-1', '2026-11-10#1'),
+      ).rejects.toThrow(GoneException);
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+  });
+
   describe('requestAvatarUploadUrl', () => {
     const UUID_KEY = /^chapters\/ch-1\/profiles\/user-1\/[0-9a-f-]{36}\.jpg$/;
 

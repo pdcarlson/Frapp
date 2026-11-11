@@ -3,9 +3,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useAccessibleChapters, useCurrentUser } from "@repo/hooks";
+import {
+  useAccessibleChapters,
+  useAccountWhatsNewSeen,
+  useCurrentUser,
+  useRecordWhatsNewSeen,
+} from "@repo/hooks";
 import {
   RELEASE_NOTES,
+  accountHasSeenNewest,
   decideWhatsNew,
   type ReleaseNote,
 } from "@repo/validation";
@@ -21,9 +27,11 @@ import { ReleaseNoteEntry } from "@/components/whats-new/whats-new";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import {
   accountPredatesNote,
+  markWhatsNewQuiet,
   markWhatsNewSeen,
   markWhatsNewUnread,
   readWhatsNewSeen,
+  restoreWhatsNewQuiet,
   skipWhatsNew,
   useWhatsNewPending,
 } from "@/lib/whats-new";
@@ -46,7 +54,12 @@ import {
  * menu's What's new row carries a mark, and the next navigation tries again.
  *
  * The entry is recorded as seen when the dialog opens, so a reload with it
- * open doesn't bring it back.
+ * open doesn't bring it back, and the account records it too (#4043): a
+ * browser whose account has already seen the entry it would open, because
+ * another device showed it, doesn't open it; it records it and leaves the
+ * account menu's row marked until What's new is opened here. It waits for the
+ * account's answer (`useAccountWhatsNewSeen`, a few seconds at most) and goes
+ * by its own marker without one.
  */
 
 /** Long enough for the landing route's own dialogs to have opened first. */
@@ -70,6 +83,8 @@ export function WhatsNewHost() {
   const chaptersQuery = useAccessibleChapters();
   const userQuery = useCurrentUser();
   const user = userQuery.data as { created_at?: string | null } | undefined;
+  const account = useAccountWhatsNewSeen({ enabled: Boolean(user) });
+  const { mutate: recordOnAccount } = useRecordWhatsNewSeen();
 
   const membership = useMemo(() => {
     const memberships = Array.isArray(chaptersQuery.data)
@@ -85,9 +100,15 @@ export function WhatsNewHost() {
   // Once per page load: a new entry only arrives with a new bundle.
   const decided = useRef(false);
 
+  // A quiet mark from an earlier page load stays until What's new is opened.
+  useEffect(() => {
+    restoreWhatsNewQuiet();
+  }, []);
+
   useEffect(() => {
     const newest = RELEASE_NOTES[0];
     if (decided.current || !newest || !user || !membership) return;
+    if (!account.settled) return;
     decided.current = true;
     const existingInstall = accountPredatesNote(user.created_at, newest);
     const decision = decideWhatsNew({
@@ -100,8 +121,12 @@ export function WhatsNewHost() {
       if (decision.record) skipWhatsNew(decision.record);
       return;
     }
+    if (decision.record && accountHasSeenNewest(RELEASE_NOTES, account.seen)) {
+      markWhatsNewQuiet(decision.record);
+      return;
+    }
     markWhatsNewUnread(existingInstall);
-  }, [user, membership]);
+  }, [user, membership, account.settled, account.seen]);
 
   useEffect(() => {
     if (!pending) return;
@@ -122,11 +147,14 @@ export function WhatsNewHost() {
         tourDue: false,
         existingInstall: pending.existingInstall,
       });
-      markWhatsNewSeen();
-      if (decision.show.length > 0) setShown(decision.show);
+      const version = markWhatsNewSeen();
+      if (decision.show.length > 0) {
+        setShown(decision.show);
+        if (version) recordOnAccount(version);
+      }
     }, WHATS_NEW_OPEN_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [pending, pathname]);
+  }, [pending, pathname, recordOnAccount]);
 
   if (!shown) return null;
   const close = () => setShown(null);

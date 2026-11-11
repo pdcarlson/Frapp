@@ -18,6 +18,8 @@ export {
   parseReleaseNoteVersion,
   isNewerReleaseNoteVersion,
   decideWhatsNew,
+  accountHasSeenNewest,
+  RELEASE_NOTE_VERSION_PATTERN,
   type ReleaseNote,
   type ReleaseNoteVersion,
   type WhatsNewDecision,

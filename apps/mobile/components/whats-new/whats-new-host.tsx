@@ -1,9 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
-import { useCurrentUser } from "@repo/hooks";
+import {
+  useAccountWhatsNewSeen,
+  useCurrentUser,
+  useRecordWhatsNewSeen,
+} from "@repo/hooks";
 import {
   RELEASE_NOTES,
+  accountHasSeenNewest,
   decideWhatsNew,
   type ReleaseNote,
 } from "@repo/validation";
@@ -22,6 +27,7 @@ import { ReleaseNoteCard } from "@/components/whats-new/release-note-card";
 import { isTourDue } from "@/lib/onboarding/tour";
 import { useFrappTheme } from "@/lib/theme";
 import {
+  markWhatsNewQuiet,
   readWhatsNewSeen,
   recordWhatsNewSeen,
   startWhatsNewBootRead,
@@ -43,7 +49,12 @@ import {
  *
  * The entry is recorded as seen once the sheet has been asked to present, so
  * a member who kills the app with it open isn't shown it again, and a sheet
- * that never presented burns nothing.
+ * that never presented burns nothing. The account records it too (#4043): a
+ * phone whose account has already seen the entry it would open, because
+ * another device showed it, doesn't open the sheet; it records the entry and
+ * marks Settings → What's new until that screen is opened. It waits for the
+ * account's answer (`useAccountWhatsNewSeen`, a few seconds at most) and goes
+ * by its own marker without one.
  */
 
 /** Long enough for the launch jump into the last channel to finish sliding. */
@@ -58,6 +69,14 @@ export function WhatsNewHost() {
   const tallSheet = useTallSheetProps();
   const userQuery = useCurrentUser();
   const userId = (userQuery.data as { id?: string } | undefined)?.id ?? null;
+  const account = useAccountWhatsNewSeen({ enabled: userId !== null });
+  // Read inside the check without re-running it when the answer changes.
+  // Declared before the check's effect, so it has synced when that runs.
+  const accountSeen = useRef(account.seen);
+  useEffect(() => {
+    accountSeen.current = account.seen;
+  }, [account.seen]);
+  const { mutate: recordOnAccount } = useRecordWhatsNewSeen();
   const [shown, setShown] = useState<{
     notes: readonly ReleaseNote[];
     record: string;
@@ -66,7 +85,7 @@ export function WhatsNewHost() {
   const checked = useRef(false);
 
   useEffect(() => {
-    if (!userId || checked.current) return;
+    if (!userId || checked.current || !account.settled) return;
     checked.current = true;
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -88,6 +107,10 @@ export function WhatsNewHost() {
       }
       const record = decision.record;
       if (!record) return;
+      if (accountHasSeenNewest(RELEASE_NOTES, accountSeen.current)) {
+        await markWhatsNewQuiet(record);
+        return;
+      }
       timer = setTimeout(() => {
         if (live) setShown({ notes: decision.show, record });
       }, WHATS_NEW_OPEN_DELAY_MS);
@@ -99,13 +122,14 @@ export function WhatsNewHost() {
       // checks again, and nothing was recorded for a sheet never shown.
       checked.current = false;
     };
-  }, [userId]);
+  }, [userId, account.settled]);
 
   useEffect(() => {
     if (!shown || !sheet.current) return;
     sheet.current.present();
     void recordWhatsNewSeen(shown.record);
-  }, [shown]);
+    recordOnAccount(shown.record);
+  }, [shown, recordOnAccount]);
 
   return (
     <BottomSheetModal

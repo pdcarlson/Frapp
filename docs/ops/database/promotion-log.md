@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-11: What's new seen on the account (#4043)
+
+### 20261111120000_user_whats_new_seen.sql
+
+- **Purpose**: Adds `users.whats_new_seen_version text` (nullable): the newest What's new entry any of a member's devices has shown, as a `releaseNoteVersion` (`YYYY-MM-DD#lines`). `UserService.recordWhatsNewSeen` writes it, only ever forward, through `PUT /v1/users/me/whats-new`; `GET /v1/users/me/whats-new` reads it. A device that would open What's new by itself checks it first and, when the account has seen the entry, marks its What's new entry instead of opening it. No existing row changes. The rule is [`spec/ui/mobile/screens.md`](../../../spec/ui/mobile/screens.md) s16 and [`spec/ui/web-dashboard/README.md` § What's new](../../../spec/ui/web-dashboard/README.md#whats-new).
+- **Checks**: After `db push`, `select count(*) from information_schema.columns where table_name = 'users' and column_name = 'whats_new_seen_version';` returns `1`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API reads users with `select('*')` and ignores the column. The newer API against an unmigrated database fails the PUT (500), and its GET answers `null`; both clients treat either as "the account doesn't know" and fall back to the device's own marker, so the cost is What's new opening once per device, as before. Adding a nullable column with no default is metadata-only, under a brief lock. `add column if not exists` makes re-applying idempotent. `anonymize_user` leaves it alone: it isn't PII. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-whats-new-seen-on-the-account-20261111120000) § Rollback What's new seen on the account.
+
 ## 2026-11-10: Recruitment permissions backfill (#4070)
 
 ### 20261111010000_rush_permissions_backfill.sql
