@@ -2756,6 +2756,9 @@ describe('ChatService', () => {
         content: '[message deleted]',
         is_deleted: true,
         metadata: { discord_import_id: 'imp-1' },
+        flag: null,
+        flagged_by: null,
+        flagged_at: null,
       });
     });
 
@@ -3138,6 +3141,162 @@ describe('ChatService', () => {
 
   // ── Pins ─────────────────────────────────────────────────────────────
 
+  // #3921: one flag per message; anyone may add one, only the sender, the
+  // flagger or an officer may replace or remove it.
+  describe('message flags', () => {
+    const flagged = {
+      ...baseMessage,
+      flag: 'important' as const,
+      flagged_by: 'user-flagger',
+      flagged_at: '2026-01-02T00:00:00.000Z',
+    };
+
+    it('lets any reader flag an unflagged message, guarded on it staying unflagged', async () => {
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+      mockMessageRepo.compareAndSetFlag.mockImplementation(
+        async (_id, _expected, data) => ({ ...baseMessage, ...data }),
+      );
+
+      const result = await service.setMessageFlag(
+        'msg-1',
+        'ch-1',
+        'user-2',
+        false,
+        'important',
+      );
+
+      expect(mockMessageRepo.compareAndSetFlag).toHaveBeenCalledWith(
+        'msg-1',
+        null,
+        expect.objectContaining({ flag: 'important', flagged_by: 'user-2' }),
+      );
+      expect(result).toMatchObject({
+        flag: 'important',
+        flagged_by: 'user-2',
+        sender_blocked: false,
+      });
+    });
+
+    it('refuses a bystander replacing someone else’s flag', async () => {
+      mockMessageRepo.findById.mockResolvedValue(flagged);
+
+      await expect(
+        service.setMessageFlag('msg-1', 'ch-1', 'user-2', false, 'funny'),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        service.clearMessageFlag('msg-1', 'ch-1', 'user-2', false),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockMessageRepo.compareAndSetFlag).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['the sender', 'user-1', false],
+      ['whoever added it', 'user-flagger', false],
+      ['an officer', 'user-officer', true],
+    ])('lets %s replace the flag', async (_who, userId, isOfficer) => {
+      mockMessageRepo.findById.mockResolvedValue(flagged);
+      mockMessageRepo.compareAndSetFlag.mockImplementation(
+        async (_id, _expected, data) => ({ ...flagged, ...data }),
+      );
+
+      await service.setMessageFlag('msg-1', 'ch-1', userId, isOfficer, 'fyi');
+
+      expect(mockMessageRepo.compareAndSetFlag).toHaveBeenCalledWith(
+        'msg-1',
+        'important',
+        expect.objectContaining({ flag: 'fyi', flagged_by: userId }),
+      );
+    });
+
+    it('answers 409 when the flag changed between the check and the write', async () => {
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+      mockMessageRepo.compareAndSetFlag.mockResolvedValue(null);
+
+      await expect(
+        service.setMessageFlag('msg-1', 'ch-1', 'user-2', false, 'important'),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('treats setting the flag a message already has as done, for anyone', async () => {
+      mockMessageRepo.findById.mockResolvedValue(flagged);
+
+      const result = await service.setMessageFlag(
+        'msg-1',
+        'ch-1',
+        'user-2',
+        false,
+        'important',
+      );
+
+      expect(result.flag).toBe('important');
+      expect(mockMessageRepo.compareAndSetFlag).not.toHaveBeenCalled();
+    });
+
+    it('refuses to flag a deleted message', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...baseMessage,
+        is_deleted: true,
+      });
+
+      await expect(
+        service.setMessageFlag('msg-1', 'ch-1', 'user-1', false, 'important'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('clears all three fields, and is a no-op on an unflagged message', async () => {
+      mockMessageRepo.findById.mockResolvedValue(flagged);
+      mockMessageRepo.compareAndSetFlag.mockImplementation(
+        async (_id, _expected, data) => ({ ...flagged, ...data }),
+      );
+
+      await service.clearMessageFlag('msg-1', 'ch-1', 'user-flagger', false);
+      expect(mockMessageRepo.compareAndSetFlag).toHaveBeenCalledWith(
+        'msg-1',
+        'important',
+        { flag: null, flagged_by: null, flagged_at: null },
+      );
+
+      mockMessageRepo.compareAndSetFlag.mockClear();
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+      await service.clearMessageFlag('msg-1', 'ch-1', 'user-2', false);
+      expect(mockMessageRepo.compareAndSetFlag).not.toHaveBeenCalled();
+    });
+
+    it('withholds a blocked flagger’s id but keeps the flag', async () => {
+      mockMessageRepo.findById.mockResolvedValue(flagged);
+      mockChatBlocks.listBlockedUserIds.mockResolvedValue(['user-flagger']);
+
+      const result = await service.setMessageFlag(
+        'msg-1',
+        'ch-1',
+        'user-2',
+        false,
+        'important',
+      );
+
+      expect(result).toMatchObject({ flag: 'important', flagged_by: null });
+    });
+
+    it('clears the flag when the message is deleted', async () => {
+      mockMessageRepo.findById.mockResolvedValue(flagged);
+      mockMessageRepo.update.mockResolvedValue({
+        ...flagged,
+        is_deleted: true,
+      });
+
+      await service.deleteMessage('msg-1', 'ch-1', 'user-1', false);
+
+      expect(mockMessageRepo.update).toHaveBeenCalledWith(
+        'msg-1',
+        expect.objectContaining({
+          flag: null,
+          flagged_by: null,
+          flagged_at: null,
+        }),
+      );
+    });
+  });
+
   describe('pinMessage', () => {
     it('should pin a message', async () => {
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
@@ -3273,6 +3432,9 @@ describe('ChatService', () => {
         content: '[message deleted]',
         is_deleted: true,
         metadata: {},
+        flag: null,
+        flagged_by: null,
+        flagged_at: null,
       });
       // Same tail as `deleteMessage`: the attachment purge runs, scoped to the
       // chapter.

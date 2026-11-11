@@ -125,6 +125,12 @@ function maskMessage(message: ChatMessage): MaskedChatMessage {
     metadata: {},
     is_pinned: message.is_pinned,
     pinned_at: message.pinned_at,
+    // A tombstone draws no flag (#3921), so none is served: the flag is a
+    // label on content the blocker does not see, and an Important tint on a
+    // tombstone would point at the blocked member's message.
+    flag: null,
+    flagged_by: null,
+    flagged_at: null,
     edited_at: message.edited_at,
     is_deleted: message.is_deleted,
     mentions: null,
@@ -201,8 +207,29 @@ export function maskBlockedMessages(
   return messages.map((message) =>
     isFromBlockedSender(message.sender_id, blocked)
       ? maskMessage(message)
-      : { ...message, sender_blocked: false },
+      : withFlaggerMasked({ ...message, sender_blocked: false }, blocked),
   );
+}
+
+/**
+ * A clear message whose flag a blocked member added keeps the flag and loses
+ * the flagger (#3921).
+ *
+ * The flag is chapter state, the same for every reader, which a block counts
+ * rather than hides (`spec/behavior/chat/README.md` § What a block does and
+ * does not hide), so an Important message stays Important for the blocker.
+ * Who added it is the blocked member's own act, withheld the way their
+ * reactions are (`20260924170000`), so the row reads "Important" with no
+ * "flagged by". Rows whose flagger is not blocked pass through untouched.
+ */
+function withFlaggerMasked(
+  message: MaskedChatMessage,
+  blocked: ReadonlySet<string>,
+): MaskedChatMessage {
+  if (message.flagged_by == null || !blocked.has(message.flagged_by)) {
+    return message;
+  }
+  return { ...message, flagged_by: null };
 }
 
 /**

@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-11: Message flags (#3921)
+
+### 20261111150000_chat_message_flags.sql
+
+- **Purpose**: Adds three nullable columns to `chat_messages`: `flag` (text), `flagged_by` (uuid, FK to `users (id)` on delete set null) and `flagged_at` (timestamptz). `chat_messages_flag_known` holds `flag` to `important`, `funny`, `question`, `hype`, `fyi` (`CHAT_MESSAGE_FLAGS` in `@repo/validation`). `chat_messages_flag_cleared` holds an unflagged row to no flagger and no time. No existing row changes: every message reads as unflagged. The rule is [`spec/behavior/chat/README.md` § Message flags](../../../spec/behavior/chat/README.md#message-flags).
+- **Checks**: After `db push`, `select column_name from information_schema.columns where table_name = 'chat_messages' and column_name in ('flag', 'flagged_by', 'flagged_at');` returns three rows, `select count(*) from chat_messages where flag is not null;` returns `0`, and `select conname, convalidated from pg_constraint where conname like 'chat_messages_flag%';` returns three rows, all `true`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API names its message columns explicitly (`CHAT_MESSAGE_COLUMNS`), so it never reads or writes the new ones. The newer API against an unmigrated database fails every message read, because its column list names `flag`. Adding nullable columns is metadata-only. The two checks and the foreign key are added `not valid` and then validated, so the scan of `chat_messages` runs under `SHARE UPDATE EXCLUSIVE` rather than the `ALTER`'s brief `ACCESS EXCLUSIVE`, against all-null values. `add column if not exists`, the `drop constraint if exists` pair and the guarded foreign key make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-message-flags-20261111150000) § Rollback message flags.
+
 ## 2026-11-11: What's new seen on the account (#4043)
 
 ### 20261111130000_user_whats_new_seen.sql

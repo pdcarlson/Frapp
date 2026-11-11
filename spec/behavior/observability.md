@@ -570,6 +570,7 @@ Properties are listed without `feature`, which every event carries. "Counts requ
 | `message-sent` | Any message is sent, a retry on the same `client_message_id` excepted. `kind` is the stored message kind. This is the count of sends; the web outbox events measure delivery | `kind`, `is_reply`, `attachment_count` |
 | `announcement-posted` | An `/announce` message is sent (feature `announcements`) | — |
 | `message-reacted` | A member adds a reaction. The emoji is never sent; a repeat is deduplicated, and removing one doesn't reach the API | — |
+| `message-flagged` | A member puts a flag on a message, or replaces one ([chat § Message flags](chat/README.md#message-flags)). Setting the flag a message already carries counts again; removing one sends nothing | `flag` (which of the five flags) |
 | `dm-opened` | A member opens a 1-on-1 DM. Get-or-create, so reopening one counts again | — |
 | `channel-created` | An officer creates a channel | `type`, `is_read_only`, `has_category` |
 | `message-reported` | A member reports a message. `reason` is the report-reason enum, never the details; a repeat while the report is open counts again | `reason` |

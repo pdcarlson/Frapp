@@ -1,3 +1,4 @@
+import type { ChatMessageFlag } from '@repo/validation';
 import type { ChatNotificationLevel } from './chat-notification-preference.entity';
 
 export type ChannelType =
@@ -282,6 +283,16 @@ export interface ChatMessage {
   metadata: Record<string, any>;
   is_pinned: boolean;
   pinned_at: string | null;
+  /**
+   * The message's flag (#3921): one of `CHAT_MESSAGE_FLAGS` in
+   * `@repo/validation`, or null. Who added it and when ride beside it, and
+   * all three are null together (`chat_messages_flag_cleared`).
+   *
+   * Optional for rows written before the columns existed.
+   */
+  flag?: ChatMessageFlag | null;
+  flagged_by?: string | null;
+  flagged_at?: string | null;
   edited_at: string | null;
   is_deleted: boolean;
   /**

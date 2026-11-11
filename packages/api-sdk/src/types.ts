@@ -1348,6 +1348,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/messages/{messageId}/flag": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Flag a message (anyone on an unflagged message; sender, flagger or channels:manage to replace) */
+        put: operations["ChatController_setMessageFlag_v1"];
+        post?: never;
+        /** Remove a message's flag (its sender, whoever added it, or channels:manage) */
+        delete: operations["ChatController_clearMessageFlag_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/channels/messages/{messageId}/actions": {
         parameters: {
             query?: never;
@@ -4653,6 +4671,17 @@ export interface components {
             metadata: Record<string, never>;
             is_pinned: boolean;
             pinned_at: string | null;
+            /**
+             * @description The flag a member added after the message was sent (#3921), or null. Null on a masked row: a tombstone draws no flag.
+             * @enum {string|null}
+             */
+            flag?: "important" | "funny" | "question" | "hype" | "fyi" | null;
+            /**
+             * Format: uuid
+             * @description Who added the flag. Null when there is no flag, and also when the viewer blocked the member who added it: the flag stays, the name is withheld.
+             */
+            flagged_by?: string | null;
+            flagged_at?: string | null;
             edited_at: string | null;
             is_deleted: boolean;
             /** @description `users.id` of everyone mentioned, plus a reply's quoted author, resolved server-side at send time. Null on a masked row: a mention overrides a per-channel mute, so leaving it would let a blocked member keep poking the blocker through a masked row. */
@@ -4704,6 +4733,13 @@ export interface components {
         };
         EditMessageDto: {
             content: string;
+        };
+        SetMessageFlagDto: {
+            /**
+             * @description One flag per message (#3921). Anyone who can read the channel may flag an unflagged message; replacing a flag takes its sender, whoever added it, or `channels:manage`.
+             * @enum {string}
+             */
+            flag: "important" | "funny" | "question" | "hype" | "fyi";
         };
         ChatMessageActionDto: {
             /** @description Action discriminator. `reaction:<emoji>` for emoji reactions, `vote` for poll votes (UPSERT), free-form for card actions. */
@@ -9377,6 +9413,70 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_setMessageFlag_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetMessageFlagDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatMessageDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_clearMessageFlag_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatMessageDto"];
+                };
             };
             /** @description Error */
             default: {

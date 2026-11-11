@@ -1,3 +1,4 @@
+import type { ChatMessageFlag } from '@repo/validation';
 import {
   ChatChannel,
   ChatChannelCategory,
@@ -287,6 +288,18 @@ export interface IChatMessageRepository {
     data: Partial<ChatMessage>,
   ): Promise<'inserted' | 'duplicate'>;
   update(id: string, data: Partial<ChatMessage>): Promise<ChatMessage>;
+  /**
+   * Write a message's flag fields only if its flag is still `expectedFlag`
+   * (null for "still unflagged"), and return the updated row, or `null` when
+   * the flag changed underneath the caller (#3921). The caller checked who may
+   * change the flag against `expectedFlag`, so a write past a concurrent
+   * change would skip that check.
+   */
+  compareAndSetFlag(
+    id: string,
+    expectedFlag: ChatMessageFlag | null,
+    data: Pick<ChatMessage, 'flag' | 'flagged_by' | 'flagged_at'>,
+  ): Promise<ChatMessage | null>;
 }
 
 export interface IChatMessageActionRepository {

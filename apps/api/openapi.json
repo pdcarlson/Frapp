@@ -4421,6 +4421,106 @@
         ]
       }
     },
+    "/v1/channels/messages/{messageId}/flag": {
+      "put": {
+        "operationId": "ChatController_setMessageFlag_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetMessageFlagDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatMessageDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Flag a message (anyone on an unflagged message; sender, flagger or channels:manage to replace)",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "delete": {
+        "operationId": "ChatController_clearMessageFlag_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatMessageDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove a message's flag (its sender, whoever added it, or channels:manage)",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/channels/messages/{messageId}/actions": {
       "post": {
         "operationId": "ChatController_recordMessageAction_v1",
@@ -14860,6 +14960,28 @@
             "type": "string",
             "nullable": true
           },
+          "flag": {
+            "type": "string",
+            "enum": [
+              "important",
+              "funny",
+              "question",
+              "hype",
+              "fyi"
+            ],
+            "nullable": true,
+            "description": "The flag a member added after the message was sent (#3921), or null. Null on a masked row: a tombstone draws no flag."
+          },
+          "flagged_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Who added the flag. Null when there is no flag, and also when the viewer blocked the member who added it: the flag stays, the name is withheld."
+          },
+          "flagged_at": {
+            "type": "string",
+            "nullable": true
+          },
           "edited_at": {
             "type": "string",
             "nullable": true
@@ -15045,6 +15167,25 @@
         },
         "required": [
           "content"
+        ]
+      },
+      "SetMessageFlagDto": {
+        "type": "object",
+        "properties": {
+          "flag": {
+            "type": "string",
+            "enum": [
+              "important",
+              "funny",
+              "question",
+              "hype",
+              "fyi"
+            ],
+            "description": "One flag per message (#3921). Anyone who can read the channel may flag an unflagged message; replacing a flag takes its sender, whoever added it, or `channels:manage`."
+          }
+        },
+        "required": [
+          "flag"
         ]
       },
       "ChatMessageActionDto": {

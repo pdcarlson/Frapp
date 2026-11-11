@@ -1011,3 +1011,10 @@ export type {
   ChatBackgroundBuiltIn,
   ChatBackgroundKey,
 } from "./chat-backgrounds";
+export {
+  CHAT_MESSAGE_FLAGS,
+  CHAT_MESSAGE_FLAG_LABELS,
+  canChangeMessageFlag,
+  isChatMessageFlag,
+} from "./chat-message-flags";
+export type { ChatMessageFlag } from "./chat-message-flags";

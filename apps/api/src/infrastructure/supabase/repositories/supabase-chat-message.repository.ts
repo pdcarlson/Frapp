@@ -1,3 +1,4 @@
+import type { ChatMessageFlag } from '@repo/validation';
 import { Inject, Injectable } from '@nestjs/common';
 import { escapeFilterValue } from '../supabase.utils';
 import { SUPABASE_CLIENT } from '../supabase.provider';
@@ -91,7 +92,7 @@ function effectivePollListLimit(requested?: number): number {
  * message page for a field that is discarded on arrival.
  */
 export const CHAT_MESSAGE_COLUMNS =
-  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, type, kind, payload, client_message_id, reply_to_id, metadata, mentions, thread_root_id, thread_reply_count, thread_last_reply_at, thread_recent_sender_ids, is_pinned, pinned_at, edited_at, is_deleted, created_at' as const;
+  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, type, kind, payload, client_message_id, reply_to_id, metadata, mentions, thread_root_id, thread_reply_count, thread_last_reply_at, thread_recent_sender_ids, is_pinned, pinned_at, flag, flagged_by, flagged_at, edited_at, is_deleted, created_at' as const;
 
 @Injectable()
 export class SupabaseChatMessageRepository implements IChatMessageRepository {
@@ -374,6 +375,26 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
     if (isDedupeHit(error, data)) return 'duplicate';
     if (error) throw new SupabaseQueryError(error);
     return 'inserted';
+  }
+
+  async compareAndSetFlag(
+    id: string,
+    expectedFlag: ChatMessageFlag | null,
+    data: Pick<
+      TablesUpdate<'chat_messages'>,
+      'flag' | 'flagged_by' | 'flagged_at'
+    >,
+  ): Promise<ChatMessage | null> {
+    const query = this.supabase.from('chat_messages').update(data).eq('id', id);
+    const guarded =
+      expectedFlag === null
+        ? query.is('flag', null)
+        : query.eq('flag', expectedFlag);
+    const { data: updated, error } = await guarded
+      .select(CHAT_MESSAGE_COLUMNS)
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return updated;
   }
 
   async update(
