@@ -1,13 +1,7 @@
 "use client";
 
-import { permissionLabel } from "@repo/validation";
-import type { ReactNode } from "react";
-
-import { useMemo, useState } from "react";
-import { Loader2, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useMemo } from "react";
 import { ProfileSection } from "@/components/profile/profile-section";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -21,14 +15,8 @@ import {
   anyReadUncached,
   OfflineState,
 } from "@/components/shared/async-states";
-import { useToast } from "@/lib/hooks/use-toast";
-import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useNetwork } from "@/lib/providers/network-provider";
-import {
-  dashboardCheckboxHitAreaClassName,
-  dashboardTableCheckboxClassName,
-} from "@/components/shared/table-controls";
-import { asArray, getErrorMessage } from "@/lib/utils";
+import { asArray } from "@/lib/utils";
 import { normalizeRoleOptions } from "@/lib/roles";
 import { can } from "@repo/validation";
 import { RolesAndPermissionsPage } from "@/components/roles/roles-page";
@@ -44,7 +32,6 @@ import {
   useRoles,
 } from "@repo/hooks";
 import { SettingsListCardSkeleton } from "@/components/settings/settings-skeleton";
-import { InlineNote } from "@/components/shared/inline-note";
 
 type Props = {
   /** Whether the caller holds `chapter-config:manage`. */
