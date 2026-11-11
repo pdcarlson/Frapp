@@ -27,3 +27,19 @@ export const hydrateEventsView = preference.hydrate;
 export const useEventsView = preference.use;
 export const setEventsView = preference.set;
 export const resetEventsViewForTests = preference.resetForTests;
+
+/**
+ * What the Calendar shows (#4144): events, the member's tasks, the tasks they
+ * assigned. Kept per phone like the view, as the layer names in JSON; an
+ * empty string is "nothing stored", which shows everything.
+ */
+const calendarLayersPreference = createStoredPreference<string>({
+  key: "frapp.events.calendar-layers",
+  parse: (raw) => (typeof raw === "string" ? raw : ""),
+  fallback: "",
+});
+
+export const useCalendarLayersRaw = calendarLayersPreference.use;
+export const setCalendarLayersRaw = calendarLayersPreference.set;
+export const resetCalendarLayersForTests =
+  calendarLayersPreference.resetForTests;

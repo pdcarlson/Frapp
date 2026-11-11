@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   ROLE_COLOR_HEXES,
   ROLE_COLOR_PALETTE,
-  resolveCustomRoleNames,
   resolveRoleChips,
   roleColor,
   roleColorOrNull,
@@ -110,32 +109,5 @@ describe("resolveRoleChips", () => {
 
   it("draws a duplicated role id once", () => {
     expect(resolveRoleChips(roles, ["r-1", "r-1"])).toHaveLength(1);
-  });
-});
-
-describe("resolveCustomRoleNames", () => {
-  const customRoles = [
-    { id: "cr-1", label: "Rush Chair" },
-    { id: "cr-2", label: "Social Chair" },
-  ];
-
-  it("resolves ids to labels", () => {
-    expect(resolveCustomRoleNames(customRoles, ["cr-1"])).toEqual([
-      "Rush Chair",
-    ]);
-  });
-
-  it("returns nothing when the viewer cannot resolve them (data undefined)", () => {
-    expect(resolveCustomRoleNames(undefined, ["cr-1"])).toEqual([]);
-  });
-
-  it("returns nothing for an empty id list", () => {
-    expect(resolveCustomRoleNames(customRoles, [])).toEqual([]);
-  });
-
-  it("drops a duplicate and an unmatched id", () => {
-    expect(
-      resolveCustomRoleNames(customRoles, ["cr-1", "cr-1", "cr-deleted"]),
-    ).toEqual(["Rush Chair"]);
   });
 });

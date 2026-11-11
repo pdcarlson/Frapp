@@ -1299,9 +1299,10 @@ After any rollback event:
   ) x
   WHERE m.id = x.message_id;
 
+  -- `attachment_photos` (#3879) describes the same rows, so it goes too.
   UPDATE chat_messages
-  SET metadata = metadata - 'attachment_count'
-  WHERE metadata ? 'attachment_count';
+  SET metadata = metadata - 'attachment_count' - 'attachment_photos'
+  WHERE metadata ? 'attachment_count' OR metadata ? 'attachment_photos';
   ```
   Rows written *after* the migration are also restored by this — they were never
   in the sigil format, but the pre-change composer produced exactly that format,
@@ -3587,6 +3588,18 @@ drop function if exists public.reorder_chat_channels(uuid, uuid, uuid[]);
 drop function if exists public.reorder_chat_categories(uuid, uuid[]);
 alter table public.chat_channels drop column if exists display_order;
 ```
+
+## Rollback custom roles fold (20261111210000)
+
+* **Migration**: `20261111210000_fold_custom_roles.sql`
+
+Two new columns, `chapter_custom_roles.folded_role_id` and `folded_at`; a new `roles` row for each custom role; each member's `custom_role_ids` moved into `role_ids` and emptied; `transfer_presidency` redefined without its custom-role clause. `chapter_custom_roles` itself is untouched apart from the new column.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API reads `roles` and `chapter_custom_roles` both; with `custom_role_ids` empty everywhere, it reads only roles, so every member keeps exactly what they have, and the folded roles show on the Roles page as ordinary roles. The reverted Settings page lists the custom roles again, unassigned. **Before rolling forward again, re-run this file by hand** (`db push` won't re-apply it): an assignment or a custom role the reverted API wrote in the meantime lives only in `custom_role_ids` or an unfolded row, which the forward API doesn't read.
+
+**Moving the assignments back into `custom_role_ids` is not needed** for a rollback and is not offered as SQL: the folded roles already grant exactly what the custom roles did. Each custom role's role is `chapter_custom_roles.folded_role_id` if it is ever wanted.
+
+If `transfer_presidency` itself must go back, its earlier body is the one in `20261108200000_transfer_presidency_keeps_member_access.sql`; with `custom_role_ids` empty its extra clause never matches, so the two behave the same.
 
 ## Rollback Task due times and subtasks (20261111214500)
 

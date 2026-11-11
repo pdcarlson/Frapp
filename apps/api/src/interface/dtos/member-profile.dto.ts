@@ -14,7 +14,12 @@ export class MemberProfileDto {
   @ApiProperty({ type: [String] })
   role_ids: string[];
 
-  @ApiProperty({ type: [String] })
+  @ApiProperty({
+    type: [String],
+    deprecated: true,
+    description:
+      'Always empty. Custom roles were folded into ordinary roles (#4075) and appear in role_ids; kept for the mobile builds already in the stores.',
+  })
   custom_role_ids: string[];
 
   @ApiProperty()

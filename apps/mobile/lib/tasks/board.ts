@@ -80,7 +80,8 @@ export interface TaskBoard {
 
 const EMPTY_BOARD: TaskBoard = { dueThisWeek: [], later: [], total: 0 };
 
-function toRow(row: Record<string, unknown>): TaskRowModel | null {
+/** One `GET /v1/tasks` row as the board draws it, or `null` if it can't be. */
+export function toTaskRow(row: Record<string, unknown>): TaskRowModel | null {
   const id = str(row, "id");
   const title = str(row, "title");
   if (!id || !title) return null;
@@ -180,7 +181,7 @@ export function selectTaskRows(
 
   for (const raw of records(data)) {
     if (str(raw, "assignee_id") !== viewerUserId) continue;
-    const row = toRow(raw);
+    const row = toTaskRow(raw);
     if (!row) continue;
 
     const days = dueInDays(row, now);

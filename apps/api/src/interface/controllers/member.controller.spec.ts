@@ -1,3 +1,4 @@
+import { ConflictException } from '@nestjs/common';
 import { TestingModule } from '@nestjs/testing';
 import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { MemberController } from './member.controller';
@@ -168,32 +169,36 @@ describe('MemberController', () => {
         'member-1',
         dto.role_ids,
         'chapter-1',
-        undefined,
       );
       expect(result).toEqual(updatedMember);
     });
 
-    it('passes custom_role_ids through when supplied', async () => {
+    it('ignores a deprecated custom_role_ids an old web page still sends (#4075)', async () => {
       const dto: UpdateMemberRolesDto = {
         role_ids: ['role-1'],
-        custom_role_ids: ['custom-1', 'custom-2'],
+        custom_role_ids: [],
       };
-      const updatedMember = {
-        id: 'member-1',
-        role_ids: dto.role_ids,
-        custom_role_ids: dto.custom_role_ids,
-      } as any;
-      memberService.updateRoles.mockResolvedValue(updatedMember);
+      memberService.updateRoles.mockResolvedValue({ id: 'member-1' } as any);
 
-      const result = await controller.updateRoles('chapter-1', 'member-1', dto);
+      await controller.updateRoles('chapter-1', 'member-1', dto);
 
       expect(memberService.updateRoles).toHaveBeenCalledWith(
         'member-1',
         dto.role_ids,
         'chapter-1',
-        dto.custom_role_ids,
       );
-      expect(result).toEqual(updatedMember);
+    });
+
+    it('refuses a non-empty custom_role_ids, which only a page read before the fold sends (#4075)', async () => {
+      const dto: UpdateMemberRolesDto = {
+        role_ids: ['role-1'],
+        custom_role_ids: ['11111111-1111-4111-8111-111111111111'],
+      };
+
+      await expect(
+        controller.updateRoles('chapter-1', 'member-1', dto),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(memberService.updateRoles).not.toHaveBeenCalled();
     });
   });
 

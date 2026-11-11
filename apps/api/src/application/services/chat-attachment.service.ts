@@ -10,6 +10,7 @@ import {
   isAllowedUploadMime,
   isWithinUploadSizeLimit,
   MAX_UPLOAD_LABEL,
+  isDecodableThumbhash,
 } from '@repo/validation';
 import {
   CHAT_MESSAGE_ATTACHMENT_REPOSITORY,
@@ -104,6 +105,45 @@ export interface SendMessageAttachmentInput {
   thumbhash?: string | null;
   /** Must be `chatPreviewPathFor(storage_path)`, the path the mint handed out. */
   preview_storage_path?: string | null;
+}
+
+/** One photo's display geometry, as `metadata.attachment_photos` carries it. */
+export interface AttachmentPhotoGeometry {
+  width: number | null;
+  height: number | null;
+  thumbhash: string | null;
+}
+
+/**
+ * The message metadata a send stamps for its attachments (#3879).
+ *
+ * `attachment_count` says there is anything to fetch. `attachment_photos` has
+ * one entry per photo (an `image/` attachment) with the size and ThumbHash
+ * `validateAttachmentInputs` kept, so a reader can reserve each photo's box
+ * before the attachments read returns, and a Realtime echo, which cannot carry
+ * a join, still has it. Every photo gets an entry, a sized one or not, so the
+ * count minus the entries is the number of files: a reader can lay out both.
+ * Live chat accepts only images every client draws (`document` uploads), so
+ * `image/` here means a photo the clients render inline; chat-core's
+ * `attachments.spec.ts` fails if `document` ever admits one they don't.
+ *
+ * Display metadata, not a copy of the rows: the rows stay the source of truth.
+ * Readers lay the entries out in any order, so this list's order need not match
+ * the read's (a column of boxes is as tall in any order).
+ */
+export function attachmentMetadataOf(
+  attachments: readonly SendMessageAttachmentInput[],
+): { attachment_count: number; attachment_photos: AttachmentPhotoGeometry[] } {
+  return {
+    attachment_count: attachments.length,
+    attachment_photos: attachments
+      .filter((attachment) => attachment.content_type.startsWith('image/'))
+      .map((attachment) => ({
+        width: attachment.width ?? null,
+        height: attachment.height ?? null,
+        thumbhash: attachment.thumbhash ?? null,
+      })),
+  };
 }
 
 /**
@@ -326,9 +366,14 @@ export class ChatAttachmentService {
     const width = edge(attachment.width);
     const height = edge(attachment.height);
     const sized = width !== null && height !== null;
+    // The pattern bounds the length; `isDecodableThumbhash` checks the header's
+    // own sizes are all there, because a short hash (`AAAA` passes the pattern)
+    // crashes expo-image's iOS decoder, and the stamp hands it to every reader
+    // before the attachments read returns (#3879).
     const thumbhash =
       attachment.thumbhash != null &&
-      THUMBHASH_BASE64.test(attachment.thumbhash)
+      THUMBHASH_BASE64.test(attachment.thumbhash) &&
+      isDecodableThumbhash(attachment.thumbhash)
         ? attachment.thumbhash
         : null;
     const preview =
@@ -395,6 +440,7 @@ export class ChatAttachmentService {
         const message = await this.messageRepo.findById(messageId);
         const metadata = { ...(message?.metadata ?? {}) };
         delete metadata.attachment_count;
+        delete metadata.attachment_photos;
         await this.messageRepo.update(messageId, { metadata });
       } catch (cleanupError) {
         // Best effort. If even this fails the message keeps a count it cannot

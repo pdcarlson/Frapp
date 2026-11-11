@@ -2,8 +2,7 @@ import { Module } from '@nestjs/common';
 import { RbacService } from '../../application/services/rbac.service';
 import { RbacController } from '../../interface/controllers/rbac.controller';
 import { ChapterModule } from '../chapter/chapter.module';
-// ChapterConfigModule → CustomRoleService, which the permission resolver uses
-// to flatten custom-role capabilities (bridge model, spec/behavior/rbac.md).
+// ChapterConfigModule → ChapterAuditLogService, which audits role writes.
 import { ChapterConfigModule } from '../chapter-config/chapter-config.module';
 
 @Module({
