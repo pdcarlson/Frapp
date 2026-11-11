@@ -4134,7 +4134,8 @@ describe('ChatService', () => {
           content,
           reply_to_id: 'msg-quoted',
         });
-      const stored = () => mockMessageRepo.create.mock.calls.at(-1)?.[0]?.mentions;
+      const stored = () =>
+        mockMessageRepo.create.mock.calls.at(-1)?.[0]?.mentions;
 
       beforeEach(() => {
         seedRoster();
@@ -4160,14 +4161,17 @@ describe('ChatService', () => {
 
       it.each([
         ['a reply to yourself', { sender_id: 'user-1' }],
-        ['a row with no linked member', { sender_id: null, kind: 'imported' }],
+        ['a row with no linked member', { sender_id: null }],
         ['a system row', { sender_id: SYSTEM_SENDER_ID }],
         ['a deleted message', { is_deleted: true }],
-      ])('pings nobody for %s', async (_label, overrides) => {
-        mockMessageRepo.findById.mockResolvedValue(quoted(overrides));
-        await reply();
-        expect(stored()).toEqual([]);
-      });
+      ] as Array<[string, Partial<ChatMessage>]>)(
+        'pings nobody for %s',
+        async (_label, overrides) => {
+          mockMessageRepo.findById.mockResolvedValue(quoted(overrides));
+          await reply();
+          expect(stored()).toEqual([]);
+        },
+      );
 
       it('pings nobody across a block, either way', async () => {
         mockMessageRepo.findById.mockResolvedValue(quoted());
@@ -4178,7 +4182,9 @@ describe('ChatService', () => {
 
       it('still sends, without the ping, when blocks cannot be read', async () => {
         mockMessageRepo.findById.mockResolvedValue(quoted());
-        mockChatBlocks.isBlockedEitherWay.mockRejectedValue(new Error('pg down'));
+        mockChatBlocks.isBlockedEitherWay.mockRejectedValue(
+          new Error('pg down'),
+        );
         await expect(reply()).resolves.toEqual({
           message: baseMessage,
           deduplicated: false,
