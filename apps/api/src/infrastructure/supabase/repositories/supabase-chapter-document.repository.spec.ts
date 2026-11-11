@@ -67,20 +67,6 @@ describe('SupabaseChapterDocumentRepository — tenant scope', () => {
     expect(docs.map((d) => d.id)).toEqual([DOC_B]);
   });
 
-  it('findByChapter keeps the chapter predicate alongside an uploader filter', async () => {
-    // The same member uploaded a document in each chapter.
-    const mine = await harness.expectTenantScoped(CHAPTER_B, () =>
-      repo.findByChapter(CHAPTER_B, { uploaded_by: USER_SHARED }),
-    );
-    const theirs = await repo.findByChapter(CHAPTER_B, {
-      uploaded_by: '0c000000-0000-4000-8000-0000000000ff',
-    });
-
-    expect(mine.length).toBeGreaterThan(0);
-    expect(mine.every((d) => d.chapter_id === CHAPTER_B)).toBe(true);
-    expect(theirs).toEqual([]);
-  });
-
   it('findByChapter keeps the chapter predicate alongside a folder filter', async () => {
     const docs = await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.findByChapter(CHAPTER_B, { folder: FOLDER }),

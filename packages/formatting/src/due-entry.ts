@@ -77,16 +77,23 @@ export function parseDueEntry(raw: string, now: Date): string | null {
       ? words.slice(1).join(" ")
       : text;
 
-  const monthFirst =
-    /^([a-z]+) (\d{1,2})(?:st|nd|rd|th)?(?: (\d{4}))?$/.exec(rest);
+  const monthFirst = /^([a-z]+) (\d{1,2})(?:st|nd|rd|th)?(?: (\d{4}))?$/.exec(
+    rest,
+  );
   if (monthFirst) {
     const month = indexOfName(MONTHS, monthFirst[1]!);
     if (month === null) return null;
-    return dated(month + 1, Number(monthFirst[2]), yearOf(monthFirst[3]), today);
+    return dated(
+      month + 1,
+      Number(monthFirst[2]),
+      yearOf(monthFirst[3]),
+      today,
+    );
   }
 
-  const dayFirst =
-    /^(\d{1,2})(?:st|nd|rd|th)? ([a-z]+)(?: (\d{4}))?$/.exec(rest);
+  const dayFirst = /^(\d{1,2})(?:st|nd|rd|th)? ([a-z]+)(?: (\d{4}))?$/.exec(
+    rest,
+  );
   if (dayFirst) {
     const month = indexOfName(MONTHS, dayFirst[2]!);
     if (month === null) return null;
@@ -110,7 +117,15 @@ export function parseDueEntry(raw: string, now: Date): string | null {
  * the browser's locale would write `"sáb, 14 de nov"` into a field that could
  * not read it back.
  */
-export function formatDueEntry(isoDate: string, now: Date): string {
+export function formatDueEntry(entry: string, now: Date): string {
+  const [isoDate = entry, time] = entry.split("T");
+  const day = formatDueDay(isoDate, now);
+  if (!time || !TIME_OF_DAY.test(time)) return day;
+  const [hours, minutes] = time.split(":").map(Number) as [number, number];
+  return `${day} · ${clockWords(hours, minutes)}`;
+}
+
+function formatDueDay(isoDate: string, now: Date): string {
   const at = parseBareDateLocalNoon(isoDate);
   if (!at) return isoDate;
   const month = capitalized(MONTHS[at.getMonth()]!.slice(0, 3));
@@ -122,6 +137,140 @@ export function formatDueEntry(isoDate: string, now: Date): string {
   }
   const weekday = capitalized(WEEKDAYS[at.getDay()]!.slice(0, 3));
   return `${weekday}, ${month} ${at.getDate()}`;
+}
+
+/** `"5 PM"`, `"5:30 PM"`, `"12 PM"`: English, like the rest of the field. */
+function clockWords(hours: number, minutes: number): string {
+  const period = hours < 12 ? "AM" : "PM";
+  const hour = hours % 12 === 0 ? 12 : hours % 12;
+  return minutes === 0
+    ? `${hour} ${period}`
+    : `${hour}:${String(minutes).padStart(2, "0")} ${period}`;
+}
+
+const TIME_OF_DAY = /^\d{2}:\d{2}$/;
+
+/**
+ * {@link parseDueEntry} with an optional time of day (#4003), the way
+ * Todoist reads "Fri 5pm": a time before or after the date, `5pm`,
+ * `5:30 pm`, `at 9am`, `17:30` or `noon`, and a time alone for today (or
+ * tomorrow once that time has passed today). Returns `YYYY-MM-DD` for a date
+ * with no time, `YYYY-MM-DDTHH:MM` (device-local wall time) for one with a
+ * time, or `null` for text that is neither.
+ *
+ * A time needs `am`/`pm`, a colon or a word, so a bare number is never one:
+ * `/task` reads a trailing number as the point reward.
+ */
+export function parseDueEntryWithTime(raw: string, now: Date): string | null {
+  const text = raw
+    .trim()
+    .toLowerCase()
+    .replace(/·/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return null;
+
+  const found = findTime(text);
+  if (!found) return parseDueEntry(text, now);
+
+  const rest = found.rest.replace(/(^|\s)at$/, "").trim();
+  const time = `${pad(found.hours)}:${pad(found.minutes)}`;
+  if (!rest) {
+    const today = localIsoDate(now);
+    const passed =
+      found.hours * 60 + found.minutes <=
+      now.getHours() * 60 + now.getMinutes();
+    if (!passed) return `${today}T${time}`;
+    const tomorrow = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + 1,
+    );
+    return `${localIsoDate(tomorrow)}T${time}`;
+  }
+  const date = parseDueEntry(rest, now);
+  return date ? `${date}T${time}` : null;
+}
+
+function pad(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+/**
+ * A time of day at the start or the end of the text, and what is left
+ * around it. `null` when there is none.
+ */
+function findTime(
+  text: string,
+): { hours: number; minutes: number; rest: string } | null {
+  const patterns = [
+    // 5pm, 5 pm, 5:30pm, 5:30 p.m., 5p
+    /(?:^|\s)(?:at )?(\d{1,2})(?::(\d{2}))? ?(a|p)\.?m?\.?$/,
+    /^(?:at )?(\d{1,2})(?::(\d{2}))? ?(a|p)\.?m?\.?(?=\s|$)/,
+    // 17:30, 9:00
+    /(?:^|\s)(?:at )?(\d{1,2}):(\d{2})()$/,
+    /^(?:at )?(\d{1,2}):(\d{2})()(?=\s|$)/,
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(text);
+    if (!match) continue;
+    let hours = Number(match[1]);
+    const minutes = match[2] ? Number(match[2]) : 0;
+    const period = match[3];
+    if (minutes > 59) return null;
+    if (period) {
+      if (hours < 1 || hours > 12) return null;
+      if (period === "p" && hours !== 12) hours += 12;
+      if (period === "a" && hours === 12) hours = 0;
+    } else if (hours > 23) {
+      return null;
+    }
+    const rest = (
+      text.slice(0, match.index) + text.slice(match.index + match[0].length)
+    ).trim();
+    return { hours, minutes, rest };
+  }
+  const noon = /(?:^|\s)(?:at )?noon$|^(?:at )?noon(?=\s|$)/.exec(text);
+  if (noon) {
+    const rest = (
+      text.slice(0, noon.index) + text.slice(noon.index + noon[0].length)
+    ).trim();
+    return { hours: 12, minutes: 0, rest };
+  }
+  return null;
+}
+
+/**
+ * What the API takes for a due entry: the day, and the instant when the
+ * entry has a time, read in the device's zone (`POST /v1/tasks` `due_at`).
+ */
+export function dueEntryFields(entry: string): {
+  due_date: string;
+  due_at?: string;
+} {
+  const [date = entry, time] = entry.split("T");
+  if (!time || !TIME_OF_DAY.test(time)) return { due_date: date };
+  const [year, month, day] = date.split("-").map(Number) as [
+    number,
+    number,
+    number,
+  ];
+  const [hours, minutes] = time.split(":").map(Number) as [number, number];
+  const at = new Date(year, month - 1, day, hours, minutes);
+  return { due_date: date, due_at: at.toISOString() };
+}
+
+/**
+ * The entry a task's due reads back as: its `due_date`, with the device-local
+ * time of its `due_at` when it has one. The inverse of {@link dueEntryFields}.
+ */
+export function dueEntryFromTask(task: {
+  due_date: string;
+  due_at?: string | null;
+}): string {
+  const at = task.due_at ? new Date(task.due_at) : null;
+  if (!at || Number.isNaN(at.getTime())) return task.due_date;
+  return `${localIsoDate(at)}T${pad(at.getHours())}:${pad(at.getMinutes())}`;
 }
 
 function capitalized(word: string): string {

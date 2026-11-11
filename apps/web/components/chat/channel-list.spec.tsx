@@ -394,6 +394,37 @@ describe("ChannelList unread badges", () => {
     expect(screen.queryByText("4")).not.toBeInTheDocument();
   });
 
+  it("draws an unread row white and bold with a pip, a read row grey", () => {
+    // Owner, 2026-11-08: read is grey, unread is white and bold, as Discord.
+    const { container } = renderList(
+      [general, { id: "c-quiet", name: "quiet", type: "PUBLIC" }],
+      new Map([["c-gen", { unreadCount: 4, mentionCount: 0 }]]),
+    );
+    const unreadRow = screen.getByRole("button", { name: /general/ });
+    const readRow = screen.getByRole("button", { name: /quiet/ });
+
+    expect(unreadRow.className).toMatch(/\bfont-bold\b/);
+    expect(unreadRow.className).toMatch(/\btext-foreground\b/);
+    expect(readRow.className).toMatch(/\btext-muted-foreground\b/);
+    expect(
+      container.querySelectorAll('[data-testid="channel-unread-pip"]'),
+    ).toHaveLength(1);
+    expect(
+      unreadRow.querySelector('[data-testid="channel-unread-pip"]'),
+    ).not.toBeNull();
+  });
+
+  it("keeps a muted channel's plain unread grey, with no pip", () => {
+    renderList(
+      [{ ...general, muted: true } as ChatChannel],
+      new Map([["c-gen", { unreadCount: 4, mentionCount: 0 }]]),
+    );
+    const row = screen.getByRole("button", { name: /general/ });
+    expect(row.className).toMatch(/\btext-muted\b/);
+    expect(row.className).not.toMatch(/\bfont-bold\b/);
+    expect(row.querySelector('[data-testid="channel-unread-pip"]')).toBeNull();
+  });
+
   it("shows the mention badge, not the raw total, when the channel has an @-mention", () => {
     renderList(
       [general],
@@ -894,7 +925,7 @@ describe("ChannelFilters (#2877)", () => {
   });
 });
 
-describe("row tone, matching mobile's channel-row (#3777)", () => {
+describe("row tone, matching mobile's channel-row (#3777, #4147)", () => {
   const rowFor = (name: string) =>
     screen.getByText(name).closest("button") as HTMLElement;
   const quiet: ChatChannel = {
@@ -910,20 +941,21 @@ describe("row tone, matching mobile's channel-row (#3777)", () => {
     muted: true,
   };
 
-  it("keeps a read row in the primary tone at regular weight", () => {
+  it("draws a read row grey at regular weight", () => {
+    // #3777 made both clients agree on a bright read row; #4147 (owner,
+    // 2026-11-08) makes both agree on a grey one instead.
     renderList([general], new Map());
     const row = rowFor("general");
-    expect(row).toHaveClass("text-foreground");
-    expect(row).not.toHaveClass("font-semibold");
-    expect(row).not.toHaveClass("text-muted-foreground");
+    expect(row).toHaveClass("text-muted-foreground");
+    expect(row).not.toHaveClass("font-bold");
   });
 
-  it("tells unread from read by weight, not by a dimmer colour", () => {
+  it("tells unread from read by colour, weight and the pip", () => {
     renderList(
       [general],
       new Map([["c-gen", { unreadCount: 3, mentionCount: 0 }]]),
     );
-    expect(rowFor("general")).toHaveClass("font-semibold", "text-foreground");
+    expect(rowFor("general")).toHaveClass("font-bold", "text-foreground");
   });
 
   it("keeps a muted channel quiet unless it addresses the member", () => {
@@ -935,7 +967,7 @@ describe("row tone, matching mobile's channel-row (#3777)", () => {
       ]),
     );
     expect(rowFor("quiet")).toHaveClass("text-muted");
-    expect(rowFor("quiet")).not.toHaveClass("font-semibold");
-    expect(rowFor("loud")).toHaveClass("font-semibold", "text-foreground");
+    expect(rowFor("quiet")).not.toHaveClass("font-bold");
+    expect(rowFor("loud")).toHaveClass("font-bold", "text-foreground");
   });
 });

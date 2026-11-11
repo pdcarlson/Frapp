@@ -1,0 +1,398 @@
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import React from "react";
+import { FrappClientProvider } from "./use-frapp-client";
+import {
+  IMPORTANT_SEEN_BATCH_MS,
+  IMPORTANT_SEEN_RETRY_PAUSE_MS,
+  importantMessageKeys,
+  importantSignature,
+  importantStripLabel,
+  useImportantMessages,
+  withoutMessages,
+  type ImportantMessages,
+} from "./use-important-messages";
+
+const KEY = importantMessageKeys.detail("chapter-1", "chan-1");
+
+const ref = (id: string) => ({
+  id,
+  created_at: "2026-11-11T15:00:00.000Z",
+  flagged_at: "2026-11-11T15:00:00.000Z",
+  sender_id: "sam",
+  author_name: null,
+  excerpt: `message ${id}`,
+});
+
+const answer = (ids: string[]): ImportantMessages => ({
+  messages: ids.map(ref),
+  total: ids.length,
+});
+
+type Flagged = {
+  id: string;
+  flag?: string | null;
+  flagged_at?: string | null;
+  is_deleted?: boolean;
+};
+
+function setup(initial: ImportantMessages) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  const GET = vi.fn().mockResolvedValue({ data: initial });
+  const POST = vi.fn(
+    (path: string, init: { body?: { message_ids: string[] } }) => {
+      if (path.endsWith("/dismiss")) {
+        return Promise.resolve({ data: answer([]) });
+      }
+      const asked = new Set(init.body?.message_ids ?? []);
+      const current =
+        queryClient.getQueryData<ImportantMessages>(KEY) ?? initial;
+      return Promise.resolve({
+        data: answer(
+          initial.messages.map((m) => m.id).filter((id) => !asked.has(id)),
+        ),
+        current,
+      });
+    },
+  );
+  const client = { GET, POST };
+  const wrapper = ({ children }: { children: React.ReactNode }) => (
+    <FrappClientProvider
+      client={
+        client as unknown as ReturnType<
+          typeof import("@repo/api-sdk").createFrappClient
+        >
+      }
+      chapterId="chapter-1"
+    >
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    </FrappClientProvider>
+  );
+  return { queryClient, GET, POST, wrapper };
+}
+
+describe("importantStripLabel", () => {
+  it("counts in words", () => {
+    expect(importantStripLabel(1)).toBe("1 important message");
+    expect(importantStripLabel(3)).toBe("3 important messages");
+  });
+});
+
+describe("importantSignature", () => {
+  it("changes when a flag goes on, comes off or is replaced, not otherwise", () => {
+    const base: Flagged[] = [
+      { id: "a", flag: "important", flagged_at: "t1" },
+      { id: "b", flag: "funny", flagged_at: "t1" },
+    ];
+    const same = importantSignature([
+      { id: "b", flag: "funny", flagged_at: "t1" },
+      { id: "a", flag: "important", flagged_at: "t1" },
+    ]);
+    expect(importantSignature(base)).toBe(same);
+    expect(
+      importantSignature([
+        ...base,
+        { id: "c", flag: "important", flagged_at: "t2" },
+      ]),
+    ).not.toBe(same);
+    expect(
+      importantSignature([
+        { id: "a", flag: "important", flagged_at: "t3" },
+        base[1]!,
+      ]),
+    ).not.toBe(same);
+    expect(
+      importantSignature([{ id: "a", flag: "important", is_deleted: true }]),
+    ).toBe("");
+  });
+});
+
+describe("withoutMessages", () => {
+  it("takes the ids out of the list and the count", () => {
+    expect(
+      withoutMessages(answer(["a", "b", "c"]), new Set(["b", "x"])),
+    ).toEqual(answer(["a", "c"]));
+  });
+});
+
+describe("useImportantMessages", () => {
+  beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }));
+  afterEach(() => vi.useRealTimers());
+
+  it("reads the channel's strip and points at the oldest unseen", async () => {
+    const { GET, wrapper } = setup(answer(["a", "b"]));
+    const { result } = renderHook(() => useImportantMessages("chan-1", []), {
+      wrapper,
+    });
+
+    await waitFor(() => expect(result.current.total).toBe(2));
+    expect(result.current.next?.id).toBe("a");
+    expect(GET).toHaveBeenCalledWith("/v1/channels/{id}/important", {
+      params: { path: { id: "chan-1" } },
+    });
+  });
+
+  it("marks a jumped-to message seen at once, and leaves the strip at once", async () => {
+    const { POST, wrapper } = setup(answer(["a", "b"]));
+    const { result } = renderHook(() => useImportantMessages("chan-1", []), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.total).toBe(2));
+
+    act(() => result.current.markSeen(["a"]));
+
+    // Before the write answers: the optimistic copy.
+    await waitFor(() => expect(result.current.total).toBe(1));
+    expect(result.current.next?.id).toBe("b");
+    expect(POST).toHaveBeenCalledWith("/v1/channels/{id}/important/seen", {
+      params: { path: { id: "chan-1" } },
+      body: { message_ids: ["a"] },
+    });
+  });
+
+  it("batches rows scrolled onto the screen, and writes each once", async () => {
+    const { POST, wrapper } = setup(answer(["a", "b", "c"]));
+    const { result } = renderHook(() => useImportantMessages("chan-1", []), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.total).toBe(3));
+
+    act(() => {
+      result.current.reportVisible(["x", "a"]);
+      result.current.reportVisible(["a", "b", "y"]);
+    });
+    expect(POST).not.toHaveBeenCalled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(IMPORTANT_SEEN_BATCH_MS);
+    });
+
+    expect(POST).toHaveBeenCalledTimes(1);
+    expect(POST.mock.calls[0]![1]).toEqual({
+      params: { path: { id: "chan-1" } },
+      body: { message_ids: ["a", "b"] },
+    });
+
+    act(() => result.current.reportVisible(["a", "b"]));
+    await act(async () => {
+      vi.advanceTimersByTime(IMPORTANT_SEEN_BATCH_MS);
+    });
+    expect(POST).toHaveBeenCalledTimes(1);
+  });
+
+  it("dismisses every one", async () => {
+    const { POST, wrapper } = setup(answer(["a", "b"]));
+    const { result } = renderHook(() => useImportantMessages("chan-1", []), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.total).toBe(2));
+
+    act(() => result.current.dismiss());
+
+    await waitFor(() => expect(result.current.total).toBe(0));
+    expect(POST).toHaveBeenCalledWith("/v1/channels/{id}/important/dismiss", {
+      params: { path: { id: "chan-1" } },
+    });
+  });
+
+  it("puts the message back when the write fails", async () => {
+    const { POST, GET, wrapper } = setup(answer(["a"]));
+    POST.mockResolvedValueOnce({ error: { message: "nope" } } as never);
+    const { result } = renderHook(() => useImportantMessages("chan-1", []), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.total).toBe(1));
+
+    act(() => result.current.markSeen(["a"]));
+
+    // The failed write re-reads the strip, so the message comes back, and a
+    // later report of it is sent again rather than taken as already sent.
+    await waitFor(() => expect(GET).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.total).toBe(1));
+    POST.mockClear();
+    act(() => result.current.markSeen(["a"]));
+    expect(POST).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-reads when a loaded message's Important flag changes", async () => {
+    const { GET, wrapper } = setup(answer([]));
+    const { rerender } = renderHook(
+      ({ loaded }: { loaded: Flagged[] }) =>
+        useImportantMessages("chan-1", loaded),
+      { wrapper, initialProps: { loaded: [{ id: "a" }] as Flagged[] } },
+    );
+    await waitFor(() => expect(GET).toHaveBeenCalledTimes(1));
+
+    rerender({ loaded: [{ id: "a" }] });
+    expect(GET).toHaveBeenCalledTimes(1);
+
+    rerender({ loaded: [{ id: "a", flag: "important", flagged_at: "t" }] });
+    await waitFor(() => expect(GET).toHaveBeenCalledTimes(2));
+  });
+
+  it("keeps a later write's message off the strip when an earlier answer lands last", async () => {
+    const { POST, wrapper } = setup(answer(["a", "b", "c"]));
+    const answers: Array<(value: unknown) => void> = [];
+    POST.mockImplementation(
+      () => new Promise((resolve) => answers.push(resolve)) as never,
+    );
+    const { result } = renderHook(() => useImportantMessages("chan-1", []), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.total).toBe(3));
+
+    act(() => result.current.markSeen(["a"]));
+    act(() => result.current.markSeen(["b"]));
+    await waitFor(() => expect(result.current.next?.id).toBe("c"));
+
+    // b's answer first, then a's, which the server computed before b landed.
+    await act(async () => answers[1]!({ data: answer(["c"]) }));
+    await act(async () => answers[0]!({ data: answer(["b", "c"]) }));
+
+    expect(result.current.total).toBe(1);
+    expect(result.current.next?.id).toBe("c");
+  });
+
+  it("stays dismissed when an earlier seen answer lands after ×", async () => {
+    const { POST, wrapper } = setup(answer(["a", "b"]));
+    let seenAnswer!: (value: unknown) => void;
+    POST.mockImplementationOnce(
+      () => new Promise((resolve) => (seenAnswer = resolve)) as never,
+    );
+    const { result } = renderHook(() => useImportantMessages("chan-1", []), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.total).toBe(2));
+
+    act(() => result.current.markSeen(["a"]));
+    act(() => result.current.dismiss());
+    await act(async () => seenAnswer({ data: answer(["b"]) }));
+
+    expect(result.current.total).toBe(0);
+  });
+
+  it("reports nothing from a browser tab in the background, then counts it on return", async () => {
+    const { POST, wrapper } = setup(answer(["a"]));
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockReturnValue("hidden");
+    const { result } = renderHook(() => useImportantMessages("chan-1", []), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.total).toBe(1));
+
+    act(() => result.current.reportVisible(["a"]));
+    await act(async () => {
+      vi.advanceTimersByTime(IMPORTANT_SEEN_BATCH_MS);
+    });
+    expect(POST).not.toHaveBeenCalled();
+
+    visibility.mockReturnValue("visible");
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(IMPORTANT_SEEN_BATCH_MS);
+    });
+    expect(POST).toHaveBeenCalledTimes(1);
+    visibility.mockRestore();
+  });
+
+  it("reports nothing while the timeline isn't in front of the member", async () => {
+    const { POST, wrapper } = setup(answer(["a"]));
+    const { result } = renderHook(
+      () => useImportantMessages("chan-1", [], { isOnScreen: () => false }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.total).toBe(1));
+
+    act(() => result.current.reportVisible(["a"]));
+    await act(async () => {
+      vi.advanceTimersByTime(IMPORTANT_SEEN_BATCH_MS);
+    });
+
+    expect(POST).not.toHaveBeenCalled();
+    expect(result.current.total).toBe(1);
+  });
+
+  it("counts a message flagged while it is on screen", async () => {
+    const { GET, POST, wrapper } = setup(answer([]));
+    const { result, rerender } = renderHook(
+      ({ loaded }: { loaded: Flagged[] }) =>
+        useImportantMessages("chan-1", loaded),
+      { wrapper, initialProps: { loaded: [{ id: "a" }] as Flagged[] } },
+    );
+    await waitFor(() => expect(GET).toHaveBeenCalledTimes(1));
+    act(() => result.current.reportVisible(["a"]));
+
+    GET.mockResolvedValue({ data: answer(["a"]) });
+    rerender({ loaded: [{ id: "a", flag: "important", flagged_at: "t" }] });
+    await waitFor(() => expect(GET).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      vi.advanceTimersByTime(IMPORTANT_SEEN_BATCH_MS);
+    });
+
+    expect(POST).toHaveBeenCalledWith("/v1/channels/{id}/important/seen", {
+      params: { path: { id: "chan-1" } },
+      body: { message_ids: ["a"] },
+    });
+  });
+
+  it("stops reporting rows on screen for a while after a write fails", async () => {
+    const { POST, GET, wrapper } = setup(answer(["a"]));
+    POST.mockResolvedValue({ error: { statusCode: 429 } } as never);
+    const { result } = renderHook(() => useImportantMessages("chan-1", []), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.total).toBe(1));
+
+    act(() => result.current.reportVisible(["a"]));
+    await act(async () => {
+      vi.advanceTimersByTime(IMPORTANT_SEEN_BATCH_MS);
+    });
+    await waitFor(() => expect(GET).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      vi.advanceTimersByTime(IMPORTANT_SEEN_BATCH_MS * 3);
+    });
+    expect(POST).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(IMPORTANT_SEEN_RETRY_PAUSE_MS);
+    });
+    act(() => result.current.reportVisible(["a"]));
+    await act(async () => {
+      vi.advanceTimersByTime(IMPORTANT_SEEN_BATCH_MS);
+    });
+    expect(POST).toHaveBeenCalledTimes(2);
+  });
+
+  it("sends what it gathered for a channel when the member leaves it", async () => {
+    const { POST, wrapper } = setup(answer(["a"]));
+    const { result, rerender } = renderHook(
+      ({ channel }: { channel: string }) => useImportantMessages(channel, []),
+      { wrapper, initialProps: { channel: "chan-1" } },
+    );
+    await waitFor(() => expect(result.current.total).toBe(1));
+
+    act(() => result.current.reportVisible(["a"]));
+    rerender({ channel: "chan-2" });
+
+    expect(POST).toHaveBeenCalledWith("/v1/channels/{id}/important/seen", {
+      params: { path: { id: "chan-1" } },
+      body: { message_ids: ["a"] },
+    });
+  });
+
+  it("reads nothing without a channel", () => {
+    const { GET, wrapper } = setup(answer(["a"]));
+    const { result } = renderHook(() => useImportantMessages(null, []), {
+      wrapper,
+    });
+
+    expect(result.current.total).toBe(0);
+    expect(GET).not.toHaveBeenCalled();
+  });
+});

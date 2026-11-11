@@ -34,6 +34,10 @@ import { NotificationService } from '../../src/application/services/notification
 import { ActivationService } from '../../src/application/services/activation.service';
 import { RbacService } from '../../src/application/services/rbac.service';
 import { ChannelAccessService } from '../../src/application/services/channel-access.service';
+import { ChannelAccessListService } from '../../src/application/services/channel-access-list.service';
+import { EMPTY_ACCESS_HOLDER } from '#domain/utils/channel-access';
+import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import { ROLE_TIER_REPOSITORY } from '#domain/repositories/role-tier.repository.interface';
 import { ChatBlockService } from '../../src/application/services/chat-block.service';
 import { CHAT_NOTIFICATION_PREFERENCE_REPOSITORY } from '#domain/repositories/chat-notification-preference.repository.interface';
 import { ChannelCacheService } from '../../src/application/services/channel-cache.service';
@@ -62,6 +66,8 @@ export const baseChannel: ChatChannel = {
   description: null,
   type: 'PUBLIC',
   required_permissions: null,
+  who_can_see: null,
+  who_can_post: null,
   member_ids: null,
   category_id: null,
   is_read_only: false,
@@ -119,6 +125,7 @@ export async function createChatServiceFixture() {
     update: jest.fn(),
     delete: jest.fn(),
     reorder: jest.fn(),
+    setAccess: jest.fn(),
   };
 
   const mockMessageRepo: jest.Mocked<IChatMessageRepository> = {
@@ -126,6 +133,7 @@ export async function createChatServiceFixture() {
     findByChannel: jest.fn(),
     findLatestPerChannel: jest.fn().mockResolvedValue([]),
     findPinnedByChannel: jest.fn(),
+    findImportantInChannel: jest.fn(),
     countPinnedByChannel: jest.fn(),
     findPollsByChapter: jest.fn(),
     findPollCardsByChapter: jest.fn(),
@@ -250,6 +258,9 @@ export async function createChatServiceFixture() {
 
   const mockRbac = {
     getEffectivePermissions: jest.fn(),
+    // What the caller holds for a channel's lists (#3722). Nothing by
+    // default; tests on a who-can-see list override it.
+    getChannelAccessHolder: jest.fn().mockResolvedValue(EMPTY_ACCESS_HOLDER),
     // The chapter's roles, for `@`-role resolution (`ChatMentionService`).
     findByChapter: jest.fn().mockResolvedValue([]),
     // Active (non-alumni) member by default; alumni posting is covered in
@@ -257,6 +268,11 @@ export async function createChatServiceFixture() {
     hasAlumniRole: jest.fn().mockResolvedValue(false),
     isAlumni: jest.fn().mockResolvedValue(false),
   };
+
+  // The chapter's roles and tiers, which a who-can-see or who-can-post list
+  // names (`ChannelAccessListService`). None by default.
+  const mockRoleRepo = { findByChapter: jest.fn().mockResolvedValue([]) };
+  const mockTierRepo = { findByChapter: jest.fn().mockResolvedValue([]) };
 
   // Defaults: caller is a member of the chapter, channel resolves, no special
   // permissions. Individual tests override to exercise denial paths.
@@ -299,6 +315,9 @@ export async function createChatServiceFixture() {
       // existing PRIVATE / ROLE_GATED rejection tests still exercise the
       // predicate end-to-end.
       ChannelAccessService,
+      ChannelAccessListService,
+      { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
+      { provide: ROLE_TIER_REPOSITORY, useValue: mockTierRepo },
       {
         provide: CHAT_NOTIFICATION_PREFERENCE_REPOSITORY,
         useValue: mockChatNotificationPrefs,
@@ -330,6 +349,8 @@ export async function createChatServiceFixture() {
     mockChatNotificationPrefs,
     mockChannelCache,
     mockRbac,
+    mockRoleRepo,
+    mockTierRepo,
     mockChatBlocks,
     mockReportRepo,
     mockThreadRepo,

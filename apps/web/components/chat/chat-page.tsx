@@ -24,9 +24,11 @@ import { CHAT_CHANNEL_PARAM, CHAT_MESSAGE_PARAM } from "@/lib/chat/chat-links";
 function ChatPageContent({
   defaultMembersHidden,
   toolBeside,
+  onClose,
 }: {
   defaultMembersHidden: boolean;
   toolBeside: boolean;
+  onClose?: () => void;
 }) {
   const searchParams = useSearchParams();
   const onChatUrl = isChatRoute(usePathname());
@@ -52,6 +54,7 @@ function ChatPageContent({
         initialMessageId={messageParam}
         defaultMembersHidden={defaultMembersHidden}
         toolBeside={toolBeside}
+        onClose={onClose}
       />
     </ChatProvider>
   );
@@ -68,11 +71,14 @@ function ChatPageContent({
 export function ChatPage({
   defaultMembersHidden = false,
   toolBeside = false,
+  onClose,
 }: {
   /** The member list's remembered state, read by the layout on the server. */
   defaultMembersHidden?: boolean;
   /** Open beside a tool page (`ChatShell`'s prop of the same name). */
   toolBeside?: boolean;
+  /** Closes the chat panel (`ChatShell`'s prop of the same name). */
+  onClose?: () => void;
 } = {}) {
   /*
     This boundary's fallback must never be what the server sends.
@@ -97,6 +103,7 @@ export function ChatPage({
       <ChatPageContent
         defaultMembersHidden={defaultMembersHidden}
         toolBeside={toolBeside}
+        onClose={onClose}
       />
     </Suspense>
   );

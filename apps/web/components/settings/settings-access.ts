@@ -134,8 +134,8 @@ export const SETTINGS_TOOL_ROUTES: readonly string[] = SETTINGS_TOOLS.map(
 /**
  * Whether a Settings tab shows for this viewer.
  *
- * Fails open while `permissions` is unresolved, like the nav: showing a tab one
- * render early is harmless, and hiding one is a visible flash. Every tab reads
+ * False while `permissions` is unresolved, like the nav (#3854): a tab is drawn
+ * only once the viewer's grants are known to include it. Every tab reads
  * or writes chapter config and needs `chapter-config:view`, except the ones in
  * `TAB_EXTRA_PERMISSIONS` (another way in) and `TAB_ONLY_PERMISSIONS` (the
  * only way in). Hiding a tab from a viewer who could only have seen
@@ -148,7 +148,7 @@ export function isSettingsTabVisible(
 ): boolean {
   // A module that is off for every chapter in the beta has no page.
   if (isModuleSettingsTab(tab) && isBetaOffModule(tab)) return false;
-  if (permissions === undefined || permissions === null) return true;
+  if (permissions === undefined || permissions === null) return false;
   /*
     A module page (#4073) reads chapter config for its switch and rules, so a
     config viewer gets every one. A viewer who holds only a tool, such as a
@@ -179,10 +179,10 @@ export function visibleSettingsTools(
   permissions: readonly string[] | null | undefined,
   isModuleEnabled?: (moduleKey: string) => boolean,
 ): SettingsTool[] {
+  // None while permissions are unresolved, like the tabs (#3854).
+  if (permissions === undefined || permissions === null) return [];
   return SETTINGS_TOOLS.filter((tool) => {
-    if (permissions !== undefined && permissions !== null) {
-      if (!can(tool.permission, permissions)) return false;
-    }
+    if (!can(tool.permission, permissions)) return false;
     if (tool.module && isModuleEnabled && !isModuleEnabled(tool.module)) {
       return false;
     }
@@ -197,13 +197,18 @@ export function visibleSettingsTools(
  * treasurer whose only tool is Reports loses the row when the chapter switches
  * Reports off, the same way the Reports row used to hide (#2946).
  *
- * Fails open while permissions are unresolved, like every nav gate.
+ * False while permissions are `undefined` (in flight, or failed online): a
+ * door is drawn only once the viewer's grants are known to open it (#3854), as
+ * the nav's gated rows wait. True for `null`, a read the offline dashboard
+ * cannot run (`useNavPermissions`), where the door shows and the page states
+ * the outage.
  */
 export function hasSettingsDestination(
   permissions: readonly string[] | null | undefined,
   isModuleEnabled?: (moduleKey: string) => boolean,
 ): boolean {
-  if (permissions === undefined || permissions === null) return true;
+  if (permissions === undefined) return false;
+  if (permissions === null) return true;
   const anyTab = canAny(
     [
       CHAPTER_CONFIG_VIEW,

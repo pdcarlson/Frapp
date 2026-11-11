@@ -8,11 +8,19 @@ import {
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
-import { SearchGlyph } from "@/components/documents/resources-glyphs";
+import {
+  PinGlyph,
+  SearchGlyph,
+  StarGlyph,
+} from "@/components/documents/resources-glyphs";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { DocumentRow } from "@/components/documents/document-row";
 import type { ChapterDocument } from "@/components/documents/document-types";
-import { FilterChip, SortChip } from "@/components/shared/filter-chip";
+import {
+  FilterChip,
+  SortChip,
+  ToggleChip,
+} from "@/components/shared/filter-chip";
 import { DateFilterChip } from "@/components/documents/document-filters";
 import {
   DOCUMENT_CAP_NOTICE,
@@ -64,6 +72,7 @@ export function DocumentList({
   onShowAllFiles,
   onUpload,
   marks,
+  onHoldRow,
 }: {
   listState: DocumentListState;
   /** The failed read behind `listState === "error"`, for its wording. */
@@ -103,6 +112,11 @@ export function DocumentList({
   onUpload?: () => void;
   /** Pins and the member's own stars (#3934). */
   marks: DocumentMarks;
+  /**
+   * Keeps a row listed under the Pinned or Starred filter while its own mark
+   * changes (#4290), so it doesn't vanish with focus on its Star.
+   */
+  onHoldRow?: (id: string) => void;
 }) {
   // Starring a file inside a folder or a search moves its row to the head of
   // the list; this keeps focus on the Star that moved it (#3934).
@@ -195,6 +209,30 @@ export function DocumentList({
               setFilters({ ...filters, kind: kind as FileKind | null })
             }
           />
+          {/*
+            Pinned and Starred (#4290): toggles rather than menus, each one
+            click, as Google Drive's Starred chip and Gmail's are. Both on
+            shows a file that is either. They narrow with the search and the
+            chips beside them, and the tiers still lead what's left.
+          */}
+          <ToggleChip
+            on={filters.marks.pinned}
+            onToggle={(pinned) =>
+              setFilters({ ...filters, marks: { ...filters.marks, pinned } })
+            }
+          >
+            <PinGlyph className="h-3.5 w-3.5" active={filters.marks.pinned} />
+            Pinned
+          </ToggleChip>
+          <ToggleChip
+            on={filters.marks.starred}
+            onToggle={(starred) =>
+              setFilters({ ...filters, marks: { ...filters.marks, starred } })
+            }
+          >
+            <StarGlyph className="h-3.5 w-3.5" active={filters.marks.starred} />
+            Starred
+          </ToggleChip>
           <SortChip options={SORT_OPTIONS} value={sort} onChange={setSort} />
         </div>
       </div>
@@ -332,10 +370,12 @@ export function DocumentList({
                 onOpen={onOpen}
                 onDelete={onDelete}
                 onToggleStar={(row) => {
+                  onHoldRow?.(row.id);
                   remember(`star:${row.id}`);
                   marks.toggleStar({ kind: "document", id: row.id }, row.title);
                 }}
                 onTogglePin={(row) => {
+                  onHoldRow?.(row.id);
                   remember(`pin:${row.id}`);
                   void marks.setPinned(
                     { kind: "document", id: row.id },

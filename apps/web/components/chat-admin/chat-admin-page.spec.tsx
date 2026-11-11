@@ -21,23 +21,30 @@ import { networkMock } from "@/tests/network";
  * `can-fallback.spec.tsx` pins.
  */
 
-const { mockOffline, reads, updateChannel, mockCreateChannel, router } =
-  vi.hoisted(() => ({
-    router: { push: vi.fn(), replace: vi.fn() },
-    mockCreateChannel: vi.fn(),
-    mockOffline: { value: false },
-    updateChannel: {
-      mutateAsync: (() => Promise.resolve()) as (
-        ...args: unknown[]
-      ) => Promise<unknown>,
-    },
-    reads: {
-      channels: {} as Record<string, unknown>,
-      categories: {} as Record<string, unknown>,
-      pins: {} as Record<string, unknown>,
-      catalog: {} as Record<string, unknown>,
-    },
-  }));
+const {
+  mockOffline,
+  reads,
+  updateChannel,
+  mockCreateChannel,
+  mockUpdateCategory,
+  router,
+} = vi.hoisted(() => ({
+  router: { push: vi.fn(), replace: vi.fn() },
+  mockCreateChannel: vi.fn(),
+  mockUpdateCategory: vi.fn(),
+  mockOffline: { value: false },
+  updateChannel: {
+    mutateAsync: (() => Promise.resolve()) as (
+      ...args: unknown[]
+    ) => Promise<unknown>,
+  },
+  reads: {
+    channels: {} as Record<string, unknown>,
+    categories: {} as Record<string, unknown>,
+    pins: {} as Record<string, unknown>,
+    accessOptions: {} as Record<string, unknown>,
+  },
+}));
 
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
@@ -58,7 +65,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useChannels: () => reads.channels,
     useCategories: () => reads.categories,
     usePinnedMessages: () => reads.pins,
-    usePermissionsCatalog: () => reads.catalog,
+    useChannelAccessOptions: () => reads.accessOptions,
     useRoles: () => ({ data: [] }),
     useMemberDisplayNames: () => ({ nameFor: () => null }),
     useCreateChannel: () => ({
@@ -71,7 +78,10 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     }),
     useDeleteChannel: mutation,
     useCreateCategory: mutation,
-    useUpdateCategory: mutation,
+    useUpdateCategory: () => ({
+      mutateAsync: mockUpdateCategory,
+      isPending: false,
+    }),
     useDeleteCategory: mutation,
     useUnpinMessage: mutation,
   };
@@ -95,6 +105,8 @@ vi.mock("@/lib/hooks/use-toast", () => ({
 
 const { ChatAdminPage } = await import("./chat-admin-page");
 
+const EXEC_TIER = "tier:00000000-0000-4000-8000-000000000001";
+const BROTHER_ROLE = "role:00000000-0000-4000-8000-000000000002";
 const channel = (
   id: string,
   name: string,
@@ -104,7 +116,8 @@ const channel = (
   name,
   description: null,
   type,
-  required_permissions: null,
+  who_can_see: null,
+  who_can_post: null,
   category_id: "cat-1",
   is_read_only: false,
   default_notification_level: null,
@@ -115,10 +128,29 @@ const CHANNELS = [
   channel("ch-2", "exec", "PRIVATE"),
   {
     ...channel("ch-3", "officers", "ROLE_GATED"),
-    required_permissions: ["members:view"],
+    who_can_see: [EXEC_TIER],
   },
 ];
-const CATALOG = [{ key: "members:view", permission: "members:view" }];
+const ACCESS_OPTIONS = [
+  {
+    entry: EXEC_TIER,
+    kind: "tier",
+    id: "00000000-0000-4000-8000-000000000001",
+    name: "Executive board",
+    color: null,
+    tier_id: null,
+    user_ids: ["u-1", "u-2"],
+  },
+  {
+    entry: BROTHER_ROLE,
+    kind: "role",
+    id: "00000000-0000-4000-8000-000000000002",
+    name: "Brother",
+    color: "#336699",
+    tier_id: null,
+    user_ids: ["u-2", "u-3", "u-4"],
+  },
+];
 const CATEGORIES = [{ id: "cat-1", name: "Chapter", display_order: 0 }];
 
 function settled(data: unknown) {
@@ -153,7 +185,7 @@ beforeEach(() => {
   reads.channels = settled(CHANNELS);
   reads.categories = settled(CATEGORIES);
   reads.pins = settled([]);
-  reads.catalog = settled(CATALOG);
+  reads.accessOptions = settled(ACCESS_OPTIONS);
 });
 
 describe("ChatAdminPage — on the page surface (#2500)", () => {
@@ -246,35 +278,97 @@ describe("ChatAdminPage — row heights", () => {
   it("lets the controls set the row height, with no padding around them", () => {
     render(<ChatAdminPage />);
 
-    const categoryRow = within(
-      screen.getByRole("region", { name: "Categories" }),
-    )
+    const item = within(screen.getByRole("region", { name: "Categories" }))
       .getByText("Chapter")
       .closest("li") as HTMLElement;
+    const categoryRow = item.firstElementChild as HTMLElement;
     expect(categoryRow.className).toContain("min-h-11");
+    expect(item.className).not.toMatch(/\bpy-/);
     expect(categoryRow.className).not.toMatch(/\bpy-/);
 
     // The row has no padding or border of its own, so the list's dividers
     // are what separate the rows.
-    expect((categoryRow.closest("ul") as HTMLElement).className).toContain(
+    expect((item.closest("ul") as HTMLElement).className).toContain(
       denseListClassName,
     );
   });
 });
 
 describe("ChatAdminPage — the create panel", () => {
-  it("says a private channel is for its members, and that the type is final", () => {
+  it("says a private channel is for the people added, and that the type is final", () => {
     render(<ChatAdminPage />);
     fireEvent.click(screen.getByRole("button", { name: "New channel" }));
 
     const dialog = within(screen.getByRole("dialog"));
     expect(
-      dialog.getByText(/A private channel is readable only by its members/),
-    ).toBeInTheDocument();
+      dialog.getByRole("switch", { name: "Private channel" }),
+    ).not.toBeChecked();
+    expect(dialog.getByText(/Only people you add can see it/)).toBeVisible();
     expect(
       dialog.getByText(/type can.t be changed after it.s created/),
     ).toBeInTheDocument();
     expect(dialog.queryByText(/visible to every member/)).toBeNull();
+    // No read-only switch or permission grid: the two lists replace them.
+    expect(dialog.queryByText(/^Read-only/)).toBeNull();
+    expect(dialog.queryAllByRole("checkbox")).toEqual([]);
+  });
+
+  it("creates a private channel with no lists", async () => {
+    mockCreateChannel.mockResolvedValue({});
+    render(<ChatAdminPage />);
+    fireEvent.click(screen.getByRole("button", { name: "New channel" }));
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "exec" },
+    });
+    fireEvent.click(screen.getByRole("switch", { name: "Private channel" }));
+    expect(screen.queryByRole("group", { name: "Who can see" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Create channel" }));
+
+    await waitFor(() => expect(mockCreateChannel).toHaveBeenCalledTimes(1));
+    const body = mockCreateChannel.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(body.type).toBe("PRIVATE");
+    expect(body).not.toHaveProperty("who_can_see");
+  });
+
+  it("creates a channel only the chosen tier can see", async () => {
+    mockCreateChannel.mockResolvedValue({});
+    render(<ChatAdminPage />);
+    fireEvent.click(screen.getByRole("button", { name: "New channel" }));
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "exec-board" },
+    });
+    const see = screen.getByRole("group", { name: "Who can see" });
+    fireEvent.click(within(see).getByRole("radio", { name: "Chosen roles" }));
+    // Nothing chosen yet: the panel won't create a channel nobody can see.
+    expect(
+      screen.getByRole("button", { name: "Create channel" }),
+    ).toBeDisabled();
+    fireEvent.click(
+      within(see).getByRole("button", { name: "Add to who can see" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("option", { name: /Executive board/ }),
+    );
+    expect(
+      within(see).getByText("Reaches 2 people.", { exact: false }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Create channel" }));
+
+    await waitFor(() =>
+      expect(mockCreateChannel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "exec-board",
+          type: "ROLE_GATED",
+          who_can_see: [EXEC_TIER],
+          who_can_post: null,
+        }),
+      ),
+    );
   });
 
   // The footer's Create sits outside the form and submits it through `form=`.
@@ -292,6 +386,10 @@ describe("ChatAdminPage — the create panel", () => {
       expect(mockCreateChannel).toHaveBeenCalledWith(
         expect.objectContaining({ name: "rush-planning", type: "PUBLIC" }),
       ),
+    );
+    // Lists untouched: the server copies the category's.
+    expect(mockCreateChannel.mock.calls[0]?.[0]).not.toHaveProperty(
+      "who_can_see",
     );
   });
 
@@ -399,50 +497,24 @@ describe("ChatAdminPage — the channel structure's states", () => {
     expect(cardFilledContainers(container)).toEqual([]);
   });
 
-  it("keeps a role-gated channel's permission grid through a failed catalog refresh", () => {
-    reads.catalog = { ...settled(CATALOG), isError: true };
+  it("keeps a chosen list's names through a failed options refresh", () => {
+    reads.accessOptions = { ...settled(ACCESS_OPTIONS), isError: true };
     render(<ChatAdminPage initialChannelId="ch-3" />);
 
-    expect(screen.queryByText(/Couldn.t load the permission list/)).toBeNull();
-    expect(screen.getAllByRole("checkbox").length).toBeGreaterThan(0);
+    const see = screen.getByRole("group", { name: "Who can see" });
+    expect(within(see).getByText("Executive board")).toBeInTheDocument();
+    expect(within(see).getByText(/Reaches 2 people/)).toBeInTheDocument();
   });
 
-  it.each([
-    [
-      "has failed with nothing loaded",
-      { isError: true },
-      false,
-      /Couldn.t load the permission list/,
-    ],
-    [
-      "is loading",
-      { isPending: true, isLoading: true, fetchStatus: "fetching" },
-      false,
-      "Loading permissions…",
-    ],
-    [
-      "can't load offline",
-      { isError: true },
-      true,
-      /Can.t load the permission list while offline/,
-    ],
-    [
-      "is paused offline",
-      { isPending: true, fetchStatus: "paused" },
-      true,
-      /Can.t load the permission list while offline/,
-    ],
-  ])(
-    "says so when a role-gated channel's catalog %s, on the page surface",
-    (_, read, offline, text) => {
-      mockOffline.value = offline;
-      reads.catalog = empty(read);
-      const { container } = render(<ChatAdminPage initialChannelId="ch-3" />);
+  it("still shows a chosen list when the options never loaded", () => {
+    reads.accessOptions = empty({ isError: true });
+    render(<ChatAdminPage initialChannelId="ch-3" />);
 
-      expect(screen.getByText(text)).toBeInTheDocument();
-      expect(cardFilledContainers(container)).toEqual([]);
-    },
-  );
+    const see = screen.getByRole("group", { name: "Who can see" });
+    expect(within(see).getByText("Unavailable")).toBeInTheDocument();
+    // The rest of the form still saves.
+    expect(screen.getByRole("button", { name: "Save channel" })).toBeEnabled();
+  });
 
   it("keeps the loaded categories through a failed background read", () => {
     reads.categories = { ...settled(CATEGORIES), isError: true };
@@ -817,13 +889,20 @@ describe("ChatAdminPage — the audit log", () => {
     expect(screen.queryByRole("button", { name: "Delete channel" })).toBeNull();
   });
 
-  it("keeps the name and the read-only switch open on an ordinary channel", () => {
-    render(exec());
+  it("keeps the name and the two lists open on an ordinary channel", () => {
+    render(<ChatAdminPage initialChannelId="ch-1" />);
 
-    const pane = screen.getByRole("region", { name: "#exec" });
+    const pane = screen.getByRole("region", { name: "#general" });
     expect(within(pane).getByLabelText("Name")).toBeEnabled();
-    expect(within(pane).getByText(/^Read-only/)).toBeInTheDocument();
+    expect(
+      within(pane).getByRole("group", { name: "Who can post" }),
+    ).toBeInTheDocument();
     expect(within(pane).queryByText(AUDIT_LOG_SETTINGS_NOTE)).toBeNull();
+  });
+
+  it("shows the audit log line in place of the lists", () => {
+    render(<ChatAdminPage initialChannelId="ch-4" />);
+    expect(screen.queryByRole("group", { name: "Who can see" })).toBeNull();
   });
 
   describe("Leave out of Activity (#3897)", () => {
@@ -867,5 +946,169 @@ describe("ChatAdminPage — the audit log", () => {
       await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
       expect(bodyOf(spy)).not.toHaveProperty("activity_excluded");
     });
+  });
+});
+
+// #3722: who can see and post, two lists, and a channel follows its category
+// until changed.
+describe("ChatAdminPage — who can see and post", () => {
+  const bodyOf = (spy: ReturnType<typeof vi.fn>) =>
+    (spy.mock.calls[0] as unknown as [{ body: Record<string, unknown> }])[0]
+      .body;
+
+  it("says a private channel's members decide, with no lists", () => {
+    render(exec());
+    const pane = screen.getByRole("region", { name: "#exec" });
+    expect(
+      within(pane).getByText(/Only the people added to this channel/),
+    ).toBeInTheDocument();
+    expect(
+      within(pane).queryByRole("group", { name: "Who can see" }),
+    ).toBeNull();
+  });
+
+  it("leaves the lists out of a save that didn't change them", async () => {
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    render(<ChatAdminPage initialChannelId="ch-1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(bodyOf(spy)).not.toHaveProperty("who_can_see");
+    expect(bodyOf(spy)).not.toHaveProperty("match_category_access");
+  });
+
+  it("sends only the list the officer changed", async () => {
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    render(<ChatAdminPage initialChannelId="ch-1" />);
+    expect(screen.getByText("Matches Chapter")).toBeInTheDocument();
+
+    const post = screen.getByRole("group", { name: "Who can post" });
+    fireEvent.click(within(post).getByRole("radio", { name: "Chosen roles" }));
+    expect(screen.getByRole("button", { name: "Save channel" })).toBeDisabled();
+    fireEvent.click(
+      within(post).getByRole("button", { name: "Add to who can post" }),
+    );
+    fireEvent.click(await screen.findByRole("option", { name: /Brother/ }));
+    expect(screen.getByText("Custom")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(bodyOf(spy)).toMatchObject({ who_can_post: [BROTHER_ROLE] });
+    expect(bodyOf(spy)).not.toHaveProperty("who_can_see");
+  });
+
+  // Migration 20261111233000 gives a channel nobody but the President could
+  // see an empty list, which the form can't build; renaming it still saves.
+  it("saves a channel whose list was already empty", async () => {
+    reads.channels = settled([
+      ...CHANNELS,
+      { ...channel("ch-4", "vault", "ROLE_GATED"), who_can_see: [] },
+    ]);
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    render(<ChatAdminPage initialChannelId="ch-4" />);
+
+    expect(
+      screen.getByRole("button", { name: "Save channel" }),
+    ).not.toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(bodyOf(spy)).not.toHaveProperty("who_can_see");
+  });
+
+  it("forgets Match when the officer picks another category", async () => {
+    reads.categories = settled([
+      ...CATEGORIES,
+      { id: "cat-2", name: "Social", display_order: 1 },
+    ]);
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    render(<ChatAdminPage initialChannelId="ch-3" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Match Chapter" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Category" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Social" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(bodyOf(spy)).toMatchObject({ category_id: "cat-2" });
+    expect(bodyOf(spy)).not.toHaveProperty("match_category_access");
+  });
+
+  it("opens a read-only private channel to everyone in it", async () => {
+    reads.channels = settled([
+      channel("ch-1", "general", "PUBLIC"),
+      {
+        ...channel("ch-2", "exec", "PRIVATE"),
+        who_can_post: [EXEC_TIER],
+        is_read_only: true,
+      },
+    ]);
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    render(exec());
+
+    expect(
+      screen.getByText(/of them only Executive board can post/),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Let everyone in it post" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(bodyOf(spy)).toMatchObject({ who_can_post: null });
+  });
+
+  it("matches the category again on request", async () => {
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    render(<ChatAdminPage initialChannelId="ch-3" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Match Chapter" }));
+    expect(screen.getByText("Matches Chapter")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(bodyOf(spy)).toMatchObject({ match_category_access: true });
+    expect(bodyOf(spy)).not.toHaveProperty("who_can_see");
+  });
+
+  it("edits a category's lists and names the channels that follow", async () => {
+    mockUpdateCategory.mockResolvedValue({});
+    render(<ChatAdminPage />);
+
+    expect(screen.getByText("Everyone can see and post")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Who can see and post in Chapter" }),
+    );
+    // #general matches the category; #officers is custom; #exec is private.
+    expect(
+      screen.getByText(/Saving also changes #general/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/One channel has custom access and keeps it/),
+    ).toBeInTheDocument();
+
+    const see = screen.getByRole("group", { name: "Who can see" });
+    fireEvent.click(within(see).getByRole("radio", { name: "Chosen roles" }));
+    fireEvent.click(
+      within(see).getByRole("button", { name: "Add to who can see" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("option", { name: /Executive board/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save access" }));
+
+    await waitFor(() =>
+      expect(mockUpdateCategory).toHaveBeenCalledWith({
+        id: "cat-1",
+        body: { who_can_see: [EXEC_TIER] },
+      }),
+    );
   });
 });

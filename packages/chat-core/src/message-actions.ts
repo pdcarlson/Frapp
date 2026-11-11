@@ -136,17 +136,12 @@ export function replyTargetId(
 }
 
 /**
- * Whether a channel takes in-thread replies from this viewer. Both halves are
- * load-bearing:
- *
- * - `can_post` is false in read-only channels **and** for an alumnus in an
- *   ordinary channel (`spec/behavior/alumni.md`), who gets
- *   `is_read_only: false`. With no composer to stage into, Reply would be an
- *   inert control.
- * - `is_read_only` covers the other side: `can_post` is deliberately true in
- *   `#announcements` for an `announcements:post` holder, but announcement
- *   messages cannot be replied to in-thread whatever the permissions, and the
- *   server 400s such a send.
+ * Whether a channel takes in-thread (quote) replies from this viewer: exactly
+ * when they may post there. A quote reply is a post (#3722), so `can_post`,
+ * which the server derives from the same gate, decides; with no composer to
+ * stage into, Reply would be an inert control. Before #3722 a read-only
+ * channel refused every quote, its posters' included; `is_read_only` is still
+ * accepted so callers need not change, and no longer read.
  *
  * `can_post` still unknown (`undefined`) reads as allowed; the server is the
  * enforcement.
@@ -155,7 +150,7 @@ export function channelAllowsReplies(channel: {
   can_post?: boolean | null;
   is_read_only?: boolean | null;
 }): boolean {
-  return channel.can_post !== false && !channel.is_read_only;
+  return channel.can_post !== false;
 }
 
 /** The marker trailing a message edited since it was sent (§11 § What rides the row). */

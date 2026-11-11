@@ -48,7 +48,13 @@ export const FEATURE_EVENTS = {
   // Tasks
   'task-created': {
     feature: 'tasks',
-    properties: ['assigned_to_self', 'has_point_reward', 'posted_to_chat'],
+    properties: [
+      'assigned_to_self',
+      'has_due_time',
+      'has_point_reward',
+      'has_subtasks',
+      'posted_to_chat',
+    ],
   },
   'task-status-changed': { feature: 'tasks', properties: ['status'] },
   'task-completion-confirmed': { feature: 'tasks', properties: [] },

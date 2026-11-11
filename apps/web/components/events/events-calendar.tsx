@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, Plus, Repeat } from "lucide-react";
 import { EventsGlyph } from "@/components/events/chapter-ops-glyphs";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,11 @@ import { stateMicrocopy } from "@/lib/state-microcopy";
 import { formatTimeOfDay, localIsoDate, parseInstant } from "@repo/formatting";
 import { useIsNarrow } from "@/lib/use-is-narrow";
 import { attendanceFieldsOf, eventDefaultAttendance } from "@repo/validation";
+import type { CalendarTask } from "@repo/hooks/calendar-tasks";
+import {
+  CalendarTaskChip,
+  CalendarTaskRow,
+} from "@/components/events/calendar-tasks";
 
 type EventRow = Record<string, unknown>;
 
@@ -61,9 +66,23 @@ type EventsCalendarProps = {
    */
   monthAnchor: Date;
   onMonthAnchorChange: (next: Date) => void;
+  /**
+   * The viewer's tasks and the tasks they assigned, by due day, already
+   * narrowed to the kinds switched on (#4144). A day lists them after its
+   * events.
+   */
+  tasksByDay?: Map<string, CalendarTask[]>;
+  /** A member's name, for who assigned a task and who it went to. */
+  nameOf?: (userId: string) => string;
+  /** The Events / My tasks / Assigned by me toggles, under the month. */
+  layerToggles?: ReactNode;
 };
 
+const NO_TASKS = new Map<string, CalendarTask[]>();
+const fallbackName = () => "A member";
+
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+/** Events and tasks together: a busy day shows three, then "+N more". */
 const MAX_VISIBLE_EVENTS_PER_DAY = 3;
 /**
  * Below this calendar width the month goes compact (#4022): a day cell is
@@ -152,6 +171,9 @@ export function EventsCalendar({
   createTitle,
   monthAnchor,
   onMonthAnchorChange,
+  tasksByDay = NO_TASKS,
+  nameOf = fallbackName,
+  layerToggles = null,
 }: EventsCalendarProps) {
   // Per-day "show all" toggle for a day whose event count exceeds the
   // visible cap — keyed by day so expanding one busy day doesn't expand
@@ -267,6 +289,8 @@ export function EventsCalendar({
         </div>
       </div>
 
+      {layerToggles}
+
       {chapterHasEvents ? null : (
         <InlineNote>
           {/*
@@ -288,6 +312,8 @@ export function EventsCalendar({
           monthAnchor={monthAnchor}
           todayKey={todayKey}
           eventsByDay={eventsByDay}
+          tasksByDay={tasksByDay}
+          nameOf={nameOf}
           shownDayKey={shownDayKey}
           onPickDay={pickDay}
           onSelectEvent={onSelectEvent}
@@ -318,14 +344,23 @@ export function EventsCalendar({
             {days.map((day) => {
               const key = localDayKey(day);
               const dayEvents = eventsByDay.get(key) ?? [];
+              const dayTasks = tasksByDay.get(key) ?? [];
               const isCurrentMonth = day.getMonth() === monthAnchor.getMonth();
               const isToday = key === todayKey;
               const isExpanded = expandedDays.has(key);
-              const visibleEvents =
-                isExpanded || dayEvents.length <= MAX_VISIBLE_EVENTS_PER_DAY
-                  ? dayEvents
-                  : dayEvents.slice(0, MAX_VISIBLE_EVENTS_PER_DAY);
-              const overflowCount = dayEvents.length - visibleEvents.length;
+              // Events first, then tasks, under one cap: the day's first
+              // three things, whatever they are, then "+N more".
+              const itemCount = dayEvents.length + dayTasks.length;
+              const visibleCount =
+                isExpanded || itemCount <= MAX_VISIBLE_EVENTS_PER_DAY
+                  ? itemCount
+                  : MAX_VISIBLE_EVENTS_PER_DAY;
+              const visibleEvents = dayEvents.slice(0, visibleCount);
+              const visibleTasks = dayTasks.slice(
+                0,
+                Math.max(0, visibleCount - visibleEvents.length),
+              );
+              const overflowCount = itemCount - visibleCount;
               const dayLabel = day.toLocaleDateString(undefined, {
                 month: "long",
                 day: "numeric",
@@ -430,6 +465,13 @@ export function EventsCalendar({
                         </button>
                       );
                     })}
+                    {visibleTasks.map((item) => (
+                      <CalendarTaskChip
+                        key={item.key}
+                        item={item}
+                        nameOf={nameOf}
+                      />
+                    ))}
                     {overflowCount > 0 ? (
                       <button
                         type="button"
@@ -438,7 +480,7 @@ export function EventsCalendar({
                           FOCUS_RING,
                           "hover:bg-card-hover hover:text-foreground",
                         )}
-                        aria-label={`Show ${overflowCount} more event${overflowCount > 1 ? "s" : ""} on ${dayLabel}`}
+                        aria-label={`Show ${overflowCount} more on ${dayLabel}`}
                         onClick={() =>
                           setExpandedDays((previous) => {
                             const next = new Set(previous);
@@ -466,6 +508,8 @@ type CompactMonthProps = {
   monthAnchor: Date;
   todayKey: string;
   eventsByDay: Map<string, EventRow[]>;
+  tasksByDay: Map<string, CalendarTask[]>;
+  nameOf: (userId: string) => string;
   shownDayKey: string;
   onPickDay: (day: Date) => void;
 } & Pick<
@@ -491,6 +535,8 @@ function CompactMonth({
   monthAnchor,
   todayKey,
   eventsByDay,
+  tasksByDay,
+  nameOf,
   shownDayKey,
   onPickDay,
   onSelectEvent,
@@ -503,6 +549,7 @@ function CompactMonth({
   const shownDay =
     days.find((day) => localDayKey(day) === shownDayKey) ?? days[0]!;
   const shownEvents = eventsByDay.get(shownDayKey) ?? [];
+  const shownTasks = tasksByDay.get(shownDayKey) ?? [];
   const shownDayLabel = shownDay.toLocaleDateString(undefined, {
     weekday: "long",
     month: "long",
@@ -526,6 +573,11 @@ function CompactMonth({
           {days.map((day) => {
             const key = localDayKey(day);
             const count = eventsByDay.get(key)?.length ?? 0;
+            const dayTasks = tasksByDay.get(key) ?? [];
+            const taskCount = dayTasks.length;
+            const hasOverdue = dayTasks.some(
+              (item) => item.state === "overdue",
+            );
             const isCurrentMonth = day.getMonth() === monthAnchor.getMonth();
             const isToday = key === todayKey;
             const isPicked = key === shownDayKey;
@@ -538,7 +590,7 @@ function CompactMonth({
                 key={key}
                 type="button"
                 aria-pressed={isPicked}
-                aria-label={`${dayLabel}, ${count === 0 ? "no events" : `${count} event${count > 1 ? "s" : ""}`}`}
+                aria-label={`${dayLabel}, ${count === 0 ? "no events" : `${count} event${count > 1 ? "s" : ""}`}${taskCount === 0 ? "" : `, ${taskCount} task${taskCount > 1 ? "s" : ""}`}`}
                 className={cn(
                   "flex min-h-11 flex-col items-center gap-1 py-1.5 transition-colors",
                   FOCUS_RING,
@@ -568,6 +620,21 @@ function CompactMonth({
                       />
                     ),
                   )}
+                  {/*
+                    Tasks are one ring after the event dots, however many:
+                    a dot is an event, a ring is something due. Red while
+                    any of the day's tasks is overdue.
+                  */}
+                  {taskCount > 0 ? (
+                    <span
+                      className={cn(
+                        "h-1.5 w-1.5 rounded-full border",
+                        hasOverdue
+                          ? "border-destructive-text"
+                          : "border-muted-foreground",
+                      )}
+                    />
+                  ) : null}
                 </span>
               </button>
             );
@@ -599,7 +666,7 @@ function CompactMonth({
             </Button>
           ) : null}
         </div>
-        {shownEvents.length === 0 ? (
+        {shownEvents.length === 0 && shownTasks.length === 0 ? (
           <p className="px-2 text-sm text-muted-foreground">
             {stateMicrocopy.events.calendarDayEmpty}
           </p>
@@ -648,6 +715,11 @@ function CompactMonth({
                 </li>
               );
             })}
+            {shownTasks.map((item) => (
+              <li key={item.key}>
+                <CalendarTaskRow item={item} nameOf={nameOf} />
+              </li>
+            ))}
           </ul>
         )}
       </section>

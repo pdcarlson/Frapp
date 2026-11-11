@@ -438,9 +438,15 @@ export function useCreateChannel() {
       name: string;
       description?: string;
       type: "PUBLIC" | "PRIVATE" | "ROLE_GATED";
-      required_permissions?: string[];
       category_id?: string;
-      is_read_only: boolean;
+      /**
+       * Who can see and who can post (#3722): `null` is everyone (who can
+       * post: everyone who can see it), a list names tiers and roles from
+       * `useChannelAccessOptions`. Left out, the channel copies its
+       * category's answer. A private channel takes neither.
+       */
+      who_can_see?: string[] | null;
+      who_can_post?: string[] | null;
       /** Always formal from the start (#3787); false when absent. */
       display_locked?: boolean;
     }) => {
@@ -477,10 +483,16 @@ export function useUpdateChannel() {
       body: {
         name?: string;
         description?: string;
-        required_permissions?: string[];
         /** `null` clears the channel back to uncategorized; `undefined` leaves it untouched. */
         category_id?: string | null;
-        is_read_only?: boolean;
+        /** Who can see and who can post (#3722); `undefined` leaves one alone. */
+        who_can_see?: string[] | null;
+        who_can_post?: string[] | null;
+        /**
+         * Copy both lists from the channel's category, so it matches and
+         * follows the category again. Not with either list.
+         */
+        match_category_access?: boolean;
         /**
          * The officer-set default push level (#2771). `null` clears it back to
          * the built-in default; `undefined` leaves it untouched.
@@ -507,7 +519,7 @@ export function useUpdateChannel() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["channels"] });
-      // `required_permissions` decides who reads a ROLE_GATED channel.
+      // `who_can_see` decides who reads the channel.
       queryClient.invalidateQueries({
         queryKey: ["members", chapterId, "channel"],
       });
@@ -962,7 +974,13 @@ export function useCreateCategory() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["channels", "create-category"],
-    mutationFn: async (body: { name: string; display_order: number }) => {
+    mutationFn: async (body: {
+      name: string;
+      display_order: number;
+      /** What a new channel in it copies (#3722); everyone when left out. */
+      who_can_see?: string[] | null;
+      who_can_post?: string[] | null;
+    }) => {
       const { data, error } = await client.POST("/v1/channels/categories", {
         body,
       });
@@ -987,7 +1005,16 @@ export function useUpdateCategory() {
       body,
     }: {
       id: string;
-      body: { name?: string; display_order?: number };
+      body: {
+        name?: string;
+        display_order?: number;
+        /**
+         * Who can see and post (#3722). Every channel in the category that
+         * matched it follows the change.
+         */
+        who_can_see?: string[] | null;
+        who_can_post?: string[] | null;
+      };
     }) => {
       const { data, error } = await client.PATCH(
         "/v1/channels/categories/{id}",
@@ -996,9 +1023,14 @@ export function useUpdateCategory() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (_data, { body }) => {
+      // A change to the lists moves the channels that matched the category,
+      // so the whole channel family goes stale, not just the categories.
       queryClient.invalidateQueries({
-        queryKey: ["channels", "categories"],
+        queryKey:
+          body.who_can_see !== undefined || body.who_can_post !== undefined
+            ? ["channels"]
+            : ["channels", "categories"],
       });
     },
   });
@@ -1274,5 +1306,27 @@ export function useUnbookmarkMessage() {
         queryKey: bookmarkKeys.lists(chapterId!),
       });
     },
+  });
+}
+
+/**
+ * What a channel's or category's who-can-see and who-can-post lists can name
+ * (#3722): the chapter's tiers, then its roles, each with the members it
+ * reaches. Groups (#4076) arrive as another `kind`; the editor groups by
+ * kind, so it shows them without a change here. Keyed under `roles` so a
+ * role or tier edit, which invalidates that prefix, refreshes it.
+ */
+export function useChannelAccessOptions(enabled = true) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: ["roles", chapterId, "channel-access-options"],
+    queryFn: async () => {
+      const { data, error } = await client.GET("/v1/channels/access-options");
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 30_000,
+    enabled: enabled && !!chapterId,
   });
 }

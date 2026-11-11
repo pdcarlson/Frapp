@@ -404,6 +404,38 @@ export async function markThreadRead(
 }
 
 /**
+ * The viewer's followed and muted threads in a channel (#4297), keyed apart
+ * from the channel's message caches so nothing that resets those sweeps it.
+ */
+export function chatFollowedThreadsKey(channelId: string) {
+  return ["chat-followed-threads", channelId] as const;
+}
+
+/**
+ * How many replies are new to the viewer in each thread they follow in a
+ * channel (`GET /v1/channels/{id}/threads/followed`), by root id. A muted
+ * thread, and one with nothing new, is left out: the server counts a muted
+ * thread as 0.
+ */
+export async function fetchThreadUnread(
+  api: FrappApiClient,
+  channelId: string,
+): Promise<Record<string, number>> {
+  const { data, error } = await api.GET("/v1/channels/{id}/threads/followed", {
+    params: { path: { id: channelId } },
+  });
+  if (error || !data) throw apiError(error, "Couldn't read your threads");
+  const unread: Record<string, number> = {};
+  for (const row of data as Array<{
+    thread_root_id: string;
+    unread_count: number;
+  }>) {
+    if (row.unread_count > 0) unread[row.thread_root_id] = row.unread_count;
+  }
+  return unread;
+}
+
+/**
  * The thread chip's text: "3 replies · last reply 5m ago".
  * `now` is injectable for tests.
  */
