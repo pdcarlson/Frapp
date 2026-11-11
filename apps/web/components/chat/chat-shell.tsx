@@ -97,6 +97,7 @@ import { useChatViewerId } from "@/lib/chat/viewer-id";
 import { asArray, cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import { chatDeepLink } from "@/lib/chat/chat-links";
+import { useThreadUnread } from "@/lib/chat/use-thread-unread";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
 import {
   useMaskedRefresh,
@@ -2181,6 +2182,13 @@ export function ChatShell({
     openThread && openThread.channelId === activeChannel?.id
       ? openThread.rootId
       : null;
+  // What's new in the threads the viewer follows here, for each card
+  // (#4297). The open thread is left out: reading it re-reads this.
+  const threadUnread = useThreadUnread(
+    activeChannelId,
+    channel.messages,
+    threadRootId,
+  );
   const canThreadHere = !!activeChannel && channelAllowsThreads(activeChannel);
   const openThreadFor = useCallback(
     (message: ChatMessage) => {
@@ -2252,19 +2260,12 @@ export function ChatShell({
     [activeChannelId],
   );
   /**
-   * Whether to offer Reply on rows in this channel at all. Both `can_post` and
-   * `is_read_only` are load-bearing; `channelAllowsReplies` says which case
-   * each covers.
+   * Whether to offer Reply on rows in this channel at all: where the viewer
+   * may post (`channelAllowsReplies`; a quote reply is a post, #3722).
    *
-   * Read off the two fields the rail actually carries rather than mirroring
-   * the API's `allowsInThreadReplies` (`apps/api/src/domain/utils/
-   * channel-access.ts`). That predicate takes a whole `ChannelAccessRecord`,
-   * and the fields the rail has never loaded would have to be invented —
-   * `required_permissions: null` and no `archived_at`. That is a projection
-   * wearing the full type: the moment the predicate consults a field such a
-   * literal fabricates, a copy silently disagrees with the server while
-   * *looking* like it cannot. This is a UX pre-filter; the server is the
-   * enforcement, and it is the server's copy of the rule that has to be right.
+   * Read off the `can_post` the rail carries, which the server derives from
+   * the same `canAccessChannel` gate the send goes through. This is a UX
+   * pre-filter; the server is the enforcement.
    */
   const canReplyHere = !!activeChannel && channelAllowsReplies(activeChannel);
   /**
@@ -3119,6 +3120,7 @@ export function ChatShell({
                   roleColorFor={roleColorFor}
                   avatarFor={avatarFor}
                   messages={channel.messages}
+                  threadUnread={threadUnread}
                   blockList={{ blockState, thread }}
                   onUnblock={handleUnblock}
                   onReloadMasked={handleReloadMasked}

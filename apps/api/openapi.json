@@ -2942,6 +2942,46 @@
         ]
       }
     },
+    "/v1/channels/access-options": {
+      "get": {
+        "operationId": "ChatController_getChannelAccessOptions_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChannelAccessOptionDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "What a channel or category’s who-can-see and who-can-post lists can name: tiers, then roles, with who holds each",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/channels/mention-roles": {
       "get": {
         "operationId": "ChatController_getMentionRoles_v1",
@@ -11620,7 +11660,7 @@
     },
     "/v1/activity": {
       "get": {
-        "description": "The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, the tasks they assigned and the files they uploaded. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.",
+        "description": "The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.",
         "operationId": "ActivityController_getActivity_v1",
         "parameters": [],
         "responses": {
@@ -15264,6 +15304,57 @@
           "created_at"
         ]
       },
+      "ChannelAccessOptionDto": {
+        "type": "object",
+        "properties": {
+          "entry": {
+            "type": "string",
+            "description": "The entry as a list stores it: `tier:<id>` or `role:<id>`. Send it back in `who_can_see` or `who_can_post`."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "tier",
+              "role"
+            ],
+            "description": "What the entry names. More kinds may come (groups, #4076); an editor groups by kind and should show an unknown one under its own heading."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string",
+            "nullable": true,
+            "description": "A role's palette color; null for a tier or an uncolored role."
+          },
+          "tier_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "A role's tier, or null; always null for a tier."
+          },
+          "user_ids": {
+            "description": "The `users.id` of every member it names, so the editor can count who a list reaches without counting anyone twice.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "entry",
+          "kind",
+          "id",
+          "name",
+          "color",
+          "tier_id",
+          "user_ids"
+        ]
+      },
       "MentionRoleDto": {
         "type": "object",
         "properties": {
@@ -15452,9 +15543,30 @@
               "PUBLIC",
               "PRIVATE",
               "ROLE_GATED"
-            ]
+            ],
+            "description": "PRIVATE for a channel its members decide (`member_ids`); PUBLIC otherwise. ROLE_GATED is still accepted and needs `who_can_see`; the API sets `type` from `who_can_see` either way."
+          },
+          "who_can_see": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who can see the channel (#3722): null for everyone in the chapter, or the tiers and roles named, each as `tier:<id>` or `role:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category).",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "who_can_post": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who can post (#3722): null for everyone who can see it, or the tiers and roles named, each as `tier:<id>` or `role:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "required_permissions": {
+            "deprecated": true,
+            "description": "Replaced by `who_can_see` and `who_can_post` (#3722); kept so an open page from before the change gets a clear refusal. A value that would change who can see or post is refused with a reload message.",
             "type": "array",
             "items": {
               "type": "string"
@@ -15465,7 +15577,8 @@
           },
           "is_read_only": {
             "type": "boolean",
-            "default": false
+            "deprecated": true,
+            "description": "Replaced by `who_can_see` and `who_can_post` (#3722); kept so an open page from before the change gets a clear refusal. A value that would change who can see or post is refused with a reload message."
           },
           "display_locked": {
             "type": "boolean",
@@ -15486,7 +15599,31 @@
           "description": {
             "type": "string"
           },
+          "who_can_see": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who can see the channel (#3722): null for everyone in the chapter, or the tiers and roles named, each as `tier:<id>` or `role:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category).",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "who_can_post": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who can post (#3722): null for everyone who can see it, or the tiers and roles named, each as `tier:<id>` or `role:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "match_category_access": {
+            "type": "boolean",
+            "description": "Copy both lists from the channel's category (the one it ends up in, when `category_id` moves it in the same request), so it matches the category again and follows its later changes. Refused with `who_can_see` or `who_can_post`, and on a channel with no category."
+          },
           "required_permissions": {
+            "deprecated": true,
+            "description": "Replaced by `who_can_see` and `who_can_post` (#3722); kept so an open page from before the change gets a clear refusal. A value that would change who can see or post is refused with a reload message.",
             "type": "array",
             "items": {
               "type": "string"
@@ -15498,7 +15635,9 @@
             "nullable": true
           },
           "is_read_only": {
-            "type": "boolean"
+            "type": "boolean",
+            "deprecated": true,
+            "description": "Replaced by `who_can_see` and `who_can_post` (#3722); kept so an open page from before the change gets a clear refusal. A value that would change who can see or post is refused with a reload message."
           },
           "default_notification_level": {
             "type": "string",
@@ -15615,6 +15754,24 @@
             "type": "number",
             "default": 0,
             "maximum": 1000000000
+          },
+          "who_can_see": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` entries. A new channel in the category starts with it.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "who_can_post": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` entries.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -15630,6 +15787,24 @@
           "display_order": {
             "type": "number",
             "maximum": 1000000000
+          },
+          "who_can_see": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` entries. Changing it changes every channel in the category that matched it, and only those.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "who_can_post": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` entries.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -19702,12 +19877,10 @@
             "enum": [
               "document",
               "backwork"
-            ],
-            "description": "Which module holds it: a chapter document or a backwork resource."
+            ]
           },
           "title": {
-            "type": "string",
-            "description": "Empty for a backwork resource with no title."
+            "type": "string"
           },
           "created_at": {
             "type": "string",
@@ -19725,7 +19898,7 @@
         "type": "object",
         "properties": {
           "polls": {
-            "description": "Poll cards the caller posted, newest first.",
+            "description": "Poll cards the caller posted, newest first: up to 25 open and the 25 most recently posted closed ones, so closed polls never push an open one out. A client lists the open ones and keeps the closed ones behind an archive (#4258).",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ActivityPollDto"
@@ -19739,7 +19912,8 @@
             }
           },
           "files": {
-            "description": "Documents and backwork the caller uploaded, newest first.",
+            "deprecated": true,
+            "description": "Always empty: uploads left Activity (#4291). Served only so a client built before that does not fail on its absence; to be removed.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ActivityFileDto"
@@ -19797,7 +19971,6 @@
                 "hours_approvals",
                 "polls",
                 "coming_up",
-                "files",
                 "made_events",
                 "links"
               ]

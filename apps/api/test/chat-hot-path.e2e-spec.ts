@@ -37,6 +37,7 @@ import { MEMBER_REPOSITORY } from '../src/domain/repositories/member.repository.
 import { SUPABASE_CLIENT } from '../src/infrastructure/supabase/supabase.provider';
 import { NotificationService } from '../src/application/services/notification.service';
 import { ActivationService } from '../src/application/services/activation.service';
+import { EMPTY_ACCESS_HOLDER } from '#domain/utils/channel-access';
 import { RbacService } from '../src/application/services/rbac.service';
 import { CHAT_NOTIFICATION_PREFERENCE_REPOSITORY } from '../src/domain/repositories/chat-notification-preference.repository.interface';
 import { ChannelCacheService } from '../src/application/services/channel-cache.service';
@@ -77,6 +78,8 @@ describe('Chat hot path (e2e)', () => {
     description: null,
     type: 'PUBLIC',
     required_permissions: null,
+    who_can_see: null,
+    who_can_post: null,
     member_ids: null,
     category_id: null,
     is_read_only: false,
@@ -89,11 +92,15 @@ describe('Chat hot path (e2e)', () => {
     created_by: null,
   };
 
+  // The tier `#announcements` lets post (#3722).
+  const OFFICERS = 'tier:00000000-0000-4000-8000-0000000000e1';
+
   const announcementsChannel: ChatChannel = {
     ...generalChannel,
     id: 'chan-announcements',
     name: 'announcements',
     is_read_only: true,
+    who_can_post: [OFFICERS],
   };
 
   // A shared shape for the fields every fixture message repeats, so the four
@@ -165,6 +172,7 @@ describe('Chat hot path (e2e)', () => {
     update: jest.fn(),
     delete: jest.fn(),
     reorder: jest.fn(),
+    setAccess: jest.fn(),
   };
   const messageRepoMock: jest.Mocked<IChatMessageRepository> = {
     findById: jest.fn(),
@@ -241,8 +249,8 @@ describe('Chat hot path (e2e)', () => {
     getEffectivePermissions: jest.fn(),
     // The chapter's roles, for `@`-role resolution (`ChatMentionService`).
     findByChapter: jest.fn(),
-    hasAlumniRole: jest.fn(),
-    isAlumni: jest.fn(),
+    // What the sender holds for a channel's lists (#3722).
+    getChannelAccessHolder: jest.fn(),
   };
   // Named so `beforeEach` can re-arm its defaults after `resetAllMocks`
   // (see below) — every other mock gets fresh defaults each test, and this
@@ -322,8 +330,9 @@ describe('Chat hot path (e2e)', () => {
     memberRepoMock.findChapterMemberIdentities.mockResolvedValue([]);
     rbacServiceMock.getEffectivePermissions.mockResolvedValue([]);
     rbacServiceMock.findByChapter.mockResolvedValue([]);
-    rbacServiceMock.hasAlumniRole.mockResolvedValue(false);
-    rbacServiceMock.isAlumni.mockResolvedValue(false);
+    rbacServiceMock.getChannelAccessHolder.mockResolvedValue(
+      EMPTY_ACCESS_HOLDER,
+    );
     attachmentRepoMock.createMany.mockResolvedValue([]);
     attachmentRepoMock.findByMessage.mockResolvedValue([]);
     readReceiptRepoMock.getUnreadCounts.mockResolvedValue([]);
@@ -412,9 +421,8 @@ describe('Chat hot path (e2e)', () => {
     );
   });
 
-  it('forbids a post to a read-only channel from a sender without announcements:post', async () => {
+  it("forbids a post from a sender off the channel's who-can-post list", async () => {
     channelRepoMock.findById.mockResolvedValue(announcementsChannel);
-    rbacServiceMock.getEffectivePermissions.mockResolvedValue([]);
 
     await request(app.getHttpServer())
       .post(`${V1}/channels/${announcementsChannel.id}/messages`)
@@ -422,18 +430,19 @@ describe('Chat hot path (e2e)', () => {
       .set('x-chapter-id', 'chapter-1')
       .send({
         client_message_id: '33333333-3333-4333-8333-333333333333',
-        content: 'I do not hold announcements:post',
+        content: 'I am not on who can post',
       })
       .expect(403);
 
     expect(messageRepoMock.create).not.toHaveBeenCalled();
   });
 
-  it('allows a post to a read-only channel from a sender who holds announcements:post', async () => {
+  it("allows a post from a sender on the channel's who-can-post list", async () => {
     channelRepoMock.findById.mockResolvedValue(announcementsChannel);
-    rbacServiceMock.getEffectivePermissions.mockResolvedValue([
-      'announcements:post',
-    ]);
+    rbacServiceMock.getChannelAccessHolder.mockResolvedValue({
+      ...EMPTY_ACCESS_HOLDER,
+      entries: new Set([OFFICERS]),
+    });
     const created = makeMessage({
       id: 'msg-announcement',
       channel_id: announcementsChannel.id,

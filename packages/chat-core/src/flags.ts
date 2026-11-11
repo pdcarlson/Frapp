@@ -15,7 +15,7 @@ import { isVisibleMember, type BlockState } from "./blocks";
 import { canActOnMessage } from "./message-actions";
 import type { ChatMessage } from "./types";
 
-/** What a flagged row draws above its body. */
+/** What a flagged row draws: on its author line, or above its body with none (#4288). */
 export interface MessageFlagView {
   flag: ChatMessageFlag;
   /** "Important", "Funny", … */

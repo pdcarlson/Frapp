@@ -441,8 +441,8 @@ interface ComposerBaseProps {
   /**
    * Server-decided capability (#704): whether the caller may post in this
    * channel at all, from `ChatChannel.can_post` — already folds in the
-   * read-only gate (a holder of `announcements:post`, or `*`, gets `true` in
-   * a read-only channel), so this is the single source of truth for whether
+   * who-can-post list (#3722; someone on it, or `*`, gets `true` in a
+   * read-only channel), so this is the single source of truth for whether
    * the composer renders live. Undefined defaults to `!isReadOnly`, matching
    * the pre-#704 behavior for a caller that hasn't wired this yet, or a
    * channel from the brief window before `getOrCreateDm`/`createGroupDm`'s
@@ -1882,8 +1882,8 @@ export function Composer({
   );
 
   // `canPost` is the single source of truth for whether *this caller* may
-  // post here right now — it already folds in the read-only gate (a holder
-  // of `announcements:post`, or `*`, gets `canPost: true` in a read-only
+  // post here right now — it already folds in the channel's who-can-post
+  // list (#3722; someone on it, or `*`, gets `canPost: true` in a read-only
   // channel). `isReadOnly` on its own used to gate the whole composer
   // unconditionally, which meant nobody — not even the President — could
   // ever get a live composer in `#announcements`, regardless of permission.
@@ -1891,12 +1891,12 @@ export function Composer({
   // Read access is already proven by the channel being in the caller's list,
   // and past that `canAccessChannel` refuses a post for three reasons: an
   // archived channel (#348), the alumni lifecycle restriction
-  // (`spec/behavior/alumni.md`), and the read-only case (no
-  // `announcements:post`). The first never reaches this composer: the list
-  // leaves archived channels out (`filterAccessibleChannels`), and this
+  // (`spec/behavior/alumni.md`), and the read-only case (the caller is not
+  // on the who-can-post list). The first never reaches this composer: the
+  // list leaves archived channels out (`filterAccessibleChannels`), and this
   // renders only for a channel in it. Of the other two, the alumni rule is
-  // checked first, which `isReadOnly` can't see: an alumnus who holds
-  // `announcements:post` is refused in a read-only channel as an alumnus but
+  // checked first, which `isReadOnly` can't see: an alumnus on the
+  // who-can-post list is refused in a read-only channel as an alumnus but
   // shown the read-only sentence, until the row says which rule refused
   // (#3074).
   //

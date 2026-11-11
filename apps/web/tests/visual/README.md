@@ -126,7 +126,7 @@ config widens the inferred type past what the package exports. It is not in
 
 ## What the harness does and does not exercise
 
-Every spec here runs in CI with **no session and no active chapter** (`beside-chat-floor.spec.ts` alone has a signed-in local mode, `BESIDE_CHAT_SIGN_IN=1`, that CI doesn't run): Playwright opens
+Every spec here runs in CI with **no session and no active chapter**, with two exceptions. `beside-chat-floor.spec.ts` has a signed-in local mode, `BESIDE_CHAT_SIGN_IN=1`, that CI doesn't run. `nav-fit.spec.ts` seeds an active chapter and stubs the permission read with an owner's `*` while holding the chapter read unanswered, because the nav's permission gate fails closed until that read answers (#3854) and a sessionless page would draw no gated row. Otherwise Playwright opens
 a fresh context with empty `localStorage`, so the persisted
 `frapp-active-chapter` key is missing and `useChapterStore.activeChapterId` is
 `null` (`apps/web/lib/stores/chapter-store.ts`). Several routes therefore render

@@ -966,6 +966,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/access-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What a channel or category’s who-can-see and who-can-post lists can name: tiers, then roles, with who holds each */
+        get: operations["ChatController_getChannelAccessOptions_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/channels/mention-roles": {
         parameters: {
             query?: never;
@@ -3418,7 +3435,7 @@ export interface paths {
         };
         /**
          * Get what needs the caller and what they made
-         * @description The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, the tasks they assigned and the files they uploaded. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.
+         * @description The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.
          */
         get: operations["ActivityController_getActivity_v1"];
         put?: never;
@@ -4735,6 +4752,27 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
+        ChannelAccessOptionDto: {
+            /** @description The entry as a list stores it: `tier:<id>` or `role:<id>`. Send it back in `who_can_see` or `who_can_post`. */
+            entry: string;
+            /**
+             * @description What the entry names. More kinds may come (groups, #4076); an editor groups by kind and should show an unknown one under its own heading.
+             * @enum {string}
+             */
+            kind: "tier" | "role";
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @description A role's palette color; null for a tier or an uncolored role. */
+            color: string | null;
+            /**
+             * Format: uuid
+             * @description A role's tier, or null; always null for a tier.
+             */
+            tier_id: string | null;
+            /** @description The `users.id` of every member it names, so the editor can count who a list reaches without counting anyone twice. */
+            user_ids: string[];
+        };
         MentionRoleDto: {
             /** Format: uuid */
             role_id: string;
@@ -4798,21 +4836,49 @@ export interface components {
         CreateChannelDto: {
             name: string;
             description?: string;
-            /** @enum {string} */
+            /**
+             * @description PRIVATE for a channel its members decide (`member_ids`); PUBLIC otherwise. ROLE_GATED is still accepted and needs `who_can_see`; the API sets `type` from `who_can_see` either way.
+             * @enum {string}
+             */
             type: "PUBLIC" | "PRIVATE" | "ROLE_GATED";
+            /** @description Who can see the channel (#3722): null for everyone in the chapter, or the tiers and roles named, each as `tier:<id>` or `role:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category). */
+            who_can_see?: string[] | null;
+            /** @description Who can post (#3722): null for everyone who can see it, or the tiers and roles named, each as `tier:<id>` or `role:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list. */
+            who_can_post?: string[] | null;
+            /**
+             * @deprecated
+             * @description Replaced by `who_can_see` and `who_can_post` (#3722); kept so an open page from before the change gets a clear refusal. A value that would change who can see or post is refused with a reload message.
+             */
             required_permissions?: string[];
             category_id?: string;
-            /** @default false */
-            is_read_only: boolean;
+            /**
+             * @deprecated
+             * @description Replaced by `who_can_see` and `who_can_post` (#3722); kept so an open page from before the change gets a clear refusal. A value that would change who can see or post is refused with a reload message.
+             */
+            is_read_only?: boolean;
             /** @description Always formal (#3787): every member sees the channel in the formal display and cannot pick another display there. False when absent. Change it later with PUT /v1/channels/{id}/display-lock. */
             display_locked?: boolean;
         };
         UpdateChannelDto: {
             name?: string;
             description?: string;
+            /** @description Who can see the channel (#3722): null for everyone in the chapter, or the tiers and roles named, each as `tier:<id>` or `role:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category). */
+            who_can_see?: string[] | null;
+            /** @description Who can post (#3722): null for everyone who can see it, or the tiers and roles named, each as `tier:<id>` or `role:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list. */
+            who_can_post?: string[] | null;
+            /** @description Copy both lists from the channel's category (the one it ends up in, when `category_id` moves it in the same request), so it matches the category again and follows its later changes. Refused with `who_can_see` or `who_can_post`, and on a channel with no category. */
+            match_category_access?: boolean;
+            /**
+             * @deprecated
+             * @description Replaced by `who_can_see` and `who_can_post` (#3722); kept so an open page from before the change gets a clear refusal. A value that would change who can see or post is refused with a reload message.
+             */
             required_permissions?: string[];
             /** Format: uuid */
             category_id?: string | null;
+            /**
+             * @deprecated
+             * @description Replaced by `who_can_see` and `who_can_post` (#3722); kept so an open page from before the change gets a clear refusal. A value that would change who can see or post is refused with a reload message.
+             */
             is_read_only?: boolean;
             /**
              * @description The channel's default push level for members who have set none of their own (#2771). Null clears it back to the built-in default: `all` for #general and the announcements channel, `off` for #chapter-audit, `mentions` for the rest. A member's own channel or kind level always wins. Refused on a DM or group DM, which always default to `all`.
@@ -4860,10 +4926,18 @@ export interface components {
             name: string;
             /** @default 0 */
             display_order: number;
+            /** @description Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` entries. A new channel in the category starts with it. */
+            who_can_see?: string[] | null;
+            /** @description Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` entries. */
+            who_can_post?: string[] | null;
         };
         UpdateCategoryDto: {
             name?: string;
             display_order?: number;
+            /** @description Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` entries. Changing it changes every channel in the category that matched it, and only those. */
+            who_can_see?: string[] | null;
+            /** @description Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` entries. */
+            who_can_post?: string[] | null;
         };
         ChatMessageDto: {
             /** Format: uuid */
@@ -6341,22 +6415,21 @@ export interface components {
         ActivityFileDto: {
             /** Format: uuid */
             id: string;
-            /**
-             * @description Which module holds it: a chapter document or a backwork resource.
-             * @enum {string}
-             */
+            /** @enum {string} */
             source: "document" | "backwork";
-            /** @description Empty for a backwork resource with no title. */
             title: string;
             /** Format: date-time */
             created_at: string;
         };
         ActivityMadeByYouDto: {
-            /** @description Poll cards the caller posted, newest first. */
+            /** @description Poll cards the caller posted, newest first: up to 25 open and the 25 most recently posted closed ones, so closed polls never push an open one out. A client lists the open ones and keeps the closed ones behind an archive (#4258). */
             polls: components["schemas"]["ActivityPollDto"][];
             /** @description Tasks the caller assigned, newest first. Empty unless the caller still holds `tasks:manage`. */
             tasks: components["schemas"]["ActivityTaskDto"][];
-            /** @description Documents and backwork the caller uploaded, newest first. */
+            /**
+             * @deprecated
+             * @description Always empty: uploads left Activity (#4291). Served only so a client built before that does not fail on its absence; to be removed.
+             */
             files: components["schemas"]["ActivityFileDto"][];
             /** @description Events the caller made that invite them and whose check-in has not closed, soonest first; a recurring series is one row, its next meeting. Events made before creators were recorded (#3897) are never here. */
             events: components["schemas"]["ActivityEventDto"][];
@@ -6371,7 +6444,7 @@ export interface components {
             /** @description How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t. */
             needs_you_count: number;
             /** @description Sections that could not be read this time. Each is served empty; the others are unaffected. */
-            unavailable: ("tasks" | "hours_approvals" | "polls" | "coming_up" | "files" | "made_events" | "links")[];
+            unavailable: ("tasks" | "hours_approvals" | "polls" | "coming_up" | "made_events" | "links")[];
             /**
              * Format: date-time
              * @description When the caller’s unread dots began in this chapter. Null until a client that draws dots calls `PUT /v1/activity/unread-since`, and every `unread` is false until then. Nothing that appeared before it is unread. Also served null, with every row read, when the caller’s unread state couldn’t be loaded.
@@ -8858,6 +8931,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChannelLatestMessageDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_getChannelAccessOptions_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelAccessOptionDto"][];
                 };
             };
             /** @description Error */
