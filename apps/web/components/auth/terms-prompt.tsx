@@ -30,7 +30,7 @@ export const TERMS_PROMPT_SIGN_OUT_FAILED =
   "Couldn't sign out. Retry in a moment, or close this tab to end the session.";
 
 /**
- * Web only: the prompt's account deletion didn't finish. `/profile`'s toast
+ * Web only: the prompt's account deletion didn't finish. Settings → Account's toast
  * words, as one inline line, since the prompt covers the page.
  */
 export const TERMS_PROMPT_DELETE_FAILED = `${DELETE_ACCOUNT_FAILED.title}. ${DELETE_ACCOUNT_FAILED.description}`;
@@ -40,7 +40,7 @@ export const TERMS_PROMPT_DELETE_FAILED = `${DELETE_ACCOUNT_FAILED.title}. ${DEL
  * outside clicks can't close, the same shape as the chapter wizard. The ways
  * out are agreeing, signing out and deleting the account, so a member who
  * declines is never trapped. Deletion is here because the prompt covers
- * `/profile`, where it otherwise lives (`spec/behavior/data-retention.md`),
+ * Settings → Account, where it otherwise lives (`spec/behavior/data-retention.md`),
  * as mobile's Terms screen offers it too. Accepting updates the cached status,
  * and the gate unmounts this.
  */
@@ -74,7 +74,7 @@ export function TermsPrompt() {
     setSigningOut(true);
     try {
       await signOutCurrentSession();
-      // Not in a `finally`, as in `profile-panel.tsx`: on success the page is
+      // Not in a `finally`, as in `account-section.tsx`: on success the page is
       // navigating away, and re-enabling the controls then would hand a
       // signed-out member a live "Agree and continue".
       window.location.assign("/sign-in");

@@ -20,7 +20,7 @@ function parked(overrides: Partial<DiscordOAuthState> = {}): DiscordOAuthState {
     chapter_id: CHAPTER,
     purpose: 'author_link',
     created_by: USER,
-    return_path: '/profile',
+    return_path: '/preferences?section=discord',
     expires_at: '2026-09-29T12:15:00Z',
     consumed_at: '2026-09-29T12:01:00Z',
     created_at: '2026-09-29T12:00:00Z',

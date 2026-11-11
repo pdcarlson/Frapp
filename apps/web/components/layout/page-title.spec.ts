@@ -16,7 +16,7 @@ describe("resolvePageTitle", () => {
     for (const tool of SETTINGS_TOOLS) {
       expect(resolvePageTitle(tool.href)).toEqual({
         title: tool.label,
-        parent: { label: "Settings", href: "/settings" },
+        parent: { label: "Chapter settings", href: "/settings" },
       });
     }
   });
@@ -48,6 +48,14 @@ describe("resolvePageTitle", () => {
 
   it("titles Profile, which is not a nav row", () => {
     expect(resolvePageTitle("/profile")).toEqual({ title: "Profile" });
+  });
+
+  it("keeps the two doors' titles apart (#3856)", () => {
+    // The member's own page is "Settings"; the nav row's is the chapter's.
+    expect(resolvePageTitle("/preferences")).toEqual({ title: "Settings" });
+    expect(resolvePageTitle("/settings")).toEqual({
+      title: "Chapter settings",
+    });
   });
 
   it("invents nothing for a route it does not know", () => {
