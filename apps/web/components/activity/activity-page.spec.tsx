@@ -22,6 +22,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     activityGroups: actual.activityGroups,
     activityKeys: actual.activityKeys,
     activityNeedsYouHeadline: actual.activityNeedsYouHeadline,
+    activityNextUpLine: actual.activityNextUpLine,
     activitySummary: actual.activitySummary,
     useActiveChapterId: () => "chap-1",
     useActivity: () => mockActivity(),

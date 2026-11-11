@@ -1,6 +1,6 @@
-import { formatRelativeDayTime } from "@repo/formatting";
 import {
   activityNeedsYouHeadline,
+  activityNextUpLine,
   type ActivityFilter,
   type ActivitySummary as Summary,
 } from "@repo/hooks";
@@ -24,13 +24,7 @@ export function ActivitySummary({
   filter: ActivityFilter;
   onFilter: (filter: ActivityFilter) => void;
 }) {
-  const next = summary.nextEvent;
-  const when = next ? formatRelativeDayTime(next.start_time) : null;
-  const nextLine = next
-    ? ["Next up:", next.name, when ? `· ${when}` : null]
-        .filter(Boolean)
-        .join(" ")
-    : null;
+  const nextLine = activityNextUpLine(summary);
   return (
     <div className="space-y-4">
       <div className="space-y-1">
