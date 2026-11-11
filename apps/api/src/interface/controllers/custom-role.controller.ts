@@ -1,44 +1,26 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Patch,
-  Post,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
-  ApiConflictResponse,
-  ApiCreatedResponse,
-  ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
-import { CustomRoleService } from '../../application/services/custom-role.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { FreeTier } from '../decorators/subscription.decorator';
-import {
-  CurrentChapterId,
-  CurrentUser,
-} from '../decorators/current-user.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
-import {
-  CreateCustomRoleDto,
-  CustomRoleDto,
-  RemoveCustomRoleResponseDto,
-  UpdateCustomRoleDto,
-} from '../dtos/custom-role.dto';
+import { CustomRoleDto } from '../dtos/custom-role.dto';
 
 /**
- * Settings → Roles → Custom. CRUD over `chapter_custom_roles`. Reads require
- * `chapter-config:view`; writes require `chapter-config:manage` (or wildcard),
- * matching the rest of the settings surface. Every write is audit-logged.
+ * Kept only for the mobile builds already in the stores (#4075). Custom roles
+ * were folded into ordinary roles by migration `20261111210000`, so this
+ * always answers an empty list. Every shipped build's member sheet calls it
+ * (`useCustomRoles`) and treats an empty list as "no custom roles"; a 404 would
+ * fail the shipped-contract check. Delete it, with `custom_role_ids` on member
+ * responses, once production's minimum mobile version is above every build
+ * that calls it (#4194).
  */
 @ApiTags('Chapter Custom Roles')
 @ApiBearerAuth()
@@ -47,55 +29,13 @@ import {
 @FreeTier()
 @Controller('custom-roles')
 export class CustomRoleController {
-  constructor(private readonly customRoleService: CustomRoleService) {}
-
   @Get()
-  @ApiOperation({ summary: 'List the chapter custom roles' })
-  @ApiOkResponse({ type: CustomRoleDto, isArray: true })
-  async list(@CurrentChapterId() chapterId: string) {
-    return this.customRoleService.findByChapter(chapterId);
-  }
-
-  @Post()
-  @RequirePermissions(SystemPermissions.CHAPTER_CONFIG_MANAGE)
-  @ApiOperation({ summary: 'Create a custom role (audit-logged)' })
-  @ApiCreatedResponse({ type: CustomRoleDto })
-  @ApiConflictResponse({
-    description: 'A custom role with this key already exists in this chapter',
-  })
-  async create(
-    @CurrentChapterId() chapterId: string,
-    @CurrentUser('id') userId: string,
-    @Body() dto: CreateCustomRoleDto,
-  ) {
-    return this.customRoleService.create(chapterId, userId, dto);
-  }
-
-  @Patch(':id')
-  @RequirePermissions(SystemPermissions.CHAPTER_CONFIG_MANAGE)
-  @ApiOperation({ summary: 'Update a custom role (audit-logged)' })
-  @ApiOkResponse({ type: CustomRoleDto })
-  async update(
-    @Param('id') id: string,
-    @CurrentChapterId() chapterId: string,
-    @CurrentUser('id') userId: string,
-    @Body() dto: UpdateCustomRoleDto,
-  ) {
-    return this.customRoleService.update(id, chapterId, userId, dto);
-  }
-
-  @Delete(':id')
-  @RequirePermissions(SystemPermissions.CHAPTER_CONFIG_MANAGE)
   @ApiOperation({
-    summary: 'Delete a non-core custom role (audit-logged)',
+    summary: 'Deprecated: always empty (custom roles are ordinary roles now)',
+    deprecated: true,
   })
-  @ApiOkResponse({ type: RemoveCustomRoleResponseDto })
-  @ApiForbiddenResponse({ description: 'Core roles cannot be deleted' })
-  async remove(
-    @Param('id') id: string,
-    @CurrentChapterId() chapterId: string,
-    @CurrentUser('id') userId: string,
-  ) {
-    return this.customRoleService.remove(id, chapterId, userId);
+  @ApiOkResponse({ type: CustomRoleDto, isArray: true })
+  list(): CustomRoleDto[] {
+    return [];
   }
 }

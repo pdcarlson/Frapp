@@ -1004,6 +1004,7 @@
     },
     "/v1/custom-roles": {
       "get": {
+        "deprecated": true,
         "operationId": "CustomRoleController_list_v1",
         "parameters": [],
         "responses": {
@@ -1036,158 +1037,7 @@
             "bearer": []
           }
         ],
-        "summary": "List the chapter custom roles",
-        "tags": [
-          "Chapter Custom Roles"
-        ]
-      },
-      "post": {
-        "operationId": "CustomRoleController_create_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateCustomRoleDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CustomRoleDto"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "A custom role with this key already exists in this chapter"
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Create a custom role (audit-logged)",
-        "tags": [
-          "Chapter Custom Roles"
-        ]
-      }
-    },
-    "/v1/custom-roles/{id}": {
-      "patch": {
-        "operationId": "CustomRoleController_update_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateCustomRoleDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CustomRoleDto"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Update a custom role (audit-logged)",
-        "tags": [
-          "Chapter Custom Roles"
-        ]
-      },
-      "delete": {
-        "operationId": "CustomRoleController_remove_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RemoveCustomRoleResponseDto"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Core roles cannot be deleted"
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Delete a non-core custom role (audit-logged)",
+        "summary": "Deprecated: always empty (custom roles are ordinary roles now)",
         "tags": [
           "Chapter Custom Roles"
         ]
@@ -13991,66 +13841,6 @@
           "updated_at"
         ]
       },
-      "CreateCustomRoleDto": {
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": "string",
-            "description": "Machine-readable slug, unique per chapter",
-            "maxLength": 64
-          },
-          "label": {
-            "type": "string",
-            "maxLength": 100
-          },
-          "rank": {
-            "type": "number",
-            "description": "Hierarchy order; lower ranks first",
-            "maximum": 1000000000
-          },
-          "capabilities": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "key",
-          "label"
-        ]
-      },
-      "UpdateCustomRoleDto": {
-        "type": "object",
-        "properties": {
-          "label": {
-            "type": "string",
-            "maxLength": 100
-          },
-          "rank": {
-            "type": "number",
-            "maximum": 1000000000
-          },
-          "capabilities": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "RemoveCustomRoleResponseDto": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean",
-            "example": true
-          }
-        },
-        "required": [
-          "success"
-        ]
-      },
       "CustomFieldOptionsDto": {
         "type": "object",
         "properties": {
@@ -14541,6 +14331,8 @@
             }
           },
           "custom_role_ids": {
+            "deprecated": true,
+            "description": "Always empty. Custom roles were folded into ordinary roles (#4075) and appear in role_ids; kept for the mobile builds already in the stores.",
             "type": "array",
             "items": {
               "type": "string"
@@ -14668,7 +14460,8 @@
             }
           },
           "custom_role_ids": {
-            "description": "Assigned chapter_custom_roles ids. Omit to leave custom-role assignment unchanged; an empty array clears it.",
+            "deprecated": true,
+            "description": "Deprecated. Custom roles were folded into ordinary roles (#4075); assign them through role_ids. Still accepted, as [], so a web page loaded before that deploy can save; a non-empty list means the page read the member before the fold, so its role_ids would drop the folded roles, and the save is refused with 409.",
             "type": "array",
             "items": {
               "type": "string"
@@ -15678,7 +15471,7 @@
           },
           "metadata": {
             "type": "object",
-            "description": "Free-form annotations; carries `attachment_count`. Empty on a masked row, which is what stops a masked message pulling the blocked member’s uploads."
+            "description": "Free-form annotations; carries `attachment_count`, and `attachment_photos` (one `{width, height, thumbhash}` per photo) so a reader can size each photo before the attachments read returns. Empty on a masked row, which is what stops a masked message pulling the blocked member’s uploads."
           },
           "is_pinned": {
             "type": "boolean"

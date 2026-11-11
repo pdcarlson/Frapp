@@ -3,7 +3,22 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { startOfMonth } from "@repo/formatting";
-import { useActiveChapterId, useEvents, useNowDate } from "@repo/hooks";
+import {
+  useActiveChapterId,
+  useCalendarTasks,
+  useChapterRoster,
+  useEvents,
+  useNowDate,
+  useTasks,
+  useViewerUserId,
+} from "@repo/hooks";
+import {
+  ALL_CALENDAR_LAYERS,
+  calendarTasksByDay,
+  parseCalendarLayers,
+  type CalendarLayer,
+} from "@repo/hooks/calendar-tasks";
+import { memberLabel } from "@repo/hooks/display-names";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   SectionHeader,
@@ -28,6 +43,7 @@ import {
   EventRowFlat,
 } from "@/components/events/event-rows";
 import { EventsCalendar } from "@/components/events/events-calendar";
+import { CalendarLayerChips } from "@/components/events/calendar-tasks";
 import { AskPill } from "@/components/chat/ask-pill";
 import { isAskAvailable } from "@/lib/ask/flag";
 import {
@@ -36,7 +52,9 @@ import {
   type EventDayGroup,
 } from "@/lib/events/select";
 import {
+  setCalendarLayersRaw,
   setEventsView,
+  useCalendarLayersRaw,
   useEventsView,
   type EventsView,
 } from "@/lib/events/events-view";
@@ -101,10 +119,7 @@ export default function EventsScreen() {
     () => selectAllEventRows(eventsQuery.data),
     [eventsQuery.data],
   );
-  const list = useMemo(
-    () => selectEventList(allEvents, now),
-    [allEvents, now],
-  );
+  const list = useMemo(() => selectEventList(allEvents, now), [allEvents, now]);
 
   // Held here, not in the views, so List → Calendar → List keeps both places.
   // Until the member moves the calendar, it follows the clock: the tab never
@@ -116,7 +131,49 @@ export default function EventsScreen() {
   const monthAnchor = pickedMonth ?? startOfMonth(now);
   const selectedDay = pickedDay ?? startOfDay(now);
 
-  const refresh = useRefetchAll([eventsQuery]);
+  // Tasks on the Calendar (#4144): the member's own on their due day, and
+  // the ones they assigned with where each stands, each kind a chip to
+  // switch, remembered on this phone like the view.
+  const calendarTasks = useCalendarTasks();
+  const rosterQuery = useChapterRoster();
+  const viewerUserId = useViewerUserId();
+  const layersRaw = useCalendarLayersRaw();
+  const shownLayers: ReadonlySet<CalendarLayer> = useMemo(
+    () => parseCalendarLayers(layersRaw) ?? ALL_CALENDAR_LAYERS,
+    [layersRaw],
+  );
+  const offeredLayers = useMemo(() => {
+    const offered = new Set<CalendarLayer>();
+    if (!calendarTasks.hasMine && !calendarTasks.hasAssigned) return offered;
+    offered.add("events");
+    if (calendarTasks.hasMine) offered.add("mine");
+    if (calendarTasks.hasAssigned) offered.add("assigned");
+    return offered;
+  }, [calendarTasks.hasMine, calendarTasks.hasAssigned]);
+  const tasksByDay = useMemo(
+    () => calendarTasksByDay(calendarTasks.items, shownLayers),
+    [calendarTasks.items, shownLayers],
+  );
+  const nameOf = useMemo(() => {
+    const names = new Map(
+      (rosterQuery.data ?? []).map((member) => [
+        member.user_id,
+        member.display_name,
+      ]),
+    );
+    return (userId: string) =>
+      userId === viewerUserId ? "You" : memberLabel(names.get(userId), userId);
+  }, [rosterQuery.data, viewerUserId]);
+  function toggleLayer(layer: CalendarLayer) {
+    const next = new Set(shownLayers);
+    if (next.has(layer)) next.delete(layer);
+    else next.add(layer);
+    setCalendarLayersRaw(JSON.stringify([...next]));
+  }
+
+  // The same read `useCalendarTasks` draws from, so a pull refreshes both.
+  const tasksQuery = useTasks();
+  const refresh = useRefetchAll([eventsQuery, tasksQuery]);
 
   function openEvent(eventId: string) {
     // Object form, because s07 now takes a param. Covered by the `pathname:`
@@ -236,7 +293,27 @@ export default function EventsScreen() {
     if (view === "calendar") {
       return (
         <EventsCalendar
-          events={allEvents}
+          events={
+            // Off only while its toggle is there to turn it back on: a
+            // member whose tasks are all gone loses the chips, not events.
+            shownLayers.has("events") || !offeredLayers.has("events")
+              ? allEvents
+              : []
+          }
+          tasksByDay={tasksByDay}
+          nameOf={nameOf}
+          onOpenTask={(taskId) =>
+            router.push({ pathname: "/tasks", params: { task: taskId } })
+          }
+          layerChips={
+            offeredLayers.size > 0 ? (
+              <CalendarLayerChips
+                offered={offeredLayers}
+                shown={shownLayers}
+                onToggle={toggleLayer}
+              />
+            ) : null
+          }
           now={now}
           monthAnchor={monthAnchor}
           selectedDay={selectedDay}

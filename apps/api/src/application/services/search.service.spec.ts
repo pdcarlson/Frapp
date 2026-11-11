@@ -243,9 +243,9 @@ describe('SearchService', () => {
         }),
       ]);
 
-      // The permission set resolves through RbacService, so custom-role
-      // capabilities gate search exactly as they gate chat channel access
-      // (bridge model, spec/behavior/rbac.md).
+      // The permission set resolves through RbacService, so a role's
+      // permissions gate search exactly as they gate chat channel access
+      // (spec/behavior/rbac.md).
       mockRbacService.getEffectivePermissions.mockResolvedValue([
         'alumni:view',
       ]);

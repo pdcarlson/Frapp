@@ -80,7 +80,6 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     refetch: vi.fn(),
   }),
   useRoles: () => ({ data: state.roles, isPending: false, isSuccess: true }),
-  useCustomRoles: () => ({ data: [], isPending: false }),
   usePermissionList: () => state.permissions,
   useCurrentChapter: () => ({
     data: state.vocabulary ? { vocabulary: state.vocabulary } : undefined,
@@ -712,7 +711,6 @@ describe("MemberDetailSheet roles", () => {
       memberId: `m-${ADA}`,
       name: "Ada",
       heldIds: [],
-      customRoleNames: [],
     });
     act(() => tree.unmount());
     state.permissions = [];

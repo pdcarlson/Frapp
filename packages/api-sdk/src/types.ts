@@ -346,33 +346,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List the chapter custom roles */
+        /**
+         * Deprecated: always empty (custom roles are ordinary roles now)
+         * @deprecated
+         */
         get: operations["CustomRoleController_list_v1"];
         put?: never;
-        /** Create a custom role (audit-logged) */
-        post: operations["CustomRoleController_create_v1"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
-        trace?: never;
-    };
-    "/v1/custom-roles/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete a non-core custom role (audit-logged) */
-        delete: operations["CustomRoleController_remove_v1"];
-        options?: never;
-        head?: never;
-        /** Update a custom role (audit-logged) */
-        patch: operations["CustomRoleController_update_v1"];
         trace?: never;
     };
     "/v1/custom-fields": {
@@ -4266,23 +4250,6 @@ export interface components {
             created_at: string;
             updated_at: string;
         };
-        CreateCustomRoleDto: {
-            /** @description Machine-readable slug, unique per chapter */
-            key: string;
-            label: string;
-            /** @description Hierarchy order; lower ranks first */
-            rank?: number;
-            capabilities?: string[];
-        };
-        UpdateCustomRoleDto: {
-            label?: string;
-            rank?: number;
-            capabilities?: string[];
-        };
-        RemoveCustomRoleResponseDto: {
-            /** @example true */
-            success: boolean;
-        };
         CustomFieldOptionsDto: {
             /** @description Option list for select */
             choices?: string[];
@@ -4426,6 +4393,10 @@ export interface components {
             user_id: string;
             chapter_id: string;
             role_ids: string[];
+            /**
+             * @deprecated
+             * @description Always empty. Custom roles were folded into ordinary roles (#4075) and appear in role_ids; kept for the mobile builds already in the stores.
+             */
             custom_role_ids: string[];
             has_completed_onboarding: boolean;
             created_at: string;
@@ -4461,7 +4432,10 @@ export interface components {
         };
         UpdateMemberRolesDto: {
             role_ids: string[];
-            /** @description Assigned chapter_custom_roles ids. Omit to leave custom-role assignment unchanged; an empty array clears it. */
+            /**
+             * @deprecated
+             * @description Deprecated. Custom roles were folded into ordinary roles (#4075); assign them through role_ids. Still accepted, as [], so a web page loaded before that deploy can save; a non-empty list means the page read the member before the fold, so its role_ids would drop the folded roles, and the save is refused with 409.
+             */
             custom_role_ids?: string[];
         };
         UpdateOnboardingDto: {
@@ -4843,7 +4817,7 @@ export interface components {
             client_message_id?: string | null;
             /** Format: uuid */
             reply_to_id: string | null;
-            /** @description Free-form annotations; carries `attachment_count`. Empty on a masked row, which is what stops a masked message pulling the blocked member’s uploads. */
+            /** @description Free-form annotations; carries `attachment_count`, and `attachment_photos` (one `{width, height, thumbhash}` per photo) so a reader can size each photo before the attachments read returns. Empty on a masked row, which is what stops a masked message pulling the blocked member’s uploads. */
             metadata: Record<string, never>;
             is_pinned: boolean;
             pinned_at: string | null;
@@ -7407,116 +7381,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CustomRoleDto"][];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorResponseDto"];
-                };
-            };
-        };
-    };
-    CustomRoleController_create_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateCustomRoleDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CustomRoleDto"];
-                };
-            };
-            /** @description A custom role with this key already exists in this chapter */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorResponseDto"];
-                };
-            };
-        };
-    };
-    CustomRoleController_remove_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RemoveCustomRoleResponseDto"];
-                };
-            };
-            /** @description Core roles cannot be deleted */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorResponseDto"];
-                };
-            };
-        };
-    };
-    CustomRoleController_update_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateCustomRoleDto"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CustomRoleDto"];
                 };
             };
             /** @description Error */

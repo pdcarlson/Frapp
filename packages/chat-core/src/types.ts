@@ -9,7 +9,11 @@
  */
 
 import type { components } from "@repo/api-sdk/types";
-import { isChatMessageFlag, type ChatMessageFlag } from "@repo/validation";
+import {
+  isChatMessageFlag,
+  isDecodableThumbhash,
+  type ChatMessageFlag,
+} from "@repo/validation";
 
 export const CHAT_MESSAGE_QUERY_ROOT = "chat" as const;
 
@@ -255,6 +259,14 @@ export interface ChatMessage {
    */
   attachment_count: number;
   /**
+   * Each photo's display geometry, from `metadata.attachment_photos` (#3879):
+   * one entry per photo, sized or not, so `attachment_count` minus its length
+   * is the number of files. Lets a reader draw each photo's box, blurred,
+   * before the attachments read returns. `undefined` on a message sent before
+   * the server stamped it (and on any import), which then draws as it did.
+   */
+  attachment_photos?: readonly AttachmentPhoto[];
+  /**
    * Who the body mentions, plus a reply's quoted author, as the API resolved
    * it (`users.id`). The one
    * per-message answer to "was I addressed": the in-body chip marks any
@@ -490,6 +502,7 @@ export function normalizeRow(row: RawChatMessage): ChatMessage {
     created_at: row.created_at,
     client_message_id: clientId,
     attachment_count: attachmentCount(row.metadata),
+    ...attachmentPhotosField(row.metadata),
     mentions: mentionIds(row.mentions),
     thread_root_id: row.thread_root_id ?? null,
     thread: threadSummaryOf(row),
@@ -544,7 +557,12 @@ export function toRawRow(message: ChatMessage): RawChatMessage {
     kind: message.kind,
     payload: message.payload,
     reply_to_id: message.reply_to_id,
-    metadata: { attachment_count: message.attachment_count },
+    metadata: {
+      attachment_count: message.attachment_count,
+      ...(message.attachment_photos
+        ? { attachment_photos: message.attachment_photos }
+        : {}),
+    },
     is_pinned: message.is_pinned,
     pinned_at: message.pinned_at,
     flag: message.flag ?? null,
@@ -578,6 +596,68 @@ function attachmentCount(metadata: unknown): number {
   const raw = (metadata as Record<string, unknown>)["attachment_count"];
   if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0) return 0;
   return Math.floor(raw);
+}
+
+/** One photo's display geometry on a message (`metadata.attachment_photos`). */
+export interface AttachmentPhoto {
+  width: number | null;
+  height: number | null;
+  thumbhash: string | null;
+}
+
+/** The API's own bounds (`ChatAttachmentService`): at most 10 files, edges 1 to 20000 px. */
+const MAX_ATTACHMENTS_PER_MESSAGE = 10;
+const MAX_PHOTO_EDGE = 20_000;
+
+function photoEdge(value: unknown): number | null {
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= MAX_PHOTO_EDGE
+    ? value
+    : null;
+}
+
+/**
+ * Reads `metadata.attachment_photos` defensively, as a spreadable field.
+ *
+ * Absent (an older message, an import, a masked row) or malformed reads as no
+ * field at all, so the reader draws as it did before geometry existed. More
+ * entries than `attachment_count`, or a count past the API's 10, is a row this
+ * can't trust either: the API now drops a client's own copies of both keys,
+ * but older rows stored them verbatim, and a forged count drew one placeholder
+ * per claimed file. Each entry gets the API's own checks: a lone width or
+ * height says nothing about the shape, so it keeps both or none, and a
+ * ThumbHash a decoder can't read in full is dropped, because expo-image's iOS
+ * decoder crashes on a short one (`isDecodableThumbhash`).
+ */
+function attachmentPhotosField(metadata: unknown): {
+  attachment_photos?: AttachmentPhoto[];
+} {
+  if (!metadata || typeof metadata !== "object") return {};
+  const raw = (metadata as Record<string, unknown>)["attachment_photos"];
+  const count = attachmentCount(metadata);
+  if (
+    !Array.isArray(raw) ||
+    raw.length > count ||
+    count > MAX_ATTACHMENTS_PER_MESSAGE
+  ) {
+    return {};
+  }
+  const photos: AttachmentPhoto[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") return {};
+    const { width, height, thumbhash } = entry as Record<string, unknown>;
+    const w = photoEdge(width);
+    const h = photoEdge(height);
+    const sized = w !== null && h !== null;
+    photos.push({
+      width: sized ? w : null,
+      height: sized ? h : null,
+      thumbhash: isDecodableThumbhash(thumbhash) ? thumbhash : null,
+    });
+  }
+  return { attachment_photos: photos };
 }
 
 /**

@@ -7,7 +7,7 @@ function profile(overrides: Record<string, unknown> = {}) {
     user_id: "u-1",
     chapter_id: "c-1",
     role_ids: ["r-1", "r-2"],
-    custom_role_ids: ["cr-1"],
+    custom_role_ids: [],
     has_completed_onboarding: true,
     created_at: "2026-08-21T12:00:00.000Z",
     updated_at: "2026-08-21T12:00:00.000Z",
@@ -40,7 +40,6 @@ describe("selectMemberDetail", () => {
       meta: "Acme Inc. · Chicago · '27",
       joinedLabel: "August 21, 2026",
       roleIds: ["r-1", "r-2"],
-      customRoleIds: ["cr-1"],
       customFields: [
         { fieldId: "f-1", label: "Shirt size", value: "M" },
         { fieldId: "f-2", label: "Vaccinated", value: "Yes" },
