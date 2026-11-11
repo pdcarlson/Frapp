@@ -537,6 +537,12 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
 
   // Draft: load once per channel, debounce writes.
   const [draftState, setDraftState] = useState("");
+  /**
+   * The composer's text as of the last keystroke, readable from inside a send
+   * that is still awaiting its POST. A send settling reads this to tell the
+   * text it sent from a new message the member started meanwhile (#4141).
+   */
+  const latestDraftRef = useRef("");
   const [photos, setPhotos] = useState<StagedPhoto[]>([]);
   /**
    * The upload behind each staged photo, by key. A ref, because a send reads
@@ -557,7 +563,9 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     if (!channelId) return;
     let cancelled = false;
     void drafts.load(channelId).then((body) => {
-      if (!cancelled) setDraftState(body);
+      if (cancelled) return;
+      latestDraftRef.current = body;
+      setDraftState(body);
     });
     return () => {
       cancelled = true;
@@ -693,6 +701,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
 
   const setDraft = useCallback(
     (body: string) => {
+      latestDraftRef.current = body;
       setDraftState(body);
       if (!channelId) return;
       cancelDraftTimer();
@@ -866,6 +875,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
           keys,
         });
         cancelDraftTimer();
+        latestDraftRef.current = "";
         setDraftState("");
         setSendError(null);
         const sent = new Set(keys);
@@ -883,6 +893,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       cancelDraftTimer();
       // Clear optimistically so the composer empties the instant the bubble
       // appears, then put the text back if the send never got anywhere.
+      latestDraftRef.current = "";
       setDraftState("");
       if (staged.length > 0) {
         const keys = new Set(staged.map((photo) => photo.key));
@@ -905,7 +916,12 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
           latestPhotoRef.current.delete(photo.key);
         }
         queued = true;
-        await drafts.clear(channelId);
+        // Only when the composer is still empty. A member who started the
+        // next message while this POST was out has text on screen and a
+        // debounced save writing it; clearing here would delete that save, so
+        // the new message would be gone the next time the channel opened
+        // (#4141). chat-core already cleared the sent draft before the POST.
+        if (!latestDraftRef.current.trim()) await drafts.clear(channelId);
       } catch (error) {
         // `sendMessage` rethrows when `outbox.enqueue` fails, after taking its
         // optimistic bubble back out (#1718), so a full or unavailable
@@ -919,15 +935,27 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
           currentChannelIdRef.current === forChannelId &&
           sendGenerationRef.current === generation
         ) {
-          setDraftState(body);
-          // Put the photos back too, or the member loses a photo that is
-          // still sitting in the bucket with no way to reach it again.
-          if (staged.length > 0) {
-            setPhotos((current) => [...staged, ...current]);
+          if (latestDraftRef.current.trim()) {
+            // The member has started the next message since: putting this
+            // one back would overwrite what they are typing (#4141), and
+            // merging the two would pair this message's photos and text with
+            // words never written for them. Keep their typing and say plainly
+            // that the earlier message is gone, as web's toast does.
+            setSendError(
+              "Your last message couldn't be queued and was discarded. Re-enter it to try again.",
+            );
+          } else {
+            latestDraftRef.current = body;
+            setDraftState(body);
+            // Put the photos back too, or the member loses a photo that is
+            // still sitting in the bucket with no way to reach it again.
+            if (staged.length > 0) {
+              setPhotos((current) => [...staged, ...current]);
+            }
+            setSendError(
+              errorCopy(error, "Couldn't queue that message. Try again."),
+            );
           }
-          setSendError(
-            errorCopy(error, "Couldn't queue that message. Try again."),
-          );
         }
       } finally {
         sendingRef.current = false;

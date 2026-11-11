@@ -167,7 +167,7 @@ describe("useChannelDraft", () => {
 
       await act(async () => {
         result.current.cancelPendingSave();
-        await result.current.clearAfterSend();
+        await result.current.clearAfterSend("on my way");
       });
       await act(async () => {
         resolveLoad("");
@@ -351,7 +351,7 @@ describe("useChannelDraft", () => {
       const { result, rerender } = renderHook(() => useChannelDraft("chan-1"));
 
       await act(async () => {
-        await result.current.clearAfterSend();
+        await result.current.clearAfterSend("");
       });
       expect(clearDraft).not.toHaveBeenCalled();
 
@@ -424,7 +424,41 @@ describe("useChannelDraft", () => {
       act(() => result.current.setDraft("sent"));
 
       await act(async () => {
-        await result.current.clearAfterSend();
+        await result.current.clearAfterSend("sent");
+      });
+
+      expect(result.current.draft).toBe("");
+      expect(clearDraft).toHaveBeenCalledWith(SCOPE, "chan-1");
+    });
+
+    it("keeps text typed while the send was still out (#4141)", async () => {
+      /*
+        The composer empties itself on Send, and the POST behind it can take a
+        while. A member who starts the next message in that window must not see
+        it wiped the moment the first one lands, and its Dexie row (written by
+        its own debounced save) must not be deleted either.
+      */
+      const { result } = renderHook(() => useChannelDraft("chan-1"));
+      act(() => result.current.setDraft("first message"));
+      // What the composer's own clear reports on Send.
+      act(() => result.current.setDraft(""));
+      // The member keeps typing while the POST is out.
+      act(() => result.current.setDraft("and the se"));
+
+      await act(async () => {
+        await result.current.clearAfterSend("first message");
+      });
+
+      expect(result.current.draft).toBe("and the se");
+      expect(clearDraft).not.toHaveBeenCalled();
+    });
+
+    it("still clears when the composer holds only the sent text", async () => {
+      const { result } = renderHook(() => useChannelDraft("chan-1"));
+      act(() => result.current.setDraft("  sent with spaces "));
+
+      await act(async () => {
+        await result.current.clearAfterSend("sent with spaces");
       });
 
       expect(result.current.draft).toBe("");
@@ -436,7 +470,7 @@ describe("useChannelDraft", () => {
       const { result } = renderHook(() => useChannelDraft("chan-1"));
 
       await act(async () => {
-        await expect(result.current.clearAfterSend()).resolves.toBeUndefined();
+        await expect(result.current.clearAfterSend("")).resolves.toBeUndefined();
       });
 
       expect(result.current.draft).toBe("");

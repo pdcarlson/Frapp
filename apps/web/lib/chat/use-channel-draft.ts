@@ -50,8 +50,18 @@ export interface ChannelDraft {
    * land after the send has cleared the draft and restore text that was posted.
    */
   cancelPendingSave: () => void;
-  /** Forget the draft once a send has committed — memory and Dexie. */
-  clearAfterSend: () => Promise<void>;
+  /**
+   * Forget the draft once a send has committed — memory and Dexie — unless
+   * the member has started a new message since (#4141).
+   *
+   * `sent` is the text that went out. The composer empties itself the moment
+   * Send is pressed, and the POST this follows can take a while on a slow
+   * network, so by now the draft is either empty, still the sent text (a
+   * caller that does not clear first), or something typed after the send
+   * started. Only the first two are cleared: the third is the member's next
+   * message, and wiping it here is exactly the bug this guards.
+   */
+  clearAfterSend: (sent: string) => Promise<void>;
 }
 
 export function useChannelDraft(channelId: string | null): ChannelDraft {
@@ -294,9 +304,16 @@ export function useChannelDraft(channelId: string | null): ChannelDraft {
     [channelId, scope, cancelPendingSave],
   );
 
-  const clearAfterSend = useCallback(async () => {
+  const clearAfterSend = useCallback(async (sent: string) => {
+    // Bumped either way: a restore still in flight would put back a draft
+    // from before this send, over whatever the composer shows now.
     restoreEpoch.current += 1;
     typedBeforeChannel.current = false;
+    const current = latest.current.trim();
+    // Typed since Send was pressed: that text is the next message, and its
+    // own debounced save owns the Dexie row now (chat-core cleared the old
+    // one before the POST), so neither memory nor the table is touched.
+    if (current && current !== sent.trim()) return;
     latest.current = "";
     setDraftState("");
     if (!channelId) return;
