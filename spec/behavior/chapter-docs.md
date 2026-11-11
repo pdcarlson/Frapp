@@ -46,7 +46,12 @@ Officers with `chapter_docs:manage` create, rename, reorder, and delete folders;
 - A star failing, or a pin, says so in a toast; a star moves on the tap and settles on what the server holds.
 - The cards, their file counts and the tiers come from the library the page has loaded, so they share § Search's cap: past 1,000 documents, a pinned or starred file older than the newest 1,000 is missing from them, and a folder card counts only the files loaded.
 
-Mobile follows in its own change (#3934).
+**Mobile s12** *(2026-11-11, #3934)*:
+
+- **PINNED and STARRED cards** sit above the list on All with no search or filter, folders and files together, as the design board draws PINNED (`canvas-screens.dc.html` s12) and as web's cards do. A tap opens the folder or the file; a starred card wears a star. Inside a folder chip, or with a search or filter, there are no cards and the tiers lead the list.
+- **Folder chips** run pinned, then starred, then the rest, a pinned chip wearing a pin and a starred one a star.
+- **A long press** on a folder chip, a card or a file row (or its screen-reader action) opens one sheet: **Star** or **Unstar** for everyone, **Pin for the chapter** or **Unpin** for `chapter_docs:manage`, and on a file **Delete document** for `chapter_docs:manage`. The phone doesn't reorder folders, so pinning there leaves the officers' order as it is.
+- A file row wears its pin and star at its end, and a screen reader hears "Pinned for the chapter" and "Starred" as the row's value. A star or a pin that fails says so in a line above the list.
 
 ## Search
 
@@ -60,7 +65,7 @@ Document listing accepts an optional case-insensitive substring match on the tit
 - **Date added** offers any time; this semester, which is the chapter's own window from [semester-rollover.md](semester-rollover.md) (after the end of the most recently created archive's `end_date` day, or everything before a first rollover), the archive picked and the day read as the API's points window picks and reads them (`findLatestByChapter`, `resolveWindowSince('semester')`), and offered only once the archives have loaded; the last 30 days; or, on web only, a custom from and to range, inclusive and read in the viewer's timezone (mobile waits on a native date picker, which needs a store build). A custom range with no dates set filters nothing. The windows move while the page stays open.
 - **Sort** orders by name A to Z (the default, and the order before #3852), newest first, oldest first, or uploader A to Z. The chosen order applies whether or not a search is typed.
 - **Rows** read "Uploaded Sep 26 by Ryan Castellano · …" when the roster can name the uploader. Mobile's line stops before the effective date and description, which it searches but has no room to draw.
-- **Delete** is offered to `chapter_docs:manage` holders and asks first: a button on each web row, and on mobile a long press on the row (or its screen-reader action) that opens a system confirm.
+- **Delete** is offered to `chapter_docs:manage` holders and asks first: a button on each web row, and on mobile the Delete document row of the long-press sheet (the row's long press, or its screen-reader action; the sheet holds Star and Pin too since #3934, § Pinned and starred), which opens a system confirm.
 - **Cap.** A response at PostgREST's 1,000-row `max_rows` is treated as truncated, and a status line above the list says it is showing only the newest, whether the list shows rows or a search that matched nothing (not above the error or offline states). Backwork hit this cap (#3525); a chapter's documents are far fewer.
 
 The server's `search` parameter has no client caller since #3938; it stays for API consumers and the contract.

@@ -29,6 +29,12 @@ const download = vi.fn();
 const deleteDocument = vi.fn(async () => undefined);
 const refetchFolders = vi.fn(async () => undefined);
 const refetchDocuments = vi.fn(async () => undefined);
+let starRows: { folder_ids: string[]; document_ids: string[] } = {
+  folder_ids: [],
+  document_ids: [],
+};
+const setStar = vi.fn();
+const setPin = vi.fn(async () => undefined);
 const LOADED = {
   data: [],
   isPending: false,
@@ -59,6 +65,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useDocumentDownloadUrl: () => ({ mutateAsync: download }),
   useRequestDocumentUploadUrl: () => ({ mutateAsync: vi.fn() }),
   useConfirmDocumentUpload: () => ({ mutateAsync: vi.fn() }),
+  useDocumentStars: () => ({ ...LOADED, data: starRows, refetch: vi.fn() }),
+  useSetDocumentStar: () => ({ mutate: setStar }),
+  useSetDocumentPin: () => ({ mutateAsync: setPin, isPending: false }),
 }));
 
 // A purple stand-in, so a glyph painted house gold (`gold.askText`) fails.
@@ -70,6 +79,9 @@ import DocumentsScreen from "@/app/(app)/documents";
 import { FilterChips } from "@/components/filter-chips";
 import { ListRow } from "@/components/list-section";
 import { InlineNote } from "@/components/inline-note";
+import { UploadDocumentSheet } from "@/components/documents/upload-document-sheet";
+import { DocumentActionsSheet } from "@/components/documents/document-actions-sheet";
+import { MarkedCards } from "@/components/documents/marked-cards";
 
 const present = vi.fn();
 const mounted: ReactTestRenderer[] = [];
@@ -101,8 +113,9 @@ const uploadControls = (tree: ReactTestRenderer) =>
       node.props.accessibilityLabel === "Upload document",
   );
 
+// The upload sheet (s21); the Star and Pin sheet is always mounted (#3934).
 const sheets = (tree: ReactTestRenderer) =>
-  tree.root.findAll((node) => (node.type as unknown) === "BottomSheetModal");
+  tree.root.findAllByType(UploadDocumentSheet);
 
 afterEach(() => {
   permissions = [];
@@ -117,6 +130,9 @@ afterEach(() => {
   download.mockReset();
   refetchFolders.mockClear();
   refetchDocuments.mockClear();
+  starRows = { folder_ids: [], document_ids: [] };
+  setStar.mockReset();
+  setPin.mockReset();
   // Back to the suite-wide stand-in (vitest.setup.ts), a browser dismissed at
   // once, after a spec that held one open.
   vi.mocked(WebBrowser.openBrowserAsync).mockResolvedValue({
@@ -690,12 +706,13 @@ describe("Documents search, filters, sort and delete, as web's (#3938)", () => {
     );
   });
 
-  it("deletes on a long press, after a confirm, for chapter_docs:manage only", async () => {
+  it("deletes from the long-press sheet, after a confirm, for chapter_docs:manage only", async () => {
     const alert = vi.spyOn(Alert, "alert").mockImplementation(() => undefined);
     const member = loaded();
-    expect(
-      member.root.findAllByType(ListRow).every((row) => !row.props.onLongPress),
-    ).toBe(true);
+    // A member's long press opens Star only (#3934): no Delete in the sheet.
+    expect(member.root.findByType(DocumentActionsSheet).props.canManage).toBe(
+      false,
+    );
 
     permissions = ["chapter_docs:manage"];
     const officer = loaded();
@@ -703,9 +720,16 @@ describe("Documents search, filters, sort and delete, as web's (#3938)", () => {
       officer.root
         .findAllByType(ListRow)
         .find((row) => row.props.label === "Chapter bylaws")!;
-    expect(bylaws().props.longPressLabel).toBe("Delete document");
+    expect(bylaws().props.longPressLabel).toBe("Star, pin or delete");
 
     act(() => bylaws().props.onLongPress());
+    const sheet = officer.root.findByType(DocumentActionsSheet);
+    expect(sheet.props.target).toMatchObject({
+      kind: "document",
+      id: "d-1",
+      name: "Chapter bylaws",
+    });
+    act(() => sheet.props.onDelete(sheet.props.target));
     expect(alert).toHaveBeenCalledTimes(1);
     const [title, , buttons] = alert.mock.calls[0]!;
     expect(title).toBe("Delete Chapter bylaws?");
@@ -739,6 +763,8 @@ describe("Documents search, filters, sort and delete, as web's (#3938)", () => {
         .find((row) => row.props.label === "Budget FY2026")!
         .props.onLongPress(),
     );
+    const sheet = tree.root.findByType(DocumentActionsSheet);
+    act(() => sheet.props.onDelete(sheet.props.target));
     const buttons = alert.mock.calls[0]![2]!;
     await act(async () => {
       buttons.find((button) => button.style === "destructive")!.onPress!();
@@ -747,5 +773,211 @@ describe("Documents search, filters, sort and delete, as web's (#3938)", () => {
       "Couldn't delete “Budget FY2026”. Try again in a moment.",
     );
     alert.mockRestore();
+  });
+});
+
+describe("Documents pinned and starred (#3934)", () => {
+  const LIBRARY = [
+    {
+      id: "d-1",
+      title: "Chapter bylaws",
+      folder: "Governance",
+      created_at: "2026-08-12T14:00:00.000Z",
+      pinned_at: "2026-11-11T00:00:00.000Z",
+    },
+    {
+      id: "d-2",
+      title: "Budget FY2026",
+      folder: "Finance",
+      created_at: "2026-10-01T14:00:00.000Z",
+    },
+    {
+      id: "d-3",
+      title: "Alumni mixer flyer",
+      created_at: "2026-09-01T14:00:00.000Z",
+    },
+  ];
+  const FOLDERS = [
+    { id: "f-1", name: "Finance", sort_order: 0 },
+    { id: "f-2", name: "Governance", sort_order: 1 },
+    {
+      id: "f-3",
+      name: "Rush",
+      sort_order: 2,
+      pinned_at: "2026-11-11T00:00:00.000Z",
+    },
+  ];
+
+  function loaded() {
+    documentRows = LIBRARY;
+    folderRows = FOLDERS;
+    starRows = { folder_ids: ["f-2"], document_ids: ["d-2"] };
+    return render();
+  }
+
+  const folderChips = (tree: ReactTestRenderer) =>
+    tree.root
+      .findAllByType(FilterChips)
+      .find((chips) => chips.props.accessibilityLabel === "Filter by folder")!;
+  const rowLabels = (tree: ReactTestRenderer) =>
+    tree.root.findAllByType(ListRow).map((row) => row.props.label as string);
+
+  it("orders the folder chips pinned, then starred, then the rest, each marked", () => {
+    const chips = folderChips(loaded()).props.chips as {
+      label: string;
+      mark?: unknown;
+    }[];
+    expect(chips.map((chip) => chip.label)).toEqual([
+      "All",
+      "Rush",
+      "Governance",
+      "Finance",
+    ]);
+    expect(chips.map((chip) => !!chip.mark)).toEqual([
+      false,
+      true,
+      true,
+      false,
+    ]);
+  });
+
+  it("draws PINNED and STARRED cards above All, folders and files together", () => {
+    const tree = loaded();
+    const cards = tree.root.findByType(MarkedCards);
+    const names = (
+      items: {
+        kind: string;
+        folder?: { name: string };
+        doc?: { title: string };
+      }[],
+    ) =>
+      items.map((item) =>
+        item.kind === "folder" ? item.folder!.name : item.doc!.title,
+      );
+    expect(names(cards.props.pinned)).toEqual(["Rush", "Chapter bylaws"]);
+    expect(names(cards.props.starred)).toEqual(["Governance", "Budget FY2026"]);
+    expect(screenText(tree)).toContain("Pinned");
+    expect(screenText(tree)).toContain("Folder · 0 files");
+    // The list below keeps its own order on All.
+    expect(rowLabels(tree)).toEqual([
+      "Alumni mixer flyer",
+      "Budget FY2026",
+      "Chapter bylaws",
+    ]);
+  });
+
+  it("leads a folder's or a search's list with pinned, then starred files, instead of cards", () => {
+    documentRows = [
+      ...LIBRARY,
+      {
+        id: "d-4",
+        title: "Chapter budget",
+        created_at: "2026-09-02T14:00:00.000Z",
+      },
+    ];
+    folderRows = FOLDERS;
+    starRows = { folder_ids: ["f-2"], document_ids: ["d-2"] };
+    const tree = render();
+    act(() => tree.root.findByType(MarkedCards).props.onOpenFolder("Finance"));
+    expect(tree.root.findAllByType(MarkedCards)).toHaveLength(0);
+    expect(rowLabels(tree)).toEqual(["Budget FY2026"]);
+
+    act(() => folderChips(tree).props.onSelect(null));
+    act(() =>
+      tree.root
+        .findAll(
+          (node) =>
+            node.props.accessibilityLabel === "Search documents" &&
+            typeof node.props.onChangeText === "function",
+        )[0]!
+        .props.onChangeText("chapter"),
+    );
+    expect(tree.root.findAllByType(MarkedCards)).toHaveLength(0);
+    // Name A–Z would put "Chapter budget" first; the pin leads instead.
+    expect(rowLabels(tree)).toEqual(["Chapter bylaws", "Chapter budget"]);
+  });
+
+  it("opens the Star and Pin sheet from a folder chip's long press", () => {
+    permissions = ["chapter_docs:manage"];
+    const tree = loaded();
+    const rush = (
+      folderChips(tree).props.chips as {
+        label: string;
+        onLongPress?: () => void;
+      }[]
+    ).find((chip) => chip.label === "Rush")!;
+    act(() => rush.onLongPress!());
+    expect(present).toHaveBeenCalled();
+    const sheet = tree.root.findByType(DocumentActionsSheet);
+    expect(sheet.props.target).toEqual({
+      kind: "folder",
+      id: "f-3",
+      name: "Rush",
+      pinned: true,
+      starred: false,
+    });
+    expect(sheet.props.canManage).toBe(true);
+  });
+
+  it("stars and pins from the sheet", async () => {
+    permissions = ["chapter_docs:manage"];
+    const tree = loaded();
+    const sheet = () => tree.root.findByType(DocumentActionsSheet);
+    act(() =>
+      tree.root
+        .findAllByType(ListRow)
+        .find((row) => row.props.label === "Alumni mixer flyer")!
+        .props.onLongPress(),
+    );
+    act(() => sheet().props.onToggleStar(sheet().props.target));
+    expect(setStar).toHaveBeenCalledWith(
+      { target: { kind: "document", id: "d-3" }, starred: true },
+      expect.anything(),
+    );
+
+    await act(async () => sheet().props.onTogglePin(sheet().props.target));
+    expect(setPin).toHaveBeenCalledWith({
+      target: { kind: "document", id: "d-3" },
+      pinned: true,
+    });
+  });
+
+  it("says so when a star or a pin fails", async () => {
+    permissions = ["chapter_docs:manage"];
+    const tree = loaded();
+    const sheet = () => tree.root.findByType(DocumentActionsSheet);
+    act(() =>
+      tree.root
+        .findAllByType(ListRow)
+        .find((row) => row.props.label === "Alumni mixer flyer")!
+        .props.onLongPress(),
+    );
+    act(() => sheet().props.onToggleStar(sheet().props.target));
+    const options = setStar.mock.calls[0]![1] as {
+      onError: (error: unknown) => void;
+    };
+    act(() => options.onError(new Error("nope")));
+    expect(screenText(tree)).toContain(
+      "Couldn't star “Alumni mixer flyer”. Try again in a moment.",
+    );
+
+    setPin.mockRejectedValueOnce(new Error("nope"));
+    await act(async () => sheet().props.onTogglePin(sheet().props.target));
+    expect(screenText(tree)).toContain(
+      "Couldn't pin “Alumni mixer flyer”. Try again in a moment.",
+    );
+  });
+
+  it("marks a pinned or starred row for a screen reader", () => {
+    const tree = loaded();
+    const row = (label: string) =>
+      tree.root
+        .findAllByType(ListRow)
+        .find((entry) => entry.props.label === label)!;
+    expect(row("Chapter bylaws").props.accessibilityValue).toBe(
+      "Pinned for the chapter",
+    );
+    expect(row("Budget FY2026").props.accessibilityValue).toBe("Starred");
+    expect(row("Alumni mixer flyer").props.accessibilityValue).toBeUndefined();
   });
 });
