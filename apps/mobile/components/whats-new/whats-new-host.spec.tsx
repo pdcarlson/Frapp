@@ -10,18 +10,33 @@ import { RELEASE_NOTES, releaseNoteVersion } from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
 import { TOUR_DUE_STORAGE_KEY } from "@/lib/onboarding/tour";
 import {
+  WHATS_NEW_QUIET_STORAGE_KEY,
   WHATS_NEW_SEEN_STORAGE_KEY,
   resetWhatsNewBootReadForTests,
+  resetWhatsNewQuietForTests,
 } from "@/lib/whats-new";
 import { ReleaseNoteCard } from "./release-note-card";
 import { WHATS_NEW_OPEN_DELAY_MS, WhatsNewHost } from "./whats-new-host";
 
 const USER = "11111111-1111-4111-8111-111111111111";
 
+const account = vi.hoisted(() => ({
+  state: { settled: true, seen: null } as {
+    settled: boolean;
+    seen: string | null | undefined;
+  },
+  record: vi.fn(),
+}));
+
 vi.mock("@repo/hooks", async () => {
   const actual =
     await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
-  return { ...actual, useCurrentUser: () => ({ data: { id: USER } }) };
+  return {
+    ...actual,
+    useCurrentUser: () => ({ data: { id: USER } }),
+    useAccountWhatsNewSeen: () => account.state,
+    useRecordWhatsNewSeen: () => ({ mutate: account.record }),
+  };
 });
 
 const storage = vi.mocked(AsyncStorage);
@@ -34,6 +49,9 @@ let present: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   vi.useFakeTimers();
   resetWhatsNewBootReadForTests();
+  resetWhatsNewQuietForTests();
+  account.state = { settled: true, seen: null };
+  account.record.mockReset();
   values = new Map();
   bootKeys = [];
   present = vi.fn();
@@ -145,6 +163,76 @@ describe("WhatsNewHost", () => {
       await vi.advanceTimersByTimeAsync(WHATS_NEW_OPEN_DELAY_MS + 10);
     });
     expect(values.get(WHATS_NEW_SEEN_STORAGE_KEY)).toBe("2000-01-01#1");
+  });
+
+  describe("across devices (#4043)", () => {
+    it("tells the account when the sheet opens", async () => {
+      values.set(WHATS_NEW_SEEN_STORAGE_KEY, "2000-01-01#1");
+      await mount();
+      expect(present).toHaveBeenCalledTimes(1);
+      expect(account.record).toHaveBeenCalledWith(NEWEST_ID);
+    });
+
+    it("doesn't open what another device already showed: it records it and marks Settings", async () => {
+      values.set(WHATS_NEW_SEEN_STORAGE_KEY, "2000-01-01#1");
+      account.state = { settled: true, seen: NEWEST_ID };
+      const tree = await mount();
+      expect(present).not.toHaveBeenCalled();
+      expect(shown(tree)).toEqual([]);
+      expect(values.get(WHATS_NEW_SEEN_STORAGE_KEY)).toBe(NEWEST_ID);
+      expect(values.get(WHATS_NEW_QUIET_STORAGE_KEY)).toBe("quiet");
+      expect(account.record).not.toHaveBeenCalled();
+    });
+
+    it("still opens when the account saw only an older entry", async () => {
+      values.set(WHATS_NEW_SEEN_STORAGE_KEY, "2000-01-01#1");
+      account.state = { settled: true, seen: "2000-01-02#1" };
+      await mount();
+      expect(present).toHaveBeenCalledTimes(1);
+    });
+
+    it("waits for the account, then goes by the phone's marker when it can't be read", async () => {
+      values.set(WHATS_NEW_SEEN_STORAGE_KEY, "2000-01-01#1");
+      account.state = { settled: false, seen: undefined };
+      const tree = await mount();
+      expect(present).not.toHaveBeenCalled();
+
+      account.state = { settled: true, seen: undefined };
+      await act(async () => {
+        tree.update(
+          <FrappThemeProvider>
+            <WhatsNewHost />
+          </FrappThemeProvider>,
+        );
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(WHATS_NEW_OPEN_DELAY_MS + 10);
+      });
+      expect(present).toHaveBeenCalledTimes(1);
+    });
+
+    it("drops an earlier quiet mark once its own sheet shows the notes", async () => {
+      values.set(WHATS_NEW_SEEN_STORAGE_KEY, "2000-01-01#1");
+      values.set(WHATS_NEW_QUIET_STORAGE_KEY, "quiet");
+      await mount();
+      expect(present).toHaveBeenCalledTimes(1);
+      expect(values.get(WHATS_NEW_QUIET_STORAGE_KEY)).toBe("none");
+    });
+
+    it("drops a quiet mark the signed-in account doesn't back (another account's)", async () => {
+      values.set(WHATS_NEW_SEEN_STORAGE_KEY, NEWEST_ID);
+      values.set(WHATS_NEW_QUIET_STORAGE_KEY, "quiet");
+      account.state = { settled: true, seen: null };
+      await mount();
+      expect(values.get(WHATS_NEW_QUIET_STORAGE_KEY)).toBe("none");
+    });
+
+    it("keeps a fresh install's first launch quiet, with no mark", async () => {
+      account.state = { settled: true, seen: NEWEST_ID };
+      await mount();
+      expect(present).not.toHaveBeenCalled();
+      expect(values.get(WHATS_NEW_QUIET_STORAGE_KEY)).toBeUndefined();
+    });
   });
 });
 

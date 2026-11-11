@@ -95,8 +95,8 @@ export function useUpdateUser() {
  * to nothing.
  *
  * `["user", "me"]` is matched exactly: as a prefix it would also refetch
- * `["user", "me", "permissions", …]` and `["user", "me", "legal-acceptance"]`,
- * which a profile edit can't change. The photo mutations wait for every
+ * `["user", "me", "permissions", …]`, `["user", "me", "legal-acceptance"]` and
+ * `["user", "me", "whats-new"]`, which a profile edit can't change. The photo mutations wait for every
  * refetch they start. `useUpdateUser` starts them without waiting, having
  * first written the saved row over the cached one when both are the same
  * account's.
