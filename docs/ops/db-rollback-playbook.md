@@ -3630,6 +3630,7 @@ One nullable column on `tasks`, `due_at`, and one new table, `task_subtasks`. No
 ```sql
 drop table if exists public.task_subtasks;
 alter table public.tasks drop column if exists due_at;
+```
 
 ## Rollback channel access lists (20261111233000)
 
