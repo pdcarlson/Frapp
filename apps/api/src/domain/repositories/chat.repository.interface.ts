@@ -1,3 +1,4 @@
+import type { ChatMessageFlag } from '@repo/validation';
 import {
   ChatChannel,
   ChatChannelCategory,
@@ -306,6 +307,24 @@ export interface IChatMessageRepository {
     data: Partial<ChatMessage>,
   ): Promise<'inserted' | 'duplicate'>;
   update(id: string, data: Partial<ChatMessage>): Promise<ChatMessage>;
+  /**
+   * Write a message's flag fields only if its flag and flagger are still the
+   * ones the caller read (`expected`; both null for "still unflagged"), and
+   * return the updated row, or `null` when either changed underneath the
+   * caller (#3921). Who may change a flag depends on both, so a write past a
+   * concurrent change, even one back to the same flag by someone else, would
+   * skip that check. `requireLive` also refuses a message deleted since the
+   * read, so a flag can't land on a tombstone.
+   */
+  compareAndSetFlag(
+    id: string,
+    expected: {
+      flag: ChatMessageFlag | null;
+      flagged_by: string | null;
+      requireLive: boolean;
+    },
+    data: Pick<ChatMessage, 'flag' | 'flagged_by' | 'flagged_at'>,
+  ): Promise<ChatMessage | null>;
 }
 
 export interface IChatMessageActionRepository {

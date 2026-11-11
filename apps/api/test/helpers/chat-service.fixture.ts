@@ -133,6 +133,7 @@ export async function createChatServiceFixture() {
     findAuthorAvatarPaths: jest.fn().mockResolvedValue([]),
     create: jest.fn(),
     insertIdempotent: jest.fn(),
+    compareAndSetFlag: jest.fn(),
     update: jest.fn(),
   };
 

@@ -399,3 +399,38 @@ describe("thread fields (#3785)", () => {
     expect(toRawRow(reply).thread_root_id).toBe("root-1");
   });
 });
+
+describe("message flags (#3921)", () => {
+  test("a flag and its flagger survive normalizeRow and toRawRow", () => {
+    const normalized = normalizeRow(
+      row({
+        flag: "important",
+        flagged_by: "u2",
+        flagged_at: "2026-11-11T15:00:00.000Z",
+      }),
+    );
+    expect(normalized).toMatchObject({
+      flag: "important",
+      flagged_by: "u2",
+      flagged_at: "2026-11-11T15:00:00.000Z",
+    });
+    expect(normalizeRow(toRawRow(normalized))).toMatchObject({
+      flag: "important",
+      flagged_by: "u2",
+    });
+  });
+
+  test("a flag this client does not know reads as no flag at all", () => {
+    expect(
+      normalizeRow(row({ flag: "urgent", flagged_by: "u2", flagged_at: "x" })),
+    ).toMatchObject({ flag: null, flagged_by: null, flagged_at: null });
+  });
+
+  test("a row from before flags existed reads as unflagged", () => {
+    expect(normalizeRow(row())).toMatchObject({
+      flag: null,
+      flagged_by: null,
+      flagged_at: null,
+    });
+  });
+});

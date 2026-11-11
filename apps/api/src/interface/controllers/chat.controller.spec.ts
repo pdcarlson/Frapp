@@ -23,6 +23,8 @@ describe('ChatController', () => {
       | 'editMessage'
       | 'pinMessage'
       | 'unpinMessage'
+      | 'setMessageFlag'
+      | 'clearMessageFlag'
       | 'setDisplayLock'
       | 'getChannelList'
       | 'getChannel'
@@ -54,6 +56,8 @@ describe('ChatController', () => {
       editMessage: jest.fn(),
       pinMessage: jest.fn(),
       unpinMessage: jest.fn(),
+      setMessageFlag: jest.fn(),
+      clearMessageFlag: jest.fn(),
       getChannelList: jest.fn(),
       getChannel: jest.fn(),
       createChannel: jest.fn(),
@@ -139,6 +143,56 @@ describe('ChatController', () => {
         false,
       );
     });
+  });
+
+  // #3921: the flag routes are open to every reader; whether the caller may
+  // replace or remove someone else's flag turns on channels:manage, resolved
+  // here and handed to the service.
+  describe('message flags', () => {
+    it.each([true, false])(
+      'passes channels:manage (%s) to setMessageFlag',
+      async (isOfficer) => {
+        rbacService.memberHasAnyPermission.mockResolvedValue(isOfficer);
+
+        await controller.setMessageFlag('msg-1', 'ch-1', 'user-1', {
+          flag: 'important',
+        });
+
+        expect(rbacService.memberHasAnyPermission).toHaveBeenCalledWith(
+          'ch-1',
+          'user-1',
+          [SystemPermissions.CHANNELS_MANAGE],
+        );
+        expect(service.setMessageFlag).toHaveBeenCalledWith(
+          'msg-1',
+          'ch-1',
+          'user-1',
+          isOfficer,
+          'important',
+        );
+      },
+    );
+
+    it.each([true, false])(
+      'passes channels:manage (%s) to clearMessageFlag',
+      async (isOfficer) => {
+        rbacService.memberHasAnyPermission.mockResolvedValue(isOfficer);
+
+        await controller.clearMessageFlag('msg-1', 'ch-1', 'user-1');
+
+        expect(rbacService.memberHasAnyPermission).toHaveBeenCalledWith(
+          'ch-1',
+          'user-1',
+          [SystemPermissions.CHANNELS_MANAGE],
+        );
+        expect(service.clearMessageFlag).toHaveBeenCalledWith(
+          'msg-1',
+          'ch-1',
+          'user-1',
+          isOfficer,
+        );
+      },
+    );
   });
 
   // Always formal (#3787): open to members at the route so a creator without
