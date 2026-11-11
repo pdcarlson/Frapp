@@ -1,0 +1,129 @@
+name: What's new fold
+
+# Keeps one PR open that folds the What's new lines waiting in
+# packages/validation/release-notes/ into RELEASE_NOTES (that folder's README
+# owns the flow; scripts/release-notes-fold.mjs owns where a line goes).
+#
+# Each run starts from main's commit, so the bot branch always equals "main plus every
+# waiting line folded":
+#   - lines waiting → fold them, force-push that one commit to `bot/whats-new`
+#     (a branch only this workflow writes), and open its PR if none is open;
+#   - nothing waiting (the PR merged, or the lines were removed first) → close
+#     a still-open bot PR, so it can't ship a line main no longer has.
+# It runs when a line file or the notes file changes on main, so a direct edit
+# to the notes that conflicts with the bot PR rebuilds it from the new main.
+#
+# AUTO_MERGE: "true" would turn on auto-merge for the bot PR so it lands once
+# CI is green with nobody merging it. That changes AGENTS.md's "Paul merges
+# everything", so it stays "false" until Paul decides; until then the bot PR
+# is merged like any other.
+#
+# The token is the base-sync GitHub App's (as in pr-base-sync.yml): a
+# GITHUB_TOKEN push or PR starts no CI, so required checks would never report.
+# Every PR lookup is `<owner>:bot/whats-new`, so a fork's branch of the same
+# name is never touched. No npm ci (the script needs only Node, which reads the
+# notes file's TypeScript directly), so the repo's pre-push hook isn't
+# installed either.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/validation/release-notes/**"
+      - "packages/validation/src/release-notes.ts"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: release-notes-fold
+  cancel-in-progress: false
+
+jobs:
+  fold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The App's secrets belong to the `automation` environment: `main` only, no
+    # required reviewers (docs/ci-cd/agent-infra.md § GitHub environments and
+    # bootstrap secrets), as in pr-base-sync.yml.
+    environment:
+      name: automation
+      deployment: false
+    env:
+      BRANCH: bot/whats-new
+      AUTO_MERGE: "false"
+    steps:
+      # The commit that triggered the run, which the `automation` environment
+      # only allows on main. A later push that doesn't touch the notes may leave
+      # the bot branch behind main; pr-base-sync updates it like any other PR.
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: ./.github/actions/node-setup
+        with:
+          install: none
+
+      - name: Fold the waiting lines
+        id: fold
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          node scripts/release-notes-fold.mjs
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+          PR="$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&head=${GITHUB_REPOSITORY_OWNER}:${BRANCH}" --jq '.[0].number // empty')"
+          echo "pr=${PR}" >> "$GITHUB_OUTPUT"
+
+      - name: Mint base-sync app token
+        id: app-token
+        if: steps.fold.outputs.changed == 'true' || steps.fold.outputs.pr != ''
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.PR_BASE_SYNC_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PR_BASE_SYNC_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Close the bot PR when nothing is waiting
+        if: steps.fold.outputs.changed == 'false' && steps.fold.outputs.pr != ''
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR: ${{ steps.fold.outputs.pr }}
+        run: |
+          set -euo pipefail
+          gh pr close "$PR" --repo "$GITHUB_REPOSITORY" --delete-branch \
+            --comment "Closed by the What's new fold workflow: main has no waiting lines any more, so there is nothing left to fold."
+
+      - name: Push the fold and open its PR
+        if: steps.fold.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR: ${{ steps.fold.outputs.pr }}
+        run: |
+          set -euo pipefail
+          git config user.name "frapp-base-sync[bot]"
+          git config user.email "319542062+frapp-base-sync[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git add -A packages/validation
+          git commit -q -m "What's new: fold the waiting lines into the notes"
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${BRANCH}"
+
+          if [ -z "$PR" ]; then
+            URL="$(gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$BRANCH" \
+              --title "What's new: fold the waiting lines into the notes" \
+              --body "Moves the What's new lines that merged PRs left in \`packages/validation/release-notes/\` into the notes and deletes their files. Opened by the What's new fold workflow; every later merge that adds or removes a line rebuilds this branch from main, so it always holds exactly the waiting lines. To reword a line, merge this first and then edit the notes, or edit the line's file on main.")"
+            PR="${URL##*/}"
+          fi
+          echo "What's new fold PR: #${PR}" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$AUTO_MERGE" = "true" ]; then
+            gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --auto --squash
+          fi

@@ -31,13 +31,16 @@ const {
   canGate,
   roster,
   stars,
+  mockStarsRefetch,
   mockSetStar,
   mockSetPin,
 } = vi.hoisted(() => ({
   stars: {
     value: { folder_ids: [] as string[], document_ids: [] as string[] },
+    failed: false,
   },
-  mockSetStar: vi.fn(),
+  mockStarsRefetch: vi.fn(),
+  mockSetStar: vi.fn().mockResolvedValue(undefined),
   mockSetPin: vi.fn().mockResolvedValue(undefined),
   mockCurrentChapter: vi.fn(),
   mockDeleteDoc: vi.fn().mockResolvedValue({}),
@@ -120,8 +123,12 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCreateDocumentFolder: () => ({ mutateAsync: mockCreateFolder }),
   useUpdateDocumentFolder: () => ({ mutateAsync: mockUpdateFolder }),
   useDeleteDocumentFolder: () => ({ mutateAsync: mockDeleteFolder }),
-  useDocumentStars: () => ({ data: stars.value }),
-  useSetDocumentStar: () => ({ mutate: mockSetStar }),
+  useDocumentStars: () => ({
+    data: stars.failed ? undefined : stars.value,
+    isError: stars.failed,
+    refetch: mockStarsRefetch,
+  }),
+  useSetDocumentStar: () => ({ mutateAsync: mockSetStar }),
   useSetDocumentPin: () => ({ mutateAsync: mockSetPin, isPending: false }),
 }));
 
@@ -165,6 +172,7 @@ function resolvedDocumentsQuery() {
   foldersQuery.isError = false;
   foldersQuery.refetch = mockFolderRefetch;
   stars.value = { folder_ids: [], document_ids: [] };
+  stars.failed = false;
 }
 
 const uploadTrigger = () =>
@@ -199,7 +207,7 @@ describe("DocumentsPage subscription gating", () => {
     // §5 rule 2: name the next action, not just the blocker.
     expect(
       screen.getByRole("link", { name: /complete checkout/i }),
-    ).toHaveAttribute("href", "/billing");
+    ).toHaveAttribute("href", "/settings?tab=billing");
 
     // §5 rule 4: disabled, not hidden — the library itself is still there.
     expect(screen.getByText(/chapter bylaws/i)).toBeInTheDocument();
@@ -1779,7 +1787,6 @@ describe("DocumentsPage pins and stars (#3934)", () => {
     );
     expect(mockSetStar).toHaveBeenCalledWith(
       { target: { kind: "folder", id: "f-1" }, starred: true },
-      expect.anything(),
     );
 
     await userEvent.click(
@@ -1787,7 +1794,6 @@ describe("DocumentsPage pins and stars (#3934)", () => {
     );
     expect(mockSetStar).toHaveBeenCalledWith(
       { target: { kind: "document", id: "doc-1" }, starred: true },
-      expect.anything(),
     );
   });
 
@@ -1965,15 +1971,28 @@ describe("DocumentsPage pins and stars (#3934)", () => {
 
   it("says so when a star or a pin fails", async () => {
     mockSetPin.mockRejectedValueOnce(new Error("network down"));
+    // The first of two overlapping stars fails: it is still reported.
+    let failFirst!: (error: unknown) => void;
+    mockSetStar
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            failFirst = reject;
+          }),
+      )
+      .mockResolvedValueOnce(undefined);
+    foldersQuery.data = [
+      { id: "f-1", name: "Governance", sort_order: 0, pinned_at: null },
+    ];
     render(<DocumentsPage />);
 
     await userEvent.click(
       screen.getByRole("button", { name: "Star Chapter bylaws" }),
     );
-    const options = mockSetStar.mock.calls[0]![1] as {
-      onError: (error: unknown) => void;
-    };
-    act(() => options.onError(new Error("network down")));
+    await userEvent.click(
+      within(rail()).getByRole("button", { name: "Star Governance" }),
+    );
+    await act(async () => failFirst(new Error("network down")));
     expect(mockToast).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "Couldn't star Chapter bylaws",
@@ -2122,5 +2141,13 @@ describe("DocumentsPage pins and stars (#3934)", () => {
     await user.keyboard("{Escape}");
 
     await waitFor(() => expect(document.activeElement).toBe(row));
+  });
+
+  it("says when the stars couldn't be read, with a way to try again", async () => {
+    stars.failed = true;
+    render(<DocumentsPage />);
+    expect(screen.getByText(/couldn't load your stars/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(mockStarsRefetch).toHaveBeenCalledTimes(1);
   });
 });

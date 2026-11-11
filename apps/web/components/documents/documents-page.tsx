@@ -24,7 +24,8 @@ import {
   DELETE_DOCUMENT_LABEL,
   NO_DOCUMENT_FILTERS,
   deleteDocumentTitle,
-  tierByMarks,
+  markedItems,
+  tierRows,
   type DocumentFilters,
   type DocumentSort,
 } from "@repo/hooks/document-library";
@@ -39,10 +40,7 @@ import {
   useFolderManagement,
 } from "@/components/documents/folder-management";
 import { FolderRail } from "@/components/documents/folder-rail";
-import {
-  MarkedStrip,
-  type MarkedItem,
-} from "@/components/documents/marked-strip";
+import { MarkedStrip } from "@/components/documents/marked-strip";
 import { useDocumentMarks } from "@/components/documents/use-document-marks";
 import {
   DocumentsPageDropTarget,
@@ -203,45 +201,26 @@ function ChapterDocumentsPage() {
     come first, and nothing is drawn twice on one screen.
   */
   const marks = useDocumentMarks();
-  const { isStarred } = marks;
   const showStrip =
     activeFolder === null && !filtering && deferredSearch === "";
-  const tieredVisible = useMemo(() => {
-    if (showStrip) return visible;
-    const tiers = tierByMarks(
-      visible,
-      (row) => !!row.doc.pinned_at,
-      (row) => isStarred({ kind: "document", id: row.doc.id }),
-    );
-    return [...tiers.pinned, ...tiers.starred, ...tiers.rest];
-  }, [visible, showStrip, isStarred]);
-  const strip = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const doc of documents) {
-      if (doc.folder) counts.set(doc.folder, (counts.get(doc.folder) ?? 0) + 1);
-    }
-    const folderItems: MarkedItem[] = folders.map((folder) => ({
-      kind: "folder",
-      folder,
-      count: counts.get(folder.name) ?? 0,
-    }));
-    const docItems: MarkedItem[] = visible.map(({ doc }) => ({
-      kind: "document",
-      doc,
-    }));
-    const isPinned = (item: MarkedItem) =>
-      item.kind === "folder" ? !!item.folder.pinned_at : !!item.doc.pinned_at;
-    const isItemStarred = (item: MarkedItem) =>
-      item.kind === "folder"
-        ? isStarred({ kind: "folder", id: item.folder.id })
-        : isStarred({ kind: "document", id: item.doc.id });
-    const { pinned, starred } = tierByMarks(
-      [...folderItems, ...docItems],
-      isPinned,
-      isItemStarred,
-    );
-    return { pinned, starred };
-  }, [documents, folders, visible, isStarred]);
+  // The tiers and the cards come from the builders mobile's s12 uses too
+  // (`@repo/hooks/document-library`), so the two apps can't disagree.
+  const { starred: starredIds } = marks;
+  const tieredVisible = useMemo(
+    () => (showStrip ? visible : tierRows(visible, starredIds.documents)),
+    [visible, showStrip, starredIds],
+  );
+  const strip = useMemo(
+    () =>
+      markedItems({
+        folders,
+        library: documents,
+        shown: visible.map((row) => row.doc),
+        starredFolders: starredIds.folders,
+        starredDocuments: starredIds.documents,
+      }),
+    [documents, folders, visible, starredIds],
+  );
   const visibleDocs = useMemo(
     () => tieredVisible.map((row) => row.doc),
     [tieredVisible],

@@ -165,6 +165,17 @@ export class CreateEventDto {
   check_in_opens_minutes?: number;
 
   @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      "One of the chapter's event types (`GET /v1/event-types`), or null for none. The type only fills the form: the event's own `point_value` and `is_mandatory` are what count. An id that isn't the chapter's is a 400.",
+  })
+  @IsOptional()
+  @IsUUID()
+  event_type_id?: string | null;
+
+  @ApiPropertyOptional({
     description:
       'When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when the event keeps anyone out (`others_invited` false, including its default when `required_role_ids` is non-empty, or a non-empty `excluded_role_ids`), on this key or `client_message_id` alone — the card is broadcast to every reader of the channel, so a create cannot both limit its audience and post one. (`PATCH` can still limit the audience of an event whose card already posted; that card is left as-is.)',
   })
@@ -267,6 +278,15 @@ export class CreateEventResponseDto implements Event {
     description: `Minutes before start_time that check-in opens; it closes ${CHECK_IN_GRACE_MINUTES} minutes after end_time.`,
   })
   check_in_opens_minutes: number;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      "The chapter's event type this was made as, or null. Cleared when the type is deleted.",
+  })
+  event_type_id: string | null;
 
   @ApiProperty({
     type: String,
@@ -425,6 +445,17 @@ export class UpdateEventDto {
   @Min(0)
   @Max(MAX_CHECK_IN_OPENS_MINUTES)
   check_in_opens_minutes?: number;
+
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      "One of the chapter's event types (`GET /v1/event-types`), or null to clear it; omitted leaves it. The type only fills the form: the event's own `point_value` and `is_mandatory` are what count. An id that isn't the chapter's is a 400.",
+  })
+  @IsOptional()
+  @IsUUID()
+  event_type_id?: string | null;
 
   // No `default:` here on purpose. `openapi-typescript` promotes any property
   // carrying a schema default to *required* in the generated SDK type (the same

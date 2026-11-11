@@ -1,5 +1,6 @@
 "use client";
 
+import { BILLING_SETTINGS_PATH } from "@/components/billing/billing-paths";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
@@ -91,9 +92,9 @@ import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confir
  * **A landing, not a gate.** Nothing blocks navigating away — the dashboard
  * shell and its nav are fully available, which is what keeps this consistent
  * with `spec/product/positioning.md`'s "inline nudges rather than a mandatory
- * gate". `/billing` already offers checkout at this exact status.
+ * gate". Plan and billing already offers checkout at this exact status.
  */
-const POST_CREATE_PATH = "/billing";
+const POST_CREATE_PATH = BILLING_SETTINGS_PATH;
 const INVITE_ROLE = "Member";
 
 /**

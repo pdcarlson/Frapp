@@ -214,7 +214,7 @@ describe("ServiceHoursPage subscription gating", () => {
     // §5 rule 2: name the next action, not just the blocker.
     expect(
       screen.getByRole("link", { name: /complete checkout/i }),
-    ).toHaveAttribute("href", "/billing");
+    ).toHaveAttribute("href", "/settings?tab=billing");
 
     // §5 rule 4: disabled, not hidden — the queue and history are still there.
     // The pending entry renders twice (review queue + your-pending card).

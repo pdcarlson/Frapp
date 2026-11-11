@@ -65,6 +65,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useActiveChapterId: () => chapterId,
   usePermissionList: () => permissions,
   useRoles: () => ({ data: [], isPending: false, isError: false }),
+  useEventTypes: () => ({ data: [] }),
   useCreateEvent: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateEvent: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteEvent: () => ({ mutate: vi.fn(), isPending: false }),

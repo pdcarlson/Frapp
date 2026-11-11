@@ -72,9 +72,9 @@ alter table public.chapter_custom_roles
   add column if not exists folded_at timestamptz;
 
 comment on column public.chapter_custom_roles.folded_role_id is
-  'The roles row this custom role became in 20261111200000_fold_custom_roles.sql (#4075). Null for a row written after that ran, or once that role is deleted.';
+  'The roles row this custom role became in 20261111210000_fold_custom_roles.sql (#4075). Null for a row written after that ran, or once that role is deleted.';
 comment on column public.chapter_custom_roles.folded_at is
-  'When 20261111200000_fold_custom_roles.sql (#4075) turned this row into a role. Null only for a row written after that ran; a re-run folds exactly those.';
+  'When 20261111210000_fold_custom_roles.sql (#4075) turned this row into a role. Null only for a row written after that ran; a re-run folds exactly those.';
 
 do $$
 declare

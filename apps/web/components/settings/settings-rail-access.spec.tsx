@@ -87,6 +87,9 @@ vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }
 
 // The Roles tab's matrix has its own reads and its own spec; here it only has
 // to be the tab a deep link lands on.
+vi.mock("@/components/billing/plan-and-billing", () => ({
+  PlanAndBilling: () => <div data-testid="plan-and-billing" />,
+}));
 vi.mock("@/components/settings/settings-roles-tab", () => ({
   SettingsRolesTab: () => <p>Roles matrix</p>,
 }));
@@ -148,13 +151,13 @@ describe("Settings shows each viewer what they can use", () => {
       "Chapter",
       "Semester",
       "Privacy",
+      "Plan and billing",
       "Roles",
       "Pledge class",
       "Member fields",
       "Modules",
       "Dues",
       "Workflows",
-      "Danger zone",
     ]);
   });
 
@@ -176,12 +179,29 @@ describe("Settings shows each viewer what they can use", () => {
     expect(tabNames()).toContain("Dues");
   });
 
-  it("lists a treasurer's one tool as the page, with no setup tabs to fail", () => {
-    permissions.current = ["members:view", "billing:view", "reports:export"];
+  it("lists a tools-only viewer's one tool as the page, with no setup tabs to fail", () => {
+    permissions.current = ["members:view", "reports:export"];
     render(<SettingsPage />);
     expect(tabNames()).toEqual([]);
     expect(screen.queryByText(/couldn't load chapter configuration/i)).toBeNull();
     expect(tools()).toEqual([["Reports", "/reports"]]);
+  });
+
+  it("gives a treasurer Plan and billing beside their tool, and no config tab (#3827)", () => {
+    permissions.current = ["members:view", "billing:view", "reports:export"];
+    render(<SettingsPage />);
+    expect(tabNames()).toEqual(["Plan and billing"]);
+    expect(screen.queryByText(/couldn't load chapter configuration/i)).toBeNull();
+    expect(tools()).toEqual([["Reports", "/reports"]]);
+  });
+
+  it("opens Plan and billing from an old Danger zone link", () => {
+    permissions.current = ["*"];
+    search.current = "tab=danger";
+    render(<SettingsPage />);
+    expect(
+      screen.getByRole("tab", { name: "Plan and billing" }),
+    ).toHaveAttribute("data-state", "active");
   });
 
   it("tells a viewer with nothing here who can change that", () => {

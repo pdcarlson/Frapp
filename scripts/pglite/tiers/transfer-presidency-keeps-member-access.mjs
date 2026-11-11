@@ -12,7 +12,7 @@ import { db, miss } from "../harness.mjs";
 //   - `{President, Treasurer}` keeps `{Treasurer}`: it already grants access;
 //   - a legacy live role carrying `*` counts as access;
 //   - a leftover `custom_role_ids` entry no longer counts as access: #4075
-//     folded custom roles into `role_ids` (20261111200000), and the RPC
+//     folded custom roles into `role_ids` (20261111210000), and the RPC
 //     reads only `roles`;
 //   - a role id in upper case still matches, as the guard compares uuids;
 //   - a Member role stripped of `members:view` is not appended a second time;

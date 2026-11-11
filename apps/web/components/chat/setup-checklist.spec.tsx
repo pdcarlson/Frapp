@@ -58,7 +58,7 @@ describe("SetupChecklistSection", () => {
       "/events",
       "/geofences",
       "/documents",
-      "/billing",
+      "/settings?tab=billing",
     ]);
   });
 

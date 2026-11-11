@@ -3536,6 +3536,26 @@ alter table public.chat_messages
   drop column if exists flag;
 ```
 
+## Rollback event types (20261111200000)
+
+* **Migration**: `20261111200000_event_types.sql`
+
+One new table, `event_types`, seeded with seven rows per chapter; one nullable column on `events`, `event_type_id`, with a composite foreign key; two functions, `seed_default_event_types` and `chapters_seed_event_types`; and an `after insert` trigger on `chapters`. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API has no `/v1/event-types` routes and never writes `event_type_id`, so a client's type picker shows nothing to pick. Event reads are `select('*')`, so they keep returning `event_type_id` until the column is dropped. Roll back any client that writes it first, or with it. The trigger keeps seeding new chapters, which is harmless.
+
+**Keep the table and column unless they are themselves the problem.** Dropping them loses every chapter's edited types and every event's type. To remove them, do it in a later forward migration after the code revert has shipped:
+
+```sql
+drop trigger if exists trg_chapters_seed_event_types on public.chapters;
+drop function if exists public.chapters_seed_event_types();
+drop function if exists public.seed_default_event_types(uuid);
+alter table public.events
+  drop constraint if exists events_event_type_fk,
+  drop column if exists event_type_id;
+drop table if exists public.event_types;
+```
+
 ## Rollback Pinned and starred documents (20261111180000)
 
 * **Migration**: `20261111180000_document_pins_and_stars.sql`
@@ -3568,9 +3588,9 @@ drop function if exists public.reorder_chat_categories(uuid, uuid[]);
 alter table public.chat_channels drop column if exists display_order;
 ```
 
-## Rollback custom roles fold (20261111200000)
+## Rollback custom roles fold (20261111210000)
 
-* **Migration**: `20261111200000_fold_custom_roles.sql`
+* **Migration**: `20261111210000_fold_custom_roles.sql`
 
 Two new columns, `chapter_custom_roles.folded_role_id` and `folded_at`; a new `roles` row for each custom role; each member's `custom_role_ids` moved into `role_ids` and emptied; `transfer_presidency` redefined without its custom-role clause. `chapter_custom_roles` itself is untouched apart from the new column.
 

@@ -419,6 +419,13 @@ with the same two permissions, to open the `shipped-builds.json` PR after a stor
 nothing there. Narrowing the App's permissions, uninstalling it or replacing it breaks that job's
 mint too: its summary then lists the uploads to record by hand.
 
+A third consumer is the What's new fold, `.github/workflows/release-notes-fold.yml`, with the same
+two permissions: it force-pushes the one branch `bot/whats-new`, which only it writes, and opens or
+closes that branch's PR, looked up as `<owner>:bot/whats-new` so a fork's same-named branch is never
+touched. It never writes to `main`; its `AUTO_MERGE` switch, off, would let that PR merge itself
+([`packages/validation/release-notes/README.md`](../../packages/validation/release-notes/README.md)).
+Narrowing or replacing the App stops the fold PR too.
+
 **Confirmed end to end on 2026-08-21T17:28Z**, on the first behind PR the sweep ever encountered.
 This closes the one claim the design rested on and could not check from a session: that an App
 installation token's pushes **create workflow runs**, where `GITHUB_TOKEN`'s do not (GitHub's
@@ -476,7 +483,7 @@ this compares against a design, not against something that ran.) What makes it s
   transitively through their only imports; `pr-base-sync-workflow.test.mjs` walks the import graph
   and fails on one); all network I/O is `fetch`, and the sole other host call is `readFileSync` on
   `GITHUB_EVENT_PATH`.
-- **The token reaches two code paths, and both merge a PR's base into that PR's head.**
+- **In these watchdogs the token reaches two code paths, and both merge a PR's base into that PR's head.**
   `PUT /repos/{repo}/pulls/{n}/update-branch` (`updatePrBranch` in `scripts/ci/pr-base-sync.mjs`),
   and, for a conflicted PR whose only change is new shipped-builds entries, the git data API
   writes in `pushRegistryMerge` (`scripts/ci/resolve-registry-conflict.mjs`, #3783): one tree

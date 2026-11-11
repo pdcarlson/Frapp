@@ -453,3 +453,72 @@ export function tierByMarks<T>(
   }
   return tiers;
 }
+
+/** A pinned or starred thing above the list: a folder, or a single file. */
+export type MarkedItem<F, D> =
+  | { kind: "folder"; folder: F; count: number }
+  | { kind: "document"; doc: D };
+
+/**
+ * The Pinned and Starred groups both apps draw above All files (#3934): the
+ * chapter's folders, each with how many loaded files it holds, then the files
+ * shown, split by `tierByMarks`. One builder, so web's cards and s12's can't
+ * come to disagree on what counts or in what order.
+ */
+export function markedItems<
+  F extends { id: string; name: string; pinned_at?: string | null },
+  D extends { id: string; folder: string | null; pinned_at?: string | null },
+>({
+  folders,
+  library,
+  shown,
+  starredFolders,
+  starredDocuments,
+}: {
+  /** The chapter's folders, in the officers' order. */
+  folders: readonly F[];
+  /** Every loaded file, for the folder counts. */
+  library: readonly D[];
+  /** The files shown, in the list's order. */
+  shown: readonly D[];
+  starredFolders: ReadonlySet<string>;
+  starredDocuments: ReadonlySet<string>;
+}): { pinned: MarkedItem<F, D>[]; starred: MarkedItem<F, D>[] } {
+  const counts = new Map<string, number>();
+  for (const doc of library) {
+    if (doc.folder) counts.set(doc.folder, (counts.get(doc.folder) ?? 0) + 1);
+  }
+  const items: MarkedItem<F, D>[] = [
+    ...folders.map(
+      (folder): MarkedItem<F, D> => ({
+        kind: "folder",
+        folder,
+        count: counts.get(folder.name) ?? 0,
+      }),
+    ),
+    ...shown.map((doc): MarkedItem<F, D> => ({ kind: "document", doc })),
+  ];
+  const { pinned, starred } = tierByMarks(
+    items,
+    (item) =>
+      item.kind === "folder" ? !!item.folder.pinned_at : !!item.doc.pinned_at,
+    (item) =>
+      item.kind === "folder"
+        ? starredFolders.has(item.folder.id)
+        : starredDocuments.has(item.doc.id),
+  );
+  return { pinned, starred };
+}
+
+/** A list's rows with pinned files first, then starred, then the rest. */
+export function tierRows<R extends { doc: { id: string; pinned_at?: string | null } }>(
+  rows: readonly R[],
+  starredDocuments: ReadonlySet<string>,
+): R[] {
+  const tiers = tierByMarks(
+    rows,
+    (row) => !!row.doc.pinned_at,
+    (row) => starredDocuments.has(row.doc.id),
+  );
+  return [...tiers.pinned, ...tiers.starred, ...tiers.rest];
+}

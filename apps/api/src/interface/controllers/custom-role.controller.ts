@@ -15,7 +15,7 @@ import { CustomRoleDto } from '../dtos/custom-role.dto';
 
 /**
  * Kept only for the mobile builds already in the stores (#4075). Custom roles
- * were folded into ordinary roles by migration `20261111200000`, so this
+ * were folded into ordinary roles by migration `20261111210000`, so this
  * always answers an empty list. Every shipped build's member sheet calls it
  * (`useCustomRoles`) and treats an empty list as "no custom roles"; a 404 would
  * fail the shipped-contract check. Delete it, with `custom_role_ids` on member

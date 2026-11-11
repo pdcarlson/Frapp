@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { db, miss } from "../harness.mjs";
 
-// ─── Functional: custom roles fold into ordinary roles (20261111200000) ─────
+// ─── Functional: custom roles fold into ordinary roles (20261111210000) ─────
 //
 // Replay runs the fold against an empty `chapter_custom_roles`, so replay
 // alone proves nothing about it. This tier seeds chapters holding both kinds
@@ -29,7 +29,7 @@ import { db, miss } from "../harness.mjs";
 //   - `transfer_presidency` still runs, reading roles alone.
 //
 // Everything runs inside one transaction and is rolled back.
-console.log("\n=== Functional: fold custom roles (20261111200000) ===");
+console.log("\n=== Functional: fold custom roles (20261111210000) ===");
 {
   const A = "a4075000-0000-4000-8000-00000000000a";
   const B = "b4075000-0000-4000-8000-00000000000b";
@@ -61,7 +61,7 @@ console.log("\n=== Functional: fold custom roles (20261111200000) ===");
   const sql = readFileSync(
     join(
       process.cwd(),
-      "supabase/migrations/20261111200000_fold_custom_roles.sql",
+      "supabase/migrations/20261111210000_fold_custom_roles.sql",
     ),
     "utf8",
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { formatDay } from "@repo/formatting";
+import type { MarkedItem as LibraryMarkedItem } from "@repo/hooks/document-library";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { IconButton } from "@/components/ui/icon-button";
 import { SectionLabel } from "@/components/shared/section-label";
@@ -19,9 +20,10 @@ import type { DocumentMarks } from "@/components/documents/use-document-marks";
 import { cn } from "@/lib/utils";
 
 /** A pinned or starred thing: a folder or a single file. */
-export type MarkedItem =
-  | { kind: "folder"; folder: FolderRow & { id: string }; count: number }
-  | { kind: "document"; doc: ChapterDocument };
+export type MarkedItem = LibraryMarkedItem<
+  FolderRow & { id: string },
+  ChapterDocument
+>;
 
 /**
  * The cards above All files (#3934, `chapter-docs.md` § Pinned and starred):

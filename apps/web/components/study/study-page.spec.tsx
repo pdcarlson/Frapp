@@ -158,7 +158,7 @@ describe("StudyPage subscription gating", () => {
     // §5 rule 2: name the next action, not just the blocker.
     expect(
       screen.getByRole("link", { name: /complete checkout/i }),
-    ).toHaveAttribute("href", "/billing");
+    ).toHaveAttribute("href", "/settings?tab=billing");
 
     const describedBy = startButton().getAttribute("aria-describedby");
     expect(describedBy).toBeTruthy();

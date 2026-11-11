@@ -53,6 +53,7 @@
  * Imports stay subpath-only for the same reason the runtime's do.
  */
 
+import type { ChatMessageFlag } from "@repo/validation";
 import { errorCopy, MemberFacingError } from "@repo/hooks/error-copy";
 import {
   useCallback,
@@ -66,6 +67,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   actOnCard,
   closePoll as closePollAction,
+  setMessageFlag as setMessageFlagAction,
   deleteMessage,
   discardOutboxRow,
   editMessage,
@@ -304,6 +306,12 @@ export interface UseChatChannelResult {
    * member-facing message on failure, and changes nothing.
    */
   closePoll: (messageId: string) => Promise<void>;
+  /**
+   * Puts a flag on a message, replaces it, or (`null`) takes it off (#3921).
+   * Pessimistic like `closePoll`: the row draws the flag when the server's
+   * answer lands. Rejects with a member-facing message, a lost race included.
+   */
+  flag: (messageId: string, flag: ChatMessageFlag | null) => Promise<void>;
   react: (messageId: string, emoji: string) => Promise<void>;
   unreact: (messageId: string, emoji: string) => Promise<void>;
   /** Inline-card action dispatch (poll votes, #528; RSVP/Done in a future card). */
@@ -1024,6 +1032,24 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, ctx],
   );
 
+  const flag = useCallback(
+    async (messageId: string, next: ChatMessageFlag | null) => {
+      const failure = next
+        ? "Couldn't flag message. Try again."
+        : "Couldn't remove flag. Try again.";
+      if (!channelId || !ctx) throw new MemberFacingError(failure);
+      await withFailureMessage(
+        (onError) =>
+          setMessageFlagAction(
+            { ...ctx, onError },
+            { channelId, messageId, flag: next },
+          ),
+        failure,
+      );
+    },
+    [channelId, ctx],
+  );
+
   const updatePhoto = useCallback(
     (key: string, patch: Partial<StagedPhoto>) => {
       const before = latestPhotoRef.current.get(key);
@@ -1256,6 +1282,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     edit,
     remove,
     closePoll,
+    flag,
     react,
     unreact,
     act,

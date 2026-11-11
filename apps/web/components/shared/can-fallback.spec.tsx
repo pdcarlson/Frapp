@@ -424,7 +424,6 @@ const CONSUMERS: readonly string[] = [
   "components/reports/reports-page.tsx",
   "components/roles/roles-page.tsx",
   "components/service/service-page.tsx",
-  "components/settings/settings-danger-tab.tsx",
   "components/settings/settings-semester-tab.tsx",
   "components/shared/subscription-gate.tsx",
   "components/tasks/tasks-board.tsx",

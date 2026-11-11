@@ -28,6 +28,34 @@ vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => mockCurrentChapter(),
   useCreateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useEventTypes: () => ({
+    data: [
+      {
+        id: "type-meeting",
+        chapter_id: "chap-1",
+        name: "Chapter meeting",
+        point_value: 10,
+        is_mandatory: true,
+        position: 1,
+        created_at: "2026-11-11T00:00:00.000Z",
+        updated_at: "2026-11-11T00:00:00.000Z",
+      },
+      {
+        id: "type-social",
+        chapter_id: "chap-1",
+        name: "Social",
+        point_value: 0,
+        is_mandatory: false,
+        position: 2,
+        created_at: "2026-11-11T00:00:00.000Z",
+        updated_at: "2026-11-11T00:00:00.000Z",
+      },
+    ],
+    isLoading: false,
+  }),
+  useCreateEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useRoles: () => ({ data: [{ id: "r1", name: "Exec" }], isError: false }),
   useActiveChapterId: () => "chap-1",
   useAttendance: () => ({
@@ -130,7 +158,7 @@ describe("EventEditorDialog subscription gating", () => {
     expect(screen.getByText(/subscription is not active/i)).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: /complete checkout/i }),
-    ).toHaveAttribute("href", "/billing");
+    ).toHaveAttribute("href", "/settings?tab=billing");
   });
 
   it("ties the disabled save button to the one explanation", () => {
@@ -203,7 +231,7 @@ describe("AttendancePanel subscription gating", () => {
     expect(screen.getByText(/subscription is not active/i)).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: /complete checkout/i }),
-    ).toHaveAttribute("href", "/billing");
+    ).toHaveAttribute("href", "/settings?tab=billing");
   });
 
   it("gates the per-row status write too, not just the headline one", () => {

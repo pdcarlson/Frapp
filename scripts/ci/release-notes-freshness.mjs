@@ -178,7 +178,7 @@ export function releaseNotesVerdict({ tag, floor, ship, changedFiles }) {
     message:
       `${changes.length} file${changes.length === 1 ? "" : "s"} members could notice changed since ${tag} (${sample}${changes.length > 5 ? ", …" : ""}), ` +
       `but What's new has no new entry or lines (newest: ${ship?.date ?? "none"}). Members won't see anything new after this update. ` +
-      `If it changes something they'd notice, add an entry to ${RELEASE_NOTES_PATH} (or append lines to today's) and deploy that commit instead.`,
+      `If it changes something they'd notice: when the What's new fold PR (branch bot/whats-new) is open, merge it and deploy that commit instead; otherwise add the missing lines as files in packages/validation/release-notes/ (its README), merge the fold PR that follows, and deploy that. Don't add them to ${RELEASE_NOTES_PATH} by hand while a fold PR is open: it would carry them twice.`,
   };
 }
 
