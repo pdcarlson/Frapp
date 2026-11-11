@@ -636,6 +636,14 @@ function TaskTile({
       <li
         aria-label={`Editing ${task.title}`}
         className="rounded-[14px] border border-ring/60 p-3"
+        // Escape puts the tile back unsaved, like the + card's Escape. A
+        // picker open inside handles its own Escape in its portal first.
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && !event.defaultPrevented) {
+            event.stopPropagation();
+            setEditing(false);
+          }
+        }}
       >
         <TaskEditForm
           task={task}

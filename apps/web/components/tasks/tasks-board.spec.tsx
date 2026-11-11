@@ -1054,6 +1054,21 @@ describe("TasksBoard editing a task (#4296)", () => {
     expect(screen.getByText("Draft the rush calendar")).toBeInTheDocument();
   });
 
+  it("puts the tile back on Escape", async () => {
+    const user = userEvent.setup();
+    render(<TasksBoard />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Edit Sweep the chapter room" }),
+    );
+    await user.keyboard("{Escape}");
+
+    expect(updateTaskMutate).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("listitem", { name: /^editing/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("offers no Edit without tasks:manage, or on a confirmed task", () => {
     tasksRef.current = [
       ...TASKS,

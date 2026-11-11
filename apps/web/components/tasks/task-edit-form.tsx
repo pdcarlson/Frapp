@@ -116,6 +116,7 @@ export function TaskEditForm({
               canEdit
               closed={false}
               gate={gate}
+              embedded
             />
           </div>
         ),
