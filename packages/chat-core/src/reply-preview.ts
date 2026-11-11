@@ -92,29 +92,27 @@ const ESCAPED_CHAR = new RegExp(
  * regressed.
  */
 function flattenMarkdown(text: string): string {
-  return (
-    text
-      .slice(0, PREVIEW_SOURCE_LIMIT)
-      .replace(
-        /\\([\\`*_[\]()#+\-.!>])/g,
-        (_match, char: string) =>
-          ESCAPE_SENTINEL + char.charCodeAt(0) + ESCAPE_SENTINEL,
-      )
-      .replace(
-        /\[([^\]]{0,300})\]\((?:[^()\s]|\([^()\s]{0,100}\)){0,500}(?:\s+"[^"]{0,200}")?\)/g,
-        "$1",
-      )
-      .replace(/```[A-Za-z0-9]{0,20}\n/g, "")
-      .replace(/```([^`]{1,300})```/g, "$1")
-      .replace(/\*\*(?=\S)([^*]{0,300}?\S)\*\*/gu, "$1")
-      .replace(STRONG_UNDERSCORE, "$1")
-      .replace(/\*(?=\S)([^*]{0,300}?\S)\*/gu, "$1")
-      .replace(EMPHASIS_UNDERSCORE, "$1")
-      .replace(/`([^`]{1,300})`/g, "$1")
-      .replace(ESCAPED_CHAR, (_match, code: string) =>
-        String.fromCharCode(Number(code)),
-      )
-  );
+  return text
+    .slice(0, PREVIEW_SOURCE_LIMIT)
+    .replace(
+      /\\([\\`*_[\]()#+\-.!>])/g,
+      (_match, char: string) =>
+        ESCAPE_SENTINEL + char.charCodeAt(0) + ESCAPE_SENTINEL,
+    )
+    .replace(
+      /\[([^\]]{0,300})\]\((?:[^()\s]|\([^()\s]{0,100}\)){0,500}(?:\s+"[^"]{0,200}")?\)/g,
+      "$1",
+    )
+    .replace(/```[A-Za-z0-9]{0,20}\n/g, "")
+    .replace(/```([^`]{1,300})```/g, "$1")
+    .replace(/\*\*(?=\S)([^*]{0,300}?\S)\*\*/gu, "$1")
+    .replace(STRONG_UNDERSCORE, "$1")
+    .replace(/\*(?=\S)([^*]{0,300}?\S)\*/gu, "$1")
+    .replace(EMPHASIS_UNDERSCORE, "$1")
+    .replace(/`([^`]{1,300})`/g, "$1")
+    .replace(ESCAPED_CHAR, (_match, code: string) =>
+      String.fromCharCode(Number(code)),
+    );
 }
 
 /**

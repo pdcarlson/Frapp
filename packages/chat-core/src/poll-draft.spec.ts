@@ -37,7 +37,11 @@ describe("checkPollDraft (#3701)", () => {
   it("posts the trimmed question and filled rows, in order", () => {
     expect(
       checkPollDraft(draft("  Who's driving?  ", [" Me ", "", "Not me"])),
-    ).toEqual({ ok: true, question: "Who's driving?", options: ["Me", "Not me"] });
+    ).toEqual({
+      ok: true,
+      question: "Who's driving?",
+      options: ["Me", "Not me"],
+    });
   });
 
   it("needs a question", () => {
@@ -55,9 +59,9 @@ describe("checkPollDraft (#3701)", () => {
   });
 
   it("refuses two options that differ only in case or spacing", () => {
-    expect(checkPollDraft(draft("Q?", ["Friday night", "friday  NIGHT"]))).toEqual(
-      { ok: false, problem: DUPLICATE_OPTION_PROBLEM },
-    );
+    expect(
+      checkPollDraft(draft("Q?", ["Friday night", "friday  NIGHT"])),
+    ).toEqual({ ok: false, problem: DUPLICATE_OPTION_PROBLEM });
   });
 
   it("refuses more than ten options", () => {

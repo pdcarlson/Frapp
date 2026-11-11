@@ -77,8 +77,7 @@ export interface EventArgs {
 }
 
 export type ParseResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; error: string };
+  { ok: true; value: T } | { ok: false; error: string };
 
 const POLL_DEFAULT_CLOSE_MINUTES = 60 * 24;
 
@@ -759,7 +758,8 @@ export function parseHoursArgs(args: string): ParseResult<HoursArgs> {
 }
 
 const RUSH_DISPLAY_NAME_MAX = 200;
-const RUSH_USAGE = "Usage: add @candidate | vote <candidate-id> | bid @candidate";
+const RUSH_USAGE =
+  "Usage: add @candidate | vote <candidate-id> | bid @candidate";
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -794,7 +794,10 @@ export function parseRushArgs(args: string): ParseResult<RushArgs> {
   if (action === "add") {
     const displayName = stripMention(tokens.slice(1).join(" ").trim());
     if (displayName.length === 0) {
-      return { ok: false, error: "A candidate name is required. " + RUSH_USAGE };
+      return {
+        ok: false,
+        error: "A candidate name is required. " + RUSH_USAGE,
+      };
     }
     if (displayName.length > RUSH_DISPLAY_NAME_MAX) {
       return {
@@ -844,7 +847,9 @@ export function parseRushArgs(args: string): ParseResult<RushArgs> {
  * input-handling rule). Commands that take counts or amounts use this;
  * `./index` re-exports it with the rest of this module.
  */
-export function parseNumericArg(token: string | undefined | null): number | null {
+export function parseNumericArg(
+  token: string | undefined | null,
+): number | null {
   if (token == null) return null;
   const trimmed = token.trim();
   if (trimmed.length === 0) return null;

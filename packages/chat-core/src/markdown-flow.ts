@@ -45,7 +45,10 @@ const MAX_BREAKS = 2;
 /** A line ending, as micromark reads one. */
 const LINE_ENDING = /\r\n|\r|\n/g;
 
-export function isElement(node: HastNode | undefined, tagName: string): boolean {
+export function isElement(
+  node: HastNode | undefined,
+  tagName: string,
+): boolean {
   return node?.type === "element" && node.tagName === tagName;
 }
 
@@ -202,9 +205,7 @@ function endsInOwnLineBlock(nodes: HastNode[]): boolean {
  * above it rather than running into the block's first line.
  */
 function startsWithOwnLineBlock(nodes: HastNode[]): boolean {
-  const first = nodes.find(
-    (node) => !isSeparator(node) && !drawsNothing(node),
-  );
+  const first = nodes.find((node) => !isSeparator(node) && !drawsNothing(node));
   return first?.type === "element" && OWN_LINE_AFTER.has(first.tagName ?? "");
 }
 

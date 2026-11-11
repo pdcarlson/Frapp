@@ -17629,6 +17629,12 @@
             "format": "date-time",
             "nullable": true
           },
+          "confirmed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When an officer confirmed the completion; null until then. A completed task with no confirmation is still waiting on one."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -17646,6 +17652,7 @@
           "created_by_name",
           "point_reward",
           "completed_at",
+          "confirmed_at",
           "created_at"
         ]
       },

@@ -177,7 +177,9 @@ function historyRow(
   overrides: Partial<RawChatMessage> = {},
 ): RawChatMessage {
   return restRow(`h${n}`, senderId, {
-    created_at: new Date(Date.UTC(2026, 8, 15, 18, 0, 0) + n * 1000).toISOString(),
+    created_at: new Date(
+      Date.UTC(2026, 8, 15, 18, 0, 0) + n * 1000,
+    ).toISOString(),
     ...overrides,
   });
 }
@@ -211,7 +213,9 @@ describe("refreshMaskedCopies — older history (#1571)", () => {
     // One millisecond past the first page's oldest row, so a row sharing its
     // instant is not skipped.
     expect(second.before).toBe(
-      new Date(Date.parse(historyRow(51, BLOCKED).created_at) + 1).toISOString(),
+      new Date(
+        Date.parse(historyRow(51, BLOCKED).created_at) + 1,
+      ).toISOString(),
     );
     const cache = cacheOf(queryClient, "chan-1");
     expect(cache.byId.h5?.sender_blocked).toBe(false);

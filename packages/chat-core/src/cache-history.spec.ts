@@ -28,7 +28,10 @@ import {
 } from "./types";
 
 /** Row `n` was sent at minute `n`, so a higher number is newer. */
-function row(n: number, overrides: Partial<RawChatMessage> = {}): RawChatMessage {
+function row(
+  n: number,
+  overrides: Partial<RawChatMessage> = {},
+): RawChatMessage {
   const minute = String(n).padStart(2, "0");
   return {
     id: `m${n}`,
@@ -290,6 +293,8 @@ describe("oldestConfirmed", () => {
 
   test("is null for an empty or all-optimistic cache", () => {
     expect(oldestConfirmed(undefined)).toBeNull();
-    expect(oldestConfirmed(upsertOptimistic(emptyCache(), queued("q1")))).toBeNull();
+    expect(
+      oldestConfirmed(upsertOptimistic(emptyCache(), queued("q1"))),
+    ).toBeNull();
   });
 });

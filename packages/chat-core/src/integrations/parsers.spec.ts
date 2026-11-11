@@ -51,9 +51,7 @@ describe("parsePollArgs", () => {
   });
 
   it("rejects more than ten options", () => {
-    const r = parsePollArgs(
-      '"Pick" a b c d e f g h i j k',
-    );
+    const r = parsePollArgs('"Pick" a b c d e f g h i j k');
     expect(r.ok).toBe(false);
   });
 
@@ -326,7 +324,9 @@ describe("parseEventArgs", () => {
   });
 
   it("accepts points= anywhere in the tail and joins the rest as location", () => {
-    const r = parseEventArgs('"Mixer" 2026-06-12 20:00-22:00 points=5 The Quad');
+    const r = parseEventArgs(
+      '"Mixer" 2026-06-12 20:00-22:00 points=5 The Quad',
+    );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.value.pointValue).toBe(5);
@@ -381,7 +381,6 @@ describe("parseEventArgs", () => {
     expect(r.error).toMatch(/quote/i);
   });
 });
-
 
 describe("parsePointsArgs reason cap", () => {
   it("imports POINTS_REASON_MAX_LENGTH from @repo/validation at the 500-char pin", () => {

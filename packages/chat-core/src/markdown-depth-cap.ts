@@ -70,7 +70,9 @@ export const MAX_MESSAGE_MARKDOWN_DEPTH = 32;
 
 /** Whether any node in `root` sits deeper than `limit`, without recursion. */
 function exceedsDepth(root: MdastNode, limit: number): boolean {
-  const stack: Array<{ node: MdastNode; depth: number }> = [{ node: root, depth: 0 }];
+  const stack: Array<{ node: MdastNode; depth: number }> = [
+    { node: root, depth: 0 },
+  ];
   while (stack.length > 0) {
     const { node, depth } = stack.pop()!;
     if (depth > limit) return true;
@@ -121,10 +123,15 @@ export function opensTooManyContainers(content: string): boolean {
   // The one marker character a thematic break could be made of: null before
   // the line's first marker, false once the line can't be a thematic break.
   let thematic: string | null | false = null;
-  for (let i = content.startsWith("\uFEFF") ? 1 : 0; i <= content.length; i += 1) {
+  for (
+    let i = content.startsWith("\uFEFF") ? 1 : 0;
+    i <= content.length;
+    i += 1
+  ) {
     const char = content[i];
     if (char === undefined || char === "\n" || char === "\r") {
-      if (count > MAX_MESSAGE_MARKDOWN_DEPTH && !(inPrefix && thematic)) return true;
+      if (count > MAX_MESSAGE_MARKDOWN_DEPTH && !(inPrefix && thematic))
+        return true;
       count = 0;
       inPrefix = true;
       thematic = null;
@@ -140,8 +147,12 @@ export function opensTooManyContainers(content: string): boolean {
       if (!isMarkerBoundary(content, markerEnd)) markerEnd = -1;
     } else if (isDigit(char)) {
       let end = i;
-      while (end < content.length && end - i < 9 && isDigit(content[end])) end += 1;
-      if ((content[end] === "." || content[end] === ")") && isMarkerBoundary(content, end + 1)) {
+      while (end < content.length && end - i < 9 && isDigit(content[end]))
+        end += 1;
+      if (
+        (content[end] === "." || content[end] === ")") &&
+        isMarkerBoundary(content, end + 1)
+      ) {
         markerEnd = end + 1;
       }
     }
@@ -153,7 +164,10 @@ export function opensTooManyContainers(content: string): boolean {
       continue;
     }
     count += 1;
-    thematic = (char === "-" || char === "*") && (thematic === null || thematic === char) ? char : false;
+    thematic =
+      (char === "-" || char === "*") && (thematic === null || thematic === char)
+        ? char
+        : false;
     i = markerEnd - 1;
   }
   return false;
@@ -167,7 +181,13 @@ export function isDigit(char: string | undefined): boolean {
 /** A list marker needs a space, a tab or the end of the line after it. */
 export function isMarkerBoundary(content: string, index: number): boolean {
   const next = content[index];
-  return next === undefined || next === " " || next === "\t" || next === "\n" || next === "\r";
+  return (
+    next === undefined ||
+    next === " " ||
+    next === "\t" ||
+    next === "\n" ||
+    next === "\r"
+  );
 }
 
 export interface DepthCapOptions {
@@ -183,9 +203,13 @@ export interface DepthCapOptions {
 
 export function remarkDepthCap(options: DepthCapOptions) {
   return (tree: MdastNode): void => {
-    if (!options.flatten && !exceedsDepth(tree, MAX_MESSAGE_MARKDOWN_DEPTH)) return;
+    if (!options.flatten && !exceedsDepth(tree, MAX_MESSAGE_MARKDOWN_DEPTH))
+      return;
     tree.children = [
-      { type: "paragraph", children: [{ type: "text", value: options.content }] },
+      {
+        type: "paragraph",
+        children: [{ type: "text", value: options.content }],
+      },
     ];
   };
 }
