@@ -70,8 +70,9 @@
 --                          Alumni role, so alumni still can't post there.
 --
 -- `*` holders are never listed: they pass every list. Custom roles
--- (`chapter_custom_roles`) are not read: production and staging held none on
--- 2026-11-11, and #4075 folds them into roles.
+-- (`chapter_custom_roles`) are not read: 20261111210000 (#4075) has already
+-- folded any into ordinary roles, and production and staging held none on
+-- 2026-11-11.
 --
 -- One known difference, accepted: someone holding the Alumni role AND another
 -- role with announcements:post, in a read-only channel that required

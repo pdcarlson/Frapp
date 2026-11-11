@@ -3,19 +3,27 @@
 import { ALWAYS_FORMAL_LABEL_WITH_HINT } from "@repo/chat-core/density";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { AUDIT_LOG_SETTINGS_NOTE } from "@repo/chat-core/audit-log-copy";
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, Pencil, PinOff, Plus, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Loader2,
+  Pencil,
+  PinOff,
+  Plus,
+  Trash2,
+  Users,
+} from "lucide-react";
 import {
   useCategories,
+  useChannelAccessOptions,
   useChannels,
   useCreateCategory,
   useCreateChannel,
   useDeleteCategory,
   useMemberDisplayNames,
-  usePermissionsCatalog,
   usePinnedMessages,
   useUnpinMessage,
   useUpdateCategory,
@@ -25,6 +33,7 @@ import {
 import { formatClock } from "@repo/formatting";
 import {
   builtInChannelDefault,
+  sameChannelAccessList,
   type ChatNotificationLevel,
 } from "@repo/validation";
 import { Can } from "@/components/shared/can";
@@ -69,10 +78,10 @@ import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import { ChatReportsCard } from "./chat-reports-card";
 import {
-  PermissionCheckboxGrid,
-  type PermissionCatalogEntry,
-} from "@/components/shared/permission-checkbox-grid";
-import { useGateCatalog } from "@/components/shared/use-gate-catalog";
+  ChannelAccessField,
+  describeChannelAccess,
+  type ChannelAccessOption,
+} from "@/components/chat-admin/channel-access-field";
 import {
   ChannelsSkeleton,
   ChatAdminBodySkeleton,
@@ -86,8 +95,15 @@ interface AdminChannel {
   name: string;
   description: string | null;
   type: ChannelType;
-  required_permissions: string[] | null;
   category_id: string | null;
+  /**
+   * Who can see and who can post (#3722): `null` is everyone (who can post:
+   * everyone who can see it), a list names tiers and roles. Null on a
+   * private channel, whose members decide.
+   */
+  who_can_see?: string[] | null;
+  who_can_post?: string[] | null;
+  /** Mirrors `who_can_post !== null`; still what the built-in push default reads. */
   is_read_only: boolean;
   /** Officer-set default push level (#2771); `null` = the built-in default. */
   default_notification_level: ChatNotificationLevel | null;
@@ -107,6 +123,9 @@ interface AdminCategory {
   id: string;
   name: string;
   display_order: number;
+  /** What a new channel in it copies, and what a matching channel follows (#3722). */
+  who_can_see?: string[] | null;
+  who_can_post?: string[] | null;
 }
 
 interface PinnedMessageRow {
@@ -121,16 +140,10 @@ interface PinnedMessageRow {
 const CHANNEL_TYPE_LABEL: Record<ChannelType, string> = {
   PUBLIC: "Public",
   PRIVATE: "Private",
-  ROLE_GATED: "Role-gated",
+  ROLE_GATED: "Chosen roles",
   DM: "Direct message",
   GROUP_DM: "Group DM",
 };
-
-/** Only these are ever created or managed here — DMs are member-initiated. */
-const CREATABLE_TYPES: Extract<
-  ChannelType,
-  "PUBLIC" | "PRIVATE" | "ROLE_GATED"
->[] = ["PUBLIC", "PRIVATE", "ROLE_GATED"];
 
 /**
  * The channel default a member gets until they choose their own level (#2771),
@@ -148,20 +161,38 @@ const BUILT_IN_DEFAULT_LEVEL = "__built_in__";
 /** Sentinel for "no category" — Radix `Select` rejects an empty-string item value. */
 const NO_CATEGORY = "__none__";
 
-/** Add/remove `value` from a `Set` state, without mutating the previous set. */
-function useToggleSet(
-  setState: (updater: (prev: Set<string>) => Set<string>) => void,
-) {
-  return useCallback(
-    (value: string) => {
-      setState((prev) => {
-        const next = new Set(prev);
-        if (next.has(value)) next.delete(value);
-        else next.add(value);
-        return next;
-      });
-    },
-    [setState],
+/** A chosen list with nothing on it: the API refuses it, so the form does. */
+function isEmptyChoice(list: readonly string[] | null): boolean {
+  return list !== null && list.length === 0;
+}
+
+/** A category's two answers in one line, for its row in the list. */
+function categoryAccessSummary(
+  category: AdminCategory,
+  options: readonly ChannelAccessOption[],
+): string {
+  const see = category.who_can_see ?? null;
+  const post = category.who_can_post ?? null;
+  if (see === null && post === null) return "Everyone can see and post";
+  const seen =
+    see === null ? "everyone" : describeChannelAccess(see, "see", options);
+  const posters =
+    post === null
+      ? "everyone who can see it"
+      : describeChannelAccess(post, "post", options);
+  return `Seen by ${seen}. Posts: ${posters}`;
+}
+
+/** Whether a channel's two lists equal its category's (it "matches" and follows it). */
+function matchesCategory(
+  see: readonly string[] | null,
+  post: readonly string[] | null,
+  category: AdminCategory | null | undefined,
+): boolean {
+  if (!category) return false;
+  return (
+    sameChannelAccessList(see, category.who_can_see ?? null) &&
+    sameChannelAccessList(post, category.who_can_post ?? null)
   );
 }
 
@@ -252,7 +283,7 @@ function ChatAdminBody({
 
   const channelsQuery = useChannels();
   const categoriesQuery = useCategories();
-  const catalogQuery = usePermissionsCatalog();
+  const accessOptionsQuery = useChannelAccessOptions();
 
   const createChannel = useCreateChannel();
   const updateChannel = useUpdateChannel();
@@ -278,15 +309,21 @@ function ChatAdminBody({
     () => asArray<AdminCategory>(categoriesQuery.data),
     [categoriesQuery.data],
   );
-  // Custom gates too, with the roles that hold each: a channel imported
-  // "Same as Discord" is gated on `channels:read:<role>` strings the system
-  // catalog does not list (#2818).
-  const { catalog, holders } = useGateCatalog(
-    useMemo(
-      () => asArray<PermissionCatalogEntry>(catalogQuery.data),
-      [catalogQuery.data],
-    ),
+  // What the who-can-see and who-can-post lists can name (#3722). Its own
+  // read, so a failure degrades only the Add menus: the lists still show
+  // what they hold, and every other setting saves.
+  const accessOptions = useMemo(
+    () => asArray<ChannelAccessOption>(accessOptionsQuery.data),
+    [accessOptionsQuery.data],
   );
+  const accessOptionsState: "ready" | "loading" | "error" =
+    accessOptionsQuery.data !== undefined
+      ? "ready"
+      : accessOptionsQuery.isError ||
+          (accessOptionsQuery.isPending &&
+            accessOptionsQuery.fetchStatus === "paused")
+        ? "error"
+        : "loading";
 
   // ── Category drafts ─────────────────────────────────────────────────────
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -294,6 +331,42 @@ function ChatAdminBody({
     null,
   );
   const [categoryNameDraft, setCategoryNameDraft] = useState("");
+  // One category's access open at a time, edited in place under its row.
+  const [accessCategoryId, setAccessCategoryId] = useState<string | null>(null);
+  const [categorySeeDraft, setCategorySeeDraft] = useState<string[] | null>(
+    null,
+  );
+  const [categoryPostDraft, setCategoryPostDraft] = useState<string[] | null>(
+    null,
+  );
+
+  function startEditCategoryAccess(category: AdminCategory) {
+    setAccessCategoryId(category.id);
+    setCategorySeeDraft(category.who_can_see ?? null);
+    setCategoryPostDraft(category.who_can_post ?? null);
+  }
+
+  async function handleSaveCategoryAccess(category: AdminCategory) {
+    if (isEmptyChoice(categorySeeDraft) || isEmptyChoice(categoryPostDraft)) {
+      return;
+    }
+    try {
+      await updateCategory.mutateAsync({
+        id: category.id,
+        body: {
+          who_can_see: categorySeeDraft,
+          who_can_post: categoryPostDraft,
+        },
+      });
+      toast({ description: `${category.name} access saved.` });
+      setAccessCategoryId(null);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        description: getErrorMessage(error, "Couldn't save the access."),
+      });
+    }
+  }
 
   function startEditCategory(category: AdminCategory) {
     setEditingCategoryId(category.id);
@@ -370,7 +443,6 @@ function ChatAdminBody({
   // the server row moving underneath an untouched draft.
   const [descriptionSeed, setDescriptionSeed] = useState("");
   const [categoryDraft, setCategoryDraft] = useState(NO_CATEGORY);
-  const [readOnlyDraft, setReadOnlyDraft] = useState(false);
   const [isDefaultDraft, setIsDefaultDraft] = useState(false);
   const [activityExcludedDraft, setActivityExcludedDraft] = useState(false);
   // Seeded like `isDefaultSeed`: the switch is sent only when the officer
@@ -383,9 +455,13 @@ function ChatAdminBody({
   const [defaultLevelDraft, setDefaultLevelDraft] = useState<string>(
     BUILT_IN_DEFAULT_LEVEL,
   );
-  const [permissionsDraft, setPermissionsDraft] = useState<Set<string>>(
-    new Set(),
-  );
+  // Who can see and post (#3722). `matchDraft` is set by "Match the
+  // category" and cleared by any later edit of either list: a save then asks
+  // the server to copy the category's lists, rather than sending the copy
+  // this page last read.
+  const [seeDraft, setSeeDraft] = useState<string[] | null>(null);
+  const [postDraft, setPostDraft] = useState<string[] | null>(null);
+  const [matchDraft, setMatchDraft] = useState(false);
 
   // `?channel=` from the channel start. Applied once, during render rather
   // than in an effect, so the editor's first paint already shows the channel.
@@ -413,7 +489,6 @@ function ChatAdminBody({
     setDescriptionDraft(channel.description ?? "");
     setDescriptionSeed((channel.description ?? "").trim());
     setCategoryDraft(channel.category_id ?? NO_CATEGORY);
-    setReadOnlyDraft(channel.is_read_only);
     setIsDefaultDraft(channel.is_default === true);
     setIsDefaultSeed(channel.is_default === true);
     setActivityExcludedDraft(channel.activity_excluded === true);
@@ -421,10 +496,27 @@ function ChatAdminBody({
     setDefaultLevelDraft(
       channel.default_notification_level ?? BUILT_IN_DEFAULT_LEVEL,
     );
-    setPermissionsDraft(new Set(channel.required_permissions ?? []));
+    setSeeDraft(channel.who_can_see ?? null);
+    setPostDraft(channel.who_can_post ?? null);
+    setMatchDraft(false);
   }
 
-  const togglePermission = useToggleSet(setPermissionsDraft);
+  /** The channel takes lists: not private, not a DM, not the audit log. */
+  const selectedTakesLists =
+    selectedChannel !== null &&
+    (selectedChannel.type === "PUBLIC" ||
+      selectedChannel.type === "ROLE_GATED") &&
+    selectedChannel.is_audit_log !== true;
+  const draftCategory =
+    categoryDraft === NO_CATEGORY
+      ? null
+      : (categories.find((c) => c.id === categoryDraft) ?? null);
+  const accessChanged =
+    selectedChannel !== null &&
+    (!sameChannelAccessList(seeDraft, selectedChannel.who_can_see ?? null) ||
+      !sameChannelAccessList(postDraft, selectedChannel.who_can_post ?? null));
+  const accessIncomplete =
+    selectedTakesLists && (isEmptyChoice(seeDraft) || isEmptyChoice(postDraft));
 
   async function handleSaveChannel() {
     if (!selectedChannel) return;
@@ -433,11 +525,11 @@ function ChatAdminBody({
       toast({ variant: "destructive", description: "Name can't be empty." });
       return;
     }
-    if (selectedChannel.type === "ROLE_GATED" && permissionsDraft.size === 0) {
+    if (accessIncomplete) {
       toast({
         variant: "destructive",
         description:
-          "A role-gated channel needs at least one required permission.",
+          "Add a tier or role to each chosen list, or pick Everyone.",
       });
       return;
     }
@@ -459,7 +551,14 @@ function ChatAdminBody({
           // `null` clears the category; `NO_CATEGORY` selected means "make this
           // uncategorized," which is a real write, not "leave it alone."
           category_id: categoryDraft === NO_CATEGORY ? null : categoryDraft,
-          is_read_only: readOnlyDraft,
+          // The lists go out only when they changed (a save of the name must
+          // not write back lists another officer, or the category, just
+          // moved), or as "match the category" when the officer asked for it.
+          ...(selectedTakesLists && matchDraft && draftCategory
+            ? { match_category_access: true }
+            : selectedTakesLists && accessChanged
+              ? { who_can_see: seeDraft, who_can_post: postDraft }
+              : {}),
           ...(activityExcludedDraft !== activityExcludedSeed
             ? { activity_excluded: activityExcludedDraft }
             : {}),
@@ -474,11 +573,9 @@ function ChatAdminBody({
             defaultLevelDraft === BUILT_IN_DEFAULT_LEVEL
               ? null
               : (defaultLevelDraft as ChatNotificationLevel),
-          ...(selectedChannel.type === "ROLE_GATED"
-            ? { required_permissions: Array.from(permissionsDraft) }
-            : {}),
         },
       });
+      setMatchDraft(false);
       if (descriptionChanged) setDescriptionSeed(description);
       setIsDefaultSeed(isDefaultDraft);
       setActivityExcludedSeed(activityExcludedDraft);
@@ -503,26 +600,39 @@ function ChatAdminBody({
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createDescription, setCreateDescription] = useState("");
-  const [createType, setCreateType] =
-    useState<(typeof CREATABLE_TYPES)[number]>("PUBLIC");
+  // Discord's create dialog asks one question about access, "Private
+  // channel", and Frapp keeps it: a private channel's members are added by
+  // hand, everyone else's access is the two lists below it.
+  const [createPrivate, setCreatePrivate] = useState(false);
   const [createCategoryId, setCreateCategoryId] = useState(NO_CATEGORY);
-  const [createReadOnly, setCreateReadOnly] = useState(false);
+  const [createSee, setCreateSee] = useState<string[] | null>(null);
+  const [createPost, setCreatePost] = useState<string[] | null>(null);
+  // Until the officer edits a list, the channel takes its category's (the
+  // server copies them when the lists are left out), and the form shows them.
+  const [createAccessTouched, setCreateAccessTouched] = useState(false);
   const [createAlwaysFormal, setCreateAlwaysFormal] = useState(false);
-  const [createPermissions, setCreatePermissions] = useState<Set<string>>(
-    new Set(),
-  );
-
-  const toggleCreatePermission = useToggleSet(setCreatePermissions);
 
   function resetCreateDraft() {
     setCreateName("");
     setCreateDescription("");
-    setCreateType("PUBLIC");
+    setCreatePrivate(false);
     setCreateCategoryId(NO_CATEGORY);
-    setCreateReadOnly(false);
+    setCreateSee(null);
+    setCreatePost(null);
+    setCreateAccessTouched(false);
     setCreateAlwaysFormal(false);
-    setCreatePermissions(new Set());
   }
+
+  function handleCreateCategoryChange(categoryId: string) {
+    setCreateCategoryId(categoryId);
+    if (createAccessTouched) return;
+    const category = categories.find((c) => c.id === categoryId);
+    setCreateSee(category?.who_can_see ?? null);
+    setCreatePost(category?.who_can_post ?? null);
+  }
+
+  const createAccessIncomplete =
+    !createPrivate && (isEmptyChoice(createSee) || isEmptyChoice(createPost));
 
   /** Every way the create panel closes (X, Escape, scrim, Cancel) drops the draft. */
   function handleCreateOpenChange(open: boolean) {
@@ -534,11 +644,11 @@ function ChatAdminBody({
     event.preventDefault();
     const name = createName.trim();
     if (!name) return;
-    if (createType === "ROLE_GATED" && createPermissions.size === 0) {
+    if (createAccessIncomplete) {
       toast({
         variant: "destructive",
         description:
-          "A role-gated channel needs at least one required permission.",
+          "Add a tier or role to each chosen list, or pick Everyone.",
       });
       return;
     }
@@ -546,13 +656,16 @@ function ChatAdminBody({
       await createChannel.mutateAsync({
         name,
         description: createDescription.trim() || undefined,
-        type: createType,
+        type: createPrivate
+          ? "PRIVATE"
+          : createSee === null
+            ? "PUBLIC"
+            : "ROLE_GATED",
         category_id:
           createCategoryId === NO_CATEGORY ? undefined : createCategoryId,
-        is_read_only: createReadOnly,
         display_locked: createAlwaysFormal,
-        ...(createType === "ROLE_GATED"
-          ? { required_permissions: Array.from(createPermissions) }
+        ...(!createPrivate && createAccessTouched
+          ? { who_can_see: createSee, who_can_post: createPost }
           : {}),
       });
       toast({ description: `#${name} created.` });
@@ -590,16 +703,9 @@ function ChatAdminBody({
   function retryQueries() {
     void channelsQuery.refetch();
     void categoriesQuery.refetch();
-    void catalogQuery.refetch();
+    void accessOptionsQuery.refetch();
   }
 
-  // The permissions catalog (`GET /v1/roles/permissions-catalog`) is gated
-  // server-side on `members:view`, a *different* permission from this page's
-  // own `channels:manage` gate — a custom role can hold one without the
-  // other. Blocking the whole page on it would 500 out plain PUBLIC/PRIVATE
-  // channel management for an admin who has no need to touch a ROLE_GATED
-  // channel's permission list. It degrades locally instead, wherever the
-  // permission checkboxes actually render.
   const paused =
     (channelsQuery.isPending && channelsQuery.fetchStatus === "paused") ||
     (categoriesQuery.isPending && categoriesQuery.fetchStatus === "paused");
@@ -643,24 +749,6 @@ function ChatAdminBody({
       />
     );
   }
-
-  // With no data, as the reads above: a catalog refetch that fails after an
-  // officer has the grid open used to swap the checkboxes for copy suggesting
-  // they lack `members:view`, mid-edit.
-  const catalogUnavailable =
-    catalogQuery.isError && catalogQuery.data === undefined;
-  // `isLoading` alone misses the paused case: a link that drops before the
-  // catalog is cached leaves it `isPending && fetchStatus === "paused"`, which
-  // is neither loading nor erroring — without this it would silently render an
-  // empty checkbox grid with no explanation, the same failure mode
-  // `anyReadUncached` in async-states.tsx exists to prevent for the page-level
-  // gates above. Offline the other way (a document that mounted offline, or an
-  // unreachable API) the read fails instead and arrives as `catalogUnavailable`.
-  // The grid reports either one offline as offline, not as a missing
-  // `members:view` (#2267).
-  const catalogLoading =
-    catalogQuery.isLoading ||
-    (catalogQuery.isPending && catalogQuery.fetchStatus === "paused");
 
   return (
     <div className="space-y-8">
@@ -749,21 +837,30 @@ function ChatAdminBody({
                     rows={2}
                   />
                 </div>
-                {selectedChannel.is_audit_log ? (
-                  <p className="text-xs text-muted-foreground">
-                    {AUDIT_LOG_SETTINGS_NOTE}
-                  </p>
-                ) : (
-                  <label className="flex items-center gap-3">
-                    <Switch
-                      checked={readOnlyDraft}
-                      onCheckedChange={setReadOnlyDraft}
-                    />
-                    <span className="text-sm">
-                      Read-only (only officers with permission can post)
-                    </span>
-                  </label>
-                )}
+                <ChannelAccessSection
+                  channel={selectedChannel}
+                  takesLists={selectedTakesLists}
+                  category={draftCategory}
+                  see={seeDraft}
+                  post={postDraft}
+                  matching={matchDraft}
+                  options={accessOptions}
+                  optionsState={accessOptionsState}
+                  onSeeChange={(next) => {
+                    setSeeDraft(next);
+                    setMatchDraft(false);
+                  }}
+                  onPostChange={(next) => {
+                    setPostDraft(next);
+                    setMatchDraft(false);
+                  }}
+                  onMatch={() => {
+                    if (!draftCategory) return;
+                    setSeeDraft(draftCategory.who_can_see ?? null);
+                    setPostDraft(draftCategory.who_can_post ?? null);
+                    setMatchDraft(true);
+                  }}
+                />
                 <div className="grid gap-1">
                   <label className="flex items-center gap-3">
                     <Switch
@@ -813,7 +910,9 @@ function ChatAdminBody({
                             builtInChannelDefault({
                               name: nameDraft.trim(),
                               type: selectedChannel.type,
-                              is_read_only: readOnlyDraft,
+                              is_read_only: selectedTakesLists
+                                ? postDraft !== null
+                                : selectedChannel.is_read_only,
                             })
                           ]
                         }
@@ -836,22 +935,6 @@ function ChatAdminBody({
                     reaches a member who muted it.
                   </p>
                 </div>
-                {selectedChannel.type === "ROLE_GATED" ? (
-                  <div>
-                    <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                      Required permissions ({permissionsDraft.size})
-                    </Label>
-                    <PermissionCheckboxGrid
-                      catalog={catalog}
-                      catalogLoading={catalogLoading}
-                      catalogUnavailable={catalogUnavailable}
-                      selected={permissionsDraft}
-                      holders={holders}
-                      onToggle={togglePermission}
-                    />
-                  </div>
-                ) : null}
-
                 <div className="flex flex-wrap items-center justify-end gap-2">
                   {/* The server refuses deleting the audit log (#3909). */}
                   {selectedChannel.is_audit_log ? null : (
@@ -876,8 +959,7 @@ function ChatAdminBody({
                     disabled={
                       updateChannel.isPending ||
                       !nameDraft.trim() ||
-                      (selectedChannel.type === "ROLE_GATED" &&
-                        permissionsDraft.size === 0)
+                      accessIncomplete
                     }
                   >
                     {updateChannel.isPending ? (
@@ -1050,8 +1132,8 @@ function ChatAdminBody({
                   </SheetTrigger>
                   {/*
               A panel, not a dialog (`components.md` § Surface size): a
-              role-gated channel carries the whole permission grid, so this
-              scrolled inside a 512px dialog capped at 80vh.
+              channel's two access lists and their Add menus would scroll
+              inside a 512px dialog capped at 80vh.
             */}
                   <PanelContent>
                     <PanelHeader>Create a channel</PanelHeader>
@@ -1060,22 +1142,10 @@ function ChatAdminBody({
                       id="channel-create-form"
                       onSubmit={handleCreateChannel}
                     >
-                      {/*
-                  Kept, because it is the one place the three types are told
-                  apart, and the last place to choose one: the update route
-                  takes no `type`, so the edit pane can only show it. It used
-                  to say private channels are "visible to every member", the
-                  opposite of what one is (`spec/behavior/chat/README.md` §
-                  Channels): only the ids in `member_ids` read it, and the
-                  create route seeds that with its creator alone.
-                */}
                       <SheetDescription>
-                        Public channels are open to every member. A private
-                        channel is readable only by its members, and you are its
-                        first. A role-gated channel is readable by members
-                        holding at least one of the selected permissions. A
-                        channel&apos;s type can&apos;t be changed after
-                        it&apos;s created.
+                        Choose who can see the channel and who can post in it.
+                        In a category, it starts with the category&apos;s
+                        answers and follows them until you change it.
                       </SheetDescription>
                       <div className="grid gap-1">
                         <Label htmlFor="ca-create-name">Name</Label>
@@ -1102,63 +1172,66 @@ function ChatAdminBody({
                           rows={2}
                         />
                       </div>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <div className="grid gap-1">
-                          <Label htmlFor="ca-create-type">Type</Label>
-                          <Select
-                            value={createType}
-                            onValueChange={(value) =>
-                              setCreateType(
-                                value as (typeof CREATABLE_TYPES)[number],
-                              )
-                            }
-                          >
-                            <SelectTrigger id="ca-create-type">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {CREATABLE_TYPES.map((type) => (
-                                <SelectItem key={type} value={type}>
-                                  {CHANNEL_TYPE_LABEL[type]}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="grid gap-1">
-                          <Label htmlFor="ca-create-category">Category</Label>
-                          <Select
-                            value={createCategoryId}
-                            onValueChange={setCreateCategoryId}
-                          >
-                            <SelectTrigger id="ca-create-category">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value={NO_CATEGORY}>
-                                Uncategorized
+                      <div className="grid gap-1">
+                        <Label htmlFor="ca-create-category">Category</Label>
+                        <Select
+                          value={createCategoryId}
+                          onValueChange={handleCreateCategoryChange}
+                        >
+                          <SelectTrigger id="ca-create-category">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={NO_CATEGORY}>
+                              Uncategorized
+                            </SelectItem>
+                            {categories.map((category) => (
+                              <SelectItem key={category.id} value={category.id}>
+                                {category.name}
                               </SelectItem>
-                              {categories.map((category) => (
-                                <SelectItem
-                                  key={category.id}
-                                  value={category.id}
-                                >
-                                  {category.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
-                      <label className="flex items-center gap-3">
-                        <Switch
-                          checked={createReadOnly}
-                          onCheckedChange={setCreateReadOnly}
-                        />
-                        <span className="text-sm">
-                          Read-only (only officers with permission can post)
-                        </span>
-                      </label>
+                      <div className="grid gap-1">
+                        <label className="flex items-center gap-3">
+                          <Switch
+                            checked={createPrivate}
+                            onCheckedChange={setCreatePrivate}
+                          />
+                          <span className="text-sm">Private channel</span>
+                        </label>
+                        <p className="text-xs text-muted-foreground">
+                          Only people you add can see it, starting with you. Its
+                          type can&apos;t be changed after it&apos;s created.
+                        </p>
+                      </div>
+                      {createPrivate ? null : (
+                        <div className="grid gap-4 rounded-md border border-border p-3">
+                          <ChannelAccessField
+                            id="ca-create-see"
+                            question="see"
+                            value={createSee}
+                            onChange={(next) => {
+                              setCreateSee(next);
+                              setCreateAccessTouched(true);
+                            }}
+                            options={accessOptions}
+                            optionsState={accessOptionsState}
+                          />
+                          <ChannelAccessField
+                            id="ca-create-post"
+                            question="post"
+                            value={createPost}
+                            onChange={(next) => {
+                              setCreatePost(next);
+                              setCreateAccessTouched(true);
+                            }}
+                            options={accessOptions}
+                            optionsState={accessOptionsState}
+                          />
+                        </div>
+                      )}
                       <label className="flex items-center gap-3">
                         <Switch
                           checked={createAlwaysFormal}
@@ -1168,26 +1241,6 @@ function ChatAdminBody({
                           {ALWAYS_FORMAL_LABEL_WITH_HINT}
                         </span>
                       </label>
-                      {createType === "ROLE_GATED" ? (
-                        <div>
-                          <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                            Required permissions ({createPermissions.size})
-                          </Label>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            A member needs at least one of these to read or
-                            post.
-                          </p>
-                          <PermissionCheckboxGrid
-                            inPanel
-                            catalog={catalog}
-                            catalogLoading={catalogLoading}
-                            catalogUnavailable={catalogUnavailable}
-                            selected={createPermissions}
-                            holders={holders}
-                            onToggle={toggleCreatePermission}
-                          />
-                        </div>
-                      ) : null}
                     </PanelBody>
                     <PanelFooter>
                       <Button
@@ -1206,8 +1259,7 @@ function ChatAdminBody({
                         disabled={
                           createChannel.isPending ||
                           !createName.trim() ||
-                          (createType === "ROLE_GATED" &&
-                            createPermissions.size === 0)
+                          createAccessIncomplete
                         }
                       >
                         {createChannel.isPending ? (
@@ -1247,66 +1299,106 @@ function ChatAdminBody({
                 {[...categories]
                   .sort((a, b) => a.display_order - b.display_order)
                   .map((category) => (
-                    <li
-                      key={category.id}
-                      className="flex min-h-11 items-center justify-between gap-2"
-                    >
-                      {editingCategoryId === category.id ? (
-                        <>
-                          <Input
-                            value={categoryNameDraft}
-                            onChange={(event) =>
-                              setCategoryNameDraft(event.target.value)
-                            }
-                            className="h-8"
-                            autoFocus
-                          />
-                          <div className="flex gap-1">
-                            <Button
-                              size="sm"
-                              onClick={() => void handleSaveCategory(category)}
-                              disabled={updateCategory.isPending}
-                            >
-                              Save
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              onClick={() => setEditingCategoryId(null)}
-                            >
-                              Cancel
-                            </Button>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <span className="min-w-0 truncate text-sm font-medium">
-                            {category.name}
-                          </span>
-                          <div className="flex shrink-0 gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className={compactControlClassName}
-                              aria-label={`Rename ${category.name}`}
-                              onClick={() => startEditCategory(category)}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className={compactControlClassName}
-                              aria-label={`Delete ${category.name}`}
-                              onClick={() =>
-                                void handleDeleteCategory(category)
+                    <li key={category.id}>
+                      <div className="flex min-h-11 items-center justify-between gap-2">
+                        {editingCategoryId === category.id ? (
+                          <>
+                            <Input
+                              value={categoryNameDraft}
+                              onChange={(event) =>
+                                setCategoryNameDraft(event.target.value)
                               }
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </>
-                      )}
+                              className="h-8"
+                              autoFocus
+                            />
+                            <div className="flex gap-1">
+                              <Button
+                                size="sm"
+                                onClick={() =>
+                                  void handleSaveCategory(category)
+                                }
+                                disabled={updateCategory.isPending}
+                              >
+                                Save
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => setEditingCategoryId(null)}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium">
+                                {category.name}
+                              </p>
+                              {/*
+                              Both answers in one line, so an officer scanning
+                              the list sees which categories are private
+                              without opening each.
+                            */}
+                              <p className="truncate text-caption text-muted-foreground">
+                                {categoryAccessSummary(category, accessOptions)}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className={compactControlClassName}
+                                aria-label={`Who can see and post in ${category.name}`}
+                                aria-expanded={accessCategoryId === category.id}
+                                onClick={() =>
+                                  accessCategoryId === category.id
+                                    ? setAccessCategoryId(null)
+                                    : startEditCategoryAccess(category)
+                                }
+                              >
+                                <Users className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className={compactControlClassName}
+                                aria-label={`Rename ${category.name}`}
+                                onClick={() => startEditCategory(category)}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className={compactControlClassName}
+                                aria-label={`Delete ${category.name}`}
+                                onClick={() =>
+                                  void handleDeleteCategory(category)
+                                }
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                      {accessCategoryId === category.id ? (
+                        <CategoryAccessEditor
+                          category={category}
+                          channels={channels}
+                          see={categorySeeDraft}
+                          post={categoryPostDraft}
+                          onSeeChange={setCategorySeeDraft}
+                          onPostChange={setCategoryPostDraft}
+                          options={accessOptions}
+                          optionsState={accessOptionsState}
+                          saving={updateCategory.isPending}
+                          onCancel={() => setAccessCategoryId(null)}
+                          onSave={() => void handleSaveCategoryAccess(category)}
+                        />
+                      ) : null}
                     </li>
                   ))}
               </ul>
@@ -1338,6 +1430,190 @@ function ChatAdminBody({
           </section>
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * A channel's "Who can see and post" (#3722). Paul, 2026-11-10: two lists,
+ * not Discord's permission matrix, and a channel copies its category's
+ * answers until changed, showing whether it still matches with a way back.
+ * Private channels and the audit log say why they have no lists instead.
+ */
+function ChannelAccessSection({
+  channel,
+  takesLists,
+  category,
+  see,
+  post,
+  matching,
+  options,
+  optionsState,
+  onSeeChange,
+  onPostChange,
+  onMatch,
+}: {
+  channel: AdminChannel;
+  takesLists: boolean;
+  category: AdminCategory | null;
+  see: string[] | null;
+  post: string[] | null;
+  matching: boolean;
+  options: readonly ChannelAccessOption[];
+  optionsState: "ready" | "loading" | "error";
+  onSeeChange: (next: string[] | null) => void;
+  onPostChange: (next: string[] | null) => void;
+  onMatch: () => void;
+}) {
+  if (channel.is_audit_log) {
+    return (
+      <p className="text-xs text-muted-foreground">{AUDIT_LOG_SETTINGS_NOTE}</p>
+    );
+  }
+  if (!takesLists) {
+    return (
+      <InlineNote>
+        Private. Only the people added to this channel can see it and post.
+      </InlineNote>
+    );
+  }
+  const matches = matching || matchesCategory(see, post, category);
+  return (
+    <section
+      aria-labelledby="ca-access-label"
+      className="grid gap-4 rounded-md border border-border p-3"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+        <h3 id="ca-access-label" className="text-sm font-semibold">
+          Who can see and post
+        </h3>
+        {category ? (
+          matches ? (
+            <span className="text-caption text-muted-foreground">
+              Matches {category.name}
+            </span>
+          ) : (
+            <span className="flex items-center gap-2 text-caption text-muted-foreground">
+              Custom
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2"
+                onClick={onMatch}
+              >
+                Match {category.name}
+              </Button>
+            </span>
+          )
+        ) : null}
+      </div>
+      <ChannelAccessField
+        id="ca-see"
+        question="see"
+        value={see}
+        onChange={onSeeChange}
+        options={options}
+        optionsState={optionsState}
+      />
+      <ChannelAccessField
+        id="ca-post"
+        question="post"
+        value={post}
+        onChange={onPostChange}
+        options={options}
+        optionsState={optionsState}
+      />
+      {category && matches ? (
+        <p className="text-caption text-muted-foreground">
+          Changes to {category.name}&apos;s access reach this channel too.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+/**
+ * A category's two answers, edited under its row. Saving moves every channel
+ * in it that matched (the server does it in one transaction), so the editor
+ * names them first: an officer locking down Exec sees which channels follow.
+ */
+function CategoryAccessEditor({
+  category,
+  channels,
+  see,
+  post,
+  onSeeChange,
+  onPostChange,
+  options,
+  optionsState,
+  saving,
+  onCancel,
+  onSave,
+}: {
+  category: AdminCategory;
+  channels: readonly AdminChannel[];
+  see: string[] | null;
+  post: string[] | null;
+  onSeeChange: (next: string[] | null) => void;
+  onPostChange: (next: string[] | null) => void;
+  options: readonly ChannelAccessOption[];
+  optionsState: "ready" | "loading" | "error";
+  saving: boolean;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  const inCategory = channels.filter(
+    (channel) =>
+      channel.category_id === category.id &&
+      (channel.type === "PUBLIC" || channel.type === "ROLE_GATED") &&
+      channel.is_audit_log !== true,
+  );
+  const following = inCategory.filter((channel) =>
+    matchesCategory(
+      channel.who_can_see ?? null,
+      channel.who_can_post ?? null,
+      category,
+    ),
+  );
+  const custom = inCategory.length - following.length;
+  const incomplete = isEmptyChoice(see) || isEmptyChoice(post);
+  return (
+    <div className="mb-2 mt-1 grid gap-4 rounded-md border border-border p-3">
+      <ChannelAccessField
+        id={`ca-cat-${category.id}-see`}
+        question="see"
+        value={see}
+        onChange={onSeeChange}
+        options={options}
+        optionsState={optionsState}
+      />
+      <ChannelAccessField
+        id={`ca-cat-${category.id}-post`}
+        question="post"
+        value={post}
+        onChange={onPostChange}
+        options={options}
+        optionsState={optionsState}
+      />
+      <p className="text-caption text-muted-foreground">
+        {following.length === 0
+          ? "No channel here matches it now, so saving changes only what new channels start with."
+          : `Saving also changes ${following
+              .map((channel) => `#${channel.name}`)
+              .join(", ")}, which match it now.`}
+        {custom > 0
+          ? ` ${custom === 1 ? "One channel has" : `${custom} channels have`} custom access and keep${custom === 1 ? "s" : ""} it.`
+          : ""}
+      </p>
+      <div className="flex justify-end gap-2">
+        <Button size="sm" variant="secondary" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button size="sm" onClick={onSave} disabled={saving || incomplete}>
+          Save access
+        </Button>
+      </div>
     </div>
   );
 }

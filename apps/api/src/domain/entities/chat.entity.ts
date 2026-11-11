@@ -126,7 +126,7 @@ export interface ChatChannel {
   /**
    * The gate before #3722. Read by nothing in the API for access; kept for one
    * release because the Discord importer still writes it (a trigger turns it
-   * into lists) and shipped clients receive it. Dropped in #FOLLOWUP.
+   * into lists) and shipped clients receive it. Dropped in #4286.
    */
   required_permissions: string[] | null;
   member_ids: string[] | null;

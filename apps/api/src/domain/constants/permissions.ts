@@ -34,7 +34,7 @@ export const SystemPermissions = {
 
   // Gated the read-only post check until #3722; a channel's who can post
   // decides that now, and a chapter's existing posters were carried into
-  // those lists. Still in the catalog until the registry drops it (#FOLLOWUP).
+  // those lists. Still in the catalog until the registry drops it (#4286).
   ANNOUNCEMENTS_POST: 'announcements:post',
 
   BILLING_VIEW: 'billing:view',

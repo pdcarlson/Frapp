@@ -152,6 +152,10 @@ const HTTP_LEDGER: Record<string, Entry> = {
   ChatController_createCategory_v1: CHANNEL_METADATA,
   ChatController_updateCategory_v1: CHANNEL_METADATA,
   ChatController_deleteCategory_v1: CHANNEL_METADATA,
+  // What a who-can-see or who-can-post list can name (#3722): tiers, roles
+  // and the user ids each reaches, to a `channels:manage` holder. Who holds
+  // a role is not hidden by a block, as the Directory shows it.
+  ChatController_getChannelAccessOptions_v1: CHANNEL_METADATA,
   // Counts only, but a count is still a signal: `get_channel_unread_counts`
   // skips a sender the caller blocked in the chapter, so a blocked member's
   // messages and @-mentions don't move the blocker's badges (#2521).

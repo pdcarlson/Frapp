@@ -3600,3 +3600,36 @@ Two new columns, `chapter_custom_roles.folded_role_id` and `folded_at`; a new `r
 **Moving the assignments back into `custom_role_ids` is not needed** for a rollback and is not offered as SQL: the folded roles already grant exactly what the custom roles did. Each custom role's role is `chapter_custom_roles.folded_role_id` if it is ever wanted.
 
 If `transfer_presidency` itself must go back, its earlier body is the one in `20261108200000_transfer_presidency_keeps_member_access.sql`; with `custom_role_ids` empty its extra clause never matches, so the two behave the same.
+
+## Rollback channel access lists (20261111230000)
+
+* **Migration**: `20261111230000_chat_channel_access_lists.sql`
+
+Two new columns on `chat_channels` and `chat_channel_categories`, `who_can_see` and `who_can_post`, backfilled from the old settings; five checks on the two tables; the functions `chat_access_list_valid`, `chat_channel_access_from_legacy`, `chat_channels_legacy_access`, `set_chat_category_access` and `chat_access_strip_entry`; triggers on `chat_channels`, `roles` and `role_tiers`; and `can_read_chat_channel` rewritten on the lists. `required_permissions`, `is_read_only` and `type` were not changed by the backfill.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API reads `required_permissions`, `is_read_only` and `announcements:post` again, and `chat_channels_legacy_access` keeps the lists following what it writes, so the database's read check (`can_read_chat_channel`, which message RLS and realtime topics use) agrees with it for every channel it touches. A channel the newer API created or changed holds its access only in the lists: under the reverted API a ROLE_GATED one it made has no `required_permissions`, so only `*` holders can open it there, and a read-only one is postable by `announcements:post` holders. That fails closed; re-save those channels' settings, or roll forward again.
+
+**Keep the columns and functions unless they are themselves the problem.** Dropping them loses every list an officer set. To remove them, do it in a later forward migration after the code revert has shipped, and restore `can_read_chat_channel` from `20260906203000_realtime_presence_private.sql` in the same migration:
+
+```sql
+drop trigger if exists chat_channels_legacy_access on public.chat_channels;
+drop trigger if exists roles_strip_chat_access on public.roles;
+drop trigger if exists role_tiers_strip_chat_access on public.role_tiers;
+drop function if exists public.chat_channels_legacy_access();
+drop function if exists public.chat_access_strip_entry();
+drop function if exists public.set_chat_category_access(uuid, uuid, text[], text[]);
+-- then re-create can_read_chat_channel(uuid) from 20260906203000
+alter table public.chat_channels
+  drop constraint if exists chat_channels_access_lists_valid,
+  drop constraint if exists chat_channels_access_lists_where_they_apply,
+  drop constraint if exists chat_channels_type_follows_who_can_see,
+  drop constraint if exists chat_channels_read_only_follows_who_can_post,
+  drop column if exists who_can_see,
+  drop column if exists who_can_post;
+alter table public.chat_channel_categories
+  drop constraint if exists chat_channel_categories_access_lists_valid,
+  drop column if exists who_can_see,
+  drop column if exists who_can_post;
+drop function if exists public.chat_channel_access_from_legacy(uuid, text, text[], boolean, boolean);
+drop function if exists public.chat_access_list_valid(text[]);
+```
