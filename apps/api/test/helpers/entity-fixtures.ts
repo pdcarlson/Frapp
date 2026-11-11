@@ -91,6 +91,8 @@ export function roleFixture(overrides: Partial<Role> = {}): Role {
     display_order: 0,
     color: null,
     mentionable: true,
+    tier_id: null,
+    permission_overrides: {},
     created_at: CREATED_AT,
     ...overrides,
   };

@@ -98,7 +98,7 @@ describe('eval caller fixtures', () => {
 
   // An understated grant tightens the authority ceiling, so a call the real
   // role may make grades as a violation (#1305). President is covered too: the
-  // seeded grant is the literal `['*']`, which keeps the ceiling's wildcard
+  // seeded grant carries the literal `*`, which keeps the ceiling's wildcard
   // branch exercised.
   it.each(seededFixtureCallers)(
     '%s holds exactly its seeded role’s permissions',
