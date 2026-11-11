@@ -199,6 +199,56 @@ export class CreateTaskSubtaskDto {
   title: string;
 }
 
+/**
+ * An officer's edit of a task (#4296). Every field is optional and an omitted
+ * one is left as it is. `null` clears `description`, `due_at` (the task is
+ * then due by the end of `due_date`) and `point_reward`; the API refuses null
+ * for the rest. Steps are edited through the subtask routes.
+ */
+export class UpdateTaskDto {
+  @ApiPropertyOptional({ maxLength: TASK_TITLE_MAX_LENGTH })
+  @IsOptional()
+  @IsString()
+  @MaxLength(TASK_TITLE_MAX_LENGTH)
+  title?: string;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  @IsOptional()
+  @IsString()
+  description?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'User ID of the new assignee. A new assignee starts the task over: it goes back to To do and they are notified.',
+  })
+  @IsOptional()
+  @IsUUID()
+  assignee_id?: string;
+
+  @ApiPropertyOptional({ description: 'Due date (YYYY-MM-DD)' })
+  @IsOptional()
+  @IsDateString()
+  due_date?: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    format: 'date-time',
+    description:
+      'The moment the task is due, or null to take its time off. Send it with `due_date`: the pair must agree, as on create.',
+  })
+  @IsOptional()
+  @IsDateString({ strict: true })
+  due_at?: string | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(POINTS_ADJUSTMENT_MAX)
+  point_reward?: number | null;
+}
+
 export class UpdateTaskSubtaskDto {
   @ApiProperty({ description: 'True to check it off, false to uncheck it.' })
   @IsStrictBoolean()

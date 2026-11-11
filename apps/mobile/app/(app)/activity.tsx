@@ -8,6 +8,7 @@ import {
   activityGroups,
   activitySummary,
   useActivity,
+  useNowDate,
   useCurrentChapter,
   useClearActivityLinkState,
   useMyPermissions,
@@ -28,7 +29,6 @@ import {
 } from "@/components/activity/activity-row";
 import {
   ActivitySheet,
-  type ActivitySheetRow,
   type LinkSheetActions,
 } from "@/components/activity/activity-sheet";
 import {
@@ -66,8 +66,8 @@ const CHIPS = ACTIVITY_FILTERS.map((option) => ({
  * "Needs you" first and split into Now and Later, with chips that narrow
  * every group to one kind of thing (#4173). A row opens the record
  * in a sheet drawn with chat's own card, where the member acts on it
- * (`components/activity/activity-sheet.tsx`). A document row opens Documents;
- * a backwork row is a record only, since the phone has no Backwork screen.
+ * (`components/activity/activity-sheet.tsx`). A closed poll leaves its list
+ * for Archived polls under Made by you (#4258).
  *
  * The read is never served fresh from cache (`useActivity`). It is read
  * again when the sheet closes, because the cards write through their own
@@ -77,11 +77,14 @@ const CHIPS = ACTIVITY_FILTERS.map((option) => ({
 export default function ActivityScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const router = useRouter();
   const activity = useActivity();
+  // The shared 30s clock the poll cards read: a poll whose time runs out
+  // leaves its section within a tick, without a re-read (#4258), and Now and
+  // Later and Next up stay current while the page is open.
+  const now = useNowDate();
   const viewerId = useViewerUserId();
   // Also on every return to this screen: it stays mounted under the thread
-  // or Documents it pushes, and a vote cast there is not heard here.
+  // or event details it pushes, and a vote cast there is not heard here.
   const reread = useActivityReread();
   const [filter, setFilter] = useState<ActivityFilter>("all");
   const [openedKey, setOpenedKey] = useState<string | null>(null);
@@ -91,23 +94,27 @@ export default function ActivityScreen() {
   const permissions = useMyPermissions().data?.permissions;
   const chapter = useCurrentChapter().data;
   const groups = useMemo(
-    () => (activity.data ? activityGroups(activity.data, filter) : []),
-    [activity.data, filter],
+    () => (activity.data ? activityGroups(activity.data, filter, now) : []),
+    [activity.data, filter, now],
   );
   // The tiles a member is never asked about (To confirm, Hours to approve)
   // show only to the roles that are; a module the chapter has off shows none.
   const summary = useMemo(
     () =>
       activity.data
-        ? activitySummary(activity.data, {
-            canConfirmTasks: can("tasks:manage", permissions ?? []),
-            canApproveHours: can("service:approve", permissions ?? []),
-            isModuleEnabled: chapter
-              ? (key) => isModuleEnabled(chapter.enabled_modules, key)
-              : undefined,
-          })
+        ? activitySummary(
+            activity.data,
+            {
+              canConfirmTasks: can("tasks:manage", permissions ?? []),
+              canApproveHours: can("service:approve", permissions ?? []),
+              isModuleEnabled: chapter
+                ? (key) => isModuleEnabled(chapter.enabled_modules, key)
+                : undefined,
+            },
+            now,
+          )
         : null,
-    [activity.data, permissions, chapter],
+    [activity.data, permissions, chapter, now],
   );
   // The open row as the latest read has it. A row that has left the list (a
   // vote cast, a completion confirmed) is `null` here and the sheet keeps
@@ -116,18 +123,14 @@ export default function ActivityScreen() {
   const openRow = useMemo(() => {
     if (openedKey === null) return null;
     const row = groups
-      .flatMap((group) => group.rows)
+      .flatMap((group) => [...group.rows, ...(group.archive?.rows ?? [])])
       .find((candidate) => candidate.key === openedKey);
-    return row && row.kind !== "file" ? row : null;
+    return row ?? null;
   }, [groups, openedKey]);
-  const [opened, setOpened] = useState<ActivitySheetRow | null>(null);
+  const [opened, setOpened] = useState<ActivityRow | null>(null);
   const sheetRow = openedKey === null ? null : (openRow ?? opened);
 
   const open = (row: ActivityRow) => {
-    if (row.kind === "file") {
-      if (row.file.source === "document") router.push("/documents");
-      return;
-    }
     setOpened(row);
     setOpenedKey(row.key);
   };
@@ -191,6 +194,7 @@ export default function ActivityScreen() {
           filter !== "all" &&
           group.id !== "needs-you" &&
           group.rows.length === 0 &&
+          group.archive === null &&
           group.unavailable.length === 0 ? null : (
             <GroupSection
               key={group.id}
@@ -348,6 +352,54 @@ function GroupSection({
           <GroupPart key={part.id} part={part} onOpen={onOpen} />
         ))
       )}
+      {group.archive ? (
+        <ArchivePart part={group.archive} onOpen={onOpen} />
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * The rows a group keeps behind one control (#4258): the member's closed
+ * polls, under Made by you, closed until pressed, as web draws them. Each
+ * row opens the poll's card with its final result.
+ */
+function ArchivePart({
+  part,
+  onOpen,
+}: {
+  part: ActivityPart;
+  onOpen: (row: ActivityRow) => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const { accent } = useChapterBranding();
+  const styles = createStyles(tokens);
+  const [open, setOpen] = useState(false);
+  const label = part.label ?? "Archive";
+  return (
+    <View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        onPress={() => setOpen((shown) => !shown)}
+        style={styles.showAll}
+      >
+        <Text style={[styles.showAllText, { color: accent }]}>
+          {open
+            ? `Hide ${label.toLowerCase()}`
+            : `${label} (${part.rows.length})`}
+        </Text>
+      </Pressable>
+      {open
+        ? part.rows.map((row, index) => (
+            <ActivityListRow
+              key={row.key}
+              row={row}
+              isFirst={index === 0}
+              onPress={() => onOpen(row)}
+            />
+          ))
+        : null}
     </View>
   );
 }
@@ -388,18 +440,14 @@ function GroupPart({
           <SectionCount count={part.rows.length} />
         </View>
       ) : null}
-      {rows.map((row, index) => {
-        // A backwork file has no screen on the phone to open.
-        const opens = row.kind !== "file" || row.file.source === "document";
-        return (
-          <ActivityListRow
-            key={row.key}
-            row={row}
-            isFirst={index === 0}
-            onPress={opens ? () => onOpen(row) : undefined}
-          />
-        );
-      })}
+      {rows.map((row, index) => (
+        <ActivityListRow
+          key={row.key}
+          row={row}
+          isFirst={index === 0}
+          onPress={() => onOpen(row)}
+        />
+      ))}
       {cappable ? (
         <Pressable
           accessibilityRole="button"

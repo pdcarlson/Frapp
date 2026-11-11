@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   duePresets,
+  dueTimePassed,
+  editDraftOf,
   formatDueFieldLabel,
+  taskEditBody,
   parsePointReward,
   validateNewTask,
 } from "./create-task";
@@ -81,7 +84,10 @@ describe("parsePointReward", () => {
   it("accepts whole points inside the ledger bound", () => {
     expect(parsePointReward("0")).toEqual({ kind: "value", points: 0 });
     expect(parsePointReward("5")).toEqual({ kind: "value", points: 5 });
-    expect(parsePointReward("100000")).toEqual({ kind: "value", points: 100000 });
+    expect(parsePointReward("100000")).toEqual({
+      kind: "value",
+      points: 100000,
+    });
   });
 
   it("rejects anything the DTO would", () => {
@@ -118,7 +124,9 @@ describe("validateNewTask", () => {
     expect(validateNewTask({ ...draft, title: "  Spaced  " })?.title).toBe(
       "Spaced",
     );
-    expect(validateNewTask({ ...draft, title: "a".repeat(255) })).not.toBeNull();
+    expect(
+      validateNewTask({ ...draft, title: "a".repeat(255) }),
+    ).not.toBeNull();
     expect(validateNewTask({ ...draft, title: "a".repeat(256) })).toBeNull();
   });
 
@@ -138,5 +146,80 @@ describe("validateNewTask", () => {
     expect(validateNewTask({ ...draft, assigneeId: null })).toBeNull();
     expect(validateNewTask({ ...draft, dueDate: "21/08/2026" })).toBeNull();
     expect(validateNewTask({ ...draft, pointsInput: "-4" })).toBeNull();
+  });
+});
+
+describe("editing a task (#4296)", () => {
+  const task = {
+    id: "t1",
+    title: "Sweep",
+    assigneeId: "u1",
+    dueDay: "2026-09-29",
+    dueAt: null as string | null,
+    pointReward: 5 as number | null,
+    storedStatus: "TODO",
+  };
+
+  it("opens a timed task on its local day and time", () => {
+    const at = new Date(2026, 8, 29, 17, 30);
+    const draft = editDraftOf({ ...task, dueAt: at.toISOString() });
+    expect(draft).toMatchObject({
+      title: "Sweep",
+      dueDate: "2026-09-29",
+      dueTime: "17:30",
+      assigneeId: "u1",
+      pointsInput: "5",
+    });
+  });
+
+  it("sends only the changed fields, the due as a pair", () => {
+    expect(
+      taskEditBody(task, {
+        title: "Sweep",
+        assignee_id: "u1",
+        due_date: "2026-09-29",
+        point_reward: 5,
+      }),
+    ).toEqual({});
+    const at = new Date(2026, 8, 29, 17, 0).toISOString();
+    expect(
+      taskEditBody(task, {
+        title: "Mop",
+        assignee_id: "u2",
+        due_date: "2026-09-29",
+        due_at: at,
+      }),
+    ).toEqual({
+      title: "Mop",
+      assignee_id: "u2",
+      due_date: "2026-09-29",
+      due_at: at,
+      point_reward: null,
+    });
+  });
+
+  it("takes the time off with due_at null", () => {
+    const at = new Date(2026, 8, 29, 17, 0).toISOString();
+    expect(
+      taskEditBody(
+        { ...task, dueAt: at },
+        {
+          title: "Sweep",
+          assignee_id: "u1",
+          due_date: "2026-09-29",
+          point_reward: 5,
+        },
+      ),
+    ).toEqual({ due_date: "2026-09-29", due_at: null });
+  });
+
+  it("doesn't refuse a task's own time for having passed, only a new one", () => {
+    const now = new Date(2026, 8, 29, 18, 0);
+    const kept = { dueDate: "2026-09-29", dueTime: "17:00" };
+    expect(dueTimePassed(kept, now)).toBe(true);
+    expect(dueTimePassed(kept, now, kept)).toBe(false);
+    expect(
+      dueTimePassed({ dueDate: "2026-09-29", dueTime: "17:30" }, now, kept),
+    ).toBe(true);
   });
 });

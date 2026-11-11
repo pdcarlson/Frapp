@@ -477,6 +477,11 @@ export interface MessageTimelineProps {
    * roster read again. Optional so a caller without a roster paints plain names.
    */
   roleColorFor?: (userId: string) => string | null;
+  /**
+   * Replies new to the viewer in each thread they follow here, by root id,
+   * for each thread card (#4297; `useThreadUnread`).
+   */
+  threadUnread?: Readonly<Record<string, number>>;
   isLoading: boolean;
   loadError: Error | null;
   onRetryLoad?: () => void;
@@ -587,6 +592,7 @@ export const MessageTimeline = forwardRef<
     nameFor,
     avatarFor,
     roleColorFor,
+    threadUnread,
     isLoading,
     loadError,
     onRetryLoad,
@@ -1181,6 +1187,9 @@ export const MessageTimeline = forwardRef<
                   onUnreact={onUnreact}
                   onReply={onReply}
                   onOpenThread={onOpenThread}
+                  avatarFor={avatarFor}
+                  roleColorFor={roleColorFor}
+                  threadUnread={threadUnread?.[entry.message.id] ?? 0}
                   onJumpToParent={onJumpToParent}
                   // The parent, or `null` when it is outside the loaded window.
                   // `MessageItem` decides whether to draw a quote from

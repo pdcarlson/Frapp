@@ -633,7 +633,7 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     calls: 2,
     entries: [MEMBER_TEXT],
   },
-  'application/services/task.service.ts': { calls: 6, entries: [MEMBER_TEXT] },
+  'application/services/task.service.ts': { calls: 8, entries: [MEMBER_TEXT] },
   'application/workers/scheduled-jobs.service.ts': {
     calls: 15,
     entries: [MEMBER_TEXT],

@@ -197,6 +197,15 @@ export interface MessageItemProps {
    */
   onOpenThread?: (message: ChatMessage) => void;
   /**
+   * The thread card's faces (#4297): a replier's photo, and their top role
+   * color for their initials' tint. Optional; without them the card draws
+   * initials in each member's hashed hue.
+   */
+  avatarFor?: (userId: string) => string | null;
+  roleColorFor?: (userId: string) => string | null;
+  /** Replies in this message's thread new to the viewer (#4297). */
+  threadUnread?: number;
+  /**
    * The message this one replies to, when `message.reply_to_id` is set and that
    * parent is inside the loaded window; `null` or absent when it is not.
    *
@@ -383,6 +392,9 @@ export function MessageItem({
   onReply,
   onJumpToParent,
   onOpenThread,
+  avatarFor,
+  roleColorFor,
+  threadUnread = 0,
   replyParent,
   onRetry,
   onDiscard,
@@ -1504,6 +1516,9 @@ export function MessageItem({
                     <ThreadChip
                       summary={message.thread}
                       nameFor={nameFor}
+                      avatarFor={avatarFor}
+                      roleColorFor={roleColorFor}
+                      unread={threadUnread}
                       onOpen={
                         onOpenThread ? () => onOpenThread(message) : undefined
                       }
@@ -1601,7 +1616,26 @@ export function MessageItem({
               The gutter, held open on every row of a run: 32px for the avatar
               in cozy, 56px for the time in compact (§11 § Density).
             */}
-            <div className={cn("shrink-0", compact ? "w-14" : "w-8")}>
+            <div
+              className={cn("relative shrink-0", compact ? "w-14" : "w-8")}
+            >
+              {message.thread && !compact && !auditLine ? (
+                /*
+                  The thread card's connector (#4297, after Discord's): from
+                  under the photo (or the follow-on's time) down the gutter's
+                  middle, curving into the card's left edge. The card is the
+                  column's last item on a confirmed row, so the line ends at
+                  its middle: half its 36px height up from the bottom.
+                */
+                <span
+                  aria-hidden="true"
+                  data-slot="thread-spine"
+                  className={cn(
+                    "pointer-events-none absolute bottom-[18px] left-[15px] w-[29px] rounded-bl-[10px] border-b-2 border-l-2 border-border",
+                    drawsHeader ? "top-10" : "top-7",
+                  )}
+                />
+              ) : null}
               {auditLine ? (
                 <div
                   className={cn(
@@ -1753,6 +1787,9 @@ export function MessageItem({
                 <ThreadChip
                   summary={message.thread}
                   nameFor={nameFor}
+                  avatarFor={avatarFor}
+                  roleColorFor={roleColorFor}
+                  unread={threadUnread}
                   onOpen={
                     onOpenThread ? () => onOpenThread(message) : undefined
                   }
@@ -1792,9 +1829,10 @@ export function MessageItem({
  * danger bar on its leading edge, the shape the mention row takes in the
  * chapter accent (§11 § A row that mentions you). It is information, so it
  * stays on under a pointer and deepens rather than giving way to the lift.
- * Chapter-accent text on the row (the thread chip's reply count is the one
- * that sits straight on the tint) reads in `--foreground` here: the accent
- * misses AA on the red for most chapter seeds.
+ * Chapter-accent text on the row reads in `--foreground` here: the accent
+ * misses AA on the red for most chapter seeds. The thread card's count sits
+ * on the card's own fill since #4297, but keeps the foreground too, so an
+ * Important row reads the same on web and mobile.
  */
 const IMPORTANT_ROW =
   "bg-destructive-tint shadow-[inset_2px_0_0_var(--destructive)] hover:bg-destructive-tint-hover has-[:focus-visible]:bg-destructive-tint-hover [&_.text-primary]:text-foreground";

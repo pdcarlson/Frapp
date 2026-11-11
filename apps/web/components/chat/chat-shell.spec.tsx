@@ -734,6 +734,11 @@ vi.mock("@/lib/auth/use-frapp-user", () => ({
   }),
 }));
 
+// The thread cards' unread counts have their own spec (use-thread-unread).
+vi.mock("@/lib/chat/use-thread-unread", () => ({
+  useThreadUnread: () => ({}),
+}));
+
 vi.mock("@/lib/chat/use-chat-channel", () => ({
   useChatChannel: (channelId: string | null) => mockUseChatChannel(channelId),
 }));

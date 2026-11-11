@@ -98,6 +98,7 @@ import { useChatViewerId } from "@/lib/chat/viewer-id";
 import { asArray, cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import { chatDeepLink } from "@/lib/chat/chat-links";
+import { useThreadUnread } from "@/lib/chat/use-thread-unread";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
 import {
   useMaskedRefresh,
@@ -2201,6 +2202,13 @@ export function ChatShell({
     openThread && openThread.channelId === activeChannel?.id
       ? openThread.rootId
       : null;
+  // What's new in the threads the viewer follows here, for each card
+  // (#4297). The open thread is left out: reading it re-reads this.
+  const threadUnread = useThreadUnread(
+    activeChannelId,
+    channel.messages,
+    threadRootId,
+  );
   const canThreadHere = !!activeChannel && channelAllowsThreads(activeChannel);
   const openThreadFor = useCallback(
     (message: ChatMessage) => {
@@ -3141,6 +3149,7 @@ export function ChatShell({
                   roleColorFor={roleColorFor}
                   avatarFor={avatarFor}
                   messages={channel.messages}
+                  threadUnread={threadUnread}
                   blockList={{ blockState, thread }}
                   onUnblock={handleUnblock}
                   onReloadMasked={handleReloadMasked}

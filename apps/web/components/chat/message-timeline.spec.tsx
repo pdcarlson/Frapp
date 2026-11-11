@@ -1948,5 +1948,27 @@ describe("MessageTimeline rows on screen (#4186)", () => {
     );
 
     expect(onVisibleMessagesChange).not.toHaveBeenCalled();
+
+describe("MessageTimeline thread cards (#4297)", () => {
+  it("hands each card its own thread's new-reply count, by message id", () => {
+    renderTimeline(
+      [
+        message({
+          id: "parent-1",
+          client_message_id: "client-parent-1",
+          thread: {
+            reply_count: 3,
+            last_reply_at: null,
+            recent_sender_ids: [],
+          },
+        } as Partial<ChatMessage>),
+      ],
+      {
+        onOpenThread: vi.fn(),
+        threadUnread: { "parent-1": 2, "someone-else": 9 },
+      },
+    );
+    expect(screen.getByText("2 new")).toBeInTheDocument();
+    expect(screen.queryByText("9 new")).not.toBeInTheDocument();
   });
 });
