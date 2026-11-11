@@ -79,6 +79,7 @@ import {
   NotificationLevelControl,
   NotificationLevelMenu,
   selectChannelNotificationLevel,
+  selectFromChapterLevel,
   useNotificationLevelMenu,
 } from "@/components/chat/notification-level-control";
 import { ThreadHistoryEdge } from "@/components/chat/thread-history-edge";
@@ -1032,6 +1033,10 @@ function ChannelThreadScreen() {
   // overlay's `right`.
   const muteMenu = useNotificationLevelMenu({
     level: notificationLevel,
+    fromChapterLevel: selectFromChapterLevel(
+      notificationPrefsQuery.data,
+      channelId,
+    ),
     disabled: !channelId,
     writeBlockedReason,
   });

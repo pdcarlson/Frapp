@@ -189,6 +189,8 @@ const HTTP_LEDGER: Record<string, Entry> = {
   ChatController_getKindNotificationPreferences_v1: OWN_PREFERENCES,
   ChatController_setKindNotificationLevel_v1: OWN_PREFERENCES,
   ChatController_clearKindNotificationLevel_v1: OWN_PREFERENCES,
+  ChatController_getChapterChatLevel_v1: OWN_PREFERENCES,
+  ChatController_setChapterChatLevel_v1: OWN_PREFERENCES,
 
   // ── Messages ───────────────────────────────────────────────────────
   ChatController_getMessages_v1: {
