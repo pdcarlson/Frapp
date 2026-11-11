@@ -33,6 +33,7 @@ runs:
     # `apt-get install -s` against what is installed, and exits nonzero when a
     # package is missing), then apt only if that check still fails.
     - name: Install Playwright OS deps
+      id: install
       shell: bash
       run: |
         DEBS="$HOME/.cache/pw-os-debs"
@@ -58,9 +59,18 @@ runs:
           sudo apt-get install -y --no-download --no-install-recommends "${todo[@]}" \
             || echo "::warning::cached Playwright OS packages did not install; apt will fetch them."
         fi
-        if npx playwright install-deps --dry-run chromium; then
+        if check="$(npx playwright install-deps --dry-run chromium 2>&1)"; then
+          echo "$check"
           echo "Every Playwright OS dependency is installed; apt not needed."
           exit 0
+        fi
+        echo "$check"
+        # What is still missing, in either form the check prints. When it is
+        # only fonts, Chromium's libraries are all here and it runs without them.
+        missing="$(printf '%s\n' "$check" | sed -nE 's/^  ([a-z0-9][a-z0-9.+-]*)$/\1/p; s/.*Unable to locate package ([^ ]+).*/\1/p')"
+        fonts_only=false
+        if [ -n "$missing" ] && ! printf '%s\n' "$missing" | grep -qvE '^x?fonts-'; then
+          fonts_only=true
         fi
 
         # Drop Google's apt source, whose Hash Sum mismatches retries can't absorb.
@@ -68,13 +78,25 @@ runs:
           /etc/apt/sources.list.d/google-chrome.list.save \
           /etc/apt/sources.list.d/google-chrome.sources \
           /etc/apt/sources.list.d/google.list
-        # Keep what apt downloads, so the save step can cache it.
-        echo 'Binary::apt-get::APT::Keep-Downloaded-Packages "true"; APT::Keep-Downloaded-Packages "true";' \
-          | sudo tee /etc/apt/apt.conf.d/99-keep-playwright-debs > /dev/null
+        # Keep what apt downloads, so the save step can cache it, and bound each
+        # fetch so an unreachable mirror fails in seconds rather than minutes.
+        printf '%s\n' \
+          'Binary::apt-get::APT::Keep-Downloaded-Packages "true";' \
+          'APT::Keep-Downloaded-Packages "true";' \
+          'Acquire::Retries "2";' \
+          'Acquire::http::Timeout "20";' \
+          'Acquire::https::Timeout "20";' \
+          | sudo tee /etc/apt/apt.conf.d/99-playwright-os-deps > /dev/null
         sudo rm -f /var/cache/apt/archives/*.deb
         for i in 1 2 3; do
           if npx playwright install-deps chromium; then
             break
+          fi
+          if [ "$fonts_only" = true ]; then
+            # Not cached, so the next run with apt reachable fetches and caches them.
+            echo "::warning::apt is unreachable and only fonts are missing ($(echo $missing)); running without them."
+            echo "save=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           if [ "$i" -eq 3 ]; then
             echo "::error::playwright install-deps failed after 3 attempts (see prior apt output)."
@@ -92,9 +114,10 @@ runs:
 
     # Saves under this image version's key whenever it wasn't an exact hit, so
     # the next run on this image restores it exactly. Runs only when the
-    # install succeeded.
+    # install succeeded, and never for a run that went without fonts, whose
+    # entry would hold this image's key without them.
     - name: Save cached OS packages
-      if: steps.restore.outputs.cache-hit != 'true'
+      if: steps.restore.outputs.cache-hit != 'true' && steps.install.outputs.save != 'false'
       uses: actions/cache/save@v6
       with:
         path: ~/.cache/pw-os-debs

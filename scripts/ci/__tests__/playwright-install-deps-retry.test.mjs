@@ -50,7 +50,7 @@ describe("Playwright OS deps install without the apt mirrors when it can", () =>
     // The hit path must end at the check, or every run still reaches the mirrors.
     assert.match(
       text,
-      /if npx playwright install-deps --dry-run chromium; then\n[^\n]*\n\s*exit 0\n\s*fi\n/,
+      /if check="\$\(npx playwright install-deps --dry-run chromium 2>&1\)"; then\n(?:[^\n]*\n){2}\s*exit 0\n\s*fi\n/,
     );
     assert.ok(
       check < at(text, INSTALL_DEPS, check),
@@ -100,6 +100,21 @@ describe("Playwright OS deps install without the apt mirrors when it can", () =>
     assert.match(
       text,
       /key=playwright-os-debs-\$\{ImageOS:-unknown\}-\$\{version\}-\$\{ImageVersion:-unknown\}/,
+    );
+  });
+
+  it("goes without only fonts when apt is down, and never caches that", () => {
+    // Chromium needs every library; a missing font changes no launch. Anything
+    // but fonts still fails the job after three tries.
+    assert.match(text, /grep -qvE '\^x\?fonts-'/);
+    const degrade = at(text, 'if [ "$fonts_only" = true ]; then');
+    assert.ok(
+      degrade < at(text, 'echo "save=false" >> "$GITHUB_OUTPUT"', degrade),
+    );
+    assert.ok(degrade < at(text, 'if [ "$i" -eq 3 ]; then', degrade));
+    assert.match(
+      text,
+      /if: steps\.restore\.outputs\.cache-hit != 'true' && steps\.install\.outputs\.save != 'false'/,
     );
   });
 
