@@ -340,11 +340,12 @@ export function useSetDocumentStar() {
  * Pins or unpins a folder or a document for the whole chapter. Needs
  * `chapter_docs:manage`. Not optimistic: a pin changes what everyone sees,
  * so the mark moves when the server has it. Re-reads the folder and document
- * lists, which carry `pinned_at`.
+ * lists, which carry `pinned_at`, before it settles.
  */
 export function useSetDocumentPin() {
   const client = useFrappClient();
-  const invalidate = useInvalidateDocumentFolders();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
   return useMutation({
     mutationKey: ["documents", "set-document-pin"],
     mutationFn: async ({
@@ -365,6 +366,10 @@ export function useSetDocumentPin() {
             : await client.DELETE("/v1/documents/{id}/pin", params);
       if (error) throw error;
     },
-    onSuccess: invalidate,
+    // Returned, so the pin stays pending until the lists carry the new
+    // `pinned_at`: a folder move worked out from the old one would save an
+    // arrangement the pin contradicts.
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["documents", chapterId] }),
   });
 }

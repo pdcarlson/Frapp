@@ -534,7 +534,7 @@ points — and the events table drew its role-targeting and recurrence markers a
 ### 6.2.5 Resources & Reporting (Signet duotone)
 
 Since the #920 Resources & Reporting slice these families draw Signet
-glyphs (`/polls` was one until #3871 retired it), all from the nav set (§1.1) except the stroke-recipe search glyph. The
+glyphs (`/polls` was one until #3871 retired it), from the nav set (§1.1) except the stroke-recipe search glyph, chat's re-exported `PinGlyph` and the drawn `StarGlyph` (both #3934). The
 glyphs live in
 [`apps/web/components/documents/resources-glyphs.tsx`](../../../apps/web/components/documents/resources-glyphs.tsx),
 one file for three screens rather than three files, for the reason §6.2.4 gives:
@@ -548,15 +548,20 @@ button, and the PDF a report exports to.
 | A folder, and the folder filter that names one | `FolderGlyph` |
 | A report, and the control that generates one | `ReportsGlyph` (re-export) |
 | Search, in the `/documents` and `/backwork` toolbars | `SearchGlyph` (re-export) |
+| A folder or file pinned for the whole chapter, and the Pin control (#3934), filled while pinned | `PinGlyph` (re-exported from the chat family, §6.2.2) |
+| A folder or file the member starred for themselves, and the Star control (#3934), filled while starred | `StarGlyph` |
 
 **Backwork's copy markers are Lucide, on purpose (2026-11-05).** A backwork row marks which copy a file is with one icon per copy type, from one set and in the row's muted text tone (Paul: "with the copy, keep the icons consistent"): `FileCheck` a student copy, `File` a blank copy, `KeyRound` an answer key, and `Lock` beside any of them for a redacted file (`apps/web/components/backwork/backwork-row-parts.tsx`). They are small inline markers beside a text label, not domain glyphs that stand for a screen, so they stay in the control-furniture set rather than the duotone family; a later pass that draws them in the Signet set changes this paragraph and that file together.
 
-Three of the four are re-exports from
+Three of the six are re-exports from
 [`apps/web/components/layout/nav-glyphs.tsx`](../../../apps/web/components/layout/nav-glyphs.tsx),
-which is §1 rule 1's rule and the two preceding families' practice. Only
+which is §1 rule 1's rule and the two preceding families' practice.
 `FolderGlyph` is not a re-export, because no nav intent covers a folder (the
 sidebar links to Documents as a whole); it draws the nav set's `folder` entry
 (Phosphor `folder`, §1.1) so the folder rail's rows stay one family.
+`PinGlyph` is re-exported from the chat family (§6.2.2), since pinning a
+message, a channel and a document is one idea. `StarGlyph` is drawn here on
+the §1 recipe, because no set entry covers a personal star (#3934).
 
 [`canvas-screens.dc.html`](reference/canvas-screens.dc.html) marks every
 document row on **s12** (the Documents screen) and **s21** (the upload sheet)
@@ -565,10 +570,11 @@ all), so the leading marker was added with the pack change rather than left
 for a later pass. Since 2026-11-05 that marker is the nav set's `file-text`
 (§1.1), not the board's file geometry. s12 also draws a two-tone split on its
 folder rail: the *pinned* rows take the accent and the ordinary rows the
-neutral paint. Web has no pin field
-([`../mobile/screens.md`](../mobile/screens.md) records the same absence on
-mobile), so document rows take the neutral paint and only the selected folder
-is accented.
+neutral paint. Since #3934 (2026-11-11) web has the pin field: the Pinned cards
+above All files take the accent duotone and the Starred ones the neutral
+paint, a pinned or starred row lights its Pin or Star, and document rows
+otherwise keep the neutral paint. (Before #3934 this paragraph said web had no
+pin field, which was true then.)
 
 Two of the swaps were corrections rather than a pack change, in §6.2.4's sense:
 

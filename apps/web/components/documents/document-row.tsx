@@ -6,8 +6,13 @@ import { uploadedLine } from "@repo/hooks/document-library";
 import { IconButton } from "@/components/ui/icon-button";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { Can } from "@/components/shared/can";
-import { DocumentsGlyph } from "@/components/documents/resources-glyphs";
+import {
+  DocumentsGlyph,
+  PinGlyph,
+  StarGlyph,
+} from "@/components/documents/resources-glyphs";
 import { OPEN_DOCUMENT_ATTRIBUTE } from "@/components/documents/document-viewer";
+import { KEEP_FOCUS_ATTRIBUTE } from "@/components/documents/use-keep-focus";
 import { useDocumentDownload } from "@/components/documents/use-document-download";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import type { ChapterDocument } from "@/components/documents/document-types";
@@ -40,18 +45,29 @@ export function DocumentRow({
   uploader,
   gate,
   deleting,
+  starred,
+  pinBusy,
   onOpen,
   onDelete,
+  onToggleStar,
+  onTogglePin,
 }: {
   doc: ChapterDocument;
   /** Who uploaded it, when the roster can name them (#3852). */
   uploader: string | null;
   gate: SubscriptionGate;
   deleting: boolean;
+  /** The member starred this file for themselves (#3934). */
+  starred: boolean;
+  /** A pin write is in flight, so Pin waits. */
+  pinBusy: boolean;
   /** Opens the document in the viewer (#3849). */
   onOpen: (doc: ChapterDocument) => void;
   onDelete: (doc: ChapterDocument) => void;
+  onToggleStar: (doc: ChapterDocument) => void;
+  onTogglePin: (doc: ChapterDocument) => void;
 }) {
+  const pinned = !!doc.pinned_at;
   return (
     /*
     Two lines, not three, and 8px of padding rather than 12. The
@@ -120,6 +136,52 @@ export function DocumentRow({
         </span>
       </button>
       <div className="flex shrink-0 items-center gap-1 @md:ml-auto">
+        {/*
+          Star for everyone, Pin for whoever manages documents (#3934). Each
+          stays lit while on, so a pinned or starred row says so in its
+          controls rather than in another badge on the meta line. A member
+          without `chapter_docs:manage` sees a pinned row's pin as a mark
+          only, since they can't change it.
+        */}
+        <IconButton
+          label={starred ? `Unstar ${doc.title}` : `Star ${doc.title}`}
+          aria-pressed={starred}
+          className={starred ? "text-accent-text" : undefined}
+          {...{ [KEEP_FOCUS_ATTRIBUTE]: `star:${doc.id}` }}
+          onClick={() => onToggleStar(doc)}
+          {...gate.controlProps()}
+        >
+          <StarGlyph active={starred} />
+        </IconButton>
+        <Can
+          permission="chapter_docs:manage"
+          deniedFallback={
+            pinned ? (
+              <span
+                className="inline-flex h-9 w-9 items-center justify-center text-accent-text"
+                title="Pinned for the chapter"
+              >
+                <PinGlyph className="h-4 w-4" active />
+                <span className="sr-only">Pinned for the chapter</span>
+              </span>
+            ) : null
+          }
+        >
+          <IconButton
+            label={
+              pinned
+                ? `Unpin ${doc.title} for the chapter`
+                : `Pin ${doc.title} for the chapter`
+            }
+            aria-pressed={pinned}
+            className={pinned ? "text-accent-text" : undefined}
+            {...{ [KEEP_FOCUS_ATTRIBUTE]: `pin:${doc.id}` }}
+            onClick={() => onTogglePin(doc)}
+            {...gate.controlProps(pinBusy)}
+          >
+            <PinGlyph active={pinned} />
+          </IconButton>
+        </Can>
         <DownloadButton id={doc.id} title={doc.title} />
         <Can permission="chapter_docs:manage">
           {/*

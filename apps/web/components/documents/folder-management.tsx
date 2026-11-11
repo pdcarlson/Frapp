@@ -7,6 +7,7 @@ import {
   useDeleteDocumentFolder,
   useUpdateDocumentFolder,
 } from "@repo/hooks";
+import { tierByMarks } from "@repo/hooks/document-library";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -185,14 +186,27 @@ export function useFolderManagement({
     the list to 0..n-1 on first use and is idempotent afterwards — and the
     `sort_order === index` guard keeps the common case at exactly two PATCHes.
   */
-  async function handleMoveFolder(index: number, direction: -1 | 1) {
+  async function handleMoveFolder(folderId: string, direction: -1 | 1) {
+    /*
+      A folder moves within its own tier (#3934): pinned folders among the
+      pinned, the rest among the rest, since the rail always draws the pinned
+      ones first. The whole arrangement is then written as pinned-then-rest,
+      so `sort_order` and what everyone sees stay one order.
+    */
+    const { pinned, rest } = splitPinned(folders);
+    const group = pinned.some((folder) => folder.id === folderId)
+      ? pinned
+      : rest;
+    const index = group.findIndex((folder) => folder.id === folderId);
     const target = index + direction;
-    if (target < 0 || target >= folders.length) return;
-    const moved = folders[index];
+    if (index < 0 || target < 0 || target >= group.length) return;
+    const moved = group[index];
     if (!moved) return;
-    const reordered = [...folders];
-    reordered.splice(index, 1);
-    reordered.splice(target, 0, moved);
+    const regrouped = [...group];
+    regrouped.splice(index, 1);
+    regrouped.splice(target, 0, moved);
+    const reordered =
+      group === pinned ? [...regrouped, ...rest] : [...pinned, ...regrouped];
 
     const changed = reordered
       .map((folder, position) => ({ folder, position }))
@@ -242,6 +256,22 @@ export function useFolderManagement({
 }
 
 export type FolderManagement = ReturnType<typeof useFolderManagement>;
+
+/**
+ * The chapter's folders as officers arrange them: the pinned ones first, each
+ * group in its stored order (#3934). Stars are left out on purpose: they are
+ * one member's, and the arrangement is everyone's.
+ */
+export function splitPinned<F extends { pinned_at?: string | null }>(
+  folders: readonly F[],
+): { pinned: F[]; rest: F[] } {
+  const { pinned, rest } = tierByMarks(
+    folders,
+    (folder) => !!folder.pinned_at,
+    () => false,
+  );
+  return { pinned, rest };
+}
 
 export function FolderDialog({
   gate,
