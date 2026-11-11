@@ -1864,6 +1864,57 @@ describe("DocumentsPage pins and stars (#3934)", () => {
     expect(titles[2]).toContain("Chapter agenda");
   });
 
+  it("filters to Pinned, Starred or either, with the search and the other chips (#4290)", async () => {
+    const AGENDA = {
+      ...BYLAWS,
+      id: "doc-3",
+      title: "Chapter agenda",
+      storage_path: "chap-1/agenda.xlsx",
+      content_type: null,
+    };
+    documentsQuery.data = [
+      AGENDA,
+      BYLAWS,
+      { ...MINUTES, pinned_at: "2026-11-11T00:00:00Z" },
+    ];
+    stars.value = { folder_ids: [], document_ids: ["doc-1", "doc-3"] };
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+    const list = () => screen.getByRole("region", { name: /documents/i });
+    const shown = () =>
+      within(list())
+        .queryAllByRole("listitem")
+        .map((row) => row.querySelector("span.font-semibold")?.textContent);
+
+    const starredChip = screen.getByRole("button", { name: "Starred" });
+    expect(starredChip).toHaveAttribute("aria-pressed", "false");
+    await user.click(starredChip);
+    expect(starredChip).toHaveAttribute("aria-pressed", "true");
+    // The cards give way to the list, as any filter does.
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Starred" })).not.toBeInTheDocument(),
+    );
+    expect(shown()).toEqual(["Chapter agenda", "Chapter bylaws"]);
+
+    await user.click(screen.getByRole("button", { name: "Pinned" }));
+    // Both on: either, pinned leading.
+    expect(shown()).toEqual(["Meeting minutes", "Chapter agenda", "Chapter bylaws"]);
+
+    await user.click(screen.getByRole("button", { name: "Pinned" }));
+    await user.click(screen.getByRole("button", { name: "File type" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Spreadsheet" }));
+    await waitFor(() => expect(shown()).toEqual(["Chapter agenda"]));
+
+    await user.type(screen.getByLabelText("Search documents"), "bylaws");
+    await user.click(await screen.findByRole("button", { name: "Clear filters" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Starred" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      ),
+    );
+  });
+
   it("pins a file and a folder for the chapter, for whoever manages documents", async () => {
     render(<DocumentsPage />);
 

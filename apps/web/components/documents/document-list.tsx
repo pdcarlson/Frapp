@@ -8,11 +8,20 @@ import {
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
-import { SearchGlyph } from "@/components/documents/resources-glyphs";
+import {
+  PinGlyph,
+  SearchGlyph,
+  StarGlyph,
+} from "@/components/documents/resources-glyphs";
+import { Button } from "@/components/ui/button";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { DocumentRow } from "@/components/documents/document-row";
 import type { ChapterDocument } from "@/components/documents/document-types";
-import { FilterChip, SortChip } from "@/components/shared/filter-chip";
+import {
+  FILTER_CHIP_CLASS,
+  FilterChip,
+  SortChip,
+} from "@/components/shared/filter-chip";
 import { DateFilterChip } from "@/components/documents/document-filters";
 import {
   DOCUMENT_CAP_NOTICE,
@@ -36,6 +45,37 @@ import { DocumentRowsSkeleton } from "@/components/documents/documents-skeleton"
 
 export type DocumentListState =
   "offline" | "loading" | "error" | "empty" | "ready";
+
+/**
+ * A toolbar chip that is on or off: the filter chips' shape and tint, with
+ * `aria-pressed` carrying the state as well as the colour and the glyph's
+ * fill (#4290).
+ */
+function MarkToggle({
+  label,
+  on,
+  onToggle,
+  glyph,
+}: {
+  label: string;
+  on: boolean;
+  onToggle: (on: boolean) => void;
+  glyph: React.ReactNode;
+}) {
+  return (
+    <Button
+      type="button"
+      variant={on ? "tinted" : "secondary"}
+      size="toolbar"
+      className={FILTER_CHIP_CLASS}
+      aria-pressed={on}
+      onClick={() => onToggle(!on)}
+    >
+      {glyph}
+      {label}
+    </Button>
+  );
+}
 
 export function DocumentList({
   listState,
@@ -194,6 +234,28 @@ export function DocumentList({
             onChange={(kind) =>
               setFilters({ ...filters, kind: kind as FileKind | null })
             }
+          />
+          {/*
+            Pinned and Starred (#4290): toggles rather than menus, each one
+            click, as Google Drive's Starred chip and Gmail's are. Both on
+            shows a file that is either. They narrow with the search and the
+            chips beside them, and the tiers still lead what's left.
+          */}
+          <MarkToggle
+            label="Pinned"
+            on={filters.marks.pinned}
+            onToggle={(pinned) =>
+              setFilters({ ...filters, marks: { ...filters.marks, pinned } })
+            }
+            glyph={<PinGlyph className="h-3.5 w-3.5" active={filters.marks.pinned} />}
+          />
+          <MarkToggle
+            label="Starred"
+            on={filters.marks.starred}
+            onToggle={(starred) =>
+              setFilters({ ...filters, marks: { ...filters.marks, starred } })
+            }
+            glyph={<StarGlyph className="h-3.5 w-3.5" active={filters.marks.starred} />}
           />
           <SortChip options={SORT_OPTIONS} value={sort} onChange={setSort} />
         </div>

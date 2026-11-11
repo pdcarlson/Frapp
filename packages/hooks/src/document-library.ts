@@ -53,6 +53,8 @@ export type LibrarySourceDocument = {
   content_type?: string | null;
   /** The storage key, whose extension stands in when `content_type` is null. */
   storage_path?: string | null;
+  /** When an officer pinned it for the chapter (#3934); null or absent when not. */
+  pinned_at?: string | null;
 };
 
 /**
@@ -179,19 +181,49 @@ export type DateFilter =
   | { preset: "30d" }
   | { preset: "custom"; from: string | null; to: string | null };
 
+/**
+ * The Pinned and Starred filters (#4290, Shawn's ask; Google Drive's Starred
+ * filter). Each is on or off. With both on a file shows when it is either, so
+ * the pair reads as "what's been marked" rather than narrowing to the few
+ * files that are both.
+ */
+export type DocumentMarkFilter = { pinned: boolean; starred: boolean };
+
+export const NO_MARK_FILTER: DocumentMarkFilter = { pinned: false, starred: false };
+
 export type DocumentFilters = {
   /** `uploaded_by`, or null for anyone. */
   uploader: string | null;
   date: DateFilter | null;
   /** A format group, or null for any. */
   kind: FileKind | null;
+  /** Pinned for the chapter, starred by this member, or either (#4290). */
+  marks: DocumentMarkFilter;
 };
 
 export const NO_DOCUMENT_FILTERS: DocumentFilters = {
   uploader: null,
   date: null,
   kind: null,
+  marks: NO_MARK_FILTER,
 };
+
+/** Whether the Pinned or Starred filter is on. */
+export function isMarkFiltering(marks: DocumentMarkFilter): boolean {
+  return marks.pinned || marks.starred;
+}
+
+/** A file passes the mark filter: off, or pinned or starred as asked. */
+function inMarkFilter(
+  doc: LibrarySourceDocument,
+  marks: DocumentMarkFilter,
+  starred: ReadonlySet<string>,
+): boolean {
+  if (!isMarkFiltering(marks)) return true;
+  return (
+    (marks.pinned && !!doc.pinned_at) || (marks.starred && starred.has(doc.id))
+  );
+}
 
 /** A document with its uploader's name resolved and its words normalised once. */
 export type LibraryDocument<D extends LibrarySourceDocument = LibrarySourceDocument> = {
@@ -266,6 +298,15 @@ export function semesterSince(
  */
 export type DateContext = { now: Date; semesterSince: Date | null | undefined };
 
+/**
+ * What `queryDocuments` reads besides the rows: the dates, and the ids of the
+ * files this member starred, for the Starred filter. A star is the member's
+ * own (`GET /v1/documents/stars`), so it isn't on the row the way a pin is.
+ */
+export type QueryContext = DateContext & { starred?: ReadonlySet<string> };
+
+const NO_STARS: ReadonlySet<string> = new Set();
+
 /** `YYYY-MM-DD` from a date input, as the start of that local day. */
 function dayStart(value: string): Date | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -319,6 +360,7 @@ export function isFiltering(
     query.trim() !== "" ||
     filters.uploader !== null ||
     filters.kind !== null ||
+    isMarkFiltering(filters.marks) ||
     isActiveDateFilter(filters.date, semesterKnown)
   );
 }
@@ -358,15 +400,17 @@ export function queryDocuments<D extends LibrarySourceDocument>(
   query: string,
   filters: DocumentFilters,
   sort: DocumentSort,
-  dates: DateContext,
+  dates: QueryContext,
 ): LibraryDocument<D>[] {
   const date = isActiveDateFilter(filters.date, dates.semesterSince !== undefined)
     ? filters.date
     : null;
+  const starred = dates.starred ?? NO_STARS;
   const filtered = rows.filter(
     (row) =>
       (filters.uploader === null || row.doc.uploaded_by === filters.uploader) &&
       (filters.kind === null || row.kind === filters.kind) &&
+      inMarkFilter(row.doc, filters.marks, starred) &&
       (date === null || inDateFilter(row.doc.created_at, date, dates)),
   );
   const needle = query.trim().toLowerCase();

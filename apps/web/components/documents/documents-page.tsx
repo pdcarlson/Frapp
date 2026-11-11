@@ -174,6 +174,8 @@ function ChapterDocumentsPage() {
     while a document is open: a window moving past the open file would drop
     its row and close the viewer mid-read. It catches up when it closes.
   */
+  // Pins and the member's stars (#3934); the stars feed the Starred filter.
+  const marks = useDocumentMarks();
   const {
     folderTotal,
     visible,
@@ -191,6 +193,7 @@ function ChapterDocumentsPage() {
     sort,
     namesById: useMemberDisplayNames().byId,
     semesters: useSemesters().data,
+    starred: marks.starred.documents,
     paused: openId !== null,
   });
   /*
@@ -200,7 +203,6 @@ function ChapterDocumentsPage() {
     folder, a search, a filter) they lead the list itself. Either way they
     come first, and nothing is drawn twice on one screen.
   */
-  const marks = useDocumentMarks();
   const showStrip =
     activeFolder === null && !filtering && deferredSearch === "";
   // The tiers and the cards come from the builders mobile's s12 uses too

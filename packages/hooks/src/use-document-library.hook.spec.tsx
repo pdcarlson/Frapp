@@ -50,7 +50,7 @@ afterEach(() => {
 describe("useDocumentLibrary (#3938)", () => {
   it("drops a picked uploader the roster no longer names", () => {
     const { result } = render({
-      filters: { uploader: "u-gone", date: null, kind: null },
+      filters: { ...NO_DOCUMENT_FILTERS, uploader: "u-gone", date: null, kind: null },
     });
     expect(result.current.filters.uploader).toBeNull();
     expect(result.current.filtering).toBe(false);
@@ -60,7 +60,7 @@ describe("useDocumentLibrary (#3938)", () => {
   it("keeps a named pick, and its choice, after their last file goes", () => {
     const { result } = render({
       documents: [DOCS[1]!],
-      filters: { uploader: "u-ryan", date: null, kind: null },
+      filters: { ...NO_DOCUMENT_FILTERS, uploader: "u-ryan", date: null, kind: null },
     });
     expect(result.current.filters.uploader).toBe("u-ryan");
     expect(result.current.uploaders).toContainEqual({
@@ -80,7 +80,7 @@ describe("useDocumentLibrary (#3938)", () => {
   it("treats the semester as unknown until the archives load", () => {
     const { result } = render({
       semesters: undefined,
-      filters: { uploader: null, date: { preset: "semester" }, kind: null },
+      filters: { ...NO_DOCUMENT_FILTERS, uploader: null, date: { preset: "semester" }, kind: null },
     });
     expect(result.current.semesterKnown).toBe(false);
     expect(result.current.filtering).toBe(false);
@@ -91,6 +91,7 @@ describe("useDocumentLibrary (#3938)", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-11-20T12:00:00Z"));
     const filters: DocumentFilters = {
+      ...NO_DOCUMENT_FILTERS,
       uploader: null,
       date: { preset: "30d" },
       kind: null,
@@ -136,7 +137,7 @@ describe("useDocumentLibrary file type (#3938)", () => {
 
     const { result } = render({
       documents: [typed[0]!],
-      filters: { uploader: null, date: null, kind: "spreadsheet" },
+      filters: { ...NO_DOCUMENT_FILTERS, kind: "spreadsheet" },
     });
     expect(result.current.kinds.map((k) => k.label)).toEqual([
       "PDF",

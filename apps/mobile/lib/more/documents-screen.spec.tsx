@@ -78,7 +78,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 
 // A purple stand-in, so a glyph painted house gold (`gold.askText`) fails.
 vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({ accent: "#7A3FC2" }),
+  useChapterBranding: () => ({
+    accent: "#7A3FC2",
+    accentPrimary: "#7A3FC2",
+    accentOnPrimary: "#FFFFFF",
+  }),
 }));
 
 import DocumentsScreen from "@/app/(app)/documents";
@@ -871,6 +875,58 @@ describe("Documents pinned and starred (#3934)", () => {
       "Budget FY2026",
       "Chapter bylaws",
     ]);
+  });
+
+  it("filters to Pinned, Starred or either from the panel, with the search (#4290)", () => {
+    const tree = loaded();
+    const press = (label: string) =>
+      act(() =>
+        tree.root
+          .find(
+            (node) =>
+              node.props.accessibilityLabel === label &&
+              typeof node.props.onPress === "function",
+          )
+          .props.onPress(),
+      );
+    const toggle = (label: string) =>
+      tree.root.find(
+        (node) =>
+          node.props.accessibilityRole === "togglebutton" &&
+          node.props.label === label,
+      );
+    press("Sort and filter");
+    expect(toggle("Starred").props.accessibilityState).toEqual({ checked: false });
+
+    act(() => toggle("Starred").props.onPress());
+    expect(toggle("Starred").props.accessibilityState).toEqual({ checked: true });
+    // Any filter swaps the cards for the list, the tiers leading it.
+    expect(tree.root.findAllByType(MarkedCards)).toHaveLength(0);
+    expect(rowLabels(tree)).toEqual(["Budget FY2026"]);
+    // It counts as one filter on the Sort & filter chip.
+    expect(
+      tree.root.findAll(
+        (node) => node.props.accessibilityLabel === "Sort and filter, 1 set",
+      ).length,
+    ).toBeGreaterThan(0);
+
+    act(() => toggle("Pinned").props.onPress());
+    expect(rowLabels(tree)).toEqual(["Chapter bylaws", "Budget FY2026"]);
+
+    act(() => toggle("Starred").props.onPress());
+    expect(rowLabels(tree)).toEqual(["Chapter bylaws"]);
+
+    // With the search: nothing pinned matches "budget".
+    act(() =>
+      tree.root
+        .find(
+          (node) =>
+            node.props.accessibilityLabel === "Search documents" &&
+            typeof node.props.onChangeText === "function",
+        )
+        .props.onChangeText("budget"),
+    );
+    expect(rowLabels(tree)).toEqual([]);
   });
 
   it("leads a folder's or a search's list with pinned, then starred files, instead of cards", () => {

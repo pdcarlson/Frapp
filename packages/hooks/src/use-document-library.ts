@@ -71,6 +71,7 @@ export function useDocumentLibrary<D extends LibrarySourceDocument>({
   sort,
   namesById,
   semesters,
+  starred,
   paused = false,
 }: {
   documents: readonly D[];
@@ -81,6 +82,8 @@ export function useDocumentLibrary<D extends LibrarySourceDocument>({
   search: string;
   filters: DocumentFilters;
   sort: DocumentSort;
+  /** The ids of the files this member starred, for the Starred filter (#4290). */
+  starred?: ReadonlySet<string>;
   paused?: boolean;
 }): DocumentLibrary<D> {
   const library = useMemo(
@@ -156,8 +159,9 @@ export function useDocumentLibrary<D extends LibrarySourceDocument>({
       queryDocuments(inFolder, search, applied, sort, {
         now,
         semesterSince: since,
+        starred,
       }),
-    [inFolder, search, applied, sort, now, since],
+    [inFolder, search, applied, sort, now, since, starred],
   );
 
   return {
