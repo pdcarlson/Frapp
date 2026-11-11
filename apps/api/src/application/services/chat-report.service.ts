@@ -257,6 +257,7 @@ export class ChatReportService {
     const { report, created } = await this.reportRepo.create({
       chapter_id: chapterId,
       message_id: input.message_id,
+      channel_id: message.channel_id,
       reporter_user_id: reporterUserId,
       reported_content: reportedContentSnapshot(message),
       reported_sender_id: message.sender_id,
@@ -763,11 +764,13 @@ export class ChatReportService {
     chapterId: string,
     reviewerUserId: string,
     status: ChatReportStatus = 'open',
+    channelId?: string,
   ): Promise<ChatMessageReportView[]> {
     return this.reportRepo.findByChapterAndStatus(
       chapterId,
       status,
       reviewerUserId,
+      channelId,
     );
   }
 

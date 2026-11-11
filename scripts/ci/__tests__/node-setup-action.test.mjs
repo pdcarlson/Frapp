@@ -170,7 +170,7 @@ describe("node-setup composite action", () => {
   // A default would let a call site that forgets `install:` get one silently;
   // a rename leaves every caller passing an input nothing reads, which the
   // runner only warns about.
-  it("keeps a required `install` input with no default", () => {
+  it("keeps a required `install` input with no default, beside an off-by-default save-modules", () => {
     const lines = actionText().split(/\r?\n/);
     const start = lines.findIndex((l) => /^inputs:\s*$/.test(l));
     assert.ok(start !== -1, "node-setup must declare inputs");
@@ -183,20 +183,28 @@ describe("node-setup composite action", () => {
     }
     const inputs = codeLines(lines.slice(start + 1, end).join("\n"));
     const names = inputs.map((l) => l.match(/^ {2}([\w-]+):\s*$/)?.[1]).filter(Boolean);
-    assert.deepEqual(names, ["install"], "node-setup takes exactly one input, `install`");
-    assert.ok(inputs.some((l) => /^ {4}required:\s*true\s*$/.test(l)), "`install` must be required");
-    assert.ok(!inputs.some((l) => /^ {4}default:/.test(l)), "`install` must have no default");
+    assert.deepEqual(names, ["install", "save-modules"], "node-setup takes `install` and `save-modules`");
+    const saveAt = inputs.findIndex((l) => /^ {2}save-modules:\s*$/.test(l));
+    const install = inputs.slice(0, saveAt);
+    const save = inputs.slice(saveAt);
+    assert.ok(install.some((l) => /^ {4}required:\s*true\s*$/.test(l)), "`install` must be required");
+    assert.ok(!install.some((l) => /^ {4}default:/.test(l)), "`install` must have no default");
+    assert.ok(
+      save.some((l) => /^ {4}default:\s*"false"\s*$/.test(l)),
+      "only a caller that asks saves node_modules",
+    );
   });
 
   // Every step pinned, in order. The per-job guards can't see inside the
   // action, so an extra step here (an unconditional `npm ci`, a
-  // `turbo-packages-build`, an `actions/cache` of node_modules) would reach
-  // every caller: `install: none` watchdogs would install, and the cold-build
-  // jobs would get a prebuilt dist/. Growing the action means editing this.
-  it("runs exactly its four steps: check the mode, set up Node, then each mode's install", () => {
+  // `turbo-packages-build`, a node_modules cache saved after a build) would
+  // reach every caller: `install: none` watchdogs would install, and the
+  // cold-build jobs would get a prebuilt dist/. Growing the action means
+  // editing this.
+  it("runs exactly its six steps: check the mode, restore node_modules, set up Node, install, save, omit-dev", () => {
     const steps = compositeSteps(actionText());
-    assert.equal(steps.length, 4, "node-setup runs exactly four steps");
-    const [check, setup, ci, omitDev] = steps;
+    assert.equal(steps.length, 6, "node-setup runs exactly six steps");
+    const [check, restore, setup, ci, save, omitDev] = steps;
     const uses = (step) => step.match(/^\s*(-\s+)?uses:\s*(.+)$/m)?.[2];
     const ifOf = (step) => step.match(/^\s*(-\s+)?if:\s*(.+)$/m)?.[2]?.trim() ?? null;
     const runOf = (step) => step.match(/^\s*(-\s+)?run:\s*(.+)$/m)?.[2]?.trim() ?? null;
@@ -213,13 +221,36 @@ describe("node-setup composite action", () => {
     assert.match(check, /INSTALL:\s*\$\{\{\s*inputs\.install\s*\}\}/, "the check must read the input");
     assert.equal(scriptOf(check), CHECK_SCRIPT, "the mode check runs exactly its case statement");
 
-    assert.match(uses(setup) ?? "", /^actions\/setup-node@/, "the second step sets up Node");
+    // node_modules is cached for `install: ci` only, keyed on everything `npm
+    // ci` reads, and saved straight after the install, by the one caller that
+    // asks, so the entry is never a tree a build has written to.
+    const MODULE_PATHS = /path: \|\n\s+node_modules\n\s+apps\/\*\/node_modules\n\s+packages\/\*\/node_modules\n/;
+    assert.match(uses(restore) ?? "", /^actions\/cache\/restore@/);
+    assert.equal(ifOf(restore), "inputs.install == 'ci'");
+    assert.match(restore, /^\s+id: modules$/m);
+    assert.match(restore, MODULE_PATHS);
+    assert.ok(!/restore-keys/.test(restore), "only an exact tree may skip npm ci");
+    const key = restore.match(/^\s+key:\s*(.+)$/m)?.[1] ?? "";
+    assert.ok(key.includes(`-node${actionVersion()}-`), "the key names the Node major the action sets up");
+    assert.ok(key.includes("${{ runner.os }}-${{ runner.arch }}"), "native builds differ by platform");
+    for (const file of ["package-lock.json", "package.json", "apps/*/package.json", "packages/*/package.json"]) {
+      assert.ok(key.includes(`'${file}'`), `the key hashes ${file}: a hit skips npm ci's manifest check`);
+    }
+    assert.match(uses(save) ?? "", /^actions\/cache\/save@/);
+    assert.equal(
+      ifOf(save),
+      "inputs.install == 'ci' && steps.modules.outputs.cache-hit != 'true' && inputs.save-modules == 'true'",
+    );
+    assert.match(save, MODULE_PATHS);
+    assert.match(save, /^\s+key: \$\{\{ steps\.modules\.outputs\.cache-primary-key \}\}$/m);
+
+    assert.match(uses(setup) ?? "", /^actions\/setup-node@/, "the third step sets up Node");
     assert.equal(ifOf(setup), null, "Node is always set up");
     assert.equal(runOf(setup), null);
     assert.match(
       setup,
-      /^\s+cache:\s*\$\{\{\s*inputs\.install != 'none' && 'npm' \|\| '' \}\}\s*$/m,
-      "the npm download cache follows the install: on for ci and omit-dev, off for none",
+      /^\s+cache:\s*\$\{\{\s*inputs\.install != 'none' && steps\.modules\.outputs\.cache-hit != 'true' && 'npm' \|\| '' \}\}\s*$/m,
+      "the npm download cache follows the install: on for omit-dev and a ci miss, off for none and a ci hit",
     );
     assert.match(
       codeLines(setup).join("\n"),
@@ -227,12 +258,12 @@ describe("node-setup composite action", () => {
       "without `package-manager-cache: false`, setup-node caches npm for install: none too",
     );
 
-    for (const [step, mode, command] of [
-      [ci, "ci", "npm ci"],
-      [omitDev, "omit-dev", "npm ci --omit=dev"],
+    for (const [step, mode, command, when] of [
+      [ci, "ci", "npm ci", "inputs.install == 'ci' && steps.modules.outputs.cache-hit != 'true'"],
+      [omitDev, "omit-dev", "npm ci --omit=dev", "inputs.install == 'omit-dev'"],
     ]) {
       assert.equal(uses(step), undefined, `install: ${mode} is a shell step`);
-      assert.equal(ifOf(step), `inputs.install == '${mode}'`, `the ${command} step runs only for install: ${mode}`);
+      assert.equal(ifOf(step), when, `the ${command} step runs only for install: ${mode}`);
       assert.equal(runOf(step), command);
     }
   });
