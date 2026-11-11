@@ -13,6 +13,7 @@ export * from "./setup-checklist";
 export * from "./unset-features";
 export * from "./use-events";
 export * from "./use-activity";
+export * from "./use-activity-links";
 export * from "./activity-rows";
 export * from "./event-series";
 export * from "./use-activity-feed";

@@ -20,6 +20,12 @@ import { FOCUS_RING } from "@/components/ui/focus";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { cn } from "@/lib/utils";
+import { can } from "@repo/validation";
+import {
+  ActivityLinkRow,
+  useActivityLinkActions,
+  type ActivityLinkActions,
+} from "./activity-link-row";
 import { ActivityPanel } from "./activity-panel";
 import {
   ACTIVITY_FILTERS,
@@ -28,6 +34,7 @@ import {
   activityKeys,
   useActiveChapterId,
   useActivity,
+  useMyPermissions,
   type ActivityFilter,
   type ActivityGroup,
   type ActivityRow,
@@ -76,10 +83,14 @@ const ROW_CLASS = cn(
 function GroupSection({
   group,
   filtered,
+  canRemoveLinks,
+  linkActions,
   onOpen,
 }: {
   group: ActivityGroup;
   filtered: boolean;
+  canRemoveLinks: boolean;
+  linkActions: ActivityLinkActions;
   onOpen: (row: ActivityRow) => void;
 }) {
   const labelId = `activity-${group.id}`;
@@ -107,23 +118,33 @@ function GroupSection({
         ) : null
       ) : (
         <ul className={denseListClassName}>
-          {group.rows.map((row) => (
-            <li key={row.key}>
-              {row.kind === "file" ? (
-                <Link href={fileHref(row)} className={ROW_CLASS}>
-                  <RowContent row={row} />
-                </Link>
-              ) : (
-                <button
-                  type="button"
-                  className={ROW_CLASS}
-                  onClick={() => onOpen(row)}
-                >
-                  <RowContent row={row} />
-                </button>
-              )}
-            </li>
-          ))}
+          {group.rows.map((row) =>
+            row.kind === "link" ? (
+              <ActivityLinkRow
+                key={row.key}
+                row={row}
+                rowClassName={ROW_CLASS}
+                canRemove={canRemoveLinks}
+                actions={linkActions}
+              />
+            ) : (
+              <li key={row.key}>
+                {row.kind === "file" ? (
+                  <Link href={fileHref(row)} className={ROW_CLASS}>
+                    <RowContent row={row} />
+                  </Link>
+                ) : (
+                  <button
+                    type="button"
+                    className={ROW_CLASS}
+                    onClick={() => onOpen(row)}
+                  >
+                    <RowContent row={row} />
+                  </button>
+                )}
+              </li>
+            ),
+          )}
         </ul>
       )}
     </section>
@@ -134,10 +155,10 @@ function GroupSection({
  * `/activity`: what is waiting on the member and what they made, in one place
  * (#3897, `spec/behavior/activity.md`). An inbox beside chat, not a home.
  *
- * Three groups, "Needs you" first, with chips that narrow every group to one
+ * Four groups, "Needs you" first, with chips that narrow every group to one
  * kind of thing. A row opens the record in a panel drawn with chat's own card,
  * where the member acts on it; a file row is a link to the page the file
- * lives on. When the read refreshes after an action, the panel shows the fresh
+ * lives on, and a sign-up link row opens the link (`ActivityLinkRow`). When the read refreshes after an action, the panel shows the fresh
  * row; a row that has left the list (a vote cast, a completion confirmed)
  * stays open as it was, so the member sees the result of what they just did
  * rather than having the panel vanish under them.
@@ -150,6 +171,10 @@ export function ActivityPage() {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<ActivityFilter>("all");
   const [opened, setOpened] = useState<ActivityRow | null>(null);
+  // Remove (off everyone's Activity) is `channels:manage`'s, as in chat.
+  const permissions = useMyPermissions();
+  const canRemoveLinks = can("channels:manage", permissions.data?.permissions);
+  const linkActions = useActivityLinkActions();
 
   const groups = useMemo(
     () => (activity.data ? activityGroups(activity.data, filter) : []),
@@ -229,6 +254,8 @@ export function ActivityPage() {
             key={group.id}
             group={group}
             filtered={filter !== "all"}
+            canRemoveLinks={canRemoveLinks}
+            linkActions={linkActions}
             onOpen={setOpened}
           />
         ),

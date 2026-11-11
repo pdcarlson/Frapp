@@ -92,6 +92,8 @@ interface AdminChannel {
   default_notification_level: ChatNotificationLevel | null;
   /** The chapter's default channel, where Chat opens with no last channel. */
   is_default?: boolean;
+  /** Leave out of Activity (#3897): its sign-up links reach no one's Activity. */
+  activity_excluded?: boolean;
   /**
    * The chapter's audit log, `#chapter-audit` (#3909). Only Frapp posts in
    * it, so the server refuses a rename or switching read-only off, and this
@@ -351,6 +353,10 @@ function ChatAdminBody({
   const [categoryDraft, setCategoryDraft] = useState(NO_CATEGORY);
   const [readOnlyDraft, setReadOnlyDraft] = useState(false);
   const [isDefaultDraft, setIsDefaultDraft] = useState(false);
+  const [activityExcludedDraft, setActivityExcludedDraft] = useState(false);
+  // Seeded like `isDefaultSeed`: the switch is sent only when the officer
+  // flipped it, so a save of another field can't undo another officer's.
+  const [activityExcludedSeed, setActivityExcludedSeed] = useState(false);
   // What the switch was seeded with, for the reason `descriptionSeed` exists:
   // another officer moving the default refetches the live row under an
   // untouched switch, and comparing with that row would send it back.
@@ -391,6 +397,8 @@ function ChatAdminBody({
     setReadOnlyDraft(channel.is_read_only);
     setIsDefaultDraft(channel.is_default === true);
     setIsDefaultSeed(channel.is_default === true);
+    setActivityExcludedDraft(channel.activity_excluded === true);
+    setActivityExcludedSeed(channel.activity_excluded === true);
     setDefaultLevelDraft(
       channel.default_notification_level ?? BUILT_IN_DEFAULT_LEVEL,
     );
@@ -433,6 +441,9 @@ function ChatAdminBody({
           // uncategorized," which is a real write, not "leave it alone."
           category_id: categoryDraft === NO_CATEGORY ? null : categoryDraft,
           is_read_only: readOnlyDraft,
+          ...(activityExcludedDraft !== activityExcludedSeed
+            ? { activity_excluded: activityExcludedDraft }
+            : {}),
           // Sent only when the officer flipped it: setting it moves the
           // chapter default off another channel, which a save of an unrelated
           // field must not.
@@ -451,6 +462,7 @@ function ChatAdminBody({
       });
       if (descriptionChanged) setDescriptionSeed(description);
       setIsDefaultSeed(isDefaultDraft);
+      setActivityExcludedSeed(activityExcludedDraft);
       toast({ description: `#${name} saved.` });
     } catch (error) {
       toast({
@@ -996,6 +1008,21 @@ function ChatAdminBody({
                       Chat opens here when a member&apos;s device has no last
                       channel. Turning this on moves it off any other channel.
                       Members who can&apos;t see this channel open #general.
+                    </p>
+                  </div>
+                  <div className="grid gap-1">
+                    <label className="flex items-center gap-3">
+                      <Switch
+                        checked={activityExcludedDraft}
+                        onCheckedChange={setActivityExcludedDraft}
+                      />
+                      <span className="text-sm">Leave out of Activity</span>
+                    </label>
+                    <p className="text-xs text-muted-foreground">
+                      Sign-up links posted here (forms, sheets, booking pages)
+                      won&apos;t show on anyone&apos;s Activity page. For
+                      channels like #advertising whose links aren&apos;t chapter
+                      business.
                     </p>
                   </div>
                   <div className="grid gap-1">

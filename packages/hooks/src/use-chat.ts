@@ -491,6 +491,11 @@ export function useUpdateChannel() {
          * other, or leave the chapter with none (`false` on the current one).
          */
         is_default?: boolean;
+        /**
+         * Leave out of Activity (#3897): its sign-up links reach no one's
+         * Activity page. Refused as `true` on a DM or group DM.
+         */
+        activity_excluded?: boolean;
       };
     }) => {
       const { data, error } = await client.PATCH("/v1/channels/{id}", {
