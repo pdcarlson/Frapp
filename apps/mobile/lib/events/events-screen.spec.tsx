@@ -9,8 +9,11 @@ import { FrappThemeProvider } from "@/lib/theme";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   EVENTS_VIEW_STORAGE_KEY,
+  resetCalendarLayersForTests,
   resetEventsViewForTests,
 } from "@/lib/events/events-view";
+import { selectCalendarTasks } from "@repo/hooks/calendar-tasks";
+import { localIsoDate } from "@repo/formatting";
 import { expectRoundedRipple } from "@/test/pressable-row";
 import { InlineNote } from "@/components/inline-note";
 import { drawnText, screenText } from "@/test/screen-text";
@@ -40,12 +43,32 @@ let chapterId: string | null = "chapter-1";
 let query = { isPending: false, isError: false, isFetching: false };
 let permissions: string[] = [];
 const refetch = vi.fn();
+const tasksRefetch = vi.fn();
+let tasks: unknown[] = [];
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useActiveChapterId: () => chapterId,
-  useListChapters: () => ({ data: [{ chapter_id: "chapter-1", role_ids: [] }] }),
+  useListChapters: () => ({
+    data: [{ chapter_id: "chapter-1", role_ids: [] }],
+  }),
   useEvents: () => ({ ...query, data: events, refetch }),
+  useTasks: () => ({ ...query, data: tasks, refetch: tasksRefetch }),
+  useCalendarTasks: () => {
+    const items = selectCalendarTasks(tasks, "me");
+    return {
+      items,
+      hasMine: items.some((item) => item.kind === "mine"),
+      hasAssigned: items.some((item) => item.kind === "assigned"),
+    };
+  },
+  useChapterRoster: () => ({
+    data: [
+      { user_id: "m1", display_name: "Sam Lee" },
+      { user_id: "m2", display_name: "Ana Ruiz" },
+    ],
+  }),
+  useViewerUserId: () => "me",
   usePermissionList: () => permissions,
 }));
 
@@ -97,6 +120,8 @@ const skeletons = (tree: ReactTestRenderer) =>
 
 beforeEach(() => {
   resetEventsViewForTests();
+  resetCalendarLayersForTests();
+  tasks = [];
   vi.useFakeTimers();
   vi.setSystemTime(MOUNTED_AT);
   events = [EVENT];
@@ -376,7 +401,7 @@ describe("Events after the first", () => {
     expect(text).toContain("Show 1");
   });
 
-  it("draws a weekly series once, as \"Chapter · Every …\" (#3823)", () => {
+  it('draws a weekly series once, as "Chapter · Every …" (#3823)', () => {
     const weekday = START.toLocaleDateString(undefined, { weekday: "long" });
     events = Array.from({ length: 13 }, (_, index) =>
       make(index === 0 ? "head" : `child-${index}`, index * 7, {
@@ -422,7 +447,9 @@ describe("Events after the first", () => {
     events = [
       make("a", 0),
       make("b", 2),
-      make("c", 2, { start_time: new Date(at(2).getTime() + 3_600_000).toISOString() }),
+      make("c", 2, {
+        start_time: new Date(at(2).getTime() + 3_600_000).toISOString(),
+      }),
     ];
     const tree = render();
     const pressableOf = (name: string) =>
@@ -511,7 +538,9 @@ describe("Events view switch", () => {
         ...EVENT,
         id: "past",
         start_time: new Date(START.getTime() - 30 * 86_400_000).toISOString(),
-        end_time: new Date(START.getTime() - 30 * 86_400_000 + 3_600_000).toISOString(),
+        end_time: new Date(
+          START.getTime() - 30 * 86_400_000 + 3_600_000,
+        ).toISOString(),
       },
     ];
     const tree = render();
@@ -591,5 +620,108 @@ describe("Events view switch", () => {
     );
     act(() => day.props.onPress());
     expect(screenText(tree)).toContain("Chapter meeting");
+  });
+});
+
+/** #4144: the member's tasks and the ones they assigned, on the Calendar. */
+describe("Tasks on the Calendar", () => {
+  const viewSwitch = (tree: ReactTestRenderer, label: string) =>
+    tree.root.find(
+      (node) =>
+        node.props.accessibilityRole === "radio" &&
+        node.props.accessibilityLabel === label &&
+        typeof node.props.onPress === "function",
+    );
+  const pressable = (tree: ReactTestRenderer, label: string) =>
+    tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === label &&
+        typeof node.props.onPress === "function",
+    );
+
+  function withTasks() {
+    const due = localIsoDate(MOUNTED_AT);
+    tasks = [
+      {
+        id: "t-mine",
+        title: "Clean the kitchen",
+        assignee_id: "me",
+        created_by: "m1",
+        due_date: due,
+        status: "OVERDUE",
+      },
+      {
+        id: "t-1",
+        title: "Dues form",
+        assignee_id: "m1",
+        created_by: "me",
+        due_date: due,
+        status: "COMPLETED",
+      },
+      {
+        id: "t-2",
+        title: "Dues form",
+        assignee_id: "m2",
+        created_by: "me",
+        due_date: due,
+        status: "TODO",
+      },
+    ];
+  }
+
+  it("lists the day's tasks under its events, with where they stand", () => {
+    withTasks();
+    const tree = render();
+    act(() => viewSwitch(tree, "Calendar").props.onPress());
+
+    const text = screenText(tree);
+    expect(text).toContain("Clean the kitchen");
+    expect(text).toContain("Overdue");
+    expect(text).toContain("Assigned by you · 1 of 2 done");
+    // A ring marks the day, beside the event dot.
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "View" &&
+          String(node.props.testID).startsWith("task-ring-"),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("opens an assigned task in place to show each assignee", () => {
+    withTasks();
+    const tree = render();
+    act(() => viewSwitch(tree, "Calendar").props.onPress());
+    expect(screenText(tree)).not.toContain("Ana Ruiz");
+
+    act(() =>
+      pressable(
+        tree,
+        "Dues form, assigned by you, 1 of 2 done",
+      ).props.onPress(),
+    );
+    const text = screenText(tree);
+    expect(text).toContain("Ana Ruiz");
+    expect(text).toContain("Waiting on an officer");
+  });
+
+  it("turns a kind off from its chip and remembers it", () => {
+    withTasks();
+    const tree = render();
+    act(() => viewSwitch(tree, "Calendar").props.onPress());
+
+    act(() => pressable(tree, "My tasks").props.onPress());
+    expect(screenText(tree)).not.toContain("Clean the kitchen");
+    expect(screenText(tree)).toContain("Dues form");
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
+      "frapp.events.calendar-layers",
+      JSON.stringify(["events", "assigned"]),
+    );
+  });
+
+  it("offers no chips to a member with no tasks", () => {
+    const tree = render();
+    act(() => viewSwitch(tree, "Calendar").props.onPress());
+    expect(screenText(tree)).not.toContain("My tasks");
   });
 });

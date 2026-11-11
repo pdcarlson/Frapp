@@ -1,3 +1,8 @@
+import {
+  parseCalendarLayers,
+  type CalendarLayer,
+} from "@repo/hooks/calendar-tasks";
+
 export type EventsView = "list" | "calendar";
 
 /**
@@ -35,5 +40,39 @@ export function writeEventsView(
     window.localStorage.setItem(eventsViewStorageKey(userId), view);
   } catch {
     /* Best-effort: the choice holds for this page's life. */
+  }
+}
+
+/**
+ * What the calendar shows (#4144): events, the viewer's tasks, the tasks they
+ * assigned. Kept the same way and for the same reason as the view: a member
+ * who turns their tasks off finds them off next time. `null` when nothing is
+ * stored, which means everything on.
+ */
+export function readCalendarLayers(
+  userId: string | null | undefined,
+): Set<CalendarLayer> | null {
+  if (!userId || typeof window === "undefined") return null;
+  try {
+    return parseCalendarLayers(
+      window.localStorage.getItem(`frapp.events.calendar-layers.${userId}`),
+    );
+  } catch {
+    return null;
+  }
+}
+
+export function writeCalendarLayers(
+  userId: string | null | undefined,
+  layers: ReadonlySet<CalendarLayer>,
+): void {
+  if (!userId || typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      `frapp.events.calendar-layers.${userId}`,
+      JSON.stringify([...layers]),
+    );
+  } catch {
+    /* Best-effort, as the view. */
   }
 }
