@@ -1,5 +1,5 @@
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, StyleSheet, View } from "react-native";
+import { Alert, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import {
   NavigationContext,
@@ -48,12 +48,26 @@ import {
   SUBSCRIPTION_REFUSAL_COPY,
   subscriptionRefusalOf,
 } from "@/lib/subscription-refusal";
-import { useFrappTheme } from "@/lib/theme";
+import { typeRole, useFrappTheme } from "@/lib/theme";
 
 type RowOf<K extends ActivityRow["kind"]> = Extract<ActivityRow, { kind: K }>;
 
 /** A row that opens the sheet: a file row goes to its own screen instead. */
 export type ActivitySheetRow = Exclude<ActivityRow, { kind: "file" }>;
+
+/**
+ * What a sign-up link's sheet can do. The screen owns these, not the sheet:
+ * Done, Hide and Remove take the row off the list at once, which closes the
+ * sheet, and the "Undo" bar that follows has to outlive it.
+ */
+export interface LinkSheetActions {
+  canRemove: boolean;
+  open: (row: RowOf<"link">) => void;
+  done: (row: RowOf<"link">) => void;
+  hide: (row: RowOf<"link">) => void;
+  openInChat: (row: RowOf<"link">) => void;
+  remove: (row: RowOf<"link">) => void;
+}
 
 const noop = () => {};
 
@@ -104,11 +118,13 @@ export function ActivitySheet({
   viewerId,
   onClosed,
   onActed,
+  linkActions,
 }: {
   row: ActivitySheetRow | null;
   viewerId: string | null;
   onClosed: () => void;
   onActed: () => void;
+  linkActions: LinkSheetActions;
 }) {
   const sheet = useRef<BottomSheetModal>(null);
   const closeSheet = useSheetClose(sheet);
@@ -156,6 +172,7 @@ export function ActivitySheet({
                 viewerId={viewerId}
                 onActed={onActed}
                 onNavigate={closeSheet}
+                linkActions={linkActions}
               />
             ) : row ? (
               // The cards decide whose controls to show from the viewer's id;
@@ -174,12 +191,14 @@ function SheetCard({
   viewerId,
   onActed,
   onNavigate,
+  linkActions,
 }: {
   row: ActivitySheetRow;
   viewerId: string;
   onActed: () => void;
   /** Closes the sheet before leaving this screen for another. */
   onNavigate: () => void;
+  linkActions: LinkSheetActions;
 }) {
   switch (row.kind) {
     case "task":
@@ -194,7 +213,104 @@ function SheetCard({
       );
     case "hours":
       return <HoursSheet row={row} viewerId={viewerId} onActed={onActed} />;
+    case "link":
+      return (
+        <LinkSheet row={row} actions={linkActions} onNavigate={onNavigate} />
+      );
   }
+}
+
+/**
+ * A sign-up link (`spec/behavior/activity.md` § Links): what it is, who
+ * posted it where, and the address, so the member sees where it goes before
+ * opening it. "Open link" opens it in the in-app browser, as a link tapped in
+ * chat does. Every other button closes the sheet first.
+ */
+function LinkSheet({
+  row,
+  actions,
+  onNavigate,
+}: {
+  row: RowOf<"link">;
+  actions: LinkSheetActions;
+  onNavigate: () => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createLinkStyles(tokens);
+  const then = (action: (row: RowOf<"link">) => void) => () => {
+    onNavigate();
+    action(row);
+  };
+  return (
+    <>
+      <View style={styles.head}>
+        <Text style={styles.title} accessibilityRole="header">
+          {row.title}
+        </Text>
+        {row.detail ? <Text style={styles.detail}>{row.detail}</Text> : null}
+        <Text style={styles.url} numberOfLines={2} selectable>
+          {row.link.url}
+        </Text>
+      </View>
+      <CardActions>
+        <CardButton
+          label="Open link"
+          variant="primary"
+          accessibilityHint="Opens the form in the browser."
+          onPress={() => actions.open(row)}
+        />
+        <CardButton
+          label="Done"
+          accessibilityHint="You filled it in. Takes it off your Activity."
+          onPress={then(actions.done)}
+        />
+      </CardActions>
+      <CardActions>
+        <CardButton
+          label="Hide"
+          accessibilityHint="Not chapter business. Takes it off your Activity."
+          onPress={then(actions.hide)}
+        />
+        <CardButton
+          label="Open in chat"
+          accessibilityHint="Opens the message it was posted in."
+          onPress={then(actions.openInChat)}
+        />
+      </CardActions>
+      {actions.canRemove ? (
+        <CardActions>
+          <CardButton
+            label="Remove for everyone"
+            accessibilityHint="Takes it off every member's Activity. The message stays in chat."
+            onPress={then(actions.remove)}
+          />
+        </CardActions>
+      ) : null}
+    </>
+  );
+}
+
+function createLinkStyles(tokens: SignetTokens) {
+  return StyleSheet.create({
+    head: {
+      gap: tokens.spacing.xs,
+    },
+    title: {
+      ...typeRole({
+        ...tokens.typography.role.body,
+        weight: tokens.typography.weight.bold,
+      }),
+      color: tokens.color.text.foreground,
+    },
+    detail: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+    },
+    url: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+    },
+  });
 }
 
 function TaskSheet({

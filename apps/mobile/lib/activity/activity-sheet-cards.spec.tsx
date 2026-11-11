@@ -88,6 +88,7 @@ const READ = {
     polls: [],
   },
   coming_up: [],
+  links: [],
   made_by_you: { polls: [], tasks: [], files: [], events: [] },
   needs_you_count: 1,
   unavailable: [],
@@ -112,6 +113,14 @@ describe("Activity sheet with chat's real task card (#3897)", () => {
                 viewerId="me"
                 onActed={() => {}}
                 onClosed={() => {}}
+                linkActions={{
+                  canRemove: false,
+                  open: () => {},
+                  done: () => {},
+                  hide: () => {},
+                  openInChat: () => {},
+                  remove: () => {},
+                }}
               />
             </NavigationRouteContext.Provider>
           </NavigationContext.Provider>

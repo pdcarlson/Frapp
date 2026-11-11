@@ -1,20 +1,27 @@
-import { useMemo, useState } from "react";
-import { View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { Alert, View } from "react-native";
 import { useRouter } from "expo-router";
 import {
   ACTIVITY_FILTERS,
   ACTIVITY_SECTION_NAMES,
   activityGroups,
   useActivity,
+  useClearActivityLinkState,
+  useMyPermissions,
+  useRemoveActivityLink,
+  useRestoreActivityLink,
+  useSetActivityLinkState,
   useViewerUserId,
   type ActivityFilter,
   type ActivityGroup,
   type ActivityRow,
 } from "@repo/hooks";
-import { describeLoadFailure } from "@repo/hooks/error-copy";
+import { describeLoadFailure, errorCopy } from "@repo/hooks/error-copy";
+import { can } from "@repo/validation";
 import {
   ActivitySheet,
   type ActivitySheetRow,
+  type LinkSheetActions,
 } from "@/components/activity/activity-sheet";
 import { BACK_TO_MORE } from "@/components/back-row";
 import { FilterChips } from "@/components/filter-chips";
@@ -29,8 +36,10 @@ import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
 import { ErrorState, SkeletonRegion } from "@/components/state-block";
 import { StatusChip } from "@/components/status-chip";
+import { UNDO_WINDOW_MS, UndoBar } from "@/components/tasks/undo-bar";
 import { activityBadgeHue } from "@/lib/activity/badge-hue";
 import { useActivityReread } from "@/lib/activity/use-activity-reread";
+import { openMessageLink } from "@/lib/chat/open-link";
 import { useFrappTheme } from "@/lib/theme";
 
 /** The chips: `null` is "All", as `FilterChips` spells it. */
@@ -67,6 +76,7 @@ export default function ActivityScreen() {
   const [filter, setFilter] = useState<ActivityFilter>("all");
   const [openedKey, setOpenedKey] = useState<string | null>(null);
   const refresh = useRefetchAll([activity]);
+  const { linkActions, undo } = useLinkActions();
 
   const groups = useMemo(
     () => (activity.data ? activityGroups(activity.data, filter) : []),
@@ -137,26 +147,112 @@ export default function ActivityScreen() {
   }
 
   return (
-    <ScreenShell back={BACK_TO_MORE} title="Activity" refresh={refresh}>
-      <FilterChips
-        chips={CHIPS}
-        selected={filter === "all" ? null : filter}
-        onSelect={(value) => setFilter((value ?? "all") as ActivityFilter)}
-        accessibilityLabel="Show"
-        scroll
-      />
-      {renderBody()}
-      <ActivitySheet
-        row={sheetRow}
-        viewerId={viewerId}
-        onActed={reread}
-        onClosed={() => {
-          setOpenedKey(null);
-          reread();
-        }}
-      />
-    </ScreenShell>
+    <>
+      <ScreenShell back={BACK_TO_MORE} title="Activity" refresh={refresh}>
+        <FilterChips
+          chips={CHIPS}
+          selected={filter === "all" ? null : filter}
+          onSelect={(value) => setFilter((value ?? "all") as ActivityFilter)}
+          accessibilityLabel="Show"
+          scroll
+        />
+        {renderBody()}
+        <ActivitySheet
+          row={sheetRow}
+          viewerId={viewerId}
+          onActed={reread}
+          onClosed={() => {
+            setOpenedKey(null);
+            reread();
+          }}
+          linkActions={linkActions}
+        />
+      </ScreenShell>
+      {undo ? (
+        <UndoBar key={undo.key} message={undo.message} onUndo={undo.run} />
+      ) : null}
+    </>
   );
+}
+
+/**
+ * The sign-up link writes (`spec/behavior/activity.md` § Links), owned by the
+ * screen: each takes the row off the list at once, which closes its sheet,
+ * and the "Undo" bar that follows (the tasks board's, for the same few
+ * seconds) has to outlive the sheet. Remove is `channels:manage`'s, as in
+ * chat. A write that fails puts the row back and says so.
+ */
+function useLinkActions() {
+  const router = useRouter();
+  const permissions = useMyPermissions();
+  const markDone = useSetActivityLinkState("done");
+  const hide = useSetActivityLinkState("hidden");
+  const clearState = useClearActivityLinkState();
+  const remove = useRemoveActivityLink();
+  const restore = useRestoreActivityLink();
+  const [undo, setUndo] = useState<{
+    message: string;
+    run: () => void;
+    key: number;
+  } | null>(null);
+  useEffect(() => {
+    if (!undo) return undefined;
+    const timer = setTimeout(() => setUndo(null), UNDO_WINDOW_MS);
+    return () => clearTimeout(timer);
+  }, [undo]);
+
+  type LinkRow = Extract<ActivityRow, { kind: "link" }>;
+  type Write = {
+    mutate: (
+      id: string,
+      options?: { onSuccess?: () => void; onError?: (error: unknown) => void },
+    ) => void;
+  };
+  const failed = (title: string) => (error: unknown) =>
+    Alert.alert(title, errorCopy(error));
+  const act =
+    (write: Write, message: string, takeBack: Write, failure: string) =>
+    (row: LinkRow) =>
+      write.mutate(row.link.id, {
+        onSuccess: () =>
+          setUndo((open) => ({
+            message,
+            // A new key per action, so the bar is announced again.
+            key: (open?.key ?? 0) + 1,
+            run: () => {
+              setUndo(null);
+              takeBack.mutate(row.link.id, {
+                onError: failed("Couldn't undo"),
+              });
+            },
+          })),
+        onError: failed(failure),
+      });
+
+  const linkActions: LinkSheetActions = {
+    canRemove: can("channels:manage", permissions.data?.permissions ?? []),
+    open: (row) => void openMessageLink(row.link.url),
+    done: act(markDone, "Marked done", clearState, "Couldn't mark it done"),
+    hide: act(hide, "Hidden", clearState, "Couldn't hide it"),
+    remove: act(
+      remove,
+      "Removed from everyone's Activity",
+      restore,
+      "Couldn't remove it",
+    ),
+    openInChat: (row) =>
+      // A thread reply isn't on the channel's timeline: open its thread.
+      router.push({
+        pathname: "/chat-thread",
+        params: row.link.thread_root_id
+          ? {
+              channelId: row.link.channel_id,
+              threadRootId: row.link.thread_root_id,
+            }
+          : { channelId: row.link.channel_id },
+      }),
+  };
+  return { linkActions, undo };
 }
 
 function GroupSection({
