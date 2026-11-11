@@ -430,6 +430,10 @@ function useMentionPicker(
   // draft. Discord's edit box opens it only once you type. A pick writes text
   // too, and the list should close after one, which this gives for free.
   const [typed, setTyped] = useState<string | null>(null);
+  // Anything else that changes the text (a send clearing it, an edit loading,
+  // a pick) forgets what was typed, so the same text coming back later, such
+  // as the message just sent opening for an edit, is not taken for typing.
+  if (typed !== null && value !== typed) setTyped(null);
   // Where the caret goes once a pick's text has reached the input. Set
   // straight away it would land in the old, shorter draft.
   const pendingCaret = useRef<number | null>(null);

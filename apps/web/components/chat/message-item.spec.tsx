@@ -29,6 +29,7 @@ vi.mock("./inline-message-editor", async () => {
   const React = await import("react");
   type Props = {
     value: string;
+    chips?: unknown;
     resetKey?: number;
     disabled?: boolean;
     onChange: (text: string) => void;
@@ -54,6 +55,7 @@ vi.mock("./inline-message-editor", async () => {
         ref={field}
         aria-label="Edit message"
         autoFocus
+        data-chips={props.chips ? "passed" : "missing"}
         value={text}
         disabled={props.disabled}
         onChange={(event) => {
@@ -1247,6 +1249,18 @@ describe("MessageItem edit and delete", () => {
     expect(onEdit).toHaveBeenCalledWith("msg-2", "hello, edited");
     // The editor closes once the save resolves.
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  it("hands the row's chip test to the editor, so its mentions open as chips (#2236)", async () => {
+    const user = userEvent.setup();
+    renderItemWithProps({
+      message: message({ sender_id: VIEWER, content: "@Paul hi" }),
+      onEdit: vi.fn(),
+    });
+
+    await user.click(screen.getByRole("button", { name: /edit/i }));
+
+    expect(screen.getByRole("textbox")).toHaveAttribute("data-chips", "passed");
   });
 
   it("cancels without calling onEdit and restores the original content", async () => {

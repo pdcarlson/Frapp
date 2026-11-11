@@ -447,6 +447,24 @@ describe("ChatComposer @-mention picker", () => {
     expect(offered(result.tree)).toEqual([]);
   });
 
+  it("stays shut when the message just sent opens for an edit", () => {
+    // Typed "thanks @pa", sent (the box clears), then Edit on that message
+    // loads the same text back: that is not the member typing it again.
+    const { tree, props } = typed("thanks @pa");
+    const rerender = (value: string) =>
+      act(() =>
+        tree.update(
+          <FrappThemeProvider>
+            <ChatComposer {...props} value={value} />
+          </FrappThemeProvider>,
+        ),
+      );
+    expect(offered(tree)).toHaveLength(2);
+    rerender("");
+    rerender("thanks @pa");
+    expect(offered(tree)).toEqual([]);
+  });
+
   const offered = (tree: ReactTestRenderer) =>
     tree.root
       .findAll(

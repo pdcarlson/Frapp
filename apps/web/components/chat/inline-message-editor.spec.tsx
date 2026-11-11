@@ -4,17 +4,27 @@ import { Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Mention from "@tiptap/extension-mention";
 import { mentionChipFilter } from "@repo/validation";
-import { buildEditDoc, createKeymap } from "./chat-editor";
+import {
+  buildEditDoc,
+  chatMentionExtension,
+  chatText,
+  chatTextKit,
+  createKeymap,
+  pasteAsLines,
+} from "./chat-editor";
 
 // Tiptap's ProseMirror view renders no document into jsdom here (see
 // composer.spec), so the document and the keys are tested on a headless
 // `Editor`, and the field the row shows on a captured `useEditor` call.
-const { captured } = vi.hoisted(() => ({
+const { captured, fake } = vi.hoisted(() => ({
   captured: [] as Array<{
     extensions: Array<{ name?: string }>;
     content: unknown;
     editorProps?: { attributes?: Record<string, string> };
+    onUpdate?: (props: { editor: { getText: (o?: unknown) => string } }) => void;
   }>,
+  /** What the stubbed `useEditor` hands back; null is "not mounted yet". */
+  fake: { current: null as unknown },
 }));
 vi.mock("@tiptap/react", async () => {
   const actual =
@@ -23,7 +33,7 @@ vi.mock("@tiptap/react", async () => {
     ...actual,
     useEditor: (options: (typeof captured)[number]) => {
       captured.push(options);
-      return null;
+      return fake.current;
     },
     EditorContent: () => null,
   };
@@ -95,6 +105,14 @@ describe("buildEditDoc", () => {
     }
   });
 
+  it("keeps a composer draft's line breaks with no chip test", () => {
+    // The composer restores drafts through this too: one paragraph per line
+    // came back from `getText` with every line break doubled.
+    const editor = headless("line one\nline two\n\nafter a blank line");
+    expect(editor.getText()).toBe("line one\nline two\n\nafter a blank line");
+    editor.destroy();
+  });
+
   it("is one empty paragraph for an empty body", () => {
     expect(buildEditDoc("")).toEqual({
       type: "doc",
@@ -134,6 +152,7 @@ describe("createKeymap", () => {
 describe("InlineMessageEditor", () => {
   beforeEach(() => {
     captured.length = 0;
+    fake.current = null;
   });
 
   it("is a named, growing text field on the body's type, with the composer's @ list", () => {
@@ -154,10 +173,127 @@ describe("InlineMessageEditor", () => {
     // box so the draft wraps near where the message wrapped.
     expect(attributes.class).toContain("leading-[25px]");
     expect(attributes.class).toContain("max-h-40");
+    // The shared focus recipe, whose border swap carries the 3:1 contrast.
+    expect(attributes.class).toContain("focus-visible:border-accent-text");
     expect(options.extensions.map((extension) => extension.name)).toContain(
       "mention",
     );
     // The row's chips open as chips.
     expect(JSON.stringify(options.content)).toContain('"type":"mention"');
   });
+
+  it("reports what the member typed, as the text Save sends", () => {
+    const onChange = vi.fn();
+    render(
+      <InlineMessageEditor
+        value="hi"
+        onChange={onChange}
+        onSave={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    const getText = vi.fn(() => "hi there");
+    captured.at(-1)!.onUpdate!({ editor: { getText } });
+    expect(onChange).toHaveBeenCalledWith("hi there");
+    // A paragraph boundary is one line break, the same as a hard break.
+    expect(getText).toHaveBeenCalledWith({ blockSeparator: "\n" });
+  });
+
+  it("loads a newer copy of the message, and opening it is not an edit", () => {
+    const editor = {
+      commands: { setContent: vi.fn(), focus: vi.fn() },
+      setEditable: vi.fn(),
+    };
+    fake.current = editor;
+    const props = {
+      onChange: vi.fn(),
+      onSave: vi.fn(),
+      onCancel: vi.fn(),
+    };
+    const { rerender } = render(
+      <InlineMessageEditor value="old" resetKey={0} {...props} />,
+    );
+    // An update event here would mark the edit dirty before a keystroke and
+    // stop the newer copy below from ever loading.
+    expect(editor.setEditable).toHaveBeenCalledWith(true, false);
+    expect(editor.commands.setContent).not.toHaveBeenCalled();
+
+    rerender(<InlineMessageEditor value="new" resetKey={1} {...props} />);
+    expect(editor.commands.setContent).toHaveBeenCalledWith(buildEditDoc("new"), {
+      emitUpdate: false,
+    });
+  });
 });
+
+describe("chatTextKit", () => {
+  it("sends what was typed: no markdown shortcut eats its markers", () => {
+    const editor = new Editor({
+      extensions: [chatTextKit()],
+      content: "<p></p>",
+    });
+    // Each of these is an input rule in a full StarterKit, which turns the
+    // text into a mark or a block and drops the characters `getText` sends.
+    for (const typed of ["**urgent**", "`npm ci`", "~~x~~", "- item", "# title"]) {
+      editor.commands.setContent("<p></p>");
+      for (const char of typed) {
+        const { from, to } = editor.state.selection;
+        // What a keystroke does: input rules first, then plain insertion.
+        const handled = editor.view.someProp("handleTextInput", (handler) =>
+          handler(editor.view, from, to, char, () =>
+            editor.state.tr.insertText(char, from, to),
+          ),
+        );
+        if (!handled) editor.commands.insertContent(char);
+      }
+      expect(chatText(editor)).toBe(typed);
+    }
+    editor.destroy();
+  });
+});
+
+describe("pasteAsLines", () => {
+  it("pastes lines as hard breaks, keeping blank lines, never doubling", () => {
+    const editor = new Editor({
+      extensions: [chatTextKit()],
+      content: "<p></p>",
+    });
+    const slice = pasteAsLines("line one\r\nline two\n\nafter", editor.view);
+    editor.view.dispatch(editor.state.tr.replaceSelection(slice));
+    expect(chatText(editor)).toBe("line one\nline two\n\nafter");
+    editor.destroy();
+  });
+});
+
+describe("chatMentionExtension onlyOnceTyped", () => {
+  function opened(onlyOnceTyped: boolean) {
+    const started = vi.fn();
+    const roster = {
+      current: [{ user_id: "u-shawn", display_name: "Shawn Lee", avatar_url: null }],
+    };
+    const extension = chatMentionExtension(roster, { current: [] }, { onlyOnceTyped });
+    const original = extension.options.suggestion.render;
+    const configured = extension.configure({
+      suggestion: {
+        ...extension.options.suggestion,
+        render: () => ({ ...original?.(), onStart: started }),
+      },
+    });
+    const editor = new Editor({
+      extensions: [chatTextKit(), configured],
+      content: buildEditDoc("hey @shawn"),
+    });
+    editor.commands.focus("end");
+    const beforeTyping = started.mock.calls.length;
+    editor.commands.insertContent("x");
+    const afterTyping = started.mock.calls.length;
+    editor.destroy();
+    return { beforeTyping, afterTyping };
+  }
+
+  it("keeps the list shut on a message ending in @text until the member types", () => {
+    expect(opened(true)).toEqual({ beforeTyping: 0, afterTyping: 1 });
+    // The composer's list opens on the caret alone, as before.
+    expect(opened(false).beforeTyping).toBe(1);
+  });
+});
+

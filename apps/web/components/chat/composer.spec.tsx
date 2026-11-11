@@ -1891,11 +1891,8 @@ describe("ComposerShell (#2176)", () => {
 
   it("swallows Shift+Enter too, unlike the real composer", async () => {
     /*
-      A newline here would not survive the handoff intact. The draft path splits
-      on "\n" into one paragraph per line and Tiptap's `getText` rejoins blocks
-      with its default "\n\n", so a line break the shell contributes comes back
-      doubled — and doubles again every save/restore cycle. That asymmetry is
-      older than this component; the shell just declines to feed it.
+      The shell is a one-line stand-in for the moment before the editor
+      loads; a line break typed into it is not carried over.
     */
     render(<ComposerShell />);
     const input = screen.getByRole("textbox", { name: "Message composer" });

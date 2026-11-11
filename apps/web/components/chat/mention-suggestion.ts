@@ -64,7 +64,8 @@ export function filterMentionEntries(
  * Builds the `@`-mention `suggestion` config for `@tiptap/extension-mention`.
  *
  * `rosterRef` (and `rolesRef`, the same way) rather than a plain array: `useEditor`'s extensions are built
- * once at mount (this composer passes no deps array), so a value closed over
+ * once at mount (neither the composer nor the inline edit field passes a deps
+ * array; both build this through `chatMentionExtension` in `chat-editor.ts`), so a value closed over
  * directly here would be whatever the roster query returned on the first
  * render — `[]`, before the query has ever resolved. Reading through a ref
  * that a `useEffect` keeps current lets `items()` see the live roster on

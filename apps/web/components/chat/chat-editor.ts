@@ -1,7 +1,10 @@
 import { useEffect, useRef, type MutableRefObject } from "react";
 import type { JSONContent } from "@tiptap/react";
 import Mention from "@tiptap/extension-mention";
-import { Extension } from "@tiptap/core";
+import { Extension, type Editor } from "@tiptap/core";
+import StarterKit from "@tiptap/starter-kit";
+import { Fragment, Slice } from "@tiptap/pm/model";
+import type { EditorView } from "@tiptap/pm/view";
 import { useChapterRoster, useMentionRoles } from "@repo/hooks";
 import { findMentionSpans, type MentionChipTest } from "@repo/validation";
 import { MENTION_CHIP } from "./chip";
@@ -43,6 +46,65 @@ export function useMentionSourceRefs(): {
 }
 
 /**
+ * StarterKit cut down to what a message body is: plain text with line breaks.
+ * What an editor sends is `getText`, which keeps no structure and no marks, so
+ * anything StarterKit would turn typing into was dropped before it reached the
+ * wire: `- ` became a list and lost its dash, `**urgent**` became bold and
+ * lost its stars, `` `npm ci` `` lost its backticks. With them off, what a
+ * member types is what is sent, the way a plain textarea did it.
+ */
+export function chatTextKit() {
+  return StarterKit.configure({
+    heading: false,
+    bulletList: false,
+    orderedList: false,
+    listItem: false,
+    listKeymap: false,
+    blockquote: false,
+    codeBlock: false,
+    horizontalRule: false,
+    bold: false,
+    italic: false,
+    strike: false,
+    code: false,
+    underline: false,
+    link: false,
+  });
+}
+
+/**
+ * Pasted plain text as one run of text and hard breaks, the shape
+ * `buildEditDoc` builds. ProseMirror's own parser makes a paragraph per line
+ * (and folds blank lines away), and `getText` joins paragraphs with a blank
+ * line, so a pasted two-line note came back with a line that was never there.
+ */
+export function pasteAsLines(text: string, view: EditorView): Slice {
+  const { schema } = view.state;
+  const inline = text
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .flatMap((line, index) => [
+      ...(index > 0 ? [schema.nodes.hardBreak!.create()] : []),
+      ...(line.length > 0 ? [schema.text(line)] : []),
+    ]);
+  return new Slice(
+    Fragment.from(schema.nodes.paragraph!.create(null, inline)),
+    1,
+    1,
+  );
+}
+
+/**
+ * The text an editor sends. A paragraph boundary counts as one line break, the
+ * same as a hard break: the only paragraphs these editors hold come from
+ * pasted HTML, and `getText`'s default blank line between them would add a
+ * line the member never saw.
+ */
+export function chatText(editor: Pick<Editor, "getText">): string {
+  return editor.getText({ blockSeparator: "\n" });
+}
+
+/**
  * The `@` extension: the timeline's own chip (`chip.ts`), not a second
  * recipe, and the shared member-then-role list. The suggestion reads the refs
  * only from keystroke callbacks, never during render.
@@ -50,10 +112,28 @@ export function useMentionSourceRefs(): {
 export function chatMentionExtension(
   rosterRef: MutableRefObject<MentionRosterEntry[]>,
   rolesRef: MutableRefObject<MentionRoleEntry[]>,
+  options: { onlyOnceTyped?: boolean } = {},
 ) {
+  const suggestion = createMentionSuggestion(rosterRef, rolesRef);
+  if (options.onlyOnceTyped) {
+    // An edit opens with the caret at the end of the message, so one that
+    // ends in an `@token` the row left as text ("hey @shawn") would pop the
+    // list over the message before a key was pressed, and Enter would pick a
+    // name instead of saving. The list waits for the member's first change to
+    // the text; loading the message, or a newer copy of it, isn't one
+    // (`preventUpdate`). Discord's edit box behaves the same, and so does
+    // mobile's (`chat-composer.tsx`).
+    let typed = false;
+    suggestion.shouldShow = ({ transaction }) => {
+      if (!typed && transaction.docChanged && !transaction.getMeta("preventUpdate")) {
+        typed = true;
+      }
+      return typed;
+    };
+  }
   return Mention.configure({
     HTMLAttributes: { class: MENTION_CHIP },
-    suggestion: createMentionSuggestion(rosterRef, rolesRef),
+    suggestion,
   });
 }
 

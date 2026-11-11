@@ -7,13 +7,16 @@ import {
   useRef,
 } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
 import type { MentionChipTest } from "@repo/validation";
 import { cn } from "@/lib/utils";
+import { FOCUS_RING } from "@/components/ui/focus";
 import {
   buildEditDoc,
   chatMentionExtension,
+  chatText,
+  chatTextKit,
   createKeymap,
+  pasteAsLines,
   useMentionSourceRefs,
 } from "./chat-editor";
 
@@ -55,7 +58,7 @@ export interface InlineMessageEditorProps {
  * `@shawn` (tester report 2026-11-11). Discord edits in the same rich box it
  * composes in.
  *
- * What it sends is still plain text (`getText`): mentions resolve server-side
+ * What it sends is still plain text (`chatText`): mentions resolve server-side
  * from the `@token` body, so the wire format is unchanged.
  */
 export const InlineMessageEditor = forwardRef<
@@ -75,38 +78,33 @@ export const InlineMessageEditor = forwardRef<
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({
-        // A message body is one paragraph of text with line breaks: no
-        // headings, lists or quotes for Enter or a markdown shortcut to make.
-        heading: false,
-        bulletList: false,
-        orderedList: false,
-        listItem: false,
-        blockquote: false,
-        codeBlock: false,
-        horizontalRule: false,
-      }),
-      chatMentionExtension(rosterRef, rolesRef),
+      chatTextKit(),
+      chatMentionExtension(rosterRef, rolesRef, { onlyOnceTyped: true }),
       createKeymap("inline-edit-keys", keysRef),
     ],
     content: buildEditDoc(value, chips),
     autofocus: "end",
     editorProps: {
+      clipboardTextParser: (text, _context, _plain, view) =>
+        pasteAsLines(text, view),
       attributes: {
         role: "textbox",
         "aria-multiline": "true",
         "aria-label": "Edit message",
         class: cn(
-          // The §4 text input at the body column's width, growing with the
-          // draft up to the composer's own cap (`max-h-40`), with the body's
-          // 16 / 25 type so the draft wraps where the message did.
-          "min-h-[60px] max-h-40 w-full overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-input bg-background px-3 py-2 text-base leading-[25px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          // The §4 multi-line input (`ui/textarea.tsx`: its fill, hairline,
+          // radius, touch padding and `FOCUS_RING`) at the body column's
+          // width, growing with the draft up to the composer's own cap
+          // (`max-h-40`), with the body's 16 / 25 type so the draft wraps
+          // where the message did.
+          "min-h-[60px] max-h-40 w-full overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-input bg-surface-1 px-3 py-2 pointer-coarse:px-3.5 pointer-coarse:py-3 text-base leading-[25px] text-foreground caret-primary transition-colors",
+          FOCUS_RING,
           className,
         ),
       },
     },
     onUpdate({ editor: current }) {
-      onChangeRef.current(current.getText());
+      onChangeRef.current(chatText(current));
     },
     immediatelyRender: false,
   });
@@ -122,12 +120,16 @@ export const InlineMessageEditor = forwardRef<
   }, [editor, resetKey, value, chips]);
 
   useEffect(() => {
-    editor?.setEditable(!disabled);
+    // No update event: one would read as the member typing, mark the edit
+    // dirty, and stop a newer copy of the message from loading.
+    editor?.setEditable(!disabled, false);
   }, [editor, disabled]);
 
   useImperativeHandle(
     ref,
-    () => ({ focus: () => editor?.commands.focus("end") }),
+    // Back where the member left off (after a failed save, say), not at the
+    // end: ProseMirror keeps the selection while the field is blurred.
+    () => ({ focus: () => editor?.commands.focus() }),
     [editor],
   );
 

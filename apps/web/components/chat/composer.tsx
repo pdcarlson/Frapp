@@ -15,8 +15,6 @@ import {
 import dynamic from "next/dynamic";
 import { errorCopy } from "@repo/hooks/error-copy";
 import { EditorContent, useEditor } from "@tiptap/react";
-import type { JSONContent } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING_WITHIN } from "@/components/ui/focus";
@@ -33,7 +31,15 @@ import {
 import { AUDIT_LOG_COMPOSER_NOTE } from "@repo/chat-core/audit-log-copy";
 import { cn } from "@/lib/utils";
 import { compactControlClassName } from "@/components/shared/table-controls";
-import { chatMentionExtension, createKeymap, useMentionSourceRefs } from "./chat-editor";
+import {
+  buildEditDoc,
+  chatMentionExtension,
+  chatText,
+  chatTextKit,
+  createKeymap,
+  pasteAsLines,
+  useMentionSourceRefs,
+} from "./chat-editor";
 import {
   useRequestChatUploadUrl,
   useUploadSignedUrl,
@@ -298,15 +304,11 @@ export function ComposerShell({
             */
             if (event.nativeEvent.isComposing) return;
             /*
-              Shift+Enter is swallowed too, which the real composer does not do.
-              A newline here would not survive the handoff intact:
-              `buildDocFromPlainText` splits the draft into one paragraph per
-              line and Tiptap's `getText` rejoins blocks with its default
-              `"\n\n"`, so every line break the shell contributes comes back
-              doubled — and doubles again on each save/restore cycle. That
-              asymmetry is older than this component and belongs to the draft
-              path generally; what is new is the shell being able to feed it, so
-              the shell stays single-line rather than widening the fix.
+              Shift+Enter is swallowed too, which the real composer does not do:
+              the shell is a one-line stand-in for the moment before the editor
+              loads, and a line break typed into it is not worth carrying over.
+              (The draft path itself keeps line breaks now: `buildEditDoc` loads
+              them as hard breaks, which `getText` gives back one for one.)
             */
             event.preventDefault();
             setPressedEnter(true);
@@ -566,32 +568,6 @@ interface ComposerBaseProps {
  * same fact, free to disagree with the strip the member can see.
  */
 type ComposerProps = ComposerBaseProps & ComposerReplyProps;
-
-/**
- * Build a Tiptap doc JSON from plain text so chars like `<`, `&`, and
- * newlines round-trip safely (Tiptap's `setContent(string)` would parse the
- * value as HTML and lose escapes / mangle reserved chars). Each line becomes
- * a paragraph; consecutive newlines yield empty paragraphs.
- */
-function buildDocFromPlainText(text: string): JSONContent {
-  // An empty draft is one empty paragraph, not an empty doc: the Placeholder
-  // extension paints "Message #name" on the first empty paragraph, so a doc
-  // with no paragraph drew a blank box (principles.md P6.5).
-  if (text.length === 0)
-    return { type: "doc", content: [{ type: "paragraph" }] };
-  const lines = text.split("\n");
-  return {
-    type: "doc",
-    content: lines.map((line) =>
-      line.length === 0
-        ? { type: "paragraph" }
-        : {
-            type: "paragraph",
-            content: [{ type: "text", text: line }],
-          },
-    ),
-  };
-}
 
 /** `#` only for an actual channel — a DM's name is a person's. */
 export function composerPlaceholder(channelName: string, isDirect?: boolean) {
@@ -1078,9 +1054,8 @@ export function Composer({
   const uploadsStartedRef = useRef(0);
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({
-        // Hard break stays on Shift+Enter via StarterKit defaults.
-      }),
+      // Hard break stays on Shift+Enter via StarterKit defaults.
+      chatTextKit(),
       Placeholder.configure({
         placeholder: composerPlaceholder(channelName, isDirect),
       }),
@@ -1098,8 +1073,10 @@ export function Composer({
         current: { Enter: () => sendRef.current() },
       }),
     ],
-    content: buildDocFromPlainText(draft),
+    content: buildEditDoc(draft),
     editorProps: {
+      clipboardTextParser: (text, _context, _plain, view) =>
+        pasteAsLines(text, view),
       attributes: {
         // `prose prose-sm` used to lead this list and did nothing at all —
         // `@tailwindcss/typography` is not installed in this app or in the
@@ -1123,7 +1100,7 @@ export function Composer({
       },
     },
     onUpdate({ editor }) {
-      const text = editor.getText();
+      const text = chatText(editor);
       onChangeDraft(text);
       // An empty box is nobody typing: the clear after a send, or the last
       // character erased. Announcing it showed "is typing…" to everyone else
@@ -1212,9 +1189,9 @@ export function Composer({
   // Keep the editor in sync if the draft is restored from Dexie after mount.
   useEffect(() => {
     if (!editor) return;
-    const current = editor.getText();
+    const current = chatText(editor);
     if (current === draft) return;
-    editor.commands.setContent(buildDocFromPlainText(draft), {
+    editor.commands.setContent(buildEditDoc(draft), {
       emitUpdate: false,
     });
   }, [draft, editor]);
@@ -1350,7 +1327,7 @@ export function Composer({
   );
   const submit = useCallback(() => {
     if (!editor) return;
-    const text = editor.getText().trim();
+    const text = chatText(editor).trim();
     // An attachment-only message is a real message. Returning early on empty
     // text would have been correct while the filename WAS the text; now that a
     // file travels beside the body it would silently swallow the send.
@@ -1450,7 +1427,7 @@ export function Composer({
       // the draft is reported by hand instead, which also keeps the
       // draft-sync effect above from treating it as a stale restore.
       editor.commands.setContent(sentDoc, { emitUpdate: false });
-      onChangeDraft(editor.getText());
+      onChangeDraft(chatText(editor));
       setPending(sentPending);
       if (sentReplyId) onRestoreReply?.(sentReplyId);
       toast({
@@ -1795,7 +1772,7 @@ export function Composer({
         toast({ ...refusal, variant: "destructive" });
         return;
       }
-      const text = editor?.getText() ?? "";
+      const text = (editor ? chatText(editor) : "");
       const parsed = parseSlashInput(text);
       const typed = parsed.command
         ? getSlashCommand(parsed.command, { recruitment: recruitmentVocab })
