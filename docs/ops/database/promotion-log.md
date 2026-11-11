@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-11: Task due times (#4003)
+
+### 20261111214500_task_due_time.sql
+
+- **Purpose**: Adds `tasks.due_at timestamptz` (nullable, no default): the moment a task is due when it has a time of day. `due_date` stays required and still names the day. A task with no `due_at` behaves as before. The rule is [`spec/behavior/tasks.md` § Task Lifecycle](../../../spec/behavior/tasks.md#task-lifecycle).
+- **Checks**: `select count(*) from information_schema.columns where table_name = 'tasks' and column_name = 'due_at';` returns `1`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API reads tasks with `select('*')` and returns `due_at` (null) as a field clients ignore. The newer API against an unmigrated database fails task creates that send a time and the five-minute timed-task sweep (logged per tick); tasks without a time still work except the daily sweep's `due_at is null` filter, which would fail too, so do not run the new API without the migration. A nullable column with no default is metadata-only, under a brief lock. `add column if not exists` makes re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-task-due-times-20261111214500) § Rollback Task due times.
+
 ## 2026-11-11: Event types (#3730)
 
 ### 20261111200000_event_types.sql
