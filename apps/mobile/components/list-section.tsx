@@ -495,11 +495,16 @@ function createStyles(tokens: SignetTokens) {
   // Shared so the caption's placeholder can't drift from the caption.
   const sectionHeaderMarginTop = tokens.spacing.sm;
   return StyleSheet.create({
+    // The eyebrow web's section labels draw (`EYEBROW`): caption at 600,
+    // uppercase, 0.12em tracking (1.5 at 12.5), in the secondary tone.
     sectionHeader: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
+      ...typeRole({
+        ...tokens.typography.role.caption,
+        weight: tokens.typography.weight.semibold,
+      }),
+      color: tokens.color.text.mutedForeground,
       textTransform: "uppercase",
-      letterSpacing: 0.6,
+      letterSpacing: 1.5,
       marginTop: sectionHeaderMarginTop,
     },
     // The caption's line box with its top margin; the uppercase tracking

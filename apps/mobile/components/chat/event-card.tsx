@@ -151,7 +151,7 @@ export function EventCard({
               payload.is_mandatory ? (
                 <StatusChip
                   label="Mandatory"
-                  hue={tokens.color.semantic.warning}
+                  hue={tokens.color.semantic.destructive}
                 />
               ) : null
             }

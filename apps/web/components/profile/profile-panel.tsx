@@ -210,13 +210,13 @@ export function ProfilePanel() {
             */}
             <AvatarFallback
               tint={ownId ? avatarTintFor(ownId) : null}
-              className="bg-popover text-[26px] font-bold text-muted-foreground"
+              className="bg-popover text-headline font-bold text-muted-foreground"
             >
               {initials(storedName || profile.email || "")}
             </AvatarFallback>
           </Avatar>
           <div className="min-w-0">
-            <h2 className="truncate text-2xl font-semibold tracking-tight">
+            <h2 className="truncate text-headline font-bold tracking-tight">
               {displayName}
             </h2>
             {/* An absent email is absent, not a sentence standing in for it. */}
