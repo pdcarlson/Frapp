@@ -228,6 +228,8 @@ async function setupInvite(): Promise<Node> {
   });
   await settle();
   await press(root, "Continue");
+  // Past the founder's display pick (#4056).
+  await press(root, "Continue");
   return root;
 }
 

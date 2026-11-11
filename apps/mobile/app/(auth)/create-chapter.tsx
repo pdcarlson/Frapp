@@ -70,6 +70,7 @@ import { OnboardingPressable } from "@/components/onboarding/onboarding-pressabl
 import { JoinedChannelsCard } from "@/components/onboarding/joined-channels-card";
 import { InviteLinksCard } from "@/components/onboarding/invite-links-card";
 import { ShareGlyph } from "@/components/control-glyphs";
+import { ChatDensityOptions } from "@/components/settings/chat-density-sheet";
 import { Toggle } from "@/components/toggle";
 import {
   EMPTY_CHAPTER_IDENTITY,
@@ -87,6 +88,10 @@ import {
   useInviteShares,
 } from "@/lib/onboarding/chapter-wizard/use-invite-shares";
 import { pickAndSetChapterLogo } from "@/lib/onboarding/chapter-wizard/chapter-logo";
+import {
+  DISPLAY_STEP_SUBTITLE,
+  DISPLAY_STEP_TITLE,
+} from "@/lib/onboarding/display-step";
 import { useSelectChapter } from "@/lib/select-chapter";
 import { usePushPrimer } from "@/lib/notifications/use-push-primer";
 import { useHoldSwipeBack } from "@/lib/back-target";
@@ -101,9 +106,10 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  *
  * Three steps make the chapter: **Find** it in the directory, **Confirm** the
  * match (or describe it by hand), and pick its **Color**. Creating it opens
- * three more: the **live** moment with its channels and an optional logo, the
- * notifications step when this build can push and push is off, and the
- * **invite** link. Then chat.
+ * four more: the **live** moment with its channels and an optional logo, the
+ * founder's own **display** pick (the same three cards as s03's display beat,
+ * #4056: founders skip s03), the notifications step when this build can push
+ * and push is off, and the **invite** link. Then chat.
  *
  * One route, with the steps as state: `POST /v1/chapters/onboard` flips the
  * membership count to 1 mid-flow, and every gate exempts `/create-chapter` by
@@ -123,7 +129,8 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * from its row keeps the letters hidden whatever its name field says later.
  */
 
-type Step = "find" | "confirm" | "color" | "live" | "primer" | "invite";
+type Step =
+  "find" | "confirm" | "color" | "live" | "display" | "primer" | "invite";
 /** The steps before the chapter exists, which the progress ticks count. */
 const SETUP_STEPS: Step[] = ["find", "confirm", "color"];
 
@@ -133,6 +140,7 @@ export const SETUP_TITLES = {
   confirmMatch: "Is this your chapter?",
   confirmManual: "Tell us about your chapter",
   color: "Pick your color",
+  display: DISPLAY_STEP_TITLE,
   primer: PUSH_ASK_TITLE,
   invite: "Invite your chapter",
 } as const;
@@ -235,7 +243,11 @@ export default function CreateChapter() {
   // What locks the screen's controls: a create, or a sign-out on its way.
   const locked = submitting || signingOut;
   const isManual = directoryId === null;
-  const created = step === "live" || step === "primer" || step === "invite";
+  const created =
+    step === "live" ||
+    step === "display" ||
+    step === "primer" ||
+    step === "invite";
   const displayName =
     identity.shortName.trim() || identity.name.trim() || "Your chapter";
   const canConfirm = chapterIdentityIsValid(identity) && archetype !== null;
@@ -393,6 +405,13 @@ export default function CreateChapter() {
 
   function leaveLive() {
     setError(null);
+    setStep("display");
+  }
+
+  // The founder's display pick (#4056). The phone's current display is
+  // preselected and a tap saves at once, so Continue keeps whatever is checked.
+  function leaveDisplay() {
+    setError(null);
     if (primer.showPrimer) {
       setStep("primer");
     } else {
@@ -426,9 +445,11 @@ export default function CreateChapter() {
           ? SETUP_TITLES.color
           : step === "live"
             ? liveTitle(displayName)
-            : step === "primer"
-              ? SETUP_TITLES.primer
-              : SETUP_TITLES.invite;
+            : step === "display"
+              ? SETUP_TITLES.display
+              : step === "primer"
+                ? SETUP_TITLES.primer
+                : SETUP_TITLES.invite;
   const setupIndex = SETUP_STEPS.indexOf(step);
   const mark = resolveChapterMark({
     logoUrl,
@@ -671,6 +692,17 @@ export default function CreateChapter() {
                 </View>
               ) : null}
 
+              {/*
+                The display pick a joining member sees on s03 (#4056):
+                founders skip s03, so setup asks it here.
+              */}
+              {step === "display" ? (
+                <View style={styles.stack}>
+                  <Text style={styles.body}>{DISPLAY_STEP_SUBTITLE}</Text>
+                  <ChatDensityOptions />
+                </View>
+              ) : null}
+
               {/* The same step a joining member sees on s03. */}
               {step === "primer" ? (
                 <View style={styles.stack}>
@@ -717,6 +749,7 @@ export default function CreateChapter() {
               void submitChapter();
             }}
             onLeaveLive={leaveLive}
+            onLeaveDisplay={leaveDisplay}
             onShare={() => {
               void invite.share();
             }}
@@ -765,6 +798,7 @@ function Footer({
   onConfirm,
   onSubmit,
   onLeaveLive,
+  onLeaveDisplay,
   onShare,
   onFinish,
   primer,
@@ -786,6 +820,7 @@ function Footer({
   onConfirm: () => void;
   onSubmit: () => void;
   onLeaveLive: () => void;
+  onLeaveDisplay: () => void;
   onShare: () => void;
   onFinish: () => void;
   primer: ComponentProps<typeof PushAskActions>;
@@ -844,6 +879,11 @@ function Footer({
       label = "Continue";
       onPress = onLeaveLive;
       disabled = logoBusy || signingOut;
+      break;
+    case "display":
+      label = "Continue";
+      onPress = onLeaveDisplay;
+      disabled = signingOut;
       break;
     default:
       return null;

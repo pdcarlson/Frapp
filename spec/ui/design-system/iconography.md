@@ -672,7 +672,7 @@ a lens-shaped wedge across the break that makes the two halves read as links.
   is a state the shared family already draws, and inventing a "done" intent no
   other surface has would be new design rather than a repaint.
 
-**The wizard's four steps stay text-only**, as Settings' tabs do (§6.2.6):
+**The wizard's five steps stay text-only**, as Settings' tabs do (§6.2.6):
 adding per-step icons is new design, and the reference draws neither.
 
 ### 6.3 Maintenance Rule
