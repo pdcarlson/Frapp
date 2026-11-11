@@ -23,13 +23,6 @@ import {
   POLL_QUESTION_MAX_LENGTH,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -41,33 +34,35 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  FormFooter,
+  fieldClass,
+  primarySize,
+  useReportDraft,
+} from "@/components/shared/short-form";
 
 /**
- * The composer's New poll form (#3865, #3773 step 2): opened from the **+**
- * menu's Poll row, or by `/poll` typed bare or unfinished, and filled in with
- * what was typed. It is the web twin of mobile's New poll sheet
- * (`apps/mobile/components/chat/new-poll-sheet.tsx`): the same draft model
- * (`@repo/chat-core/poll-draft`), the same rules for a postable poll, and the
- * same card (`buildPollMessage`), so a poll made here is the one `/poll` and
- * the phone post.
+ * The composer's New poll form (#3865, #3773 step 2), inside the + card
+ * (#3983): opened from the card's Poll row, or by `/poll` typed bare or
+ * unfinished, and filled in with what was typed. It is the web twin of
+ * mobile's New poll sheet (`apps/mobile/components/chat/new-poll-sheet.tsx`):
+ * the same draft model (`@repo/chat-core/poll-draft`), the same rules for a
+ * postable poll, and the same card (`buildPollMessage`), so a poll made here
+ * is the one `/poll` and the phone post.
  *
  * A question, two to ten options (add, remove, move up or down), and when
  * voting closes, a day by default as `/poll` does, or **Doesn't close**
  * (#3896) for a poll its creator ends from the card, and whether a member
  * may pick more than one option (#3793). Posting goes through the
  * outbox like a message, so it works offline and a server refusal lands on
- * the card's own failed row with Retry and Discard. What this dialog reports
+ * the card's own failed row with Retry and Discard. What this form reports
  * itself is only an outbox that refused the row, when the draft is all the
  * member has.
- *
- * The host mounts a fresh dialog each time it opens, so a draft never posts
- * into a channel other than the one it was opened in.
  */
-export interface NewPollDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  /** What the form opens on: empty, or read from a typed `/poll`. */
+export interface PollFormProps {
+  /** What the form opens on: empty, read from a typed `/poll`, or kept. */
   initialDraft: PollDraft;
+  onDraftChange?: (draft: PollDraft) => void;
   /** Queues the card in the channel the form was opened in. Never rejects. */
   onPost: (poll: {
     content: string;
@@ -79,19 +74,25 @@ export interface NewPollDialogProps {
    * a poll they can't close. `false` while that isn't known.
    */
   canCloseEarly: boolean;
+  onDone: () => void;
+  onDiscard: () => void;
   /** Injected so the close time is deterministic under test. */
   now?: () => Date;
 }
 
-export function NewPollDialog({
-  open,
-  onOpenChange,
+export function PollForm({
   initialDraft,
+  onDraftChange,
   onPost,
   canCloseEarly,
+  onDone,
+  onDiscard,
   now,
-}: NewPollDialogProps) {
+}: PollFormProps) {
+  const layout = "card";
+  const field = fieldClass(layout);
   const [draft, setDraft] = useState<PollDraft>(initialDraft);
+  useReportDraft(draft, onDraftChange);
   const [failure, setFailure] = useState<string | null>(null);
   const [posting, setPosting] = useState(false);
   // Set the moment Post is pressed, before `posting` reaches a render, so a
@@ -128,28 +129,17 @@ export function NewPollDialog({
         sending.current = false;
         setPosting(false);
         if (result.ok) {
-          onOpenChange(false);
+          onDone();
           return;
         }
         setFailure(result.error);
       });
-  }, [check, draft.closes, draft.multiple, now, onPost, onOpenChange]);
+  }, [check, draft.closes, draft.multiple, now, onPost, onDone]);
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        // Closing mid-post would hide the only place a refusal is reported.
-        if (!next && sending.current) return;
-        onOpenChange(next);
-      }}
-    >
-      <DialogContent className="sm:max-w-lg" aria-describedby={undefined}>
-        <DialogHeader>
-          <DialogTitle>New poll</DialogTitle>
-        </DialogHeader>
         <form
           className="grid gap-3"
+          noValidate
           onSubmit={(event) => {
             event.preventDefault();
             post();
@@ -169,7 +159,7 @@ export function NewPollDialog({
               placeholder="Ask a question"
               maxLength={POLL_QUESTION_MAX_LENGTH}
               disabled={posting}
-              autoFocus
+              data-plus-autofocus
             />
           </label>
 
@@ -191,6 +181,7 @@ export function NewPollDialog({
                   placeholder={`Option ${index + 1}`}
                   aria-label={`Option ${index + 1}`}
                   maxLength={POLL_OPTION_MAX_LENGTH}
+                  className={field}
                   disabled={posting}
                 />
                 <Button
@@ -268,7 +259,7 @@ export function NewPollDialog({
               }
               disabled={posting}
             >
-              <SelectTrigger id="new-poll-closes">
+              <SelectTrigger id="new-poll-closes" className={field}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -299,22 +290,20 @@ export function NewPollDialog({
             </p>
           ) : null}
 
-          <DialogFooter>
+          <FormFooter
+            layout={layout}
+            onCancel={onDiscard}
+            cancelDisabled={posting}
+          >
             <Button
-              type="button"
-              variant="secondary"
-              disabled={posting}
-              onClick={() => onOpenChange(false)}
+              type="submit"
+              size={primarySize(layout)}
+              disabled={!check.ok || posting}
             >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={!check.ok || posting}>
               {posting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {posting ? "Posting…" : "Post poll"}
             </Button>
-          </DialogFooter>
+          </FormFooter>
         </form>
-      </DialogContent>
-    </Dialog>
   );
 }

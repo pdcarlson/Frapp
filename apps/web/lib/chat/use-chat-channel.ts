@@ -84,6 +84,7 @@ import type { ReplayRequest } from "@repo/chat-core/types";
 import {
   dispatchSlashCommand,
   postHours,
+  postEvent,
   postPointsAdjustment,
   postPoll,
   postTask,
@@ -91,6 +92,7 @@ import {
   trackEventCard,
   type DispatchResult,
   type EventCardTrack,
+  type EventInput,
   type HoursInput,
   type PointsAdjustmentInput,
   type ResolveMember,
@@ -213,6 +215,8 @@ export interface UseChatChannelResult {
   ) => ReturnType<typeof postPoll>;
   /** The event form's card bookkeeping in a channel (#3773, `trackEventCard`). */
   trackEventCard: (channelId: string, name: string) => EventCardTrack;
+  /** The + card's Event form (#3983): the write `/event` makes, into `targetChannelId`. */
+  postEvent: (targetChannelId: string, input: EventInput) => Promise<DispatchResult>;
   /**
    * The + menu's Task, Service hours and Points forms (#3865): the same
    * writes `/task`, `/hours log` and `/points` make, posting the card into
@@ -730,6 +734,11 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   );
 
   // The + menu's forms (#3865). Each names its channel, as `sendPoll` does.
+  const postEventCb = useCallback(
+    (targetChannelId: string, input: EventInput) =>
+      postEvent(ctx, targetChannelId, input),
+    [ctx],
+  );
   const postTaskCb = useCallback(
     (targetChannelId: string, input: TaskInput) =>
       postTask(ctx, targetChannelId, input),
@@ -787,6 +796,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     dispatchSlash,
     sendPoll,
     trackEventCard: trackEventCardCb,
+    postEvent: postEventCb,
     postTask: postTaskCb,
     postHours: postHoursCb,
     postPointsAdjustment: postPointsCb,

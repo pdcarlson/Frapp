@@ -3,8 +3,8 @@ import { tokenizeQuotedArgs } from "./integrations/parsers";
 
 /**
  * The model behind the New poll form on both clients: mobile's New poll sheet
- * (`apps/mobile/components/chat/new-poll-sheet.tsx`, #3701) and web's New poll
- * dialog (`apps/web/components/chat/new-poll-dialog.tsx`, #3865): who may open
+ * (`apps/mobile/components/chat/new-poll-sheet.tsx`, #3701) and web's + card
+ * Poll form (`apps/web/components/chat/poll-form.tsx`, #3865, #3983): who may open
  * it, the draft it edits, and what makes a draft postable. The card it posts
  * is built by `buildPollMessage` in `./polls`, the same builder `/poll` uses,
  * so a poll made in either form is the card every client already votes on.
