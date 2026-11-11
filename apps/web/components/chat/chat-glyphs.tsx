@@ -21,6 +21,7 @@
  * copy of the same path data is exactly the drift §1 rule 1 bans.
  */
 
+import { MARK_GLYPH_PATHS } from "@repo/theme/nav-glyphs";
 import { Svg, detail, fillProps, stroke } from "@/components/ui/duotone";
 import type { DuotoneGlyphProps } from "@/components/ui/duotone";
 
@@ -44,11 +45,11 @@ export function PinGlyph({ className, active }: ChatGlyphProps) {
   return (
     <Svg className={className}>
       <path
-        d="M9 3.5h6l-.8 5.2 3 3.1H6.8l3-3.1z"
+        d={MARK_GLYPH_PATHS.pin.body}
         {...stroke}
         {...fillProps(active)}
       />
-      <path d="M12 11.8V20.5" {...detail} />
+      <path d={MARK_GLYPH_PATHS.pin.detail} {...detail} />
     </Svg>
   );
 }

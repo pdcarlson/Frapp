@@ -2,10 +2,9 @@
  * Narrowing for s12 (Documents), over `GET /v1/documents` and
  * `GET /v1/documents/folders`.
  *
- * The drawn screen has a PINNED section above RECENT. It is not built: nothing
- * on `chapter_documents` marks a document pinned, and picking "the two newest"
- * to fill the slot would dress an arbitrary choice up as a chapter decision.
- * Filed separately.
+ * The drawn screen's PINNED section above the list is built since #3934: an
+ * officer's pin is `pinned_at` on a folder or a document, so the slot shows a
+ * chapter decision, not a guess.
  */
 import { formatDay } from "@repo/formatting";
 import {
@@ -29,11 +28,15 @@ export interface MobileDocument {
   /** For the File type filter (`fileKind`); null on older rows. */
   content_type: string | null;
   storage_path: string | null;
+  /** When an officer pinned it for the whole chapter, or null (#3934). */
+  pinned_at: string | null;
 }
 
 export interface DocumentFolder {
   id: string;
   name: string;
+  /** When an officer pinned it for the whole chapter, or null (#3934). */
+  pinned_at?: string | null;
 }
 
 /**
@@ -57,6 +60,7 @@ export function selectDocuments(data: unknown): MobileDocument[] {
         created_at: str(row, "created_at") ?? "",
         content_type: str(row, "content_type"),
         storage_path: str(row, "storage_path"),
+        pinned_at: str(row, "pinned_at"),
       };
     })
     .filter((row): row is MobileDocument => !!row);
@@ -93,11 +97,16 @@ export function selectDocumentFolders(data: unknown): DocumentFolder[] {
       const id = str(row, "id");
       const name = str(row, "name");
       if (!id || !name) return null;
-      return { id, name, sort: num(row, "sort_order") ?? 0 };
+      return {
+        id,
+        name,
+        pinned_at: str(row, "pinned_at"),
+        sort: num(row, "sort_order") ?? 0,
+      };
     })
-    .filter((row): row is DocumentFolder & { sort: number } => !!row)
+    .filter((row): row is NonNullable<typeof row> => !!row)
     .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name))
-    .map(({ id, name }) => ({ id, name }));
+    .map(({ id, name, pinned_at }) => ({ id, name, pinned_at }));
 }
 
 /**

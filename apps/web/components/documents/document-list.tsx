@@ -9,6 +9,7 @@ import {
 } from "@/components/shared/nested-states";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 import { SearchGlyph } from "@/components/documents/resources-glyphs";
+import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { DocumentRow } from "@/components/documents/document-row";
 import type { ChapterDocument } from "@/components/documents/document-types";
 import { FilterChip, SortChip } from "@/components/shared/filter-chip";
@@ -201,6 +202,23 @@ export function DocumentList({
         Above the rows and whatever state replaces them, as backwork's is: a
         search that finds nothing past the cap is exactly when it matters.
       */}
+      {/*
+        Stars that couldn't be read would otherwise just vanish (#3934): the
+        list drops them into the rest and every Star reads off.
+      */}
+      {marks.starsFailed &&
+      (listState === "ready" || listState === "empty") ? (
+        <p className="pt-2 text-caption text-muted-foreground" role="status">
+          Couldn&apos;t load your stars.{" "}
+          <button
+            type="button"
+            className={`underline ${FOCUS_RING_OFFSET}`}
+            onClick={marks.retryStars}
+          >
+            Try again
+          </button>
+        </p>
+      ) : null}
       {truncated && (listState === "ready" || listState === "empty") ? (
         <p className="pt-2 text-caption text-muted-foreground" role="status">
           {DOCUMENT_CAP_NOTICE}
