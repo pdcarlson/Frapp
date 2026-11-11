@@ -109,8 +109,8 @@ export const SERVER_MESSAGE_COPY: Readonly<Record<string, string>> = {
   // Chat backgrounds (#3973, #4262): `chat-background.service.ts`'s refusals.
   "storage_path does not reference an uploaded photo":
     "The photo didn't finish uploading. Pick it again.",
-  "The chapter needs a default or #general channel to announce a photo background in":
-    "A photo background is announced in #general, and this chapter has no #general or default channel. Make one channel the default, then try again.",
+  "There is no channel you can post in to announce a photo background in":
+    "A photo background is announced with a chat message, and there's no channel your role can post in. Ask an officer who can.",
   "You cannot post in the channel a chapter photo background is announced in":
     "A photo background is announced in the default channel (or #general), and your role can't post there. Ask an officer who can.",
   "This channel can't have a background":

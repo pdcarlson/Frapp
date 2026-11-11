@@ -264,12 +264,12 @@ describe("chat background hooks", () => {
           .mockResolvedValue(
             failed(
               400,
-              "The chapter needs a default or #general channel to announce a photo background in",
+              "There is no channel you can post in to announce a photo background in",
             ),
           ),
       };
       expect(await failureOf(client, { background: "photo", photo })).toMatch(
-        /no #general or default channel/,
+        /no channel your role can post in/,
       );
     });
 

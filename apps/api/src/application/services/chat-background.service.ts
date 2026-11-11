@@ -38,6 +38,9 @@ import { ChannelAccessService } from './channel-access.service';
 
 const BRANDING_BUCKET = 'branding';
 /** Mirrored, as member copy, in `SERVER_MESSAGE_COPY` (`@repo/validation`). */
+export const NO_ANNOUNCE_CHANNEL =
+  'There is no channel you can post in to announce a photo background in';
+/** Mirrored, as member copy, in `SERVER_MESSAGE_COPY` (`@repo/validation`). */
 export const ANNOUNCE_CHANNEL_FORBIDDEN =
   'You cannot post in the channel a chapter photo background is announced in';
 /**
@@ -213,22 +216,7 @@ export class ChatBackgroundService {
   ): Promise<{ background: ChatBackgroundKey; photo_url: string | null }> {
     if (background === CHAT_BACKGROUND_PHOTO) {
       const photoPath = await this.assertUploadedPhoto(chapterId, storagePath);
-      const channel = await this.announcementChannel(chapterId);
-      if (!channel) {
-        throw new BadRequestException(
-          'The chapter needs a default or #general channel to announce a photo background in',
-        );
-      }
-      // The officer is on Chat settings, not in this channel, so "no access
-      // to this channel" would name nothing they can see (#4262).
-      await this.channelAccess
-        .assertChannelAccess(channel.id, chapterId, actorUserId, 'post')
-        .catch((error: unknown) => {
-          if (error instanceof ForbiddenException) {
-            throw new ForbiddenException(ANNOUNCE_CHANNEL_FORBIDDEN);
-          }
-          throw error;
-        });
+      const channel = await this.announcementChannel(chapterId, actorUserId);
       const line = await this.announce(
         channel.id,
         actorUserId,
@@ -385,18 +373,52 @@ export class ChatBackgroundService {
     }
   }
 
-  /** Where a chapter-default photo is announced: the default channel, else #general. */
+  /**
+   * Where a chapter-default photo is announced, checked against the setter's
+   * own right to post there: the default channel, else #general. A chapter
+   * with neither (a Discord-imported one, whose channels keep their Discord
+   * names) announces in the oldest channel the setter can post in (#4262,
+   * Winston 2026-11-11). Refused only when there is nowhere to post.
+   */
   private async announcementChannel(
     chapterId: string,
-  ): Promise<ChatChannel | null> {
+    actorUserId: string,
+  ): Promise<ChatChannel> {
     const channels = (await this.channelRepo.findByChapter(chapterId)).filter(
       (c) => channelTakesBackground(c),
     );
-    return (
+    const preferred =
       channels.find((c) => c.is_default) ??
-      channels.find((c) => c.name === 'general') ??
-      null
+      channels.find((c) => c.name === 'general');
+    if (preferred) {
+      // The officer is on Chat settings, not in this channel, so "no access
+      // to this channel" would name nothing they can see.
+      await this.channelAccess
+        .assertChannelAccess(preferred.id, chapterId, actorUserId, 'post')
+        .catch((error: unknown) => {
+          if (error instanceof ForbiddenException) {
+            throw new ForbiddenException(ANNOUNCE_CHANNEL_FORBIDDEN);
+          }
+          throw error;
+        });
+      return preferred;
+    }
+    const oldestFirst = [...channels].sort((a, b) =>
+      a.created_at.localeCompare(b.created_at),
     );
+    for (const candidate of oldestFirst) {
+      const canPost = await this.channelAccess
+        .assertChannelAccess(candidate.id, chapterId, actorUserId, 'post')
+        .then(
+          () => true,
+          (error: unknown) => {
+            if (error instanceof ForbiddenException) return false;
+            throw error;
+          },
+        );
+      if (canPost) return candidate;
+    }
+    throw new BadRequestException(NO_ANNOUNCE_CHANNEL);
   }
 
   /**

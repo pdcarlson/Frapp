@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import {
   ANNOUNCE_CHANNEL_FORBIDDEN,
   ChatBackgroundService,
+  NO_ANNOUNCE_CHANNEL,
 } from './chat-background.service';
 import type { ChatChannel } from '#domain/entities/chat.entity';
 
@@ -335,13 +336,58 @@ describe('ChatBackgroundService (#3973)', () => {
       );
     });
 
-    it('refuses a default photo when there is nowhere to announce it', async () => {
-      const { service, chapterRepo } = setup({
+    // #4262: a Discord-imported chapter keeps its Discord channel names, so it
+    // can have no #general and no default; its photo default 400'd.
+    it('announces in the oldest channel the setter can post in when there is no default or #general', async () => {
+      const { service, access, messageRepo, chapterRepo } = setup({
+        channels: [
+          channel({
+            id: 'rush',
+            name: 'rush',
+            created_at: '2026-10-02T00:00:00Z',
+          }),
+          channel({
+            id: 'exec',
+            name: 'exec',
+            created_at: '2026-10-01T00:00:00Z',
+          }),
+          channel({
+            id: 'house',
+            name: 'house-chat',
+            created_at: '2026-10-01T12:00:00Z',
+          }),
+        ],
+      });
+      // The oldest one is role-gated away from this setter.
+      access.assertChannelAccess.mockImplementation(async (id: string) => {
+        if (id === 'exec') {
+          throw new ForbiddenException(
+            'You do not have access to this channel',
+          );
+        }
+        return undefined;
+      });
+      await service.setChapterDefault(CHAPTER, 'actor', 'photo', PHOTO);
+      expect(messageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ channel_id: 'house' }),
+      );
+      expect(chapterRepo.update).toHaveBeenCalledWith(
+        CHAPTER,
+        expect.objectContaining({ chat_background: 'photo' }),
+      );
+    });
+
+    it('refuses a default photo only when the setter can post in no channel', async () => {
+      const { service, access, chapterRepo, messageRepo } = setup({
         channels: [channel({ name: 'house' })],
       });
+      access.assertChannelAccess.mockRejectedValue(
+        new ForbiddenException('You do not have access to this channel'),
+      );
       await expect(
         service.setChapterDefault(CHAPTER, 'actor', 'photo', PHOTO),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      ).rejects.toThrow(NO_ANNOUNCE_CHANNEL);
+      expect(messageRepo.create).not.toHaveBeenCalled();
       expect(chapterRepo.update).not.toHaveBeenCalled();
     });
   });
