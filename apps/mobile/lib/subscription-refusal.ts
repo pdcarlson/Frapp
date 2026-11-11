@@ -89,6 +89,9 @@ export const SUBSCRIPTION_REFUSAL_COPY = {
    */
   taskStatus:
     "Your chapter's subscription isn't active, so task updates can't be saved. An officer can sort this out for the chapter.",
+  /** `PATCH /v1/service-entries/:id/review`, the Activity sheet (#3897). */
+  serviceReview:
+    "Your chapter's subscription isn't active, so hours can't be reviewed. An officer can sort this out for the chapter.",
   checkIn:
     "Your chapter's subscription isn't active, so check-in isn't available. An officer can sort this out for the chapter.",
   study:

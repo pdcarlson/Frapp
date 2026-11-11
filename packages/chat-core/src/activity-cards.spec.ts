@@ -1,10 +1,16 @@
-import { describe, expect, it } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { describe, expect, it, vi } from "vitest";
 import {
   activityEventMessage,
   activityHoursMessage,
   activityPollMessage,
   activityTaskMessage,
+  readActivityPollVotes,
 } from "./activity-cards";
+import type { RawChatMessageAction } from "./types";
+
+const readMessageActions = vi.hoisted(() => vi.fn());
+vi.mock("./history", () => ({ readMessageActions }));
 import { readEventPayload, readHoursPayload, readTaskPayload } from "./cards";
 import { readPollPayload, tallyPollVotes } from "./polls";
 
@@ -153,5 +159,33 @@ describe("Activity card messages", () => {
       myVotes: ["a"],
     });
     expect(message.id).toBe("poll-1");
+  });
+});
+
+describe("readActivityPollVotes", () => {
+  const action = (id: string): RawChatMessageAction =>
+    ({ id, message_id: "poll-1" }) as RawChatMessageAction;
+
+  it("returns the message's votes from chat's own paged read", async () => {
+    readMessageActions.mockResolvedValue({
+      actions: [action("a"), action("b")],
+      incomplete: false,
+    });
+    const supabase = {} as SupabaseClient;
+    await expect(readActivityPollVotes(supabase, "poll-1")).resolves.toEqual([
+      action("a"),
+      action("b"),
+    ]);
+    expect(readMessageActions).toHaveBeenCalledWith(supabase, ["poll-1"]);
+  });
+
+  it("fails on a partial set, so no card tallies from one", async () => {
+    readMessageActions.mockResolvedValue({
+      actions: [action("a")],
+      incomplete: true,
+    });
+    await expect(
+      readActivityPollVotes({} as SupabaseClient, "poll-1"),
+    ).rejects.toThrow("Couldn't read this poll's votes");
   });
 });
