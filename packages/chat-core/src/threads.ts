@@ -16,14 +16,18 @@
  */
 
 import type { QueryClient } from "@tanstack/react-query";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomClientId } from "@repo/api-sdk";
 import {
-  CHAT_MESSAGE_QUERY_ROOT,
+  chatThreadKey,
+  chatThreadRepliesKey,
   optimisticMessage,
   type ChannelCache,
   type RawChatMessage,
+  type RawChatMessageAction,
 } from "./types";
 import {
+  applyReactionInsert,
   emptyCache,
   markFailed,
   mergeHeldServerRow,
@@ -37,6 +41,11 @@ import {
   RATE_LIMITED_COPY,
   type FrappApiClient,
 } from "./chat-client";
+import { IncompleteActionsError, readMessageActions } from "./history";
+
+// The keys live beside `chatMessagesKey` so `chat-client` can route a reply's
+// writes without importing this module (which imports it).
+export { chatThreadKey, chatThreadRepliesKey };
 
 /** How many replies one read brings: the newest page, then older on demand. */
 export const THREAD_PAGE_LIMIT = 50;
@@ -49,22 +58,68 @@ export interface ThreadMeta {
   root: RawChatMessage;
   follow_state: ThreadFollowState | null;
   last_read_at: string | null;
+  /**
+   * The parent's reactions and votes, read beside it on the client (not on
+   * the wire): the parent is drawn from here while the timeline's cache
+   * doesn't hold it (#4034).
+   */
+  root_actions?: readonly RawChatMessageAction[];
 }
 
-/** The thread's parent and the viewer's follow. */
-export function chatThreadKey(channelId: string, rootId: string) {
-  return [CHAT_MESSAGE_QUERY_ROOT, channelId, "thread", rootId] as const;
+/**
+ * The reactions and votes on the replies `ids` names, read the way the
+ * timeline reads a page's (`readMessageActions`), so a reply's reactions and a
+ * card's tally are on the first paint, not only after a live frame (#4034).
+ * `null` when there is no client to read with or the read came back
+ * incomplete (a failed batch, or rows that moved under it): a partial set is
+ * never merged, since a tally drawn from it would be wrong.
+ */
+async function readActions(
+  supabase: SupabaseClient | null | undefined,
+  ids: readonly string[],
+): Promise<readonly RawChatMessageAction[] | null> {
+  if (!supabase) return null;
+  if (ids.length === 0) return [];
+  const { actions, incomplete } = await readMessageActions(supabase, ids);
+  return incomplete ? null : actions;
 }
 
-/** The thread's reply cache (`ChannelCache` shape). */
-export function chatThreadRepliesKey(channelId: string, rootId: string) {
-  return [
-    CHAT_MESSAGE_QUERY_ROOT,
-    channelId,
-    "thread",
-    rootId,
-    "replies",
-  ] as const;
+/**
+ * Sets the actions on the replies `ids` names to `actions`, the server's
+ * whole set for them: what they held is dropped first, so a reaction removed
+ * or a vote changed while no live frame reached this cache is put right, as
+ * the timeline's newest-page read puts its rows right
+ * (`reconcileNewestPage`). Replies outside `ids` keep theirs.
+ */
+export function reconcileReplyActions(
+  cache: ChannelCache,
+  ids: ReadonlySet<string>,
+  actions: readonly RawChatMessageAction[],
+): ChannelCache {
+  if (ids.size === 0) return cache;
+  const byId = { ...cache.byId };
+  for (const [key, message] of Object.entries(cache.byId)) {
+    if (ids.has(message.id)) {
+      byId[key] = { ...message, reactions: {}, actions: [] };
+    }
+  }
+  const actionIndex = { ...cache.actionIndex };
+  for (const [actionId, entry] of Object.entries(cache.actionIndex)) {
+    if (ids.has(entry.messageKey)) delete actionIndex[actionId];
+  }
+  return actions.reduce((next, action) => applyReactionInsert(next, action), {
+    ...cache,
+    byId,
+    actionIndex,
+  });
+}
+
+/** The ids of the confirmed replies a cache holds. */
+function heldReplyIds(cache: ChannelCache | undefined): string[] {
+  if (!cache) return [];
+  return Object.values(cache.byId)
+    .filter((message) => message._status === "confirmed" && !!message.id)
+    .map((message) => message.id);
 }
 
 /** A thread read's answer, beside the replies cache it fills. */
@@ -85,12 +140,17 @@ export async function fetchThread(
   api: FrappApiClient,
   channelId: string,
   rootId: string,
+  supabase?: SupabaseClient | null,
 ): Promise<ThreadMeta> {
   const { data, error } = await api.GET("/v1/channels/{id}/threads/{rootId}", {
     params: { path: { id: channelId, rootId } },
   });
   if (error || !data) throw apiError(error, "Couldn't open this thread");
-  return data as unknown as ThreadMeta;
+  const meta = data as unknown as ThreadMeta;
+  // An incomplete read draws the parent without them: the next read of the
+  // thread (a reconnect, a refocus, a write to it) reads them again.
+  const rootActions = await readActions(supabase, [meta.root.id]);
+  return rootActions?.length ? { ...meta, root_actions: rootActions } : meta;
 }
 
 /**
@@ -105,6 +165,7 @@ export async function loadThreadReplies(
   channelId: string,
   rootId: string,
   before?: string,
+  supabase?: SupabaseClient | null,
 ): Promise<ThreadRepliesPage> {
   const { data, error } = await api.GET(
     "/v1/channels/{id}/threads/{rootId}/messages",
@@ -117,9 +178,23 @@ export async function loadThreadReplies(
   );
   if (error || !data) throw apiError(error, "Couldn't load replies");
   const rows = data as unknown as RawChatMessage[];
+  const ids = rows.map((row) => row.id).filter(Boolean);
+  const actions = await readActions(supabase, ids);
+  // An older page is merged once and never read again, so one whose actions
+  // came back incomplete is refused, as the timeline refuses one
+  // (`readOlderPage`): the caller says so and the member can retry. The
+  // newest page draws without them; the next gap read reconciles them.
+  if (before && supabase && actions === null) {
+    throw new IncompleteActionsError();
+  }
   queryClient.setQueryData<ChannelCache>(
     chatThreadRepliesKey(channelId, rootId),
-    (prev) => mergeServerRows(prev ?? emptyCache(), rows),
+    (prev) => {
+      const merged = mergeServerRows(prev ?? emptyCache(), rows);
+      return actions
+        ? reconcileReplyActions(merged, new Set(ids), actions)
+        : merged;
+    },
   );
   return { hasMore: rows.length >= THREAD_PAGE_LIMIT };
 }
@@ -138,6 +213,7 @@ export async function backfillThreadReplies(
   api: FrappApiClient,
   channelId: string,
   rootId: string,
+  supabase?: SupabaseClient | null,
 ): Promise<void> {
   const key = chatThreadRepliesKey(channelId, rootId);
   const held = queryClient.getQueryData<ChannelCache>(key);
@@ -148,7 +224,14 @@ export async function backfillThreadReplies(
         .find((m) => m && m._status === "confirmed")
     : undefined;
   if (!newest) {
-    await loadThreadReplies(queryClient, api, channelId, rootId);
+    await loadThreadReplies(
+      queryClient,
+      api,
+      channelId,
+      rootId,
+      undefined,
+      supabase,
+    );
     return;
   }
   let before: string | undefined;
@@ -177,10 +260,19 @@ export async function backfillThreadReplies(
       rows.length < THREAD_PAGE_LIMIT ||
       oldest.created_at <= newest.created_at
     ) {
-      return;
+      break;
     }
     before = oldest.created_at;
   }
+  // Then every held reply's actions, not only the new rows': a reaction
+  // removed or a vote changed during the gap reached no live frame here.
+  // Incomplete, they stay as they were until the next gap read.
+  const ids = heldReplyIds(queryClient.getQueryData<ChannelCache>(key));
+  const actions = await readActions(supabase, ids);
+  if (!actions) return;
+  queryClient.setQueryData<ChannelCache>(key, (prev) =>
+    prev ? reconcileReplyActions(prev, new Set(ids), actions) : prev,
+  );
 }
 
 /**

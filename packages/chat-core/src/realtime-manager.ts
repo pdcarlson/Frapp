@@ -62,6 +62,7 @@ import {
   applyReactionDelete,
   applyActionUpdate,
   applyReactionInsert,
+  cacheFromPage,
   dropUnreadThrough,
   emptyCache,
   holdsServerRow,
@@ -77,6 +78,7 @@ import {
   type HistoryPageQuery,
 } from "./history";
 import {
+  CHAT_MESSAGE_QUERY_ROOT,
   chatMessagesKey,
   type ChannelCache,
   type RawChatMessage,
@@ -298,6 +300,28 @@ function liveTypists(
     return previous;
   }
   return live.length === 0 ? NO_TYPING_USERS : live;
+}
+
+/** The part of a thread's parent read (`ThreadMeta` in `./threads`) a frame patches. */
+interface ThreadParentRead {
+  root: RawChatMessage;
+  root_actions?: readonly RawChatMessageAction[];
+}
+
+/**
+ * Runs a cache updater over a thread's parent read: the parent as a one-row
+ * cache, so an action frame applies to it exactly as to a timeline row, and
+ * the read keeps its identity when the frame isn't the parent's.
+ */
+function patchThreadParent(
+  read: ThreadParentRead,
+  updater: (cache: ChannelCache) => ChannelCache,
+): ThreadParentRead {
+  const before = cacheFromPage([read.root], read.root_actions ?? []);
+  const after = updater(before);
+  if (after === before) return read;
+  const parent = after.byId[read.root.id];
+  return parent ? { ...read, root_actions: parent.actions } : read;
 }
 
 class ChatRealtimeManager {
@@ -1258,7 +1282,7 @@ class ChatRealtimeManager {
 
   private dispatchActionInsert(action: RawChatMessageAction): void {
     for (const channelId of this.channels.keys()) {
-      this.patchCache(channelId, (cache) =>
+      this.patchActionCaches(channelId, (cache) =>
         cache.byId[action.message_id]
           ? applyReactionInsert(cache, action)
           : cache,
@@ -1274,7 +1298,7 @@ class ChatRealtimeManager {
    */
   private dispatchActionUpdate(action: RawChatMessageAction): void {
     for (const channelId of this.channels.keys()) {
-      this.patchCache(channelId, (cache) => {
+      this.patchActionCaches(channelId, (cache) => {
         const message = cache.byId[action.message_id];
         if (!message) return cache;
         const held = message.actions.find(
@@ -1291,7 +1315,7 @@ class ChatRealtimeManager {
 
   private dispatchActionDelete(actionId: string): void {
     for (const channelId of this.channels.keys()) {
-      this.patchCache(channelId, (cache) =>
+      this.patchActionCaches(channelId, (cache) =>
         cache.actionIndex[actionId]
           ? applyReactionDelete(cache, actionId)
           : cache,
@@ -1523,6 +1547,37 @@ class ChatRealtimeManager {
     } catch {
       // A missed eviction leaves an entry the next load prunes if the card is
       // in its window; losing the cursor write after it would cost more.
+    }
+  }
+
+  /**
+   * A reaction or vote frame for `channelId` (`chat_message_actions` carries
+   * no channel): its timeline cache, every thread reply cache of that channel
+   * a panel holds, since a thread's replies never sit in the timeline's, and
+   * every open thread's parent (`chatThreadKey`), which a panel draws from
+   * its own read while the timeline doesn't hold it (#4034). A thread cache is
+   * only patched, never created.
+   */
+  private patchActionCaches(
+    channelId: string,
+    updater: (cache: ChannelCache) => ChannelCache,
+  ): void {
+    if (!this.ctx) return;
+    this.patchCache(channelId, updater);
+    const threads = this.ctx.queryClient.getQueriesData<unknown>({
+      queryKey: [CHAT_MESSAGE_QUERY_ROOT, channelId, "thread"],
+    });
+    for (const [key, data] of threads) {
+      if (!data) continue;
+      if (key.length === 5 && key[4] === "replies") {
+        this.ctx.queryClient.setQueryData<ChannelCache>(key, (prev) =>
+          prev ? updater(prev) : prev,
+        );
+      } else if (key.length === 4) {
+        this.ctx.queryClient.setQueryData<ThreadParentRead>(key, (prev) =>
+          prev ? patchThreadParent(prev, updater) : prev,
+        );
+      }
     }
   }
 
