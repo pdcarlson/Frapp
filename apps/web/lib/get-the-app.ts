@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { OPENED_FROM_APP_KEY, OPENED_FROM_APP_VALUE } from "@repo/validation";
 
 /**
  * Whether this browser dismissed the phone dashboard's Get the app card
@@ -9,12 +10,35 @@ import { useSyncExternalStore } from "react";
 export const GET_THE_APP_DISMISSED_STORAGE_KEY =
   "frapp.web.get-the-app-dismissed";
 
+/**
+ * Set for the tab's session when a page was opened by the app itself
+ * (`?from=app`, the setup list's web-only steps): that is the app's in-app
+ * browser, whose user agent is a phone's, and someone in it has the app.
+ * Session-long because the mark is only on the first page they land on.
+ */
+export const OPENED_FROM_APP_SESSION_KEY = "frapp.web.opened-from-app";
+
+function openedFromApp(): boolean {
+  try {
+    if (
+      new URLSearchParams(window.location.search).get(OPENED_FROM_APP_KEY) ===
+      OPENED_FROM_APP_VALUE
+    ) {
+      window.sessionStorage.setItem(OPENED_FROM_APP_SESSION_KEY, "1");
+      return true;
+    }
+    return window.sessionStorage.getItem(OPENED_FROM_APP_SESSION_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 const listeners = new Set<() => void>();
 /** Set once dismissed in this page, so blocked storage still hides it until reload. */
 let dismissedHere = false;
 
 function readDismissed(): boolean {
-  if (dismissedHere) return true;
+  if (dismissedHere || openedFromApp()) return true;
   try {
     return (
       window.localStorage.getItem(GET_THE_APP_DISMISSED_STORAGE_KEY) === "1"

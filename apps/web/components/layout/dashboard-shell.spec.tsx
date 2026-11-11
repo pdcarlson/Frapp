@@ -48,6 +48,12 @@ const {
 }));
 const routerPush = vi.hoisted(() => vi.fn());
 const mockSearch = vi.hoisted(() => ({ value: "" }));
+/** The phone this browser runs on: none in jsdom unless a test says so. */
+const device = vi.hoisted(() => ({ phone: null as "ios" | "android" | null }));
+vi.mock("@/lib/use-phone-platform", () => ({
+  usePhonePlatform: () => device.phone,
+}));
+
 vi.mock("next/navigation", () => ({
   usePathname: () => mockPathname.value,
   useRouter: () => ({ push: routerPush }),
@@ -239,6 +245,33 @@ describe("DashboardShell", () => {
     } finally {
       mockPermissions.value = [];
       mockChapter.value = undefined;
+    }
+  });
+
+  it("points a phone at the app above main, and nothing else at it (#4002)", () => {
+    device.phone = "ios";
+    try {
+      const { unmount } = render(
+        <DashboardShell>
+          <p>route content</p>
+        </DashboardShell>,
+      );
+      expect(
+        screen.getByRole("region", { name: "Frapp works best in the app" }),
+      ).toBeInTheDocument();
+      unmount();
+      device.phone = null;
+      render(
+        <DashboardShell>
+          <p>route content</p>
+        </DashboardShell>,
+      );
+      expect(
+        screen.queryByRole("region", { name: "Frapp works best in the app" }),
+      ).toBeNull();
+    } finally {
+      device.phone = null;
+      window.localStorage.removeItem("frapp.web.get-the-app-dismissed");
     }
   });
 

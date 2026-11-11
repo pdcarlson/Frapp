@@ -89,4 +89,21 @@ describe("Get the app card (#4002)", () => {
     });
     expect(screen.queryByText(GET_THE_APP_TITLE)).toBeNull();
   });
+
+  it("stays out of the app's own in-app browser for the session (?from=app)", () => {
+    device.phone = "ios";
+    window.history.replaceState(null, "", "/geofences?from=app");
+    try {
+      const first = render(<GetTheAppCard />);
+      expect(screen.queryByText(GET_THE_APP_TITLE)).toBeNull();
+      first.unmount();
+      // The next page in that browser has no mark, and still shows nothing.
+      window.history.replaceState(null, "", "/chat");
+      render(<GetTheAppCard />);
+      expect(screen.queryByText(GET_THE_APP_TITLE)).toBeNull();
+    } finally {
+      window.sessionStorage.clear();
+      window.history.replaceState(null, "", "/");
+    }
+  });
 });

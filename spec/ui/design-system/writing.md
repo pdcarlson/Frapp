@@ -246,7 +246,7 @@ The strip under the top bar on a phone ([`web-dashboard/README.md` § Get the ap
 
 | State | Title | Description |
 |---|---|---|
-| Shown | `Frapp works best in the app` | `Chat, events and check-in on your phone, with notifications.` Then `Get the app` and `Open the app`. |
+| Shown | `Frapp works best in the app` | `Chat, events and check-in on your phone, with notifications. The app is in beta, so if the store says it isn't available yet, keep using Frapp here.` Then `Get the app` and `Open the app`. |
 | Close button | — | Labelled `Dismiss the Get the app suggestion` for a screen reader. |
 
 ### Events (dashboard)

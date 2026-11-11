@@ -3,10 +3,9 @@
 import { X } from "lucide-react";
 import { STORE_LISTING_URLS, openAppUrl } from "@repo/validation";
 import { Button } from "@/components/ui/button";
-import { FOCUS_RING } from "@/components/ui/focus";
+import { IconButton } from "@/components/ui/icon-button";
 import { dismissGetTheApp, useGetTheAppDismissed } from "@/lib/get-the-app";
 import { usePhonePlatform } from "@/lib/use-phone-platform";
-import { cn } from "@/lib/utils";
 
 export const GET_THE_APP_TITLE = "Frapp works best in the app";
 
@@ -23,7 +22,13 @@ export const GET_THE_APP_TITLE = "Frapp works best in the app";
  *
  * Drawn in the ops nudge's recipe (`components/chat/ops-setup-nudge.tsx`):
  * the Accent tokens, a bottom border only, `role="region"` rather than a live
- * region, since it is a standing suggestion, not news.
+ * region, since it is a standing suggestion, not news. Its close is the
+ * standard `IconButton`. It stays out of the app's own in-app browser
+ * (`?from=app`, `lib/get-the-app.ts`).
+ *
+ * It costs a phone about 120px of height above chat or the page until it is
+ * closed, which a dismissible suggestion can afford and a permanent one
+ * couldn't.
  */
 export function GetTheAppCard() {
   const phone = usePhonePlatform();
@@ -44,7 +49,9 @@ export function GetTheAppCard() {
           {GET_THE_APP_TITLE}
         </p>
         <p className="mt-0.5 text-caption text-muted-foreground">
-          Chat, events and check-in on your phone, with notifications.
+          Chat, events and check-in on your phone, with notifications. The
+          app is in beta, so if the store says it isn&apos;t available yet,
+          keep using Frapp here.
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <Button asChild variant="tinted" size="sm">
@@ -55,18 +62,13 @@ export function GetTheAppCard() {
           </Button>
         </div>
       </div>
-      <button
-        type="button"
+      <IconButton
+        label="Dismiss the Get the app suggestion"
         onClick={dismissGetTheApp}
-        aria-label="Dismiss the Get the app suggestion"
-        className={cn(
-          "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md pointer-coarse:h-11 pointer-coarse:w-11",
-          "text-accent-text transition-colors hover:bg-accent-subtle-hover",
-          FOCUS_RING,
-        )}
+        className="shrink-0"
       >
         <X className="h-4 w-4" />
-      </button>
+      </IconButton>
     </div>
   );
 }
