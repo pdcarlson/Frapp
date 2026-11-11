@@ -3737,12 +3737,13 @@ drop function if exists public.reorder_role_tiers(uuid, uuid[], uuid[]);
 
 * **Migration**: `20261112010000_chat_unread_counts_per_channel.sql`
 
-One function body and one partial index. It writes no row on apply, and the API calls the function the same way before and after.
+One function body, one new partial index, and one dropped index (`idx_chat_messages_channel`, unused beside `idx_chat_messages_channel_created`). It writes no row on apply, and the API calls the function the same way before and after.
 
 **Revert forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)): in a later migration, re-create `get_channel_unread_counts(uuid, uuid)` with its body from `20261110220000_chat_message_threads.sql`, then `revoke execute on function public.get_channel_unread_counts(uuid, uuid) from public;`. Both bodies return the same rows, so nothing a member sees changes; only the speed does.
 
-The index is harmless to keep. To remove it, in the same later migration:
+The new index is harmless to keep, and nothing needs the dropped one back. To restore both as they were, in the same later migration:
 
 ```sql
 drop index if exists public.idx_chat_messages_channel_countable;
+create index if not exists idx_chat_messages_channel on public.chat_messages (channel_id, created_at);
 ```

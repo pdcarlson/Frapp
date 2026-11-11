@@ -12,11 +12,21 @@ import {
 import { RecordingPosthogTransport } from './posthog-transport';
 import { runWithRequestLogStore } from '../observability/request-als';
 
-// Only `suppressTracing` is replaced, and it still runs its callback, so the
-// upload below is real apart from the span it would have made.
+// Only `suppressTracing` is replaced: it runs its callback and records that the
+// callback is in flight, so the defaultFetch spec can check the upload starts
+// inside it. That spec also stubs `fetch`; whether Sentry's own fetch
+// instrumentation honours suppression is Sentry's contract, not tested here.
+let mockInsideSuppressedCallback = false;
 jest.mock('@sentry/nestjs', () => ({
   ...jest.requireActual<typeof import('@sentry/nestjs')>('@sentry/nestjs'),
-  suppressTracing: jest.fn(<T>(callback: () => T): T => callback()),
+  suppressTracing: jest.fn(<T>(callback: () => T): T => {
+    mockInsideSuppressedCallback = true;
+    try {
+      return callback();
+    } finally {
+      mockInsideSuppressedCallback = false;
+    }
+  }),
 }));
 
 const HEX = 'a'.repeat(64);
@@ -298,12 +308,14 @@ describe('defaultFetch', () => {
     jest.restoreAllMocks();
   });
 
-  it('uploads to PostHog with Sentry tracing suppressed, so a flush is never its own transaction', async () => {
+  it('starts the PostHog upload inside suppressTracing, so a flush is never its own transaction', async () => {
     const suppress = jest.mocked(Sentry.suppressTracing);
     suppress.mockClear();
-    const fetchSpy = jest
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(new Response('{"status":1}', { status: 200 }));
+    const startedInside: boolean[] = [];
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockImplementation(() => {
+      startedInside.push(mockInsideSuppressedCallback);
+      return Promise.resolve(new Response('{"status":1}', { status: 200 }));
+    });
 
     const res = await defaultFetch('https://ph.example.test/i/v1/logs', {
       method: 'POST',
@@ -314,5 +326,6 @@ describe('defaultFetch', () => {
     expect(res.status).toBe(200);
     expect(suppress).toHaveBeenCalledTimes(1);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(startedInside).toEqual([true]);
   });
 });

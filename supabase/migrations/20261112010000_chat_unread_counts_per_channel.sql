@@ -22,6 +22,15 @@
 -- (timeline messages that aren't deleted or imported), so a member who never
 -- opened a channel full of imported history scans its few live rows, not the
 -- archive. It is small: about 660 of production's 43,900 rows today.
+--
+-- Every message write maintains each index on the table, and send has a hot-path
+-- budget, so this also drops `idx_chat_messages_channel` (the initial schema's
+-- `(channel_id, created_at)`). `idx_chat_messages_channel_created` covers the
+-- same columns descending, which a B-tree scans either way, and the planner
+-- already prefers it: production's pg_stat_user_indexes on 2026-11-11 showed
+-- 187,506 scans of it and 0 of the one dropped here.
+
+drop index if exists public.idx_chat_messages_channel;
 
 create index if not exists idx_chat_messages_channel_countable
   on public.chat_messages (channel_id, created_at)

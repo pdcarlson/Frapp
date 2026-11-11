@@ -443,8 +443,8 @@ function buildOtlpLogs(records: SanitizedLogRecord[]): Record<string, unknown> {
  * each log flush, which a timer starts outside any request, into its own
  * `POST /i/v1/logs` transaction: 98k of them in the week to 2026-11-11, about
  * a third of every span the org accepted on Sentry's free plan, and all of
- * them about telemetry rather than about a member's request. Exported for its
- * spec.
+ * them about telemetry rather than about a member's request. Suppression also
+ * drops the upload's fetch breadcrumb. Exported for its spec.
  */
 export const defaultFetch: PosthogFetch = (url, options) =>
   Sentry.suppressTracing(async () => {

@@ -278,6 +278,27 @@ export const LANDMARKS = [
       /blocked_user_id\s*=\s*m\.sender_id/i.test(rows[0].prosrc ?? ""),
   },
   {
+    // The unread badge's speed (#4342). `GET /v1/channels/unread` is the API's
+    // busiest route; with its old left-join body, or without this index, the
+    // planner scanned every chapter's messages (167 ms mean, 5.9 s max on
+    // production). The predicate is asserted with the body's shape: the index
+    // is reachable only while it implies nothing the per-channel count doesn't
+    // also filter on.
+    name: "get_channel_unread_counts counts per channel through the countable partial index (#4342)",
+    sql: `select
+            (select indexdef from pg_indexes
+              where indexname = 'idx_chat_messages_channel_countable') as indexdef,
+            (select prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+              where n.nspname = 'public' and p.proname = 'get_channel_unread_counts') as prosrc`,
+    ok: (rows) =>
+      rows.length === 1 &&
+      /\(channel_id, created_at\)/.test(rows[0].indexdef ?? "") &&
+      /thread_root_id IS NULL/i.test(rows[0].indexdef ?? "") &&
+      /is_deleted = false/i.test(rows[0].indexdef ?? "") &&
+      /kind <> 'imported'/i.test(rows[0].indexdef ?? "") &&
+      /cross\s+join\s+lateral/i.test(rows[0].prosrc ?? ""),
+  },
+  {
     name: "chat_message_actions UNIQUE on (message_id, user_id, action_type)",
     sql: `select indexdef from pg_indexes where indexname = 'idx_chat_message_actions_dedupe'`,
     ok: (rows) =>

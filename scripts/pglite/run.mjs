@@ -194,6 +194,7 @@ await import("./tiers/private-channel-members.mjs");
 await import("./tiers/sidebar-section-fold.mjs");
 await import("./tiers/unread-counts-blocked-sender.mjs");
 await import("./tiers/unread-counts-skip-audit-mirror.mjs");
+await import("./tiers/unread-counts-filters.mjs");
 await import("./tiers/channel-latest-messages.mjs");
 await import("./tiers/message-threads.mjs");
 await import("./tiers/discord-author-links.mjs");
