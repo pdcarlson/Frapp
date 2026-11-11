@@ -3383,6 +3383,8 @@ alter table public.roles
   drop column if exists permission_overrides;
 drop function if exists public.role_effective_permissions(text[], jsonb);
 drop table if exists public.role_tiers;
+```
+
 ## Rollback Recruitment permissions backfill (20261111010000)
 
 * **Migration**: `20261111010000_rush_permissions_backfill.sql`
