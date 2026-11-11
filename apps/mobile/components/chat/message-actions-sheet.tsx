@@ -39,6 +39,7 @@ import {
   useSheetBackgroundStyle,
   SheetBackToClose,
   useSheetClose,
+  useSheetVisit,
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import * as Clipboard from "expo-clipboard";
@@ -289,6 +290,13 @@ export const MessageActionsSheet = forwardRef<
   const pickerRef = useRef<BottomSheetModal>(null);
   const closeMenu = useSheetClose(menuRef);
   const closeReport = useSheetClose(reportRef);
+  // Whether each modal is up, so the thread's dismiss (its message was
+  // deleted) never reaches one that isn't: gorhom 5.2 wedges a modal
+  // dismissed while closed, and its next `present()` draws nothing (#3795).
+  const menuVisit = useSheetVisit(menuRef);
+  const pickerVisit = useSheetVisit(pickerRef);
+  const { dismiss: dismissMenu } = menuVisit;
+  const { dismiss: dismissPicker } = pickerVisit;
 
   useImperativeHandle(
     ref,
@@ -303,12 +311,15 @@ export const MessageActionsSheet = forwardRef<
         menuRef.current?.present();
       },
       // The picker too: it replaced the menu and acts on the same message.
+      // Each only while presented. The thread calls this whenever the
+      // long-pressed message is deleted, which can be long after the menu
+      // closed, and usually while the picker was never opened (#3795).
       dismiss: () => {
-        menuRef.current?.dismiss();
-        pickerRef.current?.dismiss();
+        dismissMenu();
+        dismissPicker();
       },
     }),
-    [],
+    [dismissMenu, dismissPicker],
   );
 
   const report = useReportMessage();
@@ -521,7 +532,11 @@ export const MessageActionsSheet = forwardRef<
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}
         backdropComponent={SheetScrim}
-        onDismiss={resetCopy}
+        onAnimate={menuVisit.onAnimate}
+        onDismiss={() => {
+          menuVisit.markClosed();
+          resetCopy();
+        }}
       >
         <SheetBackToClose onClose={closeMenu} />
         <BottomSheetView onAccessibilityEscape={closeMenu} style={styles.body}>
@@ -825,6 +840,8 @@ export const MessageActionsSheet = forwardRef<
       {onReact && onUnreact ? (
         <EmojiPickerSheet
           ref={pickerRef}
+          onAnimate={pickerVisit.onAnimate}
+          onDismiss={pickerVisit.markClosed}
           selected={target?.reactedWith ?? []}
           onPick={pickFromPicker}
         />

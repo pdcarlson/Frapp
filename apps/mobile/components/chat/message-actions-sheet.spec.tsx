@@ -543,6 +543,132 @@ describe("MessageActionsSheet — quick reactions", () => {
   });
 });
 
+describe("MessageActionsSheet — dismissed for a deleted message (#3795)", () => {
+  const TARGET: MessageActionsTarget = {
+    ...SOMEONE_ELSES,
+    messageId: "m5",
+    copyText: null,
+    blockUserId: null,
+    senderName: "Blake",
+    senderInDirectory: true,
+    senderLabel: "Blake",
+    sentAt: SENT_AT,
+    reactedWith: [],
+  };
+
+  type ModalProps = Record<string, unknown>;
+  const isMenu = (props: ModalProps) => props.enableDynamicSizing === true;
+  // The report form is the other `replace` sheet; the picker is the tall one.
+  const isPicker = (props: ModalProps) =>
+    props.stackBehavior === "replace" &&
+    JSON.stringify(props.snapPoints) === JSON.stringify(["100%"]);
+
+  /**
+   * gorhom 5.2's modal as far as this bug goes: `dismiss()` on a modal that
+   * isn't presented leaves it stuck mid-dismiss, and every later `present()`
+   * draws nothing (`BottomSheetModal` handleDismiss / handlePortalRender).
+   */
+  function fakeModal() {
+    const modal = {
+      shown: false,
+      wedged: false,
+      present: vi.fn(() => {
+        if (!modal.wedged) modal.shown = true;
+      }),
+      dismiss: vi.fn(() => {
+        if (!modal.shown) modal.wedged = true;
+        modal.shown = false;
+      }),
+    };
+    return modal;
+  }
+
+  function mount() {
+    const menu = fakeModal();
+    const picker = fakeModal();
+    const handle = createRef<MessageActionsSheetHandle>();
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <MessageActionsSheet
+            ref={handle}
+            target={TARGET}
+            onReact={vi.fn()}
+            onUnreact={vi.fn()}
+          />
+        </FrappThemeProvider>,
+        {
+          createNodeMock: (element) => {
+            if (element.type !== "BottomSheetModal") return null;
+            const props = element.props as ModalProps;
+            if (isMenu(props)) return menu;
+            if (isPicker(props)) return picker;
+            return fakeModal();
+          },
+        },
+      );
+    });
+    const modal = (which: (props: ModalProps) => boolean) =>
+      tree.root.find(
+        (node) =>
+          (node.type as unknown) === "BottomSheetModal" && which(node.props),
+      );
+    /** What gorhom fires as a modal slides up, and once it has closed. */
+    const opened = (which: (props: ModalProps) => boolean) =>
+      act(() => modal(which).props.onAnimate?.(-1, 0));
+    const closed = (which: (props: ModalProps) => boolean) =>
+      act(() => modal(which).props.onDismiss?.());
+    return { menu, picker, handle, tree, opened, closed };
+  }
+
+  it("leaves both modals alone when the message is deleted after the menu closed", () => {
+    const { menu, picker, handle, opened, closed } = mount();
+    act(() => handle.current?.present());
+    opened(isMenu);
+    closed(isMenu);
+
+    act(() => handle.current?.dismiss());
+    expect(menu.dismiss).not.toHaveBeenCalled();
+    expect(picker.dismiss).not.toHaveBeenCalled();
+
+    // The next long-press still opens the menu.
+    act(() => handle.current?.present());
+    expect(menu.wedged).toBe(false);
+    expect(menu.shown).toBe(true);
+  });
+
+  it("closes an open menu, and leaves the never-opened picker alone", () => {
+    const { menu, picker, handle, tree, opened } = mount();
+    act(() => handle.current?.present());
+    opened(isMenu);
+
+    act(() => handle.current?.dismiss());
+    expect(menu.dismiss).toHaveBeenCalledTimes(1);
+    expect(picker.dismiss).not.toHaveBeenCalled();
+
+    // "Every emoji" still opens on the next message.
+    pressByLabel(tree, "Add a reaction");
+    expect(picker.wedged).toBe(false);
+    expect(picker.shown).toBe(true);
+  });
+
+  it("closes the picker when it is the one up", () => {
+    const { menu, picker, handle, tree, opened, closed } = mount();
+    act(() => handle.current?.present());
+    opened(isMenu);
+    pressByLabel(tree, "Add a reaction");
+    opened(isPicker);
+    // `stackBehavior="replace"` dismissed the menu under it.
+    closed(isMenu);
+
+    act(() => handle.current?.dismiss());
+    expect(picker.dismiss).toHaveBeenCalledTimes(1);
+    expect(menu.dismiss).not.toHaveBeenCalled();
+    expect(picker.wedged).toBe(false);
+  });
+});
+
 describe("MessageActionsSheet — menu", () => {
   it("offers Report and Block for a blockable sender", () => {
     const tree = render({
