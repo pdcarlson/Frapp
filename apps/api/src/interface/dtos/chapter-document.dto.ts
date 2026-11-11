@@ -146,3 +146,58 @@ export class UpdateDocumentFolderDto {
   @Max(POSITION_MAX)
   sort_order?: number;
 }
+
+/** The caller's own starred folders and documents (#3934). */
+export class DocumentStarsDto {
+  @ApiProperty({
+    type: [String],
+    description: 'Ids of the folders the caller starred, oldest star first',
+  })
+  folder_ids: string[];
+
+  @ApiProperty({
+    type: [String],
+    description: 'Ids of the documents the caller starred, oldest star first',
+  })
+  document_ids: string[];
+}
+
+/**
+ * A document row as the list and pin routes return it. Declared so the SDK
+ * types `pinned_at` (#3934) rather than leaving the body untyped.
+ */
+export class ChapterDocumentDto {
+  @ApiProperty() id: string;
+  @ApiProperty() chapter_id: string;
+  @ApiProperty() title: string;
+  @ApiProperty({ type: String, nullable: true }) description: string | null;
+  @ApiProperty({ type: String, nullable: true }) folder: string | null;
+  @ApiProperty() storage_path: string;
+  @ApiProperty() uploaded_by: string;
+  @ApiProperty() created_at: string;
+  @ApiProperty({ type: String, nullable: true }) content_type: string | null;
+  @ApiProperty({ type: Number, nullable: true }) byte_size: number | null;
+  @ApiProperty({ type: String, nullable: true }) document_type: string | null;
+  @ApiProperty({ type: String, nullable: true }) effective_date: string | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'When an officer pinned it for the whole chapter, or null',
+  })
+  pinned_at: string | null;
+}
+
+/** A folder as the folder list and pin routes return it (#3934). */
+export class DocumentFolderDto {
+  @ApiProperty() id: string;
+  @ApiProperty() chapter_id: string;
+  @ApiProperty() name: string;
+  @ApiProperty() sort_order: number;
+  @ApiProperty() created_at: string;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'When an officer pinned it for the whole chapter, or null',
+  })
+  pinned_at: string | null;
+}

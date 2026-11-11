@@ -13,6 +13,7 @@ import type {
   ChapterDirectoryRequest,
   ChapterDocument,
   ChapterDocumentFolder,
+  ChapterDocumentStar,
   ChapterDuesConfig,
   ChapterServiceConfig,
   ChapterPointsConfig,
@@ -163,6 +164,7 @@ export interface Database {
       rush_candidate_votes: TableDefinition<RushCandidateVote>;
       chapter_documents: TableDefinition<ChapterDocument>;
       chapter_document_folders: TableDefinition<ChapterDocumentFolder>;
+      chapter_document_stars: TableDefinition<ChapterDocumentStar>;
       semester_archives: TableDefinition<SemesterArchive>;
       chapter_custom_roles: TableDefinition<ChapterCustomRole>;
       stripe_webhook_events: TableDefinition<StripeWebhookEvent>;

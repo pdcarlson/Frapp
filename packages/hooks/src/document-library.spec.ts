@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  tierByMarks,
   NO_DOCUMENT_FILTERS,
   isActiveDateFilter,
   semesterSince,
@@ -278,5 +279,41 @@ describe("file type (#3938)", () => {
 
   it("counts a group as a filter", () => {
     expect(isFiltering("", { ...NO_DOCUMENT_FILTERS, kind: "pdf" }, true)).toBe(true);
+  });
+});
+
+describe("tierByMarks (#3934)", () => {
+  const items = ["a", "b", "c", "d", "e"];
+
+  it("splits pinned, then starred, then the rest, each in the order given", () => {
+    const tiers = tierByMarks(
+      items,
+      (x) => x === "d" || x === "b",
+      (x) => x === "e",
+    );
+    expect(tiers).toEqual({
+      pinned: ["b", "d"],
+      starred: ["e"],
+      rest: ["a", "c"],
+    });
+  });
+
+  it("lists an item that is both pinned and starred once, under Pinned", () => {
+    const tiers = tierByMarks(
+      items,
+      (x) => x === "a",
+      (x) => x === "a" || x === "c",
+    );
+    expect(tiers.pinned).toEqual(["a"]);
+    expect(tiers.starred).toEqual(["c"]);
+    expect(tiers.rest).toEqual(["b", "d", "e"]);
+  });
+
+  it("leaves everything in the rest when nothing is marked", () => {
+    expect(tierByMarks(items, () => false, () => false)).toEqual({
+      pinned: [],
+      starred: [],
+      rest: items,
+    });
   });
 });

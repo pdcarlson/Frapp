@@ -71,4 +71,20 @@ describe('SupabaseChapterDocumentFolderRepository — tenant scope', () => {
     const rows = harness.rows('chapter_document_folders');
     expect(rows.find((f) => f.chapter_id === CHAPTER_A)?.name).toBe('Bylaws');
   });
+
+  it('setPinnedAt pins in the caller chapter and never reaches another (#3934)', async () => {
+    const pinned = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.setPinnedAt(FOLDER_B, CHAPTER_B, '2026-11-11T00:00:00.000Z'),
+    );
+    expect(pinned?.id).toBe(FOLDER_B);
+
+    const missed = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.setPinnedAt(FOLDER_A, CHAPTER_B, '2026-11-11T00:00:00.000Z'),
+    );
+    expect(missed).toBeNull();
+    expect(
+      harness.rows('chapter_document_folders').find((f) => f.id === FOLDER_A)
+        ?.pinned_at,
+    ).toBeUndefined();
+  });
 });

@@ -121,6 +121,22 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
     return data;
   }
 
+  async setPinnedAt(
+    id: string,
+    chapterId: string,
+    pinnedAt: string | null,
+  ): Promise<ChapterDocument | null> {
+    const { data, error } = await this.supabase
+      .from('chapter_documents')
+      .update({ pinned_at: pinnedAt })
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .select()
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
   async delete(id: string, chapterId: string): Promise<void> {
     const { error } = await this.supabase
       .from('chapter_documents')

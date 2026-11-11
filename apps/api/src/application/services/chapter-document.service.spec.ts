@@ -11,6 +11,10 @@ import { CHAPTER_DOCUMENT_REPOSITORY } from '#domain/repositories/chapter-docume
 import type { IChapterDocumentRepository } from '#domain/repositories/chapter-document.repository.interface';
 import { CHAPTER_DOCUMENT_FOLDER_REPOSITORY } from '#domain/repositories/chapter-document-folder.repository.interface';
 import type { IChapterDocumentFolderRepository } from '#domain/repositories/chapter-document-folder.repository.interface';
+import {
+  CHAPTER_DOCUMENT_STAR_REPOSITORY,
+  type IChapterDocumentStarRepository,
+} from '#domain/repositories/chapter-document-star.repository.interface';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import type { IStorageProvider } from '#domain/adapters/storage.interface';
 import type {
@@ -22,6 +26,7 @@ describe('ChapterDocumentService', () => {
   let service: ChapterDocumentService;
   let mockDocumentRepo: jest.Mocked<IChapterDocumentRepository>;
   let mockFolderRepo: jest.Mocked<IChapterDocumentFolderRepository>;
+  let mockStarRepo: jest.Mocked<IChapterDocumentStarRepository>;
   let mockStorageProvider: jest.Mocked<IStorageProvider>;
 
   const baseDocument: ChapterDocument = {
@@ -37,6 +42,7 @@ describe('ChapterDocumentService', () => {
     byte_size: 1024,
     document_type: 'Bylaws',
     effective_date: '2026-01-01',
+    pinned_at: null,
   };
 
   const baseFolder: ChapterDocumentFolder = {
@@ -45,6 +51,7 @@ describe('ChapterDocumentService', () => {
     name: 'Governance',
     sort_order: 0,
     created_at: '2026-01-01T00:00:00.000Z',
+    pinned_at: null,
   };
 
   beforeEach(async () => {
@@ -54,6 +61,7 @@ describe('ChapterDocumentService', () => {
       findByStoragePath: jest.fn().mockResolvedValue(null),
       create: jest.fn(),
       delete: jest.fn(),
+      setPinnedAt: jest.fn(),
       moveToRoot: jest.fn(),
       renameFolder: jest.fn(),
     };
@@ -65,6 +73,13 @@ describe('ChapterDocumentService', () => {
       create: jest.fn().mockResolvedValue(baseFolder),
       update: jest.fn(),
       delete: jest.fn(),
+      setPinnedAt: jest.fn(),
+    };
+
+    mockStarRepo = {
+      findByUser: jest.fn().mockResolvedValue([]),
+      add: jest.fn(),
+      remove: jest.fn(),
     };
 
     mockStorageProvider = {
@@ -92,6 +107,7 @@ describe('ChapterDocumentService', () => {
           provide: CHAPTER_DOCUMENT_FOLDER_REPOSITORY,
           useValue: mockFolderRepo,
         },
+        { provide: CHAPTER_DOCUMENT_STAR_REPOSITORY, useValue: mockStarRepo },
         { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
       ],
     }).compile();
@@ -924,6 +940,208 @@ describe('ChapterDocumentService', () => {
         NotFoundException,
       );
       expect(mockDocumentRepo.moveToRoot).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('pins (#3934)', () => {
+    it('pins an unpinned folder with the current time', async () => {
+      mockFolderRepo.findById.mockResolvedValue(baseFolder);
+      mockFolderRepo.setPinnedAt.mockImplementation(
+        async (_id, _ch, pinnedAt) => ({ ...baseFolder, pinned_at: pinnedAt }),
+      );
+      const result = await service.setFolderPinned('folder-1', 'ch-1', true);
+      expect(mockFolderRepo.findById).toHaveBeenCalledWith('folder-1', 'ch-1');
+      expect(mockFolderRepo.setPinnedAt).toHaveBeenCalledWith(
+        'folder-1',
+        'ch-1',
+        expect.any(String),
+      );
+      expect(result.pinned_at).not.toBeNull();
+    });
+
+    it('keeps the first pin time when a pinned folder is pinned again', async () => {
+      const pinned = { ...baseFolder, pinned_at: '2026-11-01T00:00:00.000Z' };
+      mockFolderRepo.findById.mockResolvedValue(pinned);
+      await expect(
+        service.setFolderPinned('folder-1', 'ch-1', true),
+      ).resolves.toBe(pinned);
+      expect(mockFolderRepo.setPinnedAt).not.toHaveBeenCalled();
+    });
+
+    it('unpins a pinned folder', async () => {
+      mockFolderRepo.findById.mockResolvedValue({
+        ...baseFolder,
+        pinned_at: '2026-11-01T00:00:00.000Z',
+      });
+      mockFolderRepo.setPinnedAt.mockResolvedValue(baseFolder);
+      await service.setFolderPinned('folder-1', 'ch-1', false);
+      expect(mockFolderRepo.setPinnedAt).toHaveBeenCalledWith(
+        'folder-1',
+        'ch-1',
+        null,
+      );
+    });
+
+    it("refuses to pin a folder outside the caller's chapter", async () => {
+      mockFolderRepo.findById.mockResolvedValue(null);
+      await expect(
+        service.setFolderPinned('folder-x', 'ch-1', true),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockFolderRepo.setPinnedAt).not.toHaveBeenCalled();
+    });
+
+    it('answers 404 when the folder is deleted between the read and the pin', async () => {
+      mockFolderRepo.findById.mockResolvedValue(baseFolder);
+      mockFolderRepo.setPinnedAt.mockResolvedValue(null);
+      await expect(
+        service.setFolderPinned('folder-1', 'ch-1', true),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('answers 404 when the document is deleted between the read and the pin', async () => {
+      mockDocumentRepo.findById.mockResolvedValue(baseDocument);
+      mockDocumentRepo.setPinnedAt.mockResolvedValue(null);
+      await expect(
+        service.setDocumentPinned('doc-1', 'ch-1', true),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('pins and unpins a document', async () => {
+      mockDocumentRepo.findById.mockResolvedValue(baseDocument);
+      mockDocumentRepo.setPinnedAt.mockResolvedValue({
+        ...baseDocument,
+        pinned_at: '2026-11-11T00:00:00.000Z',
+      });
+      await service.setDocumentPinned('doc-1', 'ch-1', true);
+      expect(mockDocumentRepo.setPinnedAt).toHaveBeenCalledWith(
+        'doc-1',
+        'ch-1',
+        expect.any(String),
+      );
+
+      mockDocumentRepo.setPinnedAt.mockClear();
+      mockDocumentRepo.findById.mockResolvedValue({
+        ...baseDocument,
+        pinned_at: '2026-11-11T00:00:00.000Z',
+      });
+      await service.setDocumentPinned('doc-1', 'ch-1', false);
+      expect(mockDocumentRepo.setPinnedAt).toHaveBeenCalledWith(
+        'doc-1',
+        'ch-1',
+        null,
+      );
+    });
+
+    it('leaves an unpinned document alone when asked to unpin it', async () => {
+      mockDocumentRepo.findById.mockResolvedValue(baseDocument);
+      await expect(
+        service.setDocumentPinned('doc-1', 'ch-1', false),
+      ).resolves.toBe(baseDocument);
+      expect(mockDocumentRepo.setPinnedAt).not.toHaveBeenCalled();
+    });
+
+    it("refuses to pin a document outside the caller's chapter", async () => {
+      mockDocumentRepo.findById.mockResolvedValue(null);
+      await expect(
+        service.setDocumentPinned('doc-x', 'ch-1', true),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('stars (#3934)', () => {
+    it("splits the caller's stars into folder and document ids", async () => {
+      mockStarRepo.findByUser.mockResolvedValue([
+        {
+          id: 's1',
+          user_id: 'user-1',
+          chapter_id: 'ch-1',
+          folder_id: 'folder-1',
+          document_id: null,
+          created_at: '2026-11-01T00:00:00.000Z',
+        },
+        {
+          id: 's2',
+          user_id: 'user-1',
+          chapter_id: 'ch-1',
+          folder_id: null,
+          document_id: 'doc-1',
+          created_at: '2026-11-02T00:00:00.000Z',
+        },
+      ]);
+      await expect(service.listStars('user-1', 'ch-1')).resolves.toEqual({
+        folder_ids: ['folder-1'],
+        document_ids: ['doc-1'],
+      });
+      expect(mockStarRepo.findByUser).toHaveBeenCalledWith('user-1', 'ch-1');
+    });
+
+    it("stars a folder after reading it in the caller's chapter", async () => {
+      mockFolderRepo.findById.mockResolvedValue(baseFolder);
+      await service.setFolderStarred('user-1', 'ch-1', 'folder-1', true);
+      expect(mockFolderRepo.findById).toHaveBeenCalledWith('folder-1', 'ch-1');
+      expect(mockStarRepo.add).toHaveBeenCalledWith('user-1', 'ch-1', {
+        folder_id: 'folder-1',
+      });
+    });
+
+    it("refuses to star a folder outside the caller's chapter", async () => {
+      mockFolderRepo.findById.mockResolvedValue(null);
+      await expect(
+        service.setFolderStarred('user-1', 'ch-1', 'folder-x', true),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockStarRepo.add).not.toHaveBeenCalled();
+    });
+
+    it('answers 404 when the target is deleted between the read and the star', async () => {
+      mockFolderRepo.findById.mockResolvedValue(baseFolder);
+      mockStarRepo.add.mockRejectedValue(
+        Object.assign(new Error('fk'), { code: '23503' }),
+      );
+      await expect(
+        service.setFolderStarred('user-1', 'ch-1', 'folder-1', true),
+      ).rejects.toThrow(NotFoundException);
+
+      mockDocumentRepo.findById.mockResolvedValue(baseDocument);
+      await expect(
+        service.setDocumentStarred('user-1', 'ch-1', 'doc-1', true),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('lets any other insert failure through', async () => {
+      mockFolderRepo.findById.mockResolvedValue(baseFolder);
+      const failure = Object.assign(new Error('down'), { code: '08006' });
+      mockStarRepo.add.mockRejectedValue(failure);
+      await expect(
+        service.setFolderStarred('user-1', 'ch-1', 'folder-1', true),
+      ).rejects.toBe(failure);
+    });
+
+    it('unstars a folder without reading it', async () => {
+      await service.setFolderStarred('user-1', 'ch-1', 'folder-1', false);
+      expect(mockFolderRepo.findById).not.toHaveBeenCalled();
+      expect(mockStarRepo.remove).toHaveBeenCalledWith('user-1', 'ch-1', {
+        folder_id: 'folder-1',
+      });
+    });
+
+    it('stars and unstars a document', async () => {
+      mockDocumentRepo.findById.mockResolvedValue(baseDocument);
+      await service.setDocumentStarred('user-1', 'ch-1', 'doc-1', true);
+      expect(mockStarRepo.add).toHaveBeenCalledWith('user-1', 'ch-1', {
+        document_id: 'doc-1',
+      });
+      await service.setDocumentStarred('user-1', 'ch-1', 'doc-1', false);
+      expect(mockStarRepo.remove).toHaveBeenCalledWith('user-1', 'ch-1', {
+        document_id: 'doc-1',
+      });
+    });
+
+    it("refuses to star a document outside the caller's chapter", async () => {
+      mockDocumentRepo.findById.mockResolvedValue(null);
+      await expect(
+        service.setDocumentStarred('user-1', 'ch-1', 'doc-x', true),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockStarRepo.add).not.toHaveBeenCalled();
     });
   });
 });

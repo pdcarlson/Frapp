@@ -124,6 +124,21 @@ describe('SupabaseChapterDocumentRepository — tenant scope', () => {
         .filter((d) => d.chapter_id === CHAPTER_A),
     ).toHaveLength(1);
   });
+
+  it('setPinnedAt pins in the caller chapter and never reaches another (#3934)', async () => {
+    const pinned = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.setPinnedAt(DOC_B, CHAPTER_B, '2026-11-11T00:00:00.000Z'),
+    );
+    expect(pinned?.id).toBe(DOC_B);
+
+    const missed = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.setPinnedAt(DOC_A, CHAPTER_B, '2026-11-11T00:00:00.000Z'),
+    );
+    expect(missed).toBeNull();
+    expect(
+      harness.rows('chapter_documents').find((d) => d.id === DOC_A)?.pinned_at,
+    ).toBeUndefined();
+  });
 });
 
 /**

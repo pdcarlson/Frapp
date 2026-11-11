@@ -2967,6 +2967,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/documents/stars": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's own starred folders and documents */
+        get: operations["ChapterDocumentController_listStars_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/documents/folders/{id}": {
         parameters: {
             query?: never;
@@ -2985,6 +3002,42 @@ export interface paths {
         patch: operations["ChapterDocumentController_updateFolder_v1"];
         trace?: never;
     };
+    "/v1/documents/folders/{id}/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Pin a folder for the whole chapter (idempotent) */
+        put: operations["ChapterDocumentController_pinFolder_v1"];
+        post?: never;
+        /** Unpin a folder (idempotent) */
+        delete: operations["ChapterDocumentController_unpinFolder_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/folders/{id}/star": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Star a folder for yourself (idempotent) */
+        put: operations["ChapterDocumentController_starFolder_v1"];
+        post?: never;
+        /** Remove your star from a folder (idempotent) */
+        delete: operations["ChapterDocumentController_unstarFolder_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/documents/{id}": {
         parameters: {
             query?: never;
@@ -2998,6 +3051,42 @@ export interface paths {
         post?: never;
         /** Delete a document */
         delete: operations["ChapterDocumentController_delete_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/{id}/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Pin a document for the whole chapter (idempotent) */
+        put: operations["ChapterDocumentController_pinDocument_v1"];
+        post?: never;
+        /** Unpin a document (idempotent) */
+        delete: operations["ChapterDocumentController_unpinDocument_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/{id}/star": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Star a document for yourself (idempotent) */
+        put: operations["ChapterDocumentController_starDocument_v1"];
+        post?: never;
+        /** Remove your star from a document (idempotent) */
+        delete: operations["ChapterDocumentController_unstarDocument_v1"];
         options?: never;
         head?: never;
         patch?: never;
@@ -5675,6 +5764,37 @@ export interface components {
             document_type?: string;
             /** @description Date this document took effect (ISO date), distinct from the upload timestamp */
             effective_date?: string;
+        };
+        ChapterDocumentDto: {
+            id: string;
+            chapter_id: string;
+            title: string;
+            description: string | null;
+            folder: string | null;
+            storage_path: string;
+            uploaded_by: string;
+            created_at: string;
+            content_type: string | null;
+            byte_size: number | null;
+            document_type: string | null;
+            effective_date: string | null;
+            /** @description When an officer pinned it for the whole chapter, or null */
+            pinned_at: string | null;
+        };
+        DocumentFolderDto: {
+            id: string;
+            chapter_id: string;
+            name: string;
+            sort_order: number;
+            created_at: string;
+            /** @description When an officer pinned it for the whole chapter, or null */
+            pinned_at: string | null;
+        };
+        DocumentStarsDto: {
+            /** @description Ids of the folders the caller starred, oldest star first */
+            folder_ids: string[];
+            /** @description Ids of the documents the caller starred, oldest star first */
+            document_ids: string[];
         };
         CreateDocumentFolderDto: {
             /** @description Folder name (unique within the chapter) */
@@ -13115,7 +13235,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ChapterDocumentDto"][];
+                };
             };
             /** @description Error */
             default: {
@@ -13171,7 +13293,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DocumentFolderDto"][];
+                };
             };
             /** @description Error */
             default: {
@@ -13202,6 +13326,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_listStars_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentStarsDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -13274,6 +13426,122 @@ export interface operations {
             };
         };
     };
+    ChapterDocumentController_pinFolder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentFolderDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_unpinFolder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentFolderDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_starFolder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_unstarFolder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     ChapterDocumentController_getOne_v1: {
         parameters: {
             query?: never;
@@ -13314,6 +13582,122 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_pinDocument_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterDocumentDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_unpinDocument_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterDocumentDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_starDocument_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_unstarDocument_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };

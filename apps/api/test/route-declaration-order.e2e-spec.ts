@@ -78,6 +78,9 @@ describe('Route declaration order — a literal route must not be swallowed by :
 
   const chapterDocumentServiceMock = {
     listFolders: jest.fn().mockResolvedValue([]),
+    listStars: jest
+      .fn()
+      .mockResolvedValue({ folder_ids: [], document_ids: [] }),
     // The `:id` route's handler is named `getOne`, but it delegates to
     // `findById` on the service — that's the call this mock must intercept
     // for the "wrong handler" assertion below to mean anything.
@@ -290,6 +293,20 @@ describe('Route declaration order — a literal route must not be swallowed by :
       .expect(200);
 
     expect(chapterDocumentServiceMock.listFolders).toHaveBeenCalledWith(
+      CHAPTER_ID,
+    );
+    expect(chapterDocumentServiceMock.findById).not.toHaveBeenCalled();
+  });
+
+  it('GET /v1/documents/stars reaches listStars, not getOne', async () => {
+    await request(app.getHttpServer())
+      .get(`${V1}/documents/stars`)
+      .set('authorization', 'Bearer token')
+      .set('x-chapter-id', CHAPTER_ID)
+      .expect(200);
+
+    expect(chapterDocumentServiceMock.listStars).toHaveBeenCalledWith(
+      'member-1',
       CHAPTER_ID,
     );
     expect(chapterDocumentServiceMock.findById).not.toHaveBeenCalled();
