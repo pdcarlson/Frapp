@@ -32,6 +32,10 @@ vi.mock("@/lib/onboarding/use-onboarding-redirect", () => ({
   useOnboardingRedirect: () => calls.push("onboarding"),
 }));
 
+vi.mock("@/lib/presence/chapter-presence", () => ({
+  useChapterPresenceRuntime: () => calls.push("presence"),
+}));
+
 const { AppRuntime } = await import("./app-runtime");
 
 describe("AppRuntime", () => {
@@ -50,5 +54,11 @@ describe("AppRuntime", () => {
     calls.length = 0;
     renderHook(() => AppRuntime());
     expect(calls).toContain("unread-first-paint");
+  });
+
+  it("runs chapter presence app-wide, so the dots mean online (#3917)", () => {
+    calls.length = 0;
+    renderHook(() => AppRuntime());
+    expect(calls).toContain("presence");
   });
 });

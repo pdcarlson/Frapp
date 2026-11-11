@@ -15,7 +15,10 @@
     "./member-status": "./src/member-status.ts",
     "./use-own-status-at": "./src/use-own-status-at.ts",
     "./fuzzy-match": "./src/fuzzy-match.ts",
-    "./document-library": "./src/document-library.ts"
+    "./document-library": "./src/document-library.ts",
+    "./presence-status": "./src/presence-status.ts",
+    "./presence-topics": "./src/presence-topics.ts",
+    "./use-chapter-presence": "./src/use-chapter-presence.ts"
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",

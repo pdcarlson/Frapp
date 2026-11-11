@@ -110,6 +110,16 @@ export function healthUrl(): string | null {
 
 export interface ConnectionMonitor {
   get(): ConnectionState;
+  /**
+   * Whether the link itself is down: a drop that outlasted
+   * `LINK_DOWN_GRACE_MS`, until the next link-up event or a reachable probe.
+   * Unlike `get()`'s OFFLINE it never waits on `/health`, which is why chapter
+   * presence gates on it (realtime-resilience rule 7): Realtime is a
+   * different service from the API.
+   */
+  linkDown(): boolean;
+  /** Fires when `linkDown()` changes. */
+  subscribeLinkDown(listener: () => void): () => void;
   subscribe(listener: (state: ConnectionState) => void): () => void;
   /** Idempotent: safe to call from every mount of the runtime component. */
   start(): void;
@@ -173,6 +183,7 @@ export function createConnectionMonitor(
   const deps: MonitorDeps = { ...defaultDeps, ...overrides };
   const listeners = new Set<(state: ConnectionState) => void>();
   const resumeListeners = new Set<() => void>();
+  const linkListeners = new Set<() => void>();
 
   // Optimistic until proven otherwise, matching the `NetworkState` port's
   // "unknown counts as online" contract: a false offline strands writes.
@@ -189,6 +200,8 @@ export function createConnectionMonitor(
    */
   let lifecycle = 0;
   let state: ConnectionState = "ONLINE";
+  /** The link alone, for `linkDown()`: no `/health` in it. */
+  let linkDown = false;
 
   let started = false;
   /** In the background: link events and probe results are not evidence. */
@@ -213,6 +226,13 @@ export function createConnectionMonitor(
   let poll: ReturnType<typeof setInterval> | null = null;
   let unsubscribeLink: (() => void) | null = null;
   let unsubscribeAppState: (() => void) | null = null;
+
+  /** Moves the link alone and tells its own listeners. */
+  function setLinkDown(next: boolean) {
+    if (next === linkDown) return;
+    linkDown = next;
+    for (const listener of [...linkListeners]) listener();
+  }
 
   function publish() {
     const next = deriveConnectionState({ linkOffline, consecutiveFailures });
@@ -271,6 +291,7 @@ export function createConnectionMonitor(
         // reading was wrong (a network still blocked for this app, say) and
         // the banner never shows.
         linkOffline = true;
+        setLinkDown(true);
         void probeOnce();
       }, LINK_DOWN_GRACE_MS);
       return;
@@ -290,6 +311,8 @@ export function createConnectionMonitor(
     // succeeds", and only the probe clears `linkOffline`. Clearing it here
     // would show ONLINE, or "Slow connection" from failures the down-link
     // polls left behind, before the API has said anything.
+    // The link is back, whatever `/health` goes on to say.
+    setLinkDown(false);
     const cameBack = linkOffline;
     const blip = cancelPendingLinkDown();
 
@@ -370,6 +393,7 @@ export function createConnectionMonitor(
       cancelConfirmRetry();
       consecutiveFailures = 0;
       linkOffline = false;
+      setLinkDown(false);
     } else if (
       !retried &&
       !linkOffline &&
@@ -448,6 +472,13 @@ export function createConnectionMonitor(
 
   return {
     get: () => state,
+    linkDown: () => linkDown,
+    subscribeLinkDown(listener) {
+      linkListeners.add(listener);
+      return () => {
+        linkListeners.delete(listener);
+      };
+    },
     subscribe(listener) {
       listeners.add(listener);
       return () => {

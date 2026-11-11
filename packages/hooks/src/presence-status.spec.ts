@@ -1,0 +1,304 @@
+import { describe, expect, test } from "vitest";
+import {
+  IDLE_AFTER_MS,
+  PRESENCE_HEARTBEAT_MS,
+  presenceLabel,
+  presenceMapFrom,
+  presenceStatusFor,
+  sameRoster,
+  type PresenceEntry,
+} from "./presence-status";
+import { chapterPresenceTopic } from "./presence-topics";
+import { CUSTOM_STATUS_MAX } from "./member-status";
+
+/** An automatic entry: activity only, nothing picked, no line. */
+function at(ts: number): PresenceEntry {
+  return { ts, picked: null, line: null, away: false };
+}
+
+function roster(...entries: [string, number][]): Map<string, PresenceEntry> {
+  return new Map(entries.map(([id, ts]) => [id, at(ts)]));
+}
+
+/**
+ * These pin the spec's timing rules (`spec/behavior/chat/README.md` §
+ * Online/offline presence) as executable assertions, so a future change to the
+ * derivation has to argue with the spec rather than quietly drift from it.
+ */
+describe("presence timing constants match the spec", () => {
+  test("Idle threshold is 5 minutes", () => {
+    expect(IDLE_AFTER_MS).toBe(5 * 60 * 1000);
+  });
+
+  test("heartbeat is ~30 seconds", () => {
+    expect(PRESENCE_HEARTBEAT_MS).toBe(30 * 1000);
+  });
+});
+
+describe("presenceStatusFor", () => {
+  const now = 1_700_000_000_000;
+
+  test("absent from the presence map is Offline", () => {
+    expect(presenceStatusFor(null, now)).toBe("offline");
+    expect(presenceStatusFor(undefined, now)).toBe("offline");
+  });
+
+  test("present and recently active is Online", () => {
+    expect(presenceStatusFor(at(now), now)).toBe("online");
+    expect(presenceStatusFor(at(now - 1000), now)).toBe("online");
+  });
+
+  test("exactly at the threshold is still Online — the spec says >5 minutes", () => {
+    expect(presenceStatusFor(at(now - IDLE_AFTER_MS), now)).toBe("online");
+  });
+
+  test("one millisecond past the threshold is Idle", () => {
+    expect(presenceStatusFor(at(now - IDLE_AFTER_MS - 1), now)).toBe("idle");
+  });
+
+  /**
+   * `0` is a real timestamp, not a sentinel. If a caller passed it for
+   * "absent", this would read Idle — a member who is not connected at all
+   * would render as app-open-but-inactive. The absence contract is `null`.
+   */
+  test("a zero timestamp is a stale time, not absence", () => {
+    expect(presenceStatusFor(at(0), now)).toBe("idle");
+  });
+
+  test("a clock-skewed future timestamp reads Online, not Idle", () => {
+    expect(presenceStatusFor(at(now + 60_000), now)).toBe("online");
+  });
+
+  // #3845: a picked status beats the clock in both directions.
+  test("a picked Idle stays Idle while the member is active", () => {
+    expect(presenceStatusFor({ ...at(now), picked: "idle" }, now)).toBe("idle");
+  });
+
+  test("DND stays DND after five minutes away, rather than going Idle", () => {
+    const stale = now - IDLE_AFTER_MS - 1;
+    expect(presenceStatusFor({ ...at(stale), picked: "dnd" }, now)).toBe("dnd");
+    // Switched away from the phone app (#3917): Idle, however fresh, but a
+    // picked status still wins.
+    expect(presenceStatusFor({ ...at(now), away: true }, now)).toBe("idle");
+    expect(
+      presenceStatusFor({ ...at(now), away: true, picked: "dnd" }, now),
+    ).toBe("dnd");
+  });
+});
+
+describe("presenceLabel", () => {
+  test("labels are the words the spec uses, and are the accessible name", () => {
+    expect(presenceLabel("online")).toBe("Online");
+    expect(presenceLabel("idle")).toBe("Idle");
+    expect(presenceLabel("offline")).toBe("Offline");
+    expect(presenceLabel("dnd")).toBe("Do Not Disturb");
+    expect(presenceLabel("invisible")).toBe("Invisible");
+  });
+});
+
+describe("presenceMapFrom", () => {
+  test("flattens presence keys into userId → ts", () => {
+    const map = presenceMapFrom({
+      a: [{ userId: "u1", ts: 10 }],
+      b: [{ userId: "u2", ts: 20 }],
+    });
+    expect(map.get("u1")).toEqual(at(10));
+    expect(map.get("u2")).toEqual(at(20));
+  });
+
+  /**
+   * Two tabs, or one tab mid-reconnect where the old and new joins overlap.
+   * Newest wins so "active in any tab" reads as active — an arbitrary tab
+   * winning would show a member Idle while they are typing in another window.
+   */
+  test("takes the newest ts when one user appears more than once", () => {
+    const map = presenceMapFrom({
+      a: [{ userId: "u1", ts: 10 }],
+      b: [{ userId: "u1", ts: 99 }],
+      c: [{ userId: "u1", ts: 50 }],
+    });
+    expect(map.get("u1")?.ts).toBe(99);
+    expect(map.size).toBe(1);
+  });
+
+  test("the newest entry's picked status and line come with it", () => {
+    const map = presenceMapFrom({
+      a: [{ userId: "u1", ts: 10, status: "dnd", line: "old tab" }],
+      b: [{ userId: "u1", ts: 99, status: "idle", line: "At practice" }],
+    });
+    expect(map.get("u1")).toEqual({ ts: 99, picked: "idle", line: "At practice", away: false });
+  });
+
+  test("reads status and line, and leaves them out when absent", () => {
+    const map = presenceMapFrom({
+      a: [
+        { userId: "u1", ts: 1, status: "dnd", line: "  Studying  " },
+        { userId: "u2", ts: 1 },
+      ],
+    });
+    expect(map.get("u1")).toEqual({ ts: 1, picked: "dnd", line: "Studying", away: false });
+    expect(map.get("u2")).toEqual(at(1));
+  });
+
+  test("a present entry beats an away one, whatever their stamps (#3917)", () => {
+    // Active in a web tab while the phone, used more recently, says away.
+    const map = presenceMapFrom({
+      web: [{ userId: "u1", ts: 10 }],
+      phone: [{ userId: "u1", ts: 99, away: true }],
+    });
+    expect(map.get("u1")).toEqual(at(10));
+    const reversed = presenceMapFrom({
+      phone: [{ userId: "u1", ts: 99, away: true }],
+      web: [{ userId: "u1", ts: 10 }],
+    });
+    expect(reversed.get("u1")).toEqual(at(10));
+  });
+
+  test("reads away only when it is exactly true (#3917)", () => {
+    const map = presenceMapFrom({
+      a: [
+        { userId: "u1", ts: 1, away: true },
+        { userId: "u2", ts: 1, away: "yes" },
+      ],
+    });
+    expect(map.get("u1")?.away).toBe(true);
+    expect(map.get("u2")?.away).toBe(false);
+  });
+
+  /**
+   * The payload is whatever a member's client published. An unknown status
+   * must not invent one (and `invisible` never rides the wire: an invisible
+   * member publishes nothing), and a line must stay one bounded line.
+   */
+  test("an unknown status reads automatic, and a crafted line is tamed", () => {
+    const long = "x".repeat(CUSTOM_STATUS_MAX + 20);
+    const map = presenceMapFrom({
+      a: [
+        { userId: "u1", ts: 1, status: "invisible", line: 42 },
+        { userId: "u2", ts: 1, status: "online", line: "two\nlines\u2028here" },
+        { userId: "u3", ts: 1, line: long },
+        { userId: "u4", ts: 1, line: "   " },
+      ],
+    });
+    expect(map.get("u1")).toEqual(at(1));
+    expect(map.get("u2")?.picked).toBeNull();
+    expect(map.get("u2")?.line).toBe("two lines here");
+    expect(map.get("u3")?.line).toHaveLength(CUSTOM_STATUS_MAX);
+    expect(map.get("u4")?.line).toBeNull();
+  });
+
+  test("several entries under one key are all read", () => {
+    const map = presenceMapFrom({
+      a: [
+        { userId: "u1", ts: 10 },
+        { userId: "u2", ts: 20 },
+      ],
+    });
+    expect(map.size).toBe(2);
+  });
+
+  /**
+   * The channel is public, so an entry can carry anything. A malformed payload
+   * must be skipped rather than trusted or thrown on — this runs inside a
+   * React render pass, where a throw unmounts the surface.
+   */
+  test("skips malformed entries instead of throwing", () => {
+    const map = presenceMapFrom({
+      a: [
+        null,
+        undefined,
+        "nope",
+        42,
+        {},
+        { userId: "" , ts: 1 },
+        { userId: "u1" },
+        { userId: "u2", ts: "soon" },
+        { userId: "u3", ts: Number.NaN },
+        { userId: "u4", ts: Number.POSITIVE_INFINITY },
+        { ts: 5 },
+        { userId: "good", ts: 7 },
+      ] as unknown[],
+    });
+    expect([...map.keys()]).toEqual(["good"]);
+  });
+
+  test("tolerates an empty or malformed state object", () => {
+    expect(presenceMapFrom({}).size).toBe(0);
+    expect(presenceMapFrom({ a: [] }).size).toBe(0);
+    expect(
+      presenceMapFrom({ a: "not-an-array" } as unknown as Record<string, never[]>)
+        .size,
+    ).toBe(0);
+  });
+});
+
+/**
+ * Presence is a domain status vocabulary like `geofence-status.ts` and
+ * `settings-status.ts`, and the invariant those share — pinned for them in
+ * `components/shared/status-kind.spec.ts` — is that **no domain status is ever
+ * painted in the chapter accent**. #1202 found five that were, and the families
+ * with no mapper were exactly the ones nobody could check. This is presence's
+ * half of that check.
+ */
+describe("sameRoster", () => {
+  test("equal contents compare equal even as different Map instances", () => {
+    expect(
+      sameRoster(roster(["u1", 1]), roster(["u1", 1])),
+    ).toBe(true);
+  });
+
+  test("a changed timestamp is a change", () => {
+    expect(sameRoster(roster(["u1", 1]), roster(["u1", 2]))).toBe(false);
+  });
+
+  test("a changed status or line is a change", () => {
+    const base = roster(["u1", 1]);
+    expect(
+      sameRoster(base, new Map([["u1", { ...at(1), picked: "dnd" }]])),
+    ).toBe(false);
+    expect(
+      sameRoster(base, new Map([["u1", { ...at(1), away: true }]])),
+    ).toBe(false);
+    expect(
+      sameRoster(base, new Map([["u1", { ...at(1), line: "Out" }]])),
+    ).toBe(false);
+  });
+
+  test("a different member set is a change, both directions", () => {
+    const one = roster(["u1", 1]);
+    const two = roster(["u1", 1], ["u2", 1]);
+    expect(sameRoster(one, two)).toBe(false);
+    expect(sameRoster(two, one)).toBe(false);
+  });
+
+  /**
+   * Same size, disjoint keys — the case a size-only comparison would call
+   * equal, freezing the directory on the previous roster.
+   */
+  test("same size with different members is a change", () => {
+    expect(sameRoster(roster(["u1", 1]), roster(["u2", 1]))).toBe(false);
+  });
+
+  test("two empty rosters are equal", () => {
+    expect(sameRoster(new Map(), new Map())).toBe(true);
+  });
+});
+
+/**
+ * The topic string is a contract with itself across reconnects, and it must not
+ * collide with the chapter-keyed change topic `events:<chapterId>` — the
+ * attach/release queue in `topic-registry.ts` is keyed by topic string, so a
+ * collision would make one subscription tear the other down on re-attach.
+ */
+describe("chapterPresenceTopic", () => {
+  test("is distinct from the chat and change topics", () => {
+    const chapterId = "11111111-2222-3333-4444-555555555555";
+    expect(chapterPresenceTopic(chapterId)).toBe(
+      `presence:chapter:${chapterId}`,
+    );
+    expect(chapterPresenceTopic(chapterId)).not.toBe(`events:${chapterId}`);
+    expect(chapterPresenceTopic(chapterId).startsWith("chat:channel:")).toBe(
+      false,
+    );
+  });
+});
