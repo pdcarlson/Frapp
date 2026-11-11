@@ -120,6 +120,10 @@ vi.mock("@/lib/chat/block-actions", async (importOriginal) => ({
 import { ListRow } from "@/components/list-section";
 import { SheetHeader } from "@/components/sheet-scaffold";
 import { MemberDetailSheet } from "./member-detail-sheet";
+import {
+  PRESENCE_NOT_READY,
+  setChapterPresence,
+} from "@/lib/presence/presence-store";
 
 const dismiss = vi.fn();
 const present = vi.fn();
@@ -737,5 +741,61 @@ describe("MemberDetailSheet roles", () => {
     expect(editButton(tree)?.props.disabled).toBe(false);
     act(() => tree.unmount());
     state.permissions = [];
+  });
+});
+
+// #3917: the member's presence dot on their avatar, their custom line under
+// the name, and the status in the name heading's accessible name.
+describe("MemberDetailSheet presence (#3917)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    state.viewer = VIEWER;
+    state.blockStatus = "ready";
+    state.blocked = new Set();
+    state.blockPaused = false;
+    setChapterPresence(PRESENCE_NOT_READY);
+  });
+
+  // The name heading: the header whose text is the member's name (the sheet
+  // has other headers, such as Roles).
+  const heading = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        node.type === ("Text" as never) &&
+        node.props.accessibilityRole === "header" &&
+        node.props.children === "Ada",
+    );
+  const dots = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        node.type === ("View" as never) &&
+        typeof node.props.testID === "string" &&
+        node.props.testID.startsWith("member-presence-"),
+    );
+
+  it("draws no dot and names no status before presence has synced", () => {
+    const tree = render(ADA);
+    expect(dots(tree)).toHaveLength(0);
+    expect(heading(tree).props.accessibilityLabel).toBeUndefined();
+  });
+
+  it("draws the member's dot, names the status and shows their line", () => {
+    setChapterPresence({
+      statusOf: (id) => (id === ADA ? "dnd" : "offline"),
+      lineOf: (id) => (id === ADA ? "In lab until 6" : null),
+      isReady: true,
+    });
+    const tree = render(ADA);
+    expect(dots(tree).map((dot) => dot.props.testID)).toEqual([
+      "member-presence-dnd",
+    ]);
+    expect(heading(tree).props.accessibilityLabel).toBe("Ada, Do Not Disturb");
+    expect(
+      tree.root.findAll(
+        (node) =>
+          node.type === ("Text" as never) &&
+          node.props.children === "In lab until 6",
+      ),
+    ).toHaveLength(1);
   });
 });
