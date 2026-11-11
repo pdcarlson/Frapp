@@ -9,6 +9,7 @@ import {
 } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { eyebrowStyle } from "@/components/eyebrow";
 import { gutterBleed, PressableRow } from "@/components/list-section";
 import { EventsGlyph, TasksGlyph } from "@/components/tab-glyphs";
 
@@ -317,11 +318,10 @@ function createStyles(tokens: SignetTokens) {
     strip: {
       gap: tokens.spacing.xs,
     },
+    // The shared eyebrow, as Chat home's section headings draw it.
     eyebrow: {
-      ...typeRole(tokens.typography.role.caption),
-      letterSpacing: 0.8,
-      textTransform: "uppercase",
-      color: tokens.color.text.muted,
+      ...eyebrowStyle(tokens),
+      color: tokens.color.text.mutedForeground,
     },
     row: {
       flexDirection: "row",

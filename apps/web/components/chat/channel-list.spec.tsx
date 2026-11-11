@@ -662,6 +662,22 @@ describe("ChannelList sidebar arrangement (#2877)", () => {
     expect(screen.queryByRole("list", { name: /Channels/ })).toBeNull();
   });
 
+  it("draws a folded section over plain unread bold, as an unread row reads", () => {
+    renderArranged(
+      sidebarControls({
+        preferences: {
+          pinnedIds: new Set(),
+          collapsed: new Set(["channels"]),
+          filters: { unreadOnly: false, hideMuted: false },
+        },
+      }),
+      new Map([["c-gen", { unreadCount: 3, mentionCount: 0 }]]),
+    );
+
+    const header = screen.getByRole("button", { name: /Channels/ });
+    expect(header).toHaveClass("font-bold", "text-foreground");
+  });
+
   it("keeps the open channel under its folded header", () => {
     renderArranged(
       sidebarControls({
