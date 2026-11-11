@@ -18,7 +18,6 @@ the targets resolve — so add the row in the same change that adds the topic fi
 | RBAC, roles, presidency transfer                     | [`rbac.md`](rbac.md)                       |
 | Backwork (academic library)                          | [`backwork.md`](backwork.md)               |
 | Rush / recruitment / intake                          | [`rush.md`](rush.md)                       |
-| Campus spaces, cross-chapter messages, campus moderation (proposed) | [`campus-spaces.md`](campus-spaces.md) |
 | Points ledger — security, audit, atomicity           | [`points.md`](points.md)                   |
 | Chapter billing (Stripe), grace periods, dues        | [`billing.md`](billing.md)                 |
 | Chat (channels, DMs, messages, slash commands)       | [`chat/`](chat/README.md)                  |
@@ -39,6 +38,7 @@ the targets resolve — so add the row in the same change that adds the topic fi
 | Reports and export                                   | [`reports.md`](reports.md)                 |
 | Legal (ToS, Privacy, FERPA)                          | [`legal.md`](legal.md)                     |
 | Data retention                                       | [`data-retention.md`](data-retention.md)   |
+| Campus spaces, cross-chapter messages, campus moderation (proposed) | [`campus-spaces.md`](campus-spaces.md) |
 | Alumni features                                      | [`alumni.md`](alumni.md)                   |
 | Chapter branding                                     | [`branding.md`](branding.md)               |
 | Settings shell, customization, audit                 | [`settings/`](settings/README.md)          |
