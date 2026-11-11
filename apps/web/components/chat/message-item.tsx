@@ -749,6 +749,7 @@ export function MessageItem({
         channelId={message.channel_id}
         messageId={message.id}
         count={message.attachment_count}
+        confirmed={isConfirmed}
       />
     );
 
