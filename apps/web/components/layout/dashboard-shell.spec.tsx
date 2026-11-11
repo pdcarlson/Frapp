@@ -43,7 +43,8 @@ const {
   // `undefined` is a chapter read still in flight, which every test but the
   // module-gating one wants: nothing is gated until it resolves.
   mockChapter: { value: undefined as unknown },
-  mockPermissions: { value: [] as string[] },
+  // `undefined` is a permission read still in flight.
+  mockPermissions: { value: [] as string[] | undefined },
 }));
 const routerPush = vi.hoisted(() => vi.fn());
 const mockSearch = vi.hoisted(() => ({ value: "" }));
@@ -74,7 +75,13 @@ vi.mock("@repo/hooks", async (importOriginal) => {
       data: mockLevels.value,
       isError: false,
     }),
-    useMyPermissions: () => ({ data: { permissions: mockPermissions.value } }),
+    useMyPermissions: () => ({
+      data: mockPermissions.value
+        ? { permissions: mockPermissions.value }
+        : undefined,
+      isPending: mockPermissions.value === undefined,
+      fetchStatus: mockPermissions.value === undefined ? "fetching" : "idle",
+    }),
     useHiddenUnsetFeatures: () => new Set(),
     useNotifications: () => ({ data: [] }),
     // What an ordinary member's config read looks like: `GET /chapters/:id/config`
@@ -290,6 +297,31 @@ describe("DashboardShell", () => {
     expect(
       within(banner).queryByRole("link", { name: "Chapter settings" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("offers no Settings crumb while permissions are still loading (#3854)", () => {
+    // An officer's crumb arrives with the answer; a member must never get a
+    // door to click before it.
+    mockPathname.value = "/reports";
+    mockPermissions.value = undefined;
+    const { rerender } = render(
+      <DashboardShell>
+        <p>route content</p>
+      </DashboardShell>,
+    );
+    const banner = screen.getByRole("banner");
+    expect(
+      within(banner).queryByRole("link", { name: "Chapter settings" }),
+    ).not.toBeInTheDocument();
+    mockPermissions.value = ["reports:export"];
+    rerender(
+      <DashboardShell>
+        <p>route content</p>
+      </DashboardShell>,
+    );
+    expect(
+      within(screen.getByRole("banner")).getByRole("link", { name: "Chapter settings" }),
+    ).toBeInTheDocument();
   });
 
   it("leaves the title cell empty on a route it does not know", () => {
