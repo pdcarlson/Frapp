@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState, type ReactElement } from "react";
 import { ArrowUpDown, Check, ChevronDown } from "lucide-react";
-import { normalizeWords } from "@repo/hooks/fuzzy-match";
+import { matchesWordStarts, normalizeWords } from "@repo/hooks/fuzzy-match";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -136,20 +136,6 @@ export function FilterChip({
  * cmdk gives the combobox roles, arrow keys and Enter; the match is ours
  * (`matchesWordStarts`).
  */
-/**
- * Every word typed must start a word of the label, ignoring case and accents:
- * "vi pre" finds "Vice President". Words split on anything that isn't a letter
- * or digit (`normalizeWords`, the page searches' own splitter), because a role
- * or course label is not a person's name: "exec" must find "(Exec) Treasurer"
- * and "rec" must find "Rush/Recruitment Chair".
- */
-export function matchesWordStarts(label: string, query: string): boolean {
-  const terms = normalizeWords(query);
-  if (!terms.length) return true;
-  const words = normalizeWords(label);
-  return terms.every((term) => words.some((word) => word.startsWith(term)));
-}
-
 function SearchableOptions({
   trigger,
   label,
