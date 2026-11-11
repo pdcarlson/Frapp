@@ -58,11 +58,7 @@ import {
   useRequestChatUploadUrl,
   useSetChannelNotificationLevel,
 } from "@repo/hooks";
-import {
-  can,
-  draftWithMention,
-  type ChatMessageFlag,
-} from "@repo/validation";
+import { can, draftWithMention, type ChatMessageFlag } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChatBackground } from "@/components/chat/chat-background";
 import { BlockListNotice } from "@/components/chat/block-list-notice";
@@ -943,9 +939,7 @@ function ChannelThreadScreen() {
         .filter((group) => group.mine)
         .map((group) => group.emoji),
       messageEmojis: groups.map((group) => group.emoji),
-      flag: actionTarget.flag
-        ? { current: current?.flag ?? null }
-        : undefined,
+      flag: actionTarget.flag ? { current: current?.flag ?? null } : undefined,
     };
   }, [actionTarget, byId, viewerId]);
 
@@ -1204,7 +1198,12 @@ function ChannelThreadScreen() {
             </View>
             {channelId && showMemberList ? (
               <ChannelMembersButton
-                onPress={() => memberSheetRef.current?.present()}
+                // The keyboard first, as every sheet door here does (#4142):
+                // a sheet opened over the open keyboard sits under it on iOS.
+                onPress={() => {
+                  Keyboard.dismiss();
+                  memberSheetRef.current?.present();
+                }}
               />
             ) : null}
             {channelId ? (
