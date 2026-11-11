@@ -13,6 +13,8 @@ import {
 import { SystemPermissions } from '#domain/constants/permissions';
 import type { ChapterMemberIdentity } from '#domain/entities/member.entity';
 import type { Role } from '#domain/entities/role.entity';
+import type { ChatMessage } from '#domain/entities/chat.entity';
+import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
 import { RbacService } from './rbac.service';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
@@ -67,6 +69,49 @@ export class ChatMentionService {
    * highlight and a push tier, not the message.
    */
   async resolveForSend(
+    chapterId: string,
+    senderId: string,
+    content: string,
+    replyTo: ReplyTarget | null = null,
+  ): Promise<string[]> {
+    return withMention(
+      await this.resolveBody(chapterId, senderId, content),
+      replyPingTarget(senderId, replyTo),
+    );
+  }
+
+  /**
+   * The mentions of an edited message: its new body resolved as a send's is,
+   * plus the reply ping exactly as the send stored it (#3844). The ping is
+   * kept, not re-decided: the reply still quotes its author, so a later
+   * deletion of the quoted message must not take it off their badge, and a
+   * reply sent without one (before replies pinged) must not gain one, unheard,
+   * on its first edit.
+   *
+   * `quotedAuthorId` is `undefined` when the quoted message could not be read.
+   * Then every previous mention is kept: an edit cannot tell the ping apart,
+   * and losing it to a read blip is worse than keeping a name the edit removed.
+   */
+  async resolveForEdit(
+    chapterId: string,
+    senderId: string,
+    content: string,
+    previousMentions: readonly string[],
+    quotedAuthorId: string | null | undefined,
+  ): Promise<string[]> {
+    const body = await this.resolveBody(chapterId, senderId, content);
+    if (quotedAuthorId === undefined) {
+      return previousMentions.reduce(withMention, body);
+    }
+    return withMention(
+      body,
+      quotedAuthorId && previousMentions.includes(quotedAuthorId)
+        ? quotedAuthorId
+        : null,
+    );
+  }
+
+  private async resolveBody(
     chapterId: string,
     senderId: string,
     content: string,
@@ -160,6 +205,47 @@ export class ChatMentionService {
       .filter((view) => view.member_ids.length > 0)
       .map((view) => withMentionable(view, officer));
   }
+}
+
+/** The parts of a quoted message the reply ping reads. */
+export type ReplyTarget = Pick<ChatMessage, 'sender_id' | 'is_deleted'>;
+
+/**
+ * Who a reply pings: the author of the message it quotes, or `null` (#3844,
+ * `spec/behavior/chat/README.md` § Mentions). A reply counts as an @mention of
+ * them, as Discord's replies do by default, so it rides `mentions` and the
+ * push, the `@ N` badge, the highlight and the notification row all follow,
+ * once however many ways the author got in.
+ *
+ * Nobody for a reply to yourself, to a deleted message, or to a row with no
+ * linked member (an imported row nobody claimed) or the system actor's.
+ *
+ * **No block check, on purpose**, as a typed @mention has none. `mentions`
+ * reaches the replier, so dropping the author for a block would tell them they
+ * had been blocked (`§ Report and block`: nothing may become an oracle for
+ * it). Blocks are applied where the ping is delivered instead: the push worker
+ * drops a recipient who blocked the sender, and the unread counts skip a
+ * blocked member's messages.
+ */
+export function replyPingTarget(
+  senderId: string,
+  replyTo: ReplyTarget | null,
+): string | null {
+  const authorId = replyTo?.sender_id ?? null;
+  if (
+    !authorId ||
+    authorId === senderId ||
+    authorId === SYSTEM_SENDER_ID ||
+    replyTo?.is_deleted
+  ) {
+    return null;
+  }
+  return authorId;
+}
+
+/** `ids` plus `id`, once. */
+function withMention(ids: string[], id: string | null): string[] {
+  return id && !ids.includes(id) ? [...ids, id] : ids;
 }
 
 /** Whether a member may ping a role whose switch is off. */
