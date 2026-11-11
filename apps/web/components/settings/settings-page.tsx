@@ -22,7 +22,7 @@ import {
 } from "@repo/hooks";
 import { type PatchChapterConfig } from "@repo/validation";
 import { memberViewVocabulary, titleCase, vocab } from "@repo/org-archetypes";
-import { Card, CardDescription, CardHeader } from "@/components/ui/card";
+import { InlineNote } from "@/components/shared/inline-note";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
   ErrorState,
@@ -48,9 +48,9 @@ import {
 } from "@/components/settings/settings-access";
 import {
   SETTINGS_TABS,
-  SETTINGS_TAB_VALUES,
   SettingsRail,
   SettingsToolsOnly,
+  resolveSettingsTabParam,
 } from "@/components/settings/settings-rail";
 import {
   SettingsAccentTab,
@@ -140,16 +140,21 @@ function SettingsPageContent() {
   // Deep-link the active tab via `?tab=` so links (e.g. the redirect from the
   // former standalone `/roles` page) can land directly on a tab.
   const searchParams = useSearchParams();
-  const tabParam = searchParams.get("tab");
-  const [activeTab, setActiveTab] = useState(
-    tabParam && SETTINGS_TAB_VALUES.includes(tabParam) ? tabParam : "org",
-  );
+  // `?tab=theme` (Accent, folded into Chapter) resolves to `org`.
+  const tabParam = resolveSettingsTabParam(searchParams.get("tab"));
+  const [activeTab, setActiveTab] = useState(tabParam ?? "org");
   useEffect(() => {
-    if (tabParam && SETTINGS_TAB_VALUES.includes(tabParam)) {
+    if (tabParam) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- follow `?tab=` deep links without wiping a tab the member already picked
       setActiveTab(tabParam);
     }
   }, [tabParam]);
+  // Switching rows starts the panel at its top, not wherever the last one
+  // was scrolled to: the panel scrolls inside the shell's tool pane.
+  const changeTab = useCallback((next: string) => {
+    setActiveTab(next);
+    document.querySelector("[data-tool-page]")?.scrollTo?.({ top: 0 });
+  }, []);
 
   /**
    * `?module=` narrows a `?tab=modules` deep link to one row, so chat's
@@ -200,14 +205,10 @@ function SettingsPageContent() {
 
   if (!activeChapterId) {
     return (
-      <Card>
-        <CardHeader>
-          <CardDescription>
-            Select an active chapter to edit its organization, modules, and
-            branding.
-          </CardDescription>
-        </CardHeader>
-      </Card>
+      <InlineNote>
+        Select an active chapter to edit its organization, modules, and
+        branding.
+      </InlineNote>
     );
   }
 
@@ -484,15 +485,22 @@ function SettingsPageContent() {
         with "no wrapper card, no description paragraph", and lane 4 and lane 5
         deleted the same sentence off four other routes.
       */}
+      {/*
+        One layout for every row (#3713): the rail at its fixed 200px, sticky,
+        and the panel beside it at one width whichever row is open, so nothing
+        moves sideways when the officer switches rows. Chapter settings has the
+        whole width: chat closes beside it (decision 3 of #4068,
+        `isFullWidthToolRoute`).
+      */}
       <Tabs
         value={shownTab}
-        onValueChange={setActiveTab}
-        className="flex flex-col gap-6 lg:flex-row lg:items-start"
+        onValueChange={changeTab}
+        className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-10"
       >
         <SettingsRail tools={tools} visibleTabs={visibleTabs} />
 
-        <div className="min-w-0 flex-1">
-          <TabsContent value="org" className="mt-0 space-y-6">
+        <div className="w-full min-w-0 max-w-[960px] flex-1">
+          <TabsContent value="org" className="mt-0">
             {renderConfigGated(
               <SettingsOrgTab
                 archetypeKey={archetypeKey}
@@ -517,6 +525,14 @@ function SettingsPageContent() {
                   pendingConfigKeys.has("vocabulary") ||
                   pendingConfigKeys.has("org_archetype")
                 }
+                accentSection={
+                  <SettingsAccentTab
+                    draft={accentDraft}
+                    canEditProfile={canEditProfile}
+                    updateChapter={updateChapter}
+                    orgName={chapter?.name}
+                  />
+                }
               />,
             )}
           </TabsContent>
@@ -526,7 +542,7 @@ function SettingsPageContent() {
             above the danger card — three unrelated jobs on one tab, which is
             why the tab needed a sentence explaining itself.
           */}
-          <TabsContent value="semester" className="mt-0 space-y-6">
+          <TabsContent value="semester" className="mt-0">
             <SettingsSemesterTab
               form={rolloverForm}
               pledgeTerm={pledgeTerm}
@@ -538,7 +554,7 @@ function SettingsPageContent() {
             />
           </TabsContent>
 
-          <TabsContent value="danger" className="mt-0 space-y-6">
+          <TabsContent value="danger" className="mt-0">
             <SettingsDangerTab createPortal={createPortal} />
           </TabsContent>
 
@@ -641,15 +657,6 @@ function SettingsPageContent() {
               />,
             )}
           </TabsContent>
-          <TabsContent value="theme" className="mt-0">
-            <SettingsAccentTab
-              draft={accentDraft}
-              canEditProfile={canEditProfile}
-              updateChapter={updateChapter}
-              orgName={chapter?.name}
-            />
-          </TabsContent>
-
           <TabsContent value="privacy" className="mt-0">
             {renderConfigGated(
               <SettingsPrivacyTab

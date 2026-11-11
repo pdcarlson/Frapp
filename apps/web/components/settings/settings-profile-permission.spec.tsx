@@ -76,7 +76,7 @@ async function profileSaves() {
   const profile = screen.getByRole("button", { name: /save profile/i });
   const profileEnabled = !(profile as HTMLButtonElement).disabled;
 
-  await user.click(screen.getByRole("tab", { name: /accent/i }));
+  await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
   // A savable draft first: an empty one disables Save for its own reason.
   await user.type(screen.getByLabelText(/accent color hex value/i), "#8B0000");
   const accent = screen.getByRole("button", { name: /save accent color/i });
@@ -120,7 +120,7 @@ describe("the Settings page gates profile and accent saves on CHAPTER_PROFILE_PE
     });
   });
 
-  it("offers chapter-config:manage alone neither tab, since the config read needs view", () => {
+  it("offers chapter-config:manage alone no Chapter row, since the config read needs view", () => {
     // `manage` without `view` could never save here: the route needs both, like
     // every other `chapter-config:manage` route, and the whole config
     // controller is guarded on `view`. Since #2946 Settings hides tabs the
@@ -128,7 +128,6 @@ describe("the Settings page gates profile and accent saves on CHAPTER_PROFILE_PE
     permissions.current = ["chapter-config:manage"];
     render(<SettingsPage />);
     expect(screen.queryByRole("tab", { name: /^chapter$/i })).toBeNull();
-    expect(screen.queryByRole("tab", { name: /accent/i })).toBeNull();
   });
 });
 
@@ -169,7 +168,7 @@ describe("the Settings page seeds the chapter profile from the contract payload"
       "https://donate.example/tau-nu",
     );
 
-    await user.click(screen.getByRole("tab", { name: /accent/i }));
+    await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
     expect(screen.getByLabelText(/accent color hex value/i)).toHaveValue(
       "#8B0000",
     );

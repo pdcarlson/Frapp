@@ -11,13 +11,7 @@ import type {
   CustomFieldVisibility,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { ProfileSection } from "@/components/profile/profile-section";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -135,15 +129,12 @@ export function SettingsFieldsTab({ canManage }: Props) {
   } else {
     body = (
       <>
-        <Card>
-          <CardHeader>
-            <CardTitle>Custom member fields</CardTitle>
-            <CardDescription>
-              Sensitive fields are shown only to authorized viewers. Saving
-              writes an entry to the chapter audit log.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+        <ProfileSection
+          id="settings-custom-member-fields"
+          title="Custom member fields"
+          hint="Sensitive fields are shown only to authorized viewers. Saving writes an entry to the chapter audit log."
+        >
+          <div>
             {fields.length === 0 ? (
               <InlineNote>No custom fields yet.</InlineNote>
             ) : (
@@ -158,8 +149,8 @@ export function SettingsFieldsTab({ canManage }: Props) {
                 ))}
               </ul>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </ProfileSection>
 
         <AddFieldForm
           canManage={canManage}
@@ -170,7 +161,7 @@ export function SettingsFieldsTab({ canManage }: Props) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
       {/* Above the branch: a refetch failure must not cancel an open delete. */}
       {confirmDialog}
       {body}
@@ -418,15 +409,13 @@ function AddFieldForm({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Add a field</CardTitle>
-        <CardDescription>
-          A select field needs at least one option.
-        </CardDescription>
-      </CardHeader>
+    <ProfileSection
+      id="settings-add-a-field"
+      title="Add a field"
+      hint="A select field needs at least one option."
+    >
       <form onSubmit={handleCreate}>
-        <CardContent className="space-y-4">
+        <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5">
               <Label htmlFor="custom-field-label">Name</Label>
@@ -598,16 +587,16 @@ function AddFieldForm({
               </Select>
             </div>
           </div>
-        </CardContent>
-        <CardContent className="flex justify-end pt-0">
+        </div>
+        <div className="mt-4 flex justify-end">
           <Button type="submit" disabled={!canSubmit}>
             {createField.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : null}
             Add field
           </Button>
-        </CardContent>
+        </div>
       </form>
-    </Card>
+    </ProfileSection>
   );
 }

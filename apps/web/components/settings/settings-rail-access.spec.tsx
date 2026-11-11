@@ -146,15 +146,14 @@ describe("Settings shows each viewer what they can use", () => {
     ]);
     expect(tabNames()).toEqual([
       "Chapter",
-      "Accent",
-      "Modules",
+      "Semester",
+      "Privacy",
       "Roles",
       "Pledge class",
-      "Semester",
-      "Fields",
+      "Member fields",
+      "Modules",
       "Dues",
       "Workflows",
-      "Privacy",
       "Danger zone",
     ]);
   });
@@ -236,6 +235,6 @@ describe("Settings shows each viewer what they can use", () => {
 
   it("shows every tab while permissions are still loading, so nothing flashes out", () => {
     render(<SettingsPage />);
-    expect(tabNames()).toHaveLength(11);
+    expect(tabNames()).toHaveLength(10);
   });
 });

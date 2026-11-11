@@ -6,13 +6,7 @@ import {
   MODULE_CATALOG,
   type ModuleCatalogEntry,
 } from "@repo/org-archetypes";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { ProfileSection } from "@/components/profile/profile-section";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { isBetaOffModule } from "@repo/validation";
@@ -93,16 +87,18 @@ export function SettingsModulesTab({
   ).length;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Modules</CardTitle>
-        <CardDescription>
+    <ProfileSection
+      id="settings-modules"
+      title="Modules"
+      hint={
+        <>
           {enabledCount} of {listedModules.length} modules enabled. Disabling a
           module hides it from the sidebar and chat slash commands. Re-enabling
           restores everything. Data is never deleted.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
+        </>
+      }
+    >
+      <div className="space-y-6">
         <ModuleGroup
           title="Always on"
           modules={FREE_MODULES}
@@ -123,8 +119,8 @@ export function SettingsModulesTab({
           focusModuleKey={focusModuleKey}
           onModuleFocused={onModuleFocused}
         />
-      </CardContent>
-    </Card>
+      </div>
+    </ProfileSection>
   );
 }
 

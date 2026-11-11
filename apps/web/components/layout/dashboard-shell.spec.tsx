@@ -551,6 +551,26 @@ describe("DashboardShell", () => {
       );
     });
 
+    it("gives Chapter settings the whole width, chat open or not (#4068 decision 3)", () => {
+      setWindowWidth(1440);
+      mockPathname.value = "/settings";
+      const { container } = render(
+        <DashboardShell defaultChatOpen>
+          <p>settings page</p>
+        </DashboardShell>,
+      );
+      expect(chatPanel(container)).toBeNull();
+      expect(screen.queryByRole("separator")).not.toBeInTheDocument();
+      expect(container.querySelector("[data-tool-page]")).not.toHaveClass(
+        "min-[1056px]:min-w-[375px]",
+      );
+      // The Chat row goes to chat rather than toggling a panel with no room.
+      expect(within(nav()).getByRole("link", { name: "Chat" })).toHaveAttribute(
+        "href",
+        "/chat",
+      );
+    });
+
     it("drops chat beside a tool once the window is known to be narrow", () => {
       setWindowWidth(1024);
       mockPathname.value = "/events";
