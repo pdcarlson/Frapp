@@ -41,6 +41,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { ScheduledJobsModule } from './modules/scheduled-jobs/scheduled-jobs.module';
 import { DiscordImportModule } from './modules/discord-import/discord-import.module';
 import { ClientPolicyModule } from './modules/client-policy/client-policy.module';
+import { DevLogModule } from './modules/dev-log/dev-log.module';
 import { validateEnv } from './config/env.validation';
 
 @Module({
@@ -97,6 +98,7 @@ import { validateEnv } from './config/env.validation';
     ScheduledJobsModule,
     DiscordImportModule,
     ClientPolicyModule,
+    DevLogModule,
   ],
   providers: [
     {

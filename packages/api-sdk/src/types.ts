@@ -3714,6 +3714,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/integrations/dev-log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post to the team's Dev log channel (GitHub Actions only) */
+        post: operations["DevLogController_post_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -6268,6 +6285,55 @@ export interface components {
              * @example https://apps.apple.com/app/id6812025642
              */
             update_url: string | null;
+        };
+        DevLogItemDto: {
+            /** @description The issue or pull request number. */
+            number: number;
+            title: string;
+            actor?: string;
+            areas?: string[];
+        };
+        DevLogMergeCountDto: {
+            actor: string;
+            count: number;
+        };
+        DevLogPostDto: {
+            /** @enum {string} */
+            event: "work_started" | "pr_merged" | "daily_summary" | "update_pushed";
+            /** @description work_started: the issue number. pr_merged: the pull request number. */
+            number?: number;
+            /** @description work_started, pr_merged: the issue or pull request title. */
+            title?: string;
+            /** @description work_started, pr_merged: who did it, as a name or a login. */
+            actor?: string;
+            /** @description work_started: the issue's area labels, without the prefix. */
+            areas?: string[];
+            /** @description work_started: other issues in progress that share one of the areas. */
+            also_in_area?: components["schemas"]["DevLogItemDto"][];
+            /**
+             * @description daily_summary: the day it is posted. One post per day.
+             * @example 2026-11-11
+             */
+            date?: string;
+            /** @description daily_summary: how many pull requests merged in the last day. */
+            merged_total?: number;
+            /** @description daily_summary: that total, per person. */
+            merged_by?: components["schemas"]["DevLogMergeCountDto"][];
+            /** @description daily_summary: issues in progress now. */
+            in_progress?: components["schemas"]["DevLogItemDto"][];
+            /** @description work_started: the id of the workflow run that saw the label. update_pushed: the id of the Deploy production run that shipped. */
+            run_id?: string;
+            /** @description update_pushed: that run also uploaded a store build for testers. */
+            store_build?: boolean;
+            /** @description update_pushed: that run also published an over-the-air update. */
+            ota_update?: boolean;
+        };
+        DevLogPostResultDto: {
+            /**
+             * @description duplicate: this event was already posted (the same label event, pull request, day or deploy run), so nothing was written.
+             * @enum {string}
+             */
+            status: "posted" | "duplicate";
         };
     };
     responses: never;
@@ -14563,6 +14629,59 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ClientPolicyDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    DevLogController_post_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DevLogPostDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DevLogPostResultDto"];
+                };
+            };
+            /** @description Missing or wrong token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The Dev log is not configured on this deployment. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The configured channel is gone or archived. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
