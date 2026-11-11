@@ -78,7 +78,7 @@ end;
 $$;
 
 comment on function public.reorder_role_tiers(uuid, uuid[], uuid[]) is
-  'Sets each of a chapter''s tiers to its 1-based place in p_ids; refuses (check_violation) unless p_ids names every tier once and both orders start with p_fixed_ids (PUT /v1/role-tiers/order). See 20261111234500_reorder_role_tiers.sql.';
+  'Sets each of a chapter''s tiers to its 1-based place in p_ids; refuses (check_violation) unless p_ids names every tier once and both orders start with p_fixed_ids (PUT /v1/role-tiers/order). See 20261112001000_reorder_role_tiers.sql.';
 
 revoke execute on function public.reorder_role_tiers(uuid, uuid[], uuid[]) from public;
 

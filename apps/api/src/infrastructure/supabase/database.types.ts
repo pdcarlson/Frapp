@@ -369,7 +369,7 @@ export interface Database {
         Returns: PledgeClass[];
       };
       /**
-       * `20261111234500` (#4071) — `returns setof role_tiers`. Raises
+       * `20261112001000` (#4071) — `returns setof role_tiers`. Raises
        * `check_violation` when `p_ids` is not exactly the chapter's tiers or
        * its order no longer starts with `p_fixed_ids`.
        */

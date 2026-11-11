@@ -3690,9 +3690,9 @@ drop function if exists public.chat_channel_access_from_legacy(uuid, text, text[
 drop function if exists public.chat_access_list_valid(text[]);
 ```
 
-## Rollback role tier reorder (20261111234500)
+## Rollback role tier reorder (20261112001000)
 
-* **Migration**: `20261111234500_reorder_role_tiers.sql`
+* **Migration**: `20261112001000_reorder_role_tiers.sql`
 
 One function, `reorder_role_tiers(uuid, uuid[], uuid[])`, which `PUT /v1/role-tiers/order` calls. It writes nothing on apply and changes no table.
 

@@ -1,6 +1,6 @@
 import { db, miss } from "../harness.mjs";
 
-// ─── Functional: reorder_role_tiers (20261111234500, #4071) ─────────────────
+// ─── Functional: reorder_role_tiers (20261112001000, #4071) ─────────────────
 //
 // `PUT /v1/role-tiers/order` calls the function with every tier of the
 // chapter in its new order and the tiers the caller may not move
@@ -15,7 +15,7 @@ import { db, miss } from "../harness.mjs";
 //   - another chapter's tiers are untouched.
 //
 // Everything runs inside one transaction and is rolled back.
-console.log("\n=== Functional: reorder_role_tiers (20261111234500) ===");
+console.log("\n=== Functional: reorder_role_tiers (20261112001000) ===");
 {
   const A = "a4071200-0000-4000-8000-00000000000a";
   const B = "b4071200-0000-4000-8000-00000000000b";
