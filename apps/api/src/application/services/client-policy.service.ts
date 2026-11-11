@@ -6,6 +6,7 @@ import {
   parseClientVersionHeader,
   parseVersionWithBuild,
 } from '#domain/constants/client-version';
+import { STORE_LISTING_URLS } from '@repo/validation';
 import { type Env, envValue } from '#domain/utils/env-value';
 
 /**
@@ -37,14 +38,13 @@ export const UPDATE_URL_ENV: Readonly<Record<ClientPlatform, string>> = {
 };
 
 /**
- * The store listings. The App Store id is App Store Connect's Apple ID for
- * `live.frapp.mobile` (`apps/mobile/store/README.md`); the Play URL keys on
- * the package name, which is permanent from the first upload.
+ * The store listings (`STORE_LISTING_URLS` in `@repo/validation`, which the
+ * web's invite hand-off, `AppHandoff`, reads too). The App Store id is App Store Connect's
+ * Apple ID for `live.frapp.mobile` (`apps/mobile/store/README.md`); the Play
+ * URL keys on the package name, which is permanent from the first upload.
  */
-export const DEFAULT_UPDATE_URLS: Readonly<Record<ClientPlatform, string>> = {
-  ios: 'https://apps.apple.com/app/id6812025642',
-  android: 'https://play.google.com/store/apps/details?id=live.frapp.mobile',
-};
+export const DEFAULT_UPDATE_URLS: Readonly<Record<ClientPlatform, string>> =
+  STORE_LISTING_URLS;
 
 export interface ClientPolicy {
   updateRequired: boolean;

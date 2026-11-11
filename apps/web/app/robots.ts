@@ -11,6 +11,8 @@ import type { MetadataRoute } from "next";
  */
 export default function robots(): MetadataRoute.Robots {
   return {
-    rules: [{ userAgent: "*", disallow: "/" }],
+    // Except the app-link files (#4002, `lib/app-links.ts`), which Apple and
+    // Google fetch to let an invite link open the app.
+    rules: [{ userAgent: "*", allow: "/.well-known/", disallow: "/" }],
   };
 }
