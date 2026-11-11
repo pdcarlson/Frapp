@@ -33,7 +33,7 @@ export const BLOCKED_MEMBERS_EMPTY_BODY_WEB =
   "Block someone from a message's More menu in chat. Their messages in this chapter's chat are hidden from you, and they aren't told.";
 
 /**
- * `/profile` → Blocked members: the one place on web a block can always be
+ * Settings → Blocked members (`/preferences?section=blocked`): the one place on web a block can always be
  * undone (`spec/behavior/chat/README.md` § Block — "a tombstone in a thread
  * the member may never reopen is not sufficient"; #2313). The same states and
  * words as mobile's Settings → Blocked members sheet.

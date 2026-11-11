@@ -64,7 +64,6 @@ import {
 } from "@repo/hooks";
 import { useAuthSession } from "../auth-session";
 import { useIsApiAuthenticated } from "../use-is-api-authenticated";
-import { asRoute, openHref } from "../href";
 import {
   addNotificationResponseListener,
   addPushTokenListener,
@@ -88,8 +87,8 @@ import {
 } from "./push-token-lifecycle";
 import {
   NOTIFICATION_FALLBACK_PATHNAME,
-  notificationHref,
   notificationIdFrom,
+  openNotificationTarget,
   replaceablePathname,
   resolveNotificationTarget,
 } from "./targets";
@@ -102,15 +101,24 @@ export function usePushRuntime(): void {
   const router = useRouter();
   // The focused screen's path, so a tap for a channel while one is open
   // replaces it rather than stacking a second (`openHref`). Never a message
-  // thread, which shares the channel's path (`replaceablePathname`).
+  // thread, which shares the channel's path (`replaceablePathname`). A thread
+  // reply's tap opens its channel the same way, then the thread over it
+  // (`openNotificationTarget`, #4054).
   const { threadRootId } = useGlobalSearchParams<{
     threadRootId?: string | string[];
   }>();
   const pathname = replaceablePathname(usePathname(), threadRootId);
   const pathnameRef = useRef(pathname);
+  // The open thread's root, so a tap for a reply in the thread already on
+  // screen stays put rather than stacking its channel and itself again.
+  const openRootId = Array.isArray(threadRootId)
+    ? threadRootId[0]
+    : threadRootId;
+  const openRootIdRef = useRef(openRootId);
   useLayoutEffect(() => {
     pathnameRef.current = pathname;
-  }, [pathname]);
+    openRootIdRef.current = openRootId;
+  }, [pathname, openRootId]);
   const isAuthenticated = useIsApiAuthenticated();
   const { isChapterResolving, status } = useAuthSession();
   const registerToken = useRegisterPushToken();
@@ -226,8 +234,10 @@ export function usePushRuntime(): void {
     // The same fallback check `app/(app)/notifications.tsx` makes: an
     // unrecognized payload resolves to the notification list, and pushing that
     // from a tap that arrived *as* a notification stacks the list on itself.
+    const rootId = target.params?.threadRootId;
+    if (rootId && rootId === openRootIdRef.current) return;
     if (target.pathname !== NOTIFICATION_FALLBACK_PATHNAME || target.params) {
-      openHref(router, asRoute(notificationHref(target)), pathnameRef.current);
+      openNotificationTarget(router, target, pathnameRef.current);
     }
   }, [pendingTap, status, isChapterResolving, isAuthenticated, router]);
 
