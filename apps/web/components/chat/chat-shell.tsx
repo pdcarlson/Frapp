@@ -43,7 +43,7 @@ import {
   useChatBackground,
   useChapterChatBackground,
   useSetChannelBackground,
-  errorCopy,
+  chatBackgroundErrorCopy,
   useMarkChannelRead,
   useCategories,
   useChapterRoster,
@@ -2842,7 +2842,7 @@ export function ChatShell({
                       letters: chapterLetters,
                       saving: setChannelBackground.isPending,
                       error: setChannelBackground.error
-                        ? errorCopy(setChannelBackground.error)
+                        ? chatBackgroundErrorCopy(setChannelBackground.error)
                         : null,
                       onPick: (pick) =>
                         setChannelBackground.mutate({
@@ -2852,7 +2852,7 @@ export function ChatShell({
                             ? {
                                 body: pick.photo,
                                 filename: pick.photo.name,
-                                contentType: pick.photo.type,
+                                contentType: pick.contentType,
                               }
                             : undefined,
                         }),

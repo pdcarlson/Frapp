@@ -4,10 +4,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import React from "react";
 
 const putSignedUpload = vi.hoisted(() => vi.fn());
-vi.mock("./put-signed-upload", () => ({ putSignedUpload }));
+vi.mock("./put-signed-upload", async (importActual) => ({
+  ...(await importActual<typeof import("./put-signed-upload")>()),
+  putSignedUpload,
+}));
 
+import { SignedUploadError } from "./put-signed-upload";
 import {
+  CHAT_BACKGROUND_FAILURE_COPY,
   canSetChannelBackground,
+  chatBackgroundErrorCopy,
   useRequestChatBackgroundPhotoUrl,
   useSetChannelBackground,
   useSetChapterChatBackground,
@@ -117,6 +123,7 @@ describe("chat background hooks", () => {
       signedUrl: "https://signed",
       body,
       contentType: "image/jpeg",
+      describeRejection: expect.any(Function),
     });
     expect(client.PUT).toHaveBeenCalledWith("/v1/chat-backgrounds/default", {
       body: { background: "photo", storage_path: "chapter-1/d.jpg" },
@@ -144,5 +151,146 @@ describe("chat background hooks", () => {
       "/v1/chat-backgrounds/channels/photo-url",
       { body: { filename: "a.png", content_type: "image/png" } },
     );
+  });
+  // #4262: every failure on the way to a photo background read "Try again in
+  // a moment", so nobody could tell which step broke or why.
+  describe("says which step failed (#4262)", () => {
+    const failed = (status: number, message?: string) => ({
+      data: undefined,
+      error: message ? { statusCode: status, message } : undefined,
+      response: { ok: false, status },
+    });
+    const photo = {
+      body: new Blob(["x"]),
+      filename: "d.jpg",
+      contentType: "image/jpeg",
+    };
+
+    async function failureOf(client: unknown, args: object) {
+      const { result } = renderHook(() => useSetChapterChatBackground(), {
+        wrapper: wrapper(client),
+      });
+      let caught: unknown;
+      await act(async () => {
+        await result.current
+          .mutateAsync(args as never)
+          .catch((error: unknown) => {
+            caught = error;
+          });
+      });
+      return chatBackgroundErrorCopy(caught);
+    }
+
+    it("rethrows the API's own error, so its status still reaches Sentry", async () => {
+      const client = { PUT: vi.fn().mockResolvedValue(failed(500, "boom")) };
+      const { result } = renderHook(() => useSetChapterChatBackground(), {
+        wrapper: wrapper(client),
+      });
+      let caught: unknown;
+      await act(async () => {
+        await result.current
+          .mutateAsync({ background: "letters" })
+          .catch((error: unknown) => {
+            caught = error;
+          });
+      });
+      expect(caught).toMatchObject({ statusCode: 500, message: "boom" });
+    });
+
+    it("names minting the upload when that 5xxs", async () => {
+      const client = {
+        POST: vi.fn().mockResolvedValue(failed(500)),
+        PUT: vi.fn(),
+      };
+      expect(await failureOf(client, { background: "photo", photo })).toBe(
+        CHAT_BACKGROUND_FAILURE_COPY.prepare,
+      );
+      expect(client.PUT).not.toHaveBeenCalled();
+    });
+
+    it("names saving the uploaded photo when that 5xxs", async () => {
+      const client = {
+        POST: vi
+          .fn()
+          .mockResolvedValue(ok({ upload_url: "u", storage_path: "p" })),
+        PUT: vi.fn().mockResolvedValue(failed(500)),
+      };
+      expect(await failureOf(client, { background: "photo", photo })).toBe(
+        CHAT_BACKGROUND_FAILURE_COPY.savePhoto,
+      );
+    });
+
+    it("names saving a channel's photo when that 5xxs (the channel menu)", async () => {
+      const client = {
+        POST: vi
+          .fn()
+          .mockResolvedValue(ok({ upload_url: "u", storage_path: "p" })),
+        PUT: vi.fn().mockResolvedValue(failed(500)),
+      };
+      const { result } = renderHook(() => useSetChannelBackground(), {
+        wrapper: wrapper(client),
+      });
+      let caught: unknown;
+      await act(async () => {
+        await result.current
+          .mutateAsync({ channelId: "ch-1", background: "photo", photo })
+          .catch((error: unknown) => {
+            caught = error;
+          });
+      });
+      expect(client.POST).toHaveBeenCalledWith(
+        "/v1/chat-backgrounds/channels/photo-url",
+        expect.anything(),
+      );
+      expect(chatBackgroundErrorCopy(caught)).toBe(
+        CHAT_BACKGROUND_FAILURE_COPY.savePhoto,
+      );
+    });
+
+    it("names saving a built-in when that 5xxs", async () => {
+      const client = { PUT: vi.fn().mockResolvedValue(failed(503)) };
+      expect(await failureOf(client, { background: "letters" })).toBe(
+        CHAT_BACKGROUND_FAILURE_COPY.save,
+      );
+    });
+
+    it("shows the reason when the API gives one it knows", async () => {
+      const client = {
+        POST: vi
+          .fn()
+          .mockResolvedValue(ok({ upload_url: "u", storage_path: "p" })),
+        PUT: vi
+          .fn()
+          .mockResolvedValue(
+            failed(
+              400,
+              "There is no channel you can post in to announce a photo background in",
+            ),
+          ),
+      };
+      expect(await failureOf(client, { background: "photo", photo })).toMatch(
+        /no channel your role can post in/,
+      );
+    });
+
+    it("keeps a refused upload's own sentence", async () => {
+      putSignedUpload.mockImplementationOnce(
+        async (input?: { describeRejection?: (status: number) => string }) => {
+          throw new SignedUploadError(
+            400,
+            input?.describeRejection?.(400) ?? "no describeRejection",
+          );
+        },
+      );
+      const client = {
+        POST: vi
+          .fn()
+          .mockResolvedValue(ok({ upload_url: "u", storage_path: "p" })),
+        PUT: vi.fn(),
+      };
+      expect(await failureOf(client, { background: "photo", photo })).toBe(
+        CHAT_BACKGROUND_FAILURE_COPY.upload,
+      );
+    });
   });
 });

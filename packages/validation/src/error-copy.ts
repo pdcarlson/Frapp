@@ -106,6 +106,16 @@ export const SERVER_MESSAGE_COPY: Readonly<Record<string, string>> = {
     "This event checks you in by location. Open Frapp on your phone to check in.",
   "Cannot mark auto-absent before the grace period ends":
     "Wait until the grace period ends to mark absences.",
+  // Chat backgrounds (#3973, #4262): `chat-background.service.ts`'s refusals.
+  "storage_path does not reference an uploaded photo":
+    "The photo didn't finish uploading. Pick it again.",
+  "There is no channel you can post in to announce a photo background in":
+    "A photo background is announced with a chat message, and there's no channel your role can post in. Ask an officer who can.",
+  "You cannot post in the channel a chapter photo background is announced in":
+    "A photo background is announced in the default channel (or #general), and your role can't post there. Ask an officer who can.",
+  "This channel can't have a background":
+    "This channel can't have a background.",
+  "A DM or group DM has no background": "DMs can't have a background.",
   // Chat
   "You do not have access to this channel":
     "You don't have access to this channel.",
