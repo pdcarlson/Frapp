@@ -42,18 +42,17 @@ export function useDocumentMarks() {
     [starred],
   );
 
+  // `mutateAsync`, not `mutate` with per-call callbacks: TanStack runs a
+  // `mutate` call's own `onError` only for the latest call on the hook, so a
+  // star that failed while a second was in flight would fail silently.
   function toggleStar(target: DocumentMarkTarget, name: string) {
     const next = !isStarred(target);
-    setStar.mutate(
-      { target, starred: next },
-      {
-        onError: (error) =>
-          toast({
-            title: next ? `Couldn't star ${name}` : `Couldn't unstar ${name}`,
-            description: getErrorMessage(error, "Try again in a moment."),
-            variant: "destructive",
-          }),
-      },
+    setStar.mutateAsync({ target, starred: next }).catch((error: unknown) =>
+      toast({
+        title: next ? `Couldn't star ${name}` : `Couldn't unstar ${name}`,
+        description: getErrorMessage(error, "Try again in a moment."),
+        variant: "destructive",
+      }),
     );
   }
 
@@ -80,6 +79,11 @@ export function useDocumentMarks() {
   }
 
   return {
+    /** The stars couldn't be read, so none shows; the page says so. */
+    starsFailed: starsQuery.isError,
+    retryStars: () => void starsQuery.refetch(),
+    /** The member's starred folder and document ids. */
+    starred,
     isStarred,
     toggleStar,
     setPinned,

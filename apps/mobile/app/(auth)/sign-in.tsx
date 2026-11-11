@@ -272,7 +272,11 @@ export default function SignIn() {
         area below pads the scroll view by the keyboard, so on a short screen
         the column scrolls instead of the keyboard covering "Sign in".
       */}
-      <KeyboardAvoidingArea style={styles.scroll} iosInsetFromScrollView>
+      <KeyboardAvoidingArea
+        style={styles.scroll}
+        iosInsetFromScrollView
+        atScreenBottom
+      >
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.container}

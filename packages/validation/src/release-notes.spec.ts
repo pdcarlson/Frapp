@@ -10,13 +10,9 @@ import {
   accountHasSeenNewest,
   isLaterReleaseNoteVersion,
   RELEASE_NOTE_VERSION_PATTERN,
+  releaseNoteLineProblem,
   type ReleaseNote,
 } from "./release-notes";
-
-// Pictographic emoji, the product's "no emojis in the UI" rule.
-const EMOJI = /\p{Extended_Pictographic}/u;
-// Leaks members should never read: issue/PR numbers, versions, Signet.
-const INTERNALS = /#\d|\bv?\d+\.\d+\.\d+\b|signet|\bPR\b|\bOTA\b|\bAPI\b/i;
 
 describe("RELEASE_NOTES", () => {
   it("is newest first, one entry per day", () => {
@@ -32,14 +28,27 @@ describe("RELEASE_NOTES", () => {
       expect(note.title.trim()).not.toBe("");
       expect(note.changes.length).toBeGreaterThan(0);
       for (const line of [note.title, ...note.changes]) {
-        expect(line).not.toMatch(EMOJI);
-        expect(line).not.toMatch(INTERNALS);
-        // frapp.live/changelog renders these, and landing copy takes no em
-        // dashes (spec/ui/landing/README.md § Marketing copy rules).
-        expect(line).not.toContain("\u2014");
+        expect(releaseNoteLineProblem(line)).toBeNull();
       }
     },
   );
+});
+
+describe("releaseNoteLineProblem", () => {
+  it("passes a plain member sentence, with or without a trailing newline", () => {
+    expect(releaseNoteLineProblem("Polls can allow more than one choice.")).toBeNull();
+    expect(releaseNoteLineProblem("Polls can allow more than one choice.\n")).toBeNull();
+  });
+
+  it("names what's wrong", () => {
+    expect(releaseNoteLineProblem("  \n")).toMatch(/empty/);
+    expect(releaseNoteLineProblem("One.\nTwo.")).toMatch(/more than one line/);
+    expect(releaseNoteLineProblem("Fixed #123.")).toMatch(/issue number/);
+    expect(releaseNoteLineProblem("Now in v1.2.3.")).toMatch(/version/);
+    expect(releaseNoteLineProblem("A new API.")).toMatch(/internal/);
+    expect(releaseNoteLineProblem("Fast — really.")).toMatch(/em dash/);
+    expect(releaseNoteLineProblem("Party \u{1F389}")).toMatch(/emoji/);
+  });
 });
 
 describe("formatReleaseNoteDate", () => {

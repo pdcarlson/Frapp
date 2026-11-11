@@ -49,6 +49,12 @@ export interface Event {
    */
   check_in_opens_minutes: number;
   /**
+   * The chapter's event type this was made as (`event_types`, #3730), or
+   * `null`. The type only filled in the form: the event's own `point_value`
+   * and `is_mandatory` are what count. Deleting the type clears this.
+   */
+  event_type_id: string | null;
+  /**
    * Who made the event: the caller of `POST /v1/events`, copied onto a
    * series' generated occurrences. `null` for events made before it was
    * recorded (#3897) and for rows written outside that route.

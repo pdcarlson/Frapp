@@ -11,7 +11,7 @@ import { chunkIds } from '#domain/utils/chunk-ids';
 
 /**
  * The upsert targets, each the primary key of its table in
- * `20261111200000_activity_item_reads.sql`. A target that names no unique
+ * `20261111210000_activity_item_reads.sql`. A target that names no unique
  * constraint fails every write with 42P10, which no mocked client notices,
  * so `supabase-activity-item-read.repository.spec.ts` checks these against
  * the migration.

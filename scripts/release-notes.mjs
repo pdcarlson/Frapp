@@ -20,7 +20,7 @@ const all = process.argv.includes("--all");
 const notes = all ? RELEASE_NOTES : RELEASE_NOTES.slice(0, 1);
 if (notes.length === 0) {
   console.error(
-    "No release notes yet: add one to packages/validation/src/release-notes.ts.",
+    "No release notes yet: add a line as a file in packages/validation/release-notes/ (its README says how).",
   );
   process.exit(1);
 }

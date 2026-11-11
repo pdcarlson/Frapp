@@ -24,7 +24,12 @@ const TREASURER = [
   "events:create",
   "events:update",
 ];
-const MEMBER = ["members:view", "backwork:upload", "service:log", "polls:create"];
+const MEMBER = [
+  "members:view",
+  "backwork:upload",
+  "service:log",
+  "polls:create",
+];
 
 describe("SETTINGS_ENTRY_PERMISSIONS", () => {
   it("admits exactly the holders Settings has something for", () => {
@@ -63,7 +68,9 @@ describe("isSettingsTabVisible", () => {
   it("gives the pledge class tab to a roles:manage holder and not to a config viewer", () => {
     expect(isSettingsTabVisible("classes", ["roles:manage"])).toBe(true);
     expect(isSettingsTabVisible("classes", ["*"])).toBe(true);
-    expect(isSettingsTabVisible("classes", ["chapter-config:view"])).toBe(false);
+    expect(isSettingsTabVisible("classes", ["chapter-config:view"])).toBe(
+      false,
+    );
   });
 
   it("gives a treasurer no config tabs, since each would fail to load", () => {
@@ -80,7 +87,9 @@ describe("isSettingsTabVisible", () => {
     expect(isSettingsTabVisible("billing", TREASURER)).toBe(true);
     expect(isSettingsTabVisible("billing", ["billing:view"])).toBe(true);
     // Chapter config is not a way in: the section reads billing, not config.
-    expect(isSettingsTabVisible("billing", ["chapter-config:view"])).toBe(false);
+    expect(isSettingsTabVisible("billing", ["chapter-config:view"])).toBe(
+      false,
+    );
     expect(isSettingsTabVisible("billing", MEMBER)).toBe(false);
   });
 
@@ -88,7 +97,9 @@ describe("isSettingsTabVisible", () => {
     // ChapterConfigController guards the whole class on chapter-config:view,
     // so without it even the PATCH is refused.
     expect(isSettingsTabVisible("org", ["chapter-config:manage"])).toBe(false);
-    expect(isSettingsTabVisible("modules", ["chapter-config:manage"])).toBe(false);
+    expect(isSettingsTabVisible("modules", ["chapter-config:manage"])).toBe(
+      false,
+    );
   });
 
   it("gives a semester:rollover holder the Semester tab and no other", () => {
@@ -136,7 +147,9 @@ describe("visibleSettingsTools", () => {
 
 describe("hasSettingsDestination", () => {
   it("is true for any viewer with a tab", () => {
-    expect(hasSettingsDestination(["chapter-config:view"], () => false)).toBe(true);
+    expect(hasSettingsDestination(["chapter-config:view"], () => false)).toBe(
+      true,
+    );
     expect(hasSettingsDestination(["roles:manage"])).toBe(true);
     expect(hasSettingsDestination(["semester:rollover"])).toBe(true);
   });

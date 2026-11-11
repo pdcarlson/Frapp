@@ -6469,6 +6469,184 @@
         ]
       }
     },
+    "/v1/event-types": {
+      "get": {
+        "operationId": "EventTypeController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EventTypeDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the chapter's event types, in its order",
+        "tags": [
+          "Event types"
+        ]
+      },
+      "post": {
+        "operationId": "EventTypeController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEventTypeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventTypeDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add an event type at the end of the list",
+        "tags": [
+          "Event types"
+        ]
+      }
+    },
+    "/v1/event-types/{id}": {
+      "patch": {
+        "operationId": "EventTypeController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateEventTypeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventTypeDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Change an event type's name, points or attendance; events already made keep theirs",
+        "tags": [
+          "Event types"
+        ]
+      },
+      "delete": {
+        "operationId": "EventTypeController_remove_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete an event type; its events keep their points and attendance and lose the type",
+        "tags": [
+          "Event types"
+        ]
+      }
+    },
     "/v1/events/{eventId}/attendance/check-in": {
       "post": {
         "description": "Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. `lat`/`lng` are required when the event defines a check-in geofence.",
@@ -16808,6 +16986,12 @@
             "maximum": 120,
             "description": "Minutes before start_time that check-in opens. Omitted on create, it is 10; the window closes 15 minutes after end_time."
           },
+          "event_type_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "One of the chapter's event types (`GET /v1/event-types`), or null for none. The type only fills the form: the event's own `point_value` and `is_mandatory` are what count. An id that isn't the chapter's is a 400."
+          },
           "channel_id": {
             "type": "string",
             "description": "When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when the event keeps anyone out (`others_invited` false, including its default when `required_role_ids` is non-empty, or a non-empty `excluded_role_ids`), on this key or `client_message_id` alone — the card is broadcast to every reader of the channel, so a create cannot both limit its audience and post one. (`PATCH` can still limit the audience of an event whose card already posted; that card is left as-is.)"
@@ -16916,6 +17100,12 @@
             "maximum": 120,
             "description": "Minutes before start_time that check-in opens; it closes 15 minutes after end_time."
           },
+          "event_type_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The chapter's event type this was made as, or null. Cleared when the type is deleted."
+          },
           "created_by": {
             "type": "string",
             "format": "uuid",
@@ -16951,6 +17141,7 @@
           "check_in_zone",
           "check_in_zone_name",
           "check_in_opens_minutes",
+          "event_type_id",
           "created_by",
           "created_at"
         ]
@@ -17028,6 +17219,12 @@
             "maximum": 120,
             "description": "Minutes before start_time that check-in opens; the window closes 15 minutes after end_time. Omitted leaves it unchanged; null is refused."
           },
+          "event_type_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "One of the chapter's event types (`GET /v1/event-types`), or null to clear it; omitted leaves it. The type only fills the form: the event's own `point_value` and `is_mandatory` are what count. An id that isn't the chapter's is a 400."
+          },
           "scope": {
             "type": "string",
             "enum": [
@@ -17035,6 +17232,94 @@
               "series"
             ],
             "description": "Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved."
+          }
+        }
+      },
+      "EventTypeDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "point_value": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100000,
+            "description": "Points for attending, copied onto an event made as this type."
+          },
+          "is_mandatory": {
+            "type": "boolean",
+            "description": "Whether everyone must attend, copied onto an event made as this type."
+          },
+          "position": {
+            "type": "number",
+            "description": "The type's place in the chapter's list, lowest first."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "name",
+          "point_value",
+          "is_mandatory",
+          "position",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "CreateEventTypeDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 60,
+            "description": "The type as the chapter calls it (\"Chapter meeting\", \"Work party\"). Stored trimmed; unique within the chapter, ignoring case."
+          },
+          "point_value": {
+            "type": "number",
+            "default": 0,
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "is_mandatory": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "UpdateEventTypeDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 60
+          },
+          "point_value": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "is_mandatory": {
+            "type": "boolean"
           }
         }
       },

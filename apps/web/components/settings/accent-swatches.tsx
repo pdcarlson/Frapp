@@ -1,7 +1,10 @@
 "use client";
 
 import { Check } from "lucide-react";
-import { ACCENT_PRESETS, type AccentSwatch } from "@repo/hooks/chapter-identity";
+import {
+  ACCENT_PRESETS,
+  type AccentSwatch,
+} from "@repo/hooks/chapter-identity";
 import { orgColorsFor } from "@repo/org-archetypes";
 import { EYEBROW } from "@/components/ui/typography";
 import { FOCUS_RING } from "@/components/ui/focus";
@@ -63,7 +66,9 @@ export function AccentSwatches({
         <span
           className={cn(
             "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
-            selected ? "border-foreground" : "border-transparent group-hover:border-input",
+            selected
+              ? "border-foreground"
+              : "border-transparent group-hover:border-input",
           )}
         >
           <span
@@ -71,12 +76,17 @@ export function AccentSwatches({
             style={{ backgroundColor: swatch.hex }}
           >
             {selected ? (
-              <Check className="h-3.5 w-3.5 text-white mix-blend-difference" aria-hidden />
+              <Check
+                className="h-3.5 w-3.5 text-white mix-blend-difference"
+                aria-hidden
+              />
             ) : null}
           </span>
         </span>
         {labelled ? (
-          <span className="text-sm font-semibold text-foreground">{swatch.name}</span>
+          <span className="text-sm font-semibold text-foreground">
+            {swatch.name}
+          </span>
         ) : null}
       </button>
     );
@@ -85,8 +95,14 @@ export function AccentSwatches({
   return (
     <div className="space-y-3">
       {orgColors.length > 0 ? (
-        <div role="group" aria-label="Your organization's colors" className="space-y-1.5">
-          <p className={`${EYEBROW} text-muted-foreground`}>Your organization</p>
+        <div
+          role="group"
+          aria-label="Your organization's colors"
+          className="space-y-1.5"
+        >
+          <p className={`${EYEBROW} text-muted-foreground`}>
+            Your organization
+          </p>
           <div className="flex flex-wrap gap-x-2 gap-y-1">
             {orgColors.map((swatch) => swatchButton(swatch, true))}
           </div>

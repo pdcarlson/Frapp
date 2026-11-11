@@ -1,4 +1,5 @@
 import { can, canAny, isBetaOffModule } from "@repo/validation";
+import { isModuleSettingsTab } from "@/components/settings/settings-modules";
 
 /**
  * Who Settings is for, and what each viewer finds in it.
@@ -7,8 +8,9 @@ import { can, canAny, isBetaOffModule } from "@repo/validation";
  * sidebar used to carry a six-row Admin group (Roles, Study Zones, Reports,
  * Chat Admin, Discord Import, Settings). That group is what pushed an admin's
  * nav past a 768px window, so it folded into a single Settings row. Roles was
- * already a Settings tab. The other four keep their own full-width pages and
- * are listed in the Settings rail as **tools**.
+ * already a Settings tab. The other four keep their own full-width pages, and
+ * since #4073 each is opened from its module's page in Chapter settings
+ * (`page`), not from a Tools group of the rail.
  *
  * The nav's Settings row (`nav-config.ts`), the chapter switcher's "Chapter
  * settings" link, the Settings rail and the page's "nothing here for you" state
@@ -27,6 +29,8 @@ export type SettingsTool = {
   permission: string;
   /** `enabled_modules` key; the tool hides when the chapter switches it off. */
   module?: string;
+  /** The module page in Chapter settings that lists it (`?tab=`). */
+  page: string;
 };
 
 export const SETTINGS_TOOLS: readonly SettingsTool[] = [
@@ -37,6 +41,7 @@ export const SETTINGS_TOOLS: readonly SettingsTool[] = [
       "Create, edit and delete channels, manage categories and pins, and work the report queue.",
     href: "/chat-admin",
     permission: "channels:manage",
+    page: "chat",
   },
   {
     // `channels:manage`, like Chat admin: an import creates channels, writes
@@ -46,6 +51,7 @@ export const SETTINGS_TOOLS: readonly SettingsTool[] = [
     description: "Bring a Discord server's history in as a read-only archive.",
     href: "/discord-import",
     permission: "channels:manage",
+    page: "chat",
   },
   {
     id: "study-zones",
@@ -53,6 +59,7 @@ export const SETTINGS_TOOLS: readonly SettingsTool[] = [
     description: "Draw study areas and set their reward rates.",
     href: "/geofences",
     permission: "geofences:manage",
+    page: "geofences",
     module: "geofences",
   },
   {
@@ -61,6 +68,7 @@ export const SETTINGS_TOOLS: readonly SettingsTool[] = [
     description: "Export attendance, points, roster and service data.",
     href: "/reports",
     permission: "reports:export",
+    page: "reports",
     module: "reports",
   },
 ];
@@ -105,15 +113,6 @@ const TAB_ONLY_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
 };
 
 /**
- * Tabs that configure one module. Each hides while its module is off for
- * every chapter in the beta (`BETA_OFF_MODULES`), and stays for a chapter that
- * switched the module off itself, so its officers can still set it up.
- */
-const TAB_MODULES: Readonly<Record<string, string>> = {
-  dues: "dues",
-};
-
-/**
  * Holding any one of these means Settings has a tab or a tool for the viewer.
  * The nav's Settings row is gated on the set, and `hasSettingsDestination`
  * then drops the row when the only tools behind it are switched off.
@@ -145,10 +144,25 @@ export const SETTINGS_TOOL_ROUTES: readonly string[] = SETTINGS_TOOLS.map(
 export function isSettingsTabVisible(
   tab: string,
   permissions: readonly string[] | null | undefined,
+  isModuleEnabled?: (moduleKey: string) => boolean,
 ): boolean {
-  const tabModule = TAB_MODULES[tab];
-  if (tabModule && isBetaOffModule(tabModule)) return false;
+  // A module that is off for every chapter in the beta has no page.
+  if (isModuleSettingsTab(tab) && isBetaOffModule(tab)) return false;
   if (permissions === undefined || permissions === null) return true;
+  /*
+    A module page (#4073) reads chapter config for its switch and rules, so a
+    config viewer gets every one. A viewer who holds only a tool, such as a
+    treasurer with `reports:export`, gets the page that tool lives on, and
+    only while the tool shows: the page is where they reach it now.
+  */
+  if (isModuleSettingsTab(tab)) {
+    return (
+      can(CHAPTER_CONFIG_VIEW, permissions) ||
+      visibleSettingsTools(permissions, isModuleEnabled).some(
+        (tool) => tool.page === tab,
+      )
+    );
+  }
   const only = TAB_ONLY_PERMISSIONS[tab];
   if (only) return canAny(only, permissions);
   return canAny(
@@ -198,5 +212,7 @@ export function hasSettingsDestination(
     ],
     permissions,
   );
-  return anyTab || visibleSettingsTools(permissions, isModuleEnabled).length > 0;
+  return (
+    anyTab || visibleSettingsTools(permissions, isModuleEnabled).length > 0
+  );
 }

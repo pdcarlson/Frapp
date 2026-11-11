@@ -10,6 +10,9 @@ import { EventAnnouncementService } from '../../src/application/services/event-a
 import { NotificationService } from '../../src/application/services/notification.service';
 import { ChatService } from '../../src/application/services/chat.service';
 import { RbacService } from '../../src/application/services/rbac.service';
+import { EventTypeService } from '../../src/application/services/event-type.service';
+import { EVENT_TYPE_REPOSITORY } from '#domain/repositories/event-type.repository.interface';
+import type { IEventTypeRepository } from '#domain/repositories/event-type.repository.interface';
 
 /**
  * The shared fixture for the event service specs (#3270): one Nest testing
@@ -40,6 +43,7 @@ export const baseEvent: Event = {
   check_in_zone: null,
   check_in_zone_name: null,
   check_in_opens_minutes: 10,
+  event_type_id: null,
   created_by: null,
   created_at: '2026-02-26T00:00:00.000Z',
 };
@@ -94,11 +98,31 @@ export async function createEventServiceFixture() {
     getAlumniRoleId: jest.fn().mockResolvedValue(null),
   };
 
+  // Every type id a test sends is one of the chapter's unless it says not.
+  const mockEventTypeRepo: jest.Mocked<IEventTypeRepository> = {
+    findByChapter: jest.fn().mockResolvedValue([]),
+    findById: jest.fn(async (id: string, chapterId: string) => ({
+      id,
+      chapter_id: chapterId,
+      name: 'Chapter meeting',
+      point_value: 10,
+      is_mandatory: true,
+      position: 1,
+      created_at: '2026-11-11T00:00:00.000Z',
+      updated_at: '2026-11-11T00:00:00.000Z',
+    })),
+    create: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+  };
+
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       EventService,
       EventSeriesService,
       EventAnnouncementService,
+      EventTypeService,
+      { provide: EVENT_TYPE_REPOSITORY, useValue: mockEventTypeRepo },
       { provide: EVENT_REPOSITORY, useValue: mockEventRepo },
       { provide: NotificationService, useValue: mockNotificationService },
       { provide: USER_REPOSITORY, useValue: mockUserRepo },
@@ -116,6 +140,7 @@ export async function createEventServiceFixture() {
     mockMemberRepo,
     mockChatService,
     mockRbacService,
+    mockEventTypeRepo,
   };
 }
 

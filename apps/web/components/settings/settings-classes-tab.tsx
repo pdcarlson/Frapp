@@ -32,10 +32,7 @@ import {
   anyReadUncached,
 } from "@/components/shared/async-states";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
-import {
-  InlineNote,
-  InlineNoteAction,
-} from "@/components/shared/inline-note";
+import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 import {
   PanelBody,
   PanelContent,
@@ -193,7 +190,9 @@ export function SettingsClassesTab({ canManage, classTerm, orderTerm }: Props) {
         >
           <div>
             {classes.length === 0 ? (
-              <InlineNote>Nothing here yet. Add the oldest one first.</InlineNote>
+              <InlineNote>
+                Nothing here yet. Add the oldest one first.
+              </InlineNote>
             ) : (
               <ReorderList
                 aria-label={classTerm}
@@ -219,8 +218,8 @@ export function SettingsClassesTab({ canManage, classTerm, orderTerm }: Props) {
               // Without the roster there are no counts and no class editor,
               // so say why and offer the read again.
               <InlineNote className="mt-3">
-                Couldn&apos;t load the chapter&apos;s members, so counts and
-                the member editor are unavailable.{" "}
+                Couldn&apos;t load the chapter&apos;s members, so counts and the
+                member editor are unavailable.{" "}
                 <InlineNoteAction onClick={() => void membersQuery.refetch()}>
                   Retry
                 </InlineNoteAction>
@@ -535,8 +534,7 @@ function ClassMembersEditor({
       .map((member) => ({
         memberId: member.id,
         name: rowName(member),
-        number:
-          member.order_number === null ? "" : String(member.order_number),
+        number: member.order_number === null ? "" : String(member.order_number),
       })),
   );
   const [search, setSearch] = useState("");

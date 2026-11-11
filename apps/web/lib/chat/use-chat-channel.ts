@@ -554,7 +554,9 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         replyToId: opts?.replyToId ?? null,
         attachments: opts?.attachments ?? null,
       });
-      await clearAfterSend();
+      // Clears only the text that was sent: anything typed while the POST
+      // was out is the next message and stays in the composer (#4141).
+      await clearAfterSend(content);
     },
     [cancelPendingSave, clearAfterSend, channelId, ctx],
   );

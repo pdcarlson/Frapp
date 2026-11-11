@@ -463,7 +463,7 @@ export default function CreateChapter() {
       style={styles.safeArea}
       edges={["top", "right", "bottom", "left"]}
     >
-      <KeyboardAvoidingArea style={styles.flex}>
+      <KeyboardAvoidingArea style={styles.flex} atScreenBottom>
         <View style={styles.container}>
           {/*
             The board's s02 `‹ Back` row, in house gold, with the progress

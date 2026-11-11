@@ -69,6 +69,7 @@ import type {
   StudySession,
   Task,
   PledgeClass,
+  EventType,
   PledgeClassAssignment,
   RushCandidate,
   RushCandidateVote,
@@ -164,6 +165,7 @@ export interface Database {
       service_entries: TableDefinition<ServiceEntry>;
       tasks: TableDefinition<Task>;
       chapter_pledge_classes: TableDefinition<PledgeClass>;
+      event_types: TableDefinition<EventType>;
       rush_candidates: TableDefinition<RushCandidate>;
       rush_candidate_votes: TableDefinition<RushCandidateVote>;
       chapter_documents: TableDefinition<ChapterDocument>;

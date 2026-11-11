@@ -100,6 +100,8 @@ export function seriesRuleOf(
 export function draftFromEvent(target: EventEditTarget): NewEventDraft {
   const { event, seriesRule } = target;
   return {
+    eventTypeId: event.event_type_id,
+    typeFilledName: null,
     name: event.name,
     start: new Date(event.start_time),
     end: new Date(event.end_time),
@@ -129,6 +131,8 @@ export interface EventEditPatch {
   /** `null` ends the series. */
   recurrence_rule?: RecurrenceRule | null;
   check_in_opens_minutes?: number;
+  /** `null` clears the type. */
+  event_type_id?: string | null;
 }
 
 function sameIds(a: readonly string[], b: readonly string[]): boolean {
@@ -216,6 +220,9 @@ export function validateEventEdit(
   ) {
     // All five together: they are one rule, and an emptied list must clear.
     Object.assign(patch, wire);
+  }
+  if (draft.eventTypeId !== event.event_type_id) {
+    patch.event_type_id = draft.eventTypeId;
   }
   if (draft.recurrenceRule !== seriesRule) {
     patch.recurrence_rule = draft.recurrenceRule;

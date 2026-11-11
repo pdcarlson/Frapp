@@ -251,6 +251,17 @@ export const ChapterPointsConfigSchema = z.object({
 });
 
 /**
+ * A chapter's service-hours rate (`chapter_service_config`), as the config
+ * PATCH takes it. The bounds mirror the API's `ServiceConfigDto`: at least 1
+ * (a rate of 0 would divide by zero when awarding), and no more than an
+ * entry's own duration cap, above which no entry could earn a point.
+ */
+export const ChapterServiceConfigSchema = z.object({
+  minutes_per_point: z.number().int().min(1).max(POINTS_ADJUSTMENT_MAX),
+});
+export type ChapterServiceConfig = z.infer<typeof ChapterServiceConfigSchema>;
+
+/**
  * What a chapter with no `chapter_points_config` row enforces — the values
  * `PointsService` hardcoded before the limits became configurable, which is
  * what makes the migration backfill-free.
@@ -426,6 +437,7 @@ export const PatchChapterConfigSchema = z.object({
   // Partial by design: an officer may move one limit without restating the
   // other, and the API merges onto the stored row.
   points: ChapterPointsConfigSchema.partial().optional(),
+  service: ChapterServiceConfigSchema.partial().optional(),
   workflows: z.array(ChapterWorkflowConfigSchema).optional(),
   // Per-chapter analytics opt-out (data-retention.md #analytics-events-pseudonymous).
   analytics_opt_out: z.boolean().optional(),
@@ -797,6 +809,8 @@ export {
   PLEDGE_CLASSES_MAX,
   MEMBER_ORDER_NUMBER_MAX,
   PLEDGE_CLASS_ASSIGNMENTS_MAX,
+  EVENT_TYPE_NAME_MAX_LENGTH,
+  EVENT_TYPES_MAX,
   YEAR_MAX,
 } from "./field-limits";
 

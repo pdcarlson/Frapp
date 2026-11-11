@@ -186,3 +186,4 @@ In each case the whole message box, its rounded border and what you typed sit **
 | Any of the above | Switch keyboards (Gboard's globe or the navigation bar's keyboard button, to another installed keyboard and back) |
 | Any of the above | Drag the thread down: the keyboard goes away and the box returns to the bottom, above the navigation bar |
 | Any of the above | Repeat once with three-button navigation (Settings → System → Navigation mode) |
+| Sign-in (Continue with email), welcome's name step, join, and each create-chapter step | Tap the lowest field: it, and the pinned Continue or Sign in, sit above the keyboard. These screens rise the same way as the composer (#4080), so run them on the same build |

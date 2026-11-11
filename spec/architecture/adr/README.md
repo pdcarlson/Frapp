@@ -2,7 +2,7 @@
 
 One file per ADR. [`spec/architecture/README.md`](../README.md) is the system map; this folder is the decision log. Policy: [`AGENTS.md` § ADR discipline](../../../AGENTS.md#adr-discipline).
 
-**Status** is read from each ADR's own text, so a status change is first recorded in the ADR itself. *Current*: the file carries no amendment or correction. *Amended*: dated amendments or corrections in the file change what it says, so read them before relying on the original text; the note after the colon names the largest change. *Superseded by ADR-N*: a later ADR replaced the decision, wholly or for the part named. ADR-14 alone is *Retired*: its file is deleted and the number is never reused.
+**Status** is read from each ADR's own text, so a status change is first recorded in the ADR itself. *Current*: the file carries no amendment or correction. *Amended*: dated amendments or corrections in the file change what it says, so read them before relying on the original text; the note after the colon names the largest change. *Superseded by ADR-N*: a later ADR replaced the decision, wholly or for the part named. ADR-14 alone is *Retired*: its file is deleted and the number is never reused. *Proposed, pending Paul*: drafted for a decision Paul hasn't made yet; the current spec still describes the system until he accepts it. If he declines it, the file stays, with the status *Rejected* and his reason, so the rejected design and its reasons aren't lost.
 
 | ADR | Status | File |
 | --- | --- | --- |
@@ -32,3 +32,4 @@ One file per ADR. [`spec/architecture/README.md`](../README.md) is the system ma
 | ADR-24: Delivery platform — outcome-verified delivery on the current hosts; Cloud Run only on triggers (2026-09-23) | Amended | [adr-24.md](adr-24.md) |
 | ADR-25: The product is named Frapp; "Signet" stays the design system's internal name until after the beta (2026-09-23) | Amended | [adr-25.md](adr-25.md) |
 | ADR-26: Discord bot imports copy attachments inside Supabase, through an Edge Function (2026-09-29) | Amended | [adr-26.md](adr-26.md) |
+| ADR-27: Tenant-scoped URLs; the page's URL, not the token, names the chapter a request acts in (proposed 2026-11-11) | Proposed, pending Paul | [adr-27.md](adr-27.md) |

@@ -15,7 +15,7 @@ The recruitment module manages prospective members from first contact through bi
 
 - Members vote on a candidate via `/<vocab> vote <candidate>` and extend a bid via `/<vocab> bid <candidate>`, where each takes a candidate's id or name, or with the candidate card's Vote and Extend bid.
 - Vote and bid actor identity comes from the authenticated session (`viewer.id`), never a client-supplied id — see the actor-identity rule in [`chat/integrations.md`](chat/integrations.md#slash-command-dispatch).
-- Ballots store `voter_id` so a member can vote once. The card and GET projection publish `vote_count` and `viewer_has_voted` only — voter names are never listed. That holds whatever `wf_rush_anon_vote` says: the seed shows it as a Settings → Workflows switch, but nothing reads it ([#3439](https://github.com/pdcarlson/Frapp/issues/3439)). Vote is one-click, not a toggle.
+- Ballots store `voter_id` so a member can vote once. The card and GET projection publish `vote_count` and `viewer_has_voted` only — voter names are never listed. No setting changes that: the seed's `wf_rush_anon_vote` is read by nothing and no longer shown in Chapter settings ([#3439](https://github.com/pdcarlson/Frapp/issues/3439), [#4073](https://github.com/pdcarlson/Frapp/issues/4073)). Vote is one-click, not a toggle.
 
 ## Permissions
 

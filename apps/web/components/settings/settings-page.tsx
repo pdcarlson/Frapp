@@ -36,7 +36,7 @@ import {
   can,
   canAll,
   CHAPTER_PROFILE_PERMISSIONS,
-  isOpsNudgeModuleKey,
+  isModuleEnabled as isStoredModuleEnabled,
 } from "@repo/validation";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
@@ -47,10 +47,20 @@ import {
 } from "@/components/settings/settings-access";
 import {
   SETTINGS_TABS,
+  SettingsNothingHere,
   SettingsRail,
-  SettingsToolsOnly,
   resolveSettingsTabParam,
 } from "@/components/settings/settings-rail";
+import {
+  isModuleSettingsTab,
+  shownModuleSettings,
+} from "@/components/settings/settings-modules";
+import { ModuleSettingsPage } from "@/components/settings/module-settings-page";
+import {
+  DuesGraceRule,
+  PointsRules,
+  ServiceHoursRules,
+} from "@/components/settings/module-rules";
 import {
   SettingsAccentTab,
   useAccentDraft,
@@ -61,8 +71,6 @@ import {
 } from "@/components/settings/settings-semester-tab";
 import { PlanAndBilling } from "@/components/billing/plan-and-billing";
 import { SettingsOrgTab } from "@/components/settings/settings-org-tab";
-import { SettingsModulesTab } from "@/components/settings/settings-modules-tab";
-import { SettingsWorkflowsTab } from "@/components/settings/settings-workflows-tab";
 import { SettingsDuesTab } from "@/components/settings/settings-dues-tab";
 import { SettingsRolesTab } from "@/components/settings/settings-roles-tab";
 import { SettingsPrivacyTab } from "@/components/settings/settings-privacy-tab";
@@ -138,8 +146,16 @@ function SettingsPageContent() {
   // Deep-link the active tab via `?tab=` so links (e.g. the redirect from the
   // former standalone `/roles` page) can land directly on a tab.
   const searchParams = useSearchParams();
-  // `?tab=theme` (Accent, folded into Chapter) resolves to `org`.
-  const tabParam = resolveSettingsTabParam(searchParams.get("tab"));
+  // `?tab=theme` (Accent, folded into Chapter) resolves to `org`. The old
+  // Modules list's `?tab=modules&module=<key>` opens that module's page.
+  const moduleParam = searchParams.get("module");
+  const requestedModuleKey =
+    moduleParam && isModuleSettingsTab(moduleParam) ? moduleParam : undefined;
+  const rawTabParam = searchParams.get("tab");
+  const tabParam =
+    rawTabParam === "modules" && requestedModuleKey
+      ? requestedModuleKey
+      : resolveSettingsTabParam(rawTabParam);
   const [activeTab, setActiveTab] = useState(tabParam ?? "org");
   useEffect(() => {
     if (tabParam) {
@@ -155,23 +171,17 @@ function SettingsPageContent() {
   }, []);
 
   /**
-   * `?module=` narrows a `?tab=modules` deep link to one row, so chat's
-   * ops-setup nudge (#492) can land an officer on the module it named rather
-   * than at the top of the full module list. Validated against the nudge
-   * catalog rather than passed through: an unrecognised value should be an
-   * unfocused Modules tab, not a `querySelector` for an id that does not exist.
+   * `?module=` lands an officer on that module's page with its switch
+   * focused, which is how chat's ops-setup nudge (#492) sends them to turn a
+   * module on. Validated against the module pages rather than passed
+   * through.
    *
    * **Consumed once, not held for the visit.** `TabsContent` carries no
-   * `forceMount`, so Radix unmounts the inactive tab's content — and the tab is
-   * driven by local state without rewriting the URL, so `?module=` survives the
-   * whole visit. Without this latch, an officer who follows the nudge, enables
-   * the module, wanders to Theme and comes back to Modules gets focus yanked to
-   * the same switch and the list scrolled back to it, every single time.
+   * `forceMount`, so Radix unmounts the inactive page, and the tab is driven
+   * by local state without rewriting the URL, so `?module=` survives the whole
+   * visit. Without this latch, an officer who follows the nudge, wanders to
+   * another row and comes back gets focus yanked to the switch every time.
    */
-  const moduleParam = searchParams.get("module");
-  const requestedModuleKey = isOpsNudgeModuleKey(moduleParam)
-    ? moduleParam
-    : undefined;
   const [consumedModuleKey, setConsumedModuleKey] = useState<string | null>(
     null,
   );
@@ -180,8 +190,8 @@ function SettingsPageContent() {
       ? requestedModuleKey
       : undefined;
   /*
-    Latched by the row that actually took focus, NOT by an effect up here.
-    An effect on this component would fire on renders where the Modules panel
+    Latched by the switch that actually took focus, NOT by an effect up here.
+    An effect on this component would fire on renders where the module page
     was never mounted — this function early-returns for "no active chapter"
     below, and again for the loading / offline / error banner — so a cold load
     (a pasted link, a refresh, open-in-new-tab, or just a slow first
@@ -337,7 +347,7 @@ function SettingsPageContent() {
         ? brandingRaw.founded_at
         : undefined,
   };
-  const enabledModules = config?.enabled_modules ?? {};
+  const enabledModules = config?.enabled_modules;
   const workflows = config?.workflows ?? [];
   const dues = config?.dues ?? DEFAULT_DUES;
   const semesters = asArray<SemesterArchive>(semestersQuery.data);
@@ -437,6 +447,54 @@ function SettingsPageContent() {
     return node;
   }
 
+  /** The Rules block for a module that has stored rules, else nothing. */
+  function renderModuleRules(key: string): React.ReactNode {
+    const patchRules = (diff: PatchChapterConfig, title: string) =>
+      patchConfig(diff, title);
+    if (key === "hours") {
+      return renderConfigGated(
+        <ServiceHoursRules
+          minutesPerPoint={config?.service?.minutes_per_point}
+          workflows={workflows}
+          canManage={canManage}
+          savingRate={pendingConfigKeys.has("service")}
+          savingWorkflows={pendingConfigKeys.has("workflows")}
+          onPatch={patchRules}
+        />,
+      );
+    }
+    if (key === "points") {
+      return renderConfigGated(
+        <PointsRules
+          points={config?.points}
+          canManage={canManage}
+          saving={pendingConfigKeys.has("points")}
+          onPatch={patchRules}
+        />,
+      );
+    }
+    if (key === "dues") {
+      return renderConfigGated(
+        <div className="space-y-4">
+          <SettingsDuesTab
+            dues={dues}
+            canManage={canManage}
+            isSaving={pendingConfigKeys.has("dues")}
+            onSave={(next) => patchConfig({ dues: next }, "Dues saved")}
+            pledgeTerm={pledgeTerm}
+          />
+          <DuesGraceRule
+            workflows={workflows}
+            canManage={canManage}
+            saving={pendingConfigKeys.has("workflows")}
+            onPatch={patchRules}
+          />
+        </div>,
+      );
+    }
+    return undefined;
+  }
+
   /*
     Settings shows each viewer only what they can use (#2946). The nav's
     Settings row admits anyone Settings holds a tab or an officer tool for
@@ -447,11 +505,28 @@ function SettingsPageContent() {
   */
   const permissions = permissionsPayload?.permissions;
   const tools = visibleSettingsTools(permissions, isModuleEnabled);
+  /*
+    A module's switch, as `ChapterGuard` enforces it (#3028). The config read
+    answers for a config viewer; a viewer it refuses (a treasurer reaching
+    Reports through `reports:export`) reads the member view's gate, which
+    applies the same `isModuleEnabled`. Unresolved reads say on, like the
+    nav, so no row flashes "Off".
+  */
+  const moduleOn = (key: string): boolean => {
+    if (enabledModules) return isStoredModuleEnabled(enabledModules, key);
+    return isModuleEnabled ? isModuleEnabled(key) : true;
+  };
   const visibleTabs = SETTINGS_TABS.filter((tab) =>
-    isSettingsTabVisible(tab.value, permissions),
-  ).map((tab) =>
-    tab.value === "classes" ? { ...tab, label: classTerm } : tab,
-  );
+    isSettingsTabVisible(tab.value, permissions, isModuleEnabled),
+  ).map((tab) => {
+    if (tab.value === "classes") return { ...tab, label: classTerm };
+    if (isModuleSettingsTab(tab.value)) {
+      return { ...tab, off: !moduleOn(tab.value) };
+    }
+    return tab;
+  });
+  const canViewConfig = can("chapter-config:view", permissions);
+  const canSeeWhoCan = can("members:view", permissions);
   // A `?tab=` deep link to a tab this viewer does not get, or the default
   // `org` for someone with no setup tabs, lands on the first tab they do get.
   const shownTab = visibleTabs.some((tab) => tab.value === activeTab)
@@ -462,7 +537,7 @@ function SettingsPageContent() {
     return (
       <div className="space-y-6">
         {confirmDialog}
-        <SettingsToolsOnly tools={tools} />
+        <SettingsNothingHere />
       </div>
     );
   }
@@ -495,7 +570,7 @@ function SettingsPageContent() {
         onValueChange={changeTab}
         className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-10"
       >
-        <SettingsRail tools={tools} visibleTabs={visibleTabs} />
+        <SettingsRail visibleTabs={visibleTabs} />
 
         <div className="w-full min-w-0 max-w-[960px] flex-1">
           <TabsContent value="org" className="mt-0">
@@ -561,24 +636,6 @@ function SettingsPageContent() {
             <PlanAndBilling />
           </TabsContent>
 
-          <TabsContent value="modules" className="mt-0">
-            {renderConfigGated(
-              <SettingsModulesTab
-                enabledModules={enabledModules}
-                canManage={canManage}
-                pendingModuleKeys={pendingConfigKeys}
-                focusModuleKey={focusModuleKey}
-                onModuleFocused={handleModuleFocused}
-                onToggle={(key, enabled) =>
-                  patchConfig(
-                    { enabled_modules: { [key]: enabled } },
-                    enabled ? "Module enabled" : "Module disabled",
-                  )
-                }
-              />,
-            )}
-          </TabsContent>
-
           {/*
             **Deliberately not `renderConfigGated`.** A `roles:manage` holder
             without `chapter-config:view` reaches this tab: the nav's Settings
@@ -636,30 +693,39 @@ function SettingsPageContent() {
             {renderConfigGated(<SettingsFieldsTab canManage={canManage} />)}
           </TabsContent>
 
-          <TabsContent value="workflows" className="mt-0">
-            {renderConfigGated(
-              <SettingsWorkflowsTab
-                workflows={workflows}
+          {/*
+            One page per module (#4073). The switch and "who can" read no
+            config a tool-only viewer lacks the way rules do, so only the
+            rules wait on the config read.
+          */}
+          {shownModuleSettings().map((module) => (
+            <TabsContent key={module.key} value={module.key} className="mt-0">
+              <ModuleSettingsPage
+                module={module}
+                on={moduleOn(module.key)}
                 canManage={canManage}
-                isSaving={pendingConfigKeys.has("workflows")}
-                onSave={(next) =>
-                  patchConfig({ workflows: next }, "Workflows saved")
+                switchPending={pendingConfigKeys.has(
+                  `enabled_modules.${module.key}`,
+                )}
+                onToggle={(enabled) =>
+                  patchConfig(
+                    { enabled_modules: { [module.key]: enabled } },
+                    enabled
+                      ? `${module.label} turned on`
+                      : `${module.label} turned off`,
+                  )
                 }
-              />,
-            )}
-          </TabsContent>
-
-          <TabsContent value="dues" className="mt-0">
-            {renderConfigGated(
-              <SettingsDuesTab
-                dues={dues}
-                canManage={canManage}
-                isSaving={pendingConfigKeys.has("dues")}
-                onSave={(next) => patchConfig({ dues: next }, "Dues saved")}
-                pledgeTerm={pledgeTerm}
-              />,
-            )}
-          </TabsContent>
+                tools={tools.filter((tool) => tool.page === module.key)}
+                canSeeWhoCan={canSeeWhoCan}
+                canEditRoles={can("roles:manage", permissions)}
+                focusSwitch={focusModuleKey === module.key}
+                onSwitchFocused={handleModuleFocused}
+                rules={
+                  canViewConfig ? renderModuleRules(module.key) : undefined
+                }
+              />
+            </TabsContent>
+          ))}
           <TabsContent value="privacy" className="mt-0">
             {renderConfigGated(
               <SettingsPrivacyTab

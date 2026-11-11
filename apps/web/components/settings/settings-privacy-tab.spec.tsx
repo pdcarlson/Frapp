@@ -18,11 +18,7 @@ describe("SettingsPrivacyTab", () => {
 
   it("shows analytics as off when the chapter has opted out", () => {
     render(
-      <SettingsPrivacyTab
-        analyticsOptOut
-        canManage
-        onToggle={() => {}}
-      />,
+      <SettingsPrivacyTab analyticsOptOut canManage onToggle={() => {}} />,
     );
     expect(screen.getByRole("switch", SWITCH)).not.toBeChecked();
   });
@@ -43,11 +39,7 @@ describe("SettingsPrivacyTab", () => {
   it("toggling an opted-out chapter on calls onToggle(false) (opt back in)", () => {
     const onToggle = vi.fn();
     render(
-      <SettingsPrivacyTab
-        analyticsOptOut
-        canManage
-        onToggle={onToggle}
-      />,
+      <SettingsPrivacyTab analyticsOptOut canManage onToggle={onToggle} />,
     );
     fireEvent.click(screen.getByRole("switch", SWITCH));
     expect(onToggle).toHaveBeenCalledWith(false);
