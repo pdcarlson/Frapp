@@ -169,6 +169,25 @@ describe("decorateThread — runs", () => {
     ).toEqual([true, false]);
   });
 
+  it("keeps a flagged audit line in its stack", () => {
+    // The client offers no flag on an audit line, but the server accepts one.
+    const audit = (minute: number, flag: string | null = null) =>
+      visible(
+        msg({
+          sender_id: "system",
+          kind: "system_audit",
+          payload: { action: "chapter_config_updated", diff: {} },
+          created_at: at(28, 17, minute),
+          flag,
+        }),
+      );
+    expect(runs([audit(11), audit(12, "important"), audit(13)])).toEqual([
+      true,
+      false,
+      false,
+    ]);
+  });
+
   it("starts a run on a card, and after one", () => {
     expect(
       runs([

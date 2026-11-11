@@ -1,1 +1,1 @@
-A flag on a message, like Important, now sits on the same line as the sender's name and time instead of a line of its own.
+A flag on a message, like Important or FYI, now sits on the same line as the sender's name and time, on the web and on your phone.

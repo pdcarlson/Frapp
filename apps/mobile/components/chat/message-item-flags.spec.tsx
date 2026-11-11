@@ -215,12 +215,35 @@ describe("MessageItem flags (#3921)", () => {
             node.props.testID === "message-flag",
         ),
       ).toHaveLength(1);
-      const texts = line!
-        .findAllByType(Text)
-        .map((node) => node.props.children);
-      expect(texts).toContain(formatTimeOfDay(message().created_at));
+      // In reading order: the time comes before the flag.
+      const time = formatTimeOfDay(message().created_at);
+      const order = line!
+        .findAll(
+          (node) =>
+            ((node.type as unknown) === "View" &&
+              node.props.testID === "message-flag") ||
+            ((node.type as unknown) === "Text" &&
+              node.props.children === time),
+        )
+        .map((node) =>
+          node.props.testID === "message-flag" ? "flag" : "time",
+        );
+      expect(order).toEqual(["time", "flag"]);
     },
   );
+
+  it("names the flag in the Bubbles author line's label, and only there", () => {
+    act(() => setChatDensity("bubbles"));
+    const tree = renderRow(message());
+    const [line] = byTestId(tree, "author-line");
+    expect(line!.props.accessibilityLabel).toContain(
+      "Important · flagged by Marcus",
+    );
+    // Not a second stop for TalkBack inside it.
+    const [flag] = byTestId(tree, "message-flag");
+    expect(flag!.props.accessible).toBe(false);
+    expect(flag!.props.importantForAccessibility).toBe("no-hide-descendants");
+  });
 
   it("puts the caption on a line of its own on a row with no author line", () => {
     let tree!: ReactTestRenderer;

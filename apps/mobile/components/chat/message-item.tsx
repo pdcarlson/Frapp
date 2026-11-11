@@ -1229,7 +1229,14 @@ function BubbleRowFrame({
                 </Text>
               )}
               <Text style={styles.time}>{time}</Text>
-              {flag ? <FlagCaption view={flag} styles={styles} inline /> : null}
+              {flag ? (
+                <FlagCaption
+                  view={flag}
+                  styles={styles}
+                  inline
+                  labelledByParent
+                />
+              ) : null}
             </View>
           ) : null}
           {quote ? <View style={styles.bubbleQuote}>{quote}</View> : null}
@@ -1464,80 +1471,102 @@ function ImportantHighlight({ style }: { style: StyleProp<ViewStyle> }) {
 }
 
 /**
- * The flag's caption above the body: "Important" in the danger text tone
- * with its alert glyph, or a lighter flag muted with none, then "· flagged by
- * Name" when the flagger isn't the sender. One phrase to a screen reader.
+ * The flag: "Important" in the danger text tone with its alert glyph, or a
+ * lighter flag muted with none, then "· flagged by Name" when the flagger
+ * isn't the sender. One phrase to a screen reader.
+ *
+ * `inline` draws it on the author line, right of the time (#4288), as two
+ * of the line's own children: the glyph and label, which never shrink, then
+ * "· flagged by", which truncates, sharing a narrow row's shortfall with the
+ * name. Without it, the caption is a line of its own above the body, for a
+ * row with no author line.
  */
 function FlagCaption({
   view,
   styles,
   inline = false,
+  labelledByParent = false,
 }: {
   view: MessageFlagView;
   styles: ReturnType<typeof createStyles>;
-  /**
-   * On the author line, right of the time (#4288): "· flagged by" truncates
-   * first on a narrow row, and the label and glyph hold.
-   */
   inline?: boolean;
+  /**
+   * The author line already names the flag in its own label (Bubbles), so
+   * the flag is not a second stop for a screen reader: Android's TalkBack
+   * visits an accessible child of an accessible parent on its own.
+   */
+  labelledByParent?: boolean;
 }) {
-  const { tokens } = useFrappTheme();
+  const caption = messageFlagCaption(view);
   if (inline) {
     return (
-      <View
-        style={styles.flagInline}
-        accessible
-        accessibilityLabel={messageFlagCaption(view)}
-        testID="message-flag"
-      >
-        {view.important ? (
-          <AlertGlyph size={14} color={tokens.color.semantic.destructiveText} />
-        ) : null}
-        <Text
-          style={[
-            styles.flagLabel,
-            view.important
-              ? { color: tokens.color.semantic.destructiveText }
-              : null,
-          ]}
+      <>
+        <View
+          style={[styles.flagCaption, styles.flagInline]}
+          accessible={!labelledByParent}
+          accessibilityLabel={labelledByParent ? undefined : caption}
+          importantForAccessibility={
+            labelledByParent ? "no-hide-descendants" : "auto"
+          }
+          accessibilityElementsHidden={labelledByParent}
+          testID="message-flag"
         >
-          {view.label}
-        </Text>
+          <FlagLabel view={view} styles={styles} />
+        </View>
         {view.flaggedBy ? (
+          // Heard in the label's caption above, so hidden here.
           <Text
             style={[styles.flagLabel, styles.flagBy, styles.flagByInline]}
             numberOfLines={1}
+            accessible={false}
+            importantForAccessibility="no"
+            accessibilityElementsHidden
+            testID="message-flag-by"
           >
             {`· flagged by ${view.flaggedBy}`}
           </Text>
         ) : null}
-      </View>
+      </>
     );
   }
   return (
     <View
       style={styles.flagCaption}
       accessible
-      accessibilityLabel={messageFlagCaption(view)}
+      accessibilityLabel={caption}
       testID="message-flag"
     >
-      {view.important ? (
-        <AlertGlyph size={14} color={tokens.color.semantic.destructiveText} />
-      ) : null}
-      <Text
-        style={[
-          styles.flagLabel,
-          view.important
-            ? { color: tokens.color.semantic.destructiveText }
-            : null,
-        ]}
-      >
-        {view.label}
+      <FlagLabel view={view} styles={styles}>
         {view.flaggedBy ? (
           <Text style={styles.flagBy}>{` · flagged by ${view.flaggedBy}`}</Text>
         ) : null}
-      </Text>
+      </FlagLabel>
     </View>
+  );
+}
+
+/** The glyph and label both forms of `FlagCaption` draw. */
+function FlagLabel({
+  view,
+  styles,
+  children,
+}: {
+  view: MessageFlagView;
+  styles: ReturnType<typeof createStyles>;
+  children?: ReactNode;
+}) {
+  const { tokens } = useFrappTheme();
+  const danger = tokens.color.semantic.destructiveText;
+  return (
+    <>
+      {view.important ? <AlertGlyph size={14} color={danger} /> : null}
+      <Text
+        style={[styles.flagLabel, view.important ? { color: danger } : null]}
+      >
+        {view.label}
+        {children}
+      </Text>
+    </>
   );
 }
 
@@ -1749,17 +1778,13 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.mutedForeground,
     },
     // On the author line (#4288): centred on the line rather than on its
-    // baseline, since the glyph has none. It shrinks with the name, and only
-    // "· flagged by" gives way inside it.
-    flagInline: {
-      flexDirection: "row",
-      alignItems: "center",
-      alignSelf: "center",
-      gap: 4,
-      flexShrink: 1,
-      minWidth: 0,
-    },
-    flagByInline: { flexShrink: 1, minWidth: 0 },
+    // baseline, since the glyph has none, and never shrunk, so the label
+    // always shows whole.
+    flagInline: { alignSelf: "center", flexShrink: 0, marginBottom: 0 },
+    // "· flagged by" after it, 6 from the label (the line's gap is 8): the
+    // one part of the flag that truncates, sharing the shortfall with the
+    // name.
+    flagByInline: { flexShrink: 1, minWidth: 0, marginLeft: -2 },
     mentionHighlight: {
       position: "absolute",
       top: 0,

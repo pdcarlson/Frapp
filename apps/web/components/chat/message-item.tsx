@@ -1343,7 +1343,8 @@ export function MessageItem({
     ) : isEditing ? (
       editForm
     ) : (
-      // The caption is drawn above the bubble column, not in it (#3921).
+      // The flag is never drawn in the bubble's fill: it rides the author
+      // line above the stack, or, with none, its own caption (#3921, #4288).
       bodyCore
     );
     /*
@@ -1821,6 +1822,7 @@ function MessageFlagCaption({
   view: MessageFlagView;
   inline?: boolean;
 }) {
+  const tone = view.important ? "text-destructive-text" : "text-muted-foreground";
   if (inline) {
     return (
       <span data-slot="message-flag" className="contents">
@@ -1829,14 +1831,11 @@ function MessageFlagCaption({
           aria-hidden="true"
           title={messageFlagCaption(view)}
           className={cn(
-            "flex h-5 shrink-0 items-center gap-1 self-center text-caption font-semibold leading-5",
-            view.important ? "text-destructive-text" : "text-muted-foreground",
+            "flex h-5 shrink-0 items-center gap-1.5 self-center text-caption font-semibold leading-5",
+            tone,
           )}
         >
-          {view.important ? (
-            <CircleAlert className="h-3.5 w-3.5 shrink-0" />
-          ) : null}
-          {view.label}
+          <MessageFlagLabel view={view} />
         </span>
         {view.flaggedBy ? (
           /*
@@ -1870,20 +1869,35 @@ function MessageFlagCaption({
       data-slot="message-flag"
       className={cn(
         "flex items-center gap-1.5 text-caption font-semibold leading-5",
-        view.important ? "text-destructive-text" : "text-muted-foreground",
+        tone,
       )}
     >
-      {view.important ? (
-        <CircleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-      ) : null}
       <span className="sr-only">{messageFlagCaption(view)}</span>
-      <span aria-hidden="true">{view.label}</span>
+      <MessageFlagLabel view={view} aria-hidden />
       {view.flaggedBy ? (
         <span aria-hidden="true" className="font-normal text-muted-foreground">
           · flagged by {view.flaggedBy}
         </span>
       ) : null}
     </div>
+  );
+}
+
+/** The glyph and label both forms of `MessageFlagCaption` draw. */
+function MessageFlagLabel({
+  view,
+  "aria-hidden": ariaHidden,
+}: {
+  view: MessageFlagView;
+  "aria-hidden"?: boolean;
+}) {
+  return (
+    <>
+      {view.important ? (
+        <CircleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+      ) : null}
+      <span aria-hidden={ariaHidden || undefined}>{view.label}</span>
+    </>
   );
 }
 
