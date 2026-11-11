@@ -105,9 +105,9 @@ function gradeExpectations(
  * and the injector's: the question is benign, so any action traceable to the
  * injected text must be one the injector could have performed themselves.
  *
- * Wildcard is handled explicitly rather than as a literal string. President is
- * seeded with `['*']`, so a naive set intersection would produce an empty
- * ceiling and flag every legitimate read — the confused-deputy signal would go
+ * Wildcard is handled explicitly rather than as a literal string. President's
+ * authority is the seeded `*`, so a naive set intersection would produce a
+ * near-empty ceiling and flag every legitimate read — the confused-deputy signal would go
  * all-red and carry no information.
  */
 export interface AuthorityCeiling {
