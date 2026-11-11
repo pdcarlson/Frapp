@@ -33,6 +33,8 @@ import {
 } from '#domain/utils/poll-vote-rules';
 import type { CardPollPayload } from '#domain/utils/poll-vote-rules';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
+import { ActivityLinkService } from './activity-link.service';
+import type { ActivityLink } from './activity-link.service';
 import { BackworkService } from './backwork.service';
 import { ChapterDocumentService } from './chapter-document.service';
 import { maskBlockedMessages } from './chat-block-mask';
@@ -54,6 +56,7 @@ export const ACTIVITY_SECTIONS = [
   'coming_up',
   'files',
   'made_events',
+  'links',
 ] as const;
 export type ActivitySection = (typeof ACTIVITY_SECTIONS)[number];
 
@@ -175,6 +178,11 @@ export interface ActivityView {
   };
   /** Upcoming events, soonest first. */
   coming_up: ActivityEvent[];
+  /**
+   * Sign-up links posted in channels the caller can read, newest first
+   * (`ActivityLinkService.listFor`). Not counted in `needs_you_count`.
+   */
+  links: ActivityLink[];
   made_by_you: {
     polls: ActivityPoll[];
     tasks: ActivityTask[];
@@ -300,6 +308,8 @@ interface EventViewer {
  *   an event that leaves the member out contributes nothing.
  * - **Files** are the caller's own uploads, read only while they can still
  *   open that module.
+ * - **Links** are read by {@link ActivityLinkService}, under chat's channel
+ *   list and the block list, as polls are.
  *
  * A module the chapter has switched off contributes nothing. The sections
  * are read independently: one that fails is served empty and named in
@@ -318,6 +328,7 @@ export class ActivityService {
     private readonly chatService: ChatService,
     private readonly chatBlocks: ChatBlockService,
     private readonly rbacService: RbacService,
+    private readonly linkService: ActivityLinkService,
     @Inject(CHAT_MESSAGE_REPOSITORY)
     private readonly messageRepo: IChatMessageRepository,
     @Inject(CHAT_MESSAGE_ACTION_REPOSITORY)
@@ -354,36 +365,41 @@ export class ActivityService {
         isAlumni,
       })));
 
-    const [tasks, hours, polls, events, files, madeEvents] = await Promise.all([
-      this.settle('tasks', chapterId, () =>
-        on('tasks')
-          ? this.readTasks(chapterId, userId, permissions)
-          : Promise.resolve({ mine: [], confirmations: [], assigned: [] }),
-      ),
-      this.settle('hours_approvals', chapterId, () =>
-        on('hours') && can(SystemPermissions.SERVICE_APPROVE, permissions)
-          ? this.readHoursApprovals(chapterId, userId)
-          : Promise.resolve([]),
-      ),
-      this.settle('polls', chapterId, () =>
-        on('polls')
-          ? this.readPolls(chapterId, userId, now)
-          : Promise.resolve({ unvoted: [], mine: [] }),
-      ),
-      this.settle('coming_up', chapterId, () =>
-        on('events')
-          ? this.readComingUp(chapterId, userId, now, viewer)
-          : Promise.resolve([]),
-      ),
-      this.settle('files', chapterId, () =>
-        this.readFiles(chapterId, userId, permissions, on),
-      ),
-      this.settle('made_events', chapterId, () =>
-        on('events')
-          ? this.readMadeEvents(chapterId, userId, now, viewer)
-          : Promise.resolve([]),
-      ),
-    ]);
+    const [tasks, hours, polls, events, files, madeEvents, links] =
+      await Promise.all([
+        this.settle('tasks', chapterId, () =>
+          on('tasks')
+            ? this.readTasks(chapterId, userId, permissions)
+            : Promise.resolve({ mine: [], confirmations: [], assigned: [] }),
+        ),
+        this.settle('hours_approvals', chapterId, () =>
+          on('hours') && can(SystemPermissions.SERVICE_APPROVE, permissions)
+            ? this.readHoursApprovals(chapterId, userId)
+            : Promise.resolve([]),
+        ),
+        this.settle('polls', chapterId, () =>
+          on('polls')
+            ? this.readPolls(chapterId, userId, now)
+            : Promise.resolve({ unvoted: [], mine: [] }),
+        ),
+        this.settle('coming_up', chapterId, () =>
+          on('events')
+            ? this.readComingUp(chapterId, userId, now, viewer)
+            : Promise.resolve([]),
+        ),
+        this.settle('files', chapterId, () =>
+          this.readFiles(chapterId, userId, permissions, on),
+        ),
+        this.settle('made_events', chapterId, () =>
+          on('events')
+            ? this.readMadeEvents(chapterId, userId, now, viewer)
+            : Promise.resolve([]),
+        ),
+        // Chat has no module switch, so neither does this section.
+        this.settle('links', chapterId, () =>
+          this.linkService.listFor(chapterId, userId, now),
+        ),
+      ]);
 
     const unavailable: ActivitySection[] = [];
     const valueOf = <T>(
@@ -406,6 +422,7 @@ export class ActivityService {
     const comingUp = valueOf('coming_up', events, []);
     const myFiles = valueOf('files', files, []);
     const myEvents = valueOf('made_events', madeEvents, []);
+    const myLinks = valueOf('links', links, []);
 
     const needsYouCount =
       taskLists.mine.length +
@@ -423,6 +440,7 @@ export class ActivityService {
         polls: pollLists.unvoted.slice(0, LIST_LIMIT),
       },
       coming_up: comingUp,
+      links: myLinks,
       made_by_you: {
         polls: pollLists.mine.slice(0, LIST_LIMIT),
         tasks: taskLists.assigned.slice(0, LIST_LIMIT),

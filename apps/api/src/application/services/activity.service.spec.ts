@@ -101,6 +101,7 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     findPollCardsByChapter: jest.fn().mockResolvedValue([]),
   };
   const actionRepo = { findActionsOnMessages: jest.fn().mockResolvedValue([]) };
+  const linkService = { listFor: jest.fn().mockResolvedValue([]) };
   const userRepo = {
     findDisplayIdentitiesByIds: jest.fn().mockResolvedValue([
       { id: ME, display_name: 'Me Member', avatar_url: null },
@@ -124,6 +125,7 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     chatService as never,
     chatBlocks as never,
     rbacService as never,
+    linkService as never,
     messageRepo as never,
     actionRepo as never,
     userRepo as never,
@@ -144,6 +146,7 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     chatBlocks,
     messageRepo,
     actionRepo,
+    linkService,
   };
 }
 
@@ -260,6 +263,43 @@ describe('ActivityService', () => {
       expect(view.needs_you.polls).toEqual([]);
       expect(view.made_by_you.polls).toEqual([]);
       expect(view.unavailable).toEqual(['polls']);
+    });
+
+    it('serves the caller’s links, uncounted in needs_you_count (#3897)', async () => {
+      const { service, linkService } = build();
+      const row = {
+        id: 'link-1',
+        url: 'https://forms.gle/abc',
+        host: 'forms.gle',
+        message_id: 'msg-1',
+        channel_id: READABLE,
+        channel_name: 'general',
+        channel_type: 'PUBLIC',
+        posted_by: OTHER,
+        posted_by_name: 'Other Member',
+        posted_at: iso(-HOUR),
+      };
+      linkService.listFor.mockResolvedValue([row]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(linkService.listFor).toHaveBeenCalledWith(
+        CHAPTER,
+        ME,
+        expect.any(Number),
+      );
+      expect(view.links).toEqual([row]);
+      expect(view.needs_you_count).toBe(0);
+    });
+
+    it('serves no links, and says so, when the links read fails', async () => {
+      const { service, linkService } = build();
+      linkService.listFor.mockRejectedValue(new Error('db down'));
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.links).toEqual([]);
+      expect(view.unavailable).toEqual(['links']);
     });
 
     it('reports a failed section to Sentry at error level, not only the log (#4096)', async () => {

@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ActivityService } from '../../application/services/activity.service';
+import { ActivityLinkService } from '../../application/services/activity-link.service';
+import { SupabaseChatMessageLinkRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message-link.repository';
+import { CHAT_MESSAGE_LINK_REPOSITORY } from '#domain/repositories/chat-message-link.repository.interface';
 import { ActivityController } from '../../interface/controllers/activity.controller';
 import { SupabaseChatMessageRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message.repository';
 import { SupabaseChatMessageActionRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message-action.repository';
@@ -41,6 +44,13 @@ import { TaskModule } from '../task/task.module';
   controllers: [ActivityController],
   providers: [
     ActivityService,
+    ActivityLinkService,
+    // Links on Activity (#3897): this module is the table's only reader. The
+    // database's triggers on `chat_messages` write it.
+    {
+      provide: CHAT_MESSAGE_LINK_REPOSITORY,
+      useClass: SupabaseChatMessageLinkRepository,
+    },
     // The two chat repositories are provided here, as `ChannelAccessModule`
     // does, rather than exported from `ChatModule`: they are stateless query
     // classes, and `ChatModule` exports services only.

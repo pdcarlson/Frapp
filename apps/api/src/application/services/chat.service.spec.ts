@@ -306,6 +306,38 @@ describe('ChatService', () => {
       });
     });
 
+    describe('Leave out of Activity (#3897)', () => {
+      it('saves it on a chapter channel', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockChannelRepo.update.mockResolvedValue({
+          ...baseChannel,
+          activity_excluded: true,
+        });
+
+        await service.updateChannel('chan-1', 'ch-1', {
+          activity_excluded: true,
+        });
+
+        expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
+          activity_excluded: true,
+        });
+      });
+
+      it.each(['DM', 'GROUP_DM'] as const)(
+        'refuses it on a %s, which has no officer',
+        async (type) => {
+          mockChannelRepo.findById.mockResolvedValue({ ...baseChannel, type });
+
+          await expect(
+            service.updateChannel('chan-1', 'ch-1', {
+              activity_excluded: true,
+            }),
+          ).rejects.toThrow("A DM or group DM can't be left out of Activity");
+          expect(mockChannelRepo.update).not.toHaveBeenCalled();
+        },
+      );
+    });
+
     describe('the audit log channel (#3909)', () => {
       const auditLog = {
         ...baseChannel,

@@ -433,6 +433,7 @@ export class ChatService {
         | 'is_read_only'
         | 'default_notification_level'
         | 'is_default'
+        | 'activity_excluded'
       >
     >,
   ): Promise<ChatChannel> {
@@ -459,6 +460,15 @@ export class ChatService {
     if (isDirectChannel(existing) && data.is_default === true) {
       throw new BadRequestException(
         "A DM or group DM can't be the chapter's default channel",
+      );
+    }
+
+    // Leaving a channel out of Activity is an officer's call about the
+    // chapter's channels; a DM has no officer (`spec/behavior/activity.md`
+    // § Links).
+    if (isDirectChannel(existing) && data.activity_excluded === true) {
+      throw new BadRequestException(
+        "A DM or group DM can't be left out of Activity",
       );
     }
 

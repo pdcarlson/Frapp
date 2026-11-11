@@ -10668,7 +10668,7 @@
     },
     "/v1/activity": {
       "get": {
-        "description": "The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, the tasks they assigned and the files they uploaded. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.",
+        "description": "The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, the tasks they assigned and the files they uploaded. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.",
         "operationId": "ActivityController_getActivity_v1",
         "parameters": [],
         "responses": {
@@ -10699,6 +10699,171 @@
           }
         ],
         "summary": "Get what needs the caller and what they made",
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
+    "/v1/activity/links/{id}/state": {
+      "put": {
+        "description": "Per member, idempotent; either replaces the other. 404 for a link the caller can’t read (its channel isn’t in their chat list) as for one that doesn’t exist. `spec/behavior/activity.md` § Links.",
+        "operationId": "ActivityController_setLinkState_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetActivityLinkStateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mark a link on Activity Done or Hidden for the caller",
+        "tags": [
+          "Activity"
+        ]
+      },
+      "delete": {
+        "description": "Idempotent. 404 for a link the caller can’t read, as for one that doesn’t exist.",
+        "operationId": "ActivityController_clearLinkState_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Clear the caller’s Done or Hidden on a link, so it shows again",
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
+    "/v1/activity/links/{id}/removed": {
+      "put": {
+        "description": "For a link that slipped through from a channel that should be left out of Activity. The message stays in chat. Idempotent.",
+        "operationId": "ActivityController_removeLink_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove a link from everyone’s Activity (channels:manage)",
+        "tags": [
+          "Activity"
+        ]
+      },
+      "delete": {
+        "operationId": "ActivityController_restoreLink_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Undo an officer’s remove, so a link shows on Activity again (channels:manage)",
         "tags": [
           "Activity"
         ]
@@ -14263,6 +14428,10 @@
           "is_default": {
             "type": "boolean",
             "description": "Make this the chapter's default channel, where Chat opens for a member whose device has no last channel (ahead of #general). Setting it moves the default off any other channel; `false` on the current default leaves the chapter with none. Refused as `true` on a DM or group DM."
+          },
+          "activity_excluded": {
+            "type": "boolean",
+            "description": "Leave out of Activity (#3897): sign-up links posted here never reach anyone's Activity page, for channels like #advertising whose links aren't chapter business. Refused as `true` on a DM or group DM."
           }
         }
       },
@@ -17886,6 +18055,73 @@
           "checked_in"
         ]
       },
+      "ActivityLinkDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "url": {
+            "type": "string",
+            "description": "The link as posted. Opens outside Frapp."
+          },
+          "host": {
+            "type": "string",
+            "description": "The link’s host, lower-cased and without `www.`.",
+            "example": "docs.google.com"
+          },
+          "message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The chat message it was posted in, for “Open in chat”."
+          },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "channel_name": {
+            "type": "string",
+            "description": "The channel’s name. A direct message’s is server-generated, so label those from `channel_type`."
+          },
+          "channel_type": {
+            "type": "string",
+            "enum": [
+              "PUBLIC",
+              "PRIVATE",
+              "ROLE_GATED",
+              "DM",
+              "GROUP_DM"
+            ]
+          },
+          "posted_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Null for an imported author with no Frapp account."
+          },
+          "posted_by_name": {
+            "type": "string",
+            "description": "Empty when the poster cannot be resolved."
+          },
+          "posted_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "host",
+          "message_id",
+          "channel_id",
+          "channel_name",
+          "channel_type",
+          "posted_by",
+          "posted_by_name",
+          "posted_at"
+        ]
+      },
       "ActivityFileDto": {
         "type": "object",
         "properties": {
@@ -17969,6 +18205,13 @@
               "$ref": "#/components/schemas/ActivityEventDto"
             }
           },
+          "links": {
+            "description": "Sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels the caller can read and an officer has not left out of Activity. Never the caller’s own, a blocked member’s, one an officer removed, or one the caller marked Done or Hidden. Newest first, at most 25. Not counted in `needs_you_count`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityLinkDto"
+            }
+          },
           "made_by_you": {
             "$ref": "#/components/schemas/ActivityMadeByYouDto"
           },
@@ -17987,7 +18230,8 @@
                 "polls",
                 "coming_up",
                 "files",
-                "made_events"
+                "made_events",
+                "links"
               ]
             }
           }
@@ -17995,9 +18239,26 @@
         "required": [
           "needs_you",
           "coming_up",
+          "links",
           "made_by_you",
           "needs_you_count",
           "unavailable"
+        ]
+      },
+      "SetActivityLinkStateDto": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "done",
+              "hidden"
+            ],
+            "description": "`done`: the caller filled it in. `hidden`: not chapter business for them. Either takes it off their own list only."
+          }
+        },
+        "required": [
+          "state"
         ]
       },
       "CreateDiscordImportDto": {

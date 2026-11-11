@@ -170,6 +170,14 @@ export interface ChatChannel {
   background_photo_path?: string | null;
   /** The chat line announcing that photo; a deleted line withdraws it. */
   background_message_id?: string | null;
+  /**
+   * "Leave out of Activity" (#3897): links posted here never reach anyone's
+   * Activity page. Set by a `channels:manage` holder for channels like
+   * #advertising; never on a DM or group DM. Optional because older fixtures
+   * predate it; the column always exists, default false.
+   * `spec/behavior/activity.md` § Links.
+   */
+  activity_excluded?: boolean;
 }
 
 /**
@@ -617,3 +625,38 @@ export type StoredChatMessageBookmark = Omit<
   ChatMessageBookmarkWithMessage,
   'message_available' | 'message'
 > & { message: StoredBookmarkedMessage };
+
+/**
+ * A sign-up link posted in chat (#3897), as the `chat_messages` trigger
+ * indexes it: one row per link per message. `spec/behavior/activity.md`
+ * § Links. Which hosts count lives once, in the database's
+ * `activity_action_links`.
+ */
+export interface ChatMessageLink {
+  id: string;
+  chapter_id: string;
+  channel_id: string;
+  message_id: string;
+  url: string;
+  /** The URL's host, lower-cased and without `www.`. */
+  host: string;
+  /** The message's sender; null for an imported author with no Frapp account. */
+  posted_by: string | null;
+  /** The message's `created_at`. */
+  posted_at: string;
+  /** Set when an officer removed it from everyone's Activity. */
+  removed_at: string | null;
+  removed_by: string | null;
+}
+
+/** A member's own Done or Hide on a link. No row means it still shows. */
+export const CHAT_LINK_MEMBER_STATES = ['done', 'hidden'] as const;
+export type ChatLinkMemberStateValue = (typeof CHAT_LINK_MEMBER_STATES)[number];
+
+export interface ChatLinkMemberState {
+  link_id: string;
+  user_id: string;
+  chapter_id: string;
+  state: ChatLinkMemberStateValue;
+  updated_at: string;
+}

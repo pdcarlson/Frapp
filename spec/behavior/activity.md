@@ -71,6 +71,9 @@ member's own answer, not the event's default:
   2026-11-11 (`events.created_by`, [`events.md` § Event Creation](events.md#event-creation)); older
   events have none and are never listed here.
 
+**Links:** sign-up links posted in channels the caller can read, newest first. See
+[Links](#links).
+
 **`needs_you_count`** is every "Needs you" row plus each event the member can check in to right
 now and hasn't. It is counted before the list cap, so a badge built from it does not stop at 25.
 
@@ -78,7 +81,8 @@ now and hasn't. It is counted before the list cap, so a badge built from it does
 
 - **A module that is off contributes nothing.** Each section checks its own module
   (`tasks`, `hours`, `polls`, `events`, `documents`, `backwork`) and does not read it while the
-  chapter has it off ([`../product/modules.md`](../product/modules.md)).
+  chapter has it off ([`../product/modules.md`](../product/modules.md)) Links come from chat, which has no
+  switch, so they are always read.
 - **Each list carries at most 25 rows.**
 - **One section failing does not fail the page.** The sections are read independently. One that
   fails is served empty and named in `unavailable`, so a client can say that part couldn't load
@@ -116,9 +120,9 @@ the same rule search and the poll list follow
 ## Links
 
 Sign-up links posted in chat, gathered so a member stops scrolling channels for them (#3897:
-Shawn, 2026-11-09). **Status 2026-11-11: the index and its rules are in the database
-(`20261111030000_activity_links.sql`); the read and the routes are being built, and nothing
-serves this section yet.**
+Shawn, 2026-11-09). **Status 2026-11-11: the index is in the database
+(`20261111030000_activity_links.sql`) and the API serves it (`links` on `GET /v1/activity`, and
+the routes below); no screen draws it yet (#3897 step 6).**
 
 - **What counts.** An http(s) URL in a message body whose host is a sign-up host: Google Forms,
   Sheets and Docs (`docs.google.com/forms/…`, `/spreadsheets/…`, `/document/…`, `forms.gle`),
@@ -133,12 +137,27 @@ serves this section yet.**
 - **Who sees one.** Only a member who can read the channel it was posted in, through the same
   predicate every chat read uses, with their block list applied, enforced on the server. Never a
   link from a channel set to **Leave out of Activity**: an officer (`channels:manage`) sets that
-  per channel, for channels like #advertising whose links are not chapter business. Every other
-  channel feeds Activity by default.
+  per channel (`activity_excluded` on `PATCH /v1/channels/{id}`, refused on a DM or group DM),
+  for channels like #advertising whose links are not chapter business. Every other channel feeds
+  Activity by default.
+- **Never the caller's own.** A member's own links are not listed to them: they posted it, so it
+  is not waiting on them.
+- **The list.** Newest first, at most 25, each row carrying the link, its host, the message it
+  was posted in (for "Open in chat"), the channel and the poster. An imported author with no
+  Frapp account has no poster id and an empty name. The rows are chosen from the 200 newest
+  showing links in the caller's channels, so a member would need 175 of their own, blocked or
+  settled links inside 30 days to lose a row to it.
+- **Not counted in `needs_you_count`.** A link may or may not be for this member, and Frapp
+  can't tell when one is filled in, so a badge built on links would rarely clear. They are their
+  own group, not "Needs you".
 - **Officer remove.** A `channels:manage` holder can remove one link from everyone's Activity,
-  for the one or two that slip through.
+  for the one or two that slip through (`PUT /v1/activity/links/{id}/removed`), and undo it
+  (`DELETE` on the same path). Like chat's other `channels:manage` actions it is scoped to the
+  chapter, not to channels the officer can read. The message itself stays in chat.
 - **Done and Hide.** Each member can mark a link Done (they filled it in) or Hide it (not chapter
   business for them). Both are per member and clear it from their own list; they read
-  differently because they mean different things. Frapp can't see whether a member filled in an
+  differently because they mean different things (`PUT /v1/activity/links/{id}/state` with
+  `done` or `hidden`; `DELETE` clears it). Either needs the member to read the link's channel;
+  one they can't read answers 404, as a missing link does. Frapp can't see whether a member filled in an
   outside form, so this is the only way one leaves the list (#3926 and #3927 track Frapp's own
   sign-up cards and a Google Forms connection).
