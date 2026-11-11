@@ -1,5 +1,6 @@
 "use client";
 
+import { CHECKOUT_LANDING_PATHNAMES } from "@/components/billing/billing-paths";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -68,10 +69,14 @@ import {
 export const WHATS_NEW_OPEN_DELAY_MS = 800;
 
 /**
- * Routes it never opens over: `/billing` is a checkout landing (the tour
- * stands down there too), and `/whats-new` is the notes themselves.
+ * Routes it never opens over: the checkout landings
+ * (`CHECKOUT_LANDING_PATHNAMES`; the tour stands down there too), and
+ * `/whats-new`, which is the notes themselves.
  */
-const SUPPRESSED_PREFIXES = ["/billing", "/whats-new"] as const;
+const SUPPRESSED_PREFIXES = [
+  ...CHECKOUT_LANDING_PATHNAMES,
+  "/whats-new",
+] as const;
 
 /** Anything modal or menu-like already on screen. */
 const BLOCKING_LAYER =

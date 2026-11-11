@@ -31,13 +31,25 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 ## 2026-11-11: Event types (#3730)
 
-### 20261111190000_event_types.sql
+### 20261111200000_event_types.sql
 
 - **Purpose**: Adds `event_types`, a chapter's own list of kinds of event (`name`, 1 to 60 characters trimmed, unique per chapter ignoring case; `point_value`, 0 to 100,000; `is_mandatory`; `position`, lowest first). FK to `chapters` cascades. RLS on, no policies (API only, service role). Adds one nullable column to `events`, `event_type_id`, with a composite foreign key `(event_type_id, chapter_id)` to `event_types (id, chapter_id)`, `on delete set null (event_type_id)`, so an event can only point at a type of its own chapter and deleting a type clears only that column. Adds `seed_default_event_types(uuid)` and the trigger function `chapters_seed_event_types()` (security invoker, EXECUTE for `service_role` only), with an `after insert` trigger on `chapters`, so every new chapter starts with seven types; the migration runs the seed once for every existing chapter, which inserts seven `event_types` rows per chapter and touches no other row. The rule is [`spec/behavior/events.md` § Event types](../../../spec/behavior/events.md#event-types).
 - **Checks**: After `db push`, `select relrowsecurity from pg_class where relname = 'event_types';` returns `true`, `select count(*) from pg_policies where tablename = 'event_types';` returns `0`, `select count(*) from public.chapters c where not exists (select 1 from public.event_types t where t.chapter_id = c.id);` returns `0`, and `select has_function_privilege('authenticated', 'public.seed_default_event_types(uuid)', 'execute');` returns `false`.
 - **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never reads the table, but its event reads are `select('*')`, so once this is applied it returns `event_type_id` (null) on every event. The newer API against an unmigrated database fails every `/v1/event-types` route, every event create (which writes the column) and event search (which selects it). `alter table events` takes a brief exclusive lock to add one nullable column and a foreign key over all-null values, with no rewrite. `create table if not exists`, `add column if not exists`, the guarded `add constraint`, `create or replace` and the seed's `on conflict do nothing` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-event-types-20261111190000) § Rollback event types.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-event-types-20261111200000) § Rollback event types.
+
+## 2026-11-11: Chapter channel order (#4178)
+
+### 20261111190000_chat_channels_display_order.sql
+
+- **Purpose**: Adds `chat_channels.display_order integer` (nullable, no default): a channel's place in its section of the channel list, set when an officer drags it in the web rail. Adds `reorder_chat_channels(p_chapter_id, p_category_id, p_channel_ids)` and `reorder_chat_categories(p_chapter_id, p_category_ids)`, `security invoker`, EXECUTE for `service_role` only, each writing a whole order in one transaction under a per-chapter advisory lock. `PUT /v1/channels/order` and `PUT /v1/channels/categories/order` call them. No existing row changes: every channel starts null, so every chapter's list reads A to Z as before. The rule is [`spec/behavior/chat/README.md` § Sidebar arrangement](../../../spec/behavior/chat/README.md#sidebar-arrangement).
+- **Checks**:
+  - `select count(*) from information_schema.columns where table_name = 'chat_channels' and column_name = 'display_order';` returns `1`.
+  - `select proname from pg_proc where proname in ('reorder_chat_channels', 'reorder_chat_categories');` returns 2 rows.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API reads channels with `select('*')` and ignores the column. The newer API against an unmigrated database fails the two PUTs (500, the rail puts the rows back and says so) and lists channels with no `display_order`, which sorts A to Z. A nullable column with no default is metadata-only, under a brief lock. `add column if not exists` and `create or replace function` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-chapter-channel-order-20261111190000) § Rollback Chapter channel order.
 
 ## 2026-11-11: Pinned and starred documents (#3934)
 

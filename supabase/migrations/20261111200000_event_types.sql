@@ -67,7 +67,7 @@ create trigger trg_event_types_updated_at
   for each row execute function update_updated_at();
 
 comment on table public.event_types is
-  'A chapter''s kinds of event, each with the points and attendance an event of that kind starts from. Events point at one through events.event_type_id. See 20261111190000_event_types.sql.';
+  'A chapter''s kinds of event, each with the points and attendance an event of that kind starts from. Events point at one through events.event_type_id. See 20261111200000_event_types.sql.';
 
 alter table public.events
   add column if not exists event_type_id uuid;
@@ -121,7 +121,7 @@ as $$
 $$;
 
 comment on function public.seed_default_event_types(uuid) is
-  'Adds the seven default event types to one chapter, skipping names it already has. Run by trg_chapters_seed_event_types on every new chapter. See 20261111190000_event_types.sql.';
+  'Adds the seven default event types to one chapter, skipping names it already has. Run by trg_chapters_seed_event_types on every new chapter. See 20261111200000_event_types.sql.';
 
 create or replace function public.chapters_seed_event_types()
 returns trigger

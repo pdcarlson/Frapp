@@ -16,6 +16,7 @@ import {
   type ActivityRow,
 } from "@repo/hooks";
 import { RowMenu, type RowMenuEntry } from "@/components/shared/row-menu";
+import { ActivityRowLead } from "./activity-row-lead";
 import { IconButton } from "@/components/ui/icon-button";
 import { ToastAction } from "@/components/ui/toast";
 import { chatDeepLink } from "@/lib/chat/chat-links";
@@ -183,6 +184,7 @@ export function ActivityLinkRow({
             title={link.url}
             className={cn(rowClassName, "min-w-0 flex-1")}
           >
+            <ActivityRowLead row={row} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-semibold text-foreground">
                 {row.title}

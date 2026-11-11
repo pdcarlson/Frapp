@@ -32,7 +32,8 @@ Color per state (roles defined in [foundations](foundations.md)):
 
 The navigation glyphs (the web sidebar, the mobile tab bar and the More hub's
 rows), the web in-screen families' re-exports of them, and the few in-screen
-glyphs drawn beside those (folder, schedule, invite, profile) draw one shared
+glyphs drawn beside those (folder, schedule, invite, profile, and Activity's
+`link` and `confirm`, §6.2.5a) draw one shared
 set instead of the stroke recipe above: [`packages/theme/src/nav-glyphs.ts`](../../../packages/theme/src/nav-glyphs.ts)
 (`@repo/theme/nav-glyphs`), path data from Phosphor's duotone weight (MIT),
 rendered by `apps/web/components/layout/nav-glyphs.tsx` and
@@ -273,7 +274,7 @@ viewer draws the same intents in Lucide (`Download`, `X`, `ChevronLeft`,
 
 The verbs an icon-only control draws ([components.md § Icon-only
 actions](components.md#icon-only-actions)), plus share's companion mark for an
-invite link, live in one file,
+invite link and the alert mark on an Important chat message (#3921), live in one file,
 `apps/mobile/components/control-glyphs.tsx`, so every dismiss on mobile is the
 same ×. Detail strokes only, no silhouette fill, at 20px (§2's icon-button
 size) unless a caller passes another size. Color comes from the surface: the
@@ -289,6 +290,7 @@ the chapter accent in a back-row slot (2026-11-05).
 | Share | `ShareGlyph`: iOS's box with an arrow out of it, Android's three joined nodes, each platform's own mark (moved here from the image viewer's own file, 2026-11-06) | the image viewer (24px), chapter setup's `Share invite` gold button and Invite members' secondary one (`text.foreground`, 2026-11-09, #3828), in the button's ink | Lucide `Share` |
 | Invite link | `LinkGlyph` (two joined links) | chapter setup's invite step: its link card, in `gold.askText` on the ask tile, and each shared row (16px); Invite members (`(app)/invite.tsx`) draws the same card in the chapter accent on its subtle tile | Lucide `Link` |
 | Back | `BackGlyph` (a left chevron, stroke 2.2, heavier than the recipe), in the chapter accent or the house gold | the chat thread header at 20 (2026-11-06; it was a typed `‹`), every back-row capsule at 18 | Lucide `ChevronLeft` |
+| Important (a status mark, not a control) | `AlertGlyph` (a circled !) | an Important message's flag caption in chat, at 14 in `destructiveText` ([components.md § A flagged row](components.md#a-flagged-row)) | Lucide `CircleAlert` |
 
 ### 6.2 Web Dashboard shell (Signet duotone)
 
@@ -534,7 +536,7 @@ points — and the events table drew its role-targeting and recurrence markers a
 ### 6.2.5 Resources & Reporting (Signet duotone)
 
 Since the #920 Resources & Reporting slice these families draw Signet
-glyphs (`/polls` was one until #3871 retired it), all from the nav set (§1.1) except the stroke-recipe search glyph. The
+glyphs (`/polls` was one until #3871 retired it), from the nav set (§1.1) except the stroke-recipe search glyph, chat's re-exported `PinGlyph` and the drawn `StarGlyph` (both #3934). The
 glyphs live in
 [`apps/web/components/documents/resources-glyphs.tsx`](../../../apps/web/components/documents/resources-glyphs.tsx),
 one file for three screens rather than three files, for the reason §6.2.4 gives:
@@ -548,15 +550,20 @@ button, and the PDF a report exports to.
 | A folder, and the folder filter that names one | `FolderGlyph` |
 | A report, and the control that generates one | `ReportsGlyph` (re-export) |
 | Search, in the `/documents` and `/backwork` toolbars | `SearchGlyph` (re-export) |
+| A folder or file pinned for the whole chapter, and the Pin control (#3934), filled while pinned | `PinGlyph` (re-exported from the chat family, §6.2.2) |
+| A folder or file the member starred for themselves, and the Star control (#3934), filled while starred | `StarGlyph` |
 
 **Backwork's copy markers are Lucide, on purpose (2026-11-05).** A backwork row marks which copy a file is with one icon per copy type, from one set and in the row's muted text tone (Paul: "with the copy, keep the icons consistent"): `FileCheck` a student copy, `File` a blank copy, `KeyRound` an answer key, and `Lock` beside any of them for a redacted file (`apps/web/components/backwork/backwork-row-parts.tsx`). They are small inline markers beside a text label, not domain glyphs that stand for a screen, so they stay in the control-furniture set rather than the duotone family; a later pass that draws them in the Signet set changes this paragraph and that file together.
 
-Three of the four are re-exports from
+Three of the six are re-exports from
 [`apps/web/components/layout/nav-glyphs.tsx`](../../../apps/web/components/layout/nav-glyphs.tsx),
-which is §1 rule 1's rule and the two preceding families' practice. Only
+which is §1 rule 1's rule and the two preceding families' practice.
 `FolderGlyph` is not a re-export, because no nav intent covers a folder (the
 sidebar links to Documents as a whole); it draws the nav set's `folder` entry
 (Phosphor `folder`, §1.1) so the folder rail's rows stay one family.
+`PinGlyph` is re-exported from the chat family (§6.2.2), since pinning a
+message, a channel and a document is one idea. `StarGlyph` is drawn here on
+the §1 recipe, because no set entry covers a personal star (#3934).
 
 [`canvas-screens.dc.html`](reference/canvas-screens.dc.html) marks every
 document row on **s12** (the Documents screen) and **s21** (the upload sheet)
@@ -565,10 +572,11 @@ all), so the leading marker was added with the pack change rather than left
 for a later pass. Since 2026-11-05 that marker is the nav set's `file-text`
 (§1.1), not the board's file geometry. s12 also draws a two-tone split on its
 folder rail: the *pinned* rows take the accent and the ordinary rows the
-neutral paint. Web has no pin field
-([`../mobile/screens.md`](../mobile/screens.md) records the same absence on
-mobile), so document rows take the neutral paint and only the selected folder
-is accented.
+neutral paint. Since #3934 (2026-11-11) web has the pin field: the Pinned cards
+above All files take the accent duotone and the Starred ones the neutral
+paint, a pinned or starred row lights its Pin or Star, and document rows
+otherwise keep the neutral paint. (Before #3934 this paragraph said web had no
+pin field, which was true then.)
 
 Two of the swaps were corrections rather than a pack change, in §6.2.4's sense:
 
@@ -587,6 +595,26 @@ Two of the swaps were corrections rather than a pack change, in §6.2.4's sense:
   and is deliberately **not** this family's to move: §6.2.3 already records
   that the state family's glyphs migrate with a pass over
   `components/shared/**`, not with a screen family.
+
+### 6.2.5a Activity rows (Signet duotone)
+
+Since #4173 (2026-11-11) every `/activity` row leads with a 40px neutral tile
+holding its kind's glyph at 20px in `--muted-foreground`
+([`apps/web/components/activity/activity-row-lead.tsx`](../../../apps/web/components/activity/activity-row-lead.tsx)),
+or, for an event, its month and day in place of a glyph. The glyphs are
+the nav set's (§1.1), so a row draws the shape of the place its record lives;
+`link` and `confirm` were added for the two kinds that have no place of their own.
+They stay neutral: the page's colour is for asks and status.
+
+| Row kind | Shape (nav set key, Phosphor name) |
+|---|---|
+| Your task, a task you assigned | `tasks`, `seal-check` |
+| A task waiting on your confirm | `confirm`, `check-circle` (added for it) |
+| Hours to approve | `service`, `hand-heart` |
+| Poll | `polls`, `chart-bar` |
+| Event whose start can't be read (no date to draw) | `events`, `calendar-dots` |
+| Document, backwork | `documents`, `file-text`; `backwork`, `books` |
+| Sign-up link | `link`, `link` (added for it) |
 
 ### 6.2.6 Settings & Roles (Signet duotone) — no family file, deliberately
 

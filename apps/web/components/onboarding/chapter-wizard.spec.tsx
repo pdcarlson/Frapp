@@ -929,7 +929,7 @@ describe("where the wizard leaves a brand-new founder", () => {
       await screen.findByRole("button", { name: /Skip for now|Finish/ }),
     );
 
-    expect(routerReplace).toHaveBeenCalledWith("/billing");
+    expect(routerReplace).toHaveBeenCalledWith("/settings?tab=billing");
   });
 
   it("does not send the founder to the chat landing", async () => {

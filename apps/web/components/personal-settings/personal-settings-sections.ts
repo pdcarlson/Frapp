@@ -1,3 +1,5 @@
+import { isBetaOffModule } from "@repo/validation";
+
 /**
  * The personal Settings page's sections (`/preferences`, #3856).
  *
@@ -6,8 +8,8 @@
  * is stored per chapter, so it changes with the chapter switcher: alerts
  * (`notification_preferences` is keyed by chapter), the block list
  * (`GET /v1/chat/blocks` is the active chapter's) and the Discord link (one
- * per chapter's import). My invoices joins the second group when billing moves
- * (#3827).
+ * per chapter's import), and My invoices (a member's dues are the chapter's
+ * invoices; #3827 moved them here from `/billing`).
  *
  * A section's `value` is its `?section=` address. Other screens link to these,
  * and the API's Discord link returns to `discord`
@@ -21,11 +23,29 @@ export const PERSONAL_SETTINGS_SECTIONS = [
   { value: "account", label: "Account", group: "account" },
   { value: "alerts", label: "Chapter alerts", group: "chapter" },
   { value: "blocked", label: "Blocked members", group: "chapter" },
+  { value: "invoices", label: "My invoices", group: "chapter" },
   { value: "discord", label: "Discord history", group: "chapter" },
 ] as const;
 
 export type PersonalSettingsSection =
   (typeof PERSONAL_SETTINGS_SECTIONS)[number]["value"];
+
+/**
+ * Sections that belong to one module, and leave while it is off for every
+ * chapter in the beta (`BETA_OFF_MODULES`). Dues is off for the beta, so My
+ * invoices has nothing to list and no row.
+ */
+const SECTION_MODULES: Partial<Record<PersonalSettingsSection, string>> = {
+  invoices: "dues",
+};
+
+/** Whether a section is in the product right now. */
+export function isPersonalSettingsSectionShown(
+  section: PersonalSettingsSection,
+): boolean {
+  const moduleKey = SECTION_MODULES[section];
+  return !(moduleKey && isBetaOffModule(moduleKey));
+}
 
 /** The section the page opens on, and falls back to for an unknown `?section=`. */
 export const DEFAULT_PERSONAL_SETTINGS_SECTION: PersonalSettingsSection =
@@ -41,5 +61,7 @@ export function resolvePersonalSettingsSection(
   param: string | null | undefined,
 ): PersonalSettingsSection {
   const match = PERSONAL_SETTINGS_SECTIONS.find((s) => s.value === param);
-  return match ? match.value : DEFAULT_PERSONAL_SETTINGS_SECTION;
+  return match && isPersonalSettingsSectionShown(match.value)
+    ? match.value
+    : DEFAULT_PERSONAL_SETTINGS_SECTION;
 }

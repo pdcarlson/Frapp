@@ -25,6 +25,10 @@ import {
 } from "@/components/billing/invoice-status";
 import { formatDay } from "@repo/formatting";
 import { PlanPanelSkeleton } from "@/components/billing/billing-skeleton";
+import {
+  BILLING_SETTINGS_PATH,
+  billingReturnUrl,
+} from "@/components/billing/billing-paths";
 
 /**
  * Stripe confirms the subscription over a webhook, not on the redirect, so the
@@ -191,6 +195,19 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
     statusQuery.isError &&
     can("billing:view", permissionsPayload?.permissions ?? []);
 
+  /*
+   * Active with no Stripe customer: a chapter Frapp switched on by hand, with
+   * no card and nothing to pay (Paul's own chapter in the beta). The Portal
+   * refuses a chapter without a customer (`createPortalSession` 400s), so
+   * "Manage in Stripe" here was a button that could only fail. Read only from
+   * a billing read that answered: a member's 403 or a pending read says
+   * nothing about the customer, and those keep the ordinary active panel.
+   */
+  const complimentary =
+    status === "active" &&
+    statusQuery.isSuccess &&
+    !billingStatus?.stripe_customer_id;
+
   const currentUserQuery = useCurrentUser();
   const createCheckout = useCreateCheckout();
   const createPortal = useCreatePortal();
@@ -210,7 +227,7 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
   // `past_due` for the chapter query's five-minute staleTime.
   //
   // Keyed on the status as well as the URL param: keying on the param alone let
-  // a stale `/billing?checkout=success` bookmark hijack the screen of a chapter
+  // a stale `?checkout=success` bookmark hijack the screen of a chapter
   // that had since lapsed, hiding its recovery path.
   //
   // `returned` is narrowed to `past_due`, not `lapsed`, and that narrowing is
@@ -236,11 +253,13 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
    * Did this visit actually *watch* the chapter go from not-active to active?
    *
    * It matters because **this lane added a Portal button to the `active`
-   * branch**, and that button's `return_url` is `/billing?checkout=returned`.
+   * branch**, and that button's `return_url` is
+   * `/settings?tab=billing&checkout=returned` (`/billing?checkout=returned`
+   * before #3827).
    * Before it existed, an active chapter could not land on `?checkout=returned`
    * at all: the card this panel replaces offered the Portal only in its lapsed
-   * branch, and the one other portal in the app
-   * (`settings-danger-tab.tsx`) returns to `/settings`. So `active + returned` could
+   * branch, and the one other portal in the app (Danger zone's, deleted in
+   * #3827) returned to `/settings`. So `active + returned` could
    * only mean the intended dunning recovery — lapsed chapter fixes its card,
    * webhook lands, status flips — and printing "Payment cleared" for it was
    * true by construction.
@@ -293,8 +312,8 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
       const origin = window.location.origin;
       const result = await createCheckout.mutateAsync({
         customer_email: email,
-        success_url: `${origin}/billing?checkout=success`,
-        cancel_url: `${origin}/billing?checkout=cancelled`,
+        success_url: billingReturnUrl(origin, "success"),
+        cancel_url: billingReturnUrl(origin, "cancelled"),
       });
       const url =
         result && typeof result === "object" && "url" in result
@@ -314,7 +333,7 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
   async function openPortal() {
     try {
       const result = await createPortal.mutateAsync({
-        return_url: `${window.location.origin}/billing?checkout=returned`,
+        return_url: billingReturnUrl(window.location.origin, "returned"),
       });
       const url =
         result && typeof result === "object" && "url" in result
@@ -401,6 +420,7 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
           status={status}
           pastDueSince={pastDueSince}
           invoicesHref={invoicesHref}
+          complimentary={complimentary}
         />
 
         {statusReadFailed ? (
@@ -474,13 +494,15 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
               The other three branches keep the copy, because each has a real
               block behind it.
             */}
-            <StripeAction
-              label="Manage in Stripe"
-              variant="secondary"
-              pending={createPortal.isPending}
-              onRun={openPortal}
-              askAnOfficer={null}
-            />
+            {complimentary ? null : (
+              <StripeAction
+                label="Manage in Stripe"
+                variant="secondary"
+                pending={createPortal.isPending}
+                onRun={openPortal}
+                askAnOfficer={null}
+              />
+            )}
           </>
         ) : usesPortal ? (
           <StripeAction
@@ -528,10 +550,12 @@ function PlanMeta({
   status,
   pastDueSince,
   invoicesHref,
+  complimentary = false,
 }: {
   status: string | null;
   pastDueSince: string | null;
   invoicesHref?: string;
+  complimentary?: boolean;
 }) {
   const lapsedOn =
     status === "past_due" && pastDueSince ? formatDay(pastDueSince) : null;
@@ -551,6 +575,12 @@ function PlanMeta({
   const items: { key: string; node: React.ReactNode }[] = [];
   if (lapsedOn) {
     items.push({ key: "lapsed", node: <>Past due since {lapsedOn}</> });
+  }
+  if (complimentary) {
+    items.push({
+      key: "complimentary",
+      node: <>Turned on by Frapp. No card on file and nothing to pay.</>,
+    });
   }
   if (invoicesHref) {
     items.push({
@@ -705,7 +735,7 @@ function ActivationWait({
         size="sm"
         className="h-auto px-0 pointer-coarse:h-auto"
       >
-        <a href="/billing">I haven&apos;t paid yet</a>
+        <a href={BILLING_SETTINGS_PATH}>I haven&apos;t paid yet</a>
       </Button>
     </>
   );

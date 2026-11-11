@@ -132,7 +132,7 @@ describe("PointsAdjustmentDialog subscription gating", () => {
     // ...then the next action, pointing at the screen that clears it.
     expect(
       screen.getByRole("link", { name: /complete checkout/i }),
-    ).toHaveAttribute("href", "/billing");
+    ).toHaveAttribute("href", "/settings?tab=billing");
   });
 
   it("gates the form fields too, not just the submit", () => {

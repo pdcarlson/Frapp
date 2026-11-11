@@ -154,7 +154,7 @@ export const PLEDGE_CLASS_ASSIGNMENTS_MAX = 500;
 
 /**
  * Event types (#3730). The name bound mirrors the CHECK constraint in
- * `20261111190000_event_types.sql`; the count is an API-side cap on one
+ * `20261111200000_event_types.sql`; the count is an API-side cap on one
  * chapter's list, which the New event form shows whole.
  */
 export const EVENT_TYPE_NAME_MAX_LENGTH = 60;

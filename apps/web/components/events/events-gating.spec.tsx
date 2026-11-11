@@ -158,7 +158,7 @@ describe("EventEditorDialog subscription gating", () => {
     expect(screen.getByText(/subscription is not active/i)).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: /complete checkout/i }),
-    ).toHaveAttribute("href", "/billing");
+    ).toHaveAttribute("href", "/settings?tab=billing");
   });
 
   it("ties the disabled save button to the one explanation", () => {
@@ -231,7 +231,7 @@ describe("AttendancePanel subscription gating", () => {
     expect(screen.getByText(/subscription is not active/i)).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: /complete checkout/i }),
-    ).toHaveAttribute("href", "/billing");
+    ).toHaveAttribute("href", "/settings?tab=billing");
   });
 
   it("gates the per-row status write too, not just the headline one", () => {

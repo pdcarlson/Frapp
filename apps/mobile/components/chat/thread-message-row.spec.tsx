@@ -1382,3 +1382,52 @@ describe("ThreadMessageRow — message thread chip (#3785)", () => {
     expect(onOpenThread).toHaveBeenCalledWith(poll);
   });
 });
+
+// Message flags (#3921): the row resolves the flag against the viewer's block
+// list and hands it to text and card rows alike.
+describe("ThreadMessageRow flags", () => {
+  const caption = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        node.props.testID === "message-flag",
+    );
+  const flagged = {
+    flag: "important" as const,
+    flagged_by: VIEWER,
+    flagged_at: "2026-11-11T14:00:00.000Z",
+  };
+
+  it("draws the flag on a text row, naming the viewer as you", () => {
+    const tree = renderRow({
+      message: message(flagged),
+      visibility: "visible",
+    });
+    expect(caption(tree)[0]?.props.accessibilityLabel).toBe(
+      "Important · flagged by you",
+    );
+  });
+
+  it("draws the flag on a card row too", () => {
+    const tree = renderRow({
+      message: message({
+        ...flagged,
+        kind: "poll",
+        payload: {
+          question: "Formal theme?",
+          options: [{ id: "o1", label: "Masquerade" }],
+        },
+      }),
+      visibility: "visible",
+    });
+    expect(caption(tree)).toHaveLength(1);
+  });
+
+  it("drops a blocked flagger's name and keeps the flag", () => {
+    const tree = renderRow({
+      message: message({ ...flagged, flagged_by: BLOCKED }),
+      visibility: "visible",
+    });
+    expect(caption(tree)[0]?.props.accessibilityLabel).toBe("Important");
+  });
+});

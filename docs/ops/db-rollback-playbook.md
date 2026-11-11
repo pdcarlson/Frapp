@@ -3536,9 +3536,9 @@ alter table public.chat_messages
   drop column if exists flag;
 ```
 
-## Rollback event types (20261111190000)
+## Rollback event types (20261111200000)
 
-* **Migration**: `20261111190000_event_types.sql`
+* **Migration**: `20261111200000_event_types.sql`
 
 One new table, `event_types`, seeded with seven rows per chapter; one nullable column on `events`, `event_type_id`, with a composite foreign key; two functions, `seed_default_event_types` and `chapters_seed_event_types`; and an `after insert` trigger on `chapters`. No existing row changed.
 
@@ -3570,4 +3570,20 @@ drop table if exists public.event_types;
 drop table if exists public.chapter_document_stars;
 alter table public.chapter_documents drop column if exists pinned_at;
 alter table public.chapter_document_folders drop column if exists pinned_at;
+```
+
+## Rollback Chapter channel order (20261111190000)
+
+* **Migration**: `20261111190000_chat_channels_display_order.sql`
+
+One nullable column on `chat_channels`, `display_order`, and the functions `reorder_chat_channels` and `reorder_chat_categories`. No existing row changed.
+
+**Revert the code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API never calls the functions and returns the column as a plain field (`select('*')`); the reverted clients sort every section A to Z again and ignore it.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. Dropping the column loses every chapter's channel order; category order stays in `chat_channel_categories.display_order`, which predates this:
+
+```sql
+drop function if exists public.reorder_chat_channels(uuid, uuid, uuid[]);
+drop function if exists public.reorder_chat_categories(uuid, uuid[]);
+alter table public.chat_channels drop column if exists display_order;
 ```

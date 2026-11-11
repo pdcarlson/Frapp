@@ -6,9 +6,11 @@ import { useCurrentChapter } from "@repo/hooks";
 import { AccountSection } from "@/components/personal-settings/account-section";
 import { ChapterAlertsSection } from "@/components/personal-settings/chapter-alerts-section";
 import { QuietHoursSection } from "@/components/personal-settings/quiet-hours-section";
+import { MyInvoicesSection } from "@/components/personal-settings/my-invoices-section";
 import { PersonalSettingsBodySkeleton } from "@/components/personal-settings/personal-settings-skeleton";
 import {
   PERSONAL_SETTINGS_SECTIONS,
+  isPersonalSettingsSectionShown,
   personalSettingsHref,
   resolvePersonalSettingsSection,
   type PersonalSettingsSection,
@@ -52,7 +54,9 @@ function PersonalSettingsContent() {
     },
   ].map(({ label, group }) => ({
     label,
-    items: PERSONAL_SETTINGS_SECTIONS.filter((s) => s.group === group).map(
+    items: PERSONAL_SETTINGS_SECTIONS.filter(
+      (s) => s.group === group && isPersonalSettingsSectionShown(s.value),
+    ).map(
       (s) => ({
         value: s.value,
         label: s.label,
@@ -106,6 +110,8 @@ function SectionBody({ section }: { section: PersonalSettingsSection }) {
         failed read of the block list must not look like "nobody is blocked".
       */
       return <BlockedMembersCard />;
+    case "invoices":
+      return <MyInvoicesSection />;
     case "discord":
       return <DiscordHistoryCard />;
   }

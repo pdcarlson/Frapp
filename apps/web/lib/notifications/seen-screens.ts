@@ -6,13 +6,16 @@
  * screen maps to reads those rows (§ How an in-app row is marked read), so
  * this is the inverse of the drawer's `deepLinkFor`: page → screens. Chat is
  * absent on purpose: a chat row is read by reading its channel, which the API
- * does on `POST /v1/channels/{id}/read`.
+ * does on `POST /v1/channels/{id}/read`. Billing is absent too: since #3827
+ * it is a tab of Chapter settings (and a member's invoices a section of
+ * `/preferences`), and a pathname can't tell Plan and billing from Roles, so
+ * mapping `/settings` would mark a lapse alert read on a visit to Roles. A
+ * billing row is read when it is opened.
  */
 const SCREENS_BY_ROUTE: readonly (readonly [string, readonly string[]])[] = [
   ["/events", ["events"]],
   ["/tasks", ["tasks"]],
   ["/points", ["points"]],
-  ["/billing", ["billing"]],
   ["/service", ["service"]],
   ["/members", ["members"]],
   ["/chat-admin", ["chat_reports"]],

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import { Download, FileText, Loader2 } from "lucide-react";
 import {
   selectDownloadUrl,
@@ -84,11 +84,17 @@ export function DocumentViewer({
   documents,
   openId,
   onOpenChange,
+  openerRef,
 }: {
   /** The rows in the order the list shows them. */
   documents: readonly ChapterDocument[];
   openId: string | null;
   onOpenChange: (id: string | null) => void;
+  /**
+   * The control that opened the viewer, when the page knows it. Closing goes
+   * back to it while it still names the document shown (#3934).
+   */
+  openerRef?: RefObject<HTMLElement | null>;
 }) {
   const index = openId === null ? -1 : documents.findIndex((doc) => doc.id === openId);
   const doc = index === -1 ? undefined : documents[index];
@@ -110,6 +116,7 @@ export function DocumentViewer({
         onOpenChange(documents[(index + delta + documents.length) % documents.length]!.id)
       }
       onClose={() => onOpenChange(null)}
+      openerRef={openerRef}
     />
   );
 }
@@ -126,12 +133,14 @@ function OpenDocumentViewer({
   total,
   onStep,
   onClose,
+  openerRef,
 }: {
   doc: ChapterDocument;
   index: number;
   total: number;
   onStep: (delta: -1 | 1) => void;
   onClose: () => void;
+  openerRef?: RefObject<HTMLElement | null>;
 }) {
   const kind = previewKind(doc);
   // The signed links, for a file that previews. A file that doesn't is never
@@ -176,9 +185,17 @@ function OpenDocumentViewer({
       // one that opened it (the arrows step), as chat's viewer returns to the
       // image it was showing.
       onCloseAutoFocus={(event) => {
-        const opener = document.querySelector<HTMLElement>(
-          `[${OPEN_DOCUMENT_ATTRIBUTE}="${CSS.escape(doc.id)}"]`,
-        );
+        // The element that opened the viewer when it still names this
+        // document: a pinned or starred file is drawn twice on All files, as
+        // a card and as a row (#3934), and the first match would be the card.
+        const opened = openerRef?.current;
+        const opener =
+          opened?.isConnected &&
+          opened.getAttribute(OPEN_DOCUMENT_ATTRIBUTE) === doc.id
+            ? opened
+            : document.querySelector<HTMLElement>(
+                `[${OPEN_DOCUMENT_ATTRIBUTE}="${CSS.escape(doc.id)}"]`,
+              );
         if (!opener) return;
         event.preventDefault();
         opener.focus();

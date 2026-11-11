@@ -40,13 +40,11 @@ const RAIL_ROW_RESET =
 
 const RAIL_TRIGGER_CLASS = `${RAIL_ROW_RESET} h-[34px] justify-start rounded-[10px] px-[10px] text-sm text-muted-foreground enabled:hover:bg-card data-[state=active]:bg-accent-subtle data-[state=active]:font-semibold data-[state=active]:text-accent-text data-[state=active]:shadow-none enabled:data-[state=active]:text-accent-text lg:w-full lg:flex-none`;
 
-const RAIL_DANGER_TRIGGER_CLASS = `${RAIL_ROW_RESET} h-[34px] justify-start rounded-[10px] px-[10px] text-sm text-destructive enabled:hover:bg-card data-[state=active]:bg-destructive-tint data-[state=active]:font-semibold data-[state=active]:text-destructive-text data-[state=active]:shadow-none enabled:data-[state=active]:text-destructive-text lg:w-full lg:flex-none`;
-
-/** The rail's groups, in order. Danger zone sits under all of them. */
-export type SettingsTabGroup = "chapter" | "people" | "modules" | "danger";
+/** The rail's groups, in order. */
+export type SettingsTabGroup = "chapter" | "people" | "modules";
 
 export const SETTINGS_TAB_GROUP_LABELS: Readonly<
-  Record<Exclude<SettingsTabGroup, "danger">, string>
+  Record<SettingsTabGroup, string>
 > = {
   chapter: "Chapter",
   people: "People",
@@ -61,18 +59,23 @@ export type SettingsTab = {
 
 /*
   The rail, grouped (#3827, slice 5 of #4068): Chapter, People and Modules,
-  the grouping the settings design settled (#4065), then Danger zone last in
-  normal flow. It used to be one flat list of eleven rows with Danger zone
-  pushed to the bottom of a rail stretched to the panel's height
-  (`lg:mt-auto`), so on a long tab it fell below the fold and moved every time
-  the tab changed (#3713).
+  the grouping the settings design settled (#4065). It used to be one flat
+  list of eleven rows with Danger zone pushed to the bottom of a rail
+  stretched to the panel's height (`lg:mt-auto`), so on a long tab it fell
+  below the fold and moved every time the tab changed (#3713).
+
+  - **Plan and billing is a Chapter row** (the second #3827 PR, decision 8 of
+    #4068). It was the sidebar's Billing route; `/billing` now redirects here
+    for `billing:view` holders. **Danger zone is gone**: all it held was a
+    second Stripe portal button and the closing-the-chapter note, and both are
+    the last section of Plan and billing now, where a president looking for
+    "cancel" goes. `?tab=danger` lands there (`SETTINGS_TAB_ALIASES`).
 
   - **Accent is not a row any more.** It is a section of Chapter, under the
     chapter mark: both decide how the chapter looks. `?tab=theme` still lands
     there (`SETTINGS_TAB_ALIASES`).
-  - **No `joincode` and no `subscription`.** The board `4d` rail drew both.
-    `apps/web` has no join-code surface, and billing moves in as its own
-    section in the second #3827 PR (decision 8 of #4068), not here.
+  - **No `joincode`.** The board `4d` rail drew it; `apps/web` has no
+    join-code surface. The board's `subscription` row is Plan and billing.
   - **`dues`, `workflows` and `classes` are ours.** Each is live chapter
     configuration with no other home. `classes` takes the chapter's own word
     for a class, which the page sets.
@@ -85,21 +88,22 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   { value: "org", label: "Chapter", group: "chapter" },
   { value: "semester", label: "Semester", group: "chapter" },
   { value: "privacy", label: "Privacy", group: "chapter" },
+  { value: "billing", label: "Plan and billing", group: "chapter" },
   { value: "roles", label: "Roles", group: "people" },
   { value: "classes", label: "Pledge class", group: "people" },
   { value: "fields", label: "Member fields", group: "people" },
   { value: "modules", label: "Modules", group: "modules" },
   { value: "dues", label: "Dues", group: "modules" },
   { value: "workflows", label: "Workflows", group: "modules" },
-  { value: "danger", label: "Danger zone", group: "danger" },
 ];
 
 /**
- * Old `?tab=` values that now open another row: Accent folded into Chapter.
- * Old links and bookmarks to `?tab=theme` keep working.
+ * Old `?tab=` values that now open another row: Accent folded into Chapter,
+ * and Danger zone into Plan and billing. Old links and bookmarks keep working.
  */
 export const SETTINGS_TAB_ALIASES: Readonly<Record<string, string>> = {
   theme: "org",
+  danger: "billing",
 };
 
 /** Resolves a `?tab=` value to a row, or `null` when it names none. */
@@ -116,8 +120,8 @@ export function resolveSettingsTabParam(
 // clicking one leaves this page rather than switching a tab.
 
 /**
- * The left rail: officer-tool links, then the setup rows in their groups, then
- * Danger zone. Renders inside the page's `<Tabs>`, since its lists drive the
+ * The left rail: officer-tool links, then the setup rows in their groups.
+ * Renders inside the page's `<Tabs>`, since its lists drive the
  * panels beside it.
  *
  * **Sticky, at a fixed width.** The page scrolls inside the shell's tool pane,
@@ -132,19 +136,13 @@ export function SettingsRail({
   tools: readonly SettingsTool[];
   visibleTabs: readonly SettingsTab[];
 }) {
-  const groups = (
-    Object.keys(SETTINGS_TAB_GROUP_LABELS) as Exclude<
-      SettingsTabGroup,
-      "danger"
-    >[]
-  )
+  const groups = (Object.keys(SETTINGS_TAB_GROUP_LABELS) as SettingsTabGroup[])
     .map((group) => ({
       group,
       label: SETTINGS_TAB_GROUP_LABELS[group],
       tabs: visibleTabs.filter((tab) => tab.group === group),
     }))
     .filter((entry) => entry.tabs.length > 0);
-  const danger = visibleTabs.filter((tab) => tab.group === "danger");
   return (
     <div className="flex w-full flex-col gap-4 lg:sticky lg:top-0 lg:max-h-[calc(100dvh-7rem)] lg:w-[200px] lg:shrink-0 lg:self-start lg:overflow-y-auto lg:py-1">
       {tools.length > 0 ? (
@@ -183,22 +181,6 @@ export function SettingsRail({
           </TabsList>
         </div>
       ))}
-      {danger.length > 0 ? (
-        <TabsList
-          aria-label="Danger zone"
-          className="flex h-auto w-full flex-row flex-wrap justify-start gap-0.5 border-b-0 border-t border-border bg-transparent p-0 pt-3 lg:flex-col lg:flex-nowrap lg:items-stretch"
-        >
-          {danger.map((tab) => (
-            <TabsTrigger
-              key={tab.value}
-              value={tab.value}
-              className={RAIL_DANGER_TRIGGER_CLASS}
-            >
-              {tab.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      ) : null}
     </div>
   );
 }

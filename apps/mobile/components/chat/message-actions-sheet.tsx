@@ -59,7 +59,9 @@ import {
   REPORT_SEND_LABEL,
   reportFailureBody,
 } from "@repo/chat-core/report-copy";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { MESSAGE_FLAG_OPTIONS } from "@repo/chat-core/flags";
+import type { ChatMessageFlag } from "@repo/validation";
 
 /**
  * The actions on one message: react to it, reply to it, edit or delete it
@@ -204,6 +206,12 @@ export interface MessageActionsTarget {
    * existing chip spelled without U+FE0F rather than starting a twin.
    */
   messageEmojis?: readonly string[];
+  /**
+   * The Flag row (#3921): the message's current flag, read from the cache on
+   * every render like `reactedWith`. Absent where the viewer may not flag it
+   * (`canFlagMessage` in `@repo/chat-core/flags`), which draws no row.
+   */
+  flag?: { current: ChatMessageFlag | null };
 }
 
 /** What the report form shows once a request has come back. */
@@ -247,6 +255,8 @@ export interface MessageActionsSheetProps {
   onReact?: (messageId: string, emoji: string) => void;
   /** Take back a reaction the viewer already made, from the quick row. */
   onUnreact?: (messageId: string, emoji: string) => void;
+  /** Put a flag on the message, or (`null`) take its flag off (#3921). */
+  onFlag?: (messageId: string, flag: ChatMessageFlag | null) => void;
 }
 
 export const MessageActionsSheet = forwardRef<
@@ -263,12 +273,15 @@ export const MessageActionsSheet = forwardRef<
     onMention,
     onReact,
     onUnreact,
+    onFlag,
   },
   ref,
 ) {
   const { tokens } = useFrappTheme();
   const { accent, accentSubtle, accentBorder } = useChapterBranding();
   const styles = createStyles(tokens);
+  const danger = tokens.color.semantic.destructive;
+  const dangerText = tokens.color.semantic.destructiveText;
   const backgroundStyle = useSheetBackgroundStyle();
   const menuRef = useRef<BottomSheetModal>(null);
   const reportRef = useRef<BottomSheetModal>(null);
@@ -387,6 +400,17 @@ export const MessageActionsSheet = forwardRef<
       if (messageId && run) run(messageId);
     },
     [target],
+  );
+
+  /** Closes the menu, then sets the flag, or takes off the one tapped again. */
+  const pickFlag = useCallback(
+    (flag: ChatMessageFlag) => {
+      const messageId = target?.messageId;
+      const current = target?.flag?.current ?? null;
+      menuRef.current?.dismiss();
+      if (messageId) onFlag?.(messageId, current === flag ? null : flag);
+    },
+    [target, onFlag],
   );
 
   /** Closes the menu, then adds the reaction, or takes back one already made. */
@@ -570,6 +594,54 @@ export const MessageActionsSheet = forwardRef<
                 />
               ) : null}
             </ListSection>
+          ) : null}
+          {target?.flag && onFlag ? (
+            // Flag (#3921): Important first, then the lighter flags. The
+            // current one reads selected, and tapping it again takes it off.
+            <View style={styles.flagSection}>
+              <Text style={styles.caption}>Flag</Text>
+              <View style={styles.flags} accessibilityRole="radiogroup">
+                {MESSAGE_FLAG_OPTIONS.map(({ flag, label }) => {
+                  const selected = target.flag?.current === flag;
+                  const important = flag === "important";
+                  return (
+                    <Pressable
+                      key={flag}
+                      testID={`message-flag-${flag}`}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: selected }}
+                      accessibilityLabel={label}
+                      accessibilityHint={
+                        selected ? "Removes this flag" : undefined
+                      }
+                      onPress={() => pickFlag(flag)}
+                      style={[
+                        styles.flagChip,
+                        important ? { borderColor: dangerText } : null,
+                        selected
+                          ? important
+                            ? { backgroundColor: tint(danger) }
+                            : {
+                                backgroundColor: accentSubtle,
+                                borderColor: accentBorder,
+                              }
+                          : null,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.flagChipText,
+                          important ? { color: dangerText } : null,
+                          selected && !important ? { color: accent } : null,
+                        ]}
+                      >
+                        {label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
           ) : null}
           {target?.copyText || (target?.canMention && onMention) ? (
             <ListSection>
@@ -796,6 +868,28 @@ function createStyles(tokens: SignetTokens) {
       backgroundColor: tokens.color.surface.card,
       alignItems: "center",
       justifyContent: "center",
+    },
+    flagSection: {
+      gap: tokens.spacing.sm,
+    },
+    flags: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: tokens.spacing.sm,
+    },
+    flagChip: {
+      minHeight: tokens.touch.minimum,
+      paddingHorizontal: tokens.spacing.md,
+      borderRadius: tokens.radius.control,
+      borderWidth: 1,
+      borderColor: tokens.color.border.hairline,
+      backgroundColor: tokens.color.surface.card,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    flagChipText: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.foreground,
     },
     reactionEmoji: {
       ...typeRole(tokens.typography.role.title),

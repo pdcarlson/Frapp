@@ -21,6 +21,12 @@ import type { ChannelSections, GroupableChannel } from "./channel-sections";
 export interface SidebarChannelLike {
   id: string;
   type: string;
+  /**
+   * The chapter's order for this channel inside its section, set by an
+   * officer dragging it (`PUT /v1/channels/order`); null or absent until its
+   * section is first arranged, and always on a DM.
+   */
+  display_order?: number | null;
 }
 
 /** A section as the grouping produced it, in render order. */
@@ -195,6 +201,36 @@ export function sidebarSections<
 const NO_UNREAD: SidebarUnreadCounts = { unreadCount: 0, mentionCount: 0 };
 
 /**
+ * The order of rows inside a section (owner, 2026-11-11, #4178): the
+ * chapter's `display_order` first, a row without one after every row with
+ * one, then A to Z by the title the row shows, then id so two rows with one
+ * title still sort the same way every time. A chapter nobody has arranged has
+ * no `display_order` anywhere, so it reads A to Z, as it did before; so do
+ * DMs, which never carry one. Pinned ignores it (`byTitle` in
+ * `arrangeChannelSidebar`): pins carry no order of their own.
+ *
+ * Exported because web's rail computes a drop's new order from the same
+ * sequence the section draws.
+ */
+export function compareChannelOrder<C extends SidebarChannelLike>(
+  titleOf: (channel: C) => string,
+): (a: C, b: C) => number {
+  return (a, b) => {
+    const ao = a.display_order ?? null;
+    const bo = b.display_order ?? null;
+    if (ao !== bo) {
+      if (ao === null) return 1;
+      if (bo === null) return -1;
+      return ao - bo;
+    }
+    return (
+      titleOf(a).localeCompare(titleOf(b)) ||
+      (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+    );
+  };
+}
+
+/**
  * Whether a row addresses the member, which is what the red badge means: an
  * @-mention, or anything unread in a direct message (foundations.md §5).
  */
@@ -290,6 +326,7 @@ export function arrangeChannelSidebar<C extends SidebarChannelLike>(
     titleOf(a).localeCompare(titleOf(b)) ||
     // Deterministic between two rows that show the same title.
     (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  const byOrder = compareChannelOrder(titleOf);
 
   const pinned: C[] = [];
   const rest = sections.map((section) => ({
@@ -312,7 +349,9 @@ export function arrangeChannelSidebar<C extends SidebarChannelLike>(
     channels: C[],
     isPinned: boolean,
   ): ArrangedSidebarSection<C> | null => {
-    const kept = channels.filter((c) => passes(c, isPinned)).sort(byTitle);
+    const kept = channels
+      .filter((c) => passes(c, isPinned))
+      .sort(isPinned ? byTitle : byOrder);
     if (kept.length === 0) return null;
     let unreadCount = 0;
     let mentionCount = 0;

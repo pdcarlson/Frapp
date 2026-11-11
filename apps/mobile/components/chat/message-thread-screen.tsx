@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
+import { messageFlagView } from "@repo/chat-core/flags";
 import { ChatBackground } from "@/components/chat/chat-background";
 import {
   Alert,
@@ -279,6 +280,9 @@ export function MessageThreadScreen({
           onDiscard={thread.discard}
           onReact={NO_REACT}
           onUnreact={NO_REACT}
+          // The parent's flag, and any reply's (#3921), as the channel draws
+          // them, against the same block list.
+          flag={messageFlagView(row.message, viewerId, blockState, nameFor)}
         />
       );
     },

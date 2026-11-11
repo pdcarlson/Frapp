@@ -36,6 +36,7 @@ import {
 } from "@repo/chat-core/message-actions";
 import { setChannelLocked } from "@repo/chat-core/density";
 import type { ChatMessage } from "@repo/chat-core/types";
+import { canFlagMessage } from "@repo/chat-core/flags";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   CHANNEL_LIST_KEY,
@@ -57,7 +58,11 @@ import {
   useRequestChatUploadUrl,
   useSetChannelNotificationLevel,
 } from "@repo/hooks";
-import { can, draftWithMention } from "@repo/validation";
+import {
+  can,
+  draftWithMention,
+  type ChatMessageFlag,
+} from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChatBackground } from "@/components/chat/chat-background";
 import { BlockListNotice } from "@/components/chat/block-list-notice";
@@ -141,6 +146,7 @@ import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { useConnection } from "@/lib/connection/use-connection";
 import { useReportOpenChatTransport } from "@repo/hooks/open-chat-transport";
 import { selectionHaptic } from "@/lib/haptics";
+import { errorCopy } from "@repo/hooks/error-copy";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
 
@@ -290,6 +296,7 @@ function ChannelThreadScreen() {
     edit,
     remove,
     closePoll,
+    flag,
     react,
     unreact,
     act,
@@ -736,6 +743,21 @@ function ChannelThreadScreen() {
     [remove],
   );
 
+  // The sheet's Flag row (#3921). The answer redraws the row; a refusal, a
+  // lost race included, says so here.
+  const handleFlag = useCallback(
+    (messageId: string, next: ChatMessageFlag | null) => {
+      selectionHaptic();
+      flag(messageId, next).catch((error: unknown) => {
+        Alert.alert(
+          next ? "Couldn't flag message" : "Couldn't remove flag",
+          errorCopy(error),
+        );
+      });
+    },
+    [flag],
+  );
+
   // A poll card's Close poll (#3794), asked first like Delete.
   const handleClosePoll = useCallback(
     (messageId: string) => confirmClosePoll(() => closePoll(messageId)),
@@ -886,6 +908,10 @@ function ChannelThreadScreen() {
         sentAt: message.created_at,
         senderInDirectory:
           message.sender_id !== null && isMember(message.sender_id) === true,
+        // Read live in `sheetTarget`; here only whether to offer it (#3921).
+        flag: canFlagMessage(message, viewerId, canManageChannel)
+          ? { current: message.flag ?? null }
+          : undefined,
       });
       actionsSheetRef.current?.present();
     },
@@ -917,6 +943,9 @@ function ChannelThreadScreen() {
         .filter((group) => group.mine)
         .map((group) => group.emoji),
       messageEmojis: groups.map((group) => group.emoji),
+      flag: actionTarget.flag
+        ? { current: current?.flag ?? null }
+        : undefined,
     };
   }, [actionTarget, byId, viewerId]);
 
@@ -1505,6 +1534,7 @@ function ChannelThreadScreen() {
         onMention={handleMention}
         onReact={handleReact}
         onUnreact={handleUnreact}
+        onFlag={handleFlag}
       />
       {/*
         Last, so it is above the header, the thread, the composer and the mute

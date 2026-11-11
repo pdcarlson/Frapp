@@ -182,7 +182,7 @@ That returns **63** rows. The "API only" row of that table is those 63 plus the 
 tables (`members`, `users`, `member_custom_field_values`), which carry
 non-widening policies and are therefore listed there rather than in a row of
 their own — **66**. Counted 2026-11-11 at migration
-`20261111190000`, which added `event_types` (#3730), by adding it to the count at
+`20261111200000`, which added `event_types` (#3730), by adding it to the count at
 `20261111180000`, which added `chapter_document_stars` (#3934); that count adds
 it to the one re-derived 2026-11-11 at `20261111140000`, which added `role_tiers` (#4071).
 `20261111030000` added `chat_message_links` and `chat_link_member_states`
