@@ -39,6 +39,19 @@ export function fillProps(active: boolean | undefined) {
     : { fill: "#FFFFFF", fillOpacity: 0.06 };
 }
 
+/**
+ * A mark a member toggles on a thing (Documents' Star and Pin): solid in its
+ * hue while on, the neutral silhouette while off. The one exception to §1
+ * rule 1's "recolor, never fill", because at 18% an on mark read as the off
+ * outline in another colour (#4289). Path data is unchanged: the same glyph,
+ * filled.
+ */
+export function markFillProps(active: boolean | undefined) {
+  return active
+    ? { fill: "currentColor", fillOpacity: 1 }
+    : fillProps(false);
+}
+
 export const stroke = {
   stroke: "currentColor",
   strokeWidth: 1.6,

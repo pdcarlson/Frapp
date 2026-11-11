@@ -56,6 +56,16 @@ Rules:
 1. A state change **recolors** the glyph (stroke + fill together). It MUST NOT
    swap to a solid-filled variant — solid fills are not part of the duotone
    family.
+   Changed in #4289 by pdcarlson for Shawn, 2026-11-11: one exception, a
+   **mark the member toggles on a thing**, which is Documents' Star and Pin
+   (§6.2.5). While on, its silhouette is solid in its hue; while off, it is
+   the outline. At 16–18% an on star read as the off outline in another
+   colour, so the state rode on colour alone (Shawn: "it should fill in the
+   star. It shouldn't just turn purple"). Same path data, filled, as Google
+   Drive, Gmail and Dropbox draw a star. Web: `markFillProps` in
+   `apps/web/components/ui/duotone.tsx`; mobile: `markPaint` in
+   `apps/mobile/components/documents/document-glyphs.tsx`. Nav glyphs,
+   selection and every other state still recolor only.
 2. Tab bar active state = accent duotone glyph + 700-weight label, on a soft
    capsule (white at 8%) the full height of the pill's row, as iOS 26's own
    bars draw it. Corrected 2026-11-06 with the glass tab pill (owner pick, the
@@ -536,7 +546,7 @@ points — and the events table drew its role-targeting and recurrence markers a
 ### 6.2.5 Resources & Reporting (Signet duotone)
 
 Since the #920 Resources & Reporting slice these families draw Signet
-glyphs (`/polls` was one until #3871 retired it), from the nav set (§1.1) except the stroke-recipe search glyph, chat's re-exported `PinGlyph` and the drawn `StarGlyph` (both #3934). The
+glyphs (`/polls` was one until #3871 retired it), from the nav set (§1.1) except the stroke-recipe search glyph and the drawn `PinGlyph` and `StarGlyph` (both #3934, solid while on since #4289). The
 glyphs live in
 [`apps/web/components/documents/resources-glyphs.tsx`](../../../apps/web/components/documents/resources-glyphs.tsx),
 one file for three screens rather than three files, for the reason §6.2.4 gives:
@@ -550,8 +560,8 @@ button, and the PDF a report exports to.
 | A folder, and the folder filter that names one | `FolderGlyph` |
 | A report, and the control that generates one | `ReportsGlyph` (re-export) |
 | Search, in the `/documents` and `/backwork` toolbars | `SearchGlyph` (re-export) |
-| A folder or file pinned for the whole chapter, and the Pin control (#3934), filled while pinned | `PinGlyph` (re-exported from the chat family, §6.2.2) |
-| A folder or file the member starred for themselves, and the Star control (#3934), filled while starred | `StarGlyph` |
+| A folder or file pinned for the whole chapter, and the Pin control (#3934), solid while pinned (#4289, §1 rule 1's exception) | `PinGlyph` (chat's pin shape, §6.2.2) |
+| A folder or file the member starred for themselves, and the Star control (#3934), solid while starred (#4289) | `StarGlyph` |
 
 **Backwork's copy markers are Lucide, on purpose (2026-11-05).** A backwork row marks which copy a file is with one icon per copy type, from one set and in the row's muted text tone (Paul: "with the copy, keep the icons consistent"): `FileCheck` a student copy, `File` a blank copy, `KeyRound` an answer key, and `Lock` beside any of them for a redacted file (`apps/web/components/backwork/backwork-row-parts.tsx`). They are small inline markers beside a text label, not domain glyphs that stand for a screen, so they stay in the control-furniture set rather than the duotone family; a later pass that draws them in the Signet set changes this paragraph and that file together.
 
@@ -561,9 +571,11 @@ which is §1 rule 1's rule and the two preceding families' practice.
 `FolderGlyph` is not a re-export, because no nav intent covers a folder (the
 sidebar links to Documents as a whole); it draws the nav set's `folder` entry
 (Phosphor `folder`, §1.1) so the folder rail's rows stay one family.
-`PinGlyph` is re-exported from the chat family (§6.2.2), since pinning a
-message, a channel and a document is one idea. `StarGlyph` is drawn here on
-the §1 recipe, because no set entry covers a personal star (#3934). Both
+`PinGlyph` takes chat's pin shape (§6.2.2), since pinning a message, a
+channel and a document is one idea; until #4289 (2026-11-11) it was a
+re-export, and it is drawn here now because a document's pin fills solid
+while chat's keeps the tinted recipe. `StarGlyph` is drawn here, because no
+set entry covers a personal star (#3934). Both
 draw their path data from `MARK_GLYPH_PATHS` (`@repo/theme/nav-glyphs`), which
 mobile's s12 draws too (`apps/mobile/components/documents/document-glyphs.tsx`,
 in the More family's paint), so the two apps keep one pin and one star.
