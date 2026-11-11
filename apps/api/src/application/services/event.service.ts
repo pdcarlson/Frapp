@@ -105,8 +105,8 @@ export class EventService {
   /**
    * The events a member made that have not ended by `endsAfter`, earliest
    * start first, as many as `limit`. Narrowed by the same visibility rule as
-   * the list, so a creator who has since lost a role the event targets (and
-   * holds no `events:update`) does not get it back through this read.
+   * the list: making an event grants no read of it, so a maker it leaves out
+   * who holds no `events:update` does not get it through this read.
    */
   async findCreatedBy(
     chapterId: string,

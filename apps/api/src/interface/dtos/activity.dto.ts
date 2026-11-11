@@ -292,7 +292,7 @@ export class ActivityMadeByYouDto {
   @ApiProperty({
     type: [ActivityEventDto],
     description:
-      'Events the caller made that have not ended, soonest first; a recurring series is one row, its next meeting. Events made before creators were recorded (#3897) are never here.',
+      'Events the caller made that invite them and whose check-in has not closed, soonest first; a recurring series is one row, its next meeting. Events made before creators were recorded (#3897) are never here.',
   })
   events: ActivityEventDto[];
 }

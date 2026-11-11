@@ -1,8 +1,8 @@
 -- Events record who made them (#3897, step 4 of the Activity series).
 --
--- spec/behavior/activity.md § Made by you owns the rule: the Activity page
--- lists the upcoming events a member made, so they can find one again to
--- edit it. Nothing recorded an event's creator before this; the creator's id
+-- spec/behavior/events.md § Event Creation owns the column; the Activity
+-- page (spec/behavior/activity.md) lists the upcoming events a member made
+-- from it. Nothing recorded an event's creator before this; the creator's id
 -- went to the announcement and was never stored.
 --
 -- Additive only:

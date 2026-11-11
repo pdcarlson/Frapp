@@ -59,6 +59,60 @@ describe('EventService', () => {
       others_invited: false,
     };
 
+    describe('findCreatedBy', () => {
+      it('reads only the maker’s events, from the given end, capped', async () => {
+        mockEventRepo.findCreatedBy.mockResolvedValue([baseEvent]);
+
+        const result = await service.findCreatedBy(
+          'ch-1',
+          'user-1',
+          '2026-11-11T00:00:00.000Z',
+          200,
+        );
+
+        expect(mockEventRepo.findCreatedBy).toHaveBeenCalledWith(
+          'ch-1',
+          'user-1',
+          '2026-11-11T00:00:00.000Z',
+          200,
+        );
+        expect(result).toEqual([baseEvent]);
+      });
+
+      it('drops an event that leaves its maker out: making it grants no read of it', async () => {
+        mockEventRepo.findCreatedBy.mockResolvedValue([
+          baseEvent,
+          targetedEvent,
+        ]);
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue({
+          role_ids: ['role-member'],
+        });
+
+        const result = await service.findCreatedBy(
+          'ch-1',
+          'user-1',
+          '2026-11-11T00:00:00.000Z',
+          200,
+        );
+
+        expect(result).toEqual([baseEvent]);
+      });
+
+      it('keeps it for a maker holding events:update', async () => {
+        mockEventRepo.findCreatedBy.mockResolvedValue([targetedEvent]);
+        mockRbacService.memberHasAnyPermission.mockResolvedValue(true);
+
+        const result = await service.findCreatedBy(
+          'ch-1',
+          'user-1',
+          '2026-11-11T00:00:00.000Z',
+          200,
+        );
+
+        expect(result).toEqual([targetedEvent]);
+      });
+    });
+
     describe('findByChapter', () => {
       it('omits nothing when no viewerId is supplied (internal callers)', async () => {
         mockEventRepo.findByChapter.mockResolvedValue([

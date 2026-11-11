@@ -230,7 +230,7 @@ function EventSheet({
       <CardActions>
         <CardButton
           label="Open event"
-          accessibilityHint="Opens the event's page, where officers can edit it."
+          accessibilityHint="Opens the event's page."
           onPress={() => {
             onNavigate();
             // Object form: the shape `lib/routes.spec.ts` matches when a

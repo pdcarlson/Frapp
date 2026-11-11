@@ -797,17 +797,51 @@ describe('ActivityService', () => {
   });
 
   describe('events made by you', () => {
-    it('reads the caller’s own events that have not ended, through the visibility-checked read', async () => {
+    it('reads the caller’s own events whose check-in has not closed, through the visibility-checked read', async () => {
       const { service, eventService } = build();
 
       await service.getActivity(CHAPTER, ME, null);
 
+      // The check-in grace behind now: an event that ended ten minutes ago
+      // is still in Coming up, so it stays here too.
       expect(eventService.findCreatedBy).toHaveBeenCalledWith(
         CHAPTER,
         ME,
-        NOW.toISOString(),
+        iso(-15 * 60 * 1000),
         200,
       );
+    });
+
+    it('keeps an event that has just ended while its check-in is still open', async () => {
+      const { service, eventService } = build();
+      eventService.findCreatedBy.mockResolvedValue([
+        event({
+          id: 'just-ended',
+          start_time: iso(-HOUR),
+          end_time: iso(-5 * 60 * 1000),
+          created_by: ME,
+        }),
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.made_by_you.events.map((row) => row.id)).toEqual([
+        'just-ended',
+      ]);
+    });
+
+    it('reads the caller’s member row and alumni status once for both event sections', async () => {
+      const { service, eventService, memberRepo, rbacService } = build();
+      const mine = event({ id: 'mine', created_by: ME });
+      eventService.findByChapter.mockResolvedValue([mine]);
+      eventService.findCreatedBy.mockResolvedValue([mine]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.coming_up).toHaveLength(1);
+      expect(view.made_by_you.events).toHaveLength(1);
+      expect(memberRepo.findByUserAndChapter).toHaveBeenCalledTimes(1);
+      expect(rbacService.isAlumni).toHaveBeenCalledTimes(1);
     });
 
     it('lists them soonest first, one row per recurring series, and counts none of them as waiting', async () => {
@@ -851,7 +885,7 @@ describe('ActivityService', () => {
       expect(view.needs_you_count).toBe(0);
     });
 
-    it('lists the caller’s event even when it does not invite them, with no check-in offered', async () => {
+    it('leaves out the caller’s event when it does not invite them, since its card would offer a check-in the server refuses', async () => {
       const { service, eventService, attendanceRepo } = build();
       eventService.findCreatedBy.mockResolvedValue([
         event({
@@ -866,14 +900,7 @@ describe('ActivityService', () => {
 
       const view = await service.getActivity(CHAPTER, ME, null);
 
-      expect(view.made_by_you.events).toEqual([
-        expect.objectContaining({
-          id: 'not-for-me',
-          attendance: 'optional',
-          check_in_open: false,
-          checked_in: null,
-        }),
-      ]);
+      expect(view.made_by_you.events).toEqual([]);
       expect(attendanceRepo.findByEventAndUser).not.toHaveBeenCalled();
       expect(view.needs_you_count).toBe(0);
     });

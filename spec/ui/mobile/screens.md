@@ -52,7 +52,7 @@ Supporting routes with no drawn Canvas screen: `(app)/invite.tsx` — Invite mem
 - **Reached from the More hub**, whose Activity row carries the count of things waiting on the member ([`navigation.md` § More hub](navigation.md#more-hub-s09)). It goes back to More.
 - **A row opens a tall sheet drawn with chat's own card** (`components/activity/activity-sheet.tsx` over `components/chat/{task,event,poll,hours}-card.tsx`), the sheet [`patterns.md` § Bottom sheets](patterns.md#bottom-sheets) gives a whole record. The sheet stays open after an action, a review included, so the member sees the result; the list is read again when it closes.
 - **A poll's Open in chat opens the channel**, not the message: the phone's thread has no jump to one message.
-- **An event's Open event opens its event details screen**, where an officer edits it.
+- **An event's Open event opens its event details screen**, where a member with `events:update` edits it.
 - **Approve and Reject sit under a pending service entry's card.** This sheet is the phone's only place to review hours. Reject asks first with the platform's alert and sends no comment, since that alert has no text field on Android; a comment is still web's.
 - **A document row opens Documents. A backwork row opens nothing**, because the phone has no Backwork screen.
 - **A refusal is a line under the card**, since the phone has no toast.
