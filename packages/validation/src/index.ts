@@ -702,10 +702,12 @@ export type {
 export {
   can,
   canAll,
+  canAllOfAny,
   canAny,
   CHAPTER_PROFILE_PERMISSIONS,
   CHAT_REPORT_QUEUE_PERMISSIONS,
   EVENT_CREATE_PERMISSIONS,
+  MEMBER_JOINED_AUDIENCE,
   memberAccessRoleIds,
   removesMemberAccess,
   WILDCARD_PERMISSION,

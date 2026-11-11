@@ -166,6 +166,14 @@ export class UpdateChannelDto {
   @ValidateIf((_object, value) => value !== undefined)
   @IsStrictBoolean()
   is_default?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      "Leave out of Activity (#3897): sign-up links posted here never reach anyone's Activity page, for channels like #advertising whose links aren't chapter business. Refused as `true` on a DM or group DM.",
+  })
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsStrictBoolean()
+  activity_excluded?: boolean;
 }
 
 export class CreateDmDto {
@@ -825,7 +833,7 @@ export class ChatMessageDto {
     nullable: true,
     required: false,
     description:
-      '`users.id` of everyone mentioned, resolved server-side at send time. Null on a masked row: a mention overrides a per-channel mute, so leaving it would let a blocked member keep poking the blocker through a masked row.',
+      "`users.id` of everyone mentioned, plus a reply's quoted author, resolved server-side at send time. Null on a masked row: a mention overrides a per-channel mute, so leaving it would let a blocked member keep poking the blocker through a masked row.",
   })
   mentions?: string[] | null;
 

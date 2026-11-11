@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ActivityRow } from "./activity-rows";
+import type { ActivityRow } from "@repo/hooks";
 
 const mockActivity = vi.fn();
 const mockInvalidate = vi.fn();
@@ -9,8 +9,10 @@ const mockNetwork = vi.fn(() => ({ isOffline: false }));
 vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/hooks")>();
   return {
-    TASK_STATUS_LABELS: actual.TASK_STATUS_LABELS,
-    TASK_CONFIRMED_LABEL: actual.TASK_CONFIRMED_LABEL,
+    // The row model is the real one (`activityGroups` and its tables).
+    ACTIVITY_FILTERS: actual.ACTIVITY_FILTERS,
+    ACTIVITY_SECTION_NAMES: actual.ACTIVITY_SECTION_NAMES,
+    activityGroups: actual.activityGroups,
     activityKeys: actual.activityKeys,
     useActiveChapterId: () => "chap-1",
     useActivity: () => mockActivity(),
@@ -102,6 +104,7 @@ const data = (overrides: Record<string, unknown> = {}) => ({
         created_at: "2026-11-01T00:00:00.000Z",
       },
     ],
+    events: [],
   },
   needs_you_count: 2,
   unavailable: [],

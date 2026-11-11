@@ -40,6 +40,7 @@ export const baseEvent: Event = {
   check_in_zone: null,
   check_in_zone_name: null,
   check_in_opens_minutes: 10,
+  created_by: null,
   created_at: '2026-02-26T00:00:00.000Z',
 };
 
@@ -47,6 +48,7 @@ export async function createEventServiceFixture() {
   const mockEventRepo: jest.Mocked<IEventRepository> = {
     findById: jest.fn(),
     findByChapter: jest.fn(),
+    findCreatedBy: jest.fn(),
     findChildren: jest.fn().mockResolvedValue([]),
     create: jest.fn(),
     // Echoes the rows back with ids, as the real insert's `select()` does.

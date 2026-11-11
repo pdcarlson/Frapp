@@ -47,6 +47,7 @@ import {
   assertHttpsJoinOrigin,
   chapterTextMark,
   dedupeEmails,
+  MEMBER_JOINED_AUDIENCE,
 } from '@repo/validation';
 import { orgHidingGreekLettersIn } from '@repo/org-archetypes';
 import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
@@ -182,18 +183,6 @@ async function mapWithConcurrency<T, R>(
   );
   return results;
 }
-
-/**
- * Who is told a member joined (#3656): whoever can open the roster the push
- * links to (`MemberController` requires `members:view` throughout) and can act
- * on the join, by inviting more people or by giving the new member a role
- * (`PATCH /v1/members/:id/roles` requires `roles:manage`). Any one of these
- * sets admits a member; the wildcard admits all.
- */
-export const MEMBER_JOINED_AUDIENCE: readonly (readonly string[])[] = [
-  [SystemPermissions.MEMBERS_VIEW, SystemPermissions.MEMBERS_INVITE],
-  [SystemPermissions.MEMBERS_VIEW, SystemPermissions.ROLES_MANAGE],
-];
 
 @Injectable()
 export class InviteService {
@@ -716,9 +705,8 @@ export class InviteService {
       // Named, and not sent to the member who just joined: "A new member has
       // joined the chapter" told everyone nothing, the joiner included
       // (notifications.md § What a push says). Sent only to the members who
-      // can act on a join (#3656): a chapter onboarding at once would
-      // otherwise push every member once per join, on a category with no
-      // switch.
+      // can act on a join (#3656), on the `members` category, whose switch
+      // `@repo/validation` shows to exactly this audience (#4008).
       const [holders, joiner] = await Promise.all([
         this.rbac.findUserIdsWithAnyPermissions(
           invite.chapter_id,
@@ -740,7 +728,7 @@ export class InviteService {
             title: name ? `${name} joined` : 'A new member joined',
             body: 'New member of the chapter',
             priority: 'NORMAL',
-            category: 'admin',
+            category: 'members',
             data: { target: { screen: 'members' } },
           },
         );

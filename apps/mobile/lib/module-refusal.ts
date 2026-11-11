@@ -54,6 +54,9 @@ export const MODULE_REFUSAL_COPY = {
   /** `POST /v1/service-entries` (s20), under `@RequireModule('hours')`. */
   serviceHours:
     "Service hours are turned off for your chapter right now, so new hours can't be logged. An officer can turn service hours back on.",
+  /** `PATCH /v1/service-entries/:id/review`, the Activity sheet (#3897). */
+  serviceReview:
+    "Service hours are turned off for your chapter right now, so hours can't be reviewed. An officer can turn service hours back on.",
   /** s21's two writes, under `@RequireModule('documents')` (#3399). */
   document:
     "Documents are turned off for your chapter right now, so new documents can't be uploaded. An officer can turn documents back on.",

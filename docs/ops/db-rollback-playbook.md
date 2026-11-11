@@ -770,7 +770,7 @@ After any rollback event:
 ## Rollback the private presence topics
 * **Migration**: `20260906203000_realtime_presence_private.sql`
 * **Action**: Drop the INSERT policy and recreate the SELECT policy with the three original arms only — re-run the `create policy "realtime_messages_scoped_select"` block from `20260816140000_realtime_carrier_repair.sql` after `drop policy if exists "realtime_messages_scoped_select" on realtime.messages; drop policy if exists "realtime_messages_scoped_insert" on realtime.messages;`. `can_read_chat_channel` and the delegating `can_read_chat_message` can stay (same semantics as before); to remove them too, recreate `can_read_chat_message` from `20260827190000_secdef_search_path_pg_temp.sql` first, then `drop function public.can_read_chat_channel(uuid)`.
-* **Note**: Function/policy-only, no data. **Order matters in reverse too:** the web Directory, chat-core (web and mobile chat) and the push worker all join their topics with `private: true` since the same change, so rolling the database back while those clients are live makes every presence channel — including every chat channel's live message delivery, which shares the topic — join, report `SUBSCRIBED` and deliver nothing: the silent failure the migration's header describes. Take the clients back to public channels first with a forward revert (`use-chapter-presence.ts`, `packages/chat-core/src/realtime-manager.ts`, `chat-push-worker.service.ts`, and the two spec pins) and ship it, then ship the database rollback as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)). A mobile build cannot be rolled back on a member's phone, so a database-only rollback breaks chat for every installed mobile build until they update.
+* **Note**: Function/policy-only, no data. **Order matters in reverse too:** the web Directory, chat-core (web and mobile chat) and the push worker all join their topics with `private: true` since the same change, so rolling the database back while those clients are live makes every presence channel — including every chat channel's live message delivery, which shares the topic — join, report `SUBSCRIBED` and deliver nothing: the silent failure the migration's header describes. Take the clients back to public channels first with a forward revert (`packages/hooks/src/use-chapter-presence.ts`, which web and the phone share since #3917, `packages/chat-core/src/realtime-manager.ts`, `chat-push-worker.service.ts`, and the two spec pins) and ship it, then ship the database rollback as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)). A mobile build cannot be rolled back on a member's phone, so a database-only rollback breaks chat for every installed mobile build until they update.
 
 ## Rollback `idx_audit_log_chapter_action_created_at`
 
@@ -3397,3 +3397,46 @@ One nullable column on `users`, `whats_new_seen_version` (#4043). Nothing existi
 ```sql
 alter table public.users drop column if exists whats_new_seen_version;
 ```
+
+## Rollback Events record their maker (20261111020000)
+
+* **Migration**: `20261111020000_events_created_by.sql`
+
+One column on `events`, `created_by`, its `events_created_by_fk` foreign key, and the partial index `events_chapter_created_by_start_idx`. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API never writes the column and returns it as a plain field (`select('*')`) that clients ignore; Activity's "Made by you" loses its events with the code that reads them.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. Dropping the column loses who made each event since this shipped; nothing else depends on it:
+
+```sql
+drop index if exists public.events_chapter_created_by_start_idx;
+alter table public.events
+  drop constraint if exists events_created_by_fk,
+  drop column if exists created_by;
+```
+
+## Rollback Links on Activity (20261111030000)
+
+* **Migration**: `20261111030000_activity_links.sql`
+
+`chat_channels.activity_excluded`, the function `activity_action_links`, the tables `chat_message_links` and `chat_link_member_states`, and the triggers `chat_messages_index_links` / `chat_messages_reindex_links` with their function, and `anonymize_user` redefined to also delete `chat_link_member_states`. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API never reads the tables or the column. The triggers keep indexing, which costs a little on each message with a sign-up link and harms nothing; drop them if that is not wanted:
+
+```sql
+drop trigger if exists chat_messages_index_links on public.chat_messages;
+drop trigger if exists chat_messages_reindex_links on public.chat_messages;
+```
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses every member's Done and Hide, officers' removals and which channels were left out of Activity. First redefine `anonymize_user` without its `chat_link_member_states` delete (the `20261110220000_chat_message_threads.sql` body), or account deletion fails once the table is gone:
+
+```sql
+drop trigger if exists chat_messages_index_links on public.chat_messages;
+drop trigger if exists chat_messages_reindex_links on public.chat_messages;
+drop function if exists public.chat_messages_index_links();
+drop table if exists public.chat_link_member_states;
+drop table if exists public.chat_message_links;
+drop function if exists public.activity_action_links(text);
+alter table public.chat_channels drop column if exists activity_excluded;
+```
+

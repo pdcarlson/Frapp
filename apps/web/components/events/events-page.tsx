@@ -1,7 +1,14 @@
 "use client";
 
 import { describeLoadFailure } from "@repo/hooks/error-copy";
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import {
+  Suspense,
+  useCallback,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+import { OpenLinkedEvent } from "./open-linked-event";
 import { ChevronDown, ListFilter, Plus } from "lucide-react";
 import {
   RolesGlyph,
@@ -499,7 +506,10 @@ export function EventsPage() {
           ? [
               {
                 eventId: toSend[index]!,
-                message: getErrorMessage(result.reason, "Try again in a moment."),
+                message: getErrorMessage(
+                  result.reason,
+                  "Try again in a moment.",
+                ),
               },
             ]
           : [],
@@ -1060,6 +1070,16 @@ export function EventsPage() {
           onCreateOnDay={openCreate}
         />
       )}
+
+      {/* `/events?event=<id>` opens that event's sheet (`eventDeepLink`). In its
+          own boundary: it reads the URL, which must not hold back the page. */}
+      <Suspense fallback={null}>
+        <OpenLinkedEvent
+          events={events}
+          idOf={eventIdOf}
+          onOpen={openDetails}
+        />
+      </Suspense>
 
       <EventDetailSheet
         open={detailSheetOpen}

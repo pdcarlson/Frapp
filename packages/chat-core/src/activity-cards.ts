@@ -13,6 +13,8 @@
  *
  * Zero React deps, so web and mobile hand the result to their own card.
  */
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { readMessageActions } from "./history";
 import {
   normalizeRow,
   type ChatMessage,
@@ -141,4 +143,29 @@ export function activityPollMessage(
     ...normalizeRow(message),
     actions: actions.filter((action) => action.message_id === message.id),
   };
+}
+
+/** How often an open poll's votes are re-read while its card is on screen. */
+export const ACTIVITY_POLL_VOTES_REFRESH_MS = 15_000;
+
+/**
+ * One poll's votes, for a card drawn outside its thread. Chat keeps a poll's
+ * votes current through the channel's live subscription, which the Activity
+ * page does not hold, so it reads them itself: `chat_message_actions` for
+ * this one message, under the member's own session (the table's read policy
+ * is the channel-access rule, so a poll the member cannot read returns no
+ * votes), through chat's own paged read.
+ *
+ * Throws on a partial set: a tally drawn from one would be wrong, so to the
+ * card it is a failed read.
+ */
+export async function readActivityPollVotes(
+  supabase: SupabaseClient,
+  messageId: string,
+): Promise<RawChatMessageAction[]> {
+  const { actions, incomplete } = await readMessageActions(supabase, [
+    messageId,
+  ]);
+  if (incomplete) throw new Error("Couldn't read this poll's votes");
+  return actions;
 }

@@ -15,9 +15,9 @@ import type { OwnStatus } from "@repo/hooks/member-status";
  * dot and the status sheet show. The rules (expiry, end times, the end-time
  * timer) are shared with web through `@repo/hooks`.
  *
- * The phone publishes no chapter presence (`spec/behavior/chat/README.md`
- * § Online/offline presence), so unlike web nothing is held back while the
- * status is unknown.
+ * It is also what the phone publishes on chapter presence (#3917,
+ * `lib/presence/chapter-presence.ts`), which, as on web, publishes nothing
+ * while the status is unknown, so a saved Invisible never flashes Online.
  */
 
 /**
@@ -33,11 +33,24 @@ export const STATUS_RESYNC_MS = 60 * 1000;
  * status, so the sheet stays usable: a save is a separate request and may
  * well succeed, and the next re-read corrects the answer.
  */
-export function useOwnStatus(): OwnStatus | null {
-  const { data, isError } = useUserSettings();
+/** A failed read's stand-in: no settings, so automatic Online. */
+const NO_SETTINGS = {};
+
+export function useOwnStatus(options?: {
+  enabled?: boolean;
+  /**
+   * Answer `null`, not Online, when the read failed. Presence passes it: the
+   * phone keeps no last-seen status the way web's browser does, so a member
+   * who saved Invisible would otherwise be published Online during an API
+   * outage (#3917). Until a read succeeds the phone publishes nothing.
+   */
+  unknownOnError?: boolean;
+}): OwnStatus | null {
+  const { data, isError } = useUserSettings({ enabled: options?.enabled });
+  const fallback = options?.unknownOnError ? null : NO_SETTINGS;
   const source = useMemo(
-    () => (data !== undefined ? data : isError ? {} : null),
-    [data, isError],
+    () => (data !== undefined ? data : isError ? fallback : null),
+    [data, isError, fallback],
   );
   return useOwnStatusAt(source);
 }
@@ -50,7 +63,8 @@ export function useOwnStatus(): OwnStatus | null {
  * to the foreground: one fired then lands on the dead sockets iOS leaves a
  * resumed app, which `lib/connection/query-connectivity.ts` (#3747) holds
  * every other refetch back from; the next tick is at most a minute away.
- * Mount once, where the ME button lives.
+ * Mounted once, app-wide, by the presence runtime
+ * (`lib/presence/chapter-presence.ts`), which publishes the status.
  */
 export function useOwnStatusSync() {
   const queryClient = useQueryClient();

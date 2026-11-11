@@ -27,6 +27,7 @@ import type { ChatChannel, ChatMessage } from '#domain/entities/chat.entity';
 import { ReportedMessageGrant } from './channel-access.service';
 import type { ChatMessageReportView } from '#domain/entities/chat-moderation.entity';
 import { BLOCKED_MESSAGE_CONTENT } from './chat-block-mask';
+import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
 
 describe('ChatService', () => {
   let service: ChatService;
@@ -304,6 +305,38 @@ describe('ChatService', () => {
       expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
         name: 'renamed',
       });
+    });
+
+    describe('Leave out of Activity (#3897)', () => {
+      it('saves it on a chapter channel', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockChannelRepo.update.mockResolvedValue({
+          ...baseChannel,
+          activity_excluded: true,
+        });
+
+        await service.updateChannel('chan-1', 'ch-1', {
+          activity_excluded: true,
+        });
+
+        expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
+          activity_excluded: true,
+        });
+      });
+
+      it.each(['DM', 'GROUP_DM'] as const)(
+        'refuses it on a %s, which has no officer',
+        async (type) => {
+          mockChannelRepo.findById.mockResolvedValue({ ...baseChannel, type });
+
+          await expect(
+            service.updateChannel('chan-1', 'ch-1', {
+              activity_excluded: true,
+            }),
+          ).rejects.toThrow("A DM or group DM can't be left out of Activity");
+          expect(mockChannelRepo.update).not.toHaveBeenCalled();
+        },
+      );
     });
 
     describe('the audit log channel (#3909)', () => {
@@ -4115,6 +4148,116 @@ describe('ChatService', () => {
         'msg-1',
         expect.objectContaining({ mentions: [] }),
       );
+    });
+
+    // #3844: a reply pings the author it quotes, as an @mention does.
+    describe('a reply counts as a mention of the quoted author', () => {
+      const quoted = (overrides: Partial<ChatMessage> = {}): ChatMessage => ({
+        ...baseMessage,
+        id: 'msg-quoted',
+        sender_id: 'user-2',
+        ...overrides,
+      });
+      const reply = (content = 'agreed') =>
+        service.sendMessage({
+          channel_id: 'ch-chan-1',
+          chapter_id: 'ch-1',
+          sender_id: 'user-1',
+          content,
+          reply_to_id: 'msg-quoted',
+        });
+      const stored = () =>
+        mockMessageRepo.create.mock.calls.at(-1)?.[0]?.mentions;
+      // The reply being edited, and what the quoted message reads as now.
+      const editReply = async (
+        previousMentions: string[],
+        quotedNow: ChatMessage | Error,
+        content = 'agreed, edited',
+      ) => {
+        mockMessageRepo.findById.mockImplementation((id: string) =>
+          id === 'msg-quoted'
+            ? quotedNow instanceof Error
+              ? Promise.reject(quotedNow)
+              : Promise.resolve(quotedNow)
+            : Promise.resolve({
+                ...baseMessage,
+                reply_to_id: 'msg-quoted',
+                mentions: previousMentions,
+              }),
+        );
+        mockMessageRepo.update.mockResolvedValue(baseMessage);
+        await service.editMessage('msg-1', 'ch-1', 'user-1', content);
+        return mockMessageRepo.update.mock.calls.at(-1)?.[1]?.mentions;
+      };
+
+      beforeEach(() => {
+        seedRoster();
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+      });
+
+      it('adds the quoted author to mentions', async () => {
+        mockMessageRepo.findById.mockResolvedValue(quoted());
+        await reply();
+        expect(stored()).toEqual(['user-2']);
+      });
+
+      it('lists the author once when the reply also @mentions them', async () => {
+        mockMessageRepo.findById.mockResolvedValue(quoted());
+        await reply('@janedoe agreed');
+        expect(stored()).toEqual(['user-2']);
+      });
+
+      it.each([
+        ['a reply to yourself', { sender_id: 'user-1' }],
+        ['a row with no linked member', { sender_id: null }],
+        ['a system row', { sender_id: SYSTEM_SENDER_ID }],
+        ['a deleted message', { is_deleted: true }],
+      ] as Array<[string, Partial<ChatMessage>]>)(
+        'pings nobody for %s',
+        async (_label, overrides) => {
+          mockMessageRepo.findById.mockResolvedValue(quoted(overrides));
+          await reply();
+          expect(stored()).toEqual([]);
+        },
+      );
+
+      it('pings through a block, as a typed @mention does', async () => {
+        // Dropping the author would show the replier `mentions: []` where
+        // every other reply shows the author: a "who blocked me" oracle.
+        // Delivery applies blocks instead (push worker, unread counts).
+        mockChatBlocks.listBlockedUserIds.mockResolvedValue(['user-2']);
+        mockMessageRepo.findById.mockResolvedValue(quoted());
+        await reply();
+        expect(stored()).toEqual(['user-2']);
+      });
+
+      it('keeps the ping through an edit', async () => {
+        await expect(editReply(['user-2'], quoted())).resolves.toEqual([
+          'user-2',
+        ]);
+      });
+
+      it('keeps it even after the quoted message is deleted', async () => {
+        await expect(
+          editReply(['user-2'], quoted({ is_deleted: true })),
+        ).resolves.toEqual(['user-2']);
+      });
+
+      it('does not add a ping the send never stored', async () => {
+        await expect(editReply([], quoted())).resolves.toEqual([]);
+      });
+
+      it('keeps the stored mentions when the quoted message cannot be read', async () => {
+        await expect(
+          editReply(['user-2'], new Error('pg down')),
+        ).resolves.toEqual(['user-2']);
+      });
+
+      it('still drops a body mention the edit removed', async () => {
+        await expect(
+          editReply(['user-3', 'user-2'], quoted(), 'never mind'),
+        ).resolves.toEqual(['user-2']);
+      });
     });
 
     it('still sends when the directory lookup fails', async () => {

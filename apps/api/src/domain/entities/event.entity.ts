@@ -48,5 +48,11 @@ export interface Event {
    * `checkInWindowBounds` in `@repo/validation`.
    */
   check_in_opens_minutes: number;
+  /**
+   * Who made the event: the caller of `POST /v1/events`, copied onto a
+   * series' generated occurrences. `null` for events made before it was
+   * recorded (#3897) and for rows written outside that route.
+   */
+  created_by: string | null;
   created_at: string;
 }

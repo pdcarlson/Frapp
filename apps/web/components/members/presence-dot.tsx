@@ -1,9 +1,7 @@
 "use client";
 
-import {
-  presenceStatusKind,
-  type PresenceStatus,
-} from "@/lib/realtime/presence-status";
+import type { PresenceStatus } from "@repo/hooks/presence-status";
+import { presenceStatusKind } from "@/lib/realtime/presence-status";
 
 /**
  * The presence dot pinned to a member's avatar: Online, Idle, Do Not Disturb,

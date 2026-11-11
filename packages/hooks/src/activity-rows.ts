@@ -1,5 +1,5 @@
 import type { components } from "@repo/api-sdk";
-import { TASK_CONFIRMED_LABEL, TASK_STATUS_LABELS } from "@repo/hooks";
+import { TASK_CONFIRMED_LABEL, TASK_STATUS_LABELS } from "./task-card";
 import {
   formatDueLabel,
   formatMinutesRounded,
@@ -26,14 +26,20 @@ export const ACTIVITY_FILTERS = [
 export type ActivityFilter = (typeof ACTIVITY_FILTERS)[number]["value"];
 export type ActivityKind = Exclude<ActivityFilter, "all">;
 
-type BadgeVariant = "outline" | "success" | "warning" | "destructive";
+/**
+ * A row badge's tone. `outline` is quiet metadata that must not read as a
+ * status; the others are the semantic status colours. Web hands it to
+ * `Badge` as its variant; the phone maps it to a status hue.
+ */
+export type ActivityBadgeVariant =
+  "outline" | "success" | "warning" | "destructive";
 
 interface RowBase {
   /** Unique on the page: the same task can sit under two groups. */
   key: string;
   title: string;
   detail: string;
-  badge: { label: string; variant: BadgeVariant } | null;
+  badge: { label: string; variant: ActivityBadgeVariant } | null;
 }
 
 /** One row of the page: what it shows, and the record it opens. */
@@ -57,12 +63,14 @@ export interface ActivityGroup {
 }
 
 /** A name for a section the read could not load, for "Couldn't load …". */
-export const SECTION_NAMES: Record<ActivitySection, string> = {
+export const ACTIVITY_SECTION_NAMES: Record<ActivitySection, string> = {
   tasks: "tasks",
   hours_approvals: "hours waiting for approval",
   polls: "polls",
   coming_up: "events",
   files: "files",
+  made_events: "events you made",
+  links: "links",
 };
 
 function channelLabel(poll: ActivityPoll): string {
@@ -150,11 +158,11 @@ function hoursRow(entry: ActivityHours): ActivityRow {
   };
 }
 
-function eventRow(event: ActivityEvent): ActivityRow {
+function eventRow(event: ActivityEvent, group: string): ActivityRow {
   const needsCheckIn = event.check_in_open && !event.checked_in;
   return {
     kind: "event",
-    key: `event:${event.id}`,
+    key: `${group}:event:${event.id}`,
     event,
     title: event.name,
     detail: [formatRelativeDayTime(event.start_time), event.location]
@@ -219,7 +227,7 @@ export function activityGroups(
       label: "Needs you",
       empty: "Nothing is waiting on you.",
       rows: keep([
-        ...checkInNow.map(eventRow),
+        ...checkInNow.map((event) => eventRow(event, "needs")),
         ...activity.needs_you.tasks.map((task) =>
           taskRow(task, "needs", "mine"),
         ),
@@ -238,24 +246,25 @@ export function activityGroups(
       id: "coming-up",
       label: "Coming up",
       empty: "No events in the next two weeks.",
-      rows: keep(later.map(eventRow)),
+      rows: keep(later.map((event) => eventRow(event, "coming"))),
       unavailable: downFor(["coming_up"], ["event"]),
     },
     {
       id: "made-by-you",
       label: "Made by you",
       empty:
-        "Polls you post, tasks you assign and files you upload show up here.",
+        "Polls you post, events you make, tasks you assign and files you upload show up here.",
       rows: keep([
         ...activity.made_by_you.polls.map((poll) => pollRow(poll, "made")),
+        ...activity.made_by_you.events.map((event) => eventRow(event, "made")),
         ...activity.made_by_you.tasks.map((task) =>
           taskRow(task, "made", "assigned"),
         ),
         ...activity.made_by_you.files.map(fileRow),
       ]),
       unavailable: downFor(
-        ["polls", "tasks", "files"],
-        ["poll", "task", "file"],
+        ["polls", "made_events", "tasks", "files"],
+        ["poll", "event", "task", "file"],
       ),
     },
   ];

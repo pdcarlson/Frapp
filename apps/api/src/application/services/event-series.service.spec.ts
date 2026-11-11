@@ -218,6 +218,29 @@ describe('EventSeriesService', () => {
       }
     });
 
+    it("gives every occurrence the series' maker (#3897)", async () => {
+      const weekly: Event = {
+        ...baseEvent,
+        recurrence_rule: 'WEEKLY',
+        created_by: 'user-maker',
+      };
+      mockEventRepo.create.mockResolvedValue(weekly);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        name: 'Chapter Meeting',
+        start_time: baseEvent.start_time,
+        end_time: baseEvent.end_time,
+        recurrence_rule: 'WEEKLY',
+        created_by: 'user-maker',
+      });
+
+      expect(occurrenceRows(mockEventRepo)).toHaveLength(12);
+      for (const call of occurrenceRows(mockEventRepo)) {
+        expect(call.created_by).toBe('user-maker');
+      }
+    });
+
     it('generated occurrences inherit the parent attendance by role', async () => {
       // Without this every date after the first would read the column
       // defaults: an officers-only series open to the whole chapter.

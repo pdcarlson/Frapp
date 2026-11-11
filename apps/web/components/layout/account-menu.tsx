@@ -42,7 +42,7 @@ import {
   type MemberStatus,
   type OwnStatus,
 } from "@repo/hooks/member-status";
-import { presenceLabel } from "@/lib/realtime/presence-status";
+import { presenceLabel } from "@repo/hooks/presence-status";
 import { useOwnStatus, useSaveOwnStatus } from "@/lib/realtime/use-own-status";
 import { signOutCurrentSession } from "@/lib/auth/session";
 import { useWhatsNewUnread } from "@/lib/whats-new";

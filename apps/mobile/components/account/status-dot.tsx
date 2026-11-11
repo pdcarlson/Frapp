@@ -1,16 +1,18 @@
 import { StyleSheet, View } from "react-native";
-import type { MemberStatus } from "@repo/hooks/member-status";
+import type { PresenceStatus } from "@repo/hooks/presence-status";
 import { SignetTokens } from "@repo/theme/signet";
 import { useFrappTheme } from "@/lib/theme";
 
 /**
- * A picked status's dot (#3845), drawn the way web draws it so a member reads
- * the same mark on both apps. Every status differs by shape as well as color:
+ * A status dot (#3845, #3917), drawn the way web draws it so a member reads
+ * the same mark on both apps: a member's picked status, or what chapter
+ * presence says about them. Every status differs by shape as well as color:
  *
  * - Online: a green fill.
  * - Idle: an amber ring.
  * - Do Not Disturb: a red fill with a dark bar across it.
  * - Invisible: a grey ring, which only the member themselves ever sees.
+ * - Offline: a faint grey fill (web's `bg-muted-foreground/40`).
  *
  * Decorative: whatever renders it names the status (the ME button's value,
  * the sheet row's label). `ring` paints a border in the surface behind the
@@ -22,7 +24,7 @@ export function StatusDot({
   ring,
   testID,
 }: {
-  status: MemberStatus;
+  status: PresenceStatus;
   size?: number;
   ring?: string;
   testID?: string;
@@ -48,6 +50,7 @@ export function StatusDot({
           ringed ? styles.ring : null,
           status === "idle" ? styles.idle : null,
           status === "invisible" ? styles.invisible : null,
+          status === "offline" ? styles.offline : null,
         ]}
       >
         {status === "dnd" ? <View style={styles.bar} /> : null}
@@ -77,6 +80,10 @@ function createStyles(tokens: SignetTokens, size: number) {
     },
     idle: { borderColor: tokens.color.semantic.warning },
     invisible: { borderColor: tokens.color.text.mutedForeground },
+    offline: {
+      backgroundColor: tokens.color.text.mutedForeground,
+      opacity: 0.4,
+    },
     // 6 by 2 on the 10pt dot, the proportion web, Discord and Slack draw.
     bar: {
       width: Math.round(size * 0.6),

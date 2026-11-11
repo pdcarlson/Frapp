@@ -258,9 +258,10 @@ describe("Settings switches", () => {
       (node) => (node.type as unknown) === "Switch",
     );
 
-    // Push, quiet hours, then one per notification category.
+    // Push, quiet hours, then one per notification category this member is
+    // shown (no permissions here, so not the officers' join switch).
     expect(pushSwitches(tree)).toHaveLength(1);
-    expect(switches).toHaveLength(2 + NOTIFICATION_CATEGORIES.length);
+    expect(switches).toHaveLength(2 + NOTIFICATION_CATEGORIES.length - 1);
     for (const node of switches) {
       expect(node.props.trackColor.true).toBe("#8E4EC6");
       expect(node.props.activeThumbColor).toBe("#FFFFFF");
@@ -279,12 +280,21 @@ describe("Settings switches", () => {
  */
 describe("Settings copy", () => {
   it("draws the category switches with their labels only", () => {
+    state.permissions = ["*"];
     const text = screenText(render());
 
     for (const category of NOTIFICATION_CATEGORIES) {
       expect(text).toContain(category.label);
       expect(text).not.toContain(category.description);
     }
+  });
+
+  // #4008: only the members sent "<Name> joined" get a switch for it.
+  it("draws the join switch only for officers who are told about joins", () => {
+    expect(screenText(render())).not.toContain("Someone joins the chapter");
+
+    state.permissions = ["members:view", "members:invite"];
+    expect(screenText(render())).toContain("Someone joins the chapter");
   });
 
   it("draws no Billing switch while dues is beta-off", () => {
@@ -480,26 +490,29 @@ describe("Settings push switch", () => {
   it.each([
     [true, "allowed"],
     [false, "denied"],
-  ])("records the OS answer (%s) as push-prompt-answered from settings", async (granted, answer) => {
-    state.getPushPermission = async () => ({
-      granted: false,
-      canAskAgain: true,
-      status: "undetermined",
-    });
-    state.requestPushPermission.mockResolvedValue(granted);
-    const track = vi.fn();
-    const tree = render(track);
-    await settle();
+  ])(
+    "records the OS answer (%s) as push-prompt-answered from settings",
+    async (granted, answer) => {
+      state.getPushPermission = async () => ({
+        granted: false,
+        canAskAgain: true,
+        status: "undetermined",
+      });
+      state.requestPushPermission.mockResolvedValue(granted);
+      const track = vi.fn();
+      const tree = render(track);
+      await settle();
 
-    act(() => pushSwitch(tree).props.onValueChange(true));
-    await settle();
+      act(() => pushSwitch(tree).props.onValueChange(true));
+      await settle();
 
-    expect(track).toHaveBeenCalledTimes(1);
-    expect(track).toHaveBeenCalledWith("push-prompt-answered", {
-      answer,
-      surface: "settings",
-    });
-  });
+      expect(track).toHaveBeenCalledTimes(1);
+      expect(track).toHaveBeenCalledWith("push-prompt-answered", {
+        answer,
+        surface: "settings",
+      });
+    },
+  );
 
   it("stays off after the member denies the OS prompt, and says where to turn it on", async () => {
     let asked = false;
