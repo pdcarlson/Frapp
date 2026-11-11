@@ -107,7 +107,7 @@ Read the matching skill before deep work. Skills live in [`.claude/skills/`](.cl
 - Reviewing and verifying: `diff-review` (the pre-push gate; [runbook](docs/ci-cd/ai-code-review-runbook.md)), `audit`, `infrastructure-research`, `live-verification` (deployed staging only, never production).
 - Tracker and sessions: `file-follow-up`, `needs-me`, `handoff`, `coordinator` (a standing chat that routes Paul's input to worker sessions and keeps the shared board).
 - Multi-agent work: `multi-agent` (budget, effort and mechanics for any Workflow or subagent fan-out).
-- The three scheduled routines, 1 to 3: `beta-watch`, `board-sweep` (runs `pr-followups`, `issue-curator`, `issue-triage` as phases), `weekly-upkeep` (alternates `docs-upkeep` and `hygiene-scan`) ([`routines.md`](docs/ci-cd/routines.md)).
+- The three scheduled routines, 1 to 3: `beta-watch`, `board-sweep` (runs `pr-followups`, `issue-curator`, `issue-triage` as phases), `weekly-upkeep` (`hygiene-scan` weekly, `docs-upkeep` on the month's first Wednesday) ([`routines.md`](docs/ci-cd/routines.md)).
 
 Long sessions degrade. Offer `/handoff` when context is filling or a task is ending, written as orientation for the next session, not instructions. Where the session has the suggested-task tool, the offer can be a card ([Operating mindset](#operating-mindset)).
 
