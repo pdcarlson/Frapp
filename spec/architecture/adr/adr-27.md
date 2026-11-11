@@ -53,7 +53,7 @@
    - The switcher is a rail on web and a sheet on mobile, and it navigates to `/c/<slug>`. Because a choice made there is explicit, it also writes `active_chapter_id`.
    - The tenant layout (`app/c/[slug]/layout.tsx`) owns everything keyed to one tenant: the query cache, realtime subscriptions and the chat shell's state. It is keyed on the chapter id.
    - **A switch can be a soft navigation once step 4 lands.** Because the URL carries the context and the tenant layout is keyed on the chapter id, a remount drops the query cache and tears down realtime with no reload. Rollout step 2 keeps today's full page load until a test proves no module-level singleton outlives the remount; step 4 then switches to the soft navigation. Microsoft Teams reloads the whole app on every org switch, which is what this avoids.
-   - **Unread counts span every space.** A per-user `GET /v1/me/unread` (auth only, scoped to the caller's own memberships) returns counts per tenant for the switcher's mention dot, and one per-user realtime channel keeps them live. A tab doesn't subscribe to every space it isn't showing.
+   - **Unread counts span every space.** A per-user `GET /v1/me/unread` (auth only, scoped to the caller's own memberships) returns counts per tenant for the switcher's mention dot, and one per-user realtime channel keeps them live. A tab doesn't subscribe to every space it isn't showing. The response also carries one campus entry, computed from the school tables and `campus_read_state` rather than per tenant; the campus spaces design (#4276) owns it.
 
 **Rollout steps** (each its own PR or short series; none ships a UI change before step 2):
 
