@@ -1,4 +1,5 @@
 import {
+  ActivityGlyph,
   BackworkGlyph,
   BillingGlyph,
   ChatGlyph,
@@ -152,6 +153,18 @@ export const DASHBOARD_NAV: NavSection[] = [
     id: "chapter",
     label: "Chapter",
     items: [
+      {
+        // What is waiting on the viewer and what they made, gathered from
+        // the modules below (#3897). It leads the group because it is the
+        // inbox for the rest of it. No `module`: the page spans modules, and
+        // its read leaves out any that are off. No permission either: the
+        // read needs `members:view`, which every member role holds.
+        id: "activity",
+        label: "Activity",
+        icon: ActivityGlyph,
+        href: "/activity",
+        description: "What needs you, and what you made.",
+      },
       {
         id: "events",
         label: "Events",

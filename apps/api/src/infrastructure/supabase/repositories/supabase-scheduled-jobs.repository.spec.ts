@@ -319,7 +319,7 @@ describe('SupabaseScheduledJobsRepository', () => {
       );
 
       expect(supabase.builder.select).toHaveBeenCalledWith(
-        'id, channel_id, expires_at:metadata->>expires_at, chat_channels!inner(chapter_id)',
+        'id, channel_id, expires_at:metadata->>expires_at, chat_channels!chat_messages_channel_id_fkey!inner(chapter_id)',
       );
     });
 

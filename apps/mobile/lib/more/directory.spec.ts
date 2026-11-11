@@ -23,8 +23,100 @@ describe("selectDirectoryRows", () => {
         initials: "MR",
         meta: "MechE · '27",
         avatarUrl: null,
+        pledgeClassId: null,
+        orderNumber: null,
       },
     ]);
+  });
+
+  describe("pledge class and fraternal order (#3939)", () => {
+    const CLASS_NAMES = new Map([
+      ["pc-alpha", "Alpha"],
+      ["pc-beta", "Beta"],
+    ]);
+    const MEMBERS = [
+      { id: "m-1", user_id: "u-1", display_name: "Zoe Adams", pledge_class_id: "pc-alpha", order_number: 2, graduation_year: 2027 },
+      { id: "m-2", user_id: "u-2", display_name: "Andre Silva", pledge_class_id: "pc-beta", order_number: 1 },
+      { id: "m-3", user_id: "u-3", display_name: "Marcus Reid", pledge_class_id: "pc-alpha", order_number: 1 },
+      { id: "m-4", user_id: "u-4", display_name: "Ben Ortiz" },
+      { id: "m-5", user_id: "u-5", display_name: "Cal Young", pledge_class_id: "pc-alpha" },
+      { id: "m-6", user_id: "u-6", display_name: "Dev Patel", order_number: 40 },
+    ];
+
+    it("leads a member's meta line with their class when its name is known", () => {
+      const rows = selectDirectoryRows(MEMBERS, { classNames: CLASS_NAMES });
+      const zoe = rows.find((row) => row.userId === "u-1");
+      expect(zoe?.meta).toBe("Alpha · '27");
+      expect(zoe?.pledgeClassId).toBe("pc-alpha");
+      expect(zoe?.orderNumber).toBe(2);
+      // No class, so nothing stands in for one.
+      expect(rows.find((row) => row.userId === "u-4")?.meta).toBeNull();
+    });
+
+    it("names no class without the chapter's list, or for a class it doesn't hold", () => {
+      expect(
+        selectDirectoryRows(MEMBERS).find((row) => row.userId === "u-1")?.meta,
+      ).toBe("'27");
+      expect(
+        selectDirectoryRows(MEMBERS, {
+          classNames: new Map([["pc-beta", "Beta"]]),
+        }).find((row) => row.userId === "u-1")?.meta,
+      ).toBe("'27");
+    });
+
+    it("stays alphabetical unless asked for fraternal order", () => {
+      expect(
+        selectDirectoryRows(MEMBERS, { classNames: CLASS_NAMES }).map(
+          (row) => row.displayName,
+        ),
+      ).toEqual([
+        "Andre Silva",
+        "Ben Ortiz",
+        "Cal Young",
+        "Dev Patel",
+        "Marcus Reid",
+        "Zoe Adams",
+      ]);
+    });
+
+    it("lists oldest class first, then number, then the class-less by number, then the rest by name", () => {
+      expect(
+        selectDirectoryRows(MEMBERS, {
+          classNames: CLASS_NAMES,
+          fraternalOrder: [{ id: "pc-alpha" }, { id: "pc-beta" }],
+        }).map((row) => row.displayName),
+      ).toEqual([
+        "Marcus Reid", // Alpha 1
+        "Zoe Adams", // Alpha 2
+        "Cal Young", // Alpha, no number
+        "Andre Silva", // Beta 1
+        "Dev Patel", // no class, number 40
+        "Ben Ortiz", // neither
+      ]);
+    });
+
+    // The commonest setup: classes, and nobody numbered. Each class then
+    // reads by the name its rows show.
+    it("breaks a tie on the name the row shows", () => {
+      expect(
+        selectDirectoryRows(
+          [
+            { id: "m-1", user_id: "u-1", display_name: "Zoe Adams", pledge_class_id: "pc-alpha" },
+            { id: "m-2", user_id: "u-2", display_name: "Andre Silva", pledge_class_id: "pc-alpha" },
+            { id: "m-3", user_id: "u-3", display_name: "Marcus Reid", pledge_class_id: "pc-alpha" },
+          ],
+          { fraternalOrder: [{ id: "pc-alpha" }] },
+        ).map((row) => row.displayName),
+      ).toEqual(["Andre Silva", "Marcus Reid", "Zoe Adams"]);
+    });
+
+    it("follows the chapter's class order, not the names'", () => {
+      expect(
+        selectDirectoryRows(MEMBERS, {
+          fraternalOrder: [{ id: "pc-beta" }, { id: "pc-alpha" }],
+        })[0]?.displayName,
+      ).toBe("Andre Silva");
+    });
   });
 
   it("sorts by display name so the list is scannable", () => {

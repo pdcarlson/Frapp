@@ -14,10 +14,7 @@ import { RATE_LIMITED_COPY, type ChatActionContext } from "./chat-client";
 import type { KeyValueStore, OutboxStore } from "./adapters";
 import { chatMessagesKey, type ChannelCache, type ChatMessage } from "./types";
 import { selectMessages, mergeServerRow } from "./cache";
-import {
-  mergePersistedNotices,
-  readNotices,
-} from "./heavy-command-notices";
+import { mergePersistedNotices, readNotices } from "./heavy-command-notices";
 import { emptyCache } from "./cache";
 import { memoryStore } from "./test/memory-store";
 import { stubOutbox } from "./test/outbox-stub";
@@ -89,13 +86,11 @@ function dispatchGrant(ctx: ChatActionContext) {
 
 describe("dispatchPoints — card_posted (#544)", () => {
   it("leaves the placeholder for the Realtime echo when the card posted", async () => {
-    const post = vi
-      .fn()
-      .mockResolvedValue({
-        data: { card_posted: true },
-        error: null,
-        response: { status: 200 },
-      });
+    const post = vi.fn().mockResolvedValue({
+      data: { card_posted: true },
+      error: null,
+      response: { status: 200 },
+    });
     const ctx = buildCtx(post);
 
     const result = await dispatchGrant(ctx);
@@ -107,13 +102,11 @@ describe("dispatchPoints — card_posted (#544)", () => {
   });
 
   it("keeps a recorded row and warns when the card did not post", async () => {
-    const post = vi
-      .fn()
-      .mockResolvedValue({
-        data: { card_posted: false },
-        error: null,
-        response: { status: 200 },
-      });
+    const post = vi.fn().mockResolvedValue({
+      data: { card_posted: false },
+      error: null,
+      response: { status: 200 },
+    });
     const kv = memoryStore();
     const ctx = buildCtx(post, kv);
 
@@ -140,13 +133,11 @@ describe("dispatchPoints — card_posted (#544)", () => {
   // toast it destructively and invite a retry, and a retry writes a SECOND
   // ledger row — the grant already committed.
   it("does not report the committed grant as a failure", async () => {
-    const post = vi
-      .fn()
-      .mockResolvedValue({
-        data: { card_posted: false },
-        error: null,
-        response: { status: 200 },
-      });
+    const post = vi.fn().mockResolvedValue({
+      data: { card_posted: false },
+      error: null,
+      response: { status: 200 },
+    });
 
     const result = await dispatchGrant(buildCtx(post));
 
@@ -551,13 +542,11 @@ describe("dispatchPoints — replay refusals and resolution (#1733 review)", () 
 
   // A 2xx whose body did not parse is a SUCCESS, not a lost response.
   it("does not call a bodyless 2xx unconfirmed", async () => {
-    const post = vi
-      .fn()
-      .mockResolvedValue({
-        data: undefined,
-        error: null,
-        response: { status: 204 },
-      });
+    const post = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: null,
+      response: { status: 204 },
+    });
     const ctx = buildCtx(post);
 
     const result = await dispatchGrant(ctx);
@@ -980,7 +969,9 @@ function describeCreateCardPosted(
       expect(result).toEqual({
         ok: false,
         error: copy.fourXxMessage,
-        ...(copy.lostResponse ? { cause: { message: copy.fourXxMessage } } : {}),
+        ...(copy.lostResponse
+          ? { cause: { message: copy.fourXxMessage } }
+          : {}),
       });
       expect(placeholderCount(ctx)).toBe(0);
     });
@@ -1025,13 +1016,17 @@ function describeCreateCardPosted(
   });
 }
 
-describeCreateCardPosted("dispatchTask — card_posted (#1717)", dispatchTaskCmd, {
-  recordedVerb: /created/i,
-  fourXxMessage: "nope",
-  gatewayError: /Couldn't create task/i,
-  transportError: "Couldn't reach the tasks service",
-  lostResponse: /Couldn't confirm the task was created/,
-});
+describeCreateCardPosted(
+  "dispatchTask — card_posted (#1717)",
+  dispatchTaskCmd,
+  {
+    recordedVerb: /created/i,
+    fourXxMessage: "nope",
+    gatewayError: /Couldn't create task/i,
+    transportError: "Couldn't reach the tasks service",
+    lostResponse: /Couldn't confirm the task was created/,
+  },
+);
 
 describeCreateCardPosted(
   "dispatchEvent — card_posted (#1717)",
@@ -1209,9 +1204,7 @@ describe("dispatchPoll / dispatchAnnounce — sendMessage faults (#1718)", () =>
     async (which) => {
       const post = postingApi();
       const outbox = stubOutbox({
-        clearDraft: vi
-          .fn()
-          .mockRejectedValue(new Error("DatabaseClosedError")),
+        clearDraft: vi.fn().mockRejectedValue(new Error("DatabaseClosedError")),
       });
       const ctx = buildSimpleCtx(post, outbox);
 

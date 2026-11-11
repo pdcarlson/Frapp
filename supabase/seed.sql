@@ -26,7 +26,8 @@ Default system roles seeded on chapter creation:
    permissions: ['members:view', 'polls:view_all']
 
 5. Member (is_system: true, display_order: 5)
-   permissions: ['members:view', 'backwork:upload', 'service:log', 'polls:create']
+   permissions: ['members:view', 'backwork:upload', 'service:log', 'polls:create',
+                 'rush:view', 'rush:add', 'rush:notes', 'rush:vote', 'rush:view_results', 'rush:bid']
 
 6. New Member (is_system: true, display_order: 6)
    permissions: ['members:view', 'backwork:upload']

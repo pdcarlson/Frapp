@@ -5,7 +5,9 @@ don't have to look through channels and module pages to find it (#3897). It is a
 chat, not a home: chat stays the first screen ([`../product/surfaces.md`](../product/surfaces.md)).
 
 This file owns the read behind the page, `GET /v1/activity`. The page itself (where it sits, how
-a row opens chat's own card to act in place) is added to `spec/ui/` with the screens.
+a row opens chat's own card to act in place) is
+[`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity) on web; the
+phone's screen is added with it.
 
 Not to be confused with two other things that use the word:
 

@@ -133,6 +133,45 @@ export async function readMessageRows(
 }
 
 /**
+ * Every `chat_message_actions` row for `messageIds`, read under the member's
+ * own session (the table's read policy is the channel-access rule), in
+ * batches of {@link ACTION_READ_LIMIT} until the count is reached.
+ *
+ * `incomplete` is set when a batch fails or rows moved under the read, so the
+ * caller can decide what a partial set is worth: a tally drawn from it would
+ * be wrong, and nothing here guesses. Shared by the history pages below and
+ * by a surface that draws one card outside its thread (the Activity page).
+ */
+export async function readMessageActions(
+  supabase: SupabaseClient,
+  messageIds: readonly string[],
+): Promise<{ actions: RawChatMessageAction[]; incomplete: boolean }> {
+  const actions: RawChatMessageAction[] = [];
+  if (messageIds.length === 0) return { actions, incomplete: false };
+  for (;;) {
+    const {
+      data: batch,
+      error,
+      count,
+    } = await supabase
+      .from("chat_message_actions")
+      .select("*", { count: "exact" })
+      .in("message_id", [...messageIds])
+      .order("id")
+      .range(actions.length, actions.length + ACTION_READ_LIMIT - 1);
+    if (error) return { actions, incomplete: true };
+    const got = (batch ?? []) as RawChatMessageAction[];
+    actions.push(...got);
+    // Done once the count is reached. A batch that adds nothing while the
+    // count says more exist means rows moved under the read; say so rather
+    // than loop.
+    if (typeof count !== "number" || actions.length >= count) break;
+    if (got.length === 0) return { actions, incomplete: true };
+  }
+  return { actions, incomplete: false };
+}
+
+/**
  * The one way a client reads a page with its actions: `readMessageRows`, then a
  * single batched select on `chat_message_actions`, so reactions and poll
  * tallies are on the first paint rather than appearing only after a live
@@ -159,27 +198,11 @@ export function createHistoryPageFetcher(
     const rows = await readMessageRows(apiClient, channelId, query);
     const messageIds = rows.map((row) => row.id).filter(Boolean);
     if (!supabase || messageIds.length === 0) return { rows, actions: [] };
-    const actions: RawChatMessageAction[] = [];
-    for (;;) {
-      const {
-        data: batch,
-        error,
-        count,
-      } = await supabase
-        .from("chat_message_actions")
-        .select("*", { count: "exact" })
-        .in("message_id", messageIds)
-        .order("id")
-        .range(actions.length, actions.length + ACTION_READ_LIMIT - 1);
-      if (error) return { rows, actions, actionsIncomplete: true };
-      const got = (batch ?? []) as RawChatMessageAction[];
-      actions.push(...got);
-      // Done once the count is reached. A batch that adds nothing while the
-      // count says more exist means rows moved under the read; say so rather
-      // than loop.
-      if (typeof count !== "number" || actions.length >= count) break;
-      if (got.length === 0) return { rows, actions, actionsIncomplete: true };
-    }
+    const { actions, incomplete } = await readMessageActions(
+      supabase,
+      messageIds,
+    );
+    if (incomplete) return { rows, actions, actionsIncomplete: true };
     return { rows, actions };
   };
 }

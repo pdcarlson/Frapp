@@ -11,6 +11,7 @@ import {
 } from '@supabase/supabase-js';
 import { Test, TestingModule } from '@nestjs/testing';
 import { SupabaseAuthGuard } from './supabase-auth.guard';
+import { AuthRejectedException } from './auth-rejected.exception';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 
 describe('SupabaseAuthGuard', () => {
@@ -69,6 +70,83 @@ describe('SupabaseAuthGuard', () => {
     });
     const ctx = mockExecutionContext({ authorization: 'Bearer bad-token' });
     await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
+  });
+
+  describe('names its 401 (#3907)', () => {
+    /** An unsigned JWT-shaped token whose payload carries only `exp`. */
+    function tokenExpiringAt(expSeconds: number): string {
+      const payload = Buffer.from(JSON.stringify({ exp: expSeconds })).toString(
+        'base64url',
+      );
+      return `e30.${payload}.sig`;
+    }
+
+    async function refusal(
+      headers: Record<string, string>,
+    ): Promise<AuthRejectedException> {
+      const thrown: unknown = await guard
+        .canActivate(mockExecutionContext(headers))
+        .catch((error: unknown) => error);
+      expect(thrown).toBeInstanceOf(AuthRejectedException);
+      return thrown as AuthRejectedException;
+    }
+
+    it.each([
+      ['no header', {}],
+      ['a non-Bearer header', { authorization: 'Basic abc123' }],
+    ])('says no_bearer for %s', async (_label, headers) => {
+      const { detail } = await refusal(headers);
+      expect(detail).toEqual({ reason: 'no_bearer' });
+      expect(mockGetUser).not.toHaveBeenCalled();
+    });
+
+    it('says token_rejected with Auth code and expiry for a stale token', async () => {
+      mockGetUser.mockResolvedValue({
+        data: { user: null },
+        error: new AuthApiError('JWT expired', 403, 'bad_jwt'),
+      });
+      const stale = tokenExpiringAt(Math.floor(Date.now() / 1000) - 60);
+
+      const error = await refusal({ authorization: `Bearer ${stale}` });
+      expect(error.detail).toEqual({
+        reason: 'token_rejected',
+        authErrorCode: 'bad_jwt',
+        tokenExpired: true,
+      });
+      expect(error.getResponse()).toMatchObject({
+        message: 'Invalid or expired token',
+      });
+      expect(JSON.stringify(error.detail)).not.toContain(stale);
+    });
+
+    it('marks an unexpired refused token as not expired', async () => {
+      mockGetUser.mockResolvedValue({
+        data: { user: null },
+        error: new AuthApiError('Session not found', 403, 'session_not_found'),
+      });
+      const live = tokenExpiringAt(Math.floor(Date.now() / 1000) + 600);
+
+      const { detail } = await refusal({ authorization: `Bearer ${live}` });
+      expect(detail).toEqual({
+        reason: 'token_rejected',
+        authErrorCode: 'session_not_found',
+        tokenExpired: false,
+      });
+    });
+
+    it('drops an unreadable token expiry and a free-text error code', async () => {
+      const error = Object.assign(new Error('nope'), {
+        code: 'Not A Code <script>',
+      });
+      mockGetUser.mockResolvedValue({ data: { user: null }, error });
+
+      const { detail } = await refusal({ authorization: 'Bearer bad-token' });
+      expect(detail).toEqual({
+        reason: 'token_rejected',
+        authErrorCode: undefined,
+        tokenExpired: undefined,
+      });
+    });
   });
 
   it('should set supabaseUser on request when token is valid', async () => {

@@ -46,7 +46,10 @@ describe("filterSlashCommands", () => {
   });
 
   it("excludes commands whose required module is disabled", () => {
-    const result = filterSlashCommands("", (moduleKey) => moduleKey !== "events");
+    const result = filterSlashCommands(
+      "",
+      (moduleKey) => moduleKey !== "events",
+    );
     expect(result.some((command) => command.name === "event")).toBe(false);
     // announce has no requiredModule, so it survives every module gate.
     expect(result.some((command) => command.name === "announce")).toBe(true);
@@ -54,7 +57,9 @@ describe("filterSlashCommands", () => {
 
   it("always includes commands with a null requiredModule regardless of gating", () => {
     const result = filterSlashCommands("", noneEnabled);
-    expect(result.every((command) => command.requiredModule === null)).toBe(true);
+    expect(result.every((command) => command.requiredModule === null)).toBe(
+      true,
+    );
     expect(result.some((command) => command.name === "announce")).toBe(true);
   });
 
@@ -87,7 +92,10 @@ describe("filterSlashCommands", () => {
 
   it("applies module gating before the query filter, not instead of it", () => {
     // "event" matches the query but its module is disabled.
-    const result = filterSlashCommands("event", (moduleKey) => moduleKey !== "events");
+    const result = filterSlashCommands(
+      "event",
+      (moduleKey) => moduleKey !== "events",
+    );
     expect(result).toEqual([]);
   });
 

@@ -35,6 +35,7 @@ export const PERMISSION_MODULES = [
   { key: "points", label: "Points" },
   { key: "hours", label: "Service hours" },
   { key: "polls", label: "Polls" },
+  { key: "rush", label: "Recruitment" },
   { key: "backwork", label: "Backwork" },
   { key: "documents", label: "Documents" },
   { key: "geofences", label: "Study zones" },
@@ -207,6 +208,49 @@ export const PERMISSION_REGISTRY: readonly PermissionDefinition[] = [
   ),
 
   chapterPermission(
+    "rush:view",
+    "rush",
+    "See prospects",
+    "Look up a prospect and see their bid status.",
+  ),
+  chapterPermission(
+    "rush:add",
+    "rush",
+    "Add prospects",
+    "Add a prospect to the chapter's recruitment list.",
+  ),
+  chapterPermission(
+    "rush:notes",
+    "rush",
+    "Write notes on prospects",
+    "Write notes on a prospect for other members to read.",
+  ),
+  chapterPermission(
+    "rush:vote",
+    "rush",
+    "Vote on prospects",
+    "Cast a vote on a prospect.",
+  ),
+  chapterPermission(
+    "rush:view_results",
+    "rush",
+    "See vote results",
+    "See how many votes a prospect has.",
+  ),
+  chapterPermission(
+    "rush:bid",
+    "rush",
+    "Record bids",
+    "Record that the chapter extended a bid to a prospect.",
+  ),
+  chapterPermission(
+    "rush:manage",
+    "rush",
+    "Manage recruitment",
+    "Delete prospects and export the recruitment list.",
+  ),
+
+  chapterPermission(
     "backwork:upload",
     "backwork",
     "Upload backwork",
@@ -267,6 +311,23 @@ const BY_PERMISSION: ReadonlyMap<string, PermissionDefinition> = new Map(
 const MODULE_LABELS: ReadonlyMap<string, string> = new Map(
   PERMISSION_MODULES.map((module) => [module.key, module.label]),
 );
+
+/**
+ * The recruitment permissions a role needs to do what any member could do
+ * before recruitment had permissions of its own (#4070): look a prospect up,
+ * add one, write notes, vote, see the count and record a bid. The seeded
+ * Member role holds them, and migration
+ * `20261111010000_rush_permissions_backfill.sql` carries the same six for
+ * existing roles. `rush:manage` is left out: nobody could delete or export.
+ */
+export const RUSH_MEMBER_PERMISSIONS = [
+  "rush:view",
+  "rush:add",
+  "rush:notes",
+  "rush:vote",
+  "rush:view_results",
+  "rush:bid",
+] as const;
 
 /** The registry entry for a permission string, if it is a system one. */
 export function permissionDefinition(

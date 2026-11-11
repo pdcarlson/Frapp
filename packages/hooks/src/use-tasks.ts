@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { useChapterScope } from "./chapter-scope";
 
 /**
  * Query keys for this module.
@@ -327,6 +328,8 @@ function invalidateTask(
 export function useTasks() {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
+  // No chapter-scoped read without a chapter to scope it to (#4094).
+  const scope = useChapterScope();
   return useQuery({
     queryKey: taskKeys.lists(chapterId),
     queryFn: async () => {
@@ -335,6 +338,7 @@ export function useTasks() {
       return data;
     },
     staleTime: 30_000,
+    enabled: scope === "chapter",
   });
 }
 

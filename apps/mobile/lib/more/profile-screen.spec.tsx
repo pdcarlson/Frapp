@@ -34,6 +34,19 @@ const LOADED_USER = {
 };
 // Swapped by the back-row specs for s15's loading and error states.
 let currentUser: Record<string, unknown> = LOADED_USER;
+// The viewer's own member profile and the chapter's class list (#3939).
+let membership: Record<string, unknown> | undefined;
+let pledgeClasses: { id: string; name: string }[] | undefined = [];
+let vocabulary: Record<string, string> | undefined;
+let permissions: string[] = ["members:view"];
+const useMemberByUserId = vi.fn((userId: string) => ({
+  data: userId ? membership : undefined,
+}));
+const usePledgeClasses = vi.fn((options?: { enabled?: boolean }) =>
+  options?.enabled === false || pledgeClasses === undefined
+    ? { data: undefined, isPending: true, isSuccess: false }
+    : { data: pledgeClasses, isPending: false, isSuccess: true },
+);
 const useServiceEntries = vi.fn<(...args: unknown[]) => unknown>(() => ({
   data: [],
   isPending: false,
@@ -49,6 +62,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useMyPoints: () => ({ data: undefined, isPending: true, isError: false }),
   useServiceEntries: (...args: unknown[]) => useServiceEntries(...args),
   useUpdateUser: () => ({ mutate: vi.fn(), isPending: false }),
+  useMemberByUserId: (userId: string) => useMemberByUserId(userId),
+  usePermissionList: () => permissions,
+  usePledgeClasses: (options?: { enabled?: boolean }) =>
+    usePledgeClasses(options),
+  useCurrentChapter: () => ({ data: vocabulary ? { vocabulary } : undefined }),
 }));
 
 vi.mock("@/lib/auth-session", () => ({
@@ -238,6 +256,96 @@ describe("Profile stat cards and Details", () => {
       "Company",
     ]);
     for (const row of rows) expect(row.props.variant).toBe("detail");
+    tree.unmount();
+  });
+});
+
+/**
+ * #3939. Canvas draws a Pledge class row on s15; its source is the viewer's
+ * member profile. Read-only, and drawn only when an officer has set it.
+ */
+describe("Profile pledge class and order number (#3939)", () => {
+  beforeEach(() => {
+    // An earlier suite leaves the viewer unknown.
+    viewerUserId = "user-1";
+  });
+
+  afterEach(() => {
+    membership = undefined;
+    pledgeClasses = [];
+    vocabulary = undefined;
+    permissions = ["members:view"];
+    usePledgeClasses.mockClear();
+    useMemberByUserId.mockClear();
+  });
+
+  function detailRows(tree: ReactTestRenderer) {
+    return tree.root
+      .findAllByType(ListRow)
+      .map((row) => [row.props.label, row.props.value]);
+  }
+
+  it("draws the class and the number after Graduation, in the chapter's words", () => {
+    membership = { user_id: "user-1", pledge_class_id: "pc-1", order_number: 14 };
+    pledgeClasses = [{ id: "pc-1", name: "Alpha" }];
+    const tree = render();
+
+    expect(detailRows(tree).slice(2, 5)).toEqual([
+      ["Graduation", "Not set"],
+      ["Pledge class", "Alpha"],
+      ["Fraternal order", "14"],
+    ]);
+    tree.unmount();
+  });
+
+  it("labels both rows with the chapter's own words, as typed", () => {
+    membership = { user_id: "user-1", pledge_class_id: "pc-1", order_number: 14 };
+    pledgeClasses = [{ id: "pc-1", name: "Alpha" }];
+    vocabulary = { class: "Line", order: "line number" };
+    const tree = render();
+
+    expect(detailRows(tree).slice(3, 5)).toEqual([
+      ["Line", "Alpha"],
+      ["line number", "14"],
+    ]);
+    tree.unmount();
+  });
+
+  it("says Loading for the class until the chapter's list answers", () => {
+    membership = { user_id: "user-1", pledge_class_id: "pc-1", order_number: null };
+    pledgeClasses = undefined;
+    const tree = render();
+
+    expect(detailRows(tree)[3]).toEqual(["Pledge class", "Loading"]);
+    tree.unmount();
+  });
+
+  // Both reads take `members:view`; without it neither is sent.
+  it("asks for neither read, and draws neither row, without members:view", () => {
+    membership = { user_id: "user-1", pledge_class_id: "pc-1", order_number: 14 };
+    permissions = [];
+    const tree = render();
+
+    expect(useMemberByUserId).toHaveBeenLastCalledWith("");
+    expect(usePledgeClasses).toHaveBeenLastCalledWith({ enabled: false });
+    expect(detailRows(tree).map(([label]) => label)).not.toContain(
+      "Pledge class",
+    );
+    tree.unmount();
+  });
+
+  it("draws neither, and reads no class list, for a member with none set", () => {
+    membership = { user_id: "user-1", pledge_class_id: null, order_number: null };
+    const tree = render();
+
+    expect(detailRows(tree).map(([label]) => label)).toEqual([
+      "Email",
+      "Major",
+      "Graduation",
+      "City",
+      "Company",
+    ]);
+    expect(usePledgeClasses).toHaveBeenLastCalledWith({ enabled: false });
     tree.unmount();
   });
 });

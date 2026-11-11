@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { fraternalOrderComparator } from "./fraternal-order";
+import { fraternalOrderComparator, usesFraternalOrder } from "./fraternal-order";
 
 const CLASSES = [{ id: "alpha" }, { id: "beta" }];
 
@@ -61,6 +61,14 @@ describe("fraternalOrderComparator", () => {
     ).toEqual(["Al", "bob", "Cy"]);
   });
 
+  test("a member with no name sorts by the label their row shows, not as blank", () => {
+    const comparator = fraternalOrderComparator(CLASSES);
+    const unnamed = { display_name: "  ", user_id: "zzz99999-0000", pledge_class_id: null, order_number: null };
+    expect(
+      [unnamed, member("Aaron", null, null)].sort(comparator)[0],
+    ).toMatchObject({ display_name: "Aaron" });
+  });
+
   test("a class the list doesn't hold sorts as no class", () => {
     expect(
       sorted([member("Stale 1", "deleted", 1), member("Beta 5", "beta", 5)]),
@@ -74,5 +82,24 @@ describe("fraternalOrderComparator", () => {
         .sort(comparator)
         .map((entry) => entry.display_name),
     ).toEqual(["B", "A"]);
+  });
+});
+
+describe("usesFraternalOrder", () => {
+  test("false for a chapter with no classes and no numbers", () => {
+    expect(usesFraternalOrder([], [member("A", null, null)])).toBe(false);
+    expect(usesFraternalOrder(undefined, undefined)).toBe(false);
+  });
+
+  test("true once the chapter has a class, even with nobody in it", () => {
+    expect(usesFraternalOrder(CLASSES, [member("A", null, null)])).toBe(true);
+  });
+
+  test("true when a member holds a class the list doesn't show yet", () => {
+    expect(usesFraternalOrder([], [member("A", "alpha", null)])).toBe(true);
+  });
+
+  test("true for a chapter that keeps only a chapter-wide number", () => {
+    expect(usesFraternalOrder([], [member("A", null, 12)])).toBe(true);
   });
 });

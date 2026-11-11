@@ -78,7 +78,11 @@ describe("heavy-command notices — recorded (#1789)", () => {
     );
     cache = mergeServerRow(cache, cardEcho());
     expect(locateRow(cache, "cm-1")).toBe("confirmed");
-    mergePersistedNotices(cache, { channelId: "chan-1", viewerId: "user-1", kv });
+    mergePersistedNotices(cache, {
+      channelId: "chan-1",
+      viewerId: "user-1",
+      kv,
+    });
     expect(readNotices("chan-1", "user-1", kv)).toEqual([]);
   });
 
@@ -94,7 +98,10 @@ describe("heavy-command notices — recorded (#1789)", () => {
   // Display-only, so no age bound: it is the trace that says not to re-run.
   test("restores a recorded row however old it is", () => {
     const kv = memoryStore();
-    persistNotice(recordedNotice({ createdAt: "2020-01-01T00:00:00.000Z" }), kv);
+    persistNotice(
+      recordedNotice({ createdAt: "2020-01-01T00:00:00.000Z" }),
+      kv,
+    );
     expect(restore(kv).byId["cm-1"]?._status).toBe("recorded");
   });
 });
@@ -181,11 +188,14 @@ describe("heavy-command notices — unconfirmed (#1909)", () => {
   test("drops an unconfirmed entry once its card is confirmed", () => {
     const kv = memoryStore();
     persistNotice(unconfirmedNotice(), kv);
-    const merged = mergePersistedNotices(mergeServerRow(emptyCache(), cardEcho()), {
-      channelId: "chan-1",
-      viewerId: "user-1",
-      kv,
-    });
+    const merged = mergePersistedNotices(
+      mergeServerRow(emptyCache(), cardEcho()),
+      {
+        channelId: "chan-1",
+        viewerId: "user-1",
+        kv,
+      },
+    );
     expect(readNotices("chan-1", "user-1", kv)).toEqual([]);
     expect(merged.byId["cm-1"]).toBeUndefined();
   });
@@ -252,7 +262,10 @@ describe("heavy-command notices — unconfirmed (#1909)", () => {
   test.each([
     ["no replay", { replay: undefined }],
     ["a replay under another key", { replay: pointsReplay("cm-other") }],
-    ["a replay for another channel", { replay: pointsReplay("cm-1", "chan-2") }],
+    [
+      "a replay for another channel",
+      { replay: pointsReplay("cm-1", "chan-2") },
+    ],
     [
       "a body missing its reason",
       {

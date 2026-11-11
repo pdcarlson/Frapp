@@ -5,6 +5,7 @@ import { assignResolvedRedirect } from "./lib/auth/redirect";
 export const AUTH_ROUTES = ["/sign-in", "/sign-up"];
 export const PROTECTED_ROUTE_PREFIXES = [
   "/dashboard",
+  "/activity",
   "/members",
   "/alumni",
   "/roles",
@@ -229,7 +230,7 @@ export const config = {
     "/dashboard/:path*",
     {
       source:
-        "/((?:members|alumni|roles|events|tasks|service|documents|backwork|discord-import|geofences|study|chat|chat-admin|points|billing|reports|profile|preferences|settings)(?:/.*)?)",
+        "/((?:activity|members|alumni|roles|events|tasks|service|documents|backwork|discord-import|geofences|study|chat|chat-admin|points|billing|reports|profile|preferences|settings)(?:/.*)?)",
       missing: [{ type: "header", key: "next-router-prefetch" }],
     },
   ],
