@@ -13,6 +13,7 @@ import {
   useMyPermissions,
   useNow,
   useRejectTask,
+  useChapterScope,
   useTasks,
   useUpdateTaskStatus,
 } from "@repo/hooks";
@@ -131,6 +132,8 @@ export function TasksBoard() {
   const gate = useSubscriptionGate();
   const { confirm, confirmDialog } = useConfirmDialog();
   const tasksQuery = useTasks();
+  // `none`: the server can't scope the read, so `useTasks` never sends it (#4094).
+  const chapterScope = useChapterScope();
   const membersQuery = useMembers();
   const currentUser = useCurrentUser();
   const createTask = useCreateTask();
@@ -394,6 +397,12 @@ export function TasksBoard() {
    * card the board deleted (README § Page grammar). `sole` keeps the live
    * region and the heading each state is this page's only one of.
    */
+  // Before the pending gate: a read that never goes out stays pending, and
+  // the skeleton would never end. Worded as chat's no-chapter pane is.
+  if (chapterScope === "none") {
+    return <InlineNote>Pick an active chapter to load its tasks.</InlineNote>;
+  }
+
   if (tasksQuery.isPending) {
     return <TasksPageSkeleton />;
   }

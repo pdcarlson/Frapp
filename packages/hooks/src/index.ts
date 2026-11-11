@@ -42,6 +42,7 @@ export * from "./use-reports";
 export * from "./use-search";
 export * from "./search-analytics";
 export * from "./use-chapters";
+export * from "./chapter-scope";
 export * from "./use-chapter-directory";
 export * from "./use-roles";
 export * from "./use-invites";

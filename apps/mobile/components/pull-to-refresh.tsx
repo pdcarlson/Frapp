@@ -26,8 +26,8 @@ export type RefreshableQuery = {
  * `enabled` gate (an active chapter, the viewer's id, a non-empty search)
  * therefore holds for the pull too: a viewer-scoped read waiting on
  * `/v1/users/me` would otherwise go out unscoped and fetch the whole
- * chapter's rows. A read whose hook has no gate but that the screen does not
- * show in some state (Tasks' board with no chapter) goes in as `null` there.
+ * chapter's rows. A read that is enabled but that the screen does not show
+ * in some state (Tasks' board with no chapter id) goes in as `null` there.
  *
  * A pull replaces a fetch already in flight (`cancelRefetch: true`, what a
  * plain `refetch()` does) rather than joining it. The pull is the member

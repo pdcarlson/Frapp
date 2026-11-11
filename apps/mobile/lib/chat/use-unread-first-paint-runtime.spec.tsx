@@ -138,7 +138,12 @@ async function launch(api: ReturnType<typeof heldApi>) {
   });
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>
-      <FrappClientProvider client={api.client as never}>
+      {/* The session's chapter, as `lib/frapp-client.tsx` passes it: the
+          unread read waits for one (#4094). */}
+      <FrappClientProvider
+        client={api.client as never}
+        chapterId={session.value.chapterId}
+      >
         {children}
       </FrappClientProvider>
     </QueryClientProvider>

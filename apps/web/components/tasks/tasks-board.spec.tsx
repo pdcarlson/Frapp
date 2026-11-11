@@ -24,6 +24,8 @@ const {
   eventsEnabled,
   eventsModuleOn,
   permissionsFailed,
+  chapterScopeRef,
+  tasksPending,
 } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
   createTaskMutate: vi.fn(),
@@ -40,6 +42,12 @@ const {
   eventsModuleOn: { current: true },
   // The permissions read failed (or can't run) rather than still loading.
   permissionsFailed: { current: false },
+  // `useChapterScope` (#4094): `none` is a user the server can't scope, whose
+  // `useTasks` read never goes out and so stays pending.
+  chapterScopeRef: {
+    current: "chapter" as "chapter" | "none" | "resolving",
+  },
+  tasksPending: { current: false },
 }));
 
 // Only the chapter payload is stubbed — `useSubscriptionWriteState` and
@@ -104,9 +112,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   // `actionStatus` stays real; only the data hooks are stubbed.
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCurrentChapter: () => mockCurrentChapter(),
+  useChapterScope: () => chapterScopeRef.current,
   useTasks: () => ({
-    data: tasksRef.current,
-    isPending: false,
+    data: tasksPending.current ? undefined : tasksRef.current,
+    isPending: tasksPending.current,
     isError: false,
     refetch: vi.fn(),
   }),
@@ -196,6 +205,23 @@ beforeEach(() => {
   eventsRef.current = [];
   eventsEnabled.length = 0;
   eventsModuleOn.current = true;
+});
+
+describe("TasksBoard with no chapter the server can scope (#4094)", () => {
+  it("says so instead of a skeleton that never ends", () => {
+    chapter.active();
+    chapterScopeRef.current = "none";
+    tasksPending.current = true;
+    try {
+      render(<TasksBoard />);
+      expect(
+        screen.getByText("Pick an active chapter to load its tasks."),
+      ).toBeInTheDocument();
+    } finally {
+      chapterScopeRef.current = "chapter";
+      tasksPending.current = false;
+    }
+  });
 });
 
 describe("TasksBoard subscription gating", () => {

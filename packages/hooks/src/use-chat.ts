@@ -15,6 +15,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { useChapterScope } from "./chapter-scope";
 import { createChapterQueryKeys } from "./chapter-query-keys";
 import { putSignedUpload } from "./put-signed-upload";
 import {
@@ -28,6 +29,9 @@ export const CHANNEL_LIST_KEY = ["channels"] as const;
 
 export function useChannels(options?: { enabled?: boolean }) {
   const client = useFrappClient();
+  const enabled = options?.enabled ?? true;
+  // No chapter-scoped read without a chapter to scope it to (#4094).
+  const scope = useChapterScope({ enabled });
   return useQuery({
     queryKey: CHANNEL_LIST_KEY,
     queryFn: async () => {
@@ -36,7 +40,7 @@ export function useChannels(options?: { enabled?: boolean }) {
       return data;
     },
     staleTime: 60_000,
-    enabled: options?.enabled ?? true,
+    enabled: enabled && scope === "chapter",
   });
 }
 
@@ -63,6 +67,9 @@ export interface ChannelUnreadCount {
  */
 export function useChannelUnreadCounts(options?: { enabled?: boolean }) {
   const client = useFrappClient();
+  const enabled = options?.enabled ?? true;
+  // No chapter-scoped read without a chapter to scope it to (#4094).
+  const scope = useChapterScope({ enabled });
   return useQuery({
     queryKey: CHANNEL_UNREAD_COUNTS_KEY,
     queryFn: async () => {
@@ -73,7 +80,7 @@ export function useChannelUnreadCounts(options?: { enabled?: boolean }) {
     // Deliberately shorter than the 60s on `useChannels`: a badge that lags a
     // read is the most visible staleness in the app.
     staleTime: 15_000,
-    enabled: options?.enabled ?? true,
+    enabled: enabled && scope === "chapter",
   });
 }
 
@@ -92,6 +99,9 @@ export const CHANNEL_LATEST_MESSAGES_KEY = ["channels", "latest"] as const;
  */
 export function useChannelLatestMessages(options?: { enabled?: boolean }) {
   const client = useFrappClient();
+  const enabled = options?.enabled ?? true;
+  // No chapter-scoped read without a chapter to scope it to (#4094).
+  const scope = useChapterScope({ enabled });
   return useQuery({
     queryKey: CHANNEL_LATEST_MESSAGES_KEY,
     queryFn: async () => {
@@ -100,7 +110,7 @@ export function useChannelLatestMessages(options?: { enabled?: boolean }) {
       return data ?? [];
     },
     staleTime: 15_000,
-    enabled: options?.enabled ?? true,
+    enabled: enabled && scope === "chapter",
   });
 }
 
@@ -171,6 +181,7 @@ export function useChannelMembers(
 
 export function useCategories() {
   const client = useFrappClient();
+  const scope = useChapterScope();
   return useQuery({
     queryKey: ["channels", "categories"],
     queryFn: async () => {
@@ -179,6 +190,7 @@ export function useCategories() {
       return data;
     },
     staleTime: 60_000,
+    enabled: scope === "chapter",
   });
 }
 
@@ -256,6 +268,7 @@ export function useChannelNotificationPreferences() {
   const queryClient = useQueryClient();
   // Same cache entry as the rail's `useChannels()` — one GET, two observers.
   const channelsQuery = useChannels();
+  const scope = useChapterScope();
   const fingerprint = channelSetFingerprint(channelsQuery.data);
   const prevFingerprint = useRef<string | null>(null);
 
@@ -298,6 +311,7 @@ export function useChannelNotificationPreferences() {
     // counts, and a stale mute badge is not the visible defect a stale unread
     // badge is.
     staleTime: 60_000,
+    enabled: scope === "chapter",
   });
 }
 
