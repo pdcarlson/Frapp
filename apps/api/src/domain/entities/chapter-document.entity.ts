@@ -18,6 +18,11 @@ export interface ChapterDocument {
    * time). User-supplied; never inferred.
    */
   effective_date: string | null;
+  /**
+   * When an officer pinned this document for the whole chapter, or null.
+   * `spec/behavior/chapter-docs.md` § Pinned and starred (#3934).
+   */
+  pinned_at: string | null;
 }
 
 /**
@@ -34,4 +39,31 @@ export interface ChapterDocumentFolder {
   name: string;
   sort_order: number;
   created_at: string;
+  /** When an officer pinned this folder for the whole chapter, or null (#3934). */
+  pinned_at: string | null;
+}
+
+/**
+ * One member's star on a folder or a document (#3934). Exactly one of
+ * `folder_id` and `document_id` is set (`chapter_document_stars_one_target`).
+ * Private to the member: nothing reads another member's stars.
+ */
+export interface ChapterDocumentStar {
+  id: string;
+  user_id: string;
+  chapter_id: string;
+  folder_id: string | null;
+  document_id: string | null;
+  created_at: string;
+}
+
+/** What a star points at: a folder or a document, never both. */
+export type ChapterDocumentStarTarget =
+  | { folder_id: string; document_id?: never }
+  | { document_id: string; folder_id?: never };
+
+/** The caller's stars in their active chapter, as two id lists. */
+export interface ChapterDocumentStars {
+  folder_ids: string[];
+  document_ids: string[];
 }

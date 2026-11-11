@@ -146,3 +146,18 @@ export class UpdateDocumentFolderDto {
   @Max(POSITION_MAX)
   sort_order?: number;
 }
+
+/** The caller's own starred folders and documents (#3934). */
+export class DocumentStarsDto {
+  @ApiProperty({
+    type: [String],
+    description: 'Ids of the folders the caller starred, oldest star first',
+  })
+  folder_ids: string[];
+
+  @ApiProperty({
+    type: [String],
+    description: 'Ids of the documents the caller starred, oldest star first',
+  })
+  document_ids: string[];
+}

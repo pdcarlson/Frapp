@@ -25,6 +25,20 @@ Officers with `chapter_docs:manage` create, rename, reorder, and delete folders;
 - **Delete** — see Edge Cases below.
 - **Uploading into an unknown folder still works.** Naming a folder that does not exist on upload registers it, which is how folders came into being before they were manageable. It is not an error.
 
+## Pinned and starred
+
+*(Added 2026-11-11, #3934; Shawn's idea, and his picks of where they show, what can be marked and who pins.)* Documents lists folders and files in three tiers: what officers **pinned** for the whole chapter, then what this member **starred** for themselves, then everything else. Both folders and single files can be pinned and starred. Comparable apps: Google Drive's Starred, Slack's pinned and starred sidebar sections, Microsoft Teams' pinned channels.
+
+- **Pin** is chapter-wide. A member holding `chapter_docs:manage`, the permission that already creates, renames and reorders folders, pins or unpins a folder or a file, and every member sees it at the top. A pin is `pinned_at` on the folder or document row; pinning something already pinned keeps its first pin time.
+- **Star** is personal. Every member who can read the library stars or unstars any folder or file for themselves; nobody else, officers included, can see who starred what. A star is a row in `chapter_document_stars`, which has RLS on and no policies, so only the API reads it, filtering on the member.
+- **Order inside a tier.** The tiers sit on top of the existing orders rather than replacing them: pinned folders keep the officers' folder order among themselves (§ Folder management's Reorder still applies), and pinned or starred files keep the list's chosen sort (§ Search). Something both pinned and starred shows once, under Pinned, still wearing the member's star.
+- **Search and filters** narrow every tier the same way: the tiers order whatever the folder, search and filters leave.
+- **Deleting** a folder or a file removes its pin and every member's star on it. Renaming a folder keeps both, since a star points at the folder's record, not its name. Deleting an account removes that member's stars (`anonymize_user`).
+- **Who sees a pinned folder.** Every member can open every folder today. Restricted folders ([#3642](https://github.com/pdcarlson/Frapp/issues/3642)) are parked; when they land, a pinned or starred folder a member cannot open is not shown to that member.
+- **Routes.** `GET /v1/documents/stars` returns the caller's own `{ folder_ids, document_ids }`. `PUT` stars and `DELETE` unstars `/v1/documents/folders/{id}/star` and `/v1/documents/{id}/star`, each idempotent and answering 204. `PUT` pins and `DELETE` unpins `/v1/documents/folders/{id}/pin` and `/v1/documents/{id}/pin`, behind `chapter_docs:manage`, each idempotent and answering the updated row. Starring something outside the caller's chapter is a 404.
+
+How web and mobile draw the tiers is added with each client's change (#3934).
+
 ## Search
 
 Document listing accepts an optional case-insensitive substring match on the title, combinable with the folder filter. Search is scoped to the caller's active chapter. `%` and `_` in a query are matched literally, not as wildcards.

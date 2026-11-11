@@ -3,16 +3,21 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   InternalServerErrorException,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiNoContentResponse,
+  ApiOkResponse,
   ApiOperation,
   ApiQuery,
   ApiTags,
@@ -40,6 +45,7 @@ import {
   ConfirmDocumentUploadDto,
   CreateDocumentFolderDto,
   UpdateDocumentFolderDto,
+  DocumentStarsDto,
 } from '../dtos/chapter-document.dto';
 
 @ApiTags('Documents')
@@ -151,6 +157,22 @@ export class ChapterDocumentController {
     return this.chapterDocumentService.listFolders(chapterId);
   }
 
+  // Pins are chapter-wide and need `chapter_docs:manage`, the permission that
+  // already creates, renames and reorders folders. Stars are each member's
+  // own and need only the class-level read permission (#3934).
+
+  @Get('stars')
+  @ApiOperation({
+    summary: "The caller's own starred folders and documents",
+  })
+  @ApiOkResponse({ type: DocumentStarsDto })
+  async listStars(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<DocumentStarsDto> {
+    return this.chapterDocumentService.listStars(userId, chapterId);
+  }
+
   @Post('folders')
   @RequirePermissions(SystemPermissions.CHAPTER_DOCS_MANAGE)
   @ApiOperation({ summary: 'Create a document folder' })
@@ -192,6 +214,60 @@ export class ChapterDocumentController {
     return { success: true };
   }
 
+  @Put('folders/:id/pin')
+  @RequirePermissions(SystemPermissions.CHAPTER_DOCS_MANAGE)
+  @ApiOperation({ summary: 'Pin a folder for the whole chapter (idempotent)' })
+  async pinFolder(
+    @CurrentChapterId() chapterId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.chapterDocumentService.setFolderPinned(id, chapterId, true);
+  }
+
+  @Delete('folders/:id/pin')
+  @RequirePermissions(SystemPermissions.CHAPTER_DOCS_MANAGE)
+  @ApiOperation({ summary: 'Unpin a folder (idempotent)' })
+  async unpinFolder(
+    @CurrentChapterId() chapterId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.chapterDocumentService.setFolderPinned(id, chapterId, false);
+  }
+
+  @Put('folders/:id/star')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Star a folder for yourself (idempotent)' })
+  @ApiNoContentResponse()
+  async starFolder(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.chapterDocumentService.setFolderStarred(
+      userId,
+      chapterId,
+      id,
+      true,
+    );
+  }
+
+  @Delete('folders/:id/star')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Remove your star from a folder (idempotent)' })
+  @ApiNoContentResponse()
+  async unstarFolder(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.chapterDocumentService.setFolderStarred(
+      userId,
+      chapterId,
+      id,
+      false,
+    );
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get document with download URL' })
   @FeatureEvent('document-viewed')
@@ -205,5 +281,61 @@ export class ChapterDocumentController {
   async delete(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
     await this.chapterDocumentService.delete(id, chapterId);
     return { success: true };
+  }
+
+  @Put(':id/pin')
+  @RequirePermissions(SystemPermissions.CHAPTER_DOCS_MANAGE)
+  @ApiOperation({
+    summary: 'Pin a document for the whole chapter (idempotent)',
+  })
+  async pinDocument(
+    @CurrentChapterId() chapterId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.chapterDocumentService.setDocumentPinned(id, chapterId, true);
+  }
+
+  @Delete(':id/pin')
+  @RequirePermissions(SystemPermissions.CHAPTER_DOCS_MANAGE)
+  @ApiOperation({ summary: 'Unpin a document (idempotent)' })
+  async unpinDocument(
+    @CurrentChapterId() chapterId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.chapterDocumentService.setDocumentPinned(id, chapterId, false);
+  }
+
+  @Put(':id/star')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Star a document for yourself (idempotent)' })
+  @ApiNoContentResponse()
+  async starDocument(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.chapterDocumentService.setDocumentStarred(
+      userId,
+      chapterId,
+      id,
+      true,
+    );
+  }
+
+  @Delete(':id/star')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Remove your star from a document (idempotent)' })
+  @ApiNoContentResponse()
+  async unstarDocument(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.chapterDocumentService.setDocumentStarred(
+      userId,
+      chapterId,
+      id,
+      false,
+    );
   }
 }

@@ -3463,3 +3463,19 @@ alter table public.chat_notification_preferences
     check ((scope = 'channel' and scope_id is not null and scope_kind is null)
         or (scope = 'kind' and scope_kind is not null and scope_id is null));
 ```
+
+## Rollback Pinned and starred documents (20261111150000)
+
+* **Migration**: `20261111150000_document_pins_and_stars.sql`
+
+`pinned_at` on `chapter_document_folders` and `chapter_documents`, the table `chapter_document_stars`, and `anonymize_user` redefined to also delete `chapter_document_stars`. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API never writes either column or the table, and returns `pinned_at` as a plain field (`select('*')`) that older clients ignore.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses every pin and every member's stars; nothing else depends on them. First redefine `anonymize_user` without its `chapter_document_stars` delete (the `20261111030000_activity_links.sql` body), or account deletion fails once the table is gone:
+
+```sql
+drop table if exists public.chapter_document_stars;
+alter table public.chapter_documents drop column if exists pinned_at;
+alter table public.chapter_document_folders drop column if exists pinned_at;
+```

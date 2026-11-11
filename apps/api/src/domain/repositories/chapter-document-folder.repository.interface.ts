@@ -6,6 +6,8 @@ export const CHAPTER_DOCUMENT_FOLDER_REPOSITORY =
 export interface ChapterDocumentFolderUpdate {
   name?: string;
   sort_order?: number;
+  /** ISO time the folder was pinned, or null to unpin (#3934). */
+  pinned_at?: string | null;
 }
 
 export interface IChapterDocumentFolderRepository {

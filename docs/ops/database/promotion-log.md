@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-11: Pinned and starred documents (#3934)
+
+### 20261111150000_document_pins_and_stars.sql
+
+- **Purpose**: Adds `pinned_at timestamptz` (nullable) to `chapter_document_folders` and `chapter_documents`: an officer's pin for the whole chapter, written by `PUT`/`DELETE /v1/documents/folders/{id}/pin` and `/v1/documents/{id}/pin`. Adds `chapter_document_stars` (one row per member per starred folder or document, exactly one of `folder_id` / `document_id`, cascading with either, unique per member and target), RLS on with no policies, read by `GET /v1/documents/stars` and written by the `/star` routes. Redefines `anonymize_user` in full from `20261111030000_activity_links.sql` with one added line deleting the member's `chapter_document_stars`. No existing row changes. The rule is [`spec/behavior/chapter-docs.md` § Pinned and starred](../../../spec/behavior/chapter-docs.md#pinned-and-starred).
+- **Checks**: After `db push`, `select count(*) from information_schema.columns where table_name in ('chapter_documents', 'chapter_document_folders') and column_name = 'pinned_at';` returns `2`, `select count(*) from chapter_document_stars;` returns `0`, and `select prosrc like '%chapter_document_stars%' from pg_proc where proname = 'anonymize_user';` returns `t`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API reads both document tables with `select('*')` and returns `pinned_at` (null) as a field clients ignore. The newer API against an unmigrated database fails the pin and star routes and `GET /v1/documents/stars` (500); clients show no pins or stars, and the library itself still loads. Adding nullable columns with no default is metadata-only, under a brief lock. `if not exists` and `create or replace` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-pinned-and-starred-documents-20261111150000) § Rollback Pinned and starred documents.
+
 ## 2026-11-11: What's new seen on the account (#4043)
 
 ### 20261111130000_user_whats_new_seen.sql

@@ -19,9 +19,14 @@ import type { IChapterDocumentRepository } from '#domain/repositories/chapter-do
 import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
 import { CHAPTER_DOCUMENT_FOLDER_REPOSITORY } from '#domain/repositories/chapter-document-folder.repository.interface';
 import type { IChapterDocumentFolderRepository } from '#domain/repositories/chapter-document-folder.repository.interface';
+import {
+  CHAPTER_DOCUMENT_STAR_REPOSITORY,
+  type IChapterDocumentStarRepository,
+} from '#domain/repositories/chapter-document-star.repository.interface';
 import type {
   ChapterDocument,
   ChapterDocumentFolder,
+  ChapterDocumentStars,
 } from '#domain/entities/chapter-document.entity';
 import {
   STORAGE_PROVIDER,
@@ -62,6 +67,8 @@ export class ChapterDocumentService {
     private readonly documentRepo: IChapterDocumentRepository,
     @Inject(CHAPTER_DOCUMENT_FOLDER_REPOSITORY)
     private readonly folderRepo: IChapterDocumentFolderRepository,
+    @Inject(CHAPTER_DOCUMENT_STAR_REPOSITORY)
+    private readonly starRepo: IChapterDocumentStarRepository,
     @Inject(STORAGE_PROVIDER)
     private readonly storageProvider: IStorageProvider,
   ) {}
@@ -369,6 +376,104 @@ export class ChapterDocumentService {
     // folder intact rather than stranding documents under a deleted name.
     await this.documentRepo.moveToRoot(folder.name, chapterId);
     await this.folderRepo.delete(id, chapterId);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Pins (chapter-wide) and stars (each member's own), #3934
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Pins or unpins a folder for the whole chapter. Pinning a pinned folder
+   * keeps its first pin time, so a repeated tap is a no-op.
+   */
+  async setFolderPinned(
+    id: string,
+    chapterId: string,
+    pinned: boolean,
+  ): Promise<ChapterDocumentFolder> {
+    const folder = await this.folderRepo.findById(id, chapterId);
+    if (!folder) {
+      throw new NotFoundException('Folder not found');
+    }
+    if ((folder.pinned_at !== null) === pinned) return folder;
+    return this.folderRepo.update(id, chapterId, {
+      pinned_at: pinned ? new Date().toISOString() : null,
+    });
+  }
+
+  /** Pins or unpins a document for the whole chapter, as folders pin. */
+  async setDocumentPinned(
+    id: string,
+    chapterId: string,
+    pinned: boolean,
+  ): Promise<ChapterDocument> {
+    const document = await this.documentRepo.findById(id, chapterId);
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+    if ((document.pinned_at !== null) === pinned) return document;
+    return this.documentRepo.setPinnedAt(
+      id,
+      chapterId,
+      pinned ? new Date().toISOString() : null,
+    );
+  }
+
+  /** The caller's own stars in their active chapter. */
+  async listStars(
+    userId: string,
+    chapterId: string,
+  ): Promise<ChapterDocumentStars> {
+    const stars = await this.starRepo.findByUser(userId, chapterId);
+    const result: ChapterDocumentStars = { folder_ids: [], document_ids: [] };
+    for (const star of stars) {
+      if (star.folder_id) result.folder_ids.push(star.folder_id);
+      if (star.document_id) result.document_ids.push(star.document_id);
+    }
+    return result;
+  }
+
+  /**
+   * Stars or unstars a folder for the caller alone. Starring reads the folder
+   * through the chapter-scoped lookup first, which is what keeps a star from
+   * naming another chapter's folder. Unstarring needs no read: it deletes
+   * only the caller's own row in this chapter, and a missing one is a no-op.
+   */
+  async setFolderStarred(
+    userId: string,
+    chapterId: string,
+    folderId: string,
+    starred: boolean,
+  ): Promise<void> {
+    if (!starred) {
+      await this.starRepo.remove(userId, chapterId, { folder_id: folderId });
+      return;
+    }
+    const folder = await this.folderRepo.findById(folderId, chapterId);
+    if (!folder) {
+      throw new NotFoundException('Folder not found');
+    }
+    await this.starRepo.add(userId, chapterId, { folder_id: folderId });
+  }
+
+  /** Stars or unstars a document for the caller alone, as folders star. */
+  async setDocumentStarred(
+    userId: string,
+    chapterId: string,
+    documentId: string,
+    starred: boolean,
+  ): Promise<void> {
+    if (!starred) {
+      await this.starRepo.remove(userId, chapterId, {
+        document_id: documentId,
+      });
+      return;
+    }
+    const document = await this.documentRepo.findById(documentId, chapterId);
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+    await this.starRepo.add(userId, chapterId, { document_id: documentId });
   }
 
   private async ensureFolder(

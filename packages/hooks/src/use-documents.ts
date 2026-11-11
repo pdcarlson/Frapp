@@ -232,3 +232,138 @@ export function useDeleteDocument() {
     },
   });
 }
+
+// ---------------------------------------------------------------------------
+// Pins (chapter-wide) and stars (each member's own), #3934.
+// `spec/behavior/chapter-docs.md` § Pinned and starred.
+// ---------------------------------------------------------------------------
+
+/** What a pin or a star points at. */
+export type DocumentMarkTarget =
+  { kind: "folder"; id: string } | { kind: "document"; id: string };
+
+/** The caller's own starred folder and document ids. */
+export interface DocumentStarIds {
+  folder_ids: string[];
+  document_ids: string[];
+}
+
+const NO_STARS: DocumentStarIds = { folder_ids: [], document_ids: [] };
+
+function starsKey(chapterId: string | null | undefined) {
+  return ["documents", chapterId, "stars"] as const;
+}
+
+/**
+ * The caller's starred folders and documents in the active chapter. Private to
+ * the caller: the server answers with their stars alone.
+ */
+export function useDocumentStars() {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: starsKey(chapterId),
+    queryFn: async (): Promise<DocumentStarIds> => {
+      const { data, error } = await client.GET("/v1/documents/stars");
+      if (error) throw error;
+      return data ?? NO_STARS;
+    },
+    staleTime: 300_000,
+  });
+}
+
+/** `stars` with `target` starred or not, leaving the input unchanged. */
+export function withStar(
+  stars: DocumentStarIds,
+  target: DocumentMarkTarget,
+  starred: boolean,
+): DocumentStarIds {
+  const field = target.kind === "folder" ? "folder_ids" : "document_ids";
+  const rest = stars[field].filter((id) => id !== target.id);
+  return { ...stars, [field]: starred ? [...rest, target.id] : rest };
+}
+
+/**
+ * Stars or unstars a folder or a document for the caller.
+ *
+ * Optimistic, because a star is the caller's own and nothing else can
+ * disagree with it: the mark moves on the tap, goes back if the server
+ * refuses, and the list is re-read either way.
+ */
+export function useSetDocumentStar() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  const key = starsKey(chapterId);
+  return useMutation({
+    mutationKey: ["documents", "set-document-star"],
+    mutationFn: async ({
+      target,
+      starred,
+    }: {
+      target: DocumentMarkTarget;
+      starred: boolean;
+    }) => {
+      const params = { params: { path: { id: target.id } } };
+      const { error } =
+        target.kind === "folder"
+          ? starred
+            ? await client.PUT("/v1/documents/folders/{id}/star", params)
+            : await client.DELETE("/v1/documents/folders/{id}/star", params)
+          : starred
+            ? await client.PUT("/v1/documents/{id}/star", params)
+            : await client.DELETE("/v1/documents/{id}/star", params);
+      if (error) throw error;
+    },
+    onMutate: async ({ target, starred }) => {
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<DocumentStarIds>(key);
+      queryClient.setQueryData<DocumentStarIds>(
+        key,
+        withStar(previous ?? NO_STARS, target, starred),
+      );
+      return { previous };
+    },
+    onError: (_error, _vars, context) => {
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData(key, context.previous);
+      }
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: key });
+    },
+  });
+}
+
+/**
+ * Pins or unpins a folder or a document for the whole chapter. Needs
+ * `chapter_docs:manage`. Not optimistic: a pin changes what everyone sees,
+ * so the mark moves when the server has it. Re-reads the folder and document
+ * lists, which carry `pinned_at`.
+ */
+export function useSetDocumentPin() {
+  const client = useFrappClient();
+  const invalidate = useInvalidateDocumentFolders();
+  return useMutation({
+    mutationKey: ["documents", "set-document-pin"],
+    mutationFn: async ({
+      target,
+      pinned,
+    }: {
+      target: DocumentMarkTarget;
+      pinned: boolean;
+    }) => {
+      const params = { params: { path: { id: target.id } } };
+      const { error } =
+        target.kind === "folder"
+          ? pinned
+            ? await client.PUT("/v1/documents/folders/{id}/pin", params)
+            : await client.DELETE("/v1/documents/folders/{id}/pin", params)
+          : pinned
+            ? await client.PUT("/v1/documents/{id}/pin", params)
+            : await client.DELETE("/v1/documents/{id}/pin", params);
+      if (error) throw error;
+    },
+    onSuccess: invalidate,
+  });
+}

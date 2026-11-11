@@ -61,7 +61,7 @@ describeIntegration(
       // storage.
       const unused = {} as never;
       repo = new SupabaseChapterDocumentRepository(supabase);
-      documents = new ChapterDocumentService(repo, unused, unused);
+      documents = new ChapterDocumentService(repo, unused, unused, unused);
 
       assertOk(
         'chapters',
