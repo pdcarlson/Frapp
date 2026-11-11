@@ -55,9 +55,11 @@ export function ThreadChip({
         // On a narrow card the faces go after the time, before the count,
         // one at a time from the right: each is its own item in a clipped
         // wrapping box, behind a zero-width lead (a line's first item never
-        // wraps).
+        // wraps). Its shrink factor is a sliver of the time's, so the time
+        // takes the whole shortfall until it is gone: any share here, even a
+        // pixel, wraps a face away while the card still has room.
         <span
-          className="flex h-6 min-w-0 shrink-[100] flex-wrap gap-0.5 overflow-hidden"
+          className="flex h-6 min-w-0 shrink-[0.0001] flex-wrap gap-0.5 overflow-hidden"
           aria-hidden="true"
         >
           <span className="-mr-0.5 h-6 w-0" />
@@ -100,8 +102,9 @@ export function ThreadChip({
           </span>
         </span>
       ) : null}
+      {/* At the card's right edge, so room the time gave up sits before it. */}
       <ChevronRight
-        className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+        className="ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground"
         aria-hidden="true"
       />
     </>
