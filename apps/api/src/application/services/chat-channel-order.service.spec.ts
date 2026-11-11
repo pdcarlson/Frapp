@@ -90,7 +90,7 @@ describe('ChatChannelOrderService', () => {
   ] as const)('refuses %s', async (_label, extra) => {
     channels.findByIds.mockResolvedValue([
       channel('a'),
-      channel('x', extra as Partial<ChatChannel>),
+      channel('x', extra),
     ]);
     await expect(
       service.reorderChannels(CHAPTER, null, ['a', 'x']),
