@@ -110,6 +110,14 @@ export function healthUrl(): string | null {
 
 export interface ConnectionMonitor {
   get(): ConnectionState;
+  /**
+   * Whether a confirmed link drop is what the monitor last published: the
+   * link half of `get()`, without `/health`. Chapter presence gates on it
+   * (realtime-resilience rule 7), because Realtime is a different service from
+   * the API and three failed probes say nothing about it. `subscribe`
+   * listeners fire when it changes, even if `get()` doesn't.
+   */
+  linkDown(): boolean;
   subscribe(listener: (state: ConnectionState) => void): () => void;
   /** Idempotent: safe to call from every mount of the runtime component. */
   start(): void;
@@ -189,6 +197,8 @@ export function createConnectionMonitor(
    */
   let lifecycle = 0;
   let state: ConnectionState = "ONLINE";
+  /** `linkOffline` as of the last publish, for `linkDown()`. */
+  let publishedLinkDown = false;
 
   let started = false;
   /** In the background: link events and probe results are not evidence. */
@@ -216,8 +226,12 @@ export function createConnectionMonitor(
 
   function publish() {
     const next = deriveConnectionState({ linkOffline, consecutiveFailures });
-    if (next === state) return;
+    // A link change can leave the state where it was (OFFLINE from failed
+    // probes, then the link drops too), so it notifies on its own.
+    const linkChanged = linkOffline !== publishedLinkDown;
+    if (next === state && !linkChanged) return;
     state = next;
+    publishedLinkDown = linkOffline;
     // Copy first: a listener that unsubscribes itself would otherwise mutate
     // the set mid-iteration (the same guard `lib/auth-token.ts` uses).
     for (const listener of [...listeners]) listener(state);
@@ -448,6 +462,7 @@ export function createConnectionMonitor(
 
   return {
     get: () => state,
+    linkDown: () => publishedLinkDown,
     subscribe(listener) {
       listeners.add(listener);
       return () => {

@@ -381,6 +381,38 @@ describe("connection monitor", () => {
     expect(monitor.get()).toBe("ONLINE");
   });
 
+  it("reports the link half apart from /health, for chapter presence (#3917)", async () => {
+    const { monitor, fetchMock, link, elapse } = harness();
+    fetchMock.mockRejectedValue(new Error("timeout"));
+    monitor.start();
+    await settle();
+    elapse(CONFIRM_RETRY_MS);
+    await settle();
+    await monitor.probeOnce();
+    await monitor.probeOnce();
+    // Three failed probes: OFFLINE, but the link is up, so presence stays.
+    expect(monitor.get()).toBe("OFFLINE");
+    expect(monitor.linkDown()).toBe(false);
+
+    // The link drops too. The state doesn't move, but a listener still
+    // hears it, so presence can let go of its channel.
+    const notified = vi.fn();
+    monitor.subscribe(notified);
+    link()?.({ isConnected: false });
+    elapse(LINK_DOWN_GRACE_MS);
+    await settle();
+    expect(monitor.get()).toBe("OFFLINE");
+    expect(monitor.linkDown()).toBe(true);
+    expect(notified).toHaveBeenCalled();
+
+    // Only /health answering clears it, as it clears OFFLINE.
+    link()?.({ isConnected: true, isInternetReachable: true });
+    fetchMock.mockResolvedValue(OK);
+    await monitor.probeOnce();
+    expect(monitor.linkDown()).toBe(false);
+    expect(monitor.get()).toBe("ONLINE");
+  });
+
   it("re-probes after a link blip inside the grace", async () => {
     const { monitor, fetchMock, link } = harness();
     fetchMock.mockResolvedValue(OK);

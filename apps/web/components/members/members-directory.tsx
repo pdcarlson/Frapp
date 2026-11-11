@@ -70,7 +70,7 @@ import { useChapterPresenceContext } from "@/lib/providers/chapter-presence-prov
 import {
   presenceLabel,
   type PresenceStatus,
-} from "@/lib/realtime/presence-status";
+} from "@repo/hooks/presence-status";
 import { asArray, cn, initials } from "@/lib/utils";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import {
