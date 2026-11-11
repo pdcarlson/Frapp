@@ -130,7 +130,14 @@ at or before the mark.
 File (or update) an issue for:
 
 - A Sentry production issue at level error or above that isn't already tracked, unless it is
-  clearly noise (a bot, a browser extension, a single event from a dev build).
+  clearly noise (a bot, a browser extension, a single event from a dev build). That includes a
+  `ClientContractError` in `frapp-web` or `frapp-mobile` (tag `api_error_class: client-contract`):
+  the API refused a request a correct client never sends, so it is a client bug however few users
+  hit it ([`observability.md` § Error Tracking](../../../spec/behavior/observability.md#error-tracking)).
+  Name the `error_code` and `query_key_root` tags in the title's symptom.
+- Other client warnings stay unfiled: a query or mutation `ApiError` at `warning` (a 404, a
+  member-caused or uncoded 4xx, a 5xx the API reports itself) or a dead fetch. File one only when
+  its count or users jump, or when its `request_id` leads to an API fault that isn't tracked.
 - A server failure the API never saw: a `frapp-web` or `frapp-mobile` issue tagged
   `query_failure:http` and `status_class:5xx` (these arrive at `warning`,
   [#3377](https://github.com/pdcarlson/Frapp/issues/3377)) whose events carry no `request_id`, or
