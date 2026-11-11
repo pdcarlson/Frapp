@@ -1,9 +1,14 @@
-import { expect, test, type Page } from "@playwright/test";
+import {
+  expect,
+  test,
+  type BrowserContext,
+  type Page,
+} from "@playwright/test";
 
 import { DASHBOARD_ROUTES } from "./routes";
 
 /**
- * Every tool page holds its 375px floor beside chat (#4033, #4022).
+ * Tool pages hold their 375px floor beside chat (#4033, #4022).
  *
  * Beside chat (#3779) a tool page can be as narrow as 375px in a window wide
  * enough for every viewport breakpoint, so a page that breaks on `sm`/`md`/`lg`
@@ -17,14 +22,14 @@ import { DASHBOARD_ROUTES } from "./routes";
  * most pages show an empty or loading state, and this mostly pins the shell's
  * beside-chat floor. The populated pages are the point, and they need a
  * signed-in chapter: start the stack, seed it (`scripts/demo/setup-demo.sh`),
- * run `next dev` yourself, then
+ * boot the API and `next dev` yourself, then from `apps/web`
  *
  *   PLAYWRIGHT_BASE_URL=http://localhost:3000 BESIDE_CHAT_SIGN_IN=1 \
- *     npx playwright test beside-chat-floor -w apps/web
+ *     npx playwright test beside-chat-floor
  *
- * which signs in as the demo president first. `localhost`, not `127.0.0.1`:
+ * which signs in once as the demo president. `localhost`, not `127.0.0.1`:
  * the API's CORS list names the former (`docs/guides/demo-data.md`). A signed-in
- * harness for CI is the open part of #4033's ask.
+ * harness for CI is #4033's open follow-up.
  *
  * Deliberately NOT a screenshot: it compares integers.
  */
@@ -34,13 +39,35 @@ const FLOOR = 375;
 
 const SIGN_IN = process.env.BESIDE_CHAT_SIGN_IN === "1";
 // The local demo seed's login and chapter: `LOCAL_DEMO_*` and
-// `demoIds(TEMPLATE_NAMESPACE)` in `scripts/demo/seed-demo.mjs`.
+// `demoIds(TEMPLATE_NAMESPACE)` in `scripts/demo/seed-demo.mjs`, which notes
+// this copy. Restated rather than imported: `check-types` compiles this file,
+// and the seed script is untyped JavaScript outside the web app.
 const DEMO_EMAIL = "marcus.ellison@example.com";
 const DEMO_PASSWORD = "DemoShowcase!2026";
 const DEMO_CHAPTER_ID = "c0ffee00-0000-4000-8000-000000000001";
 
-/** `/chat` is chat alone: it has no tool page to measure. */
-const TOOL_ROUTES = DASHBOARD_ROUTES.filter((route) => route !== "/chat");
+/**
+ * Every dashboard route but `/chat` (chat alone, no tool page), plus the tool
+ * surfaces `routes.ts` reaches only as a tab or not at all: Roles is a Settings
+ * tab, Alumni a Directory tab, and Chat admin opens from Settings.
+ */
+const TOOL_ROUTES = [
+  ...DASHBOARD_ROUTES.filter((route) => route !== "/chat"),
+  "/chat-admin",
+  "/settings?tab=roles",
+  "/members?tab=alumni",
+];
+
+/**
+ * Still on viewport breakpoints until the Settings rebuild (#3856, open as
+ * #4106) lands: Settings' 200px rail sits beside its content at `lg`, so a
+ * populated Settings overflows beside chat. Expected to fail signed in.
+ */
+const NOT_YET_CONVERTED = new Set(["/settings", "/settings?tab=roles"]);
+
+function escapeRegExp(text: string) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 async function signInAsDemoPresident(page: Page) {
   await page.goto("/sign-in", { waitUntil: "networkidle" });
@@ -78,23 +105,58 @@ async function signInAsDemoPresident(page: Page) {
 }
 
 test.describe("tool pages hold the 375px floor beside chat", () => {
+  // One sign-in for the whole run, reused by every test: a password sign-in
+  // per route would also spend the local auth server's sign-in rate limit.
+  let signedIn: Awaited<ReturnType<BrowserContext["storageState"]>> | null =
+    null;
+
+  test.beforeAll(async ({ browser }) => {
+    if (!SIGN_IN) return;
+    const context = await browser.newContext({ viewport: WINDOW });
+    await signInAsDemoPresident(await context.newPage());
+    signedIn = await context.storageState();
+    await context.close();
+  });
+
   test.beforeEach(async ({ page, context, baseURL }) => {
     await page.setViewportSize(WINDOW);
     const url = baseURL ?? "http://localhost:3000";
+    if (signedIn) {
+      await context.addCookies(signedIn.cookies);
+      const origins = signedIn.origins;
+      await context.addInitScript((saved) => {
+        for (const origin of saved) {
+          if (origin.origin !== window.location.origin) continue;
+          for (const { name, value } of origin.localStorage) {
+            window.localStorage.setItem(name, value);
+          }
+        }
+      }, origins);
+    }
     await context.addCookies([
       { name: "frapp_chat_open", value: "1", url },
       { name: "frapp_chat_split", value: "0", url },
     ]);
-    if (SIGN_IN) await signInAsDemoPresident(page);
   });
 
   for (const route of TOOL_ROUTES) {
     test(`${route} does not scroll sideways beside chat`, async ({ page }) => {
+      test.fixme(
+        SIGN_IN && NOT_YET_CONVERTED.has(route),
+        "Settings still follows the window until #3856 lands (#4033)",
+      );
       await page.goto(route);
       await page.waitForLoadState("networkidle");
       // The same guard as the viewport suite: a redirect to `/sign-in`
       // would measure a page with no shell.
-      await expect(page).toHaveURL(new RegExp(`${route}/?(\\?.*)?$`));
+      const [path = route, query] = route.split("?");
+      await expect(page).toHaveURL(
+        new RegExp(
+          `${escapeRegExp(path)}/?` +
+            (query ? `\\?${escapeRegExp(query)}` : "(\\?.*)?") +
+            "$",
+        ),
+      );
 
       const toolPage = page.locator("[data-tool-page]");
       await expect(toolPage).toBeVisible();

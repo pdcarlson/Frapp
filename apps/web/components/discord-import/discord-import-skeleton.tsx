@@ -11,7 +11,7 @@ export function DiscordImportSkeleton() {
   return (
     <SectionSkeleton
       label="Loading the import"
-      className="@container mx-auto max-w-2xl space-y-4"
+      className="@container mx-auto w-full max-w-2xl space-y-4"
     >
       <div aria-hidden="true" className="space-y-2">
         <Skeleton className="h-[11px] w-28" />
