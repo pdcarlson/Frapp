@@ -238,7 +238,7 @@ export function ChatAdminPage({
         deniedFallback={null}
         offlineFallback={null}
       >
-        <div className="mt-10 border-t border-border pt-8">
+        <div className="mt-10">
           <ChatReportsCard channelId={initialChannelId ?? undefined} />
         </div>
       </Can>
