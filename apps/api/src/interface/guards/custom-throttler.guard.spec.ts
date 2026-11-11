@@ -296,6 +296,52 @@ describe('CustomThrottlerGuard', () => {
       expect(getClaims).toHaveBeenCalledWith(token);
     });
 
+    // `SupabaseAuthGuard` starts the chapter lookups on these while `getUser`
+    // runs (#3728), so they must be exactly what was verified, and nothing
+    // when verification did not happen.
+    it('leaves the claims it verified on the request, and none it did not', async () => {
+      const claims = {
+        sub: 'user-es256',
+        exp: futureExp(),
+        active_chapter_id: 'chapter-1',
+      };
+      getClaims.mockResolvedValueOnce({ data: { claims }, error: null });
+      const verified: Record<string, unknown> = {
+        headers: {
+          authorization: `Bearer ${asymmetricJwt({ exp: futureExp() })}`,
+        },
+        ip: '203.0.113.30',
+      };
+      await jwksGuard.track(verified);
+      expect(verified.throttlerVerifiedClaims).toEqual(claims);
+
+      getClaims.mockResolvedValueOnce({
+        data: null,
+        error: { message: 'invalid signature' },
+      });
+      const rejected: Record<string, unknown> = {
+        headers: {
+          authorization: `Bearer ${asymmetricJwt({ exp: futureExp() })}`,
+        },
+        ip: '203.0.113.31',
+      };
+      await jwksGuard.track(rejected);
+      expect(rejected).not.toHaveProperty('throttlerVerifiedClaims');
+
+      getClaims.mockResolvedValueOnce({
+        data: { claims: { sub: 'user-es256', exp: 1 } },
+        error: null,
+      });
+      const expired: Record<string, unknown> = {
+        headers: {
+          authorization: `Bearer ${asymmetricJwt({ exp: futureExp() })}`,
+        },
+        ip: '203.0.113.32',
+      };
+      await jwksGuard.track(expired);
+      expect(expired).not.toHaveProperty('throttlerVerifiedClaims');
+    });
+
     it('accepts RS256 through the same verifier', async () => {
       getClaims.mockResolvedValue({
         data: { claims: { sub: 'user-rs256', exp: futureExp() } },

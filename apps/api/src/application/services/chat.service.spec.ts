@@ -4208,6 +4208,17 @@ describe('ChatService', () => {
 
       expect(result.channel_id).toBe('ch-chan-1');
     });
+
+    it('leaves the notifications alone when the receipt fails', async () => {
+      mockReadReceiptRepo.upsert.mockRejectedValueOnce(new Error('db down'));
+
+      await expect(
+        service.markChannelRead('ch-chan-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow('db down');
+      expect(
+        mockNotificationService.markChatChannelNotificationsRead,
+      ).not.toHaveBeenCalled();
+    });
   });
 
   // ── File Upload ─────────────────────────────────────────────────────

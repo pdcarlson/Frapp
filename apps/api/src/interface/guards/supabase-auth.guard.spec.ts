@@ -9,8 +9,13 @@ import {
   AuthSessionMissingError,
   AuthUnknownError,
 } from '@supabase/supabase-js';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { Test, TestingModule } from '@nestjs/testing';
 import { SupabaseAuthGuard } from './supabase-auth.guard';
+import { ChapterGuard } from './chapter.guard';
+import { PermissionsGuard } from './permissions.guard';
+import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import { runWithRequestReads } from '../../infrastructure/supabase/request-reads';
 import { AuthRejectedException } from './auth-rejected.exception';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 
@@ -18,9 +23,40 @@ describe('SupabaseAuthGuard', () => {
   let guard: SupabaseAuthGuard;
   let mockGetUser: jest.Mock;
   let mockGetClaims: jest.Mock;
+  let mockFrom: jest.Mock;
+
+  /** A route guarded by this guard alone, as `GET /v1/users/me` is. */
+  class AuthOnlyController {}
+  Reflect.defineMetadata(
+    GUARDS_METADATA,
+    [SupabaseAuthGuard],
+    AuthOnlyController,
+  );
+
+  /** A chapter route with no permission check, as attendance check-in is. */
+  class ChapterController {}
+  Reflect.defineMetadata(
+    GUARDS_METADATA,
+    [SupabaseAuthGuard, ChapterGuard],
+    ChapterController,
+  );
+
+  /** The usual class-level chain, with a permission to check. */
+  class PermissionedController {}
+  Reflect.defineMetadata(
+    GUARDS_METADATA,
+    [SupabaseAuthGuard, ChapterGuard, PermissionsGuard],
+    PermissionedController,
+  );
+  Reflect.defineMetadata(
+    PERMISSIONS_KEY,
+    ['members:view'],
+    PermissionedController,
+  );
 
   const mockExecutionContext = (
     headers: Record<string, string> = {},
+    controller: new () => unknown = AuthOnlyController,
   ): ExecutionContext => {
     const request = {
       headers,
@@ -31,12 +67,24 @@ describe('SupabaseAuthGuard', () => {
       switchToHttp: () => ({
         getRequest: () => request,
       }),
+      getHandler: () => () => undefined,
+      getClass: () => controller,
     } as unknown as ExecutionContext;
   };
 
   beforeEach(async () => {
     mockGetUser = jest.fn();
     mockGetClaims = jest.fn().mockResolvedValue({ data: null, error: null });
+    // Only the chapter-context prefetch reads tables; it never settles here,
+    // which is all these cases need to see whether it started.
+    mockFrom = jest.fn(() => {
+      const chain: Record<string, unknown> = {};
+      chain.select = () => chain;
+      chain.eq = () => chain;
+      chain.in = () => chain;
+      chain.maybeSingle = () => new Promise(() => undefined);
+      return chain;
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -45,6 +93,7 @@ describe('SupabaseAuthGuard', () => {
           provide: SUPABASE_CLIENT,
           useValue: {
             auth: { getUser: mockGetUser, getClaims: mockGetClaims },
+            from: mockFrom,
           },
         },
       ],
@@ -257,6 +306,165 @@ describe('SupabaseAuthGuard', () => {
       await expect(guard.canActivate(bearer())).rejects.toThrow(
         UnauthorizedException,
       );
+    });
+  });
+  // The session check is the slowest call a request makes; the chapter
+  // guard's reads start while it is in flight, on the sub the throttler
+  // already verified (`request.throttlerVerifiedClaims`).
+  describe('chapter lookups overlap the session check (#3728)', () => {
+    const CHAPTER = '33333333-3333-4333-8333-333333333333';
+    // A fresh sub per case: the user lookup is shared across requests for
+    // `IN_FLIGHT_JOIN_WINDOW_MS` (#3753), and these mocks never settle, so a
+    // reused sub would join the previous case's read instead of starting one.
+    let claims: { sub: string; active_chapter_id: string };
+    let caseNo = 0;
+    beforeEach(() => {
+      caseNo += 1;
+      claims = { sub: `auth-overlap-${caseNo}`, active_chapter_id: CHAPTER };
+    });
+
+    const pendingSession = () => {
+      let release!: (value: unknown) => void;
+      mockGetUser.mockReturnValue(
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+      );
+      return (user: { id: string } | null) =>
+        release(
+          user
+            ? { data: { user }, error: null }
+            : { data: { user: null }, error: new Error('session revoked') },
+        );
+    };
+
+    /** A context whose request carries what the throttler verified, if anything. */
+    const contextWith = (
+      verified: object | undefined,
+      controller: new () => unknown,
+    ) => {
+      const ctx = mockExecutionContext(
+        { authorization: 'Bearer valid-token' },
+        controller,
+      );
+      const request = ctx.switchToHttp().getRequest<Record<string, unknown>>();
+      request.throttlerVerifiedClaims = verified;
+      return ctx;
+    };
+
+    const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+    it('starts them before getUser answers, on a chapter route', async () => {
+      const answer = pendingSession();
+      const ctx = contextWith(claims, ChapterController);
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(ctx);
+        await settle();
+        expect(mockFrom).toHaveBeenCalledWith('users');
+        expect(mockFrom).toHaveBeenCalledWith('chapters');
+
+        answer({ id: claims.sub });
+        await expect(verdict).resolves.toBe(true);
+      });
+    });
+
+    it('verifies no token itself: getClaims still runs only after getUser accepted it', async () => {
+      const answer = pendingSession();
+      const ctx = contextWith(claims, ChapterController);
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(ctx);
+        await settle();
+        expect(mockGetClaims).not.toHaveBeenCalled();
+        answer({ id: claims.sub });
+        await verdict;
+      });
+      expect(mockGetClaims).toHaveBeenCalledTimes(1);
+    });
+
+    it('starts nothing on a route without ChapterGuard', async () => {
+      const answer = pendingSession();
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(
+          contextWith(claims, AuthOnlyController),
+        );
+        await settle();
+        answer({ id: claims.sub });
+        await verdict;
+      });
+      expect(mockFrom).not.toHaveBeenCalled();
+    });
+
+    it('starts nothing when the throttler verified nothing', async () => {
+      const answer = pendingSession();
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(
+          contextWith(undefined, ChapterController),
+        );
+        await settle();
+        answer({ id: 'auth-123' });
+        await verdict;
+      });
+      expect(mockFrom).not.toHaveBeenCalled();
+    });
+
+    it('reads roles only where PermissionsGuard will check a permission', async () => {
+      const memberRow = { id: 'member-1', role_ids: ['role-1'] };
+      mockFrom.mockImplementation((table: string) => {
+        const chain: Record<string, unknown> = {};
+        chain.select = () => chain;
+        chain.eq = () => chain;
+        chain.in = () => chain;
+        chain.maybeSingle = () =>
+          Promise.resolve({
+            data:
+              table === 'users'
+                ? { id: 'user-1' }
+                : table === 'members'
+                  ? memberRow
+                  : { subscription_status: 'active' },
+            error: null,
+          });
+        return chain;
+      });
+      const tables = () =>
+        mockFrom.mock.calls.map(([table]: [string]) => table).sort();
+
+      for (const controller of [ChapterController, PermissionedController]) {
+        mockFrom.mockClear();
+        claims = { ...claims, sub: `${claims.sub}-${controller.name}` };
+        const answer = pendingSession();
+        await runWithRequestReads('GET', async () => {
+          const verdict = guard.canActivate(contextWith(claims, controller));
+          await settle();
+          answer({ id: claims.sub });
+          await verdict;
+        });
+        // Only roles is in question; the chapter read may have joined an
+        // earlier case's in-flight lookup (#3753) and not show up here.
+        expect(tables()).toContain('members');
+        expect(tables().includes('roles')).toBe(
+          controller === PermissionedController,
+        );
+      }
+    });
+
+    it('still refuses a revoked session whose lookups already started', async () => {
+      const answer = pendingSession();
+      const ctx = contextWith(claims, ChapterController);
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(ctx);
+        await settle();
+        expect(mockFrom).toHaveBeenCalled();
+        answer(null);
+        await expect(verdict).rejects.toThrow(UnauthorizedException);
+      });
+      expect(ctx.switchToHttp().getRequest().supabaseUser).toBeUndefined();
+      expect(ctx.switchToHttp().getRequest().jwtClaims).toBeUndefined();
     });
   });
 });
