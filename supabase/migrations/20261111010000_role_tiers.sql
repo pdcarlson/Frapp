@@ -287,13 +287,23 @@ declare
   v_from_permissions boolean;
   v_permission text;
 begin
+  -- A null list is not a list: leave it for the column's NOT NULL to refuse,
+  -- as it always has, and do not read it as "no permissions".
+  if new.permissions is null then
+    return new;
+  end if;
+
   if new.tier_id is not null then
+    -- FOR SHARE: a tier whose permissions are being changed in another
+    -- transaction is waited for, so this role is written from the tier's new
+    -- list and not the one about to be replaced. It also makes that other
+    -- transaction wait for this one, so its rewrite sees this role.
     select t.permissions into v_tier
       from public.role_tiers t
-     where t.id = new.tier_id;
+     where t.id = new.tier_id
+       for share;
     v_tier := coalesce(v_tier, '{}'::text[]);
   end if;
-  new.permissions := coalesce(new.permissions, '{}'::text[]);
   v_effective :=
     public.role_effective_permissions(v_tier, new.permission_overrides);
 

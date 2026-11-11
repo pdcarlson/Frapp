@@ -112,7 +112,7 @@ Migration `20261111010000` gave every existing chapter the four starting tier na
 - A role holding `*`, and the seeded President, Vice President, Treasurer and Secretary, went to the first tier; the seeded Member to the third; the seeded New Member to the fourth.
 - The seeded Alumni, and any role with no permissions at all (most roles a Discord import made), stayed outside the tiers.
 - Any other role went to the second tier when it held a permission the chapter's Member role lacked, and to the third otherwise. Ranking such a role too high takes nothing from anyone; ranking an officer's role too low would have stopped them editing roles they edit today.
-- Each tier started with the permissions every one of its seeded roles already held, and each role recorded its difference from that as overrides. So an existing chapter's President role carries "off" overrides for the tier's few permissions beside its `*`, which change nothing the wildcard grants.
+- Each tier started with the permissions that every seeded role placed in it already held, leaving out any role holding `*`. A tier with no seeded role in it (the second tier always, since no role is seeded there) started with what every role placed in it held, so a chapter whose only officer role held `events:create` has a second tier that gives `events:create`; a tier with no roles started empty. Each role recorded its difference from its tier as overrides. So an existing chapter's President role carries "off" overrides for the tier's few permissions beside its `*`, which change nothing the wildcard grants.
 
 The endpoints that edit tiers and overrides, the rank rules on who may edit what, and the officer defaults for new chapters are the next slice of #4071 and are not built yet.
 

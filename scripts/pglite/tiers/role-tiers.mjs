@@ -364,6 +364,14 @@ console.log("\n=== Functional: role tiers (20261111010000) ===");
       { risk: await role(A, "Risk") },
     );
 
+    const presidentBefore = JSON.stringify(await role(A, "President"));
+    check(
+      "a null permissions list is refused, and the role is left as it was",
+      (await refused(
+        `update roles set permissions = null where chapter_id = '${A}' and name = 'President'`,
+      )) && JSON.stringify(await role(A, "President")) === presidentBefore,
+      { president: await role(A, "President") },
+    );
     check(
       "a tier cannot carry the wildcard",
       await refused(
