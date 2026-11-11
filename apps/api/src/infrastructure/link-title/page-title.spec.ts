@@ -26,9 +26,9 @@ describe('page titles (#4187)', () => {
       expect(
         pageTitleFromHtml('<title>Rush BBQ | SignUpGenius.com</title>'),
       ).toBe('Rush BBQ');
-      expect(
-        pageTitleFromHtml('<title>Calendly - Olive Ramos</title>'),
-      ).toBe('Olive Ramos');
+      expect(pageTitleFromHtml('<title>Calendly - Olive Ramos</title>')).toBe(
+        'Olive Ramos',
+      );
     });
 
     it('decodes entities and collapses whitespace', () => {
@@ -72,7 +72,9 @@ describe('page titles (#4187)', () => {
     });
 
     it('drops control and bidirectional-override characters', () => {
-      expect(cleanPageTitle('Dues‮ gnirps\u0007')).toBe('Dues gnirps');
+      expect(
+        cleanPageTitle(`Dues${String.fromCharCode(0x202e)} gnirps\u0007`),
+      ).toBe('Dues gnirps');
     });
 
     it('caps a long title', () => {

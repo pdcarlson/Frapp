@@ -157,7 +157,9 @@ describe('HttpsLinkTitleFetcher (#4187)', () => {
     });
 
     await expect(
-      new HttpsLinkTitleFetcher(net).fetchTitle('https://forms.office.com/r/abc'),
+      new HttpsLinkTitleFetcher(net).fetchTitle(
+        'https://forms.office.com/r/abc',
+      ),
     ).resolves.toBeNull();
   });
 
@@ -248,7 +250,9 @@ describe('HttpsLinkTitleFetcher (#4187)', () => {
     await expect(
       fetcher.fetchTitle('https://calendly.com/missing'),
     ).resolves.toBeNull();
-    await expect(fetcher.fetchTitle('https://calendly.com/json')).resolves.toBeNull();
+    await expect(
+      fetcher.fetchTitle('https://calendly.com/json'),
+    ).resolves.toBeNull();
   });
 
   it('reads a gzip page, and stops at the size cap however far it unpacks', async () => {
@@ -271,7 +275,9 @@ describe('HttpsLinkTitleFetcher (#4187)', () => {
       fetcher.fetchTitle('https://calendly.com/small'),
     ).resolves.toBe('Olive Ramos');
     // The title sits past the cap, so it is never reached.
-    await expect(fetcher.fetchTitle('https://calendly.com/bomb')).resolves.toBeNull();
+    await expect(
+      fetcher.fetchTitle('https://calendly.com/bomb'),
+    ).resolves.toBeNull();
   });
 
   it('gives up at the deadline', async () => {

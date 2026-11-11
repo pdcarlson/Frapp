@@ -163,7 +163,7 @@ export class SupabaseChatMessageLinkRepository implements IChatMessageLinkReposi
       .order('posted_at', { ascending: false })
       .limit(options.limit);
     if (error) throw new SupabaseQueryError(error);
-    return (data ?? []) as LinkTitleCandidate[];
+    return data ?? [];
   }
 
   async claimForTitle(linkIds: string[]): Promise<LinkTitleCandidate[]> {
@@ -175,7 +175,7 @@ export class SupabaseChatMessageLinkRepository implements IChatMessageLinkReposi
       .is('title_checked_at', null)
       .select(TITLE_CANDIDATE_COLUMNS);
     if (error) throw new SupabaseQueryError(error);
-    return (data ?? []) as LinkTitleCandidate[];
+    return data ?? [];
   }
 
   async setTitle(

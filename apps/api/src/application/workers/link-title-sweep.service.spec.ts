@@ -1,4 +1,7 @@
-import { LINK_TITLE_BATCH, LinkTitleSweepService } from './link-title-sweep.service';
+import {
+  LINK_TITLE_BATCH,
+  LinkTitleSweepService,
+} from './link-title-sweep.service';
 import type { LinkTitleCandidate } from '#domain/repositories/chat-message-link.repository.interface';
 
 const NOW = Date.parse('2026-11-11T12:00:00.000Z');
@@ -50,9 +53,9 @@ describe('LinkTitleSweepService (#4187)', () => {
     expect(linkRepo.claimForTitle).toHaveBeenCalledWith(['mine', 'theirs']);
     expect(fetcher.fetchTitle).toHaveBeenCalledTimes(1);
     expect(fetcher.fetchTitle).toHaveBeenCalledWith('https://forms.gle/mine');
-    expect(
-      linkRepo.claimForTitle.mock.invocationCallOrder[0],
-    ).toBeLessThan(fetcher.fetchTitle.mock.invocationCallOrder[0]);
+    expect(linkRepo.claimForTitle.mock.invocationCallOrder[0]).toBeLessThan(
+      fetcher.fetchTitle.mock.invocationCallOrder[0],
+    );
     expect(linkRepo.setTitle).toHaveBeenCalledWith(
       'chapter-a',
       ['mine'],

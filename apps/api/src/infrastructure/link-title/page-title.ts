@@ -96,7 +96,8 @@ function decodeEntities(text: string): string {
 /** One tag's attributes, names lower-cased. */
 function attributes(tag: string): Map<string, string> {
   const found = new Map<string, string>();
-  const pattern = /([a-z_:][-a-z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi;
+  const pattern =
+    /([a-z_:][-a-z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi;
   for (const match of tag.matchAll(pattern)) {
     found.set(match[1].toLowerCase(), match[2] ?? match[3] ?? match[4] ?? '');
   }
@@ -106,7 +107,11 @@ function attributes(tag: string): Map<string, string> {
 function ogTitle(html: string): string | null {
   for (const match of html.matchAll(/<meta\b[^>]*>/gi)) {
     const attrs = attributes(match[0]);
-    const name = (attrs.get('property') ?? attrs.get('name') ?? '').toLowerCase();
+    const name = (
+      attrs.get('property') ??
+      attrs.get('name') ??
+      ''
+    ).toLowerCase();
     if (name === 'og:title') {
       const content = attrs.get('content');
       if (content) return content;
@@ -120,16 +125,28 @@ function titleElement(html: string): string | null {
   return match ? match[1] : null;
 }
 
+/** C0 and C1 controls, and the marks that reorder bidirectional text. */
+function isHiddenControl(code: number): boolean {
+  return (
+    code <= 0x1f ||
+    (code >= 0x7f && code <= 0x9f) ||
+    code === 0x200e ||
+    code === 0x200f ||
+    (code >= 0x202a && code <= 0x202e) ||
+    (code >= 0x2066 && code <= 0x2069)
+  );
+}
+
 /**
  * The text as one plain line: entities decoded, whitespace collapsed, and
  * control and bidirectional-override characters dropped, so a title can't
  * reorder the text drawn after it.
  */
 function plainLine(text: string): string {
-  return decodeEntities(text)
-    .replace(/[\u0000-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const kept = Array.from(decodeEntities(text), (char) =>
+    isHiddenControl(char.codePointAt(0) ?? 0) ? ' ' : char,
+  ).join('');
+  return kept.replace(/\s+/g, ' ').trim();
 }
 
 /** A raw title cleaned for a row, or null when it names nothing. */
