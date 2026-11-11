@@ -3589,6 +3589,22 @@ drop function if exists public.reorder_chat_categories(uuid, uuid[]);
 alter table public.chat_channels drop column if exists display_order;
 ```
 
+## Rollback Unread dots on Activity (20261111220000)
+
+* **Migration**: `20261111220000_activity_item_reads.sql`
+
+The tables `activity_item_reads` and `activity_unread_starts`, the nullable column `tasks.sent_back_at`, and `anonymize_user` redefined to also delete both tables' rows. No existing row changed.
+
+**Revert the code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API never reads or writes the tables or the column (it reads tasks with `select('*')` and returns `sent_back_at` as a plain field older clients ignore) and serves no `unread`; the reverted clients draw no dots.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses which items every member opened and when their dots began, and when tasks were sent back. First redefine `anonymize_user` without its two deletes (the `20261111180000_document_pins_and_stars.sql` body), or account deletion fails once the tables are gone:
+
+```sql
+drop table if exists public.activity_item_reads;
+drop table if exists public.activity_unread_starts;
+alter table public.tasks drop column if exists sent_back_at;
+```
+
 ## Rollback custom roles fold (20261111210000)
 
 * **Migration**: `20261111210000_fold_custom_roles.sql`

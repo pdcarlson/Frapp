@@ -504,8 +504,14 @@ export class TaskService {
     }
 
     // Compare-and-set, so a confirm (or the assignee taking it back) that
-    // lands between the guards above and this write is not overwritten.
-    const updated = await this.taskRepo.reopenCompletion(id, chapterId);
+    // lands between the guards above and this write is not overwritten. The
+    // send-back time is when it waits on the assignee again: Activity serves
+    // it unread to them from then (`spec/behavior/activity.md` § Unread).
+    const updated = await this.taskRepo.reopenCompletion(
+      id,
+      chapterId,
+      new Date().toISOString(),
+    );
     if (!updated) {
       throw new BadRequestException(
         'Task is no longer waiting on confirmation — it was confirmed or moved back already',

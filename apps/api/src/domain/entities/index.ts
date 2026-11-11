@@ -36,3 +36,4 @@ export * from './scheduled-notification-dispatch.entity';
 export * from './chapter-activation-milestone.entity';
 export * from './discord-connection.entity';
 export * from './discord-import.entity';
+export * from './activity-item-read.entity';

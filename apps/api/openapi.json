@@ -11491,6 +11491,78 @@
         ]
       }
     },
+    "/v1/activity/unread-since": {
+      "put": {
+        "description": "A client that draws dots calls it when `GET /v1/activity` serves `unread_since: null`. From then, a row that appears is unread until the caller opens it; nothing older ever is, since no client could have recorded the caller’s opens of it. Idempotent: once set it never moves. `spec/behavior/activity.md` § Unread.",
+        "operationId": "ActivityController_startUnread_v1",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Begin the caller’s unread dots on Activity, if they haven’t begun",
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
+    "/v1/activity/reads": {
+      "post": {
+        "description": "Clears their `unread` on `GET /v1/activity` until the item starts waiting on the caller again (a task they opened, then completed by its assignee, is unread again in their confirmations). Per member and idempotent; opening an item again moves its time. Opening an item anywhere else in Frapp doesn’t count. Nothing checks that the caller can see an item: a read is theirs alone and an item they can’t see is never served to them. `spec/behavior/activity.md` § Unread.",
+        "operationId": "ActivityController_markRead_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkActivityReadDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Record that the caller opened these items from Activity",
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
     "/v1/activity/links/{id}/state": {
       "put": {
         "description": "Per member, idempotent; either replaces the other. 404 for a link the caller can’t read (its channel isn’t in their chat list) as for one that doesn’t exist. `spec/behavior/activity.md` § Links.",
@@ -17959,6 +18031,12 @@
             "format": "date-time",
             "nullable": true
           },
+          "sent_back_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When an officer last sent the completion back to the assignee; null if never. The assignee taking back their own completion doesn’t set it."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -17981,6 +18059,7 @@
           "points_awarded",
           "completed_at",
           "confirmed_at",
+          "sent_back_at",
           "created_at"
         ]
       },
@@ -18991,9 +19070,19 @@
             "nullable": true,
             "description": "When an officer confirmed the completion; null until then. A completed task with no confirmation is still waiting on one."
           },
+          "sent_back_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When an officer last sent the completion back to the assignee; null if never."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "unread": {
+            "type": "boolean",
+            "description": "Whether the caller hasn’t opened it from Activity since it started waiting on them: since it was assigned or last sent back, or for a confirmation since it was completed (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for a task the caller assigned to themselves that was never sent back."
           }
         },
         "required": [
@@ -19009,7 +19098,9 @@
           "point_reward",
           "completed_at",
           "confirmed_at",
-          "created_at"
+          "sent_back_at",
+          "created_at",
+          "unread"
         ]
       },
       "ActivityHoursEntryDto": {
@@ -19041,6 +19132,10 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "unread": {
+            "type": "boolean",
+            "description": "Whether the caller hasn’t opened it from Activity since it was submitted (`POST /v1/activity/reads`). Always false while `unread_since` is null."
           }
         },
         "required": [
@@ -19050,7 +19145,8 @@
           "date",
           "duration_minutes",
           "description",
-          "created_at"
+          "created_at",
+          "unread"
         ]
       },
       "ActivityPollDto": {
@@ -19112,6 +19208,10 @@
             "type": "string",
             "format": "date-time"
           },
+          "unread": {
+            "type": "boolean",
+            "description": "Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null, and in `made_by_you`."
+          },
           "message": {
             "description": "The poll’s chat message, as `GET /v1/channels/{id}/messages` serves it, for chat’s own poll card. Its votes are read from `chat_message_actions`, as chat reads them.",
             "allOf": [
@@ -19134,6 +19234,7 @@
           "is_closed",
           "has_voted",
           "created_at",
+          "unread",
           "message"
         ]
       },
@@ -19220,6 +19321,20 @@
             "type": "boolean",
             "nullable": true,
             "description": "Whether the caller has an attendance row for it. Read only while check-in is open; null otherwise, and when that read failed."
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Who made it. Null for an event made before makers were recorded (2026-11-11)."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "unread": {
+            "type": "boolean",
+            "description": "Whether the caller hasn’t opened it from Activity since it was made (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for an event the caller made."
           }
         },
         "required": [
@@ -19232,7 +19347,10 @@
           "point_value",
           "check_in_opens_minutes",
           "check_in_open",
-          "checked_in"
+          "checked_in",
+          "created_by",
+          "created_at",
+          "unread"
         ]
       },
       "ActivityLinkDto": {
@@ -19293,6 +19411,10 @@
           "posted_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "unread": {
+            "type": "boolean",
+            "description": "Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null."
           }
         },
         "required": [
@@ -19306,7 +19428,8 @@
           "channel_type",
           "posted_by",
           "posted_by_name",
-          "posted_at"
+          "posted_at",
+          "unread"
         ]
       },
       "ActivityFileDto": {
@@ -19421,6 +19544,12 @@
                 "links"
               ]
             }
+          },
+          "unread_since": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the caller’s unread dots began in this chapter. Null until a client that draws dots calls `PUT /v1/activity/unread-since`, and every `unread` is false until then. Nothing that appeared before it is unread. Also served null, with every row read, when the caller’s unread state couldn’t be loaded."
           }
         },
         "required": [
@@ -19429,7 +19558,49 @@
           "links",
           "made_by_you",
           "needs_you_count",
-          "unavailable"
+          "unavailable",
+          "unread_since"
+        ]
+      },
+      "ActivityItemRefDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "task",
+              "hours_entry",
+              "poll",
+              "event",
+              "link"
+            ],
+            "description": "Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`."
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "kind",
+          "item_id"
+        ]
+      },
+      "MarkActivityReadDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "minItems": 1,
+            "maxItems": 100,
+            "description": "The items the caller opened. At most 100.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityItemRefDto"
+            }
+          }
+        },
+        "required": [
+          "items"
         ]
       },
       "SetActivityLinkStateDto": {
