@@ -221,6 +221,42 @@ describe("MessageItem flags across densities and states (#3921)", () => {
     },
   );
 
+  it.each(["cozy", "compact", "bubbles"] as const)(
+    "puts the flag on the author line, right of the time or name, in %s (#4288)",
+    (density) => {
+      act(() => setChatDensity(density));
+      const { container } = renderRow({ message: message(flagged) });
+      const flag = container.querySelector('[data-slot="message-flag"]')!;
+      const line = flag.parentElement!;
+      // Compact's time is in the gutter, so the flag follows the name there.
+      expect(line.textContent).toContain("Elias Brandt");
+      const before = flag.previousElementSibling!;
+      expect(before.tagName).toBe(density === "compact" ? "SPAN" : "TIME");
+      // Not a line of its own above the text.
+      expect(
+        container.querySelector('[data-slot="message-body"]')?.contains(flag),
+      ).toBeFalsy();
+    },
+  );
+
+  it("keeps compact's name off the sentence on a flagged message", () => {
+    act(() => setChatDensity("compact"));
+    const { container } = renderRow({ message: message(flagged) });
+    expect(container.querySelector(".flow-root")).toBeNull();
+  });
+
+  it("puts the caption on a line of its own where the row draws no author line", () => {
+    const { container } = renderRow({
+      message: message(flagged),
+      showHeader: false,
+    });
+    expect(container.querySelector('[data-slot="author-line"]')).toBeNull();
+    const flag = container.querySelector('[data-slot="message-flag"]')!;
+    // Its own block above the body, not the author line's inline parts.
+    expect(flag.tagName).toBe("DIV");
+    expect(flag.className).not.toContain("contents");
+  });
+
   it("draws the caption above the bubble, not on its fill", () => {
     act(() => setChatDensity("bubbles"));
     const { container } = renderRow({

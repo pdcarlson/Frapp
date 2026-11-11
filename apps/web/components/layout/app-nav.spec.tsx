@@ -147,11 +147,41 @@ describe("AppNav", () => {
     );
   });
 
-  it("fails open while permissions are unresolved", () => {
-    // Hiding a link one render early is a visible flash of nav items
-    // disappearing; the route itself is guarded server-side.
-    renderNav({ permissions: undefined });
+  it("draws no permission-gated row while permissions are unresolved (#3854)", () => {
+    // Failing open drew Chapter settings for every member on every reload,
+    // clickable, until the permission read answered and took it back.
+    {
+      const { unmount } = renderNav({ permissions: undefined });
+      for (const gated of ["Chapter settings", "Directory", "Backwork"]) {
+        expect(
+          screen.queryByRole("link", { name: gated }),
+        ).not.toBeInTheDocument();
+      }
+      // Rows with no permission rule render at once.
+      expect(screen.getByRole("link", { name: "Events" })).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Documents" })).toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it("keeps gated rows when the offline dashboard can't ask (null)", () => {
+    // A check that could not run is not a denial (design-system §5 rule 4):
+    // a member keeps the Directory row they hold, and the page states the outage.
+    renderNav({ permissions: null });
+    expect(screen.getByRole("link", { name: "Directory" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Chapter settings" })).toBeInTheDocument();
+  });
+
+  it("draws the gated rows once an officer's permissions answer", () => {
+    const { rerender } = renderNav({ permissions: undefined });
+    expect(
+      screen.queryByRole("link", { name: "Chapter settings" }),
+    ).not.toBeInTheDocument();
+    rerender(
+      <AppNav collapsed={false} permissions={OFFICER} pathname="/events" />,
+    );
+    expect(screen.getByRole("link", { name: "Chapter settings" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Directory" })).toBeInTheDocument();
   });
 
   it("hides a row whose module is switched off", () => {
