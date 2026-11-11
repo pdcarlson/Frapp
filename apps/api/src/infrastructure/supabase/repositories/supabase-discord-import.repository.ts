@@ -752,7 +752,9 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     // repo's multi-tenancy invariant states — and bounds the delete.
     const { data: candidates, error: selectError } = await this.supabase
       .from('chat_messages')
-      .select('id, chat_channels!inner(chapter_id)')
+      .select(
+        'id, chat_channels!chat_messages_channel_id_fkey!inner(chapter_id)',
+      )
       .eq('kind', 'imported')
       .eq('metadata->>discord_import_id', importId)
       .eq('chat_channels.chapter_id', chapterId)

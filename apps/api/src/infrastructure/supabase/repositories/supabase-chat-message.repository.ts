@@ -207,10 +207,14 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
     // chat_messages doesn't carry chapter_id directly — filter via the
     // chat_channels foreign key relationship. Supabase projects the
     // inner-joined chat_channels row back but we only care about the
-    // message columns.
+    // message columns. The FK is named because `chat_channels` also points
+    // at `chat_messages` (`background_message_id`), and PostgREST refuses a
+    // bare embed between two tables with two relationships (PGRST201, #4087).
     let query = this.supabase
       .from('chat_messages')
-      .select(`${CHAT_MESSAGE_COLUMNS}, chat_channels!inner(chapter_id)`)
+      .select(
+        `${CHAT_MESSAGE_COLUMNS}, chat_channels!chat_messages_channel_id_fkey!inner(chapter_id)`,
+      )
       .eq('type', 'POLL')
       .eq('chat_channels.chapter_id', chapterId)
       .order('created_at', { ascending: false });
@@ -261,7 +265,9 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
     // `chat_messages` carries no `chapter_id` of its own.
     let query = this.supabase
       .from('chat_messages')
-      .select(`${CHAT_MESSAGE_COLUMNS}, chat_channels!inner(chapter_id)`)
+      .select(
+        `${CHAT_MESSAGE_COLUMNS}, chat_channels!chat_messages_channel_id_fkey!inner(chapter_id)`,
+      )
       .eq('kind', 'poll')
       .eq('is_deleted', false)
       .eq('chat_channels.chapter_id', chapterId)

@@ -26,7 +26,7 @@ import {
  *
  * What that assertion does *not* cover, because the harness records the
  * `select()` string without parsing it: dropping `!inner` from
- * `'*, chat_channels!inner(chapter_id)'`. Against real PostgREST that turns the
+ * `chat_channels!chat_messages_channel_id_fkey!inner(chapter_id)`. Against real PostgREST that turns the
  * embed filter into a non-filter — the row comes back with a nulled embed
  * instead of being excluded — and every chapter's polls leak. That is query
  * shape, and it belongs to the live-PostgREST integration suite
@@ -66,7 +66,7 @@ const message = (
   is_deleted: false,
   created_at: '2026-01-01T00:00:00.000Z',
   author_avatar_path: authorAvatarPath,
-  // How PostgREST projects `chat_channels!inner(chapter_id)` back onto the row.
+  // How PostgREST projects the `chat_channels` embed back onto the row.
   chat_channels: { chapter_id: chapterId },
 });
 
