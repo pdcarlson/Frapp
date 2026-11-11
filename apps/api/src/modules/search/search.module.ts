@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { SearchService } from '../../application/services/search.service';
 import { SearchController } from '../../interface/controllers/search.controller';
 // RbacModule → RbacService: search resolves channel-gating permissions through
-// the same bridged resolver as chat, so custom-role capabilities count here.
+// the same resolver as chat.
 import { RbacModule } from '../rbac/rbac.module';
 // ChatBlockModule → ChatBlockService: message search serves chat content to a
 // named viewer, so it applies the caller's block list like the timeline does

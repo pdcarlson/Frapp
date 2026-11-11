@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import {
   dayDelta,
+  formatClockShort,
   formatDayHeading,
   parseInstant,
   parseInstantOrBareLocalNoon,
@@ -143,7 +144,7 @@ export function selectNextTask(
     .map((row) => {
       const id = str(row, "id");
       const title = str(row, "title");
-      const dueDate = str(row, "due_date");
+      const dueDate = str(row, "due_at") ?? str(row, "due_date");
       const status = str(row, "status") ?? "TODO";
       if (!id || !title || !dueDate) return null;
       if (status === "COMPLETED") return null;
@@ -207,8 +208,12 @@ export function formatDueDate(dueDate: string, now: Date): string {
   const due = parseDueInstant(dueDate);
   if (!due) return "";
   const days = dayDelta(now, due);
-  if (days < 0) return "Overdue";
-  if (days === 0) return "Due today";
+  // A task due at a time (a full timestamp, #4003) is overdue from that
+  // minute, and today it says when.
+  const timed = dueDate.length > 10;
+  if (days < 0 || (timed && due.getTime() <= now.getTime())) return "Overdue";
+  if (days === 0)
+    return timed ? `Due at ${formatClockShort(due)}` : "Due today";
   if (days === 1) return "Due tomorrow";
   return `Due ${formatDayWord(due, now)}`;
 }

@@ -8,7 +8,6 @@ import {
 } from '../../application/services/chapter-workflows.service';
 import { ChapterServiceConfigService } from '../../application/services/chapter-service-config.service';
 import { ChapterPointsConfigService } from '../../application/services/chapter-points-config.service';
-import { CustomRoleService } from '../../application/services/custom-role.service';
 import { CustomRoleController } from '../../interface/controllers/custom-role.controller';
 import { CustomFieldService } from '../../application/services/custom-field.service';
 import { CustomFieldController } from '../../interface/controllers/custom-field.controller';
@@ -18,8 +17,6 @@ import { CHAPTER_AUDIT_LOG_REPOSITORY } from '#domain/repositories/chapter-audit
 import { SupabaseChapterAuditLogRepository } from '../../infrastructure/supabase/repositories/supabase-chapter-audit-log.repository';
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
 import { SupabaseRoleRepository } from '../../infrastructure/supabase/repositories/supabase-role.repository';
-import { CUSTOM_ROLE_REPOSITORY } from '#domain/repositories/custom-role.repository.interface';
-import { SupabaseCustomRoleRepository } from '../../infrastructure/supabase/repositories/supabase-custom-role.repository';
 import { CUSTOM_FIELD_REPOSITORY } from '#domain/repositories/custom-field.repository.interface';
 import { SupabaseCustomFieldRepository } from '../../infrastructure/supabase/repositories/supabase-custom-field.repository';
 import { CHAPTER_CONFIG_REPOSITORY } from '#domain/repositories/chapter-config.repository.interface';
@@ -43,8 +40,6 @@ import { ActivationModule } from '../activation/activation.module';
     ChapterPointsConfigService,
     // Seed catalog as a value provider — see the token's doc comment.
     { provide: ORG_WORKFLOWS_SEED, useValue: WORKFLOWS_SEED },
-    CustomRoleService,
-    { provide: CUSTOM_ROLE_REPOSITORY, useClass: SupabaseCustomRoleRepository },
     CustomFieldService,
     {
       provide: CUSTOM_FIELD_REPOSITORY,
@@ -69,7 +64,6 @@ import { ActivationModule } from '../activation/activation.module';
     ChapterWorkflowsService,
     ChapterServiceConfigService,
     ChapterPointsConfigService,
-    CustomRoleService,
     CustomFieldService,
     ChapterAuditLogService,
   ],

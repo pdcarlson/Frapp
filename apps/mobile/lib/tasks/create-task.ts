@@ -1,4 +1,8 @@
-import { formatWeekdayDay, localIsoDate } from "@repo/formatting";
+import {
+  dueEntryFields,
+  formatWeekdayDay,
+  localIsoDate,
+} from "@repo/formatting";
 
 /**
  * Draft state and validation for the s19 "New task" sheet.
@@ -20,12 +24,20 @@ import { formatWeekdayDay, localIsoDate } from "@repo/formatting";
  * A picked day is held as a date, like "Friday" ({@link resolveDue}).
  */
 
+import { TASK_SUBTASKS_MAX } from "@repo/validation";
 import { POINTS_MAX, TITLE_MAX_LENGTH } from "./limits";
 
 export interface NewTaskDraft {
   title: string;
   /** `YYYY-MM-DD`, device-local. */
   dueDate: string;
+  /**
+   * `HH:MM` on the 24-hour clock, device-local, when the task is due at a
+   * time of day (#4003); `null` or absent for a task due by the day.
+   */
+  dueTime?: string | null;
+  /** The steps, in order (#4003); blank lines are dropped on send. */
+  subtasks?: string[];
   assigneeId: string | null;
   /** Raw keypad text, so a half-typed value is not silently coerced. */
   pointsInput: string;
@@ -103,8 +115,7 @@ export function duePresets(now: Date): DuePreset[] {
  * picked (see {@link DuePreset.relative}).
  */
 export type DueChoice =
-  | { kind: "relative"; id: string }
-  | { kind: "date"; date: string };
+  { kind: "relative"; id: string } | { kind: "date"; date: string };
 
 /** A new draft's due choice: "Today". */
 export const DEFAULT_DUE_CHOICE: DueChoice = { kind: "relative", id: "today" };
@@ -170,9 +181,7 @@ export function formatDueFieldLabel(
  * offering points at all.
  */
 export type PointsParse =
-  | { kind: "omit" }
-  | { kind: "value"; points: number }
-  | { kind: "invalid" };
+  { kind: "omit" } | { kind: "value"; points: number } | { kind: "invalid" };
 
 export function parsePointReward(value: string): PointsParse {
   const trimmed = value.trim();
@@ -189,7 +198,60 @@ export interface ValidatedNewTask {
   title: string;
   assignee_id: string;
   due_date: string;
+  /** The moment it is due, when the draft has a time. */
+  due_at?: string;
+  /** Subtask titles, in order, when the draft has any. */
+  subtasks?: string[];
   point_reward?: number;
+}
+
+/**
+ * The time field's text: `"5 PM"`, `"9:30 AM"`. The minutes only when there
+ * are some, as a calendar writes a time.
+ */
+export function formatDueTimeLabel(time: string): string {
+  const [hours = 0, minutes = 0] = time.split(":").map(Number);
+  const period = hours < 12 ? "AM" : "PM";
+  const hour = hours % 12 === 0 ? 12 : hours % 12;
+  return minutes === 0
+    ? `${hour} ${period}`
+    : `${hour}:${String(minutes).padStart(2, "0")} ${period}`;
+}
+
+/**
+ * Where "Add a time" starts: 5 PM, the end of a chapter's working day, or
+ * for a task due today once that has passed, the next whole hour (up to
+ * 11 PM), so a fresh time is never already behind.
+ */
+export function suggestedDueTime(dueDate: string, now: Date): string {
+  if (dueDate !== localIsoDate(now) || now.getHours() < 17) return "17:00";
+  return `${String(Math.min(now.getHours() + 1, 23)).padStart(2, "0")}:00`;
+}
+
+/**
+ * True when the draft names a time on today that has already gone by: a
+ * task created like that would be overdue the moment it exists.
+ */
+export function dueTimePassed(
+  draft: Pick<NewTaskDraft, "dueDate" | "dueTime">,
+  now: Date,
+  /**
+   * An edit's due as the task already has it (#4296). A task that is
+   * overdue can still have its title or points changed, so its own due
+   * isn't refused for having passed; only a newly picked one is.
+   */
+  kept?: Pick<NewTaskDraft, "dueDate" | "dueTime">,
+): boolean {
+  if (!draft.dueTime) return false;
+  if (
+    kept &&
+    kept.dueDate === draft.dueDate &&
+    (kept.dueTime ?? null) === draft.dueTime
+  ) {
+    return false;
+  }
+  const { due_at } = dueEntryFields(`${draft.dueDate}T${draft.dueTime}`);
+  return due_at !== undefined && Date.parse(due_at) <= now.getTime();
 }
 
 /**
@@ -201,11 +263,18 @@ export interface ValidatedNewTask {
  * only its presence is checked here — the server re-validates chapter
  * membership regardless.
  */
-export function validateNewTask(draft: NewTaskDraft): ValidatedNewTask | null {
+export function validateNewTask(
+  draft: NewTaskDraft,
+  now: Date = new Date(),
+  /** An edit's stored due, which may have passed (see `dueTimePassed`). */
+  kept?: Pick<NewTaskDraft, "dueDate" | "dueTime">,
+): ValidatedNewTask | null {
   const title = draft.title.trim();
   if (title.length === 0 || title.length > TITLE_MAX_LENGTH) return null;
   if (!draft.assigneeId) return null;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.dueDate)) return null;
+  if (draft.dueTime && !/^\d{2}:\d{2}$/.test(draft.dueTime)) return null;
+  if (dueTimePassed(draft, now, kept)) return null;
 
   const points = parsePointReward(draft.pointsInput);
   if (points.kind === "invalid") return null;
@@ -215,6 +284,84 @@ export function validateNewTask(draft: NewTaskDraft): ValidatedNewTask | null {
     assignee_id: draft.assigneeId,
     due_date: draft.dueDate,
   };
+  if (draft.dueTime) {
+    const { due_at } = dueEntryFields(`${draft.dueDate}T${draft.dueTime}`);
+    if (due_at) body.due_at = due_at;
+  }
+  const subtasks = (draft.subtasks ?? [])
+    .map((step) => step.trim())
+    .filter((step) => step.length > 0)
+    .slice(0, TASK_SUBTASKS_MAX);
+  if (subtasks.length > 0) body.subtasks = subtasks;
   if (points.kind === "value") body.point_reward = points.points;
+  return body;
+}
+
+/** A task as an edit opens it (#4296): what the sheet's fields start from. */
+export interface TaskEditTarget {
+  id: string;
+  title: string;
+  assigneeId: string;
+  /** The stored `due_date`. */
+  dueDay: string;
+  /** The stored `due_at`, or `null` for a task due by the day. */
+  dueAt: string | null;
+  pointReward: number | null;
+  /** The stored status: a new assignee starts anything past To do over. */
+  storedStatus: string | null;
+}
+
+/**
+ * The sheet's draft for a task as it stands. A timed task opens on the day
+ * and time of its `due_at` on this device, the inverse of `dueEntryFields`.
+ */
+export function editDraftOf(task: TaskEditTarget): NewTaskDraft {
+  const at = task.dueAt ? new Date(task.dueAt) : null;
+  const timed = at !== null && !Number.isNaN(at.getTime());
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return {
+    title: task.title,
+    dueDate: timed ? localIsoDate(at) : task.dueDay,
+    dueTime: timed ? `${pad(at.getHours())}:${pad(at.getMinutes())}` : null,
+    subtasks: [],
+    assigneeId: task.assigneeId,
+    pointsInput: task.pointReward ? String(task.pointReward) : "",
+  };
+}
+
+/** What `PATCH /v1/tasks/:id` takes (#4296). */
+export interface TaskEditBody {
+  title?: string;
+  assignee_id?: string;
+  due_date?: string;
+  due_at?: string | null;
+  point_reward?: number | null;
+}
+
+/**
+ * Only what the officer changed, the due date and time as a pair, as the
+ * API reads them. Empty when nothing changed, so Save sends nothing.
+ */
+export function taskEditBody(
+  task: TaskEditTarget,
+  next: ValidatedNewTask,
+): TaskEditBody {
+  const body: TaskEditBody = {};
+  if (next.title !== task.title) body.title = next.title;
+  if (next.assignee_id !== task.assigneeId) {
+    body.assignee_id = next.assignee_id;
+  }
+  const dueAt = next.due_at ?? null;
+  const storedAt = task.dueAt ? new Date(task.dueAt).toISOString() : null;
+  // A timed task's day is its time's day: an unchanged `due_at` is an
+  // unchanged due, even read on a device whose zone puts it on another day.
+  const dueChanged =
+    dueAt !== storedAt || (dueAt === null && next.due_date !== task.dueDay);
+  if (dueChanged) {
+    body.due_date = next.due_date;
+    body.due_at = dueAt;
+  }
+  const points = next.point_reward || null;
+  if (points !== (task.pointReward || null)) body.point_reward = points;
   return body;
 }

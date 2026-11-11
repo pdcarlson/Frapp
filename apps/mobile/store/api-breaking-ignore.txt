@@ -20,3 +20,13 @@ PATCH /v1/roles/{id} request property 'color' was restricted to a list of enum v
 # `git grep 'useDownloadEventIcs\|/ics"' <sha> -- apps/mobile` finds no caller, so the binaries
 # never request the route (the hook they bundle from packages/hooks defines it, unused).
 GET /v1/events/{id}/ics api path removed without deprecation
+
+# #4075 folds custom roles into ordinary roles and deletes their writes. Only the web Settings page
+# created, edited or deleted a custom role. At every shipped SHA (ea9bc12c, cca52dec, 5e43a27b,
+# 55922eab, 108b7ac7, 728fb69e, b61c20c3, c91ec8d8, 547c1364, 68a47019),
+# `git grep 'useCreateCustomRole\|useUpdateCustomRole\|useDeleteCustomRole' <sha> -- apps/mobile`
+# finds no caller (the hooks they bundle from packages/hooks define them, unused). The binaries do
+# call GET /v1/custom-roles (useCustomRoles in the member sheet), so that route stays, answering [].
+POST /v1/custom-roles api removed without deprecation
+DELETE /v1/custom-roles/{id} api path removed without deprecation
+PATCH /v1/custom-roles/{id} api path removed without deprecation

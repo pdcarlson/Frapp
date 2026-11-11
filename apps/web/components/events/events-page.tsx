@@ -16,10 +16,19 @@ import {
 } from "@/components/events/chapter-ops-glyphs";
 import {
   useAutoAbsent,
+  useCalendarTasks,
+  useChapterRoster,
   useEvents,
   useMyPermissions,
   useNow,
 } from "@repo/hooks";
+import {
+  ALL_CALENDAR_LAYERS,
+  calendarTasksByDay,
+  type CalendarLayer,
+} from "@repo/hooks/calendar-tasks";
+import { memberLabel } from "@repo/hooks/display-names";
+import { CalendarLayerToggles } from "@/components/events/calendar-tasks";
 // A subpath, like `error-copy`: pure functions a test's `@repo/hooks` mock
 // must not swallow.
 import {
@@ -93,7 +102,9 @@ import { checkInClosesAt } from "@/components/events/check-in-close";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import {
+  readCalendarLayers,
   readEventsView,
+  writeCalendarLayers,
   writeEventsView,
   type EventsView,
 } from "@/lib/events/events-view";
@@ -305,6 +316,53 @@ export function EventsPage() {
     setView(next);
     writeEventsView(userId, next);
   }
+
+  // Tasks on the calendar (#4144): the viewer's own on their due day, and
+  // the ones they assigned with where each stands. What shows is a toggle
+  // per kind, remembered on this browser like the view; `null` until read.
+  const calendarTasks = useCalendarTasks();
+  const rosterQuery = useChapterRoster();
+  const [storedLayers, setStoredLayers] = useState<Set<CalendarLayer> | null>(
+    null,
+  );
+  const [layersReadFor, setLayersReadFor] = useState<string | null>(null);
+  if (userId && layersReadFor !== userId) {
+    setLayersReadFor(userId);
+    setStoredLayers(readCalendarLayers(userId));
+  }
+  const shownLayers: ReadonlySet<CalendarLayer> =
+    storedLayers ?? ALL_CALENDAR_LAYERS;
+  const offeredLayers = useMemo(() => {
+    const offered = new Set<CalendarLayer>();
+    if (!calendarTasks.hasMine && !calendarTasks.hasAssigned) return offered;
+    offered.add("events");
+    if (calendarTasks.hasMine) offered.add("mine");
+    if (calendarTasks.hasAssigned) offered.add("assigned");
+    return offered;
+  }, [calendarTasks.hasMine, calendarTasks.hasAssigned]);
+  function toggleLayer(layer: CalendarLayer) {
+    const next = new Set(shownLayers);
+    if (next.has(layer)) next.delete(layer);
+    else next.add(layer);
+    setStoredLayers(next);
+    writeCalendarLayers(userId, next);
+  }
+  const tasksByDay = useMemo(
+    () => calendarTasksByDay(calendarTasks.items, shownLayers),
+    [calendarTasks.items, shownLayers],
+  );
+  const nameOf = useMemo(() => {
+    const names = new Map(
+      (rosterQuery.data ?? []).map((member) => [
+        member.user_id,
+        member.display_name,
+      ]),
+    );
+    return (memberUserId: string) =>
+      memberUserId === userId
+        ? "you"
+        : memberLabel(names.get(memberUserId), memberUserId);
+  }, [rosterQuery.data, userId]);
 
   // Shared by both views: search text, attendance policy, cadence. Time
   // (upcoming/past/all) is deliberately NOT here — it's a list-view concept
@@ -1058,7 +1116,24 @@ export function EventsPage() {
           own month, and a day number and an event chip say what they do.
         */
         <EventsCalendar
-          events={calendarEvents}
+          events={
+            // Off only while its toggle is there to turn it back on: a
+            // member whose tasks are all gone loses the chips, not events.
+            shownLayers.has("events") || !offeredLayers.has("events")
+              ? calendarEvents
+              : []
+          }
+          tasksByDay={tasksByDay}
+          nameOf={nameOf}
+          layerToggles={
+            offeredLayers.size > 0 ? (
+              <CalendarLayerToggles
+                offered={offeredLayers}
+                shown={shownLayers}
+                onToggle={toggleLayer}
+              />
+            ) : null
+          }
           monthAnchor={calendarMonthAnchor}
           onMonthAnchorChange={setCalendarMonthAnchor}
           canCreate={canCreateEvents}
@@ -1098,13 +1173,23 @@ export function EventsPage() {
         onEventDeleted={async () => {
           await eventsQuery.refetch();
         }}
+        docked
       />
 
       <EventEditorDialog
         open={editorDialog.open}
-        onOpenChange={editorDialog.setOpen}
+        onOpenChange={(open) => {
+          editorDialog.setOpen(open);
+          // Edit opened from the event's own view, so leaving it (Back,
+          // Cancel or Save) goes back there, as Google Calendar does.
+          if (!open && editorMode === "edit" && activeEvent) {
+            setDetailSheetOpen(true);
+          }
+        }}
         onCloseAutoFocus={editorDialog.contentProps.onCloseAutoFocus}
         mode={editorMode}
+        docked
+        backLabel={editorMode === "edit" ? "Back to event" : "Back to events"}
         event={activeEvent}
         usingPreviewData={false}
         initialStartAt={calendarCreateDefaults?.startAt}

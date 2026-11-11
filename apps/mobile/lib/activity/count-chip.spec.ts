@@ -24,7 +24,8 @@ describe("activityCountChip (#3897)", () => {
 
   it("keeps the plain count when only an uncounted section failed", () => {
     expect(
-      activityCountChip({ needs_you_count: 2, unavailable: ["files"] })?.label,
+      activityCountChip({ needs_you_count: 2, unavailable: ["made_events"] })
+        ?.label,
     ).toBe("2");
   });
 

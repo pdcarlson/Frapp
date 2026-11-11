@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -51,7 +57,10 @@ const member = (
   order_number: number | null,
 ) => ({ id, user_id: `u-${id}`, display_name, pledge_class_id, order_number });
 
-const CLASSES = [pledgeClass("alpha", "Alpha", 0), pledgeClass("beta", "Beta", 1)];
+const CLASSES = [
+  pledgeClass("alpha", "Alpha", 0),
+  pledgeClass("beta", "Beta", 1),
+];
 const MEMBERS = [
   member("m1", "Ada", "alpha", 2),
   member("m2", "Ben", "alpha", 1),
@@ -129,7 +138,10 @@ describe("SettingsClassesTab", () => {
     const field = screen.getByLabelText("Name of Alpha");
     await userEvent.clear(field);
     await userEvent.type(field, "Alpha 2019{Enter}");
-    expect(mockRename).toHaveBeenCalledWith({ id: "alpha", name: "Alpha 2019" });
+    expect(mockRename).toHaveBeenCalledWith({
+      id: "alpha",
+      name: "Alpha 2019",
+    });
   });
 
   it("saves the whole list when a class is moved", async () => {
@@ -163,7 +175,11 @@ describe("SettingsClassesTab", () => {
       screen.getByText(/its 2 members are left without one/i),
     ).toBeInTheDocument();
     await userEvent.click(
-      screen.getByRole("button", { name: "Delete Alpha", hidden: false, description: undefined }),
+      screen.getByRole("button", {
+        name: "Delete Alpha",
+        hidden: false,
+        description: undefined,
+      }),
     );
     expect(mockDelete).toHaveBeenCalledWith("alpha");
   });

@@ -89,7 +89,7 @@ const READ = {
   },
   coming_up: [],
   links: [],
-  made_by_you: { polls: [], tasks: [], files: [], events: [] },
+  made_by_you: { polls: [], tasks: [], events: [] },
   needs_you_count: 1,
   unavailable: [],
 } as unknown as Activity;

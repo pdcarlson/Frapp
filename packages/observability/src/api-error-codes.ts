@@ -38,6 +38,9 @@ export const CLIENT_CONTRACT_ERROR_CODES = [
   // seeded Member role: the chapter's rows are missing what every chapter is
   // created with.
   "invite.role_unresolved",
+  // A config PATCH switching off an always-on module. Chapter settings draws
+  // those locked and never sends it (#4073).
+  "chapter.config.module_always_on",
 ] as const;
 
 export const MEMBER_CAUSED_ERROR_CODES = [

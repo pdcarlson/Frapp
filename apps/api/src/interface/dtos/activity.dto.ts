@@ -1,5 +1,16 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsIn } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsIn,
+  IsUUID,
+  ValidateNested,
+} from 'class-validator';
+import { ACTIVITY_ITEM_KINDS } from '#domain/entities/activity-item-read.entity';
+import type { ActivityItemKind } from '#domain/entities/activity-item-read.entity';
+import type { ActivityItemRef } from '#domain/repositories/activity-item-read.repository.interface';
 import { CHAT_LINK_MEMBER_STATES } from '#domain/entities/chat.entity';
 import type { ChatLinkMemberStateValue } from '#domain/entities/chat.entity';
 import type { ActivityLink } from '../../application/services/activity-link.service';
@@ -9,13 +20,19 @@ import type { ChannelType } from '#domain/entities/chat.entity';
 import { ACTIVITY_SECTIONS } from '../../application/services/activity.service';
 import type {
   ActivityEvent,
-  ActivityFile,
   ActivityHoursEntry,
   ActivityPoll,
   ActivitySection,
   ActivityTask,
   ActivityView,
 } from '../../application/services/activity.service';
+
+/**
+ * Items one `POST /v1/activity/reads` may carry: every row Activity serves
+ * that can be unread is at most 135, so a client marking a whole page read
+ * sends two.
+ */
+const ACTIVITY_READ_BATCH_LIMIT = 100;
 
 /** Every channel type, direct messages included: a poll can be posted in any. */
 const ACTIVITY_EVENT_ATTENDANCE: ActivityEvent['attendance'][] = [
@@ -40,6 +57,14 @@ export class ActivityTaskDto implements ActivityTask {
 
   @ApiProperty({ format: 'date', example: '2026-11-20' })
   due_date: string;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description: 'The moment it is due, when it has a time of day.',
+  })
+  due_at: string | null;
 
   @ApiProperty({
     enum: TaskStatus,
@@ -85,8 +110,23 @@ export class ActivityTaskDto implements ActivityTask {
   })
   confirmed_at: string | null;
 
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'When an officer last sent the completion back to the assignee; null if never.',
+  })
+  sent_back_at: string | null;
+
   @ApiProperty({ format: 'date-time' })
   created_at: string;
+
+  @ApiProperty({
+    description:
+      'Whether the caller hasn’t opened it from Activity since it started waiting on them: since it was assigned or last sent back, or for a confirmation since it was completed (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for a task the caller assigned to themselves that was never sent back.',
+  })
+  unread: boolean;
 }
 
 export class ActivityHoursEntryDto implements ActivityHoursEntry {
@@ -112,6 +152,12 @@ export class ActivityHoursEntryDto implements ActivityHoursEntry {
 
   @ApiProperty({ format: 'date-time' })
   created_at: string;
+
+  @ApiProperty({
+    description:
+      'Whether the caller hasn’t opened it from Activity since it was submitted (`POST /v1/activity/reads`). Always false while `unread_since` is null.',
+  })
+  unread: boolean;
 }
 
 export class ActivityPollDto implements ActivityPoll {
@@ -170,6 +216,12 @@ export class ActivityPollDto implements ActivityPoll {
   created_at: string;
 
   @ApiProperty({
+    description:
+      'Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null, and in `made_by_you`.',
+  })
+  unread: boolean;
+
+  @ApiProperty({
     type: ChatMessageDto,
     description:
       'The poll’s chat message, as `GET /v1/channels/{id}/messages` serves it, for chat’s own poll card. Its votes are read from `chat_message_actions`, as chat reads them.',
@@ -219,25 +271,35 @@ export class ActivityEventDto implements ActivityEvent {
       'Whether the caller has an attendance row for it. Read only while check-in is open; null otherwise, and when that read failed.',
   })
   checked_in: boolean | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Who made it. Null for an event made before makers were recorded (2026-11-11).',
+  })
+  created_by: string | null;
+
+  @ApiProperty({ format: 'date-time' })
+  created_at: string;
+
+  @ApiProperty({
+    description:
+      'Whether the caller hasn’t opened it from Activity since it was made (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for an event the caller made.',
+  })
+  unread: boolean;
 }
 
-const ACTIVITY_FILE_SOURCES: ActivityFile['source'][] = [
-  'document',
-  'backwork',
-];
-
-export class ActivityFileDto implements ActivityFile {
+/** A file the caller uploaded. Never served since #4291; see `ActivityMadeByYouDto.files`. */
+export class ActivityFileDto {
   @ApiProperty({ format: 'uuid' })
   id: string;
 
-  @ApiProperty({
-    enum: ACTIVITY_FILE_SOURCES,
-    description:
-      'Which module holds it: a chapter document or a backwork resource.',
-  })
-  source: ActivityFile['source'];
+  @ApiProperty({ enum: ['document', 'backwork'] })
+  source: 'document' | 'backwork';
 
-  @ApiProperty({ description: 'Empty for a backwork resource with no title.' })
+  @ApiProperty()
   title: string;
 
   @ApiProperty({ format: 'date-time' })
@@ -299,6 +361,12 @@ export class ActivityLinkDto implements ActivityLink {
 
   @ApiProperty({ format: 'date-time' })
   posted_at: string;
+
+  @ApiProperty({
+    description:
+      'Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null.',
+  })
+  unread: boolean;
 }
 
 /** `PUT /v1/activity/links/{id}/state`. */
@@ -310,6 +378,37 @@ export class SetActivityLinkStateDto {
   })
   @IsIn(CHAT_LINK_MEMBER_STATES)
   state: ChatLinkMemberStateValue;
+}
+
+/** One item in `POST /v1/activity/reads`. */
+export class ActivityItemRefDto implements ActivityItemRef {
+  @ApiProperty({
+    enum: ACTIVITY_ITEM_KINDS,
+    description:
+      'Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`.',
+  })
+  @IsIn(ACTIVITY_ITEM_KINDS)
+  kind: ActivityItemKind;
+
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID()
+  item_id: string;
+}
+
+/** `POST /v1/activity/reads`. */
+export class MarkActivityReadDto {
+  @ApiProperty({
+    type: [ActivityItemRefDto],
+    minItems: 1,
+    maxItems: ACTIVITY_READ_BATCH_LIMIT,
+    description: `The items the caller opened. At most ${ACTIVITY_READ_BATCH_LIMIT}.`,
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(ACTIVITY_READ_BATCH_LIMIT)
+  @ValidateNested({ each: true })
+  @Type(() => ActivityItemRefDto)
+  items: ActivityItemRefDto[];
 }
 
 export class ActivityNeedsYouDto {
@@ -344,7 +443,8 @@ export class ActivityNeedsYouDto {
 export class ActivityMadeByYouDto {
   @ApiProperty({
     type: [ActivityPollDto],
-    description: 'Poll cards the caller posted, newest first.',
+    description:
+      'Poll cards the caller posted, newest first: up to 25 open and the 25 most recently posted closed ones, so closed polls never push an open one out. A client lists the open ones and keeps the closed ones behind an archive (#4258).',
   })
   polls: ActivityPollDto[];
 
@@ -357,7 +457,9 @@ export class ActivityMadeByYouDto {
 
   @ApiProperty({
     type: [ActivityFileDto],
-    description: 'Documents and backwork the caller uploaded, newest first.',
+    deprecated: true,
+    description:
+      'Always empty: uploads left Activity (#4291). Served only so a client built before that does not fail on its absence; to be removed.',
   })
   files: ActivityFileDto[];
 
@@ -403,4 +505,13 @@ export class ActivityDto implements ActivityView {
       'Sections that could not be read this time. Each is served empty; the others are unaffected.',
   })
   unavailable: ActivitySection[];
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'When the caller’s unread dots began in this chapter. Null until a client that draws dots calls `PUT /v1/activity/unread-since`, and every `unread` is false until then. Nothing that appeared before it is unread. Also served null, with every row read, when the caller’s unread state couldn’t be loaded.',
+  })
+  unread_since: string | null;
 }

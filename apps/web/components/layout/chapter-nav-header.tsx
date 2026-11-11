@@ -6,7 +6,6 @@ import { AlertTriangle, Check, ChevronDown, Loader2 } from "lucide-react";
 import {
   useAccessibleChapters,
   useCurrentChapter,
-  useMyPermissions,
 } from "@repo/hooks";
 import type { ChapterMembershipSummary } from "@repo/hooks";
 import type { ChapterMark } from "@repo/validation";
@@ -24,6 +23,7 @@ import { useSelectChapter } from "@/lib/auth/select-chapter";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
 import { hasSettingsDestination } from "@/components/settings/settings-access";
+import { useNavPermissions } from "@/lib/hooks/use-nav-permissions";
 import { cn } from "@/lib/utils";
 import { FOCUS_RING_SHELL } from "@/components/ui/focus";
 import { Skeleton } from "@/components/shared/async-states";
@@ -80,14 +80,9 @@ export function ChapterNavHeader({
   // asks the nav's Settings row's question: is there anything there for this
   // viewer? Without it a member followed the link to a page with nothing they
   // could use (#2946).
-  const { data: permissionsPayload } = useMyPermissions({
-    enabled: !!activeChapterId,
-  });
+  const permissions = useNavPermissions();
   const isModuleEnabled = useChapterModuleGate();
-  const showSettingsLink = hasSettingsDestination(
-    permissionsPayload?.permissions,
-    isModuleEnabled,
-  );
+  const showSettingsLink = hasSettingsDestination(permissions, isModuleEnabled);
   const selectChapter = useSelectChapter();
   const { toast } = useToast();
   const [switchingTo, setSwitchingTo] = useState<string | null>(null);

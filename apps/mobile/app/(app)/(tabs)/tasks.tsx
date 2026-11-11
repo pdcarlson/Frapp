@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { AppState, StyleSheet, Text, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
@@ -35,9 +35,15 @@ import {
 import { InlineNote } from "@/components/inline-note";
 import { TaskRow, TaskRowSkeleton } from "@/components/tasks/task-row";
 import { TaskDetailSheet } from "@/components/tasks/task-detail-sheet";
+import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
+import type { TaskEditTarget } from "@/lib/tasks/create-task";
 import { UNDO_WINDOW_MS, UndoBar } from "@/components/tasks/undo-bar";
 import { PointsSummaryCard } from "@/components/tasks/points-summary-card";
-import { selectTaskRows, type TaskRowModel } from "@/lib/tasks/board";
+import {
+  selectTaskRows,
+  toTaskRow,
+  type TaskRowModel,
+} from "@/lib/tasks/board";
 import { selectHouseRank, selectPointsSummary } from "@/lib/tasks/points-card";
 import { checkboxSequence } from "@/lib/tasks/transitions";
 import { taskStatusGateRefusal } from "@/lib/tasks/status-refusal";
@@ -145,8 +151,7 @@ export default function TasksScreen() {
   const chapterQuery = useCurrentChapter();
   const enabledModules = (
     chapterQuery.data as
-      | { enabled_modules?: Record<string, boolean> }
-      | undefined
+      { enabled_modules?: Record<string, boolean> } | undefined
   )?.enabled_modules;
   const eventsOn =
     chapterQuery.isSuccess && isModuleEnabled(enabledModules, "events");
@@ -319,15 +324,47 @@ export default function TasksScreen() {
   // board as a write lands.
   const sheetRef = useRef<BottomSheetModal>(null);
   const [openId, setOpenId] = useState<string | null>(null);
-  const openRow = useMemo(
-    () =>
-      openId === null
-        ? null
-        : ([...board.dueThisWeek, ...board.later].find(
-            (row) => row.id === openId,
-          ) ?? null),
-    [board, openId],
-  );
+  const openRow = useMemo(() => {
+    if (openId === null) return null;
+    const onBoard = [...board.dueThisWeek, ...board.later].find(
+      (row) => row.id === openId,
+    );
+    if (onBoard) return onBoard;
+    // Opened from the Events calendar (#4144), which also shows a task the
+    // board has let go of (finished more than a week ago): read it off the
+    // same query rather than open an empty sheet.
+    const raw = Array.isArray(tasksQuery.data)
+      ? (tasksQuery.data as unknown[]).find(
+          (row) =>
+            !!row &&
+            typeof row === "object" &&
+            (row as { id?: unknown }).id === openId,
+        )
+      : undefined;
+    return raw ? toTaskRow(raw as Record<string, unknown>) : null;
+  }, [board, openId, tasksQuery.data]);
+
+  // `/tasks?task=<id>`: the Events calendar's way in. Opens that task's
+  // sheet once its row is readable, then clears the param so coming back to
+  // the tab doesn't open it again.
+  const { task: linkedTaskId } = useLocalSearchParams<{ task?: string }>();
+  const router = useRouter();
+  const linked =
+    typeof linkedTaskId === "string" && linkedTaskId !== ""
+      ? linkedTaskId
+      : null;
+  const [openedLink, setOpenedLink] = useState<string | null>(null);
+  if (linked !== null && tasksQuery.isSuccess && openedLink !== linked) {
+    setOpenedLink(linked);
+    setOpenId(linked);
+  } else if (linked === null && openedLink !== null) {
+    setOpenedLink(null);
+  }
+  useEffect(() => {
+    if (openedLink === null) return;
+    sheetRef.current?.present();
+    router.setParams({ task: undefined });
+  }, [openedLink, router]);
   const rosterQuery = useChapterRoster();
   const createdBy = openRow?.createdBy ?? null;
   const assignedBy = useMemo(() => {
@@ -339,6 +376,34 @@ export default function TasksScreen() {
     // The shared fallback, so a creator with no name reads as on web.
     return memberLabel(match?.display_name, createdBy);
   }, [createdBy, rosterQuery.data, viewerUserId]);
+
+  // An officer's edit (#4296): the New task sheet, opened on the task. One
+  // sheet per task edited, mounted for the edit and gone once it closes, so
+  // its fields always start from the task as it stands.
+  const editRef = useRef<BottomSheetModal>(null);
+  const [editing, setEditing] = useState<TaskEditTarget | null>(null);
+  useEffect(() => {
+    if (editing) editRef.current?.present();
+  }, [editing]);
+  const startEdit =
+    canManageTasks &&
+    openRow &&
+    !openRow.pointsAwarded &&
+    openRow.assigneeId &&
+    openRow.dueDay
+      ? () => {
+          sheetRef.current?.dismiss();
+          setEditing({
+            id: openRow.id,
+            title: openRow.title,
+            assigneeId: openRow.assigneeId!,
+            dueDay: openRow.dueDay!,
+            dueAt: openRow.dueAt,
+            pointReward: openRow.pointReward,
+            storedStatus: openRow.storedStatus,
+          });
+        }
+      : undefined;
 
   const canToggle = useCallback(
     (row: TaskRowModel) =>
@@ -489,8 +554,19 @@ export default function TasksScreen() {
               }
             : undefined
         }
+        onEdit={startEdit}
         onDismiss={() => setOpenId(null)}
       />
+
+      {editing ? (
+        <NewTaskSheet
+          key={editing.id}
+          ref={editRef}
+          now={now}
+          editing={editing}
+          onClosed={() => setEditing(null)}
+        />
+      ) : null}
     </View>
   );
 }

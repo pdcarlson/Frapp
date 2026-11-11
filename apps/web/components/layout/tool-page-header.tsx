@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import { IconButton } from "@/components/ui/icon-button";
 import { PageTitleText } from "@/components/layout/top-bar";
 import type { PageTitle } from "@/components/layout/page-title";
+import { cn } from "@/lib/utils";
 
 /**
  * The tool page's own header, from the side-by-side width up (Paul,
@@ -47,13 +48,42 @@ export function ToolPageHeader({
           <PageTitleText pageTitle={pageTitle} asHeading={titleIsHeading} />
         ) : null}
       </div>
-      <IconButton
+      <PanelCloseButton
         label={pageTitle ? `Close ${pageTitle.title}` : "Close page"}
         onClick={onClose}
-        className="-mr-2 shrink-0 text-muted-foreground"
-      >
-        <X className="h-[18px] w-[18px]" aria-hidden="true" />
-      </IconButton>
+        className="-mr-2"
+      />
     </div>
+  );
+}
+
+/**
+ * The X at the right end of a side-by-side panel's 48px header: the tool
+ * page's (above) and chat's channel header (#4223), so the two panels close
+ * the same way, the way Slack's channel and its right-hand panel each carry
+ * one.
+ *
+ * Each header passes the margin that puts the 36px square's right edge 16px
+ * from its panel's edge, so the X sits in the same place in every panel:
+ * `-mr-2` against this header's 24px gutter, none against chat's 16px, and
+ * `mr-2` against the thread's 8px.
+ */
+export function PanelCloseButton({
+  label,
+  onClick,
+  className,
+}: {
+  label: string;
+  onClick: () => void;
+  className?: string;
+}) {
+  return (
+    <IconButton
+      label={label}
+      onClick={onClick}
+      className={cn("shrink-0 text-muted-foreground", className)}
+    >
+      <X className="h-[18px] w-[18px]" aria-hidden="true" />
+    </IconButton>
   );
 }

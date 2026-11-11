@@ -11,6 +11,16 @@ import { isBetaOffModule } from "./beta-off-modules";
 
 export { BETA_OFF_MODULES, isBetaOffModule } from "./beta-off-modules";
 export {
+  CHANNEL_ACCESS_ENTRY_KINDS,
+  CHANNEL_ACCESS_ENTRY_PATTERN,
+  CHANNEL_ACCESS_LIST_MAX,
+  channelAccessEntry,
+  normalizeChannelAccessList,
+  parseChannelAccessEntry,
+  sameChannelAccessList,
+  type ChannelAccessEntryKind,
+} from "./channel-access-lists";
+export {
   RELEASE_NOTES,
   formatReleaseNoteDate,
   releaseNoteText,
@@ -251,6 +261,17 @@ export const ChapterPointsConfigSchema = z.object({
 });
 
 /**
+ * A chapter's service-hours rate (`chapter_service_config`), as the config
+ * PATCH takes it. The bounds mirror the API's `ServiceConfigDto`: at least 1
+ * (a rate of 0 would divide by zero when awarding), and no more than an
+ * entry's own duration cap, above which no entry could earn a point.
+ */
+export const ChapterServiceConfigSchema = z.object({
+  minutes_per_point: z.number().int().min(1).max(POINTS_ADJUSTMENT_MAX),
+});
+export type ChapterServiceConfig = z.infer<typeof ChapterServiceConfigSchema>;
+
+/**
  * What a chapter with no `chapter_points_config` row enforces — the values
  * `PointsService` hardcoded before the limits became configurable, which is
  * what makes the migration backfill-free.
@@ -277,48 +298,6 @@ export const ChapterWorkflowConfigSchema = z.object({
   key: z.string(),
   enabled: z.boolean(),
   threshold: z.number().int().nonnegative().optional(),
-});
-
-/**
- * A chapter custom role (Settings → Roles → Custom), persisted to
- * `chapter_custom_roles`. `key` is a lowercase slug unique per chapter;
- * `capabilities` are arbitrary permission strings from the catalog. `core`
- * roles are protected from deletion.
- */
-export const ChapterCustomRoleSchema = z.object({
-  id: z.string(),
-  chapter_id: z.string(),
-  key: z.string(),
-  label: z.string(),
-  rank: z.number().int().nonnegative(),
-  capabilities: z.array(z.string()),
-  core: z.boolean(),
-  created_at: z.string(),
-  updated_at: z.string(),
-});
-
-/**
- * Body for `POST /custom-roles`. `core` is intentionally absent — only system
- * seeding marks a role core; user-created roles are always non-core.
- */
-export const CreateCustomRoleSchema = z.object({
-  key: z
-    .string()
-    .min(1)
-    .regex(
-      /^[a-z0-9_]+$/,
-      "key must be lowercase letters, numbers, underscores",
-    ),
-  label: z.string().min(1),
-  rank: z.number().int().nonnegative().optional(),
-  capabilities: z.array(z.string()).optional(),
-});
-
-/** Body for `PATCH /custom-roles/:id` (key and core are immutable). */
-export const UpdateCustomRoleSchema = z.object({
-  label: z.string().min(1).optional(),
-  rank: z.number().int().nonnegative().optional(),
-  capabilities: z.array(z.string()).optional(),
 });
 
 /**
@@ -426,6 +405,7 @@ export const PatchChapterConfigSchema = z.object({
   // Partial by design: an officer may move one limit without restating the
   // other, and the API merges onto the stored row.
   points: ChapterPointsConfigSchema.partial().optional(),
+  service: ChapterServiceConfigSchema.partial().optional(),
   workflows: z.array(ChapterWorkflowConfigSchema).optional(),
   // Per-chapter analytics opt-out (data-retention.md #analytics-events-pseudonymous).
   analytics_opt_out: z.boolean().optional(),
@@ -563,19 +543,13 @@ export const SendChatMessageSchema = z.object({
   reply_to_id: z.string().uuid().optional(),
 });
 
-// ── Alumni channel permission ────────────────────────────────────────────────
-// The channel-access predicate that reads this lives in the API
-// (`apps/api/src/domain/utils/channel-access.ts`, #3268); mobile reads the
-// value too, so it stays shared.
+// ── Alumni permission ────────────────────────────────────────────────────────
 
 /**
- * The permission a ROLE_GATED channel must *require* to be alumni-writable.
- *
- * This is read off the channel's `required_permissions`, not off the caller's
- * permissions: it marks the channel as an alumni space. Checking a permission
- * alumni merely *hold* would not work — the Alumni role also holds
- * `members:view`, which is exactly the value a chapter would put on a private
- * `#exec-board`, so that check would re-open the hole it is meant to close.
+ * The permission the seeded Alumni role holds. Chat no longer reads it: since
+ * #3722 an alumnus posts where a channel's who-can-post list (or, when anyone
+ * who can see may post, its who-can-see list) names the Alumni role. Mobile
+ * still reads it to tell an alumnus apart (`lib/more/donation.ts`).
  */
 export const ALUMNI_CHANNEL_PERMISSION = "alumni:post";
 
@@ -585,9 +559,6 @@ export type ChapterBranding = z.infer<typeof ChapterBrandingSchema>;
 export type ChapterDuesConfig = z.infer<typeof ChapterDuesConfigSchema>;
 export type ChapterPointsConfig = z.infer<typeof ChapterPointsConfigSchema>;
 export type PatchChapterConfig = z.infer<typeof PatchChapterConfigSchema>;
-export type ChapterCustomRole = z.infer<typeof ChapterCustomRoleSchema>;
-export type CreateCustomRole = z.infer<typeof CreateCustomRoleSchema>;
-export type UpdateCustomRole = z.infer<typeof UpdateCustomRoleSchema>;
 export type CustomFieldType = z.infer<typeof CustomFieldTypeSchema>;
 export type CustomFieldVisibility = z.infer<typeof CustomFieldVisibilitySchema>;
 export type ChapterCustomField = z.infer<typeof ChapterCustomFieldSchema>;
@@ -792,6 +763,8 @@ export {
   POLL_OPTIONS_MIN,
   POLL_QUESTION_MAX_LENGTH,
   SERVICE_DESCRIPTION_MAX_LENGTH,
+  TASK_SUBTASK_TITLE_MAX_LENGTH,
+  TASK_SUBTASKS_MAX,
   TASK_TITLE_MAX_LENGTH,
   PLEDGE_CLASS_NAME_MAX_LENGTH,
   PLEDGE_CLASSES_MAX,
@@ -854,6 +827,7 @@ export {
   inspectUploadFile,
 } from "./upload-allowlists";
 export type { UploadKind, InspectedUpload } from "./upload-allowlists";
+export { isDecodableThumbhash } from "./thumbhash";
 
 // Discord export (DCE) preamble parsing, shared between the import wizard
 // (apps/web) and the import worker (apps/api). See ./discord-export for why
@@ -963,7 +937,6 @@ export type { SidebarFixedSectionKey, SidebarSectionKey } from "./chat-sidebar";
 export {
   ROLE_COLOR_HEXES,
   ROLE_COLOR_PALETTE,
-  resolveCustomRoleNames,
   resolveRoleChips,
   roleColor,
   roleColorOrNull,

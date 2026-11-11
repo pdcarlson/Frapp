@@ -4,10 +4,6 @@
  * someone's roles; there is no press-and-hold or second entry point (Paul,
  * 2026-11-07).
  *
- * The editor works on `role_ids` only. `custom_role_ids` is left out of every
- * save, which the API reads as "leave unchanged", so a custom role the officer
- * cannot see here is never stripped.
- *
  * Sized for a real chapter, not a seed: Paul's has 113 roles after its Discord
  * import, so the list is searched, and its order is fixed when the editor
  * opens (held roles first) so a row never jumps out from under a finger.
@@ -112,9 +108,7 @@ function baseAccessIds(options: readonly RoleOption[]): Set<string> {
  * True when this change is the one that takes away chat, the roster and
  * events. A member who already lacked base access is not warned again on
  * every tap. The rule is web's too (`removesMemberAccess` in
- * `@repo/validation`); this editor sees live roles only, so a custom role
- * that carries `members:view` doesn't count here and the officer may be
- * asked when the member would keep access through it.
+ * `@repo/validation`).
  */
 export function removesBaseAccess(
   before: readonly string[],
@@ -155,10 +149,4 @@ export function rolesSaveFailedBody(
     return `${change} isn't allowed any more, so it was put back.`;
   }
   return `${change} didn't reach the server, so it was put back. Try again.`;
-}
-
-/** Custom roles keep their own editor on the web; this one changes `role_ids`. */
-export function customRolesCaption(names: readonly string[]): string | null {
-  if (names.length === 0) return null;
-  return `${names.join(", ")} ${names.length === 1 ? "is a custom role" : "are custom roles"}, changed on the web.`;
 }

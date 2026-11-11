@@ -7,6 +7,7 @@ import {
   formatDayTime,
   formatDayTimeRange,
   formatDueLabel,
+  formatDueOn,
   formatRelativeDayTime,
   formatSentLabel,
   formatTimestampFull,
@@ -20,7 +21,13 @@ const FRI_5PM = "2026-11-07T01:00:00.000Z";
 
 describe("house date shapes", () => {
   it("leaves a missing or unreadable value out", () => {
-    for (const fn of [formatDay, formatWeekdayDay, formatDayTime, formatRelativeDayTime, formatDueLabel]) {
+    for (const fn of [
+      formatDay,
+      formatWeekdayDay,
+      formatDayTime,
+      formatRelativeDayTime,
+      formatDueLabel,
+    ]) {
       expect(fn(undefined, NOW)).toBeNull();
       expect(fn("", NOW)).toBeNull();
       expect(fn("not a date", NOW)).toBeNull();
@@ -62,27 +69,47 @@ describe("house date shapes", () => {
   });
 
   it("spans days with the year said once", () => {
-    expect(formatDayRange("2026-08-24", "2026-12-12")).toBe("Aug 24 – Dec 12, 2026");
-    expect(formatDayRange("2026-12-01", "2027-01-15")).toBe("Dec 1, 2026 – Jan 15, 2027");
+    expect(formatDayRange("2026-08-24", "2026-12-12")).toBe(
+      "Aug 24 – Dec 12, 2026",
+    );
+    expect(formatDayRange("2026-12-01", "2027-01-15")).toBe(
+      "Dec 1, 2026 – Jan 15, 2027",
+    );
   });
 
   it("reads a row's when relative to today, as mobile's event row does", () => {
-    expect(formatRelativeDayTime("2026-11-04T17:00:00-08:00", NOW)).toBe("Today · 5:00 PM");
-    expect(formatRelativeDayTime("2026-11-05T17:00:00-08:00", NOW)).toBe("Tomorrow · 5:00 PM");
-    expect(formatRelativeDayTime("2026-11-03T17:00:00-08:00", NOW)).toBe("Yesterday · 5:00 PM");
+    expect(formatRelativeDayTime("2026-11-04T17:00:00-08:00", NOW)).toBe(
+      "Today · 5:00 PM",
+    );
+    expect(formatRelativeDayTime("2026-11-05T17:00:00-08:00", NOW)).toBe(
+      "Tomorrow · 5:00 PM",
+    );
+    expect(formatRelativeDayTime("2026-11-03T17:00:00-08:00", NOW)).toBe(
+      "Yesterday · 5:00 PM",
+    );
     expect(formatRelativeDayTime(FRI_5PM, NOW)).toBe("Friday · 5:00 PM");
-    expect(formatRelativeDayTime("2026-11-20T17:00:00-08:00", NOW)).toBe("Nov 20 · 5:00 PM");
+    expect(formatRelativeDayTime("2026-11-20T17:00:00-08:00", NOW)).toBe(
+      "Nov 20 · 5:00 PM",
+    );
   });
 
   it("writes a day heading out, as the Events lists group by", () => {
     expect(formatDayHeading("2026-11-04T17:00:00-08:00", NOW)).toBe("Today");
     expect(formatDayHeading("2026-11-05T08:00:00-08:00", NOW)).toBe("Tomorrow");
-    expect(formatDayHeading("2026-11-03T17:00:00-08:00", NOW)).toBe("Yesterday");
+    expect(formatDayHeading("2026-11-03T17:00:00-08:00", NOW)).toBe(
+      "Yesterday",
+    );
     expect(formatDayHeading(FRI_5PM, NOW)).toBe("Friday");
     expect(formatDayHeading("2026-11-10T17:00:00-08:00", NOW)).toBe("Tuesday");
-    expect(formatDayHeading("2026-11-11T17:00:00-08:00", NOW)).toBe("November 11");
-    expect(formatDayHeading("2026-10-30T17:00:00-07:00", NOW)).toBe("October 30");
-    expect(formatDayHeading("2027-01-03T17:00:00-08:00", NOW)).toBe("January 3, 2027");
+    expect(formatDayHeading("2026-11-11T17:00:00-08:00", NOW)).toBe(
+      "November 11",
+    );
+    expect(formatDayHeading("2026-10-30T17:00:00-07:00", NOW)).toBe(
+      "October 30",
+    );
+    expect(formatDayHeading("2027-01-03T17:00:00-08:00", NOW)).toBe(
+      "January 3, 2027",
+    );
     expect(formatDayHeading(null, NOW)).toBeNull();
   });
 
@@ -97,12 +124,18 @@ describe("house date shapes", () => {
   it("writes a day heading out: Today, Tomorrow, Yesterday, the weekday, then the date", () => {
     expect(formatDayHeading("2026-11-04T23:00:00-08:00", NOW)).toBe("Today");
     expect(formatDayHeading("2026-11-05T00:30:00-08:00", NOW)).toBe("Tomorrow");
-    expect(formatDayHeading("2026-11-03T20:00:00-08:00", NOW)).toBe("Yesterday");
+    expect(formatDayHeading("2026-11-03T20:00:00-08:00", NOW)).toBe(
+      "Yesterday",
+    );
     expect(formatDayHeading(FRI_5PM, NOW)).toBe("Friday");
     // Six days ahead is still the weekday; seven is the date.
     expect(formatDayHeading("2026-11-10T18:00:00-08:00", NOW)).toBe("Tuesday");
-    expect(formatDayHeading("2026-11-11T18:00:00-08:00", NOW)).toBe("November 11");
-    expect(formatDayHeading("2027-01-03T18:00:00-08:00", NOW)).toBe("January 3, 2027");
+    expect(formatDayHeading("2026-11-11T18:00:00-08:00", NOW)).toBe(
+      "November 11",
+    );
+    expect(formatDayHeading("2027-01-03T18:00:00-08:00", NOW)).toBe(
+      "January 3, 2027",
+    );
     expect(formatDayHeading("not a date", NOW)).toBeNull();
   });
 });
@@ -122,5 +155,44 @@ describe("formatSentLabel", () => {
 
   it("leaves an unreadable time out", () => {
     expect(formatSentLabel("not a date", NOW)).toBeNull();
+  });
+});
+
+describe("a due time (#4003)", () => {
+  const at = (iso: string) => new Date(iso);
+
+  it("counts down to the time, naming it", () => {
+    expect(formatDueLabel("2026-11-04T17:00:00-08:00", NOW)).toBe(
+      "Due today at 5 PM",
+    );
+    expect(formatDueLabel("2026-11-05T09:30:00-08:00", NOW)).toBe(
+      "Due tomorrow at 9:30 AM",
+    );
+    expect(formatDueLabel(FRI_5PM, NOW)).toBe("Due Friday at 5 PM");
+    expect(formatDueLabel("2026-11-20T23:59:00-08:00", NOW)).toBe(
+      "Due Nov 20 at 11:59 PM",
+    );
+  });
+
+  it("is overdue from the minute, by the minute, hour, then day", () => {
+    const due = "2026-11-04T08:00:00-08:00";
+    expect(formatDueLabel(due, at("2026-11-04T08:00:30-08:00"))).toBe(
+      "Overdue by 1 minute",
+    );
+    expect(formatDueLabel(due, at("2026-11-04T08:40:00-08:00"))).toBe(
+      "Overdue by 40 minutes",
+    );
+    expect(formatDueLabel(due, at("2026-11-04T11:10:00-08:00"))).toBe(
+      "Overdue by 3 hours",
+    );
+    expect(formatDueLabel(due, at("2026-11-06T09:00:00-08:00"))).toBe(
+      "Overdue by 2 days",
+    );
+  });
+
+  it("states a due without a countdown", () => {
+    expect(formatDueOn(FRI_5PM, NOW)).toBe("Due Nov 6 at 5 PM");
+    expect(formatDueOn("2026-11-06", NOW)).toBe("Due Nov 6");
+    expect(formatDueOn(undefined, NOW)).toBeNull();
   });
 });

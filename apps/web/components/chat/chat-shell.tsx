@@ -1,7 +1,14 @@
 "use client";
 
 import { describeLoadFailure } from "@repo/hooks/error-copy";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   CHANNELS_ROLE_REFUSAL_TITLE,
   channelsRoleRefusalBody,
@@ -62,6 +69,7 @@ import {
   useSetChannelDisplayLock,
   useReorderCategories,
   useReorderChannels,
+  useImportantMessages,
 } from "@repo/hooks";
 import { setChannelLocked, syncLockedChannels } from "@repo/chat-core/density";
 import {
@@ -83,12 +91,14 @@ import {
 } from "@/lib/chat/members-panel";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { IconButton } from "@/components/ui/icon-button";
+import { PanelCloseButton } from "@/components/layout/tool-page-header";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useChatViewerId } from "@/lib/chat/viewer-id";
 import { asArray, cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import { chatDeepLink } from "@/lib/chat/chat-links";
+import { useThreadUnread } from "@/lib/chat/use-thread-unread";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
 import {
   useMaskedRefresh,
@@ -123,6 +133,7 @@ import {
 } from "./channel-list";
 import { ChannelListSkeleton } from "./channel-list-skeleton";
 import { ChatBackground, useChapterLetters } from "./chat-background";
+import { ChatDropTarget } from "./chat-drop-target";
 import {
   MessageTimeline,
   MessageTimelineSkeleton,
@@ -163,6 +174,7 @@ import type { ChannelRowActions } from "./channel-row-menu";
 import type { ChatSearchHit } from "./chat-search-popover";
 import type { BookmarkEntry } from "./bookmarks-popover";
 import { BlockListNotice } from "./block-list-notice";
+import { ImportantStrip } from "./important-strip";
 import { useUnblockFlow } from "./use-unblock-flow";
 import { useBlockFlow } from "./use-block-flow";
 import {
@@ -177,24 +189,41 @@ import {
   parsePollArgs,
   parseTaskArgs,
   taskFormPrefill,
-  type EventFormPrefill,
   type SlashCommand,
 } from "@repo/chat-core/integrations";
 import type { DispatchResult } from "@repo/chat-core/dispatch";
 import {
-  NewTaskDialog,
-  type NewTaskPrefill,
-} from "@/components/tasks/new-task-dialog";
-import { LogHoursDialog } from "@/components/service/log-hours-dialog";
-import { PointsAdjustmentDialog } from "@/components/points/points-adjustment-dialog";
+  TaskForm,
+  taskDraftFrom,
+  type TaskDraft,
+} from "@/components/tasks/task-form";
+import {
+  LogHoursForm,
+  type HoursDraft,
+} from "@/components/service/log-hours-form";
+import {
+  PointsAdjustmentForm,
+  type PointsDraft,
+} from "@/components/points/points-adjustment-form";
 import { useSubscriptionGate } from "@/components/shared/subscription-gate";
 import { EventEditorDialog } from "@/components/events/event-editor-dialog";
-import { pollDraftFromArgs, type PollDraft } from "@repo/chat-core/poll-draft";
-import { NewPollDialog } from "./new-poll-dialog";
+import {
+  emptyPollDraft,
+  pollDraftFromArgs,
+  type PollDraft,
+} from "@repo/chat-core/poll-draft";
+import { PollForm } from "./poll-form";
+import {
+  EventQuickForm,
+  eventQuickDraftFrom,
+  type EventQuickDraft,
+} from "./event-quick-form";
+import { usePlusDrafts } from "./use-plus-drafts";
 import {
   PLUS_MENU_COMMANDS,
   PLUS_MENU_PERMISSIONS,
   plusMenuForms,
+  type PlusMenuCommand,
   type PlusMenuForm,
 } from "@repo/chat-core/plus-menu";
 import type { ChatNotificationLevel } from "@repo/hooks";
@@ -202,11 +231,25 @@ import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 
 /** What a + menu form says when its write threw after the request went out. */
 const FORM_UNCONFIRMED_WARNING = {
+  event:
+    "Couldn't confirm the event was created. Check the calendar before you create it again.",
   task: "Couldn't confirm the task was created. Check the task board before you create it again.",
   hours:
     "Couldn't confirm the hours were logged. Check the Service page before you log them again.",
   points:
     "Couldn't confirm the points were adjusted. Check the points ledger before you adjust them again.",
+} as const;
+
+/**
+ * What a + card form's notice is about (#3913): the form's thing, not a
+ * command the member never typed ("Task not confirmed", not "/task not
+ * confirmed").
+ */
+const FORM_SUBJECT = {
+  event: "Event",
+  task: "Task",
+  hours: "Service hours",
+  points: "Points",
 } as const;
 
 interface DirectoryMember {
@@ -368,6 +411,7 @@ export function ChatShell({
   initialMessageId = null,
   defaultMembersHidden = false,
   toolBeside = false,
+  onClose,
 }: {
   initialChannelId?: string | null;
   initialMessageId?: string | null;
@@ -383,6 +427,13 @@ export function ChatShell({
    * comes back with chat alone.
    */
   toolBeside?: boolean;
+  /**
+   * Closes the chat panel and leaves the tool page beside it (#4223). The
+   * shell passes it only while chat sits beside a page from the side-by-side
+   * width up: alone, or below that width, there is nothing to close chat
+   * into, so the header draws no X.
+   */
+  onClose?: () => void;
 } = {}) {
   const activeChapterId = useChapterStore((state) => state.activeChapterId);
   /*
@@ -1185,41 +1236,16 @@ export function ChatShell({
   }, [activeChannel?.id, resetChannelBackground]);
   const chapterLetters = useChapterLetters();
 
-  // `/event` typed bare, with details the one-liner can't read, or picked
-  // from the palette or the composer's + menu, opens the Events page's own
-  // form, filled in with what was typed, and the card posts in the channel it
-  // came from (#3773, #3865).
-  const [eventForm, setEventForm] = useState<{
+  // The composer's + card forms (#3865, #3983): what each holds, per
+  // channel, kept until it posts or is discarded (`use-plus-drafts.ts`).
+  const plusDrafts = usePlusDrafts();
+  // The full event editor, opened by the card's Event form's More options
+  // with what was typed carried over. Its card posts in the channel it came
+  // from (#3773).
+  const [eventEditor, setEventEditor] = useState<{
     open: boolean;
     channelId: string;
-    prefill: EventFormPrefill;
-  } | null>(null);
-  // `/poll` the same way: the New poll dialog (#3773 step 2). Keyed per open,
-  // so each visit starts from what was typed and posts where it was opened.
-  const [pollForm, setPollForm] = useState<{
-    open: boolean;
-    key: number;
-    channelId: string;
-    draft: PollDraft;
-  } | null>(null);
-  // `/task`, `/hours` and `/points` the same way (#3865): the + menu's Task,
-  // Service hours and Points rows, `/task` with details the one-liner can't
-  // read, and `/hours` or `/points` picked bare. Keyed per open, like the poll.
-  const [taskForm, setTaskForm] = useState<{
-    open: boolean;
-    key: number;
-    channelId: string;
-    prefill: NewTaskPrefill;
-    assigneeId?: string;
-  } | null>(null);
-  const [hoursForm, setHoursForm] = useState<{
-    open: boolean;
-    key: number;
-    channelId: string;
-  } | null>(null);
-  const [pointsForm, setPointsForm] = useState<{
-    open: boolean;
-    channelId: string;
+    draft: EventQuickDraft;
   } | null>(null);
   // The Service hours form's writes are paid-ops (#841); the dialog takes its
   // host's gate, as on the Service page.
@@ -1258,15 +1284,17 @@ export function ChatShell({
         ) {
           return "refused";
         }
-        const { assigneeToken, ...prefill } = taskFormPrefill(args);
-        const assignee = assigneeToken ? resolveMember(assigneeToken) : null;
-        setTaskForm((previous) => ({
-          open: true,
-          key: (previous?.key ?? 0) + 1,
-          channelId: activeChannelId,
-          prefill,
-          assigneeId: assignee?.user_id,
-        }));
+        // Typed details replace the form's draft; a bare `/task` (or the
+        // card's row) opens on the draft the form already holds.
+        if (args.trim().length > 0) {
+          const { assigneeToken, ...prefill } = taskFormPrefill(args);
+          const assignee = assigneeToken ? resolveMember(assigneeToken) : null;
+          plusDrafts.seed(
+            activeChannelId,
+            "task",
+            taskDraftFrom(prefill, assignee?.user_id ?? ""),
+          );
+        }
         return "opened";
       }
       // `/hours` and `/points` open their forms only when picked or typed
@@ -1283,11 +1311,6 @@ export function ChatShell({
         ) {
           return "refused";
         }
-        setHoursForm((previous) => ({
-          open: true,
-          key: (previous?.key ?? 0) + 1,
-          channelId: activeChannelId,
-        }));
         return "opened";
       }
       if (command.name === "points") {
@@ -1301,7 +1324,6 @@ export function ChatShell({
         ) {
           return "refused";
         }
-        setPointsForm({ open: true, channelId: activeChannelId });
         return "opened";
       }
       if (command.name === "poll") {
@@ -1309,12 +1331,9 @@ export function ChatShell({
         // No role check: `/poll` lets any member post a poll today, and
         // whether it should is #3007's open call. The + menu offers Poll
         // only to `polls:create`, as the phone's + does.
-        setPollForm((previous) => ({
-          open: true,
-          key: (previous?.key ?? 0) + 1,
-          channelId: activeChannelId,
-          draft: pollDraftFromArgs(args),
-        }));
+        if (args.trim().length > 0) {
+          plusDrafts.seed(activeChannelId, "poll", pollDraftFromArgs(args));
+        }
         return "opened";
       }
       if (command.name !== "event") return null;
@@ -1328,14 +1347,16 @@ export function ChatShell({
       ) {
         return "refused";
       }
-      setEventForm({
-        open: true,
-        channelId: activeChannelId,
-        prefill: eventFormPrefill(args),
-      });
+      if (args.trim().length > 0) {
+        plusDrafts.seed(
+          activeChannelId,
+          "event",
+          eventQuickDraftFrom(eventFormPrefill(args)),
+        );
+      }
       return "opened";
     },
-    [activeChannelId, permissionsPayload, resolveMember, toast],
+    [activeChannelId, permissionsPayload, plusDrafts, resolveMember, toast],
   );
 
   // A + menu form's write, read as the typed command's is: a refusal stays
@@ -1349,7 +1370,7 @@ export function ChatShell({
   // resubmit under a fresh key, which would write it twice.
   const postFromForm = useCallback(
     async (
-      commandName: "task" | "hours" | "points",
+      commandName: "event" | "task" | "hours" | "points",
       post: () => Promise<DispatchResult>,
     ): Promise<DispatchResult> => {
       let result: DispatchResult;
@@ -1369,11 +1390,142 @@ export function ChatShell({
         result.ok &&
         (result.warning || result.unconfirmed || result.resolved)
       ) {
-        notifyDispatchOutcome(toast, commandName, result);
+        notifyDispatchOutcome(toast, FORM_SUBJECT[commandName], result);
       }
       return result;
     },
     [toast],
+  );
+
+  // Each + card form (#3983), for the composer to draw in its card. A form
+  // opens on its kept draft, reports every edit back, and posts into the
+  // channel the card is open in; the card closes with the composer's
+  // per-channel key, so that is always the channel the draft belongs to.
+  const renderPlusForm = useCallback(
+    (
+      command: PlusMenuCommand,
+      card: { close: () => void; back: () => void },
+    ): ReactNode => {
+      if (!activeChannelId) return null;
+      const channelId = activeChannelId;
+      // Passed beside the spread: React refuses a `key` spread into JSX.
+      const key = `${command}:${plusDrafts.version(channelId, command)}`;
+      const kept = {
+        onDraftChange: (draft: unknown) =>
+          plusDrafts.save(channelId, command, draft),
+        onDone: () => {
+          plusDrafts.drop(channelId, command);
+          card.close();
+        },
+      };
+      const discard = () => {
+        plusDrafts.drop(channelId, command);
+        card.back();
+      };
+      switch (command) {
+        case "poll":
+          return (
+            <PollForm
+              key={key}
+              {...kept}
+              initialDraft={
+                plusDrafts.get<PollDraft>(channelId, "poll") ?? emptyPollDraft()
+              }
+              canCloseEarly={can(
+                "polls:create",
+                permissionsPayload?.permissions,
+              )}
+              onDiscard={discard}
+              onPost={async (poll) => {
+                const result = await channel.sendPoll(channelId, poll);
+                // Posted, but this device couldn't finish saving it: the same
+                // non-destructive notice `/poll` gives, so nobody posts it
+                // twice.
+                if (result.ok && result.warning) {
+                  toast({ title: "Poll posted", description: result.warning });
+                }
+                return result;
+              }}
+            />
+          );
+        case "event":
+          return (
+            <EventQuickForm
+              key={key}
+              {...kept}
+              initialDraft={plusDrafts.get<EventQuickDraft>(channelId, "event")}
+              onDiscard={discard}
+              onPost={(input) =>
+                postFromForm("event", () => channel.postEvent(channelId, input))
+              }
+              onMoreOptions={(draft) => {
+                // The draft stays until the editor creates the event, so
+                // cancelling the editor loses nothing either.
+                plusDrafts.save(channelId, "event", draft);
+                setEventEditor({ open: true, channelId, draft });
+                card.close();
+              }}
+            />
+          );
+        case "task":
+          return (
+            <TaskForm
+              key={key}
+              {...kept}
+              initialDraft={plusDrafts.get<TaskDraft>(channelId, "task")}
+              onDiscard={discard}
+              onPost={(input) =>
+                postFromForm("task", () => channel.postTask(channelId, input))
+              }
+            />
+          );
+        case "hours":
+          return (
+            <LogHoursForm
+              key={key}
+              {...kept}
+              layout="card"
+              initialDraft={plusDrafts.get<HoursDraft>(channelId, "hours")}
+              gate={hoursGate}
+              // Chat has no notice of its own for this gate (the Service
+              // page shows one).
+              showSubscriptionNotice
+              onCancel={discard}
+              submitToChannel={(input) =>
+                postFromForm("hours", () => channel.postHours(channelId, input))
+              }
+            />
+          );
+        case "points":
+          return (
+            <PointsAdjustmentForm
+              key={key}
+              {...kept}
+              layout="card"
+              initialDraft={plusDrafts.get<PointsDraft>(channelId, "points")}
+              onCancel={discard}
+              submitToChannel={(input) =>
+                postFromForm("points", () =>
+                  channel.postPointsAdjustment(channelId, input),
+                )
+              }
+            />
+          );
+      }
+    },
+    [
+      activeChannelId,
+      channel,
+      hoursGate,
+      permissionsPayload,
+      plusDrafts,
+      postFromForm,
+      toast,
+    ],
+  );
+  const plusDraftsHere = useMemo(
+    () => plusDrafts.markedFor(activeChannelId),
+    [plusDrafts, activeChannelId],
   );
 
   // What the composer's + offers beside Attach a file (#3865), and whether
@@ -1832,6 +1984,24 @@ export function ChatShell({
     ? (levelByChannelId.get(activeChannelId) ?? null)
     : null;
 
+  // The "1 important message" strip (#4186). The server decides what counts
+  // and what was seen; the timeline reports what scrolled onto the screen.
+  // Below `lg` the channel list can cover the timeline; rows behind it are on
+  // no one's screen.
+  const threadOnScreenRef = useRef(threadOnScreen);
+  useEffect(() => {
+    threadOnScreenRef.current = threadOnScreen;
+  }, [threadOnScreen]);
+  const important = useImportantMessages(activeChannelId, channel.messages, {
+    isOnScreen: () => threadOnScreenRef.current,
+  });
+  const { next: nextImportant, markSeen: markImportantSeen } = important;
+  const jumpToImportant = useCallback(() => {
+    if (!nextImportant || !activeChannelId) return;
+    markImportantSeen([nextImportant.id]);
+    jumpToChannelMessage(activeChannelId, nextImportant.id);
+  }, [nextImportant, activeChannelId, markImportantSeen, jumpToChannelMessage]);
+
   /** Search hit (#469) — the panel carries the channel on every row. */
   const jumpToSearchHit = useCallback(
     (hit: ChatSearchHit) => jumpToChannelMessage(hit.channelId, hit.message.id),
@@ -2024,10 +2194,21 @@ export function ChatShell({
   ) {
     setOpenThread(null);
   }
+  // The chat column, and the live composer's attach path, for the drop
+  // target over the column (#4143).
+  const chatColumnRef = useRef<HTMLElement | null>(null);
+  const dropAttachRef = useRef<((files: File[]) => void) | null>(null);
   const threadRootId =
     openThread && openThread.channelId === activeChannel?.id
       ? openThread.rootId
       : null;
+  // What's new in the threads the viewer follows here, for each card
+  // (#4297). The open thread is left out: reading it re-reads this.
+  const threadUnread = useThreadUnread(
+    activeChannelId,
+    channel.messages,
+    threadRootId,
+  );
   const canThreadHere = !!activeChannel && channelAllowsThreads(activeChannel);
   const openThreadFor = useCallback(
     (message: ChatMessage) => {
@@ -2099,19 +2280,12 @@ export function ChatShell({
     [activeChannelId],
   );
   /**
-   * Whether to offer Reply on rows in this channel at all. Both `can_post` and
-   * `is_read_only` are load-bearing; `channelAllowsReplies` says which case
-   * each covers.
+   * Whether to offer Reply on rows in this channel at all: where the viewer
+   * may post (`channelAllowsReplies`; a quote reply is a post, #3722).
    *
-   * Read off the two fields the rail actually carries rather than mirroring
-   * the API's `allowsInThreadReplies` (`apps/api/src/domain/utils/
-   * channel-access.ts`). That predicate takes a whole `ChannelAccessRecord`,
-   * and the fields the rail has never loaded would have to be invented —
-   * `required_permissions: null` and no `archived_at`. That is a projection
-   * wearing the full type: the moment the predicate consults a field such a
-   * literal fabricates, a copy silently disagrees with the server while
-   * *looking* like it cannot. This is a UX pre-filter; the server is the
-   * enforcement, and it is the server's copy of the rule that has to be right.
+   * Read off the `can_post` the rail carries, which the server derives from
+   * the same `canAccessChannel` gate the send goes through. This is a UX
+   * pre-filter; the server is the enforcement.
    */
   const canReplyHere = !!activeChannel && channelAllowsReplies(activeChannel);
   /**
@@ -2523,6 +2697,7 @@ export function ChatShell({
         the bottom of the viewport.
       */}
       <section
+        ref={chatColumnRef}
         className={cn(
           // `isolate` + `relative`: the chat background (#3973) sits at
           // `-z-10` inside this column, and only this column (#3779).
@@ -2531,6 +2706,18 @@ export function ChatShell({
         )}
       >
         <ChatBackground channelId={activeChannel?.id ?? null} />
+        {/* Files dropped anywhere on this column attach to the composer (#4143). */}
+        <ChatDropTarget
+          containerRef={chatColumnRef}
+          attachRef={dropAttachRef}
+          label={
+            activeChannel?.type === "DM" || activeChannel?.type === "GROUP_DM"
+              ? activeChannelName
+              : `#${activeChannelName}`
+          }
+          // A thread covers the column, and its replies take no files.
+          disabled={!!threadRootId}
+        />
         {/*
           48px, one row (`1b` pin 11). The name, its description and the one
           overflow control share the row; anything that cannot fit in 48px and
@@ -2695,6 +2882,9 @@ export function ChatShell({
                   : undefined
               }
             />
+            {onClose ? (
+              <PanelCloseButton label="Close chat" onClick={onClose} />
+            ) : null}
           </div>
         </header>
         {/*
@@ -2912,6 +3102,15 @@ export function ChatShell({
               isRetrying={blockList.isRetrying}
               isPaused={blockList.isPaused}
             />
+            <ImportantStrip
+              total={important.total}
+              next={nextImportant}
+              nextSender={
+                nextImportant ? resolveAuthorName(nextImportant, nameFor) : null
+              }
+              onJump={jumpToImportant}
+              onDismiss={important.dismiss}
+            />
             {/*
           `role="log"` alone still carries an ARIA-spec *implicit* default of
           `aria-live="polite"` / `aria-relevant="additions text"` — so making
@@ -2950,6 +3149,7 @@ export function ChatShell({
                   roleColorFor={roleColorFor}
                   avatarFor={avatarFor}
                   messages={channel.messages}
+                  threadUnread={threadUnread}
                   blockList={{ blockState, thread }}
                   onUnblock={handleUnblock}
                   onReloadMasked={handleReloadMasked}
@@ -2976,6 +3176,7 @@ export function ChatShell({
                   onUnreact={channel.unreact}
                   onReply={canReplyHere ? startReply : undefined}
                   onOpenThread={canThreadHere ? openThreadFor : undefined}
+                  onVisibleMessagesChange={important.reportVisible}
                   // The quote above a reply scrolls to the message it quotes. It used
                   // to open `ThreadPanel` in the Details rail; #2142 deleted both, and
                   // this is the same machinery pins and saved messages already use.
@@ -2995,7 +3196,11 @@ export function ChatShell({
                     // re-types the command, mints a fresh key and double-grants.
                     try {
                       const result = await channel.retryUnconfirmed(replay);
-                      notifyDispatchOutcome(toast, replay.command, result);
+                      notifyDispatchOutcome(
+                        toast,
+                        `/${replay.command}`,
+                        result,
+                      );
                     } catch (error) {
                       Sentry.captureException(error, {
                         tags: { slash_command: `${replay.command}_retry` },
@@ -3074,6 +3279,7 @@ export function ChatShell({
             // never during render, and it answers `true` at most once — see
             // `claimShellFocus` above and `Composer`'s own prop doc.
             claimShellFocus={claimShellFocus}
+            dropAttachRef={dropAttachRef}
             channelId={activeChannel.id}
             channelName={activeChannelName}
             isDirect={
@@ -3120,6 +3326,8 @@ export function ChatShell({
             }
             onOpenCommandForm={openCommandForm}
             commandForms={commandForms}
+            renderPlusForm={renderPlusForm}
+            plusDrafts={plusDraftsHere}
             onTyping={channel.emitTyping}
             isModuleEnabled={isModuleEnabled}
             recruitmentVocab={recruitmentVocab}
@@ -3147,6 +3355,7 @@ export function ChatShell({
             <ThreadPanel
               key={threadRootId}
               className="absolute inset-0 z-10"
+              onClosePanel={onClose}
               channelId={activeChannel.id}
               channelName={activeChannel.name ?? null}
               rootId={threadRootId}
@@ -3238,106 +3447,36 @@ export function ChatShell({
       {confirmDialog}
       {unblockFlow.confirmDialog}
       {blockFlow.confirmDialog}
-      {/* Mounted from the first `/event` on, so it can animate closed. */}
-      {eventForm ? (
+      {/*
+        The full event editor, from the + card's Event form's More options
+        (#3983). Mounted from the first open on, so it can animate closed.
+      */}
+      {eventEditor ? (
         <EventEditorDialog
-          open={eventForm.open}
+          open={eventEditor.open}
           onOpenChange={(open) =>
-            setEventForm((previous) =>
+            setEventEditor((previous) =>
               previous ? { ...previous, open } : previous,
             )
           }
           mode="create"
           event={null}
           usingPreviewData={false}
-          onSaved={() => undefined}
-          initialName={eventForm.prefill.name}
-          initialLocation={eventForm.prefill.location}
-          initialPointValue={eventForm.prefill.pointValue}
+          // Created: the card's draft has become the event.
+          onSaved={() => plusDrafts.drop(eventEditor.channelId, "event")}
+          initialName={eventEditor.draft.name}
+          initialLocation={eventEditor.draft.location}
+          initialPointValue={eventEditor.draft.pointValue}
           initialStartAt={prefillLocalInput(
-            eventForm.prefill.date,
-            eventForm.prefill.startTime,
+            eventEditor.draft.date,
+            eventEditor.draft.startTime,
           )}
           initialEndAt={prefillLocalInput(
-            eventForm.prefill.date,
-            eventForm.prefill.endTime,
+            eventEditor.draft.date,
+            eventEditor.draft.endTime,
           )}
-          postToChannelId={eventForm.channelId}
+          postToChannelId={eventEditor.channelId}
           trackChatCard={channel.trackEventCard}
-        />
-      ) : null}
-      {pollForm ? (
-        <NewPollDialog
-          key={`poll:${pollForm.key}`}
-          open={pollForm.open}
-          onOpenChange={(open) =>
-            setPollForm((previous) =>
-              previous ? { ...previous, open } : previous,
-            )
-          }
-          initialDraft={pollForm.draft}
-          canCloseEarly={can("polls:create", permissionsPayload?.permissions)}
-          onPost={async (poll) => {
-            const result = await channel.sendPoll(pollForm.channelId, poll);
-            // Posted, but this device couldn't finish saving it: the same
-            // non-destructive notice `/poll` gives, so nobody posts it twice.
-            if (result.ok && result.warning) {
-              toast({ title: "Poll posted", description: result.warning });
-            }
-            return result;
-          }}
-        />
-      ) : null}
-      {taskForm ? (
-        <NewTaskDialog
-          key={`task:${taskForm.key}`}
-          open={taskForm.open}
-          onOpenChange={(open) =>
-            setTaskForm((previous) =>
-              previous ? { ...previous, open } : previous,
-            )
-          }
-          prefill={taskForm.prefill}
-          initialAssigneeId={taskForm.assigneeId}
-          onPost={async (input) =>
-            postFromForm("task", () =>
-              channel.postTask(taskForm.channelId, input),
-            )
-          }
-        />
-      ) : null}
-      {hoursForm ? (
-        <LogHoursDialog
-          key={`hours:${hoursForm.key}`}
-          open={hoursForm.open}
-          onOpenChange={(open) =>
-            setHoursForm((previous) =>
-              previous ? { ...previous, open } : previous,
-            )
-          }
-          gate={hoursGate}
-          showSubscriptionNotice
-          submitToChannel={async (input) =>
-            postFromForm("hours", () =>
-              channel.postHours(hoursForm.channelId, input),
-            )
-          }
-        />
-      ) : null}
-      {pointsForm ? (
-        <PointsAdjustmentDialog
-          open={pointsForm.open}
-          onOpenChange={(open) =>
-            setPointsForm((previous) =>
-              previous ? { ...previous, open } : previous,
-            )
-          }
-          onAdjusted={() => undefined}
-          submitToChannel={async (input) =>
-            postFromForm("points", () =>
-              channel.postPointsAdjustment(pointsForm.channelId, input),
-            )
-          }
         />
       ) : null}
       <ReportMessageDialog

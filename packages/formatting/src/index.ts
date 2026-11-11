@@ -24,11 +24,19 @@ export {
   formatDayRange,
   formatDayTime,
   formatDayTimeRange,
+  formatClockShort,
   formatDueLabel,
+  formatDueOn,
   formatRelativeDayTime,
   formatSentLabel,
   formatTimestampFull,
   formatWeekdayDay,
 } from "./display";
-export { formatDueEntry, parseDueEntry } from "./due-entry";
+export {
+  dueEntryFields,
+  dueEntryFromTask,
+  formatDueEntry,
+  parseDueEntry,
+  parseDueEntryWithTime,
+} from "./due-entry";
 export { nextUpLine } from "./next-up";

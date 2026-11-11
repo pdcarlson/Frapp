@@ -27,6 +27,8 @@ export interface ActivityTaskRow {
   id: string;
   title: string;
   due_date: string;
+  /** Set when the task is due at a time of day (#4003). */
+  due_at?: string | null;
   assignee_id: string;
   assignee_name: string;
   created_by: string;
@@ -92,6 +94,7 @@ export function activityTaskMessage(task: ActivityTaskRow): ChatMessage {
     assignee_user_id: task.assignee_id,
     assignee_name: task.assignee_name,
     due_date: task.due_date,
+    due_at: task.due_at ?? null,
     // The creation-time snapshot. The card shows the live status it reads back.
     status: "TODO",
     point_reward: task.point_reward,

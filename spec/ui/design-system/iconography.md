@@ -620,7 +620,6 @@ They stay neutral: the page's colour is for asks and status.
 | Hours to approve | `service`, `hand-heart` |
 | Poll | `polls`, `chart-bar` |
 | Event whose start can't be read (no date to draw) | `events`, `calendar-dots` |
-| Document, backwork | `documents`, `file-text`; `backwork`, `books` |
 | Sign-up link | `link`, `link` (added for it) |
 
 ### 6.2.6 Settings & Roles (Signet duotone) — no family file, deliberately

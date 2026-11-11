@@ -1,5 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
+  ActivityItemRead,
+  ActivityUnreadStart,
   BackworkCourse,
   BackworkDepartment,
   BackworkProfessor,
@@ -8,7 +10,6 @@ import type {
   ChapterActivationMilestone,
   ChapterAuditLog,
   ChapterCustomField,
-  ChapterCustomRole,
   ChapterDirectoryEntry,
   ChapterDirectoryRequest,
   ChapterDocument,
@@ -26,6 +27,7 @@ import type {
   ChatMessageAction,
   ChatMessageAttachment,
   ChatMessageBookmark,
+  ChatMessageImportantSeen,
   ChatMessageLink,
   ChatLinkMemberState,
   ChatThreadFollow,
@@ -66,6 +68,7 @@ import type {
   StudyGeofence,
   StudySession,
   Task,
+  TaskSubtask,
   PledgeClass,
   EventType,
   PledgeClassAssignment,
@@ -144,8 +147,11 @@ export interface Database {
       message_reactions: TableDefinition<MessageReaction>;
       channel_read_receipts: TableDefinition<ChannelReadReceipt>;
       chat_message_bookmarks: TableDefinition<ChatMessageBookmark>;
+      chat_message_important_seen: TableDefinition<ChatMessageImportantSeen>;
       chat_message_links: TableDefinition<ChatMessageLink>;
       chat_link_member_states: TableDefinition<ChatLinkMemberState>;
+      activity_item_reads: TableDefinition<ActivityItemRead>;
+      activity_unread_starts: TableDefinition<ActivityUnreadStart>;
       chat_thread_follows: TableDefinition<ChatThreadFollow>;
       chat_message_reports: TableDefinition<ChatMessageReport>;
       chat_member_blocks: TableDefinition<ChatMemberBlock>;
@@ -160,6 +166,7 @@ export interface Database {
       financial_transactions: TableDefinition<FinancialTransaction>;
       service_entries: TableDefinition<ServiceEntry>;
       tasks: TableDefinition<Task>;
+      task_subtasks: TableDefinition<TaskSubtask>;
       chapter_pledge_classes: TableDefinition<PledgeClass>;
       event_types: TableDefinition<EventType>;
       rush_candidates: TableDefinition<RushCandidate>;
@@ -168,7 +175,6 @@ export interface Database {
       chapter_document_folders: TableDefinition<ChapterDocumentFolder>;
       chapter_document_stars: TableDefinition<ChapterDocumentStar>;
       semester_archives: TableDefinition<SemesterArchive>;
-      chapter_custom_roles: TableDefinition<ChapterCustomRole>;
       stripe_webhook_events: TableDefinition<StripeWebhookEvent>;
       chapter_audit_log: TableDefinition<ChapterAuditLog>;
       chapter_custom_fields: TableDefinition<ChapterCustomField>;
@@ -466,6 +472,21 @@ export interface Database {
           p_category_ids: string[];
         };
         Returns: ChatChannelCategory[];
+      };
+      /**
+       * `20261111233000` (#3722). Sets a category's who-can-see and
+       * who-can-post lists, and the same lists on every channel in it that
+       * matched the category before, in one transaction. Returns the ids of
+       * the channels that followed.
+       */
+      set_chat_category_access: {
+        Args: {
+          p_chapter_id: string;
+          p_category_id: string;
+          p_who_can_see: string[] | null;
+          p_who_can_post: string[] | null;
+        };
+        Returns: string[];
       };
       leave_group_dm: {
         Args: {

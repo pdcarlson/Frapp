@@ -219,7 +219,8 @@ describe("ChapterNavHeader", () => {
     expect(await screen.findByText("Chapter settings")).toBeInTheDocument();
   });
 
-  it("keeps offering chapter settings while permissions are still loading", async () => {
+  it("holds chapter settings back while permissions are still loading (#3854)", async () => {
+    // Offering it early gave a member a door to click before it was taken back.
     chaptersQuery.current = {
       data: [membership("chap-1", "Alpha Chapter")],
       isSuccess: true,
@@ -228,7 +229,8 @@ describe("ChapterNavHeader", () => {
     render(<ChapterNavHeader collapsed={false} />);
 
     openMenu();
-    expect(await screen.findByText("Chapter settings")).toBeInTheDocument();
+    expect(await screen.findByText("Join another chapter")).toBeInTheDocument();
+    expect(screen.queryByText("Chapter settings")).not.toBeInTheDocument();
   });
 
   it("keeps chapter switching out of the account menu's job", async () => {

@@ -1,14 +1,9 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { ChapterCustomRole } from "@repo/validation";
 
 // Mock the data hooks so the tab renders without a query client / network.
-const mockUseCustomRoles = vi.fn();
 const mockUseRoles = vi.fn();
-const mockCreate = vi.fn();
-const mockUpdate = vi.fn();
-const mockDelete = vi.fn();
 const mockSaveDefaultRole = vi.fn();
 const mockUseCatalog = vi.fn();
 const mockUseMembers = vi.fn();
@@ -17,11 +12,7 @@ const mockPermissions = vi.fn();
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useCustomRoles: () => mockUseCustomRoles(),
   useRoles: () => mockUseRoles(),
-  useCreateCustomRole: () => ({ mutateAsync: mockCreate, isPending: false }),
-  useUpdateCustomRole: () => ({ mutateAsync: mockUpdate, isPending: false }),
-  useDeleteCustomRole: () => ({ mutateAsync: mockDelete, isPending: false }),
   // The `4e` matrix reads these three directly, so the tab renders even when
   // the chapter-config call is refused.
   usePermissionsCatalog: () => mockUseCatalog(),
@@ -58,30 +49,10 @@ const CATALOG = [
   { key: "EVENTS_CREATE", permission: "events:create" },
 ];
 
-function customRole(over: Partial<ChapterCustomRole> = {}): ChapterCustomRole {
-  return {
-    id: "r1",
-    chapter_id: "c1",
-    key: "pledge_educator",
-    label: "Pledge Educator",
-    rank: 9,
-    capabilities: ["members:view"],
-    core: false,
-    created_at: "",
-    updated_at: "",
-    ...over,
-  };
-}
 
 /** The hook mocks every test in this file renders against. */
 function primeMocks() {
   vi.clearAllMocks();
-  mockUseCustomRoles.mockReturnValue({
-    data: [],
-    isPending: false,
-    isError: false,
-    isSuccess: true,
-  });
   mockUseRoles.mockReturnValue({
     data: [
       {
@@ -130,7 +101,6 @@ describe("SettingsRolesTab", () => {
     render(
       <SettingsRolesTab
         canManage
-        catalog={CATALOG}
         defaultInviteRoleId={null}
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
@@ -146,7 +116,6 @@ describe("SettingsRolesTab", () => {
     render(
       <SettingsRolesTab
         canManage
-        catalog={CATALOG}
         defaultInviteRoleId={null}
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
@@ -191,7 +160,6 @@ describe("SettingsRolesTab", () => {
     render(
       <SettingsRolesTab
         canManage
-        catalog={CATALOG}
         defaultInviteRoleId={null}
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
@@ -218,7 +186,6 @@ describe("SettingsRolesTab", () => {
     render(
       <SettingsRolesTab
         canManage
-        catalog={CATALOG}
         defaultInviteRoleId={null}
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
@@ -239,7 +206,6 @@ describe("SettingsRolesTab", () => {
     render(
       <SettingsRolesTab
         canManage
-        catalog={CATALOG}
         defaultInviteRoleId={null}
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
@@ -267,7 +233,6 @@ describe("SettingsRolesTab", () => {
     render(
       <SettingsRolesTab
         canManage
-        catalog={CATALOG}
         defaultInviteRoleId={null}
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
@@ -313,7 +278,6 @@ describe("SettingsRolesTab", () => {
     render(
       <SettingsRolesTab
         canManage
-        catalog={CATALOG}
         defaultInviteRoleId={null}
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
@@ -329,10 +293,15 @@ describe("SettingsRolesTab", () => {
   });
 
   it("never renders the wildcard as a permission row", () => {
+    mockUseCatalog.mockReturnValue({
+      data: [{ key: "WILDCARD", permission: "*" }, ...CATALOG],
+      isPending: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
     render(
       <SettingsRolesTab
         canManage
-        catalog={[{ key: "WILDCARD", permission: "*" }, ...CATALOG]}
         defaultInviteRoleId={null}
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
@@ -349,7 +318,6 @@ describe("SettingsRolesTab", () => {
     render(
       <SettingsRolesTab
         canManage={false}
-        catalog={CATALOG}
         defaultInviteRoleId={null}
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
@@ -361,141 +329,11 @@ describe("SettingsRolesTab", () => {
       screen.getByText("Granted: See the full directory for Member"),
     ).toBeInTheDocument();
   });
-
-  it("hides the delete control for core roles and shows it for non-core", async () => {
-    mockUseCustomRoles.mockReturnValue({
-      data: [
-        customRole({ id: "core1", label: "Core Role", core: true }),
-        customRole({ id: "free1", label: "Free Role", core: false }),
-      ],
-      isPending: false,
-      isError: false,
-    });
-    render(
-      <SettingsRolesTab
-        canManage
-        catalog={CATALOG}
-        defaultInviteRoleId={null}
-        onSaveDefaultInviteRole={mockSaveDefaultRole}
-      />,
-    );
-    expect(
-      screen.queryByRole("button", { name: /delete core role/i }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /delete free role/i }),
-    ).toBeInTheDocument();
-  });
-
-  it("creates a custom role from its name alone: key and order are derived", async () => {
-    const user = userEvent.setup();
-    mockCreate.mockResolvedValue({});
-    mockUseCustomRoles.mockReturnValue({
-      data: [customRole({ key: "social_chair", label: "Social", rank: 9 })],
-      isPending: false,
-      isError: false,
-      isSuccess: true,
-    });
-    render(
-      <SettingsRolesTab
-        canManage
-        catalog={CATALOG}
-        defaultInviteRoleId={null}
-        onSaveDefaultInviteRole={mockSaveDefaultRole}
-      />,
-    );
-    expect(screen.queryByLabelText("Key")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Rank")).not.toBeInTheDocument();
-    await user.type(screen.getByLabelText("Name"), "Social Chair");
-    await user.click(screen.getByLabelText("New role: Create events"));
-    await user.click(screen.getByRole("button", { name: /create role/i }));
-
-    expect(mockCreate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        key: "social_chair_2",
-        label: "Social Chair",
-        rank: 10,
-        capabilities: ["events:create"],
-      }),
-    );
-  });
-
-  it("disables custom-role editing controls when the caller cannot manage", async () => {
-    render(
-      <SettingsRolesTab
-        canManage={false}
-        catalog={CATALOG}
-        defaultInviteRoleId={null}
-        onSaveDefaultInviteRole={mockSaveDefaultRole}
-      />,
-    );
-    expect(screen.getByLabelText("Name")).toBeDisabled();
-    expect(screen.getByRole("button", { name: /create role/i })).toBeDisabled();
-  });
-
-  it("never offers the wildcard as a capability checkbox", async () => {
-    const catalogWithWildcard = [
-      { key: "WILDCARD", permission: "*" },
-      ...CATALOG,
-    ];
-    mockUseCustomRoles.mockReturnValue({
-      data: [customRole()],
-      isPending: false,
-      isError: false,
-    });
-    render(
-      <SettingsRolesTab
-        canManage
-        catalog={catalogWithWildcard}
-        defaultInviteRoleId={null}
-        onSaveDefaultInviteRole={mockSaveDefaultRole}
-      />,
-    );
-
-    // The API rejects `*` on custom roles (400), so the chip must not render —
-    // neither on existing roles nor in the create form.
-    expect(
-      screen.queryByRole("checkbox", { name: /Pledge Educator: \*/ }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("checkbox", { name: "New role: *" }),
-    ).not.toBeInTheDocument();
-    // Ordinary capabilities still render for both.
-    expect(
-      screen.getByRole("checkbox", {
-        name: "Pledge Educator: See the full directory",
-      }),
-    ).toBeInTheDocument();
-  });
-
-  it("strips a legacy wildcard from the payload when toggling capabilities", async () => {
-    const user = userEvent.setup();
-    // Pre-bridge rows can still carry `*`; echoing it back would 400 forever.
-    mockUseCustomRoles.mockReturnValue({
-      data: [customRole({ capabilities: ["*", "members:view"] })],
-      isPending: false,
-      isError: false,
-    });
-    render(
-      <SettingsRolesTab
-        canManage
-        catalog={CATALOG}
-        defaultInviteRoleId={null}
-        onSaveDefaultInviteRole={mockSaveDefaultRole}
-      />,
-    );
-    await user.click(
-      screen.getByRole("checkbox", { name: "Pledge Educator: Create events" }),
-    );
-
-    expect(mockUpdate).toHaveBeenCalledWith({
-      id: "r1",
-      body: { capabilities: ["members:view", "events:create"] },
-    });
-  });
 });
 
 describe("the capability matrix's marks, at the call site", () => {
+  beforeEach(primeMocks);
+
   /*
    * `settings-contrast.spec.ts` measures the tones; it cannot see which one
    * the component reaches for. The review proved the gap: reverting the
@@ -508,7 +346,6 @@ describe("the capability matrix's marks, at the call site", () => {
     render(
       <SettingsRolesTab
         canManage
-        catalog={CATALOG}
         defaultInviteRoleId={null}
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
@@ -564,7 +401,6 @@ describe("the capability matrix's marks, at the call site", () => {
       render(
         <SettingsRolesTab
           canManage
-          catalog={CATALOG}
           defaultInviteRoleId="role-pledge"
           onSaveDefaultInviteRole={mockSaveDefaultRole}
         />,
@@ -582,7 +418,6 @@ describe("the capability matrix's marks, at the call site", () => {
       render(
         <SettingsRolesTab
           canManage
-          catalog={CATALOG}
           defaultInviteRoleId={null}
           onSaveDefaultInviteRole={mockSaveDefaultRole}
         />,
@@ -603,7 +438,6 @@ describe("the capability matrix's marks, at the call site", () => {
       render(
         <SettingsRolesTab
           canManage
-          catalog={CATALOG}
           defaultInviteRoleId="role-member"
           onSaveDefaultInviteRole={mockSaveDefaultRole}
         />,
@@ -617,7 +451,6 @@ describe("the capability matrix's marks, at the call site", () => {
       render(
         <SettingsRolesTab
           canManage={false}
-          catalog={CATALOG}
           defaultInviteRoleId={null}
           onSaveDefaultInviteRole={mockSaveDefaultRole}
         />,
@@ -629,7 +462,6 @@ describe("the capability matrix's marks, at the call site", () => {
       render(
         <SettingsRolesTab
           canManage
-          catalog={CATALOG}
           defaultInviteRoleId="role-deleted"
           onSaveDefaultInviteRole={mockSaveDefaultRole}
         />,
@@ -661,7 +493,6 @@ describe("the capability matrix's marks, at the call site", () => {
       render(
         <SettingsRolesTab
           canManage
-          catalog={CATALOG}
           defaultInviteRoleId="role-pledge"
           onSaveDefaultInviteRole={mockSaveDefaultRole}
         />,
@@ -684,7 +515,6 @@ describe("the capability matrix's marks, at the call site", () => {
       render(
         <SettingsRolesTab
           canManage
-          catalog={CATALOG}
           defaultInviteRoleId="role-pledge"
           onSaveDefaultInviteRole={mockSaveDefaultRole}
         />,
@@ -697,7 +527,6 @@ describe("the capability matrix's marks, at the call site", () => {
       render(
         <SettingsRolesTab
           canManage
-          catalog={CATALOG}
           defaultInviteRoleId={null}
           onSaveDefaultInviteRole={mockSaveDefaultRole}
           isSavingConfig

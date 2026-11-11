@@ -99,9 +99,15 @@ describe("DueDateField (#3928)", () => {
   it("says how to write one when the form was submitted with unreadable text", () => {
     render(<Harness missing />);
     type("soon");
-    expect(screen.getByRole("alert")).toHaveTextContent(/Nov 14 or 11\/14/);
+    expect(screen.getByRole("alert")).toHaveTextContent(/Nov 14 or Friday/);
     type("11/14");
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("reads a time with the date, and hands the parent both (#4003)", () => {
+    render(<Harness />);
+    type("11/14 5pm");
+    expect(screen.getByText("Sat, Nov 14 · 5 PM")).toBeInTheDocument();
   });
 
   it("lays the reading over the form, so blur changes no height", () => {

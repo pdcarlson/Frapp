@@ -3,7 +3,8 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { signetDarkTokens } from "@repo/theme/signet";
-import { useMyPermissions, useNotifications } from "@repo/hooks";
+import { useNotifications } from "@repo/hooks";
+import { useNavPermissions } from "@/lib/hooks/use-nav-permissions";
 import {
   Sheet,
   SheetContent,
@@ -53,7 +54,6 @@ import { NoAccessRedirect } from "@/components/layout/no-access-redirect";
 import { TermsPromptGate } from "@/components/auth/terms-prompt";
 import { OnboardingTutorial } from "@/components/onboarding/onboarding-tutorial";
 import { WhatsNewHost } from "@/components/whats-new/whats-new-host";
-import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useChatRealtimeBinding } from "@/lib/chat/use-chat-realtime-binding";
 import { useNavHighlights } from "@/components/layout/use-chat-has-unread";
 import { cn } from "@/lib/utils";
@@ -175,7 +175,7 @@ export function DashboardShell({
       (onChatRoute &&
         Boolean(
           searchParams?.get(CHAT_CHANNEL_PARAM) ||
-            searchParams?.get(CHAT_MESSAGE_PARAM),
+          searchParams?.get(CHAT_MESSAGE_PARAM),
         )),
   );
   const [toolShare, setToolShare] = useState(defaultToolShare);
@@ -227,6 +227,18 @@ export function DashboardShell({
     } else setAnimateOpen(true);
     setChatOpen(!chatOpen);
   }, [chatOpen]);
+  /*
+    The X in chat's channel header (#4223): closes chat and leaves the tool
+    page, which fills the row. The X goes with the panel, so focus moves to
+    the page rather than dropping to `<body>`, and Escape there still closes
+    the page.
+  */
+  const toolColumnRef = useRef<HTMLDivElement>(null);
+  const closeChatPanel = useCallback(() => {
+    if (!chatOpen) return;
+    toggleChat();
+    toolColumnRef.current?.focus();
+  }, [chatOpen, toggleChat]);
   const closeTool = useCallback(() => {
     setClosingTool(true);
     router.push("/chat");
@@ -270,7 +282,6 @@ export function DashboardShell({
     [split, closeTool],
   );
 
-
   // A full-width tool (Chapter settings) hides chat without closing it: the
   // cookie and the Chat row's state stay as they were, so leaving the page
   // brings chat back beside the next tool.
@@ -307,14 +318,9 @@ export function DashboardShell({
   const [navKey, setNavKey] = useState<"rail" | "column" | null>(null);
   if (hydrated && navKey === null) setNavKey(hydratedNavKey);
 
-  const activeChapterId = useChapterStore((s) => s.activeChapterId);
-  const { data: permissionsPayload } = useMyPermissions({
-    enabled: Boolean(activeChapterId),
-  });
-  const permissions = useMemo(
-    () => permissionsPayload?.permissions,
-    [permissionsPayload],
-  );
+  // `undefined` hides gated rows until the read answers; `null` means the
+  // offline dashboard can't ask, and shows them (`useNavPermissions`, #3854).
+  const permissions = useNavPermissions();
   // Module gating: items tied to a disabled module hide once the chapter read
   // resolves. Undefined while loading means "do not gate", so nothing flashes
   // out during the initial load. Read from the member-readable current chapter,
@@ -471,11 +477,17 @@ export function DashboardShell({
                   : (navKey ?? hydratedNavKey)
               }
               className={
-                railByCss ? (rail ? RAIL_BAND_ONLY : OUTSIDE_RAIL_BAND) : undefined
+                railByCss
+                  ? rail
+                    ? RAIL_BAND_ONLY
+                    : OUTSIDE_RAIL_BAND
+                  : undefined
               }
               collapsed={rail}
               onToggleCollapsed={
-                forceRail || (railByCss && rail) ? undefined : toggleNavCollapsed
+                forceRail || (railByCss && rail)
+                  ? undefined
+                  : toggleNavCollapsed
               }
               permissions={permissions}
               isModuleEnabled={isModuleEnabled}
@@ -548,6 +560,9 @@ export function DashboardShell({
                   <ChatPage
                     defaultMembersHidden={defaultMembersHidden}
                     toolBeside={hasTool}
+                    onClose={
+                      hasTool && split === true ? closeChatPanel : undefined
+                    }
                   />
                 ) : (
                   <ChatRouteSkeleton />
@@ -577,6 +592,7 @@ export function DashboardShell({
           */}
           {hasTool ? (
             <div
+              ref={toolColumnRef}
               data-tool-column=""
               onKeyDown={onToolKeyDown}
               // Focusable by click only, so a click on the page's blank space
@@ -584,7 +600,8 @@ export function DashboardShell({
               // leaving focus on `<body>`. Never a Tab stop.
               tabIndex={-1}
               className={cn(
-                "flex min-h-0 min-w-0 flex-1 flex-col outline-none transition-opacity",
+                // `relative`: a docked panel (`shared/panel.tsx`) covers the column.
+                "relative flex min-h-0 min-w-0 flex-1 flex-col outline-none transition-opacity",
                 chatShown && "min-[1056px]:min-w-[375px]",
                 collapsing === "page" && "opacity-40",
               )}
