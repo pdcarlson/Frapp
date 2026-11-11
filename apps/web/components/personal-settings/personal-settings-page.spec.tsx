@@ -125,6 +125,7 @@ describe("personal settings sections", () => {
       "/preferences?section=account",
       "/preferences?section=alerts",
       "/preferences?section=blocked",
+      "/preferences?section=invoices",
       "/preferences?section=discord",
     ]);
   });
@@ -133,5 +134,10 @@ describe("personal settings sections", () => {
     expect(resolvePersonalSettingsSection(null)).toBe("notifications");
     expect(resolvePersonalSettingsSection("nope")).toBe("notifications");
     expect(resolvePersonalSettingsSection("discord")).toBe("discord");
+  });
+
+  it("hides My invoices while dues is off for the beta, and opens the default for it", () => {
+    // `BETA_OFF_MODULES` holds dues for the beta, so there is nothing to list.
+    expect(resolvePersonalSettingsSection("invoices")).toBe("notifications");
   });
 });

@@ -1,10 +1,11 @@
-import { BillingPage } from "@/components/billing/billing-page";
+import { BillingRedirect } from "@/components/billing/billing-redirect";
 
-export const metadata = {
-  title: "Billing",
-  description: "Chapter subscription, plan and member invoices.",
-};
-
+/**
+ * Billing has no page of its own any more: it is Plan and billing in Chapter
+ * settings, and a member's invoices are My invoices in Settings (#3827). Old
+ * links, bookmarks, notifications and in-flight Stripe returns still name
+ * this route, so it forwards by what the viewer holds.
+ */
 export default function Billing() {
-  return <BillingPage />;
+  return <BillingRedirect />;
 }

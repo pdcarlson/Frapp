@@ -146,14 +146,20 @@ function Cell({ included, column }: { included: boolean; column: string }) {
 const ROW_CLASS =
   "grid min-h-10 grid-cols-[1fr_72px_72px] items-center gap-2 border-t border-border px-4 py-1.5 @md:grid-cols-[1fr_120px_120px]";
 
-export function PlanMatrix() {
+/**
+ * `onPaidPlan` is whether the chapter holds the subscription (`active` or
+ * `past_due`). A president on Pro opens Plan and billing to see what the
+ * chapter is paying for, not to be sold it, so the heading says so and the
+ * Pro column is marked as theirs. `false` and unknown keep the selling copy.
+ */
+export function PlanMatrix({ onPaidPlan = false }: { onPaidPlan?: boolean }) {
   return (
     <section aria-labelledby="plan-matrix-heading" className="space-y-2">
       <h2
         id="plan-matrix-heading"
         className={`${EYEBROW} text-muted-foreground`}
       >
-        What the subscription unlocks
+        {onPaidPlan ? "What your plan includes" : "What the subscription unlocks"}
       </h2>
       <div className="overflow-hidden rounded-lg border border-border">
         {/*
@@ -177,7 +183,15 @@ export function PlanMatrix() {
         >
           <span>Module</span>
           <span className="text-center">Free</span>
-          <span className="text-center text-accent-text">Pro</span>
+          <span className="text-center text-accent-text">
+            Pro
+            {onPaidPlan ? (
+              <span className="hidden font-normal text-muted-foreground @md:inline">
+                {" "}
+                · yours
+              </span>
+            ) : null}
+          </span>
         </div>
 
         <div className={ROW_CLASS}>

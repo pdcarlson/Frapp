@@ -5,7 +5,6 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   type OrgDues,
-  useCreatePortal,
   useCurrentChapter,
   useMyPermissions,
   useOrgConfig,
@@ -60,7 +59,7 @@ import {
   SettingsSemesterTab,
   useRolloverForm,
 } from "@/components/settings/settings-semester-tab";
-import { SettingsDangerTab } from "@/components/settings/settings-danger-tab";
+import { PlanAndBilling } from "@/components/billing/plan-and-billing";
 import { SettingsOrgTab } from "@/components/settings/settings-org-tab";
 import { SettingsModulesTab } from "@/components/settings/settings-modules-tab";
 import { SettingsWorkflowsTab } from "@/components/settings/settings-workflows-tab";
@@ -121,7 +120,6 @@ function SettingsPageContent() {
   // `isPending` used to disable every control on every tab at once (#881).
   const pendingConfigKeys = usePendingConfigKeys();
   const rollover = useSemesterRollover();
-  const createPortal = useCreatePortal();
   // Scoped to the rollover card; `SettingsSemesterTab` says why.
   const rolloverGate = useSubscriptionGate();
 
@@ -554,8 +552,13 @@ function SettingsPageContent() {
             />
           </TabsContent>
 
-          <TabsContent value="danger" className="mt-0">
-            <SettingsDangerTab createPortal={createPortal} />
+          {/*
+            Plan and billing (#3827): the old `/billing` route, gated on
+            `billing:view` like the sidebar row it replaces. No config gate:
+            it reads the billing record and invoices, not chapter config.
+          */}
+          <TabsContent value="billing" className="mt-0">
+            <PlanAndBilling />
           </TabsContent>
 
           <TabsContent value="modules" className="mt-0">

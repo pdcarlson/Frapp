@@ -73,7 +73,8 @@ export const SETUP_CHECKLIST_WEB_PATH: Readonly<
   event: "/events",
   "study-zone": "/geofences",
   document: "/documents",
-  dues: "/billing",
+  // Member invoices sit in Plan and billing since #3827.
+  dues: "/settings?tab=billing",
 };
 
 /** In the order an officer usually does them. */

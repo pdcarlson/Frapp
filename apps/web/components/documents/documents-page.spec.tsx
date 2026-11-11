@@ -199,7 +199,7 @@ describe("DocumentsPage subscription gating", () => {
     // §5 rule 2: name the next action, not just the blocker.
     expect(
       screen.getByRole("link", { name: /complete checkout/i }),
-    ).toHaveAttribute("href", "/billing");
+    ).toHaveAttribute("href", "/settings?tab=billing");
 
     // §5 rule 4: disabled, not hidden — the library itself is still there.
     expect(screen.getByText(/chapter bylaws/i)).toBeInTheDocument();

@@ -94,6 +94,14 @@ const TAB_EXTRA_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
  */
 const TAB_ONLY_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   classes: ["roles:manage"],
+  /*
+   * Plan and billing (#3827) reads `GET /v1/billing/status` and the invoice
+   * list, both `billing:view`, and no chapter config. It is the gate the
+   * sidebar's Billing row used, so whoever reached billing before still does,
+   * and the nav's Chapter settings row now admits a treasurer who holds only
+   * this. Plan actions stay behind `billing:manage` inside the section.
+   */
+  billing: ["billing:view"],
 };
 
 /**
@@ -183,7 +191,11 @@ export function hasSettingsDestination(
 ): boolean {
   if (permissions === undefined || permissions === null) return true;
   const anyTab = canAny(
-    [CHAPTER_CONFIG_VIEW, ...Object.values(TAB_EXTRA_PERMISSIONS).flat()],
+    [
+      CHAPTER_CONFIG_VIEW,
+      ...Object.values(TAB_EXTRA_PERMISSIONS).flat(),
+      ...Object.values(TAB_ONLY_PERMISSIONS).flat(),
+    ],
     permissions,
   );
   return anyTab || visibleSettingsTools(permissions, isModuleEnabled).length > 0;
