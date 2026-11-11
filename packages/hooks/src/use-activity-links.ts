@@ -41,9 +41,6 @@ function restoreLink(
   return { ...activity, links };
 }
 
-/** Every link write's mutation key starts with this. */
-const LINK_WRITES = "activity-link-write";
-
 /**
  * The shared shape of the four link writes (`spec/behavior/activity.md`
  * § Links). The two that take a link off the list (a state, a removal) drop
@@ -65,7 +62,9 @@ function useLinkWrite(
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
-    mutationKey: [LINK_WRITES, name],
+    // A literal root, as every mutation key has (`mutation-keys.spec.ts`);
+    // `onSettled` counts pending link writes by it.
+    mutationKey: ["activity-link-write", name],
     mutationFn: write,
     onMutate: async (id: string) => {
       if (!drops || !chapterId) return null;
@@ -91,7 +90,8 @@ function useLinkWrite(
       if (!chapterId) return;
       // This write still counts as pending here; any more are still on
       // their way, and the last of them re-reads.
-      if (queryClient.isMutating({ mutationKey: [LINK_WRITES] }) > 1) return;
+      if (queryClient.isMutating({ mutationKey: ["activity-link-write"] }) > 1)
+        return;
       void queryClient.invalidateQueries({
         queryKey: activityKeys.chapter(chapterId),
         exact: true,
