@@ -8,7 +8,8 @@ import { APP_LINK_PATHS, NATIVE_APP_ID } from "@repo/validation";
  * and the binary carries `applinks:app.frapp.live`. Android opens it when this
  * origin serves `/.well-known/assetlinks.json` with the SHA-256 of the key that
  * signs the installed app and the binary's intent filter is `autoVerify`. Both
- * halves are needed; the binary's half is `apps/mobile/app.json`.
+ * halves are needed. The binary's half is `apps/mobile/app.json`, and no store
+ * build carries it yet (#4002): until one does, these files open nothing.
  *
  * The identifiers come from the environment, not the repo, which records
  * neither: `eas.json` names no `appleTeamId`, and the Play app-signing

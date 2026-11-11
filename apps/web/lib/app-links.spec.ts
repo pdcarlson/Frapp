@@ -81,6 +81,21 @@ describe("the routes", () => {
     }
   });
 
+  it("publish from the documented variables once they are set", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APPLE_TEAM_ID", "ABCDE12345");
+    vi.stubEnv("NEXT_PUBLIC_ANDROID_APP_CERT_SHA256", PLAY_KEY);
+    try {
+      const aasa = aasaRoute();
+      expect(aasa.status).toBe(200);
+      expect(await aasa.json()).toEqual(appleAppSiteAssociation("ABCDE12345"));
+      const links = assetLinksRoute();
+      expect(links.status).toBe(200);
+      expect(await links.json()).toEqual(androidAssetLinks(PLAY_KEY));
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("serve JSON with an explicit content type, since the iOS file has no extension", async () => {
     const response = appLinksResponse({ applinks: {} });
     expect(response.status).toBe(200);

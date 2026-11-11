@@ -45,6 +45,8 @@ import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confir
 import { asArray } from "@/lib/utils";
 import { isLockedOutOfChapter } from "@/lib/auth/no-access";
 import {
+  JOIN_IN_BROWSER_KEY,
+  JOIN_IN_BROWSER_VALUE,
   isJoinSkipCandidate,
   shouldSkipJoinForMember,
 } from "@/lib/auth/join-visit";
@@ -116,11 +118,19 @@ function JoinPageContent() {
   const [sessionState, setSessionState] = useState<
     "checking" | "signed-out" | "ready" | "failed"
   >("checking");
-  // An invite link opened on a phone offers the app before anything else
-  // (#4002), signed in or not; `proxy.ts` lets it here signed out for that.
+  // An invite link opened on a phone may offer the app first (#4002);
+  // `proxy.ts` lets a signed-out visit here for that. Continue in the browser
+  // marks the URL, so the choice outlives the sign-in round trip it starts
+  // (`JOIN_IN_BROWSER_KEY`).
   const phone = usePhonePlatform();
-  const [continueInBrowser, setContinueInBrowser] = useState(false);
-  const offerApp = phone !== null && initialToken !== "" && !continueInBrowser;
+  const inBrowser =
+    searchParams.get(JOIN_IN_BROWSER_KEY) === JOIN_IN_BROWSER_VALUE;
+  const phoneInvite = phone !== null && initialToken !== "" && !inBrowser;
+  const continueInBrowser = useCallback(() => {
+    const next = new URLSearchParams(searchParams.toString());
+    next.set(JOIN_IN_BROWSER_KEY, JOIN_IN_BROWSER_VALUE);
+    router.replace(`/join?${next.toString()}`);
+  }, [router, searchParams]);
   const [account, setAccount] = useState<{
     id: string;
     email: string | null;
@@ -156,6 +166,20 @@ function JoinPageContent() {
     memberships.length,
   );
   const openChatMembership = hasAccess ? currentMembership : null;
+
+  // Who the app is offered to: a signed-out visitor, or an account with no
+  // chapter. A member of a chapter keeps the web form, because the app sends
+  // a member with a chapter to its tabs and drops the invite (its `(auth)`
+  // layout), so the web is still the only place they can join a second one.
+  // A signed-in visit waits for the chapter list, so the offer never flashes.
+  const offerApp =
+    phoneInvite &&
+    (sessionState === "signed-out" ||
+      (sessionState === "ready" &&
+        !chaptersQuery.isLoading &&
+        memberships.length === 0));
+  const decidingAppOffer =
+    phoneInvite && sessionState === "ready" && chaptersQuery.isLoading;
 
   const visitFrom = searchParams.get("from");
   const visitHasInvite = initialToken !== "";
@@ -221,10 +245,11 @@ function JoinPageContent() {
   // then only once the visitor picks Continue in the browser.
   useEffect(() => {
     if (sessionState !== "signed-out" || offerApp) return;
+    const query = searchParams.toString();
     const signInUrl = new URL("/sign-in", window.location.origin);
-    signInUrl.searchParams.set("redirectTo", `/join${window.location.search}`);
+    signInUrl.searchParams.set("redirectTo", `/join${query ? `?${query}` : ""}`);
     router.replace(signInUrl.pathname + signInUrl.search);
-  }, [sessionState, offerApp, router]);
+  }, [sessionState, offerApp, router, searchParams]);
 
   // Decided while rendering (React's "adjusting state when a prop changes"),
   // once the reads it needs have settled; the effect below only navigates.
@@ -332,7 +357,7 @@ function JoinPageContent() {
       <AppHandoff
         platform={phone}
         token={initialToken}
-        onContinueInBrowser={() => setContinueInBrowser(true)}
+        onContinueInBrowser={continueInBrowser}
       />
     );
   }
@@ -340,6 +365,7 @@ function JoinPageContent() {
   if (
     sessionState === "checking" ||
     sessionState === "signed-out" ||
+    decidingAppOffer ||
     awaitingSkipDecision ||
     skipDecision === "skip"
   ) {

@@ -185,7 +185,7 @@ describe("web join — an invite link opened on a phone (#4002)", () => {
     );
   }
 
-  it("offers the app first to a signed-out visitor, and holds sign-in until they continue in the browser", async () => {
+  it("offers the app first to a signed-out visitor, and holds sign-in until they choose the browser", async () => {
     device.phone = "ios";
     sessionUser.mockResolvedValue(null);
     searchParams.current = new URLSearchParams("token=abc");
@@ -203,14 +203,37 @@ describe("web join — an invite link opened on a phone (#4002)", () => {
     await waitFor(() => expect(sessionUser).toHaveBeenCalled());
     expect(replace).not.toHaveBeenCalled();
 
+    // The choice goes into the URL, so it outlives the sign-in round trip.
     fireEvent.click(
       screen.getByRole("button", { name: "Continue in the browser" }),
     );
+    expect(replace).toHaveBeenCalledWith("/join?token=abc&web=1");
+  });
+
+  it("sends a visitor who chose the browser on to sign-in, keeping the choice for the way back", async () => {
+    device.phone = "ios";
+    sessionUser.mockResolvedValue(null);
+    searchParams.current = new URLSearchParams("token=abc&web=1");
+    renderPage();
+
     await waitFor(() =>
       expect(replace).toHaveBeenCalledWith(
-        expect.stringMatching(/^\/sign-in\?redirectTo=%2Fjoin/),
+        `/sign-in?redirectTo=${encodeURIComponent("/join?token=abc&web=1")}`,
       ),
     );
+    expect(screen.queryByText("Join in the Frapp app")).toBeNull();
+  });
+
+  it("shows the filled form, not the offer again, when sign-in brings them back", async () => {
+    device.phone = "ios";
+    searchParams.current = new URLSearchParams("token=abc&web=1");
+    renderPage();
+
+    expect(
+      ((await screen.findByLabelText("Invite")) as HTMLInputElement).value,
+    ).toBe("abc");
+    expect(screen.queryByText("Join in the Frapp app")).toBeNull();
+    expect(replace).not.toHaveBeenCalled();
   });
 
   it("hands Android the intent link, which falls back to Play by itself", async () => {
@@ -231,18 +254,37 @@ describe("web join — an invite link opened on a phone (#4002)", () => {
     ).toBe("https://play.google.com/store/apps/details?id=live.frapp.mobile");
   });
 
-  it("offers the app to a signed-in visitor too, then shows the filled form in the browser", async () => {
+  it("offers the app to a signed-in account with no chapter", async () => {
     device.phone = "ios";
     searchParams.current = new URLSearchParams("token=abc");
     renderPage();
 
+    expect(await screen.findByText("Join in the Frapp app")).toBeTruthy();
     fireEvent.click(
-      await screen.findByRole("button", { name: "Continue in the browser" }),
+      screen.getByRole("button", { name: "Continue in the browser" }),
     );
+    expect(replace).toHaveBeenCalledWith("/join?token=abc&web=1");
+  });
+
+  it("keeps the web form for a member of a chapter, whom the app can't yet take to a second one", async () => {
+    device.phone = "ios";
+    perms.data = { permissions: ["chat:read"] };
+    chapters.data = [
+      {
+        chapter_id: "ch-north",
+        member_id: "m-north",
+        role_ids: ["r-1"],
+        has_completed_onboarding: true,
+        chapter: { id: "ch-north", name: "Northfield" },
+      },
+    ];
+    searchParams.current = new URLSearchParams("token=abc");
+    renderPage();
+
     expect(
       ((await screen.findByLabelText("Invite")) as HTMLInputElement).value,
     ).toBe("abc");
-    expect(replace).not.toHaveBeenCalled();
+    expect(screen.queryByText("Join in the Frapp app")).toBeNull();
   });
 
   it("goes straight to the form on a phone with no invite in the link", async () => {
@@ -260,7 +302,7 @@ describe("web join — an invite link opened on a phone (#4002)", () => {
 
     await waitFor(() =>
       expect(replace).toHaveBeenCalledWith(
-        expect.stringMatching(/^\/sign-in\?redirectTo=%2Fjoin/),
+        `/sign-in?redirectTo=${encodeURIComponent("/join?token=abc")}`,
       ),
     );
     expect(screen.queryByText("Join in the Frapp app")).toBeNull();

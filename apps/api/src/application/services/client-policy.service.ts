@@ -39,7 +39,7 @@ export const UPDATE_URL_ENV: Readonly<Record<ClientPlatform, string>> = {
 
 /**
  * The store listings (`STORE_LISTING_URLS` in `@repo/validation`, which the
- * web's "Get the app" reads too). The App Store id is App Store Connect's
+ * web's invite hand-off, `AppHandoff`, reads too). The App Store id is App Store Connect's
  * Apple ID for `live.frapp.mobile` (`apps/mobile/store/README.md`); the Play
  * URL keys on the package name, which is permanent from the first upload.
  */

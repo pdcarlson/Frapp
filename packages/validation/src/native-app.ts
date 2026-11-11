@@ -5,8 +5,8 @@
  * and the Android package are both `live.frapp.mobile`, the scheme is `frapp://`,
  * and the App Store id is App Store Connect's Apple ID for the app
  * (`apps/mobile/eas.json` → `submit.production.ios.ascAppId`). One home, so the
- * web's "Get the app", the API's update screen default and the app-link files
- * can't name different apps.
+ * web's invite hand-off (`apps/web/components/auth/app-handoff.tsx`), the API's
+ * update screen default and the app-link files can't name different apps.
  */
 
 export const NATIVE_APP_ID = "live.frapp.mobile";
@@ -28,8 +28,11 @@ export const STORE_LISTING_URLS: Readonly<Record<NativePlatform, string>> = {
 /**
  * The paths on the dashboard origin the app claims as universal links (iOS)
  * and App Links (Android). Only the invite: every other dashboard page is web
- * work an officer does on a desktop. `apps/mobile/app.json` and the web's
- * `/.well-known` files must list the same paths.
+ * work an officer does on a desktop. The web's `/.well-known` files publish
+ * these; the binary claims them through `apps/mobile/app.json`
+ * (`ios.associatedDomains`, Android `intentFilters`), which must list the same
+ * paths. Until a store build carries that native half (#4002), no installed
+ * app claims them and every invite link opens the web.
  */
 export const APP_LINK_PATHS = ["/join"] as const;
 
