@@ -142,7 +142,8 @@ type Options = {
    * member who saved Invisible must not flash Online to the chapter while
    * their settings load. Omitted (`undefined`) means the caller tracks no
    * picked status, and the viewer publishes as plain automatic presence.
-   * `ChapterPresenceProvider`, the one production caller, always passes it.
+   * Both production callers always pass it: web's `ChapterPresenceProvider`
+   * and the phone's `useChapterPresenceRuntime`.
    */
   own?: OwnStatus | null;
   /**
@@ -155,7 +156,9 @@ type Options = {
 };
 
 const EMPTY = new Map<string, PresenceEntry>();
-const EMPTY_LEFT = new Map<string, number>();
+/** When an away member left, and the status they had picked (#3917). */
+type AwayLeave = { at: number; picked: PresenceEntry["picked"] };
+const EMPTY_LEFT = new Map<string, AwayLeave>();
 
 /**
  * A member's status: off their entry while present, Idle for `AWAY_GRACE_MS`
@@ -163,16 +166,16 @@ const EMPTY_LEFT = new Map<string, number>();
  */
 function statusFor(
   present: Map<string, PresenceEntry>,
-  left: Map<string, number>,
+  left: Map<string, AwayLeave>,
   userId: string,
   now: number,
 ): PresenceStatus {
   const entry = present.get(userId);
   if (entry) return presenceStatusFor(entry, now);
-  const leftAt = left.get(userId);
-  return leftAt !== undefined && now - leftAt < AWAY_GRACE_MS
-    ? "idle"
-    : "offline";
+  const leave = left.get(userId);
+  if (leave === undefined || now - leave.at >= AWAY_GRACE_MS) return "offline";
+  // A picked status still wins through the grace: DND stays DND.
+  return leave.picked ?? "idle";
 }
 
 /**
@@ -184,22 +187,22 @@ function statusFor(
 function nextLeftAt(
   previous: {
     byUser: Map<string, PresenceEntry>;
-    leftAt: Map<string, number>;
+    leftAt: Map<string, AwayLeave>;
   } | null,
   next: Map<string, PresenceEntry>,
   at: number,
-): Map<string, number> {
+): Map<string, AwayLeave> {
   if (previous === null) return EMPTY_LEFT;
   let changed = false;
   const leftAt = new Map(previous.leftAt);
   for (const [userId, entry] of previous.byUser) {
     if (entry.away && !next.has(userId)) {
-      leftAt.set(userId, at);
+      leftAt.set(userId, { at, picked: entry.picked });
       changed = true;
     }
   }
-  for (const [userId, when] of leftAt) {
-    if (next.has(userId) || at - when >= AWAY_GRACE_MS) {
+  for (const [userId, leave] of leftAt) {
+    if (next.has(userId) || at - leave.at >= AWAY_GRACE_MS) {
       leftAt.delete(userId);
       changed = true;
     }
@@ -242,7 +245,7 @@ export function useSharedChapterPresence({
      * connection (#3917). A leave this client didn't see (it joined later, or
      * was disconnected) is simply not here, so that member reads Offline.
      */
-    leftAt: Map<string, number>;
+    leftAt: Map<string, AwayLeave>;
   }>(() => ({ connection: -1, byUser: EMPTY, leftAt: EMPTY_LEFT }));
 
   /**
@@ -415,7 +418,7 @@ export function useSharedChapterPresence({
   // grace runs out.
   const hasRoster =
     presentSince.size > 0 ||
-    [...recentlyLeft.values()].some((at) => now - at < AWAY_GRACE_MS);
+    [...recentlyLeft.values()].some((leave) => now - leave.at < AWAY_GRACE_MS);
   useEffect(() => {
     if (!hasRoster) return undefined;
     const interval = setInterval(

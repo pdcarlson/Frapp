@@ -33,13 +33,24 @@ export const STATUS_RESYNC_MS = 60 * 1000;
  * status, so the sheet stays usable: a save is a separate request and may
  * well succeed, and the next re-read corrects the answer.
  */
+/** A failed read's stand-in: no settings, so automatic Online. */
+const NO_SETTINGS = {};
+
 export function useOwnStatus(options?: {
   enabled?: boolean;
+  /**
+   * Answer `null`, not Online, when the read failed. Presence passes it: the
+   * phone keeps no last-seen status the way web's browser does, so a member
+   * who saved Invisible would otherwise be published Online during an API
+   * outage (#3917). Until a read succeeds the phone publishes nothing.
+   */
+  unknownOnError?: boolean;
 }): OwnStatus | null {
-  const { data, isError } = useUserSettings(options);
+  const { data, isError } = useUserSettings({ enabled: options?.enabled });
+  const fallback = options?.unknownOnError ? null : NO_SETTINGS;
   const source = useMemo(
-    () => (data !== undefined ? data : isError ? {} : null),
-    [data, isError],
+    () => (data !== undefined ? data : isError ? fallback : null),
+    [data, isError, fallback],
   );
   return useOwnStatusAt(source);
 }

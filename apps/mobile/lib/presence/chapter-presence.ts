@@ -109,7 +109,7 @@ function useForeground(): { foreground: boolean; releasing: boolean } {
 }
 
 function subscribeToLink(onChange: () => void): () => void {
-  return connectionMonitor.subscribe(onChange);
+  return connectionMonitor.subscribeLinkDown(onChange);
 }
 
 function isLinkDown(): boolean {
@@ -136,7 +136,16 @@ export const phoneActivity: PresenceActivitySource = {
     const interval = setInterval(() => {
       if (isForeground()) onActivity();
     }, FOREGROUND_REFRESH_MS);
-    return () => clearInterval(interval);
+    // The return to the foreground is activity even when the channel never
+    // let go (the OS froze the app inside `AWAY_RELEASE_DELAY_MS`), where no
+    // re-attach reads `latest`.
+    const subscription = AppState.addEventListener("change", () => {
+      if (isForeground()) onActivity();
+    });
+    return () => {
+      clearInterval(interval);
+      subscription.remove();
+    };
   },
 };
 
@@ -146,7 +155,9 @@ export function useChapterPresenceRuntime(): void {
   const viewerId = useViewerUserId({ enabled: signedIn });
   const chapterId = useActiveChapterId();
   // `null` until the member's settings load, which holds the publish back.
-  const own = useOwnStatus({ enabled: signedIn });
+  // A failed read stays unknown too: the phone has no last-seen status to
+  // fall back on, and a saved Invisible must not go out as Online.
+  const own = useOwnStatus({ enabled: signedIn, unknownOnError: true });
   // Keeps that status current across devices while the app is open.
   useOwnStatusSync();
   const { foreground, releasing } = useForeground();

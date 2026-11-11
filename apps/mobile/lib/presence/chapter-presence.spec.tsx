@@ -21,7 +21,9 @@ const state = vi.hoisted(() => ({
   supabase: { id: "client" } as { id: string } | null,
   attach: vi.fn(),
   detach: vi.fn(),
-  track: vi.fn(async () => "ok"),
+  track: vi.fn<(payload: Record<string, unknown>) => Promise<string>>(
+    async () => "ok",
+  ),
   untrack: vi.fn(async () => "ok"),
   presenceState: {} as Record<string, unknown[]>,
   handlers: new Map<string, () => void>(),
@@ -83,16 +85,18 @@ vi.mock("@/lib/account/own-status", () => ({
 vi.mock("@/lib/connection/monitor", () => ({
   connectionMonitor: {
     linkDown: () => state.linkDown,
-    subscribe: (listener: () => void) => {
+    subscribeLinkDown: (listener: () => void) => {
       state.linkListeners.add(listener);
       return () => state.linkListeners.delete(listener);
     },
   },
 }));
 
-const { useChapterPresenceRuntime, AWAY_RELEASE_DELAY_MS } = await import(
-  "./chapter-presence"
-);
+const {
+  useChapterPresenceRuntime,
+  AWAY_RELEASE_DELAY_MS,
+  FOREGROUND_REFRESH_MS,
+} = await import("./chapter-presence");
 const { useChapterPresence } = await import("./presence-store");
 
 function own(patch: Partial<OwnStatus> = {}): OwnStatus {
@@ -194,6 +198,43 @@ describe("useChapterPresenceRuntime (#3917)", () => {
     expect(state.track).toHaveBeenLastCalledWith(
       expect.not.objectContaining({ away: true }),
     );
+  });
+
+  it("re-stamps activity while the app stays open, so a reader doesn't go Idle", async () => {
+    vi.useFakeTimers();
+    renderHook(() => useChapterPresenceRuntime());
+    await settle();
+    const first = state.track.mock.calls.at(-1)![0] as unknown as { ts: number };
+    act(() => vi.advanceTimersByTime(FOREGROUND_REFRESH_MS));
+    const next = state.track.mock.calls.at(-1)![0] as unknown as { ts: number };
+    expect(next.ts).toBe(first.ts + FOREGROUND_REFRESH_MS);
+  });
+
+  it("a return to the app is fresh activity, with or without a re-join", async () => {
+    vi.useFakeTimers();
+    renderHook(() => useChapterPresenceRuntime());
+    await settle();
+    setAppState("background");
+    // Frozen inside the release delay: no timer ran, ten minutes passed.
+    vi.setSystemTime(Date.now() + 10 * 60 * 1000);
+    setAppState("active");
+    expect(state.detach).not.toHaveBeenCalled();
+    const last = state.track.mock.calls.at(-1)![0] as unknown as { ts: number; away?: boolean };
+    expect(last.away).toBeUndefined();
+    expect(last.ts).toBe(Date.now());
+  });
+
+  it("a re-join after a long time away carries the return as activity", async () => {
+    vi.useFakeTimers();
+    renderHook(() => useChapterPresenceRuntime());
+    await settle();
+    setAppState("background");
+    act(() => vi.advanceTimersByTime(AWAY_RELEASE_DELAY_MS));
+    vi.setSystemTime(Date.now() + 30 * 60 * 1000);
+    setAppState("active");
+    await settle();
+    const last = state.track.mock.calls.at(-1)![0] as unknown as { ts: number };
+    expect(last.ts).toBe(Date.now());
   });
 
   it("an Invisible member says nothing on switching away", async () => {

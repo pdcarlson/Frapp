@@ -397,7 +397,7 @@ describe("connection monitor", () => {
     // The link drops too. The state doesn't move, but a listener still
     // hears it, so presence can let go of its channel.
     const notified = vi.fn();
-    monitor.subscribe(notified);
+    monitor.subscribeLinkDown(notified);
     link()?.({ isConnected: false });
     elapse(LINK_DOWN_GRACE_MS);
     await settle();
@@ -405,12 +405,33 @@ describe("connection monitor", () => {
     expect(monitor.linkDown()).toBe(true);
     expect(notified).toHaveBeenCalled();
 
-    // Only /health answering clears it, as it clears OFFLINE.
+    // The link coming back clears it at once, while /health still fails:
+    // presence must not wait on the API.
     link()?.({ isConnected: true, isInternetReachable: true });
+    await settle();
+    expect(monitor.linkDown()).toBe(false);
+    expect(monitor.get()).toBe("OFFLINE");
     fetchMock.mockResolvedValue(OK);
     await monitor.probeOnce();
-    expect(monitor.linkDown()).toBe(false);
     expect(monitor.get()).toBe("ONLINE");
+  });
+
+  it("clears a link drop on link-up even with no API configured (#3917)", async () => {
+    const previous = process.env.EXPO_PUBLIC_API_URL;
+    delete process.env.EXPO_PUBLIC_API_URL;
+    try {
+      const { monitor, link, elapse } = harness();
+      monitor.start();
+      await settle();
+      link()?.({ isConnected: false });
+      elapse(LINK_DOWN_GRACE_MS);
+      await settle();
+      expect(monitor.linkDown()).toBe(true);
+      link()?.({ isConnected: true, isInternetReachable: true });
+      expect(monitor.linkDown()).toBe(false);
+    } finally {
+      if (previous !== undefined) process.env.EXPO_PUBLIC_API_URL = previous;
+    }
   });
 
   it("re-probes after a link blip inside the grace", async () => {

@@ -140,6 +140,20 @@ describe("presenceMapFrom", () => {
     expect(map.get("u2")).toEqual(at(1));
   });
 
+  test("a present entry beats an away one, whatever their stamps (#3917)", () => {
+    // Active in a web tab while the phone, used more recently, says away.
+    const map = presenceMapFrom({
+      web: [{ userId: "u1", ts: 10 }],
+      phone: [{ userId: "u1", ts: 99, away: true }],
+    });
+    expect(map.get("u1")).toEqual(at(10));
+    const reversed = presenceMapFrom({
+      phone: [{ userId: "u1", ts: 99, away: true }],
+      web: [{ userId: "u1", ts: 10 }],
+    });
+    expect(reversed.get("u1")).toEqual(at(10));
+  });
+
   test("reads away only when it is exactly true (#3917)", () => {
     const map = presenceMapFrom({
       a: [

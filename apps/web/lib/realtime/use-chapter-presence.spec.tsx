@@ -777,6 +777,22 @@ describe("useChapterPresence, the away grace", () => {
     expect(result.current.statusOf("u1")).toBe("offline");
   });
 
+  test("a picked status still wins through the grace: DND stays DND", async () => {
+    const { result } = await joined();
+    fake.setState({
+      a: [{ userId: "u1", ts: Date.now(), away: true, status: "dnd" }],
+    });
+    act(() => fake.fire("sync"));
+    expect(result.current.statusOf("u1")).toBe("dnd");
+    fake.setState({});
+    act(() => fake.fire("leave"));
+    expect(result.current.statusOf("u1")).toBe("dnd");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(AWAY_GRACE_MS + PRESENCE_HEARTBEAT_MS);
+    });
+    expect(result.current.statusOf("u1")).toBe("offline");
+  });
+
   test("a leave without away is Offline at once", async () => {
     const { result } = await joined();
     fake.setState({ a: [{ userId: "u1", ts: Date.now() }] });

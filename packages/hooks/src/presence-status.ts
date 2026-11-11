@@ -156,7 +156,8 @@ function pickedFrom(value: unknown): PickedPresence | null {
  *     mid-reconnect, where the old and new joins briefly overlap) appears more
  *     than once. The entry with the newest `ts` wins, so "active in *any* tab"
  *     reads as active rather than an arbitrary tab winning, and its picked
- *     status and line come with it.
+ *     status and line come with it. An entry that isn't `away` beats one that
+ *     is, whatever their stamps, for the same reason (#3917).
  *   - **Foreign payloads.** The channel is shared by the chapter, so an entry
  *     may carry anything. Everything is validated before use and anything
  *     unrecognised is skipped rather than trusted — a malformed entry must not
@@ -182,12 +183,19 @@ export function presenceMapFrom(
       if (typeof userId !== "string" || userId.length === 0) continue;
       if (typeof ts !== "number" || !Number.isFinite(ts)) continue;
       const previous = byUser.get(userId);
-      if (previous === undefined || ts > previous.ts) {
+      const isAway = away === true;
+      // A present entry beats an away one whatever their stamps (#3917): a
+      // member active in a web tab while their phone says "away" is active.
+      const wins =
+        previous === undefined ||
+        (previous.away && !isAway) ||
+        (previous.away === isAway && ts > previous.ts);
+      if (wins) {
         byUser.set(userId, {
           ts,
           picked: pickedFrom(status),
           line: presenceLineFrom(line),
-          away: away === true,
+          away: isAway,
         });
       }
     }
