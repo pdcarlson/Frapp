@@ -1329,9 +1329,7 @@ describe('RbacService', () => {
   });
 
   describe('getEffectivePermissions', () => {
-    const buildMember = (
-      role_ids: string[],
-    ): Member =>
+    const buildMember = (role_ids: string[]): Member =>
       memberFixture({
         role_ids,
         has_completed_onboarding: true,
@@ -1626,10 +1624,7 @@ describe('RbacService', () => {
         display_order: 10,
       });
 
-    const member = (
-      user_id: string,
-      role_ids: string[],
-    ): Member =>
+    const member = (user_id: string, role_ids: string[]): Member =>
       memberFixture({
         id: `member-${user_id}`,
         user_id,

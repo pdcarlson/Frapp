@@ -20,9 +20,9 @@ describe('CustomRoleController', () => {
   });
 
   it('keeps the read gate the shipped builds were made against', () => {
-    expect(
-      Reflect.getMetadata(PERMISSIONS_KEY, CustomRoleController),
-    ).toEqual([SystemPermissions.CHAPTER_CONFIG_VIEW]);
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomRoleController)).toEqual([
+      SystemPermissions.CHAPTER_CONFIG_VIEW,
+    ]);
   });
 
   it('serves only GET: the writes are gone', () => {

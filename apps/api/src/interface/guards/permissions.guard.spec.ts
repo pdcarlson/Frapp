@@ -55,9 +55,8 @@ describe('PermissionsGuard', () => {
           matched = matched.filter((row) => row[column] === value);
           return chain;
         }),
-        then: (
-          resolve: (result: { data: RoleRow[] }) => unknown,
-        ) => resolve({ data: matched }),
+        then: (resolve: (result: { data: RoleRow[] }) => unknown) =>
+          resolve({ data: matched }),
       };
       return chain;
     });
