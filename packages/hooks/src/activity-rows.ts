@@ -70,6 +70,7 @@ export const ACTIVITY_SECTION_NAMES: Record<ActivitySection, string> = {
   coming_up: "events",
   files: "files",
   made_events: "events you made",
+  links: "links",
 };
 
 function channelLabel(poll: ActivityPoll): string {
