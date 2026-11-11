@@ -1,9 +1,7 @@
 import { Skeleton } from "@/components/shared/async-states";
 import {
   PageSkeleton,
-  SectionSkeleton,
   SkeletonField,
-  SkeletonRows,
   SkeletonSectionLabel,
 } from "@/components/shared/page-skeletons";
 
@@ -17,54 +15,9 @@ function SectionHead() {
   );
 }
 
-/** Quiet hours' three fields and Save, for that section's own load. */
-function QuietHoursFields() {
-  return (
-    <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <SkeletonField />
-        <SkeletonField />
-        <SkeletonField />
-      </div>
-      <div className="flex justify-end">
-        <Skeleton className="h-12 w-[136px] rounded-md" />
-      </div>
-    </div>
-  );
-}
-
-/** Notification category rows: label, description, switch. */
-function NotificationRows() {
-  return (
-    <SkeletonRows
-      rows={6}
-      trailing={["w-11 rounded-full"]}
-      trailingHeight="h-6"
-      rowClassName="py-3"
-    />
-  );
-}
-
-export function QuietHoursSkeleton() {
-  return (
-    <SectionSkeleton label="Loading your preferences">
-      <QuietHoursFields />
-    </SectionSkeleton>
-  );
-}
-
-export function NotificationSettingsSkeleton() {
-  return (
-    <SectionSkeleton label="Loading your notification settings">
-      <NotificationRows />
-    </SectionSkeleton>
-  );
-}
-
 /**
  * `/profile` while it loads: the 84px avatar beside name, email and photo
- * control, then the page's sections on its `max-w-2xl` column (directory
- * profile form, quiet hours, notifications).
+ * control, then the directory profile form on its `max-w-2xl` column.
  */
 export function ProfilePageSkeleton() {
   return (
@@ -90,14 +43,6 @@ export function ProfilePageSkeleton() {
           <div className="flex justify-end">
             <Skeleton className="h-12 w-[112px] rounded-md" />
           </div>
-        </section>
-        <section className="space-y-4">
-          <SectionHead />
-          <QuietHoursFields />
-        </section>
-        <section className="space-y-4">
-          <SectionHead />
-          <NotificationRows />
         </section>
       </div>
     </PageSkeleton>

@@ -24,7 +24,7 @@ import type { PageTitle } from "@/components/layout/page-title";
  * page's toolbar row; back up here, every page gets that row's height back.
  * It is the route's only `<h1>`, derived from the route (`page-title.ts`), so
  * it is there on the loading, offline and error paths too. A page under
- * Settings adds its parent as a link and a chevron, "Settings › Study zones";
+ * Settings adds its parent as a link and a chevron, "Chapter settings › Study zones";
  * a top-level route shows its title alone. `/chat` shows "Chat" too, which
  * board `1b` (the chat board) leaves out: one rule for every route beats a
  * chat exception, and the channel name below stays the thread's own `h2`.
