@@ -54,6 +54,7 @@ import { NoAccessRedirect } from "@/components/layout/no-access-redirect";
 import { TermsPromptGate } from "@/components/auth/terms-prompt";
 import { OnboardingTutorial } from "@/components/onboarding/onboarding-tutorial";
 import { WhatsNewHost } from "@/components/whats-new/whats-new-host";
+import { GetTheAppCard } from "@/components/layout/get-the-app-card";
 import { useChatRealtimeBinding } from "@/lib/chat/use-chat-realtime-binding";
 import { useNavHighlights } from "@/components/layout/use-chat-has-unread";
 import { cn } from "@/lib/utils";
@@ -527,6 +528,9 @@ export function DashboardShell({
           onOpenNotifications={() => setNotificationDrawerOpen(true)}
           onOpenMobileNav={() => setMobileNavOpen(true)}
         />
+        {/* On a phone only, until dismissed (#4002). Above `<main>` so it
+            sits over chat and every tool page alike. */}
+        <GetTheAppCard />
         {/*
           `<main>` is the whole row right of the nav: chat, the divider and
           the tool page (#3779). One landmark for everything the member came

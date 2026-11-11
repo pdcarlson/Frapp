@@ -72,3 +72,16 @@ export function openInAppUrl(platform: NativePlatform, token: string): string {
   }
   return `${NATIVE_APP_SCHEME}://join?${query}`;
 }
+
+/**
+ * The link that opens the installed app at its home, with no invite: the
+ * phone dashboard's Get the app card. Android's `intent:` form opens Play when
+ * the app is missing; iOS's scheme is refused without it, so the card offers
+ * the store beside it.
+ */
+export function openAppUrl(platform: NativePlatform): string {
+  if (platform === "android") {
+    return `intent://#Intent;scheme=${NATIVE_APP_SCHEME};package=${NATIVE_APP_ID};end`;
+  }
+  return `${NATIVE_APP_SCHEME}://`;
+}

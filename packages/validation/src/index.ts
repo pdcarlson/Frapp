@@ -869,6 +869,7 @@ export {
   NATIVE_APP_ID,
   NATIVE_APP_SCHEME,
   STORE_LISTING_URLS,
+  openAppUrl,
   openInAppUrl,
   phonePlatform,
 } from "./native-app";
