@@ -8,11 +8,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export const TOKEN_EXPIRY_MARGIN_MS = 90_000;
 
 /**
- * When a JWT's `exp` falls, in epoch milliseconds, read from its payload
- * without verifying it (the API verifies). `null` for anything that isn't a
- * three-part JWT with a numeric `exp`.
+ * A JWT's `exp` and `iat` in epoch milliseconds, read from its payload without
+ * verifying it (the API verifies). `null` for anything that isn't a three-part
+ * JWT with a numeric `exp`; `issuedAt` is `null` when `iat` is missing.
  */
-export function accessTokenExpiresAt(token: string): number | null {
+export function accessTokenTimes(
+  token: string,
+): { expiresAt: number; issuedAt: number | null } | null {
   const parts = token.split(".");
   if (parts.length !== 3) return null;
   try {
@@ -20,8 +22,13 @@ export function accessTokenExpiresAt(token: string): number | null {
     const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
     const payload: unknown = JSON.parse(atob(padded));
     if (!payload || typeof payload !== "object") return null;
-    const { exp } = payload as { exp?: unknown };
-    return typeof exp === "number" && Number.isFinite(exp) ? exp * 1000 : null;
+    const { exp, iat } = payload as { exp?: unknown; iat?: unknown };
+    if (typeof exp !== "number" || !Number.isFinite(exp)) return null;
+    return {
+      expiresAt: exp * 1000,
+      issuedAt:
+        typeof iat === "number" && Number.isFinite(iat) ? iat * 1000 : null,
+    };
   } catch {
     return null;
   }
@@ -49,6 +56,12 @@ export function accessTokenExpiresAt(token: string): number | null {
  * When the refresh fails, the mirrored token goes out as before: the API's
  * 401 then reaches `onUnauthorized`, which owns deciding whether the session
  * is over (`lib/rejected-session.ts`).
+ *
+ * `exp` is stamped by Auth's clock and compared with the device's. On a phone
+ * running an hour fast, every new token would look stale and every request
+ * would wait on a refresh. So when a refresh hands back a new token, its `iat`
+ * (Auth's "now", give or take the round trip) sets the device-to-Auth offset,
+ * and later checks use it: skew costs one refresh, not one per request.
  */
 export function createFreshAuthTokenReader(deps: {
   readToken: () => Promise<string | null>;
@@ -56,11 +69,16 @@ export function createFreshAuthTokenReader(deps: {
   now?: () => number;
 }): () => Promise<string | null> {
   const now = deps.now ?? Date.now;
+  /** Auth's clock minus the device's, learned from the last refresh. */
+  let offsetMs = 0;
   return async () => {
     const token = await deps.readToken();
     if (!token) return token;
-    const expiresAt = accessTokenExpiresAt(token);
-    if (expiresAt === null || expiresAt - now() > TOKEN_EXPIRY_MARGIN_MS) {
+    const times = accessTokenTimes(token);
+    if (
+      !times ||
+      times.expiresAt - (now() + offsetMs) > TOKEN_EXPIRY_MARGIN_MS
+    ) {
       return token;
     }
     const supabase = deps.getSupabase();
@@ -70,7 +88,19 @@ export function createFreshAuthTokenReader(deps: {
       if (error) return token;
       // No error and no session is a signed-out client. Send no token rather
       // than one Auth has already let go of.
-      return data.session?.access_token ?? null;
+      const fresh = data.session?.access_token ?? null;
+      // Learn the offset only when the token Auth just handed back still looks
+      // stale: with a right clock a refreshed token has its full lifetime
+      // left, so only skew explains it. An older token returned unrefreshed
+      // never moves the offset.
+      const freshTimes = fresh ? accessTokenTimes(fresh) : null;
+      if (
+        freshTimes?.issuedAt != null &&
+        freshTimes.expiresAt - (now() + offsetMs) <= TOKEN_EXPIRY_MARGIN_MS
+      ) {
+        offsetMs = freshTimes.issuedAt - now();
+      }
+      return fresh;
     } catch {
       return token;
     }

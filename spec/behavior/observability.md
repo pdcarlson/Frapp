@@ -299,7 +299,7 @@ They are emitted from `AllExceptionsFilter` (`apps/api/src/interface/filters/all
 | `userId` | Raw user id, when the request resolved one. Raw per the internal-log rule above. |
 | `chapterId` | Raw chapter id, when one was in context. |
 | `originHash` | Pseudonymized origin (see § Structured Logging). Absent when no salt is configured. |
-| `reason` | `auth_failure` only: which of the auth guard's refusals it was. `no_bearer` (no `Authorization: Bearer` header) or `token_rejected` (Supabase Auth refused the token). Absent on a 401 the guard didn't raise, such as the Stripe webhook's signature check. |
+| `reason` | `auth_failure` only (and the spike record below, for its tripping request): which of the auth guard's refusals it was. `no_bearer` (no `Authorization: Bearer` header) or `token_rejected` (Supabase Auth refused the token). Absent on a 401 the guard didn't raise, such as the Stripe webhook's signature check. |
 | `authErrorCode` | `token_rejected` only: Supabase Auth's error code (`bad_jwt`, `session_not_found`, `user_not_found`, …), kept only when it is a short snake_case identifier. |
 | `tokenExpired` | `token_rejected` only: whether the refused token's own `exp` had passed, read from its payload without verifying it. An expired token that keeps arriving is a client that isn't refreshing; an unexpired one Auth refuses is a revoked session or a deleted user. Nothing else from the token is read, and the token itself is never logged. |
 | `clientApp` | `mobile` (a parseable `X-Client-Version`) or `web` (the dashboard's `Origin`), from what the clients already send (`requestApp`). Absent when neither places the caller. |
@@ -310,7 +310,12 @@ They are emitted from `AllExceptionsFilter` (`apps/api/src/interface/filters/all
 
 A sliding-window counter (`auth-failure-spike.ts`) watches `auth_failure` records per origin and emits a `kind: auth_failure_spike` record — plus a `warning`-level Sentry event — when one origin crosses **20 failures in 5 minutes**, then stays silent for a 15-minute cooldown so one sustained attack reports once rather than thousands of times.
 
-The spike says which 401s tripped it (#3907). The record and the Sentry event carry the window's reason mix (`auth_failure_reason`: the one `reason` every failure shared, or `mixed`; `auth_failure_reasons`: each reason with its count, such as `token_rejected:18,no_bearer:2`, where a 401 the guard didn't raise counts as `other`), plus the tripping request's `auth_error_code`, `token_expired`, `client_app` and `client_version`. A burst from one origin is almost always one client, so the tripping request's detail stands for it.
+The spike says which 401s tripped it (#3907), in both of its outputs:
+
+- **The spike record** (`kind: auth_failure_spike`, still flat) carries the tripping request's `reason`, `authErrorCode`, `tokenExpired`, `clientApp` and `clientVersion`, with the meanings in the table above, plus `reasons`: each reason in the window with its count, largest first, as one string such as `token_rejected:18,no_bearer:2`. A 401 the guard didn't raise counts as `other`.
+- **The Sentry event** carries the same as tags: `auth_failure_reason` (the one reason every failure in the window shared, or `mixed`), `auth_failure_reasons` (the same string as `reasons`), and the tripping request's `auth_error_code`, `token_expired`, `client_app` (`unknown` when neither header places it) and `client_version`.
+
+A burst from one origin is almost always one client, so the tripping request's detail stands for it.
 
 The counter is in-memory, which is a deliberate trade and bounds what it can be asked to do. It is **per-instance** (two API instances each count their own half), **reset by every deploy**, and **evadable by an attacker who rotates more origins than the bounded map holds**. Bounding the map is not optional — an unbounded one is itself a memory-exhaustion vector — so these are the cost of counting in process, not defects to fix in place. The signal is a *spike detector*, never an audit ledger; anything that must be complete belongs in a provider-side rule.
 

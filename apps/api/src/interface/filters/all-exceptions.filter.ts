@@ -22,8 +22,11 @@ import {
   pseudonymizeUserId,
 } from '../../infrastructure/observability/pseudonyms';
 import {
+  authFailureAttributes,
+  authFailureFields,
   buildSecurityEvent,
   securityEventKind,
+  type AuthFailureContext,
   type AuthFailureDetail,
 } from '../../infrastructure/observability/security-events';
 import {
@@ -234,10 +237,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const originHash = pseudonymizeIp(clientIp(request));
       // Which app, from what the clients already send (#3907): enough to tell
       // a stale mobile build from a dashboard tab. Never the raw header.
-      const clientApp = request.headers ? requestApp(request) : undefined;
-      const clientVersion = clientVersionForLog(
-        request.headers?.[CLIENT_VERSION_HEADER],
-      );
+      const context: AuthFailureContext = {
+        authFailure,
+        clientApp: request.headers ? requestApp(request) : undefined,
+        clientVersion: clientVersionForLog(
+          request.headers?.[CLIENT_VERSION_HEADER],
+        ),
+      };
       this.logger.warn(
         JSON.stringify(
           buildSecurityEvent({
@@ -251,19 +257,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
             userId: request.appUser?.id,
             chapterId: request.chapterId,
             originHash,
-            authFailure,
-            clientApp,
-            clientVersion,
+            ...context,
           }),
         ),
       );
 
-      this.enqueueSanitizedSecurityLog(request, kind, status, requestId, {
+      this.enqueueSanitizedSecurityLog(
+        request,
+        kind,
+        status,
+        requestId,
         originHash,
-        authFailure,
-        clientApp,
-        clientVersion,
-      });
+        context,
+      );
 
       if (kind !== 'auth_failure') return;
 
@@ -277,15 +283,18 @@ export class AllExceptionsFilter implements ExceptionFilter {
       // unauthenticated request into one bucket.
       const originKey =
         request.appUser?.id ?? originHash ?? clientIp(request) ?? 'unknown';
+      // An absent reason counts under the detector's `other`.
       const trip = this.spikeDetector.record(
         originKey,
         undefined,
-        authFailure?.reason ?? 'other',
+        authFailure?.reason,
       );
       if (!trip) return;
 
       // Which 401s tripped it (#3907): the window's mix, and the tripping
       // request's detail and client, which a burst from one origin shares.
+      // The record keeps the per-request field names, which here describe the
+      // tripping request, and adds the mix as one flat string.
       const reasons = describeReasons(trip.labels);
       this.logger.warn(
         JSON.stringify({
@@ -295,16 +304,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
           threshold: trip.threshold,
           windowMs: trip.windowMs,
           originHash,
-          reason: reasons.reason,
-          reasons: trip.labels,
-          ...(authFailure?.authErrorCode
-            ? { authErrorCode: authFailure.authErrorCode }
-            : {}),
-          ...(authFailure?.tokenExpired !== undefined
-            ? { tokenExpired: authFailure.tokenExpired }
-            : {}),
-          ...(clientApp ? { clientApp } : {}),
-          ...(clientVersion ? { clientVersion } : {}),
+          ...authFailureFields(context),
+          reasons: reasons.summary,
           timestamp: new Date().toISOString(),
         }),
       );
@@ -319,16 +320,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
           ...(originHash ? { origin: originHash } : {}),
           failure_count: String(trip.count),
           window_ms: String(trip.windowMs),
+          ...spikeTags(context),
           auth_failure_reason: reasons.reason,
           auth_failure_reasons: reasons.summary,
-          ...(authFailure?.authErrorCode
-            ? { auth_error_code: authFailure.authErrorCode }
-            : {}),
-          ...(authFailure?.tokenExpired !== undefined
-            ? { token_expired: String(authFailure.tokenExpired) }
-            : {}),
-          client_app: clientApp ?? 'unknown',
-          ...(clientVersion ? { client_version: clientVersion } : {}),
         },
         fingerprint: ['auth-failure-spike'],
       }));
@@ -469,14 +463,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
     kind: string,
     status: number,
     requestId: string,
-    context: {
-      originHash: string | undefined;
-      authFailure: AuthFailureDetail | undefined;
-      clientApp: string | undefined;
-      clientVersion: string | undefined;
-    },
+    originHash: string | undefined,
+    context: AuthFailureContext,
   ): void {
-    const { originHash, authFailure, clientApp, clientVersion } = context;
     const userHash = pseudonymizeUserId(request.appUser?.id);
     const chapterHash = pseudonymizeChapterId(request.chapterId);
     const statusClass = httpStatusClass(status);
@@ -493,25 +482,32 @@ export class AllExceptionsFilter implements ExceptionFilter {
         ...(originHash ? { origin_hash: originHash } : {}),
         ...(userHash ? { user_hash: userHash } : {}),
         ...(chapterHash ? { chapter_hash: chapterHash } : {}),
-        ...(authFailure ? { reason: authFailure.reason } : {}),
-        ...(authFailure?.authErrorCode
-          ? { auth_error_code: authFailure.authErrorCode }
-          : {}),
-        ...(authFailure?.tokenExpired !== undefined
-          ? { token_expired: authFailure.tokenExpired }
-          : {}),
-        ...(clientApp ? { client_app: clientApp } : {}),
-        ...(clientVersion ? { client_version: clientVersion } : {}),
+        ...authFailureAttributes(context),
       },
     });
   }
 }
 
 /**
+ * The tripping request's detail as Sentry tags: the shared attributes, with
+ * values as strings (tags take nothing else) and `client_app` always present,
+ * so a spike from a client neither header places reads `unknown`. The 401's
+ * own `reason` stays off: the window's mix below replaces it.
+ */
+function spikeTags(context: AuthFailureContext): Record<string, string> {
+  const tags: Record<string, string> = { client_app: 'unknown' };
+  for (const [key, value] of Object.entries(authFailureAttributes(context))) {
+    if (key !== 'reason') tags[key] = String(value);
+  }
+  return tags;
+}
+
+/**
  * A spike's reason mix as Sentry tags (#3907). `reason` is the one reason when
  * every failure in the window shared it, else `mixed`; `summary` lists each
  * with its count, largest first (`token_rejected:18,no_bearer:2`). The labels
- * are the guard's two reasons plus `other`, so the summary stays short.
+ * are the guard's two reasons plus the detector's `other`, so the summary stays
+ * short.
  */
 function describeReasons(labels: Readonly<Record<string, number>>): {
   reason: string;

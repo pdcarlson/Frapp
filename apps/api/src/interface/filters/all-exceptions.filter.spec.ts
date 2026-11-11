@@ -350,11 +350,15 @@ describe('AllExceptionsFilter', () => {
       const spike = securityEvents().find(
         (e) => e.kind === 'auth_failure_spike',
       );
+      // Flat: the tripping request's fields, plus the mix as one string.
       expect(spike).toMatchObject({
-        reason: 'mixed',
-        reasons: { token_rejected: 3, no_bearer: 1 },
+        reason: 'token_rejected',
+        tokenExpired: true,
+        reasons: 'token_rejected:3,no_bearer:1',
         clientApp: 'mobile',
+        clientVersion: 'ios/0.10.3+15',
       });
+      expect(context.tags).not.toHaveProperty('reason');
     });
 
     it('names one reason when the whole window shared it', () => {

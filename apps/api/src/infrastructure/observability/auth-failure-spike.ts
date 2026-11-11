@@ -78,8 +78,12 @@ export interface SpikeTrip {
   labels: Readonly<Record<string, number>>;
 }
 
-/** The label a failure carries when the caller gives none. */
-export const UNLABELLED = 'unlabelled';
+/**
+ * The label a failure carries when the caller names no reason: for the filter,
+ * a 401 the auth guard didn't raise. The one name for "no reason", which the
+ * spec documents.
+ */
+export const UNATTRIBUTED = 'other';
 
 export class AuthFailureSpikeDetector {
   private readonly threshold: number;
@@ -110,7 +114,7 @@ export class AuthFailureSpikeDetector {
   record(
     originKey: string,
     now: number = Date.now(),
-    label: string = UNLABELLED,
+    label: string = UNATTRIBUTED,
   ): SpikeTrip | null {
     const state = this.origins.get(originKey) ?? { hits: [], alertedAt: 0 };
 

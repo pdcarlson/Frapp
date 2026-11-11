@@ -33,7 +33,7 @@ describe('AuthFailureSpikeDetector', () => {
       count: 5,
       windowMs: 60_000,
       threshold: 5,
-      labels: { unlabelled: 5 },
+      labels: { other: 5 },
     });
   });
 
