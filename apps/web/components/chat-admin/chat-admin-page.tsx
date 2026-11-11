@@ -1601,7 +1601,9 @@ function CategoryAccessEditor({
           ? "No channel here matches it now, so saving changes only what new channels start with."
           : `Saving also changes ${following
               .map((channel) => `#${channel.name}`)
-              .join(", ")}, which match it now.`}
+              .join(
+                ", ",
+              )}, which ${following.length === 1 ? "matches" : "match"} it now.`}
         {custom > 0
           ? ` ${custom === 1 ? "One channel has" : `${custom} channels have`} custom access and keep${custom === 1 ? "s" : ""} it.`
           : ""}

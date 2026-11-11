@@ -326,7 +326,10 @@ describe("ChatAdminPage — the create panel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create channel" }));
 
     await waitFor(() => expect(mockCreateChannel).toHaveBeenCalledTimes(1));
-    const body = mockCreateChannel.mock.calls[0][0] as Record<string, unknown>;
+    const body = mockCreateChannel.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
     expect(body.type).toBe("PRIVATE");
     expect(body).not.toHaveProperty("who_can_see");
   });
@@ -385,7 +388,7 @@ describe("ChatAdminPage — the create panel", () => {
       ),
     );
     // Lists untouched: the server copies the category's.
-    expect(mockCreateChannel.mock.calls[0][0]).not.toHaveProperty(
+    expect(mockCreateChannel.mock.calls[0]?.[0]).not.toHaveProperty(
       "who_can_see",
     );
   });
