@@ -101,8 +101,9 @@ export default function TasksScreen() {
   const tasksQuery = useTasks();
   const pointsQuery = useMyPoints("semester");
   const leaderboardQuery = useLeaderboard("semester");
-  // `useTasks` has no chapter gate (see the no-chapter branch below), so the
-  // pull leaves the board out until there is a chapter to scope it to.
+  // `useTasks` waits for a chapter on its own (`useChapterScope`), but a
+  // pull's `refetch()` runs a query whatever its `enabled` says, so the pull
+  // leaves the board out until there is a chapter to scope it to.
   const refresh = useRefetchAll([
     viewerQuery,
     chapterId ? tasksQuery : null,
@@ -369,9 +370,9 @@ export default function TasksScreen() {
   );
 
   function renderBoard() {
-    // `useTasks` carries no `enabled: !!chapterId` guard, unlike every sibling
-    // read, so without this gate it fires without a scope and surfaces an error
-    // where "pick a chapter" is the honest answer.
+    // With no chapter id, "pick a chapter" is the honest answer. `useTasks`
+    // sends nothing for a member with no membership (#4094), but its query
+    // then sits pending, which would otherwise draw a skeleton that never ends.
     if (!chapterId) return <NoChapterState noun="your tasks" />;
 
     // Checked before the pending gate below, because `useViewerUserId` reports a

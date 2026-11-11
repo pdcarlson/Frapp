@@ -39,6 +39,9 @@ function createWrapper(queryClient: QueryClient, mockClient: unknown) {
           typeof import("@repo/api-sdk").createFrappClient
         >
       }
+      // A member in a chapter: the channel reads wait for one (#4094,
+      // `chapter-scope.spec.tsx` covers the no-chapter path).
+      chapterId="chapter-1"
     >
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     </FrappClientProvider>

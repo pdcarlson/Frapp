@@ -23,11 +23,12 @@
  * ## Gated on `chapterId`, not just badged-to-zero without it
  *
  * `useNotifications` already carries its own `enabled: !!chapterId`.
- * `useChannelUnreadCounts` doesn't gate by default (its other call sites only
- * ever mount post-auth), and this hook is the first to mount above the auth
- * gate (`components/app-runtime.tsx`) — so without an explicit `enabled` here
- * it would fire `GET /v1/channels/unread` with no session on every cold start
- * and while switching chapters, only to have the result discarded by the
+ * `useChannelUnreadCounts` gates only on `useChapterScope` (#4094), which
+ * with no chapter id reads `GET /v1/chapters` to learn whether there is one,
+ * and this hook is the first to mount above the auth gate
+ * (`components/app-runtime.tsx`) — so without an explicit `enabled` here it
+ * would send that read with no session on every cold start, and the unread
+ * read for a claim-less member, only to have the result discarded by the
  * `!chapterId` branch below. Passing `enabled` through stops the request
  * before it's made, rather than merely ignoring its result.
  *

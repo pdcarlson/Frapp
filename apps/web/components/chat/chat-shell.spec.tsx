@@ -27,6 +27,17 @@ const { chapterStoreState } = vi.hoisted(() => ({
   chapterStoreState: { value: "chapter-1" as string | null },
 }));
 
+/**
+ * `useChapterScope`'s answer (#4094). `"none"` is a user the server lists no
+ * membership for, whose channel reads never go out; reset alongside
+ * `chapterStoreState`.
+ */
+const { chapterScopeState } = vi.hoisted(() => ({
+  chapterScopeState: {
+    value: "chapter" as "chapter" | "none" | "resolving",
+  },
+}));
+
 // Mutable so the unresolved-viewer window can be exercised (#2243). `null` is
 // what `useFrappUser` really reports until `GET /v1/users/me` answers, and the
 // static `"viewer-1"` this used to be meant no test could reach that window.
@@ -464,6 +475,7 @@ vi.mock("@repo/hooks", async () => ({
     error: null,
   }),
   errorCopy: () => "Something went wrong.",
+  useChapterScope: () => chapterScopeState.value,
   useChannels: () => ({
     data: CHANNELS,
     isFetching: false,
@@ -3352,6 +3364,30 @@ describe("ChatShell with no chapter and no channels (#2145)", () => {
   afterEach(() => {
     chapterStoreState.value = "chapter-1";
     channelsQueryState.value = {};
+    chapterScopeState.value = "chapter";
+  });
+
+  it("says so for a user with no membership, whose channel read never goes out (#4094)", () => {
+    // The reads wait on `useChapterScope`, so a disabled query sits pending
+    // for good: without the scope this would be a skeleton that never ends.
+    chapterStoreState.value = null;
+    chapterScopeState.value = "none";
+    channelsQueryState.value = { isPending: true, data: undefined };
+    render(<ChatShell />);
+
+    expect(
+      screen.getByText("Pick an active chapter to load its channels."),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("channel-list-skeleton")).toBeNull();
+  });
+
+  it("still shimmers while the membership list is unanswered (#4094)", () => {
+    chapterStoreState.value = null;
+    chapterScopeState.value = "resolving";
+    channelsQueryState.value = { isPending: true, data: undefined };
+    render(<ChatShell />);
+
+    expect(screen.getByTestId("channel-list-skeleton")).toBeInTheDocument();
   });
 
   it("says so, inside the frame rather than in place of it", () => {

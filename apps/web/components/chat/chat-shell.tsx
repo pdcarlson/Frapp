@@ -30,6 +30,7 @@ import {
   claimViewedChannel,
   useChannelUnreadCounts,
   useChannels,
+  useChapterScope,
   useSetChannelNotificationLevel,
   useChatBackground,
   useChapterChatBackground,
@@ -426,6 +427,10 @@ export function ChatShell({
     : undefined;
 
   const channelsQuery = useChannels();
+  // Whether there is a chapter to read at all. With no membership the channel
+  // reads never go out (#4094), so their queries stay pending and the pane
+  // has to learn "no chapter" from here rather than from a settled list.
+  const chapterScope = useChapterScope();
   const categoriesQuery = useCategories();
   // Names for message authors and DM titles. Shares its query key with the
   // roster read below, so react-query serves both from one fetch.
@@ -2208,8 +2213,8 @@ export function ChatShell({
     above the composer; a card that becomes a layout is the opposite of both.
 
     The first attempt at this put `no-chapter` first, which was wrong in a way
-    worth recording. `useChannels()` takes no chapter argument — no `enabled`
-    gate, and `["channels"]` as its whole query key (`packages/hooks/src/use-chat.ts`)
+    worth recording. `useChannels()` takes no chapter argument — no
+    `chapterId` gate (`useChapterScope` opens it for a listed membership), and `["channels"]` as its whole query key (`packages/hooks/src/use-chat.ts`)
     — and `chapter.guard.ts` resolves a sole membership server-side, so the
     channel list arrives perfectly well while this store field is still null.
     Short-circuiting on the field therefore said "no chapter" over the top of
@@ -2222,7 +2227,11 @@ export function ChatShell({
     So the list decides. Having channels means ready, whatever the store says;
     "no chapter" is only reached once the query has settled with nothing, where
     it is a terminal explanation rather than a guess about a load still in
-    flight. That also removes the need to choose a placeholder for it: a cold
+    flight. Since #4094 the channel reads wait for a chapter (`useChapterScope`),
+    so for a user with no membership the query never settles; there,
+    `chapterScope === "none"` is that terminal answer, read from the server's
+    empty membership list rather than the store field, which is why it may
+    come ahead of `isPending`. That also removes the need to choose a placeholder for it: a cold
     load is `loading` — `isPending` is true on the server and through hydration —
     so the frame and its skeletons are what render at 0ms, which is what the
     contract asked for in the first place.
@@ -2236,7 +2245,9 @@ export function ChatShell({
   const channelsPaneState =
     channels.length > 0
       ? "ready"
-      : channelsQuery.isPending
+      : chapterScope === "none"
+        ? "no-chapter"
+        : channelsQuery.isPending
         ? "loading"
         : channelsQuery.isError
           ? "error"
