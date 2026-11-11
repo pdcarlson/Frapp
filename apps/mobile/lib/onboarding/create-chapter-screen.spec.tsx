@@ -14,8 +14,9 @@ import { FrappThemeProvider } from "@/lib/theme";
 import { flatStyle } from "@/test/flat-style";
 
 /**
- * Chapter setup (#3351): find, confirm, color, then the live moment, the push
- * primer when this build can push, the invite, and chat. These pin the step
+ * Chapter setup (#3351): find, confirm, color, then the live moment, the
+ * founder's display pick (#4056), the push primer when this build can push,
+ * the invite, and chat. These pin the step
  * order, the archetype rule (a match carries it, by hand it is asked with
  * nothing preselected), the letters rule (an organization that hides its
  * letters shows them nowhere), the optional logo, and the primer the founder
@@ -126,6 +127,16 @@ vi.mock("@/lib/chapter-branding", async (importOriginal) => {
 });
 
 import CreateChapter, { SETUP_TITLES } from "@/app/(auth)/create-chapter";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { CHAT_DENSITY_STORAGE_KEY } from "@repo/chat-core/density";
+import {
+  resetChatDensityForTests,
+  setChatDensity,
+} from "@/lib/chat/chat-density";
+import {
+  DISPLAY_STEP_SUBTITLE,
+  DISPLAY_STEP_TITLE,
+} from "@/lib/onboarding/display-step";
 import { ShareGlyph } from "@/components/control-glyphs";
 import {
   INVITE_WATCH_INTERVAL_MS,
@@ -290,6 +301,16 @@ async function createFromMatch(root: Node): Promise<void> {
   await settle();
 }
 
+/**
+ * From the live step past the founder's display pick (#4056), keeping the
+ * preselected display.
+ */
+async function leaveLive(root: Node): Promise<void> {
+  await press(root, "Continue");
+  expect(title(root)).toBe(SETUP_TITLES.display);
+  await press(root, "Continue");
+}
+
 beforeEach(() => {
   pushAvailable = false;
   permission = null;
@@ -314,7 +335,7 @@ afterEach(() => {
 });
 
 describe("chapter setup — step order", () => {
-  it("goes find, confirm, color, live, invite, then chat", async () => {
+  it("goes find, confirm, color, live, display, invite, then chat", async () => {
     const { root } = await render();
     expect(title(root)).toBe(SETUP_TITLES.find);
 
@@ -341,6 +362,10 @@ describe("chapter setup — step order", () => {
     // No way back to before the chapter existed.
     expect(control(root, "Back")).toBeUndefined();
 
+    await press(root, "Continue");
+    // The founder's own display pick (#4056), which s03 would have asked.
+    expect(title(root)).toBe(SETUP_TITLES.display);
+    expect(control(root, "Back")).toBeUndefined();
     await press(root, "Continue");
     expect(title(root)).toBe(SETUP_TITLES.invite);
 
@@ -435,6 +460,10 @@ describe("chapter setup — signed in as (#3782)", () => {
     expectAccountLine(root);
 
     await press(root, "Continue");
+    expect(title(root)).toBe(SETUP_TITLES.display);
+    expectAccountLine(root);
+
+    await press(root, "Continue");
     expect(title(root)).toBe(SETUP_TITLES.primer);
     expectAccountLine(root);
 
@@ -515,12 +544,22 @@ describe("chapter setup — signed in as (#3782)", () => {
     expect(control(root, "Add your chapter's logo")?.props.disabled).toBe(true);
   });
 
+  it("holds the display step's Continue while the sign-out is on its way", async () => {
+    const { root } = await render();
+    await createFromMatch(root);
+    await press(root, "Continue");
+    expect(title(root)).toBe(SETUP_TITLES.display);
+    expect(control(root, "Continue")?.props.disabled).toBe(false);
+    await startSigningOut(root);
+    expect(control(root, "Continue")?.props.disabled).toBe(true);
+  });
+
   it("holds both push answers while the sign-out is on its way", async () => {
     pushAvailable = true;
     permission = { granted: false };
     const { root } = await render();
     await createFromMatch(root);
-    await press(root, "Continue");
+    await leaveLive(root);
     expect(title(root)).toBe(SETUP_TITLES.primer);
     expect(control(root, "Not now")?.props.disabled).toBe(false);
     await startSigningOut(root);
@@ -532,7 +571,7 @@ describe("chapter setup — signed in as (#3782)", () => {
   it("holds Share invite and the way to chat while the sign-out is on its way", async () => {
     const { root } = await render();
     await createFromMatch(root);
-    await press(root, "Continue");
+    await leaveLive(root);
     expect(title(root)).toBe(SETUP_TITLES.invite);
     expect(control(root, "Skip for now")?.props.disabled).toBe(false);
     await startSigningOut(root);
@@ -553,7 +592,7 @@ describe("chapter setup — signed in as (#3782)", () => {
     createInvite.mockReturnValueOnce(new Promise(() => {}));
     const { root } = await render();
     await createFromMatch(root);
-    await press(root, "Continue");
+    await leaveLive(root);
     expect(control(root, "Sign out")?.props.disabled).toBe(false);
     await press(root, "Share invite");
     expect(control(root, "Sign out")?.props.disabled).toBe(true);
@@ -919,7 +958,7 @@ describe("chapter setup — logo", () => {
     const { root } = await render();
     await createFromMatch(root);
     expect(control(root, "Add your chapter's logo")).toBeDefined();
-    await press(root, "Continue");
+    await leaveLive(root);
     expect(pickAndSetChapterLogo).not.toHaveBeenCalled();
     expect(title(root)).toBe(SETUP_TITLES.invite);
   });
@@ -971,7 +1010,7 @@ describe("chapter setup — new chapter not active", () => {
     expect(title(root)).toBe("FIJI is live");
     expect(allText(root)).not.toContain("general");
 
-    await press(root, "Continue");
+    await leaveLive(root);
     expect(control(root, "Share invite")).toBeUndefined();
     expect(useRouter().dismissTo).toHaveBeenCalledWith("/");
     expect(createInvite).not.toHaveBeenCalled();
@@ -984,7 +1023,7 @@ describe("chapter setup — push primer for the founder", () => {
     permission = { granted: false };
     const { root } = await render();
     await createFromMatch(root);
-    await press(root, "Continue");
+    await leaveLive(root);
     expect(title(root)).toBe(SETUP_TITLES.primer);
 
     await press(root, "Not now");
@@ -997,7 +1036,7 @@ describe("chapter setup — push primer for the founder", () => {
     selectChapter.mockResolvedValue(false);
     const { root } = await render();
     await createFromMatch(root);
-    await press(root, "Continue");
+    await leaveLive(root);
     expect(title(root)).toBe(SETUP_TITLES.primer);
     await press(root, "Not now");
     expect(useRouter().dismissTo).toHaveBeenCalledWith("/");
@@ -1010,7 +1049,7 @@ describe("chapter setup — push primer for the founder", () => {
     requestPushPermission.mockRejectedValue(new Error("native module"));
     const { root } = await render();
     await createFromMatch(root);
-    await press(root, "Continue");
+    await leaveLive(root);
     await press(root, "Turn on notifications");
     expect(title(root)).toBe(SETUP_TITLES.invite);
   });
@@ -1018,7 +1057,7 @@ describe("chapter setup — push primer for the founder", () => {
   it("skips it when this build can't push", async () => {
     const { root } = await render();
     await createFromMatch(root);
-    await press(root, "Continue");
+    await leaveLive(root);
     expect(title(root)).toBe(SETUP_TITLES.invite);
   });
 
@@ -1027,7 +1066,7 @@ describe("chapter setup — push primer for the founder", () => {
     permission = { granted: true };
     const { root } = await render();
     await createFromMatch(root);
-    await press(root, "Continue");
+    await leaveLive(root);
     expect(title(root)).toBe(SETUP_TITLES.invite);
   });
 
@@ -1036,7 +1075,7 @@ describe("chapter setup — push primer for the founder", () => {
     permission = { granted: false };
     const { root } = await render();
     await createFromMatch(root);
-    await press(root, "Continue");
+    await leaveLive(root);
     expect(title(root)).toBe("Turn on notifications");
     expect(allText(root)).toContain(
       "DMs, mentions, #general, and #announcements",
@@ -1050,6 +1089,65 @@ describe("chapter setup — push primer for the founder", () => {
 const fillOf = (pressable: Node | undefined): unknown =>
   flatStyle(pressable?.props.style).backgroundColor;
 
+describe("chapter setup — display pick for the founder (#4056)", () => {
+  afterEach(() => {
+    resetChatDensityForTests();
+  });
+
+  const densityCard = (root: Node, label: string) =>
+    radios(root).find((r) => r.props.accessibilityLabel === label);
+
+  it("offers the same three cards as s03, with this phone's display preselected", async () => {
+    setChatDensity("compact");
+    vi.mocked(AsyncStorage.setItem).mockClear();
+    const { root } = await render();
+    await createFromMatch(root);
+    await press(root, "Continue");
+
+    expect(title(root)).toBe(DISPLAY_STEP_TITLE);
+    expect(allText(root)).toContain(DISPLAY_STEP_SUBTITLE);
+    expect(radios(root).map((r) => r.props.accessibilityLabel)).toEqual([
+      "Cozy",
+      "Compact",
+      "Bubbles",
+    ]);
+    expect(densityCard(root, "Compact")?.props.accessibilityState).toEqual({
+      checked: true,
+    });
+
+    // Continue keeps it and moves on.
+    await press(root, "Continue");
+    expect(title(root)).toBe(SETUP_TITLES.invite);
+    expect(AsyncStorage.setItem).not.toHaveBeenCalledWith(
+      CHAT_DENSITY_STORAGE_KEY,
+      expect.anything(),
+    );
+  });
+
+  it("saves a picked display on this phone", async () => {
+    const { root } = await render();
+    await createFromMatch(root);
+    await press(root, "Continue");
+    expect(densityCard(root, "Cozy")?.props.accessibilityState).toEqual({
+      checked: true,
+    });
+    vi.mocked(AsyncStorage.setItem).mockClear();
+
+    await act(async () => {
+      densityCard(root, "Bubbles")?.props.onPress();
+    });
+    await settle();
+
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
+      CHAT_DENSITY_STORAGE_KEY,
+      "bubbles",
+    );
+    expect(densityCard(root, "Bubbles")?.props.accessibilityState).toEqual({
+      checked: true,
+    });
+  });
+});
+
 /**
  * The invite step's one gold button is `Share invite` (owner pick 2026-11-06,
  * "Share first"). Each press mints a fresh link and shares it, since a link
@@ -1060,7 +1158,7 @@ describe("chapter setup — invite", () => {
   async function toInvite(): Promise<Node> {
     const { root } = await render();
     await createFromMatch(root);
-    await press(root, "Continue");
+    await leaveLive(root);
     expect(title(root)).toBe(SETUP_TITLES.invite);
     return root;
   }
