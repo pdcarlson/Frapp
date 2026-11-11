@@ -16,7 +16,10 @@ import {
   type ChapterDocumentFilter,
 } from '#domain/repositories/chapter-document.repository.interface';
 import type { IChapterDocumentRepository } from '#domain/repositories/chapter-document.repository.interface';
-import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
+import {
+  isForeignKeyViolation,
+  isUniqueViolation,
+} from '#domain/constants/postgres-error-codes';
 import { CHAPTER_DOCUMENT_FOLDER_REPOSITORY } from '#domain/repositories/chapter-document-folder.repository.interface';
 import type { IChapterDocumentFolderRepository } from '#domain/repositories/chapter-document-folder.repository.interface';
 import {
@@ -26,6 +29,7 @@ import {
 import type {
   ChapterDocument,
   ChapterDocumentFolder,
+  ChapterDocumentStarTarget,
   ChapterDocumentStars,
 } from '#domain/entities/chapter-document.entity';
 import {
@@ -384,7 +388,8 @@ export class ChapterDocumentService {
 
   /**
    * Pins or unpins a folder for the whole chapter. Pinning a pinned folder
-   * keeps its first pin time, so a repeated tap is a no-op.
+   * keeps its first pin time, so a repeated tap is a no-op. A folder deleted
+   * between the read and the write is a 404, as one never there is.
    */
   async setFolderPinned(
     id: string,
@@ -396,9 +401,15 @@ export class ChapterDocumentService {
       throw new NotFoundException('Folder not found');
     }
     if ((folder.pinned_at !== null) === pinned) return folder;
-    return this.folderRepo.update(id, chapterId, {
-      pinned_at: pinned ? new Date().toISOString() : null,
-    });
+    const updated = await this.folderRepo.setPinnedAt(
+      id,
+      chapterId,
+      pinned ? new Date().toISOString() : null,
+    );
+    if (!updated) {
+      throw new NotFoundException('Folder not found');
+    }
+    return updated;
   }
 
   /** Pins or unpins a document for the whole chapter, as folders pin. */
@@ -412,11 +423,15 @@ export class ChapterDocumentService {
       throw new NotFoundException('Document not found');
     }
     if ((document.pinned_at !== null) === pinned) return document;
-    return this.documentRepo.setPinnedAt(
+    const updated = await this.documentRepo.setPinnedAt(
       id,
       chapterId,
       pinned ? new Date().toISOString() : null,
     );
+    if (!updated) {
+      throw new NotFoundException('Document not found');
+    }
+    return updated;
   }
 
   /** The caller's own stars in their active chapter. */
@@ -453,7 +468,7 @@ export class ChapterDocumentService {
     if (!folder) {
       throw new NotFoundException('Folder not found');
     }
-    await this.starRepo.add(userId, chapterId, { folder_id: folderId });
+    await this.addStar(userId, chapterId, { folder_id: folderId }, 'Folder');
   }
 
   /** Stars or unstars a document for the caller alone, as folders star. */
@@ -473,7 +488,33 @@ export class ChapterDocumentService {
     if (!document) {
       throw new NotFoundException('Document not found');
     }
-    await this.starRepo.add(userId, chapterId, { document_id: documentId });
+    await this.addStar(
+      userId,
+      chapterId,
+      { document_id: documentId },
+      'Document',
+    );
+  }
+
+  /**
+   * The insert behind both stars. The target was read in this chapter just
+   * before, but an officer can delete it in between; the star's foreign key
+   * then refuses the row, which is the same answer as a target never there.
+   */
+  private async addStar(
+    userId: string,
+    chapterId: string,
+    target: ChapterDocumentStarTarget,
+    noun: 'Folder' | 'Document',
+  ): Promise<void> {
+    try {
+      await this.starRepo.add(userId, chapterId, target);
+    } catch (error) {
+      if (isForeignKeyViolation(error)) {
+        throw new NotFoundException(`${noun} not found`);
+      }
+      throw error;
+    }
   }
 
   private async ensureFolder(

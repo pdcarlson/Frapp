@@ -6,8 +6,6 @@ export const CHAPTER_DOCUMENT_FOLDER_REPOSITORY =
 export interface ChapterDocumentFolderUpdate {
   name?: string;
   sort_order?: number;
-  /** ISO time the folder was pinned, or null to unpin (#3934). */
-  pinned_at?: string | null;
 }
 
 export interface IChapterDocumentFolderRepository {
@@ -36,4 +34,14 @@ export interface IChapterDocumentFolderRepository {
     data: ChapterDocumentFolderUpdate,
   ): Promise<ChapterDocumentFolder>;
   delete(id: string, chapterId: string): Promise<void>;
+  /**
+   * Pins (an ISO time) or unpins (null) a folder for the chapter (#3934).
+   * Null when no folder with that id is in the chapter, including one deleted
+   * since the caller read it.
+   */
+  setPinnedAt(
+    id: string,
+    chapterId: string,
+    pinnedAt: string | null,
+  ): Promise<ChapterDocumentFolder | null>;
 }

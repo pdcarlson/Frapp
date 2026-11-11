@@ -73,6 +73,7 @@ describe('ChapterDocumentService', () => {
       create: jest.fn().mockResolvedValue(baseFolder),
       update: jest.fn(),
       delete: jest.fn(),
+      setPinnedAt: jest.fn(),
     };
 
     mockStarRepo = {
@@ -945,15 +946,16 @@ describe('ChapterDocumentService', () => {
   describe('pins (#3934)', () => {
     it('pins an unpinned folder with the current time', async () => {
       mockFolderRepo.findById.mockResolvedValue(baseFolder);
-      mockFolderRepo.update.mockImplementation(async (_id, _ch, patch) => ({
-        ...baseFolder,
-        ...patch,
-      }));
+      mockFolderRepo.setPinnedAt.mockImplementation(
+        async (_id, _ch, pinnedAt) => ({ ...baseFolder, pinned_at: pinnedAt }),
+      );
       const result = await service.setFolderPinned('folder-1', 'ch-1', true);
       expect(mockFolderRepo.findById).toHaveBeenCalledWith('folder-1', 'ch-1');
-      expect(mockFolderRepo.update).toHaveBeenCalledWith('folder-1', 'ch-1', {
-        pinned_at: expect.any(String),
-      });
+      expect(mockFolderRepo.setPinnedAt).toHaveBeenCalledWith(
+        'folder-1',
+        'ch-1',
+        expect.any(String),
+      );
       expect(result.pinned_at).not.toBeNull();
     });
 
@@ -963,7 +965,7 @@ describe('ChapterDocumentService', () => {
       await expect(
         service.setFolderPinned('folder-1', 'ch-1', true),
       ).resolves.toBe(pinned);
-      expect(mockFolderRepo.update).not.toHaveBeenCalled();
+      expect(mockFolderRepo.setPinnedAt).not.toHaveBeenCalled();
     });
 
     it('unpins a pinned folder', async () => {
@@ -971,11 +973,13 @@ describe('ChapterDocumentService', () => {
         ...baseFolder,
         pinned_at: '2026-11-01T00:00:00.000Z',
       });
-      mockFolderRepo.update.mockResolvedValue(baseFolder);
+      mockFolderRepo.setPinnedAt.mockResolvedValue(baseFolder);
       await service.setFolderPinned('folder-1', 'ch-1', false);
-      expect(mockFolderRepo.update).toHaveBeenCalledWith('folder-1', 'ch-1', {
-        pinned_at: null,
-      });
+      expect(mockFolderRepo.setPinnedAt).toHaveBeenCalledWith(
+        'folder-1',
+        'ch-1',
+        null,
+      );
     });
 
     it("refuses to pin a folder outside the caller's chapter", async () => {
@@ -983,7 +987,23 @@ describe('ChapterDocumentService', () => {
       await expect(
         service.setFolderPinned('folder-x', 'ch-1', true),
       ).rejects.toThrow(NotFoundException);
-      expect(mockFolderRepo.update).not.toHaveBeenCalled();
+      expect(mockFolderRepo.setPinnedAt).not.toHaveBeenCalled();
+    });
+
+    it('answers 404 when the folder is deleted between the read and the pin', async () => {
+      mockFolderRepo.findById.mockResolvedValue(baseFolder);
+      mockFolderRepo.setPinnedAt.mockResolvedValue(null);
+      await expect(
+        service.setFolderPinned('folder-1', 'ch-1', true),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('answers 404 when the document is deleted between the read and the pin', async () => {
+      mockDocumentRepo.findById.mockResolvedValue(baseDocument);
+      mockDocumentRepo.setPinnedAt.mockResolvedValue(null);
+      await expect(
+        service.setDocumentPinned('doc-1', 'ch-1', true),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('pins and unpins a document', async () => {
@@ -1070,6 +1090,30 @@ describe('ChapterDocumentService', () => {
         service.setFolderStarred('user-1', 'ch-1', 'folder-x', true),
       ).rejects.toThrow(NotFoundException);
       expect(mockStarRepo.add).not.toHaveBeenCalled();
+    });
+
+    it('answers 404 when the target is deleted between the read and the star', async () => {
+      mockFolderRepo.findById.mockResolvedValue(baseFolder);
+      mockStarRepo.add.mockRejectedValue(
+        Object.assign(new Error('fk'), { code: '23503' }),
+      );
+      await expect(
+        service.setFolderStarred('user-1', 'ch-1', 'folder-1', true),
+      ).rejects.toThrow(NotFoundException);
+
+      mockDocumentRepo.findById.mockResolvedValue(baseDocument);
+      await expect(
+        service.setDocumentStarred('user-1', 'ch-1', 'doc-1', true),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('lets any other insert failure through', async () => {
+      mockFolderRepo.findById.mockResolvedValue(baseFolder);
+      const failure = Object.assign(new Error('down'), { code: '08006' });
+      mockStarRepo.add.mockRejectedValue(failure);
+      await expect(
+        service.setFolderStarred('user-1', 'ch-1', 'folder-1', true),
+      ).rejects.toBe(failure);
     });
 
     it('unstars a folder without reading it', async () => {

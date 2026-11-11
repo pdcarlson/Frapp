@@ -413,12 +413,10 @@ describe("document stars and pins (#3934)", () => {
   it("stars a folder with PUT and unstars a document with DELETE", async () => {
     const mockPut = vi.fn().mockResolvedValue({ error: null });
     const mockDelete = vi.fn().mockResolvedValue({ error: null });
-    const mockGet = vi
-      .fn()
-      .mockResolvedValue({
-        data: { folder_ids: [], document_ids: [] },
-        error: null,
-      });
+    const mockGet = vi.fn().mockResolvedValue({
+      data: { folder_ids: [], document_ids: [] },
+      error: null,
+    });
     const { result } = renderHook(() => useSetDocumentStar(), {
       wrapper: createWrapper(queryClient, {
         GET: mockGet,
@@ -444,9 +442,7 @@ describe("document stars and pins (#3934)", () => {
     });
   });
 
-  it("marks a star at once and takes it back when the server refuses", async () => {
-    const key = ["documents", null, "stars"];
-    queryClient.setQueryData(key, { folder_ids: [], document_ids: [] });
+  it("marks a star at once, and re-reads the server when it refuses", async () => {
     let refuse: (value: unknown) => void = () => {};
     const mockPut = vi.fn(
       () =>
@@ -454,16 +450,27 @@ describe("document stars and pins (#3934)", () => {
           refuse = resolve;
         }),
     );
-    const mockGet = vi.fn(() => new Promise(() => {}));
-    const { result } = renderHook(() => useSetDocumentStar(), {
-      wrapper: createWrapper(queryClient, { PUT: mockPut, GET: mockGet }),
-    });
+    const mockGet = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: { folder_ids: [], document_ids: [] },
+        error: null,
+      })
+      .mockResolvedValue({
+        data: { folder_ids: ["f9"], document_ids: [] },
+        error: null,
+      });
+    const { result } = renderHook(
+      () => ({ stars: useDocumentStars(), star: useSetDocumentStar() }),
+      { wrapper: createWrapper(queryClient, { PUT: mockPut, GET: mockGet }) },
+    );
+    await waitFor(() => expect(result.current.stars.isSuccess).toBe(true));
 
-    const pending = result.current
+    const pending = result.current.star
       .mutateAsync({ target: { kind: "document", id: "d1" }, starred: true })
       .catch(() => undefined);
     await waitFor(() =>
-      expect(queryClient.getQueryData(key)).toEqual({
+      expect(result.current.stars.data).toEqual({
         folder_ids: [],
         document_ids: ["d1"],
       }),
@@ -471,9 +478,42 @@ describe("document stars and pins (#3934)", () => {
 
     refuse({ error: { message: "nope" } });
     await pending;
-    expect(queryClient.getQueryData(key)).toEqual({
-      folder_ids: [],
-      document_ids: [],
+    // The server's answer, not a snapshot from before the tap.
+    await waitFor(() =>
+      expect(result.current.stars.data).toEqual({
+        folder_ids: ["f9"],
+        document_ids: [],
+      }),
+    );
+  });
+
+  it("re-reads the stars of the chapter the tap was made in", async () => {
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    const mockPut = vi.fn().mockResolvedValue({ error: null });
+    const { result } = renderHook(() => useSetDocumentStar(), {
+      wrapper: createWrapper(queryClient, { PUT: mockPut, GET: vi.fn() }),
+    });
+    await result.current.mutateAsync({
+      target: { kind: "folder", id: "f1" },
+      starred: true,
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["documents", null, "stars"],
+    });
+  });
+
+  it("re-reads the folder and document lists after a pin", async () => {
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    const mockPut = vi.fn().mockResolvedValue({ error: null });
+    const { result } = renderHook(() => useSetDocumentPin(), {
+      wrapper: createWrapper(queryClient, { PUT: mockPut }),
+    });
+    await result.current.mutateAsync({
+      target: { kind: "folder", id: "f1" },
+      pinned: true,
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["documents", null],
     });
   });
 

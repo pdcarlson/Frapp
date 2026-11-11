@@ -7,6 +7,9 @@ import { db, miss } from "../harness.mjs";
 // runs. What each check pins, and the edit it catches:
 // - a star names exactly one of a folder or a document;
 // - a member stars a folder or a document once (the toggle is idempotent);
+// - the API's upsert targets, `on conflict (user_id, folder_id)` and
+//   `(user_id, document_id)`, name real unique constraints, so a repeat star
+//   is a no-op rather than a 42P10 (no matching constraint) on every star;
 // - two members may star the same folder, and one member many folders;
 // - deleting the folder or the document takes its stars with it;
 // - account deletion deletes the member's stars and nobody else's.
@@ -88,6 +91,27 @@ try {
       `insert into chapter_document_stars (user_id, chapter_id, document_id) values ('${U.a}', '${CH}', '${DOC}');`,
     ),
     "a member stars a document only once",
+  ]);
+
+  // What `SupabaseChapterDocumentStarRepository.add` sends: an upsert with
+  // `ignoreDuplicates`, which PostgREST runs as ON CONFLICT ... DO NOTHING.
+  const upsertOk = async (column, id) => {
+    try {
+      await db.exec(
+        `insert into chapter_document_stars (user_id, chapter_id, ${column})
+         values ('${U.a}', '${CH}', '${id}')
+         on conflict (user_id, ${column}) do nothing;`,
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  checks.push([
+    (await upsertOk("folder_id", F1)) &&
+      (await upsertOk("document_id", DOC)) &&
+      (await count(`user_id = '${U.a}'`)) === 3,
+    "a repeat star through the API's upsert targets is a no-op",
   ]);
 
   await db.exec(`delete from chapter_document_folders where id = '${F2}';`);

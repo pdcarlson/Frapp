@@ -27,12 +27,16 @@ export interface IChapterDocumentRepository {
    */
   create(data: Partial<ChapterDocument>): Promise<ChapterDocument>;
   delete(id: string, chapterId: string): Promise<void>;
-  /** Pins (an ISO time) or unpins (null) a document for the chapter (#3934). */
+  /**
+   * Pins (an ISO time) or unpins (null) a document for the chapter (#3934).
+   * Null when no document with that id is in the chapter, including one
+   * deleted since the caller read it.
+   */
   setPinnedAt(
     id: string,
     chapterId: string,
     pinnedAt: string | null,
-  ): Promise<ChapterDocument>;
+  ): Promise<ChapterDocument | null>;
   moveToRoot(folder: string, chapterId: string): Promise<void>;
   /** Re-files every document under `fromFolder` into `toFolder`. */
   renameFolder(

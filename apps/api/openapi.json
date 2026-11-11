@@ -9788,7 +9788,17 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChapterDocumentDto"
+                  }
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -9818,7 +9828,17 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DocumentFolderDto"
+                  }
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -10018,7 +10038,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentFolderDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -10055,7 +10082,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentFolderDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -10246,7 +10280,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterDocumentDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -10283,7 +10324,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterDocumentDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -18011,6 +18059,106 @@
         "required": [
           "storage_path",
           "title"
+        ]
+      },
+      "ChapterDocumentDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "chapter_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "folder": {
+            "type": "string",
+            "nullable": true
+          },
+          "storage_path": {
+            "type": "string"
+          },
+          "uploaded_by": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string",
+            "nullable": true
+          },
+          "byte_size": {
+            "type": "number",
+            "nullable": true
+          },
+          "document_type": {
+            "type": "string",
+            "nullable": true
+          },
+          "effective_date": {
+            "type": "string",
+            "nullable": true
+          },
+          "pinned_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "When an officer pinned it for the whole chapter, or null"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "title",
+          "description",
+          "folder",
+          "storage_path",
+          "uploaded_by",
+          "created_at",
+          "content_type",
+          "byte_size",
+          "document_type",
+          "effective_date",
+          "pinned_at"
+        ]
+      },
+      "DocumentFolderDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "chapter_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sort_order": {
+            "type": "number"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "pinned_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "When an officer pinned it for the whole chapter, or null"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "name",
+          "sort_order",
+          "created_at",
+          "pinned_at"
         ]
       },
       "DocumentStarsDto": {

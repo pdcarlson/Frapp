@@ -5707,6 +5707,31 @@ export interface components {
             /** @description Date this document took effect (ISO date), distinct from the upload timestamp */
             effective_date?: string;
         };
+        ChapterDocumentDto: {
+            id: string;
+            chapter_id: string;
+            title: string;
+            description: string | null;
+            folder: string | null;
+            storage_path: string;
+            uploaded_by: string;
+            created_at: string;
+            content_type: string | null;
+            byte_size: number | null;
+            document_type: string | null;
+            effective_date: string | null;
+            /** @description When an officer pinned it for the whole chapter, or null */
+            pinned_at: string | null;
+        };
+        DocumentFolderDto: {
+            id: string;
+            chapter_id: string;
+            name: string;
+            sort_order: number;
+            created_at: string;
+            /** @description When an officer pinned it for the whole chapter, or null */
+            pinned_at: string | null;
+        };
         DocumentStarsDto: {
             /** @description Ids of the folders the caller starred, oldest star first */
             folder_ids: string[];
@@ -13037,7 +13062,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ChapterDocumentDto"][];
+                };
             };
             /** @description Error */
             default: {
@@ -13093,7 +13120,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DocumentFolderDto"][];
+                };
             };
             /** @description Error */
             default: {
@@ -13239,7 +13268,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DocumentFolderDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -13267,7 +13298,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DocumentFolderDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -13407,7 +13440,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ChapterDocumentDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -13435,7 +13470,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ChapterDocumentDto"];
+                };
             };
             /** @description Error */
             default: {

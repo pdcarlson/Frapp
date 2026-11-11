@@ -286,15 +286,21 @@ export function withStar(
 /**
  * Stars or unstars a folder or a document for the caller.
  *
- * Optimistic, because a star is the caller's own and nothing else can
- * disagree with it: the mark moves on the tap, goes back if the server
- * refuses, and the list is re-read either way.
+ * Optimistic, because a star is the caller's own: the mark moves on the tap.
+ * Two rules from `useSidebarWrite` (`use-chat-sidebar.ts`), which met the
+ * same hazards first:
+ *
+ * - The chapter is captured when the write starts. TanStack pushes each
+ *   render's options onto a write still in flight, so a key read at settle
+ *   time would file a write sent in one chapter under the next.
+ * - Every write ends by re-reading the server, and a failure re-reads rather
+ *   than restoring a snapshot: a snapshot taken before a second tap would
+ *   undo that tap's star along with the failed one.
  */
 export function useSetDocumentStar() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
-  const key = starsKey(chapterId);
   return useMutation({
     mutationKey: ["documents", "set-document-star"],
     mutationFn: async ({
@@ -316,21 +322,16 @@ export function useSetDocumentStar() {
       if (error) throw error;
     },
     onMutate: async ({ target, starred }) => {
+      const key = starsKey(chapterId);
       await queryClient.cancelQueries({ queryKey: key });
-      const previous = queryClient.getQueryData<DocumentStarIds>(key);
-      queryClient.setQueryData<DocumentStarIds>(
-        key,
-        withStar(previous ?? NO_STARS, target, starred),
+      queryClient.setQueryData<DocumentStarIds>(key, (current) =>
+        withStar(current ?? NO_STARS, target, starred),
       );
-      return { previous };
+      return { key };
     },
-    onError: (_error, _vars, context) => {
-      if (context?.previous !== undefined) {
-        queryClient.setQueryData(key, context.previous);
-      }
-    },
-    onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: key });
+    onSettled: (_data, _error, _vars, context) => {
+      if (!context) return;
+      void queryClient.invalidateQueries({ queryKey: context.key });
     },
   });
 }

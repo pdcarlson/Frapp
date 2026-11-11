@@ -46,6 +46,8 @@ import {
   CreateDocumentFolderDto,
   UpdateDocumentFolderDto,
   DocumentStarsDto,
+  ChapterDocumentDto,
+  DocumentFolderDto,
 } from '../dtos/chapter-document.dto';
 
 @ApiTags('Documents')
@@ -129,6 +131,7 @@ export class ChapterDocumentController {
     required: false,
     description: 'Case-insensitive substring match on the document title',
   })
+  @ApiOkResponse({ type: ChapterDocumentDto, isArray: true })
   async list(
     @CurrentChapterId() chapterId: string,
     @Query('folder') folder?: string,
@@ -153,6 +156,7 @@ export class ChapterDocumentController {
 
   @Get('folders')
   @ApiOperation({ summary: 'List document folders in display order' })
+  @ApiOkResponse({ type: DocumentFolderDto, isArray: true })
   async listFolders(@CurrentChapterId() chapterId: string) {
     return this.chapterDocumentService.listFolders(chapterId);
   }
@@ -217,20 +221,22 @@ export class ChapterDocumentController {
   @Put('folders/:id/pin')
   @RequirePermissions(SystemPermissions.CHAPTER_DOCS_MANAGE)
   @ApiOperation({ summary: 'Pin a folder for the whole chapter (idempotent)' })
+  @ApiOkResponse({ type: DocumentFolderDto })
   async pinFolder(
     @CurrentChapterId() chapterId: string,
     @Param('id', ParseUUIDPipe) id: string,
-  ) {
+  ): Promise<DocumentFolderDto> {
     return this.chapterDocumentService.setFolderPinned(id, chapterId, true);
   }
 
   @Delete('folders/:id/pin')
   @RequirePermissions(SystemPermissions.CHAPTER_DOCS_MANAGE)
   @ApiOperation({ summary: 'Unpin a folder (idempotent)' })
+  @ApiOkResponse({ type: DocumentFolderDto })
   async unpinFolder(
     @CurrentChapterId() chapterId: string,
     @Param('id', ParseUUIDPipe) id: string,
-  ) {
+  ): Promise<DocumentFolderDto> {
     return this.chapterDocumentService.setFolderPinned(id, chapterId, false);
   }
 
@@ -288,20 +294,22 @@ export class ChapterDocumentController {
   @ApiOperation({
     summary: 'Pin a document for the whole chapter (idempotent)',
   })
+  @ApiOkResponse({ type: ChapterDocumentDto })
   async pinDocument(
     @CurrentChapterId() chapterId: string,
     @Param('id', ParseUUIDPipe) id: string,
-  ) {
+  ): Promise<ChapterDocumentDto> {
     return this.chapterDocumentService.setDocumentPinned(id, chapterId, true);
   }
 
   @Delete(':id/pin')
   @RequirePermissions(SystemPermissions.CHAPTER_DOCS_MANAGE)
   @ApiOperation({ summary: 'Unpin a document (idempotent)' })
+  @ApiOkResponse({ type: ChapterDocumentDto })
   async unpinDocument(
     @CurrentChapterId() chapterId: string,
     @Param('id', ParseUUIDPipe) id: string,
-  ) {
+  ): Promise<ChapterDocumentDto> {
     return this.chapterDocumentService.setDocumentPinned(id, chapterId, false);
   }
 
