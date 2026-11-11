@@ -561,7 +561,10 @@ sidebar links to Documents as a whole); it draws the nav set's `folder` entry
 (Phosphor `folder`, §1.1) so the folder rail's rows stay one family.
 `PinGlyph` is re-exported from the chat family (§6.2.2), since pinning a
 message, a channel and a document is one idea. `StarGlyph` is drawn here on
-the §1 recipe, because no set entry covers a personal star (#3934).
+the §1 recipe, because no set entry covers a personal star (#3934). Both
+draw their path data from `MARK_GLYPH_PATHS` (`@repo/theme/nav-glyphs`), which
+mobile's s12 draws too (`apps/mobile/components/documents/document-glyphs.tsx`,
+in the More family's paint), so the two apps keep one pin and one star.
 
 [`canvas-screens.dc.html`](reference/canvas-screens.dc.html) marks every
 document row on **s12** (the Documents screen) and **s21** (the upload sheet)

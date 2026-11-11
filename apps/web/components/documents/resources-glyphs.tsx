@@ -37,7 +37,7 @@
  *   page labelling the PDF. Both now name what the control produces.
  */
 
-import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
+import { MARK_GLYPH_PATHS, NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { Svg, fillProps, stroke } from "@/components/ui/duotone";
 import type { DuotoneGlyphProps } from "@/components/ui/duotone";
 import { NavGlyph } from "@/components/layout/nav-glyphs";
@@ -86,7 +86,7 @@ export function StarGlyph({ className, active }: ResourcesGlyphProps) {
   return (
     <Svg className={className}>
       <path
-        d="M12 3.6l2.55 5.2 5.7.83-4.13 4.02.98 5.68L12 16.65l-5.1 2.68.98-5.68-4.13-4.02 5.7-.83z"
+        d={MARK_GLYPH_PATHS.star.body}
         {...stroke}
         {...fillProps(active)}
       />

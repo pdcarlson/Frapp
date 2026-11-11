@@ -29,7 +29,9 @@ import {
   SORT_OPTIONS,
   deleteDocumentTitle,
   isActiveDateFilter,
+  markedItems,
   tierByMarks,
+  tierRows,
   type DocumentSort,
   type FileKind,
 } from "@repo/hooks/document-library";
@@ -49,10 +51,7 @@ import {
   type DocumentActionsTarget,
 } from "@/components/documents/document-actions-sheet";
 import { PinGlyph, StarGlyph } from "@/components/documents/document-glyphs";
-import {
-  MarkedCards,
-  type MarkedCardItem,
-} from "@/components/documents/marked-cards";
+import { MarkedCards } from "@/components/documents/marked-cards";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   ListRow,
@@ -286,41 +285,23 @@ export default function DocumentsScreen() {
   // On All with no search or filter the tiers are cards above the list, and
   // the list keeps its order; anywhere else they lead the list (#3934).
   const showCards = folder === null && !filtering && deferredSearch === "";
-  const rows = useMemo(() => {
-    if (showCards) return visible;
-    const tiers = tierByMarks(
-      visible,
-      (row) => !!row.doc.pinned_at,
-      (row) => starredDocuments.has(row.doc.id),
-    );
-    return [...tiers.pinned, ...tiers.starred, ...tiers.rest];
-  }, [visible, showCards, starredDocuments]);
-  const cards = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const doc of documents) {
-      if (doc.folder) counts.set(doc.folder, (counts.get(doc.folder) ?? 0) + 1);
-    }
-    const items: MarkedCardItem[] = [
-      ...folders.map((entry): MarkedCardItem => ({
-        kind: "folder",
-        folder: entry,
-        count: counts.get(entry.name) ?? 0,
-      })),
-      ...visible.map((row): MarkedCardItem => ({
-        kind: "document",
-        doc: row.doc,
-      })),
-    ];
-    return tierByMarks(
-      items,
-      (item) =>
-        item.kind === "folder" ? !!item.folder.pinned_at : !!item.doc.pinned_at,
-      (item) =>
-        item.kind === "folder"
-          ? starredFolders.has(item.folder.id)
-          : starredDocuments.has(item.doc.id),
-    );
-  }, [documents, folders, visible, starredFolders, starredDocuments]);
+  // The tiers and the cards come from the builders web's `/documents` uses
+  // too (`@repo/hooks/document-library`), so the two apps can't disagree.
+  const rows = useMemo(
+    () => (showCards ? visible : tierRows(visible, starredDocuments)),
+    [visible, showCards, starredDocuments],
+  );
+  const cards = useMemo(
+    () =>
+      markedItems({
+        folders,
+        library: documents,
+        shown: visible.map((row) => row.doc),
+        starredFolders,
+        starredDocuments,
+      }),
+    [documents, folders, visible, starredFolders, starredDocuments],
+  );
   const chipFolders = useMemo(() => {
     const tiers = tierByMarks(
       folders,
@@ -328,9 +309,9 @@ export default function DocumentsScreen() {
       (entry) => starredFolders.has(entry.id),
     );
     return [
-      ...tiers.pinned.map((entry) => ({ entry, mark: "pinned" as const })),
-      ...tiers.starred.map((entry) => ({ entry, mark: "starred" as const })),
-      ...tiers.rest.map((entry) => ({ entry, mark: null })),
+      ...tiers.pinned,
+      ...tiers.starred,
+      ...tiers.rest,
     ];
   }, [folders, starredFolders]);
   const markFailed =
@@ -375,26 +356,29 @@ export default function DocumentsScreen() {
     };
   }
 
-  function toggleStar(target: DocumentActionsTarget) {
+  // `mutateAsync`, not `mutate` with per-call callbacks: TanStack runs a
+  // `mutate` call's own `onError` only for the latest call on the hook, so a
+  // star that failed while a second was in flight would fail silently.
+  async function toggleStar(target: DocumentActionsTarget) {
     setMarkFailure(null);
     const next = !target.starred;
-    setStar.mutate(
-      { target: { kind: target.kind, id: target.id }, starred: next },
-      {
-        onSuccess: () =>
-          AccessibilityInfo.announceForAccessibility(
-            next ? `Starred “${target.name}”.` : `Unstarred “${target.name}”.`,
-          ),
-        onError: (caught) =>
-          setMarkFailure({
-            chapterId: chapterId ?? null,
-            message: errorCopy(
-              caught,
-              `Couldn't ${next ? "star" : "unstar"} “${target.name}”. Try again in a moment.`,
-            ),
-          }),
-      },
-    );
+    try {
+      await setStar.mutateAsync({
+        target: { kind: target.kind, id: target.id },
+        starred: next,
+      });
+      AccessibilityInfo.announceForAccessibility(
+        next ? `Starred “${target.name}”.` : `Unstarred “${target.name}”.`,
+      );
+    } catch (caught) {
+      setMarkFailure({
+        chapterId: chapterId ?? null,
+        message: errorCopy(
+          caught,
+          `Couldn't ${next ? "star" : "unstar"} “${target.name}”. Try again in a moment.`,
+        ),
+      });
+    }
   }
 
   async function togglePin(target: DocumentActionsTarget) {
@@ -711,22 +695,28 @@ export default function DocumentsScreen() {
             { value: null, label: "All" },
             // Pinned, then starred, then the rest (#3934); a long press
             // opens the folder's Star and Pin sheet.
-            ...chipFolders.map(({ entry, mark }) => ({
+            // A folder both pinned and starred wears both marks.
+            ...chipFolders.map((entry) => ({
               value: entry.name,
               label: entry.name,
               mark:
-                mark === "pinned" ? (
-                  <PinGlyph
-                    color={folder === entry.name ? accentOnPrimary : accent}
-                    on
-                    size={14}
-                  />
-                ) : mark === "starred" ? (
-                  <StarGlyph
-                    color={folder === entry.name ? accentOnPrimary : accent}
-                    on
-                    size={14}
-                  />
+                entry.pinned_at || starredFolders.has(entry.id) ? (
+                  <View style={styles.marks}>
+                    {entry.pinned_at ? (
+                      <PinGlyph
+                        color={folder === entry.name ? accentOnPrimary : accent}
+                        on
+                        size={14}
+                      />
+                    ) : null}
+                    {starredFolders.has(entry.id) ? (
+                      <StarGlyph
+                        color={folder === entry.name ? accentOnPrimary : accent}
+                        on
+                        size={14}
+                      />
+                    ) : null}
+                  </View>
                 ) : undefined,
               onLongPress: () => openActions(folderTarget(entry)),
               longPressLabel: canManage ? "Star or pin" : "Star or unstar",
@@ -802,6 +792,11 @@ export default function DocumentsScreen() {
           That document couldn&apos;t be opened. Try again in a moment.
         </Text>
       ) : null}
+      {starsQuery.isError ? (
+        <Text accessibilityLiveRegion="polite" style={styles.errorNote}>
+          Couldn&apos;t load your stars. Pull down to try again.
+        </Text>
+      ) : null}
       {markFailed ? (
         <Text accessibilityLiveRegion="polite" style={styles.errorNote}>
           {markFailed}
@@ -826,6 +821,8 @@ export default function DocumentsScreen() {
               : starredDocuments.has(item.doc.id)
           }
           openingId={openingId}
+          deletingIds={deletingIds}
+          actionsLabel={canManage ? "Star, pin or delete" : "Star or unstar"}
           onOpenFolder={setFolder}
           onOpenDocument={(id) => void open(id)}
           onActions={(item) =>
@@ -849,7 +846,7 @@ export default function DocumentsScreen() {
         ref={actionsSheetRef}
         target={actionsTarget}
         canManage={canManage}
-        onToggleStar={toggleStar}
+        onToggleStar={(target) => void toggleStar(target)}
         onTogglePin={(target) => void togglePin(target)}
         onDelete={(target) => confirmDelete(target.id, target.name)}
       />

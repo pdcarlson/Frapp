@@ -2,6 +2,7 @@ import { StyleSheet, Text, View } from "react-native";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { SignetTokens } from "@repo/theme/signet";
 import { formatDay } from "@repo/formatting";
+import type { MarkedItem } from "@repo/hooks/document-library";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { NavGlyph } from "@/components/nav-glyph";
@@ -10,9 +11,7 @@ import type { DocumentFolder, MobileDocument } from "@/lib/more/documents";
 import { StarGlyph } from "./document-glyphs";
 
 /** A pinned or starred thing on s12: a folder, or a single file (#3934). */
-export type MarkedCardItem =
-  | { kind: "folder"; folder: DocumentFolder; count: number }
-  | { kind: "document"; doc: MobileDocument };
+export type MarkedCardItem = MarkedItem<DocumentFolder, MobileDocument>;
 
 /**
  * s12's PINNED section (`canvas-screens.dc.html` s12), and a STARRED one under
@@ -29,6 +28,8 @@ export function MarkedCards({
   starred,
   isStarred,
   openingId,
+  deletingIds,
+  actionsLabel,
   onOpenFolder,
   onOpenDocument,
   onActions,
@@ -38,6 +39,10 @@ export function MarkedCards({
   isStarred: (item: MarkedCardItem) => boolean;
   /** The file whose link is being fetched, which shows its spinner. */
   openingId: string | null;
+  /** Files being deleted: their cards take no press, as their rows don't. */
+  deletingIds: ReadonlySet<string>;
+  /** The long press's spoken name, matched to what the viewer may do. */
+  actionsLabel: string;
   onOpenFolder: (name: string) => void;
   onOpenDocument: (id: string) => void;
   onActions: (item: MarkedCardItem) => void;
@@ -53,6 +58,8 @@ export function MarkedCards({
             accented
             isStarred={isStarred}
             openingId={openingId}
+            deletingIds={deletingIds}
+            actionsLabel={actionsLabel}
             onOpenFolder={onOpenFolder}
             onOpenDocument={onOpenDocument}
             onActions={onActions}
@@ -67,6 +74,8 @@ export function MarkedCards({
             accented={false}
             isStarred={isStarred}
             openingId={openingId}
+            deletingIds={deletingIds}
+            actionsLabel={actionsLabel}
             onOpenFolder={onOpenFolder}
             onOpenDocument={onOpenDocument}
             onActions={onActions}
@@ -82,6 +91,8 @@ function CardList({
   accented,
   isStarred,
   openingId,
+  deletingIds,
+  actionsLabel,
   onOpenFolder,
   onOpenDocument,
   onActions,
@@ -90,6 +101,8 @@ function CardList({
   accented: boolean;
   isStarred: (item: MarkedCardItem) => boolean;
   openingId: string | null;
+  deletingIds: ReadonlySet<string>;
+  actionsLabel: string;
   onOpenFolder: (name: string) => void;
   onOpenDocument: (id: string) => void;
   onActions: (item: MarkedCardItem) => void;
@@ -118,7 +131,12 @@ function CardList({
                 .filter(Boolean)
                 .join(" · ");
         const starred = isStarred(item);
-        const busy = item.kind === "document" && item.doc.id === openingId;
+        // A file on its way out takes no second press or long press, as its
+        // row doesn't (`ListRow` while busy): a second Delete would fail.
+        const deleting =
+          item.kind === "document" && deletingIds.has(item.doc.id);
+        const busy =
+          deleting || (item.kind === "document" && item.doc.id === openingId);
         return (
           <PressableRow
             key={key}
@@ -131,16 +149,21 @@ function CardList({
                 : "Opens in your browser."
             }
             accessibilityState={busy ? { busy: true } : undefined}
-            accessibilityActions={[{ name: "longpress", label: "Star or pin" }]}
+            accessibilityActions={
+              deleting ? undefined : [{ name: "longpress", label: actionsLabel }]
+            }
             onAccessibilityAction={(event) => {
-              if (event.nativeEvent.actionName === "longpress") onActions(item);
+              if (!deleting && event.nativeEvent.actionName === "longpress") {
+                onActions(item);
+              }
             }}
+            disabled={deleting}
             onPress={() =>
               item.kind === "folder"
                 ? onOpenFolder(item.folder.name)
                 : onOpenDocument(item.doc.id)
             }
-            onLongPress={() => onActions(item)}
+            onLongPress={deleting ? undefined : () => onActions(item)}
             style={styles.card}
           >
             <NavGlyph

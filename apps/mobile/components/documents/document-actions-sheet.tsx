@@ -7,7 +7,6 @@ import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   SheetBackToClose,
   SheetGrabber,
-  SheetHeader,
   SheetScrim,
   SHEET_STACK_BEHAVIOR,
   useSheetBackgroundStyle,
@@ -43,10 +42,10 @@ export interface DocumentActionsSheetProps {
  * s12's long-press sheet (#3934, `spec/behavior/chapter-docs.md` § Pinned and
  * starred): Star for everyone, Pin for the chapter for whoever manages
  * documents, and, on a file, Delete document, which used to be the long
- * press's only action. The Add to the conversation sheet's chrome
- * (`components/chat/composer-plus-sheet.tsx`): a title, then bare rows at the
- * 44pt floor. A row runs once the sheet has closed, so Delete's system
- * confirm never draws over the sheet.
+ * press's only action. An action menu's chrome (components.md § Chrome
+ * weight): a line naming the folder or file, then bare rows at the 44pt
+ * floor with no explaining lines. A row runs once the sheet has closed, so
+ * Delete's system confirm never draws over the sheet.
  */
 export const DocumentActionsSheet = forwardRef<
   BottomSheetModal,
@@ -89,12 +88,18 @@ export const DocumentActionsSheet = forwardRef<
     >
       <SheetBackToClose onClose={closeSheet} />
       <BottomSheetView onAccessibilityEscape={closeSheet} style={styles.body}>
-        <SheetHeader title={target?.name ?? ""} onCancel={closeSheet} />
+        {/* No title and no Cancel: this is a menu of actions, not a form.
+            The line naming the folder or file is its heading, and the
+            grabber, the scrim, Android back and VoiceOver's escape close it
+            (components.md § Chrome weight), as message-actions-sheet.tsx's
+            does. */}
         {target ? (
           <>
+            <Text style={styles.nameLine} numberOfLines={1}>
+              {target.name}
+            </Text>
             <ActionRow
               label={target.starred ? "Unstar" : "Star"}
-              detail={target.starred ? null : "Only you see your stars."}
               glyph={
                 <StarGlyph
                   color={target.starred ? accent : muted}
@@ -112,7 +117,6 @@ export const DocumentActionsSheet = forwardRef<
                     ? "Unpin for the chapter"
                     : "Pin for the chapter"
                 }
-                detail={target.pinned ? null : "Everyone sees it at the top."}
                 glyph={
                   <PinGlyph
                     color={target.pinned ? accent : muted}
@@ -143,14 +147,12 @@ export const DocumentActionsSheet = forwardRef<
 
 function ActionRow({
   label,
-  detail = null,
   glyph = null,
   destructive = false,
   onPress,
   styles,
 }: {
   label: string;
-  detail?: string | null;
   glyph?: ReactNode;
   destructive?: boolean;
   onPress: () => void;
@@ -160,7 +162,6 @@ function ActionRow({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityHint={detail ?? undefined}
       onPress={onPress}
       style={({ pressed }) => [styles.row, pressed ? styles.rowPressed : null]}
     >
@@ -170,7 +171,6 @@ function ActionRow({
       >
         {label}
       </Text>
-      {detail ? <Text style={styles.rowDetail}>{detail}</Text> : null}
     </Pressable>
   );
 }
@@ -201,9 +201,12 @@ function createStyles(tokens: SignetTokens) {
     rowDestructive: {
       color: tokens.color.semantic.destructive,
     },
-    rowDetail: {
+    // The line naming what the menu acts on, as the message menu's
+    // sender-and-time line is drawn.
+    nameLine: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
+      paddingBottom: tokens.spacing.xs,
     },
   });
 }

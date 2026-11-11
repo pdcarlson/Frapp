@@ -33,7 +33,8 @@ let starRows: { folder_ids: string[]; document_ids: string[] } = {
   folder_ids: [],
   document_ids: [],
 };
-const setStar = vi.fn();
+const setStar = vi.fn(async () => undefined);
+let starsFailed = false;
 const setPin = vi.fn(async () => undefined);
 const LOADED = {
   data: [],
@@ -65,8 +66,13 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useDocumentDownloadUrl: () => ({ mutateAsync: download }),
   useRequestDocumentUploadUrl: () => ({ mutateAsync: vi.fn() }),
   useConfirmDocumentUpload: () => ({ mutateAsync: vi.fn() }),
-  useDocumentStars: () => ({ ...LOADED, data: starRows, refetch: vi.fn() }),
-  useSetDocumentStar: () => ({ mutate: setStar }),
+  useDocumentStars: () => ({
+    ...LOADED,
+    data: starsFailed ? undefined : starRows,
+    isError: starsFailed,
+    refetch: vi.fn(),
+  }),
+  useSetDocumentStar: () => ({ mutateAsync: setStar }),
   useSetDocumentPin: () => ({ mutateAsync: setPin, isPending: false }),
 }));
 
@@ -77,7 +83,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 import DocumentsScreen from "@/app/(app)/documents";
 import { FilterChips } from "@/components/filter-chips";
-import { ListRow } from "@/components/list-section";
+import { ListRow, PressableRow } from "@/components/list-section";
 import { InlineNote } from "@/components/inline-note";
 import { UploadDocumentSheet } from "@/components/documents/upload-document-sheet";
 import { DocumentActionsSheet } from "@/components/documents/document-actions-sheet";
@@ -132,6 +138,7 @@ afterEach(() => {
   refetchDocuments.mockClear();
   starRows = { folder_ids: [], document_ids: [] };
   setStar.mockReset();
+  starsFailed = false;
   setPin.mockReset();
   // Back to the suite-wide stand-in (vitest.setup.ts), a browser dismissed at
   // once, after a spec that held one open.
@@ -929,11 +936,11 @@ describe("Documents pinned and starred (#3934)", () => {
         .find((row) => row.props.label === "Alumni mixer flyer")!
         .props.onLongPress(),
     );
-    act(() => sheet().props.onToggleStar(sheet().props.target));
-    expect(setStar).toHaveBeenCalledWith(
-      { target: { kind: "document", id: "d-3" }, starred: true },
-      expect.anything(),
-    );
+    await act(async () => sheet().props.onToggleStar(sheet().props.target));
+    expect(setStar).toHaveBeenCalledWith({
+      target: { kind: "document", id: "d-3" },
+      starred: true,
+    });
 
     await act(async () => sheet().props.onTogglePin(sheet().props.target));
     expect(setPin).toHaveBeenCalledWith({
@@ -952,11 +959,8 @@ describe("Documents pinned and starred (#3934)", () => {
         .find((row) => row.props.label === "Alumni mixer flyer")!
         .props.onLongPress(),
     );
-    act(() => sheet().props.onToggleStar(sheet().props.target));
-    const options = setStar.mock.calls[0]![1] as {
-      onError: (error: unknown) => void;
-    };
-    act(() => options.onError(new Error("nope")));
+    setStar.mockRejectedValueOnce(new Error("nope"));
+    await act(async () => sheet().props.onToggleStar(sheet().props.target));
     expect(screenText(tree)).toContain(
       "Couldn't star “Alumni mixer flyer”. Try again in a moment.",
     );
@@ -979,5 +983,80 @@ describe("Documents pinned and starred (#3934)", () => {
     );
     expect(row("Budget FY2026").props.accessibilityValue).toBe("Starred");
     expect(row("Alumni mixer flyer").props.accessibilityValue).toBeUndefined();
+  });
+
+  const card = (tree: ReactTestRenderer, title: string) =>
+    tree.root
+      .findByType(MarkedCards)
+      .findAllByType(PressableRow)
+      .find((entry) => entry.props.accessibilityLabel === title)!;
+
+  it("draws both marks on a folder chip both pinned and starred", () => {
+    documentRows = LIBRARY;
+    folderRows = FOLDERS;
+    starRows = { folder_ids: ["f-3"], document_ids: [] };
+    const tree = render();
+    const rush = (folderChips(tree).props.chips as {
+      label: string;
+      mark?: React.ReactElement<{ children: React.ReactNode }>;
+    }[]).find((chip) => chip.label === "Rush")!;
+    const marks = React.Children.toArray(rush.mark!.props.children);
+    expect(marks).toHaveLength(2);
+  });
+
+  it("names a card's long press for what the viewer may do, and fires it", () => {
+    const member = loaded();
+    const memberCard = card(member, "Rush");
+    expect(memberCard.props.accessibilityActions).toEqual([
+      { name: "longpress", label: "Star or unstar" },
+    ]);
+    act(() =>
+      memberCard.props.onAccessibilityAction({
+        nativeEvent: { actionName: "longpress" },
+      }),
+    );
+    expect(member.root.findByType(DocumentActionsSheet).props.target).toEqual(
+      expect.objectContaining({ kind: "folder", id: "f-3" }),
+    );
+
+    permissions = ["chapter_docs:manage"];
+    const officer = loaded();
+    expect(
+      card(officer, "Chapter bylaws").props.accessibilityActions,
+    ).toEqual([{ name: "longpress", label: "Star, pin or delete" }]);
+  });
+
+  it("takes no press on a card whose file is being deleted", async () => {
+    const alert = vi.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    permissions = ["chapter_docs:manage"];
+    deleteDocument.mockImplementation(() => new Promise(() => {}));
+    const tree = loaded();
+    act(() =>
+      tree.root
+        .findAllByType(ListRow)
+        .find((row) => row.props.label === "Chapter bylaws")!
+        .props.onLongPress(),
+    );
+    const sheet = tree.root.findByType(DocumentActionsSheet);
+    act(() => sheet.props.onDelete(sheet.props.target));
+    const confirm = alert.mock.calls[0]![2]!.find(
+      (button) => button.style === "destructive",
+    )!;
+    act(() => confirm.onPress!());
+
+    const bylaws = card(tree, "Chapter bylaws");
+    expect(bylaws.props.disabled).toBe(true);
+    expect(bylaws.props.onLongPress).toBeUndefined();
+    expect(bylaws.props.accessibilityActions).toBeUndefined();
+    alert.mockRestore();
+  });
+
+  it("says when the stars couldn't be read", () => {
+    starsFailed = true;
+    documentRows = LIBRARY;
+    folderRows = FOLDERS;
+    expect(screenText(render())).toContain(
+      "Couldn't load your stars. Pull down to try again.",
+    );
   });
 });
