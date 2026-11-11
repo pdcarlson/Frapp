@@ -141,6 +141,7 @@ Every route leads to the same record. A PNM is never created twice.
   - That stops a PNM from claiming another student's ID and receiving their grades ([§ Getting the data in](#getting-the-data-in)).
 - **Fuzzy matches are never merged automatically.**
   - These raise a suggestion in the council's merge queue (`council:recruitment_manage`), shown side by side:
+    - the same name and phone;
     - the same name and class year;
     - two verified emails claiming one school-supplied ID.
   - **A merge:**
@@ -156,7 +157,7 @@ Every route leads to the same record. A PNM is never created twice.
 
 | Kind | Fields |
 | --- | --- |
-| **Core, set by the council** | Legal first and last name; preferred name; verified email; school-supplied student ID; class year or entry term; phone (optional, held by the chapters the PNM gave it to and never shown to the council, so the council's registration form doesn't ask for it); pronouns (optional); major (optional); how they heard about recruitment; source and date |
+| **Core, set by the council** | Legal first and last name; preferred name; verified email; school-supplied student ID; class year or entry term; phone (optional); pronouns (optional); major (optional); how they heard about recruitment; source and date |
 | **The council's own questions** | Up to 10, using the same question types as a chapter form |
 | **Derived** | Interests; eligibility verdict; release status; recruitment outcome (none, bid outstanding, accepted at a chapter, or withdrawn) |
 
@@ -170,7 +171,7 @@ The council never reads a chapter's pipeline. It holds only what was sent up.
 
 | Comes from | The event | What it carries |
 | --- | --- | --- |
-| The PNM | Form submission, registration | The core fields except phone, which chapter, the source. Phone stays with the chapters the PNM gave it to |
+| The PNM | Form submission, registration | The core fields, which chapter, the source |
 | The PNM | Acceptance or decline of a bid | Which chapter, when |
 | The PNM | Withdrawal, deletion | The withdrawal or deletion |
 | The chapter | **Bid extended** | PNM, chapter, time, expiry. The chapter emits it when a member extends |
@@ -192,7 +193,7 @@ An IFC officer is usually a brother in one of the chapters the council covers. I
 - **Which chapter a PNM chose shows only for acceptances.** An acceptance is public to the chapters anyway, as "Accepted elsewhere".
 - **Held bid-day bids show only as counts per chapter** before release.
 - **Per-PNM, per-chapter detail** (who is interested where, who bid on whom) opens to the council when the season closes, for reports.
-- **Phone numbers are hidden from the council** (Paul, 2026-11-11, [decision 9](#decisions-for-paul)). The master list shows a PNM's verified email only. A council that needs to reach PNMs uses Frapp's own email to them, so no officer holds a list of every PNM's number.
+- **Phone numbers** on the master list need `council:recruitment_manage`, and every view of one is in the read log below (Paul, 2026-11-11, [decision 9](#decisions-for-paul)). An officer with that key is usually a chapter member, so the log is what lets the council president and the school office see who looked.
 - **Every council read of a PNM record is logged.** The log is visible to the council president and to the school office.
 
 ### What chapters see on the master list
@@ -304,7 +305,7 @@ All in one transaction, written server-side (ADR-27):
 
 The text sits above the submit button, never behind a link. **It's a draft.** Legal and privacy copy is Paul's ([AGENTS.md § ADR discipline](../../AGENTS.md#adr-discipline)).
 
-> By submitting, you share this information with **{Chapter}**{ at {School}} so they can contact you about joining. {At a school:} Your name, email and class year (not your phone number) also go to the council {Chapter} belongs to on Frapp (today: **{Council}** / none yet), which keeps one recruitment list for {School}. The council sees how many chapters you've signed up with, and which one you join. Other chapters don't see that you signed up here. {Under option B or C, say exactly what other chapters see.} Frapp stores this for them. You can withdraw from this chapter, or delete your recruitment information entirely, at any time from the link we email you. We don't ask for your grades here. If the council checks eligibility, you'll be asked to sign a separate release in Frapp, unless you've already signed one with {School}. Either way, we'll tell you when your eligibility is checked, and you can revoke at any time.
+> By submitting, you share this information with **{Chapter}**{ at {School}} so they can contact you about joining. {At a school:} Your name, email, class year and phone also go to the council {Chapter} belongs to on Frapp (today: **{Council}** / none yet), which keeps one recruitment list for {School}. The council sees how many chapters you've signed up with, and which one you join. Other chapters don't see that you signed up here. {Under option B or C, say exactly what other chapters see.} Frapp stores this for them. You can withdraw from this chapter, or delete your recruitment information entirely, at any time from the link we email you. We don't ask for your grades here. If the council checks eligibility, you'll be asked to sign a separate release in Frapp, unless you've already signed one with {School}. Either way, we'll tell you when your eligibility is checked, and you can revoke at any time.
 
 **The boxes:**
 - **Required:** "I agree, and I'm 18 or older." The Terms require 18 ([`legal.md`](legal.md)), and some first-year PNMs are 17. That's [decision 4](#decisions-for-paul).
@@ -853,6 +854,6 @@ Each of these is on the [AGENTS.md raise-first list](../../AGENTS.md#adr-discipl
    - `rush:read_notes` follows decision 9's defaults ([§ Notes](#notes-tags-ratings)).
 7. **The retention defaults. Decided as proposed:** 30 days after season close for chapter notes and other private pipeline data, and 180 days for PNMs who don't join. Raw grades don't arise in the MVP.
 8. **The default master-list option. Decided: A** (interested only) for MVP, B next, never C by default.
-9. **Council officers and contact details. Decided: phone numbers are hidden from the council** ([§ Officers in a chapter](#council-officers-are-also-chapter-members)). The council reaches PNMs through Frapp's own email. Read logging stays.
+9. **Council officers and contact details. Decided: the council sees phone numbers,** gated on `council:recruitment_manage`, with every view logged ([§ Officers in a chapter](#council-officers-are-also-chapter-members)). Paul first picked hiding them, then reversed it the same day.
 
 **Still open:** when to build. Recruitment is behind the beta, and no build issues are filed until Paul sets a date ([status](#ifc-recruitment-master-list-interest-forms-chapter-pipeline-eligibility)). The real-scale numbers in [§ A recruitment week](#a-recruitment-week-at-real-scale) are to be confirmed with our IFC before then.
