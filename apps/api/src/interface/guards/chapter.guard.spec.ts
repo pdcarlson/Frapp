@@ -64,7 +64,6 @@ describe('ChapterGuard', () => {
     member?: {
       id: string;
       role_ids: string[];
-      custom_role_ids?: string[];
     } | null;
     chapter?: {
       subscription_status: SubscriptionStatus;
@@ -75,7 +74,6 @@ describe('ChapterGuard', () => {
     memberships?: Array<{
       id: string;
       role_ids: string[];
-      custom_role_ids?: string[];
       chapter_id: string;
     }>;
   }) => {
@@ -411,15 +409,10 @@ describe('ChapterGuard', () => {
     expect(request.enabledModules).toEqual({ polls: false });
   });
 
-  it('selects custom_role_ids on the membership and carries it into request.member', async () => {
-    // PermissionsGuard resolves custom-role capabilities from
-    // request.member.custom_role_ids — if this select drops the column, the
-    // bridge silently stops enforcing for the whole request.
-    const member = {
-      id: 'member-1',
-      role_ids: ['role-1'],
-      custom_role_ids: ['custom-1'],
-    };
+  it('selects only id and role_ids on the membership (#4075)', async () => {
+    // Custom roles were folded into role_ids, so nothing reads
+    // custom_role_ids for access any more.
+    const member = { id: 'member-1', role_ids: ['role-1'] };
     const chain = mockSupabaseChain({
       appUser: { id: 'user-1' },
       member,
@@ -432,7 +425,7 @@ describe('ChapterGuard', () => {
 
     expect(request.member).toEqual(member);
     for (const columns of chain.selectArgs['members'] ?? []) {
-      expect(columns).toContain('custom_role_ids');
+      expect(columns).not.toContain('custom_role_ids');
     }
     expect((chain.selectArgs['members'] ?? []).length).toBeGreaterThan(0);
   });

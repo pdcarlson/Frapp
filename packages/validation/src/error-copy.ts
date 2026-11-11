@@ -138,8 +138,6 @@ export const SERVER_MESSAGE_COPY: Readonly<Record<string, string>> = {
   // Roles and members
   "Role name already exists in this chapter":
     "A role with that name already exists. Pick another name.",
-  "A custom role with this key already exists in this chapter":
-    "A role with that name already exists. Pick another name.",
   "A custom field with this key already exists in this chapter":
     "A field with that name already exists. Pick another name.",
   "Cannot delete system roles": "Built-in roles can't be deleted.",

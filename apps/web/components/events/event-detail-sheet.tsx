@@ -2,12 +2,7 @@
 
 import { can, checkInZoneLine } from "@repo/validation";
 import { useMemo } from "react";
-import {
-  AlertTriangle,
-  Loader2,
-  Pencil,
-  Trash2,
-} from "lucide-react";
+import { AlertTriangle, Loader2, Pencil, Trash2 } from "lucide-react";
 import { SectionSkeleton } from "@/components/shared/page-skeletons";
 import { SkeletonText } from "@/components/shared/async-states";
 import {
@@ -39,8 +34,8 @@ import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
-import { Sheet } from "@/components/ui/sheet";
 import {
+  Panel,
   PanelBody,
   PanelContent,
   PanelHeader,
@@ -79,6 +74,12 @@ type EventDetailSheetProps = {
   usingPreviewData: boolean;
   onRequestEdit: (event: EventRecord) => void;
   onEventDeleted: () => Promise<void> | void;
+  /**
+   * Open inside the Events page instead of over the app (`shared/panel.tsx`
+   * § Docked). The Events page sets it; a caller with no page of its own
+   * leaves the sheet.
+   */
+  docked?: boolean;
 };
 
 export function EventDetailSheet({
@@ -91,6 +92,7 @@ export function EventDetailSheet({
   usingPreviewData,
   onRequestEdit,
   onEventDeleted,
+  docked = false,
 }: EventDetailSheetProps) {
   const eventId = typeof event?.id === "string" ? event.id : "";
   const eventQuery = useEvent(!usingPreviewData ? eventId : "");
@@ -189,9 +191,7 @@ export function EventDetailSheet({
   // `null` for a one-time event, which then shows no cadence badge at all.
   // The head's rule when the caller knows the series: a generated meeting
   // carries none of its own, and would otherwise read as one-time.
-  const cadence = recurrenceLabel(
-    seriesRule ?? resolvedEvent?.recurrence_rule,
-  );
+  const cadence = recurrenceLabel(seriesRule ?? resolvedEvent?.recurrence_rule);
   const schedule = formatDayTimeRange(
     resolvedEvent?.start_time,
     resolvedEvent?.end_time,
@@ -298,7 +298,12 @@ export function EventDetailSheet({
   );
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Panel
+      open={open}
+      onOpenChange={onOpenChange}
+      docked={docked}
+      backLabel="Back to events"
+    >
       {/*
         No description: the one this had explained the sheet to someone already
         reading it. `aria-describedby={undefined}` says so to Radix, which
@@ -577,11 +582,10 @@ export function EventDetailSheet({
                 />
               </Can>
             ) : null}
-
           </div>
         </PanelBody>
         {confirmDialog}
       </PanelContent>
-    </Sheet>
+    </Panel>
   );
 }

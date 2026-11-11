@@ -39,6 +39,8 @@ const { mockCurrentChapter } = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/hooks", () => ({
+  useCalendarTasks: () => ({ items: [], hasMine: false, hasAssigned: false }),
+  useChapterRoster: () => ({ data: [] }),
   useCurrentChapter: () => mockCurrentChapter(),
   useCreateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
