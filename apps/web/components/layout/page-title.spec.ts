@@ -12,13 +12,19 @@ describe("resolvePageTitle", () => {
     }
   });
 
-  it("puts every Settings tool under a Settings link", () => {
+  it("puts every Settings tool under a link back to its module page (#4073)", () => {
     for (const tool of SETTINGS_TOOLS) {
       expect(resolvePageTitle(tool.href)).toEqual({
         title: tool.label,
-        parent: { label: "Chapter settings", href: "/settings" },
+        parent: {
+          label: "Chapter settings",
+          href: `/settings?tab=${tool.page}`,
+        },
       });
     }
+    expect(resolvePageTitle("/geofences")?.parent?.href).toBe(
+      "/settings?tab=geofences",
+    );
   });
 
   it("drops the Settings parent when the nav hides the Settings row", () => {

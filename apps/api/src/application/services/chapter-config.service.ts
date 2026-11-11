@@ -71,6 +71,43 @@ function paidModuleKeys(): readonly string[] {
   );
 }
 
+/**
+ * The chapter's module switches as `ChapterGuard` enforces them (#3028): every
+ * catalog module is on unless the stored column says `false`, which is the
+ * shared `isModuleEnabled` rule. Settings used to lay the archetype's seed
+ * under the column instead, so a chapter whose column had no key for a module
+ * its archetype seeds off saw that module "off" in Settings while the guard,
+ * the nav and the slash palette all treated it as on. Archetype seeds still
+ * reach the column: onboarding and an archetype switch write them there.
+ *
+ * Beta-off is deliberately not applied here. `patchConfig` merges a PATCH
+ * onto this value and writes the result back, so folding `BETA_OFF_MODULES`
+ * in would store `false` for a beta-off module and keep it off after the beta.
+ * Clients apply beta-off through `isModuleEnabled`.
+ */
+function resolveEnabledModules(
+  stored: Record<string, boolean> | null | undefined,
+): Record<string, boolean> {
+  const resolved: Record<string, boolean> = { ...(stored ?? {}) };
+  for (const entry of MODULE_CATALOG) {
+    resolved[entry.key] = stored?.[entry.key] !== false;
+  }
+  return resolved;
+}
+
+/**
+ * Always-on modules (Chat, Members, Announcements, ...) cannot be switched
+ * off. Settings draws them locked; this keeps a hand-made PATCH from storing
+ * an off switch the guard would then enforce.
+ */
+function alwaysOnModulesSwitchedOff(
+  patch: Record<string, boolean>,
+): readonly string[] {
+  return MODULE_CATALOG.filter(
+    (entry) => entry.alwaysOn && patch[entry.key] === false,
+  ).map((entry) => entry.key);
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -326,10 +363,7 @@ export class ChapterConfigService {
         description: archetype.description,
         council: archetype.council,
       },
-      enabled_modules: {
-        ...seed.modules,
-        ...(chapter.enabled_modules ?? {}),
-      },
+      enabled_modules: resolveEnabledModules(chapter.enabled_modules),
       vocabulary: {
         ...seed.vocabulary,
         ...(chapter.vocabulary ?? {}),
@@ -443,11 +477,18 @@ export class ChapterConfigService {
     // as a transition on the next unrelated patch.
     let newlyEnabledPaidModules: string[] = [];
     if (dto.enabled_modules !== undefined) {
+      const lockedOff = alwaysOnModulesSwitchedOff(dto.enabled_modules);
+      if (lockedOff.length > 0) {
+        throw new BadRequestException({
+          code: 'chapter.config.module_always_on',
+          message: `These modules are always on and cannot be switched off: ${lockedOff.join(', ')}.`,
+        });
+      }
       const merged = deepMerge(existing.enabled_modules, dto.enabled_modules);
       diff['enabled_modules'] = { from: existing.enabled_modules, to: merged };
       update['enabled_modules'] = merged as Record<string, boolean>;
 
-      const before = existing.enabled_modules as Record<string, boolean>;
+      const before = existing.enabled_modules;
       const after = merged as Record<string, boolean>;
       newlyEnabledPaidModules = paidModuleKeys().filter(
         (key) => !isModuleEnabled(before, key) && isModuleEnabled(after, key),

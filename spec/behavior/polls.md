@@ -38,7 +38,7 @@ rg -n 'enabled_modules\.[a-z]+\.[a-z]|enabled_modules\[' apps packages
 rg -n 'poll_votes' --type ts apps packages
 ```
 
-**No poll is anonymous today.** There is no anonymity flag in `PollMetadata`, no `anonymous` column anywhere, and no code path that treats one voter differently from another. The `polls.anonymous` entry in the module catalog (`packages/org-archetypes/src/index.ts`, `subFeatures`) is a **label with no storage**: `chapters.enabled_modules` is a flat `{module: boolean}` jsonb, no sub-feature key is written or read by anything, and the Settings Modules tab renders sub-features as read-only text under its own note that per-feature toggles are not built. Anything that reads `polls.anonymous` as configuration is reading a catalog string. This is true of every sub-feature key, not just this one (#1760).
+**No poll is anonymous today.** There is no anonymity flag in `PollMetadata`, no `anonymous` column anywhere, and no code path that treats one voter differently from another. The `polls.anonymous` entry in the module catalog (`packages/org-archetypes/src/index.ts`, `subFeatures`) is a **label with no storage**: `chapters.enabled_modules` is a flat `{module: boolean}` jsonb, no sub-feature key is written or read by anything, and Chapter settings no longer shows sub-features at all ([#4073](https://github.com/pdcarlson/Frapp/issues/4073)). Anything that reads `polls.anonymous` as configuration is reading a catalog string. This is true of every sub-feature key, not just this one (#1760).
 
 ### There are two poll systems, and they fail anonymity in opposite ways
 

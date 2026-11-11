@@ -78,7 +78,7 @@ describe("the Settings page keeps unsaved drafts across tab switches", () => {
     await user.clear(hex);
     await user.type(hex, "#5AA9E6");
 
-    await user.click(screen.getByRole("tab", { name: /^modules$/i }));
+    await user.click(screen.getByRole("tab", { name: /^privacy$/i }));
     expect(screen.queryByLabelText(/accent color hex value/i)).toBeNull();
     await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
 
@@ -117,7 +117,7 @@ describe("the Settings page keeps unsaved drafts across tab switches", () => {
     );
     expect(purple).toHaveAttribute("aria-pressed", "true");
 
-    await user.click(screen.getByRole("tab", { name: /^modules$/i }));
+    await user.click(screen.getByRole("tab", { name: /^privacy$/i }));
     await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
     expect(screen.getByLabelText(/accent color hex value/i)).toHaveValue(
       "#4F2683",
@@ -131,7 +131,7 @@ describe("the Settings page keeps unsaved drafts across tab switches", () => {
     await user.click(screen.getByRole("tab", { name: /semester/i }));
     await user.type(screen.getByLabelText(/^label$/i), "Fall 2026");
 
-    await user.click(screen.getByRole("tab", { name: /^modules$/i }));
+    await user.click(screen.getByRole("tab", { name: /^privacy$/i }));
     expect(screen.queryByLabelText(/^label$/i)).toBeNull();
     await user.click(screen.getByRole("tab", { name: /semester/i }));
 

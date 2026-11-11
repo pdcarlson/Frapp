@@ -268,9 +268,10 @@ describe("DashboardShell", () => {
     expect(within(banner).getByRole("heading", { level: 1 })).toHaveTextContent(
       "Study zones",
     );
+    // Back to the module page the tool lives on (#4073), not the Settings root.
     expect(
       within(banner).getByRole("link", { name: "Chapter settings" }),
-    ).toHaveAttribute("href", "/settings");
+    ).toHaveAttribute("href", "/settings?tab=geofences");
   });
 
   it("offers no Settings crumb to a member the nav hides Settings from", () => {

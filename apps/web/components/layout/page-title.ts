@@ -23,7 +23,8 @@ import { SETTINGS_TOOLS } from "@/components/settings/settings-access";
  *
  * **A parent only where there is a page to go back to** (2026-11-05). The four
  * officer tools behind the Settings rail are reached from inside Settings, so
- * they read "Chapter settings › Study zones" and the parent links back. The parent is
+ * they read "Chapter settings › Study zones" and the parent links back to the
+ * module page that lists the tool (#4073). The parent is
  * the nav row that claims the route in its `activeFor`, so it is named and
  * linked exactly as that row is, and it shows only when that row does: a
  * member the nav hides Settings from is not handed a link to it here.
@@ -82,7 +83,12 @@ export function resolvePageTitle(
     return parentRow && isNavItemVisible(parentRow)
       ? {
           title: tool.label,
-          parent: { label: parentRow.label, href: parentRow.href },
+          // Back to the module page the tool is opened from (#4073), not
+          // to the top of Chapter settings.
+          parent: {
+            label: parentRow.label,
+            href: `${parentRow.href}?tab=${tool.page}`,
+          },
         }
       : { title: tool.label };
   }
