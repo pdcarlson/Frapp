@@ -20,6 +20,12 @@ export interface ThreadChipProps {
   onPress?: () => void;
   /** Which side it hugs: Bubbles puts the viewer's own on the right. */
   align?: "start" | "end";
+  /**
+   * The row is flagged Important (#3921): the count draws in the foreground
+   * tone, since the chapter accent misses AA on the danger tint for most
+   * seeds (components.md § A flagged row).
+   */
+  onImportantRow?: boolean;
 }
 
 /**
@@ -35,6 +41,7 @@ export function ThreadChip({
   roleColorFor,
   onPress,
   align = "start",
+  onImportantRow = false,
 }: ThreadChipProps) {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
@@ -78,7 +85,16 @@ export function ThreadChip({
           ))}
         </View>
       ) : null}
-      <Text style={[styles.replies, { color: brand.accent }]}>{replies}</Text>
+      <Text
+        style={[
+          styles.replies,
+          {
+            color: onImportantRow ? tokens.color.text.foreground : brand.accent,
+          },
+        ]}
+      >
+        {replies}
+      </Text>
       {lastReply ? (
         <Text style={styles.lastReply} numberOfLines={1}>
           {`· ${lastReply}`}

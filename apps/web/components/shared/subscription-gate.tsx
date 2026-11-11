@@ -1,5 +1,6 @@
 "use client";
 
+import { BILLING_SETTINGS_PATH } from "@/components/billing/billing-paths";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
@@ -376,7 +377,9 @@ function DefaultRecovery({
       deniedFallback={askAnOfficer}
       offlineFallback={askAnOfficer}
     >
-      <Link href="/billing" className="font-medium underline underline-offset-4">
+      <Link
+        href={BILLING_SETTINGS_PATH}
+        className="font-medium underline underline-offset-4">
         {action}
       </Link>{" "}
       to restore {feature}.

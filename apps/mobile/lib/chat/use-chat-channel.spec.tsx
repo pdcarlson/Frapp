@@ -93,6 +93,7 @@ const mocks = vi.hoisted(() => {
     actOnCard: vi.fn<(ctx: unknown, args: unknown) => Promise<void>>(),
     editMessage: vi.fn<(ctx: unknown, args: unknown) => Promise<void>>(),
     deleteMessage: vi.fn<(ctx: unknown, args: unknown) => Promise<void>>(),
+    setMessageFlag: vi.fn<(ctx: unknown, args: unknown) => Promise<void>>(),
     bootChatAdapters: vi.fn((): Promise<void> => Promise.resolve()),
     listForChannel: vi.fn(async () => [] as unknown[]),
     draftLoad: vi.fn(async () => ""),
@@ -134,6 +135,7 @@ vi.mock("@repo/chat-core/chat-client", () => ({
   actOnCard: mocks.actOnCard,
   editMessage: mocks.editMessage,
   deleteMessage: mocks.deleteMessage,
+  setMessageFlag: mocks.setMessageFlag,
 }));
 
 // The + sheet's Task and Service hours posts (#3865): chat-core's own calls,
@@ -1268,6 +1270,27 @@ describe("reply, edit and delete (#2775)", () => {
     await waitFor(() => expect(result.current.canSend).toBe(true));
     await expect(result.current.remove("m2")).rejects.toThrow(
       "You can only delete your own messages",
+    );
+  });
+
+  // #3921: the sheet's Flag row picks a flag, or takes it off with null.
+  it("flags and unflags through chat-core for this channel", async () => {
+    mocks.setMessageFlag.mockResolvedValue(undefined);
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    await act(async () => {
+      await result.current.flag("m1", "funny");
+      await result.current.flag("m1", null);
+    });
+    expect(mocks.setMessageFlag).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      { channelId: CHANNEL, messageId: "m1", flag: "funny" },
+    );
+    expect(mocks.setMessageFlag).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      { channelId: CHANNEL, messageId: "m1", flag: null },
     );
   });
 

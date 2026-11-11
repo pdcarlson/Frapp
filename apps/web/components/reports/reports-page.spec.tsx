@@ -106,7 +106,7 @@ describe("ReportsPage subscription gating", () => {
     // §5 rule 2: name the next action, not just the blocker.
     expect(
       screen.getByRole("link", { name: /complete checkout/i }),
-    ).toHaveAttribute("href", "/billing");
+    ).toHaveAttribute("href", "/settings?tab=billing");
   });
 
   it("gates the PDF export too, not just Generate report", () => {

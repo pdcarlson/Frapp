@@ -1,3 +1,4 @@
+import { messageFlagView } from "@repo/chat-core/flags";
 import { useMemo, type ReactNode } from "react";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
@@ -173,6 +174,9 @@ function ThreadMessageRowBody({
   }
 
   const reactions = visibleReactions(cached.reactions, blockState, viewerId);
+  // The flag (#3921), with the flagger's name dropped when the viewer blocked
+  // them: a Realtime echo carries `flagged_by` raw.
+  const flag = messageFlagView(cached, viewerId, blockState, nameFor);
   const message: ChatMessage =
     reactions === cached.reactions ? cached : { ...cached, reactions };
 
@@ -256,6 +260,7 @@ function ThreadMessageRowBody({
         avatarFor={avatarFor}
         startsRun={startsRun}
         quote={quote}
+        flag={flag}
         onOpenActions={openActions}
         onOpenProfile={onOpenProfile}
       >
@@ -268,6 +273,7 @@ function ThreadMessageRowBody({
             nameFor={nameFor}
             roleColorFor={roleColorFor}
             onPress={onOpenThread ? () => onOpenThread(cached) : undefined}
+            onImportantRow={flag?.important === true}
           />
         ) : null}
       </MessageRowFrame>
@@ -293,6 +299,7 @@ function ThreadMessageRowBody({
       onJumpToParent={onJumpToParent}
       onOpenProfile={onOpenProfile}
       onOpenThread={onOpenThread ? () => onOpenThread(cached) : undefined}
+      flag={flag}
     />
   );
 }

@@ -32,7 +32,8 @@ Color per state (roles defined in [foundations](foundations.md)):
 
 The navigation glyphs (the web sidebar, the mobile tab bar and the More hub's
 rows), the web in-screen families' re-exports of them, and the few in-screen
-glyphs drawn beside those (folder, schedule, invite, profile) draw one shared
+glyphs drawn beside those (folder, schedule, invite, profile, and Activity's
+`link` and `confirm`, §6.2.5a) draw one shared
 set instead of the stroke recipe above: [`packages/theme/src/nav-glyphs.ts`](../../../packages/theme/src/nav-glyphs.ts)
 (`@repo/theme/nav-glyphs`), path data from Phosphor's duotone weight (MIT),
 rendered by `apps/web/components/layout/nav-glyphs.tsx` and
@@ -273,7 +274,7 @@ viewer draws the same intents in Lucide (`Download`, `X`, `ChevronLeft`,
 
 The verbs an icon-only control draws ([components.md § Icon-only
 actions](components.md#icon-only-actions)), plus share's companion mark for an
-invite link, live in one file,
+invite link and the alert mark on an Important chat message (#3921), live in one file,
 `apps/mobile/components/control-glyphs.tsx`, so every dismiss on mobile is the
 same ×. Detail strokes only, no silhouette fill, at 20px (§2's icon-button
 size) unless a caller passes another size. Color comes from the surface: the
@@ -289,6 +290,7 @@ the chapter accent in a back-row slot (2026-11-05).
 | Share | `ShareGlyph`: iOS's box with an arrow out of it, Android's three joined nodes, each platform's own mark (moved here from the image viewer's own file, 2026-11-06) | the image viewer (24px), chapter setup's `Share invite` gold button and Invite members' secondary one (`text.foreground`, 2026-11-09, #3828), in the button's ink | Lucide `Share` |
 | Invite link | `LinkGlyph` (two joined links) | chapter setup's invite step: its link card, in `gold.askText` on the ask tile, and each shared row (16px); Invite members (`(app)/invite.tsx`) draws the same card in the chapter accent on its subtle tile | Lucide `Link` |
 | Back | `BackGlyph` (a left chevron, stroke 2.2, heavier than the recipe), in the chapter accent or the house gold | the chat thread header at 20 (2026-11-06; it was a typed `‹`), every back-row capsule at 18 | Lucide `ChevronLeft` |
+| Important (a status mark, not a control) | `AlertGlyph` (a circled !) | an Important message's flag caption in chat, at 14 in `destructiveText` ([components.md § A flagged row](components.md#a-flagged-row)) | Lucide `CircleAlert` |
 
 ### 6.2 Web Dashboard shell (Signet duotone)
 
@@ -596,6 +598,26 @@ Two of the swaps were corrections rather than a pack change, in §6.2.4's sense:
   and is deliberately **not** this family's to move: §6.2.3 already records
   that the state family's glyphs migrate with a pass over
   `components/shared/**`, not with a screen family.
+
+### 6.2.5a Activity rows (Signet duotone)
+
+Since #4173 (2026-11-11) every `/activity` row leads with a 40px neutral tile
+holding its kind's glyph at 20px in `--muted-foreground`
+([`apps/web/components/activity/activity-row-lead.tsx`](../../../apps/web/components/activity/activity-row-lead.tsx)),
+or, for an event, its month and day in place of a glyph. The glyphs are
+the nav set's (§1.1), so a row draws the shape of the place its record lives;
+`link` and `confirm` were added for the two kinds that have no place of their own.
+They stay neutral: the page's colour is for asks and status.
+
+| Row kind | Shape (nav set key, Phosphor name) |
+|---|---|
+| Your task, a task you assigned | `tasks`, `seal-check` |
+| A task waiting on your confirm | `confirm`, `check-circle` (added for it) |
+| Hours to approve | `service`, `hand-heart` |
+| Poll | `polls`, `chart-bar` |
+| Event whose start can't be read (no date to draw) | `events`, `calendar-dots` |
+| Document, backwork | `documents`, `file-text`; `backwork`, `books` |
+| Sign-up link | `link`, `link` (added for it) |
 
 ### 6.2.6 Settings & Roles (Signet duotone) — no family file, deliberately
 

@@ -32,7 +32,7 @@ import { FOCUS_RING_SHELL } from "@/components/ui/focus";
 
 /** Permissions for a member who holds nothing role-gated. */
 const ORDINARY_MEMBER: readonly string[] = [];
-/** Enough to see every row, including Directory, Billing and Settings. */
+/** Enough to see every row, including Directory and Settings. */
 const OFFICER: readonly string[] = [
   "members:view",
   "billing:view",
@@ -81,10 +81,11 @@ describe("AppNav", () => {
     expect(headings).not.toContain("Chat");
   });
 
-  it("still shows Directory and Billing without their headings", () => {
+  it("still shows Directory without a heading, and no Billing row (#3827)", () => {
     renderNav();
     expect(screen.getByRole("link", { name: "Directory" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Billing" })).toBeInTheDocument();
+    // Billing is Chapter settings' Plan and billing row now.
+    expect(screen.queryByRole("link", { name: "Billing" })).toBeNull();
   });
 
   it("keeps officer rows to a single Settings row, last in the list", () => {

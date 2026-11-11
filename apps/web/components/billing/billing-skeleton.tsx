@@ -1,11 +1,7 @@
-import { PlanMatrix } from "@/components/billing/plan-matrix";
 import { Skeleton } from "@/components/shared/async-states";
 import {
-  PageSkeleton,
   SectionSkeleton,
-  SkeletonControl,
   SkeletonRows,
-  SkeletonSectionLabel,
 } from "@/components/shared/page-skeletons";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 
@@ -58,33 +54,5 @@ export function InvoiceRowsSkeleton() {
     <SectionSkeleton label={stateMicrocopy.billing.loading}>
       <InvoiceRows />
     </SectionSkeleton>
-  );
-}
-
-/**
- * `/billing` while it loads: the plan panel, the plan matrix (real, since it
- * needs no data), then the invoice toolbar and rows.
- */
-export function BillingPageSkeleton() {
-  return (
-    <PageSkeleton label="Loading billing" className="@container space-y-6">
-      <PlanPanelFrame />
-      {/*
-        The real matrix: it is static (the module catalogue, no query), so the
-        skeleton renders it as it is rather than a picture of it.
-      */}
-      <PlanMatrix />
-      <section className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="mr-auto">
-            <SkeletonSectionLabel width="w-20" count />
-          </div>
-          <SkeletonControl className="w-full @md:w-64" />
-          <SkeletonControl className="w-[92px]" />
-          <SkeletonControl className="w-[132px]" />
-        </div>
-        <InvoiceRows />
-      </section>
-    </PageSkeleton>
   );
 }

@@ -232,7 +232,7 @@ describe("WhatsNewHost", () => {
   });
 
   it("never opens over checkout or the What's new page itself", () => {
-    for (const pathname of ["/billing", "/whats-new"]) {
+    for (const pathname of ["/billing", "/settings", "/whats-new"]) {
       nav.pathname = pathname;
       const view = renderHost();
       wait();

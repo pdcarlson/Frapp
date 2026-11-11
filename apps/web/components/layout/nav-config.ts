@@ -1,7 +1,6 @@
 import {
   ActivityGlyph,
   BackworkGlyph,
-  BillingGlyph,
   ChatGlyph,
   DirectoryGlyph,
   DocumentsGlyph,
@@ -14,7 +13,6 @@ import {
   type NavGlyphComponent,
 } from "@/components/layout/nav-glyphs";
 import type { UnsetFeatureKey } from "@repo/hooks";
-import { isBetaOffModule } from "@repo/validation";
 import {
   SETTINGS_ENTRY_PERMISSIONS,
   SETTINGS_TOOL_ROUTES,
@@ -238,21 +236,23 @@ export const DASHBOARD_NAV: NavSection[] = [
   },
   {
     /*
-     * Directory, Billing and Settings share one UNLABELED group.
+     * Directory and Chapter settings share one UNLABELED group.
      *
      * Directory and Billing were two sections of one item each, so the
      * headings "DIRECTORY" and "FINANCE" were each announcing a single row
      * whose own label already said the same word. The framework board (option
      * `1b`) merged them and dropped both headings; `1t` lists the two labels as
      * deleted chrome. Settings joined them when the Admin group folded into it
-     * (#2946). The group keeps a wider top margin so it still reads as its own
-     * block.
+     * (#2946). Billing then left the sidebar for Chapter settings' Plan and
+     * billing row (#3827): a president checks the plan once a semester, which
+     * is not a daily nav destination. The group keeps a wider top margin so it
+     * still reads as its own block.
      *
      * `anchor` is the existing "render items with no heading" flag, the same
      * one Chat uses. It is not a claim that this group is an app home.
      */
-    id: "directory-billing-settings",
-    label: "Directory, billing and settings",
+    id: "directory-settings",
+    label: "Directory and settings",
     anchor: true,
     items: [
       {
@@ -265,23 +265,12 @@ export const DASHBOARD_NAV: NavSection[] = [
         requirePermission: "members:view",
       },
       {
-        id: "billing",
-        label: "Billing",
-        icon: BillingGlyph,
-        href: "/billing",
-        // Hover text, read once: a beta-off dues has no invoices to name.
-        description: isBetaOffModule("dues")
-          ? "Subscription and Stripe portal."
-          : "Subscription, Stripe portal, member invoices, dues.",
-        requirePermission: "billing:view",
-      },
-      {
         id: "settings",
         label: "Chapter settings",
         icon: SettingsGlyph,
         href: "/settings",
         description:
-          "Chapter setup, roles, and officer tools: chat admin, Discord import, study zones, reports.",
+          "Chapter setup, roles, plan and billing, and officer tools: chat admin, Discord import, study zones, reports.",
         // Shown to anyone Settings has something for: a tab they can use, or
         // an officer tool whose module is on (`settings-access.ts`). The
         // permission set is the coarse gate; `showWhen` drops the row when

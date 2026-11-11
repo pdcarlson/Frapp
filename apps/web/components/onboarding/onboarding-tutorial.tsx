@@ -1,5 +1,6 @@
 "use client";
 
+import { isCheckoutLandingPath } from "@/components/billing/billing-paths";
 import { useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { CheckCircle2 } from "lucide-react";
@@ -133,16 +134,17 @@ const STEPS: Step[] = [
  *
  * It is mounted in `dashboard-shell.tsx` and gated only on
  * `has_completed_onboarding`, so it is otherwise route-agnostic: it opens over
- * whatever the member happens to have landed on. Since #2297 `/billing` is a
- * landing rather than somewhere only a deliberate visitor arrives, and the
- * tour would cover its "Complete checkout" CTA and then end on "Dive into your
- * home dashboard."
+ * whatever the member happens to have landed on. Since #2297 Plan and billing
+ * (`/billing` until #3827 moved it into Chapter settings) is a landing rather
+ * than somewhere only a deliberate visitor arrives, and the tour would cover
+ * its "Complete checkout" CTA and then end on "Dive into your home dashboard."
+ * The routes are `CHECKOUT_LANDING_PATHNAMES`, shared with What's new.
  *
  * WHO THIS ACTUALLY PROTECTS — not the brand-new founder. `ChapterService`
  * creates the founder's own membership with `has_completed_onboarding: true`
  * (`chapter.service.ts`), so the tour never fires for the person the wizard
  * just redirected. It fires for a member whose flag is false and who reaches
- * `/billing`: an invited member, or a founder who chose "Replay tutorial" in
+ * Plan and billing: an invited member, or a founder who chose "Replay tutorial" in
  * Profile (`profile-panel.tsx` sets the flag back to false). This guard is
  * therefore defensive rather than a fix for a live first-run bug — worth
  * stating, because a comment claiming the founder case would send the next
@@ -151,7 +153,6 @@ const STEPS: Step[] = [
  * Suppressed, not dismissed — the flag is left alone, so the tour still opens
  * the next time that member is anywhere else in the dashboard.
  */
-const TOUR_SUPPRESSED_PREFIXES = ["/billing"] as const;
 
 /**
  * Shows a skippable slideshow the first time a member lands in the web
@@ -189,9 +190,7 @@ export function OnboardingTutorial() {
     activeMembership?.chapter?.name ??
     "your chapter";
 
-  const onSuppressedRoute = TOUR_SUPPRESSED_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname?.startsWith(`${prefix}/`),
-  );
+  const onSuppressedRoute = isCheckoutLandingPath(pathname);
 
   const shouldShow =
     Boolean(activeMembership) &&

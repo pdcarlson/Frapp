@@ -56,6 +56,21 @@ export function AddReactionGlyph({
   );
 }
 
+/**
+ * Important, on a flagged chat message (#3921): web draws Lucide's
+ * `CircleAlert` for the same mark. Not a control, but drawn from the same
+ * recipe so it sits with the verbs at caption size.
+ */
+export function AlertGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Circle cx={12} cy={12} r={10} {...detail} fill="none" />
+      <Path d="M12 8v4M12 16h.01" {...detail} />
+    </Frame>
+  );
+}
+
 /** Try again: web draws Lucide's `RotateCw` for the same intent. */
 export function RetryGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   const { detail } = paint({ color });
