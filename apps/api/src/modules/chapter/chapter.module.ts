@@ -9,6 +9,8 @@ import { SupabaseMemberRepository } from '../../infrastructure/supabase/reposito
 import { SupabaseStorageService } from '../../infrastructure/storage/supabase-storage.service';
 import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import { ROLE_TIER_REPOSITORY } from '#domain/repositories/role-tier.repository.interface';
+import { SupabaseRoleTierRepository } from '../../infrastructure/supabase/repositories/supabase-role-tier.repository';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import {
@@ -37,6 +39,7 @@ import { ChapterConfigModule } from '../chapter-config/chapter-config.module';
     ChapterOnboardingService,
     { provide: CHAPTER_REPOSITORY, useClass: SupabaseChapterRepository },
     { provide: ROLE_REPOSITORY, useClass: SupabaseRoleRepository },
+    { provide: ROLE_TIER_REPOSITORY, useClass: SupabaseRoleTierRepository },
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
     { provide: STORAGE_PROVIDER, useClass: SupabaseStorageService },
     // Chapter creation seeds the default channels and onboarding posts the

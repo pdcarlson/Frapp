@@ -623,22 +623,30 @@ describe("local actions resolve at every call site", () => {
   it("every path-gated job that calls a local action re-runs when an action changes", () => {
     const path = join(WORKFLOWS, "ci.yml");
     const lines = readFileSync(path, "utf8").split(/\r?\n/);
-    const start = lines.findIndex((l) => /^\s+filters:\s*\|\s*$/.test(l));
-    assert.ok(start !== -1, "ci.yml must still define its paths-filter block");
+    const starts = lines.flatMap((l, i) => (/^\s+filters:\s*\|\s*$/.test(l) ? [i] : []));
+    assert.ok(starts.length > 0, "ci.yml must still define its paths-filter block");
+    // Every paths-filter step in `changes`: `filter` lists what a job reads,
+    // `apps` (predicate-quantifier: every) what it skips.
     const filters = {};
-    let current = null;
-    for (const line of lines.slice(start + 1)) {
-      if (line.trim() === "" || /^\s*#/.test(line)) continue;
-      if (!/^ {12}/.test(line)) break;
-      const filter = line.match(/^ {12}([\w-]+):\s*$/);
-      if (filter) {
-        current = filter[1];
-        filters[current] = [];
-        continue;
+    for (const start of starts) {
+      let current = null;
+      for (const line of lines.slice(start + 1)) {
+        if (line.trim() === "" || /^\s*#/.test(line)) continue;
+        if (!/^ {12}/.test(line)) break;
+        const filter = line.match(/^ {12}([\w-]+):\s*$/);
+        if (filter) {
+          current = filter[1];
+          filters[current] = [];
+          continue;
+        }
+        const item = line.match(/^ {14}-\s*["']?([^"'#]+?)["']?\s*(#.*)?$/);
+        if (item && current) filters[current].push(item[1]);
       }
-      const item = line.match(/^ {14}-\s*["']?([^"'#]+?)["']?\s*(#.*)?$/);
-      if (item && current) filters[current].push(item[1]);
     }
+    // A skip-list filter covers an action change unless it skips .github itself.
+    const covers = (list) =>
+      list.includes(".github/actions/**") ||
+      (list[0] === "**" && !list.some((p) => /^!\.github(\/|\*)/.test(p) || p === "!**"));
     const gated = workflowJobs(path).flatMap((job) =>
       [...(job.if ?? "").matchAll(/needs\.changes\.outputs\.([\w-]+)/g)].map((m) => ({ job: job.jobId, filter: m[1] })),
     );
@@ -650,7 +658,7 @@ describe("local actions resolve at every call site", () => {
     );
     const missing = gated
       .filter((g) => usesAction.has(g.job))
-      .filter((g) => !(filters[g.filter] ?? []).includes(".github/actions/**"))
+      .filter((g) => !covers(filters[g.filter] ?? []))
       .map((g) => `${g.job} (filter \`${g.filter}\`)`);
     assert.deepEqual(missing, [], "add '.github/actions/**' to each of these jobs' paths-filter");
   });

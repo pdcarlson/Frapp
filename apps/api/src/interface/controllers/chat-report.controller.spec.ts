@@ -94,12 +94,14 @@ describe('ChatReportController', () => {
     it('GET / passes the caller to the queue read', async () => {
       await controller.listReports('chapter-1', 'user-officer', {
         status: 'dismissed',
+        channel_id: 'channel-1',
       });
 
       expect(reportService.listReports).toHaveBeenCalledWith(
         'chapter-1',
         'user-officer',
         'dismissed',
+        'channel-1',
       );
     });
 

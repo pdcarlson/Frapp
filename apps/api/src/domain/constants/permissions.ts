@@ -127,18 +127,71 @@ export const SystemRoleKeys = {
 export const ALUMNI_ROLE_NAME = 'Alumni';
 
 /**
- * Seeded on chapter creation. Colors come from the role palette in
- * `@repo/validation` (#3485): the five officer and Alumni roles get one, while
- * Member and New Member stay uncolored so most of a chapter's chat reads in
- * the plain foreground and the officers stand out. Migration
- * `20261105200000_role_color_palette_defaults.sql` moves existing chapters'
- * untouched seeds onto the same values.
+ * The tiers a new chapter starts with, highest first (#4068 decision 10), and
+ * what each gives its roles. **Seed data only.** From the moment a chapter
+ * exists its tiers are its own rows in `role_tiers`: it can rename, reorder,
+ * add and delete them, so nothing may look a tier up by these names or assume
+ * there are four. Alumni, and advisors when a chapter adds them, sit outside
+ * the tiers.
+ *
+ * Each tier starts with what its seeded roles held before tiers existed, so a
+ * new chapter's roles can do exactly what they could before. The officer
+ * defaults Paul decided on 2026-11-10 (#4068 decision 9) land with the rank
+ * rules, in the next slice of #4071: `roles:manage` on a tier is only safe
+ * once a holder cannot edit their own tier.
+ *
+ * Chapters that existed before tiers were placed into the same four names by
+ * migration `20261111140000_role_tiers.sql`. Changing this list changes new
+ * chapters and nothing else.
  */
-export const DEFAULT_SYSTEM_ROLES = [
+export const STARTING_ROLE_TIERS = [
+  {
+    name: 'Exec board',
+    permissions: [
+      SystemPermissions.MEMBERS_VIEW,
+      SystemPermissions.POLLS_VIEW_ALL,
+    ],
+  },
+  {
+    name: 'Officers and chairs',
+    permissions: [SystemPermissions.MEMBERS_VIEW],
+  },
+  {
+    name: 'Members',
+    permissions: [
+      SystemPermissions.MEMBERS_VIEW,
+      SystemPermissions.BACKWORK_UPLOAD,
+      SystemPermissions.SERVICE_LOG,
+      SystemPermissions.POLLS_CREATE,
+      // What any member could do in recruitment before it had permissions
+      // (#4070); a chapter tightens it from here.
+      ...RUSH_MEMBER_PERMISSIONS,
+    ],
+  },
+  {
+    name: 'New members',
+    permissions: [
+      SystemPermissions.MEMBERS_VIEW,
+      SystemPermissions.BACKWORK_UPLOAD,
+    ],
+  },
+] as const satisfies readonly {
+  name: string;
+  permissions: readonly string[];
+}[];
+
+/**
+ * The seeded roles as authored: each role's starting tier (an index into
+ * {@link STARTING_ROLE_TIERS}, or `null` for outside the tiers) and what it
+ * holds beyond that tier, which is seeded as "on" overrides.
+ * {@link DEFAULT_SYSTEM_ROLES} adds the resulting `permissions` list.
+ */
+const SEEDED_ROLES = [
   {
     name: 'President',
     system_key: SystemRoleKeys.PRESIDENT,
-    permissions: [SystemPermissions.WILDCARD],
+    starting_tier: 0,
+    extra_permissions: [SystemPermissions.WILDCARD],
     is_system: true,
     display_order: 1,
     color: roleColor('orange'),
@@ -146,13 +199,12 @@ export const DEFAULT_SYSTEM_ROLES = [
   {
     name: 'Treasurer',
     system_key: SystemRoleKeys.TREASURER,
-    permissions: [
+    starting_tier: 0,
+    extra_permissions: [
       SystemPermissions.BILLING_VIEW,
       SystemPermissions.BILLING_MANAGE,
       SystemPermissions.POINTS_ADJUST,
       SystemPermissions.POINTS_VIEW_ALL,
-      SystemPermissions.POLLS_VIEW_ALL,
-      SystemPermissions.MEMBERS_VIEW,
       SystemPermissions.REPORTS_EXPORT,
       SystemPermissions.EVENTS_CREATE,
       SystemPermissions.EVENTS_UPDATE,
@@ -164,10 +216,8 @@ export const DEFAULT_SYSTEM_ROLES = [
   {
     name: 'Vice President',
     system_key: SystemRoleKeys.VICE_PRESIDENT,
-    permissions: [
-      SystemPermissions.MEMBERS_VIEW,
-      SystemPermissions.POLLS_VIEW_ALL,
-    ],
+    starting_tier: 0,
+    extra_permissions: [],
     is_system: true,
     display_order: 3,
     color: roleColor('periwinkle'),
@@ -175,10 +225,8 @@ export const DEFAULT_SYSTEM_ROLES = [
   {
     name: 'Secretary',
     system_key: SystemRoleKeys.SECRETARY,
-    permissions: [
-      SystemPermissions.MEMBERS_VIEW,
-      SystemPermissions.POLLS_VIEW_ALL,
-    ],
+    starting_tier: 0,
+    extra_permissions: [],
     is_system: true,
     display_order: 4,
     color: roleColor('rose'),
@@ -186,15 +234,8 @@ export const DEFAULT_SYSTEM_ROLES = [
   {
     name: 'Member',
     system_key: SystemRoleKeys.MEMBER,
-    permissions: [
-      SystemPermissions.MEMBERS_VIEW,
-      SystemPermissions.BACKWORK_UPLOAD,
-      SystemPermissions.SERVICE_LOG,
-      SystemPermissions.POLLS_CREATE,
-      // What any member could do in recruitment before it had permissions
-      // (#4070); a chapter tightens it from here.
-      ...RUSH_MEMBER_PERMISSIONS,
-    ],
+    starting_tier: 2,
+    extra_permissions: [],
     is_system: true,
     display_order: 5,
     color: null,
@@ -202,10 +243,8 @@ export const DEFAULT_SYSTEM_ROLES = [
   {
     name: 'New Member',
     system_key: SystemRoleKeys.NEW_MEMBER,
-    permissions: [
-      SystemPermissions.MEMBERS_VIEW,
-      SystemPermissions.BACKWORK_UPLOAD,
-    ],
+    starting_tier: 3,
+    extra_permissions: [],
     is_system: true,
     display_order: 6,
     color: null,
@@ -217,7 +256,8 @@ export const DEFAULT_SYSTEM_ROLES = [
     // to.
     name: ALUMNI_ROLE_NAME,
     system_key: SystemRoleKeys.ALUMNI,
-    permissions: [
+    starting_tier: null,
+    extra_permissions: [
       SystemPermissions.MEMBERS_VIEW,
       SystemPermissions.ALUMNI_POST,
     ],
@@ -225,7 +265,35 @@ export const DEFAULT_SYSTEM_ROLES = [
     display_order: 7,
     color: roleColor('slate'),
   },
-] as const;
+] as const satisfies readonly {
+  starting_tier: number | null;
+  extra_permissions: readonly string[];
+  [key: string]: unknown;
+}[];
+
+/**
+ * Seeded on chapter creation, each into its starting tier
+ * ({@link STARTING_ROLE_TIERS}). `permissions` is what the role ends up
+ * holding: its tier's list plus its own `extra_permissions`, the same rule the
+ * database applies on every later save (`role_effective_permissions`).
+ *
+ * Colors come from the role palette in `@repo/validation` (#3485): the five
+ * officer and Alumni roles get one, while Member and New Member stay uncolored
+ * so most of a chapter's chat reads in the plain foreground and the officers
+ * stand out. Migration `20261105200000_role_color_palette_defaults.sql` moves
+ * existing chapters' untouched seeds onto the same values.
+ */
+export const DEFAULT_SYSTEM_ROLES = SEEDED_ROLES.map((role) => ({
+  ...role,
+  permissions: [
+    ...new Set<string>([
+      ...(role.starting_tier === null
+        ? []
+        : STARTING_ROLE_TIERS[role.starting_tier].permissions),
+      ...role.extra_permissions,
+    ]),
+  ],
+}));
 
 /**
  * Channels seeded on chapter creation.
