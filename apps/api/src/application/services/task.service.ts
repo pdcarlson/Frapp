@@ -19,6 +19,7 @@ import type { NotifyPayload } from './notification.service';
 import { ChatService } from './chat.service';
 import { formatDueDate, joinFacts } from './push-copy';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 const VALID_ASSIGNEE_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   [TaskStatus.TODO]: [TaskStatus.IN_PROGRESS],
@@ -540,12 +541,14 @@ export class TaskService {
     try {
       await this.notificationService.notifyUser(assigneeId, chapterId, payload);
     } catch (error) {
-      logThrowable(
-        this.logger,
-        'warn',
-        `notifyUser failed for task ${taskId} (${notificationContext}) / assignee ${assigneeId}`,
+      // A notification nobody retries (#4096): reported so a failing
+      // notifications write isn't silent.
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'task-notify',
+        message: `notifyUser failed for task ${taskId} (${notificationContext}) / assignee ${assigneeId}`,
         error,
-      );
+      });
     }
   }
 

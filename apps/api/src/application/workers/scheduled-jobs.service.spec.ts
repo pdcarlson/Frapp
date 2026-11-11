@@ -308,10 +308,17 @@ describe('ScheduledJobsService', () => {
         sent: 1,
       });
       expect(notifyUser).toHaveBeenCalledTimes(1);
-      expect(captureException.mock.calls[0][1]).toMatchObject({
-        level: 'warning',
-        fingerprint: expect.arrayContaining(['event-reminder-sweep-event']),
-      });
+      // The guard's own error, not `toISOString`'s RangeError, so the event
+      // that failed is the one named.
+      expect(captureException).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'event evt-bad has no valid start_time',
+        }),
+        expect.objectContaining({
+          level: 'warning',
+          fingerprint: expect.arrayContaining(['event-reminder-sweep-event']),
+        }),
+      );
     });
 
     it('notifies every required member that the event is starting soon', async () => {

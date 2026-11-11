@@ -210,7 +210,8 @@ export class ScheduledJobsService {
    *
    * Needs no catch of its own, by the test in the report-retention docblock
    * below: the candidate read goes through `fetchAllPages`, and every per-row
-   * step sits inside a `try`.
+   * step sits inside a `try`. Anything that still escapes, `@ReportedCron`
+   * reports.
    */
   @ReportedCron(CronExpression.EVERY_HOUR)
   async handleStalePaletteSweep(): Promise<void> {
@@ -222,19 +223,17 @@ export class ScheduledJobsService {
    * evidence sweep below is the other.
    *
    * Every other handler here reaches the database through `fetchAllPages`,
-   * which absorbs a query error and returns `[]`, so none of them can reject —
-   * that, not their count, is the test to apply when adding one. This one
-   * reaches *storage*, and a failure listing the bucket root propagates.
+   * which absorbs a query error and returns `[]`, and runs each row inside a
+   * `try` — that, not their count, is the test to apply when adding one. This
+   * one reaches *storage*, and a failure listing the bucket root propagates.
    * A handler whose candidate query does not go through `fetchAllPages`, or
-   * that awaits anything outside a per-item `try`, needs its own catch too.
+   * that awaits or computes anything outside a per-item `try` (the auto-absent
+   * sweep's date key did, until #3498), needs its own catch too.
    *
-   * The catch is not what keeps the process up: `@nestjs/schedule` wraps every
-   * `@Cron` method in its own try/catch and passes a rejection to Nest's
-   * `logger.error` as the raw object. That line reaches no alert, and for a
-   * PostgREST error it prints the `details` that `logThrowable` exists to keep
-   * out of the logs. The catch here reports the failure to Sentry under this
-   * sweep's own fingerprint and logs it scrubbed, so a sweep that cannot start
-   * skips the tick loudly.
+   * `@ReportedCron` would still report a rejection, under `cron:<handler>`
+   * (#3498), so the catch is not what makes the failure visible. It names
+   * what failed: the failure reports under this sweep's own site, with a log
+   * line that says the tick was skipped and why.
    */
   @ReportedCron(CronExpression.EVERY_HOUR)
   async handleReportRetentionSweep(): Promise<void> {
@@ -524,9 +523,10 @@ export class ScheduledJobsService {
     // stability requirement applies: every tick that sees this poll before
     // it's claimed must compute the same key.
     //
-    // `expires_at` is caller-supplied and validated only as a string
-    // (`CreatePollDto` has no `@IsISO8601()`), so a malformed value reaching
-    // this far is possible. Guard explicitly
+    // `expires_at` is caller-supplied. `CreatePollDto` refuses one `Date`
+    // can't parse since #3498, but a row stored before then was validated
+    // only as a string, so a malformed value reaching this far is possible.
+    // Guard explicitly
     // rather than letting `toDateKey`'s `.toISOString()` throw a generic
     // `RangeError` the sweep's outer catch would log without naming the
     // cause — an unparseable date can never become parseable on a later

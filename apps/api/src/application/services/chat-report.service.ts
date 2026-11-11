@@ -403,7 +403,7 @@ export class ChatReportService {
         reportCaughtFailure(this.logger, {
           level: 'warning',
           site: 'chat-report-notify-officers-partial',
-          message: `${failed} of ${recipients.length} officers were not notified of chat report ${report.id}`,
+          message: `${failed} of ${recipients.length} officers were not notified of chat report ${report.id} in chapter ${chapterId}`,
           error: results.find(
             (r): r is PromiseRejectedResult => r.status === 'rejected',
           )?.reason,
