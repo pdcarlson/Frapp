@@ -83,6 +83,9 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useAccessibleChapters: () => ({ data: [], isSuccess: true }),
     useCurrentChapter: () => ({ data: mockChapter.value, isError: false }),
     useCurrentUser: () => ({ data: { display_name: "Paul Carlson" } }),
+    // The What's new host (#4043): the account hasn't answered.
+    useAccountWhatsNewSeen: () => ({ settled: false, seen: undefined }),
+    useRecordWhatsNewSeen: () => ({ mutate: () => {} }),
     useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
     useSearch: () => ({ data: undefined, isFetching: false }),
     useChannels: () => ({ data: mockChannels.value }),

@@ -80,6 +80,7 @@ export function useRecordWhatsNewSeen() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["user", "record-whats-new-seen"],
     mutationFn: async (version: string): Promise<WhatsNewSeen> => {
       const cached = queryClient.getQueryData<WhatsNewSeen>(
         whatsNewSeenQueryKey(),
