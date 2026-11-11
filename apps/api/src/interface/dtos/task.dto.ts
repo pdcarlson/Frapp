@@ -1,7 +1,6 @@
 import {
   ArrayMaxSize,
   IsArray,
-  IsBoolean,
   IsDateString,
   IsEnum,
   IsInt,
@@ -24,6 +23,7 @@ import {
   type Task,
   type TaskSubtask,
 } from '#domain/entities/task.entity';
+import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 
 export class CreateTaskDto {
   @ApiProperty()
@@ -192,7 +192,7 @@ export class CreateTaskSubtaskDto {
 
 export class UpdateTaskSubtaskDto {
   @ApiProperty({ description: 'True to check it off, false to uncheck it.' })
-  @IsBoolean()
+  @IsStrictBoolean()
   done: boolean;
 }
 

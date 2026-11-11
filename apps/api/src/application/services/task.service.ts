@@ -12,11 +12,7 @@ import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interf
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
-import type {
-  Task,
-  TaskSubtask,
-  TaskView,
-} from '#domain/entities/task.entity';
+import type { Task, TaskSubtask, TaskView } from '#domain/entities/task.entity';
 import { TaskStatus } from '#domain/entities/task.entity';
 import {
   TASK_SUBTASK_TITLE_MAX_LENGTH,
@@ -126,7 +122,7 @@ export class TaskService {
       throw new NotFoundException('Task not found');
     }
     const [view] = await this.withSubtasks(chapterId, [toDisplayStatus(task)]);
-    return view!;
+    return view;
   }
 
   /** Each task with its subtasks, in order (#4003). */
@@ -205,9 +201,9 @@ export class TaskService {
     const position =
       existing.reduce((max, row) => Math.max(max, row.position), -1) + 1;
     const [created] = await this.taskRepo.createSubtasks([
-      { task_id: taskId, chapter_id: chapterId, title: clean!, position },
+      { task_id: taskId, chapter_id: chapterId, title: clean, position },
     ]);
-    return created!;
+    return created;
   }
 
   /** An officer removes one of a task's subtasks (#4003). */
