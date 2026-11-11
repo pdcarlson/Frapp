@@ -5,7 +5,7 @@ import {
   SkeletonSectionLabel,
 } from "@/components/shared/page-skeletons";
 import { denseListClassName } from "@/components/shared/table-controls";
-import { ACTIVITY_FILTERS } from "@repo/hooks";
+import { ACTIVITY_FILTERS } from "@repo/hooks/activity-rows";
 
 /**
  * Rows per group (Needs you, Coming up, Links, Made by you), tapering the way
