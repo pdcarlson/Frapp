@@ -2,14 +2,20 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-const { roles } = vi.hoisted(() => ({
+const { roles, updateRole } = vi.hoisted(() => ({
   roles: {
     current: [] as Array<Record<string, unknown>>,
   },
+  updateRole: vi.fn(),
 }));
 
 vi.mock("@repo/hooks", () => ({
   useRoles: () => ({ data: roles.current, isPending: false, isError: false }),
+  useUpdateRole: () => ({ mutateAsync: updateRole, isPending: false }),
+}));
+
+vi.mock("@/lib/hooks/use-toast", () => ({
+  useToast: () => ({ toast: vi.fn() }),
 }));
 
 const { ModuleSettingsPage } = await import("./module-settings-page");
@@ -94,6 +100,79 @@ describe("a module page", () => {
     expect(
       within(list).getByRole("link", { name: /change in roles/i }),
     ).toHaveAttribute("href", "/settings?tab=roles");
+    // Read-only without roles:manage: no remove or add controls.
+    expect(within(list).queryByRole("button")).toBeNull();
+  });
+
+  it("lets a roles:manage holder take a permission from a role right there", async () => {
+    const user = userEvent.setup();
+    updateRole.mockReset().mockResolvedValue(undefined);
+    roles.current = [
+      { id: "p", name: "President", permissions: ["*"], display_order: 0 },
+      {
+        id: "s",
+        name: "Service Chair",
+        permissions: ["service:approve", "service:log"],
+        display_order: 3,
+      },
+    ];
+    render(
+      <ModuleSettingsPage
+        module={hours}
+        on
+        canManage
+        onToggle={vi.fn()}
+        tools={[]}
+        canSeeWhoCan
+        canEditRoles
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: /remove service chair from approve service/i,
+      }),
+    );
+    expect(updateRole).toHaveBeenCalledWith({
+      id: "s",
+      body: { permissions: ["service:log"] },
+    });
+  });
+
+  it("adds a role to a permission from a list it can filter, leaving the President out", async () => {
+    const user = userEvent.setup();
+    updateRole.mockReset().mockResolvedValue(undefined);
+    roles.current = [
+      { id: "p", name: "President", permissions: ["*"], display_order: 0 },
+      {
+        id: "t",
+        name: "Treasurer",
+        permissions: ["service:log"],
+        display_order: 2,
+      },
+      { id: "m", name: "Member", permissions: [], display_order: 9 },
+    ];
+    render(
+      <ModuleSettingsPage
+        module={hours}
+        on
+        canManage
+        onToggle={vi.fn()}
+        tools={[]}
+        canSeeWhoCan
+        canEditRoles
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: /add a role to approve service/i }),
+    );
+    expect(screen.queryByRole("option", { name: /president/i })).toBeNull();
+    await user.type(screen.getByPlaceholderText("Find a role"), "trea");
+    expect(screen.queryByRole("option", { name: "Member" })).toBeNull();
+    await user.click(screen.getByRole("option", { name: "Treasurer" }));
+    expect(updateRole).toHaveBeenCalledWith({
+      id: "t",
+      body: { permissions: ["service:log", "service:approve"] },
+    });
   });
 });
 

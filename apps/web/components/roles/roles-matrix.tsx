@@ -1,11 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useUpdateRole } from "@repo/hooks";
-import { cn, getErrorMessage, initials } from "@/lib/utils";
+import { useMemo } from "react";
+import { cn, initials } from "@/lib/utils";
 import { EYEBROW } from "@/components/ui/typography";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
-import { useToast } from "@/lib/hooks/use-toast";
+import { useRolePermissionToggle } from "@/components/roles/use-role-permission-toggle";
 import { groupPermissionsByModule, permissionLabel } from "@repo/validation";
 
 export type MatrixRole = {
@@ -38,9 +37,12 @@ type Props = {
 /**
  * Board `4e`: the roles × permissions matrix.
  *
- * **This is the one place permissions are edited**, which is the whole reason
- * the board draws it — "roles gate everything, so this is the one place they're
- * edited". What it replaces is two surfaces that disagreed about that:
+ * **This is where every permission is edited at once**, which is the whole
+ * reason the board draws it — "roles gate everything, so this is the one place
+ * they're edited". A module page's "Who can" (#4073) also edits that module's
+ * permissions in place, through the same writer (`useRolePermissionToggle`),
+ * since Paul asked for it on 2026-11-11. What the matrix replaced is two
+ * surfaces that disagreed about that:
  *
  * | Was | Why it went |
  * | --- | ----------- |
@@ -82,53 +84,10 @@ export function RolesMatrix({
   memberCounts,
   canManage,
 }: Props) {
-  const { toast } = useToast();
-  const updateRole = useUpdateRole();
-
-  /*
-   * **An optimistic overlay, and it is a correctness device, not polish.**
-   *
-   * `toggle` builds the next permission array from the `role.permissions` it
-   * was rendered with. `useUpdateRole`'s `onSuccess` fires
-   * `invalidateQueries` without returning it, so `mutateAsync` resolves
-   * *before* the refetched roles reach this component — which means two flips
-   * on the same role in quick succession would both start from the original
-   * array, and the second would silently drop the first. Board `4e` asks for
-   * exactly that workflow ("click flips and saves", swept across a role).
-   *
-   * So each flip records what it sent, subsequent flips read through it, and
-   * the entry is dropped once the server's own copy agrees. A failed flip
-   * drops its entry immediately, so the cell snaps back to the truth rather
-   * than showing a grant that never landed.
-   */
-  const [overlay, setOverlay] = useState<Record<string, string[]>>({});
-
-  // The cell in flight, for the focus ring board `4e` pin 2 draws on "the one
-  // being edited".
-  const [pending, setPending] = useState<{
-    roleId: string;
-    permission: string;
-  } | null>(null);
-
-  /*
-   * Reconciled during render rather than in an effect. An entry whose sent
-   * array now matches the server's is indistinguishable from no entry at all,
-   * so dropping it is a pure derivation — and doing it here means no
-   * `setState` in an effect, and no render where a stale entry could mask a
-   * change another officer made to the same role.
-   */
-  const liveOverlay = useMemo(() => {
-    if (Object.keys(overlay).length === 0) return overlay;
-    const next: Record<string, string[]> = {};
-    for (const role of roles) {
-      const sent = overlay[role.id];
-      if (sent && !sameMembers(sent, role.permissions)) next[role.id] = sent;
-    }
-    return next;
-  }, [overlay, roles]);
-
-  const permissionsOf = (role: MatrixRole) =>
-    liveOverlay[role.id] ?? role.permissions;
+  // Saved on click through the same writer a module page's "Who can" uses
+  // (#4073); the hook carries the overlay that keeps quick flips on one role
+  // from dropping each other.
+  const { toggle, pending } = useRolePermissionToggle(roles);
 
   const columns = useMemo(
     () =>
@@ -143,40 +102,6 @@ export function RolesMatrix({
   // marker that says every row is already granted. Rendering it would put a
   // permanently-locked row at the top of a table whose whole job is flipping.
   const groups = useMemo(() => groupPermissionsByModule(catalog), [catalog]);
-
-  async function toggle(role: MatrixRole, permission: string, held: boolean) {
-    const current = permissionsOf(role);
-    const next = held
-      ? current.filter((p) => p !== permission)
-      : [...current, permission];
-
-    setOverlay((prev) => ({ ...prev, [role.id]: next }));
-    setPending({ roleId: role.id, permission });
-    try {
-      await updateRole.mutateAsync({
-        id: role.id,
-        body: { permissions: next },
-      });
-    } catch (error) {
-      // Drop the overlay entry rather than leaving it to be reconciled: the
-      // write failed, so the server's copy is already the truth.
-      setOverlay((prev) => {
-        const reverted = { ...prev };
-        delete reverted[role.id];
-        return reverted;
-      });
-      toast({
-        title: `Couldn't update ${role.name}`,
-        description: getErrorMessage(
-          error,
-          "The permission was not changed. Try again in a moment.",
-        ),
-        variant: "destructive",
-      });
-    } finally {
-      setPending(null);
-    }
-  }
 
   // `200px repeat(N,1fr)` is the board's track list. It is an inline style
   // rather than a class because N is the chapter's role count — Tailwind cannot
@@ -370,11 +295,4 @@ export function RolesMatrix({
       </div>
     </div>
   );
-}
-
-/** Order-insensitive membership equality, for reconciling the overlay. */
-function sameMembers(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  const set = new Set(b);
-  return a.every((value) => set.has(value));
 }

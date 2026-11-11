@@ -717,6 +717,7 @@ function SettingsPageContent() {
                 }
                 tools={tools.filter((tool) => tool.page === module.key)}
                 canSeeWhoCan={canSeeWhoCan}
+                canEditRoles={can("roles:manage", permissions)}
                 focusSwitch={focusModuleKey === module.key}
                 onSwitchFocused={handleModuleFocused}
                 rules={

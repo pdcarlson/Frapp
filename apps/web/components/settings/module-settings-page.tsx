@@ -29,6 +29,8 @@ type Props = {
   rules?: ReactNode;
   /** Whether the viewer can read roles (`members:view`) for "Who can". */
   canSeeWhoCan: boolean;
+  /** Whether the viewer can change roles (`roles:manage`) from "Who can". */
+  canEditRoles?: boolean;
   /**
    * Focus the switch on mount: chat's ops-setup nudge (#492) lands an officer
    * here to turn the module on.
@@ -61,6 +63,7 @@ export function ModuleSettingsPage({
   tools,
   rules,
   canSeeWhoCan,
+  canEditRoles = false,
   focusSwitch = false,
   onSwitchFocused,
 }: Props) {
@@ -139,7 +142,11 @@ export function ModuleSettingsPage({
       {rules}
 
       {canSeeWhoCan ? (
-        <ModuleWhoCan moduleKey={module.key} moduleLabel={module.label} />
+        <ModuleWhoCan
+          moduleKey={module.key}
+          moduleLabel={module.label}
+          canEdit={canEditRoles}
+        />
       ) : null}
     </div>
   );

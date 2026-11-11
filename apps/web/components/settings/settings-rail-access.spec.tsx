@@ -71,6 +71,7 @@ vi.mock("@repo/hooks", () => ({
   usePatchOrgConfig: () => ({ mutateAsync: vi.fn(), isPending: false }),
   usePendingConfigKeys: () => new Set<string>(),
   useRoles: () => ({ data: [], isPending: false, isError: false }),
+  useUpdateRole: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
