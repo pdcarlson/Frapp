@@ -19,8 +19,8 @@ import type { ChatChapterLevel } from '@repo/validation';
 import { resolveLevelWithSource } from './push-rules';
 
 /**
- * A member's own chat notification levels: per channel (#296) and per message
- * kind (#500).
+ * A member's own chat notification levels: per channel (#296), per message
+ * kind (#500), and chapter-wide (#3840).
  *
  * Split out of `ChatService` (#1380). It shares nothing with the chat hot path
  * but the channel-access check, and it answers with the push worker's own
@@ -118,7 +118,7 @@ export class ChatNotificationPreferenceService {
     const preferences = [...channelRows, ...kindRows, ...chapterRows];
 
     // Delegated to the worker's own `resolveLevel` rather than reimplementing
-    // channel-pref ▶ kind-pref ▶ default here. The previous local version
+    // channel-pref ▶ kind-pref ▶ chapter-wide ▶ default here. The previous local version
     // silently fell out of step with the worker the moment the kind arm gained
     // a write path; sharing the function makes that class of drift structural
     // rather than something a reviewer has to notice.
@@ -153,7 +153,16 @@ export class ChatNotificationPreferenceService {
       userId,
       chapterId,
     );
-    return { level: rows[0]?.level === 'mentions' ? 'mentions' : 'all' };
+    const stored = rows[0]?.level;
+    // Only `mentions` is writable today. A stored `off` (the CHECK allows it,
+    // for a later "Off") must not read back as "All messages" while the
+    // worker silences every channel, so it fails loudly instead.
+    if (stored === undefined) return { level: 'all' };
+    if (stored === 'mentions') return { level: 'mentions' };
+    throw new Error(
+      `chat-prefs: chapter row for user ${userId} holds '${stored}', ` +
+        'which this API cannot report',
+    );
   }
 
   /**
@@ -199,7 +208,7 @@ export class ChatNotificationPreferenceService {
    * undo it short of the DELETE below.
    *
    * The effective level for a real message is the per-channel endpoint's
-   * answer, which resolves the full channel-pref ▶ kind-pref ▶ default chain
+   * answer, which resolves the full channel-pref ▶ kind-pref ▶ chapter-wide ▶ default chain
    * (in a DM a kind row counts only when louder than the DM's `all`).
    * This endpoint answers only "what have I overridden".
    *

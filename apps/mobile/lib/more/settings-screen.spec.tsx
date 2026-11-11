@@ -373,9 +373,16 @@ describe("Settings copy", () => {
   });
 
   it("names the chapter-wide chat level on its own row (#3840)", () => {
-    const text = screenText(render());
-    expect(text).toContain("Chat messages");
-    expect(text).toContain("All messages");
+    // Found by the row's own props: the sheet behind it also draws "Chat
+    // messages" and "All messages", so screen text alone would pass with the
+    // row deleted.
+    const row = render().root.find(
+      (node) =>
+        node.props.label === "Chat messages" &&
+        node.props.value === "All messages" &&
+        typeof node.props.onPress === "function",
+    );
+    expect(row.props.disabled).toBe(false);
   });
 
   it("gives an editor's accent row no narration, and no web footnote", () => {

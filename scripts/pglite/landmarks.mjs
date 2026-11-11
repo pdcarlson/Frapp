@@ -61,8 +61,10 @@ export const LANDMARKS = [
       /WHERE/i.test(rows[0].indexdef),
   },
   {
-    // Both plain unique indexes on chat_notification_preferences are ON CONFLICT
-    // targets for one arm each of the mute API, and neither can be replaced by
+    // The plain unique indexes on chat_notification_preferences are ON CONFLICT
+    // targets for one arm each of the mute API (the chapter arm's, #3840, is
+    // NULLS NOT DISTINCT because both its keys are NULL; the rest is about the
+    // channel and kind pair), and neither can be replaced by
     // the original expression index `idx_chat_notif_prefs_unique`: PostgREST's
     // `on_conflict` takes column names and cannot express its
     // `coalesce(scope_id::text, scope_kind)`. Nor can either substitute for the

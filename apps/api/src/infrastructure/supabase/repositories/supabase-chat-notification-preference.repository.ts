@@ -45,8 +45,8 @@ export class SupabaseChatNotificationPreferenceRepository implements IChatNotifi
   /**
    * Load every chat-pref row for a batch of users in one chapter, grouped by
    * user. The push worker decides per-message whether the channel-specific row
-   * or the kind-fallback row applies; loading both arms keeps the hot path
-   * cheap.
+   * or the kind-fallback row applies, or the chapter-wide row (#3840); loading
+   * every arm at once keeps the hot path cheap.
    *
    * This replaced a per-user `findForUser`, which `handleMessage` awaited once
    * per recipient inside its loop — ~150 round trips per message in a
@@ -332,7 +332,7 @@ export class SupabaseChatNotificationPreferenceRepository implements IChatNotifi
   }
 
   /**
-   * The shared body of the two scope-specific finders above. They differ only
+   * The shared body of the scope-specific finders. They differ only
    * in the `scope` literal, and jscpd flagged them as clones; the public
    * methods stay separate because their *contracts* differ (each is documented
    * against its own arm and its own caller), but the query lives once.

@@ -271,7 +271,7 @@ describe('ChatNotificationPreferenceService', () => {
       ]);
     });
 
-    /** Precedence is channel-pref ▶ kind-pref ▶ default, not the reverse. */
+    /** Precedence is channel-pref ▶ kind-pref ▶ chapter-wide ▶ default. */
     it('lets a channel-scoped row outrank a kind override', async () => {
       mockChatNotificationPrefs.findChannelPreferencesForUser.mockResolvedValue(
         [
@@ -565,6 +565,15 @@ describe('ChatNotificationPreferenceService', () => {
       await expect(
         notificationPreferences.getChapterChatLevel('chapter-1', 'user-1'),
       ).resolves.toEqual({ level: 'mentions' });
+    });
+
+    it('refuses to report a stored off as all', async () => {
+      mockChatNotificationPrefs.findChapterPreferencesForUser.mockResolvedValue(
+        [{ ...chapterRow, level: 'off' as never }],
+      );
+      await expect(
+        notificationPreferences.getChapterChatLevel('chapter-1', 'user-1'),
+      ).rejects.toThrow(/cannot report/);
     });
 
     it('stores mentions and deletes the row for all', async () => {

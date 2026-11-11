@@ -19,7 +19,7 @@ export type ChatNotificationLevel = (typeof CHAT_NOTIFICATION_LEVELS)[number];
  *
  * - `all`: "All messages", each channel at its own default.
  * - `mentions`: "Mentions and DMs only". Every ordinary channel acts as
- *   `mentions` (a quote reply counts as a mention, #4121); DMs, group DMs and
+ *   `mentions` (a reply counts as a mention, #3844); DMs, group DMs and
  *   the announcements channel keep notifying. A level the member set on one
  *   channel still wins.
  *
@@ -39,7 +39,8 @@ export const CHAT_CHAPTER_LEVEL_OPTIONS: readonly {
   {
     level: "all",
     label: "All messages",
-    description: "Each channel notifies as it's set, #general for every message.",
+    description:
+      "Each channel notifies as it's set, #general for every message.",
   },
   {
     level: "mentions",
@@ -51,7 +52,10 @@ export const CHAT_CHAPTER_LEVEL_OPTIONS: readonly {
 
 /** The short name for a level, as a settings row's value. */
 export function chatChapterLevelLabel(level: ChatChapterLevel): string {
-  return level === "mentions" ? "Mentions and DMs only" : "All messages";
+  return (
+    CHAT_CHAPTER_LEVEL_OPTIONS.find((option) => option.level === level)
+      ?.label ?? level
+  );
 }
 
 /** The channel fields the default reads. Structural, so any channel row fits. */

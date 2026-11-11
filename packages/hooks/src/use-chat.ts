@@ -358,8 +358,14 @@ export function useSetChannelNotificationLevel() {
   });
 }
 
-/** The member's chapter-wide chat level (#3840). Same scoping as the prefs key. */
-export const CHAPTER_CHAT_LEVEL_KEY = ["chapter-chat-level"] as const;
+/**
+ * The member's chapter-wide chat level (#3840), keyed by chapter: a write that
+ * resolves after a chapter switch lands on its own chapter's entry, never on
+ * the chapter now shown (`chapter-query-keys.ts` says why `clear()` is not
+ * enough).
+ */
+export const chapterChatLevelKeys =
+  createChapterQueryKeys("chapter-chat-level");
 
 /**
  * The member's chapter-wide chat level (#3840): `all` (each channel at its own
@@ -368,8 +374,9 @@ export const CHAPTER_CHAT_LEVEL_KEY = ["chapter-chat-level"] as const;
 export function useChapterChatLevel() {
   const client = useFrappClient();
   const scope = useChapterScope();
+  const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: CHAPTER_CHAT_LEVEL_KEY,
+    queryKey: chapterChatLevelKeys.chapter(chapterId ?? ""),
     queryFn: async () => {
       const { data, error } = await client.GET(
         "/v1/channels/notification-preferences/chapter",
@@ -378,7 +385,7 @@ export function useChapterChatLevel() {
       return (data as { level: ChatChapterLevel }).level;
     },
     staleTime: 60_000,
-    enabled: scope === "chapter",
+    enabled: scope === "chapter" && Boolean(chapterId),
   });
 }
 
@@ -389,25 +396,35 @@ export function useChapterChatLevel() {
 export function useSetChapterChatLevel() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
   return useMutation({
     mutationKey: ["channels", "set-chapter-chat-level"],
     mutationFn: async (level: ChatChapterLevel) => {
+      // The chapter the write is for, captured before the request leaves.
+      const forChapter = chapterId;
       const { data, error } = await client.PUT(
         "/v1/channels/notification-preferences/chapter",
         { body: { level } },
       );
       if (error) throw error;
-      return (data as { level: ChatChapterLevel }).level;
+      return { level: (data as { level: ChatChapterLevel }).level, forChapter };
     },
-    onSuccess: (level) => {
-      queryClient.setQueryData(CHAPTER_CHAT_LEVEL_KEY, level);
+    onSuccess: ({ level, forChapter }) => {
+      if (forChapter) {
+        queryClient.setQueryData(
+          chapterChatLevelKeys.chapter(forChapter),
+          level,
+        );
+      }
       void queryClient.invalidateQueries({
         queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,
       });
     },
     // Re-read rather than keep showing a level the server never stored.
     onError: () => {
-      void queryClient.invalidateQueries({ queryKey: CHAPTER_CHAT_LEVEL_KEY });
+      void queryClient.invalidateQueries({
+        queryKey: chapterChatLevelKeys.all,
+      });
     },
   });
 }

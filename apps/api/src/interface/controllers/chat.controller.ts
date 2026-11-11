@@ -194,7 +194,8 @@ export class ChatController {
 
   // Two segments, so `@Get(':id')` (a single segment) cannot swallow this the
   // way it would swallow a bare literal. Kept beside the channel-scoped read
-  // above because they answer the same question for the two scope arms, and a
+  // above because they answer the same question for the scope arms (the chapter-wide one is
+  // below), and a
   // reader looking for one should find the other.
   @Get('notification-preferences/kinds')
   @ApiOperation({
