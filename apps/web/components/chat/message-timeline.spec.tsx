@@ -1948,6 +1948,8 @@ describe("MessageTimeline rows on screen (#4186)", () => {
     );
 
     expect(onVisibleMessagesChange).not.toHaveBeenCalled();
+  });
+});
 
 describe("MessageTimeline thread cards (#4297)", () => {
   it("hands each card its own thread's new-reply count, by message id", () => {
