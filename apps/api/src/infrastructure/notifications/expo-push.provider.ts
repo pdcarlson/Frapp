@@ -71,6 +71,7 @@ const FALLBACK_BODY_BY_CATEGORY: Record<string, string> = {
   points: 'Points update',
   billing: 'Billing update',
   service: 'Service hours update',
+  members: 'New member',
   admin: 'Chapter update',
 };
 

@@ -93,6 +93,40 @@ export const CHAT_REPORT_QUEUE_PERMISSIONS = [
 ] as const;
 
 /**
+ * Who is told a member joined the chapter (#3656), and so who gets the
+ * "Someone joins the chapter" notification switch (#4008): whoever can open the roster the push
+ * links to (`members:view`) **and** can act on the join, by inviting more
+ * people (`members:invite`) or by giving the new member a role
+ * (`roles:manage`). Any one set admits a member; the wildcard admits all.
+ *
+ * **The one spelling**, so the push and the switch can't drift: a member shown
+ * a switch for a push they never get, or getting a push with no switch.
+ *
+ * Code that reads it:
+ *
+ * - who the API pushes about a join (`InviteService.redeem`, through
+ *   `RbacService.findUserIdsWithAnyPermissions`);
+ * - the `members` row of `NOTIFICATION_CATEGORIES`, whose `audience` is this
+ *   list, so `shownNotificationCategories` draws the switch only for them.
+ *
+ * Prose that restates it: the "New member joined" row of the trigger table in
+ * `spec/behavior/notifications.md`.
+ */
+export const MEMBER_JOINED_AUDIENCE: readonly (readonly string[])[] = [
+  ["members:view", "members:invite"],
+  ["members:view", "roles:manage"],
+];
+
+/** Does `permissions` satisfy every permission in at least one of `sets`? */
+export function canAllOfAny(
+  sets: readonly (readonly string[])[],
+  permissions: readonly string[] | null | undefined,
+): boolean {
+  if (!permissions || permissions.length === 0) return false;
+  return sets.some((set) => set.length > 0 && canAll(set, permissions));
+}
+
+/**
  * What it takes to edit the chapter's profile, accent and logo (#2575):
  * `chapter-config:view` **and** `chapter-config:manage`, or the wildcard. That
  * covers the name, university, donation URL and accent through

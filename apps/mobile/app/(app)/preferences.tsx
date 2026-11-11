@@ -397,7 +397,7 @@ export default function PreferencesScreen() {
       />
 
       <ListSection>
-        {shownNotificationCategories().map((category) => (
+        {shownNotificationCategories(permissions).map((category) => (
           // No description. The shared catalog carries one per category for
           // web's Profile card, but on the phone five two-line hints pushed
           // Account three screens down, and the labels say enough.

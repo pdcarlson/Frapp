@@ -116,10 +116,12 @@ export type ChatReportRemoval = ChatMessageReportView & {
  * screen is an accusation before anyone has reviewed it). The queue is where an
  * officer learns what was reported; this only says that something was.
  *
- * - **`admin` category**, not `chat`: this is chapter operations, like "new
- *   member joined", not a member's own messages. (The coarse Chat switch this
- *   once had to dodge is gone since 2026-11-06.) `admin` has no member-facing switch
- *   (`NOTIFICATION_CATEGORIES` in `@repo/validation` omits it on purpose).
+ * - **`admin` category**, not `chat`: this is moderation work, not a member's
+ *   own messages. (The coarse Chat switch this once had to dodge is gone since
+ *   2026-11-06.) `admin` has no member-facing switch, so an officer can't
+ *   silence reports by accident (`NOTIFICATION_CATEGORIES` in `@repo/validation`
+ *   omits it on purpose). "New member joined" shared it until #4008 moved it to
+ *   its own switchable `members` category.
  * - **NORMAL**, not URGENT: a report is not a chapter emergency, and NORMAL
  *   keeps quiet hours in force. URGENT is reserved for traffic a member may not
  *   mute at all (`spec/behavior/notifications.md` § Delivery Flow).

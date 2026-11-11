@@ -123,30 +123,34 @@ describe('SupabaseChatMessageActionRepository — tenant scope', () => {
     ).toEqual([ACTION_A, ACTION_B]);
   });
 
-  it('findActedMessageIds names only the messages asked about that this member acted on', async () => {
+  it('findActionsOnMessages names only the messages asked about that this member acted on', async () => {
     // The same voter has a vote in each chapter. Asking about chapter B's
     // message must not answer with chapter A's, and a message the member
     // never voted on is left out rather than guessed.
-    const ids = await repo.findActedMessageIds(
+    const rows = await repo.findActionsOnMessages(
       [MESSAGE_B, MISSING_MESSAGE],
       USER_SHARED,
       'vote',
     );
 
-    expect(ids).toEqual([MESSAGE_B]);
+    expect(rows.map((row) => row.message_id)).toEqual([MESSAGE_B]);
+    // The payload comes with it: the caller decides whether a row is a vote.
+    expect(rows[0]).toHaveProperty('payload');
   });
 
-  it('findActedMessageIds keys on the action type and the member', async () => {
+  it('findActionsOnMessages keys on the action type and the member', async () => {
     expect(
-      await repo.findActedMessageIds([MESSAGE_B], USER_SHARED, 'rsvp'),
+      await repo.findActionsOnMessages([MESSAGE_B], USER_SHARED, 'rsvp'),
     ).toEqual([]);
     expect(
-      await repo.findActedMessageIds([MESSAGE_B], MISSING_MESSAGE, 'vote'),
+      await repo.findActionsOnMessages([MESSAGE_B], MISSING_MESSAGE, 'vote'),
     ).toEqual([]);
   });
 
-  it('findActedMessageIds asks nothing for an empty list', async () => {
-    expect(await repo.findActedMessageIds([], USER_SHARED, 'vote')).toEqual([]);
+  it('findActionsOnMessages asks nothing for an empty list', async () => {
+    expect(await repo.findActionsOnMessages([], USER_SHARED, 'vote')).toEqual(
+      [],
+    );
     expect(harness.ops).toHaveLength(0);
   });
 });
