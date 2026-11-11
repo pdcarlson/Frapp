@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import userEvent from "@testing-library/user-event";
 
 // Shared spy so tests can assert the exact mutation payload the sheet sends.
 const updateRolesMutateAsync = vi.fn().mockResolvedValue({});
@@ -655,29 +656,72 @@ describe("MemberDetailSheet Message action", () => {
   });
 });
 
-// Every member can open this sheet, from the directory and from chat, so its
-// writes mirror the permissions the server checks on them.
-describe("MemberDetailSheet Remove member", () => {
-  it("is absent for a viewer without members:remove", () => {
-    mockPermissions.current = ["members:view", "roles:manage"];
-    renderProfile();
+// Removing a member sits behind the profile's ⋯, never on its face (Paul,
+// 2026-11-11), and only where the API says this viewer may remove this member
+// (`viewer_can_remove`: `members:remove`, not their own profile, and the
+// member ranks below them).
+describe("MemberDetailSheet Remove from chapter", () => {
+  const moreButton = () =>
+    screen.queryByRole("button", { name: "More for Jane Smith" });
+
+  it("draws no Remove button on the profile's face", () => {
+    renderProfile({ ...baseMember, viewer_can_remove: true });
     expect(
-      screen.queryByRole("button", { name: /Remove member/ }),
+      screen.queryByRole("button", { name: /Remove/ }),
     ).not.toBeInTheDocument();
   });
 
-  it("removes after confirming, for a viewer holding members:remove", async () => {
-    mockPermissions.current = ["members:view", "members:remove"];
+  it("draws no ⋯ when the API says this viewer may not remove them", () => {
+    renderProfile({ ...baseMember, viewer_can_remove: false });
+    expect(moreButton()).not.toBeInTheDocument();
+  });
+
+  it("draws no ⋯ for a profile read that says nothing about removal", () => {
+    renderProfile();
+    expect(moreButton()).not.toBeInTheDocument();
+  });
+
+  it("never offers it on your own profile", () => {
+    mockCurrentUserId.current = "u1";
+    renderProfile({ ...baseMember, viewer_can_remove: true });
+    expect(moreButton()).not.toBeInTheDocument();
+  });
+
+  it("removes from the ⋯ menu after confirming", async () => {
+    const user = userEvent.setup();
     removeMutateAsync.mockResolvedValue({});
     const onOpenChange = vi.fn();
-    renderProfile(baseMember, { onOpenChange });
+    renderProfile({ ...baseMember, viewer_can_remove: true }, { onOpenChange });
 
-    fireEvent.click(screen.getByRole("button", { name: /Remove member/ }));
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Remove from chapter" }),
+    await user.click(moreButton()!);
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Remove from chapter" }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Remove Jane Smith from the chapter?",
+    });
+    await user.click(
+      within(dialog).getByRole("button", { name: "Remove from chapter" }),
     );
 
     await waitFor(() => expect(removeMutateAsync).toHaveBeenCalledWith("m1"));
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("does nothing when the confirmation is cancelled", async () => {
+    const user = userEvent.setup();
+    removeMutateAsync.mockReset();
+    renderProfile({ ...baseMember, viewer_can_remove: true });
+
+    await user.click(moreButton()!);
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Remove from chapter" }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Remove Jane Smith from the chapter?",
+    });
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(removeMutateAsync).not.toHaveBeenCalled();
   });
 });

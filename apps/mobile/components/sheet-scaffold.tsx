@@ -262,13 +262,20 @@ export function SheetCloseButton({
  * A tall sheet's header row: an optional title and the close X. A record
  * sheet passes no title, because the record's own name heads the body (the
  * member sheet used to say "Member" above "Marcus Ellison").
+ *
+ * `actions` are the record's own icon controls (`IconButton`s), drawn just
+ * before the close, as web's `PanelHeader` draws them: the member sheet's `⋯`
+ * sits here, so what a viewer only now and then reaches for stays off the
+ * record's face (`components.md` § Chrome weight).
  */
 export function TallSheetHeader({
   title,
   onClose,
+  actions,
 }: {
   title?: string;
   onClose: () => void;
+  actions?: ReactNode;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -279,7 +286,10 @@ export function TallSheetHeader({
           {title}
         </Text>
       ) : null}
-      <SheetCloseButton onPress={onClose} />
+      <View style={styles.headerActions}>
+        {actions}
+        <SheetCloseButton onPress={onClose} />
+      </View>
     </View>
   );
 }
@@ -518,6 +528,10 @@ function createStyles(tokens: SignetTokens) {
     },
     headerRowEnd: {
       justifyContent: "flex-end",
+    },
+    headerActions: {
+      flexDirection: "row",
+      alignItems: "center",
     },
     title: {
       // TODO-DESIGN: Canvas draws the sheet title at 19px/700; `title` is 18/600.
