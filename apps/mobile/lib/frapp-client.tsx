@@ -8,6 +8,7 @@ import { useAuthSession } from "./auth-session";
 import { queryClient } from "./query-client";
 import { forgetDuesMemory } from "./dues/visit-memory";
 import { createRejectedSessionHandler } from "./rejected-session";
+import { createFreshAuthTokenReader } from "./fresh-auth-token";
 import { getSupabaseClient } from "./supabase";
 
 export { AUTH_TOKEN_STORAGE_KEY } from "./auth-token";
@@ -83,7 +84,13 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
       createFrappClient({
         // Bare origin — the generated SDK paths already carry `/v1`.
         baseUrl: process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3001",
-        getAuthToken: readAuthToken,
+        // The mirrored token, refreshed first when it is about to expire, so a
+        // foreground refetch never goes out with the token the OS let lapse
+        // in the background (#3907). `lib/fresh-auth-token.ts`.
+        getAuthToken: createFreshAuthTokenReader({
+          readToken: readAuthToken,
+          getSupabase: getSupabaseClient,
+        }),
         getChapterId: () => chapterIdRef.current,
         // Read once: a running process never changes its native build.
         clientVersion: readClientVersion(),

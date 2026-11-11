@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockState = vi.hoisted(() => ({
   chapterId: null as string | null,
+  supabase: null as unknown,
 }));
 
 vi.mock("./auth-session", () => ({
@@ -14,7 +15,9 @@ vi.mock("./auth-session", () => ({
 // Forces the store-build path: the suite-wide `expo-constants` mock in
 // `vitest.setup.ts` runs as Expo Go. The header value itself is
 // `client-version.spec.ts`'s.
-vi.mock("./supabase", () => ({ getSupabaseClient: () => null }));
+vi.mock("./supabase", () => ({
+  getSupabaseClient: () => mockState.supabase,
+}));
 vi.mock("./expo-go", () => ({ isExpoGo: () => false }));
 
 vi.mock("./auth-token", () => ({
@@ -39,6 +42,8 @@ vi.mock("@repo/hooks", () => ({
   markNotificationReadOnOpenMutationKey: ["notifications", "read", "on-open"],
 }));
 
+import { createFrappClient } from "@repo/api-sdk";
+import { readAuthToken } from "./auth-token";
 import { FrappProvider } from "./frapp-client";
 import { queryClient } from "./query-client";
 
@@ -69,6 +74,27 @@ function renderAt(chapterId: string | null) {
 beforeEach(() => {
   queryClient.clear();
   mockState.chapterId = null;
+  mockState.supabase = null;
+});
+
+describe("FrappProvider — API token (#3907)", () => {
+  it("refreshes a lapsed token before the SDK sends it", async () => {
+    // The mirror still holds the token the OS let lapse in the background.
+    const exp = Math.floor(Date.now() / 1000) - 3600;
+    const lapsed = `e30.${btoa(JSON.stringify({ exp }))}.sig`;
+    vi.mocked(readAuthToken).mockResolvedValue(lapsed);
+    const getSession = vi.fn(async () => ({
+      data: { session: { access_token: "fresh" } },
+      error: null,
+    }));
+    mockState.supabase = { auth: { getSession } };
+
+    renderAt("chapter-a");
+
+    const [config] = vi.mocked(createFrappClient).mock.calls.at(-1)!;
+    await expect(config.getAuthToken?.()).resolves.toBe("fresh");
+    expect(getSession).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("FrappProvider — chapter-switch cache drop", () => {

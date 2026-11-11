@@ -18,6 +18,17 @@ interface MessageAttachmentsProps {
   messageId: string;
   /** `message.attachment_count` — 0 means nothing is fetched. */
   count: number;
+  /**
+   * False while the message is still the sender's local copy (any `_status`
+   * but `confirmed`). That row's id is its `client_message_id`, and the server
+   * mints its own id, so there is no message to read the files from yet:
+   * asking answers 404 every time (#4095, FRAPP-WEB-8). Nothing is fetched,
+   * and the row names how many files it carries; its own chrome says whether
+   * it is sending or failed. The confirmed row that replaces it carries the
+   * server id and fetches then. Mobile gates the same way
+   * (`apps/mobile/components/chat/message-attachments.tsx`).
+   */
+  confirmed?: boolean;
 }
 
 /**
@@ -56,11 +67,24 @@ export function MessageAttachments({
   channelId,
   messageId,
   count,
+  confirmed = true,
 }: MessageAttachmentsProps) {
-  const query = useMessageAttachments(channelId, messageId, count > 0);
+  const query = useMessageAttachments(
+    channelId,
+    messageId,
+    count > 0 && confirmed,
+  );
   const openViewer = useOpenImageViewer();
 
   if (count === 0) return null;
+
+  if (!confirmed) {
+    return (
+      <p className="mt-1 text-caption text-muted-foreground">
+        {count === 1 ? "1 attachment" : `${count} attachments`}
+      </p>
+    );
+  }
 
   if (query.isPending) {
     return (

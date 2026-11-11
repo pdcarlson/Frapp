@@ -235,7 +235,7 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
    * (there is no dedicated column — see `idx_chat_messages_poll_expires_at`,
    * added by `20260902010000_poll_expiry_dispatch.sql` for this query), and
    * `chapter_id` isn't on `chat_messages` at all — both are read through the
-   * same `chat_channels!inner` embed `findPollsByChapter` filters through,
+   * same FK-named `chat_channels` embed `findPollsByChapter` filters through,
    * mirrored here as a lookup rather than a filter since the sweep runs
    * across every chapter at once.
    */
@@ -257,7 +257,7 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
         this.supabase
           .from('chat_messages')
           .select(
-            'id, channel_id, expires_at:metadata->>expires_at, chat_channels!inner(chapter_id)',
+            'id, channel_id, expires_at:metadata->>expires_at, chat_channels!chat_messages_channel_id_fkey!inner(chapter_id)',
           )
           .eq('type', 'POLL')
           .eq('is_deleted', false)
