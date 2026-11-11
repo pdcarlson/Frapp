@@ -546,7 +546,7 @@ The window is measured from the previous row, not from the run's first row. The 
 - **Web,** 36px tall (44 to a finger): the alert glyph at 14 (Lucide `CircleAlert`) and "1 important message" / "N important messages" in `--destructive-text` at 12.5 / 600, then "· Sender: first words…" in `--muted-foreground` at 400, cut to one line, then **Jump** with an up arrow in `--foreground`. The whole strip left of the × is one button; its hover deepens to `--destructive-tint-hover`. The × is an `IconButton`, "Dismiss important messages".
 - **Mobile,** 44pt tall: the alert glyph, the count in `destructiveText` at caption / 600, then **Show ↑** in `text.foreground`; no preview, since a phone has no room. The strip is one 44pt target, and the × its own 44pt target.
 - **Comparable:** Slack's "N new messages" bar under the channel header and Discord's "new messages since" bar, both of which jump you up and clear as you read; Microsoft Teams for the red Important mark.
-- **Implementation:** not yet built ([#4186](https://github.com/pdcarlson/Frapp/issues/4186)).
+- **Implementation:** web `ImportantStrip` in `apps/web/components/chat/important-strip.tsx`, placed by `chat-shell.tsx`; mobile `ImportantStrip` in `apps/mobile/components/chat/important-strip.tsx`, placed by `chat-thread.tsx`. Both draw from `useImportantMessages` in `@repo/hooks`, whose `importantStripLabel` holds the count's words.
 
 #### In-body mention chip
 

@@ -12,7 +12,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
+import { Virtuoso, type ListRange, type VirtuosoHandle } from "react-virtuoso";
 import { ErrorState, Skeleton } from "@/components/shared/async-states";
 import { Button } from "@/components/ui/button";
 import { useTapRevealedMessage } from "@/lib/hooks/use-tap-revealed-message";
@@ -487,6 +487,12 @@ export interface MessageTimelineProps {
   /** Opens a message's thread (#3785): Start thread, and the parent's chip. */
   onOpenThread?: (message: ChatMessage) => void;
   /**
+   * The ids of the messages drawn in the viewport, each time that set changes
+   * (#4186): what the Important strip counts as scrolled past. A blocked
+   * member's tombstone is left out, since its words aren't on screen.
+   */
+  onVisibleMessagesChange?: (messageIds: string[]) => void;
+  /**
    * Scrolls this timeline to the message a reply quotes — what the quote above
    * a reply does. It opened a Details-rail thread panel until #2142 deleted
    * both.
@@ -588,6 +594,7 @@ export const MessageTimeline = forwardRef<
     onUnreact,
     onReply,
     onOpenThread,
+    onVisibleMessagesChange,
     onJumpToParent,
     onRetry,
     onDiscard,
@@ -869,6 +876,34 @@ export const MessageTimeline = forwardRef<
     [isLoadingOlder, olderError, onLoadOlder, hasOlder, channelStart, header],
   );
 
+  // Virtuoso reports a range in its own index space, which `firstItemIndex`
+  // offsets; `decorated` is indexed from 0.
+  const visibleRange = useRef<ListRange | null>(null);
+  const reportVisible = useCallback(() => {
+    const range = visibleRange.current;
+    if (!onVisibleMessagesChange || !range) return;
+    const ids: string[] = [];
+    for (let i = range.startIndex; i <= range.endIndex; i++) {
+      const entry = decorated[i - firstItemIndex];
+      if (entry && entry.visibility !== "tombstone") {
+        ids.push(entry.message.id);
+      }
+    }
+    onVisibleMessagesChange(ids);
+  }, [decorated, firstItemIndex, onVisibleMessagesChange]);
+  const handleRangeChanged = useCallback(
+    (range: ListRange) => {
+      visibleRange.current = range;
+      reportVisible();
+    },
+    [reportVisible],
+  );
+  // The rows under an unchanged range can change too: a page landing, or a
+  // row leaving the hold.
+  useEffect(() => {
+    reportVisible();
+  }, [reportVisible]);
+
   useImperativeHandle(
     ref,
     () => ({
@@ -1036,6 +1071,7 @@ export const MessageTimeline = forwardRef<
           followOutput={holdFollow || (prepended && armed) ? false : "smooth"}
           initialTopMostItemIndex={Math.max(decorated.length - 1, 0)}
           atTopStateChange={handleAtTop}
+          rangeChanged={handleRangeChanged}
           // Holds the open on its newest row while rows above it grow: a photo
           // loading after the list settled (#3863).
           scrollerRef={stickToBottom.scrollerRef}

@@ -27,6 +27,7 @@ const virtuosoProps = vi.hoisted(() => ({
     atTopStateChange?: (atTop: boolean) => void;
     scrollerRef?: (element: HTMLElement | Window | null) => void;
     totalListHeightChanged?: (height: number) => void;
+    rangeChanged?: (range: { startIndex: number; endIndex: number }) => void;
   },
   // The handle's one method the timeline calls, for the cases that assert
   // where it scrolls.
@@ -72,6 +73,7 @@ vi.mock("react-virtuoso", async () => {
         atTopStateChange,
         scrollerRef,
         totalListHeightChanged,
+        rangeChanged,
         components,
         context,
       }: {
@@ -82,6 +84,10 @@ vi.mock("react-virtuoso", async () => {
         atTopStateChange?: (atTop: boolean) => void;
         scrollerRef?: (element: HTMLElement | Window | null) => void;
         totalListHeightChanged?: (height: number) => void;
+        rangeChanged?: (range: {
+          startIndex: number;
+          endIndex: number;
+        }) => void;
         components?: {
           Header?: (props: { context?: unknown }) => React.ReactNode;
         };
@@ -107,6 +113,7 @@ vi.mock("react-virtuoso", async () => {
         atTopStateChange,
         scrollerRef,
         totalListHeightChanged,
+        rangeChanged,
       };
       const Header = components?.Header;
       return (
@@ -1811,5 +1818,29 @@ describe("MessageTimeline Close poll wiring (#3794)", () => {
   it("gives the card no Close poll handler when the shell offers none", () => {
     renderTimeline([ownPoll()]);
     expect(screen.getByText("stub-poll-without-close")).toBeInTheDocument();
+  });
+});
+
+describe("MessageTimeline rows on screen (#4186)", () => {
+  it("reports the ids in the visible range, in Virtuoso's own index space", () => {
+    const onVisibleMessagesChange = vi.fn();
+    renderTimeline(
+      [
+        message({ id: "a", created_at: "2026-01-01T00:00:00Z" }),
+        message({ id: "b", created_at: "2026-01-01T00:01:00Z" }),
+        message({ id: "c", created_at: "2026-01-01T00:02:00Z" }),
+      ],
+      { onVisibleMessagesChange },
+    );
+    const first = virtuosoProps.current.firstItemIndex ?? 0;
+
+    act(() =>
+      virtuosoProps.current.rangeChanged?.({
+        startIndex: first + 1,
+        endIndex: first + 2,
+      }),
+    );
+
+    expect(onVisibleMessagesChange).toHaveBeenLastCalledWith(["b", "c"]);
   });
 });
