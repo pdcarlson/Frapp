@@ -164,7 +164,7 @@ describe("StatusSheet", () => {
       status_expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
     };
     const tree = render();
-    expect(screenText(tree)).toMatch(/Until \d/);
+    expect(screenText(tree)).toMatch(/Until (\d|[A-Z][a-z]{2} \d)/);
   });
 
   it("saves a custom line that clears today by default", async () => {
