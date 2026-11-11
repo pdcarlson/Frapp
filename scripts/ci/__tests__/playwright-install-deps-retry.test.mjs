@@ -22,12 +22,14 @@ const WORKFLOWS = join(
 );
 const CI_YML = join(WORKFLOWS, "ci.yml");
 const INSTALL_DEPS = "npx playwright install-deps chromium";
-const HASH_CHECK_DISABLE = /Check-Valid-Until\s*=\s*false|Acquire::https::Verify-Peer\s*=\s*false|--allow-unauthenticated|APT::Get::AllowUnauthenticated/i;
+const HASH_CHECK_DISABLE =
+  /Check-Valid-Until\s*=\s*false|Acquire::https::Verify-Peer\s*=\s*false|--allow-unauthenticated|APT::Get::AllowUnauthenticated/i;
 
 function jobBlock(text, jobId) {
   const lines = text.split("\n");
   const key = (l) => l.replace(/\s+$/, "");
-  const isHeader = (l) => /^ {2}["']?[a-zA-Z0-9_-]+["']?:(\s*#.*)?$/.test(key(l));
+  const isHeader = (l) =>
+    /^ {2}["']?[a-zA-Z0-9_-]+["']?:(\s*#.*)?$/.test(key(l));
   const start = lines.findIndex(
     (l) =>
       key(l)
@@ -80,6 +82,30 @@ describe("playwright install-deps retries apt Hash Sum mismatch", () => {
       /install-deps chromium\s*\|\|\s*true/,
       "a failed install-deps must fail the job, not be swallowed",
     );
+  });
+
+  it("installs cached OS debs before any apt, in both Playwright jobs", () => {
+    // 2026-11-11: an apt mirror DNS outage held every PR's Playwright jobs red
+    // for 12 minutes. A cache hit installs the saved .debs and never runs apt.
+    const text = readFileSync(CI_YML, "utf8");
+    for (const jobId of ["web-responsive-floor", "landing-fold"]) {
+      const block = jobBlock(text, jobId);
+      assert.ok(block, `ci.yml must still define ${jobId}`);
+      const restoreAt = block.indexOf("actions/cache/restore@");
+      const dpkgAt = block.indexOf("sudo dpkg -i");
+      const depsAt = block.indexOf(INSTALL_DEPS);
+      const saveAt = block.indexOf("actions/cache/save@");
+      assert.ok(
+        restoreAt !== -1 && restoreAt < dpkgAt,
+        `${jobId} restores the deb cache first`,
+      );
+      assert.ok(dpkgAt < depsAt, `${jobId} tries the cached debs before apt`);
+      assert.ok(depsAt < saveAt, `${jobId} saves what apt fetched`);
+      assert.match(
+        block,
+        /key: playwright-os-debs-\$\{\{ steps\.pw\.outputs\.image \}\}-/,
+      );
+    }
   });
 
   it("retries every workflow install-deps, or has none besides the floor job", () => {
