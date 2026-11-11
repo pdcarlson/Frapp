@@ -15,13 +15,20 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     // The row model is the real one (`activityGroups` and its tables).
     ACTIVITY_FILTERS: actual.ACTIVITY_FILTERS,
     ACTIVITY_SECTION_NAMES: actual.ACTIVITY_SECTION_NAMES,
+    activityBadgeIsAsk: actual.activityBadgeIsAsk,
     activityGroups: actual.activityGroups,
     activityKeys: actual.activityKeys,
+    activityNeedsYouHeadline: actual.activityNeedsYouHeadline,
+    activitySummary: actual.activitySummary,
     useActiveChapterId: () => "chap-1",
     useActivity: () => mockActivity(),
     useMyPermissions: () => mockPermissions(),
   };
 });
+// The chapter's module switch, unknown here: every tile shows.
+vi.mock("@/lib/hooks/use-chapter-module-gate", () => ({
+  useChapterModuleGate: () => undefined,
+}));
 vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ invalidateQueries: mockInvalidate }),
 }));
@@ -323,5 +330,141 @@ describe("ActivityPage", () => {
     });
     render(<ActivityPage />);
     expect(screen.getByText("link:Google Form:officer")).toBeInTheDocument();
+  });
+
+  it("leads with how much needs the member and a tile per ask, and a tile sets its chip", () => {
+    mockActivity.mockReturnValue(loaded());
+    render(<ActivityPage />);
+
+    expect(screen.getByText("2 things need you")).toBeInTheDocument();
+    const tiles = screen.getByRole("group", { name: "Needs you by kind" });
+    // A member: no confirm or approve tile.
+    expect(
+      within(tiles)
+        .getAllByRole("button")
+        .map((tile) => tile.textContent),
+    ).toEqual(["1Your tasks", "1Polls to vote on"]);
+
+    fireEvent.click(
+      within(tiles).getByRole("button", { name: /Polls to vote on/ }),
+    );
+    expect(screen.getByRole("button", { name: "Polls" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.queryByText("Book the venue")).not.toBeInTheDocument();
+
+    // Pressing the lit tile again clears it.
+    fireEvent.click(
+      within(tiles).getByRole("button", { name: /Polls to vote on/ }),
+    );
+    expect(screen.getByRole("button", { name: "All" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("gives an officer the confirm and approve tiles", () => {
+    mockPermissions.mockReturnValue({
+      data: { permissions: ["tasks:manage", "service:approve"] },
+    });
+    mockActivity.mockReturnValue(loaded());
+    render(<ActivityPage />);
+    const tiles = screen.getByRole("group", { name: "Needs you by kind" });
+    expect(
+      within(tiles).getByRole("button", { name: /To confirm/ }),
+    ).toBeInTheDocument();
+    expect(
+      within(tiles).getByRole("button", { name: /Hours to approve/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("says the member is all caught up when nothing waits on them", () => {
+    mockActivity.mockReturnValue(
+      loaded({
+        needs_you: {
+          tasks: [],
+          task_confirmations: [],
+          hours_approvals: [],
+          polls: [],
+        },
+        needs_you_count: 0,
+      }),
+    );
+    render(<ActivityPage />);
+    expect(screen.getByText("You're all caught up")).toBeInTheDocument();
+  });
+
+  it("draws an ask as the action, apart from a status badge", () => {
+    mockActivity.mockReturnValue(
+      loaded({
+        needs_you: {
+          tasks: [{ ...task, status: "OVERDUE", stored_status: "TODO" }],
+          task_confirmations: [],
+          hours_approvals: [],
+          polls: [poll],
+        },
+      }),
+    );
+    render(<ActivityPage />);
+    const vote = screen.getByText("Vote");
+    expect(vote.className).toContain("bg-accent-subtle");
+    const overdue = screen.getByText("Overdue");
+    expect(overdue.className).not.toContain("bg-accent-subtle");
+  });
+
+  it("splits Made by you by kind, and holds a long kind behind Show all", () => {
+    mockActivity.mockReturnValue(
+      loaded({
+        made_by_you: {
+          polls: [],
+          tasks: [1, 2, 3, 4, 5].map((n) => ({
+            ...task,
+            id: `m${n}`,
+            title: `Assigned ${n}`,
+          })),
+          files: [],
+          events: [],
+        },
+      }),
+    );
+    render(<ActivityPage />);
+    const made = screen.getByRole("region", { name: "Made by you" });
+    const part = within(made).getByRole("group", {
+      name: /Tasks you assigned/,
+    });
+    expect(within(part).getAllByRole("listitem")).toHaveLength(3);
+    fireEvent.click(within(part).getByRole("button", { name: "Show all 5" }));
+    expect(within(part).getAllByRole("listitem")).toHaveLength(5);
+    expect(
+      within(part).getByRole("button", { name: "Show fewer" }),
+    ).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("draws an event with its date beside it", () => {
+    mockActivity.mockReturnValue(
+      loaded({
+        coming_up: [
+          {
+            id: "e1",
+            name: "Chapter meeting",
+            location: "Great Room",
+            start_time: "2099-01-01T19:00:00.000Z",
+            end_time: "2099-01-01T20:00:00.000Z",
+            attendance: "optional",
+            point_value: 0,
+            check_in_opens_minutes: 10,
+            check_in_open: false,
+            checked_in: null,
+          },
+        ],
+      }),
+    );
+    render(<ActivityPage />);
+    const coming = screen.getByRole("region", { name: "Coming up" });
+    expect(
+      within(coming).getByTestId("activity-date-block"),
+    ).toBeInTheDocument();
+    expect(within(coming).getByText(/Great Room$/)).toBeInTheDocument();
   });
 });

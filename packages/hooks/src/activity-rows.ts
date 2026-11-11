@@ -1,9 +1,13 @@
 import type { components } from "@repo/api-sdk";
 import { TASK_CONFIRMED_LABEL, TASK_STATUS_LABELS } from "./task-card";
 import {
+  dayDelta,
   formatDueLabel,
   formatMinutesRounded,
   formatRelativeDayTime,
+  formatTimeOfDay,
+  parseInstant,
+  parseInstantOrBareLocalNoon,
 } from "@repo/formatting";
 
 export type Activity = components["schemas"]["ActivityDto"];
@@ -36,12 +40,53 @@ export type ActivityKind = Exclude<ActivityFilter, "all">;
 export type ActivityBadgeVariant =
   "outline" | "success" | "warning" | "destructive";
 
+/**
+ * The kind of thing a row is, drawn as the row's leading glyph so a member
+ * tells a task from a poll at a glance (#4173, the way Teams' Activity marks
+ * each row). `confirm` is a task waiting on the member's confirm, apart from
+ * their own tasks; an event row draws its date instead of a glyph.
+ */
+export type ActivityGlyph =
+  | "task"
+  | "confirm"
+  | "hours"
+  | "poll"
+  | "event"
+  | "document"
+  | "backwork"
+  | "link";
+
+/**
+ * An event row's date, for a calendar-style block beside the row (#4173):
+ * `weekday` "THU", `day` "12", `month` "NOV", and `detail`, the row's detail
+ * without the day, since the block says it.
+ */
+export interface ActivityDateBlock {
+  weekday: string;
+  day: string;
+  month: string;
+  detail: string;
+}
+
 interface RowBase {
   /** Unique on the page: the same task can sit under two groups. */
   key: string;
   title: string;
   detail: string;
+  /**
+   * `warning` is an ask (`Vote`, `Confirm`, `Approve`, `Check in`): what the
+   * member has to do, which a client may draw as an action rather than a
+   * status (`activityBadgeIsAsk`).
+   */
   badge: { label: string; variant: ActivityBadgeVariant } | null;
+  glyph: ActivityGlyph;
+  /** Set on an event row only. */
+  dateBlock: ActivityDateBlock | null;
+}
+
+/** Whether a row's badge asks the member to act, rather than naming a state. */
+export function activityBadgeIsAsk(row: Pick<ActivityRow, "badge">): boolean {
+  return row.badge?.variant === "warning";
 }
 
 /** One row of the page: what it shows, and the record it opens. */
@@ -55,12 +100,32 @@ export type ActivityRow = RowBase &
     | { kind: "link"; link: ActivityLink }
   );
 
+/**
+ * A run of rows inside a group, under its own small heading: "Now" and
+ * "Later" under Needs you, one per kind under Made by you (#4173). A group
+ * with one part draws it with no heading.
+ */
+export interface ActivityPart {
+  id: string;
+  /** `null` when the part is the whole group, so the group label says it. */
+  label: string | null;
+  rows: ActivityRow[];
+  /**
+   * How many rows to draw before a "Show all" (`null`: all of them). Lifted
+   * under a chip, where the member asked for that kind.
+   */
+  limit: number | null;
+}
+
 export interface ActivityGroup {
   id: "needs-you" | "coming-up" | "links" | "made-by-you";
   label: string;
   /** Said in place of the rows when the group has none. */
   empty: string;
+  /** Every row of the group, in order: the parts' rows end to end. */
   rows: ActivityRow[];
+  /** The rows split for drawing. Empty parts are left out. */
+  parts: ActivityPart[];
   /** Sections behind this group that could not be read this time. */
   unavailable: ActivitySection[];
 }
@@ -146,6 +211,8 @@ function pollRow(poll: ActivityPoll, group: string): ActivityRow {
       : poll.has_voted
         ? { label: "Voted", variant: "success" }
         : { label: "Vote", variant: "warning" },
+    glyph: "poll",
+    dateBlock: null,
   };
 }
 
@@ -187,6 +254,8 @@ function taskRow(
     title: task.title,
     detail: [who, due].filter(Boolean).join(" · "),
     badge,
+    glyph: role === "confirm" ? "confirm" : "task",
+    dateBlock: null,
   };
 }
 
@@ -203,6 +272,23 @@ function hoursRow(entry: ActivityHours): ActivityRow {
       .filter(Boolean)
       .join(" · "),
     badge: { label: "Approve", variant: "warning" },
+    glyph: "hours",
+    dateBlock: null,
+  };
+}
+
+function dateBlock(event: ActivityEvent): ActivityDateBlock | null {
+  const at = parseInstant(event.start_time);
+  if (!at) return null;
+  return {
+    weekday: at
+      .toLocaleDateString(undefined, { weekday: "short" })
+      .toUpperCase(),
+    day: String(at.getDate()),
+    month: at.toLocaleDateString(undefined, { month: "short" }).toUpperCase(),
+    detail: [formatTimeOfDay(event.start_time), event.location]
+      .filter(Boolean)
+      .join(" · "),
   };
 }
 
@@ -223,6 +309,8 @@ function eventRow(event: ActivityEvent, group: string): ActivityRow {
         : event.attendance === "required"
           ? { label: "Required", variant: "outline" }
           : null,
+    glyph: "event",
+    dateBlock: dateBlock(event),
   };
 }
 
@@ -237,6 +325,8 @@ function fileRow(file: ActivityFile): ActivityRow {
       formatRelativeDayTime(file.created_at),
     ].join(" · "),
     badge: null,
+    glyph: file.source === "document" ? "document" : "backwork",
+    dateBlock: null,
   };
 }
 
@@ -254,7 +344,54 @@ function linkRow(link: ActivityLink): ActivityRow {
       .filter(Boolean)
       .join(" · "),
     badge: null,
+    glyph: "link",
+    dateBlock: null,
   };
+}
+
+/** How many rows a part of Needs you draws before "Show all". */
+export const ACTIVITY_NEEDS_YOU_LIMIT = 5;
+/** How many of each kind Made by you draws before "Show all". */
+export const ACTIVITY_MADE_BY_YOU_LIMIT = 3;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Whether a "Needs you" row is for now rather than later (#4173): an event
+ * the member can check in to, anything waiting on their confirm or approval,
+ * a task overdue or due today or tomorrow, and a poll closing within a day.
+ * A poll with no closing time, and a task due later, is later.
+ */
+export function activityRowIsNow(row: ActivityRow, now: Date): boolean {
+  switch (row.kind) {
+    case "event":
+    case "hours":
+      return true;
+    case "task": {
+      if (row.glyph === "confirm" || row.task.status === "OVERDUE") {
+        return true;
+      }
+      const due = parseInstantOrBareLocalNoon(row.task.due_date);
+      return due === null || dayDelta(now, due) <= 1;
+    }
+    case "poll": {
+      const closes = row.poll.closes_at
+        ? parseInstant(row.poll.closes_at)
+        : null;
+      return closes !== null && closes.getTime() - now.getTime() <= DAY_MS;
+    }
+    default:
+      return false;
+  }
+}
+
+function part(
+  id: string,
+  label: string | null,
+  rows: ActivityRow[],
+  limit: number | null,
+): ActivityPart[] {
+  return rows.length === 0 ? [] : [{ id, label, rows, limit }];
 }
 
 /**
@@ -263,21 +400,27 @@ function linkRow(link: ActivityLink): ActivityRow {
  *
  * "Needs you" leads with what is most pressing: an event the member can check
  * in to right now, then tasks, confirmations, approvals and polls, each in the
- * order the read serves it. An event that needs a check-in is listed under
- * "Needs you" and not again under "Coming up".
+ * order the read serves it. It splits into Now and Later
+ * (`activityRowIsNow`). An event that needs a check-in is listed under
+ * "Needs you" and not again under "Coming up". "Made by you" draws one part
+ * per kind, a few rows each, so one busy kind doesn't bury the others.
  */
 export function activityGroups(
   activity: Activity,
   filter: ActivityFilter,
+  now: Date = new Date(),
 ): ActivityGroup[] {
   const down = new Set(activity.unavailable);
+  const filtered = filter !== "all";
   const keep = (rows: ActivityRow[]) =>
-    filter === "all" ? rows : rows.filter((row) => row.kind === filter);
+    filtered ? rows.filter((row) => row.kind === filter) : rows;
   const downFor = (sections: ActivitySection[], kinds: ActivityKind[]) =>
     sections.filter(
       (section, index) =>
-        down.has(section) && (filter === "all" || filter === kinds[index]),
+        down.has(section) && (!filtered || filter === kinds[index]),
     );
+  // Under a chip the member asked for that kind, so nothing is held back.
+  const cap = (limit: number) => (filtered ? null : limit);
 
   const checkInNow = activity.coming_up.filter(
     (event) => event.check_in_open && !event.checked_in,
@@ -286,22 +429,56 @@ export function activityGroups(
     (event) => !(event.check_in_open && !event.checked_in),
   );
 
+  const needs = keep([
+    ...checkInNow.map((event) => eventRow(event, "needs")),
+    ...activity.needs_you.tasks.map((task) => taskRow(task, "needs", "mine")),
+    ...activity.needs_you.task_confirmations.map((task) =>
+      taskRow(task, "needs-confirm", "confirm"),
+    ),
+    ...activity.needs_you.hours_approvals.map(hoursRow),
+    ...activity.needs_you.polls.map((poll) => pollRow(poll, "needs")),
+  ]);
+  const needsNow = needs.filter((row) => activityRowIsNow(row, now));
+  const needsLater = needs.filter((row) => !activityRowIsNow(row, now));
+
+  const coming = keep(later.map((event) => eventRow(event, "coming")));
+  const links = keep(activity.links.map(linkRow));
+
+  const madePolls = keep(
+    activity.made_by_you.polls.map((poll) => pollRow(poll, "made")),
+  );
+  const madeEvents = keep(
+    activity.made_by_you.events.map((event) => eventRow(event, "made")),
+  );
+  const madeTasks = keep(
+    activity.made_by_you.tasks.map((task) => taskRow(task, "made", "assigned")),
+  );
+  const madeFiles = keep(activity.made_by_you.files.map(fileRow));
+
   return [
     {
       id: "needs-you",
       label: "Needs you",
       empty: "Nothing is waiting on you.",
-      rows: keep([
-        ...checkInNow.map((event) => eventRow(event, "needs")),
-        ...activity.needs_you.tasks.map((task) =>
-          taskRow(task, "needs", "mine"),
-        ),
-        ...activity.needs_you.task_confirmations.map((task) =>
-          taskRow(task, "needs-confirm", "confirm"),
-        ),
-        ...activity.needs_you.hours_approvals.map(hoursRow),
-        ...activity.needs_you.polls.map((poll) => pollRow(poll, "needs")),
-      ]),
+      rows: [...needsNow, ...needsLater],
+      // One part draws with no heading: "Now" over every row says nothing.
+      parts:
+        needsNow.length > 0 && needsLater.length > 0
+          ? [
+              ...part("now", "Now", needsNow, cap(ACTIVITY_NEEDS_YOU_LIMIT)),
+              ...part(
+                "later",
+                "Later",
+                needsLater,
+                cap(ACTIVITY_NEEDS_YOU_LIMIT),
+              ),
+            ]
+          : part(
+              "all",
+              null,
+              [...needsNow, ...needsLater],
+              cap(ACTIVITY_NEEDS_YOU_LIMIT),
+            ),
       unavailable: downFor(
         ["tasks", "hours_approvals", "polls", "coming_up"],
         ["task", "hours", "poll", "event"],
@@ -311,7 +488,8 @@ export function activityGroups(
       id: "coming-up",
       label: "Coming up",
       empty: "No events in the next two weeks.",
-      rows: keep(later.map((event) => eventRow(event, "coming"))),
+      rows: coming,
+      parts: part("all", null, coming, null),
       unavailable: downFor(["coming_up"], ["event"]),
     },
     {
@@ -321,7 +499,8 @@ export function activityGroups(
       label: "Links",
       empty:
         "Sign-up forms, sheets and booking links posted in your channels show up here.",
-      rows: keep(activity.links.map(linkRow)),
+      rows: links,
+      parts: part("all", null, links, null),
       unavailable: downFor(["links"], ["link"]),
     },
     {
@@ -329,18 +508,131 @@ export function activityGroups(
       label: "Made by you",
       empty:
         "Polls you post, events you make, tasks you assign and files you upload show up here.",
-      rows: keep([
-        ...activity.made_by_you.polls.map((poll) => pollRow(poll, "made")),
-        ...activity.made_by_you.events.map((event) => eventRow(event, "made")),
-        ...activity.made_by_you.tasks.map((task) =>
-          taskRow(task, "made", "assigned"),
+      rows: [...madePolls, ...madeEvents, ...madeTasks, ...madeFiles],
+      parts: [
+        ...part(
+          "polls",
+          "Polls you posted",
+          madePolls,
+          cap(ACTIVITY_MADE_BY_YOU_LIMIT),
         ),
-        ...activity.made_by_you.files.map(fileRow),
-      ]),
+        ...part(
+          "events",
+          "Events you made",
+          madeEvents,
+          cap(ACTIVITY_MADE_BY_YOU_LIMIT),
+        ),
+        ...part(
+          "tasks",
+          "Tasks you assigned",
+          madeTasks,
+          cap(ACTIVITY_MADE_BY_YOU_LIMIT),
+        ),
+        ...part(
+          "files",
+          "Files you uploaded",
+          madeFiles,
+          cap(ACTIVITY_MADE_BY_YOU_LIMIT),
+        ),
+      ],
       unavailable: downFor(
         ["polls", "made_events", "tasks", "files"],
         ["poll", "event", "task", "file"],
       ),
     },
   ];
+}
+
+/** One count tile at the top of the page (#4173). */
+export interface ActivityTile {
+  id: "check-in" | "tasks" | "confirm" | "approve" | "polls";
+  label: string;
+  count: number;
+  /** The chip a tap on the tile sets. */
+  filter: ActivityKind;
+}
+
+export interface ActivitySummary {
+  /** Everything waiting on the member, counted before the list cap. */
+  needsYou: number;
+  tiles: ActivityTile[];
+  /** The soonest event still ahead, for "Next up". */
+  nextEvent: ActivityEvent | null;
+}
+
+/**
+ * The top of the page: how much is waiting, a tile per kind of ask, and the
+ * next event (#4173; Apple Reminders' count tiles, Linear's inbox zero).
+ *
+ * The confirm and approve tiles show only to a member who can confirm tasks
+ * or approve hours, since nobody else is ever asked to; a module the chapter
+ * has off shows no tile. The check-in tile shows only while an event is open
+ * for check-in, since it is rare and time-bound.
+ */
+export function activitySummary(
+  activity: Activity,
+  options: {
+    canConfirmTasks: boolean;
+    canApproveHours: boolean;
+    /** The chapter's module switch; omit while it is unknown to show all. */
+    isModuleEnabled?: (module: string) => boolean;
+  },
+  now: Date = new Date(),
+): ActivitySummary {
+  const on = (module: string) => options.isModuleEnabled?.(module) ?? true;
+  const checkIn = activity.coming_up.filter(
+    (event) => event.check_in_open && !event.checked_in,
+  ).length;
+  const tiles: ActivityTile[] = [];
+  if (checkIn > 0) {
+    tiles.push({
+      id: "check-in",
+      label: "Check in now",
+      count: checkIn,
+      filter: "event",
+    });
+  }
+  if (on("tasks")) {
+    tiles.push({
+      id: "tasks",
+      label: "Your tasks",
+      count: activity.needs_you.tasks.length,
+      filter: "task",
+    });
+    if (options.canConfirmTasks) {
+      tiles.push({
+        id: "confirm",
+        label: "To confirm",
+        count: activity.needs_you.task_confirmations.length,
+        filter: "task",
+      });
+    }
+  }
+  if (on("hours") && options.canApproveHours) {
+    tiles.push({
+      id: "approve",
+      label: "Hours to approve",
+      count: activity.needs_you.hours_approvals.length,
+      filter: "hours",
+    });
+  }
+  if (on("polls")) {
+    tiles.push({
+      id: "polls",
+      label: "Polls to vote on",
+      count: activity.needs_you.polls.length,
+      filter: "poll",
+    });
+  }
+  const nextEvent =
+    activity.coming_up.find((event) => {
+      const start = parseInstant(event.start_time);
+      return start !== null && start.getTime() > now.getTime();
+    }) ?? null;
+  return { needsYou: activity.needs_you_count, tiles, nextEvent };
+}
+
+/** "8 things need you", "1 thing needs you". */
+export function activityNeedsYouHeadline(count: number): string {
+  return count === 1 ? "1 thing needs you" : `${count} things need you`;
 }

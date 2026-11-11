@@ -587,6 +587,24 @@ Two of the swaps were corrections rather than a pack change, in §6.2.4's sense:
   that the state family's glyphs migrate with a pass over
   `components/shared/**`, not with a screen family.
 
+### 6.2.5a Activity rows (Signet duotone)
+
+Since #4173 (2026-11-11) every `/activity` row leads with a 40px neutral tile
+holding its kind's glyph at 20px in `--muted-foreground`
+([`apps/web/components/activity/activity-row-lead.tsx`](../../../apps/web/components/activity/activity-row-lead.tsx)),
+or, for an event, its weekday and day in place of a glyph. The glyphs are
+the nav set's (§1.1), so a row draws the shape of the place its record lives.
+They stay neutral: the page's colour is for asks and status.
+
+| Row kind | Shape (nav set key, Phosphor name) |
+|---|---|
+| Your task, a task you assigned | `tasks`, `seal-check` |
+| A task waiting on your confirm | `confirm`, `check-circle` (added for it) |
+| Hours to approve | `service`, `hand-heart` |
+| Poll | `polls`, `chart-bar` |
+| Document, backwork | `documents`, `file-text`; `backwork`, `books` |
+| Sign-up link | `link`, `link` (added for it) |
+
 ### 6.2.6 Settings & Roles (Signet duotone) — no family file, deliberately
 
 The #920 Settings & Roles slice is the one family that ships **no

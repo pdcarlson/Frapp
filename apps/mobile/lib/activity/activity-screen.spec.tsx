@@ -196,9 +196,11 @@ describe("Activity screen (#3897)", () => {
 
   it("lists what needs the member first, then what they made, each group with its count", () => {
     const tree = render();
+    // Hours to approve is for now, the task due far off for later
+    // (`activityRowIsNow`, #4173), so the approval leads.
     expect(rowLabels(tree)).toEqual([
-      "Book the venue",
       "Food bank",
+      "Book the venue",
       "Bylaws",
       "CS 101 midterm",
     ]);

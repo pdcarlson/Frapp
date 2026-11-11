@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  activityBadgeIsAsk,
   activityGroups,
   activityLinkKind,
+  activityNeedsYouHeadline,
+  activityRowIsNow,
+  activitySummary,
   type Activity,
 } from "./activity-rows";
 
@@ -405,6 +409,250 @@ describe("activityGroups", () => {
     expect(
       activityGroups(data, "link").find((g) => g.id === "links")!.unavailable,
     ).toEqual(["links"]);
+  });
+});
+
+describe("Now and Later, and Made by you by kind (#4173)", () => {
+  // Wednesday 11 November 2026, midday local time.
+  const NOW = new Date(2026, 10, 11, 12, 0, 0);
+  const partsOf = (
+    data: Activity,
+    filter: Parameters<typeof activityGroups>[1] = "all",
+  ) =>
+    Object.fromEntries(
+      activityGroups(data, filter, NOW).map((group) => [
+        group.id,
+        group.parts.map((part) => ({
+          label: part.label,
+          titles: part.rows.map((row) => row.title),
+          limit: part.limit,
+        })),
+      ]),
+    );
+
+  it("puts what is due today or tomorrow, overdue, or waiting on a confirm or approval under Now", () => {
+    const data = activity({
+      needs_you: {
+        tasks: [
+          task({ id: "a", title: "Due tomorrow", due_date: "2026-11-12" }),
+          task({ id: "b", title: "Due next week", due_date: "2026-11-18" }),
+          task({
+            id: "c",
+            title: "Overdue",
+            status: "OVERDUE",
+            due_date: "2026-11-02",
+          }),
+        ],
+        task_confirmations: [
+          task({
+            id: "d",
+            title: "Confirm me",
+            status: "COMPLETED",
+            stored_status: "COMPLETED",
+          }),
+        ],
+        hours_approvals: [],
+        polls: [
+          poll({
+            message_id: "p1",
+            question: "Closes tonight",
+            closes_at: "2026-11-11T23:00:00",
+          }),
+          poll({ message_id: "p2", question: "Open-ended", closes_at: null }),
+        ],
+      },
+    });
+    expect(partsOf(data)["needs-you"]).toEqual([
+      {
+        label: "Now",
+        titles: ["Due tomorrow", "Overdue", "Confirm me", "Closes tonight"],
+        limit: 5,
+      },
+      { label: "Later", titles: ["Due next week", "Open-ended"], limit: 5 },
+    ]);
+  });
+
+  it("draws Needs you as one part with no heading when everything is now, or everything later", () => {
+    const data = activity({
+      needs_you: {
+        tasks: [task({ due_date: "2026-11-30" })],
+        task_confirmations: [],
+        hours_approvals: [],
+        polls: [],
+      },
+    });
+    expect(partsOf(data)["needs-you"]).toEqual([
+      { label: null, titles: ["Book the venue"], limit: 5 },
+    ]);
+  });
+
+  it("splits Made by you by kind, a few rows each, and leaves out an empty kind", () => {
+    const data = activity({
+      made_by_you: {
+        polls: [poll({ question: "Shirt color" })],
+        events: [],
+        tasks: [1, 2, 3, 4].map((n) =>
+          task({ id: `t${n}`, title: `Task ${n}` }),
+        ),
+        files: [],
+      },
+    });
+    expect(partsOf(data)["made-by-you"]).toEqual([
+      { label: "Polls you posted", titles: ["Shirt color"], limit: 3 },
+      {
+        label: "Tasks you assigned",
+        titles: ["Task 1", "Task 2", "Task 3", "Task 4"],
+        limit: 3,
+      },
+    ]);
+  });
+
+  it("holds nothing back under a chip, where the member asked for that kind", () => {
+    const data = activity({
+      made_by_you: {
+        polls: [],
+        events: [],
+        tasks: [1, 2, 3, 4].map((n) =>
+          task({ id: `t${n}`, title: `Task ${n}` }),
+        ),
+        files: [],
+      },
+    });
+    expect(partsOf(data, "task")["made-by-you"]?.[0]?.limit).toBeNull();
+  });
+
+  it("keeps a group's rows as its parts end to end", () => {
+    const data = activity({
+      needs_you: {
+        tasks: [
+          task({ id: "a", title: "Later one", due_date: "2026-11-30" }),
+          task({ id: "b", title: "Now one", due_date: "2026-11-11" }),
+        ],
+        task_confirmations: [],
+        hours_approvals: [],
+        polls: [],
+      },
+    });
+    const needs = activityGroups(data, "all", NOW)[0]!;
+    expect(needs.rows.map((row) => row.title)).toEqual(
+      needs.parts.flatMap((p) => p.rows.map((row) => row.title)),
+    );
+  });
+
+  it("gives each row its kind's glyph, and an event a date block whose detail leaves the day to the block", () => {
+    const data = activity({
+      needs_you: {
+        tasks: [task()],
+        task_confirmations: [task({ id: "c" })],
+        hours_approvals: [],
+        polls: [],
+      },
+      coming_up: [event({ start_time: "2026-11-12T17:00:00" })],
+    });
+    const groups = activityGroups(data, "all", NOW);
+    expect(groups[0]!.rows.map((row) => row.glyph)).toEqual([
+      "confirm",
+      "task",
+    ]);
+    const coming = groups[1]!.rows[0]!;
+    expect(coming.glyph).toBe("event");
+    expect(coming.dateBlock).toMatchObject({ day: "12" });
+    expect(coming.dateBlock?.detail).toMatch(/Great Room$/);
+    expect(coming.dateBlock?.detail).not.toMatch(/Tomorrow/);
+    expect(groups[0]!.rows.every((row) => row.dateBlock === null)).toBe(true);
+  });
+
+  it("calls a warning badge an ask, and nothing else", () => {
+    expect(
+      activityBadgeIsAsk({ badge: { label: "Vote", variant: "warning" } }),
+    ).toBe(true);
+    expect(
+      activityBadgeIsAsk({
+        badge: { label: "Overdue", variant: "destructive" },
+      }),
+    ).toBe(false);
+    expect(activityBadgeIsAsk({ badge: null })).toBe(false);
+  });
+
+  it("counts an event open for check-in as now", () => {
+    const data = activity({
+      coming_up: [event({ check_in_open: true, checked_in: false })],
+    });
+    const row = activityGroups(data, "all", NOW)[0]!.rows[0]!;
+    expect(activityRowIsNow(row, NOW)).toBe(true);
+  });
+});
+
+describe("activitySummary (#4173)", () => {
+  const NOW = new Date(2026, 10, 11, 12, 0, 0);
+  const data = activity({
+    needs_you: {
+      tasks: [task(), task({ id: "t2" })],
+      task_confirmations: [task({ id: "c1" })],
+      hours_approvals: [{ id: "h1" }, { id: "h2" }, { id: "h3" }],
+      polls: [],
+    },
+    coming_up: [
+      event({ id: "past", name: "Started", start_time: "2026-11-11T11:00:00" }),
+      event({
+        id: "next",
+        name: "Exec sync",
+        start_time: "2026-11-12T17:00:00",
+      }),
+    ],
+    needs_you_count: 6,
+  });
+
+  it("gives an officer a tile per ask, and the next event still ahead", () => {
+    const summary = activitySummary(
+      data,
+      { canConfirmTasks: true, canApproveHours: true },
+      NOW,
+    );
+    expect(summary.needsYou).toBe(6);
+    expect(
+      summary.tiles.map((tile) => [tile.id, tile.count, tile.filter]),
+    ).toEqual([
+      ["tasks", 2, "task"],
+      ["confirm", 1, "task"],
+      ["approve", 3, "hours"],
+      ["polls", 0, "poll"],
+    ]);
+    expect(summary.nextEvent?.name).toBe("Exec sync");
+  });
+
+  it("shows a member no confirm or approve tile, and no tile for a module that is off", () => {
+    const summary = activitySummary(
+      data,
+      {
+        canConfirmTasks: false,
+        canApproveHours: false,
+        isModuleEnabled: (module) => module !== "polls",
+      },
+      NOW,
+    );
+    expect(summary.tiles.map((tile) => tile.id)).toEqual(["tasks"]);
+  });
+
+  it("adds a check-in tile first, only while an event is open for check-in", () => {
+    const open = activity({
+      coming_up: [event({ check_in_open: true, checked_in: false })],
+    });
+    const summary = activitySummary(
+      open,
+      { canConfirmTasks: false, canApproveHours: false },
+      NOW,
+    );
+    expect(summary.tiles[0]).toMatchObject({
+      id: "check-in",
+      count: 1,
+      filter: "event",
+    });
+  });
+
+  it("says how many things need you in words", () => {
+    expect(activityNeedsYouHeadline(1)).toBe("1 thing needs you");
+    expect(activityNeedsYouHeadline(8)).toBe("8 things need you");
   });
 });
 
