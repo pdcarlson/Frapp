@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-11: Links on Activity (#3897)
+
+### 20261111030000_activity_links.sql
+
+- **Purpose**: Gathers sign-up links posted in chat onto Activity. Adds `chat_channels.activity_excluded` (boolean, not null, default false; "Leave out of Activity"). Adds `activity_action_links(text)`, an immutable SQL function: the URLs in a message body on a sign-up host (Google Forms, Sheets and Docs; Microsoft Forms, `forms.cloud.microsoft` included; Typeform; SignUpGenius; Calendly), never a URL with userinfo before its host, the one copy of that list. Adds `chat_message_links` (one row per such link per message, with the message's `thread_root_id` and an officer's `removed_at` / `removed_by`) and `chat_link_member_states` (a member's `done` or `hidden`), both RLS on with no policies. Two triggers on `chat_messages`, `chat_messages_index_links` (after insert, only when the body has a URL) and `chat_messages_reindex_links` (after an update that changes `content`, `is_deleted` or `sender_id`, so a Discord author link or detach moves the links' poster), keep the index in step with every write path. A failure there raises a warning and never fails the message. Redefines `anonymize_user` in full from `20261110220000_chat_message_threads.sql` with one added line deleting the member's `chat_link_member_states`. Backfills the last 30 days of messages, the window Activity reads. The rule is [`spec/behavior/activity.md` § Links](../../../spec/behavior/activity.md#links).
+- **Checks**: After `db push`, `select count(*) from chat_message_links;` returns the backfilled count (zero on a chapter with no such link in 30 days), `select url from activity_action_links('see https://forms.gle/abc.');` returns `https://forms.gle/abc`, `select count(*) from chat_channels where activity_excluded;` returns `0`, and `select prosrc like '%chat_link_member_states%' from pg_proc where proname = 'anonymize_user';` returns `t`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API ignores the new column, tables and triggers; the triggers start indexing at once, which nothing reads until the newer API ships. The newer API against an unmigrated database serves Activity's links section as unavailable and fails the link routes and the channel setting. The backfill reads only 30 days of `chat_messages`; it is one pass over `chat_messages` filtered on `created_at`, with no lock beyond reads. Adding a constant-default column is metadata-only. `if not exists`, `create or replace`, `drop trigger if exists` and `on conflict do nothing` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-links-on-activity-20261111030000) § Rollback Links on Activity.
+
 ## 2026-11-11: Events record their maker (#3897)
 
 ### 20261111020000_events_created_by.sql
