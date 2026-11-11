@@ -1,103 +1,172 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { workflowFiles } from "./helpers/workflow-yaml.mjs";
+import { join } from "node:path";
+import {
+  ACTION_DIR,
+  WORKFLOW_DIR,
+  actionFiles,
+  usesLocalAction,
+  workflowFiles,
+  workflowSteps,
+} from "./helpers/workflow-yaml.mjs";
 
-// Pins the install-deps retry AND dropping GitHub's unused chrome apt
-// source. That source Hash-Sum-mismatches and reds required
-// `web-responsive-floor` before the 375px suite runs. The watchdog will
-// not auto-requeue: the failed step is repo-defined. Do not skip apt
-// hash checks and do not pin Chrome apt. The workflow step itself landed
-// on main with #2015; this lock is what keeps it from drifting.
+// Pins how the two required Playwright jobs get Chromium's OS packages, in
+// .github/actions/playwright-os-deps. The Ubuntu apt mirrors have failed
+// these jobs three ways: Hash Sum mismatches on Google's unused chrome source
+// (#2015), a two-hour hang (#3129), and a DNS outage on 2026-11-11 that held
+// every PR red. So the action installs cached .debs, asks Playwright's own
+// offline check whether anything is still missing, and goes to apt (dropping
+// the chrome source, retrying) only when it is. Do not skip apt hash checks
+// and do not pin Chrome apt.
 
-const WORKFLOWS = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "..",
-  "..",
-  ".github",
-  "workflows",
-);
-const CI_YML = join(WORKFLOWS, "ci.yml");
+const ACTION = join(ACTION_DIR, "playwright-os-deps", "action.yml");
 const INSTALL_DEPS = "npx playwright install-deps chromium";
-const HASH_CHECK_DISABLE = /Check-Valid-Until\s*=\s*false|Acquire::https::Verify-Peer\s*=\s*false|--allow-unauthenticated|APT::Get::AllowUnauthenticated/i;
+const DRY_RUN = "npx playwright install-deps --dry-run chromium";
+const HASH_CHECK_DISABLE =
+  /Check-Valid-Until\s*=\s*false|Acquire::https::Verify-Peer\s*=\s*false|--allow-unauthenticated|APT::Get::AllowUnauthenticated/i;
+const JOBS = {
+  "web-responsive-floor": "npm run test:floor -w apps/web",
+  "landing-fold": "npm run test:fold -w apps/landing",
+};
 
-function jobBlock(text, jobId) {
-  const lines = text.split("\n");
-  const key = (l) => l.replace(/\s+$/, "");
-  const isHeader = (l) => /^ {2}["']?[a-zA-Z0-9_-]+["']?:(\s*#.*)?$/.test(key(l));
-  const start = lines.findIndex(
-    (l) =>
-      key(l)
-        .replace(/\s*#.*$/, "")
-        .replace(/^( {2})["'](.+)["']:$/, "$1$2:") === `  ${jobId}:`,
+function at(text, needle, from = 0) {
+  const i = text.indexOf(needle, from);
+  assert.notEqual(
+    i,
+    -1,
+    `playwright-os-deps must contain ${JSON.stringify(needle)}`,
   );
-  if (start === -1) return null;
-  let end = lines.length;
-  for (let i = start + 1; i < lines.length; i++) {
-    if (isHeader(lines[i])) {
-      end = i;
-      break;
-    }
-  }
-  return lines.slice(start, end).join("\n");
+  return i;
 }
 
-function dropsChromeSourceAndRetries(text) {
-  return (
-    /google-chrome\.list/.test(text) &&
-    /for i in 1 2 3;/.test(text) &&
-    /\bsleep 20\b/.test(text) &&
-    text.includes(INSTALL_DEPS)
-  );
-}
+describe("Playwright OS deps install without the apt mirrors when it can", () => {
+  const text = readFileSync(ACTION, "utf8");
 
-describe("playwright install-deps retries apt Hash Sum mismatch", () => {
-  it("retries install-deps in web-responsive-floor and still runs the floor suite", () => {
-    const text = readFileSync(CI_YML, "utf8");
-    const block = jobBlock(text, "web-responsive-floor");
-    assert.ok(block, "ci.yml must still define web-responsive-floor");
-    assert.ok(
-      dropsChromeSourceAndRetries(block),
-      "web-responsive-floor must drop google-chrome.list and retry install-deps 3 times",
+  it("tries the cached packages and Playwright's offline check before any apt", () => {
+    const restore = at(text, "actions/cache/restore@");
+    const offline = at(text, "apt-get install -y --no-download", restore);
+    const check = at(text, DRY_RUN, offline);
+    // The hit path must end at the check, or every run still reaches the mirrors.
+    assert.match(
+      text,
+      /if check="\$\(npx playwright install-deps --dry-run chromium 2>&1\)"; then\n(?:[^\n]*\n){2}\s*exit 0\n\s*fi\n/,
     );
-    const depsAt = block.indexOf(INSTALL_DEPS);
-    const floorAt = block.indexOf("npm run test:floor -w apps/web");
-    assert.notEqual(floorAt, -1, "the 375px floor assertion must still run");
     assert.ok(
-      depsAt < floorAt,
-      "install-deps must still precede test:floor so a successful retry measures routes",
+      check < at(text, INSTALL_DEPS, check),
+      "apt comes only after the check",
+    );
+    assert.match(
+      text,
+      /dpkg-query -W[^\n]*\n[^\n]*todo\+=/,
+      "only packages the image lacks are installed, so nothing is downgraded",
+    );
+  });
+
+  it("falls back to apt with the chrome source dropped and three tries", () => {
+    const check = at(text, DRY_RUN);
+    const apt = at(text, INSTALL_DEPS, check);
+    assert.ok(at(text, "google-chrome.list", check) < apt);
+    assert.match(text, /for i in 1 2 3;[\s\S]*\bsleep 20\b/);
+    assert.match(
+      text,
+      /if npx playwright install-deps chromium; then\n\s*break\n/,
     );
     assert.doesNotMatch(
-      block,
+      text,
       HASH_CHECK_DISABLE,
       "do not skip apt hash checks or pin Chrome apt",
     );
     assert.doesNotMatch(
-      block,
+      text,
       /install-deps chromium\s*\|\|\s*true/,
-      "a failed install-deps must fail the job, not be swallowed",
+      "a failed apt install must fail the job",
     );
   });
 
-  it("retries every workflow install-deps, or has none besides the floor job", () => {
-    const files = workflowFiles();
-    const hits = [];
-    for (const name of files) {
-      const text = readFileSync(join(WORKFLOWS, name), "utf8");
-      if (!text.includes(INSTALL_DEPS)) continue;
-      hits.push(name);
-      assert.ok(
-        dropsChromeSourceAndRetries(text),
-        `${name} runs install-deps and must drop chrome-stable then retry`,
+  it("caches what apt fetched under the key it restores", () => {
+    const apt = at(text, INSTALL_DEPS, at(text, DRY_RUN));
+    assert.ok(at(text, 'cp "${fetched[@]}" "$DEBS/"', apt) > apt);
+    const save = at(text, "actions/cache/save@");
+    assert.match(
+      text.slice(save - 120, save),
+      /if: steps\.restore\.outputs\.cache-hit != 'true'/,
+    );
+    const keys = [...text.matchAll(/^\s+key: (.+)$/gm)].map((m) => m[1].trim());
+    assert.deepEqual(keys, [
+      "${{ steps.key.outputs.key }}",
+      "${{ steps.key.outputs.key }}",
+    ]);
+    assert.match(
+      text,
+      /key=playwright-os-debs-\$\{ImageOS:-unknown\}-\$\{version\}-\$\{ImageVersion:-unknown\}/,
+    );
+  });
+
+  it("goes without only fonts when apt is down, and never caches that", () => {
+    // Chromium needs every library; a missing font changes no launch. Anything
+    // but fonts still fails the job after three tries.
+    assert.match(text, /grep -qvE '\^x\?fonts-'/);
+    const helper = at(text, "without_fonts() {");
+    assert.ok(
+      helper < at(text, 'echo "save=false" >> "$GITHUB_OUTPUT"', helper),
+    );
+    // A dead mirror is caught by one bounded probe before apt, and a failed
+    // attempt never reaches the third try when only fonts are missing.
+    const probe = at(text, "curl -sS -o /dev/null --max-time 15");
+    assert.ok(probe < at(text, INSTALL_DEPS, probe));
+    assert.match(
+      text.slice(probe),
+      /^\s*if \[ "\$fonts_only" = true \]; then without_fonts; fi$/m,
+    );
+    const loop = at(text, "for i in 1 2 3;");
+    assert.ok(
+      at(text, 'if [ "$fonts_only" = true ]; then without_fonts; fi', loop) <
+        at(text, 'if [ "$i" -eq 3 ]; then', loop),
+    );
+    assert.match(
+      text,
+      /if: steps\.restore\.outputs\.cache-hit != 'true' && steps\.install\.outputs\.save != 'false'/,
+    );
+  });
+
+  it("is what both Playwright jobs run, bounded, before their suites", () => {
+    const steps = workflowSteps(join(WORKFLOW_DIR, "ci.yml"));
+    for (const [jobId, suite] of Object.entries(JOBS)) {
+      const own = steps.filter((step) => step.jobId === jobId);
+      const callsAction = usesLocalAction("playwright-os-deps");
+      const deps = own.findIndex((step) =>
+        step.body.split("\n").some((line) => callsAction.test(line)),
       );
+      const tests = own.findIndex((step) => step.body.includes(suite));
+      assert.notEqual(
+        deps,
+        -1,
+        `${jobId} must install OS deps through playwright-os-deps`,
+      );
+      assert.notEqual(tests, -1, `${jobId} must still run ${suite}`);
+      assert.ok(deps < tests, `${jobId} installs OS deps before ${suite}`);
+      assert.match(own[deps].body, /^\s+timeout-minutes:\s*\d+\s*$/m);
     }
+  });
+
+  it("has no other install-deps consumer", () => {
+    const hits = [
+      ...workflowFiles()
+        .filter((name) =>
+          readFileSync(join(WORKFLOW_DIR, name), "utf8").includes(
+            "playwright install-deps",
+          ),
+        )
+        .map((name) => `workflows/${name}`),
+      ...actionFiles()
+        .filter((a) => a.text.includes("playwright install-deps"))
+        .map((a) => `actions/${a.name}`),
+    ];
     assert.deepEqual(
       hits,
-      ["ci.yml"],
-      "unexpected extra install-deps consumer — give it the retry or drop it",
+      ["actions/playwright-os-deps"],
+      "route it through playwright-os-deps",
     );
   });
 });

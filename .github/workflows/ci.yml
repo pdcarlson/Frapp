@@ -843,30 +843,13 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
 
-      # Drop Google's apt source, whose Hash Sum mismatches retries can't absorb. OS deps
-      # aren't in the browser cache, so never skip this on a hit or `|| true` it.
+      # Cached .debs first, apt only when Playwright's own check finds a package
+      # missing: .github/actions/playwright-os-deps. Never skip this on a browser
+      # cache hit or `|| true` it, since OS deps aren't in the browser cache.
       - name: Install Playwright OS deps
         # Hung for two hours on 2026-10-01 (#3129); fails a hang before the job timeout.
         timeout-minutes: 10
-        run: |
-          sudo rm -f /etc/apt/sources.list.d/google-chrome.list \
-            /etc/apt/sources.list.d/google-chrome.list.save \
-            /etc/apt/sources.list.d/google-chrome.sources \
-            /etc/apt/sources.list.d/google.list
-          for i in 1 2 3; do
-            if npx playwright install-deps chromium; then
-              exit 0
-            fi
-            if [ "$i" -eq 3 ]; then
-              echo "::error::playwright install-deps failed after 3 attempts (see prior apt output)."
-              exit 1
-            fi
-            echo "Attempt $i/3 failed — retrying in 20s..."
-            sudo rm -rf /var/lib/apt/lists/* || true
-            sleep 20
-          done
-          echo "::error::playwright install-deps retry loop ended without success."
-          exit 1
+        uses: ./.github/actions/playwright-os-deps
 
       - name: Install Playwright browser
         if: steps.pw-cache.outputs.cache-hit != 'true'
@@ -912,29 +895,13 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
 
-      # Same apt workaround as web-responsive-floor, pinned by playwright-install-deps-retry.test.mjs.
+      # Cached .debs first, apt only when Playwright's own check finds a package
+      # missing: .github/actions/playwright-os-deps. Never skip this on a browser
+      # cache hit or `|| true` it, since OS deps aren't in the browser cache.
       - name: Install Playwright OS deps
         # Hung for two hours on 2026-10-01 (#3129); fails a hang before the job timeout.
         timeout-minutes: 10
-        run: |
-          sudo rm -f /etc/apt/sources.list.d/google-chrome.list \
-            /etc/apt/sources.list.d/google-chrome.list.save \
-            /etc/apt/sources.list.d/google-chrome.sources \
-            /etc/apt/sources.list.d/google.list
-          for i in 1 2 3; do
-            if npx playwright install-deps chromium; then
-              exit 0
-            fi
-            if [ "$i" -eq 3 ]; then
-              echo "::error::playwright install-deps failed after 3 attempts (see prior apt output)."
-              exit 1
-            fi
-            echo "Attempt $i/3 failed — retrying in 20s..."
-            sudo rm -rf /var/lib/apt/lists/* || true
-            sleep 20
-          done
-          echo "::error::playwright install-deps retry loop ended without success."
-          exit 1
+        uses: ./.github/actions/playwright-os-deps
 
       - name: Install Playwright browser
         if: steps.pw-cache.outputs.cache-hit != 'true'
