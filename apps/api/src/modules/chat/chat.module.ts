@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ChatService } from '../../application/services/chat.service';
 import { ChatAttachmentService } from '../../application/services/chat-attachment.service';
 import { ChatNotificationPreferenceService } from '../../application/services/chat-notification-preference.service';
+import { ChannelAccessListService } from '../../application/services/channel-access-list.service';
 import { ChatCategoryService } from '../../application/services/chat-category.service';
 import { ChatReactionService } from '../../application/services/chat-reaction.service';
 import { ChatBookmarkService } from '../../application/services/chat-bookmark.service';
@@ -125,6 +126,9 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
     // Step 2 (#1380): channel categories, and reactions/actions on a message.
     // Neither is on the send path; both are called only by `ChatController`.
     ChatCategoryService,
+    // Who can see and post in each channel (#3722): the lists' checks and
+    // the editor's options.
+    ChannelAccessListService,
     // The chapter's channel and category order (owner, 2026-11-11).
     ChatChannelOrderService,
     ChatReactionService,

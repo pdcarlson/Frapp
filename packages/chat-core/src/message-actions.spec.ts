@@ -115,8 +115,13 @@ describe("channelAllowsReplies", () => {
     );
   });
 
-  it("refuses them in #announcements even to someone who may post there", () => {
+  // #3722: a quote reply is a post, so whoever may post may quote, in a
+  // channel with a who-can-post list too.
+  it("allows them to a poster in a channel with a who-can-post list", () => {
     expect(channelAllowsReplies({ can_post: true, is_read_only: true })).toBe(
+      true,
+    );
+    expect(channelAllowsReplies({ can_post: false, is_read_only: true })).toBe(
       false,
     );
   });

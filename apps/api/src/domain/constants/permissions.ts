@@ -4,7 +4,6 @@ import {
   RUSH_MEMBER_PERMISSIONS,
   type PermissionDefinition,
 } from '@repo/validation';
-import { ANNOUNCEMENTS_POST_PERMISSION } from '../utils/channel-access';
 
 export const WILDCARD = '*';
 
@@ -33,10 +32,10 @@ export const SystemPermissions = {
   CHANNELS_CREATE: 'channels:create',
   CHANNELS_MANAGE: 'channels:manage',
 
-  // The posting gate on read-only channels is `canAccessChannel`
-  // (`domain/utils/channel-access.ts`), which owns the value; this entry puts
-  // it in the catalog.
-  ANNOUNCEMENTS_POST: ANNOUNCEMENTS_POST_PERMISSION,
+  // Gated the read-only post check until #3722; a channel's who can post
+  // decides that now, and a chapter's existing posters were carried into
+  // those lists. Still in the catalog until the registry drops it (#4286).
+  ANNOUNCEMENTS_POST: 'announcements:post',
 
   BILLING_VIEW: 'billing:view',
   BILLING_MANAGE: 'billing:manage',
@@ -75,10 +74,9 @@ export const SystemPermissions = {
   CHAPTER_CONFIG_VIEW: 'chapter-config:view',
   CHAPTER_CONFIG_MANAGE: 'chapter-config:manage',
 
-  // Marks a ROLE_GATED channel as one the Alumni lifecycle may author in. Held
-  // by the Alumni role, but the posting gate reads it off the *channel's*
-  // `required_permissions` — see `ALUMNI_CHANNEL_PERMISSION` in
-  // `@repo/validation`, which owns the value.
+  // Held by the Alumni role. Marked a ROLE_GATED channel alumni could post in
+  // until #3722; chat reads the channel's lists now (`isAlumniPostableChannel`).
+  // `ALUMNI_CHANNEL_PERMISSION` in `@repo/validation` owns the value.
   ALUMNI_POST: ALUMNI_CHANNEL_PERMISSION,
 } as const;
 
@@ -296,16 +294,31 @@ export const DEFAULT_SYSTEM_ROLES = SEEDED_ROLES.map((role) => ({
 }));
 
 /**
+ * Who a seeded channel's list names (#3722), resolved against the new
+ * chapter's own rows when it is created: `null` is everyone (who can see it,
+ * for a post list), `tiers` are positions in {@link STARTING_ROLE_TIERS}
+ * (0 is the highest), `alumni` adds the Alumni role. An empty `tiers` with no
+ * Alumni is nobody: only the President's `*` passes it.
+ */
+export type SeededChannelAccess = {
+  tiers: readonly number[];
+  alumni?: boolean;
+} | null;
+
+/**
  * Channels seeded on chapter creation.
  *
- * `required_permissions` is persisted verbatim by `ChapterService.create`. It
- * is meaningful only for ROLE_GATED channels — `canAccessChannel` denies a
- * ROLE_GATED channel whose requirement list is empty, so every ROLE_GATED entry
- * here MUST carry a non-empty list or the seeded channel is unreachable.
+ * Who can see and who can post are lists of the new chapter's tiers and roles
+ * (#3722), which `ChapterService.create` resolves from the rows it just made
+ * and writes with `type` and `is_read_only` to match:
  *
- * `#alumni` requires `members:view` (held by every seeded role, so active
- * members and alumni both keep the read access `spec/behavior/alumni.md`
- * specifies) plus `alumni:post`, which is what marks it alumni-writable.
+ * - `#announcements`: officers post (the top two starting tiers), everyone
+ *   reads. Before #3722 it took `announcements:post`, which no seeded role
+ *   held, so only the President could post in a new chapter.
+ * - `#chapter-audit`: everyone reads, nobody posts. The audit flag (#3909)
+ *   refuses every member's write anyway; the empty list says so in the data.
+ * - `#alumni`: every starting tier and the Alumni role read and post, which
+ *   is what lets alumni post there (`spec/behavior/alumni.md`).
  *
  * `description` is the line the channel header shows beside the name and the
  * channel start repeats ("Welcome to #general"). Officers edit it in Chat
@@ -319,16 +332,14 @@ export const DEFAULT_CHANNELS = [
   {
     name: 'general',
     description: "The whole chapter. Plans, questions, whatever's going on.",
-    type: 'PUBLIC',
-    is_read_only: false,
-    required_permissions: null,
+    who_can_see: null,
+    who_can_post: null,
   },
   {
     name: 'announcements',
     description: 'News from officers. Everyone gets notified.',
-    type: 'PUBLIC',
-    is_read_only: true,
-    required_permissions: null,
+    who_can_see: null,
+    who_can_post: { tiers: [0, 1] },
   },
   // System-write, member-read audit feed. The Chunk 02 audit bridge and the
   // onboarding welcome message post system_audit messages here / to #general.
@@ -336,21 +347,22 @@ export const DEFAULT_CHANNELS = [
     name: 'chapter-audit',
     description:
       'Officer changes to dues, roles and settings, posted automatically.',
-    type: 'PUBLIC',
-    is_read_only: true,
     // System-write only (#3909): no member posts here, whatever their
-    // permissions, and the audit mirror finds the channel by this flag.
+    // roles, and the audit mirror finds the channel by this flag.
     is_audit_log: true,
-    required_permissions: null,
+    who_can_see: null,
+    who_can_post: { tiers: [] },
   },
   {
     name: 'alumni',
     description: 'Alumni and actives keeping in touch.',
-    type: 'ROLE_GATED',
-    is_read_only: false,
-    required_permissions: [
-      SystemPermissions.MEMBERS_VIEW,
-      SystemPermissions.ALUMNI_POST,
-    ],
+    who_can_see: { tiers: [0, 1, 2, 3], alumni: true },
+    who_can_post: null,
   },
-] as const;
+] as const satisfies readonly {
+  name: string;
+  description: string;
+  is_audit_log?: boolean;
+  who_can_see: SeededChannelAccess;
+  who_can_post: SeededChannelAccess;
+}[];

@@ -18,7 +18,7 @@ export interface SearchChannelAccessRow {
   id: string;
   type: ChannelType;
   member_ids: string[] | null;
-  required_permissions: string[] | null;
+  who_can_see: string[] | null;
 }
 
 /** What a message can be asked to carry (`has=` on `GET /v1/search`). */

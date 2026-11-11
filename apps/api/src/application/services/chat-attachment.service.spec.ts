@@ -7,6 +7,7 @@ import {
 import * as Sentry from '@sentry/nestjs';
 import { MAX_UPLOAD_BYTES } from '@repo/validation';
 import type { ReportedAttachment } from '#domain/entities/chat-moderation.entity';
+import { EMPTY_ACCESS_HOLDER } from '#domain/utils/channel-access';
 import { ChatAttachmentService } from './chat-attachment.service';
 import {
   baseChannel,
@@ -987,10 +988,15 @@ describe('ChatAttachmentService', () => {
      * object had already been handed out.
      */
     describe('refuses to sign before authorizing (#2186)', () => {
-      it('denies a read-only channel to a caller without announcements:post', async () => {
+      it('denies a read-only channel to a caller not on its who-can-post list', async () => {
         mockChannelRepo.findById.mockResolvedValue({
           ...baseChannel,
           is_read_only: true,
+          who_can_post: ['tier:00000000-0000-4000-8000-0000000071e1'],
+        });
+        mockRbac.getChannelAccessHolder.mockResolvedValue({
+          ...EMPTY_ACCESS_HOLDER,
+          entries: new Set(['role:00000000-0000-4000-8000-0000000000aa']),
         });
 
         await expect(
@@ -1029,7 +1035,12 @@ describe('ChatAttachmentService', () => {
       });
 
       it('denies an alumni member in an operational channel', async () => {
-        mockRbac.hasAlumniRole.mockResolvedValue(true);
+        const alumni = 'role:00000000-0000-4000-8000-0000000a1a11';
+        mockRbac.getChannelAccessHolder.mockResolvedValue({
+          entries: new Set([alumni]),
+          wildcard: false,
+          alumniEntries: new Set([alumni]),
+        });
 
         await expect(
           attachments.requestChatUploadUrl(

@@ -1,6 +1,5 @@
 import { ConflictException, ForbiddenException } from '@nestjs/common';
 import type { DiscordImport } from '#domain/entities/discord-import.entity';
-import { canAccessChannel } from '#domain/utils/channel-access';
 import {
   CHAPTER,
   GUILD,
@@ -394,24 +393,15 @@ describe('DiscordImportRoleMappingService — Discord roles gate private channel
 
       const [, , rows] = repo.replaceChannels.mock.calls[0];
       expect(rows[0].new_channel_is_read_only).toBe(false);
-      // The worker creates the channel from exactly these fields.
-      const channel = {
-        type: rows[0].new_channel_type,
-        member_ids: null,
-        required_permissions: rows[0].new_channel_required_permissions,
-        is_read_only: rows[0].new_channel_is_read_only,
-      };
-      const rushChair = {
-        channel,
-        userId: 'member-1',
-        isChapterMember: true,
-        permissions: ['channels:read:rush-chair'],
-      };
-      expect(canAccessChannel({ ...rushChair, operation: 'post' })).toBe(true);
-      // And still nobody outside the gate.
-      expect(
-        canAccessChannel({ ...rushChair, permissions: [], operation: 'read' }),
-      ).toBe(false);
+      // The worker creates the channel from these legacy fields, and the
+      // database turns them into who can see and post (the
+      // `chat_channels_legacy_access` trigger, #3722): a channel gated on the
+      // rush chair's read permission, with no who-can-post list, so whoever
+      // can see it posts there, as in Discord.
+      expect(rows[0].new_channel_type).toBe('ROLE_GATED');
+      expect(rows[0].new_channel_required_permissions).toContain(
+        'channels:read:rush-chair',
+      );
     });
 
     it('gates it on the mapped readers, leaves the ignored one out, and carries it to its threads', async () => {

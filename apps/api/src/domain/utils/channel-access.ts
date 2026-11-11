@@ -1,20 +1,22 @@
-import { ALUMNI_CHANNEL_PERMISSION } from '@repo/validation';
+import { channelAccessEntry } from '@repo/validation';
+import { SystemRoleKeys } from '../constants/permissions';
 import type { ChannelType } from '../entities/chat.entity';
+import type { Role } from '../entities/role.entity';
 
 /**
  * The chat channel-access predicate, shared by every chat and search path in
  * the API: cold reads, the hot-path send and react controllers
  * (`ChatService.sendMessage`, `ChatReactionService.recordMessageAction`), and
  * search. Pure: no I/O, no framework imports. Callers perform their own TRUSTED
- * database lookups (channel record, the caller's chapter membership, and, only
- * for ROLE_GATED channels, the caller's effective permissions) and feed them
+ * database lookups (channel record, the caller's chapter membership, and, when
+ * a list or the Alumni rule can decide, what the caller holds) and feed them
  * in here. Centralizing the rule prevents the layers from drifting apart,
- * which is how cross-tenant authorization holes appear.
+ * which is how cross-tenant authorization holes appear. Its database twin is
+ * `can_read_chat_channel` (migration 20261111233000).
  *
- * Moved out of `@repo/validation` (#3268). It lived there, inline in
- * `index.ts`, so the pre-ADR-11 Supabase Edge Functions `chat-send` and
- * `chat-react` could import it through a Deno import map (#416). They are
- * gone and no client imports it, so the rule is the API's alone.
+ * Moved out of `@repo/validation` (#3268). The lists' entry spelling is still
+ * shared from there (`channel-access-lists.ts`), so the editor and this
+ * predicate agree on what an entry is.
  */
 
 /** The trusted channel fields the access decision depends on. */
@@ -25,19 +27,24 @@ export interface ChannelAccessRecord {
    */
   type: string;
   member_ids: string[] | null;
-  required_permissions: string[] | null;
   /**
-   * Whether the channel rejects member writes from anyone without
-   * `announcements:post` (e.g. `#announcements`). Only consulted for a write;
-   * safe to omit (treated as `false`) for read checks. (Chunk 05 / ADR-07.)
+   * Who can see a PUBLIC or ROLE_GATED channel (#3722): `null` is everyone in
+   * the chapter, a list admits members holding any entry in it
+   * (`tier:<id>`, `role:<id>`). An empty list admits nobody but `*`.
+   * Ignored for PRIVATE / DM / GROUP_DM, which `member_ids` decides.
    */
-  is_read_only?: boolean | null;
+  who_can_see: string[] | null;
+  /**
+   * Who can post there: `null` is everyone who can see it, a list admits
+   * those of them holding an entry in it. Only consulted for a write.
+   */
+  who_can_post: string[] | null;
   /**
    * Set once a GROUP_DM's membership drops to <= 1 via the leave endpoint
    * (#348). Only consulted for a write operation, where it denies
-   * unconditionally — unlike `is_read_only`, no permission clears it, since
-   * there is no "unarchive" flow. Safe to omit for read checks: an archived
-   * channel stays directly readable by whoever is still in `member_ids`.
+   * unconditionally: no permission clears it, since there is no "unarchive"
+   * flow. Safe to omit for read checks: an archived channel stays directly
+   * readable by whoever is still in `member_ids`.
    */
   archived_at?: string | null;
   /**
@@ -52,122 +59,164 @@ export interface ChannelAccessRecord {
 /**
  * Operation the predicate is being consulted for. Defaults to "read".
  *
- * `"vote"` is a write that does not author channel content (poll votes). It
- * clears the same read-only / `announcements:post` gate as `"post"`, but is
- * deliberately **not** subject to the Alumni lifecycle rule — alumni are
- * restricted from posting, not from participating in a poll they can read.
- *
  * - `read`: see the channel.
- * - `post`: write in the timeline (gated in a read-only channel).
- * - `vote`: take part in something already readable (a poll).
+ * - `post`: write in the timeline (who can post decides).
+ * - `vote`: take part in something already readable (a poll). Who can post
+ *   decides it as for `post`, but the Alumni rule does not apply: alumni are
+ *   restricted from posting, not from a poll they can read.
  * - `thread`: write inside a message thread (#3785). Authored content, so
- *   archive, the audit log and the alumni rule apply as for `post`, but not the
- *   read-only gate: any member who can read an announcement may thread under it
+ *   archive, the audit log and the Alumni rule apply as for `post`, but not
+ *   who can post: any member who can read an announcement may thread under it
  *   (Winston, 2026-11-10; spec/behavior/chat/README.md § Message threads).
  */
 export type ChannelOperation = 'read' | 'post' | 'vote' | 'thread';
 
-/** Permission key that grants posting into a read-only channel (e.g. `#announcements`). */
-export const ANNOUNCEMENTS_POST_PERMISSION = 'announcements:post';
+/**
+ * What a member holds that a list can name, resolved from a TRUSTED read of
+ * their roles in the channel's chapter (`RbacService.getChannelAccessHolder`,
+ * or `getChapterMemberAccess` for a whole chapter).
+ */
+export interface ChannelAccessHolder {
+  /** `role:<id>` for each role they hold here and `tier:<id>` for its tier. */
+  entries: ReadonlySet<string>;
+  /**
+   * Holds `*` (the President). Passes every list, so a chapter can't lock
+   * itself out, and the Alumni rule.
+   */
+  wildcard: boolean;
+  /**
+   * The entries that come from the Alumni role (`role:<id>`, and its tier's
+   * when it sits in one) when they hold it, else `null`. Holding the role is
+   * what restricts, whatever else they hold (`spec/behavior/alumni.md`).
+   */
+  alumniEntries: ReadonlySet<string> | null;
+}
+
+/** A holder with nothing: decides every list as an empty role set would. */
+export const EMPTY_ACCESS_HOLDER: ChannelAccessHolder = {
+  entries: new Set(),
+  wildcard: false,
+  alumniEntries: null,
+};
+
+/**
+ * What a member holds, from the roles they hold in one chapter. The caller
+ * passes only roles already re-scoped to that chapter (a member's `role_ids`
+ * is not foreign-keyed, so a stale or foreign id must contribute nothing).
+ *
+ * `*` comes from a role's own `permissions`; custom roles never carry it
+ * (`flattenPermissionSets`), so they are not read. The Alumni role is the one
+ * with `system_key` `ALUMNI`, as `RbacService.getAlumniRoleId` resolves it.
+ */
+export function accessHolderFromRoles(
+  roles: readonly Pick<Role, 'id' | 'tier_id' | 'permissions' | 'system_key'>[],
+): ChannelAccessHolder {
+  const entries = new Set<string>();
+  let wildcard = false;
+  let alumniEntries: Set<string> | null = null;
+  for (const role of roles) {
+    const held = [channelAccessEntry('role', role.id)];
+    if (role.tier_id) held.push(channelAccessEntry('tier', role.tier_id));
+    for (const entry of held) entries.add(entry);
+    if ((role.permissions ?? []).includes('*')) wildcard = true;
+    if (role.system_key === SystemRoleKeys.ALUMNI) {
+      alumniEntries ??= new Set();
+      for (const entry of held) alumniEntries.add(entry);
+    }
+  }
+  return { entries, wildcard, alumniEntries };
+}
 
 export interface ChannelAccessInput {
   channel: ChannelAccessRecord;
-  /** App-level user id, resolved from the session — never the client payload. */
+  /** App-level user id, resolved from the session, never the client payload. */
   userId: string;
   /** Whether the caller is an active member of the chapter that owns the channel. */
   isChapterMember: boolean;
   /**
-   * The caller's effective permission strings in that chapter. Consulted for
-   * ROLE_GATED channels and for write checks against read-only channels.
-   * `"*"` (wildcard) grants access.
+   * What the caller holds in that chapter. Only read where a list or the
+   * Alumni rule can decide ({@link needsAccessHolder}); pass
+   * {@link EMPTY_ACCESS_HOLDER} elsewhere.
    */
-  permissions: string[];
-  /**
-   * What the caller is trying to do. `"read"` (default) checks visibility;
-   * `"post"` additionally enforces the read-only / announcements:post gate.
-   */
+  holder: ChannelAccessHolder;
+  /** What the caller is trying to do. `"read"` (default) checks visibility. */
   operation?: ChannelOperation;
-  /**
-   * Whether the caller holds the chapter's Alumni role. Alumni are read-mostly:
-   * they keep full read access but may only post in direct conversations and in
-   * ROLE_GATED channels that require `alumni:post` (the seeded `#alumni`). Only
-   * consulted when `operation` is `"post"` or `"thread"`; omit (or `false`) for active members.
-   */
-  isAlumni?: boolean;
+}
+
+const DIRECT_TYPES: ReadonlySet<string> = new Set<ChannelType>([
+  'DM',
+  'GROUP_DM',
+]);
+const MEMBER_LIST_TYPES: ReadonlySet<string> = new Set<ChannelType>([
+  'PRIVATE',
+  'DM',
+  'GROUP_DM',
+]);
+const LIST_TYPES: ReadonlySet<string> = new Set<ChannelType>([
+  'PUBLIC',
+  'ROLE_GATED',
+]);
+
+/** Whether `list` admits `holder`: `null` admits everyone, `*` passes any list. */
+function listAdmits(
+  list: readonly string[] | null,
+  holder: ChannelAccessHolder,
+): boolean {
+  if (list === null) return true;
+  if (holder.wildcard) return true;
+  return list.some((entry) => holder.entries.has(entry));
 }
 
 /**
- * Channel types an Alumni-role member may post into. Alumni keep read access
- * everywhere they can see, but writing is limited to the alumni channel
- * (ROLE_GATED) and direct conversations. See `spec/behavior/alumni.md`.
+ * Whether someone holding the Alumni role may author content in `channel`
+ * (`spec/behavior/alumni.md`). Alumni read everywhere they can see, but write
+ * only in direct conversations and in a channel that names the Alumni role
+ * (or its tier): in who can post, or in who can see when anyone who can see
+ * may post. "Everyone" names nobody, so `#general` stays closed to them, and
+ * a seeded `#alumni`, whose who can see lists the Alumni role, is open.
  */
-// Typed on construction so a typo is a compile error, but exposed as a
-// ReadonlySet<string> because `ChannelAccessRecord.type` is widened to string.
-//
-// DM / GROUP_DM are unconditional: a direct conversation is alumni-writable by
-// construction. ROLE_GATED is deliberately NOT in this set — being role-gated
-// says nothing about being *for* alumni, and treating the two as the same thing
-// made every ROLE_GATED channel (e.g. a chapter's `#exec-board`) alumni-postable
-// (FRA-321). A ROLE_GATED channel is alumni-writable only when it explicitly
-// requires `ALUMNI_CHANNEL_PERMISSION` (`@repo/validation`); see
-// `isAlumniPostableChannel`.
-export const ALUMNI_POSTABLE_CHANNEL_TYPES: ReadonlySet<string> =
-  new Set<ChannelType>(['DM', 'GROUP_DM']);
-
-/**
- * Whether an Alumni-role member may author content in `channel`.
- *
- * Exported so the API can skip the Alumni role lookup on channels where the
- * rule cannot apply, using the same predicate the gate itself uses.
- */
-export function isAlumniPostableChannel(channel: ChannelAccessRecord): boolean {
-  if (ALUMNI_POSTABLE_CHANNEL_TYPES.has(channel.type)) return true;
-  if (channel.type !== 'ROLE_GATED') return false;
-  return (channel.required_permissions ?? []).includes(
-    ALUMNI_CHANNEL_PERMISSION,
-  );
+export function isAlumniPostableChannel(
+  channel: ChannelAccessRecord,
+  alumniEntries: ReadonlySet<string>,
+): boolean {
+  if (DIRECT_TYPES.has(channel.type)) return true;
+  if (!LIST_TYPES.has(channel.type)) return false;
+  const named = channel.who_can_post ?? channel.who_can_see;
+  if (named === null) return false;
+  return named.some((entry) => alumniEntries.has(entry));
 }
 
 /**
- * Whether `channel` accepts in-thread replies.
- *
- * Read-only channels (`#announcements`, `#chapter-audit`) are broadcast
- * surfaces. Per `spec/behavior/chat/README.md` § Announcements: "Announcement
- * messages cannot be replied to in-thread." A reply would turn a one-way
- * broadcast into a conversation the channel's whole point is to not have —
- * note the rationale is the one-way model, *not* hidden nesting: replies here
- * are Discord-style reply-with-quote rendered in the main timeline (§ Reply
- * threads), so nothing is ever tucked out of sight.
- *
- * Two deliberate properties:
- *
- * - **Keyed off `is_read_only`, not the channel name.** The same flag already
- *   decides *who* may post (`canAccessChannel`), so one flag governs broadcast
- *   semantics end to end. A name match would silently stop enforcing the moment
- *   a chapter renamed its announcements channel, and would miss `#chapter-audit`
- *   and any chapter-created read-only channel.
- * - **Unconditional on permissions.** `canAccessChannel` decides who may author a
- *   top-level announcement; this decides that no member threads one — holders
- *   of `announcements:post` and of the `"*"` wildcard included. The rule is a
- *   property of the channel, not of the caller, so this deliberately takes no
- *   permissions argument. Do not add one: a `"*"` escape hatch here reopens
- *   exactly the hole the predicate exists to close.
- *
- * It gates what a member *sends* (`ChatService.sendMessage` is the caller), not
- * what is stored: the poll-expiry notice and the Discord archive importer both
- * write replies into read-only channels server-side (the spec section above).
- * So do not read a stored row's `reply_to_id` in a read-only channel as a
- * violation, or hide its quote: the expiry notice names its poll only there.
- *
- * Takes a whole `ChannelAccessRecord` rather than just the field it reads, for
- * the same reason `isAlumniPostableChannel` does: a `Pick<…, "is_read_only">`
- * is an all-optional type, so a caller handing over a projection that never
- * selected the column would type-check and read as replyable. Requiring the
- * full record makes the caller prove it loaded a real channel — this predicate
- * must fail closed, and an omitted field is the one way it could fail open.
+ * Whether {@link canAccessChannel} can read the holder for this channel and
+ * operation, so callers skip the role lookup when it can't change the answer:
+ * a read of a channel everyone sees, anything in a DM or group DM, a read of a
+ * private channel.
  */
-export function allowsInThreadReplies(channel: ChannelAccessRecord): boolean {
-  return !channel.is_read_only;
+export function needsAccessHolder(
+  channel: Pick<ChannelAccessRecord, 'type' | 'who_can_see' | 'who_can_post'>,
+  operation: ChannelOperation = 'read',
+): boolean {
+  if (DIRECT_TYPES.has(channel.type)) return false;
+  if (channel.type === 'PRIVATE') {
+    // `post` and `thread`: the Alumni rule; `vote`: a read-only private
+    // channel's who-can-post list from before #3722.
+    return (
+      operation === 'post' ||
+      operation === 'thread' ||
+      (operation === 'vote' && channel.who_can_post !== null)
+    );
+  }
+  if (!LIST_TYPES.has(channel.type)) return false;
+  if (channel.who_can_see !== null) return true;
+  switch (operation) {
+    case 'read':
+      return false;
+    case 'vote':
+      return channel.who_can_post !== null;
+    default:
+      // `post` and `thread`: the Alumni rule can decide.
+      return true;
+  }
 }
 
 /**
@@ -186,97 +235,70 @@ export function channelAllowsThreads(
  * Decide whether `userId` may access (read / participate in) `channel`.
  *
  * - Non-members of the owning chapter are always denied.
- * - PUBLIC: any chapter member.
- * - PRIVATE / DM / GROUP_DM: the user must be in the explicit `member_ids` list.
- * - ROLE_GATED: the user must hold `"*"` or one of `required_permissions`. An
- *   empty/absent requirement list is denied — a role-gated channel that gates on
- *   nothing is a misconfiguration, not a public channel (FRA-321).
- * - Unknown channel type: denied (guarded default — never falls open).
+ * - PRIVATE / DM / GROUP_DM: the user must be in the explicit `member_ids`
+ *   list (no `*` bypass: no officer opens a member's private thread).
+ * - PUBLIC / ROLE_GATED: who can see decides. `null` admits every member; a
+ *   list admits a holder of any entry in it, or `*`. An empty list admits
+ *   only `*`.
+ * - Unknown channel type: denied (guarded default, never falls open).
  *
- * When `operation` is a write (`"post"` or `"vote"`), the read check above must
- * pass, the channel must not be the audit log (`is_audit_log`, which no
- * member writes in, #3909), AND the channel must either not be read-only, or
- * the caller must hold `"*"` or `"announcements:post"`. Existing callers default to `"read"`, so the
- * predicate stays backward-compatible. `"thread"` (#3785) is a write that skips
- * the read-only gate only: archive and the audit log still refuse it.
+ * A write (`post`, `vote`, `thread`) must also pass the read, and is refused
+ * in an archived channel and in the audit log whatever the caller holds.
+ * Then:
  *
- * When `operation` is `"post"` or `"thread"` and `isAlumni` is set, the caller is additionally
- * limited to direct conversations and ROLE_GATED channels that explicitly
- * require `alumni:post` — alumni read everywhere they can see but do not author
- * content in operational channels.
- * `"*"` (President) still bypasses, so a chapter cannot lock itself out.
- * `"vote"` is exempt: participating in a poll is not posting.
+ * - The Alumni rule, for `post` and `thread`: a holder of the Alumni role
+ *   writes only where {@link isAlumniPostableChannel} says, unless they hold
+ *   `*`. `vote` is exempt: a poll they can read is participation.
+ * - `thread` stops there: any reader may write in a message thread.
+ * - `post` and `vote`: who can post decides, as who can see does for a read.
+ *   A quote reply is a post, so whoever may post may quote (#3722).
+ *   A private channel has a who-can-post list only if it was made read-only
+ *   before #3722.
  */
 export function canAccessChannel(input: ChannelAccessInput): boolean {
-  const { channel, userId, isChapterMember, permissions } = input;
+  const { channel, userId, isChapterMember, holder } = input;
   const operation: ChannelOperation = input.operation ?? 'read';
 
   if (!isChapterMember) return false;
 
-  const canRead = (() => {
-    switch (channel.type) {
-      case 'PUBLIC':
-        return true;
-
-      case 'PRIVATE':
-      case 'DM':
-      case 'GROUP_DM':
-        return (channel.member_ids ?? []).includes(userId);
-
-      case 'ROLE_GATED': {
-        if (permissions.includes('*')) return true;
-        const required = channel.required_permissions ?? [];
-        // An empty requirement list is a misconfiguration, not an invitation:
-        // it used to mean "any chapter member", which made a ROLE_GATED channel
-        // functionally PUBLIC and silently un-gated (FRA-321). Deny instead, and
-        // keep the field populated at both write points (channel create/update
-        // reject an empty list; the seeder always persists one).
-        if (required.length === 0) return false;
-        return required.some((permission) => permissions.includes(permission));
-      }
-
-      default:
-        return false;
-    }
-  })();
+  let canRead: boolean;
+  if (MEMBER_LIST_TYPES.has(channel.type)) {
+    canRead = (channel.member_ids ?? []).includes(userId);
+  } else if (LIST_TYPES.has(channel.type)) {
+    canRead = listAdmits(channel.who_can_see, holder);
+  } else {
+    canRead = false;
+  }
 
   if (!canRead) return false;
   if (operation === 'read') return true;
 
-  // An archived channel (#348) is frozen: no further writes from anyone,
-  // regardless of permissions. Checked before the President wildcard below —
-  // unlike the read-only / announcements:post gate, there is no override,
-  // because there is no "unarchive" flow to make an override meaningful.
+  // An archived channel (#348) is frozen: no further writes from anyone.
+  // There is no "unarchive" flow, so there is no override either.
   if (channel.archived_at) return false;
 
   // The audit log (#3909) is system-write only. The audit mirror inserts its
   // rows directly and never comes through here, so refusing every caller,
   // the President's `*` included, leaves exactly the server writing in it.
-  // Checked before the read-only gate below, which `*` and
-  // `announcements:post` would otherwise pass.
   if (channel.is_audit_log) return false;
 
-  const isPresident = permissions.includes('*');
-
-  // Alumni lifecycle: read-mostly. They may only write in the alumni channel
-  // and direct conversations, never in operational PUBLIC/PRIVATE channels.
-  // Only authored content ("post") is restricted — "vote" is participation in
-  // something they can already read, so it stays open.
   if (
     (operation === 'post' || operation === 'thread') &&
-    input.isAlumni &&
-    !isPresident &&
-    !isAlumniPostableChannel(channel)
+    holder.alumniEntries !== null &&
+    !holder.wildcard &&
+    !isAlumniPostableChannel(channel, holder.alumniEntries)
   ) {
     return false;
   }
 
-  // A thread reply is open to every reader, read-only channel or not. The
-  // timeline of an announcement stays officer-only; its threads do not.
+  // A thread reply is open to every reader. The timeline of an announcement
+  // stays with who can post; its threads do not.
   if (operation === 'thread') return true;
 
-  // operation === "post": gate read-only channels behind announcements:post / *.
-  if (!channel.is_read_only) return true;
-  if (isPresident) return true;
-  return permissions.includes(ANNOUNCEMENTS_POST_PERMISSION);
+  // A DM or group DM has no who-can-post list. A private channel does only
+  // when someone made it read-only before #3722 (migration 20261111233000).
+  if (MEMBER_LIST_TYPES.has(channel.type) && channel.type !== 'PRIVATE') {
+    return true;
+  }
+  return listAdmits(channel.who_can_post, holder);
 }

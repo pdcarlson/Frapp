@@ -182,8 +182,9 @@ That returns **67** rows. The "API only" row of that table is those 67 plus the 
 tables (`members`, `users`, `member_custom_field_values`), which carry
 non-widening policies and are therefore listed there rather than in a row of
 their own — **70**. Re-derived 2026-11-11 against a local stack at migration
-`20261111233000`, which added `chat_message_important_seen` (#4186), one after
-`20261111230000`, which added `task_subtasks` (#4003). Before that,
+`20261111235900`, which added `chat_message_important_seen` (#4186), after
+`20261111230000`, which added `task_subtasks` (#4003), and `20261111233000` (#3722),
+which added no table. Before that,
 counted at `20261111220000`, which added `activity_item_reads` and `activity_unread_starts`
 (#4173), against a local stack, adding them to the count at
 `20261111200000`, which added `event_types` (#3730), by adding it to the count at

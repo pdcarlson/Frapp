@@ -11,6 +11,7 @@ import { ChatReactionService } from '../../application/services/chat-reaction.se
 import type { MaskedChatMessage } from '../../application/services/chat-block-mask';
 import { RbacService } from '../../application/services/rbac.service';
 import { ChatMentionService } from '../../application/services/chat-mention.service';
+import { ChannelAccessListService } from '../../application/services/channel-access-list.service';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 
@@ -44,8 +45,10 @@ describe('ChatController', () => {
   let reactions: jest.Mocked<Pick<ChatReactionService, 'recordMessageAction'>>;
   let rbacService: jest.Mocked<Pick<RbacService, 'memberHasAnyPermission'>>;
   let mentions: jest.Mocked<Pick<ChatMentionService, 'listMentionRoles'>>;
+  let accessLists: jest.Mocked<Pick<ChannelAccessListService, 'listOptions'>>;
 
   beforeEach(async () => {
+    accessLists = { listOptions: jest.fn() };
     rbacService = { memberHasAnyPermission: jest.fn() };
     attachments = { requestChatUploadUrl: jest.fn() };
     categories = { updateCategory: jest.fn(), deleteCategory: jest.fn() };
@@ -90,10 +93,31 @@ describe('ChatController', () => {
         { provide: ChatReactionService, useValue: reactions },
         { provide: RbacService, useValue: rbacService },
         { provide: ChatMentionService, useValue: mentions },
+        { provide: ChannelAccessListService, useValue: accessLists },
       ],
     }).compile();
 
     controller = module.get<ChatController>(ChatController);
+  });
+
+  describe('getChannelAccessOptions', () => {
+    it('answers with the chapter’s options, behind channels:manage', async () => {
+      const options = [{ entry: 'tier:t-1' }] as unknown as Awaited<
+        ReturnType<ChannelAccessListService['listOptions']>
+      >;
+      accessLists.listOptions.mockResolvedValue(options);
+
+      await expect(
+        controller.getChannelAccessOptions('chapter-1'),
+      ).resolves.toBe(options);
+      expect(accessLists.listOptions).toHaveBeenCalledWith('chapter-1');
+      expect(
+        Reflect.getMetadata(
+          PERMISSIONS_KEY,
+          ChatController.prototype.getChannelAccessOptions,
+        ),
+      ).toEqual([SystemPermissions.CHANNELS_MANAGE]);
+    });
   });
 
   describe('getMentionRoles', () => {
