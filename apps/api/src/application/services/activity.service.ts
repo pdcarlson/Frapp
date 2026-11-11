@@ -41,9 +41,7 @@ import type { CardPollPayload } from '#domain/utils/poll-vote-rules';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { ActivityLinkService } from './activity-link.service';
 import type { ActivityLink, ChatReads } from './activity-link.service';
-import { BackworkService } from './backwork.service';
 import { displayNamesById } from './display-names';
-import { ChapterDocumentService } from './chapter-document.service';
 import { maskBlockedMessages } from './chat-block-mask';
 import type { MaskedChatMessage } from './chat-block-mask';
 import { ChatBlockService } from './chat-block.service';
@@ -61,7 +59,6 @@ export const ACTIVITY_SECTIONS = [
   'hours_approvals',
   'polls',
   'coming_up',
-  'files',
   'made_events',
   'links',
 ] as const;
@@ -193,14 +190,6 @@ export interface ActivityEvent {
   unread: boolean;
 }
 
-/** A file the member uploaded: a chapter document or a backwork resource. */
-export interface ActivityFile {
-  id: string;
-  source: 'document' | 'backwork';
-  title: string;
-  created_at: string;
-}
-
 export interface ActivityView {
   needs_you: {
     /** Open tasks assigned to the caller, soonest due first. */
@@ -222,7 +211,6 @@ export interface ActivityView {
   made_by_you: {
     polls: ActivityPoll[];
     tasks: ActivityTask[];
-    files: ActivityFile[];
     /**
      * Events the caller made that have not ended, soonest first. A recurring
      * series is one row, its next meeting. Events made before creators were
@@ -354,8 +342,6 @@ interface EventViewer {
  *   read, and never when the caller has blocked its author.
  * - **Events** come through `EventService.findByChapter` with the viewer, so
  *   an event that leaves the member out contributes nothing.
- * - **Files** are the caller's own uploads, read only while they can still
- *   open that module.
  * - **Links** are read by {@link ActivityLinkService}, under chat's channel
  *   list and the block list, as polls are.
  *
@@ -371,8 +357,6 @@ export class ActivityService {
     private readonly taskService: TaskService,
     private readonly serviceEntryService: ServiceEntryService,
     private readonly eventService: EventService,
-    private readonly documentService: ChapterDocumentService,
-    private readonly backworkService: BackworkService,
     private readonly chatService: ChatService,
     private readonly chatBlocks: ChatBlockService,
     private readonly rbacService: RbacService,
@@ -425,43 +409,39 @@ export class ActivityService {
         this.chatBlocks.listBlockedUserIds(chapterId, userId),
       ]).then(([channels, blockedUserIds]) => ({ channels, blockedUserIds })));
 
-    const [tasks, hours, polls, events, files, madeEvents, links] =
-      await Promise.all([
-        this.settle('tasks', chapterId, () =>
-          on('tasks')
-            ? this.readTasks(chapterId, userId, permissions)
-            : Promise.resolve({ mine: [], confirmations: [], assigned: [] }),
+    const [tasks, hours, polls, events, madeEvents, links] = await Promise.all([
+      this.settle('tasks', chapterId, () =>
+        on('tasks')
+          ? this.readTasks(chapterId, userId, permissions)
+          : Promise.resolve({ mine: [], confirmations: [], assigned: [] }),
+      ),
+      this.settle('hours_approvals', chapterId, () =>
+        on('hours') && can(SystemPermissions.SERVICE_APPROVE, permissions)
+          ? this.readHoursApprovals(chapterId, userId)
+          : Promise.resolve([]),
+      ),
+      this.settle('polls', chapterId, () =>
+        on('polls')
+          ? this.readPolls(chapterId, userId, now, chatReads)
+          : Promise.resolve({ unvoted: [], mine: [] }),
+      ),
+      this.settle('coming_up', chapterId, () =>
+        on('events')
+          ? this.readComingUp(chapterId, userId, now, viewer)
+          : Promise.resolve([]),
+      ),
+      this.settle('made_events', chapterId, () =>
+        on('events')
+          ? this.readMadeEvents(chapterId, userId, now, viewer)
+          : Promise.resolve([]),
+      ),
+      // Chat has no module switch, so neither does this section.
+      this.settle('links', chapterId, () =>
+        chatReads().then((reads) =>
+          this.linkService.listFor(chapterId, userId, now, reads),
         ),
-        this.settle('hours_approvals', chapterId, () =>
-          on('hours') && can(SystemPermissions.SERVICE_APPROVE, permissions)
-            ? this.readHoursApprovals(chapterId, userId)
-            : Promise.resolve([]),
-        ),
-        this.settle('polls', chapterId, () =>
-          on('polls')
-            ? this.readPolls(chapterId, userId, now, chatReads)
-            : Promise.resolve({ unvoted: [], mine: [] }),
-        ),
-        this.settle('coming_up', chapterId, () =>
-          on('events')
-            ? this.readComingUp(chapterId, userId, now, viewer)
-            : Promise.resolve([]),
-        ),
-        this.settle('files', chapterId, () =>
-          this.readFiles(chapterId, userId, permissions, on),
-        ),
-        this.settle('made_events', chapterId, () =>
-          on('events')
-            ? this.readMadeEvents(chapterId, userId, now, viewer)
-            : Promise.resolve([]),
-        ),
-        // Chat has no module switch, so neither does this section.
-        this.settle('links', chapterId, () =>
-          chatReads().then((reads) =>
-            this.linkService.listFor(chapterId, userId, now, reads),
-          ),
-        ),
-      ]);
+      ),
+    ]);
 
     const unavailable: ActivitySection[] = [];
     const valueOf = <T>(
@@ -482,7 +462,6 @@ export class ActivityService {
     const hoursApprovals = valueOf('hours_approvals', hours, []);
     const pollLists = valueOf('polls', polls, { unvoted: [], mine: [] });
     const comingUp = valueOf('coming_up', events, []);
-    const myFiles = valueOf('files', files, []);
     const myEvents = valueOf('made_events', madeEvents, []);
     const myLinks = valueOf('links', links, []);
 
@@ -506,7 +485,6 @@ export class ActivityService {
       made_by_you: {
         polls: pollLists.mine.slice(0, LIST_LIMIT),
         tasks: taskLists.assigned.slice(0, LIST_LIMIT),
-        files: myFiles.slice(0, LIST_LIMIT),
         events: myEvents.slice(0, LIST_LIMIT),
       },
       needs_you_count: needsYouCount,
@@ -1095,46 +1073,6 @@ export class ActivityService {
       });
       return null;
     }
-  }
-
-  private async readFiles(
-    chapterId: string,
-    userId: string,
-    permissions: string[],
-    on: (moduleKey: string) => boolean,
-  ): Promise<ActivityFile[]> {
-    const canBackwork =
-      can(SystemPermissions.BACKWORK_UPLOAD, permissions) ||
-      can(SystemPermissions.BACKWORK_ADMIN, permissions);
-    const [documents, backwork] = await Promise.all([
-      // Filtered to the uploader in SQL: a chapter-wide read is cut at the
-      // database's row cap, and the caller's files could fall outside it.
-      on('documents')
-        ? this.documentService.findByChapter(chapterId, {
-            uploaded_by: userId,
-          })
-        : Promise.resolve([]),
-      on('backwork') && canBackwork
-        ? this.backworkService.findByChapter(chapterId, {
-            uploader_id: userId,
-          })
-        : Promise.resolve([]),
-    ]);
-    const files: ActivityFile[] = [
-      ...documents.map((document) => ({
-        id: document.id,
-        source: 'document' as const,
-        title: document.title,
-        created_at: document.created_at,
-      })),
-      ...backwork.map((resource) => ({
-        id: resource.id,
-        source: 'backwork' as const,
-        title: resource.title ?? '',
-        created_at: resource.created_at,
-      })),
-    ];
-    return files.sort(byNewest);
   }
 
   /** Display names by user id. An id with no user row is simply absent. */

@@ -26,8 +26,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * hairlines, the way the phone's Events and Tasks lists draw theirs
  * (`components/events/event-rows.tsx`), not in a rounded card.
  *
- * The whole row is the one hit target. A row with no `onPress` (a backwork
- * file, which the phone has no screen for) draws the same, with no chevron.
+ * The whole row is the one hit target. A row with no `onPress` draws the
+ * same, with no chevron.
  */
 export function ActivityListRow({
   row,

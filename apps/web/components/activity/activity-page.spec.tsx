@@ -24,6 +24,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     activityNeedsYouHeadline: actual.activityNeedsYouHeadline,
     activityNextUpLine: actual.activityNextUpLine,
     activitySummary: actual.activitySummary,
+    useActivityClock: actual.useActivityClock,
     useActiveChapterId: () => "chap-1",
     useActivity: () => mockActivity(),
     useMyPermissions: () => mockPermissions(),
@@ -125,14 +126,6 @@ const data = (overrides: Record<string, unknown> = {}) => ({
   made_by_you: {
     polls: [],
     tasks: [],
-    files: [
-      {
-        id: "f1",
-        source: "document",
-        title: "Bylaws",
-        created_at: "2026-11-01T00:00:00.000Z",
-      },
-    ],
     events: [],
   },
   needs_you_count: 2,
@@ -154,7 +147,7 @@ beforeEach(() => {
 });
 
 describe("ActivityPage", () => {
-  it("draws Needs you first, with each row's badge, and a file as a link to where it lives", () => {
+  it("draws Needs you first, with each row's badge, and no Files chip (#4291)", () => {
     mockActivity.mockReturnValue(loaded());
     render(<ActivityPage />);
 
@@ -168,10 +161,7 @@ describe("ActivityPage", () => {
     const needs = screen.getByRole("region", { name: "Needs you" });
     expect(within(needs).getByText("Book the venue")).toBeInTheDocument();
     expect(within(needs).getByText("Vote")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Bylaws/ })).toHaveAttribute(
-      "href",
-      "/documents",
-    );
+    expect(screen.queryByRole("button", { name: "Files" })).toBeNull();
     expect(
       screen.getByText("No events in the next two weeks."),
     ).toBeInTheDocument();
@@ -191,6 +181,54 @@ describe("ActivityPage", () => {
     expect(screen.queryByText("Book the venue")).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Coming up" })).toBeNull();
     expect(screen.queryByRole("region", { name: "Made by you" })).toBeNull();
+  });
+
+  it("lists open polls only, and keeps closed ones behind Archived polls (#4258)", () => {
+    mockActivity.mockReturnValue(
+      loaded({
+        made_by_you: {
+          polls: [
+            {
+              ...poll,
+              message_id: "m1",
+              question: "Open one",
+              sender_id: "me",
+            },
+            {
+              ...poll,
+              message_id: "m2",
+              question: "Closed one",
+              sender_id: "me",
+              is_closed: true,
+              closed_at: "2026-11-02T00:00:00.000Z",
+            },
+          ],
+          tasks: [],
+          events: [],
+        },
+      }),
+    );
+    render(<ActivityPage />);
+
+    const made = screen.getByRole("region", { name: "Made by you" });
+    expect(within(made).getByText("Open one")).toBeInTheDocument();
+    expect(within(made).queryByText("Closed one")).toBeNull();
+    const toggle = within(made).getByRole("button", {
+      name: "Archived polls (1)",
+    });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const archive = within(made).getByRole("list", { name: "Archived polls" });
+    expect(within(archive).getByText("Closed one")).toBeInTheDocument();
+    expect(within(archive).getByText("Closed")).toBeInTheDocument();
+
+    // A closed poll opens its card, with its result, like any other row.
+    fireEvent.click(
+      within(archive).getByRole("button", { name: /Closed one/ }),
+    );
+    expect(screen.getByTestId("panel")).toHaveTextContent("panel:Closed one");
   });
 
   it("says a section could not be loaded instead of calling it empty", () => {
@@ -427,7 +465,6 @@ describe("ActivityPage", () => {
             id: `m${n}`,
             title: `Assigned ${n}`,
           })),
-          files: [],
           events: [],
         },
       }),

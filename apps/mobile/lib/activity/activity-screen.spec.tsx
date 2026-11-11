@@ -42,11 +42,21 @@ const task = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const file = (source: "document" | "backwork", id: string, title: string) => ({
-  id,
-  source,
-  title,
+/** A poll card the member posted, open (by default) or closed. */
+const myPoll = (id: string, question: string, closed = false) => ({
+  message_id: id,
+  channel_id: "channel-1",
+  channel_name: "general",
+  channel_type: "PUBLIC",
+  sender_id: "me",
+  question,
+  option_count: 2,
+  closes_at: closed ? "2026-11-02T00:00:00.000Z" : null,
+  closed_at: null,
+  is_closed: closed,
+  has_voted: true,
   created_at: "2026-11-01T00:00:00.000Z",
+  message: {},
 });
 
 const read = (overrides: Record<string, unknown> = {}) => ({
@@ -69,12 +79,11 @@ const read = (overrides: Record<string, unknown> = {}) => ({
   coming_up: [],
   links: [],
   made_by_you: {
-    polls: [],
-    tasks: [],
-    files: [
-      file("document", "doc-1", "Bylaws"),
-      file("backwork", "bw-1", "CS 101 midterm"),
+    polls: [
+      myPoll("p-open", "Dues vote"),
+      myPoll("p-closed", "Old vote", true),
     ],
+    tasks: [],
     events: [],
   },
   needs_you_count: 2,
@@ -257,11 +266,11 @@ describe("Activity screen (#3897)", () => {
     expect(rowLabels(tree)).toEqual([
       "Food bank",
       "Book the venue",
-      "Bylaws",
-      "CS 101 midterm",
+      "Dues vote",
     ]);
     expect(sectionCount(tree, "Needs you")).toBe(2);
-    expect(sectionCount(tree, "Made by you")).toBe(2);
+    // Open polls only: the closed one is archived, outside the count.
+    expect(sectionCount(tree, "Made by you")).toBe(1);
     // The count is its own muted text, not part of the caption.
     expect(screenText(tree)).not.toContain("Needs you · 2");
     // Nothing is coming up, and the group says so instead of vanishing.
@@ -274,7 +283,8 @@ describe("Activity screen (#3897)", () => {
     expect(text).toMatch(
       /Now\n1\n[\s\S]*Food bank[\s\S]*Later\n1\n[\s\S]*Book the venue/,
     );
-    expect(text).toContain("Files you uploaded");
+    expect(text).toContain("Polls you posted");
+    expect(text).not.toContain("Files you uploaded");
   });
 
   it("draws one part with no heading when everything is for now", () => {
@@ -331,7 +341,7 @@ describe("Activity screen (#3897)", () => {
     expect(
       lead("Book the venue", "activity-glyph-task").length,
     ).toBeGreaterThan(0);
-    expect(lead("Bylaws", "activity-glyph-document").length).toBeGreaterThan(0);
+    expect(lead("Dues vote", "activity-glyph-poll").length).toBeGreaterThan(0);
     const block = row(tree, "Chapter").findAll(
       (node) =>
         (node.type as unknown) === "View" &&
@@ -494,7 +504,6 @@ describe("Activity screen (#3897)", () => {
         data: read({
           made_by_you: {
             ...read().made_by_you,
-            files: [],
             tasks: Array.from({ length: 5 }, (_, index) =>
               task({ id: `made-${index}`, title: `Assigned ${index}` }),
             ),
@@ -508,7 +517,8 @@ describe("Activity screen (#3897)", () => {
       const showAll = tree.root.find(
         (node) =>
           (node.type as unknown) === "Pressable" &&
-          node.props.accessibilityState?.expanded === false,
+          node.props.accessibilityState?.expanded === false &&
+          drawnText(node) === "Show all 5",
       );
       expect(screenText(tree)).toContain("Show all 5");
       act(() => {
@@ -524,7 +534,6 @@ describe("Activity screen (#3897)", () => {
         data: read({
           made_by_you: {
             ...read().made_by_you,
-            files: [],
             tasks: Array.from({ length: 5 }, (_, index) =>
               task({ id: `made-${index}`, title: `Assigned ${index}` }),
             ),
@@ -633,25 +642,35 @@ describe("Activity screen (#3897)", () => {
     expect(sheet.props?.row).toBeNull();
   });
 
-  it("sends a document row to Documents, and gives a backwork row nowhere to go", () => {
+  it("keeps a closed poll behind Archived polls, which opens its card (#4258)", () => {
     const tree = render();
-    const push = vi.mocked(useRouter().push);
-    push.mockClear();
+    expect(rowLabels(tree)).not.toContain("Old vote");
+    const toggle = tree.root
+      .findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityRole === "button",
+      )
+      .find((node) => drawnText(node) === "Archived polls (1)")!;
+    expect(toggle.props.accessibilityState).toEqual({ expanded: false });
+
     act(() => {
-      row(tree, "Bylaws").props.onPress();
+      toggle.props.onPress();
     });
-    expect(push).toHaveBeenCalledWith("/documents");
-    expect(sheet.props?.row).toBeNull();
-    // The phone has no Backwork screen, so the row is a record only.
-    expect(row(tree, "CS 101 midterm").props.onPress).toBeUndefined();
+    expect(rowLabels(tree)).toContain("Old vote");
+    expect(row(tree, "Old vote").props.row.badge?.label).toBe("Closed");
+    act(() => {
+      row(tree, "Old vote").props.onPress();
+    });
+    expect(sheet.props?.row?.key).toBe("archived:poll:p-closed");
   });
 
   it("narrows every group to one kind under a chip, keeping Needs you", () => {
     const tree = render();
     act(() => {
-      tree.root.findByType(FilterChips).props.onSelect("file");
+      tree.root.findByType(FilterChips).props.onSelect("poll");
     });
-    expect(rowLabels(tree)).toEqual(["Bylaws", "CS 101 midterm"]);
+    expect(rowLabels(tree)).toEqual(["Dues vote"]);
     const text = screenText(tree);
     expect(text).toContain("Needs you");
     expect(text).toContain("Nothing of this kind here.");

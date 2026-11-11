@@ -20,7 +20,6 @@ import type { ChannelType } from '#domain/entities/chat.entity';
 import { ACTIVITY_SECTIONS } from '../../application/services/activity.service';
 import type {
   ActivityEvent,
-  ActivityFile,
   ActivityHoursEntry,
   ActivityPoll,
   ActivitySection,
@@ -284,29 +283,6 @@ export class ActivityEventDto implements ActivityEvent {
   unread: boolean;
 }
 
-const ACTIVITY_FILE_SOURCES: ActivityFile['source'][] = [
-  'document',
-  'backwork',
-];
-
-export class ActivityFileDto implements ActivityFile {
-  @ApiProperty({ format: 'uuid' })
-  id: string;
-
-  @ApiProperty({
-    enum: ACTIVITY_FILE_SOURCES,
-    description:
-      'Which module holds it: a chapter document or a backwork resource.',
-  })
-  source: ActivityFile['source'];
-
-  @ApiProperty({ description: 'Empty for a backwork resource with no title.' })
-  title: string;
-
-  @ApiProperty({ format: 'date-time' })
-  created_at: string;
-}
-
 export class ActivityLinkDto implements ActivityLink {
   @ApiProperty({ format: 'uuid' })
   id: string;
@@ -444,7 +420,8 @@ export class ActivityNeedsYouDto {
 export class ActivityMadeByYouDto {
   @ApiProperty({
     type: [ActivityPollDto],
-    description: 'Poll cards the caller posted, newest first.',
+    description:
+      'Poll cards the caller posted, open or closed, newest first. A client lists the open ones and keeps the closed ones behind an archive (#4258).',
   })
   polls: ActivityPollDto[];
 
@@ -454,12 +431,6 @@ export class ActivityMadeByYouDto {
       'Tasks the caller assigned, newest first. Empty unless the caller still holds `tasks:manage`.',
   })
   tasks: ActivityTaskDto[];
-
-  @ApiProperty({
-    type: [ActivityFileDto],
-    description: 'Documents and backwork the caller uploaded, newest first.',
-  })
-  files: ActivityFileDto[];
 
   @ApiProperty({
     type: [ActivityEventDto],

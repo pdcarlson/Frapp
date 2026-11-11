@@ -87,8 +87,6 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     findByChapter: jest.fn().mockResolvedValue([]),
     findCreatedBy: jest.fn().mockResolvedValue([]),
   };
-  const documentService = { findByChapter: jest.fn().mockResolvedValue([]) };
-  const backworkService = { findByChapter: jest.fn().mockResolvedValue([]) };
   const chatService = {
     getChannels: jest
       .fn()
@@ -129,8 +127,6 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     taskService as never,
     serviceEntryService as never,
     eventService as never,
-    documentService as never,
-    backworkService as never,
     chatService as never,
     chatBlocks as never,
     rbacService as never,
@@ -151,8 +147,6 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     attendanceRepo,
     memberRepo,
     rbacService,
-    documentService,
-    backworkService,
     chatService,
     chatBlocks,
     messageRepo,
@@ -1079,70 +1073,6 @@ describe('ActivityService', () => {
       expect(view.needs_you.polls).toHaveLength(25);
       expect(view.needs_you.task_confirmations).toHaveLength(25);
       expect(view.needs_you_count).toBe(57);
-    });
-  });
-
-  describe('files', () => {
-    it('lists only the caller’s own uploads, newest first', async () => {
-      const { service, documentService, backworkService } = build([
-        SystemPermissions.MEMBERS_VIEW,
-        SystemPermissions.BACKWORK_UPLOAD,
-      ]);
-      documentService.findByChapter.mockResolvedValue([
-        {
-          id: 'doc-mine',
-          title: 'Bylaws',
-          uploaded_by: ME,
-          created_at: iso(-HOUR),
-        },
-      ]);
-      backworkService.findByChapter.mockResolvedValue([
-        {
-          id: 'bw-mine',
-          title: null,
-          uploader_id: ME,
-          created_at: iso(-HOUR / 2),
-        },
-      ]);
-
-      const view = await service.getActivity(CHAPTER, ME, null);
-
-      expect(view.made_by_you.files).toEqual([
-        {
-          id: 'bw-mine',
-          source: 'backwork',
-          title: '',
-          created_at: iso(-HOUR / 2),
-        },
-        {
-          id: 'doc-mine',
-          source: 'document',
-          title: 'Bylaws',
-          created_at: iso(-HOUR),
-        },
-      ]);
-      // Narrowed to the uploader in the query, not after a chapter-wide read.
-      expect(documentService.findByChapter).toHaveBeenCalledWith(CHAPTER, {
-        uploaded_by: ME,
-      });
-      expect(backworkService.findByChapter).toHaveBeenCalledWith(CHAPTER, {
-        uploader_id: ME,
-      });
-    });
-
-    it('does not read backwork for a member who cannot open it, or either module while it is off', async () => {
-      const member = build();
-      await member.service.getActivity(CHAPTER, ME, null);
-      expect(member.backworkService.findByChapter).not.toHaveBeenCalled();
-      expect(member.documentService.findByChapter).toHaveBeenCalled();
-
-      const off = build([SystemPermissions.BACKWORK_ADMIN]);
-      await off.service.getActivity(CHAPTER, ME, {
-        backwork: false,
-        documents: false,
-      });
-      expect(off.backworkService.findByChapter).not.toHaveBeenCalled();
-      expect(off.documentService.findByChapter).not.toHaveBeenCalled();
     });
   });
 

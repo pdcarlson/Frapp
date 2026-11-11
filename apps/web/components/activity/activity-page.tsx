@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
@@ -39,6 +38,7 @@ import {
   activitySummary,
   useActiveChapterId,
   useActivity,
+  useActivityClock,
   useMyPermissions,
   type ActivityFilter,
   type ActivityGroup,
@@ -46,11 +46,6 @@ import {
   type ActivityRow,
 } from "@repo/hooks";
 import { ActivityPageSkeleton } from "./activity-skeleton";
-
-/** Where a file row goes: the page the file lives on. */
-function fileHref(row: Extract<ActivityRow, { kind: "file" }>): string {
-  return row.file.source === "document" ? "/documents" : "/backwork";
-}
 
 /**
  * The row's lead (its kind's glyph, or an event's date), its two lines, and
@@ -143,7 +138,66 @@ function GroupSection({
           />
         ))
       )}
+      {group.archive ? (
+        <ArchivePart groupId={group.id} part={group.archive} onOpen={onOpen} />
+      ) : null}
     </section>
+  );
+}
+
+/**
+ * The rows a group keeps behind one control (#4258): the member's closed
+ * polls, under Made by you. Closed until pressed, the way Slack keeps
+ * archived channels behind "Show archived" and Google Forms puts closed
+ * forms apart from open ones; each row opens the poll's card with its
+ * final result.
+ */
+function ArchivePart({
+  groupId,
+  part,
+  onOpen,
+}: {
+  groupId: ActivityGroup["id"];
+  part: ActivityPart;
+  onOpen: (row: ActivityRow) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const listId = `activity-${groupId}-${part.id}`;
+  return (
+    <div className="space-y-1">
+      <Button
+        type="button"
+        variant="link"
+        size="sm"
+        className="px-2"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        onClick={() => setOpen((shown) => !shown)}
+      >
+        {open
+          ? `Hide ${part.label?.toLowerCase() ?? "archive"}`
+          : `${part.label ?? "Archive"} (${part.rows.length})`}
+      </Button>
+      {open ? (
+        <ul
+          id={listId}
+          aria-label={part.label ?? undefined}
+          className={denseListClassName}
+        >
+          {part.rows.map((row) => (
+            <li key={row.key}>
+              <button
+                type="button"
+                className={ROW_CLASS}
+                onClick={() => onOpen(row)}
+              >
+                <RowContent row={row} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 
@@ -199,19 +253,13 @@ function GroupPart({
             />
           ) : (
             <li key={row.key}>
-              {row.kind === "file" ? (
-                <Link href={fileHref(row)} className={ROW_CLASS}>
-                  <RowContent row={row} />
-                </Link>
-              ) : (
-                <button
-                  type="button"
-                  className={ROW_CLASS}
-                  onClick={() => onOpen(row)}
-                >
-                  <RowContent row={row} />
-                </button>
-              )}
+              <button
+                type="button"
+                className={ROW_CLASS}
+                onClick={() => onOpen(row)}
+              >
+                <RowContent row={row} />
+              </button>
             </li>
           ),
         )}
@@ -238,14 +286,17 @@ function GroupPart({
  *
  * Four groups, "Needs you" first, with chips that narrow every group to one
  * kind of thing. A row opens the record in a panel drawn with chat's own card,
- * where the member acts on it; a file row is a link to the page the file
- * lives on, and a sign-up link row opens the link (`ActivityLinkRow`). When the read refreshes after an action, the panel shows the fresh
+ * where the member acts on it; a sign-up link row opens the link
+ * (`ActivityLinkRow`). A closed poll leaves its list for Archived polls under
+ * Made by you (#4258). When the read refreshes after an action, the panel shows the fresh
  * row; a row that has left the list (a vote cast, a completion confirmed)
  * stays open as it was, so the member sees the result of what they just did
  * rather than having the panel vanish under them.
  */
 export function ActivityPage() {
   const activity = useActivity();
+  // Moves on when a poll's time runs out, so it leaves its section live.
+  const now = useActivityClock(activity.data);
   const { isOffline } = useNetwork();
   const { userId } = useFrappUser();
   const chapterId = useActiveChapterId();
@@ -259,29 +310,36 @@ export function ActivityPage() {
   const isModuleEnabled = useChapterModuleGate();
 
   const groups = useMemo(
-    () => (activity.data ? activityGroups(activity.data, filter) : []),
-    [activity.data, filter],
+    () => (activity.data ? activityGroups(activity.data, filter, now) : []),
+    [activity.data, filter, now],
   );
   const summary = useMemo(
     () =>
       activity.data
-        ? activitySummary(activity.data, {
-            canConfirmTasks: can("tasks:manage", permissions.data?.permissions),
-            canApproveHours: can(
-              "service:approve",
-              permissions.data?.permissions,
-            ),
-            isModuleEnabled,
-          })
+        ? activitySummary(
+            activity.data,
+            {
+              canConfirmTasks: can(
+                "tasks:manage",
+                permissions.data?.permissions,
+              ),
+              canApproveHours: can(
+                "service:approve",
+                permissions.data?.permissions,
+              ),
+              isModuleEnabled,
+            },
+            now,
+          )
         : null,
-    [activity.data, permissions.data?.permissions, isModuleEnabled],
+    [activity.data, permissions.data?.permissions, isModuleEnabled, now],
   );
   const openRow = useMemo(
     () =>
       opened === null
         ? null
         : (groups
-            .flatMap((group) => group.rows)
+            .flatMap((group) => [...group.rows, ...(group.archive?.rows ?? [])])
             .find((row) => row.key === opened.key) ?? opened),
     [groups, opened],
   );
@@ -359,6 +417,7 @@ export function ActivityPage() {
         filter !== "all" &&
         group.id !== "needs-you" &&
         group.rows.length === 0 &&
+        group.archive === null &&
         group.unavailable.length === 0 ? null : (
           <GroupSection
             key={group.id}
