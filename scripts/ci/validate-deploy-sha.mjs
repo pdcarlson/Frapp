@@ -99,6 +99,15 @@ export function normalizeSha(value) {
  * can still be cancelled by a manual stop, a timeout, or a `stale` conclusion —
  * none of which the guard touches.
  *
+ * The guard alone left a second door open (2026-11-11): GitHub keeps one
+ * running and one pending run per group, and cancels the older pending run
+ * when a newer one queues, whatever `cancel-in-progress` says. A run dropped
+ * that way never starts, so its checks read "never reported", not
+ * `cancelled`. On a busy afternoon that dropped the required checks of 14 of
+ * 15 commits on `main`, and Deploy production's empty-`sha` pick found
+ * nothing. All four workflows now key a main run's group on `github.sha`, so
+ * main runs never share a group (`workflow-concurrency.test.mjs`).
+ *
  * That commit is then permanently undeployable: `jobIdsAtRef` cannot excuse it
  * (the run EXISTS, it is just cancelled), so it lands in `failing` and reads as
  * "CI is not green" — a red-tests message for a commit whose tests never ran.

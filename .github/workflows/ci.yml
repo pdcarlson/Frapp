@@ -7,7 +7,13 @@ on:
     branches: [main]
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # On main, one group per commit, so no main run ever waits in this group.
+  # GitHub keeps one running and ONE pending run per group and cancels any
+  # older pending run when a newer one queues, whatever cancel-in-progress
+  # says. Keyed on the ref, three merges in a few minutes drop the middle
+  # commit's run before it starts: its required checks never report and
+  # Deploy production can't pick it. scripts/ci/__tests__/workflow-concurrency.test.mjs.
+  group: ci-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   # Never cancel on main: a cancelled push run leaves required checks
   # `cancelled`, which validate-deploy-sha.mjs refuses (§ CANCELLED_CONCLUSIONS).
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}

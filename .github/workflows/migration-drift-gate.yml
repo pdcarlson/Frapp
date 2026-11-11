@@ -86,7 +86,13 @@ concurrency:
   # on that runner, which is thrown away with it. Nothing in this workflow ever
   # sends SQL to a deployed database, so a superseded run has no cleanup to do
   # and no reason to finish.
-  group: migration-drift-gate-${{ github.ref }}
+  # On main, one group per commit, so no main run ever waits in this group.
+  # GitHub keeps one running and ONE pending run per group and cancels any
+  # older pending run when a newer one queues, whatever cancel-in-progress
+  # says. Keyed on the ref, three merges in a few minutes drop the middle
+  # commit's run before it starts: its required checks never report and
+  # Deploy production can't pick it. scripts/ci/__tests__/workflow-concurrency.test.mjs.
+  group: migration-drift-gate-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   # Cancellable on a PR ref, NEVER on main.
   #
   # `github.ref` is `refs/heads/main` for every push to main, so an unguarded

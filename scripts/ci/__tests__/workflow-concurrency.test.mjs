@@ -72,6 +72,7 @@ const workflows = workflowFiles()
   .map((name) => ({ name, text: readFileSync(join(WORKFLOWS, name), "utf8") }));
 
 const GUARD = "${{ github.ref != 'refs/heads/main' }}";
+const MAIN_PER_COMMIT = "${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}";
 
 describe("workflow concurrency — a main push run must never cancel another", () => {
   it("reads the workflow directory at all", () => {
@@ -113,6 +114,44 @@ describe("workflow concurrency — a main push run must never cancel another", (
       const wf = workflows.find((w) => w.name === name);
       assert.ok(wf, `${name} must exist`);
       assert.equal(concurrencyOf(wf.text)?.cancel, GUARD, `${name} must carry the guard`);
+    }
+  });
+
+  it("gives every main push run its own group, so none is dropped while pending", () => {
+    // `cancel-in-progress: false` stops a RUNNING run from being cancelled, not a
+    // PENDING one: GitHub keeps one running and one pending run per group and
+    // cancels the older pending run when a newer one queues. Keyed on the bare
+    // ref, three merges in a few minutes drop the middle commit's run before it
+    // starts; its required checks never report, and Deploy production's
+    // empty-`sha` pick skips it (2026-11-11: 14 of 15 commits on main, run
+    // 43110385644). Keying a main run on the commit puts each in its own group.
+    const offenders = [];
+    for (const { name, text } of workflows) {
+      const c = concurrencyOf(text);
+      if (!c || !c.group?.includes("github.ref")) continue;
+      if (!pushesToMain(text)) continue;
+      if (!c.group.includes(MAIN_PER_COMMIT)) offenders.push(name);
+    }
+    assert.deepEqual(
+      offenders,
+      [],
+      `these run on pushes to main with a github.ref-keyed concurrency group, so a ` +
+        `burst of merges drops the waiting runs and their commits' required checks ` +
+        `never report. Key the group on \`${MAIN_PER_COMMIT}\`.`,
+    );
+    for (const [name, prefix] of [
+      ["ci.yml", "ci"],
+      ["docs.yml", "docs"],
+      ["links.yml", "links"],
+      ["migration-drift-gate.yml", "migration-drift-gate"],
+    ]) {
+      const wf = workflows.find((w) => w.name === name);
+      assert.ok(wf, `${name} must exist`);
+      assert.equal(
+        concurrencyOf(wf.text)?.group,
+        `${prefix}-${MAIN_PER_COMMIT}`,
+        `${name} must key a main run's group on its commit`,
+      );
     }
   });
 
