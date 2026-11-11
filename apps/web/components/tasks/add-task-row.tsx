@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { Plus } from "lucide-react";
+import { dueEntryFields } from "@repo/formatting";
 import { memberLabel } from "@repo/hooks/display-names";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -104,7 +105,7 @@ export function AddTaskRow({
       title,
       description: draft.description.trim() || undefined,
       assignee_id: draft.assignee_id,
-      due_date: draft.due_date,
+      ...dueEntryFields(draft.due_date),
       point_reward: parseGuardedInt(draft.point_reward),
     });
     if (!created) return;
@@ -203,7 +204,7 @@ export function AddTaskRow({
           <DueDateField
             ref={dueRef}
             aria-label="Due date"
-            placeholder="Due: Nov 14"
+            placeholder="Due: Fri 5pm"
             missing={missing.due}
             value={draft.due_date}
             onChange={(value) => {

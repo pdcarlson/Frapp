@@ -43,6 +43,7 @@ interface CachedTask {
   status?: string;
   stored_status?: string;
   due_date?: string;
+  due_at?: string | null;
   completed_at?: string | null;
   confirmed_at?: string | null;
   points_awarded?: boolean;
@@ -94,8 +95,18 @@ export function deriveDisplayStatus(
   storedStatus: TaskStatus,
   dueDate: string | undefined,
   today: string,
+  /**
+   * A task due at a time of day is overdue from that minute (#4003), as
+   * `toDisplayStatus` reads it; `now` is injected for the unit table.
+   */
+  dueAt?: string | null,
+  now: Date = new Date(),
 ): TaskStatus {
   const derivable = storedStatus === "TODO" || storedStatus === "IN_PROGRESS";
+  const dueAtMs = dueAt ? Date.parse(dueAt) : Number.NaN;
+  if (!Number.isNaN(dueAtMs)) {
+    return derivable && dueAtMs <= now.getTime() ? "OVERDUE" : storedStatus;
+  }
   if (
     derivable &&
     typeof dueDate === "string" &&
@@ -375,6 +386,8 @@ export function useCreateTask() {
       description?: string;
       assignee_id: string;
       due_date: string;
+      /** The moment it is due, when it has a time of day (#4003). */
+      due_at?: string;
       point_reward?: number;
     }) => {
       const { data, error } = await client.POST("/v1/tasks", { body });
@@ -439,7 +452,12 @@ export function useUpdateTaskStatus() {
       // first leaves the button unchanged after a successful write — the member
       // taps again and collects a 400 for an action that already succeeded.
       const patch: TaskPatch = {
-        status: deriveDisplayStatus(body.status, row?.due_date, todayUtc()),
+        status: deriveDisplayStatus(
+          body.status,
+          row?.due_date,
+          todayUtc(),
+          row?.due_at,
+        ),
         stored_status: body.status,
       };
       // Mirrors the server stamping `completed_at` on COMPLETED and leaving it
@@ -563,7 +581,12 @@ export function useRejectTask() {
       await cancelTaskQueries(queryClient, chapterId, id);
       const row = readCachedTask(queryClient, chapterId, id);
       return applyTaskPatch(queryClient, chapterId, id, {
-        status: deriveDisplayStatus("IN_PROGRESS", row?.due_date, todayUtc()),
+        status: deriveDisplayStatus(
+          "IN_PROGRESS",
+          row?.due_date,
+          todayUtc(),
+          row?.due_at,
+        ),
         stored_status: "IN_PROGRESS",
         completed_at: null,
       });

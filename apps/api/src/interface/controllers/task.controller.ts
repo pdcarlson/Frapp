@@ -109,6 +109,7 @@ export class TaskController {
       assignee_id: dto.assignee_id,
       created_by: createdBy,
       due_date: dto.due_date,
+      due_at: dto.due_at ?? null,
       point_reward: dto.point_reward ?? null,
       channel_id: dto.channel_id,
       client_message_id: dto.client_message_id,

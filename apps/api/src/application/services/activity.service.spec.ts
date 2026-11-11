@@ -26,6 +26,7 @@ const task = (overrides: Partial<TaskView>): TaskView => ({
   assignee_id: ME,
   created_by: OTHER,
   due_date: '2026-11-20',
+  due_at: null,
   status: TaskStatus.TODO,
   stored_status: TaskStatus.TODO,
   point_reward: 5,

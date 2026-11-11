@@ -3,6 +3,7 @@
 import { useId, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useMembers } from "@repo/hooks";
+import { dueEntryFields } from "@repo/formatting";
 import { memberLabel } from "@repo/hooks/display-names";
 import type { DispatchResult, TaskInput } from "@repo/chat-core/dispatch";
 import { TASK_TITLE_MAX_LENGTH } from "@repo/validation";
@@ -117,7 +118,7 @@ export function NewTaskDialog({
         title: trimmed,
         description: description.trim() || undefined,
         assignee_id: assigneeId,
-        due_date: dueDate,
+        ...dueEntryFields(dueDate),
         point_reward: parseGuardedInt(points),
       });
       if (!result.ok) {
@@ -164,7 +165,8 @@ export function NewTaskDialog({
                   ...prev,
                   title: prev.title && !next.trim(),
                   titleTooLong:
-                    prev.titleTooLong && next.trim().length > TASK_TITLE_MAX_LENGTH,
+                    prev.titleTooLong &&
+                    next.trim().length > TASK_TITLE_MAX_LENGTH,
                 }));
               }}
               {...gate.controlProps()}
@@ -223,7 +225,7 @@ export function NewTaskDialog({
                 <DueDateField
                   ref={dueRef}
                   id={`${ids}-due`}
-                  placeholder="Nov 14, Friday, tomorrow"
+                  placeholder="Nov 14, Friday 5pm, tomorrow"
                   missing={missing.due}
                   value={dueDate}
                   onChange={(value) => {

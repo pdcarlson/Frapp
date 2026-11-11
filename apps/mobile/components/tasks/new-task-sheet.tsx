@@ -41,14 +41,17 @@ import {
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import { DueDateField } from "@/components/tasks/due-date-field";
+import { DueTimeField } from "@/components/tasks/due-time-field";
 import { localIsoDate } from "@repo/formatting";
 import { TITLE_MAX_LENGTH } from "@/lib/tasks/limits";
 import {
   DEFAULT_DUE_CHOICE,
   dueChoiceOf,
+  dueTimePassed,
   duePresets,
   parsePointReward,
   resolveDue,
+  suggestedDueTime,
   validateNewTask,
   type DueChoice,
 } from "@/lib/tasks/create-task";
@@ -192,6 +195,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const [pointsInput, setPointsInput] = useState("");
     // The chip as the draft holds it, resolved against today's below.
     const [due, setDue] = useState<DueChoice>(DEFAULT_DUE_CHOICE);
+    // `HH:MM`, or null for a task due by the day (#4003).
+    const [dueTime, setDueTime] = useState<string | null>(null);
     // Defaults to the viewer, so the common case needs no picker interaction.
     const [assigneeId, setAssigneeId] = useState<string | null>(null);
     const [titleFocused, setTitleFocused] = useState(false);
@@ -247,10 +252,12 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const draft = {
       title,
       dueDate,
+      dueTime,
       assigneeId: effectiveAssigneeId,
       pointsInput,
     };
-    const body = validateNewTask(draft);
+    const body = validateNewTask(draft, at);
+    const timePassed = dueTimePassed(draft, at);
     const pointsInvalid = parsePointReward(pointsInput).kind === "invalid";
     const canSubmit = body !== null && !pending && refusal === null;
 
@@ -259,6 +266,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       setTitle("");
       setPointsInput("");
       setDue(DEFAULT_DUE_CHOICE);
+      setDueTime(null);
       setAssigneeId(null);
     }, []);
 
@@ -474,6 +482,15 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
               accessibilityLabel="Due date"
             />
 
+            <View style={styles.field}>
+              <DueTimeField
+                value={dueTime}
+                suggested={suggestedDueTime(dueDate, at)}
+                disabled={pending}
+                onChange={setDueTime}
+              />
+            </View>
+
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`Assignee: ${assigneeLabel}`}
@@ -496,6 +513,13 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
               </Text>
               <Text style={styles.assigneeHint}>assignee</Text>
             </Pressable>
+
+            {timePassed ? (
+              <Text style={styles.error}>
+                That time has already passed today. Pick a later time or another
+                day.
+              </Text>
+            ) : null}
 
             {pointsInvalid ? (
               <Text style={styles.error}>

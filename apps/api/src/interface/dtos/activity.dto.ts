@@ -42,6 +42,14 @@ export class ActivityTaskDto implements ActivityTask {
   due_date: string;
 
   @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description: 'The moment it is due, when it has a time of day.',
+  })
+  due_at: string | null;
+
+  @ApiProperty({
     enum: TaskStatus,
     description: 'Display status: OVERDUE for an open task past its due date.',
   })

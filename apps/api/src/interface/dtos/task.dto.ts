@@ -32,6 +32,15 @@ export class CreateTaskDto {
   @IsDateString()
   due_date: string;
 
+  @ApiPropertyOptional({
+    description:
+      'The moment the task is due, when it has a time of day (ISO 8601 with an offset). `due_date` must be the calendar day of this moment as the creator sees it. Omit for a task due on `due_date` with no time.',
+    format: 'date-time',
+  })
+  @IsOptional()
+  @IsDateString({ strict: true })
+  due_at?: string;
+
   @ApiPropertyOptional({ description: 'Points to award on completion' })
   @IsOptional()
   @IsInt()
@@ -92,6 +101,9 @@ export class CreateTaskResponseDto implements Task {
 
   @ApiProperty({ format: 'date' })
   due_date: string;
+
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
+  due_at: string | null;
 
   @ApiProperty({ enum: TaskStatus })
   status: TaskStatus;

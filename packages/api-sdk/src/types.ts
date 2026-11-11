@@ -5680,6 +5680,11 @@ export interface components {
             assignee_id: string;
             /** @description Due date (YYYY-MM-DD) */
             due_date: string;
+            /**
+             * Format: date-time
+             * @description The moment the task is due, when it has a time of day (ISO 8601 with an offset). `due_date` must be the calendar day of this moment as the creator sees it. Omit for a task due on `due_date` with no time.
+             */
+            due_at?: string;
             /** @description Points to award on completion */
             point_reward?: number;
             /** @description When set with `client_message_id`, posts an interactive task card to this chat channel after the task is created (the `/task` slash command). Omit for dashboard creates. */
@@ -5700,6 +5705,8 @@ export interface components {
             created_by: string;
             /** Format: date */
             due_date: string;
+            /** Format: date-time */
+            due_at: string | null;
             /** @enum {string} */
             status: "TODO" | "IN_PROGRESS" | "COMPLETED" | "OVERDUE";
             point_reward: number | null;
@@ -6077,6 +6084,11 @@ export interface components {
              * @example 2026-11-20
              */
             due_date: string;
+            /**
+             * Format: date-time
+             * @description The moment it is due, when it has a time of day.
+             */
+            due_at: string | null;
             /**
              * @description Display status: OVERDUE for an open task past its due date.
              * @enum {string}

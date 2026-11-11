@@ -37,6 +37,7 @@ describe('TaskService', () => {
     assignee_id: 'user-1',
     created_by: 'admin-1',
     due_date: '2099-03-15',
+    due_at: null,
     status: TaskStatus.TODO,
     point_reward: 10,
     points_awarded: false,
@@ -140,6 +141,7 @@ describe('TaskService', () => {
         assignee_id: 'user-1',
         created_by: 'admin-1',
         due_date: '2099-03-15',
+        due_at: null,
         status: TaskStatus.TODO,
         point_reward: 10,
         points_awarded: false,
@@ -147,6 +149,55 @@ describe('TaskService', () => {
         confirmed_at: null,
       });
       expect(result).toEqual(baseTask);
+    });
+
+    describe('with a due time (#4003)', () => {
+      const create = (due_date: string, due_at: string) =>
+        service.create({
+          chapter_id: 'ch-1',
+          title: 'Take out the trash',
+          assignee_id: 'user-1',
+          created_by: 'admin-1',
+          due_date,
+          due_at,
+        });
+
+      it('stores the instant beside the day', async () => {
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+        mockTaskRepo.create.mockResolvedValue({
+          ...baseTask,
+          due_at: '2099-03-16T02:00:00.000Z',
+        });
+        (mockNotificationService as any).timeZoneFor = jest
+          .fn()
+          .mockResolvedValue('America/New_York');
+
+        // 9 PM Central on Mar 15 is 02:00Z on Mar 16: still "on" Mar 15.
+        await create('2099-03-15', '2099-03-15T21:00:00-05:00');
+
+        expect(mockTaskRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            due_date: '2099-03-15',
+            due_at: '2099-03-16T02:00:00.000Z',
+          }),
+        );
+        // The assignee reads the time in their own zone.
+        const payload = mockNotificationService.notifyUser.mock.calls[0][2];
+        expect(
+          payload.personalize!({
+            userId: 'user-1',
+            timeZone: 'America/Chicago',
+          }).body,
+        ).toContain('due Sun, Mar 15, 2099, 9 PM');
+      });
+
+      it('refuses an instant that is not on the due day', async () => {
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+        await expect(
+          create('2099-03-15', '2099-03-18T12:00:00.000Z'),
+        ).rejects.toThrow('due_at must fall on due_date');
+        expect(mockTaskRepo.create).not.toHaveBeenCalled();
+      });
     });
 
     it('should reject create when assignee is not a chapter member', async () => {
@@ -867,6 +918,30 @@ describe('TaskService', () => {
       const result = await service.list('ch-1', 'user-1', true);
 
       expect(result[0].status).toBe(TaskStatus.OVERDUE);
+    });
+
+    it('is overdue from the minute of a due time, not the day after (#4003)', async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const passed: Task = {
+        ...baseTask,
+        id: 'passed',
+        due_date: today,
+        due_at: new Date(Date.now() - 60_000).toISOString(),
+      };
+      const ahead: Task = {
+        ...baseTask,
+        id: 'ahead',
+        due_date: today,
+        due_at: new Date(Date.now() + 60 * 60_000).toISOString(),
+      };
+      mockTaskRepo.findByChapter.mockResolvedValue([passed, ahead]);
+
+      const result = await service.list('ch-1', 'user-1', true);
+
+      expect(result.map((task) => task.status)).toEqual([
+        TaskStatus.OVERDUE,
+        TaskStatus.TODO,
+      ]);
     });
 
     /**

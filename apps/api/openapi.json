@@ -18091,6 +18091,11 @@
             "type": "string",
             "description": "Due date (YYYY-MM-DD)"
           },
+          "due_at": {
+            "type": "string",
+            "description": "The moment the task is due, when it has a time of day (ISO 8601 with an offset). `due_date` must be the calendar day of this moment as the creator sees it. Omit for a task due on `due_date` with no time.",
+            "format": "date-time"
+          },
           "point_reward": {
             "type": "number",
             "description": "Points to award on completion"
@@ -18140,6 +18145,11 @@
             "type": "string",
             "format": "date"
           },
+          "due_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -18183,6 +18193,7 @@
           "assignee_id",
           "created_by",
           "due_date",
+          "due_at",
           "status",
           "point_reward",
           "points_awarded",
@@ -19147,6 +19158,12 @@
             "format": "date",
             "example": "2026-11-20"
           },
+          "due_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "The moment it is due, when it has a time of day."
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -19207,6 +19224,7 @@
           "id",
           "title",
           "due_date",
+          "due_at",
           "status",
           "stored_status",
           "assignee_id",

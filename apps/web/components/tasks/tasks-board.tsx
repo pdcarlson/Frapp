@@ -19,7 +19,7 @@ import {
 } from "@repo/hooks";
 import type { TaskStatus } from "@repo/hooks";
 import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
-import { formatWeekdayDay, nextUpLine } from "@repo/formatting";
+import { formatDayTime, formatWeekdayDay, nextUpLine } from "@repo/formatting";
 import { can } from "@repo/validation";
 import { ToastAction } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
@@ -58,6 +58,8 @@ type Task = {
   assignee_id: string;
   created_by: string;
   due_date: string;
+  /** The moment it is due, when it has a time of day (#4003). */
+  due_at?: string | null;
   /** Display status — `OVERDUE` when derived. Drives the column grouping. */
   status: TaskStatus;
   /**
@@ -210,9 +212,13 @@ export function TasksBoard() {
     recent.sort((a, b) => confirmedAt(b) - confirmedAt(a));
     for (const [, list] of grouped) {
       list.sort((a, b) => {
-        const aMs = new Date(a.due_date).getTime();
-        const bMs = new Date(b.due_date).getTime();
-        return aMs - bMs;
+        // By day, then by time within the day, a task with no time last
+        // (it is due by the end of the day).
+        const byDay = a.due_date.localeCompare(b.due_date);
+        if (byDay !== 0) return byDay;
+        const aMs = a.due_at ? Date.parse(a.due_at) : Number.POSITIVE_INFINITY;
+        const bMs = b.due_at ? Date.parse(b.due_at) : Number.POSITIVE_INFINITY;
+        return aMs === bMs ? 0 : aMs < bMs ? -1 : 1;
       });
     }
     return { columns: grouped, confirmed: recent };
@@ -561,9 +567,7 @@ export function TasksBoard() {
               className="justify-self-start"
               onClick={() => setShowAllConfirmed((open) => !open)}
             >
-              {showAllConfirmed
-                ? "Show fewer"
-                : `Show all ${confirmed.length}`}
+              {showAllConfirmed ? "Show fewer" : `Show all ${confirmed.length}`}
             </Button>
           ) : null}
         </section>
@@ -629,7 +633,11 @@ function TaskTile({
           <>
             <span
               className={due.overdue ? "text-destructive-text" : undefined}
-              title={formatWeekdayDay(task.due_date) ?? undefined}
+              title={
+                (task.due_at
+                  ? formatDayTime(task.due_at)
+                  : formatWeekdayDay(task.due_date)) ?? undefined
+              }
             >
               {due.text}
             </span>

@@ -70,6 +70,8 @@ export interface ActivityTask {
   id: string;
   title: string;
   due_date: string;
+  /** The moment it is due, when it has a time of day (#4003). */
+  due_at: string | null;
   /** Display status: `OVERDUE` for an open task past its due date. */
   status: TaskStatus;
   /** The status actually stored; what the next transition is checked against. */
@@ -514,7 +516,9 @@ export class ActivityService {
 
     const mine = own
       .filter((task) => task.stored_status !== TaskStatus.COMPLETED)
-      .sort(byAscending((task) => task.due_date));
+      // By day, and within a day by time, a task with no time last: it is
+      // due by the end of the day.
+      .sort(byAscending((task) => `${task.due_date} ${task.due_at ?? '~'}`));
     // Confirming your own completion is refused (`TaskService.confirmCompletion`,
     // the no-self-award rule), so it is not offered as waiting on you.
     const confirmations = canManage
@@ -544,6 +548,7 @@ export class ActivityService {
       id: task.id,
       title: task.title,
       due_date: task.due_date,
+      due_at: task.due_at,
       status: task.status,
       stored_status: task.stored_status,
       assignee_id: task.assignee_id,

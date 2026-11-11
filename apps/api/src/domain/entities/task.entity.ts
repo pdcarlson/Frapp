@@ -13,6 +13,12 @@ export interface Task {
   assignee_id: string;
   created_by: string;
   due_date: string;
+  /**
+   * The moment the task is due, when it has a time of day (#4003). Null for a
+   * task due on `due_date` with no time. When set, `due_date` is still the
+   * calendar day the creator saw, and overdue starts at this instant.
+   */
+  due_at: string | null;
   status: TaskStatus;
   point_reward: number | null;
   points_awarded: boolean;

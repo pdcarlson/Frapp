@@ -73,7 +73,9 @@ function toRow(row: Record<string, unknown>): TaskRowModel | null {
     createdBy: str(row, "created_by"),
     storedStatus,
     displayStatus,
-    dueDate: str(row, "due_date"),
+    // A task due at a time carries its instant here, so the subtitle, the
+    // urgency and the order all read the time (#4003).
+    dueDate: str(row, "due_at") ?? str(row, "due_date"),
     completedAt: str(row, "completed_at"),
     confirmedAt: str(row, "confirmed_at"),
     pointReward: num(row, "point_reward"),

@@ -124,7 +124,7 @@ export function TaskCard({
           />
           <CardMeta
             items={[
-              dueLine(payload.due_date, live, now),
+              dueLine(payload.due_at ?? payload.due_date, live, now),
               payload.point_reward ? (
                 <PointsChip points={payload.point_reward} />
               ) : null,
