@@ -6,7 +6,10 @@ import { request as httpsRequest, type RequestOptions } from 'node:https';
 import type { LookupFunction } from 'node:net';
 import { createBrotliDecompress, createGunzip, createInflate } from 'node:zlib';
 import type { Readable } from 'node:stream';
-import type { ILinkTitleFetcher } from '#domain/adapters/link-title.interface';
+import type {
+  ILinkTitleFetcher,
+  LinkTitleResult,
+} from '#domain/adapters/link-title.interface';
 import { fetchableUrl, isPublicAddress } from './link-title-guards';
 import { headIsComplete, pageTitleFromHtml } from './page-title';
 
@@ -48,8 +51,15 @@ const systemResolveAll: ResolveAll = (hostname) =>
 const systemRequest: HttpsRequest = (url, options, onResponse) =>
   httpsRequest(url, options, onResponse);
 
-/** Thrown inside the read; any of them ends it with no title. */
+/**
+ * A guard said no: the host resolves to a non-public address, or the page is
+ * in an encoding the read doesn't take. A definite answer, never retried.
+ */
 class Refused extends Error {}
+/** The deadline over the whole read passed. Worth trying again later. */
+class TimedOut extends Error {}
+
+const NONE: LinkTitleResult = { outcome: 'none' };
 
 /**
  * The socket's own DNS lookup, refusing the connection when any address the
@@ -85,7 +95,7 @@ export function guardedLookup(resolveAll: ResolveAll): LookupFunction {
       },
       (error: unknown) =>
         callback(
-          error instanceof Error ? error : new Refused('lookup failed'),
+          error instanceof Error ? error : new Error('lookup failed'),
           '',
           0,
         ),
@@ -93,8 +103,28 @@ export function guardedLookup(resolveAll: ResolveAll): LookupFunction {
   };
 }
 
-/** The body as text, decompressed, stopping at the head's end or the cap. */
-function readHead(response: IncomingMessage): Promise<string> {
+/**
+ * The `charset` a `Content-Type` names, when the decoder knows it; UTF-8
+ * otherwise, which is what every sign-up host serves today.
+ */
+export function charsetOf(contentType: string): string {
+  const label = /;\s*charset\s*=\s*"?([\w.:-]+)"?/i.exec(contentType)?.[1];
+  if (!label) return 'utf-8';
+  try {
+    return new TextDecoder(label).encoding;
+  } catch {
+    return 'utf-8';
+  }
+}
+
+/**
+ * The body as text, decompressed, stopping at the head's end or the cap.
+ * Exported for its spec, which drives it with a stream it controls.
+ */
+export function readHead(
+  response: IncomingMessage,
+  charset = 'utf-8',
+): Promise<string> {
   const encoding = String(response.headers['content-encoding'] ?? '')
     .trim()
     .toLowerCase();
@@ -106,12 +136,12 @@ function readHead(response: IncomingMessage): Promise<string> {
   } else if (encoding === 'br') {
     body = response.pipe(createBrotliDecompress());
   } else if (encoding !== '' && encoding !== 'identity') {
-    response.resume();
+    response.destroy();
     return Promise.reject(new Refused('unknown encoding'));
   }
 
   return new Promise((resolve, reject) => {
-    const decoder = new TextDecoder('utf-8');
+    const decoder = new TextDecoder(charset);
     let text = '';
     let bytes = 0;
     let settled = false;
@@ -135,7 +165,7 @@ function readHead(response: IncomingMessage): Promise<string> {
     body.on('end', () => finish(text + decoder.decode()));
     body.on('error', (error: Error) => finish(error));
     // Closed before its end: aborted by the deadline or the server.
-    body.on('close', () => finish(new Refused('closed early')));
+    body.on('close', () => finish(new Error('closed early')));
     response.on('error', (error: Error) => finish(error));
   });
 }
@@ -167,10 +197,10 @@ export class HttpsLinkTitleFetcher implements ILinkTitleFetcher {
     };
   }
 
-  async fetchTitle(url: string): Promise<string | null> {
+  async fetchTitle(url: string): Promise<LinkTitleResult> {
     const controller = new AbortController();
     const timer = setTimeout(
-      () => controller.abort(new Refused('timed out')),
+      () => controller.abort(new TimedOut('timed out')),
       LINK_TITLE_TIMEOUT_MS,
     );
     const deadline = controller.signal;
@@ -179,27 +209,42 @@ export class HttpsLinkTitleFetcher implements ILinkTitleFetcher {
       for (let hop = 0; target && hop <= LINK_TITLE_MAX_REDIRECTS; hop += 1) {
         const response = await this.get(target, deadline);
         const status = response.statusCode ?? 0;
+        const type = String(response.headers['content-type'] ?? '');
+        const location = response.headers.location;
+        // Nothing more is read of a response that is not the page itself.
+        if (status !== 200) response.destroy();
         if (status >= 300 && status < 400) {
-          const location = response.headers.location;
-          response.resume();
           target = location ? fetchableUrl(location, target) : null;
           continue;
         }
-        const type = String(response.headers['content-type'] ?? '');
-        if (status !== 200 || !/^\s*text\/html\b/i.test(type)) {
-          response.resume();
-          return null;
+        if (status === 429 || status >= 500) {
+          return { outcome: 'failed', reason: 'server-error' };
         }
-        return pageTitleFromHtml(await readHead(response));
+        if (status !== 200 || !/^\s*text\/html\b/i.test(type)) {
+          response.destroy();
+          return NONE;
+        }
+        const title = pageTitleFromHtml(
+          await readHead(response, charsetOf(type)),
+        );
+        return title === null ? NONE : { outcome: 'title', title };
       }
-      return null;
+      // Refused, redirected off the list, or past the redirect limit.
+      return NONE;
     } catch (error) {
-      // Expected for refused hosts, timeouts and unreachable pages: the row
-      // keeps its kind, which is the designed outcome, so nothing is lost.
+      if (error instanceof Refused) return NONE;
+      if (deadline.aborted || error instanceof TimedOut) {
+        return { outcome: 'failed', reason: 'timeout' };
+      }
+      if (error instanceof Error && 'code' in error) {
+        // DNS, connection, TLS: `ENOTFOUND`, `ECONNRESET`, `CERT_…`.
+        this.logger.debug(`link title read failed: ${String(error.code)}`);
+        return { outcome: 'failed', reason: 'network' };
+      }
       this.logger.debug(
-        `link title not read: ${error instanceof Error ? error.name : 'error'}`,
+        `link title read failed: ${error instanceof Error ? error.name : 'unknown'}`,
       );
-      return null;
+      return { outcome: 'failed', reason: 'unexpected' };
     } finally {
       clearTimeout(timer);
     }
@@ -208,7 +253,7 @@ export class HttpsLinkTitleFetcher implements ILinkTitleFetcher {
   private get(target: URL, signal: AbortSignal): Promise<IncomingMessage> {
     return new Promise((resolve, reject) => {
       if (signal.aborted) {
-        reject(new Refused('timed out'));
+        reject(new TimedOut('timed out'));
         return;
       }
       const req = this.deps.request(
@@ -232,7 +277,7 @@ export class HttpsLinkTitleFetcher implements ILinkTitleFetcher {
       );
       req.on('error', reject);
       // The socket's idle timeout; the deadline above bounds the whole chain.
-      req.on('timeout', () => req.destroy(new Refused('timed out')));
+      req.on('timeout', () => req.destroy(new TimedOut('timed out')));
       req.end();
     });
   }

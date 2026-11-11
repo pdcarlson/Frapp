@@ -129,12 +129,14 @@ on web ([`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README
   Sheets and Docs (`docs.google.com/forms/…`, `/spreadsheets/…`, `/document/…`, with or without a
   Workspace account's `/a/<domain>` prefix, and `forms.gle`), Microsoft Forms
   (`forms.office.com`, `forms.microsoft.com`, `forms.cloud.microsoft`), Typeform, SignUpGenius and
-  Calendly. The list lives once, in `activity_action_links` in the database, and is flagged for
-  Paul to change or widen. The page names each row's kind ("Google Form", "Calendly") from
-  `activityLinkKind` in `@repo/hooks`, which knows the same hosts: a host added to the database
-  alone is gathered and titled by its bare host until it gets a name there. The title fetch
-  below keeps a third copy (`isSignUpHost` in `apps/api`), so a host added to the database
-  alone is gathered but gets no name until it is added there too. Any other link is not gathered, and neither is a URL with a user name
+  Calendly. What is gathered is decided by `activity_action_links` in the database, which is
+  flagged for Paul to change or widen. Two copies of the list follow it, and a widening changes
+  all three. The page names each row's kind ("Google Form", "Calendly") from `activityLinkKind`
+  in `@repo/hooks`: a host added to the database alone is gathered and titled by its bare host
+  until it gets a name there. The name read below opens only what `isSignUpHost` in `apps/api`
+  allows: a link on a host added to the database alone is gathered, but its read is refused,
+  which is a definite answer, so a link posted before the API's copy catches up never gets a
+  name. Any other link is not gathered, and neither is a URL with a user name
   in it (`https://calendly.com:1@evil.example/`): a browser opens the host after the `@`, so the
   one before it would be a trusted label on somewhere else.
 - **How they are found.** A trigger on chat messages indexes every write path the same way (a
@@ -145,13 +147,20 @@ on web ([`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README
 - **Names** (#4187: Shawn, 2026-11-11; fetching approved by Paul the same day, with the guards
   below). A row is titled by the page's own name, the form's or sheet's title, with its kind
   leading the detail ("5K volunteer shifts", then "Google Form · Olive · #rush · Tue 3:00 PM").
-  A link with no name keeps today's row, titled by its kind. The API reads each name **once, in
-  the background**, and stores it on the link (`title`); `GET /v1/activity` only serves what is
-  stored and never opens a link. A sweep on the API claims up to 10 unread links a minute
-  (`title_checked_at`, a compare-and-set, so one replica reads each link) and never reads a
-  claimed link again, whatever came back. An edit that keeps a URL keeps its row and its name; a
-  new URL is a new row, read once. The read is the API's only request to a URL a member posted,
-  and every hop of it is guarded:
+  A link with no name keeps today's row, titled by its kind. The API reads each name **in the
+  background** and stores it on the link (`title`); `GET /v1/activity` only serves what is
+  stored and never opens a link. A sweep on the API reads up to 10 links a minute, newest first,
+  a budget the whole API shares across every chapter (links in a channel left out of Activity
+  spend it too, since an officer can bring the channel back). Each link is claimed just before
+  its read with a compare-and-set on its try count (`title_attempts`), so one replica reads it
+  at a time. A **definite answer** ends it for good: a name, or a page with none (refused, off
+  the list, a 4xx, not HTML, a sign-in page). A read that **broke on the way** (a timeout, a
+  network or TLS error, a 5xx or rate limit, the API restarting mid-read) is tried again an hour
+  later, three tries at most, and a sweep tick whose reads broke reports it
+  (`link-title-sweep-read`), so a fault that breaks every read is seen. An edit that keeps a URL
+  keeps its row and its name; a new URL is a new row. The same URL posted in several messages
+  in one tick is read once. The read is the API's only request to a URL a member posted, and
+  every hop of it is guarded:
   - **Allowlist.** Only the sign-up hosts and paths above. An `http` link is read over `https` on
     the same host; a user name or password, a non-default port, or an IP literal is refused.
   - **Network safety.** The host is resolved in the connection's own lookup, and the connection is
@@ -163,13 +172,16 @@ on web ([`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README
     address checks. One that leaves the list ends the read with no name.
   - **Limits.** Five seconds over the whole read, redirects included; at most 512 KB of page,
     counted after decompression; only a `200` HTML page is read, and reading stops where the
-    page's head ends. A `GET` with no cookies or credentials, on a fresh connection each hop.
+    page's head ends, in the charset the page names (UTF-8 otherwise). A response that is not
+    the page itself (a redirect, an error) is closed, not read. A `GET` with no cookies or
+    credentials, on a fresh connection each hop.
   - **What counts as a name.** The page's `og:title`, else its `<title>`, without the product's
     name around it (" - Google Sheets"). No name: a sign-in page (a private Sheet or Doc
     redirects to Google's sign-in, which is off the list, or serves "Sign in" in place), an
     access request, an error or closed form, or a title that is only the product ("Microsoft
-    Forms") or Google's "Untitled form". Control and bidirectional-override characters are
-    dropped, and a name is cut at 200 characters.
+    Forms") or Google's "Untitled form". Only the first 2,000 characters of a title are looked
+    at; control and bidirectional-override characters and broken surrogate pairs are dropped,
+    and a name is cut at 200 characters, never through a character.
   - **Access.** A name is served only on a link the caller already sees: it is a field of the
     link, under the same rule as the rest of the row.
 - **How long one shows.** 30 days from when it was posted.

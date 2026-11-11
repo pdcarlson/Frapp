@@ -648,8 +648,9 @@ export type StoredChatMessageBookmark = Omit<
 /**
  * A sign-up link posted in chat (#3897), as the `chat_messages` trigger
  * indexes it: one row per link per message. `spec/behavior/activity.md`
- * § Links. Which hosts count lives once, in the database's
- * `activity_action_links`.
+ * § Links. Which hosts are gathered is decided by the database's
+ * `activity_action_links`; the API's title read keeps its own copy of the
+ * list (`isSignUpHost`) for what it may open.
  */
 export interface ChatMessageLink {
   id: string;
@@ -669,11 +670,16 @@ export interface ChatMessageLink {
   removed_at: string | null;
   removed_by: string | null;
   /**
-   * The linked page's own name, read once in the background (#4187); null
-   * when the page had none worth showing or has not been read yet.
+   * The linked page's own name, read in the background (#4187); null when
+   * the page had none worth showing or has not been read yet.
    */
   title: string | null;
-  /** When the title sweep claimed this link for its one read; null: not yet. */
+  /**
+   * How many times the title sweep has tried the page. A definite answer
+   * sets it to `MAX_LINK_TITLE_ATTEMPTS`; a failed read leaves it below.
+   */
+  title_attempts: number;
+  /** When the last title read began; null: never tried. */
   title_checked_at: string | null;
 }
 

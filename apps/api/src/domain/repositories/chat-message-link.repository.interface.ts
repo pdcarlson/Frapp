@@ -7,8 +7,15 @@ import type {
 /** A link the title sweep reads the page of (#4187). */
 export type LinkTitleCandidate = Pick<
   ChatMessageLink,
-  'id' | 'chapter_id' | 'url'
+  'id' | 'chapter_id' | 'url' | 'title_attempts'
 >;
+
+/**
+ * How many times the title sweep tries a page before giving up on it. A
+ * definite answer (a name, or a page with none) sets the count straight to
+ * this, so only reads that failed on the way are ever tried again.
+ */
+export const MAX_LINK_TITLE_ATTEMPTS = 3;
 
 export const CHAT_MESSAGE_LINK_REPOSITORY = 'CHAT_MESSAGE_LINK_REPOSITORY';
 
@@ -20,8 +27,8 @@ export const CHAT_MESSAGE_LINK_REPOSITORY = 'CHAT_MESSAGE_LINK_REPOSITORY';
  * every way a message is written indexes the same way. This repository reads
  * them, records an officer's remove, keeps the member states, and stores
  * each link's page title. Every method is scoped by chapter except the title
- * sweep's two reads, which walk every chapter's unread links by design and
- * return only ids and URLs. None applies a channel's access rule:
+ * sweep's read and claim, which walk every chapter's unread links by design
+ * and return only ids, chapters, URLs and attempt counts. None applies a channel's access rule:
  * `ActivityLinkService` does, through chat's own channel list.
  */
 export interface IChatMessageLinkRepository {
@@ -65,21 +72,30 @@ export interface IChatMessageLinkRepository {
     removedBy: string | null,
   ): Promise<ChatMessageLink | null>;
   /**
-   * The title sweep's work (#4187): links not yet claimed for their one title
-   * read, not removed, posted after `since`, newest first, at most `limit`,
-   * across every chapter.
+   * The title sweep's work (#4187), across every chapter, newest first, at
+   * most `limit`: links with no title and fewer than
+   * {@link MAX_LINK_TITLE_ATTEMPTS} tries, not removed, posted after `since`,
+   * and either never tried or last tried before `retryBefore`.
    */
-  findTitleUnchecked(options: {
+  findTitlePending(options: {
     since: string;
+    retryBefore: string;
     limit: number;
   }): Promise<LinkTitleCandidate[]>;
   /**
-   * Claims links for their one title read: sets `title_checked_at` on those
-   * of `linkIds` still unclaimed and returns exactly those. A compare-and-set,
-   * so of two sweeps (two API replicas) only one gets each link, and a link
-   * once claimed is never read again.
+   * Claims one link for a title read: raises its `title_attempts` by one and
+   * stamps `title_checked_at`, only while the count is still the one the
+   * sweep read. A compare-and-set, so of two sweeps (two API replicas) only
+   * one reads each link each time. True when this call won it.
    */
-  claimForTitle(linkIds: string[]): Promise<LinkTitleCandidate[]>;
-  /** Stores a page title on these links of the chapter. */
-  setTitle(chapterId: string, linkIds: string[], title: string): Promise<void>;
+  claimForTitle(link: LinkTitleCandidate): Promise<boolean>;
+  /**
+   * Ends these links' title reads with a definite answer: stores the name,
+   * or, for `null`, none, and either way stops further tries.
+   */
+  finishTitle(
+    chapterId: string,
+    linkIds: string[],
+    title: string | null,
+  ): Promise<void>;
 }

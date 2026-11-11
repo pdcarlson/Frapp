@@ -14,8 +14,10 @@ const GOOGLE_DOCS_PATH = /^(\/a\/[^/]+)?\/(forms|spreadsheets|document)\//i;
  * as `activity_action_links` in the database
  * (`20261111030000_activity_links.sql`), which decides what is indexed; this
  * copy decides what may be opened, so a redirect is held to it too. A host
- * the database list later widens to is gathered but gets no title until it
- * is added here, which fails closed.
+ * the database list later widens to is gathered, but its read is refused
+ * until it is added here, which fails closed. A refusal is a definite
+ * answer, so a link posted before then never gets a name: widen both lists
+ * in the same change.
  */
 export function isSignUpHost(host: string, path: string): boolean {
   if (host === 'docs.google.com') return GOOGLE_DOCS_PATH.test(path);

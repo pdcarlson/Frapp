@@ -3572,16 +3572,17 @@ alter table public.chat_channels drop column if exists display_order;
 
 * **Migration**: `20261111210000_activity_link_titles.sql`
 
-Two nullable columns on `chat_message_links`, `title` and `title_checked_at`, and the partial index `idx_chat_message_links_title_unchecked`. No existing row changed.
+Three columns on `chat_message_links`, `title`, `title_attempts` and `title_checked_at`, and the partial index `idx_chat_message_links_title_pending`. No existing row changed.
 
-**Revert the code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API stops the title sweep, so it opens no more links, and reads the rows with `select('*')`, so the two columns are fields it ignores; the reverted clients title every link row by its kind again.
+**Revert the code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API stops the title sweep, so it opens no more links, and reads the rows with `select('*')`, so the columns are fields it ignores; the reverted clients title every link row by its kind again.
 
-**To stop the outbound reads without a code revert**, nothing in the schema does it: the sweep claims rows by `title_checked_at is null`, so `update public.chat_message_links set title_checked_at = now() where title_checked_at is null;` leaves it nothing to read until new links are posted. Use that only as a stopgap while the revert ships.
+**To stop the outbound reads without a code revert**, nothing in the schema does it: the sweep reads only links with `title is null and title_attempts < 3`, so `update public.chat_message_links set title_attempts = 3 where title is null and title_attempts < 3;` leaves it nothing to read until new links are posted. Use that only as a stopgap while the revert ships.
 
 **To remove the schema**, in a later forward migration after the code revert has shipped. Dropping the columns loses the stored titles, which the sweep would read again if it came back:
 
 ```sql
-drop index if exists public.idx_chat_message_links_title_unchecked;
+drop index if exists public.idx_chat_message_links_title_pending;
 alter table public.chat_message_links drop column if exists title_checked_at;
+alter table public.chat_message_links drop column if exists title_attempts;
 alter table public.chat_message_links drop column if exists title;
 ```

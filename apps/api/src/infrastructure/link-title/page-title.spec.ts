@@ -77,6 +77,31 @@ describe('page titles (#4187)', () => {
       ).toBe('Dues gnirps');
     });
 
+    it('never leaves half of a character: no lone surrogate from an entity or the cut', () => {
+      expect(cleanPageTitle('Rush &#xD800; BBQ')).toBe('Rush BBQ');
+      const title = cleanPageTitle(`${'a'.repeat(198)}😀 and more`);
+      // No lone surrogate: every UTF-16 unit in 0xD800–0xDFFF is half of a pair.
+      expect(
+        /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(
+          title ?? '',
+        ),
+      ).toBe(false);
+      expect(Array.from(title ?? '')).toHaveLength(MAX_TITLE_LENGTH);
+    });
+
+    it('stays fast on an enormous, repetitive title', () => {
+      const started = Date.now();
+      expect(cleanPageTitle('sign in '.repeat(64 * 1024))).not.toBeUndefined();
+      expect(
+        pageTitleFromHtml(`<head>${'<meta '.repeat(64 * 1024)}`),
+      ).toBeNull();
+      expect(
+        pageTitleFromHtml(`<head>${'<title>'.repeat(64 * 1024)}`),
+      ).toBeNull();
+      // Quadratic matching took seconds here; linear takes milliseconds.
+      expect(Date.now() - started).toBeLessThan(500);
+    });
+
     it('caps a long title', () => {
       const title = cleanPageTitle('x'.repeat(500));
       expect(title).toHaveLength(MAX_TITLE_LENGTH);

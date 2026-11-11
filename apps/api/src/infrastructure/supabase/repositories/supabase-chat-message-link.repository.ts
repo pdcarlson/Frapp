@@ -1,9 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
-import type {
-  IChatMessageLinkRepository,
-  LinkTitleCandidate,
+import {
+  MAX_LINK_TITLE_ATTEMPTS,
+  type IChatMessageLinkRepository,
+  type LinkTitleCandidate,
 } from '#domain/repositories/chat-message-link.repository.interface';
 import type {
   ChatLinkMemberState,
@@ -14,14 +15,15 @@ import { SupabaseQueryError } from '../supabase-query-error';
 import { chunkIds } from '#domain/utils/chunk-ids';
 
 /** What the title sweep reads of a link: no poster, message or channel. */
-const TITLE_CANDIDATE_COLUMNS = 'id, chapter_id, url';
+const TITLE_CANDIDATE_COLUMNS = 'id, chapter_id, url, title_attempts';
 
 /**
  * `chat_message_links` and `chat_link_member_states` (#3897). Both tables have
  * RLS on and no policies: the API's service role is the only reader, and
  * every query here filters on `chapter_id` because nothing else would. The
- * title sweep's two reads are the exception (#4187): they walk every
- * chapter's unread links by design, and return only ids and URLs.
+ * title sweep's read and claim are the exception (#4187): they walk every
+ * chapter's unread links by design, and return only ids, chapters, URLs and
+ * attempt counts.
  */
 @Injectable()
 export class SupabaseChatMessageLinkRepository implements IChatMessageLinkRepository {
@@ -150,43 +152,50 @@ export class SupabaseChatMessageLinkRepository implements IChatMessageLinkReposi
     return data ?? null;
   }
 
-  async findTitleUnchecked(options: {
+  async findTitlePending(options: {
     since: string;
+    retryBefore: string;
     limit: number;
   }): Promise<LinkTitleCandidate[]> {
     const { data, error } = await this.supabase
       .from('chat_message_links')
       .select(TITLE_CANDIDATE_COLUMNS)
-      .is('title_checked_at', null)
+      .is('title', null)
+      .lt('title_attempts', MAX_LINK_TITLE_ATTEMPTS)
       .is('removed_at', null)
       .gt('posted_at', options.since)
+      .or(`title_checked_at.is.null,title_checked_at.lt.${options.retryBefore}`)
       .order('posted_at', { ascending: false })
       .limit(options.limit);
     if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
 
-  async claimForTitle(linkIds: string[]): Promise<LinkTitleCandidate[]> {
-    if (linkIds.length === 0) return [];
+  async claimForTitle(link: LinkTitleCandidate): Promise<boolean> {
     const { data, error } = await this.supabase
       .from('chat_message_links')
-      .update({ title_checked_at: new Date().toISOString() })
-      .in('id', linkIds)
-      .is('title_checked_at', null)
-      .select(TITLE_CANDIDATE_COLUMNS);
+      .update({
+        title_attempts: link.title_attempts + 1,
+        title_checked_at: new Date().toISOString(),
+      })
+      .eq('chapter_id', link.chapter_id)
+      .eq('id', link.id)
+      .eq('title_attempts', link.title_attempts)
+      .is('title', null)
+      .select('id');
     if (error) throw new SupabaseQueryError(error);
-    return data ?? [];
+    return (data ?? []).length > 0;
   }
 
-  async setTitle(
+  async finishTitle(
     chapterId: string,
     linkIds: string[],
-    title: string,
+    title: string | null,
   ): Promise<void> {
     if (linkIds.length === 0) return;
     const { error } = await this.supabase
       .from('chat_message_links')
-      .update({ title })
+      .update({ title, title_attempts: MAX_LINK_TITLE_ATTEMPTS })
       .eq('chapter_id', chapterId)
       .in('id', linkIds);
     if (error) throw new SupabaseQueryError(error);

@@ -7,7 +7,9 @@ import { gzipSync } from 'node:zlib';
 import {
   HttpsLinkTitleFetcher,
   LINK_TITLE_MAX_BYTES,
+  charsetOf,
   guardedLookup,
+  readHead,
   type HttpsRequest,
 } from './https-link-title.fetcher';
 
@@ -32,9 +34,14 @@ function fakeNetwork(
 ) {
   const requested: string[] = [];
   const optionsSeen: RequestOptions[] = [];
+  const responses: PassThrough[] = [];
   const resolveAll = jest.fn(async (hostname: string) => {
     const answer = dns[hostname] ?? PUBLIC;
-    if (answer.length === 0) throw new Error('ENOTFOUND');
+    if (answer.length === 0) {
+      throw Object.assign(new Error('getaddrinfo ENOTFOUND'), {
+        code: 'ENOTFOUND',
+      });
+    }
     return answer;
   });
   const request: HttpsRequest = (url, options, onResponse) => {
@@ -69,18 +76,21 @@ function fakeNetwork(
           PassThrough;
         response.statusCode = reply.status;
         response.headers = reply.headers ?? {};
+        responses.push(response);
         onResponse(response);
         response.end(reply.body ?? '');
       });
     };
     return req;
   };
-  return { requested, optionsSeen, resolveAll, request };
+  return { requested, optionsSeen, responses, resolveAll, request };
 }
 
 const html = (title: string) =>
   `<html><head><title>${title}</title></head><body>…</body></html>`;
 const HTML = { 'content-type': 'text/html; charset=utf-8' };
+const NONE = { outcome: 'none' };
+const named = (title: string) => ({ outcome: 'title', title });
 
 describe('HttpsLinkTitleFetcher (#4187)', () => {
   it('reads a public form’s title', async () => {
@@ -95,7 +105,7 @@ describe('HttpsLinkTitleFetcher (#4187)', () => {
 
     await expect(
       fetcher.fetchTitle('https://docs.google.com/forms/d/e/abc/viewform'),
-    ).resolves.toBe('5K volunteer shifts');
+    ).resolves.toEqual(named('5K volunteer shifts'));
     // No pooled socket, no credentials, and a GET.
     expect(net.optionsSeen[0]).toMatchObject({ method: 'GET', agent: false });
     expect(net.optionsSeen[0].headers).not.toHaveProperty('cookie');
@@ -119,7 +129,7 @@ describe('HttpsLinkTitleFetcher (#4187)', () => {
 
     await expect(
       new HttpsLinkTitleFetcher(net).fetchTitle('https://forms.gle/abc'),
-    ).resolves.toBe('Formal RSVP');
+    ).resolves.toEqual(named('Formal RSVP'));
     expect(net.requested).toEqual([
       'https://forms.gle/abc',
       'https://docs.google.com/forms/d/e/abc/viewform',
@@ -141,7 +151,7 @@ describe('HttpsLinkTitleFetcher (#4187)', () => {
       new HttpsLinkTitleFetcher(net).fetchTitle(
         'https://docs.google.com/spreadsheets/d/abc/edit',
       ),
-    ).resolves.toBeNull();
+    ).resolves.toEqual(NONE);
     expect(net.requested).toEqual([
       'https://docs.google.com/spreadsheets/d/abc/edit',
     ]);
@@ -160,7 +170,7 @@ describe('HttpsLinkTitleFetcher (#4187)', () => {
       new HttpsLinkTitleFetcher(net).fetchTitle(
         'https://forms.office.com/r/abc',
       ),
-    ).resolves.toBeNull();
+    ).resolves.toEqual(NONE);
   });
 
   it('never opens a URL off the sign-up list, or with credentials or a port', async () => {
@@ -173,7 +183,7 @@ describe('HttpsLinkTitleFetcher (#4187)', () => {
       'https://calendly.com:8443/olive',
       'https://169.254.169.254/latest/meta-data/',
     ]) {
-      await expect(fetcher.fetchTitle(url)).resolves.toBeNull();
+      await expect(fetcher.fetchTitle(url)).resolves.toEqual(NONE);
     }
     expect(net.requested).toEqual([]);
     expect(net.resolveAll).not.toHaveBeenCalled();
@@ -193,7 +203,7 @@ describe('HttpsLinkTitleFetcher (#4187)', () => {
 
     await expect(
       new HttpsLinkTitleFetcher(net).fetchTitle('https://calendly.com/olive'),
-    ).resolves.toBeNull();
+    ).resolves.toEqual(NONE);
   });
 
   it('refuses a host that mixes a public and a private answer', async () => {
@@ -215,7 +225,7 @@ describe('HttpsLinkTitleFetcher (#4187)', () => {
 
     await expect(
       new HttpsLinkTitleFetcher(net).fetchTitle('https://calendly.com/olive'),
-    ).resolves.toBeNull();
+    ).resolves.toEqual(NONE);
   });
 
   it('stops after three redirects', async () => {
@@ -228,7 +238,7 @@ describe('HttpsLinkTitleFetcher (#4187)', () => {
 
     await expect(
       new HttpsLinkTitleFetcher(net).fetchTitle(hop(0)),
-    ).resolves.toBeNull();
+    ).resolves.toEqual(NONE);
     expect(net.requested).toHaveLength(4);
   });
 
@@ -249,10 +259,88 @@ describe('HttpsLinkTitleFetcher (#4187)', () => {
 
     await expect(
       fetcher.fetchTitle('https://calendly.com/missing'),
-    ).resolves.toBeNull();
+    ).resolves.toEqual(NONE);
     await expect(
       fetcher.fetchTitle('https://calendly.com/json'),
-    ).resolves.toBeNull();
+    ).resolves.toEqual(NONE);
+  });
+
+  it('never parses a 200 that is not HTML, even one carrying a <title>', async () => {
+    const net = fakeNetwork({
+      'https://calendly.com/plain': {
+        status: 200,
+        headers: { 'content-type': 'text/plain' },
+        body: html('Not a page'),
+      },
+    });
+
+    await expect(
+      new HttpsLinkTitleFetcher(net).fetchTitle('https://calendly.com/plain'),
+    ).resolves.toEqual(NONE);
+    expect(net.responses[0].destroyed).toBe(true);
+  });
+
+  it('destroys a response it does not read, rather than draining it', async () => {
+    const net = fakeNetwork({
+      'https://calendly.com/missing': {
+        status: 404,
+        headers: HTML,
+        body: html('Olive Ramos'),
+      },
+      'https://forms.gle/abc': {
+        status: 302,
+        headers: { location: 'https://accounts.google.com/ServiceLogin' },
+        body: 'x'.repeat(1024),
+      },
+    });
+    const fetcher = new HttpsLinkTitleFetcher(net);
+
+    await fetcher.fetchTitle('https://calendly.com/missing');
+    await fetcher.fetchTitle('https://forms.gle/abc');
+    expect(net.responses.map((response) => response.destroyed)).toEqual([
+      true,
+      true,
+    ]);
+  });
+
+  it.each([
+    [503, 'server-error'],
+    [500, 'server-error'],
+    [429, 'server-error'],
+  ])('calls a %i a failed read, to be tried again', async (status, reason) => {
+    const net = fakeNetwork({
+      'https://calendly.com/busy': { status, headers: HTML, body: '' },
+    });
+
+    await expect(
+      new HttpsLinkTitleFetcher(net).fetchTitle('https://calendly.com/busy'),
+    ).resolves.toEqual({ outcome: 'failed', reason });
+  });
+
+  it('calls a host that does not resolve a failed read, not a page with no name', async () => {
+    const net = fakeNetwork({}, { 'calendly.com': [] });
+
+    await expect(
+      new HttpsLinkTitleFetcher(net).fetchTitle('https://calendly.com/olive'),
+    ).resolves.toEqual({ outcome: 'failed', reason: 'network' });
+  });
+
+  it('decodes a page in the charset it names', async () => {
+    const net = fakeNetwork({
+      'https://calendly.com/olive': {
+        status: 200,
+        headers: { 'content-type': 'text/html; charset=windows-1252' },
+        body: Buffer.concat([
+          Buffer.from('<head><title>Caf'),
+          Buffer.from([0xe9]),
+          Buffer.from(' night</title></head>'),
+        ]),
+      },
+    });
+
+    await expect(
+      new HttpsLinkTitleFetcher(net).fetchTitle('https://calendly.com/olive'),
+    ).resolves.toEqual(named('Café night'));
   });
 
   it('reads a gzip page, and stops at the size cap however far it unpacks', async () => {
@@ -273,11 +361,11 @@ describe('HttpsLinkTitleFetcher (#4187)', () => {
 
     await expect(
       fetcher.fetchTitle('https://calendly.com/small'),
-    ).resolves.toBe('Olive Ramos');
+    ).resolves.toEqual(named('Olive Ramos'));
     // The title sits past the cap, so it is never reached.
     await expect(
       fetcher.fetchTitle('https://calendly.com/bomb'),
-    ).resolves.toBeNull();
+    ).resolves.toEqual(NONE);
   });
 
   it('gives up at the deadline', async () => {
@@ -290,10 +378,72 @@ describe('HttpsLinkTitleFetcher (#4187)', () => {
         'https://calendly.com/slow',
       );
       await jest.advanceTimersByTimeAsync(5_001);
-      await expect(pending).resolves.toBeNull();
+      await expect(pending).resolves.toEqual({
+        outcome: 'failed',
+        reason: 'timeout',
+      });
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  describe('readHead', () => {
+    const stream = () => {
+      const response = new PassThrough() as unknown as IncomingMessage &
+        PassThrough;
+      response.headers = {};
+      return response;
+    };
+
+    it('stops reading where the head ends, and stops the download', async () => {
+      const response = stream();
+      const pending = readHead(response);
+      response.write('<html><head><title>Rush BBQ</title></head>');
+
+      await expect(pending).resolves.toContain('Rush BBQ');
+      expect(response.destroyed).toBe(true);
+    });
+
+    it('stops at the size cap, however much more is coming', async () => {
+      const response = stream();
+      const pending = readHead(response);
+      const chunk = Buffer.alloc(64 * 1024, 0x20);
+      for (let sent = 0; sent <= LINK_TITLE_MAX_BYTES; sent += chunk.length) {
+        if (response.destroyed) break;
+        response.write(chunk);
+      }
+
+      const text = await pending;
+      expect(text).toHaveLength(LINK_TITLE_MAX_BYTES);
+      expect(response.destroyed).toBe(true);
+    });
+
+    it('fails a body that breaks off after the headers, instead of hanging', async () => {
+      const response = stream();
+      const pending = readHead(response);
+      response.write('<html><head><title>Half');
+      response.destroy(new Error('aborted'));
+
+      await expect(pending).rejects.toThrow('aborted');
+    });
+
+    it('fails a body that closes before its end', async () => {
+      const response = stream();
+      const pending = readHead(response);
+      response.write('<html><head>');
+      response.destroy();
+
+      await expect(pending).rejects.toThrow('closed early');
+    });
+  });
+
+  describe('charsetOf', () => {
+    it('reads a charset the decoder knows, and falls back to UTF-8', () => {
+      expect(charsetOf('text/html; charset=ISO-8859-1')).toBe('windows-1252');
+      expect(charsetOf('text/html; charset="utf-8"')).toBe('utf-8');
+      expect(charsetOf('text/html; charset=nonsense')).toBe('utf-8');
+      expect(charsetOf('text/html')).toBe('utf-8');
+    });
   });
 
   describe('guardedLookup', () => {

@@ -8,6 +8,12 @@
 
 /** Longer than any row draws; rows truncate, this only bounds what is stored. */
 export const MAX_TITLE_LENGTH = 200;
+/**
+ * How much of a raw title is cleaned and matched at all. A page's title can
+ * run to the read's 512 KB cap, and the checks below are not linear in it, so
+ * a form author's enormous title must not cost the API seconds of CPU.
+ */
+export const MAX_RAW_TITLE_LENGTH = 2_000;
 
 /** The product's name after the page's own (`Dues - Google Sheets`). */
 const PRODUCT_SUFFIX =
@@ -83,7 +89,13 @@ function decodeEntities(text: string): string {
           entity[1] === 'x' || entity[1] === 'X'
             ? Number.parseInt(entity.slice(2), 16)
             : Number.parseInt(entity.slice(1), 10);
-        if (!Number.isFinite(code) || code <= 0 || code > 0x10ffff) {
+        // A lone surrogate is no character at all; it can't be stored.
+        if (
+          !Number.isFinite(code) ||
+          code <= 0 ||
+          code > 0x10ffff ||
+          (code >= 0xd800 && code <= 0xdfff)
+        ) {
           return '';
         }
         return String.fromCodePoint(code);
@@ -105,7 +117,9 @@ function attributes(tag: string): Map<string, string> {
 }
 
 function ogTitle(html: string): string | null {
-  for (const match of html.matchAll(/<meta\b[^>]*>/gi)) {
+  // `[^<>]` keeps each try from scanning past the next tag: linear, where
+  // `[^>]` on an unclosed `<meta` run is quadratic.
+  for (const match of html.matchAll(/<meta\b[^<>]*>/gi)) {
     const attrs = attributes(match[0]);
     const name = (
       attrs.get('property') ??
@@ -121,14 +135,22 @@ function ogTitle(html: string): string | null {
 }
 
 function titleElement(html: string): string | null {
-  const match = /<title\b[^>]*>([\s\S]*?)<\/title\s*>/i.exec(html);
-  return match ? match[1] : null;
+  const open = /<title\b[^<>]*>/i.exec(html);
+  if (!open) return null;
+  const start = open.index + open[0].length;
+  const end = html.toLowerCase().indexOf('</title', start);
+  return end === -1 ? null : html.slice(start, end);
 }
 
-/** C0 and C1 controls, and the marks that reorder bidirectional text. */
+/**
+ * C0 and C1 controls, lone surrogates, and the marks that reorder
+ * bidirectional text.
+ */
 function isHiddenControl(code: number): boolean {
   return (
     code <= 0x1f ||
+    // A lone surrogate, left by a cut through a pair.
+    (code >= 0xd800 && code <= 0xdfff) ||
     (code >= 0x7f && code <= 0x9f) ||
     code === 0x200e ||
     code === 0x200f ||
@@ -151,13 +173,18 @@ function plainLine(text: string): string {
 
 /** A raw title cleaned for a row, or null when it names nothing. */
 export function cleanPageTitle(raw: string): string | null {
-  let title = plainLine(raw);
+  let title = plainLine(raw.slice(0, MAX_RAW_TITLE_LENGTH));
   title = title.replace(PRODUCT_SUFFIX, '').replace(PRODUCT_PREFIX, '').trim();
   if (title === '') return null;
   if (NAMES_NOTHING.has(title.toLowerCase())) return null;
   if (NOT_THE_PAGE.some((pattern) => pattern.test(title))) return null;
-  if (title.length > MAX_TITLE_LENGTH) {
-    title = `${title.slice(0, MAX_TITLE_LENGTH - 1).trimEnd()}…`;
+  // Counted in characters, so the cut never splits an emoji's pair.
+  const chars = Array.from(title);
+  if (chars.length > MAX_TITLE_LENGTH) {
+    title = `${chars
+      .slice(0, MAX_TITLE_LENGTH - 1)
+      .join('')
+      .trimEnd()}…`;
   }
   return title;
 }

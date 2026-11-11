@@ -23,6 +23,7 @@ const link = (overrides: Partial<ChatMessageLink> = {}): ChatMessageLink => ({
   removed_at: null,
   removed_by: null,
   title: null,
+  title_attempts: 0,
   title_checked_at: null,
   ...overrides,
 });
@@ -48,9 +49,9 @@ function build() {
     setState: jest.fn().mockResolvedValue(undefined),
     clearState: jest.fn().mockResolvedValue(undefined),
     setRemoved: jest.fn().mockResolvedValue(null),
-    findTitleUnchecked: jest.fn().mockResolvedValue([]),
-    claimForTitle: jest.fn().mockResolvedValue([]),
-    setTitle: jest.fn().mockResolvedValue(undefined),
+    findTitlePending: jest.fn().mockResolvedValue([]),
+    claimForTitle: jest.fn().mockResolvedValue(false),
+    finishTitle: jest.fn().mockResolvedValue(undefined),
   };
   const userRepo = {
     findDisplayIdentitiesByIds: jest
@@ -111,6 +112,7 @@ describe('ActivityLinkService', () => {
       linkRepo.findShowing.mockResolvedValue([
         link({
           title: '5K volunteer shifts',
+          title_attempts: 3,
           title_checked_at: '2026-11-10T12:01:00.000Z',
         }),
       ]);
@@ -119,8 +121,9 @@ describe('ActivityLinkService', () => {
 
       expect(rows[0].title).toBe('5K volunteer shifts');
       // The read's only link reads are the index and the member's states.
+      expect(linkRepo.findTitlePending).not.toHaveBeenCalled();
       expect(linkRepo.claimForTitle).not.toHaveBeenCalled();
-      expect(linkRepo.setTitle).not.toHaveBeenCalled();
+      expect(linkRepo.finishTitle).not.toHaveBeenCalled();
     });
 
     it('never lists a link from a channel outside the caller’s list or left out of Activity', async () => {
