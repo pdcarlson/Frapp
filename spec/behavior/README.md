@@ -46,6 +46,7 @@ the targets resolve — so add the row in the same change that adds the topic fi
 | Vault (encrypted private storage)                    | [`vault.md`](vault.md)                     |
 | AI features (corpus scope, citations, non-goals)     | [`ai.md`](ai.md)                           |
 | Chapter config endpoints                             | [`chapter-config.md`](chapter-config.md)   |
+| Council types: IFC, Panhellenic, NPHC, MGC (proposed) | [`council-types.md`](council-types.md)     |
 
 Each topic file is canonical **intended** behavior. Delivery (which is shipped vs. queued) is tracked in **GitHub Issues** (see [`docs/ci-cd/github-pm.md`](../../docs/ci-cd/github-pm.md)), not in this spec.
 
