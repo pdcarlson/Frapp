@@ -17,8 +17,12 @@ import { SYSTEM_SENDER_ID } from "@repo/validation";
 
 // The real list resolves signed URLs through `useFrappClient`, a provider this
 // suite does not stand up; a stand-in is enough to say where the list sits.
+const attachmentProps = vi.hoisted(() => [] as Record<string, unknown>[]);
 vi.mock("./message-attachments", () => ({
-  MessageAttachments: () => <ul data-testid="attachments" />,
+  MessageAttachments: (props: Record<string, unknown>) => {
+    attachmentProps.push(props);
+    return <ul data-testid="attachments" />;
+  },
 }));
 
 /**
@@ -2490,5 +2494,37 @@ describe("MessageItem bubbles", () => {
     expect(
       other.container.querySelector('[data-density="bubbles"]'),
     ).toBeNull();
+  });
+});
+
+// #4095 (FRAPP-WEB-8): an unsent row's id is its `client_message_id`, which the
+// server never uses, so its files must not be asked for until it is confirmed.
+describe("MessageItem attachments on an unsent row", () => {
+  it.each(["pending", "failed", "unconfirmed"] as const)(
+    "tells the list a %s row is not the server's yet",
+    (status) => {
+      attachmentProps.length = 0;
+      renderItem(
+        message({
+          id: "client-1",
+          sender_id: VIEWER,
+          attachment_count: 1,
+          _status: status,
+        }),
+      );
+      expect(attachmentProps.at(-1)).toMatchObject({
+        messageId: "client-1",
+        confirmed: false,
+      });
+    },
+  );
+
+  it("lets a confirmed row fetch its files", () => {
+    attachmentProps.length = 0;
+    renderItem(message({ attachment_count: 1 }));
+    expect(attachmentProps.at(-1)).toMatchObject({
+      messageId: "msg-1",
+      confirmed: true,
+    });
   });
 });
