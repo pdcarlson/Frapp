@@ -474,8 +474,8 @@ export class ChannelAccessService {
    * Annotate already-readable channels with `can_post`, decided by the same
    * `canAccessChannel` predicate the write path (`assertChannelAccess`)
    * enforces — so a client's composer state and the server's actual gate
-   * cannot drift. #704: surfaces the alumni-post restriction (and the
-   * existing read-only-without-`announcements:post` case) as one capability
+   * cannot drift. #704: surfaces the alumni-post restriction (and a caller
+   * not on the channel's who-can-post list, #3722) as one capability
    * flag instead of shipping the caller's raw alumni status.
    *
    * Callers must have already filtered to channels the caller may `read`

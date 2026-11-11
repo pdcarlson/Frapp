@@ -467,7 +467,7 @@ describe("postRefusalHint", () => {
 
   it("keeps the read-only and alumni sentences", () => {
     expect(postRefusalHint(capability({ isReadOnly: true }))).toBe(
-      "This channel is read-only. Posting requires the announcements:post permission.",
+      "This channel is read-only for your role.",
     );
     expect(postRefusalHint(capability({}))).toBe(
       "Alumni can read this channel but not post. Alumni may post in #alumni and direct messages.",

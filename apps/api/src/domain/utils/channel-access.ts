@@ -198,7 +198,13 @@ export function needsAccessHolder(
 ): boolean {
   if (DIRECT_TYPES.has(channel.type)) return false;
   if (channel.type === 'PRIVATE') {
-    return operation === 'post' || operation === 'thread';
+    // `post` and `thread`: the Alumni rule; `vote`: a read-only private
+    // channel's who-can-post list from before #3722.
+    return (
+      operation === 'post' ||
+      operation === 'thread' ||
+      (operation === 'vote' && channel.who_can_post !== null)
+    );
   }
   if (!LIST_TYPES.has(channel.type)) return false;
   if (channel.who_can_see !== null) return true;
@@ -211,43 +217,6 @@ export function needsAccessHolder(
       // `post` and `thread`: the Alumni rule can decide.
       return true;
   }
-}
-
-/**
- * Whether `channel` accepts in-thread replies.
- *
- * A channel where not everyone who can see it may post (`#announcements`,
- * `#chapter-audit`, anything an officer gave a who-can-post list) is a
- * broadcast surface. Per `spec/behavior/chat/README.md` § Announcements:
- * "Announcement messages cannot be replied to in-thread." A reply would turn a
- * one-way broadcast into a conversation the channel's whole point is to not
- * have. Replies here are Discord-style reply-with-quote rendered in the main
- * timeline (§ Reply threads), so nothing is ever tucked out of sight.
- *
- * Two deliberate properties:
- *
- * - **Keyed off who can post, not the channel name.** The same list decides
- *   *who* may post (`canAccessChannel`), so one setting governs broadcast
- *   semantics end to end. `is_read_only` is kept equal to "has a who-can-post
- *   list" (migration 20261111230000), so clients that read it agree.
- * - **Unconditional on what the caller holds.** `canAccessChannel` decides who
- *   may author a top-level post; this decides that no member quote-replies,
- *   the listed posters and the `"*"` wildcard included. The rule is a property
- *   of the channel, so this takes no holder. Do not add one: a `"*"` escape
- *   hatch here reopens exactly the hole the predicate exists to close.
- *
- * It gates what a member *sends* (`ChatService.sendMessage` is the caller), not
- * what is stored: the poll-expiry notice and the Discord archive importer both
- * write replies into read-only channels server-side (the spec section above).
- * So do not read a stored row's `reply_to_id` in a read-only channel as a
- * violation, or hide its quote: the expiry notice names its poll only there.
- *
- * Takes a whole `ChannelAccessRecord` so the caller proves it loaded a real
- * channel: a projection that never selected `who_can_post` must not read as
- * replyable.
- */
-export function allowsInThreadReplies(channel: ChannelAccessRecord): boolean {
-  return channel.who_can_post === null;
 }
 
 /**
@@ -282,6 +251,9 @@ export function channelAllowsThreads(
  *   `*`. `vote` is exempt: a poll they can read is participation.
  * - `thread` stops there: any reader may write in a message thread.
  * - `post` and `vote`: who can post decides, as who can see does for a read.
+ *   A quote reply is a post, so whoever may post may quote (#3722).
+ *   A private channel has a who-can-post list only if it was made read-only
+ *   before #3722.
  */
 export function canAccessChannel(input: ChannelAccessInput): boolean {
   const { channel, userId, isChapterMember, holder } = input;
@@ -323,6 +295,10 @@ export function canAccessChannel(input: ChannelAccessInput): boolean {
   // stays with who can post; its threads do not.
   if (operation === 'thread') return true;
 
-  if (MEMBER_LIST_TYPES.has(channel.type)) return true;
+  // A DM or group DM has no who-can-post list. A private channel does only
+  // when someone made it read-only before #3722 (migration 20261111230000).
+  if (MEMBER_LIST_TYPES.has(channel.type) && channel.type !== 'PRIVATE') {
+    return true;
+  }
   return listAdmits(channel.who_can_post, holder);
 }

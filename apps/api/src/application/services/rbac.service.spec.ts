@@ -1852,6 +1852,28 @@ describe('RbacService', () => {
       ]);
     });
 
+    // `role_ids` isn't foreign-keyed; the per-member read and the database
+    // match an uppercase id, so the push audience must too.
+    it('matches a role id stored in uppercase', async () => {
+      mockRoleRepo.findByChapter.mockResolvedValue([role('role-officer', 2)]);
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        memberFixture({
+          user_id: 'user-1',
+          role_ids: ['ROLE-OFFICER', 'role-officer'],
+        }),
+      ]);
+
+      const [entry] = await service.getChapterMemberAccess('ch-1');
+
+      expect(entry?.top_role).toEqual({
+        id: 'role-officer',
+        name: 'role-role-officer',
+      });
+      expect([...(entry?.channel_access.entries ?? [])]).toEqual([
+        'role:role-officer',
+      ]);
+    });
+
     it('ignores a role from another chapter, for rank and permissions alike', async () => {
       mockRoleRepo.findByChapter.mockResolvedValue([
         role('role-foreign', 0, ['*'], 'ch-other'),

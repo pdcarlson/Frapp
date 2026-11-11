@@ -14,10 +14,7 @@ import {
   isModuleEnabled,
   type ChatMessageFlag,
 } from '@repo/validation';
-import {
-  allowsInThreadReplies,
-  channelAllowsThreads,
-} from '#domain/utils/channel-access';
+import { channelAllowsThreads } from '#domain/utils/channel-access';
 import {
   CHAT_THREAD_REPOSITORY,
   type IChatThreadRepository,
@@ -940,12 +937,11 @@ export class ChatService {
    * Hot-path send. Mirrors the retired `chat-send` Edge Function:
    *
    * - Authorizes via the shared `canAccessChannel` predicate with
-   *   `operation: "post"` so read-only channels (#announcements) gate on the
-   *   `announcements:post` permission, and the audit log (`is_audit_log`,
-   *   #chapter-audit) refuses every member, the President included (#3909).
-   * - Cross-channel reply links are rejected before the insert, as are
-   *   in-thread replies in a read-only channel — a broadcast is not a thread,
-   *   regardless of the sender's permissions.
+   *   `operation: "post"` so a channel's who-can-post list decides
+   *   (#announcements), and the audit log (`is_audit_log`, #chapter-audit)
+   *   refuses every member, the President included (#3909). A quote reply is
+   *   a post, so the same gate decides it (#3722).
+   * - Cross-channel reply links are rejected before the insert.
    * - Idempotent on `client_message_id`: a retried POST with the same
    *   `(channel_id, sender_id, client_message_id)` triple returns the
    *   existing row with `deduplicated: true` instead of inserting again
@@ -1004,16 +1000,8 @@ export class ChatService {
 
     let replyTo: ChatMessage | null = null;
     if (input.reply_to_id) {
-      // A read-only channel is a broadcast surface, so nothing in it is
-      // threadable — not for a holder of `announcements:post`, not for the
-      // President's `"*"`. Checked before the lookup below: the channel already
-      // answers this, so a threaded announcement never costs a query.
-      if (!allowsInThreadReplies(channel)) {
-        throw new BadRequestException(
-          'Messages in a read-only channel cannot be replied to in-thread',
-        );
-      }
-
+      // A quote reply is a post: whoever may post here may quote (#3722),
+      // which `assertChannelAccess` above already decided.
       replyTo = await this.messageRepo.findById(input.reply_to_id);
       if (!replyTo || replyTo.channel_id !== input.channel_id) {
         throw new BadRequestException(

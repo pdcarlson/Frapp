@@ -240,9 +240,8 @@ function ChannelThreadScreen() {
   // in `is_read_only` for posting; `postRefusalHint` picks which disabled hint
   // applies (an archived Group DM, read-only-without-permission, or the alumni
   // restriction — the cases `spec/ui/design-system/writing.md` § Chat
-  // documents). `isReadOnly` is also load-bearing for Reply: `can_post` is true in
-  // #announcements for an `announcements:post` holder, yet nobody replies
-  // there (`channelAllowsReplies`, #2775). `selectPostCapability` parses the payload defensively
+  // documents). Reply follows `can_post` alone (`channelAllowsReplies`): a
+  // quote reply is a post (#3722). `selectPostCapability` parses the payload defensively
   // the same way `selectChannels` does — `GET /v1/channels/{id}` infers as
   // `never` in the generated SDK.
   const channelQuery = useChannel(channelId ?? "");

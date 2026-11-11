@@ -1,6 +1,5 @@
 import {
   accessHolderFromRoles,
-  allowsInThreadReplies,
   canAccessChannel,
   channelAllowsThreads,
   EMPTY_ACCESS_HOLDER,
@@ -100,6 +99,23 @@ describe('accessHolderFromRoles', () => {
       `role:${ALUMNI}`,
     ]);
   });
+
+  // A channel that names the Alumni role's tier is alumni-writable too
+  // (`isAlumniPostableChannel`), so the tier is one of the alumni entries.
+  it("counts the Alumni role's tier as an alumni entry", () => {
+    const alumniTier = '00000000-0000-4000-8000-00000000a1a1';
+    const holder = holding({ ...roles.alumni, tier_id: alumniTier });
+    expect([...(holder.alumniEntries ?? [])].sort()).toEqual(
+      [`role:${ALUMNI}`, `tier:${alumniTier}`].sort(),
+    );
+    expect(
+      check(
+        channel({ type: 'ROLE_GATED', who_can_see: [`tier:${alumniTier}`] }),
+        holder,
+        'post',
+      ),
+    ).toBe(true);
+  });
 });
 
 describe('canAccessChannel', () => {
@@ -189,6 +205,28 @@ describe('canAccessChannel', () => {
       expect(check(announcements, holding(roles.brother), 'post')).toBe(false);
       expect(check(announcements, holding(roles.treasurer), 'post')).toBe(true);
       expect(check(announcements, holding(roles.president), 'post')).toBe(true);
+    });
+
+    // Migration 20261111230000 gives a private channel made read-only before
+    // #3722 the roles that could post there; its members still decide reads.
+    it('a read-only private channel lets only its listed members post', () => {
+      const locked = channel({
+        type: 'PRIVATE',
+        member_ids: ['user-1'],
+        who_can_post: [`tier:${EXEC_TIER}`],
+      });
+      expect(check(locked, holding(roles.brother))).toBe(true);
+      expect(check(locked, holding(roles.brother), 'post')).toBe(false);
+      expect(check(locked, holding(roles.treasurer), 'post')).toBe(true);
+      expect(check(locked, holding(roles.brother), 'thread')).toBe(true);
+      expect(
+        check(
+          channel({ type: 'PRIVATE', member_ids: ['user-1'] }),
+          EMPTY_ACCESS_HOLDER,
+          'post',
+        ),
+      ).toBe(true);
+      expect(needsAccessHolder(locked, 'vote')).toBe(true);
     });
 
     it('a poster who cannot see the channel still cannot post', () => {
@@ -370,27 +408,6 @@ describe('needsAccessHolder', () => {
     expect(needsAccessHolder(channel(), 'thread')).toBe(true);
     expect(needsAccessHolder(channel({ type: 'PRIVATE' }), 'post')).toBe(true);
   });
-});
-
-describe('allowsInThreadReplies', () => {
-  it('allows quote replies where everyone who can see may post', () => {
-    expect(allowsInThreadReplies(channel())).toBe(true);
-    expect(allowsInThreadReplies(execOnly)).toBe(true);
-  });
-
-  // Who can post is the only field that may decide this. Keying off the
-  // channel's type or name instead would let a renamed announcements channel
-  // silently start taking replies.
-  it.each(['PUBLIC', 'PRIVATE', 'ROLE_GATED', 'DM', 'GROUP_DM'] as const)(
-    'refuses them on a %s channel with a who-can-post list',
-    (type) => {
-      expect(
-        allowsInThreadReplies(
-          channel({ type, member_ids: ['user-1'], who_can_post: [] }),
-        ),
-      ).toBe(false);
-    },
-  );
 });
 
 describe('channelAllowsThreads', () => {

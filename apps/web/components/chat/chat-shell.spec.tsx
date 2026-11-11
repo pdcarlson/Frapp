@@ -3064,13 +3064,10 @@ describe("ChatShell reply-with-quote (#489)", () => {
     });
   });
 
-  it("offers no Reply control in a read-only channel (AC 4)", async () => {
-    // `spec/behavior/chat/README.md`: "Announcement messages cannot be replied
-    // to in-thread… it holds regardless of permissions." `ChatService` 400s
-    // such a send. Two ways this fails if the control is offered anyway: a
-    // member has no composer there at all (`can_post` false), so Reply visibly
-    // does nothing; a holder of `announcements:post` does get one, so Reply
-    // stages a strip that then fails on send.
+  it("offers Reply in a channel with a who-can-post list to a poster", async () => {
+    // #3722: a quote reply is a post, so whoever may post may quote, in
+    // #announcements too. The fixture leaves `can_post` unset, which reads as
+    // allowed; the alumni fixture below covers `can_post: false`.
     withMessages([ROOT]);
     render(<ChatShell initialChannelId="chan-announcements" />);
 
@@ -3079,7 +3076,7 @@ describe("ChatShell reply-with-quote (#489)", () => {
         "chan-announcements",
       );
     });
-    expect(screen.getByTestId("reply-offered")).toHaveTextContent("false");
+    expect(screen.getByTestId("reply-offered")).toHaveTextContent("true");
   });
 
   it("offers Reply in an ordinary channel", () => {

@@ -9,15 +9,18 @@ import { setAuth } from "../probe.mjs";
 // Replay runs the backfill against an empty `chat_channels`, so replay alone
 // proves nothing about it. This tier seeds a chapter the way it looked before
 // the lists: roles with permission strings, channels gated by
-// `required_permissions` and `is_read_only`. It inserts the channels through
-// the legacy bridge trigger, which runs the same conversion the backfill does
-// (`chat_channel_access_from_legacy`), and checks the migration's promise that
-// every member sees and posts exactly where they did. Then the rest of what it
-// leaves in place: the checks that keep `type` and `is_read_only` equal to the
-// lists, a category's change reaching only the channels that matched it, a
-// deleted role or tier leaving every list, the bridge on an old writer's
-// update, `can_read_chat_channel` on a tier entry, and a second run of the
-// whole file changing nothing.
+// `required_permissions` and `is_read_only`, and no lists. It writes them
+// with the migration's checks dropped and its bridge trigger off, so the rows
+// sit there exactly as an unmigrated database holds them, then runs the whole
+// migration file over them: the backfill, the category backfill and the
+// VALIDATE of every check, as staging and production will. It checks the
+// migration's promise that every member sees and posts exactly where they
+// did, and that the bridge trigger converts a row the same way. Then the rest
+// of what it leaves in place: the checks that keep `type` and `is_read_only`
+// equal to the lists, a category's change reaching only the channels that
+// matched it, a deleted role or tier leaving every list, the bridge on an old
+// writer's update, `can_read_chat_channel` on a tier entry, and a second run
+// of the whole file changing nothing.
 //
 // Everything runs inside one transaction and is rolled back.
 console.log("\n=== Functional: who can see and post (20261111230000) ===");
@@ -35,6 +38,8 @@ console.log("\n=== Functional: who can see and post (20261111230000) ===");
   const U_BRO = "c3722000-0000-4000-8000-0000000000a5";
   const A_BRO = "c3722000-0000-4000-8000-0000000000b5";
   const CAT = "c3722000-0000-4000-8000-0000000000ca";
+  const CAT_EMPTY = "c3722000-0000-4000-8000-0000000000cb";
+  const CH_OTHER = "c3722000-0000-4000-8000-00000000000b";
   const ch = (n) =>
     `c3722000-0000-4000-8000-0000000c${String(n).padStart(4, "0")}`;
   const sql = readFileSync(
@@ -91,8 +96,16 @@ console.log("\n=== Functional: who can see and post (20261111230000) ===");
       insert into members (user_id, chapter_id, role_ids) values
         ('${U_TREAS}', '${CH}', '{${R_TREAS}}'),
         ('${U_BRO}', '${CH}', '{${R_BRO}}');
+      insert into chapters (id, name, university) values ('${CH_OTHER}', 'Other', 'U');
       insert into chat_channel_categories (id, chapter_id, name) values
-        ('${CAT}', '${CH}', 'Exec');
+        ('${CAT}', '${CH}', 'Exec'),
+        ('${CAT_EMPTY}', '${CH}', 'Empty');
+      -- An unmigrated database: no checks on the lists, no bridge.
+      alter table chat_channels
+        drop constraint chat_channels_access_lists_where_they_apply,
+        drop constraint chat_channels_type_follows_who_can_see,
+        drop constraint chat_channels_read_only_follows_who_can_post;
+      alter table chat_channels disable trigger chat_channels_legacy_access;
       -- What an API from before #3722 writes: no lists.
       insert into chat_channels (id, chapter_id, name, type, is_read_only, is_audit_log, required_permissions, category_id) values
         ('${ch(1)}', '${CH}', 'general', 'PUBLIC', false, false, null, null),
@@ -104,7 +117,15 @@ console.log("\n=== Functional: who can see and post (20261111230000) ===");
         ('${ch(7)}', '${CH}', 'rush', 'ROLE_GATED', false, false, '{channels:read:rush}', '${CAT}'),
         ('${ch(8)}', '${CH}', 'exec-news', 'ROLE_GATED', true, false, '{finances:read}', '${CAT}'),
         ('${ch(9)}', '${CH}', 'nobody', 'ROLE_GATED', false, false, '{}', null);
+      insert into chat_channels (id, chapter_id, name, type, is_read_only, member_ids) values
+        ('${ch(10)}', '${CH}', 'exec-private', 'PRIVATE', true, '{${U_TREAS},${U_BRO}}'),
+        ('${ch(11)}', '${CH}', 'friends', 'PRIVATE', false, '{${U_TREAS},${U_BRO}}');
+      -- Another chapter's channel filed under this chapter's empty category,
+      -- which nothing has ever refused: it must not set that category's lists.
+      insert into chat_channels (id, chapter_id, name, type, is_read_only, required_permissions, category_id) values
+        ('${ch(12)}', '${CH_OTHER}', 'stray', 'ROLE_GATED', false, '{}', '${CAT_EMPTY}');
     `);
+    await db.exec(sql);
 
     const role = (id) => `role:${id}`;
     const expected = {
@@ -167,6 +188,20 @@ console.log("\n=== Functional: who can see and post (20261111230000) ===");
         who_can_see: [],
         who_can_post: null,
       },
+      // Read-only private: its members still decide who reads it, and the
+      // roles that could post there still can.
+      [ch(10)]: {
+        type: "PRIVATE",
+        is_read_only: true,
+        who_can_see: null,
+        who_can_post: [role(R_TREAS)],
+      },
+      [ch(11)]: {
+        type: "PRIVATE",
+        is_read_only: false,
+        who_can_see: null,
+        who_can_post: null,
+      },
     };
     const converted = {};
     for (const id of Object.keys(expected)) converted[id] = await channel(id);
@@ -177,6 +212,36 @@ console.log("\n=== Functional: who can see and post (20261111230000) ===");
         { got: converted[id], want },
       );
     }
+
+    check(
+      "a category is never set from another chapter's channel",
+      same(
+        (
+          await rows(
+            `select who_can_see, who_can_post from chat_channel_categories where id = $1`,
+            [CAT_EMPTY],
+          )
+        )[0],
+        { who_can_see: null, who_can_post: null },
+      ),
+      {},
+    );
+
+    // The bridge trigger converts a row the way the backfill did.
+    await db.exec(`
+      insert into chat_channels (id, chapter_id, name, type, is_read_only, required_permissions) values
+        ('${ch(20)}', '${CH}', 'actives-2', 'ROLE_GATED', false, '{members:view}'),
+        ('${ch(21)}', '${CH}', 'exec-private-2', 'PRIVATE', true, null);
+    `);
+    check(
+      "the bridge trigger converts as the backfill did",
+      same(await channel(ch(20)), expected[ch(6)]) &&
+        same(await channel(ch(21)), expected[ch(10)]),
+      { actives: await channel(ch(20)), privateLocked: await channel(ch(21)) },
+    );
+    await db.query(`delete from chat_channels where id = any($1)`, [
+      [ch(20), ch(21)],
+    ]);
 
     // The backfill run again over converted rows is a no-op, and the
     // category it agrees on for `Exec` stays unset (its channels disagree).

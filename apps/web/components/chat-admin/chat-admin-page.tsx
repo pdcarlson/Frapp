@@ -350,12 +350,26 @@ function ChatAdminBody({
     if (isEmptyChoice(categorySeeDraft) || isEmptyChoice(categoryPostDraft)) {
       return;
     }
+    // Only the lists the officer changed go out, so a list another officer
+    // changed meanwhile isn't written back.
+    const seeChanged = !sameChannelAccessList(
+      categorySeeDraft,
+      category.who_can_see ?? null,
+    );
+    const postChanged = !sameChannelAccessList(
+      categoryPostDraft,
+      category.who_can_post ?? null,
+    );
+    if (!seeChanged && !postChanged) {
+      setAccessCategoryId(null);
+      return;
+    }
     try {
       await updateCategory.mutateAsync({
         id: category.id,
         body: {
-          who_can_see: categorySeeDraft,
-          who_can_post: categoryPostDraft,
+          ...(seeChanged ? { who_can_see: categorySeeDraft } : {}),
+          ...(postChanged ? { who_can_post: categoryPostDraft } : {}),
         },
       });
       toast({ description: `${category.name} access saved.` });
@@ -462,6 +476,11 @@ function ChatAdminBody({
   const [seeDraft, setSeeDraft] = useState<string[] | null>(null);
   const [postDraft, setPostDraft] = useState<string[] | null>(null);
   const [matchDraft, setMatchDraft] = useState(false);
+  // What the drafts were seeded from, as the description's seed is: a save
+  // sends only a list the officer changed, so a refetch that brings in
+  // another officer's change (or the category's) isn't written back over.
+  const [seeSeed, setSeeSeed] = useState<string[] | null>(null);
+  const [postSeed, setPostSeed] = useState<string[] | null>(null);
 
   // `?channel=` from the channel start. Applied once, during render rather
   // than in an effect, so the editor's first paint already shows the channel.
@@ -498,6 +517,8 @@ function ChatAdminBody({
     );
     setSeeDraft(channel.who_can_see ?? null);
     setPostDraft(channel.who_can_post ?? null);
+    setSeeSeed(channel.who_can_see ?? null);
+    setPostSeed(channel.who_can_post ?? null);
     setMatchDraft(false);
   }
 
@@ -511,12 +532,18 @@ function ChatAdminBody({
     categoryDraft === NO_CATEGORY
       ? null
       : (categories.find((c) => c.id === categoryDraft) ?? null);
-  const accessChanged =
-    selectedChannel !== null &&
-    (!sameChannelAccessList(seeDraft, selectedChannel.who_can_see ?? null) ||
-      !sameChannelAccessList(postDraft, selectedChannel.who_can_post ?? null));
+  const seeChanged = !sameChannelAccessList(seeDraft, seeSeed);
+  const postChanged = !sameChannelAccessList(postDraft, postSeed);
+  // Only a list the officer changed must name someone: an empty list the
+  // channel already had (a chapter's "nobody but the President" channel)
+  // doesn't block saving its name.
   const accessIncomplete =
-    selectedTakesLists && (isEmptyChoice(seeDraft) || isEmptyChoice(postDraft));
+    selectedTakesLists &&
+    ((seeChanged && isEmptyChoice(seeDraft)) ||
+      (postChanged && isEmptyChoice(postDraft)));
+  /** A private channel made read-only before #3722, which can be opened up. */
+  const clearsPrivatePosters =
+    selectedChannel?.type === "PRIVATE" && postChanged && postDraft === null;
 
   async function handleSaveChannel() {
     if (!selectedChannel) return;
@@ -556,9 +583,14 @@ function ChatAdminBody({
           // moved), or as "match the category" when the officer asked for it.
           ...(selectedTakesLists && matchDraft && draftCategory
             ? { match_category_access: true }
-            : selectedTakesLists && accessChanged
-              ? { who_can_see: seeDraft, who_can_post: postDraft }
-              : {}),
+            : selectedTakesLists
+              ? {
+                  ...(seeChanged ? { who_can_see: seeDraft } : {}),
+                  ...(postChanged ? { who_can_post: postDraft } : {}),
+                }
+              : clearsPrivatePosters
+                ? { who_can_post: null }
+                : {}),
           ...(activityExcludedDraft !== activityExcludedSeed
             ? { activity_excluded: activityExcludedDraft }
             : {}),
@@ -576,6 +608,8 @@ function ChatAdminBody({
         },
       });
       setMatchDraft(false);
+      setSeeSeed(seeDraft);
+      setPostSeed(postDraft);
       if (descriptionChanged) setDescriptionSeed(description);
       setIsDefaultSeed(isDefaultDraft);
       setActivityExcludedSeed(activityExcludedDraft);
@@ -807,7 +841,12 @@ function ChatAdminBody({
                     <Label htmlFor="ca-category">Category</Label>
                     <Select
                       value={categoryDraft}
-                      onValueChange={setCategoryDraft}
+                      onValueChange={(next) => {
+                        setCategoryDraft(next);
+                        // "Match" meant the category picked when it was
+                        // pressed; another one is a new question.
+                        setMatchDraft(false);
+                      }}
                     >
                       <SelectTrigger id="ca-category">
                         <SelectValue />
@@ -1471,6 +1510,29 @@ function ChannelAccessSection({
     );
   }
   if (!takesLists) {
+    // A private channel made read-only before #3722 kept the roles that
+    // could post there. It can be opened to everyone in it, not narrowed.
+    if (channel.type === "PRIVATE" && post !== null) {
+      return (
+        <InlineNote>
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span>
+              Private. Only the people added to this channel can see it, and of
+              them only {describeChannelAccess(post, "post", options)} can post.
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2"
+              onClick={() => onPostChange(null)}
+            >
+              Let everyone in it post
+            </Button>
+          </span>
+        </InlineNote>
+      );
+    }
     return (
       <InlineNote>
         Private. Only the people added to this channel can see it and post.

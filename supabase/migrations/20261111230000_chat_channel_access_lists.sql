@@ -21,7 +21,10 @@
 -- everywhere a list governs, so a chapter can't lock itself out. Lists are
 -- kept sorted and distinct, so two lists that say the same thing are equal.
 -- Only PUBLIC and ROLE_GATED channels carry lists: PRIVATE, DM and GROUP_DM
--- are still decided by member_ids, and their lists are always null.
+-- are still decided by member_ids, and their lists are null. One exception:
+-- a PRIVATE channel someone made read-only before this keeps a who-can-post
+-- list (the roles that could post there), which an officer can clear but
+-- not set.
 --
 -- The Alumni lifecycle rule (spec/behavior/alumni.md) reads the lists too:
 -- someone holding the Alumni role posts only where the channel names that
@@ -40,8 +43,9 @@
 --
 --   type          ROLE_GATED exactly when who_can_see is a list (a check).
 --   is_read_only  true exactly when who_can_post is a list (a check), which
---                 is still what turns off quote replies and makes a channel
---                 an announcements channel for push.
+--                 still makes a PUBLIC channel named announcements the
+--                 announcements channel for push. Quote replies follow
+--                 posting now: whoever may post may quote.
 --
 -- `chat_channels_legacy_access` (below) derives the lists from the old
 -- columns for a writer that only sets those: the API that is still serving
@@ -68,6 +72,13 @@
 --                          Alumni role can see but that never required
 --                          alumni:post: its posters are its readers minus the
 --                          Alumni role, so alumni still can't post there.
+--   PRIVATE                who_can_see null (member_ids decide); a read-only
+--                          one gets who_can_post as above.
+--
+-- The backfill writes is_read_only with the lists, so a channel that gets a
+-- who-can-post list only to keep alumni out is flagged too. Nothing else
+-- reads that as "broadcast" for it: quote replies follow posting, and the
+-- announcements push needs a PUBLIC channel.
 --
 -- `*` holders are never listed: they pass every list. Custom roles
 -- (`chapter_custom_roles`) are not read: 20261111210000 (#4075) has already
@@ -111,7 +122,7 @@ alter table public.chat_channel_categories
 comment on column public.chat_channels.who_can_see is
   'Who can see the channel: null is everyone in the chapter; a list holds tier:<id> and role:<id> entries. Null on PRIVATE, DM and GROUP_DM. See 20261111230000_chat_channel_access_lists.sql.';
 comment on column public.chat_channels.who_can_post is
-  'Who can post: null is everyone who can see it; a list holds tier:<id> and role:<id> entries. See 20261111230000_chat_channel_access_lists.sql.';
+  'Who can post: null is everyone who can see it; a list holds tier:<id> and role:<id> entries. Null on DM and GROUP_DM, and on PRIVATE except one made read-only before this migration. See 20261111230000_chat_channel_access_lists.sql.';
 comment on column public.chat_channel_categories.who_can_see is
   'What a new channel in this category copies for who can see it, and what a channel that matches it follows. See 20261111230000_chat_channel_access_lists.sql.';
 comment on column public.chat_channel_categories.who_can_post is
@@ -160,7 +171,10 @@ declare
 begin
   who_can_see := null;
   who_can_post := null;
-  if p_type is null or p_type not in ('PUBLIC', 'ROLE_GATED') then
+  -- A PRIVATE channel keeps its members (`member_ids`) as who can see; a
+  -- read-only one still gets who can post, so its members post exactly
+  -- where they did.
+  if p_type is null or p_type not in ('PUBLIC', 'ROLE_GATED', 'PRIVATE') then
     return;
   end if;
 
@@ -221,23 +235,31 @@ $$;
 -- 3. Backfill every channel, then each category whose channels agree.
 -- ---------------------------------------------------------------------------
 
+-- is_read_only is written with the lists, because the check in section 4
+-- keeps it equal to "has a who-can-post list": a channel the Alumni role
+-- reads without being allowed to post gets a list (its readers minus Alumni),
+-- and so the flag, though nobody else lost anything there.
 update public.chat_channels c
-   set (who_can_see, who_can_post) = (
-         select d.who_can_see, d.who_can_post
+   set (who_can_see, who_can_post, is_read_only) = (
+         select d.who_can_see, d.who_can_post, d.who_can_post is not null
            from public.chat_channel_access_from_legacy(
              c.chapter_id, c.type, c.required_permissions, c.is_read_only, c.is_audit_log
            ) d
        )
- where c.type in ('PUBLIC', 'ROLE_GATED')
+ where c.type in ('PUBLIC', 'ROLE_GATED', 'PRIVATE')
    and c.who_can_see is null
    and c.who_can_post is null;
 
 -- '*' stands for null in the comparison: a list's text form starts with '{'.
+-- Only a channel of the category's own chapter counts: nothing has ever
+-- checked that a channel's category is its chapter's.
 with agreed as (
   select c.category_id
     from public.chat_channels c
-   where c.category_id is not null
-     and c.type in ('PUBLIC', 'ROLE_GATED')
+    join public.chat_channel_categories own
+      on own.id = c.category_id
+     and own.chapter_id = c.chapter_id
+   where c.type in ('PUBLIC', 'ROLE_GATED')
      and not c.is_audit_log
    group by c.category_id
   having count(distinct
@@ -249,6 +271,7 @@ update public.chat_channel_categories cat
          select c.who_can_see, c.who_can_post
            from public.chat_channels c
           where c.category_id = cat.id
+            and c.chapter_id = cat.chapter_id
             and c.type in ('PUBLIC', 'ROLE_GATED')
             and not c.is_audit_log
           limit 1
@@ -279,7 +302,7 @@ begin
       add constraint chat_channels_access_lists_where_they_apply
       check (
         type in ('PUBLIC', 'ROLE_GATED')
-        or (who_can_see is null and who_can_post is null)
+        or (who_can_see is null and (type = 'PRIVATE' or who_can_post is null))
       ) not valid;
   end if;
   if not exists (select 1 from pg_constraint where conname = 'chat_channels_type_follows_who_can_see') then
@@ -294,7 +317,7 @@ begin
     alter table public.chat_channels
       add constraint chat_channels_read_only_follows_who_can_post
       check (
-        type not in ('PUBLIC', 'ROLE_GATED')
+        type not in ('PUBLIC', 'ROLE_GATED', 'PRIVATE')
         or is_read_only = (who_can_post is not null)
       ) not valid;
   end if;
@@ -334,7 +357,7 @@ as $$
 declare
   v_derived record;
 begin
-  if new.type not in ('PUBLIC', 'ROLE_GATED') then
+  if new.type not in ('PUBLIC', 'ROLE_GATED', 'PRIVATE') then
     return new;
   end if;
   if tg_op = 'INSERT' then

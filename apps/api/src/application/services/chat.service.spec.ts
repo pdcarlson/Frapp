@@ -491,6 +491,32 @@ describe('ChatService', () => {
         });
       });
 
+      // A private channel made read-only before #3722 keeps its posters as a
+      // list (migration 20261111230000): an officer may clear it, not set one.
+      it('clears a read-only private channel and refuses setting one', async () => {
+        const locked = {
+          ...baseChannel,
+          type: 'PRIVATE' as const,
+          member_ids: ['u-1'],
+          who_can_post: [`role:${EXEC_ROLE}`],
+          is_read_only: true,
+        };
+        mockChannelRepo.findById.mockResolvedValue(locked);
+        mockChannelRepo.update.mockResolvedValue(locked);
+
+        await service.updateChannel('chan-1', 'ch-1', { who_can_post: null });
+        expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
+          who_can_post: null,
+          is_read_only: false,
+        });
+
+        await expect(
+          service.updateChannel('chan-1', 'ch-1', {
+            who_can_post: [`role:${EXEC_ROLE}`],
+          }),
+        ).rejects.toThrow(BadRequestException);
+      });
+
       it('refuses an empty list', async () => {
         mockChannelRepo.findById.mockResolvedValue(roleGated);
 
@@ -3053,86 +3079,57 @@ describe('ChatService', () => {
       });
     });
 
-    // #734: a read-only channel is a broadcast surface. `canAccessChannel`
-    // decides who may author a top-level announcement; these cover the separate
-    // invariant that nobody threads one, whatever they hold.
-    describe('in-thread replies in a read-only channel', () => {
-      const announcements: ChatChannel = {
+    // #3722: a quote reply is a post. Whoever may post in a channel with a
+    // who-can-post list may quote there; whoever may not is refused at the
+    // post gate, before the replied-to message is looked up.
+    describe('quote replies in a channel with a who-can-post list', () => {
+      const listed: ChatChannel = {
         ...baseChannel,
-        name: 'announcements',
+        name: 'actives',
         is_read_only: true,
         who_can_post: [OFFICERS],
       };
 
-      it('rejects a reply from a sender on its who-can-post list', async () => {
-        mockChannelRepo.findById.mockResolvedValue(announcements);
+      it('accepts a quote reply from a sender on the list', async () => {
+        mockChannelRepo.findById.mockResolvedValue(listed);
         mockRbac.getChannelAccessHolder.mockResolvedValue(holderOf(OFFICERS));
-
-        await expect(
-          service.sendMessage({
-            chapter_id: 'ch-1',
-            channel_id: 'ch-chan-1',
-            sender_id: 'user-1',
-            content: 'Threading a broadcast',
-            reply_to_id: 'msg-same',
-          }),
-        ).rejects.toThrow(BadRequestException);
-        expect(mockMessageRepo.create).not.toHaveBeenCalled();
-      });
-
-      it('rejects a reply from the President wildcard too', async () => {
-        mockChannelRepo.findById.mockResolvedValue(announcements);
-        mockRbac.getChannelAccessHolder.mockResolvedValue(WILDCARD);
-
-        await expect(
-          service.sendMessage({
-            chapter_id: 'ch-1',
-            channel_id: 'ch-chan-1',
-            sender_id: 'user-1',
-            content: 'Threading a broadcast',
-            reply_to_id: 'msg-same',
-          }),
-        ).rejects.toThrow(BadRequestException);
-        expect(mockMessageRepo.create).not.toHaveBeenCalled();
-      });
-
-      it('rejects before spending a lookup on the replied-to message', async () => {
-        mockChannelRepo.findById.mockResolvedValue(announcements);
-        mockRbac.getChannelAccessHolder.mockResolvedValue(holderOf(OFFICERS));
-
-        await expect(
-          service.sendMessage({
-            chapter_id: 'ch-1',
-            channel_id: 'ch-chan-1',
-            sender_id: 'user-1',
-            content: 'Threading a broadcast',
-            reply_to_id: 'msg-same',
-          }),
-        ).rejects.toThrow(BadRequestException);
-        expect(mockMessageRepo.findById).not.toHaveBeenCalled();
-      });
-
-      it('still accepts a top-level announcement from an authorized officer', async () => {
-        mockChannelRepo.findById.mockResolvedValue(announcements);
-        mockRbac.getChannelAccessHolder.mockResolvedValue(holderOf(OFFICERS));
+        mockMessageRepo.findById.mockResolvedValue({
+          ...baseMessage,
+          id: 'msg-same',
+          channel_id: 'ch-chan-1',
+        });
         mockMessageRepo.create.mockResolvedValue(baseMessage);
 
         const result = await service.sendMessage({
           chapter_id: 'ch-1',
           channel_id: 'ch-chan-1',
           sender_id: 'user-1',
-          content: 'Chapter meeting moved to 7pm',
+          content: 'Agreed',
+          reply_to_id: 'msg-same',
         });
 
         expect(result).toEqual({ message: baseMessage, deduplicated: false });
-        expect(mockMessageRepo.create).toHaveBeenCalled();
+        expect(mockMessageRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ reply_to_id: 'msg-same' }),
+        );
       });
 
-      // No "reply in a normal channel still works" case here: "should accept a
-      // reply targeting a message in the same channel" above already covers it
-      // with the same channel, payload, and assertions. No mutation of this
-      // guard fails one without failing the other, so a read-only-specific copy
-      // would assert nothing new while implying the split is covered twice.
+      it('refuses a quote reply from a reader not on the list', async () => {
+        mockChannelRepo.findById.mockResolvedValue(listed);
+        mockRbac.getChannelAccessHolder.mockResolvedValue(holderOf());
+
+        await expect(
+          service.sendMessage({
+            chapter_id: 'ch-1',
+            channel_id: 'ch-chan-1',
+            sender_id: 'user-1',
+            content: 'Agreed',
+            reply_to_id: 'msg-same',
+          }),
+        ).rejects.toThrow(ForbiddenException);
+        expect(mockMessageRepo.findById).not.toHaveBeenCalled();
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
     });
   });
 

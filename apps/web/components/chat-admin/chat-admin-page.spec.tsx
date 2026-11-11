@@ -979,7 +979,7 @@ describe("ChatAdminPage — who can see and post", () => {
     expect(bodyOf(spy)).not.toHaveProperty("match_category_access");
   });
 
-  it("sends both lists when the officer changes who can post", async () => {
+  it("sends only the list the officer changed", async () => {
     const spy = vi.fn(() => Promise.resolve());
     updateChannel.mutateAsync = spy;
     render(<ChatAdminPage initialChannelId="ch-1" />);
@@ -996,10 +996,72 @@ describe("ChatAdminPage — who can see and post", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
 
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
-    expect(bodyOf(spy)).toMatchObject({
-      who_can_see: null,
-      who_can_post: [BROTHER_ROLE],
-    });
+    expect(bodyOf(spy)).toMatchObject({ who_can_post: [BROTHER_ROLE] });
+    expect(bodyOf(spy)).not.toHaveProperty("who_can_see");
+  });
+
+  // Migration 20261111230000 gives a channel nobody but the President could
+  // see an empty list, which the form can't build; renaming it still saves.
+  it("saves a channel whose list was already empty", async () => {
+    reads.channels = settled([
+      ...CHANNELS,
+      { ...channel("ch-4", "vault", "ROLE_GATED"), who_can_see: [] },
+    ]);
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    render(<ChatAdminPage initialChannelId="ch-4" />);
+
+    expect(
+      screen.getByRole("button", { name: "Save channel" }),
+    ).not.toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(bodyOf(spy)).not.toHaveProperty("who_can_see");
+  });
+
+  it("forgets Match when the officer picks another category", async () => {
+    reads.categories = settled([
+      ...CATEGORIES,
+      { id: "cat-2", name: "Social", display_order: 1 },
+    ]);
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    render(<ChatAdminPage initialChannelId="ch-3" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Match Chapter" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Category" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Social" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(bodyOf(spy)).toMatchObject({ category_id: "cat-2" });
+    expect(bodyOf(spy)).not.toHaveProperty("match_category_access");
+  });
+
+  it("opens a read-only private channel to everyone in it", async () => {
+    reads.channels = settled([
+      channel("ch-1", "general", "PUBLIC"),
+      {
+        ...channel("ch-2", "exec", "PRIVATE"),
+        who_can_post: [EXEC_TIER],
+        is_read_only: true,
+      },
+    ]);
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    render(exec());
+
+    expect(
+      screen.getByText(/of them only Executive board can post/),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Let everyone in it post" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(bodyOf(spy)).toMatchObject({ who_can_post: null });
   });
 
   it("matches the category again on request", async () => {
@@ -1045,7 +1107,7 @@ describe("ChatAdminPage — who can see and post", () => {
     await waitFor(() =>
       expect(mockUpdateCategory).toHaveBeenCalledWith({
         id: "cat-1",
-        body: { who_can_see: [EXEC_TIER], who_can_post: null },
+        body: { who_can_see: [EXEC_TIER] },
       }),
     );
   });

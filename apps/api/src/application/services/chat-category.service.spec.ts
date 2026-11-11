@@ -197,10 +197,12 @@ describe('ChatCategoryService', () => {
 
       await expect(
         categories.updateCategory('cat-1', 'ch-1', {
+          name: 'Board',
           who_can_see: ['tier:00000000-0000-4000-8000-0000000000ff'],
         }),
       ).rejects.toThrow("That tier isn't in this chapter anymore");
       expect(mockCategoryRepo.setAccess).not.toHaveBeenCalled();
+      expect(mockCategoryRepo.update).not.toHaveBeenCalled();
     });
 
     it('leaves the lists alone on a rename', async () => {

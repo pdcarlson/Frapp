@@ -140,9 +140,9 @@ export interface ChatChannel {
   /** Who can post there: `null` is everyone who can see it. As `who_can_see`. */
   who_can_post: string[] | null;
   /**
-   * Kept equal to "has a who-can-post list" (a database check), which is
-   * still what turns off quote replies (`allowsInThreadReplies`) and makes a
-   * channel an announcements channel for push. Never written on its own.
+   * Kept equal to "has a who-can-post list" (a database check), which still
+   * makes a PUBLIC channel named announcements the announcements channel for
+   * push, and old clients' composer hint. Never written on its own.
    */
   is_read_only: boolean;
   created_at: string;

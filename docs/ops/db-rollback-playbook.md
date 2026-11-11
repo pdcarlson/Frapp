@@ -3605,7 +3605,17 @@ If `transfer_presidency` itself must go back, its earlier body is the one in `20
 
 * **Migration**: `20261111230000_chat_channel_access_lists.sql`
 
-Two new columns on `chat_channels` and `chat_channel_categories`, `who_can_see` and `who_can_post`, backfilled from the old settings; five checks on the two tables; the functions `chat_access_list_valid`, `chat_channel_access_from_legacy`, `chat_channels_legacy_access`, `set_chat_category_access` and `chat_access_strip_entry`; triggers on `chat_channels`, `roles` and `role_tiers`; and `can_read_chat_channel` rewritten on the lists. `required_permissions`, `is_read_only` and `type` were not changed by the backfill.
+Two new columns on `chat_channels` and `chat_channel_categories`, `who_can_see` and `who_can_post`, backfilled from the old settings; five checks on the two tables; the functions `chat_access_list_valid`, `chat_channel_access_from_legacy`, `chat_channels_legacy_access`, `set_chat_category_access` and `chat_access_strip_entry`; triggers on `chat_channels`, `roles` and `role_tiers`; and `can_read_chat_channel` rewritten on the lists. `required_permissions` and `type` were not changed by the backfill. `is_read_only` was, in one case: a ROLE_GATED channel the Alumni role could read without `alumni:post` got a who-can-post list (its readers minus Alumni) and so `is_read_only` true. The reverted API reads that as read-only, so in those channels only `announcements:post` holders can post until the API rolls forward again. The check `chat_channels_read_only_follows_who_can_post` and the bridge trigger keep the flag tied to the list, so it can't simply be switched off: if the rollback must last, a forward migration drops that check and the trigger, then sets `is_read_only` false on these rows:
+
+```sql
+select c.id, c.chapter_id, c.name
+  from public.chat_channels c
+  join public.roles r on r.chapter_id = c.chapter_id and r.system_key = 'ALUMNI'
+ where c.type = 'ROLE_GATED'
+   and not c.is_audit_log
+   and ('role:' || r.id) = any (c.who_can_see)
+   and c.who_can_post = array_remove(c.who_can_see, 'role:' || r.id);
+```
 
 **Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API reads `required_permissions`, `is_read_only` and `announcements:post` again, and `chat_channels_legacy_access` keeps the lists following what it writes, so the database's read check (`can_read_chat_channel`, which message RLS and realtime topics use) agrees with it for every channel it touches. A channel the newer API created or changed holds its access only in the lists: under the reverted API a ROLE_GATED one it made has no `required_permissions`, so only `*` holders can open it there, and a read-only one is postable by `announcements:post` holders. That fails closed; re-save those channels' settings, or roll forward again.
 

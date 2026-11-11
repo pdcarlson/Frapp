@@ -154,6 +154,17 @@ export class ChannelAccessListService {
     if (!sendsLists && !matches) return {};
 
     if (!LISTED_TYPES.has(existing.type)) {
+      // A private channel made read-only before #3722 keeps the roles that
+      // could post as a who-can-post list (migration 20261111230000). It can
+      // be cleared, so everyone in it posts, but never set.
+      if (
+        existing.type === 'PRIVATE' &&
+        !matches &&
+        input.who_can_see === undefined &&
+        input.who_can_post === null
+      ) {
+        return { who_can_post: null, is_read_only: false };
+      }
       throw new BadRequestException(
         "A private channel's members decide who reads it, so it takes no who-can-see or who-can-post list",
       );

@@ -95,15 +95,20 @@ export class ChatCategoryService {
   ): Promise<ChatChannelCategory> {
     const existing = await this.getCategory(id, chapterId);
     const { who_can_see: whoCanSee, who_can_post: whoCanPost, ...plain } = data;
+    const sendsLists = whoCanSee !== undefined || whoCanPost !== undefined;
+    // Checked before anything is written, so a refused list leaves a rename
+    // in the same request unsaved too.
+    const lists = sendsLists
+      ? await this.accessLists.normalize(chapterId, {
+          who_can_see: whoCanSee,
+          who_can_post: whoCanPost,
+        })
+      : null;
     let updated =
       Object.keys(plain).length > 0
         ? await this.categoryRepo.update(id, chapterId, plain)
         : existing;
-    if (whoCanSee !== undefined || whoCanPost !== undefined) {
-      const lists = await this.accessLists.normalize(chapterId, {
-        who_can_see: whoCanSee,
-        who_can_post: whoCanPost,
-      });
+    if (lists) {
       const nextSee =
         lists.who_can_see !== undefined
           ? lists.who_can_see

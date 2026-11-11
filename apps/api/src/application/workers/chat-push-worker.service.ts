@@ -1000,10 +1000,10 @@ export class ChatPushWorkerService
    * **The channel decides, never the message's `kind`.** `kind` comes from the
    * client (`SendMessageDto.kind`), and `ChatService.sendMessage` accepts
    * `announcement` from any member in any channel it may post in, so trusting
-   * it let a member without `announcements:post` send an URGENT push that skips
+   * it let a member who couldn't post in #announcements send an URGENT push that skips
    * quiet hours to everyone at `all` in #general, or in any DM (#2771 review).
    * Only an announcements channel (`isAnnouncementChannel`: PUBLIC, read-only,
-   * so only `announcements:post` holders write there) makes one.
+   * so only its who-can-post list writes there, #3722) makes one.
    *
    * The channel's name is still load-bearing here; narrowing it is #1323.
    */

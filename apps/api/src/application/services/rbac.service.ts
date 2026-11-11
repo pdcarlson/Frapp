@@ -747,7 +747,7 @@ export class RbacService {
     const roleById = new Map(
       roles
         .filter((role) => role.chapter_id === chapterId)
-        .map((role) => [role.id, role] as const),
+        .map((role) => [role.id.toLowerCase(), role] as const),
     );
 
     const held = new Map<string, string[]>();
@@ -759,9 +759,17 @@ export class RbacService {
     }
 
     return [...held].map(([userId, roleIds]) => {
-      const liveRoles = roleIds
-        .map((id) => roleById.get(id))
-        .filter((role): role is Role => role !== undefined);
+      // `role_ids` is not foreign-keyed and may hold an uppercase id; the
+      // per-member read (`findByIds`, a uuid `in`) and `can_read_chat_channel`
+      // match it case-insensitively, so this does too, or the push audience
+      // would drift from the read audience.
+      const liveRoles = [
+        ...new Set(
+          roleIds
+            .map((id) => roleById.get(id.toLowerCase()))
+            .filter((role): role is Role => role !== undefined),
+        ),
+      ];
       const top = topRole(liveRoles);
       return {
         user_id: userId,
