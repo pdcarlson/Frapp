@@ -1744,13 +1744,12 @@ export class ChatService {
   async markChannelRead(channelId: string, chapterId: string, userId: string) {
     await this.assertChannelAccess(channelId, chapterId, userId);
     const readAt = new Date().toISOString();
-    // Side by side, one round trip instead of two (#3728). Both are keyed on
-    // the same `readAt`, and the clear is best-effort and never throws, so
-    // the receipt's outcome is the request's outcome either way.
-    const [receipt] = await Promise.all([
-      this.readReceiptRepo.upsert(channelId, userId, readAt),
-      this.clearChannelNotifications(channelId, chapterId, userId, readAt),
-    ]);
+    const receipt = await this.readReceiptRepo.upsert(
+      channelId,
+      userId,
+      readAt,
+    );
+    await this.clearChannelNotifications(channelId, chapterId, userId, readAt);
     return receipt;
   }
 

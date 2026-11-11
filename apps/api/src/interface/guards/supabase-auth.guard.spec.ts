@@ -13,6 +13,8 @@ import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { Test, TestingModule } from '@nestjs/testing';
 import { SupabaseAuthGuard } from './supabase-auth.guard';
 import { ChapterGuard } from './chapter.guard';
+import { PermissionsGuard } from './permissions.guard';
+import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { runWithRequestReads } from '../../infrastructure/supabase/request-reads';
 import { AuthRejectedException } from './auth-rejected.exception';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
@@ -31,12 +33,25 @@ describe('SupabaseAuthGuard', () => {
     AuthOnlyController,
   );
 
-  /** A chapter route: the usual class-level chain. */
+  /** A chapter route with no permission check, as attendance check-in is. */
   class ChapterController {}
   Reflect.defineMetadata(
     GUARDS_METADATA,
     [SupabaseAuthGuard, ChapterGuard],
     ChapterController,
+  );
+
+  /** The usual class-level chain, with a permission to check. */
+  class PermissionedController {}
+  Reflect.defineMetadata(
+    GUARDS_METADATA,
+    [SupabaseAuthGuard, ChapterGuard, PermissionsGuard],
+    PermissionedController,
+  );
+  Reflect.defineMetadata(
+    PERMISSIONS_KEY,
+    ['members:view'],
+    PermissionedController,
   );
 
   const mockExecutionContext = (
@@ -294,7 +309,8 @@ describe('SupabaseAuthGuard', () => {
     });
   });
   // The session check is the slowest call a request makes; the chapter
-  // guard's reads start while it is in flight, on the token's verified sub.
+  // guard's reads start while it is in flight, on the sub the throttler
+  // already verified (`request.throttlerVerifiedClaims`).
   describe('chapter lookups overlap the session check (#3728)', () => {
     const CHAPTER = '33333333-3333-4333-8333-333333333333';
     // A fresh sub per case: the user lookup is shared across requests for
@@ -322,15 +338,25 @@ describe('SupabaseAuthGuard', () => {
         );
     };
 
+    /** A context whose request carries what the throttler verified, if anything. */
+    const contextWith = (
+      verified: object | undefined,
+      controller: new () => unknown,
+    ) => {
+      const ctx = mockExecutionContext(
+        { authorization: 'Bearer valid-token' },
+        controller,
+      );
+      const request = ctx.switchToHttp().getRequest<Record<string, unknown>>();
+      request.throttlerVerifiedClaims = verified;
+      return ctx;
+    };
+
     const settle = () => new Promise((resolve) => setImmediate(resolve));
 
     it('starts them before getUser answers, on a chapter route', async () => {
       const answer = pendingSession();
-      mockGetClaims.mockResolvedValue({ data: { claims }, error: null });
-      const ctx = mockExecutionContext(
-        { authorization: 'Bearer valid-token' },
-        ChapterController,
-      );
+      const ctx = contextWith(claims, ChapterController);
 
       await runWithRequestReads('GET', async () => {
         const verdict = guard.canActivate(ctx);
@@ -341,16 +367,28 @@ describe('SupabaseAuthGuard', () => {
         answer({ id: claims.sub });
         await expect(verdict).resolves.toBe(true);
       });
-      expect(ctx.switchToHttp().getRequest().jwtClaims).toEqual(claims);
+    });
+
+    it('verifies no token itself: getClaims still runs only after getUser accepted it', async () => {
+      const answer = pendingSession();
+      const ctx = contextWith(claims, ChapterController);
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(ctx);
+        await settle();
+        expect(mockGetClaims).not.toHaveBeenCalled();
+        answer({ id: claims.sub });
+        await verdict;
+      });
+      expect(mockGetClaims).toHaveBeenCalledTimes(1);
     });
 
     it('starts nothing on a route without ChapterGuard', async () => {
       const answer = pendingSession();
-      mockGetClaims.mockResolvedValue({ data: { claims }, error: null });
 
       await runWithRequestReads('GET', async () => {
         const verdict = guard.canActivate(
-          mockExecutionContext({ authorization: 'Bearer valid-token' }),
+          contextWith(claims, AuthOnlyController),
         );
         await settle();
         answer({ id: claims.sub });
@@ -359,31 +397,64 @@ describe('SupabaseAuthGuard', () => {
       expect(mockFrom).not.toHaveBeenCalled();
     });
 
-    it('starts nothing when the claims cannot be verified', async () => {
+    it('starts nothing when the throttler verified nothing', async () => {
       const answer = pendingSession();
-      mockGetClaims.mockResolvedValue({ data: null, error: new Error('jwks') });
 
       await runWithRequestReads('GET', async () => {
         const verdict = guard.canActivate(
-          mockExecutionContext(
-            { authorization: 'Bearer valid-token' },
-            ChapterController,
-          ),
+          contextWith(undefined, ChapterController),
         );
         await settle();
-        answer({ id: claims.sub });
+        answer({ id: 'auth-123' });
         await verdict;
       });
       expect(mockFrom).not.toHaveBeenCalled();
+    });
+
+    it('reads roles only where PermissionsGuard will check a permission', async () => {
+      const memberRow = { id: 'member-1', role_ids: ['role-1'] };
+      mockFrom.mockImplementation((table: string) => {
+        const chain: Record<string, unknown> = {};
+        chain.select = () => chain;
+        chain.eq = () => chain;
+        chain.in = () => chain;
+        chain.maybeSingle = () =>
+          Promise.resolve({
+            data:
+              table === 'users'
+                ? { id: 'user-1' }
+                : table === 'members'
+                  ? memberRow
+                  : { subscription_status: 'active' },
+            error: null,
+          });
+        return chain;
+      });
+      const tables = () =>
+        mockFrom.mock.calls.map(([table]: [string]) => table).sort();
+
+      for (const controller of [ChapterController, PermissionedController]) {
+        mockFrom.mockClear();
+        claims = { ...claims, sub: `${claims.sub}-${controller.name}` };
+        const answer = pendingSession();
+        await runWithRequestReads('GET', async () => {
+          const verdict = guard.canActivate(contextWith(claims, controller));
+          await settle();
+          answer({ id: claims.sub });
+          await verdict;
+        });
+        // Only roles is in question; the chapter read may have joined an
+        // earlier case's in-flight lookup (#3753) and not show up here.
+        expect(tables()).toContain('members');
+        expect(tables().includes('roles')).toBe(
+          controller === PermissionedController,
+        );
+      }
     });
 
     it('still refuses a revoked session whose lookups already started', async () => {
       const answer = pendingSession();
-      mockGetClaims.mockResolvedValue({ data: { claims }, error: null });
-      const ctx = mockExecutionContext(
-        { authorization: 'Bearer valid-token' },
-        ChapterController,
-      );
+      const ctx = contextWith(claims, ChapterController);
 
       await runWithRequestReads('GET', async () => {
         const verdict = guard.canActivate(ctx);
@@ -394,31 +465,6 @@ describe('SupabaseAuthGuard', () => {
       });
       expect(ctx.switchToHttp().getRequest().supabaseUser).toBeUndefined();
       expect(ctx.switchToHttp().getRequest().jwtClaims).toBeUndefined();
-    });
-
-    it('surfaces a getUser that throws before the claims are read', async () => {
-      const boom = new Error('socket hang up');
-      mockGetUser.mockRejectedValue(boom);
-      let releaseClaims!: (value: unknown) => void;
-      mockGetClaims.mockReturnValue(
-        new Promise((resolve) => {
-          releaseClaims = resolve;
-        }),
-      );
-      const unhandled = jest.fn();
-      process.on('unhandledRejection', unhandled);
-      try {
-        const verdict = guard.canActivate(
-          mockExecutionContext({ authorization: 'Bearer valid-token' }),
-        );
-        await settle();
-        releaseClaims({ data: { claims }, error: null });
-        await expect(verdict).rejects.toBe(boom);
-        await settle();
-        expect(unhandled).not.toHaveBeenCalled();
-      } finally {
-        process.off('unhandledRejection', unhandled);
-      }
     });
   });
 });

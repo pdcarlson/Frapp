@@ -1197,6 +1197,7 @@ describe('ChapterGuard', () => {
           'auth-p1',
           undefined,
           req.headers,
+          { roles: true },
         );
         await settle();
         expect(reads.sort()).toEqual(['chapters', 'members', 'roles', 'users']);
@@ -1222,6 +1223,7 @@ describe('ChapterGuard', () => {
           'auth-claimed',
           undefined,
           req.headers,
+          { roles: true },
         );
         await settle();
         await guard.canActivate(mockExecutionContext(req));
@@ -1238,6 +1240,7 @@ describe('ChapterGuard', () => {
         'auth-p2',
         undefined,
         { 'x-chapter-id': CHAPTER },
+        { roles: true },
       );
       await runWithRequestReads('POST', async () => {
         sealRequestReadsForWrites();
@@ -1246,10 +1249,26 @@ describe('ChapterGuard', () => {
           'auth-p2',
           undefined,
           { 'x-chapter-id': CHAPTER },
+          { roles: true },
         );
       });
       await settle();
       expect(reads).toEqual([]);
+    });
+
+    it('leaves roles alone when the route will not check permissions', async () => {
+      const reads = tables();
+      await runWithRequestReads('GET', async () => {
+        prefetchChapterContext(
+          { from: mockFrom } as never,
+          'auth-p5',
+          undefined,
+          { 'x-chapter-id': CHAPTER },
+          { roles: false },
+        );
+        await settle();
+      });
+      expect(reads.sort()).toEqual(['chapters', 'members', 'users']);
     });
 
     it('starts only the user lookup when no chapter is named', async () => {
@@ -1260,6 +1279,7 @@ describe('ChapterGuard', () => {
           'auth-p3',
           undefined,
           {},
+          { roles: true },
         );
         await settle();
       });
@@ -1278,6 +1298,7 @@ describe('ChapterGuard', () => {
           'auth-p4',
           undefined,
           req.headers,
+          { roles: true },
         );
         await settle();
         await expect(

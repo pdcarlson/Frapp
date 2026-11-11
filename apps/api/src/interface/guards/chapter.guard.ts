@@ -80,11 +80,41 @@ const chapterLookups = new InFlightLookups<
   PostgrestMaybeSingleResponse<ChapterRow>
 >();
 
+/** Carries a failed PostgREST answer out of `readOncePerRequest` as a rejection. */
+class FailedLookup<T> extends Error {
+  constructor(readonly response: T) {
+    super('lookup failed');
+  }
+}
+
+/**
+ * `readOncePerRequest` for a PostgREST answer, keeping only a real one. A
+ * failed lookup resolves (`{ data: null, error }`) rather than rejecting, so
+ * it is turned into a rejection the store forgets, and the guard's own call
+ * reads again instead of reusing a failure the prefetch hit (#3728). Each
+ * caller still gets the failed answer itself, as it always did.
+ */
+async function keepAnswerForRequest<T extends { error: unknown }>(
+  key: string,
+  load: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await readOncePerRequest(key, async () => {
+      const response = await load();
+      if (response.error) throw new FailedLookup(response);
+      return response;
+    });
+  } catch (failure) {
+    if (failure instanceof FailedLookup) return failure.response as T;
+    throw failure;
+  }
+}
+
 function lookupAppUser(
   supabase: FrappSupabaseClient,
   supabaseAuthId: string,
 ): Promise<PostgrestMaybeSingleResponse<{ id: string }>> {
-  return readOncePerRequest(`chapter-guard:user:${supabaseAuthId}`, () =>
+  return keepAnswerForRequest(`chapter-guard:user:${supabaseAuthId}`, () =>
     appUserLookups.run(supabaseAuthId, () =>
       supabase
         .from('users')
@@ -99,7 +129,7 @@ function lookupChapter(
   supabase: FrappSupabaseClient,
   chapterId: string,
 ): Promise<PostgrestMaybeSingleResponse<ChapterRow>> {
-  return readOncePerRequest(`chapter-guard:chapter:${chapterId}`, () =>
+  return keepAnswerForRequest(`chapter-guard:chapter:${chapterId}`, () =>
     chapterLookups.run(chapterId, () =>
       supabase
         .from('chapters')
@@ -123,17 +153,20 @@ function lookupChapter(
  * returned. They are keyed by that id, so a token whose verified `sub` were
  * somehow not the user `getUser` answers with would find nothing to reuse.
  * Every request still reads its own membership and roles; this changes when
- * the reads start, not whether they happen (#3752). A failed read is dropped
- * here and made again by the guard that needs it.
+ * the reads start, not whether they happen (#3752). A failed read is not
+ * kept (`keepAnswerForRequest`, and the member and role reads throw), so the
+ * guard that needs it reads again.
  *
- * Without a store (no request, or past the guards of a write) it does
- * nothing, so it never adds a read that the guards would not then use.
+ * It reads only what the route's guards will ask for: the caller decides
+ * whether `PermissionsGuard` will read roles (`options.roles`). Without a
+ * store (no request, or past the guards of a write) it does nothing.
  */
 export function prefetchChapterContext(
   supabase: FrappSupabaseClient,
   supabaseAuthId: string,
   claims: JwtPayload | undefined,
   headers: RequestContext['headers'],
+  options: { roles: boolean },
 ): void {
   if (!requestReadsActive()) return;
 
@@ -151,7 +184,7 @@ export function prefetchChapterContext(
       data ? readMemberByUserAndChapter(supabase, data.id, chapterId) : null,
     )
     .then((member) =>
-      member?.role_ids?.length
+      options.roles && member?.role_ids?.length
         ? readRolesByIds(supabase, member.role_ids, chapterId)
         : null,
     )

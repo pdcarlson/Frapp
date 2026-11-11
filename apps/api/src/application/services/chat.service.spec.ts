@@ -4209,35 +4209,15 @@ describe('ChatService', () => {
       expect(result.channel_id).toBe('ch-chan-1');
     });
 
-    it('writes the receipt and clears the notifications side by side (#3728)', async () => {
-      let releaseReceipt!: (value: unknown) => void;
-      mockReadReceiptRepo.upsert.mockReturnValue(
-        new Promise((resolve) => {
-          releaseReceipt = resolve;
-        }),
-      );
-
-      const pending = service.markChannelRead('ch-chan-1', 'ch-1', 'user-1');
-      await new Promise((resolve) => setImmediate(resolve));
-
-      // The clear went out while the receipt was still unanswered.
-      expect(
-        mockNotificationService.markChatChannelNotificationsRead,
-      ).toHaveBeenCalled();
-
-      releaseReceipt({ id: 'rr-1', channel_id: 'ch-chan-1' });
-      await expect(pending).resolves.toEqual({
-        id: 'rr-1',
-        channel_id: 'ch-chan-1',
-      });
-    });
-
-    it('fails when the receipt fails, whatever the clear did', async () => {
+    it('leaves the notifications alone when the receipt fails', async () => {
       mockReadReceiptRepo.upsert.mockRejectedValueOnce(new Error('db down'));
 
       await expect(
         service.markChannelRead('ch-chan-1', 'ch-1', 'user-1'),
       ).rejects.toThrow('db down');
+      expect(
+        mockNotificationService.markChatChannelNotificationsRead,
+      ).not.toHaveBeenCalled();
     });
   });
 

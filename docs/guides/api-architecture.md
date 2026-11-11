@@ -110,6 +110,10 @@ Interceptors:
 
 - **requestIdMiddleware** — Express middleware (not an interceptor) that honours or mints `x-request-id`, binds it on AsyncLocalStorage for Nest `Logger` records, and echoes it on the response. `sentry-trace` / `baggage` are a different identifier space.
 - **LoggingInterceptor** — structured JSON logging with latency and status code.
+- **requestReadsMiddleware** and **RequestReadsInterceptor** — global. Within one request, the
+  caller's membership row and roles are read once and shared by the guards and the handler; a write's
+  handler reads afresh. What is shared and why it never crosses requests:
+  [`authorization-model.md` § The model in short](../security/authorization-model.md#1-the-model-in-short).
 - **AuthSyncInterceptor** — auto-creates/syncs the `users` row from Supabase Auth on first
   authenticated request. Parallel first requests can both miss the row and collide on
   `users_supabase_auth_id_key`; `AuthService.syncUser` treats that unique violation as
@@ -124,7 +128,7 @@ Interceptors:
 
 ### Rate limiting
 
-`CustomThrottlerGuard` is registered as the global `APP_GUARD`, so it runs **before** the chain above — that is why it reads the bearer token itself (verifying the HS256 signature) instead of using `request.supabaseUser`, which is not populated yet.
+`CustomThrottlerGuard` is registered as the global `APP_GUARD`, so it runs **before** the chain above — that is why it reads the bearer token itself (verifying its signature: ES256/RS256 against the project JWKS through `getClaims`, HS256 against `SUPABASE_JWT_SECRET`) instead of using `request.supabaseUser`, which is not populated yet. It leaves the verified claims on `request.throttlerVerifiedClaims`, which `SupabaseAuthGuard` uses to start the chapter lookups while `getUser` runs (#3728); they authenticate nothing.
 
 Two named buckets are registered in `AppModule`: `read` at 100/min and `write` at 30/min. The guard's `handleRequest` gates them by method, so `read` applies to `GET`/`HEAD`/`OPTIONS` and `write` to everything else.
 

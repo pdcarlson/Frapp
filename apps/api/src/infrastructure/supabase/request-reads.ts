@@ -8,10 +8,13 @@ import { AsyncLocalStorage } from 'node:async_hooks';
  * rows again, two or three times on a channel list, one after another. On a
  * resume burst every one of those is a round trip to Supabase. Inside one
  * request they now share the first read, and the guards' reads start while
- * the session check is still in flight (`prefetchChapterContext`).
+ * the session check is still in flight (`prefetchChapterContext`). The keys
+ * are `readMemberByUserAndChapter` and `readRolesByIds` (so every
+ * `findByUserAndChapter` / `findByIds` call in the request) and
+ * `ChapterGuard`'s user and chapter rows.
  *
- * **Never across requests.** `spec/behavior/rbac.md` § Permission Resolution
- * and `spec/behavior/multi-tenancy.md` promise that each request resolves
+ * **Never across requests.** `spec/behavior/rbac.md` § Permission Check
+ * Algorithm and `spec/behavior/multi-tenancy.md` promise that each request resolves
  * membership and roles afresh, and Paul kept that promise in #3752. The store
  * is created per request by `requestReadsMiddleware` and dies with it, so a
  * role change or a removal still takes effect on the very next request.
