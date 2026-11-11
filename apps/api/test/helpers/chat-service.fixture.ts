@@ -206,6 +206,9 @@ export async function createChatServiceFixture() {
     findKindPreferencesForUser: jest.fn().mockResolvedValue([]),
     upsertKindLevel: jest.fn(),
     deleteKindLevel: jest.fn(),
+    findChapterPreferencesForUser: jest.fn().mockResolvedValue([]),
+    upsertChapterLevel: jest.fn(),
+    deleteChapterLevel: jest.fn(),
   };
 
   const mockChannelCache = {
