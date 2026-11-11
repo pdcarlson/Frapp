@@ -209,6 +209,7 @@ await import("./tiers/members-keep-base-role.mjs");
 await import("./tiers/transfer-presidency-keeps-member-access.mjs");
 await import("./tiers/check-in-once.mjs");
 await import("./tiers/activity-links.mjs");
+await import("./tiers/channel-order.mjs");
 
 const tableCount = await db.query(
   `select count(*)::int as n from information_schema.tables where table_schema = 'public'`,

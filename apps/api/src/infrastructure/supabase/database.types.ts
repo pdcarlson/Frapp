@@ -435,6 +435,32 @@ export interface Database {
         };
         Returns: ChatChannel[];
       };
+      /**
+       * `20261111160000`. Files the listed channels under one section
+       * (`p_category_id` null is the default Channels section) in array
+       * order, and renumbers the rest of that section after them. Skips DMs,
+       * group DMs and the audit log. Returns the listed rows.
+       */
+      reorder_chat_channels: {
+        Args: {
+          p_chapter_id: string;
+          p_category_id: string | null;
+          p_channel_ids: string[];
+        };
+        Returns: ChatChannel[];
+      };
+      /**
+       * `20261111160000`. The chapter's category order in array order; any
+       * category not listed keeps its relative order after them. Returns
+       * every category of the chapter in its new order.
+       */
+      reorder_chat_categories: {
+        Args: {
+          p_chapter_id: string;
+          p_category_ids: string[];
+        };
+        Returns: ChatChannelCategory[];
+      };
       leave_group_dm: {
         Args: {
           p_channel_id: string;

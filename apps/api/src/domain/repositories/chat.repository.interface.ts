@@ -139,6 +139,17 @@ export interface IChatChannelRepository {
    * not in the chapter or is a DM.
    */
   setDefault(id: string, chapterId: string): Promise<ChatChannel | null>;
+  /**
+   * File these channels under one section (`categoryId` null is the default
+   * Channels section) in this order, in one transaction
+   * (`reorder_chat_channels`). The rest of that section keeps its relative
+   * order after them. Returns the listed rows.
+   */
+  reorder(
+    chapterId: string,
+    categoryId: string | null,
+    channelIds: string[],
+  ): Promise<ChatChannel[]>;
   /** Atomic Group DM leave (#348) — see the Supabase implementation's doc comment. */
   leaveGroupDm(
     channelId: string,
@@ -184,6 +195,14 @@ export interface IChatCategoryRepository {
     data: Partial<ChatChannelCategory>,
   ): Promise<ChatChannelCategory>;
   delete(id: string, chapterId: string): Promise<void>;
+  /**
+   * The chapter's category order, in one transaction
+   * (`reorder_chat_categories`). Returns every category in its new order.
+   */
+  reorder(
+    chapterId: string,
+    categoryIds: string[],
+  ): Promise<ChatChannelCategory[]>;
 }
 
 export interface IChatMessageRepository {

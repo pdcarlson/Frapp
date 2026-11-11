@@ -3463,3 +3463,19 @@ alter table public.chat_notification_preferences
     check ((scope = 'channel' and scope_id is not null and scope_kind is null)
         or (scope = 'kind' and scope_kind is not null and scope_id is null));
 ```
+
+## Rollback Chapter channel order (20261111160000)
+
+* **Migration**: `20261111160000_chat_channels_display_order.sql`
+
+One nullable column on `chat_channels`, `display_order`, and the functions `reorder_chat_channels` and `reorder_chat_categories`. No existing row changed.
+
+**Revert the code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API never calls the functions and returns the column as a plain field (`select('*')`); the reverted clients sort every section A to Z again and ignore it.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. Dropping the column loses every chapter's channel order; category order stays in `chat_channel_categories.display_order`, which predates this:
+
+```sql
+drop function if exists public.reorder_chat_channels(uuid, uuid, uuid[]);
+drop function if exists public.reorder_chat_categories(uuid, uuid[]);
+alter table public.chat_channels drop column if exists display_order;
+```

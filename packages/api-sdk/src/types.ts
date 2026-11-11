@@ -1782,6 +1782,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set one section's channel order, moving channels into it */
+        put: operations["ChatOrderController_reorderChannels_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/categories/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set the chapter's category order */
+        put: operations["ChatOrderController_reorderCategories_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events": {
         parameters: {
             query?: never;
@@ -4995,6 +5029,22 @@ export interface components {
             background: "plain" | "gold-glow" | "midnight" | "game-day" | "letters" | "photo";
             /** @description Required with `photo`: the path the photo-url call returned. */
             storage_path?: string;
+        };
+        ReorderChannelsDto: {
+            /**
+             * Format: uuid
+             * @description The category the channels are filed under, or null for the default Channels section. A channel listed from another section moves here.
+             */
+            category_id: string | null;
+            /** @description Every channel the officer sees in that section, top to bottom. Any other channel already in the section keeps its relative order after them. Never a DM, a group DM or #chapter-audit. */
+            channel_ids: string[];
+        };
+        ReorderResponseDto: {
+            success: boolean;
+        };
+        ReorderCategoriesDto: {
+            /** @description The chapter’s categories, top to bottom. A category not listed keeps its relative order after them. */
+            category_ids: string[];
         };
         GeofenceCoordinateDto: {
             lat: number;
@@ -10428,6 +10478,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatBackgroundPhotoUrlResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatOrderController_reorderChannels_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderChannelsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReorderResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatOrderController_reorderCategories_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderCategoriesDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReorderResponseDto"];
                 };
             };
             /** @description Error */

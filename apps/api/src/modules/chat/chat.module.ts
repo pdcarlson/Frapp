@@ -13,6 +13,8 @@ import { SupabaseChatThreadRepository } from '../../infrastructure/supabase/repo
 import { CHAT_THREAD_REPOSITORY } from '#domain/repositories/chat-thread.repository.interface';
 import { ChatController } from '../../interface/controllers/chat.controller';
 import { ChatBackgroundController } from '../../interface/controllers/chat-background.controller';
+import { ChatOrderController } from '../../interface/controllers/chat-order.controller';
+import { ChatChannelOrderService } from '../../application/services/chat-channel-order.service';
 import { ChatBackgroundService } from '../../application/services/chat-background.service';
 import { ChatBookmarkController } from '../../interface/controllers/chat-bookmark.controller';
 import { ChatBlockController } from '../../interface/controllers/chat-block.controller';
@@ -94,6 +96,7 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
     ChatThreadController,
     // Chat backgrounds (#3973), at their own root for the reason bookmarks are.
     ChatBackgroundController,
+    ChatOrderController,
   ],
   providers: [
     // Provided directly rather than by importing `ChatPushWorkerModule`, which
@@ -116,6 +119,8 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
     // Step 2 (#1380): channel categories, and reactions/actions on a message.
     // Neither is on the send path; both are called only by `ChatController`.
     ChatCategoryService,
+    // The chapter's channel and category order (owner, 2026-11-11).
+    ChatChannelOrderService,
     ChatReactionService,
     // Bookmarks (#462) share this module's wiring but not `ChatService` — see
     // the service's own docblock for why they are a separate class.

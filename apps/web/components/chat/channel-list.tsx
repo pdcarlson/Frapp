@@ -1,10 +1,18 @@
 "use client";
 
-import { useCallback, useId, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { ChevronDown, ChevronRight, ListFilter } from "lucide-react";
 import {
   arrangeChannelSidebar,
   canHideConversation,
+  compareChannelOrder,
   directChannelDisplayName,
   groupChannelsByCategory,
   HIDDEN_CONVERSATIONS_LABEL,
@@ -39,6 +47,11 @@ import { compactControlClassName } from "@/components/shared/table-controls";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { AuditGlyph, LockGlyph, MuteGlyph } from "./chat-glyphs";
 import { ChannelRowMenu, type ChannelRowActions } from "./channel-row-menu";
+import {
+  useRailReorder,
+  type RailDrag,
+  type RailDrop,
+} from "./use-rail-reorder";
 import { isSystemChannel } from "./channel-start";
 import { cn, initials } from "@/lib/utils";
 import { EYEBROW } from "@/components/ui/typography";
@@ -93,6 +106,12 @@ export interface ChatChannel {
   display_locked?: boolean;
   /** Who created the channel, who may set Always formal; null when unrecorded. */
   created_by?: string | null;
+  /**
+   * The chapter's order for this channel inside its section (#4178), set by
+   * an officer dragging it; null until its section is first arranged.
+   * `compareChannelOrder` in `@repo/hooks` sorts by it.
+   */
+  display_order?: number | null;
 }
 
 /**
@@ -261,7 +280,49 @@ export interface ChannelListProps {
    * arrangement and offers no pin or fold control.
    */
   sidebar?: ChannelSidebarControls;
+  /**
+   * Drag to reorder (#4178), for a member with `channels:manage`. Absent, no
+   * row or heading drags.
+   */
+  reorder?: ChannelReorderControls;
 }
+
+/**
+ * The chapter's order writes (#4178). The rail works out the whole new order
+ * of the one section or category list a drop changed, and the caller saves it.
+ */
+export interface ChannelReorderControls {
+  /** `categoryId` null is the default Channels group. Every listed channel moves there. */
+  onReorderChannels: (categoryId: string | null, channelIds: string[]) => void;
+  onReorderCategories: (categoryIds: string[]) => void;
+}
+
+/** Copy for the reorder (#4178), rostered in writing.md § Arrange the channel list. */
+export const EMPTY_CATEGORY_HINT = "Drag channels here";
+export const REORDER_SAVE_FAILED_TITLE = "Couldn't save the channel order";
+export const REORDER_SAVE_FAILED_BODY =
+  "Nothing changed. Check your connection and try again.";
+
+/** A section the chapter orders: the default Channels group or a category. */
+function isOrderableSection(key: string): boolean {
+  return key === "channels" || key.startsWith("category:");
+}
+
+/** The category a section key names, or null for the default group. */
+function categoryIdOf(key: string): string | null {
+  return key.startsWith("category:") ? key.slice("category:".length) : null;
+}
+
+/** The drop line drawn above or below a row, a block or a heading. */
+const DROP_LINE_BEFORE =
+  "before:pointer-events-none before:absolute before:inset-x-2 before:-top-px before:z-20 before:h-0.5 before:rounded-full before:bg-primary";
+const DROP_LINE_AFTER =
+  "after:pointer-events-none after:absolute after:inset-x-2 after:-bottom-px after:z-20 after:h-0.5 after:rounded-full after:bg-primary";
+/** Between two section blocks, which sit 16px apart. */
+const BLOCK_LINE_BEFORE =
+  "before:pointer-events-none before:absolute before:inset-x-2 before:-top-2 before:z-20 before:h-0.5 before:rounded-full before:bg-primary";
+const BLOCK_LINE_AFTER =
+  "after:pointer-events-none after:absolute after:inset-x-2 after:-bottom-2 after:z-20 after:h-0.5 after:rounded-full after:bg-primary";
 
 /**
  * Left-rail channel list, per `canvas-screens.dc.html` s04.
@@ -294,6 +355,7 @@ export function ChannelList({
   onHide,
   rowActions,
   sidebar,
+  reorder,
 }: ChannelListProps) {
   const preferences = sidebar?.preferences ?? DEFAULT_PREFERENCES;
   const mutedChannelIds = sidebar?.mutedChannelIds;
@@ -337,7 +399,7 @@ export function ChannelList({
    * The category rules (API order, type before category, an unknown
    * `category_id` falls back to uncategorized) are `groupChannelsByCategory`'s,
    * shared with mobile's s04 so the two clients can't disagree (#1684), and so
-   * is the arrangement on top of it: pins, the A–Z sort inside every section,
+   * is the arrangement on top of it: pins, the sort inside every section (the chapter order, then A–Z, #4178),
    * the filters and the folds (`arrangeChannelSidebar`, #2877). What stays here
    * is web's own: the System group, which is split off first so the shared
    * grouping never sees it, and the Hidden conversations group.
@@ -348,7 +410,7 @@ export function ChannelList({
    * categories moves no uncategorized channel. A chapter that categorizes
    * everything just sees that group's empty section disappear.
    */
-  const { arranged, hiddenDms } = useMemo(() => {
+  const { arranged, hiddenDms, inputSections, sectionOrder } = useMemo(() => {
     // A DM the member hid (#2303) moves to the collapsed group at the end,
     // except while it is the open channel, so a jump into one does not leave
     // the rail with no row marked current. Hiding wins over pinning: a hidden
@@ -371,12 +433,25 @@ export function ChannelList({
       }
     }
 
+    const grouped = groupChannelsByCategory(rest, categories);
+    const inputSections = sidebarSections(
+      grouped,
+      { channels: "Channels", direct: "Direct messages" },
+      { label: "System", channels: system },
+    );
+    // Every channel of each orderable section in the order it draws, pinned
+    // and filtered-out rows included (#4178): a drop rewrites the whole
+    // section, so a row the member pinned or filtered away keeps its place
+    // instead of falling to the end.
+    const byOrder = compareChannelOrder(titleFor);
+    const sectionOrder = new Map<string, ChatChannel[]>();
+    for (const section of inputSections) {
+      if (isOrderableSection(section.key)) {
+        sectionOrder.set(section.key, [...section.channels].sort(byOrder));
+      }
+    }
     const arranged = arrangeChannelSidebar({
-      sections: sidebarSections(
-        groupChannelsByCategory(rest, categories),
-        { channels: "Channels", direct: "Direct messages" },
-        { label: "System", channels: system },
-      ),
+      sections: inputSections,
       pinnedIds,
       collapsed: preferences.collapsed,
       filters: preferences.filters,
@@ -386,7 +461,7 @@ export function ChannelList({
       mutedChannelIds,
     });
     hiddenDms.sort((a, b) => titleFor(a).localeCompare(titleFor(b)));
-    return { arranged, hiddenDms };
+    return { arranged, hiddenDms, inputSections, sectionOrder };
   }, [
     channels,
     titleFor,
@@ -397,7 +472,136 @@ export function ChannelList({
     mutedChannelIds,
   ]);
 
-  const renderRow = (channel: ChatChannel) => {
+  // ── Drag to reorder (#4178) ──────────────────────────────────────────────
+  const [announcement, setAnnouncement] = useState("");
+  // Which row or heading to give focus back to once a keyboard move redraws
+  // it: React moves the node, and moving a focused node blurs it.
+  const refocus = useRef<string | null>(null);
+
+  const sectionLabel = useCallback(
+    (key: string) =>
+      inputSections.find((section) => section.key === key)?.label ?? key,
+    [inputSections],
+  );
+
+  /** The whole new order a drop makes, or null when it moves nothing. */
+  const commitDrop = useCallback(
+    (
+      drag: RailDrag,
+      drop: RailDrop,
+    ): { position: number; of: number; label: string } | null => {
+      if (!reorder) return null;
+      if (drag.kind === "channel") {
+        const section =
+          drop.kind === "row" || drop.kind === "header" ? drop.section : null;
+        if (!section || !isOrderableSection(section)) return null;
+        const current = (sectionOrder.get(section) ?? []).map((c) => c.id);
+        const next = current.filter((id) => id !== drag.id);
+        let at = 0;
+        if (drop.kind === "row") {
+          const index = next.indexOf(drop.id);
+          if (index < 0) return null;
+          at = drop.after ? index + 1 : index;
+        }
+        next.splice(at, 0, drag.id);
+        const unchanged =
+          section === drag.section &&
+          next.length === current.length &&
+          next.every((id, i) => id === current[i]);
+        if (unchanged) return null;
+        reorder.onReorderChannels(categoryIdOf(section), next);
+        return {
+          position: at + 1,
+          of: next.length,
+          label: sectionLabel(section),
+        };
+      }
+      if (drop.kind !== "category") return null;
+      const current = categories.map((category) => category.id);
+      const next = current.filter((id) => id !== drag.id);
+      const index = next.indexOf(drop.id);
+      if (index < 0) return null;
+      const at = drop.after ? index + 1 : index;
+      next.splice(at, 0, drag.id);
+      if (next.every((id, i) => id === current[i])) return null;
+      reorder.onReorderCategories(next);
+      return { position: at + 1, of: next.length, label: "categories" };
+    },
+    [reorder, sectionOrder, categories, sectionLabel],
+  );
+
+  const nameOfDrag = useCallback(
+    (drag: RailDrag) =>
+      drag.kind === "channel"
+        ? titleFor(
+            channels.find((c) => c.id === drag.id) ?? {
+              id: drag.id,
+              name: drag.id,
+              type: "PUBLIC",
+            },
+          )
+        : (categories.find((c) => c.id === drag.id)?.name ?? "Category"),
+    [titleFor, channels, categories],
+  );
+
+  const announceMove = useCallback(
+    (
+      drag: RailDrag,
+      moved: { position: number; of: number; label: string } | null,
+    ) => {
+      if (!moved) return;
+      setAnnouncement(
+        `${nameOfDrag(drag)} moved to ${moved.position} of ${moved.of} in ${moved.label}`,
+      );
+    },
+    [nameOfDrag],
+  );
+
+  const railReorder = useRailReorder({
+    enabled: !!reorder,
+    onDrop: (drag, drop) => announceMove(drag, commitDrop(drag, drop)),
+    onKeyMove: (drag, step) => {
+      let drop: RailDrop | null = null;
+      if (drag.kind === "channel") {
+        // One place among the rows the section draws, so the move is the one
+        // the member sees.
+        const rows =
+          arranged.sections.find((section) => section.key === drag.section)
+            ?.rows ?? [];
+        const index = rows.findIndex((row) => row.id === drag.id);
+        const neighbour = index < 0 ? undefined : rows[index + step];
+        if (neighbour) {
+          drop = {
+            kind: "row",
+            section: drag.section,
+            id: neighbour.id,
+            after: step === 1,
+          };
+        }
+        refocus.current = `[data-reorder-row="${drag.id}"] button`;
+      } else {
+        const index = categories.findIndex((c) => c.id === drag.id);
+        const neighbour = index < 0 ? undefined : categories[index + step];
+        if (neighbour) {
+          drop = { kind: "category", id: neighbour.id, after: step === 1 };
+        }
+        refocus.current = `[data-reorder-category="${drag.id}"] [data-reorder-header]`;
+      }
+      if (drop) announceMove(drag, commitDrop(drag, drop));
+    },
+  });
+
+  useEffect(() => {
+    const selector = refocus.current;
+    if (!selector) return;
+    refocus.current = null;
+    const target = document.querySelector<HTMLElement>(selector);
+    if (target && target !== document.activeElement) target.focus();
+  }, [channels, categories]);
+
+  const { dragging, drop } = railReorder;
+
+  const renderRow = (channel: ChatChannel, sectionKey?: string) => {
     const isActive = channel.id === activeChannelId;
     const countsKnown = unreadByChannelId !== undefined;
     const counts = unreadByChannelId?.get(channel.id) ?? NO_UNREAD;
@@ -422,6 +626,21 @@ export function ChannelList({
     const pinned = preferences.pinnedIds.has(channel.id);
     const offersHide =
       !!onHide && canHideConversation(channel) && !channel.hidden;
+    // A row an officer can drag (#4178): one in the default group or a
+    // category, never Pinned, Direct messages, System or Hidden.
+    const draggable =
+      !!reorder && sectionKey !== undefined && isOrderableSection(sectionKey);
+    const drag: RailDrag | null = draggable
+      ? { kind: "channel", id: channel.id, section: sectionKey }
+      : null;
+    const dropHere =
+      draggable && drop?.kind === "row" && drop.id === channel.id
+        ? drop.after
+          ? DROP_LINE_AFTER
+          : DROP_LINE_BEFORE
+        : undefined;
+    const isDragged =
+      dragging?.kind === "channel" && dragging.id === channel.id;
     // Every row action lives in the right-click menu (owner, 2026-11-06:
     // "take away the pin option on hover"). The row draws no hover controls,
     // so its end is free for the mute mark and the badge alone.
@@ -438,15 +657,22 @@ export function ChannelList({
         <li
           // The row stays lit while its menu is open, so the member can see
           // which channel the menu is for.
-          className={
-            isActive
-              ? undefined
-              : "[&[data-state=open]>button]:bg-card [&[data-state=open]>button]:text-foreground"
-          }
+          className={cn(
+            !isActive &&
+              "[&[data-state=open]>button]:bg-card [&[data-state=open]>button]:text-foreground",
+            draggable && "relative",
+            dropHere,
+            isDragged && "opacity-40",
+          )}
+          data-reorder-row={draggable ? channel.id : undefined}
+          data-reorder-section={draggable ? sectionKey : undefined}
+          onPointerDown={drag ? railReorder.pointerDownFor(drag) : undefined}
         >
           <button
             type="button"
             onClick={() => onPick(channel)}
+            onKeyDown={drag ? railReorder.keyDownFor(drag) : undefined}
+            aria-keyshortcuts={drag ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
             aria-current={isActive ? "page" : undefined}
             // `1b` pin 6 and the `3a` geometry table: a channel row
             // is 32px at radius 8, tighter than the 34px/r10 nav row
@@ -526,12 +752,139 @@ export function ChannelList({
     );
   };
 
+  // The sections to draw, in order. An officer who can reorder also sees each
+  // category with no channel at all, as a heading to drop the first one on;
+  // everyone else sees only sections with rows, as before.
+  type RenderEntry =
+    | { kind: "section"; section: (typeof arranged.sections)[number] }
+    | { kind: "empty"; key: string; label: string };
+  const renderOrder: RenderEntry[] = [];
+  {
+    const byKey = new Map(
+      arranged.sections.map((section) => [section.key as string, section]),
+    );
+    const pinned = byKey.get("pinned");
+    if (pinned) renderOrder.push({ kind: "section", section: pinned });
+    for (const input of inputSections) {
+      const section = byKey.get(input.key);
+      if (section) {
+        renderOrder.push({ kind: "section", section });
+      } else if (
+        reorder &&
+        input.key.startsWith("category:") &&
+        input.channels.length === 0 &&
+        !arranged.emptiedByFilters
+      ) {
+        renderOrder.push({ kind: "empty", key: input.key, label: input.label });
+      }
+    }
+  }
+
+  /** A section block's drag attributes and its category drop line. */
+  const blockProps = (key: string) => {
+    if (!reorder) return {};
+    if (!isOrderableSection(key)) return { "data-reorder-none": "" };
+    const categoryId = categoryIdOf(key);
+    if (!categoryId) return {};
+    const lineHere =
+      drop?.kind === "category" && drop.id === categoryId
+        ? drop.after
+          ? BLOCK_LINE_AFTER
+          : BLOCK_LINE_BEFORE
+        : undefined;
+    return {
+      "data-reorder-category": categoryId,
+      className: cn(
+        "relative",
+        lineHere,
+        dragging?.kind === "category" &&
+          dragging.id === categoryId &&
+          "opacity-40",
+      ),
+    };
+  };
+
+  /**
+   * A category with no channel yet, drawn only for an officer who can fill it.
+   * Its heading lines up with the others: with the sidebar controls they carry
+   * a fold chevron, so this one keeps the chevron's room without drawing one,
+   * since there is nothing to fold.
+   */
+  const renderEmptyCategory = (key: string, label: string) => {
+    const categoryId = categoryIdOf(key);
+    const drag: RailDrag | null = categoryId
+      ? { kind: "category", id: categoryId }
+      : null;
+    const lineHere =
+      drop?.kind === "header" && drop.section === key && DROP_LINE_AFTER;
+    return (
+      <div key={key} {...blockProps(key)}>
+        <p
+          data-reorder-header={key}
+          tabIndex={0}
+          onPointerDown={drag ? railReorder.pointerDownFor(drag) : undefined}
+          onKeyDown={drag ? railReorder.keyDownFor(drag) : undefined}
+          aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+          className={cn(
+            "relative flex items-center gap-1 pb-1 text-muted-foreground",
+            sidebar ? "px-2" : "px-3",
+            EYEBROW,
+            lineHere,
+          )}
+        >
+          {sidebar ? (
+            <span className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          ) : null}
+          <span className="truncate">{label}</span>
+        </p>
+        <p
+          className={cn(
+            "pt-0.5 text-caption text-muted",
+            sidebar ? "pl-[26px] pr-2" : "px-3",
+          )}
+        >
+          {EMPTY_CATEGORY_HINT}
+        </p>
+      </div>
+    );
+  };
+
   return (
-    <div className="space-y-4">
-      {arranged.sections.map((section) => {
+    <div className="space-y-4" data-reorder-rail={reorder ? "" : undefined}>
+      {/* Where a drag or an Alt+Arrow move is announced (#4178). */}
+      {reorder ? (
+        <p className="sr-only" aria-live="polite">
+          {announcement}
+        </p>
+      ) : null}
+      {renderOrder.map((entry) => {
+        if (entry.kind === "empty") {
+          return renderEmptyCategory(entry.key, entry.label);
+        }
+        const section = entry.section;
         const headerId = `channel-section:${section.key}`;
+        const orderable = !!reorder && isOrderableSection(section.key);
+        const categoryId = categoryIdOf(section.key);
+        const headerDrag: RailDrag | null =
+          orderable && categoryId ? { kind: "category", id: categoryId } : null;
+        const headerProps = orderable
+          ? {
+              "data-reorder-header": section.key,
+              onPointerDown: headerDrag
+                ? railReorder.pointerDownFor(headerDrag)
+                : undefined,
+              onKeyDown: headerDrag
+                ? railReorder.keyDownFor(headerDrag)
+                : undefined,
+            }
+          : {};
+        const headerDropLine =
+          orderable &&
+          drop?.kind === "header" &&
+          drop.section === section.key &&
+          DROP_LINE_AFTER;
         return (
-          <div key={section.key}>
+          <div key={section.key} {...blockProps(section.key)}>
             {/*
               The header names the list rather than just sitting above it: a
               screen-reader member navigating by list or by button would
@@ -547,6 +900,7 @@ export function ChannelList({
               <button
                 type="button"
                 id={headerId}
+                {...headerProps}
                 aria-expanded={!section.collapsed}
                 onClick={() =>
                   sidebar.onSetCollapsed(section.key, !section.collapsed)
@@ -566,6 +920,7 @@ export function ChannelList({
                   section.collapsed &&
                     section.unreadCount > 0 &&
                     "font-bold text-foreground",
+                  headerDropLine,
                 )}
               >
                 {section.collapsed ? (
@@ -597,13 +952,21 @@ export function ChannelList({
             ) : (
               <p
                 id={headerId}
-                className={cn("px-3 pb-1 text-muted-foreground", EYEBROW)}
+                {...headerProps}
+                className={cn(
+                  "px-3 pb-1 text-muted-foreground",
+                  EYEBROW,
+                  headerDropLine && "relative",
+                  headerDropLine,
+                )}
               >
                 {section.label}
               </p>
             )}
             {section.rows.length > 0 ? (
-              <ul aria-labelledby={headerId}>{section.rows.map(renderRow)}</ul>
+              <ul aria-labelledby={headerId}>
+                {section.rows.map((row) => renderRow(row, section.key))}
+              </ul>
             ) : null}
           </div>
         );
@@ -621,7 +984,7 @@ export function ChannelList({
         </div>
       ) : null}
       {hiddenDms.length > 0 ? (
-        <div>
+        <div data-reorder-none={reorder ? "" : undefined}>
           <button
             type="button"
             onClick={() => setShowHidden((open) => !open)}
@@ -639,7 +1002,7 @@ export function ChannelList({
               id="channel-section:hidden"
               aria-label={HIDDEN_CONVERSATIONS_LABEL}
             >
-              {hiddenDms.map(renderRow)}
+              {hiddenDms.map((row) => renderRow(row))}
             </ul>
           ) : null}
         </div>

@@ -59,11 +59,10 @@ import {
   landingChannelId,
   canSetChannelDisplayLock,
   useSetChannelDisplayLock,
+  useReorderCategories,
+  useReorderChannels,
 } from "@repo/hooks";
-import {
-  setChannelLocked,
-  syncLockedChannels,
-} from "@repo/chat-core/density";
+import { setChannelLocked, syncLockedChannels } from "@repo/chat-core/density";
 import {
   can,
   canAll,
@@ -114,6 +113,9 @@ import { FOCUS_RING, SKIP_LINK_CLASSES } from "@/components/ui/focus";
 import {
   ChannelFilters,
   ChannelList,
+  REORDER_SAVE_FAILED_BODY,
+  REORDER_SAVE_FAILED_TITLE,
+  type ChannelReorderControls,
   type ChannelSidebarControls,
   type ChannelCategory,
   type ChatChannel,
@@ -1666,6 +1668,29 @@ export function ChatShell({
     ],
   );
 
+  // Drag to reorder the rail (#4178), for `channels:manage` only. Each write
+  // shows at once and goes back if it fails; the toast says so, per call.
+  const reorderChannelsAsync = useReorderChannels().mutateAsync;
+  const reorderCategoriesAsync = useReorderCategories().mutateAsync;
+  const railReorder = useMemo<ChannelReorderControls | undefined>(() => {
+    if (!canManageChannel) return undefined;
+    const failed = () =>
+      toast({
+        variant: "destructive",
+        title: REORDER_SAVE_FAILED_TITLE,
+        description: REORDER_SAVE_FAILED_BODY,
+      });
+    return {
+      onReorderChannels: (categoryId, channelIds) =>
+        void reorderChannelsAsync({
+          category_id: categoryId,
+          channel_ids: channelIds,
+        }).catch(failed),
+      onReorderCategories: (categoryIds) =>
+        void reorderCategoriesAsync(categoryIds).catch(failed),
+    };
+  }, [canManageChannel, reorderChannelsAsync, reorderCategoriesAsync, toast]);
+
   // Unread and mention counts come from `GET /v1/channels/unread`, never from a
   // local re-derivation: the server excludes the viewer's own and deleted
   // messages and treats a never-opened channel as entirely unread, so a second
@@ -2252,12 +2277,12 @@ export function ChatShell({
       : chapterScope === "none"
         ? "no-chapter"
         : channelsQuery.isPending
-        ? "loading"
-        : channelsQuery.isError
-          ? "error"
-          : !activeChapterId
-            ? "no-chapter"
-            : "empty";
+          ? "loading"
+          : channelsQuery.isError
+            ? "error"
+            : !activeChapterId
+              ? "no-chapter"
+              : "empty";
   // `Esc`, where nothing else takes it (#3824; the history half is above).
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -2354,6 +2379,7 @@ export function ChatShell({
               onHide={hideFromRail}
               rowActions={rowActions}
               sidebar={sidebarControls}
+              reorder={railReorder}
               onPick={(ch) => {
                 if (ch.hidden) {
                   const memberId = otherMemberId(ch, userId);
@@ -2561,7 +2587,8 @@ export function ChatShell({
                         setDisplayLock.mutate(
                           { id: channelId, locked },
                           {
-                            onSuccess: () => setChannelLocked(channelId, locked),
+                            onSuccess: () =>
+                              setChannelLocked(channelId, locked),
                             onError: () =>
                               toast({
                                 title: "Couldn't change Always formal",

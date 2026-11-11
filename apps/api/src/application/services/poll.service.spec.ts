@@ -134,6 +134,7 @@ describe('PollService', () => {
       removePrivateChannelMember: jest.fn(),
       removeUserFromPrivateChannels: jest.fn(),
       setDefault: jest.fn(),
+      reorder: jest.fn(),
     };
 
     mockVoteRepo = {
