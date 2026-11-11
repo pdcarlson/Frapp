@@ -53,7 +53,12 @@ export function taskEditFrom(task: EditableTask, input: TaskInput): TaskEdit {
   }
   const dueAt = input.due_at ?? null;
   const storedAt = task.due_at ? new Date(task.due_at).toISOString() : null;
-  if (input.due_date !== task.due_date || dueAt !== storedAt) {
+  // A timed task's day is its time's day: an unchanged `due_at` is an
+  // unchanged due, even read where the zone puts it on another day.
+  if (
+    dueAt !== storedAt ||
+    (dueAt === null && input.due_date !== task.due_date)
+  ) {
     body.due_date = input.due_date;
     body.due_at = dueAt;
   }

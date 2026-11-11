@@ -7,6 +7,7 @@ import {
   taskCardControls,
   taskStatusLabel,
   canReopenOwnTask,
+  viewerIsCardAssignee,
   type LiveTask,
 } from "./task-card";
 import { countCheckedIn } from "./use-attendance";
@@ -17,6 +18,7 @@ function live(overrides: Partial<LiveTask> = {}): LiveTask {
     status: "TODO",
     stored_status: "TODO",
     points_awarded: false,
+    assignee_id: undefined,
     subtasks: [],
     ...overrides,
   };
@@ -235,5 +237,22 @@ describe("countCheckedIn", () => {
     expect(countCheckedIn(undefined)).toBe(null);
     expect(countCheckedIn({ status: "PRESENT" })).toBe(null);
     expect(countCheckedIn([])).toBe(0);
+  });
+});
+
+describe("viewerIsCardAssignee (#4296)", () => {
+  it("follows the live task's assignee once it is read", () => {
+    expect(
+      viewerIsCardAssignee("u-old", "u-old", live({ assignee_id: "u-new" })),
+    ).toBe(false);
+    expect(
+      viewerIsCardAssignee("u-new", "u-old", live({ assignee_id: "u-new" })),
+    ).toBe(true);
+  });
+
+  it("reads the snapshot until then, and never matches a missing viewer", () => {
+    expect(viewerIsCardAssignee("u-old", "u-old", null)).toBe(true);
+    expect(viewerIsCardAssignee("", "", null)).toBe(false);
+    expect(viewerIsCardAssignee(null, undefined, live())).toBe(false);
   });
 });
