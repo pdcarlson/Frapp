@@ -78,6 +78,8 @@ const mocks = vi.hoisted(() => {
     // and a disabled query reports `isLoading: false` (v5 derives it as
     // `isPending && isFetching`), so it never reaches the loading rung at all.
     chapterId: "chap-1" as string | null,
+    // The wildcard draws every switch, the join one (#4008) included.
+    permissions: ["*"] as string[],
     preferencesQuery: {
       data: undefined as unknown,
       isPending: false,
@@ -113,6 +115,7 @@ vi.mock("@repo/hooks", () => ({
   useUpdateOnboarding: () => mocks.noopMutation,
   useDeleteAccount: () => mocks.deleteAccount,
   useActiveChapterId: () => mocks.chapterId,
+  usePermissionList: () => mocks.permissions,
   useNotificationPreferences: () => mocks.preferencesQuery,
   useUpdateNotificationPreference: () => ({
     mutateAsync: mocks.updatePreferenceMutateAsync,
@@ -682,6 +685,7 @@ describe("ChapterAlertsSection — notification categories (#564)", () => {
     mocks.updatePreferenceMutateAsync.mockResolvedValue({});
     mockOffline.value = false;
     mocks.chapterId = "chap-1";
+    mocks.permissions = ["*"];
     mocks.preferencesQuery.data = [];
     mocks.preferencesQuery.isPending = false;
     mocks.preferencesQuery.isLoading = false;
@@ -714,6 +718,21 @@ describe("ChapterAlertsSection — notification categories (#564)", () => {
         }),
       ).toBeTruthy();
     }
+  });
+
+  // #4008: the switch follows the push, so a member who is never told about
+  // a join is never shown a switch for it.
+  it("draws the join switch only for officers who are told about joins", () => {
+    mocks.permissions = ["members:view"];
+    const { unmount } = render(<ChapterAlertsSection />);
+    expect(
+      screen.queryByRole("switch", { name: /^someone joins the chapter$/i }),
+    ).toBeNull();
+    unmount();
+
+    mocks.permissions = ["members:view", "roles:manage"];
+    render(<ChapterAlertsSection />);
+    expect(categorySwitch(/^someone joins the chapter$/i)).toBeTruthy();
   });
 
   it("draws no Billing switch while dues is beta-off", () => {

@@ -3,6 +3,7 @@
 import {
   useActiveChapterId,
   useNotificationPreferences,
+  usePermissionList,
   useUpdateNotificationPreference,
 } from "@repo/hooks";
 import {
@@ -44,6 +45,8 @@ export function ChapterAlertsSection() {
   const chapterId = useActiveChapterId();
   const preferencesQuery = useNotificationPreferences(chapterId ?? "");
   const updatePreference = useUpdateNotificationPreference();
+  // Decides which audience-gated switches are drawn (the join switch, #4008).
+  const permissions = usePermissionList();
 
   /*
    * ...and a *third* query is a third set, by the same rule (#564).
@@ -181,7 +184,7 @@ export function ChapterAlertsSection() {
       {categoriesState ?? (
         <div className="space-y-4">
           <ul className={denseListClassName}>
-            {shownNotificationCategories().map((category) => {
+            {shownNotificationCategories(permissions).map((category) => {
               const switchId = `notification-category-${category.key}`;
               const descriptionId = `${switchId}-description`;
               return (
@@ -298,8 +301,10 @@ export function ChapterAlertsSection() {
             preference gate (#1041), so a switch would suppress nothing.
 
             Deliberately NOT claiming this is the only unswitchable
-            category — `admin` (the member-joined push, `invite.service.ts`)
-            is NORMAL priority with no catalog entry either. This names the
+            category — `admin` (the chat-report alert and the Discord
+            import notice) is NORMAL priority with no catalog entry either.
+            The member-joined push left it for its own switch (#4008).
+            This names the
             one a member is most likely to go looking for, and does not
             pretend the grid is exhaustive.
           */}
