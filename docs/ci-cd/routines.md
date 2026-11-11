@@ -11,14 +11,15 @@ with the repository checked out and the owner's connectors, and talks to the own
 2026-11-06 to 2026-11-08 they were bound to the project thread *Redefine Frapp scheduled routines*
 on the owner's personal account. Claude Code projects aren't offered on Team plans, so the move to
 the organization re-created them on a plain session ([#3737](https://github.com/pdcarlson/Frapp/issues/3737)).
-Checked on 2026-11-08: the session has the repository on `main` and the connectors. Checked on
-2026-11-11 from the run records on [#2966](https://github.com/pdcarlson/Frapp/issues/2966): the
-organization's Beta Watch has posted one every day since 2026-11-08 and its Board Sweep posted one
-for 2026-11-09, so those copies are the ones running. Weekly Upkeep first falls due on 2026-11-11.
-The 2026-11-06 copies on the personal account were never deleted and were still enabled on
-2026-11-11, though every fire since 2026-11-08 had died on that account's weekly usage limit. Once
-the limit reset they would have run beside the organization's copies, so check both accounts'
-`list_triggers` when a routine posts two records for one fire. The five Routines before them
+Checked on 2026-11-08: the session has the repository on `main` and the connectors.
+*Checked 2026-11-11:* the run records on [#2966](https://github.com/pdcarlson/Frapp/issues/2966)
+show one Beta Watch record a day since 2026-11-08 and a Board Sweep record for the 2026-11-09 fire,
+which can only be the organization's copies. On the personal account, `list_triggers` still listed
+the 2026-11-06 copies as enabled, and the bound thread's transcript showed every one of their fires
+since 2026-11-08 ending at once on that account's weekly usage limit, so they wrote nothing. The
+owner was asked whether to switch them off ([#3737](https://github.com/pdcarlson/Frapp/issues/3737));
+until then, two records for one fire mean both copies ran. Weekly Upkeep's first fire under either
+copy is 2026-11-11, and it is still to be checked against [Verify](#verify). The five Routines before them
 lived on a claude.ai account the owner stopped using, and stopped with it after 2026-10-29
 ([ADR-16](../../spec/architecture/adr/adr-16.md) amendment 11 has why the set shrank to three).
 Because an agent created them, an agent in a session the owner is attending can change one with
@@ -32,7 +33,7 @@ it waits on. Earlier decisions: ADR-16 amendments 4–10.
 | --- | --- | --- | --- | --- |
 | 1 | **Beta Watch** | [`beta-watch`](../../.claude/skills/beta-watch/SKILL.md) | daily 08:07 | Reads production Sentry, TestFlight feedback and crashes, Play crashes, store reviews and the team's Development channel in Frapp; files one issue per real problem or team idea; posts to the owner only when something new needs him. No repo writes |
 | 2 | **Board Sweep** | [`board-sweep`](../../.claude/skills/board-sweep/SKILL.md) | weekly Sun 21:07 | Three phases in one session: [`pr-followups`](../../.claude/skills/pr-followups/SKILL.md) files what last week's PRs left for a human, [`issue-curator`](../../.claude/skills/issue-curator/SKILL.md) maintains the `suggestion` issues and files a few, [`issue-triage`](../../.claude/skills/issue-triage/SKILL.md) prioritizes the inbox and grooms a Backlog batch (what [`/next`](../../.claude/commands/next.md) ranks by). Posts only decisions waiting on the owner |
-| 3 | **Weekly Upkeep** | [`weekly-upkeep`](../../.claude/skills/weekly-upkeep/SKILL.md) | weekly Wed 23:07 | Hygiene weeks, all but the month's first Wednesday: [`hygiene-scan`](../../.claude/skills/hygiene-scan/SKILL.md) fixes one bounded hygiene theme in one product-code PR. Docs weeks, the first Wednesday of the month: [`docs-upkeep`](../../.claude/skills/docs-upkeep/SKILL.md) fixes a rotating fifth of the docs corpus in one docs-only PR. Never two upkeep PRs open. Until 2026-11-11 the two alternated weekly; the owner gave the code the larger share when Shawn asked for regular cleanup back |
+| 3 | **Weekly Upkeep** | [`weekly-upkeep`](../../.claude/skills/weekly-upkeep/SKILL.md) | weekly Wed 23:07 | Hygiene weeks, all but the month's first Wednesday: [`hygiene-scan`](../../.claude/skills/hygiene-scan/SKILL.md) fixes one bounded hygiene theme in one product-code PR. Docs weeks, the first Wednesday of the month: [`docs-upkeep`](../../.claude/skills/docs-upkeep/SKILL.md) fixes a rotating fifth of the docs corpus in one docs-only PR. Never two upkeep PRs open. Until 2026-11-11 the two alternated ([ADR-16](../../spec/architecture/adr/adr-16.md) amendment 11) |
 
 Don't bring back the hourly "Next steps" Routine (`/next`), disabled since 2026-09-05: it would
 claim and ship backlog work, product code included, which is outside the ownership boundary below.
@@ -381,11 +382,11 @@ After each routine's first fire, check:
 - **Weekly Upkeep:** the record's second line names the phase. Docs weeks: the report names its
   slice (group index and month), at most one PR touching only the corpus and passing
   `link-check`, no `area:docs` issue, and a second run in the same month takes the same slice
-  (the rotation comes from the Eastern month and the corpus). Hygiene weeks: at most one PR on
+  (the group `weekly-upkeep` prints, and the corpus). Hygiene weeks: at most one PR on
   `claude/hygiene-scan-YYYY-MM-DD` naming the rule each fix restores, touching no
   `supabase/migrations/**`, `.github/workflows/**`, dependency versions or `apps/landing` visuals,
-  and exactly one new comment on the "Hygiene Scan — ledger" issue; a second run the same day
-  takes the same slice (group index and day of year). With an upkeep PR already open, no second
+  and exactly one new comment on the "Hygiene Scan — ledger" issue; a second run the same week
+  takes the same slice (the group `weekly-upkeep` prints). With an upkeep PR already open, no second
   one.
 
 ## Self-maintenance (the "update themselves" contract)

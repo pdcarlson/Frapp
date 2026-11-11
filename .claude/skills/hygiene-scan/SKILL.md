@@ -101,15 +101,12 @@ licenses skipping the check it describes.
 
 ### 0.2 Name today's slice — deterministically, carrying no state
 
-Sessions carry no state, so the date alone picks the slice:
-
-```sh
-J=$(date -u +%j); echo $(( 10#$J % 5 ))
-```
-
-`%j` is zero-padded, so parse it base 10 (`10#$J`) or `008` and `009` throw; `-u` keeps a manual
-re-run on the scheduled answer. 365 is divisible by 5, so the cycle is stable across years (a leap
-year shifts it a day, accepted).
+Sessions carry no state, so the calendar alone picks the slice: read the group that
+[`weekly-upkeep`](../weekly-upkeep/SKILL.md#this-weeks-job-and-slice) prints, from the week of the
+scheduled fire. Run outside the routine, use the same snippet's `hygiene group`. It steps by one
+per hygiene run, so every group is read every fifth run, and a manual re-run in the same week
+takes the same one. Until 2026-11-11 the day of the year picked it, which skipped groups once docs
+weeks took a Wednesday a month.
 
 | Group | Slice (read it whole) | Grounding skill |
 | --- | --- | --- |
@@ -354,7 +351,7 @@ In this order:
 
 1. **Lead line:** the PR link and its one-sentence theme, or "no PR" and why; then any security or
    data-loss issue filed.
-2. **Grounding:** standards read, the slice (group and day of year), baselines (types, lint
+2. **Grounding:** standards read, the slice (group and the fire's week), baselines (types, lint
    warnings, dep-cruiser counts, duplication %, tests), what the ledger and open PR said.
 3. **Fixed:** per fix, the rule restored, sites, verification outcome; which baselines moved.
 4. **Filed:** issue numbers, one line each.

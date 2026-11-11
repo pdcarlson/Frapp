@@ -274,7 +274,8 @@ nothing. The owner is also short on weekly usage.
    the owner.
 3. **Weekly Upkeep** (weekly): Docs Upkeep and Hygiene Scan in alternate weeks, with
    at most one upkeep PR open at a time.
-   *Changed 2026-11-11 (owner, after Shawn asked for regular code cleanup back):* Hygiene Scan
+   *Changed 2026-11-11 (owner, after Shawn asked for regular code cleanup back,
+   [#4150](https://github.com/pdcarlson/Frapp/issues/4150)):* Hygiene Scan
    runs every week and Docs Upkeep only on the first Wednesday of the month, still in the one
    weekly slot. The alternation had left the code with two cleanup runs a month while four people
    merged daily ([`weekly-upkeep`](../../../.claude/skills/weekly-upkeep/SKILL.md)).

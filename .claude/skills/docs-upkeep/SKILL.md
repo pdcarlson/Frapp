@@ -57,16 +57,14 @@ and `routines.md` § Verify expects two runs in the same month to take the same 
 1. Keep the command's output in its own order (already byte order; don't re-sort).
 2. Number the files `0 … n-1`; file `i` is in group `floor(i * 5 / n)`, so groups `0–4` differ by
    at most one file.
-3. Sweep group `$(TZ=America/New_York date +%m) mod 5`.
+3. Sweep the group [`weekly-upkeep`](../weekly-upkeep/SKILL.md#this-weeks-job-and-slice) prints
+   (run outside the routine, the same snippet's `docs group`).
 
-The docs phase runs once a month, on the first Wednesday ([`weekly-upkeep`](../weekly-upkeep/SKILL.md)),
-so the month picks the group and each group comes round every five months. Until 2026-11-11 it ran
-every other week and the ISO week picked the group. The Eastern month matches the scheduled fire,
-which is already the next day in UTC. `%m` is zero-padded, so parse it base 10 (`10#$M` in bash),
-or `08` and `09` fail as octal.
+The docs phase runs once a month, on the first Wednesday, so the group counts months: it steps by
+one each month, straight through New Year, and each group comes round every five months. Until
+2026-11-11 it ran every other week and the ISO week picked the group.
 
-Two known imperfections are accepted. At New Year `mod 5` skews the cycle (12 isn't a multiple of
-5), so one group runs two months early. And groups differ in reading weight by up to about 3× (group 0 holds every
+One known imperfection is accepted: groups differ in reading weight by up to about 3× (group 0 holds every
 `.claude/skills/` file plus `AGENTS.md`). Budget for that, and say in the report where you stopped
 if you ran out of run, but don't re-scope the slice to balance it, because a judgement-based slice
 isn't reproducible. A heavy slice is worth splitting across a few subagents, each taking a group of
