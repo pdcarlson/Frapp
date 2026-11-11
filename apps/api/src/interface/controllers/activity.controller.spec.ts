@@ -9,10 +9,17 @@ import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import { MarkActivityReadDto } from '../dtos/activity.dto';
 
 describe('ActivityController', () => {
   let controller: ActivityController;
-  const activityService = { getActivity: jest.fn() };
+  const activityService = {
+    getActivity: jest.fn(),
+    markRead: jest.fn(),
+    startUnread: jest.fn(),
+  };
   const linkService = {
     setState: jest.fn(),
     clearState: jest.fn(),
@@ -120,6 +127,65 @@ describe('ActivityController', () => {
         LINK,
         null,
       );
+    });
+  });
+
+  describe('reads (#4173)', () => {
+    const ITEM = '0a000000-0000-4000-8000-000000004173';
+    const errorsOf = async (body: unknown) =>
+      (await validate(plainToInstance(MarkActivityReadDto, body))).map(
+        (error) => error.property,
+      );
+
+    it('records the caller’s own opens, open to any member', async () => {
+      expect(
+        Reflect.getMetadata(PERMISSIONS_KEY, controller.markRead),
+      ).toBeUndefined();
+
+      await controller.markRead('chapter-1', 'user-1', {
+        items: [{ kind: 'poll', item_id: ITEM }],
+      });
+
+      expect(activityService.markRead).toHaveBeenCalledWith(
+        'chapter-1',
+        'user-1',
+        [{ kind: 'poll', item_id: ITEM }],
+      );
+    });
+
+    it('begins the caller’s own dots, open to any member', async () => {
+      expect(
+        Reflect.getMetadata(PERMISSIONS_KEY, controller.startUnread),
+      ).toBeUndefined();
+
+      await controller.startUnread('chapter-1', 'user-1');
+
+      expect(activityService.startUnread).toHaveBeenCalledWith(
+        'chapter-1',
+        'user-1',
+      );
+    });
+
+    it('takes 1 to 100 items, each a known kind and a uuid', async () => {
+      await expect(
+        errorsOf({ items: [{ kind: 'link', item_id: ITEM }] }),
+      ).resolves.toEqual([]);
+      await expect(errorsOf({ items: [] })).resolves.toEqual(['items']);
+      await expect(
+        errorsOf({
+          items: Array.from({ length: 101 }, () => ({
+            kind: 'task',
+            item_id: ITEM,
+          })),
+        }),
+      ).resolves.toEqual(['items']);
+      // A file is never unread (it is only ever the caller's own).
+      await expect(
+        errorsOf({ items: [{ kind: 'file', item_id: ITEM }] }),
+      ).resolves.toEqual(['items']);
+      await expect(
+        errorsOf({ items: [{ kind: 'task', item_id: 'not-a-uuid' }] }),
+      ).resolves.toEqual(['items']);
     });
   });
 });

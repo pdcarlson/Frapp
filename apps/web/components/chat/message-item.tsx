@@ -781,6 +781,7 @@ export function MessageItem({
         messageId={message.id}
         count={message.attachment_count}
         confirmed={isConfirmed}
+        photos={message.attachment_photos}
       />
     );
 

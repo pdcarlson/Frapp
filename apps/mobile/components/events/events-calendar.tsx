@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import {
@@ -14,6 +14,8 @@ import { IconButton } from "@/components/icon-button";
 import { InlineNote } from "@/components/inline-note";
 import { SectionHeader } from "@/components/list-section";
 import { EventRowFlat } from "@/components/events/event-rows";
+import { CalendarTaskRow } from "@/components/events/calendar-tasks";
+import type { CalendarTask } from "@repo/hooks/calendar-tasks";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { selectSeriesCadence, type EventRow } from "@/lib/events/select";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
@@ -38,6 +40,9 @@ const WEEKDAY_INITIALS = ["S", "M", "T", "W", "T", "F", "S"] as const;
 /** How far a finger travels sideways before a swipe turns the month. */
 const SWIPE_DISTANCE = 48;
 
+const NO_TASKS = new Map<string, CalendarTask[]>();
+const fallbackName = () => "A member";
+
 export function EventsCalendar({
   events,
   now,
@@ -47,6 +52,10 @@ export function EventsCalendar({
   onSelectDay,
   onOpen,
   emptyNote = null,
+  tasksByDay = NO_TASKS,
+  nameOf = fallbackName,
+  onOpenTask,
+  layerChips = null,
 }: {
   /** Every occurrence, past ones included (`selectAllEventRows`). */
   events: EventRow[];
@@ -66,6 +75,16 @@ export function EventsCalendar({
    * day.".
    */
   emptyNote?: string | null;
+  /**
+   * The member's tasks and the ones they assigned, by due day, narrowed to
+   * the kinds switched on (#4144). Listed under the day's events.
+   */
+  tasksByDay?: Map<string, CalendarTask[]>;
+  nameOf?: (userId: string) => string;
+  /** The member's own task, opened on the Tasks tab. */
+  onOpenTask?: (taskId: string) => void;
+  /** The Events / My tasks / Assigned by me chips, under the month. */
+  layerChips?: ReactNode;
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
@@ -89,6 +108,7 @@ export function EventsCalendar({
   const todayKey = localIsoDate(now);
   const selectedKey = localIsoDate(selectedDay);
   const dayEvents = byDay.get(selectedKey) ?? [];
+  const dayTasks = tasksByDay.get(selectedKey) ?? [];
 
   const shiftMonth = (delta: number) => {
     onMonthChange(new Date(month.getFullYear(), month.getMonth() + delta, 1));
@@ -131,6 +151,8 @@ export function EventsCalendar({
         </IconButton>
       </View>
 
+      {layerChips}
+
       <GestureDetector gesture={swipe}>
         <View style={styles.grid}>
           <View
@@ -148,6 +170,19 @@ export function EventsCalendar({
               {week.map((day) => {
                 const key = localIsoDate(day);
                 const count = byDay.get(key)?.length ?? 0;
+                const cellTasks = tasksByDay.get(key) ?? [];
+                const taskCount = cellTasks.length;
+                const hasOverdue = cellTasks.some(
+                  (item) => item.state === "overdue",
+                );
+                const counts = [
+                  count === 0
+                    ? null
+                    : `${count} ${count === 1 ? "event" : "events"}`,
+                  taskCount === 0
+                    ? null
+                    : `${taskCount} ${taskCount === 1 ? "task" : "tasks"}`,
+                ].filter(Boolean);
                 const inMonth = day.getMonth() === month.getMonth();
                 const isToday = key === todayKey;
                 const isSelected = key === selectedKey;
@@ -160,11 +195,7 @@ export function EventsCalendar({
                   <Pressable
                     key={key}
                     accessibilityRole="button"
-                    accessibilityLabel={
-                      count === 0
-                        ? label
-                        : `${label}, ${count} ${count === 1 ? "event" : "events"}`
-                    }
+                    accessibilityLabel={[label, ...counts].join(", ")}
                     accessibilityState={{ selected: isSelected }}
                     onPress={() => onSelectDay(day)}
                     style={styles.cell}
@@ -192,18 +223,39 @@ export function EventsCalendar({
                         {day.getDate()}
                       </Text>
                     </View>
-                    <View
-                      testID={count > 0 ? `event-dot-${key}` : undefined}
-                      style={[
-                        styles.dot,
-                        count > 0
-                          ? {
+                    {/*
+                      A dot is an event, a ring is something due: red while
+                      any of the day's tasks is overdue.
+                    */}
+                    <View style={styles.marks}>
+                      {count > 0 ? (
+                        <View
+                          testID={`event-dot-${key}`}
+                          style={[
+                            styles.dot,
+                            {
                               backgroundColor:
                                 tokens.color.text.mutedForeground,
-                            }
-                          : null,
-                      ]}
-                    />
+                            },
+                          ]}
+                        />
+                      ) : null}
+                      {taskCount > 0 ? (
+                        <View
+                          testID={`task-ring-${key}`}
+                          style={[
+                            styles.dot,
+                            styles.ring,
+                            hasOverdue
+                              ? {
+                                  borderColor:
+                                    tokens.color.semantic.destructiveText,
+                                }
+                              : null,
+                          ]}
+                        />
+                      ) : null}
+                    </View>
                   </Pressable>
                 );
               })}
@@ -216,19 +268,30 @@ export function EventsCalendar({
         <SectionHeader>
           {formatDayHeading(selectedDay.toISOString(), now) ?? selectedKey}
         </SectionHeader>
-        {dayEvents.length === 0 ? (
+        {dayEvents.length === 0 && dayTasks.length === 0 ? (
           <InlineNote>{emptyNote ?? "Nothing on this day."}</InlineNote>
         ) : (
-          dayEvents.map((event, index) => (
-            <EventRowFlat
-              key={event.id}
-              event={event}
-              cadence={selectSeriesCadence(events, event)}
-              now={now}
-              isFirst={index === 0}
-              onPress={() => onOpen(event.id)}
-            />
-          ))
+          <>
+            {dayEvents.map((event, index) => (
+              <EventRowFlat
+                key={event.id}
+                event={event}
+                cadence={selectSeriesCadence(events, event)}
+                now={now}
+                isFirst={index === 0}
+                onPress={() => onOpen(event.id)}
+              />
+            ))}
+            {dayTasks.map((item, index) => (
+              <CalendarTaskRow
+                key={item.key}
+                item={item}
+                isFirst={dayEvents.length === 0 && index === 0}
+                nameOf={nameOf}
+                onOpenTask={(taskId) => onOpenTask?.(taskId)}
+              />
+            ))}
+          </>
         )}
       </View>
     </View>
@@ -296,10 +359,19 @@ function createStyles(tokens: SignetTokens) {
     outsideMonth: {
       color: tokens.color.text.mutedForeground,
     },
+    marks: {
+      flexDirection: "row",
+      gap: 2,
+      height: 5,
+    },
     dot: {
       width: 5,
       height: 5,
       borderRadius: 2.5,
+    },
+    ring: {
+      borderWidth: 1,
+      borderColor: tokens.color.text.mutedForeground,
     },
   });
 }

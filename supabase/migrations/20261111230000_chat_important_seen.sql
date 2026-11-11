@@ -60,7 +60,7 @@ alter table public.chat_message_important_seen enable row level security;
 -- 3. Account deletion purges seen rows ---------------------------------------
 
 -- `anonymize_user` is redefined in full from
--- `20261111180000_document_pins_and_stars.sql`; the one change is the
+-- `20261111220000_activity_item_reads.sql`; the one change is the
 -- `chat_message_important_seen` delete. Same signature, so its grants are kept.
 create or replace function anonymize_user(
   p_user_id uuid,
@@ -139,6 +139,9 @@ begin
   delete from chat_link_member_states where user_id = p_user_id;
   -- Documents (#3934): the member's own starred folders and files.
   delete from chapter_document_stars where user_id = p_user_id;
+  -- Activity unread dots (#4173): which Activity items the member opened.
+  delete from activity_item_reads where user_id = p_user_id;
+  delete from activity_unread_starts where user_id = p_user_id;
   -- Important strip (#4186): which Important messages the member has seen.
   delete from chat_message_important_seen where user_id = p_user_id;
   delete from rush_candidate_votes where voter_id = p_user_id;

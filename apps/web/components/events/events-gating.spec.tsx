@@ -25,6 +25,8 @@ const ATTENDANCE = [
 // `subscriptionWriteState` run for real, so this covers the whole path from the
 // wire format to the disabled control.
 vi.mock("@repo/hooks", () => ({
+  useCalendarTasks: () => ({ items: [], hasMine: false, hasAssigned: false }),
+  useChapterRoster: () => ({ data: [] }),
   useCurrentChapter: () => mockCurrentChapter(),
   useCreateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),

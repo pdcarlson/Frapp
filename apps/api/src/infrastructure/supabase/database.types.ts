@@ -1,5 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
+  ActivityItemRead,
+  ActivityUnreadStart,
   BackworkCourse,
   BackworkDepartment,
   BackworkProfessor,
@@ -8,7 +10,6 @@ import type {
   ChapterActivationMilestone,
   ChapterAuditLog,
   ChapterCustomField,
-  ChapterCustomRole,
   ChapterDirectoryEntry,
   ChapterDirectoryRequest,
   ChapterDocument,
@@ -148,6 +149,8 @@ export interface Database {
       chat_message_important_seen: TableDefinition<ChatMessageImportantSeen>;
       chat_message_links: TableDefinition<ChatMessageLink>;
       chat_link_member_states: TableDefinition<ChatLinkMemberState>;
+      activity_item_reads: TableDefinition<ActivityItemRead>;
+      activity_unread_starts: TableDefinition<ActivityUnreadStart>;
       chat_thread_follows: TableDefinition<ChatThreadFollow>;
       chat_message_reports: TableDefinition<ChatMessageReport>;
       chat_member_blocks: TableDefinition<ChatMemberBlock>;
@@ -170,7 +173,6 @@ export interface Database {
       chapter_document_folders: TableDefinition<ChapterDocumentFolder>;
       chapter_document_stars: TableDefinition<ChapterDocumentStar>;
       semester_archives: TableDefinition<SemesterArchive>;
-      chapter_custom_roles: TableDefinition<ChapterCustomRole>;
       stripe_webhook_events: TableDefinition<StripeWebhookEvent>;
       chapter_audit_log: TableDefinition<ChapterAuditLog>;
       chapter_custom_fields: TableDefinition<ChapterCustomField>;

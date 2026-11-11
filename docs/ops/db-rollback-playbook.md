@@ -1299,9 +1299,10 @@ After any rollback event:
   ) x
   WHERE m.id = x.message_id;
 
+  -- `attachment_photos` (#3879) describes the same rows, so it goes too.
   UPDATE chat_messages
-  SET metadata = metadata - 'attachment_count'
-  WHERE metadata ? 'attachment_count';
+  SET metadata = metadata - 'attachment_count' - 'attachment_photos'
+  WHERE metadata ? 'attachment_count' OR metadata ? 'attachment_photos';
   ```
   Rows written *after* the migration are also restored by this — they were never
   in the sigil format, but the pre-change composer produced exactly that format,
@@ -3544,7 +3545,7 @@ The table `chat_message_important_seen`, the partial index `idx_chat_messages_ch
 
 **Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API has no `/important` routes, so clients that ask for the strip get a 404 and draw none. Seen rows written before the revert stay, and count again when the API ships.
 
-**To remove the schema**, in a later forward migration after the code revert has shipped. This loses which Important messages each member has seen, so every one flagged in the last 14 days shows on the strip again once it is rebuilt. First redefine `anonymize_user` without its `chat_message_important_seen` delete (the `20261111180000_document_pins_and_stars.sql` body), or account deletion fails once the table is gone:
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses which Important messages each member has seen, so every one flagged in the last 14 days shows on the strip again once it is rebuilt. First redefine `anonymize_user` without its `chat_message_important_seen` delete (the `20261111220000_activity_item_reads.sql` body), or account deletion fails once the table is gone:
 
 ```sql
 drop table if exists public.chat_message_important_seen;
@@ -3602,3 +3603,31 @@ drop function if exists public.reorder_chat_channels(uuid, uuid, uuid[]);
 drop function if exists public.reorder_chat_categories(uuid, uuid[]);
 alter table public.chat_channels drop column if exists display_order;
 ```
+
+## Rollback Unread dots on Activity (20261111220000)
+
+* **Migration**: `20261111220000_activity_item_reads.sql`
+
+The tables `activity_item_reads` and `activity_unread_starts`, the nullable column `tasks.sent_back_at`, and `anonymize_user` redefined to also delete both tables' rows. No existing row changed.
+
+**Revert the code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API never reads or writes the tables or the column (it reads tasks with `select('*')` and returns `sent_back_at` as a plain field older clients ignore) and serves no `unread`; the reverted clients draw no dots.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses which items every member opened and when their dots began, and when tasks were sent back. First redefine `anonymize_user` without its two deletes (the `20261111180000_document_pins_and_stars.sql` body), or account deletion fails once the tables are gone:
+
+```sql
+drop table if exists public.activity_item_reads;
+drop table if exists public.activity_unread_starts;
+alter table public.tasks drop column if exists sent_back_at;
+```
+
+## Rollback custom roles fold (20261111210000)
+
+* **Migration**: `20261111210000_fold_custom_roles.sql`
+
+Two new columns, `chapter_custom_roles.folded_role_id` and `folded_at`; a new `roles` row for each custom role; each member's `custom_role_ids` moved into `role_ids` and emptied; `transfer_presidency` redefined without its custom-role clause. `chapter_custom_roles` itself is untouched apart from the new column.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API reads `roles` and `chapter_custom_roles` both; with `custom_role_ids` empty everywhere, it reads only roles, so every member keeps exactly what they have, and the folded roles show on the Roles page as ordinary roles. The reverted Settings page lists the custom roles again, unassigned. **Before rolling forward again, re-run this file by hand** (`db push` won't re-apply it): an assignment or a custom role the reverted API wrote in the meantime lives only in `custom_role_ids` or an unfolded row, which the forward API doesn't read.
+
+**Moving the assignments back into `custom_role_ids` is not needed** for a rollback and is not offered as SQL: the folded roles already grant exactly what the custom roles did. Each custom role's role is `chapter_custom_roles.folded_role_id` if it is ever wanted.
+
+If `transfer_presidency` itself must go back, its earlier body is the one in `20261108200000_transfer_presidency_keeps_member_access.sql`; with `custom_role_ids` empty its extra clause never matches, so the two behave the same.

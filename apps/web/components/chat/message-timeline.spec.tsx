@@ -1409,6 +1409,24 @@ describe("MessageTimeline stays on its newest row while rows grow (#3863)", () =
     expect(virtuosoProps.scrollToIndex).toHaveBeenCalledTimes(1);
   });
 
+  // #3878 AC: a jump to a message (pin, saved message, reply quote, search)
+  // is not pulled back to the bottom once it has landed, either. The jump's
+  // own scroll is the member leaving the bottom, so a photo loading after the
+  // hold lifts leaves the target where it is.
+  it("leaves a landed jump where it is once the hold lifts (#3878)", () => {
+    const jumping = renderTimeline(rows, { holdFollow: true });
+    const element = scroller(1000, 400);
+    act(() => virtuosoProps.current.scrollerRef?.(element));
+    settle(element, 400);
+
+    // The jump scrolls up to its target, then the shell lets go of the hold.
+    settle(element, 120);
+    jumping.rerender(view(rows));
+    grow(element, 256);
+
+    expect(virtuosoProps.scrollToIndex).not.toHaveBeenCalled();
+  });
+
   it("does not pull the list back down while a jump is on its way", () => {
     renderTimeline(rows, { holdFollow: true });
     const element = scroller(1000, 400);

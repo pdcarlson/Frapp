@@ -346,33 +346,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List the chapter custom roles */
+        /**
+         * Deprecated: always empty (custom roles are ordinary roles now)
+         * @deprecated
+         */
         get: operations["CustomRoleController_list_v1"];
         put?: never;
-        /** Create a custom role (audit-logged) */
-        post: operations["CustomRoleController_create_v1"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
-        trace?: never;
-    };
-    "/v1/custom-roles/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete a non-core custom role (audit-logged) */
-        delete: operations["CustomRoleController_remove_v1"];
-        options?: never;
-        head?: never;
-        /** Update a custom role (audit-logged) */
-        patch: operations["CustomRoleController_update_v1"];
         trace?: never;
     };
     "/v1/custom-fields": {
@@ -3461,6 +3445,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/activity/unread-since": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Begin the caller’s unread dots on Activity, if they haven’t begun
+         * @description A client that draws dots calls it when `GET /v1/activity` serves `unread_since: null`. From then, a row that appears is unread until the caller opens it; nothing older ever is, since no client could have recorded the caller’s opens of it. Idempotent: once set it never moves. `spec/behavior/activity.md` § Unread.
+         */
+        put: operations["ActivityController_startUnread_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/activity/reads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record that the caller opened these items from Activity
+         * @description Clears their `unread` on `GET /v1/activity` until the item starts waiting on the caller again (a task they opened, then completed by its assignee, is unread again in their confirmations). Per member and idempotent; opening an item again moves its time. Opening an item anywhere else in Frapp doesn’t count. Nothing checks that the caller can see an item: a read is theirs alone and an item they can’t see is never served to them. `spec/behavior/activity.md` § Unread.
+         */
+        post: operations["ActivityController_markRead_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/activity/links/{id}/state": {
         parameters: {
             query?: never;
@@ -4317,23 +4341,6 @@ export interface components {
             created_at: string;
             updated_at: string;
         };
-        CreateCustomRoleDto: {
-            /** @description Machine-readable slug, unique per chapter */
-            key: string;
-            label: string;
-            /** @description Hierarchy order; lower ranks first */
-            rank?: number;
-            capabilities?: string[];
-        };
-        UpdateCustomRoleDto: {
-            label?: string;
-            rank?: number;
-            capabilities?: string[];
-        };
-        RemoveCustomRoleResponseDto: {
-            /** @example true */
-            success: boolean;
-        };
         CustomFieldOptionsDto: {
             /** @description Option list for select */
             choices?: string[];
@@ -4477,6 +4484,10 @@ export interface components {
             user_id: string;
             chapter_id: string;
             role_ids: string[];
+            /**
+             * @deprecated
+             * @description Always empty. Custom roles were folded into ordinary roles (#4075) and appear in role_ids; kept for the mobile builds already in the stores.
+             */
             custom_role_ids: string[];
             has_completed_onboarding: boolean;
             created_at: string;
@@ -4512,7 +4523,10 @@ export interface components {
         };
         UpdateMemberRolesDto: {
             role_ids: string[];
-            /** @description Assigned chapter_custom_roles ids. Omit to leave custom-role assignment unchanged; an empty array clears it. */
+            /**
+             * @deprecated
+             * @description Deprecated. Custom roles were folded into ordinary roles (#4075); assign them through role_ids. Still accepted, as [], so a web page loaded before that deploy can save; a non-empty list means the page read the member before the fold, so its role_ids would drop the folded roles, and the save is refused with 409.
+             */
             custom_role_ids?: string[];
         };
         UpdateOnboardingDto: {
@@ -4894,7 +4908,7 @@ export interface components {
             client_message_id?: string | null;
             /** Format: uuid */
             reply_to_id: string | null;
-            /** @description Free-form annotations; carries `attachment_count`. Empty on a masked row, which is what stops a masked message pulling the blocked member’s uploads. */
+            /** @description Free-form annotations; carries `attachment_count`, and `attachment_photos` (one `{width, height, thumbhash}` per photo) so a reader can size each photo before the attachments read returns. Empty on a masked row, which is what stops a masked message pulling the blocked member’s uploads. */
             metadata: Record<string, never>;
             is_pinned: boolean;
             pinned_at: string | null;
@@ -5786,6 +5800,11 @@ export interface components {
             completed_at: string | null;
             /** Format: date-time */
             confirmed_at: string | null;
+            /**
+             * Format: date-time
+             * @description When an officer last sent the completion back to the assignee; null if never. The assignee taking back their own completion doesn’t set it.
+             */
+            sent_back_at: string | null;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the task row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
@@ -6181,8 +6200,15 @@ export interface components {
              * @description When an officer confirmed the completion; null until then. A completed task with no confirmation is still waiting on one.
              */
             confirmed_at: string | null;
+            /**
+             * Format: date-time
+             * @description When an officer last sent the completion back to the assignee; null if never.
+             */
+            sent_back_at: string | null;
             /** Format: date-time */
             created_at: string;
+            /** @description Whether the caller hasn’t opened it from Activity since it started waiting on them: since it was assigned or last sent back, or for a confirmation since it was completed (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for a task the caller assigned to themselves that was never sent back. */
+            unread: boolean;
         };
         ActivityHoursEntryDto: {
             /** Format: uuid */
@@ -6200,6 +6226,8 @@ export interface components {
             description: string;
             /** Format: date-time */
             created_at: string;
+            /** @description Whether the caller hasn’t opened it from Activity since it was submitted (`POST /v1/activity/reads`). Always false while `unread_since` is null. */
+            unread: boolean;
         };
         ActivityPollDto: {
             /**
@@ -6231,6 +6259,8 @@ export interface components {
             has_voted: boolean;
             /** Format: date-time */
             created_at: string;
+            /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null, and in `made_by_you`. */
+            unread: boolean;
             /** @description The poll’s chat message, as `GET /v1/channels/{id}/messages` serves it, for chat’s own poll card. Its votes are read from `chat_message_actions`, as chat reads them. */
             message: components["schemas"]["ChatMessageDto"];
         };
@@ -6264,6 +6294,15 @@ export interface components {
             check_in_open: boolean;
             /** @description Whether the caller has an attendance row for it. Read only while check-in is open; null otherwise, and when that read failed. */
             checked_in: boolean | null;
+            /**
+             * Format: uuid
+             * @description Who made it. Null for an event made before makers were recorded (2026-11-11).
+             */
+            created_by: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** @description Whether the caller hasn’t opened it from Activity since it was made (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for an event the caller made. */
+            unread: boolean;
         };
         ActivityLinkDto: {
             /** Format: uuid */
@@ -6300,6 +6339,8 @@ export interface components {
             posted_by_name: string;
             /** Format: date-time */
             posted_at: string;
+            /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null. */
+            unread: boolean;
         };
         ActivityFileDto: {
             /** Format: uuid */
@@ -6335,6 +6376,24 @@ export interface components {
             needs_you_count: number;
             /** @description Sections that could not be read this time. Each is served empty; the others are unaffected. */
             unavailable: ("tasks" | "hours_approvals" | "polls" | "coming_up" | "files" | "made_events" | "links")[];
+            /**
+             * Format: date-time
+             * @description When the caller’s unread dots began in this chapter. Null until a client that draws dots calls `PUT /v1/activity/unread-since`, and every `unread` is false until then. Nothing that appeared before it is unread. Also served null, with every row read, when the caller’s unread state couldn’t be loaded.
+             */
+            unread_since: string | null;
+        };
+        ActivityItemRefDto: {
+            /**
+             * @description Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`.
+             * @enum {string}
+             */
+            kind: "task" | "hours_entry" | "poll" | "event" | "link";
+            /** Format: uuid */
+            item_id: string;
+        };
+        MarkActivityReadDto: {
+            /** @description The items the caller opened. At most 100. */
+            items: components["schemas"]["ActivityItemRefDto"][];
         };
         SetActivityLinkStateDto: {
             /**
@@ -7485,116 +7544,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CustomRoleDto"][];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorResponseDto"];
-                };
-            };
-        };
-    };
-    CustomRoleController_create_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateCustomRoleDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CustomRoleDto"];
-                };
-            };
-            /** @description A custom role with this key already exists in this chapter */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorResponseDto"];
-                };
-            };
-        };
-    };
-    CustomRoleController_remove_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RemoveCustomRoleResponseDto"];
-                };
-            };
-            /** @description Core roles cannot be deleted */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorResponseDto"];
-                };
-            };
-        };
-    };
-    CustomRoleController_update_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateCustomRoleDto"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CustomRoleDto"];
                 };
             };
             /** @description Error */
@@ -14668,6 +14617,62 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ActivityDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_startUnread_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_markRead_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkActivityReadDto"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

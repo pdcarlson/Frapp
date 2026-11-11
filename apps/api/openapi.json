@@ -1004,6 +1004,7 @@
     },
     "/v1/custom-roles": {
       "get": {
+        "deprecated": true,
         "operationId": "CustomRoleController_list_v1",
         "parameters": [],
         "responses": {
@@ -1036,158 +1037,7 @@
             "bearer": []
           }
         ],
-        "summary": "List the chapter custom roles",
-        "tags": [
-          "Chapter Custom Roles"
-        ]
-      },
-      "post": {
-        "operationId": "CustomRoleController_create_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateCustomRoleDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CustomRoleDto"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "A custom role with this key already exists in this chapter"
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Create a custom role (audit-logged)",
-        "tags": [
-          "Chapter Custom Roles"
-        ]
-      }
-    },
-    "/v1/custom-roles/{id}": {
-      "patch": {
-        "operationId": "CustomRoleController_update_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateCustomRoleDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CustomRoleDto"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Update a custom role (audit-logged)",
-        "tags": [
-          "Chapter Custom Roles"
-        ]
-      },
-      "delete": {
-        "operationId": "CustomRoleController_remove_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RemoveCustomRoleResponseDto"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Core roles cannot be deleted"
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Delete a non-core custom role (audit-logged)",
+        "summary": "Deprecated: always empty (custom roles are ordinary roles now)",
         "tags": [
           "Chapter Custom Roles"
         ]
@@ -11789,6 +11639,78 @@
         ]
       }
     },
+    "/v1/activity/unread-since": {
+      "put": {
+        "description": "A client that draws dots calls it when `GET /v1/activity` serves `unread_since: null`. From then, a row that appears is unread until the caller opens it; nothing older ever is, since no client could have recorded the caller’s opens of it. Idempotent: once set it never moves. `spec/behavior/activity.md` § Unread.",
+        "operationId": "ActivityController_startUnread_v1",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Begin the caller’s unread dots on Activity, if they haven’t begun",
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
+    "/v1/activity/reads": {
+      "post": {
+        "description": "Clears their `unread` on `GET /v1/activity` until the item starts waiting on the caller again (a task they opened, then completed by its assignee, is unread again in their confirmations). Per member and idempotent; opening an item again moves its time. Opening an item anywhere else in Frapp doesn’t count. Nothing checks that the caller can see an item: a read is theirs alone and an item they can’t see is never served to them. `spec/behavior/activity.md` § Unread.",
+        "operationId": "ActivityController_markRead_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkActivityReadDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Record that the caller opened these items from Activity",
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
     "/v1/activity/links/{id}/state": {
       "put": {
         "description": "Per member, idempotent; either replaces the other. 404 for a link the caller can’t read (its channel isn’t in their chat list) as for one that doesn’t exist. `spec/behavior/activity.md` § Links.",
@@ -14139,66 +14061,6 @@
           "updated_at"
         ]
       },
-      "CreateCustomRoleDto": {
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": "string",
-            "description": "Machine-readable slug, unique per chapter",
-            "maxLength": 64
-          },
-          "label": {
-            "type": "string",
-            "maxLength": 100
-          },
-          "rank": {
-            "type": "number",
-            "description": "Hierarchy order; lower ranks first",
-            "maximum": 1000000000
-          },
-          "capabilities": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "key",
-          "label"
-        ]
-      },
-      "UpdateCustomRoleDto": {
-        "type": "object",
-        "properties": {
-          "label": {
-            "type": "string",
-            "maxLength": 100
-          },
-          "rank": {
-            "type": "number",
-            "maximum": 1000000000
-          },
-          "capabilities": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "RemoveCustomRoleResponseDto": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean",
-            "example": true
-          }
-        },
-        "required": [
-          "success"
-        ]
-      },
       "CustomFieldOptionsDto": {
         "type": "object",
         "properties": {
@@ -14689,6 +14551,8 @@
             }
           },
           "custom_role_ids": {
+            "deprecated": true,
+            "description": "Always empty. Custom roles were folded into ordinary roles (#4075) and appear in role_ids; kept for the mobile builds already in the stores.",
             "type": "array",
             "items": {
               "type": "string"
@@ -14816,7 +14680,8 @@
             }
           },
           "custom_role_ids": {
-            "description": "Assigned chapter_custom_roles ids. Omit to leave custom-role assignment unchanged; an empty array clears it.",
+            "deprecated": true,
+            "description": "Deprecated. Custom roles were folded into ordinary roles (#4075); assign them through role_ids. Still accepted, as [], so a web page loaded before that deploy can save; a non-empty list means the page read the member before the fold, so its role_ids would drop the folded roles, and the save is refused with 409.",
             "type": "array",
             "items": {
               "type": "string"
@@ -15826,7 +15691,7 @@
           },
           "metadata": {
             "type": "object",
-            "description": "Free-form annotations; carries `attachment_count`. Empty on a masked row, which is what stops a masked message pulling the blocked member’s uploads."
+            "description": "Free-form annotations; carries `attachment_count`, and `attachment_photos` (one `{width, height, thumbhash}` per photo) so a reader can size each photo before the attachments read returns. Empty on a masked row, which is what stops a masked message pulling the blocked member’s uploads."
           },
           "is_pinned": {
             "type": "boolean"
@@ -18392,6 +18257,12 @@
             "format": "date-time",
             "nullable": true
           },
+          "sent_back_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When an officer last sent the completion back to the assignee; null if never. The assignee taking back their own completion doesn’t set it."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -18414,6 +18285,7 @@
           "points_awarded",
           "completed_at",
           "confirmed_at",
+          "sent_back_at",
           "created_at"
         ]
       },
@@ -19424,9 +19296,19 @@
             "nullable": true,
             "description": "When an officer confirmed the completion; null until then. A completed task with no confirmation is still waiting on one."
           },
+          "sent_back_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When an officer last sent the completion back to the assignee; null if never."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "unread": {
+            "type": "boolean",
+            "description": "Whether the caller hasn’t opened it from Activity since it started waiting on them: since it was assigned or last sent back, or for a confirmation since it was completed (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for a task the caller assigned to themselves that was never sent back."
           }
         },
         "required": [
@@ -19442,7 +19324,9 @@
           "point_reward",
           "completed_at",
           "confirmed_at",
-          "created_at"
+          "sent_back_at",
+          "created_at",
+          "unread"
         ]
       },
       "ActivityHoursEntryDto": {
@@ -19474,6 +19358,10 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "unread": {
+            "type": "boolean",
+            "description": "Whether the caller hasn’t opened it from Activity since it was submitted (`POST /v1/activity/reads`). Always false while `unread_since` is null."
           }
         },
         "required": [
@@ -19483,7 +19371,8 @@
           "date",
           "duration_minutes",
           "description",
-          "created_at"
+          "created_at",
+          "unread"
         ]
       },
       "ActivityPollDto": {
@@ -19545,6 +19434,10 @@
             "type": "string",
             "format": "date-time"
           },
+          "unread": {
+            "type": "boolean",
+            "description": "Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null, and in `made_by_you`."
+          },
           "message": {
             "description": "The poll’s chat message, as `GET /v1/channels/{id}/messages` serves it, for chat’s own poll card. Its votes are read from `chat_message_actions`, as chat reads them.",
             "allOf": [
@@ -19567,6 +19460,7 @@
           "is_closed",
           "has_voted",
           "created_at",
+          "unread",
           "message"
         ]
       },
@@ -19653,6 +19547,20 @@
             "type": "boolean",
             "nullable": true,
             "description": "Whether the caller has an attendance row for it. Read only while check-in is open; null otherwise, and when that read failed."
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Who made it. Null for an event made before makers were recorded (2026-11-11)."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "unread": {
+            "type": "boolean",
+            "description": "Whether the caller hasn’t opened it from Activity since it was made (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for an event the caller made."
           }
         },
         "required": [
@@ -19665,7 +19573,10 @@
           "point_value",
           "check_in_opens_minutes",
           "check_in_open",
-          "checked_in"
+          "checked_in",
+          "created_by",
+          "created_at",
+          "unread"
         ]
       },
       "ActivityLinkDto": {
@@ -19726,6 +19637,10 @@
           "posted_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "unread": {
+            "type": "boolean",
+            "description": "Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null."
           }
         },
         "required": [
@@ -19739,7 +19654,8 @@
           "channel_type",
           "posted_by",
           "posted_by_name",
-          "posted_at"
+          "posted_at",
+          "unread"
         ]
       },
       "ActivityFileDto": {
@@ -19854,6 +19770,12 @@
                 "links"
               ]
             }
+          },
+          "unread_since": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the caller’s unread dots began in this chapter. Null until a client that draws dots calls `PUT /v1/activity/unread-since`, and every `unread` is false until then. Nothing that appeared before it is unread. Also served null, with every row read, when the caller’s unread state couldn’t be loaded."
           }
         },
         "required": [
@@ -19862,7 +19784,49 @@
           "links",
           "made_by_you",
           "needs_you_count",
-          "unavailable"
+          "unavailable",
+          "unread_since"
+        ]
+      },
+      "ActivityItemRefDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "task",
+              "hours_entry",
+              "poll",
+              "event",
+              "link"
+            ],
+            "description": "Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`."
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "kind",
+          "item_id"
+        ]
+      },
+      "MarkActivityReadDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "minItems": 1,
+            "maxItems": 100,
+            "description": "The items the caller opened. At most 100.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityItemRefDto"
+            }
+          }
+        },
+        "required": [
+          "items"
         ]
       },
       "SetActivityLinkStateDto": {

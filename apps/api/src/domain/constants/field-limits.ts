@@ -10,9 +10,6 @@
  * matches the decorators it was generated from.
  */
 
-/** Machine-readable role slug (`chapter_custom_roles.key`). */
-export const ROLE_KEY_MAX_LENGTH = 64;
-
 /**
  * Invoice amount in cents. Anchored to Stripe's own per-charge maximum for USD
  * (99,999,999 = $999,999.99): above this the payment intent could never be
@@ -46,7 +43,7 @@ export const INT4_MAX = 2_147_483_647;
 
 /**
  * A list position a client may set: role and category `display_order`, custom
- * field `sort`, document folder `sort_order`, custom role `rank`.
+ * field `sort` and document folder `sort_order`.
  *
  * Generous, so no position a chapter has stored is refused when a form sends
  * it back unchanged, but well below {@link INT4_MAX}: a list placed last
