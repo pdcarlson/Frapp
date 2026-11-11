@@ -56,7 +56,7 @@ This is the **behavior** part of the #4192 design. Three sibling designs own the
 
 ## Words used here
 
-- **PNM** (potential new member): a student being recruited. One PNM is **one person at one school**, however many chapters they talk to. They are a `school_members` row with status `pnm` (ADR-27).
+- **PNM** (potential new member): a student being recruited. One PNM is **one person at one school**, however many chapters they talk to. Each is a school-wide `pnms` row. Once they have a Frapp account, they also get a `school_members` row with status `pnm` (ADR-27).
 - **Master list:** the council's list of every PNM at the school.
 - **Interest:** a link between a PNM and one chapter. It records how it started: that chapter's form, an event check-in, the council's registration, or an import.
 - **Candidate:** today's `rush_candidates` row, the chapter's own record of a prospect.
@@ -220,7 +220,8 @@ Winston deferred this ([answer 5](https://github.com/pdcarlson/Frapp/issues/4192
 
 ### Every chapter has one
 
-- **Created closed.** A chapter's form exists as soon as the Rush module is on. It stays closed until a holder of `rush:manage` opens it.
+- **Not for NPHC chapters.** A chapter with the `nphc` archetype never gets an interest form. NPHC intake works differently ([`council-types.md`](https://github.com/pdcarlson/Frapp/pull/4264) (PR #4264)).
+- **Created closed.** Every other chapter's form exists as soon as the Rush module is on. It stays closed until a holder of `rush:manage` opens it.
 - **One live form per chapter.** A chapter that wants to know where people came from uses several QR source labels, not several forms. It can replace its form, which issues a new form slug (ADR-27).
 
 ### Before the chapter's council link is accepted
@@ -287,7 +288,7 @@ It never shows members, chat or other internal data.
 All in one transaction, written server-side (ADR-27):
 
 1. **Finds or creates the PNM.**
-   - At a school, it uses the [identity rules](#identity-and-duplicates) and makes a `school_members` row with status `pnm`.
+   - At a school, it uses the [identity rules](#identity-and-duplicates) and creates a school-wide `pnms` row. It adds a `school_members` row with status `pnm` only once the person has a Frapp account.
    - With no school, it finds or creates the PNM within the chapter.
 2. **Adds an interest,** with the source (`chapter_form`) and QR label. A repeat submission updates it.
 3. **Creates or updates the chapter's candidate,** in the first stage, with `pnm_id` set.
@@ -305,7 +306,7 @@ All in one transaction, written server-side (ADR-27):
 
 The text sits above the submit button, never behind a link. **It's a draft.** Legal and privacy copy is Paul's ([AGENTS.md § ADR discipline](../../AGENTS.md#adr-discipline)).
 
-> By submitting, you share this information with **{Chapter}**{ at {School}} so they can contact you about joining. {At a school:} Your name, email, class year and phone also go to the council {Chapter} belongs to on Frapp (today: **{Council}** / none yet), which keeps one recruitment list for {School}. The council sees how many chapters you've signed up with, and which one you join. Other chapters don't see that you signed up here. {Under option B or C, say exactly what other chapters see.} Frapp stores this for them. You can withdraw from this chapter, or delete your recruitment information entirely, at any time from the link we email you. We don't ask for your grades here. If the council checks eligibility, you'll be asked to sign a separate release in Frapp, unless you've already signed one with {School}. Either way, we'll tell you when your eligibility is checked, and you can revoke at any time.
+> By submitting, you share this information with **{Chapter}**{ at {School}} so they can contact you about joining. {At a school:} Your name, email, class year and phone also go to **{Council}**, the council {Chapter} belongs to on Frapp (or, if it has none yet, the council it joins), which keeps one recruitment list for {School}. The council sees how many chapters you've signed up with, and which one you join. Other chapters don't see that you signed up here. {Under option B or C, say exactly what other chapters see.} Frapp stores this for them. You can withdraw from this chapter, or delete your recruitment information entirely, at any time from the link we email you. We don't ask for your grades here. If the council checks eligibility, you'll be asked to sign a separate release in Frapp, unless you've already signed one with {School}. Either way, we'll tell you when your eligibility is checked, and you can revoke at any time.
 
 **The boxes:**
 - **Required:** "I agree, and I'm 18 or older." The Terms require 18 ([`legal.md`](legal.md)), and some first-year PNMs are 17. That's [decision 4](#decisions-for-paul).
@@ -691,7 +692,7 @@ Council kickoffs and info nights are council events with "Open to PNMs" on.
 
 ### Bid matching and bid day
 
-**No matching for IFC.** IFC recruitment is usually open bidding: a chapter extends a bid and the PNM accepts. Frapp's IFC flow does no matching. Panhellenic needs matching, which comes in a later phase ([§ Phasing](#phasing)).
+**No matching for IFC.** IFC recruitment is usually open bidding: a chapter extends a bid and the PNM accepts. Frapp's IFC flow does no matching. Panhellenic's `formal` model needs matching. Frapp will **import** match results first, not build matching ([`council-types.md`](https://github.com/pdcarlson/Frapp/pull/4264) (PR #4264)).
 
 #### Bid day
 
@@ -719,7 +720,7 @@ Per-PNM, per-chapter detail is available only once the season closes ([above](#c
 
 ## The PNM's own view
 
-**Getting in.** The PNM opens the link in their emails, or signs in with their verified email. They need a Frapp account but no chapter: a `school_members` row with status `pnm` (ADR-27). For a chapter with no school, it's the emailed link only.
+**Getting in.** The PNM opens the link in their emails, or signs in with their verified email. The view needs a Frapp account but no chapter. Signing in adds a `school_members` row with status `pnm` to their `pnms` row (ADR-27). For a chapter with no school, it's the emailed link only.
 
 **What it shows:**
 - their details (editable) and interests;
@@ -817,15 +818,15 @@ This builds on the URL and data-model phases 1 and 2 of the concept.
 
 ### Panhellenic differences
 
-Panhellenic formal recruitment needs its own design pass, not settings on the IFC flow:
+Panhellenic formal recruitment needs its own design, not settings on the IFC flow. That design is the `formal` model in [`council-types.md`](https://github.com/pdcarlson/Frapp/pull/4264) (PR #4264), which owns the details. In summary:
 
 - **Rounds and invitations.** In the first round PNMs visit every chapter. After that, chapters invite and PNMs accept, round by round (typically open house, philanthropy, sisterhood, preference). This needs schedules, per-PNM invitation lists and party capacity.
 - **Mutual selection.** After preference, chapters rank PNMs and PNMs rank chapters, and a matching algorithm assigns bids.
   - NPC's Release Figure Methodology sets how many each chapter invites per round.
   - Quota and total set the size of the new member class.
-  - Frapp would build matching or integrate with a provider. Errors are high-stakes and public, so this is the riskiest piece in any phase.
+  - **Import first, don't build.** Frapp imports match results from the council's matching provider. Errors are high-stakes and public, so building matching is the riskiest piece in any phase.
 - **Recruitment counselors (Rho Gammas / Pi Chis) disaffiliate.** Their role sees PNM logistics and **nothing** chapter-private, including their own chapter's. The [council-officer limits](#council-officers-are-also-chapter-members) are the starting point.
-- **Continuous open bidding** after formal recruitment is like IFC rolling bids, so the IFC flow covers it.
+- **Continuous open bidding (COB)** belongs to the Panhellenic `formal` model, not the IFC flow, and is **not in the IFC MVP**. Its total cap counts outstanding bids, and it carries the COB MRABA and the one-year rule. All of that lives in [`council-types.md`](https://github.com/pdcarlson/Frapp/pull/4264) (PR #4264).
 - **Registration fees** are common. That's a billing decision.
 
 ## Decisions for Paul
