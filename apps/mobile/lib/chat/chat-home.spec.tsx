@@ -50,6 +50,7 @@ const {
   queryErrors,
   notificationsData,
   channelsState,
+  chapterScope,
   refetches,
   setupChecklist,
   setupChecklistOptions,
@@ -120,6 +121,9 @@ const {
   notificationsData: {
     value: [] as { id: string; read_at: string | null; data?: unknown }[],
   },
+  // `useChapterScope` (#4094): `none` is a member the server can't scope
+  // chat for, whose channel read never goes out.
+  chapterScope: { value: "chapter" as "chapter" | "none" | "resolving" },
   // The channel list's own read state, for the loading and error branches.
   channelsState: {
     value: {
@@ -225,6 +229,7 @@ vi.mock("@repo/hooks", async () => {
       isError: queryErrors.levels,
     }),
     useNowDate: () => new Date("2026-09-25T18:00:00Z"),
+    useChapterScope: () => chapterScope.value,
     useChannels: () => ({
       ...query(channelsData.value),
       ...channelsState.value,
@@ -324,7 +329,7 @@ import { SetupChecklistView } from "@/components/chat/setup-checklist";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
 import { DisclosureGlyph } from "@/components/control-glyphs";
 import { ScreenShell, StickyHeader } from "@/components/screen-shell";
-import { ErrorState } from "@/components/state-block";
+import { ErrorState, NoChapterState } from "@/components/state-block";
 import { InlineNote } from "@/components/inline-note";
 
 const general = { id: "c-general", name: "general", type: "PUBLIC" };
@@ -383,6 +388,7 @@ beforeEach(() => {
   // behind the skeleton while one may still happen.
   settleChatLaunch();
   vi.clearAllMocks();
+  chapterScope.value = "chapter";
   latestData.value = [];
   latestData.answered = true;
   setupChecklist.value = null;
@@ -1440,6 +1446,16 @@ describe("Chat home header: Messages and the account menu", () => {
  * channels…" and a hand-rolled retry.
  */
 describe("Chat home loading and error states", () => {
+  it("says to pick a chapter, not a skeleton that never ends, when chat can't be scoped (#4094)", () => {
+    // The channel read never goes out, so its query stays pending for good.
+    chapterScope.value = "none";
+    channelsState.value = { ...channelsState.value, isPending: true };
+    const tree = render();
+
+    expect(tree.root.findAllByType(ChannelListSkeleton)).toHaveLength(0);
+    expect(tree.root.findAllByType(NoChapterState)).toHaveLength(1);
+  });
+
   it("loads on channel-shaped skeletons, with no spinner or loading copy", () => {
     channelsState.value = { ...channelsState.value, isPending: true };
     const tree = render();
