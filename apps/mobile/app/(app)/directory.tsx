@@ -10,6 +10,7 @@ import {
   useMembers,
   usePermissionList,
   usePledgeClasses,
+  useRoles,
   usesFraternalOrder,
   type MemberAvatarTint,
 } from "@repo/hooks";
@@ -42,6 +43,16 @@ import {
   useRefetchAll,
 } from "@/components/pull-to-refresh";
 import { MemberDetailSheet } from "@/components/directory/member-detail-sheet";
+import { ActivesFilterSheet } from "@/components/directory/actives-filter-sheet";
+import {
+  countActivesFilters,
+  effectiveActivesFilter,
+  filterActives,
+  graduationYearOptions,
+  NO_ACTIVES_FILTER,
+  parseFilterRoles,
+  type ActivesFilter,
+} from "@/lib/directory/actives-filter";
 import {
   type DirectoryRow,
   selectActives,
@@ -109,6 +120,16 @@ import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
  * tab's trailing chip is Filters, and web's Alumni tab has no sort either
  * (#4088). Alumni rows still name their class, since `GET /v1/alumni` returns
  * it. Read-only here; officers set both on web (mobile editing is #3991).
+ *
+ * ## Actives filters (#3971)
+ *
+ * The Actives tab's chip row carries a Filters chip, before the sort, that
+ * opens `ActivesFilterSheet`: Status, Graduation year, the chapter's pledge
+ * class and Role, web's four Directory filters by web's rules
+ * (`lib/directory/actives-filter.ts`). The Alumni tab keeps its own Filters
+ * chip and fields, since `GET /v1/alumni` filters server-side by different
+ * fields. Like the alumni filters, these stay set across a tab switch and
+ * are left alone by a search, which looks across both lists by name.
  */
 type Tab = "actives" | "alumni";
 
@@ -124,6 +145,9 @@ export default function DirectoryScreen() {
   const canInvite = can("members:invite", usePermissionList());
   const detailSheetRef = useRef<BottomSheetModal>(null);
   const [selected, setSelected] = useState<DirectoryRow | null>(null);
+  const activesFilterSheetRef = useRef<BottomSheetModal>(null);
+  const [activesFilterPicks, setActivesFilterPicks] =
+    useState<ActivesFilter>(NO_ACTIVES_FILTER);
 
   const [tab, setTab] = useState<Tab>("actives");
   const [query, setQuery] = useState("");
@@ -167,7 +191,12 @@ export default function DirectoryScreen() {
 
   const membersQuery = useMembers();
   const classesQuery = usePledgeClasses();
-  const { orderTerm } = usePledgeClassTerms();
+  const { classTerm, orderTerm } = usePledgeClassTerms();
+  const rolesQuery = useRoles();
+  const filterRoles = useMemo(
+    () => parseFilterRoles(rolesQuery.data),
+    [rolesQuery.data],
+  );
   // `null` until the list has answered once. The last list read is kept when
   // a refetch fails, as web keeps it (and as the members list beside it is
   // kept), so a weak signal doesn't strip the names and undo the sort.
@@ -193,6 +222,7 @@ export default function DirectoryScreen() {
     alumniQuery,
     searchQuery,
     classesQuery,
+    rolesQuery,
   ]);
 
   // `GET /v1/members` is the whole chapter; the Actives tab is the part of it
@@ -202,8 +232,24 @@ export default function DirectoryScreen() {
     () => selectActives(membersQuery.data),
     [membersQuery.data],
   );
+  const yearOptions = useMemo(() => graduationYearOptions(actives), [actives]);
+  // A pick that no longer exists reads as unpicked (see `effectiveActivesFilter`).
+  const activesFilter = useMemo(
+    () =>
+      effectiveActivesFilter(activesFilterPicks, {
+        roleIds: new Set(filterRoles.map((role) => role.id)),
+        years: yearOptions,
+        classIds: new Set(classNames.keys()),
+      }),
+    [activesFilterPicks, filterRoles, yearOptions, classNames],
+  );
+  const activesFilterCount = countActivesFilters(activesFilter);
+  const filteredActives = useMemo(
+    () => filterActives(actives, activesFilter),
+    [actives, activesFilter],
+  );
   const listData =
-    !isSearching && tab === "actives" ? actives : activeQuery.data;
+    !isSearching && tab === "actives" ? filteredActives : activeQuery.data;
   // Asked of the actives, the list the chip sorts: a chapter whose only
   // numbered members are alumni would otherwise get a chip that does nothing.
   const orderOffered =
@@ -284,23 +330,44 @@ export default function DirectoryScreen() {
                 on={filtersOpen}
                 onPress={() => setFiltersOpen((open) => !open)}
               />
-            ) : orderOffered ? (
-              <Chip
-                accessibilityRole="button"
-                accessibilityState={{ selected: sortByOrder }}
-                accessibilityLabel={`Sort by ${orderTerm}`}
-                accessibilityHint={
-                  sortByOrder
-                    ? "Lists actives by name again."
-                    : "Lists actives oldest class first, then by number."
-                }
-                // "Sort:" leads, because beside Actives and Alumni a chip
-                // reading only the chapter's word looks like a third tab.
-                label={`Sort: ${orderTerm}`}
-                on={sortByOrder}
-                onPress={() => setSortByOrder((on) => !on)}
-              />
-            ) : null
+            ) : (
+              <>
+                <Chip
+                  accessibilityRole="button"
+                  accessibilityState={{}}
+                  accessibilityLabel={
+                    activesFilterCount > 0
+                      ? `Filters, ${activesFilterCount} set`
+                      : "Filters"
+                  }
+                  accessibilityHint="Narrows actives by status, graduation year, class or role."
+                  label={
+                    activesFilterCount > 0
+                      ? `Filters · ${activesFilterCount}`
+                      : "Filters"
+                  }
+                  on={activesFilterCount > 0}
+                  onPress={() => activesFilterSheetRef.current?.present()}
+                />
+                {orderOffered ? (
+                  <Chip
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: sortByOrder }}
+                    accessibilityLabel={`Sort by ${orderTerm}`}
+                    accessibilityHint={
+                      sortByOrder
+                        ? "Lists actives by name again."
+                        : "Lists actives oldest class first, then by number."
+                    }
+                    // "Sort:" leads, because beside Actives and Alumni a chip
+                    // reading only the chapter's word looks like a third tab.
+                    label={`Sort: ${orderTerm}`}
+                    on={sortByOrder}
+                    onPress={() => setSortByOrder((on) => !on)}
+                  />
+                ) : null}
+              </>
+            )
           }
         />
       )}
@@ -372,6 +439,18 @@ export default function DirectoryScreen() {
           }}
         >
           No alumni match these filters.
+        </InlineNote>
+      );
+    }
+    if (tab === "actives" && activesFilterCount > 0) {
+      return (
+        <InlineNote
+          action={{
+            label: "Clear filters",
+            onPress: () => setActivesFilterPicks(NO_ACTIVES_FILTER),
+          }}
+        >
+          No actives match these filters.
         </InlineNote>
       );
     }
@@ -459,6 +538,15 @@ export default function DirectoryScreen() {
           ref={detailSheetRef}
           member={selected}
           onDismiss={() => setSelected(null)}
+        />
+        <ActivesFilterSheet
+          ref={activesFilterSheetRef}
+          filter={activesFilter}
+          onChange={setActivesFilterPicks}
+          roles={filterRoles}
+          years={yearOptions}
+          classes={pledgeClasses ?? []}
+          classWord={classTerm}
         />
       </SafeAreaView>
     </View>
