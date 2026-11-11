@@ -146,6 +146,10 @@ describe('ChapterService', () => {
           })),
         ),
       ),
+      create: jest.fn(),
+      update: jest.fn(),
+      reorder: jest.fn(),
+      delete: jest.fn(),
     };
 
     mockMemberRepo = {
@@ -533,6 +537,26 @@ describe('ChapterService', () => {
       expect(vicePresident.permissions).toEqual([
         ...STARTING_ROLE_TIERS[0].permissions,
       ]);
+    });
+
+    // #4071 acceptance check (Paul, 2026-11-10): a chapter created after the
+    // officer defaults landed has a Vice President who can approve service
+    // hours and manage roles, from the tier. Chapters that existed before are
+    // untouched: STARTING_ROLE_TIERS is seed data that no migration reads.
+    it("gives a new chapter's Vice President the officer defaults", async () => {
+      const { role } = await createChapter();
+      const vicePresident = role(SystemRoleKeys.VICE_PRESIDENT);
+
+      expect(vicePresident.permissions).toEqual(
+        expect.arrayContaining([
+          SystemPermissions.SERVICE_APPROVE,
+          SystemPermissions.ROLES_MANAGE,
+          SystemPermissions.CHAPTER_CONFIG_MANAGE,
+        ]),
+      );
+      expect(role(SystemRoleKeys.MEMBER).permissions).not.toContain(
+        SystemPermissions.SERVICE_APPROVE,
+      );
     });
 
     it('keeps what a seeded role held before tiers as overrides on that role', async () => {

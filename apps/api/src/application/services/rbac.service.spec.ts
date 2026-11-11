@@ -7,6 +7,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { RbacService } from './rbac.service';
+import {
+  ROLE_TIER_REPOSITORY,
+  type IRoleTierRepository,
+} from '#domain/repositories/role-tier.repository.interface';
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
 import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
@@ -40,8 +44,18 @@ describe('RbacService', () => {
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
   let mockChapterRepo: jest.Mocked<IChapterRepository>;
   let mockChapterAuditLogService: AuditLogServiceMock;
+  let mockTierRepo: jest.Mocked<IRoleTierRepository>;
 
   beforeEach(async () => {
+    mockTierRepo = {
+      findByChapter: jest.fn().mockResolvedValue([]),
+      createMany: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      reorder: jest.fn(),
+      delete: jest.fn(),
+    };
+
     mockRoleRepo = {
       findById: jest.fn(),
       findByChapter: jest.fn(),
@@ -88,6 +102,7 @@ describe('RbacService', () => {
         { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
         { provide: CHAPTER_REPOSITORY, useValue: mockChapterRepo },
+        { provide: ROLE_TIER_REPOSITORY, useValue: mockTierRepo },
         {
           provide: ChapterAuditLogService,
           useValue: mockChapterAuditLogService,

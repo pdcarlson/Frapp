@@ -125,6 +125,20 @@ export const SystemRoleKeys = {
 export const ALUMNI_ROLE_NAME = 'Alumni';
 
 /**
+ * What the top two starting tiers give their roles in a new chapter (#4068
+ * decision 9). `announcements:post` decides no channel's posters since #3722,
+ * but the Discord importer still starts a read-only channel's posters from
+ * its holders (#4286), so it keeps officers posting there too.
+ */
+const OFFICER_DEFAULT_PERMISSIONS = [
+  SystemPermissions.SERVICE_APPROVE,
+  SystemPermissions.ANNOUNCEMENTS_POST,
+  SystemPermissions.TASKS_MANAGE,
+  SystemPermissions.CHANNELS_CREATE,
+  SystemPermissions.CHANNELS_MANAGE,
+] as const;
+
+/**
  * The tiers a new chapter starts with, highest first (#4068 decision 10), and
  * what each gives its roles. **Seed data only.** From the moment a chapter
  * exists its tiers are its own rows in `role_tiers`: it can rename, reorder,
@@ -132,11 +146,12 @@ export const ALUMNI_ROLE_NAME = 'Alumni';
  * there are four. Alumni, and advisors when a chapter adds them, sit outside
  * the tiers.
  *
- * Each tier starts with what its seeded roles held before tiers existed, so a
- * new chapter's roles can do exactly what they could before. The officer
- * defaults Paul decided on 2026-11-10 (#4068 decision 9) land with the rank
- * rules, in the next slice of #4071: `roles:manage` on a tier is only safe
- * once a holder cannot edit their own tier.
+ * The top two carry the officer defaults Paul decided on 2026-11-10 (#4068
+ * decision 9): both approve service hours, post announcements, and manage
+ * tasks and channels; the top one also manages roles and chapter settings.
+ * `roles:manage` on a tier is safe because of the rank rules (#4071): nobody
+ * edits a role or tier ranked at or above their own, so the Vice President
+ * cannot edit the President's role or the Exec board itself.
  *
  * Chapters that existed before tiers were placed into the same four names by
  * migration `20261111140000_role_tiers.sql`. Changing this list changes new
@@ -148,11 +163,18 @@ export const STARTING_ROLE_TIERS = [
     permissions: [
       SystemPermissions.MEMBERS_VIEW,
       SystemPermissions.POLLS_VIEW_ALL,
+      ...OFFICER_DEFAULT_PERMISSIONS,
+      SystemPermissions.ROLES_MANAGE,
+      SystemPermissions.CHAPTER_CONFIG_VIEW,
+      SystemPermissions.CHAPTER_CONFIG_MANAGE,
     ],
   },
   {
     name: 'Officers and chairs',
-    permissions: [SystemPermissions.MEMBERS_VIEW],
+    permissions: [
+      SystemPermissions.MEMBERS_VIEW,
+      ...OFFICER_DEFAULT_PERMISSIONS,
+    ],
   },
   {
     name: 'Members',

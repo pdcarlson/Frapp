@@ -425,7 +425,10 @@ export interface paths {
         /** List chapter roles */
         get: operations["RbacController_list_v1"];
         put?: never;
-        /** Create a custom role */
+        /**
+         * Create a custom role
+         * @description Into a tier ranked below the caller's own, or outside the tiers, holding only permissions the caller holds (#4071).
+         */
         post: operations["RbacController_create_v1"];
         delete?: never;
         options?: never;
@@ -460,11 +463,17 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Delete a custom role */
+        /**
+         * Delete a custom role
+         * @description Only a role ranked below the caller's own (#4071).
+         */
         delete: operations["RbacController_delete_v1"];
         options?: never;
         head?: never;
-        /** Update a role */
+        /**
+         * Update a role
+         * @description Only a role ranked below the caller's own, and only granting permissions the caller holds (#4071). Send `permissions` (the whole list), or `tier_id` and `permission_overrides`, not both.
+         */
         patch: operations["RbacController_update_v1"];
         trace?: never;
     };
@@ -517,6 +526,71 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/v1/role-tiers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the chapter's role tiers, highest first */
+        get: operations["RoleTierController_list_v1"];
+        put?: never;
+        /**
+         * Add a role tier
+         * @description Added at the bottom, below every other tier, with only permissions the caller holds.
+         */
+        post: operations["RoleTierController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/role-tiers/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reorder the role tiers
+         * @description Every tier, highest first. Tiers from the top down to the caller's own stay where they are; 409 when the tiers changed since the caller read them.
+         */
+        put: operations["RoleTierController_reorder_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/role-tiers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete an empty role tier
+         * @description Only a tier ranked below the caller's own; 409 while a role still sits in it.
+         */
+        delete: operations["RoleTierController_delete_v1"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename a role tier or set its permissions
+         * @description Only a tier ranked below the caller's own. A new permission list rewrites every role in the tier, each with its own overrides applied.
+         */
+        patch: operations["RoleTierController_update_v1"];
         trace?: never;
     };
     "/v1/members": {
@@ -4445,6 +4519,11 @@ export interface components {
             color?: "#F2994A" | "#F47FA4" | "#B392F0" | "#8FA8FF" | "#5CC8F0" | "#3DD6C4" | "#6FD08C" | "#C5E06A" | "#D9B99B" | "#A9B4C2" | null;
             /** @description Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it. */
             mentionable?: boolean;
+            /**
+             * Format: uuid
+             * @description The tier the role sits in (#4071), one ranked below the caller's own; null puts it outside the tiers. A role takes its tier's permissions, with its own overrides applied.
+             */
+            tier_id?: string | null;
         };
         UpdateRoleDto: {
             name?: string;
@@ -4457,6 +4536,21 @@ export interface components {
             color?: "#F2994A" | "#F47FA4" | "#B392F0" | "#8FA8FF" | "#5CC8F0" | "#3DD6C4" | "#6FD08C" | "#C5E06A" | "#D9B99B" | "#A9B4C2" | null;
             /** @description Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it. */
             mentionable?: boolean;
+            /**
+             * Format: uuid
+             * @description The tier the role sits in (#4071), one ranked below the caller's own; null puts it outside the tiers. A role takes its tier's permissions, with its own overrides applied.
+             */
+            tier_id?: string | null;
+            /**
+             * @description Overrides to change, merged into what the role has (#4071): true switches a permission on for this role whatever its tier says, false switches it off, null clears the override so the tier decides. Keys left out are kept. Not with `permissions`.
+             * @example {
+             *       "service:approve": true,
+             *       "polls:create": null
+             *     }
+             */
+            permission_overrides?: {
+                [key: string]: boolean | null;
+            };
         };
         TransferPresidencyDto: {
             /** Format: uuid */
@@ -4469,6 +4563,34 @@ export interface components {
             eligible: boolean;
             /** @description Name of the eligible role, or null when no role below President has any member at all (the "Frapp support intervenes" case). */
             next_role_name: string | null;
+        };
+        RoleTierDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /** @description Order within the chapter; 1 is highest. */
+            position: number;
+            /** @description The chapter's own name for the tier. */
+            name: string;
+            /** @description What every role in the tier gets before its own overrides. */
+            permissions: string[];
+            created_at: string;
+            updated_at: string;
+        };
+        CreateRoleTierDto: {
+            name: string;
+            /** @description What every role in the tier gets. Only permissions the caller holds; never `*`. Defaults to none. */
+            permissions?: string[];
+        };
+        ReorderRoleTiersDto: {
+            /** @description Every one of the chapter's tiers, highest first. Tiers ranked at or above the caller's own must stay where they are. */
+            tier_ids: string[];
+        };
+        UpdateRoleTierDto: {
+            name?: string;
+            /** @description The tier's whole list; every role in it is rewritten to match, with its own overrides applied. Never `*`. */
+            permissions?: string[];
         };
         MemberCustomFieldValueDto: {
             field_id: string;
@@ -8015,6 +8137,160 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    RoleTierController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleTierDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    RoleTierController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRoleTierDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleTierDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    RoleTierController_reorder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderRoleTiersDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleTierDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    RoleTierController_delete_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    RoleTierController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRoleTierDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleTierDto"];
+                };
             };
             /** @description Error */
             default: {

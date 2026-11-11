@@ -1369,6 +1369,7 @@
         ]
       },
       "post": {
+        "description": "Into a tier ranked below the caller's own, or outside the tiers, holding only permissions the caller holds (#4071).",
         "operationId": "RbacController_create_v1",
         "parameters": [],
         "requestBody": {
@@ -1449,6 +1450,7 @@
     },
     "/v1/roles/{id}": {
       "patch": {
+        "description": "Only a role ranked below the caller's own, and only granting permissions the caller holds (#4071). Send `permissions` (the whole list), or `tier_id` and `permission_overrides`, not both.",
         "operationId": "RbacController_update_v1",
         "parameters": [
           {
@@ -1496,6 +1498,7 @@
         ]
       },
       "delete": {
+        "description": "Only a role ranked below the caller's own (#4071).",
         "operationId": "RbacController_delete_v1",
         "parameters": [
           {
@@ -1635,6 +1638,238 @@
           }
         ],
         "summary": "Claim the chapter's vacant presidency",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      }
+    },
+    "/v1/role-tiers": {
+      "get": {
+        "operationId": "RoleTierController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RoleTierDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the chapter's role tiers, highest first",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      },
+      "post": {
+        "description": "Added at the bottom, below every other tier, with only permissions the caller holds.",
+        "operationId": "RoleTierController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRoleTierDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleTierDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add a role tier",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      }
+    },
+    "/v1/role-tiers/order": {
+      "put": {
+        "description": "Every tier, highest first. Tiers from the top down to the caller's own stay where they are; 409 when the tiers changed since the caller read them.",
+        "operationId": "RoleTierController_reorder_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderRoleTiersDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RoleTierDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Reorder the role tiers",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      }
+    },
+    "/v1/role-tiers/{id}": {
+      "patch": {
+        "description": "Only a tier ranked below the caller's own. A new permission list rewrites every role in the tier, each with its own overrides applied.",
+        "operationId": "RoleTierController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRoleTierDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleTierDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Rename a role tier or set its permissions",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      },
+      "delete": {
+        "description": "Only a tier ranked below the caller's own; 409 while a role still sits in it.",
+        "operationId": "RoleTierController_delete_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete an empty role tier",
         "tags": [
           "Roles & Permissions"
         ]
@@ -14461,6 +14696,12 @@
           "mentionable": {
             "type": "boolean",
             "description": "Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it."
+          },
+          "tier_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The tier the role sits in (#4071), one ranked below the caller's own; null puts it outside the tiers. A role takes its tier's permissions, with its own overrides applied."
           }
         },
         "required": [
@@ -14505,6 +14746,24 @@
           "mentionable": {
             "type": "boolean",
             "description": "Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it."
+          },
+          "tier_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The tier the role sits in (#4071), one ranked below the caller's own; null puts it outside the tiers. A role takes its tier's permissions, with its own overrides applied."
+          },
+          "permission_overrides": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean",
+              "nullable": true
+            },
+            "description": "Overrides to change, merged into what the role has (#4071): true switches a permission on for this role whatever its tier says, false switches it off, null clears the override so the tier decides. Keys left out are kept. Not with `permissions`.",
+            "example": {
+              "service:approve": true,
+              "polls:create": null
+            }
           }
         }
       },
@@ -14542,6 +14801,100 @@
           "eligible",
           "next_role_name"
         ]
+      },
+      "RoleTierDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "position": {
+            "type": "number",
+            "description": "Order within the chapter; 1 is highest."
+          },
+          "name": {
+            "type": "string",
+            "description": "The chapter's own name for the tier."
+          },
+          "permissions": {
+            "description": "What every role in the tier gets before its own overrides.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "position",
+          "name",
+          "permissions",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "CreateRoleTierDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "permissions": {
+            "description": "What every role in the tier gets. Only permissions the caller holds; never `*`. Defaults to none.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "ReorderRoleTiersDto": {
+        "type": "object",
+        "properties": {
+          "tier_ids": {
+            "description": "Every one of the chapter's tiers, highest first. Tiers ranked at or above the caller's own must stay where they are.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "tier_ids"
+        ]
+      },
+      "UpdateRoleTierDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "permissions": {
+            "description": "The tier's whole list; every role in it is rewritten to match, with its own overrides applied. Never `*`.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       },
       "MemberCustomFieldValueDto": {
         "type": "object",

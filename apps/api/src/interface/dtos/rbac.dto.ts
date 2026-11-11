@@ -1,14 +1,18 @@
 import {
+  ArrayMaxSize,
+  ArrayUnique,
   IsArray,
   IsIn,
   IsInt,
   IsNotEmpty,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
   Max,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -20,6 +24,11 @@ import {
   type PermissionScope,
 } from '@repo/validation';
 import { POSITION_MAX } from '#domain/constants/field-limits';
+
+/** `role_tiers_name_len` (migration `20261111140000`). */
+export const ROLE_TIER_NAME_MAX_LENGTH = 80;
+/** `role_tiers_position_range`: a chapter has at most this many tiers. */
+export const ROLE_TIER_POSITION_MAX = 1000;
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 
 /**
@@ -71,6 +80,18 @@ export class CreateRoleDto {
   @IsOptional()
   @IsStrictBoolean()
   mentionable?: boolean;
+
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      "The tier the role sits in (#4071), one ranked below the caller's own; null puts it outside the tiers. A role takes its tier's permissions, with its own overrides applied.",
+  })
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== null)
+  @IsUUID()
+  tier_id?: string | null;
 }
 
 export class UpdateRoleDto {
@@ -114,6 +135,29 @@ export class UpdateRoleDto {
   @IsOptional()
   @IsStrictBoolean()
   mentionable?: boolean;
+
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      "The tier the role sits in (#4071), one ranked below the caller's own; null puts it outside the tiers. A role takes its tier's permissions, with its own overrides applied.",
+  })
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== null)
+  @IsUUID()
+  tier_id?: string | null;
+
+  @ApiPropertyOptional({
+    type: 'object',
+    additionalProperties: { type: 'boolean', nullable: true },
+    description:
+      'Overrides to change, merged into what the role has (#4071): true switches a permission on for this role whatever its tier says, false switches it off, null clears the override so the tier decides. Keys left out are kept. Not with `permissions`.',
+    example: { 'service:approve': true, 'polls:create': null },
+  })
+  @IsOptional()
+  @IsObject()
+  permission_overrides?: Record<string, boolean | null>;
 }
 
 export class TransferPresidencyDto {
@@ -179,4 +223,82 @@ export class PermissionCatalogEntryDto {
     description: 'The level the permission applies at. Always `chapter` today.',
   })
   scope: PermissionScope;
+}
+
+export class CreateRoleTierDto {
+  @ApiProperty({ maxLength: ROLE_TIER_NAME_MAX_LENGTH })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(ROLE_TIER_NAME_MAX_LENGTH)
+  name: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'What every role in the tier gets. Only permissions the caller holds; never `*`. Defaults to none.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  permissions?: string[];
+}
+
+export class UpdateRoleTierDto {
+  @ApiPropertyOptional({ maxLength: ROLE_TIER_NAME_MAX_LENGTH })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(ROLE_TIER_NAME_MAX_LENGTH)
+  name?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      "The tier's whole list; every role in it is rewritten to match, with its own overrides applied. Never `*`.",
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  permissions?: string[];
+}
+
+export class ReorderRoleTiersDto {
+  @ApiProperty({
+    type: [String],
+    format: 'uuid',
+    description:
+      "Every one of the chapter's tiers, highest first. Tiers ranked at or above the caller's own must stay where they are.",
+  })
+  @IsArray()
+  @ArrayMaxSize(ROLE_TIER_POSITION_MAX)
+  @ArrayUnique()
+  @IsUUID('all', { each: true })
+  tier_ids: string[];
+}
+
+/** One of a chapter's tiers (`GET /v1/role-tiers`, #4071). */
+export class RoleTierDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ format: 'uuid' })
+  chapter_id: string;
+
+  @ApiProperty({ description: 'Order within the chapter; 1 is highest.' })
+  position: number;
+
+  @ApiProperty({ description: "The chapter's own name for the tier." })
+  name: string;
+
+  @ApiProperty({
+    type: [String],
+    description: 'What every role in the tier gets before its own overrides.',
+  })
+  permissions: string[];
+
+  @ApiProperty()
+  created_at: string;
+
+  @ApiProperty()
+  updated_at: string;
 }
