@@ -912,6 +912,12 @@ describe("Documents pinned and starred (#3934)", () => {
 
     act(() => toggle("Pinned").props.onPress());
     expect(rowLabels(tree)).toEqual(["Chapter bylaws", "Budget FY2026"]);
+    // Each toggle is one filter on the chip.
+    expect(
+      tree.root.findAll(
+        (node) => node.props.accessibilityLabel === "Sort and filter, 2 set",
+      ).length,
+    ).toBeGreaterThan(0);
 
     act(() => toggle("Starred").props.onPress());
     expect(rowLabels(tree)).toEqual(["Chapter bylaws"]);
@@ -926,6 +932,54 @@ describe("Documents pinned and starred (#3934)", () => {
         )
         .props.onChangeText("budget"),
     );
+    expect(rowLabels(tree)).toEqual([]);
+    // The way out names what it clears: the search and the Pinned filter.
+    const clear = tree.root.find(
+      (node) =>
+        node.props.action?.label === "Clear filters" &&
+        typeof node.props.action?.onPress === "function",
+    );
+    act(() => clear.props.action.onPress());
+    expect(toggle("Pinned").props.accessibilityState).toEqual({ checked: false });
+    expect(rowLabels(tree)).toEqual([
+      "Alumni mixer flyer",
+      "Budget FY2026",
+      "Chapter bylaws",
+    ]);
+  });
+
+  it("keeps a file unstarred from the sheet under Starred until the filter changes (#4290)", async () => {
+    const tree = loaded();
+    act(() =>
+      tree.root
+        .find(
+          (node) =>
+            node.props.accessibilityLabel === "Sort and filter" &&
+            typeof node.props.onPress === "function",
+        )
+        .props.onPress(),
+    );
+    const starredToggle = () =>
+      tree.root.find(
+        (node) =>
+          node.props.accessibilityRole === "togglebutton" &&
+          node.props.label === "Starred",
+      );
+    act(() => starredToggle().props.onPress());
+    expect(rowLabels(tree)).toEqual(["Budget FY2026"]);
+
+    const row = tree.root
+      .findAllByType(ListRow)
+      .find((r) => r.props.label === "Budget FY2026")!;
+    act(() => row.props.onLongPress());
+    starRows = { folder_ids: ["f-2"], document_ids: [] };
+    const sheet = () => tree.root.findByType(DocumentActionsSheet);
+    await act(async () => sheet().props.onToggleStar(sheet().props.target));
+    act(() => tree.update(screen()));
+    expect(rowLabels(tree)).toEqual(["Budget FY2026"]);
+
+    act(() => starredToggle().props.onPress());
+    act(() => starredToggle().props.onPress());
     expect(rowLabels(tree)).toEqual([]);
   });
 

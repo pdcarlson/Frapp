@@ -6,7 +6,7 @@ import {
   type DocumentFilters,
   type LibrarySourceDocument,
 } from "./document-library";
-import { useDocumentLibrary } from "./use-document-library";
+import { useDocumentLibrary, useMarkFilterHold } from "./use-document-library";
 
 const doc = (
   id: string,
@@ -145,5 +145,29 @@ describe("useDocumentLibrary file type (#3938)", () => {
     ]);
     expect(result.current.visible).toEqual([]);
     expect(result.current.filtering).toBe(true);
+  });
+});
+
+describe("useMarkFilterHold (#4290)", () => {
+  it("holds ids while the filter stays, and drops them when it changes", () => {
+    const { result, rerender } = renderHook(
+      ({ marks }) => useMarkFilterHold(marks),
+      { initialProps: { marks: { pinned: false, starred: true } } },
+    );
+    act(() => result.current.hold("a"));
+    expect([...result.current.held]).toEqual(["a"]);
+
+    rerender({ marks: { pinned: false, starred: false } });
+    expect(result.current.held.size).toBe(0);
+    rerender({ marks: { pinned: false, starred: true } });
+    expect(result.current.held.size).toBe(0);
+  });
+
+  it("holds nothing while neither filter is on", () => {
+    const { result } = renderHook(() =>
+      useMarkFilterHold({ pinned: false, starred: false }),
+    );
+    act(() => result.current.hold("a"));
+    expect(result.current.held.size).toBe(0);
   });
 });

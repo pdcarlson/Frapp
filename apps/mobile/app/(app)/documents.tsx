@@ -14,6 +14,7 @@ import {
   useDocumentDownloadUrl,
   useDocumentFolders,
   useDocumentLibrary,
+  useMarkFilterHold,
   useDocuments,
   useDocumentStars,
   useMemberDisplayNames,
@@ -29,7 +30,6 @@ import {
   SORT_OPTIONS,
   deleteDocumentTitle,
   isActiveDateFilter,
-  isMarkFiltering,
   markedItems,
   NO_MARK_FILTER,
   tierByMarks,
@@ -204,6 +204,9 @@ export default function DocumentsScreen() {
   // Pinned and Starred (#4290), each on or off; both on shows either.
   const [markFilter, setMarkFilter] =
     useState<DocumentMarkFilter>(NO_MARK_FILTER);
+  // A file starred or pinned from the sheet while one of them is on stays in
+  // the list until the filter changes, rather than vanishing (#4290).
+  const { held, hold } = useMarkFilterHold(markFilter);
   const [panelOpen, setPanelOpen] = useState(false);
   const [deletingIds, setDeletingIds] = useState<ReadonlySet<string>>(
     () => new Set(),
@@ -290,6 +293,7 @@ export default function DocumentsScreen() {
     namesById: useMemberDisplayNames().byId,
     semesters: useSemesters().data,
     starred: starredDocuments,
+    keep: held,
   });
   // On All with no search or filter the tiers are cards above the list, and
   // the list keeps its order; anywhere else they lead the list (#3934).
@@ -371,6 +375,7 @@ export default function DocumentsScreen() {
   async function toggleStar(target: DocumentActionsTarget) {
     setMarkFailure(null);
     const next = !target.starred;
+    if (target.kind === "document") hold(target.id);
     try {
       await setStar.mutateAsync({
         target: { kind: target.kind, id: target.id },
@@ -393,6 +398,7 @@ export default function DocumentsScreen() {
   async function togglePin(target: DocumentActionsTarget) {
     setMarkFailure(null);
     const next = !target.pinned;
+    if (target.kind === "document") hold(target.id);
     try {
       await setPin.mutateAsync({
         target: { kind: target.kind, id: target.id },
@@ -420,7 +426,8 @@ export default function DocumentsScreen() {
     (uploader !== null ? 1 : 0) +
     (dateActive ? 1 : 0) +
     (kind !== null ? 1 : 0) +
-    (isMarkFiltering(markFilter) ? 1 : 0) +
+    (markFilter.pinned ? 1 : 0) +
+    (markFilter.starred ? 1 : 0) +
     (sort !== "name" ? 1 : 0);
   const deleteFailed =
     deleteFailure && deleteFailure.chapterId === (chapterId ?? null)
@@ -594,7 +601,9 @@ export default function DocumentsScreen() {
                 deferredSearch &&
                 uploader === null &&
                 !dateActive &&
-                kind === null
+                kind === null &&
+                !markFilter.pinned &&
+                !markFilter.starred
                   ? "Clear search"
                   : "Clear filters",
               onPress: clearFilters,

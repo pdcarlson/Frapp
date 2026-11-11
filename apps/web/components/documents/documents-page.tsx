@@ -5,6 +5,7 @@ import {
   useDeleteDocument,
   useDocumentFolders,
   useDocumentLibrary,
+  useMarkFilterHold,
   useDocuments,
   useMemberDisplayNames,
   useMyPermissions,
@@ -73,7 +74,7 @@ function ChapterDocumentsPage() {
   const { confirm, confirmDialog } = useConfirmDialog();
   const [search, setSearch] = useState("");
   /*
-    Search, the uploader, date and file type filters, and the order all run
+    Search, the uploader, date, file type, Pinned and Starred filters, and the order all run
     here (`useDocumentLibrary`), over
     the library the list endpoint returns in one response (#3852), as
     `/backwork`'s do: a keystroke re-ranks what is in memory, so there is no
@@ -176,6 +177,18 @@ function ChapterDocumentsPage() {
   */
   // Pins and the member's stars (#3934); the stars feed the Starred filter.
   const marks = useDocumentMarks();
+  /*
+    Under Pinned or Starred (#4290), a row the member just unmarked stays
+    until the filter changes, and so does the file open in the viewer: a mark
+    changing under it (an officer's unpin, a star rolled back, another tab)
+    would otherwise drop the row and close the viewer mid-read, which the
+    clock's pause can't prevent.
+  */
+  const { held, hold } = useMarkFilterHold(filters.marks);
+  const keep = useMemo(
+    () => (openId === null ? held : new Set([...held, openId])),
+    [held, openId],
+  );
   const {
     folderTotal,
     visible,
@@ -194,6 +207,7 @@ function ChapterDocumentsPage() {
     namesById: useMemberDisplayNames().byId,
     semesters: useSemesters().data,
     starred: marks.starred.documents,
+    keep,
     paused: openId !== null,
   });
   /*
@@ -472,6 +486,7 @@ function ChapterDocumentsPage() {
             onShowAllFiles={() => setActiveFolder(null)}
             onUpload={canUpload ? () => upload.openPanel() : undefined}
             marks={marks}
+            onHoldRow={hold}
           />
         </div>
       </div>

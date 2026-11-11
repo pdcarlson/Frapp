@@ -343,6 +343,17 @@ describe("the Pinned and Starred filters (#4290)", () => {
     ).toEqual([]);
   });
 
+  it("keeps a held file whatever its marks, only while the filter is on", () => {
+    const run = (marks: { pinned: boolean; starred: boolean }) =>
+      queryDocuments(rows, "", { ...NO_DOCUMENT_FILTERS, marks }, "name", {
+        ...DATES,
+        starred,
+        keep: new Set(["n"]),
+      }).map((row) => row.doc.id);
+    expect(run({ pinned: true, starred: false })).toEqual(["ps", "p", "n"]);
+    expect(run({ pinned: false, starred: false })).toHaveLength(5);
+  });
+
   it("counts as a filter only when one is on", () => {
     expect(isMarkFiltering({ pinned: false, starred: false })).toBe(false);
     expect(isFiltering("", NO_DOCUMENT_FILTERS, true)).toBe(false);

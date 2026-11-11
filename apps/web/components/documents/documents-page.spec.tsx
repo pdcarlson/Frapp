@@ -1915,6 +1915,32 @@ describe("DocumentsPage pins and stars (#3934)", () => {
     );
   });
 
+  it("keeps a row unstarred under Starred, and its focus, until the filter changes (#4290)", async () => {
+    documentsQuery.data = [BYLAWS, MINUTES];
+    stars.value = { folder_ids: [], document_ids: ["doc-1"] };
+    const user = userEvent.setup();
+    const { rerender } = render(<DocumentsPage />);
+    await user.click(screen.getByRole("button", { name: "Starred" }));
+    const unstar = screen.getByRole("button", { name: "Unstar Chapter bylaws" });
+    await user.click(unstar);
+    expect(mockSetStar).toHaveBeenCalled();
+    // The server's answer: the star is gone.
+    stars.value = { folder_ids: [], document_ids: [] };
+    rerender(<DocumentsPage />);
+
+    const star = await screen.findByRole("button", { name: "Star Chapter bylaws" });
+    expect(star).toHaveFocus();
+    expect(screen.queryByRole("button", { name: /^Meeting minutes/ })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Starred" }));
+    await user.click(screen.getByRole("button", { name: "Starred" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Star Chapter bylaws" }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
   it("pins a file and a folder for the chapter, for whoever manages documents", async () => {
     render(<DocumentsPage />);
 

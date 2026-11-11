@@ -213,13 +213,18 @@ export function isMarkFiltering(marks: DocumentMarkFilter): boolean {
   return marks.pinned || marks.starred;
 }
 
-/** A file passes the mark filter: off, or pinned or starred as asked. */
+/**
+ * A file passes the mark filter: off, pinned or starred as asked, or held
+ * (`keep`): a file the member unmarked or has open stays put until the filter
+ * changes, rather than vanishing under their cursor (#4290).
+ */
 function inMarkFilter(
   doc: LibrarySourceDocument,
   marks: DocumentMarkFilter,
   starred: ReadonlySet<string>,
+  keep: ReadonlySet<string>,
 ): boolean {
-  if (!isMarkFiltering(marks)) return true;
+  if (!isMarkFiltering(marks) || keep.has(doc.id)) return true;
   return (
     (marks.pinned && !!doc.pinned_at) || (marks.starred && starred.has(doc.id))
   );
@@ -303,7 +308,11 @@ export type DateContext = { now: Date; semesterSince: Date | null | undefined };
  * files this member starred, for the Starred filter. A star is the member's
  * own (`GET /v1/documents/stars`), so it isn't on the row the way a pin is.
  */
-export type QueryContext = DateContext & { starred?: ReadonlySet<string> };
+export type QueryContext = DateContext & {
+  starred?: ReadonlySet<string>;
+  /** Files the Pinned and Starred filters keep whatever their marks (`inMarkFilter`). */
+  keep?: ReadonlySet<string>;
+};
 
 const NO_STARS: ReadonlySet<string> = new Set();
 
@@ -406,11 +415,12 @@ export function queryDocuments<D extends LibrarySourceDocument>(
     ? filters.date
     : null;
   const starred = dates.starred ?? NO_STARS;
+  const keep = dates.keep ?? NO_STARS;
   const filtered = rows.filter(
     (row) =>
       (filters.uploader === null || row.doc.uploaded_by === filters.uploader) &&
       (filters.kind === null || row.kind === filters.kind) &&
-      inMarkFilter(row.doc, filters.marks, starred) &&
+      inMarkFilter(row.doc, filters.marks, starred, keep) &&
       (date === null || inDateFilter(row.doc.created_at, date, dates)),
   );
   const needle = query.trim().toLowerCase();
