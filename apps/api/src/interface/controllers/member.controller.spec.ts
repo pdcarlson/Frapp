@@ -1,3 +1,4 @@
+import { ConflictException } from '@nestjs/common';
 import { TestingModule } from '@nestjs/testing';
 import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { MemberController } from './member.controller';
@@ -186,6 +187,18 @@ describe('MemberController', () => {
         dto.role_ids,
         'chapter-1',
       );
+    });
+
+    it('refuses a non-empty custom_role_ids, which only a page read before the fold sends (#4075)', async () => {
+      const dto: UpdateMemberRolesDto = {
+        role_ids: ['role-1'],
+        custom_role_ids: ['11111111-1111-4111-8111-111111111111'],
+      };
+
+      await expect(
+        controller.updateRoles('chapter-1', 'member-1', dto),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(memberService.updateRoles).not.toHaveBeenCalled();
     });
   });
 

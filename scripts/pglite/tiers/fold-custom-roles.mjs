@@ -14,16 +14,18 @@ import { db, miss } from "../harness.mjs";
 //
 //   - every member's effective permissions, now read from roles alone, are
 //     exactly what they were;
-//   - every custom role became a role: by name, folded into a same-named
-//     unseeded role holding the same list, or renamed "(custom)" when the
-//     name is taken, never folded into a seeded role;
-//   - each new role holds exactly the capabilities without `*`, and sits in
-//     the tier the header says (outside the tiers with no permissions, or
-//     when the chapter has no tier at that position);
+//   - every custom role became a new role of its own, never an existing one
+//     (not even a same-named role holding the same list), renamed "(custom)"
+//     when the name is taken and cut to fit the 100-character cap;
+//   - each new role holds exactly the capabilities without `*`, even in a
+//     tier that grants more, and sits in the tier the header says (outside
+//     the tiers with no permissions, or when the chapter has no tier at that
+//     position);
 //   - `role_ids` keeps the member's roles first and appends each folded role
 //     once, dropping ids of deleted or foreign custom roles, and
 //     `custom_role_ids` is emptied;
-//   - a second run changes nothing;
+//   - a second run changes nothing, and a third, after an officer deletes a
+//     folded role, does not bring it back;
 //   - `transfer_presidency` still runs, reading roles alone.
 //
 // Everything runs inside one transaction and is rolled back.
@@ -50,8 +52,12 @@ console.log("\n=== Functional: fold custom roles (20261111200000) ===");
     historian2: id(17),
     rush: id(18),
     deleted: id(19),
+    long: id(20),
   };
   const M = { m1: id(21), m2: id(22), m3: id(23), m4: id(24), m5: id(25) };
+  // 95 characters, the name of an existing role: "(custom)" must not push
+  // the folded role's name past 100.
+  const LONG = "L".repeat(95);
   const sql = readFileSync(
     join(
       process.cwd(),
@@ -124,20 +130,24 @@ console.log("\n=== Functional: fold custom roles (20261111200000) ===");
     );
 
   try {
-    // Chapter A has the four starting tiers; Chapter B has none.
+    // Chapter A has the four starting tiers, granting what a real chapter's
+    // do (Members holds the Member role's list), so a folded role that took
+    // its tier's list would show up; Chapter B has none.
     await db.exec(`
       begin;
       insert into chapters (id, name, university) values ('${A}', 'A', 'U'), ('${B}', 'B', 'U');
-      insert into role_tiers (chapter_id, position, name) values
-        ('${A}', 1, 'Exec board'), ('${A}', 2, 'Officers and chairs'),
-        ('${A}', 3, 'Members'), ('${A}', 4, 'New members');
+      insert into role_tiers (chapter_id, position, name, permissions) values
+        ('${A}', 1, 'Exec board', '{members:view,polls:create,events:create,roles:manage}'),
+        ('${A}', 2, 'Officers and chairs', '{members:view,polls:create,events:create}'),
+        ('${A}', 3, 'Members', '{members:view,polls:create}'), ('${A}', 4, 'New members', '{}');
       insert into roles (id, chapter_id, name, permissions, is_system, system_key, display_order) values
         ('${R.president}', '${A}', 'President', '{*}', true, 'PRESIDENT', 1),
         ('${R.member}', '${A}', 'Member', '{members:view,polls:create}', true, 'MEMBER', 5),
         ('${R.alumni}', '${A}', 'Alumni', '{}', true, 'ALUMNI', 7),
         ('${R.brothers}', '${A}', 'Brothers', '{members:view}', false, null, 20),
         ('${R.historian}', '${A}', 'Historian', '{chapter_docs:upload,members:view}', false, null, 21),
-        ('${R.bPresident}', '${B}', 'President', '{*}', true, 'PRESIDENT', 1);
+        ('${R.bPresident}', '${B}', 'President', '{*}', true, 'PRESIDENT', 1),
+        ('${id(7)}', '${A}', '${LONG}', '{}', false, null, 22);
       insert into chapter_custom_roles (id, chapter_id, key, label, rank, capabilities) values
         ('${C.social}', '${A}', 'social', 'Social Chair', 1, '{events:create,members:view}'),
         ('${C.brothers}', '${A}', 'brothers', 'Brothers', 2, '{members:view}'),
@@ -146,7 +156,8 @@ console.log("\n=== Functional: fold custom roles (20261111200000) ===");
         ('${C.empty}', '${A}', 'empty', 'Empty', 5, '{}'),
         ('${C.alumni}', '${A}', 'alumni', 'Alumni', 6, '{}'),
         ('${C.historian2}', '${A}', 'historian2', 'Historian', 7, '{polls:view_all}'),
-        ('${C.rush}', '${B}', 'rush', 'Rush', 99, '{rush:view}');
+        ('${C.rush}', '${B}', 'rush', 'Rush', 99, '{rush:view}'),
+        ('${C.long}', '${A}', 'long', '${LONG}', 8, '{members:view}');
       insert into users (id, supabase_auth_id, email) values
         ('${id(31)}', gen_random_uuid(), 'm1@x.test'), ('${id(32)}', gen_random_uuid(), 'm2@x.test'),
         ('${id(33)}', gen_random_uuid(), 'm3@x.test'), ('${id(34)}', gen_random_uuid(), 'm4@x.test'),
@@ -184,13 +195,14 @@ console.log("\n=== Functional: fold custom roles (20261111200000) ===");
     );
     const expected = {
       [C.social]: ["Social Chair", ["events:create", "members:view"], 2],
-      [C.brothers]: ["Brothers", ["members:view"], null],
+      [C.brothers]: ["Brothers (custom)", ["members:view"], 3],
       [C.historian]: ["Historian (custom)", ["members:view"], 3],
       [C.shadow]: ["Shadow", ["members:view"], 3],
       [C.empty]: ["Empty", [], null],
       [C.alumni]: ["Alumni (custom)", [], null],
       [C.historian2]: ["Historian (custom 2)", ["polls:view_all"], 2],
       [C.rush]: ["Rush", ["rush:view"], null],
+      [C.long]: [`${"L".repeat(91)} (custom)`, ["members:view"], 3],
     };
     const wrong = Object.entries(expected).filter(([cid, [name, perms, pos]]) => {
       const f = folded[cid];
@@ -208,8 +220,9 @@ console.log("\n=== Functional: fold custom roles (20261111200000) ===");
       { wrong: wrong.map(([cid]) => folded[cid]) },
     );
     check(
-      "a same-named unseeded role with the same list is reused, not duplicated",
-      folded[C.brothers]?.role_id === R.brothers,
+      "a same-named role holding the same list is not reused: role ids drive events and mentions",
+      Boolean(folded[C.brothers]?.role_id) &&
+        folded[C.brothers].role_id !== R.brothers,
       folded[C.brothers],
     );
 
@@ -227,9 +240,12 @@ console.log("\n=== Functional: fold custom roles (20261111200000) ===");
       sameList(members[M.m1].role_ids, [
         R.member,
         roleOf(C.social),
-        R.brothers,
+        roleOf(C.brothers),
       ]) &&
-        sameList(members[M.m2].role_ids, [R.brothers.toUpperCase()]) &&
+        sameList(members[M.m2].role_ids, [
+          R.brothers.toUpperCase(),
+          roleOf(C.brothers),
+        ]) &&
         sameList(members[M.m3].role_ids, [R.member, roleOf(C.shadow)]) &&
         sameList(members[M.m4].role_ids, [
           R.president,
@@ -253,6 +269,22 @@ console.log("\n=== Functional: fold custom roles (20261111200000) ===");
       "running it a second time changes nothing",
       (await snapshot()) === once,
       { once, twice: await snapshot() },
+    );
+
+    // An officer deletes a folded role; the planned re-run before the table
+    // drop (#4194) must not bring it back.
+    await db.query(`update members set role_ids = '{}' where id = $1`, [M.m5]);
+    await db.query(`delete from roles where id = $1`, [roleOf(C.rush)]);
+    await db.exec(sql);
+    check(
+      "a re-run does not bring back a folded role that was since deleted",
+      (
+        await rows(
+          `select count(*)::int as n from roles where chapter_id = $1 and name = 'Rush'`,
+          [B],
+        )
+      )[0].n === 0,
+      await rows(`select name from roles where chapter_id = $1`, [B]),
     );
 
     const transfer = await rows(

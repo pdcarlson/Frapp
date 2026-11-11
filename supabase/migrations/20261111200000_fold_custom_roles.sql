@@ -15,16 +15,19 @@
 -- 1. Every `chapter_custom_roles` row becomes a `roles` row in the same
 --    chapter, holding its capabilities without `*` (the guard never honoured a
 --    custom role's wildcard, so dropping it changes nothing). The new row's id
---    is recorded in `chapter_custom_roles.folded_role_id`, which is also what
---    makes this file safe to run again: a folded row is skipped.
+--    is recorded in `chapter_custom_roles.folded_role_id`, and the time in
+--    `folded_at`, which is what makes this file safe to run again: a row with
+--    `folded_at` set is skipped, even when an officer has since deleted the
+--    role it became (that clears `folded_role_id`, and must not bring the
+--    role back).
 --
 --    The name is the label. When the chapter already has a role of that name
---    (`roles` is unique on chapter and name) that holds exactly the same
---    permissions and is not a seeded role, the custom role folds into it
---    rather than duplicating it (a seeded role is excluded because its
---    `system_key` carries meaning of its own: holding Alumni restricts);
---    when the name is taken by a role holding something else, the new role is
---    called "<label> (custom)", then "<label> (custom 2)" and so on.
+--    (`roles` is unique on chapter and name), the new role is called
+--    "<label> (custom)", then "<label> (custom 2)" and so on, with the label
+--    cut so the name stays within the API's 100-character cap. A custom role
+--    never folds into an existing role, even one holding the same list:
+--    events, mentions and the Members list key on role ids, so handing its
+--    holders another role's id would change what they see.
 --
 --    It is placed in a tier the way 20261111140000 placed every role that was
 --    not seeded, and not from `rank`: the only writer of `rank`, the web
@@ -65,10 +68,13 @@
 
 alter table public.chapter_custom_roles
   add column if not exists folded_role_id uuid
-    references public.roles(id) on delete set null;
+    references public.roles(id) on delete set null,
+  add column if not exists folded_at timestamptz;
 
 comment on column public.chapter_custom_roles.folded_role_id is
-  'The roles row this custom role became in 20261111200000_fold_custom_roles.sql (#4075). Null only for a row written after that ran.';
+  'The roles row this custom role became in 20261111200000_fold_custom_roles.sql (#4075). Null for a row written after that ran, or once that role is deleted.';
+comment on column public.chapter_custom_roles.folded_at is
+  'When 20261111200000_fold_custom_roles.sql (#4075) turned this row into a role. Null only for a row written after that ran; a re-run folds exactly those.';
 
 do $$
 declare
@@ -80,12 +86,13 @@ declare
   v_name text;
   v_base text;
   v_suffix integer;
+  v_tag text;
   v_order integer;
 begin
   for v_custom in
     select c.*
       from public.chapter_custom_roles c
-     where c.folded_role_id is null
+     where c.folded_at is null
      order by c.chapter_id, c.rank, c.created_at, c.id
   loop
     select coalesce(array_agg(distinct p order by p), '{}'::text[])
@@ -95,59 +102,49 @@ begin
 
     v_base := coalesce(nullif(btrim(v_custom.label), ''), v_custom.key);
 
-    -- Fold into a same-named, unseeded role that already holds exactly this
-    -- list.
-    select r.id into v_role_id
+    -- A new role, under a name the chapter doesn't use yet.
+    v_name := left(v_base, 100);
+    v_suffix := 1;
+    while exists (
+      select 1 from public.roles r
+       where r.chapter_id = v_custom.chapter_id and r.name = v_name
+    ) loop
+      v_tag := ' (custom' ||
+        case when v_suffix = 1 then '' else ' ' || v_suffix end || ')';
+      v_name := left(v_base, 100 - length(v_tag)) || v_tag;
+      v_suffix := v_suffix + 1;
+    end loop;
+
+    select r.permissions into v_member_permissions
       from public.roles r
-     where r.chapter_id = v_custom.chapter_id
-       and r.system_key is null
-       and r.name = v_base
-       and r.permissions @> v_permissions
-       and r.permissions <@ v_permissions
+     where r.chapter_id = v_custom.chapter_id and r.system_key = 'MEMBER'
      limit 1;
+    v_member_permissions := coalesce(v_member_permissions, '{}'::text[]);
 
-    if v_role_id is null then
-      v_name := v_base;
-      v_suffix := 1;
-      while exists (
-        select 1 from public.roles r
-         where r.chapter_id = v_custom.chapter_id and r.name = v_name
-      ) loop
-        v_name := v_base || ' (custom' ||
-          case when v_suffix = 1 then '' else ' ' || v_suffix end || ')';
-        v_suffix := v_suffix + 1;
-      end loop;
-
-      select r.permissions into v_member_permissions
-        from public.roles r
-       where r.chapter_id = v_custom.chapter_id and r.system_key = 'MEMBER'
-       limit 1;
-      v_member_permissions := coalesce(v_member_permissions, '{}'::text[]);
-
-      v_tier_id := null;
-      if cardinality(v_permissions) > 0 then
-        select t.id into v_tier_id
-          from public.role_tiers t
-         where t.chapter_id = v_custom.chapter_id
-           and t.position = case
-                 when v_permissions <@ v_member_permissions then 3
-                 else 2
-               end;
-      end if;
-
-      select coalesce(max(r.display_order), 0) + 1 into v_order
-        from public.roles r
-       where r.chapter_id = v_custom.chapter_id;
-
-      insert into public.roles
-        (chapter_id, name, permissions, is_system, system_key, display_order, tier_id)
-      values
-        (v_custom.chapter_id, v_name, v_permissions, false, null, v_order, v_tier_id)
-      returning id into v_role_id;
+    v_tier_id := null;
+    if cardinality(v_permissions) > 0 then
+      select t.id into v_tier_id
+        from public.role_tiers t
+       where t.chapter_id = v_custom.chapter_id
+         and t.position = case
+               when v_permissions <@ v_member_permissions then 3
+               else 2
+             end;
     end if;
 
+    select coalesce(max(r.display_order), 0) + 1 into v_order
+      from public.roles r
+     where r.chapter_id = v_custom.chapter_id;
+
+    insert into public.roles
+      (chapter_id, name, permissions, is_system, system_key, display_order, tier_id)
+    values
+      (v_custom.chapter_id, v_name, v_permissions, false, null, v_order, v_tier_id)
+    returning id into v_role_id;
+
     update public.chapter_custom_roles
-       set folded_role_id = v_role_id
+       set folded_role_id = v_role_id,
+           folded_at = now()
      where id = v_custom.id;
   end loop;
 end

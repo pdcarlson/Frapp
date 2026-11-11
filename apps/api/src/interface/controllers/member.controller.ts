@@ -1,5 +1,6 @@
 import {
   Body,
+  ConflictException,
   Controller,
   Delete,
   Get,
@@ -130,6 +131,15 @@ export class MemberController {
     @Param('id') id: string,
     @Body() dto: UpdateMemberRolesDto,
   ) {
+    // A non-empty list can only come from a page that read the member before
+    // #4075 folded custom roles into role_ids. Its role_ids then lack the
+    // folded roles, so saving it would quietly take them away: ask for a
+    // reload instead.
+    if (dto.custom_role_ids && dto.custom_role_ids.length > 0) {
+      throw new ConflictException(
+        "This member's roles changed since the page loaded. Reload and try again.",
+      );
+    }
     return this.memberService.updateRoles(id, dto.role_ids, chapterId);
   }
 

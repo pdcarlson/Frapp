@@ -1,6 +1,6 @@
 # Settings: Customization Tabs
 
-Behavior rules for the customization-heavy settings tabs (Accent, Roles, Fields, Workflows, Dues). The settings rail, Org/Modules tabs, and cross-cutting audit rules live in [`README.md`](README.md). Saves in these tabs write `chapter_audit_log` rows mirrored to `#chapter-audit`. On the Roles tab that covers creating, editing, recolouring, reordering or deleting any role in the Manage roles section, every permission-matrix toggle, a presidency transfer, the `chapter_custom_roles` section (`/custom-roles`), the default invite role and a presidency claim. Which verbs and diffs the role routes write, and which writes skip a save that changes nothing, is in the README's [audit rules](README.md#audit-rules).
+Behavior rules for the customization-heavy settings tabs (Accent, Roles, Fields, Workflows, Dues). The settings rail, Org/Modules tabs, and cross-cutting audit rules live in [`README.md`](README.md). Saves in these tabs write `chapter_audit_log` rows mirrored to `#chapter-audit`. On the Roles tab that covers creating, editing, recolouring, reordering or deleting any role in the Manage roles section, every permission-matrix toggle, a presidency transfer, the default invite role and a presidency claim. Which verbs and diffs the role routes write, and which writes skip a save that changes nothing, is in the README's [audit rules](README.md#audit-rules).
 
 ## Accent (a section of Chapter, `?tab=theme`)
 

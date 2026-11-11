@@ -4398,7 +4398,7 @@ export interface components {
             role_ids: string[];
             /**
              * @deprecated
-             * @description Ignored. Custom roles were folded into ordinary roles (#4075); assign them through role_ids. Still accepted so a web page loaded before that deploy can save.
+             * @description Deprecated. Custom roles were folded into ordinary roles (#4075); assign them through role_ids. Still accepted, as [], so a web page loaded before that deploy can save; a non-empty list means the page read the member before the fold, so its role_ids would drop the folded roles, and the save is refused with 409.
              */
             custom_role_ids?: string[];
         };
