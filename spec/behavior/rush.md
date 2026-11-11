@@ -2,6 +2,8 @@
 
 The recruitment module manages prospective members from first contact through bid/vote to acceptance. Its surfaces follow the shared ops integration pattern — see [`integrations.md`](integrations.md).
 
+A proposed upgrade (a pipeline, interest forms, eligibility and a council master list) is in [`ifc-recruitment.md`](ifc-recruitment.md). It is pending Paul, and this file still owns what recruitment does today.
+
 ## Vocabulary
 
 - The module name and all member-facing copy render through the chapter's **vocabulary helper**, never a hardcoded "rush." The substitutable term is configured per chapter (rush / recruitment / intake / induction) in the settings Chapter tab (`?tab=org`), and defaults to the archetype's. The same vocabulary term names the slash command, the dashboard and the chat candidate card's eyebrow. Web and mobile resolve it with the one helper, `vocab()` and `memberViewVocabulary()` in `@repo/org-archetypes`.
