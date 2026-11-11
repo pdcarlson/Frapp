@@ -1,14 +1,14 @@
 ---
 name: docs-upkeep
 description: >
-  Run the docs phase of the Weekly Upkeep routine (alternate weeks): sweep a rotating fifth of the docs corpus, verify its
+  Run the docs phase of the Weekly Upkeep routine (first Wednesday of the month): sweep a rotating fifth of the docs corpus, verify its
   claims against code and providers, and fix what is wrong in a single docs-only PR. Use when the
   Weekly Upkeep routine picks it, or when asked to sweep, audit, or refresh the docs.
 ---
 
 # Docs Upkeep (a phase of Weekly Upkeep)
 
-Docs decay quietly: a reader finds a wrong claim by acting on it. This routine sweeps this week's
+Docs decay quietly: a reader finds a wrong claim by acting on it. This routine sweeps this month's
 slice of the corpus, checks its claims against the code and providers, and fixes what is wrong in
 one docs-only PR that a human merges. A clean slice with no PR is a successful run. The standard a
 doc is held to is
@@ -52,19 +52,19 @@ Use tracked files only (never `find`, which picks up untracked scratch), and tak
 the command each run rather than writing one down.
 
 Derive the slice from the calendar and the corpus alone. Sessions are fresh and carry no state,
-and `routines.md` § Verify expects two runs in the same week to take the same slice.
+and `routines.md` § Verify expects two runs in the same month to take the same slice.
 
 1. Keep the command's output in its own order (already byte order; don't re-sort).
 2. Number the files `0 … n-1`; file `i` is in group `floor(i * 5 / n)`, so groups `0–4` differ by
    at most one file.
-3. Sweep group `$(date -u +%V) mod 5`.
+3. Sweep the group [`weekly-upkeep`](../weekly-upkeep/SKILL.md#this-weeks-job-and-slice) prints
+   (run outside the routine, the same snippet's `docs group`).
 
-`%V` is the ISO week; `%W` and `%U` differ from it most of the year. `-u` keeps a manual re-run
-near the week boundary on the scheduled answer. `%V` is zero-padded, so parse it base 10
-(`10#$V` in bash), or `08` and `09` fail as octal.
+The docs phase runs once a month, on the first Wednesday, so the group counts months: it steps by
+one each month, straight through New Year, and each group comes round every five months. Until
+2026-11-11 it ran every other week and the ISO week picked the group.
 
-Two known imperfections are accepted. At New Year `mod 5` skews the cycle, so one group waits up to
-eight weeks. And groups differ in reading weight by up to about 3× (group 0 holds every
+One known imperfection is accepted: groups differ in reading weight by up to about 3× (group 0 holds every
 `.claude/skills/` file plus `AGENTS.md`). Budget for that, and say in the report where you stopped
 if you ran out of run, but don't re-scope the slice to balance it, because a judgement-based slice
 isn't reproducible. A heavy slice is worth splitting across a few subagents, each taking a group of
@@ -158,7 +158,7 @@ without a PR, `stopped` when a push failed. Your final message is the run report
 
 ## Run report
 
-1. **Slice**: group index, ISO week, file count, which areas.
+1. **Slice**: group index, month, file count, which areas.
 2. **Fixed**: one line per change, naming the file and what was wrong; the PR link, or the branch
    name if the MCP was down.
 3. **Found but not fixable in a docs edit**: needs a decision, a provider change or code, plus any
