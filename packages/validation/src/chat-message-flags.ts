@@ -16,6 +16,7 @@
 export const CHAT_MESSAGE_FLAGS = [
   "important",
   "funny",
+  "interesting",
   "question",
   "hype",
   "fyi",
@@ -26,6 +27,7 @@ export type ChatMessageFlag = (typeof CHAT_MESSAGE_FLAGS)[number];
 export const CHAT_MESSAGE_FLAG_LABELS: Record<ChatMessageFlag, string> = {
   important: "Important",
   funny: "Funny",
+  interesting: "Interesting",
   question: "Question",
   hype: "Hype",
   fyi: "FYI",

@@ -3167,7 +3167,7 @@ describe('ChatService', () => {
 
       expect(mockMessageRepo.compareAndSetFlag).toHaveBeenCalledWith(
         'msg-1',
-        null,
+        { flag: null, flagged_by: null, requireLive: true },
         expect.objectContaining({ flag: 'important', flagged_by: 'user-2' }),
       );
       expect(result).toMatchObject({
@@ -3203,9 +3203,44 @@ describe('ChatService', () => {
 
       expect(mockMessageRepo.compareAndSetFlag).toHaveBeenCalledWith(
         'msg-1',
-        'important',
+        { flag: 'important', flagged_by: 'user-flagger', requireLive: true },
         expect.objectContaining({ flag: 'fyi', flagged_by: userId }),
       );
+    });
+
+    it('refuses a message in a channel the caller cannot read, before any write', async () => {
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+      mockChannelRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.setMessageFlag('msg-1', 'ch-1', 'user-2', false, 'important'),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        service.clearMessageFlag('msg-1', 'ch-1', 'user-2', true),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockMessageRepo.compareAndSetFlag).not.toHaveBeenCalled();
+    });
+
+    it('masks the flagged message it answers with, for a sender the caller has blocked', async () => {
+      mockChatBlocks.listBlockedUserIds.mockResolvedValue(['user-1']);
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+      mockMessageRepo.compareAndSetFlag.mockImplementation(
+        async (_id, _expected, data) => ({ ...baseMessage, ...data }),
+      );
+
+      const result = await service.setMessageFlag(
+        'msg-1',
+        'ch-1',
+        'user-2',
+        false,
+        'funny',
+      );
+
+      expect(result).toMatchObject({
+        content: BLOCKED_MESSAGE_CONTENT,
+        sender_blocked: true,
+        flag: null,
+      });
     });
 
     it('answers 409 when the flag changed between the check and the write', async () => {
@@ -3252,7 +3287,7 @@ describe('ChatService', () => {
       await service.clearMessageFlag('msg-1', 'ch-1', 'user-flagger', false);
       expect(mockMessageRepo.compareAndSetFlag).toHaveBeenCalledWith(
         'msg-1',
-        'important',
+        { flag: 'important', flagged_by: 'user-flagger', requireLive: false },
         { flag: null, flagged_by: null, flagged_at: null },
       );
 

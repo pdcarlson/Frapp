@@ -1508,10 +1508,11 @@ export class ChatService {
    * a reaction: a flag adds no content, so a read-only channel or an alumnus
    * may still flag (spec/behavior/chat/README.md § Message flags).
    *
-   * The write is a compare-and-set on the flag the check was made against, so
-   * two members flagging the same unflagged message at once cannot both win,
-   * and the loser, who may not be allowed to replace the winner's flag, gets a
-   * 409 rather than silently overwriting it.
+   * The write is a compare-and-set on the flag and flagger the check was made
+   * against, and on the message still being live, so two members flagging the
+   * same unflagged message at once cannot both win, and the loser, who may
+   * not be allowed to replace the winner's flag, gets a 409 rather than
+   * silently overwriting it. A delete that lands mid-request is a 409 too.
    *
    * The answer is masked for the caller like any message read, since the
    * caller may have blocked the sender.
@@ -1538,7 +1539,11 @@ export class ChatService {
 
     const updated = await this.messageRepo.compareAndSetFlag(
       messageId,
-      message.flag ?? null,
+      {
+        flag: message.flag ?? null,
+        flagged_by: message.flagged_by ?? null,
+        requireLive: true,
+      },
       { flag, flagged_by: userId, flagged_at: new Date().toISOString() },
     );
     if (!updated) throw this.flagRaceConflict();
@@ -1562,9 +1567,15 @@ export class ChatService {
     }
     this.assertMayChangeFlag(message, userId, hasManagePermission);
 
+    // No `requireLive`: a tombstone that still carries a flag (one deleted
+    // while an API without this rule was serving) must stay clearable.
     const updated = await this.messageRepo.compareAndSetFlag(
       messageId,
-      message.flag,
+      {
+        flag: message.flag,
+        flagged_by: message.flagged_by ?? null,
+        requireLive: false,
+      },
       { flag: null, flagged_by: null, flagged_at: null },
     );
     if (!updated) throw this.flagRaceConflict();
@@ -1595,7 +1606,7 @@ export class ChatService {
 
   private flagRaceConflict(): ConflictException {
     return new ConflictException(
-      'Someone else changed this message’s flag just now. Reload and try again.',
+      'This message’s flag changed, or the message was deleted, just now. Reload and try again.',
     );
   }
 

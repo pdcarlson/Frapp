@@ -14965,6 +14965,7 @@
             "enum": [
               "important",
               "funny",
+              "interesting",
               "question",
               "hype",
               "fyi"
@@ -15177,6 +15178,7 @@
             "enum": [
               "important",
               "funny",
+              "interesting",
               "question",
               "hype",
               "fyi"

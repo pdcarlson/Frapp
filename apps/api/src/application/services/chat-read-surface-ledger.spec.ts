@@ -230,6 +230,22 @@ const HTTP_LEDGER: Record<string, Entry> = {
     status: 'no-foreign-content',
     why: 'Returns the soft-deleted row, whose content is already `[message deleted]`.',
   },
+  // #3921: both answer the flagged message through `maskBlockedMessages`,
+  // since the caller may have blocked its sender.
+  ChatController_setMessageFlag_v1: {
+    status: 'masked',
+    proof: {
+      spec: CHAT_SERVICE_SPEC,
+      test: 'masks the flagged message it answers with, for a sender the caller has blocked',
+    },
+  },
+  ChatController_clearMessageFlag_v1: {
+    status: 'masked',
+    proof: {
+      spec: CHAT_SERVICE_SPEC,
+      test: 'masks the flagged message it answers with, for a sender the caller has blocked',
+    },
+  },
   ChatController_pinMessage_v1: OFFICER_MODERATION,
   ChatController_unpinMessage_v1: OFFICER_MODERATION,
   ChatController_requestUploadUrl_v1: {

@@ -1,7 +1,8 @@
 -- Message flags (#3921, slice 1 of 4).
 --
 -- spec/behavior/chat/README.md § Message flags owns the rule. A member marks a
--- sent message with one flag (Important, Funny, Question, Hype or FYI). The
+-- sent message with one flag (Important, Funny, Interesting, Question,
+-- Hype or FYI). The
 -- flag is a fact about the message, the same for every reader, so it lives on
 -- the row beside `is_pinned`, and its Realtime UPDATE echo carries it to every
 -- open timeline the way an edit or a pin already travels.
@@ -22,44 +23,26 @@
 -- `chat_messages` has a SELECT policy for members and no write policy (every
 -- write is the API, service role), so no client can set a flag directly.
 
+-- One transaction, as every migration file is applied, so the ACCESS
+-- EXCLUSIVE lock the first ALTER takes on `chat_messages` is held until
+-- commit: chat reads and writes wait for the whole file. The two checks are
+-- added in the same statement as the columns, so they validate in that one
+-- pass over the table, and the foreign key's validation is one more scan.
+-- Every existing row is null, so nothing is rejected and each scan only reads.
+-- Promote it outside the chapters' busy evening hours.
+alter table public.chat_messages
+  drop constraint if exists chat_messages_flag_known,
+  drop constraint if exists chat_messages_flag_cleared,
+  drop constraint if exists chat_messages_flagged_by_fk;
+
 alter table public.chat_messages
   add column if not exists flag text,
   add column if not exists flagged_by uuid,
-  add column if not exists flagged_at timestamptz;
-
-alter table public.chat_messages
-  drop constraint if exists chat_messages_flag_known,
-  drop constraint if exists chat_messages_flag_cleared;
-
--- Added `not valid` and validated after, so the scan of existing rows runs
--- under the validation's lighter lock rather than the ALTER's exclusive one.
--- Every existing row is null, so neither check rejects anything.
-alter table public.chat_messages
+  add column if not exists flagged_at timestamptz,
   add constraint chat_messages_flag_known
-    check (flag is null or flag in ('important', 'funny', 'question', 'hype', 'fyi'))
-    not valid,
+    check (flag is null or flag in ('important', 'funny', 'interesting', 'question', 'hype', 'fyi')),
   add constraint chat_messages_flag_cleared
-    check (flag is not null or (flagged_by is null and flagged_at is null))
-    not valid;
-
-alter table public.chat_messages validate constraint chat_messages_flag_known;
-alter table public.chat_messages validate constraint chat_messages_flag_cleared;
-
--- `not valid`, then validated, the shape the other foreign keys added to
--- existing tables use. Every existing row is null, so validation rejects
--- nothing.
-do $$
-begin
-  if not exists (
-    select 1 from pg_constraint where conname = 'chat_messages_flagged_by_fk'
-  ) then
-    alter table public.chat_messages
-      add constraint chat_messages_flagged_by_fk
-      foreign key (flagged_by) references public.users (id)
-      on delete set null
-      not valid;
-  end if;
-end
-$$;
-
-alter table public.chat_messages validate constraint chat_messages_flagged_by_fk;
+    check (flag is not null or (flagged_by is null and flagged_at is null)),
+  add constraint chat_messages_flagged_by_fk
+    foreign key (flagged_by) references public.users (id)
+    on delete set null;

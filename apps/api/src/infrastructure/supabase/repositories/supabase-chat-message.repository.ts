@@ -379,18 +379,27 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
 
   async compareAndSetFlag(
     id: string,
-    expectedFlag: ChatMessageFlag | null,
+    expected: {
+      flag: ChatMessageFlag | null;
+      flagged_by: string | null;
+      requireLive: boolean;
+    },
     data: Pick<
       TablesUpdate<'chat_messages'>,
       'flag' | 'flagged_by' | 'flagged_at'
     >,
   ): Promise<ChatMessage | null> {
-    const query = this.supabase.from('chat_messages').update(data).eq('id', id);
-    const guarded =
-      expectedFlag === null
+    let query = this.supabase.from('chat_messages').update(data).eq('id', id);
+    query =
+      expected.flag === null
         ? query.is('flag', null)
-        : query.eq('flag', expectedFlag);
-    const { data: updated, error } = await guarded
+        : query.eq('flag', expected.flag);
+    query =
+      expected.flagged_by === null
+        ? query.is('flagged_by', null)
+        : query.eq('flagged_by', expected.flagged_by);
+    if (expected.requireLive) query = query.eq('is_deleted', false);
+    const { data: updated, error } = await query
       .select(CHAT_MESSAGE_COLUMNS)
       .maybeSingle();
     if (error) throw new SupabaseQueryError(error);

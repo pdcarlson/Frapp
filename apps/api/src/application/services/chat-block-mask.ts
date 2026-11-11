@@ -218,9 +218,12 @@ export function maskBlockedMessages(
  * The flag is chapter state, the same for every reader, which a block counts
  * rather than hides (`spec/behavior/chat/README.md` § What a block does and
  * does not hide), so an Important message stays Important for the blocker.
- * Who added it is the blocked member's own act, withheld the way their
- * reactions are (`20260924170000`), so the row reads "Important" with no
- * "flagged by". Rows whose flagger is not blocked pass through untouched.
+ * Who added it is the blocked member's own act, so the row reads "Important"
+ * with no "flagged by". That holds on the reads that mask, not everywhere a
+ * reaction's does (reactions are withheld at RLS, `20260924170000`): the
+ * Realtime echo and the pin, unpin and edit answers carry the raw
+ * `flagged_by`, and a client applies its own block list to the name. Rows
+ * whose flagger is not blocked pass through untouched.
  */
 function withFlaggerMasked(
   message: MaskedChatMessage,
