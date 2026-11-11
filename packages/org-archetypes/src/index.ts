@@ -92,12 +92,6 @@ export interface Archetype {
   readonly description: string;
   readonly council: string;
   readonly modules: Readonly<Record<string, boolean>>;
-  /**
-   * A label only, echoed as `role_pack` in the chapter config response. No
-   * catalog is keyed by it: the `ROLE_PACKS` table it once named had no caller
-   * and was deleted (#2435).
-   */
-  readonly rolePack: string;
   readonly recruitmentLanguage: string;
   readonly pledgeLanguage: string;
   readonly classLanguage: string;
@@ -139,7 +133,6 @@ export const ARCHETYPES = Object.freeze({
       billing: true, lines: false, networking: false, standards: false,
       serviceFirst: false,
     }),
-    rolePack: "ifc_standard",
     recruitmentLanguage: "Rush",
     pledgeLanguage: "New member",
     classLanguage: "Pledge class",
@@ -164,7 +157,6 @@ export const ARCHETYPES = Object.freeze({
       billing: true, lines: false, networking: false, standards: true,
       serviceFirst: false,
     }),
-    rolePack: "npc_standard",
     recruitmentLanguage: "Recruitment",
     pledgeLanguage: "New member",
     classLanguage: "New member class",
@@ -189,7 +181,6 @@ export const ARCHETYPES = Object.freeze({
       billing: true, lines: true, networking: false, standards: false,
       serviceFirst: false,
     }),
-    rolePack: "nphc_standard",
     recruitmentLanguage: "Intake",
     pledgeLanguage: "Aspirant",
     classLanguage: "Line",
@@ -214,7 +205,6 @@ export const ARCHETYPES = Object.freeze({
       billing: true, lines: true, networking: false, standards: false,
       serviceFirst: false,
     }),
-    rolePack: "ifc_standard",
     recruitmentLanguage: "Intake",
     pledgeLanguage: "New member",
     classLanguage: "Line",
@@ -239,7 +229,6 @@ export const ARCHETYPES = Object.freeze({
       billing: true, lines: false, networking: true, standards: false,
       serviceFirst: false,
     }),
-    rolePack: "professional",
     recruitmentLanguage: "Recruitment",
     pledgeLanguage: "Candidate",
     classLanguage: "Cohort",
@@ -264,7 +253,6 @@ export const ARCHETYPES = Object.freeze({
       billing: true, lines: false, networking: false, standards: false,
       serviceFirst: true,
     }),
-    rolePack: "service",
     recruitmentLanguage: "Rush",
     pledgeLanguage: "Pledge",
     classLanguage: "Pledge class",
@@ -289,7 +277,6 @@ export const ARCHETYPES = Object.freeze({
       billing: true, lines: false, networking: false, standards: false,
       serviceFirst: false,
     }),
-    rolePack: "honor",
     recruitmentLanguage: "Induction",
     pledgeLanguage: "Inductee",
     classLanguage: "Class",
@@ -314,7 +301,6 @@ export const ARCHETYPES = Object.freeze({
       billing: false, lines: false, networking: false, standards: false,
       serviceFirst: false,
     }),
-    rolePack: "minimal",
     recruitmentLanguage: "Rush",
     pledgeLanguage: "Founding member",
     classLanguage: "Founding class",
@@ -720,7 +706,6 @@ export function getModuleCatalogEntry(key: string): ModuleCatalogEntry {
 export interface ChapterConfigSeed {
   archetype: ArchetypeKey;
   modules: Record<string, boolean>;
-  rolePack: string;
   vocabulary: VocabularyDefaults;
   customFields: CustomFieldEntry[];
   workflows: WorkflowEntry[];
@@ -737,7 +722,6 @@ export function buildChapterConfigFromArchetype(archetypeKey: string): ChapterCo
   return {
     archetype: archetype.key,
     modules:      structuredClone({ ...archetype.modules }),
-    rolePack:     archetype.rolePack,
     vocabulary:   structuredClone(VOCABULARY_DEFAULTS[archetype.key]),
     customFields: structuredClone(CUSTOM_FIELDS_SEED as CustomFieldEntry[]),
     workflows:    structuredClone(WORKFLOWS_SEED as WorkflowEntry[]).map((w) => ({

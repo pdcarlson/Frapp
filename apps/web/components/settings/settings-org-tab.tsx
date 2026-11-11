@@ -244,9 +244,8 @@ export function SettingsOrgTab({
   function confirmArchetypeSwitch() {
     if (!pendingArchetype) return;
     const next = getArchetype(pendingArchetype);
-    // Reset modules + vocabulary to the new archetype's defaults. The
-    // `role_pack` label follows `org_archetype` server-side, but it is only a
-    // label: no role changes. Identity/branding are preserved.
+    // Reset modules + vocabulary to the new archetype's defaults. No role
+    // changes. Identity/branding are preserved.
     void onPatchConfig({
       org_archetype: next.key,
       vocabulary: { ...VOCABULARY_DEFAULTS[next.key] },

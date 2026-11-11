@@ -94,6 +94,7 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
     const payload: TablesInsert<'chat_message_reports'> = {
       chapter_id: input.chapter_id,
       message_id: input.message_id,
+      channel_id: input.channel_id,
       reporter_user_id: input.reporter_user_id,
       reported_content: input.reported_content,
       reported_sender_id: input.reported_sender_id,
@@ -154,14 +155,18 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
     chapterId: string,
     status: ChatReportStatus,
     reviewerUserId: string,
+    channelId?: string,
   ): Promise<ChatMessageReportView[]> {
-    const { data, error } = await this.supabase
+    let query = this.supabase
       .from('chat_message_reports')
       .select()
       .eq('chapter_id', chapterId)
       .eq('status', status)
-      .or(notAbout(reviewerUserId))
-      .order('created_at', { ascending: false });
+      .or(notAbout(reviewerUserId));
+    if (channelId) query = query.eq('channel_id', channelId);
+    const { data, error } = await query.order('created_at', {
+      ascending: false,
+    });
     if (error) throw new SupabaseQueryError(error);
     return (data ?? []).map(stripReportRow);
   }

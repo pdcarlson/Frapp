@@ -653,7 +653,7 @@ The officer report queue ([`../../behavior/chat/README.md`](../../behavior/chat/
 | No chapter | — | `Pick an active chapter to review its reports.` (one line) |
 | Offline | `Reports unavailable offline` | `Reconnect to review reported messages.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can review reported messages.` |
-| Permission denied | `Reported messages` | `Reviewing reported messages needs a role that can see the full directory and manage channels and pins. Ask your chapter president for access.` |
+| Permission denied | `Reported messages` | Nothing: the queue is left out for a role that can't review it (Paul, 2026-11-11: reports stay out of the way). |
 | Nothing to remove | — | `This message no longer exists, so there's nothing to remove. Mark actioned to close the report.` (hard-deleted; the row offers `Mark actioned` in place of `Remove message`) |
 | Attachments (open report) | — | `1 attachment` / `<n> attachments`, then `Kept while this report is open, even if the sender deletes the message.`, each file's name (`Unnamed file` for none) and size, and `Show attachments` to load them (#2481). Loading: `Loading attachments...`. Failed: `Couldn't load the attachments.` with `Retry`. Fewer loaded than the report holds: `1 attachment couldn't be loaded.` / `<n> attachments couldn't be loaded.` |
 | Attachments (resolved report) | — | `1 attachment` / `<n> attachments`, then `Attachments are kept only while a report is open.` and the file names, with nothing to open |

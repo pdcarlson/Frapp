@@ -5,7 +5,9 @@ import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { AUDIT_LOG_SETTINGS_NOTE } from "@repo/chat-core/audit-log-copy";
 import { useCallback, useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { Loader2, Pencil, PinOff, Plus, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, Loader2, Pencil, PinOff, Plus, Trash2 } from "lucide-react";
 import {
   useCategories,
   useChannels,
@@ -65,7 +67,6 @@ import { useDeleteChannelFlow } from "@/components/chat/use-delete-channel-flow"
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
-import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { ChatReportsCard } from "./chat-reports-card";
 import {
   PermissionCheckboxGrid,
@@ -165,10 +166,18 @@ function useToggleSet(
 }
 
 /**
- * `initialChannelId` is `?channel=<id>`: the channel start's Edit channel
- * shortcut (`components/chat/channel-start.tsx`) and the chat rail's
- * right-click Edit channel (`chat-shell.tsx`) open this page with that
- * channel selected and its description field focused.
+ * Two pages on one route, the way Discord splits channel settings from server
+ * settings (Paul, 2026-11-11: "scope the chat admin panel to whatever channel
+ * you're editing"):
+ *
+ * - **`?channel=<id>`: that channel's settings, and nothing else.** The
+ *   channel start's Edit channel shortcut (`components/chat/channel-start.tsx`)
+ *   and the chat rail's right-click Edit channel (`chat-shell.tsx`) open it.
+ *   Its settings first, then its pins, then the reports filed in it. No list
+ *   of every channel: the chat rail beside the page already is one.
+ * - **No channel: the chapter's chat settings.** New channel, a picker to open
+ *   one channel's settings, categories, the chapter's chat background, and the
+ *   whole report queue last (the only place a report about a DM shows).
  */
 export function ChatAdminPage({
   initialChannelId = null,
@@ -198,24 +207,35 @@ export function ChatAdminPage({
         )}
       >
         {/*
-          The report queue first, and outside `ChatAdminBody`: the new-report
-          notification deep-links here (`chat_reports` → `/chat-admin`), so it
-          is what an officer arrives to act on, and a failed channels read —
-          which replaces the whole body with an error — must not take the
-          queue down with it.
+          Keyed by channel, so opening another channel's settings starts from
+          that channel's row rather than the last one's drafts.
         */}
-        <div className="space-y-6">
-          <ChatReportsCard />
-          <ChatAdminBody initialChannelId={initialChannelId} />
-        </div>
+        <ChatAdminBody
+          key={initialChannelId ?? "chapter"}
+          initialChannelId={initialChannelId}
+        />
       </Can>
       {/*
         Outside the channels:manage gate: the chapter default is set by whoever
         edits the chapter profile (#3973), who may not manage channels. The
-        card carries its own CHAPTER_PROFILE_PERMISSIONS gate.
+        card carries its own CHAPTER_PROFILE_PERMISSIONS gate. Chapter-wide, so
+        not on one channel's page.
       */}
-      <div className="mt-6">
-        <ChatBackgroundDefaultCard />
+      {initialChannelId ? null : (
+        <div className="mt-8">
+          <ChatBackgroundDefaultCard />
+        </div>
+      )}
+      {/*
+        The report queue last, and outside `ChatAdminBody`, so a failed
+        channels read (which replaces the body with an error) does not take it
+        down. The card carries its own gate (`CHAT_REPORT_QUEUE_PERMISSIONS`,
+        which includes channels:manage) and renders nothing for an officer it
+        refuses. The new-report notification links to its anchor
+        (`/chat-admin#reported-messages`).
+      */}
+      <div className="mt-10">
+        <ChatReportsCard channelId={initialChannelId ?? undefined} />
       </div>
     </>
   );
@@ -237,6 +257,9 @@ function ChatAdminBody({
   const createChannel = useCreateChannel();
   const updateChannel = useUpdateChannel();
   const deleteChannelFlow = useDeleteChannelFlow(confirm);
+  const router = useRouter();
+  /** `?channel=` was given: this page is that channel's settings alone. */
+  const channelMode = initialChannelId !== null;
   const createCategory = useCreateCategory();
   const updateCategory = useUpdateCategory();
   const deleteCategory = useDeleteCategory();
@@ -264,10 +287,6 @@ function ChatAdminBody({
       [catalogQuery.data],
     ),
   );
-  const categoryName = useMemo(() => {
-    const byId = new Map(categories.map((c) => [c.id, c.name]));
-    return (id: string | null) => (id ? (byId.get(id) ?? "Unknown") : null);
-  }, [categories]);
 
   // ── Category drafts ─────────────────────────────────────────────────────
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -475,6 +494,8 @@ function ChatAdminBody({
   async function handleDeleteChannel(channel: AdminChannel) {
     await deleteChannelFlow(channel, () => {
       if (selectedChannelId === channel.id) setSelectedChannelId(null);
+      // The page was this channel's; back to the chapter's chat settings.
+      if (channelMode) router.replace("/chat-admin");
     });
   }
 
@@ -587,7 +608,7 @@ function ChatAdminBody({
   // this flush route they would redraw the card the route deleted. `sole`
   // because each is the only state the channel structure has, and it stands
   // where both of its sections would be: its title is that region's heading
-  // and its loading line is that region's announcement. The report queue above
+  // and its loading line is that region's announcement. The report queue below
   // keeps its own, separately.
   if (isOffline && anyReadUncached(channelsQuery, categoriesQuery)) {
     return (
@@ -606,7 +627,7 @@ function ChatAdminBody({
   // keeps the rows TanStack already holds, and an officer part-way through an
   // edit should not lose the form behind an error that blames their access
   // over a read that will likely succeed next time. Same line as the report
-  // queue above draws.
+  // queue below draws.
   if (
     (channelsQuery.isError && channelsQuery.data === undefined) ||
     (categoriesQuery.isError && categoriesQuery.data === undefined)
@@ -642,9 +663,7 @@ function ChatAdminBody({
     (catalogQuery.isPending && catalogQuery.fetchStatus === "paused");
 
   return (
-    // A container (#4033): beside chat (#3779) the page is narrow while the
-    // window is wide, so the list and edit pane sit side by side by its width.
-    <div className="@container space-y-8">
+    <div className="space-y-8">
       {confirmDialog}
       {/*
         The channels and categories below are the last good read when a
@@ -655,117 +674,54 @@ function ChatAdminBody({
         message="Couldn't refresh the channels. These are the last ones that loaded."
         onRetry={retryQueries}
       />
-      {/*
-        Flush, not carded (`1f` pin 2: "one toolbar row, no wrapper card, no
-        description paragraph"). Three `<Card>`s sat here — Channels,
-        Categories and the edit pane. The two that were sections keep their
-        heading as the section label the other flush routes use; the edit
-        pane, a column inside Channels, keeps a 16/700 heading naming the
-        channel it edits, one level below. Also gone:
-        the paragraph that opened the body, "Create, edit, and delete channels;
-        organize them into categories; and manage pinned messages", which
-        narrated the page to an officer who had just navigated to it.
-
-        Channels lead because they carry the route's primary action, New
-        channel, on their own toolbar row; the categories they file into
-        follow.
-      */}
-      <section aria-labelledby="ca-channels-label" className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-          <SectionLabel
-            id="ca-channels-label"
-            count={
-              channels.length > 0
-                ? `${channels.length} channel${channels.length === 1 ? "" : "s"}`
-                : null
-            }
-          >
-            Channels
-          </SectionLabel>
-          <Sheet open={createDialogOpen} onOpenChange={handleCreateOpenChange}>
-            <SheetTrigger asChild>
-              <Button className="gap-2">
-                <Plus className="h-4 w-4" />
-                New channel
-              </Button>
-            </SheetTrigger>
-            {/*
-              A panel, not a dialog (`components.md` § Surface size): a
-              role-gated channel carries the whole permission grid, so this
-              scrolled inside a 512px dialog capped at 80vh.
-            */}
-            <PanelContent>
-              <PanelHeader>Create a channel</PanelHeader>
-              <PanelBody
-                as="form"
-                id="channel-create-form"
-                onSubmit={handleCreateChannel}
-              >
-                {/*
-                  Kept, because it is the one place the three types are told
-                  apart, and the last place to choose one: the update route
-                  takes no `type`, so the edit pane can only show it. It used
-                  to say private channels are "visible to every member", the
-                  opposite of what one is (`spec/behavior/chat/README.md` §
-                  Channels): only the ids in `member_ids` read it, and the
-                  create route seeds that with its creator alone.
-                */}
-                <SheetDescription>
-                  Public channels are open to every member. A private channel is
-                  readable only by its members, and you are its first. A
-                  role-gated channel is readable by members holding at least one
-                  of the selected permissions. A channel&apos;s type can&apos;t
-                  be changed after it&apos;s created.
-                </SheetDescription>
-                <div className="grid gap-1">
-                  <Label htmlFor="ca-create-name">Name</Label>
-                  <Input
-                    id="ca-create-name"
-                    value={createName}
-                    onChange={(event) => setCreateName(event.target.value)}
-                    placeholder="announcements"
-                    required
-                  />
+      {channelMode ? (
+        <>
+          {selectedChannel ? (
+            // Its own container: the form's fields count the page's width.
+            <div className="@container">
+              <section aria-labelledby="ca-edit-label" className="space-y-4">
+                <div className="flex min-h-9 min-w-0 flex-wrap items-center gap-2">
+                  <h2
+                    id="ca-edit-label"
+                    className="min-w-0 truncate text-lg font-bold"
+                  >
+                    #{selectedChannel.name}
+                  </h2>
+                  <Badge variant="outline">
+                    {CHANNEL_TYPE_LABEL[selectedChannel.type]}
+                  </Badge>
+                  {selectedChannel.is_default ? (
+                    <Badge variant="secondary">Default</Badge>
+                  ) : null}
+                  <Button
+                    asChild
+                    variant="ghost"
+                    size="sm"
+                    className="ml-auto gap-1.5 text-muted-foreground"
+                  >
+                    <Link href="/chat-admin">
+                      <ArrowLeft className="h-4 w-4" />
+                      All chat settings
+                    </Link>
+                  </Button>
                 </div>
-                <div className="grid gap-1">
-                  <Label htmlFor="ca-create-description">Description</Label>
-                  <Textarea
-                    id="ca-create-description"
-                    value={createDescription}
-                    onChange={(event) =>
-                      setCreateDescription(event.target.value)
-                    }
-                    rows={2}
-                  />
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-3 @md:grid-cols-2">
                   <div className="grid gap-1">
-                    <Label htmlFor="ca-create-type">Type</Label>
-                    <Select
-                      value={createType}
-                      onValueChange={(value) =>
-                        setCreateType(value as (typeof CREATABLE_TYPES)[number])
-                      }
-                    >
-                      <SelectTrigger id="ca-create-type">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {CREATABLE_TYPES.map((type) => (
-                          <SelectItem key={type} value={type}>
-                            {CHANNEL_TYPE_LABEL[type]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Label htmlFor="ca-name">Name</Label>
+                    <Input
+                      id="ca-name"
+                      value={nameDraft}
+                      disabled={selectedChannel.is_audit_log === true}
+                      onChange={(event) => setNameDraft(event.target.value)}
+                    />
                   </div>
                   <div className="grid gap-1">
-                    <Label htmlFor="ca-create-category">Category</Label>
+                    <Label htmlFor="ca-category">Category</Label>
                     <Select
-                      value={createCategoryId}
-                      onValueChange={setCreateCategoryId}
+                      value={categoryDraft}
+                      onValueChange={setCategoryDraft}
                     >
-                      <SelectTrigger id="ca-create-category">
+                      <SelectTrigger id="ca-category">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -781,322 +737,174 @@ function ChatAdminBody({
                     </Select>
                   </div>
                 </div>
-                <label className="flex items-center gap-3">
-                  <Switch
-                    checked={createReadOnly}
-                    onCheckedChange={setCreateReadOnly}
+                <div className="grid gap-1">
+                  <Label htmlFor="ca-description">Description</Label>
+                  <Textarea
+                    autoFocus={focusDescription}
+                    id="ca-description"
+                    value={descriptionDraft}
+                    onChange={(event) =>
+                      setDescriptionDraft(event.target.value)
+                    }
+                    rows={2}
                   />
-                  <span className="text-sm">
-                    Read-only (only officers with permission can post)
-                  </span>
-                </label>
-                <label className="flex items-center gap-3">
-                  <Switch
-                    checked={createAlwaysFormal}
-                    onCheckedChange={setCreateAlwaysFormal}
-                  />
-                  <span className="text-sm">
-                    {ALWAYS_FORMAL_LABEL_WITH_HINT}
-                  </span>
-                </label>
-                {createType === "ROLE_GATED" ? (
+                </div>
+                {selectedChannel.is_audit_log ? (
+                  <p className="text-xs text-muted-foreground">
+                    {AUDIT_LOG_SETTINGS_NOTE}
+                  </p>
+                ) : (
+                  <label className="flex items-center gap-3">
+                    <Switch
+                      checked={readOnlyDraft}
+                      onCheckedChange={setReadOnlyDraft}
+                    />
+                    <span className="text-sm">
+                      Read-only (only officers with permission can post)
+                    </span>
+                  </label>
+                )}
+                <div className="grid gap-1">
+                  <label className="flex items-center gap-3">
+                    <Switch
+                      checked={isDefaultDraft}
+                      onCheckedChange={setIsDefaultDraft}
+                    />
+                    <span className="text-sm">Chapter default channel</span>
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    Chat opens here when a member&apos;s device has no last
+                    channel. Turning this on moves it off any other channel.
+                    Members who can&apos;t see this channel open #general.
+                  </p>
+                </div>
+                <div className="grid gap-1">
+                  <label className="flex items-center gap-3">
+                    <Switch
+                      checked={activityExcludedDraft}
+                      onCheckedChange={setActivityExcludedDraft}
+                    />
+                    <span className="text-sm">Leave out of Activity</span>
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    Sign-up links posted here (forms, sheets, booking pages)
+                    won&apos;t show on anyone&apos;s Activity page. For channels
+                    like #advertising whose links aren&apos;t chapter business.
+                  </p>
+                </div>
+                <div className="grid gap-1">
+                  <Label htmlFor="ca-default-level">
+                    Default notifications
+                  </Label>
+                  <Select
+                    value={defaultLevelDraft}
+                    onValueChange={setDefaultLevelDraft}
+                  >
+                    <SelectTrigger id="ca-default-level">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={BUILT_IN_DEFAULT_LEVEL}>
+                        {/* Read from the drafts, so renaming a channel to or
+                              from #general shows the default it would get. */}
+                        Standard (
+                        {
+                          DEFAULT_LEVEL_LABELS[
+                            builtInChannelDefault({
+                              name: nameDraft.trim(),
+                              type: selectedChannel.type,
+                              is_read_only: readOnlyDraft,
+                            })
+                          ]
+                        }
+                        )
+                      </SelectItem>
+                      {(
+                        Object.keys(
+                          DEFAULT_LEVEL_LABELS,
+                        ) as ChatNotificationLevel[]
+                      ).map((level) => (
+                        <SelectItem key={level} value={level}>
+                          {DEFAULT_LEVEL_LABELS[level]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    What members get until they pick their own level for this
+                    channel. Their own choice always wins, and an @mention still
+                    reaches a member who muted it.
+                  </p>
+                </div>
+                {selectedChannel.type === "ROLE_GATED" ? (
                   <div>
                     <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                      Required permissions ({createPermissions.size})
+                      Required permissions ({permissionsDraft.size})
                     </Label>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      A member needs at least one of these to read or post.
-                    </p>
                     <PermissionCheckboxGrid
-                      inPanel
                       catalog={catalog}
                       catalogLoading={catalogLoading}
                       catalogUnavailable={catalogUnavailable}
-                      selected={createPermissions}
+                      selected={permissionsDraft}
                       holders={holders}
-                      onToggle={toggleCreatePermission}
+                      onToggle={togglePermission}
                     />
                   </div>
                 ) : null}
-              </PanelBody>
-              <PanelFooter>
-                <Button
-                  variant="secondary"
-                  // Through the same handler as the X and Escape: Radix fires no
-                  // `onOpenChange` for a close made by setting state, so a bare
-                  // `setCreateDialogOpen(false)` would keep the draft.
-                  onClick={() => handleCreateOpenChange(false)}
-                  disabled={createChannel.isPending}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  form="channel-create-form"
-                  type="submit"
-                  disabled={
-                    createChannel.isPending ||
-                    !createName.trim() ||
-                    (createType === "ROLE_GATED" &&
-                      createPermissions.size === 0)
-                  }
-                >
-                  {createChannel.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : null}
-                  Create channel
-                </Button>
-              </PanelFooter>
-            </PanelContent>
-          </Sheet>
-        </div>
 
-        {channels.length === 0 ? (
-          <InlineNote>No channels yet. Create the first one above.</InlineNote>
-        ) : (
-          <div className="grid gap-6 @3xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
-            {/*
-              Each row is itself a control (it selects the channel), so it
-              takes the Directory's row height: 36 for a pointer, 44 for a
-              finger, set by the button and with no padding around it. The
-              delete beside it is the trailing 32px control.
-            */}
-            <ul className={denseListClassName}>
-              {channels.map((channel) => (
-                <li key={channel.id} className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    className={cn(
-                      "flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left transition-colors pointer-coarse:min-h-11",
-                      FOCUS_RING_OFFSET,
-                      selectedChannelId === channel.id
-                        ? "bg-accent-subtle-hover text-accent-text"
-                        : "hover:bg-card-hover",
-                    )}
-                    aria-pressed={selectedChannelId === channel.id}
-                    onClick={() => selectChannel(channel)}
-                  >
-                    <span className="truncate text-sm font-medium">
-                      #{channel.name}
-                    </span>
-                    {/* The name truncates; the badges don't wrap (375px). */}
-                    <Badge variant="outline" className="shrink-0">
-                      {CHANNEL_TYPE_LABEL[channel.type]}
-                    </Badge>
-                    {channel.is_default ? (
-                      <Badge variant="secondary" className="shrink-0">
-                        Default
-                      </Badge>
-                    ) : null}
-                    {channel.is_read_only ? (
-                      <Badge variant="secondary" className="shrink-0">
-                        Read-only
-                      </Badge>
-                    ) : null}
-                    {categoryName(channel.category_id) ? (
-                      <span className="ml-auto truncate text-xs text-muted-foreground">
-                        {categoryName(channel.category_id)}
-                      </span>
-                    ) : null}
-                  </button>
+                <div className="flex flex-wrap items-center justify-end gap-2">
                   {/* The server refuses deleting the audit log (#3909). */}
-                  {channel.is_audit_log ? null : (
+                  {selectedChannel.is_audit_log ? null : (
                     <Button
                       variant="ghost"
-                      size="icon"
-                      className={compactControlClassName}
-                      aria-label={`Delete #${channel.name}`}
-                      onClick={() => void handleDeleteChannel(channel)}
+                      className="mr-auto gap-2 text-destructive hover:text-destructive"
+                      onClick={() => void handleDeleteChannel(selectedChannel)}
                     >
                       <Trash2 className="h-4 w-4" />
+                      Delete channel
                     </Button>
                   )}
-                </li>
-              ))}
-            </ul>
+                  <Button
+                    variant="secondary"
+                    onClick={() => selectChannel(selectedChannel)}
+                    disabled={updateChannel.isPending}
+                  >
+                    Revert changes
+                  </Button>
+                  <Button
+                    onClick={() => void handleSaveChannel()}
+                    disabled={
+                      updateChannel.isPending ||
+                      !nameDraft.trim() ||
+                      (selectedChannel.type === "ROLE_GATED" &&
+                        permissionsDraft.size === 0)
+                    }
+                  >
+                    {updateChannel.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : null}
+                    Save channel
+                  </Button>
+                </div>
 
-            {/*
-              The edit pane is a column of the same section, divided from the
-              list by a hairline rather than lifted onto a card. Its heading
-              carries the channel's type as a badge, and the form has no type
-              field. That replaces a description that said "Type is set at
-              creation and can't be changed here"; the create panel, where
-              the type is chosen, now says it is final.
-            */}
-            {/* Its own container too: the form's fields count the pane's width. */}
-            <div className="@container @3xl:border-l @3xl:border-border @3xl:pl-6">
-              {selectedChannel ? (
-                <section aria-labelledby="ca-edit-label" className="space-y-4">
-                  <div className="flex min-h-9 min-w-0 flex-wrap items-center gap-2">
-                    <h3
-                      id="ca-edit-label"
-                      className="min-w-0 truncate text-base font-bold"
-                    >
-                      Edit #{selectedChannel.name}
-                    </h3>
-                    <Badge variant="outline">
-                      {CHANNEL_TYPE_LABEL[selectedChannel.type]}
-                    </Badge>
-                  </div>
-                  <div className="grid gap-3 @md:grid-cols-2">
-                    <div className="grid gap-1">
-                      <Label htmlFor="ca-name">Name</Label>
-                      <Input
-                        id="ca-name"
-                        value={nameDraft}
-                        disabled={selectedChannel.is_audit_log === true}
-                        onChange={(event) => setNameDraft(event.target.value)}
-                      />
-                    </div>
-                    <div className="grid gap-1">
-                      <Label htmlFor="ca-category">Category</Label>
-                      <Select
-                        value={categoryDraft}
-                        onValueChange={setCategoryDraft}
-                      >
-                        <SelectTrigger id="ca-category">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={NO_CATEGORY}>
-                            Uncategorized
-                          </SelectItem>
-                          {categories.map((category) => (
-                            <SelectItem key={category.id} value={category.id}>
-                              {category.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="grid gap-1">
-                    <Label htmlFor="ca-description">Description</Label>
-                    <Textarea
-                      autoFocus={focusDescription}
-                      id="ca-description"
-                      value={descriptionDraft}
-                      onChange={(event) =>
-                        setDescriptionDraft(event.target.value)
-                      }
-                      rows={2}
-                    />
-                  </div>
-                  {selectedChannel.is_audit_log ? (
-                    <p className="text-xs text-muted-foreground">
-                      {AUDIT_LOG_SETTINGS_NOTE}
-                    </p>
-                  ) : (
-                    <label className="flex items-center gap-3">
-                      <Switch
-                        checked={readOnlyDraft}
-                        onCheckedChange={setReadOnlyDraft}
-                      />
-                      <span className="text-sm">
-                        Read-only (only officers with permission can post)
-                      </span>
-                    </label>
-                  )}
-                  <div className="grid gap-1">
-                    <label className="flex items-center gap-3">
-                      <Switch
-                        checked={isDefaultDraft}
-                        onCheckedChange={setIsDefaultDraft}
-                      />
-                      <span className="text-sm">Chapter default channel</span>
-                    </label>
-                    <p className="text-xs text-muted-foreground">
-                      Chat opens here when a member&apos;s device has no last
-                      channel. Turning this on moves it off any other channel.
-                      Members who can&apos;t see this channel open #general.
-                    </p>
-                  </div>
-                  <div className="grid gap-1">
-                    <label className="flex items-center gap-3">
-                      <Switch
-                        checked={activityExcludedDraft}
-                        onCheckedChange={setActivityExcludedDraft}
-                      />
-                      <span className="text-sm">Leave out of Activity</span>
-                    </label>
-                    <p className="text-xs text-muted-foreground">
-                      Sign-up links posted here (forms, sheets, booking pages)
-                      won&apos;t show on anyone&apos;s Activity page. For
-                      channels like #advertising whose links aren&apos;t chapter
-                      business.
-                    </p>
-                  </div>
-                  <div className="grid gap-1">
-                    <Label htmlFor="ca-default-level">
-                      Default notifications
-                    </Label>
-                    <Select
-                      value={defaultLevelDraft}
-                      onValueChange={setDefaultLevelDraft}
-                    >
-                      <SelectTrigger id="ca-default-level">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={BUILT_IN_DEFAULT_LEVEL}>
-                          {/* Read from the drafts, so renaming a channel to or
-                              from #general shows the default it would get. */}
-                          Standard (
-                          {
-                            DEFAULT_LEVEL_LABELS[
-                              builtInChannelDefault({
-                                name: nameDraft.trim(),
-                                type: selectedChannel.type,
-                                is_read_only: readOnlyDraft,
-                              })
-                            ]
-                          }
-                          )
-                        </SelectItem>
-                        {(
-                          Object.keys(
-                            DEFAULT_LEVEL_LABELS,
-                          ) as ChatNotificationLevel[]
-                        ).map((level) => (
-                          <SelectItem key={level} value={level}>
-                            {DEFAULT_LEVEL_LABELS[level]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
-                      What members get until they pick their own level for this
-                      channel. Their own choice always wins, and an @mention
-                      still reaches a member who muted it.
-                    </p>
-                  </div>
-                  {selectedChannel.type === "ROLE_GATED" ? (
-                    <div>
-                      <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                        Required permissions ({permissionsDraft.size})
-                      </Label>
-                      <PermissionCheckboxGrid
-                        catalog={catalog}
-                        catalogLoading={catalogLoading}
-                        catalogUnavailable={catalogUnavailable}
-                        selected={permissionsDraft}
-                        holders={holders}
-                        onToggle={togglePermission}
-                      />
-                    </div>
-                  ) : null}
-
-                  <div className="space-y-2 border-t border-border pt-4">
-                    <h4 className={`${EYEBROW} text-muted-foreground`}>
-                      Pinned messages
-                      {/* A count only once there is a list to count. */}
-                      {pinsQuery.data !== undefined ? ` (${pins.length})` : ""}
-                    </h4>
-                    <StaleReadNotice
-                      stale={pinsQuery.isError && pinsQuery.data !== undefined}
-                      message="Couldn't refresh the pins. These are the last ones that loaded."
-                      onRetry={() => void pinsQuery.refetch()}
-                    />
-                    {/*
+                <section
+                  aria-labelledby="ca-pins-label"
+                  className="space-y-2 border-t border-border pt-6"
+                >
+                  <h3
+                    id="ca-pins-label"
+                    className={`${EYEBROW} text-muted-foreground`}
+                  >
+                    Pinned messages
+                    {/* A count only once there is a list to count. */}
+                    {pinsQuery.data !== undefined ? ` (${pins.length})` : ""}
+                  </h3>
+                  <StaleReadNotice
+                    stale={pinsQuery.isError && pinsQuery.data !== undefined}
+                    message="Couldn't refresh the pins. These are the last ones that loaded."
+                    onRetry={() => void pinsQuery.refetch()}
+                  />
+                  {/*
                       A failed or paused read is not an empty list. Both used
                       to fall through to "Nothing pinned", because `pins` is
                       `[]` whenever there is no data, so an officer offline or
@@ -1108,206 +916,428 @@ function ChatAdminBody({
                       with the API unreachable or a page restored offline, it
                       fails, which would otherwise read as a load error.
                     */}
-                    {readIsOffline(isOffline, pinsQuery) ? (
-                      <NestedOffline
-                        title="Pins unavailable offline"
-                        description="Reconnect to load this channel's pins."
-                        onRetry={() => void pinsQuery.refetch()}
-                      />
-                    ) : pinsQuery.isLoading ? (
-                      <p className="text-xs text-muted-foreground">
-                        Loading pins...
-                      </p>
-                    ) : pinsQuery.isError && pinsQuery.data === undefined ? (
-                      <NestedError
-                        title="Couldn't load pins"
-                        description={describeLoadFailure(pinsQuery.error)}
-                        onRetry={() => void pinsQuery.refetch()}
-                      />
-                    ) : pins.length === 0 ? (
-                      <InlineNote>
-                        Nothing pinned. Pin a message from the channel.
-                      </InlineNote>
-                    ) : (
-                      <ul
-                        className={cn(
-                          denseListClassName,
-                          "max-h-56 overflow-y-auto",
-                        )}
-                      >
-                        {pins.map((message) => (
-                          <li
-                            key={message.id}
-                            className="flex items-start justify-between gap-2 py-2"
+                  {readIsOffline(isOffline, pinsQuery) ? (
+                    <NestedOffline
+                      title="Pins unavailable offline"
+                      description="Reconnect to load this channel's pins."
+                      onRetry={() => void pinsQuery.refetch()}
+                    />
+                  ) : pinsQuery.isLoading ? (
+                    <p className="text-xs text-muted-foreground">
+                      Loading pins...
+                    </p>
+                  ) : pinsQuery.isError && pinsQuery.data === undefined ? (
+                    <NestedError
+                      title="Couldn't load pins"
+                      description={describeLoadFailure(pinsQuery.error)}
+                      onRetry={() => void pinsQuery.refetch()}
+                    />
+                  ) : pins.length === 0 ? (
+                    <InlineNote>
+                      Nothing pinned. Pin a message from the channel.
+                    </InlineNote>
+                  ) : (
+                    <ul
+                      className={cn(
+                        denseListClassName,
+                        "max-h-56 overflow-y-auto",
+                      )}
+                    >
+                      {pins.map((message) => (
+                        <li
+                          key={message.id}
+                          className="flex items-start justify-between gap-2 py-2"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-foreground">
+                              {resolveAuthorLabel(message, nameFor, null)}
+                              <span className="ml-2 font-normal text-muted-foreground">
+                                {formatClock(
+                                  message.pinned_at ?? message.created_at,
+                                )}
+                              </span>
+                            </p>
+                            <p className="line-clamp-2 text-xs text-muted-foreground">
+                              {message.content}
+                            </p>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className={compactControlClassName}
+                            aria-label="Unpin message"
+                            onClick={() => void handleUnpin(message.id)}
+                            disabled={unpinMessage.isPending}
                           >
-                            <div className="min-w-0">
-                              <p className="text-xs font-semibold text-foreground">
-                                {resolveAuthorLabel(message, nameFor, null)}
-                                <span className="ml-2 font-normal text-muted-foreground">
-                                  {formatClock(
-                                    message.pinned_at ?? message.created_at,
-                                  )}
-                                </span>
-                              </p>
-                              <p className="line-clamp-2 text-xs text-muted-foreground">
-                                {message.content}
-                              </p>
-                            </div>
+                            <PinOff className="h-4 w-4" />
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              </section>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <InlineNote>
+                This channel isn&apos;t here anymore. It may have been deleted.
+              </InlineNote>
+              <Button asChild variant="secondary" size="sm" className="gap-1.5">
+                <Link href="/chat-admin">
+                  <ArrowLeft className="h-4 w-4" />
+                  All chat settings
+                </Link>
+              </Button>
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          {/*
+        Flush, not carded (`1f` pin 2: "one toolbar row, no wrapper card, no
+        description paragraph"). The chapter's page lists no channels: the
+        chat rail beside it already does, and right-click > Edit channel there
+        opens one channel's own page. The picker is the way in from Settings,
+        where the rail is not beside it.
+      */}
+          <section aria-labelledby="ca-channels-label" className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+              <SectionLabel
+                id="ca-channels-label"
+                count={
+                  channels.length > 0
+                    ? `${channels.length} channel${channels.length === 1 ? "" : "s"}`
+                    : null
+                }
+              >
+                Channels
+              </SectionLabel>
+              <div className="flex flex-wrap items-center gap-2">
+                {channels.length > 0 ? (
+                  <Select
+                    value=""
+                    onValueChange={(id) =>
+                      router.push(
+                        `/chat-admin?channel=${encodeURIComponent(id)}`,
+                      )
+                    }
+                  >
+                    <SelectTrigger
+                      aria-label="Edit a channel"
+                      className="w-56 max-w-full"
+                    >
+                      <SelectValue placeholder="Edit a channel" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {channels.map((channel) => (
+                        <SelectItem key={channel.id} value={channel.id}>
+                          #{channel.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : null}
+                <Sheet
+                  open={createDialogOpen}
+                  onOpenChange={handleCreateOpenChange}
+                >
+                  <SheetTrigger asChild>
+                    <Button className="gap-2">
+                      <Plus className="h-4 w-4" />
+                      New channel
+                    </Button>
+                  </SheetTrigger>
+                  {/*
+              A panel, not a dialog (`components.md` § Surface size): a
+              role-gated channel carries the whole permission grid, so this
+              scrolled inside a 512px dialog capped at 80vh.
+            */}
+                  <PanelContent>
+                    <PanelHeader>Create a channel</PanelHeader>
+                    <PanelBody
+                      as="form"
+                      id="channel-create-form"
+                      onSubmit={handleCreateChannel}
+                    >
+                      {/*
+                  Kept, because it is the one place the three types are told
+                  apart, and the last place to choose one: the update route
+                  takes no `type`, so the edit pane can only show it. It used
+                  to say private channels are "visible to every member", the
+                  opposite of what one is (`spec/behavior/chat/README.md` §
+                  Channels): only the ids in `member_ids` read it, and the
+                  create route seeds that with its creator alone.
+                */}
+                      <SheetDescription>
+                        Public channels are open to every member. A private
+                        channel is readable only by its members, and you are its
+                        first. A role-gated channel is readable by members
+                        holding at least one of the selected permissions. A
+                        channel&apos;s type can&apos;t be changed after
+                        it&apos;s created.
+                      </SheetDescription>
+                      <div className="grid gap-1">
+                        <Label htmlFor="ca-create-name">Name</Label>
+                        <Input
+                          id="ca-create-name"
+                          value={createName}
+                          onChange={(event) =>
+                            setCreateName(event.target.value)
+                          }
+                          placeholder="announcements"
+                          required
+                        />
+                      </div>
+                      <div className="grid gap-1">
+                        <Label htmlFor="ca-create-description">
+                          Description
+                        </Label>
+                        <Textarea
+                          id="ca-create-description"
+                          value={createDescription}
+                          onChange={(event) =>
+                            setCreateDescription(event.target.value)
+                          }
+                          rows={2}
+                        />
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="grid gap-1">
+                          <Label htmlFor="ca-create-type">Type</Label>
+                          <Select
+                            value={createType}
+                            onValueChange={(value) =>
+                              setCreateType(
+                                value as (typeof CREATABLE_TYPES)[number],
+                              )
+                            }
+                          >
+                            <SelectTrigger id="ca-create-type">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {CREATABLE_TYPES.map((type) => (
+                                <SelectItem key={type} value={type}>
+                                  {CHANNEL_TYPE_LABEL[type]}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="grid gap-1">
+                          <Label htmlFor="ca-create-category">Category</Label>
+                          <Select
+                            value={createCategoryId}
+                            onValueChange={setCreateCategoryId}
+                          >
+                            <SelectTrigger id="ca-create-category">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={NO_CATEGORY}>
+                                Uncategorized
+                              </SelectItem>
+                              {categories.map((category) => (
+                                <SelectItem
+                                  key={category.id}
+                                  value={category.id}
+                                >
+                                  {category.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <label className="flex items-center gap-3">
+                        <Switch
+                          checked={createReadOnly}
+                          onCheckedChange={setCreateReadOnly}
+                        />
+                        <span className="text-sm">
+                          Read-only (only officers with permission can post)
+                        </span>
+                      </label>
+                      <label className="flex items-center gap-3">
+                        <Switch
+                          checked={createAlwaysFormal}
+                          onCheckedChange={setCreateAlwaysFormal}
+                        />
+                        <span className="text-sm">
+                          {ALWAYS_FORMAL_LABEL_WITH_HINT}
+                        </span>
+                      </label>
+                      {createType === "ROLE_GATED" ? (
+                        <div>
+                          <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+                            Required permissions ({createPermissions.size})
+                          </Label>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            A member needs at least one of these to read or
+                            post.
+                          </p>
+                          <PermissionCheckboxGrid
+                            inPanel
+                            catalog={catalog}
+                            catalogLoading={catalogLoading}
+                            catalogUnavailable={catalogUnavailable}
+                            selected={createPermissions}
+                            holders={holders}
+                            onToggle={toggleCreatePermission}
+                          />
+                        </div>
+                      ) : null}
+                    </PanelBody>
+                    <PanelFooter>
+                      <Button
+                        variant="secondary"
+                        // Through the same handler as the X and Escape: Radix fires no
+                        // `onOpenChange` for a close made by setting state, so a bare
+                        // `setCreateDialogOpen(false)` would keep the draft.
+                        onClick={() => handleCreateOpenChange(false)}
+                        disabled={createChannel.isPending}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        form="channel-create-form"
+                        type="submit"
+                        disabled={
+                          createChannel.isPending ||
+                          !createName.trim() ||
+                          (createType === "ROLE_GATED" &&
+                            createPermissions.size === 0)
+                        }
+                      >
+                        {createChannel.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : null}
+                        Create channel
+                      </Button>
+                    </PanelFooter>
+                  </PanelContent>
+                </Sheet>
+              </div>
+            </div>
+            {channels.length === 0 ? (
+              <InlineNote>
+                No channels yet. Create the first one above.
+              </InlineNote>
+            ) : null}
+          </section>
+
+          <section aria-labelledby="ca-categories-label" className="space-y-3">
+            <SectionLabel
+              id="ca-categories-label"
+              count={
+                categories.length > 0
+                  ? `${categories.length} categor${categories.length === 1 ? "y" : "ies"}`
+                  : null
+              }
+            >
+              Categories
+            </SectionLabel>
+            {categories.length === 0 ? (
+              <InlineNote>
+                No categories yet. Channels without one show as uncategorized.
+              </InlineNote>
+            ) : (
+              <ul className={denseListClassName}>
+                {[...categories]
+                  .sort((a, b) => a.display_order - b.display_order)
+                  .map((category) => (
+                    <li
+                      key={category.id}
+                      className="flex min-h-11 items-center justify-between gap-2"
+                    >
+                      {editingCategoryId === category.id ? (
+                        <>
+                          <Input
+                            value={categoryNameDraft}
+                            onChange={(event) =>
+                              setCategoryNameDraft(event.target.value)
+                            }
+                            className="h-8"
+                            autoFocus
+                          />
+                          <div className="flex gap-1">
+                            <Button
+                              size="sm"
+                              onClick={() => void handleSaveCategory(category)}
+                              disabled={updateCategory.isPending}
+                            >
+                              Save
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => setEditingCategoryId(null)}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <span className="min-w-0 truncate text-sm font-medium">
+                            {category.name}
+                          </span>
+                          <div className="flex shrink-0 gap-1">
                             <Button
                               variant="ghost"
                               size="icon"
                               className={compactControlClassName}
-                              aria-label="Unpin message"
-                              onClick={() => void handleUnpin(message.id)}
-                              disabled={unpinMessage.isPending}
+                              aria-label={`Rename ${category.name}`}
+                              onClick={() => startEditCategory(category)}
                             >
-                              <PinOff className="h-4 w-4" />
+                              <Pencil className="h-4 w-4" />
                             </Button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      variant="secondary"
-                      onClick={() => selectChannel(selectedChannel)}
-                      disabled={updateChannel.isPending}
-                    >
-                      Revert changes
-                    </Button>
-                    <Button
-                      onClick={() => void handleSaveChannel()}
-                      disabled={
-                        updateChannel.isPending ||
-                        !nameDraft.trim() ||
-                        (selectedChannel.type === "ROLE_GATED" &&
-                          permissionsDraft.size === 0)
-                      }
-                    >
-                      {updateChannel.isPending ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : null}
-                      Save channel
-                    </Button>
-                  </div>
-                </section>
-              ) : (
-                <InlineNote>Pick a channel to edit it.</InlineNote>
-              )}
-            </div>
-          </div>
-        )}
-      </section>
-
-      <section aria-labelledby="ca-categories-label" className="space-y-3">
-        <SectionLabel
-          id="ca-categories-label"
-          count={
-            categories.length > 0
-              ? `${categories.length} categor${categories.length === 1 ? "y" : "ies"}`
-              : null
-          }
-        >
-          Categories
-        </SectionLabel>
-        {categories.length === 0 ? (
-          <InlineNote>
-            No categories yet. Channels without one show as uncategorized.
-          </InlineNote>
-        ) : (
-          <ul className={denseListClassName}>
-            {[...categories]
-              .sort((a, b) => a.display_order - b.display_order)
-              .map((category) => (
-                <li
-                  key={category.id}
-                  className="flex min-h-11 items-center justify-between gap-2"
-                >
-                  {editingCategoryId === category.id ? (
-                    <>
-                      <Input
-                        value={categoryNameDraft}
-                        onChange={(event) =>
-                          setCategoryNameDraft(event.target.value)
-                        }
-                        className="h-8"
-                        autoFocus
-                      />
-                      <div className="flex gap-1">
-                        <Button
-                          size="sm"
-                          onClick={() => void handleSaveCategory(category)}
-                          disabled={updateCategory.isPending}
-                        >
-                          Save
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => setEditingCategoryId(null)}
-                        >
-                          Cancel
-                        </Button>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <span className="min-w-0 truncate text-sm font-medium">
-                        {category.name}
-                      </span>
-                      <div className="flex shrink-0 gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className={compactControlClassName}
-                          aria-label={`Rename ${category.name}`}
-                          onClick={() => startEditCategory(category)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className={compactControlClassName}
-                          aria-label={`Delete ${category.name}`}
-                          onClick={() => void handleDeleteCategory(category)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </>
-                  )}
-                </li>
-              ))}
-          </ul>
-        )}
-        <form
-          onSubmit={handleCreateCategory}
-          className="flex items-end gap-2 pt-2"
-        >
-          <div className="grid flex-1 gap-1">
-            <Label htmlFor="ca-new-category" className="text-xs">
-              New category
-            </Label>
-            <Input
-              id="ca-new-category"
-              value={newCategoryName}
-              onChange={(event) => setNewCategoryName(event.target.value)}
-              placeholder="Officers"
-              className="h-8"
-            />
-          </div>
-          <Button
-            type="submit"
-            size="sm"
-            disabled={createCategory.isPending || !newCategoryName.trim()}
-          >
-            Add
-          </Button>
-        </form>
-      </section>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className={compactControlClassName}
+                              aria-label={`Delete ${category.name}`}
+                              onClick={() =>
+                                void handleDeleteCategory(category)
+                              }
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </>
+                      )}
+                    </li>
+                  ))}
+              </ul>
+            )}
+            <form
+              onSubmit={handleCreateCategory}
+              className="flex items-end gap-2 pt-2"
+            >
+              <div className="grid flex-1 gap-1">
+                <Label htmlFor="ca-new-category" className="text-xs">
+                  New category
+                </Label>
+                <Input
+                  id="ca-new-category"
+                  value={newCategoryName}
+                  onChange={(event) => setNewCategoryName(event.target.value)}
+                  placeholder="Officers"
+                  className="h-8"
+                />
+              </div>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={createCategory.isPending || !newCategoryName.trim()}
+              >
+                Add
+              </Button>
+            </form>
+          </section>
+        </>
+      )}
     </div>
   );
 }

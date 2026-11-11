@@ -11,7 +11,7 @@ import {
   hasProtectionDrift,
   normalizeProtection,
 } from "../../configure-branch-protection.mjs";
-import { ALL_REQUIRED_CHECKS } from "../lib/required-checks.mjs";
+import { ALL_REQUIRED_CHECKS, REQUIRE_UP_TO_DATE } from "../lib/required-checks.mjs";
 
 // Before #1383 `configure-branch-protection.mjs` had exactly one API call and
 // exactly one method — PUT — so it could report only what it INTENDED to write.
@@ -40,9 +40,10 @@ const liveResponse = ({
   contexts = ALL_REQUIRED_CHECKS,
   forkSyncing = false,
   lockBranch = false,
+  strict = REQUIRE_UP_TO_DATE,
 } = {}) => ({
   url: "https://api.github.com/repos/o/r/branches/main/protection",
-  required_status_checks: { strict: true, contexts: [...contexts] },
+  required_status_checks: { strict, contexts: [...contexts] },
   required_signatures: { enabled: false },
   enforce_admins: { enabled: true },
   required_linear_history: { enabled: true },
@@ -100,6 +101,18 @@ describe("diffProtection", () => {
     });
     assert.equal(hasProtectionDrift(diff), false);
     assert.deepEqual(formatProtectionDiff(diff), []);
+  });
+
+  // The roster writes REQUIRE_UP_TO_DATE, and a live rule still holding the
+  // other value is drift that --verify must name (2026-11-11: it went off).
+  it("writes the up-to-date rule from REQUIRE_UP_TO_DATE and names a live mismatch", () => {
+    assert.equal(buildProtectionPayload("main").required_status_checks.strict, REQUIRE_UP_TO_DATE);
+    const diff = diffProtection({
+      current: liveResponse({ strict: !REQUIRE_UP_TO_DATE }),
+      desired: buildProtectionPayload("main"),
+    });
+    assert.equal(hasProtectionDrift(diff), true);
+    assert.ok(formatProtectionDiff(diff).some((l) => l.includes("strict")));
   });
 
   it("names an added required check rather than diffing the whole array", () => {

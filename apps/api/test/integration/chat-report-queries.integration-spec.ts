@@ -125,6 +125,7 @@ describeIntegration('Chat report evidence against live PostgREST', () => {
     const { created } = await reports.create({
       chapter_id: chapterId,
       message_id: pollId,
+      channel_id: channelId,
       reporter_user_id: reporterId,
       reported_content: reportedContentSnapshot(poll!),
       reported_sender_id: poll!.sender_id,
