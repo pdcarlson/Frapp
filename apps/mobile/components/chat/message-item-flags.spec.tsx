@@ -6,6 +6,7 @@ import type { ChatMessage } from "@repo/chat-core/types";
 import { messageFlagView } from "@repo/chat-core/flags";
 import type { BlockState } from "@repo/chat-core/blocks";
 import { signetDarkTokens } from "@repo/theme/signet";
+import { formatTimeOfDay } from "@repo/formatting";
 import { StyleSheet, Text } from "react-native";
 import { FrappThemeProvider, tint } from "@/lib/theme";
 import { AlertGlyph } from "@/components/control-glyphs";
@@ -198,6 +199,51 @@ describe("MessageItem flags (#3921)", () => {
     const tree = renderRow(message({ is_deleted: true }));
     expect(byTestId(tree, "message-flag")).toHaveLength(0);
     expect(byTestId(tree, "message-flag-important")).toHaveLength(0);
+  });
+
+  it.each(["cozy", "compact", "bubbles"] as const)(
+    "puts the flag on the author line, beside the time, in %s (#4288)",
+    (density) => {
+      act(() => setChatDensity(density));
+      const tree = renderRow(message());
+      const [line] = byTestId(tree, "author-line");
+      expect(line).toBeDefined();
+      expect(
+        line!.findAll(
+          (node) =>
+            (node.type as unknown) === "View" &&
+            node.props.testID === "message-flag",
+        ),
+      ).toHaveLength(1);
+      const texts = line!
+        .findAllByType(Text)
+        .map((node) => node.props.children);
+      expect(texts).toContain(formatTimeOfDay(message().created_at));
+    },
+  );
+
+  it("puts the caption on a line of its own on a row with no author line", () => {
+    let tree!: ReactTestRenderer;
+    const msg = message();
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <MessageItem
+            message={msg}
+            viewerId={VIEWER}
+            nameFor={nameFor}
+            startsRun={false}
+            onRetry={vi.fn()}
+            onDiscard={vi.fn()}
+            onReact={vi.fn()}
+            onUnreact={vi.fn()}
+            flag={messageFlagView(msg, VIEWER, ready([]), nameFor)}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    expect(byTestId(tree, "author-line")).toHaveLength(0);
+    expect(byTestId(tree, "message-flag")).toHaveLength(1);
   });
 
   it.each(["cozy", "compact", "bubbles"] as const)(

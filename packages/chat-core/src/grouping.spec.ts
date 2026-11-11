@@ -136,6 +136,39 @@ describe("decorateThread — runs", () => {
     ).toEqual([true, true]);
   });
 
+  it("starts a run on a flagged message, so its flag has an author line (#4288)", () => {
+    expect(
+      runs([
+        visible(msg({ created_at: at(28, 17, 15) })),
+        visible(msg({ flag: "important", created_at: at(28, 17, 16) })),
+        // The row after a flagged one joins it as usual.
+        visible(msg({ created_at: at(28, 17, 17) })),
+      ]),
+    ).toEqual([true, true, false]);
+  });
+
+  it("does not break a run for a flag that draws nowhere", () => {
+    expect(
+      runs([
+        visible(msg({ created_at: at(28, 17, 15) })),
+        // A deleted message draws no flag.
+        visible(
+          msg({ flag: "funny", is_deleted: true, created_at: at(28, 17, 16) }),
+        ),
+      ]),
+    ).toEqual([true, false]);
+    expect(
+      runs([
+        visible(msg({ created_at: at(28, 17, 15) })),
+        // Nor does a blocked member's tombstone.
+        {
+          message: msg({ flag: "important", created_at: at(28, 17, 16) }),
+          visibility: "tombstone",
+        },
+      ]),
+    ).toEqual([true, false]);
+  });
+
   it("starts a run on a card, and after one", () => {
     expect(
       runs([

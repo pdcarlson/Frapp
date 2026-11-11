@@ -496,6 +496,7 @@ export function MessageRowFrame({
             <View
               style={styles.authorLine}
               accessible={"accessibilityActions" in headerA11y}
+              testID="author-line"
               {...headerA11y}
             >
               <Text style={styles.compactTime}>{time}</Text>
@@ -512,9 +513,13 @@ export function MessageRowFrame({
               >
                 {authorLabel}
               </Text>
+              {flag ? <FlagCaption view={flag} styles={styles} inline /> : null}
             </View>
           ) : null}
-          {flag ? <FlagCaption view={flag} styles={styles} /> : null}
+          {/* No author line of its own to carry it (#4288). */}
+          {flag && !(startsRun && !authorInline) ? (
+            <FlagCaption view={flag} styles={styles} />
+          ) : null}
           {children}
         </>
       ) : (
@@ -545,6 +550,7 @@ export function MessageRowFrame({
               <View
                 style={styles.authorLine}
                 accessible={"accessibilityActions" in headerA11y}
+                testID="author-line"
                 {...headerA11y}
               >
                 <Text
@@ -561,9 +567,14 @@ export function MessageRowFrame({
                   {authorLabel}
                 </Text>
                 <Text style={styles.time}>{time}</Text>
+                {flag ? (
+                  <FlagCaption view={flag} styles={styles} inline />
+                ) : null}
               </View>
             ) : null}
-            {flag ? <FlagCaption view={flag} styles={styles} /> : null}
+            {flag && !startsRun ? (
+              <FlagCaption view={flag} styles={styles} />
+            ) : null}
             {children}
           </View>
         </View>
@@ -773,7 +784,10 @@ export function MessageItem({
   const hasText = parsed !== null && !parsed.empty;
   // Compact draws the name inside the body on a run's first row, so the body
   // carries the profile action there (`leadsWithAuthor`, below).
-  const leadsInline = compact && startsRun && (message.is_deleted || hasText);
+  // A flagged message keeps its name on a line of its own, the flag beside
+  // it, rather than leading the sentence (#4288).
+  const leadsInline =
+    compact && startsRun && !flag && (message.is_deleted || hasText);
   const bodyA11y = messageActionsA11yProps(onOpenActions, {
     links: hasText ? parsed.links : [],
     onJumpToParent: quoteJump(message, onJumpToParent),
@@ -1111,7 +1125,10 @@ function BubbleRowFrame({
   /** As `MessageRowFrame`'s: the quote's jump, for a row with no text to carry it. */
   onJumpToParent?: () => void;
   onOpenProfile?: (userId: string) => void;
-  /** The row's flag (#3921), drawn above the bubble, never on its fill. */
+  /**
+   * The row's flag (#3921), on the author line above the stack (#4288),
+   * never on the bubble's fill.
+   */
   flag?: MessageFlagView | null;
   styles: ReturnType<typeof createStyles>;
   children: ReactNode;
@@ -1187,8 +1204,13 @@ function BubbleRowFrame({
           {startsRun ? (
             <View
               style={styles.bubbleAuthorLine}
+              testID="author-line"
               accessible
-              accessibilityLabel={`${authorLabel}, ${time}`}
+              accessibilityLabel={
+                flag
+                  ? `${authorLabel}, ${time}, ${messageFlagCaption(flag)}`
+                  : `${authorLabel}, ${time}`
+              }
               {...headerA11y}
             >
               {mine ? null : (
@@ -1207,10 +1229,13 @@ function BubbleRowFrame({
                 </Text>
               )}
               <Text style={styles.time}>{time}</Text>
+              {flag ? <FlagCaption view={flag} styles={styles} inline /> : null}
             </View>
           ) : null}
           {quote ? <View style={styles.bubbleQuote}>{quote}</View> : null}
-          {flag ? <FlagCaption view={flag} styles={styles} /> : null}
+          {flag && !startsRun ? (
+            <FlagCaption view={flag} styles={styles} />
+          ) : null}
           {children}
         </View>
       </View>
@@ -1446,11 +1471,49 @@ function ImportantHighlight({ style }: { style: StyleProp<ViewStyle> }) {
 function FlagCaption({
   view,
   styles,
+  inline = false,
 }: {
   view: MessageFlagView;
   styles: ReturnType<typeof createStyles>;
+  /**
+   * On the author line, right of the time (#4288): "· flagged by" truncates
+   * first on a narrow row, and the label and glyph hold.
+   */
+  inline?: boolean;
 }) {
   const { tokens } = useFrappTheme();
+  if (inline) {
+    return (
+      <View
+        style={styles.flagInline}
+        accessible
+        accessibilityLabel={messageFlagCaption(view)}
+        testID="message-flag"
+      >
+        {view.important ? (
+          <AlertGlyph size={14} color={tokens.color.semantic.destructiveText} />
+        ) : null}
+        <Text
+          style={[
+            styles.flagLabel,
+            view.important
+              ? { color: tokens.color.semantic.destructiveText }
+              : null,
+          ]}
+        >
+          {view.label}
+        </Text>
+        {view.flaggedBy ? (
+          <Text
+            style={[styles.flagLabel, styles.flagBy, styles.flagByInline]}
+            numberOfLines={1}
+          >
+            {`· flagged by ${view.flaggedBy}`}
+          </Text>
+        ) : null}
+      </View>
+    );
+  }
   return (
     <View
       style={styles.flagCaption}
@@ -1685,6 +1748,18 @@ function createStyles(tokens: SignetTokens) {
       fontFamily: fontFamilyFor(400),
       color: tokens.color.text.mutedForeground,
     },
+    // On the author line (#4288): centred on the line rather than on its
+    // baseline, since the glyph has none. It shrinks with the name, and only
+    // "· flagged by" gives way inside it.
+    flagInline: {
+      flexDirection: "row",
+      alignItems: "center",
+      alignSelf: "center",
+      gap: 4,
+      flexShrink: 1,
+      minWidth: 0,
+    },
+    flagByInline: { flexShrink: 1, minWidth: 0 },
     mentionHighlight: {
       position: "absolute",
       top: 0,
