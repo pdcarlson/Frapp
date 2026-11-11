@@ -183,6 +183,7 @@ A message that would take too long to format renders as its raw text too, decide
 - A message can be a reply to another message via `reply_to_id`. The UI shows the replied-to message as a quote/preview above the reply.
 - This is Discord-style reply-with-quote, not Slack-style nested threads. All replies appear in the main channel timeline.
 - Replying to a reply references the root message (no deep nesting).
+- A reply mentions the author it quotes (#3844, § Mentions).
 - Reply is offered where the channel takes replies: the viewer can post there (`can_post`), and it is not read-only, since announcements can't be replied to in-thread. Both clients decide it with `channelAllowsReplies`, and root-normalize with `replyTargetId`, in `packages/chat-core/src/message-actions.ts`. Web stages a reply from a row's Reply control; mobile from the message's long-press sheet (#2775). Both show a "Replying to" strip above the composer with a cancel. Tapping a quote goes to the message it quotes when that message is loaded.
 
 **Message threads (#3785):**
@@ -609,7 +610,9 @@ This is a placeholder, not a second definition of unread, and the server's answe
 
 ### Mentions
 
-`chat_messages.mentions` holds the `users.id` of everyone mentioned in the body, resolved **server-side at send time** against the chapter roster. This is a security boundary rather than a convenience: a mention overrides a per-channel mute in the push rules, so a client-supplied list would let any member force a push to any other member in a channel they had deliberately muted.
+`chat_messages.mentions` holds the `users.id` of everyone mentioned in the body, resolved **server-side at send time** against the chapter roster, and, on a reply, the author of the message it quotes. This is a security boundary rather than a convenience: a mention overrides a per-channel mute in the push rules, so a client-supplied list would let any member force a push to any other member in a channel they had deliberately muted.
+
+**A reply mentions the author it quotes** (#3844; Shawn's beta ask, matching Discord's default "@ON" when replying), so it notifies them as an `@` does: the push, the channel's `@ N` count (`GET /v1/channels/unread`), the notification row and the highlight all read this one list, and a reply that also `@`s them lists them once. Not for a reply to yourself, to a deleted message, or to a system row or an imported one with no linked member (`replyPingTarget` in `ChatMentionService`). An edit keeps the ping as the send stored it: it is not re-decided, so deleting the quoted message later does not take it off the author's badge, and a reply sent before this rule does not gain one. There is no block check here, as a typed `@` has none, because `mentions` reaches the replier and a missing author would tell them they were blocked (§ Report and block); the push worker drops a recipient who blocked the sender, and the unread counts skip a blocked member's messages. Nor a read check: the push worker sends only to members who can read the channel. A quote reply and a thread-reply push cannot overlap, since a thread reply carries no `reply_to_id` (§ Messages → Message threads). There is no per-reply or member-side switch yet.
 
 Resolution is tiered and fails closed — exact user id, exact display name, name without spaces, first word, unique prefix — and **ambiguity at any tier resolves to nobody**. If two members share a first name, `@jane` mentions neither, because silently picking one notifies the wrong person while looking correct to the sender. Unresolvable tokens are dropped silently; an `@` in prose is not an error.
 

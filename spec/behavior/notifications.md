@@ -190,6 +190,7 @@ Users can mute specific chat channels. Muted channels:
 - Do not generate push notifications for new messages.
 - Still show unread indicators in the app when opened.
 - @mentions in muted channels still generate notifications (override mute).
+- A reply to your message counts as an @mention of you, so it overrides mute too (#3844; the rule: [`chat/README.md` § Mentions](chat/README.md#mentions)).
 
 The mention-override is implemented in the push worker's `decidePush`
 (`apps/api/src/application/services/push-rules.ts`): a `hasMention` recipient is sent a
@@ -377,6 +378,7 @@ A push is read on a lock screen, in a glance, next to iOS Calendar and Google Ca
 | Domain        | Trigger                                                            | Priority                    |
 | ------------- | ------------------------------------------------------------------ | --------------------------- |
 | Chat          | @mention                                                           | NORMAL                      |
+| Chat          | Reply to your message, as an @mention of you (#3844; Discord's default, "@ON" when replying; who it skips: [`chat/README.md` § Mentions](chat/README.md#mentions)) | NORMAL |
 | Chat          | DM received                                                        | NORMAL                      |
 | Chat          | New message in unmuted channel                                     | NORMAL                      |
 | Announcements | New announcement posted                                            | URGENT                      |
