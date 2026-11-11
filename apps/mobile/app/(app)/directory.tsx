@@ -103,10 +103,12 @@ import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
  * sort on this screen, so the chip is this file's addition: one toggle, on the
  * row that already carries the Alumni tab's Filters chip, because the list has
  * exactly two orders. As on web, all of it waits for the class list: a chapter
- * with no classes and no numbers sees none of it, and a failed class read
- * drops the chip and the names rather than sort by a list it doesn't have.
- * The Alumni tab has no chip: `GET /v1/alumni` carries neither field (#4088).
- * Read-only here; officers set both on web (mobile editing is #3991).
+ * with no classes and no numbers sees none of it, and a class list that has
+ * never answered drops the chip and the names rather than sort by a list it
+ * doesn't have. The sort is the Actives tab's alone, by choice: the Alumni
+ * tab's trailing chip is Filters, and web's Alumni tab has no sort either
+ * (#4088). Alumni rows still name their class, since `GET /v1/alumni` returns
+ * it. Read-only here; officers set both on web (mobile editing is #3991).
  */
 type Tab = "actives" | "alumni";
 
@@ -166,19 +168,14 @@ export default function DirectoryScreen() {
   const membersQuery = useMembers();
   const classesQuery = usePledgeClasses();
   const { orderTerm } = usePledgeClassTerms();
-  // Only a list that answered: `data` can outlive a failed refetch, and a
-  // stale list would sort and name classes the chapter may have changed.
-  const pledgeClasses = useMemo(
-    () => (classesQuery.isSuccess ? (classesQuery.data ?? []) : null),
-    [classesQuery.isSuccess, classesQuery.data],
-  );
+  // `null` until the list has answered once. The last list read is kept when
+  // a refetch fails, as web keeps it (and as the members list beside it is
+  // kept), so a weak signal doesn't strip the names and undo the sort.
+  const pledgeClasses = classesQuery.data ?? null;
   const classNames = useMemo(
     () => classNamesById(pledgeClasses),
     [pledgeClasses],
   );
-  const orderOffered =
-    pledgeClasses !== null &&
-    usesFraternalOrder(pledgeClasses, records(membersQuery.data));
   const [sortByOrder, setSortByOrder] = useState(false);
   const alumniQuery = useAlumni(deferredAlumniFilters);
   const searchQuery = useMemberSearch(deferredQuery);
@@ -207,9 +204,13 @@ export default function DirectoryScreen() {
   );
   const listData =
     !isSearching && tab === "actives" ? actives : activeQuery.data;
+  // Asked of the actives, the list the chip sorts: a chapter whose only
+  // numbered members are alumni would otherwise get a chip that does nothing.
+  const orderOffered =
+    pledgeClasses !== null && usesFraternalOrder(pledgeClasses, actives);
 
-  // The Actives list alone: search ranks across both lists by name, and the
-  // alumni read carries no class or number to order by (#4088).
+  // The Actives list alone: search looks across both lists by name, and the
+  // Alumni tab has no sort (see the header).
   const inFraternalOrder =
     sortByOrder && orderOffered && !isSearching && tab === "actives";
   const rows = useMemo(

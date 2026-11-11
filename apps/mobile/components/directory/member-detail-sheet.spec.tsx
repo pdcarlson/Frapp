@@ -36,6 +36,7 @@ const state = vi.hoisted(() => ({
   roles: [] as unknown[],
   // `GET /v1/pledge-classes` and the options the sheet reads it with (#3939).
   classes: [] as { id: string; name: string }[],
+  vocabulary: undefined as Record<string, string> | undefined,
   classReads: [] as ({ enabled?: boolean } | undefined)[],
 }));
 
@@ -81,7 +82,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useRoles: () => ({ data: state.roles, isPending: false, isSuccess: true }),
   useCustomRoles: () => ({ data: [], isPending: false }),
   usePermissionList: () => state.permissions,
-  useCurrentChapter: () => ({ data: undefined }),
+  useCurrentChapter: () => ({
+    data: state.vocabulary ? { vocabulary: state.vocabulary } : undefined,
+  }),
   usePledgeClasses: (options?: { enabled?: boolean }) => {
     state.classReads.push(options);
     return options?.enabled === false
@@ -594,6 +597,42 @@ describe("MemberDetailSheet fact rows", () => {
       ["Fraternal order", "9"],
       ["Member since", "August 21, 2026"],
     ]);
+    act(() => tree.unmount());
+  });
+
+  it("labels both rows with the chapter's own words, as typed", () => {
+    PROFILES[CARA] = {
+      ...profile(CARA, "Cara"),
+      pledge_class_id: "pc-1",
+      order_number: 9,
+    } as never;
+    state.classes = [{ id: "pc-1", name: "Alpha" }];
+    state.vocabulary = { class: "Line", order: "line number" };
+    const tree = render(CARA);
+    const rows = tree.root
+      .findAllByType(ListRow)
+      .map((row) => [row.props.label, row.props.value]);
+    state.vocabulary = undefined;
+
+    expect(rows.slice(1, 3)).toEqual([
+      ["Line", "Alpha"],
+      ["line number", "9"],
+    ]);
+    act(() => tree.unmount());
+  });
+
+  it("says Not available for a class the chapter's list no longer holds", () => {
+    PROFILES[CARA] = {
+      ...profile(CARA, "Cara"),
+      pledge_class_id: "pc-gone",
+    } as never;
+    state.classes = [{ id: "pc-1", name: "Alpha" }];
+    const tree = render(CARA);
+
+    expect(
+      tree.root.findAllByType(ListRow).find((r) => r.props.label === "Pledge class")
+        ?.props.value,
+    ).toBe("Not available");
     act(() => tree.unmount());
   });
 

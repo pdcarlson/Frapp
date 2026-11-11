@@ -95,6 +95,21 @@ describe("selectDirectoryRows", () => {
       ]);
     });
 
+    // The commonest setup: classes, and nobody numbered. Each class then
+    // reads by the name its rows show.
+    it("breaks a tie on the name the row shows", () => {
+      expect(
+        selectDirectoryRows(
+          [
+            { id: "m-1", user_id: "u-1", display_name: "Zoe Adams", pledge_class_id: "pc-alpha" },
+            { id: "m-2", user_id: "u-2", display_name: "Andre Silva", pledge_class_id: "pc-alpha" },
+            { id: "m-3", user_id: "u-3", display_name: "Marcus Reid", pledge_class_id: "pc-alpha" },
+          ],
+          { fraternalOrder: [{ id: "pc-alpha" }] },
+        ).map((row) => row.displayName),
+      ).toEqual(["Andre Silva", "Marcus Reid", "Zoe Adams"]);
+    });
+
     it("follows the chapter's class order, not the names'", () => {
       expect(
         selectDirectoryRows(MEMBERS, {

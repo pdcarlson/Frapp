@@ -4,9 +4,14 @@
  * them on web; editing on mobile is #3991.
  *
  * Shared by the member sheet (s13) and the viewer's own Profile (s15), so the
- * two draw the same rows under the same rules.
+ * two draw the same rows under the same rules: `usePledgeClassRows` is the
+ * whole of it for both.
  */
-import { useCurrentChapter, type PledgeClass } from "@repo/hooks";
+import {
+  useCurrentChapter,
+  usePledgeClasses,
+  type PledgeClass,
+} from "@repo/hooks";
 import { memberViewVocabulary, vocab } from "@repo/org-archetypes";
 
 /**
@@ -74,4 +79,28 @@ export function pledgeClassRows({
     rows.push({ key: "order", label: orderTerm, value: String(orderNumber) });
   }
   return rows;
+}
+
+/**
+ * The rows for one member, for the sheet and for Profile: the chapter's words,
+ * and the class list read only for a member who has a class to name.
+ *
+ * The last list read is kept when a refetch fails, as web's profile sheet
+ * keeps it: a weak signal shouldn't turn a name already on screen into "Not
+ * available". Only a list that has never answered leaves the name out.
+ */
+export function usePledgeClassRows(
+  member: { pledgeClassId: string | null; orderNumber: number | null } | null,
+): PledgeClassRow[] {
+  const { classTerm, orderTerm } = usePledgeClassTerms();
+  const classesQuery = usePledgeClasses({ enabled: !!member?.pledgeClassId });
+  if (!member) return [];
+  return pledgeClassRows({
+    pledgeClassId: member.pledgeClassId,
+    orderNumber: member.orderNumber,
+    classNames: classNamesById(classesQuery.data),
+    classesPending: classesQuery.isPending,
+    classTerm,
+    orderTerm,
+  });
 }

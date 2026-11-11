@@ -83,7 +83,10 @@ const state = vi.hoisted(() => ({
   // vocabulary, each swapped by the pledge class specs (#3939).
   members: null as unknown[] | null,
   classes: [] as { id: string; name: string }[],
-  classesFailed: false,
+  // "never": the list has not answered. "refetch": it answered, then a
+  // refresh of it failed, which leaves the last list in `data`.
+  classesFailed: null as null | "never" | "refetch",
+  classesPending: false,
   vocabulary: undefined as Record<string, string> | undefined,
 }));
 
@@ -102,17 +105,25 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   usePermissionList: () => state.permissions,
   useMembers: () => read(state.members ?? MEMBERS, refetches.members),
   usePledgeClasses: () =>
-    state.classesFailed
+    state.classesPending
       ? {
-          // What a failed refetch leaves: the last list, and an error.
-          data: state.classes,
-          isPending: false,
-          isError: true,
+          data: undefined,
+          isPending: true,
+          isError: false,
           isSuccess: false,
-          isFetching: false,
+          isFetching: true,
           refetch: refetches.classes,
         }
-      : read(state.classes, refetches.classes),
+      : state.classesFailed
+        ? {
+            data: state.classesFailed === "refetch" ? state.classes : undefined,
+            isPending: false,
+            isError: true,
+            isSuccess: false,
+            isFetching: false,
+            refetch: refetches.classes,
+          }
+        : read(state.classes, refetches.classes),
   useCurrentChapter: () => ({
     data: state.vocabulary ? { vocabulary: state.vocabulary } : undefined,
   }),
@@ -243,7 +254,8 @@ beforeEach(() => {
   state.permissions = [];
   state.members = null;
   state.classes = [];
-  state.classesFailed = false;
+  state.classesFailed = null;
+  state.classesPending = false;
   state.vocabulary = undefined;
   for (const refetch of Object.values(refetches)) {
     refetch.mockReset().mockResolvedValue(undefined);
@@ -465,6 +477,8 @@ describe("s13's pledge classes and fraternal order (#3939)", () => {
       selected: true,
     });
     expect(listed(tree)).toEqual(["Marcus Reid", "Andre Silva"]);
+    // Sorted by class, the rows still name it.
+    expect(metaOf(tree, "Marcus Reid")).toBe("Alpha");
 
     act(() => orderChip(tree)!.props.onPress());
     expect(listed(tree)).toEqual(["Andre Silva", "Marcus Reid"]);
@@ -494,14 +508,7 @@ describe("s13's pledge classes and fraternal order (#3939)", () => {
     expect(listed(tree)).toEqual(["Charles Whitmore III", "Daniel Kirkpatrick"]);
   });
 
-  it("drops the sort and the class names when the class list can't be read", () => {
-    state.classes = CLASSES;
-    state.members = WITH_CLASSES;
-    const tree = render();
-    act(() => orderChip(tree)!.props.onPress());
-    expect(listed(tree)).toEqual(["Marcus Reid", "Andre Silva"]);
-
-    state.classesFailed = true;
+  function rerender(tree: ReactTestRenderer) {
     act(() =>
       tree.update(
         <FrappThemeProvider>
@@ -509,10 +516,73 @@ describe("s13's pledge classes and fraternal order (#3939)", () => {
         </FrappThemeProvider>,
       ),
     );
+  }
+
+  it("waits for the class list: no sort and no names while it loads, though the roster has", () => {
+    state.classes = CLASSES;
+    state.members = WITH_CLASSES;
+    state.classesPending = true;
+    const tree = render();
+
+    expect(listed(tree)).toEqual(["Andre Silva", "Marcus Reid"]);
+    expect(orderChip(tree)).toBeNull();
+    expect(metaOf(tree, "Marcus Reid")).toBeNull();
+
+    state.classesPending = false;
+    rerender(tree);
+    expect(orderChip(tree)).not.toBeNull();
+    expect(metaOf(tree, "Marcus Reid")).toBe("Alpha");
+  });
+
+  it("drops the sort and the class names when the class list can't be read", () => {
+    state.classes = CLASSES;
+    state.members = WITH_CLASSES;
+    state.classesFailed = "never";
+    const tree = render();
 
     expect(orderChip(tree)).toBeNull();
     expect(listed(tree)).toEqual(["Andre Silva", "Marcus Reid"]);
     expect(metaOf(tree, "Marcus Reid")).toBeNull();
+  });
+
+  it("keeps the list it has, and the sort, when a refresh of it fails", () => {
+    state.classes = CLASSES;
+    state.members = WITH_CLASSES;
+    const tree = render();
+    act(() => orderChip(tree)!.props.onPress());
+
+    state.classesFailed = "refetch";
+    rerender(tree);
+
+    expect(orderChip(tree)!.props.on).toBe(true);
+    expect(listed(tree)).toEqual(["Marcus Reid", "Andre Silva"]);
+    expect(metaOf(tree, "Marcus Reid")).toBe("Alpha");
+  });
+
+  it("offers no sort when only alumni hold a number: it would sort nothing", () => {
+    state.members = [MARCUS, ANDRE, { ...CHARLES, order_number: 3 }, DANIEL];
+    const tree = render();
+
+    expect(orderChip(tree)).toBeNull();
+  });
+
+  it("lists a search by name even while the sort is on", () => {
+    state.classes = CLASSES;
+    state.members = WITH_CLASSES;
+    state.search = WITH_CLASSES.slice(0, 2);
+    const tree = render();
+    act(() => orderChip(tree)!.props.onPress());
+    expect(listed(tree)).toEqual(["Marcus Reid", "Andre Silva"]);
+
+    const field = inHeader(
+      tree,
+      (element) =>
+        (element.type as unknown) === SearchFieldStandIn &&
+        element.props.accessibilityLabel === "Search the directory",
+    ) as { onChangeText: (text: string) => void };
+    act(() => field.onChangeText("r"));
+
+    expect(listed(tree)).toEqual(["Andre Silva", "Marcus Reid"]);
   });
 });
 

@@ -36,9 +36,14 @@ const LOADED_USER = {
 let currentUser: Record<string, unknown> = LOADED_USER;
 // The viewer's own member profile and the chapter's class list (#3939).
 let membership: Record<string, unknown> | undefined;
-let pledgeClasses: { id: string; name: string }[] = [];
+let pledgeClasses: { id: string; name: string }[] | undefined = [];
+let vocabulary: Record<string, string> | undefined;
+let permissions: string[] = ["members:view"];
+const useMemberByUserId = vi.fn((userId: string) => ({
+  data: userId ? membership : undefined,
+}));
 const usePledgeClasses = vi.fn((options?: { enabled?: boolean }) =>
-  options?.enabled === false
+  options?.enabled === false || pledgeClasses === undefined
     ? { data: undefined, isPending: true, isSuccess: false }
     : { data: pledgeClasses, isPending: false, isSuccess: true },
 );
@@ -57,10 +62,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useMyPoints: () => ({ data: undefined, isPending: true, isError: false }),
   useServiceEntries: (...args: unknown[]) => useServiceEntries(...args),
   useUpdateUser: () => ({ mutate: vi.fn(), isPending: false }),
-  useMemberByUserId: () => ({ data: membership }),
+  useMemberByUserId: (userId: string) => useMemberByUserId(userId),
+  usePermissionList: () => permissions,
   usePledgeClasses: (options?: { enabled?: boolean }) =>
     usePledgeClasses(options),
-  useCurrentChapter: () => ({ data: undefined }),
+  useCurrentChapter: () => ({ data: vocabulary ? { vocabulary } : undefined }),
 }));
 
 vi.mock("@/lib/auth-session", () => ({
@@ -259,10 +265,18 @@ describe("Profile stat cards and Details", () => {
  * member profile. Read-only, and drawn only when an officer has set it.
  */
 describe("Profile pledge class and order number (#3939)", () => {
+  beforeEach(() => {
+    // An earlier suite leaves the viewer unknown.
+    viewerUserId = "user-1";
+  });
+
   afterEach(() => {
     membership = undefined;
     pledgeClasses = [];
+    vocabulary = undefined;
+    permissions = ["members:view"];
     usePledgeClasses.mockClear();
+    useMemberByUserId.mockClear();
   });
 
   function detailRows(tree: ReactTestRenderer) {
@@ -281,6 +295,42 @@ describe("Profile pledge class and order number (#3939)", () => {
       ["Pledge class", "Alpha"],
       ["Fraternal order", "14"],
     ]);
+    tree.unmount();
+  });
+
+  it("labels both rows with the chapter's own words, as typed", () => {
+    membership = { user_id: "user-1", pledge_class_id: "pc-1", order_number: 14 };
+    pledgeClasses = [{ id: "pc-1", name: "Alpha" }];
+    vocabulary = { class: "Line", order: "line number" };
+    const tree = render();
+
+    expect(detailRows(tree).slice(3, 5)).toEqual([
+      ["Line", "Alpha"],
+      ["line number", "14"],
+    ]);
+    tree.unmount();
+  });
+
+  it("says Loading for the class until the chapter's list answers", () => {
+    membership = { user_id: "user-1", pledge_class_id: "pc-1", order_number: null };
+    pledgeClasses = undefined;
+    const tree = render();
+
+    expect(detailRows(tree)[3]).toEqual(["Pledge class", "Loading"]);
+    tree.unmount();
+  });
+
+  // Both reads take `members:view`; without it neither is sent.
+  it("asks for neither read, and draws neither row, without members:view", () => {
+    membership = { user_id: "user-1", pledge_class_id: "pc-1", order_number: 14 };
+    permissions = [];
+    const tree = render();
+
+    expect(useMemberByUserId).toHaveBeenLastCalledWith("");
+    expect(usePledgeClasses).toHaveBeenLastCalledWith({ enabled: false });
+    expect(detailRows(tree).map(([label]) => label)).not.toContain(
+      "Pledge class",
+    );
     tree.unmount();
   });
 

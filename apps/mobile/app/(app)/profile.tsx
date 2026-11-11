@@ -6,12 +6,13 @@ import {
   useCurrentUser,
   useMemberByUserId,
   useMyPoints,
-  usePledgeClasses,
+  usePermissionList,
   useServiceEntries,
   useViewerUserId,
   useOwnAvatarTint,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import { can } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
 import { PencilGlyph } from "@/components/control-glyphs";
 import { IconButton } from "@/components/icon-button";
@@ -36,11 +37,7 @@ import {
 import { useAuthSession } from "@/lib/auth-session";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { selectMemberDetail } from "@/lib/directory/member-detail";
-import {
-  classNamesById,
-  pledgeClassRows,
-  usePledgeClassTerms,
-} from "@/lib/directory/pledge-class";
+import { usePledgeClassRows } from "@/lib/directory/pledge-class";
 import {
   formatGraduationYear,
   formatHours,
@@ -110,27 +107,19 @@ export default function ProfileScreen() {
   // the "Not set" rows below: those are the member's own to fill in under
   // Edit, and these are an officer's, so an empty one would be a row the
   // member can do nothing about, in a chapter that may keep neither.
-  const memberQuery = useMemberByUserId(viewerUserId ?? "");
+  //
+  // That read and the class list both take `members:view`, the Directory's
+  // gate, so a viewer without it is not asked for either (an empty id leaves
+  // the query off) and sees neither row, as they see no Directory.
+  const canViewMembers = can("members:view", usePermissionList());
+  const memberQuery = useMemberByUserId(
+    canViewMembers ? (viewerUserId ?? "") : "",
+  );
   const membership = useMemo(
     () => selectMemberDetail(memberQuery.data),
     [memberQuery.data],
   );
-  const { classTerm, orderTerm } = usePledgeClassTerms();
-  const classesQuery = usePledgeClasses({
-    enabled: !!membership?.pledgeClassId,
-  });
-  const classRows = membership
-    ? pledgeClassRows({
-        pledgeClassId: membership.pledgeClassId,
-        orderNumber: membership.orderNumber,
-        classNames: classNamesById(
-          classesQuery.isSuccess ? classesQuery.data : null,
-        ),
-        classesPending: classesQuery.isPending,
-        classTerm,
-        orderTerm,
-      })
-    : [];
+  const classRows = usePledgeClassRows(membership);
   const pointsBalance = selectPointsBalance(pointsQuery.data);
   // `null` until the entries land, so the card shows an em dash rather than a
   // confident "0 service hrs" beside a correct name and points balance.
@@ -292,8 +281,12 @@ export default function ProfileScreen() {
   );
 }
 
-/** The four Details rows: Email, Graduation, City, Company. */
-const DETAIL_ROWS = 4;
+/**
+ * The Details rows every profile draws: Email, Major, Graduation, City,
+ * Company. The pledge class and order number rows are left out of the count:
+ * most members have neither, and they arrive with a second read.
+ */
+const DETAIL_ROWS = 5;
 
 /**
  * The screen's loading state, on the loaded screen's own styles: the photo's
