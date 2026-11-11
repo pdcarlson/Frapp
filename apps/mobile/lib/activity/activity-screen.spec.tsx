@@ -2,6 +2,7 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
+import { Alert } from "react-native";
 import * as expoRouter from "expo-router";
 import { useRouter } from "expo-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -89,7 +90,7 @@ const activity = vi.hoisted(() => ({
   },
 }));
 
-/** The link writes, each a `mutate` the test answers by hand. */
+/** The link writes, each a `mutateAsync` that resolves unless a test says not. */
 const links = vi.hoisted(() => ({
   permissions: [] as string[],
   done: vi.fn(),
@@ -108,11 +109,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCurrentChapter: () => ({ data: undefined }),
   useMyPermissions: () => ({ data: { permissions: links.permissions } }),
   useSetActivityLinkState: (state: "done" | "hidden") => ({
-    mutate: links[state],
+    mutateAsync: links[state],
   }),
-  useClearActivityLinkState: () => ({ mutate: links.clear }),
-  useRemoveActivityLink: () => ({ mutate: links.remove }),
-  useRestoreActivityLink: () => ({ mutate: links.restore }),
+  useClearActivityLinkState: () => ({ mutateAsync: links.clear }),
+  useRemoveActivityLink: () => ({ mutateAsync: links.remove }),
+  useRestoreActivityLink: () => ({ mutateAsync: links.restore }),
 }));
 
 /** The props the screen last handed its sheet. */
@@ -125,6 +126,9 @@ const sheet = vi.hoisted(() => ({
     linkActions: import("@/components/activity/activity-sheet").LinkSheetActions;
   },
 }));
+const openLink = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/chat/open-link", () => ({ openMessageLink: openLink }));
+
 vi.mock("@/components/activity/activity-sheet", () => ({
   ActivitySheet: (props: NonNullable<typeof sheet.props>) => {
     sheet.props = props;
@@ -403,6 +407,15 @@ describe("Activity screen (#3897)", () => {
 
     beforeEach(() => {
       links.permissions = [];
+      for (const write of [
+        links.done,
+        links.hidden,
+        links.clear,
+        links.remove,
+        links.restore,
+      ]) {
+        write.mockResolvedValue(undefined);
+      }
       activity.value = { ...activity.value, data: read({ links: [link()] }) };
     });
 
@@ -422,25 +435,72 @@ describe("Activity screen (#3897)", () => {
       expect(sheet.props?.linkActions.canRemove).toBe(true);
     });
 
-    it("offers Undo once Done lands, and Undo clears the state", () => {
-      const tree = render();
-      const linkRow = { link: link(), title: "Google Form" } as LinkRow;
-      act(() => {
-        sheet.props!.linkActions.done(linkRow);
-      });
-      expect(links.done).toHaveBeenCalledWith("l1", expect.any(Object));
-      expect(tree.root.findAllByType(UndoBar)).toHaveLength(0);
+    const linkRow = () => ({ link: link(), title: "Google Form" }) as LinkRow;
 
-      act(() => {
-        links.done.mock.calls[0]![1].onSuccess();
+    it.each([
+      ["done", "Marked done", "clear"],
+      ["hide", "Hidden", "clear"],
+      ["remove", "Removed from everyone's Activity", "restore"],
+    ] as const)(
+      "offers Undo once %s lands, and Undo takes it back with the matching write",
+      async (action, message, takeBack) => {
+        const tree = render();
+        const write = {
+          done: links.done,
+          hide: links.hidden,
+          remove: links.remove,
+        }[action];
+        await act(async () => {
+          sheet.props!.linkActions[action](linkRow());
+        });
+        expect(write).toHaveBeenCalledWith("l1");
+        const bar = tree.root.findByType(UndoBar);
+        expect(bar.props.message).toBe(message);
+        await act(async () => {
+          bar.props.onUndo();
+        });
+        expect(links[takeBack]).toHaveBeenCalledWith("l1");
+        expect(tree.root.findAllByType(UndoBar)).toHaveLength(0);
+      },
+    );
+
+    it("says a failed write with the platform alert, and offers no Undo", async () => {
+      const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+      links.hidden.mockRejectedValueOnce(new Error("nope"));
+      const tree = render();
+      await act(async () => {
+        sheet.props!.linkActions.hide(linkRow());
       });
-      const bar = tree.root.findByType(UndoBar);
-      expect(bar.props.message).toBe("Marked done");
-      act(() => {
-        bar.props.onUndo();
-      });
-      expect(links.clear).toHaveBeenCalledWith("l1", expect.any(Object));
+      expect(alert).toHaveBeenCalledWith(
+        "Couldn't hide it",
+        expect.any(String),
+      );
       expect(tree.root.findAllByType(UndoBar)).toHaveLength(0);
+    });
+
+    it("opens the link in the in-app browser", () => {
+      render();
+      act(() => {
+        sheet.props!.linkActions.open(linkRow());
+      });
+      expect(openLink).toHaveBeenCalledWith("https://forms.gle/abc");
+    });
+
+    it("leaves the re-read to the write when the sheet closes behind one", async () => {
+      const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+      render();
+      await act(async () => {
+        sheet.props!.linkActions.done(linkRow());
+      });
+      act(() => {
+        sheet.props!.onClosed();
+      });
+      expect(invalidate).not.toHaveBeenCalled();
+      // Only that one close: the next one re-reads as usual.
+      act(() => {
+        sheet.props!.onClosed();
+      });
+      expect(invalidate).toHaveBeenCalledTimes(1);
     });
 
     it("opens a thread reply in its thread, and a channel message in its channel", () => {

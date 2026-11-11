@@ -101,6 +101,9 @@ function frameFor(message: ChatMessage, viewerId: string): ChatCardFrameProps {
  * - a pending service entry gets Approve and Reject. Chat's hours card is a
  *   read-only record, and the phone has no other screen that reviews hours.
  *
+ * A sign-up link has no chat card: its sheet is `LinkSheet` below, the link
+ * and the screen's own actions for it (`LinkSheetActions`).
+ *
  * A tall sheet, as `spec/ui/mobile/patterns.md` § Bottom sheets gives a sheet
  * that holds a whole record. A sheet is drawn outside the screen's
  * navigator, so the screen's navigation context is handed down to the cards:
@@ -273,7 +276,11 @@ function LinkSheet({
         />
         <CardButton
           label="Open in chat"
-          accessibilityHint="Opens the message it was posted in."
+          accessibilityHint={
+            row.link.thread_root_id
+              ? "Opens the thread it was posted in."
+              : "Opens the channel it was posted in."
+          }
           onPress={then(actions.openInChat)}
         />
       </CardActions>

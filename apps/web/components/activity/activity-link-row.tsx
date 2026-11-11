@@ -36,22 +36,10 @@ export function linkChatHref(row: LinkRow): string {
   });
 }
 
-/**
- * A sign-up link on `/activity` (#3897, `spec/behavior/activity.md` § Links).
- *
- * The row is the link itself: it opens the form in a new tab, the way a link
- * in chat does. Done sits on the row, as GitHub's notifications and Slack's
- * Later put their check, because it is what a member does after filling one
- * in. The rest is in the row's menu (⋯, or a right-click off the link): Hide
- * ("Not chapter business"), Open in chat, and for an officer
- * (`channels:manage`) Remove, which takes it off everyone's Activity. Each
- * takes the row away at once and offers Undo, since none of them can be seen
- * again from this page.
- */
 export interface ActivityLinkActions {
-  done: (row: LinkRow) => void;
-  hide: (row: LinkRow) => void;
-  remove: (row: LinkRow) => void;
+  done: (row: LinkRow) => Promise<unknown>;
+  hide: (row: LinkRow) => Promise<unknown>;
+  remove: (row: LinkRow) => Promise<unknown>;
 }
 
 /**
@@ -75,25 +63,18 @@ export function useActivityLinkActions(): ActivityLinkActions {
       description: getErrorMessage(error, "Try again in a moment."),
     });
 
+  // Each write's own promise, not `mutate`'s per-call callbacks, which a
+  // second Done before the first answers would cancel (`useLinkWrite`).
+  type Write = { mutateAsync: (id: string) => Promise<unknown> };
   const act = (
-    write: {
-      mutate: (
-        id: string,
-        options: { onSuccess: () => void; onError: (error: unknown) => void },
-      ) => void;
-    },
+    write: Write,
     row: LinkRow,
     title: string,
-    undo: {
-      mutate: (
-        id: string,
-        options: { onError: (error: unknown) => void },
-      ) => void;
-    },
+    undo: Write,
     failure: string,
   ) =>
-    write.mutate(row.link.id, {
-      onSuccess: () =>
+    write.mutateAsync(row.link.id).then(
+      () =>
         toast({
           title,
           description: row.title,
@@ -101,15 +82,17 @@ export function useActivityLinkActions(): ActivityLinkActions {
             <ToastAction
               altText={`Undo: ${title}`}
               onClick={() =>
-                undo.mutate(row.link.id, { onError: failed("Couldn't undo") })
+                void undo
+                  .mutateAsync(row.link.id)
+                  .catch(failed("Couldn't undo"))
               }
             >
               Undo
             </ToastAction>
           ),
         }),
-      onError: failed(failure),
-    });
+      failed(failure),
+    );
 
   return {
     done: (row) =>
@@ -133,6 +116,18 @@ export function useActivityLinkActions(): ActivityLinkActions {
   };
 }
 
+/**
+ * A sign-up link on `/activity` (#3897, `spec/behavior/activity.md` § Links).
+ *
+ * The row is the link itself: it opens the form in a new tab, the way a link
+ * in chat does. Done sits on the row, as GitHub's notifications and Slack's
+ * Later put their check, because it is what a member does after filling one
+ * in. The rest is in the row's menu (⋯, or a right-click off the link): Hide
+ * ("Not chapter business"), Open in chat, and for an officer
+ * (`channels:manage`) Remove, which takes it off everyone's Activity. Each
+ * takes the row away at once and offers Undo, since none of them can be seen
+ * again from this page.
+ */
 export function ActivityLinkRow({
   row,
   rowClassName,
@@ -153,7 +148,7 @@ export function ActivityLinkRow({
       key: "hide",
       label: "Hide: not chapter business",
       icon: EyeOff,
-      onSelect: () => actions.hide(row),
+      onSelect: () => void actions.hide(row),
     },
     {
       type: "item",
@@ -171,7 +166,7 @@ export function ActivityLinkRow({
             label: "Remove for everyone",
             icon: Trash2,
             destructive: true,
-            onSelect: () => actions.remove(row),
+            onSelect: () => void actions.remove(row),
           },
         ] satisfies RowMenuEntry[])
       : []),
@@ -207,7 +202,7 @@ export function ActivityLinkRow({
           <IconButton
             label={`Done: ${row.title}`}
             title="I filled it in"
-            onClick={() => actions.done(row)}
+            onClick={() => void actions.done(row)}
           >
             <Check className="h-4 w-4" aria-hidden="true" />
           </IconButton>

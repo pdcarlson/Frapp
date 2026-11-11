@@ -354,6 +354,9 @@ function ChatAdminBody({
   const [readOnlyDraft, setReadOnlyDraft] = useState(false);
   const [isDefaultDraft, setIsDefaultDraft] = useState(false);
   const [activityExcludedDraft, setActivityExcludedDraft] = useState(false);
+  // Seeded like `isDefaultSeed`: the switch is sent only when the officer
+  // flipped it, so a save of another field can't undo another officer's.
+  const [activityExcludedSeed, setActivityExcludedSeed] = useState(false);
   // What the switch was seeded with, for the reason `descriptionSeed` exists:
   // another officer moving the default refetches the live row under an
   // untouched switch, and comparing with that row would send it back.
@@ -395,6 +398,7 @@ function ChatAdminBody({
     setIsDefaultDraft(channel.is_default === true);
     setIsDefaultSeed(channel.is_default === true);
     setActivityExcludedDraft(channel.activity_excluded === true);
+    setActivityExcludedSeed(channel.activity_excluded === true);
     setDefaultLevelDraft(
       channel.default_notification_level ?? BUILT_IN_DEFAULT_LEVEL,
     );
@@ -437,7 +441,9 @@ function ChatAdminBody({
           // uncategorized," which is a real write, not "leave it alone."
           category_id: categoryDraft === NO_CATEGORY ? null : categoryDraft,
           is_read_only: readOnlyDraft,
-          activity_excluded: activityExcludedDraft,
+          ...(activityExcludedDraft !== activityExcludedSeed
+            ? { activity_excluded: activityExcludedDraft }
+            : {}),
           // Sent only when the officer flipped it: setting it moves the
           // chapter default off another channel, which a save of an unrelated
           // field must not.
@@ -456,6 +462,7 @@ function ChatAdminBody({
       });
       if (descriptionChanged) setDescriptionSeed(description);
       setIsDefaultSeed(isDefaultDraft);
+      setActivityExcludedSeed(activityExcludedDraft);
       toast({ description: `#${name} saved.` });
     } catch (error) {
       toast({

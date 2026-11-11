@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, View } from "react-native";
 import { useRouter } from "expo-router";
 import {
@@ -55,7 +55,7 @@ const CHIPS = ACTIVITY_FILTERS.map((option) => ({
  *
  * The phone's twin of web's `/activity`
  * (`spec/ui/web-dashboard/README.md` § Activity), on the same row model
- * (`activityGroups` in `@repo/hooks`): three groups, "Needs you" first, with
+ * (`activityGroups` in `@repo/hooks`): four groups, "Needs you" first, with
  * chips that narrow every group to one kind of thing. A row opens the record
  * in a sheet drawn with chat's own card, where the member acts on it
  * (`components/activity/activity-sheet.tsx`). A document row opens Documents;
@@ -76,7 +76,7 @@ export default function ActivityScreen() {
   const [filter, setFilter] = useState<ActivityFilter>("all");
   const [openedKey, setOpenedKey] = useState<string | null>(null);
   const refresh = useRefetchAll([activity]);
-  const { linkActions, undo } = useLinkActions();
+  const { linkActions, undo, rereadOnClose } = useLinkActions();
 
   const groups = useMemo(
     () => (activity.data ? activityGroups(activity.data, filter) : []),
@@ -163,7 +163,7 @@ export default function ActivityScreen() {
           onActed={reread}
           onClosed={() => {
             setOpenedKey(null);
-            reread();
+            if (rereadOnClose()) reread();
           }}
           linkActions={linkActions}
         />
@@ -195,6 +195,7 @@ function useLinkActions() {
     run: () => void;
     key: number;
   } | null>(null);
+  const skipCloseReread = useRef(false);
   useEffect(() => {
     if (!undo) return undefined;
     const timer = setTimeout(() => setUndo(null), UNDO_WINDOW_MS);
@@ -202,32 +203,31 @@ function useLinkActions() {
   }, [undo]);
 
   type LinkRow = Extract<ActivityRow, { kind: "link" }>;
-  type Write = {
-    mutate: (
-      id: string,
-      options?: { onSuccess?: () => void; onError?: (error: unknown) => void },
-    ) => void;
-  };
+  // Each write's own promise, not `mutate`'s per-call callbacks, which a
+  // second Done before the first answers would cancel (`useLinkWrite`).
+  type Write = { mutateAsync: (id: string) => Promise<unknown> };
   const failed = (title: string) => (error: unknown) =>
     Alert.alert(title, errorCopy(error));
   const act =
     (write: Write, message: string, takeBack: Write, failure: string) =>
-    (row: LinkRow) =>
-      write.mutate(row.link.id, {
-        onSuccess: () =>
+    (row: LinkRow) => {
+      // The sheet closes as this starts; the write re-reads Activity itself
+      // when it settles, and a re-read on close would race it.
+      skipCloseReread.current = true;
+      write.mutateAsync(row.link.id).then(
+        () =>
           setUndo((open) => ({
             message,
             // A new key per action, so the bar is announced again.
             key: (open?.key ?? 0) + 1,
             run: () => {
               setUndo(null);
-              takeBack.mutate(row.link.id, {
-                onError: failed("Couldn't undo"),
-              });
+              takeBack.mutateAsync(row.link.id).catch(failed("Couldn't undo"));
             },
           })),
-        onError: failed(failure),
-      });
+        failed(failure),
+      );
+    };
 
   const linkActions: LinkSheetActions = {
     canRemove: can("channels:manage", permissions.data?.permissions ?? []),
@@ -252,7 +252,13 @@ function useLinkActions() {
           : { channelId: row.link.channel_id },
       }),
   };
-  return { linkActions, undo };
+  /** Whether the sheet's close should re-read; false once after a link write. */
+  const rereadOnClose = () => {
+    const skip = skipCloseReread.current;
+    skipCloseReread.current = false;
+    return !skip;
+  };
+  return { linkActions, undo, rereadOnClose };
 }
 
 function GroupSection({

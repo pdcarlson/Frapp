@@ -41,12 +41,21 @@ function restoreLink(
   return { ...activity, links };
 }
 
+/** Every link write's mutation key starts with this. */
+const LINK_WRITES = "activity-link-write";
+
 /**
  * The shared shape of the four link writes (`spec/behavior/activity.md`
  * § Links). The two that take a link off the list (a state, a removal) drop
  * its row optimistically and put it back on failure; the two that undo one
  * (clear, restore) wait for the re-read, since only the server has the row's
- * current fields. Every one re-reads Activity when it settles.
+ * current fields. Activity is re-read when the last pending link write
+ * settles: a read that started while another write was still on its way
+ * would bring that write's dropped row back until its own re-read.
+ *
+ * Callers react to each write through `mutateAsync`'s promise, never through
+ * per-call `mutate(id, { onSuccess })` options, which TanStack Query drops for
+ * an earlier call when the same hook writes again (two quick Dones).
  */
 function useLinkWrite(
   name: string,
@@ -56,7 +65,7 @@ function useLinkWrite(
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
-    mutationKey: ["activity", name],
+    mutationKey: [LINK_WRITES, name],
     mutationFn: write,
     onMutate: async (id: string) => {
       if (!drops || !chapterId) return null;
@@ -80,6 +89,9 @@ function useLinkWrite(
     },
     onSettled: () => {
       if (!chapterId) return;
+      // This write still counts as pending here; any more are still on
+      // their way, and the last of them re-reads.
+      if (queryClient.isMutating({ mutationKey: [LINK_WRITES] }) > 1) return;
       void queryClient.invalidateQueries({
         queryKey: activityKeys.chapter(chapterId),
         exact: true,

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,11 +20,11 @@ vi.mock("@/lib/hooks/use-toast", () => ({
 }));
 vi.mock("@repo/hooks", () => ({
   useSetActivityLinkState: (state: "done" | "hidden") => ({
-    mutate: writes[state],
+    mutateAsync: writes[state],
   }),
-  useClearActivityLinkState: () => ({ mutate: writes.clear }),
-  useRemoveActivityLink: () => ({ mutate: writes.remove }),
-  useRestoreActivityLink: () => ({ mutate: writes.restore }),
+  useClearActivityLinkState: () => ({ mutateAsync: writes.clear }),
+  useRemoveActivityLink: () => ({ mutateAsync: writes.remove }),
+  useRestoreActivityLink: () => ({ mutateAsync: writes.restore }),
 }));
 
 const { ActivityLinkRow, useActivityLinkActions } =
@@ -75,7 +75,12 @@ function undoFromToast(): ReactNode {
   return call.action;
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  for (const write of Object.values(writes)) {
+    write.mockResolvedValue(undefined);
+  }
+});
 
 describe("ActivityLinkRow", () => {
   it("opens the link itself in a new tab, with nothing of Frapp's sent along", () => {
@@ -91,27 +96,29 @@ describe("ActivityLinkRow", () => {
     draw();
 
     await user.click(screen.getByRole("button", { name: "Done: Google Form" }));
-    expect(writes.done).toHaveBeenCalledWith("l1", expect.any(Object));
-
-    writes.done.mock.calls[0]![1].onSuccess();
-    expect(mockToast).toHaveBeenCalledWith(
-      expect.objectContaining({ title: "Marked done" }),
+    expect(writes.done).toHaveBeenCalledWith("l1");
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Marked done" }),
+      ),
     );
     render(<>{undoFromToast()}</>);
     await user.click(screen.getByText("Undo"));
-    expect(writes.clear).toHaveBeenCalledWith("l1", expect.any(Object));
+    expect(writes.clear).toHaveBeenCalledWith("l1");
   });
 
   it("says a failed write instead of dropping it quietly", async () => {
     const user = userEvent.setup();
+    writes.done.mockRejectedValueOnce(new Error("nope"));
     draw();
     await user.click(screen.getByRole("button", { name: "Done: Google Form" }));
-    writes.done.mock.calls[0]![1].onError(new Error("nope"));
-    expect(mockToast).toHaveBeenCalledWith(
-      expect.objectContaining({
-        variant: "destructive",
-        title: "Couldn't mark the link done",
-      }),
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          variant: "destructive",
+          title: "Couldn't mark the link done",
+        }),
+      ),
     );
   });
 
@@ -127,7 +134,7 @@ describe("ActivityLinkRow", () => {
     expect(items).toEqual(["Hide: not chapter business", "Open in chat"]);
 
     await user.click(screen.getByRole("menuitem", { name: /Hide/ }));
-    expect(writes.hidden).toHaveBeenCalledWith("l1", expect.any(Object));
+    expect(writes.hidden).toHaveBeenCalledWith("l1");
   });
 
   it("opens a thread reply at its thread's first message, and a channel message at itself", async () => {
@@ -163,14 +170,29 @@ describe("ActivityLinkRow", () => {
     await user.click(
       await screen.findByRole("menuitem", { name: "Remove for everyone" }),
     );
-    expect(writes.remove).toHaveBeenCalledWith("l1", expect.any(Object));
-
-    writes.remove.mock.calls[0]![1].onSuccess();
-    expect(mockToast).toHaveBeenCalledWith(
-      expect.objectContaining({ title: "Removed from everyone's Activity" }),
+    expect(writes.remove).toHaveBeenCalledWith("l1");
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Removed from everyone's Activity" }),
+      ),
     );
     render(<>{undoFromToast()}</>);
     await user.click(screen.getByText("Undo"));
-    expect(writes.restore).toHaveBeenCalledWith("l1", expect.any(Object));
+    expect(writes.restore).toHaveBeenCalledWith("l1");
+  });
+
+  it("gives each of two quick Dones its own toast, even when the first answers last", async () => {
+    const user = userEvent.setup();
+    let answerFirst!: () => void;
+    writes.done.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (answerFirst = resolve)),
+    );
+    draw();
+    await user.click(screen.getByRole("button", { name: "Done: Google Form" }));
+    await user.click(screen.getByRole("button", { name: "Done: Google Form" }));
+
+    await waitFor(() => expect(mockToast).toHaveBeenCalledTimes(1));
+    answerFirst();
+    await waitFor(() => expect(mockToast).toHaveBeenCalledTimes(2));
   });
 });

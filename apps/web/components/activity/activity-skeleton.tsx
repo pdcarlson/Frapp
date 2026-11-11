@@ -5,12 +5,16 @@ import {
   SkeletonSectionLabel,
 } from "@/components/shared/page-skeletons";
 import { denseListClassName } from "@/components/shared/table-controls";
-
-/** Rows per group, tapering the way the loaded page usually does. */
-const GROUP_ROWS = [4, 3, 3] as const;
+import { ACTIVITY_FILTERS } from "@repo/hooks";
 
 /**
- * `/activity` while it loads: the chip row, then the three groups, each a
+ * Rows per group (Needs you, Coming up, Links, Made by you), tapering the way
+ * the loaded page usually does.
+ */
+const GROUP_ROWS = [4, 3, 2, 3] as const;
+
+/**
+ * `/activity` while it loads: the chip row, then the four groups, each a
  * label over two-line rows with a badge at the end, in the loaded page's own
  * list frame.
  */
@@ -18,7 +22,7 @@ export function ActivityPageSkeleton() {
   return (
     <PageSkeleton label="Loading your activity" className="space-y-8">
       <div className="flex flex-wrap gap-2">
-        {Array.from({ length: 6 }, (_, chip) => (
+        {ACTIVITY_FILTERS.map((_, chip) => (
           <SkeletonControl key={chip} className="w-16 rounded-full" />
         ))}
       </div>

@@ -130,7 +130,9 @@ on web ([`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README
   Workspace account's `/a/<domain>` prefix, and `forms.gle`), Microsoft Forms
   (`forms.office.com`, `forms.microsoft.com`, `forms.cloud.microsoft`), Typeform, SignUpGenius and
   Calendly. The list lives once, in `activity_action_links` in the database, and is flagged for
-  Paul to change or widen. Any other link is not gathered, and neither is a URL with a user name
+  Paul to change or widen. The page names each row's kind ("Google Form", "Calendly") from
+  `activityLinkKind` in `@repo/hooks`, which knows the same hosts: a host added to the database
+  alone is gathered and titled by its bare host until it gets a name there. Any other link is not gathered, and neither is a URL with a user name
   in it (`https://calendly.com:1@evil.example/`): a browser opens the host after the `@`, so the
   one before it would be a trusted label on somewhere else.
 - **How they are found.** A trigger on chat messages indexes every write path the same way (a
