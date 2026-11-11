@@ -6164,6 +6164,100 @@
         ]
       }
     },
+    "/v1/channels/order": {
+      "put": {
+        "operationId": "ChatOrderController_reorderChannels_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderChannelsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReorderResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set one section's channel order, moving channels into it",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/categories/order": {
+      "put": {
+        "operationId": "ChatOrderController_reorderCategories_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderCategoriesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReorderResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set the chapter's category order",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/events": {
       "get": {
         "operationId": "EventController_list_v1",
@@ -16498,6 +16592,58 @@
         },
         "required": [
           "background"
+        ]
+      },
+      "ReorderChannelsDto": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The category the channels are filed under, or null for the default Channels section. A channel listed from another section moves here."
+          },
+          "channel_ids": {
+            "maxItems": 500,
+            "description": "Every channel the officer sees in that section, top to bottom. Any other channel already in the section keeps its relative order after them. Never a DM, a group DM or #chapter-audit.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "category_id",
+          "channel_ids"
+        ]
+      },
+      "ReorderResponseDto": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success"
+        ]
+      },
+      "ReorderCategoriesDto": {
+        "type": "object",
+        "properties": {
+          "category_ids": {
+            "maxItems": 500,
+            "description": "The chapter’s categories, top to bottom. A category not listed keeps its relative order after them.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "category_ids"
         ]
       },
       "GeofenceCoordinateDto": {

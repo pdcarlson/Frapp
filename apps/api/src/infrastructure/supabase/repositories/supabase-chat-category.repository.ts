@@ -86,6 +86,19 @@ export class SupabaseChatCategoryRepository implements IChatCategoryRepository {
     return updated;
   }
 
+  /** Via `reorder_chat_categories`, one transaction, like the channels. */
+  async reorder(
+    chapterId: string,
+    categoryIds: string[],
+  ): Promise<ChatChannelCategory[]> {
+    const { data, error } = await this.supabase.rpc('reorder_chat_categories', {
+      p_chapter_id: chapterId,
+      p_category_ids: categoryIds,
+    });
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
+  }
+
   async delete(id: string, chapterId: string): Promise<void> {
     const { error } = await this.supabase
       .from('chat_channel_categories')
