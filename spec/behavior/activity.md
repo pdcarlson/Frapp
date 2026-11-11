@@ -121,8 +121,9 @@ the same rule search and the poll list follow
 
 Sign-up links posted in chat, gathered so a member stops scrolling channels for them (#3897:
 Shawn, 2026-11-09). **Status 2026-11-11: the index is in the database
-(`20261111030000_activity_links.sql`) and the API serves it (`links` on `GET /v1/activity`, and
-the routes below); no screen draws it yet (#3897 step 6).**
+(`20261111030000_activity_links.sql`), the API serves it (`links` on `GET /v1/activity`, and
+the routes below), and the Activity page draws it on web and the phone, with the channel switch
+on web ([`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity)).**
 
 - **What counts.** An http(s) URL in a message body whose host is a sign-up host: Google Forms,
   Sheets and Docs (`docs.google.com/forms/…`, `/spreadsheets/…`, `/document/…`, with or without a
