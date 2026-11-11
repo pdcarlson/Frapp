@@ -96,12 +96,8 @@ export const chatReportCopy = {
   offlineTitle: "Reports unavailable offline",
   offlineDescription: "Reconnect to review reported messages.",
   noChapter: "Pick an active chapter to review its reports.",
-  /**
-   * Restates `CHAT_REPORT_QUEUE_PERMISSIONS` (`@repo/validation`) in words;
-   * `chat-report-copy.spec.ts` fails if it stops naming one of them.
-   */
-  deniedDescription:
-    "Reviewing reported messages needs a role that can see the full directory and manage channels and pins. Ask your chapter president for access.",
+  /** The queue folded to one link when nothing is open (Paul, 2026-11-11). */
+  historyLink: "Report history",
   noContent: "This message had no text.",
   detailsLabel: "Reporter's note",
   /**

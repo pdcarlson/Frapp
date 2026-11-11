@@ -174,7 +174,7 @@ describe("DashboardNotificationDrawer — report queue freshness", () => {
     mockInvalidateReports.mockClear();
 
     const link = screen.getByRole("link", { name: /Message Reported/ });
-    expect(link).toHaveAttribute("href", "/chat-admin");
+    expect(link).toHaveAttribute("href", "/chat-admin#reported-messages");
     await user.click(link);
 
     expect(mockInvalidateReports).toHaveBeenCalledTimes(1);

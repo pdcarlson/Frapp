@@ -4894,6 +4894,16 @@
                 "dismissed"
               ]
             }
+          },
+          {
+            "name": "channel_id",
+            "required": false,
+            "in": "query",
+            "description": "Only the reports filed in this channel, for Chat admin's per-channel view. Omit for the whole chapter's queue, which is the only place a report about a DM or a deleted channel appears.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -15329,6 +15339,12 @@
             "nullable": true,
             "description": "Null once the reported message was hard-deleted (a channel delete, or the Discord import purge). The report outlives it; the reported_* fields are the evidence."
           },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The channel the message was in when the report was filed. Null once that channel is deleted, and for reports filed before it was recorded whose message was already gone. An id only: it grants no read, and a direct message stays closed to the officer."
+          },
           "reported_content": {
             "type": "string",
             "nullable": true,
@@ -15393,6 +15409,7 @@
           "id",
           "chapter_id",
           "message_id",
+          "channel_id",
           "reported_content",
           "reported_sender_id",
           "reported_author_name",
@@ -15465,6 +15482,12 @@
             "nullable": true,
             "description": "Null once the reported message was hard-deleted (a channel delete, or the Discord import purge). The report outlives it; the reported_* fields are the evidence."
           },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The channel the removed message was in, so a client can blank that one timeline's cached copy instead of refetching every timeline. An id only: it grants no read, and a direct message stays closed to the officer. Null when the message row no longer exists."
+          },
           "reported_content": {
             "type": "string",
             "nullable": true,
@@ -15527,18 +15550,13 @@
           "message_already_deleted": {
             "type": "boolean",
             "description": "True when the message was already soft-deleted before this call, so nothing was removed now; the report (and any other open report on the message) is marked actioned either way."
-          },
-          "channel_id": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true,
-            "description": "The channel the removed message was in, so a client can blank that one timeline's cached copy instead of refetching every timeline. An id only: it grants no read, and a direct message stays closed to the officer. Null when the message row no longer exists."
           }
         },
         "required": [
           "id",
           "chapter_id",
           "message_id",
+          "channel_id",
           "reported_content",
           "reported_sender_id",
           "reported_author_name",
@@ -15549,8 +15567,7 @@
           "resolved_at",
           "resolved_by",
           "reported_attachments",
-          "message_already_deleted",
-          "channel_id"
+          "message_already_deleted"
         ]
       },
       "ChatBlockListDto": {
