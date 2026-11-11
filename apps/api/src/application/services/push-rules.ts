@@ -11,7 +11,11 @@
  * default, then the built-in one — so read it rather than a summary here.
  */
 
-import { builtInChannelDefault, isDirectChannel } from '@repo/validation';
+import {
+  builtInChannelDefault,
+  isAnnouncementChannel,
+  isDirectChannel,
+} from '@repo/validation';
 import type { ChatNotificationLevel } from '#domain/entities/chat-notification-preference.entity';
 import type { ChatNotificationPreferenceRow } from '#domain/repositories/chat-notification-preference.repository.interface';
 
@@ -56,10 +60,22 @@ export interface PushDecisionInput {
   thread?: { followState: 'following' | 'muted' | null };
 }
 
+/** Where a member's effective level for a channel came from. */
+export type ChatLevelSource =
+  /** The member set this channel (or DM) themselves. */
+  | 'channel'
+  /** The member's per-kind override. */
+  | 'kind'
+  /** The member's chapter-wide chat level (#3840), "Mentions and DMs only". */
+  | 'chapter'
+  /** Nobody chose: the officer's or the built-in channel default. */
+  | 'default';
+
 /**
  * Lift the user's effective level for this (channel, kind). Channel-scoped
- * rows beat kind-scoped rows beat defaults; the table allows both arms so a
- * user can mute a single channel without muting the whole kind.
+ * rows beat kind-scoped rows beat the chapter-wide row beat defaults; the
+ * table allows every arm so a user can mute a single channel without muting
+ * the whole kind.
  *
  * **In a DM or group DM a kind row can make it louder, never quieter.** A kind
  * override is a chapter-wide way to tune channel traffic, and until #2771 DMs
@@ -69,27 +85,51 @@ export interface PushDecisionInput {
  * DM is muted from the DM itself. A kind row above it still counts, so a
  * `system_audit` opt-in keeps reaching system messages posted into DMs (the
  * invite-accept notice, a DM poll's expiry), as it did before.
+ *
+ * **The chapter-wide row only ever lowers an ordinary channel's default**
+ * (#3840). "Mentions and DMs only" means every channel acts as `mentions`,
+ * while DMs, group DMs and the announcements channel (URGENT) keep notifying.
+ * So it never reaches a DM or the announcements channel, and it never raises a
+ * channel whose default is already quieter (`#chapter-audit`, an officer's
+ * `off`, the `system_audit` kind's `off`).
  */
 export function resolveLevel(
   channel: PushRuleChannel,
   messageKind: string,
   preferences: ChatNotificationPreferenceRow[],
 ): ChatNotificationLevel {
+  return resolveLevelWithSource(channel, messageKind, preferences).level;
+}
+
+/** {@link resolveLevel}, plus which preference decided it. */
+export function resolveLevelWithSource(
+  channel: PushRuleChannel,
+  messageKind: string,
+  preferences: ChatNotificationPreferenceRow[],
+): { level: ChatNotificationLevel; source: ChatLevelSource } {
   const channelPref = preferences.find(
     (p) => p.scope === 'channel' && p.scope_id === channel.id,
   );
-  if (channelPref) return channelPref.level;
+  if (channelPref) return { level: channelPref.level, source: 'channel' };
   const kindPref = preferences.find(
     (p) => p.scope === 'kind' && p.scope_kind === messageKind,
   );
+  const fallback = defaultLevelFor(channel, messageKind);
   if (isDirectChannel(channel)) {
-    const fallback = defaultLevelFor(channel, messageKind);
     return kindPref && LOUDNESS[kindPref.level] > LOUDNESS[fallback]
-      ? kindPref.level
-      : fallback;
+      ? { level: kindPref.level, source: 'kind' }
+      : { level: fallback, source: 'default' };
   }
-  if (kindPref) return kindPref.level;
-  return defaultLevelFor(channel, messageKind);
+  if (kindPref) return { level: kindPref.level, source: 'kind' };
+  const chapterPref = preferences.find((p) => p.scope === 'chapter');
+  if (
+    chapterPref &&
+    !isAnnouncementChannel(channel) &&
+    LOUDNESS[chapterPref.level] < LOUDNESS[fallback]
+  ) {
+    return { level: chapterPref.level, source: 'chapter' };
+  }
+  return { level: fallback, source: 'default' };
 }
 
 /** How much each level lets through, for comparing two of them. */

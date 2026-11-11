@@ -3228,6 +3228,88 @@
         ]
       }
     },
+    "/v1/channels/notification-preferences/chapter": {
+      "get": {
+        "operationId": "ChatController_getChapterChatLevel_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterChatLevelDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's chapter-wide chat level: all (each channel at its default) or mentions (Mentions and DMs only)",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "put": {
+        "operationId": "ChatController_setChapterChatLevel_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetChapterChatLevelDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterChatLevelDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set the caller's chapter-wide chat level",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/channels/{id}": {
       "get": {
         "operationId": "ChatController_getChannel_v1",
@@ -14256,6 +14338,10 @@
               "mentions",
               "off"
             ]
+          },
+          "from_chapter_level": {
+            "type": "boolean",
+            "description": "True when the level comes from the member's chapter-wide chat level (GET /v1/channels/notification-preferences/chapter), not from this channel's own setting or default, so a client can label it \"your default\"."
           }
         },
         "required": [
@@ -14349,6 +14435,37 @@
         },
         "required": [
           "kind",
+          "level"
+        ]
+      },
+      "ChapterChatLevelDto": {
+        "type": "object",
+        "properties": {
+          "level": {
+            "type": "string",
+            "enum": [
+              "all",
+              "mentions"
+            ]
+          }
+        },
+        "required": [
+          "level"
+        ]
+      },
+      "SetChapterChatLevelDto": {
+        "type": "object",
+        "properties": {
+          "level": {
+            "type": "string",
+            "enum": [
+              "all",
+              "mentions"
+            ],
+            "description": "all = each channel at its own default; mentions = \"Mentions and DMs only\": every ordinary channel acts as mentions, while DMs, group DMs and the announcements channel keep notifying. A level the member set on one channel, or on a message kind, still wins."
+          }
+        },
+        "required": [
           "level"
         ]
       },

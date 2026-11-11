@@ -52,6 +52,7 @@ describe('Route declaration order — a literal route must not be swallowed by :
   const notificationPreferencesMock = {
     getChannelNotificationPreferences: jest.fn().mockResolvedValue([]),
     getKindNotificationPreferences: jest.fn().mockResolvedValue([]),
+    getChapterChatLevel: jest.fn().mockResolvedValue({ level: 'all' }),
   };
 
   const chatServiceMock = {
@@ -218,6 +219,19 @@ describe('Route declaration order — a literal route must not be swallowed by :
     expect(
       notificationPreferencesMock.getChannelNotificationPreferences,
     ).not.toHaveBeenCalled();
+  });
+
+  it('GET /v1/channels/notification-preferences/chapter reaches getChapterChatLevel, not getChannel', async () => {
+    await request(app.getHttpServer())
+      .get(`${V1}/channels/notification-preferences/chapter`)
+      .set('authorization', 'Bearer token')
+      .set('x-chapter-id', CHAPTER_ID)
+      .expect(200);
+
+    expect(
+      notificationPreferencesMock.getChapterChatLevel,
+    ).toHaveBeenCalledWith(CHAPTER_ID, 'member-1');
+    expect(chatServiceMock.getChannel).not.toHaveBeenCalled();
   });
 
   // ── member.controller.ts (`/members`) ──
