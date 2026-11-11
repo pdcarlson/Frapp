@@ -9,6 +9,7 @@ import {
   TASK_ACTION_LABELS,
   taskStatusLabel,
   useMyPermissions,
+  subtaskProgress,
   useTask,
   useUpdateTaskStatus,
   useConfirmTask,
@@ -24,7 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Can } from "@/components/shared/can";
 import { can } from "@repo/validation";
-import { parseBareDateLocalMidnight, parseInstant } from "@repo/formatting";
+import { formatDueOn } from "@repo/formatting";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -40,26 +41,16 @@ interface TaskCardProps {
   isConfirmed: boolean;
 }
 
-function formatDate(value: string): string {
-  // due_date is a date-only `YYYY-MM-DD`; parse at local midnight so the
-  // rendered day matches the server-formatted `content` string instead of
-  // shifting back a day in negative-UTC-offset timezones. Protected cluster —
-  // do not fold into formatLocaleDate (`new Date(value)` is UTC midnight).
-  const local = parseBareDateLocalMidnight(value);
-  if (local) return local.toLocaleDateString();
-  const instant = parseInstant(value);
-  if (!instant) return value;
-  return instant.toLocaleDateString();
-}
-
 /** Exported for the sign-in showcase, which draws this badge without a live task. */
-export const STATUS_BADGE: Record<TaskStatus, "default" | "outline" | "destructive"> =
-  {
-    TODO: "outline",
-    IN_PROGRESS: "default",
-    COMPLETED: "default",
-    OVERDUE: "destructive",
-  };
+export const STATUS_BADGE: Record<
+  TaskStatus,
+  "default" | "outline" | "destructive"
+> = {
+  TODO: "outline",
+  IN_PROGRESS: "default",
+  COMPLETED: "default",
+  OVERDUE: "destructive",
+};
 
 /**
  * Task assignment card. The chat message is an immutable creation-time snapshot
@@ -193,7 +184,16 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
           {payload.assigner_name} → {payload.assignee_name}
         </span>
         <span aria-hidden="true">·</span>
-        <span>Due {formatDate(payload.due_date)}</span>
+        <span>
+          {formatDueOn(payload.due_at ?? payload.due_date) ??
+            `Due ${payload.due_date}`}
+        </span>
+        {live && live.subtasks.length > 0 ? (
+          <>
+            <span aria-hidden="true">·</span>
+            <span>{subtaskProgress(live.subtasks)?.label} subtasks</span>
+          </>
+        ) : null}
         {payload.point_reward ? (
           <Badge variant="outline">+{payload.point_reward} pts</Badge>
         ) : null}
@@ -228,10 +228,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
               onClick={() =>
                 updateStatus.mutate(
                   { id: payload.task_id, body: { status: "COMPLETED" } },
-                  onFailure(
-                    "Couldn't complete task",
-                    "Try again in a moment.",
-                  ),
+                  onFailure("Couldn't complete task", "Try again in a moment."),
                 )
               }
             >

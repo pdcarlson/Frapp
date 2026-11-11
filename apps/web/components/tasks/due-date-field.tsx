@@ -1,14 +1,18 @@
 "use client";
 
 import { forwardRef, useId, useState } from "react";
-import { formatDueEntry, parseDueEntry } from "@repo/formatting";
+import { formatDueEntry, parseDueEntryWithTime } from "@repo/formatting";
 import { Input } from "@/components/ui/input";
 
 type DueDateFieldProps = Omit<
   React.ComponentProps<"input">,
   "value" | "onChange" | "type"
 > & {
-  /** `YYYY-MM-DD`, or `""` while nothing readable is typed. */
+  /**
+   * `YYYY-MM-DD`, `YYYY-MM-DDTHH:MM` when a time of day was typed (#4003),
+   * or `""` while nothing readable is typed. `dueEntryFields` turns it into
+   * what `POST /v1/tasks` takes.
+   */
   value: string;
   onChange: (isoDate: string) => void;
   /** The form was submitted without a due date: say so under the field. */
@@ -21,8 +25,11 @@ type DueDateFieldProps = Omit<
  * A task's due date on web (#3928): type a month and a day, `Nov 14` or
  * `11/14`, or a word like `Friday` or `tomorrow`, and the year is filled in
  * as the next time that date comes round. A year is typed only for a date
- * further out. `parseDueEntry` in `@repo/formatting` owns what is read, and
- * the chat `/task` command reads its date the same way.
+ * further out. A time may go with it, before or after the date, the way
+ * Todoist reads one: `Fri 5pm`, `11/14 9:30am`, `tomorrow noon`, or `5pm`
+ * alone for today (#4003). `parseDueEntryWithTime` in `@repo/formatting`
+ * owns what is read, and the chat `/task` command reads its date the same
+ * way.
  *
  * It replaced the browser's date input, which shows and asks for a full
  * `MM/DD/YYYY`. The quick entry is how Todoist, Linear and Asana take a due
@@ -67,7 +74,7 @@ export const DueDateField = forwardRef<HTMLInputElement, DueDateFieldProps>(
     const [seen, setSeen] = useState(value);
     if (value !== seen) {
       setSeen(value);
-      if (value !== (parseDueEntry(text, at) ?? "")) {
+      if (value !== (parseDueEntryWithTime(text, at) ?? "")) {
         setText(value ? formatDueEntry(value, at) : "");
       }
     }
@@ -77,7 +84,7 @@ export const DueDateField = forwardRef<HTMLInputElement, DueDateFieldProps>(
       missing && !value
         ? text.trim() === ""
           ? "Pick a due date."
-          : "Try a date like Nov 14 or 11/14, or a day like Friday."
+          : "Try a date like Nov 14 or Friday, with a time if it has one, like Friday 5pm."
         : null;
     const reading = value && text !== shown ? shown : null;
 
@@ -100,7 +107,7 @@ export const DueDateField = forwardRef<HTMLInputElement, DueDateFieldProps>(
             onChange={(event) => {
               const next = event.target.value;
               setText(next);
-              onChange(parseDueEntry(next, at) ?? "");
+              onChange(parseDueEntryWithTime(next, at) ?? "");
             }}
             onBlur={(event) => {
               if (value) setText(shown);

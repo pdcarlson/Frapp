@@ -55,8 +55,21 @@ vi.mock("next/navigation", () => ({
 // Chat's panel has its own specs (`chat-shell.spec.tsx`); here it is a stub
 // that reports what the shell hands it.
 vi.mock("@/components/chat/chat-page", () => ({
-  ChatPage: ({ toolBeside }: { toolBeside?: boolean }) => (
-    <p data-testid="chat-stub">{toolBeside ? "beside a tool" : "alone"}</p>
+  ChatPage: ({
+    toolBeside,
+    onClose,
+  }: {
+    toolBeside?: boolean;
+    onClose?: () => void;
+  }) => (
+    <>
+      <p data-testid="chat-stub">{toolBeside ? "beside a tool" : "alone"}</p>
+      {onClose ? (
+        <button type="button" onClick={onClose}>
+          Close chat
+        </button>
+      ) : null}
+    </>
   ),
 }));
 
@@ -542,6 +555,54 @@ describe("DashboardShell", () => {
       expect(chatPanel(container)!.style.minWidth).toBe("615px");
     });
 
+    describe("closing chat from chat's own header (#4223)", () => {
+      it("closes chat and leaves the tool page, with focus on the page", () => {
+        vi.useFakeTimers();
+        try {
+          setWindowWidth(1440);
+          mockPathname.value = "/events";
+          const { container } = render(<DashboardShell>events</DashboardShell>);
+          fireEvent.click(screen.getByRole("button", { name: "Close chat" }));
+          // The same exit the Chat row plays, and the page keeps the route.
+          expect(chatPanel(container)).toHaveAttribute("inert");
+          expect(
+            container.querySelector("[data-tool-column]"),
+          ).toHaveFocus();
+          act(() => {
+            vi.runAllTimers();
+          });
+          expect(chatPanel(container)).toBeNull();
+          expect(routerPush).not.toHaveBeenCalled();
+          expect(document.cookie).toContain("frapp_chat_open=0");
+          // The Chat row still opens it again.
+          const chatRow = within(nav()).getByRole("button", { name: /^Chat/ });
+          expect(chatRow).toHaveAttribute("aria-pressed", "false");
+          fireEvent.click(chatRow);
+          expect(chatPanel(container)).not.toBeNull();
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it("offers no close with chat alone, or below the side-by-side width", () => {
+        setWindowWidth(1440);
+        mockPathname.value = "/chat";
+        const { unmount } = render(<DashboardShell>chat</DashboardShell>);
+        expect(screen.getByTestId("chat-stub")).toBeInTheDocument();
+        expect(
+          screen.queryByRole("button", { name: "Close chat" }),
+        ).not.toBeInTheDocument();
+        unmount();
+
+        setWindowWidth(900);
+        render(<DashboardShell>chat</DashboardShell>);
+        expect(screen.getByTestId("chat-stub")).toBeInTheDocument();
+        expect(
+          screen.queryByRole("button", { name: "Close chat" }),
+        ).not.toBeInTheDocument();
+      });
+    });
+
     describe("closing the tool page from the page itself (Paul, 2026-11-11)", () => {
       it("gives every tool page a close button and its title in its own header", () => {
         setWindowWidth(1440);
@@ -565,6 +626,12 @@ describe("DashboardShell", () => {
         expect(barCopy.tagName).toBe("P");
         expect(barCopy.parentElement).toHaveClass("min-[1056px]:hidden");
 
+        // 16px from the page's edge: -8px into its 24px gutter (#4223 puts
+        // chat's X in the same place).
+        expect(header).toHaveClass("sm:px-6");
+        expect(
+          within(header).getByRole("button", { name: "Close Chat admin" }),
+        ).toHaveClass("-mr-2");
         fireEvent.click(
           within(header).getByRole("button", { name: "Close Chat admin" }),
         );

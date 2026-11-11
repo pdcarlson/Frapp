@@ -182,6 +182,27 @@ export function formatDueDate(date: string, now: Date = new Date()): string {
   return dayLabel(zonedParts(at, 'UTC'), zonedParts(now, 'UTC'));
 }
 
+/**
+ * A task's due as a member reads it: "Fri, Nov 14" for a task due on a day,
+ * "Fri, Nov 14, 5 PM" for one due at a time (#4003), with the zone's short
+ * name when the zone is a fallback rather than the reader's own. Without a
+ * zone at all the time is left off, so a guessed clock is never shown.
+ */
+export function formatTaskDue(
+  dueDate: string,
+  dueAt: string | null | undefined,
+  options: { timeZone: string | null; labelZone?: boolean; now?: Date },
+): string {
+  const at = dueAt ? new Date(dueAt) : null;
+  if (!at || Number.isNaN(at.getTime()) || !options.timeZone) {
+    return formatDueDate(dueDate, options.now);
+  }
+  const parts = zonedParts(at, options.timeZone);
+  const now = zonedParts(options.now ?? new Date(), options.timeZone);
+  const zone = options.labelZone ? ` ${zoneLabel(at, options.timeZone)}` : '';
+  return `${dayLabel(parts, now)}, ${clock(parts)} ${parts.period}${zone}`;
+}
+
 /** Joins the non-empty facts of a push body with {@link PUSH_SEPARATOR}. */
 export function joinFacts(
   ...facts: (string | null | undefined | false)[]

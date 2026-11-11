@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
+import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { useChapterScope } from "./chapter-scope";
 
@@ -43,10 +44,15 @@ interface CachedTask {
   status?: string;
   stored_status?: string;
   due_date?: string;
+  due_at?: string | null;
   completed_at?: string | null;
   confirmed_at?: string | null;
   points_awarded?: boolean;
+  subtasks?: TaskSubtask[];
 }
+
+/** One line of a task's checklist (#4003), as the task reads carry it. */
+export type TaskSubtask = components["schemas"]["TaskSubtaskDto"];
 
 type TaskPatch = Partial<
   Pick<
@@ -94,8 +100,18 @@ export function deriveDisplayStatus(
   storedStatus: TaskStatus,
   dueDate: string | undefined,
   today: string,
+  /**
+   * A task due at a time of day is overdue from that minute (#4003), as
+   * `toDisplayStatus` reads it; `now` is injected for the unit table.
+   */
+  dueAt?: string | null,
+  now: Date = new Date(),
 ): TaskStatus {
   const derivable = storedStatus === "TODO" || storedStatus === "IN_PROGRESS";
+  const dueAtMs = dueAt ? Date.parse(dueAt) : Number.NaN;
+  if (!Number.isNaN(dueAtMs)) {
+    return derivable && dueAtMs <= now.getTime() ? "OVERDUE" : storedStatus;
+  }
   if (
     derivable &&
     typeof dueDate === "string" &&
@@ -375,6 +391,10 @@ export function useCreateTask() {
       description?: string;
       assignee_id: string;
       due_date: string;
+      /** The moment it is due, when it has a time of day (#4003). */
+      due_at?: string;
+      /** Subtask titles, in order (#4003). */
+      subtasks?: string[];
       point_reward?: number;
     }) => {
       const { data, error } = await client.POST("/v1/tasks", { body });
@@ -439,7 +459,12 @@ export function useUpdateTaskStatus() {
       // first leaves the button unchanged after a successful write — the member
       // taps again and collects a 400 for an action that already succeeded.
       const patch: TaskPatch = {
-        status: deriveDisplayStatus(body.status, row?.due_date, todayUtc()),
+        status: deriveDisplayStatus(
+          body.status,
+          row?.due_date,
+          todayUtc(),
+          row?.due_at,
+        ),
         stored_status: body.status,
       };
       // Mirrors the server stamping `completed_at` on COMPLETED and leaving it
@@ -563,7 +588,12 @@ export function useRejectTask() {
       await cancelTaskQueries(queryClient, chapterId, id);
       const row = readCachedTask(queryClient, chapterId, id);
       return applyTaskPatch(queryClient, chapterId, id, {
-        status: deriveDisplayStatus("IN_PROGRESS", row?.due_date, todayUtc()),
+        status: deriveDisplayStatus(
+          "IN_PROGRESS",
+          row?.due_date,
+          todayUtc(),
+          row?.due_at,
+        ),
         stored_status: "IN_PROGRESS",
         completed_at: null,
       });
@@ -598,4 +628,180 @@ export function useDeleteTask() {
       queryClient.invalidateQueries({ queryKey: taskKeys.all });
     },
   });
+}
+
+/**
+ * Check off or uncheck one of a task's subtasks (#4003), optimistically: the
+ * box flips on the tap, and a refusal puts it back. The assignee or an
+ * officer; the server checks which.
+ */
+export function useSetSubtaskDone() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["tasks", "set-subtask-done"],
+    mutationFn: async ({
+      taskId,
+      subtaskId,
+      done,
+    }: {
+      taskId: string;
+      subtaskId: string;
+      done: boolean;
+    }) => {
+      const { data, error } = await client.PATCH(
+        "/v1/tasks/{id}/subtasks/{subtaskId}",
+        { params: { path: { id: taskId, subtaskId } }, body: { done } },
+      );
+      if (error) throw error;
+      return data;
+    },
+    onMutate: async ({ taskId, subtaskId, done }) => {
+      await cancelTaskQueries(queryClient, chapterId, taskId);
+      const before = readCachedTask(
+        queryClient,
+        chapterId,
+        taskId,
+      )?.subtasks?.find((subtask) => subtask.id === subtaskId);
+      if (!before) return null;
+      const doneAt = done ? new Date().toISOString() : null;
+      editCachedSubtasks(queryClient, chapterId, taskId, (steps) =>
+        steps.map((step) =>
+          step.id === subtaskId ? { ...step, done_at: doneAt } : step,
+        ),
+      );
+      return { chapterId, doneAt, previous: before.done_at };
+    },
+    onError: (_error, { taskId, subtaskId }, context) => {
+      if (!context) return;
+      // Only this step, and only while it still holds what this tap wrote:
+      // a second tap on another step, or on this one, keeps its own state.
+      editCachedSubtasks(queryClient, context.chapterId, taskId, (steps) =>
+        steps.map((step) =>
+          step.id === subtaskId && step.done_at === context.doneAt
+            ? { ...step, done_at: context.previous }
+            : step,
+        ),
+      );
+    },
+    onSettled: (_data, _error, { taskId }, context) => {
+      invalidateTask(queryClient, context?.chapterId ?? chapterId, taskId);
+    },
+  });
+}
+
+/** An officer adds a subtask to the end of a task (#4003). Not optimistic: the id is the server's. */
+export function useAddSubtask() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["tasks", "add-subtask"],
+    mutationFn: async ({
+      taskId,
+      title,
+    }: {
+      taskId: string;
+      title: string;
+    }) => {
+      const { data, error } = await client.POST("/v1/tasks/{id}/subtasks", {
+        params: { path: { id: taskId } },
+        body: { title },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSettled: (_data, _error, { taskId }) => {
+      invalidateTask(queryClient, chapterId, taskId);
+    },
+  });
+}
+
+/** An officer removes a subtask (#4003), optimistically. */
+export function useDeleteSubtask() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["tasks", "delete-subtask"],
+    mutationFn: async ({
+      taskId,
+      subtaskId,
+    }: {
+      taskId: string;
+      subtaskId: string;
+    }) => {
+      const { error } = await client.DELETE(
+        "/v1/tasks/{id}/subtasks/{subtaskId}",
+        { params: { path: { id: taskId, subtaskId } } },
+      );
+      if (error) throw error;
+    },
+    onMutate: async ({ taskId, subtaskId }) => {
+      await cancelTaskQueries(queryClient, chapterId, taskId);
+      const removed = readCachedTask(
+        queryClient,
+        chapterId,
+        taskId,
+      )?.subtasks?.find((subtask) => subtask.id === subtaskId);
+      if (!removed) return null;
+      editCachedSubtasks(queryClient, chapterId, taskId, (steps) =>
+        steps.filter((step) => step.id !== subtaskId),
+      );
+      return { chapterId, removed };
+    },
+    onError: (_error, { taskId }, context) => {
+      if (!context) return;
+      const { removed } = context;
+      editCachedSubtasks(queryClient, context.chapterId, taskId, (steps) =>
+        steps.some((step) => step.id === removed.id)
+          ? steps
+          : [...steps, removed].sort((a, b) => a.position - b.position),
+      );
+    },
+    onSettled: (_data, _error, { taskId }, context) => {
+      invalidateTask(queryClient, context?.chapterId ?? chapterId, taskId);
+    },
+  });
+}
+
+/**
+ * Rewrite one task's subtasks in both cache entries that hold it (the detail
+ * and the board list). Subtask writes revert step by step rather than through
+ * {@link revertTaskPatch}: that compares by reference, and the cache's
+ * structural sharing copies an edited array, so a whole-array patch would
+ * never match on the way back.
+ */
+function editCachedSubtasks(
+  queryClient: QueryClient,
+  chapterId: string | null,
+  taskId: string,
+  edit: (steps: TaskSubtask[]) => TaskSubtask[],
+): void {
+  const apply = (row: unknown): unknown => {
+    const task = asCachedTask(row);
+    if (!task || task.id !== taskId || !task.subtasks) return row;
+    return { ...task, subtasks: edit(task.subtasks) };
+  };
+  queryClient.setQueryData(taskKeys.detail(chapterId, taskId), apply);
+  queryClient.setQueryData(taskKeys.lists(chapterId), (list: unknown) =>
+    Array.isArray(list) ? list.map(apply) : list,
+  );
+}
+
+/**
+ * How far through its subtasks a task is: `"2 of 5"`, or `null` for a task
+ * with none. Rows and cards show it beside the due date (#4003).
+ */
+export function subtaskProgress(
+  subtasks: readonly { done_at: string | null }[] | null | undefined,
+): { done: number; total: number; label: string } | null {
+  if (!subtasks || subtasks.length === 0) return null;
+  const done = subtasks.filter((subtask) => subtask.done_at).length;
+  return {
+    done,
+    total: subtasks.length,
+    label: `${done} of ${subtasks.length}`,
+  };
 }
