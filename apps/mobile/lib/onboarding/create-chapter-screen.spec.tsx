@@ -1089,12 +1089,6 @@ describe("chapter setup — push primer for the founder", () => {
 const fillOf = (pressable: Node | undefined): unknown =>
   flatStyle(pressable?.props.style).backgroundColor;
 
-/**
- * The invite step's one gold button is `Share invite` (owner pick 2026-11-06,
- * "Share first"). Each press mints a fresh link and shares it, since a link
- * lets one person in; no link is minted before a press, and no token is ever
- * drawn. Leaving is the quiet line under it.
- */
 describe("chapter setup — display pick for the founder (#4056)", () => {
   afterEach(() => {
     resetChatDensityForTests();
@@ -1154,6 +1148,12 @@ describe("chapter setup — display pick for the founder (#4056)", () => {
   });
 });
 
+/**
+ * The invite step's one gold button is `Share invite` (owner pick 2026-11-06,
+ * "Share first"). Each press mints a fresh link and shares it, since a link
+ * lets one person in; no link is minted before a press, and no token is ever
+ * drawn. Leaving is the quiet line under it.
+ */
 describe("chapter setup — invite", () => {
   async function toInvite(): Promise<Node> {
     const { root } = await render();

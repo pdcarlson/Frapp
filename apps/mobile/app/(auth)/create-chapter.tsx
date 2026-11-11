@@ -243,11 +243,8 @@ export default function CreateChapter() {
   // What locks the screen's controls: a create, or a sign-out on its way.
   const locked = submitting || signingOut;
   const isManual = directoryId === null;
-  const created =
-    step === "live" ||
-    step === "display" ||
-    step === "primer" ||
-    step === "invite";
+  // Every step after the setup ones exists only once the chapter does.
+  const created = !SETUP_STEPS.includes(step);
   const displayName =
     identity.shortName.trim() || identity.name.trim() || "Your chapter";
   const canConfirm = chapterIdentityIsValid(identity) && archetype !== null;

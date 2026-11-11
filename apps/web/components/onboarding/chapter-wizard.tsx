@@ -265,7 +265,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
           : {
               title: "Chapter created",
               description:
-                "Your chapter is set up. Invite your members to start chatting.",
+                "Your chapter is set up. Pick your chat display, then invite your members.",
             },
       );
       setStep("display");
