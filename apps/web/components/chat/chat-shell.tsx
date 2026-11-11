@@ -60,10 +60,7 @@ import {
   canSetChannelDisplayLock,
   useSetChannelDisplayLock,
 } from "@repo/hooks";
-import {
-  setChannelLocked,
-  syncLockedChannels,
-} from "@repo/chat-core/density";
+import { setChannelLocked, syncLockedChannels } from "@repo/chat-core/density";
 import {
   can,
   canAll,
@@ -2252,12 +2249,12 @@ export function ChatShell({
       : chapterScope === "none"
         ? "no-chapter"
         : channelsQuery.isPending
-        ? "loading"
-        : channelsQuery.isError
-          ? "error"
-          : !activeChapterId
-            ? "no-chapter"
-            : "empty";
+          ? "loading"
+          : channelsQuery.isError
+            ? "error"
+            : !activeChapterId
+              ? "no-chapter"
+              : "empty";
   // `Esc`, where nothing else takes it (#3824; the history half is above).
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -2561,7 +2558,8 @@ export function ChatShell({
                         setDisplayLock.mutate(
                           { id: channelId, locked },
                           {
-                            onSuccess: () => setChannelLocked(channelId, locked),
+                            onSuccess: () =>
+                              setChannelLocked(channelId, locked),
                             onError: () =>
                               toast({
                                 title: "Couldn't change Always formal",
@@ -2955,6 +2953,10 @@ export function ChatShell({
                   }
                   onDelete={handleDeleteMessage}
                   onClosePoll={handleClosePoll}
+                  onFlag={(messageId, flag) =>
+                    // The action toasts a refusal itself; nothing to add here.
+                    void channel.flag(messageId, flag).catch(() => {})
+                  }
                   bookmarkedMessageIds={bookmarkedMessageIds}
                   onToggleBookmark={handleToggleBookmark}
                   canManageChannel={canManageChannel}

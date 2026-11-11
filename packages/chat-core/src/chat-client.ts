@@ -18,6 +18,7 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { ChatMessageFlag } from "@repo/validation";
 import {
   isDefinitiveClientError,
   randomClientId,
@@ -1130,6 +1131,44 @@ export async function editMessage(
       params: { path: { messageId: args.messageId } },
       body: { content: args.content },
     }),
+  );
+}
+
+export interface SetMessageFlagArgs {
+  channelId: string;
+  messageId: string;
+  /** The flag to put on, or `null` to take the message's flag off. */
+  flag: ChatMessageFlag | null;
+}
+
+/**
+ * Put a flag on a message, replace it, or take it off (#3921). Who may is
+ * the server's call (`canChangeMessageFlag`); the client offers the control
+ * only where it should work (`canFlagMessage` in `./flags`).
+ *
+ * Not optimistic, like `editMessage`: the row the server returns carries the
+ * flag, the flagger and the time, and merging it is both the confirmation and
+ * the update. Everyone else's timeline draws it from the Realtime UPDATE
+ * echo, which re-merges the same row as a no-op here. A lost race (someone
+ * else changed the flag first) is a 409 the toast explains.
+ */
+export async function setMessageFlag(
+  ctx: ChatActionContext,
+  args: SetMessageFlagArgs,
+): Promise<void> {
+  const path = { params: { path: { messageId: args.messageId } } };
+  const flag = args.flag;
+  await writeHeldRow(
+    ctx,
+    args.channelId,
+    flag ? "Couldn't flag message" : "Couldn't remove flag",
+    () =>
+      flag
+        ? ctx.apiClient.PUT("/v1/channels/messages/{messageId}/flag", {
+            ...path,
+            body: { flag },
+          })
+        : ctx.apiClient.DELETE("/v1/channels/messages/{messageId}/flag", path),
   );
 }
 

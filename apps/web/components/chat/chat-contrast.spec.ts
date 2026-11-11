@@ -177,6 +177,49 @@ describe("a row that mentions the viewer", () => {
   });
 });
 
+/**
+ * An Important row (#3921, `components.md` §11 § A flagged row): the danger
+ * tint across the whole row, `--destructive-tint-hover` once hovered, with a
+ * 2px `--destructive` bar. The same check as the mention row's: every text
+ * the row draws still reads on the tint, and the bar separates from the
+ * thread. The tint is one alpha over the thread's own background, so one
+ * figure per state, not one per chapter seed.
+ */
+describe("an Important row", () => {
+  const rest = statusTint("destructive", SURFACE.background);
+  const hovered = tint(SEMANTIC.destructive, SURFACE.background, 0.2);
+
+  it("keeps body text, captions and the red label AA at rest and hovered", () => {
+    for (const [state, bg] of [
+      ["rest", rest],
+      ["hovered", hovered],
+    ] as const) {
+      expect(
+        ratio(TEXT.foreground, bg),
+        `${state} body`,
+      ).toBeGreaterThanOrEqual(AA_TEXT);
+      expect(
+        ratio(TEXT.mutedForeground, bg),
+        `${state} caption`,
+      ).toBeGreaterThanOrEqual(AA_TEXT);
+      expect(
+        ratio(DESTRUCTIVE_TEXT, bg),
+        `${state} Important label`,
+      ).toBeGreaterThanOrEqual(AA_TEXT);
+      expect(
+        ratio(MENTION_CHIP.text, bg),
+        `${state} mention chip`,
+      ).toBeGreaterThanOrEqual(AA_TEXT);
+    }
+  });
+
+  it("draws the bar at non-text contrast against the thread", () => {
+    expect(
+      ratio(SEMANTIC.destructive, SURFACE.background),
+    ).toBeGreaterThanOrEqual(AA_NON_TEXT);
+  });
+});
+
 describe("reaction chips", () => {
   it("keeps accent chip text AA on its own tint for every chapter seed", () => {
     for (const seed of SEEDS) {

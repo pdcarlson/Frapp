@@ -176,28 +176,43 @@ describe("a multi-choice poll card (#3793)", () => {
     }) as unknown as ChatMessage;
 
   it("builds the mode onto the card only when asked, and reads it back", () => {
-    const input = { question: "Which days?", options: ["Fri", "Sat"], closesAt: null };
+    const input = {
+      question: "Which days?",
+      options: ["Fri", "Sat"],
+      closesAt: null,
+    };
     const one = buildPollMessage(input).payload;
     expect(one).not.toHaveProperty("choice_mode");
     expect(isMultiChoicePoll(one)).toBe(false);
     const many = buildPollMessage({ ...input, multiple: true }).payload;
     expect(many.choice_mode).toBe("multi");
-    expect(readPollPayload({ payload: many } as unknown as ChatMessage)).toEqual(many);
+    expect(
+      readPollPayload({ payload: many } as unknown as ChatMessage),
+    ).toEqual(many);
   });
 
   it("reads a card without the mode, or marked single, as single-choice", () => {
     const read = (payload: object) =>
       readPollPayload({ payload } as unknown as ChatMessage)!;
     expect(read(single)).not.toHaveProperty("choice_mode");
-    expect(read({ ...single, choice_mode: "single" })).not.toHaveProperty("choice_mode");
-    expect(read({ ...single, choice_mode: null })).not.toHaveProperty("choice_mode");
+    expect(read({ ...single, choice_mode: "single" })).not.toHaveProperty(
+      "choice_mode",
+    );
+    expect(read({ ...single, choice_mode: null })).not.toHaveProperty(
+      "choice_mode",
+    );
     // Anything else votes as multi on the server, so it reads as multi here.
     expect(read({ ...single, choice_mode: "many" }).choice_mode).toBe("multi");
   });
 
   it("tallies a single-choice card as before", () => {
     const tally = tallyPollVotes(
-      votes([["u1", "a"], ["u2", "a"], ["me", "b"], ["u3", "zzz"]]),
+      votes([
+        ["u1", "a"],
+        ["u2", "a"],
+        ["me", "b"],
+        ["u3", "zzz"],
+      ]),
       options,
       "me",
     );
@@ -256,8 +271,12 @@ describe("a multi-choice poll card (#3793)", () => {
     expect(pollVotePayload(single, ["a"], "a")).toEqual({ option_id: "a" });
     // Multi-choice: add, in the card's order; tap again to clear.
     expect(pollVotePayload(multi, [], "c")).toEqual({ option_id: ["c"] });
-    expect(pollVotePayload(multi, ["c"], "a")).toEqual({ option_id: ["a", "c"] });
-    expect(pollVotePayload(multi, ["a", "c"], "a")).toEqual({ option_id: ["c"] });
+    expect(pollVotePayload(multi, ["c"], "a")).toEqual({
+      option_id: ["a", "c"],
+    });
+    expect(pollVotePayload(multi, ["a", "c"], "a")).toEqual({
+      option_id: ["c"],
+    });
     expect(pollVotePayload(multi, ["c"], "c")).toEqual({ option_id: [] });
   });
 
@@ -279,7 +298,9 @@ describe("a multi-choice poll card (#3793)", () => {
 
   it("tells a member they can pick several", () => {
     expect(pollChoiceHint(multi, false)).toBe("Select one or more");
-    expect(pollChoiceHint(multi, true)).toBe("More than one choice was allowed");
+    expect(pollChoiceHint(multi, true)).toBe(
+      "More than one choice was allowed",
+    );
   });
 });
 

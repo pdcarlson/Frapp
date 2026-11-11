@@ -15,6 +15,7 @@
  * chat-core covers and what differs between the two, and why.
  */
 
+import type { ChatMessageFlag } from "@repo/validation";
 import {
   useCallback,
   useContext,
@@ -62,6 +63,7 @@ import {
 import {
   actOnCard,
   closePoll as closePollAction,
+  setMessageFlag as setMessageFlagAction,
   deleteMessage as deleteMessageAction,
   discardOutboxRow,
   editMessage as editMessageAction,
@@ -142,6 +144,11 @@ export interface UseChatChannelResult {
    * server. Toasts and rejects on failure.
    */
   closePoll: (messageId: string) => Promise<void>;
+  /**
+   * Puts a flag on a message, replaces it, or (`null`) takes it off (#3921).
+   * Toasts and rejects on failure, a lost race included.
+   */
+  flag: (messageId: string, flag: ChatMessageFlag | null) => Promise<void>;
   draft: string;
   setDraft: (body: string) => void;
   /** The manager's list: the same array until someone starts or stops typing. */
@@ -192,8 +199,14 @@ export interface UseChatChannelResult {
    * points) unconfirmed-retry bookkeeping. Never reject; read the result as
    * `notifyDispatchOutcome` does.
    */
-  postTask: (targetChannelId: string, input: TaskInput) => Promise<DispatchResult>;
-  postHours: (targetChannelId: string, input: HoursInput) => Promise<DispatchResult>;
+  postTask: (
+    targetChannelId: string,
+    input: TaskInput,
+  ) => Promise<DispatchResult>;
+  postHours: (
+    targetChannelId: string,
+    input: HoursInput,
+  ) => Promise<DispatchResult>;
   postPointsAdjustment: (
     targetChannelId: string,
     input: PointsAdjustmentInput,
@@ -572,6 +585,14 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, ctx],
   );
 
+  const flagCb = useCallback(
+    async (messageId: string, flag: ChatMessageFlag | null) => {
+      if (!channelId) return;
+      await setMessageFlagAction(ctx, { channelId, messageId, flag });
+    },
+    [channelId, ctx],
+  );
+
   const emitTyping = useCallback(() => {
     if (!channelId || !userId) return;
     chatRealtime.emitTyping(channelId, userId);
@@ -711,6 +732,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     edit: editCb,
     delete: deleteCb,
     closePoll: closePollCb,
+    flag: flagCb,
     draft,
     setDraft,
     typingUsers,

@@ -1,5 +1,6 @@
 "use client";
 
+import type { ChatMessageFlag } from "@repo/validation";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import {
   forwardRef,
@@ -487,6 +488,8 @@ export interface MessageTimelineProps {
   onDelete?: (messageId: string) => void;
   /** A poll card's Close poll, on the viewer's own open poll (#3794). */
   onClosePoll?: (messageId: string) => void;
+  /** Flag, re-flag or (`null`) unflag a message (#3921). */
+  onFlag?: (messageId: string, flag: ChatMessageFlag | null) => void;
   /**
    * Message ids the viewer has bookmarked (#462). A set rather than a
    * per-message flag so the virtualized list looks each row up in O(1) without
@@ -563,6 +566,7 @@ export const MessageTimeline = forwardRef<
     onEdit,
     onDelete,
     onClosePoll,
+    onFlag,
     bookmarkedMessageIds,
     onToggleBookmark,
     canManageChannel,
@@ -1091,6 +1095,7 @@ export const MessageTimeline = forwardRef<
                   onEdit={onEdit}
                   onDelete={onDelete}
                   onClosePoll={onClosePoll}
+                  onFlag={onFlag}
                   isBookmarked={bookmarkedMessageIds?.has(entry.message.id)}
                   onToggleBookmark={onToggleBookmark}
                   canManageChannel={canManageChannel}

@@ -1,8 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Ban, Flag, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
-import { SYSTEM_SENDER_ID } from "@repo/validation";
+import {
+  Ban,
+  Check,
+  CircleAlert,
+  Flag,
+  MoreHorizontal,
+  Pencil,
+  Tag,
+  Trash2,
+} from "lucide-react";
+import { SYSTEM_SENDER_ID, type ChatMessageFlag } from "@repo/validation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -28,6 +37,13 @@ import { ImportedReactionChips } from "./imported-reaction-chips";
 import { selectImportedReactions } from "./imported-reactions";
 import { ReactionChips, ReactionQuickPick } from "./reaction-bar";
 import { ThreadChip, StartThreadGlyph } from "./thread-chip";
+import {
+  MESSAGE_FLAG_OPTIONS,
+  canFlagMessage,
+  messageFlagCaption,
+  messageFlagView,
+  type MessageFlagView,
+} from "@repo/chat-core/flags";
 import { MessageAttachments } from "./message-attachments";
 import { QuotedMessage, replyPreviewText } from "./reply-quote";
 import {
@@ -216,6 +232,12 @@ export interface MessageItemProps {
   /** A poll card's Close poll, on the viewer's own open poll (#3794). */
   onClosePoll?: (messageId: string) => void;
   /**
+   * Flag, re-flag or (`null`) unflag this message (#3921). Optional so a
+   * surface that doesn't wire it offers no Flag control; whether the viewer
+   * may is `canFlagMessage`.
+   */
+  onFlag?: (messageId: string, flag: ChatMessageFlag | null) => void;
+  /**
    * Whether the viewer has bookmarked this message (#462).
    *
    * The viewer's own state and nobody else's: there is no count and no "who
@@ -368,6 +390,7 @@ export function MessageItem({
   onEdit,
   onDelete,
   onClosePoll,
+  onFlag,
   isBookmarked,
   onToggleBookmark,
   canManageChannel,
@@ -417,6 +440,13 @@ export function MessageItem({
     // unread badge skips it, the push is gone), so its tombstone stays plain.
     !message.is_deleted &&
     message.mentions.includes(viewerId);
+  // A flag a member put on the message after it was sent (#3921): Important
+  // tints the row in danger red, a lighter flag is only a caption. The view
+  // drops a blocked flagger's name, since a Realtime echo carries it raw.
+  const flagView = messageFlagView(message, viewerId, blockState, nameFor);
+  const importantRow = flagView?.important === true;
+  const canFlag =
+    !!onFlag && canFlagMessage(message, viewerId, !!canManageChannel);
   // Frapp's own posts (the welcome, the audit bridge, a poll's closing notice,
   // an invite-accept DM) wear the crest, not initials: the sender is the
   // product, not a member (#3347).
@@ -827,12 +857,21 @@ export function MessageItem({
     </MentionOpenerContext.Provider>
   );
   // A card in flight has no text to gray, so the whole card dims instead.
-  const body =
+  const bodyCore =
     isPending && isCardMessage(message) ? (
       <div className="opacity-50">{renderer}</div>
     ) : (
       renderer
     );
+  const flagCaption = flagView ? <MessageFlagCaption view={flagView} /> : null;
+  const body = flagCaption ? (
+    <>
+      {flagCaption}
+      {bodyCore}
+    </>
+  ) : (
+    bodyCore
+  );
 
   // Deleted content has nothing left to react to. Reaction rows for a message
   // are never deleted server-side (only the message's own content/metadata
@@ -985,6 +1024,12 @@ export function MessageItem({
           >
             <BookmarkGlyph className="h-4 w-4" active={isBookmarked} />
           </button>
+        ) : null}
+        {canFlag ? (
+          <MessageFlagMenu
+            current={message.flag ?? null}
+            onPick={(flag) => onFlag?.(message.id, flag)}
+          />
         ) : null}
         {canEdit ? (
           <button
@@ -1271,7 +1316,7 @@ export function MessageItem({
           mine && (isPending || isFailed) && "opacity-60",
         )}
       >
-        {body}
+        {bodyCore}
       </div>
     ) : isEditing ? (
       editForm
@@ -1303,14 +1348,16 @@ export function MessageItem({
           "group/message relative px-5 pt-(--row-pt) pb-0.5",
           // A new speaker sits 12 below; a stacked bubble 2.
           showHeader ? "[--row-pt:0.75rem]" : "[--row-pt:0.125rem]",
-          mentionsViewer
-            ? "bg-accent-subtle shadow-[inset_2px_0_0_var(--primary)] hover:bg-accent-subtle-hover has-[:focus-visible]:bg-accent-subtle-hover"
-            : "hover:bg-surface-1 has-[:focus-visible]:bg-surface-1",
-          !mentionsViewer && isTapRevealed && "bg-surface-1",
-          mentionsViewer && isTapRevealed && "bg-accent-subtle-hover",
+          importantRow
+            ? IMPORTANT_ROW
+            : mentionsViewer
+              ? "bg-accent-subtle shadow-[inset_2px_0_0_var(--primary)] hover:bg-accent-subtle-hover has-[:focus-visible]:bg-accent-subtle-hover"
+              : "hover:bg-surface-1 has-[:focus-visible]:bg-surface-1",
+          isTapRevealed && rowTapClass(importantRow, mentionsViewer),
         )}
         data-density="bubbles"
         data-side={mine ? "self" : "other"}
+        data-flag={flagView?.flag}
         data-mentions-viewer={mentionsViewer || undefined}
         data-status={message._status}
         data-run={showHeader ? "start" : "follow"}
@@ -1396,6 +1443,9 @@ export function MessageItem({
                     {replyQuote}
                   </div>
                 ) : null}
+                {flagCaption && !isEditing ? (
+                  <div className="px-3">{flagCaption}</div>
+                ) : null}
                 {bubble}
                 {attachments}
                 {trailingOnOwnLine && trailing && !isEditing ? (
@@ -1476,19 +1526,21 @@ export function MessageItem({
         // Delineation without a bubble (§11): the whole row lifts one surface
         // step under a pointer, with keyboard focus inside it, or once tapped.
         // Pointer feedback, not information, so the ~1.1:1 step is enough.
-        mentionsViewer
-          ? // A row that @-mentions the viewer wears the chapter accent the
-            // way Discord marks one (§11): the accent-subtle fill with a 2px
-            // accent bar on its leading edge. It is information, so it stays
-            // on under a pointer instead of giving way to the surface lift.
-            "bg-accent-subtle shadow-[inset_2px_0_0_var(--primary)] hover:bg-accent-subtle-hover has-[:focus-visible]:bg-accent-subtle-hover"
-          : // `:focus-visible`, not `:focus-within`: a mouse click on a control
-            // in the row leaves focus there, and must not hold the lift on after
-            // the pointer has gone (the action bar's note below).
-            "hover:bg-surface-1 has-[:focus-visible]:bg-surface-1",
-        !mentionsViewer && isTapRevealed && "bg-surface-1",
-        mentionsViewer && isTapRevealed && "bg-accent-subtle-hover",
+        importantRow
+          ? IMPORTANT_ROW
+          : mentionsViewer
+            ? // A row that @-mentions the viewer wears the chapter accent the
+              // way Discord marks one (§11): the accent-subtle fill with a 2px
+              // accent bar on its leading edge. It is information, so it stays
+              // on under a pointer instead of giving way to the surface lift.
+              "bg-accent-subtle shadow-[inset_2px_0_0_var(--primary)] hover:bg-accent-subtle-hover has-[:focus-visible]:bg-accent-subtle-hover"
+            : // `:focus-visible`, not `:focus-within`: a mouse click on a control
+              // in the row leaves focus there, and must not hold the lift on after
+              // the pointer has gone (the action bar's note below).
+              "hover:bg-surface-1 has-[:focus-visible]:bg-surface-1",
+        isTapRevealed && rowTapClass(importantRow, mentionsViewer),
       )}
+      data-flag={flagView?.flag}
       data-mentions-viewer={mentionsViewer || undefined}
       data-status={message._status}
       data-run={showHeader ? "start" : "follow"}
@@ -1639,25 +1691,28 @@ export function MessageItem({
                 </div>
               ) : null}
               {inlineName ? (
-                /*
+                <>
+                  {flagCaption}
+                  {/*
                   Compact's name leads the body's first line, floated so the
                   text flows beside it and wraps back under it, the way a
                   sentence would (`flow-root` keeps the float inside the row).
                   Body size at 600, so the name and the text share a baseline.
-                */
-                <div className="flow-root min-w-0">
-                  <AuthorName
-                    openProfile={openAuthor}
-                    slot="author-line"
-                    // `max-w-full break-words`: an unbroken imported handle
-                    // wraps inside the column rather than spilling past it.
-                    className="float-left mr-2 max-w-full break-words text-base font-semibold leading-[25px] text-foreground"
-                    style={authorColor ? { color: authorColor } : undefined}
-                  >
-                    {authorLabel}
-                  </AuthorName>
-                  {body}
-                </div>
+                */}
+                  <div className="flow-root min-w-0">
+                    <AuthorName
+                      openProfile={openAuthor}
+                      slot="author-line"
+                      // `max-w-full break-words`: an unbroken imported handle
+                      // wraps inside the column rather than spilling past it.
+                      className="float-left mr-2 max-w-full break-words text-base font-semibold leading-[25px] text-foreground"
+                      style={authorColor ? { color: authorColor } : undefined}
+                    >
+                      {authorLabel}
+                    </AuthorName>
+                    {bodyCore}
+                  </div>
+                </>
               ) : isEditing ? (
                 editForm
               ) : (
@@ -1703,5 +1758,107 @@ export function MessageItem({
         ) : null}
       </div>
     </div>
+  );
+}
+
+/**
+ * An Important row (#3921): the danger tint across the whole row with a 2px
+ * danger bar on its leading edge, the shape the mention row takes in the
+ * chapter accent (§11 § A row that mentions you). It is information, so it
+ * stays on under a pointer and deepens rather than giving way to the lift.
+ */
+const IMPORTANT_ROW =
+  "bg-destructive-tint shadow-[inset_2px_0_0_var(--destructive)] hover:bg-destructive-tint-hover has-[:focus-visible]:bg-destructive-tint-hover";
+
+/** The fill a tapped row holds, by which emphasis it wears. */
+function rowTapClass(important: boolean, mentionsViewer: boolean): string {
+  if (important) return "bg-destructive-tint-hover";
+  return mentionsViewer ? "bg-accent-subtle-hover" : "bg-surface-1";
+}
+
+/**
+ * The flag's caption above the body: "Important", or "Funny · flagged by
+ * Marcus". Important is danger red with its alert glyph; a lighter flag is
+ * muted, with no glyph, so it reads as a note rather than an alarm.
+ */
+function MessageFlagCaption({ view }: { view: MessageFlagView }) {
+  return (
+    <div
+      data-slot="message-flag"
+      className={cn(
+        "flex items-center gap-1.5 text-caption font-semibold leading-5",
+        view.important ? "text-destructive-text" : "text-muted-foreground",
+      )}
+    >
+      {view.important ? (
+        <CircleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+      ) : null}
+      <span className="sr-only">{messageFlagCaption(view)}</span>
+      <span aria-hidden="true">{view.label}</span>
+      {view.flaggedBy ? (
+        <span aria-hidden="true" className="font-normal text-muted-foreground">
+          · flagged by {view.flaggedBy}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The action bar's Flag control (#3921): Important first, then the lighter
+ * flags, and Remove flag when the message has one. Tag, not Flag, for its
+ * glyph: the More menu's Report message already draws Lucide's flag.
+ */
+function MessageFlagMenu({
+  current,
+  onPick,
+}: {
+  current: ChatMessageFlag | null;
+  onPick: (flag: ChatMessageFlag | null) => void;
+}) {
+  return (
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className={cn(ACTION_BAR_BUTTON, current && ACTION_BAR_BUTTON_ON)}
+          aria-label="Flag"
+          title="Flag"
+        >
+          <Tag className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {MESSAGE_FLAG_OPTIONS.map(({ flag, label }) => (
+          <DropdownMenuItem
+            key={flag}
+            className={cn(
+              flag === "important" &&
+                "text-destructive-text focus:bg-destructive-tint focus:text-destructive-text",
+            )}
+            onSelect={() => onPick(flag)}
+          >
+            {flag === "important" ? (
+              <CircleAlert aria-hidden="true" />
+            ) : (
+              <span aria-hidden="true" className="size-4" />
+            )}
+            <span className="flex-1">{label}</span>
+            {current === flag ? (
+              <>
+                <Check aria-hidden="true" />
+                <span className="sr-only">(current flag)</span>
+              </>
+            ) : null}
+          </DropdownMenuItem>
+        ))}
+        {current ? (
+          <DropdownMenuItem onSelect={() => onPick(null)}>
+            <span aria-hidden="true" className="size-4" />
+            Remove flag
+          </DropdownMenuItem>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
