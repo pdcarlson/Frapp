@@ -2,8 +2,14 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
   CHAT_BACKGROUND_BUILT_INS,
   CHAT_BACKGROUND_LABELS,
+  CHAT_BACKGROUND_PHOTO_NOTE,
+  chatBackgroundDefaultLabel,
   type ChatBackgroundKey,
 } from "@repo/validation";
+import {
+  CHAT_BACKGROUND_PAINTS,
+  type ChatBackgroundBuiltInKey,
+} from "@repo/theme/chat-backgrounds";
 import { SignetTokens } from "@repo/theme/signet";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -12,17 +18,13 @@ import { ChatBackgroundPaint, useChapterLetters } from "./chat-background";
 /** What a swatch press asks for: a key, null to follow the chapter default, or a new photo. */
 export type ChatBackgroundSwatchPick = ChatBackgroundKey | null;
 
-/** The line under the swatches, the same words web's picker shows. */
-export const CHAT_BACKGROUND_PHOTO_NOTE =
-  "Photos are dimmed and blurred so messages stay readable. Setting one posts a line in chat that anyone can report.";
-
-/** "Chapter default", with "(photo)" when the default is a photo it can't preview. */
-export function chapterDefaultLabel(
-  inheritPreview: ChatBackgroundKey | undefined,
-): string {
-  return inheritPreview === "photo"
-    ? "Chapter default (photo)"
-    : "Chapter default";
+/** What the inherit swatch draws: the default's paint, plain for a photo or a key this build doesn't know. */
+function inheritPaint(
+  inheritPreview: string | undefined,
+): ChatBackgroundBuiltInKey {
+  return inheritPreview && inheritPreview in CHAT_BACKGROUND_PAINTS
+    ? (inheritPreview as ChatBackgroundBuiltInKey)
+    : "plain";
 }
 
 /**
@@ -42,8 +44,11 @@ export function ChatBackgroundSwatches({
   disabled = false,
   onPick,
 }: {
-  /** The stored choice; null when a channel follows the chapter default. */
-  value: ChatBackgroundKey | null;
+  /**
+   * The stored choice; null when a channel follows the chapter default, and
+   * undefined when it couldn't be read, so no swatch claims to be it.
+   */
+  value: ChatBackgroundKey | null | undefined;
   allowInherit: boolean;
   /** What "Chapter default" would draw. A photo default previews as plain. */
   inheritPreview?: ChatBackgroundKey;
@@ -115,8 +120,8 @@ export function ChatBackgroundSwatches({
         {allowInherit
           ? swatch(
               null,
-              chapterDefaultLabel(inheritPreview),
-              inheritPreview === "photo" ? "plain" : inheritPreview,
+              chatBackgroundDefaultLabel(inheritPreview),
+              inheritPaint(inheritPreview),
             )
           : null}
         {CHAT_BACKGROUND_BUILT_INS.map((key) =>

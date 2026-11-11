@@ -79,8 +79,8 @@ export interface ChannelActionsMenuTarget {
    */
   canSetDisplayLock?: boolean;
   /**
-   * The viewer holds `channels:manage` and this isn't a DM
-   * (`canSetChannelBackground`), so the menu offers Background (#4031).
+   * `canSetChannelBackground` from `@repo/hooks` said yes for this viewer and
+   * channel, so the menu offers Background (#4031).
    */
   canSetBackground?: boolean;
 }
@@ -336,8 +336,16 @@ function MenuBody({
                 const firstOfficer =
                   index ===
                   target.actions.member.length + 1 + (showBackground ? 1 : 0);
-                const disabled =
-                  key === "notifications" && levelsBlockedReason !== null;
+                // Background writes to the server too, so offline locks it with
+                // the same reason (a photo would otherwise be picked and
+                // shrunk only to fail at the upload).
+                const blockedReason =
+                  key === "notifications"
+                    ? levelsBlockedReason
+                    : key === "background"
+                      ? writeBlockedReason
+                      : null;
+                const disabled = blockedReason !== null;
                 const detail =
                   key === "display"
                     ? channelDensityDetail(densityOverride, displayLocked)
@@ -357,9 +365,7 @@ function MenuBody({
                     accessibilityLabel={
                       detail ? `${label(key)}, ${detail}` : label(key)
                     }
-                    accessibilityHint={
-                      disabled ? (levelsBlockedReason ?? undefined) : undefined
-                    }
+                    accessibilityHint={blockedReason ?? undefined}
                     accessibilityState={disabled ? { disabled } : undefined}
                     disabled={disabled}
                     onPress={() => run(key)}
@@ -399,13 +405,19 @@ function MenuBody({
           ) : view === "background" ? (
             <BackgroundView
               name={target.name}
-              value={channelBackground}
+              value={background.data ? channelBackground : undefined}
               loaded={background.data !== undefined || background.isError}
               onBack={() => setView("menu")}
               onPick={(pick) => {
                 // Re-picking a built-in already in place writes nothing; a
-                // photo always opens the library, to replace it.
-                if (pick !== "photo" && pick === channelBackground) {
+                // photo always opens the library, to replace it. Only when the
+                // setting was actually read: after a failed read nothing is
+                // known, so every pick writes.
+                if (
+                  background.data !== undefined &&
+                  pick !== "photo" &&
+                  pick === channelBackground
+                ) {
                   onClose();
                   return;
                 }
@@ -576,7 +588,8 @@ function BackgroundView({
   onPick,
 }: {
   name: string;
-  value: ChatBackgroundKey | null;
+  /** Undefined when the channel's setting couldn't be read. */
+  value: ChatBackgroundKey | null | undefined;
   /** The channel's setting has been read; until then nothing is marked or pickable. */
   loaded: boolean;
   onBack: () => void;

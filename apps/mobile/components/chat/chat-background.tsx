@@ -102,7 +102,10 @@ export function ChatBackgroundPaint({
   idPrefix?: string;
   testID?: string;
 }) {
-  const paint = CHAT_BACKGROUND_PAINTS[paintKey];
+  // A key this build doesn't know (a newer API) draws plain, never throws,
+  // whichever caller handed it in.
+  const paint =
+    CHAT_BACKGROUND_PAINTS[paintKey] ?? CHAT_BACKGROUND_PAINTS.plain;
   return (
     <View
       pointerEvents="none"

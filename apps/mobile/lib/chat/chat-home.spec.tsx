@@ -62,9 +62,11 @@ const {
   connection,
   latestCalls,
   setChannelBackground,
+  requestBackgroundPhotoUrl,
 } = vi.hoisted(() => ({
   setDisplayLock: vi.fn(),
   setChannelBackground: vi.fn(),
+  requestBackgroundPhotoUrl: vi.fn(),
   latestCalls: vi.fn(),
   permissionList: { value: [] as string[] },
   markReadMutate: vi.fn(),
@@ -187,7 +189,9 @@ vi.mock("@repo/hooks", async () => {
     // are the menu's own, stubbed quiet.
     canSetChannelBackground: actual.canSetChannelBackground,
     useSetChannelBackground: () => ({ mutateAsync: setChannelBackground }),
-    useRequestChatBackgroundPhotoUrl: () => ({ mutateAsync: vi.fn() }),
+    useRequestChatBackgroundPhotoUrl: () => ({
+      mutateAsync: requestBackgroundPhotoUrl,
+    }),
     useChatBackground: () => query(undefined),
     useChapterChatBackground: () => query(undefined),
     lastChannelLandingId: actual.lastChannelLandingId,
@@ -1048,6 +1052,81 @@ describe("Chat home sidebar arrangement (#2877)", () => {
       background: "midnight",
       storagePath: undefined,
     });
+  });
+
+  it("sets a channel photo through the channel's own photo route, and says why a refused one failed (#4031)", async () => {
+    const photo = await import("@/lib/chat/chat-background-photo");
+    const save = vi
+      .spyOn(photo, "saveChatBackgroundPick")
+      .mockResolvedValue({ status: "refused", reason: "Not allowed here." });
+    permissionList.value = ["channels:manage"];
+    setChannelBackground.mockResolvedValue(undefined);
+    channelsData.value = [general];
+    const tree = render();
+
+    longPress(tree, "general");
+    pressItem(tree, "Background");
+    const photoSwatch = menu(tree).find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.testID === "chat-background-swatch-photo",
+    );
+    act(() => photoSwatch.props.onPress());
+    const modal = menu(tree).find(
+      (node) => (node.type as unknown) === "Modal",
+    );
+    await act(async () => {
+      modal.props.onDismiss();
+    });
+
+    const [pick, deps] = save.mock.calls[0]!;
+    expect(pick).toBe("photo");
+    await deps.requestPhotoUrl({ filename: "a.jpg", contentType: "image/jpeg" });
+    expect(requestBackgroundPhotoUrl).toHaveBeenCalledWith({
+      scope: "channel",
+      filename: "a.jpg",
+      contentType: "image/jpeg",
+    });
+    await deps.save({ background: "photo", storagePath: "p" });
+    expect(setChannelBackground).toHaveBeenCalledWith({
+      channelId: general.id,
+      background: "photo",
+      storagePath: "p",
+    });
+    expect(vi.mocked(Alert.alert)).toHaveBeenCalledWith(
+      "Couldn't change the background",
+      "Not allowed here.",
+    );
+    save.mockRestore();
+  });
+
+  it("runs a background pick on the close itself where the modal reports no dismiss (Android) (#4031)", async () => {
+    const { Platform } = await import("react-native");
+    const os = Platform.OS;
+    (Platform as { OS: string }).OS = "android";
+    try {
+      permissionList.value = ["channels:manage"];
+      setChannelBackground.mockResolvedValue(undefined);
+      channelsData.value = [general];
+      const tree = render();
+      longPress(tree, "general");
+      pressItem(tree, "Background");
+      const letters = menu(tree).find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.testID === "chat-background-swatch-letters",
+      );
+      await act(async () => {
+        letters.props.onPress();
+      });
+      expect(setChannelBackground).toHaveBeenCalledWith({
+        channelId: general.id,
+        background: "letters",
+        storagePath: undefined,
+      });
+    } finally {
+      (Platform as { OS: string }).OS = os;
+    }
   });
 
   it("offers Background to no one without channels:manage, and never on the audit log (#4031)", () => {

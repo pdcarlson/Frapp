@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import {
   CHAT_BACKGROUND_PHOTO,
+  channelTakesBackground,
   fileExtension,
   isAllowedUploadExtension,
   isAllowedUploadMime,
@@ -162,7 +163,8 @@ export class ChatBackgroundService {
     }
     // The audit log is system-write only (#3909), and an archived channel
     // takes no writes; neither gets a background or its announcing line.
-    if (channel.is_audit_log || channel.archived_at) {
+    // The clients offer the picker by the same rule (`canSetChannelBackground`).
+    if (!channelTakesBackground(channel)) {
       throw new BadRequestException("This channel can't have a background");
     }
 
@@ -380,7 +382,7 @@ export class ChatBackgroundService {
     chapterId: string,
   ): Promise<ChatChannel | null> {
     const channels = (await this.channelRepo.findByChapter(chapterId)).filter(
-      (c) => !isDirectChannel(c) && !c.is_audit_log && !c.archived_at,
+      (c) => channelTakesBackground(c),
     );
     return (
       channels.find((c) => c.is_default) ??

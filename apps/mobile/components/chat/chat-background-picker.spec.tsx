@@ -98,6 +98,24 @@ describe("ChatBackgroundSwatches", () => {
     ).toBe("Plain");
   });
 
+  it("previews a default this build doesn't know as plain, rather than throwing", () => {
+    const tree = render({ inheritPreview: "tailgate" as never });
+    const inherit = tree.root.find(
+      (node) =>
+        typeof node.type === "function" &&
+        node.type.name === "ChatBackgroundPaint" &&
+        node.props.testID === "chat-background-swatch-paint-inherit",
+    );
+    expect(inherit.props.paintKey).toBe("plain");
+  });
+
+  it("marks nothing when the stored choice couldn't be read", () => {
+    const tree = render({ value: undefined });
+    expect(
+      radios(tree).filter((r) => r.props.accessibilityState.checked),
+    ).toHaveLength(0);
+  });
+
   it("hands back null for Chapter default and the key otherwise, and nothing while disabled", () => {
     const onPick = vi.fn();
     const tree = render({ onPick });

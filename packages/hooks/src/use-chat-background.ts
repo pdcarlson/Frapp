@@ -1,7 +1,7 @@
 import { throwUnlessOk } from "@repo/api-sdk";
 import {
   can,
-  isDirectChannel,
+  channelTakesBackground,
   type ChatBackgroundKey,
 } from "@repo/validation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -25,10 +25,10 @@ export interface ChatBackgroundPhotoInput {
 
 /**
  * Who may set a channel's own background: `channels:manage` (the route's
- * guard), and never on a DM or group DM, which stay plain, nor on the audit
- * log or an archived channel, which the API refuses
- * (`ChatBackgroundService.setChannelBackground`). Web's channel menu and
- * mobile's long-press menu both read this.
+ * guard), on a channel that takes one at all (`channelTakesBackground`, the
+ * rule the API applies too). Web's channel menu and mobile's long-press menu
+ * both read this. A photo also needs the setter's right to post there (its
+ * announcing line), which the API checks on the save.
  */
 export function canSetChannelBackground(
   channel: {
@@ -38,8 +38,7 @@ export function canSetChannelBackground(
   },
   permissions: readonly string[] | null | undefined,
 ): boolean {
-  if (isDirectChannel({ type: channel.type ?? "" })) return false;
-  if (channel.is_audit_log || channel.archived_at) return false;
+  if (!channelTakesBackground(channel)) return false;
   return can("channels:manage", permissions);
 }
 
