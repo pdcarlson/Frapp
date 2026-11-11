@@ -44,6 +44,12 @@ export interface ActivityLink {
   url: string;
   /** Lower-cased, without `www.`: what a row shows as where the link goes. */
   host: string;
+  /**
+   * The page's own name, read once in the background (#4187); null when it
+   * had none worth showing or hasn't been read yet, and the row shows its
+   * kind instead.
+   */
+  title: string | null;
   /** The chat message it was posted in, for "Open in chat". */
   message_id: string;
   /**
@@ -136,6 +142,7 @@ export class ActivityLinkService {
         id: link.id,
         url: link.url,
         host: link.host,
+        title: link.title ?? null,
         message_id: link.message_id,
         thread_root_id: link.thread_root_id ?? null,
         channel_id: link.channel_id,

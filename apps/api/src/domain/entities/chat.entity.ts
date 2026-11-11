@@ -668,6 +668,13 @@ export interface ChatMessageLink {
   /** Set when an officer removed it from everyone's Activity. */
   removed_at: string | null;
   removed_by: string | null;
+  /**
+   * The linked page's own name, read once in the background (#4187); null
+   * when the page had none worth showing or has not been read yet.
+   */
+  title: string | null;
+  /** When the title sweep claimed this link for its one read; null: not yet. */
+  title_checked_at: string | null;
 }
 
 /** A member's own Done or Hide on a link. No row means it still shows. */

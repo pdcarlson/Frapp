@@ -59,6 +59,7 @@ const link = (overrides: Record<string, unknown> = {}) => ({
   id: "link-1",
   url: "https://docs.google.com/forms/d/e/abc/viewform",
   host: "docs.google.com",
+  title: null,
   message_id: "message-1",
   thread_root_id: null,
   channel_id: "channel-1",
@@ -383,6 +384,26 @@ describe("activityGroups", () => {
     // No poster name for an imported author, and no server-made DM name.
     expect(group.rows[1]!.detail).toMatch(/^Direct message · /);
     expect(group.rows.every((row) => row.badge === null)).toBe(true);
+  });
+
+  it("titles a link by its page's name, with its kind leading the detail (#4187)", () => {
+    const data = activity({
+      links: [
+        link({ title: "5K volunteer shifts" }),
+        link({
+          id: "link-2",
+          url: "https://docs.google.com/spreadsheets/d/abc/edit",
+          title: "  ",
+        }),
+      ],
+    });
+    const group = activityGroups(data, "all").find((g) => g.id === "links")!;
+
+    expect(group.rows[0]!.title).toBe("5K volunteer shifts");
+    expect(group.rows[0]!.detail).toMatch(/^Google Form · Olive · #rush · /);
+    // A blank name is no name: the row keeps its kind, and the detail doesn't repeat it.
+    expect(group.rows[1]!.title).toBe("Google Sheet");
+    expect(group.rows[1]!.detail).toMatch(/^Olive · #rush · /);
   });
 
   it("narrows to links under the Links chip, and names a links read that failed there", () => {

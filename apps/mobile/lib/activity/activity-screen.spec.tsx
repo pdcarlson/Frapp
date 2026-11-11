@@ -391,6 +391,7 @@ describe("Activity screen (#3897)", () => {
       id: "l1",
       url: "https://forms.gle/abc",
       host: "forms.gle",
+      title: null,
       message_id: "m1",
       thread_root_id: null,
       channel_id: "chan-1",
@@ -427,6 +428,16 @@ describe("Activity screen (#3897)", () => {
       });
       expect(sheet.props?.row?.key).toBe("link:l1");
       expect(sheet.props?.linkActions.canRemove).toBe(false);
+    });
+
+    it("draws a link by its page's name, with its kind leading the detail (#4187)", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({ links: [link({ title: "5K volunteer shifts" })] }),
+      };
+      const tree = render();
+      expect(rowLabels(tree)).toContain("5K volunteer shifts");
+      expect(screenText(tree)).toMatch(/Google Form · Olive · #rush · /);
     });
 
     it("lets only a channels:manage holder remove one for everyone", () => {

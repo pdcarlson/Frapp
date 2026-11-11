@@ -132,7 +132,9 @@ on web ([`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README
   Calendly. The list lives once, in `activity_action_links` in the database, and is flagged for
   Paul to change or widen. The page names each row's kind ("Google Form", "Calendly") from
   `activityLinkKind` in `@repo/hooks`, which knows the same hosts: a host added to the database
-  alone is gathered and titled by its bare host until it gets a name there. Any other link is not gathered, and neither is a URL with a user name
+  alone is gathered and titled by its bare host until it gets a name there. The title fetch
+  below keeps a third copy (`isSignUpHost` in `apps/api`), so a host added to the database
+  alone is gathered but gets no name until it is added there too. Any other link is not gathered, and neither is a URL with a user name
   in it (`https://calendly.com:1@evil.example/`): a browser opens the host after the `@`, so the
   one before it would be a trusted label on somewhere else.
 - **How they are found.** A trigger on chat messages indexes every write path the same way (a
@@ -140,6 +142,36 @@ on web ([`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README
   the rest, a deleted message takes its links with it, and when a Discord author link or detach
   changes a message's sender the links' poster follows. The index went in with the last 30 days
   of history.
+- **Names** (#4187: Shawn, 2026-11-11; fetching approved by Paul the same day, with the guards
+  below). A row is titled by the page's own name, the form's or sheet's title, with its kind
+  leading the detail ("5K volunteer shifts", then "Google Form · Olive · #rush · Tue 3:00 PM").
+  A link with no name keeps today's row, titled by its kind. The API reads each name **once, in
+  the background**, and stores it on the link (`title`); `GET /v1/activity` only serves what is
+  stored and never opens a link. A sweep on the API claims up to 10 unread links a minute
+  (`title_checked_at`, a compare-and-set, so one replica reads each link) and never reads a
+  claimed link again, whatever came back. An edit that keeps a URL keeps its row and its name; a
+  new URL is a new row, read once. The read is the API's only request to a URL a member posted,
+  and every hop of it is guarded:
+  - **Allowlist.** Only the sign-up hosts and paths above. An `http` link is read over `https` on
+    the same host; a user name or password, a non-default port, or an IP literal is refused.
+  - **Network safety.** The host is resolved in the connection's own lookup, and the connection is
+    refused if any address it resolves to is not public: private, shared (CGNAT), loopback,
+    link-local (cloud metadata), multicast, reserved and documentation ranges, and any IPv6
+    outside global unicast or carrying an IPv4 address (mapped, NAT64, 6to4, Teredo). Checking
+    in the connection itself leaves no gap for a DNS answer to change between check and connect.
+  - **Redirects** are followed by hand, at most three, each held to the same allowlist and
+    address checks. One that leaves the list ends the read with no name.
+  - **Limits.** Five seconds over the whole read, redirects included; at most 512 KB of page,
+    counted after decompression; only a `200` HTML page is read, and reading stops where the
+    page's head ends. A `GET` with no cookies or credentials, on a fresh connection each hop.
+  - **What counts as a name.** The page's `og:title`, else its `<title>`, without the product's
+    name around it (" - Google Sheets"). No name: a sign-in page (a private Sheet or Doc
+    redirects to Google's sign-in, which is off the list, or serves "Sign in" in place), an
+    access request, an error or closed form, or a title that is only the product ("Microsoft
+    Forms") or Google's "Untitled form". Control and bidirectional-override characters are
+    dropped, and a name is cut at 200 characters.
+  - **Access.** A name is served only on a link the caller already sees: it is a field of the
+    link, under the same rule as the rest of the row.
 - **How long one shows.** 30 days from when it was posted.
 - **Who sees one.** Only a member who can read the channel it was posted in, through the same
   predicate every chat read uses, with their block list applied, enforced on the server. Never a
@@ -149,7 +181,8 @@ on web ([`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README
   Activity by default.
 - **Never the caller's own.** A member's own links are not listed to them: they posted it, so it
   is not waiting on them.
-- **The list.** Newest first, at most 25, each row carrying the link, its host, the message it
+- **The list.** Newest first, at most 25, each row carrying the link, its host, its name when
+  one was read, the message it
   was posted in (for "Open in chat"; a thread reply also carries its thread root, since the
   channel's timeline doesn't show replies), the channel and the poster. An imported author with no
   Frapp account has no poster id and an empty name. The rows are chosen from the 200 newest

@@ -4,6 +4,12 @@ import type {
   ChatMessageLink,
 } from '../entities/chat.entity';
 
+/** A link the title sweep reads the page of (#4187). */
+export type LinkTitleCandidate = Pick<
+  ChatMessageLink,
+  'id' | 'chapter_id' | 'url'
+>;
+
 export const CHAT_MESSAGE_LINK_REPOSITORY = 'CHAT_MESSAGE_LINK_REPOSITORY';
 
 /**
@@ -12,8 +18,10 @@ export const CHAT_MESSAGE_LINK_REPOSITORY = 'CHAT_MESSAGE_LINK_REPOSITORY';
  *
  * Nothing here writes a link: the `chat_messages` triggers index them, so
  * every way a message is written indexes the same way. This repository reads
- * them, records an officer's remove, and keeps the member states. Every
- * method is scoped by chapter. None applies a channel's access rule:
+ * them, records an officer's remove, keeps the member states, and stores
+ * each link's page title. Every method is scoped by chapter except the title
+ * sweep's two reads, which walk every chapter's unread links by design and
+ * return only ids and URLs. None applies a channel's access rule:
  * `ActivityLinkService` does, through chat's own channel list.
  */
 export interface IChatMessageLinkRepository {
@@ -56,4 +64,22 @@ export interface IChatMessageLinkRepository {
     linkId: string,
     removedBy: string | null,
   ): Promise<ChatMessageLink | null>;
+  /**
+   * The title sweep's work (#4187): links not yet claimed for their one title
+   * read, not removed, posted after `since`, newest first, at most `limit`,
+   * across every chapter.
+   */
+  findTitleUnchecked(options: {
+    since: string;
+    limit: number;
+  }): Promise<LinkTitleCandidate[]>;
+  /**
+   * Claims links for their one title read: sets `title_checked_at` on those
+   * of `linkIds` still unclaimed and returns exactly those. A compare-and-set,
+   * so of two sweeps (two API replicas) only one gets each link, and a link
+   * once claimed is never read again.
+   */
+  claimForTitle(linkIds: string[]): Promise<LinkTitleCandidate[]>;
+  /** Stores a page title on these links of the chapter. */
+  setTitle(chapterId: string, linkIds: string[], title: string): Promise<void>;
 }

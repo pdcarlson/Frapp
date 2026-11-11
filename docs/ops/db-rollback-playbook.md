@@ -3567,3 +3567,21 @@ drop function if exists public.reorder_chat_channels(uuid, uuid, uuid[]);
 drop function if exists public.reorder_chat_categories(uuid, uuid[]);
 alter table public.chat_channels drop column if exists display_order;
 ```
+
+## Rollback Link titles on Activity (20261111210000)
+
+* **Migration**: `20261111210000_activity_link_titles.sql`
+
+Two nullable columns on `chat_message_links`, `title` and `title_checked_at`, and the partial index `idx_chat_message_links_title_unchecked`. No existing row changed.
+
+**Revert the code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API stops the title sweep, so it opens no more links, and reads the rows with `select('*')`, so the two columns are fields it ignores; the reverted clients title every link row by its kind again.
+
+**To stop the outbound reads without a code revert**, nothing in the schema does it: the sweep claims rows by `title_checked_at is null`, so `update public.chat_message_links set title_checked_at = now() where title_checked_at is null;` leaves it nothing to read until new links are posted. Use that only as a stopgap while the revert ships.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. Dropping the columns loses the stored titles, which the sweep would read again if it came back:
+
+```sql
+drop index if exists public.idx_chat_message_links_title_unchecked;
+alter table public.chat_message_links drop column if exists title_checked_at;
+alter table public.chat_message_links drop column if exists title;
+```

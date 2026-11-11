@@ -50,6 +50,8 @@ const link = (
   posted_at: '2026-11-10T12:00:00.000Z',
   removed_at: null,
   removed_by: null,
+  title: null,
+  title_checked_at: null,
   ...overrides,
 });
 
@@ -272,6 +274,59 @@ describe('SupabaseChatMessageLinkRepository — tenant scope', () => {
 
       const restored = await repo.setRemoved(CHAPTER_A, LINK_A, null);
       expect(restored).toMatchObject({ removed_at: null, removed_by: null });
+    });
+  });
+
+  describe('setTitle', () => {
+    it('titles only the chapter’s own links, even given the other’s id', async () => {
+      await harness.expectTenantScoped(CHAPTER_A, () =>
+        repo.setTitle(CHAPTER_A, [LINK_A, LINK_B], 'Formal RSVP'),
+      );
+
+      const rows = harness.rows('chat_message_links');
+      expect(rows.find((r) => r.id === LINK_A)).toMatchObject({
+        title: 'Formal RSVP',
+      });
+      expect(rows.find((r) => r.id === LINK_B)).toMatchObject({ title: null });
+    });
+
+    it('writes nothing for no links', async () => {
+      await repo.setTitle(CHAPTER_A, [], 'Formal RSVP');
+      expect(harness.ops).toHaveLength(0);
+    });
+  });
+
+  // The title sweep's reads walk every chapter by design (#4187): what they
+  // return is ids, chapters and URLs, and the write above is scoped.
+  describe('findTitleUnchecked', () => {
+    it('returns unclaimed, unremoved links inside the window, from every chapter', async () => {
+      const rows = await repo.findTitleUnchecked({ since: SINCE, limit: 10 });
+
+      expect(rows.map((row) => row.id).sort()).toEqual([LINK_A, LINK_B].sort());
+    });
+  });
+
+  describe('claimForTitle', () => {
+    it('claims each link once: a second claim gets nothing', async () => {
+      const first = await repo.claimForTitle([LINK_A, LINK_B]);
+      expect(first.map((row) => row.id).sort()).toEqual(
+        [LINK_A, LINK_B].sort(),
+      );
+      expect(
+        harness.rows('chat_message_links').find((r) => r.id === LINK_A)
+          ?.title_checked_at,
+      ).toEqual(expect.any(String));
+
+      const second = await repo.claimForTitle([LINK_A, LINK_B]);
+      expect(second).toEqual([]);
+      await expect(
+        repo.findTitleUnchecked({ since: SINCE, limit: 10 }),
+      ).resolves.toEqual([]);
+    });
+
+    it('claims nothing for no links', async () => {
+      await expect(repo.claimForTitle([])).resolves.toEqual([]);
+      expect(harness.ops).toHaveLength(0);
     });
   });
 });

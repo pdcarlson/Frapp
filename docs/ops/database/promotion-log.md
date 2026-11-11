@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-11: Link titles on Activity (#4187)
+
+### 20261111210000_activity_link_titles.sql
+
+- **Purpose**: Adds `chat_message_links.title text` and `title_checked_at timestamptz` (both nullable, no default) and the partial index `idx_chat_message_links_title_unchecked` on `(posted_at desc) where title_checked_at is null`. The API's link title sweep (`LinkTitleSweepService`, every minute) claims unread links by setting `title_checked_at`, reads each page's title once through the guarded fetcher, and stores it; `GET /v1/activity` serves `title` on each link. No existing row changes: every link starts unread, so the first ticks after deploy read the titles of the links already indexed (the last 30 days), 10 a minute. The rule is [`spec/behavior/activity.md` § Links](../../../spec/behavior/activity.md#links).
+- **Checks**: After `db push`, `select count(*) from information_schema.columns where table_name = 'chat_message_links' and column_name in ('title', 'title_checked_at');` returns `2`, and `select indexname from pg_indexes where indexname = 'idx_chat_message_links_title_unchecked';` returns 1 row. After the API deploys, `select count(*) from chat_message_links where title_checked_at is null and removed_at is null and posted_at > now() - interval '30 days';` falls toward `0`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API reads links with `select('*')` and ignores both columns. The newer API against an unmigrated database still serves the Activity links read (`select('*')` returns no `title`, which it serves as null, so every row shows its kind), but its sweep fails each tick on the unknown `title_checked_at` column and reports `cron:handle-link-title-sweep` to Sentry. Adding nullable columns with no default is metadata-only, under a brief lock; the partial index builds over a table holding at most 30 days of sign-up links. `if not exists` makes re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-link-titles-on-activity-20261111210000) § Rollback Link titles on Activity.
+
 ## 2026-11-11: Chapter channel order (#4178)
 
 ### 20261111190000_chat_channels_display_order.sql
