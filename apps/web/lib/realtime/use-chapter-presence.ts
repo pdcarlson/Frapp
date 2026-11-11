@@ -59,6 +59,7 @@ export function useChapterPresence(options: {
   viewerId: string | null | undefined;
   enabled?: boolean;
   own?: OwnStatus | null;
+  away?: boolean;
 }) {
   return useSharedChapterPresence({ ...options, attach, activity });
 }

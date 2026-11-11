@@ -8,6 +8,7 @@ import {
 } from "react";
 import { chapterPresenceTopic } from "./presence-topics";
 import {
+  AWAY_GRACE_MS,
   PRESENCE_HEARTBEAT_MS,
   presenceMapFrom,
   presenceStatusFor,
@@ -144,9 +145,68 @@ type Options = {
    * `ChapterPresenceProvider`, the one production caller, always passes it.
    */
   own?: OwnStatus | null;
+  /**
+   * The viewer has switched away from the app (the phone, #3917). Published
+   * as `away: true`, which reads Idle, so the phone can say so in the moment
+   * before it lets go of the topic; readers then keep the member Idle for
+   * `AWAY_GRACE_MS` after their entry leaves. Web never sets it.
+   */
+  away?: boolean;
 };
 
 const EMPTY = new Map<string, PresenceEntry>();
+const EMPTY_LEFT = new Map<string, number>();
+
+/**
+ * A member's status: off their entry while present, Idle for `AWAY_GRACE_MS`
+ * after an away member's entry left (#3917), otherwise Offline.
+ */
+function statusFor(
+  present: Map<string, PresenceEntry>,
+  left: Map<string, number>,
+  userId: string,
+  now: number,
+): PresenceStatus {
+  const entry = present.get(userId);
+  if (entry) return presenceStatusFor(entry, now);
+  const leftAt = left.get(userId);
+  return leftAt !== undefined && now - leftAt < AWAY_GRACE_MS
+    ? "idle"
+    : "offline";
+}
+
+/**
+ * The members who left while away, carried from the previous roster on the
+ * same connection: a new leave is stamped `at`, a member back on the topic
+ * and a grace that has run out are dropped. Returns `previous.leftAt` itself
+ * when nothing changed, so an unchanged roster keeps its identity.
+ */
+function nextLeftAt(
+  previous: {
+    byUser: Map<string, PresenceEntry>;
+    leftAt: Map<string, number>;
+  } | null,
+  next: Map<string, PresenceEntry>,
+  at: number,
+): Map<string, number> {
+  if (previous === null) return EMPTY_LEFT;
+  let changed = false;
+  const leftAt = new Map(previous.leftAt);
+  for (const [userId, entry] of previous.byUser) {
+    if (entry.away && !next.has(userId)) {
+      leftAt.set(userId, at);
+      changed = true;
+    }
+  }
+  for (const [userId, when] of leftAt) {
+    if (next.has(userId) || at - when >= AWAY_GRACE_MS) {
+      leftAt.delete(userId);
+      changed = true;
+    }
+  }
+  if (!changed) return previous.leftAt;
+  return leftAt.size === 0 ? EMPTY_LEFT : leftAt;
+}
 
 const AUTOMATIC: OwnStatus = {
   status: "online",
@@ -162,6 +222,7 @@ export function useSharedChapterPresence({
   viewerId,
   enabled = true,
   own: ownOption,
+  away = false,
 }: Options): ChapterPresence {
   const own = ownOption === undefined ? AUTOMATIC : ownOption;
   /**
@@ -176,7 +237,13 @@ export function useSharedChapterPresence({
   const [roster, setRoster] = useState<{
     connection: number;
     byUser: Map<string, PresenceEntry>;
-  }>(() => ({ connection: -1, byUser: EMPTY }));
+    /**
+     * When each member who left while marked `away` left, seen on this
+     * connection (#3917). A leave this client didn't see (it joined later, or
+     * was disconnected) is simply not here, so that member reads Offline.
+     */
+    leftAt: Map<string, number>;
+  }>(() => ({ connection: -1, byUser: EMPTY, leftAt: EMPTY_LEFT }));
 
   /**
    * A generation counter for "which attach are we on", bumped during render
@@ -276,6 +343,7 @@ export function useSharedChapterPresence({
     live.generation === attachState.generation &&
     roster.connection === live.connection;
   const presentSince = isCurrent ? roster.byUser : EMPTY;
+  const recentlyLeft = isCurrent ? roster.leftAt : EMPTY_LEFT;
 
   /**
    * `viewerId` is deliberately not an effect dependency.
@@ -302,6 +370,10 @@ export function useSharedChapterPresence({
    * `viewerIdRef`: a status change must re-publish, not re-mint the channel.
    */
   const ownRef = useRef(own);
+  const awayRef = useRef(away);
+  useLayoutEffect(() => {
+    awayRef.current = away;
+  }, [away]);
   useLayoutEffect(() => {
     ownRef.current = own;
   }, [own]);
@@ -339,7 +411,11 @@ export function useSharedChapterPresence({
   // context boundary, and would stop working entirely the moment anyone
   // memoized the return (the React Compiler would do exactly that).
   const [now, setNow] = useState(() => Date.now());
-  const hasRoster = presentSince.size > 0;
+  // A member inside their away grace (#3917) is someone to age too, until the
+  // grace runs out.
+  const hasRoster =
+    presentSince.size > 0 ||
+    [...recentlyLeft.values()].some((at) => now - at < AWAY_GRACE_MS);
   useEffect(() => {
     if (!hasRoster) return undefined;
     const interval = setInterval(
@@ -380,16 +456,24 @@ export function useSharedChapterPresence({
       const next = presenceMapFrom(
         channel.presenceState() as unknown as RawPresenceState,
       );
-      setRoster((previous) =>
+      const at = Date.now();
+      setRoster((previous) => {
+        const leftAt = nextLeftAt(
+          previous.connection === connectionId ? previous : null,
+          next,
+          at,
+        );
         // A re-publish of an unchanged payload broadcasts a diff to every
         // subscriber. Without this, each peer's activity re-publish would
         // replace the roster with a structurally identical Map and re-render
         // the whole directory — search box, sorts, every row — to change
         // nothing on screen.
-        previous.connection === connectionId && sameRoster(previous.byUser, next)
+        return previous.connection === connectionId &&
+          sameRoster(previous.byUser, next) &&
+          leftAt === previous.leftAt
           ? previous
-          : { connection: connectionId, byUser: next },
-      );
+          : { connection: connectionId, byUser: next, leftAt };
+      });
       // The Idle clock only ticks while there is a roster to age, so it freezes
       // whenever the roster is empty or the channel is down — for as long as
       // that lasts. Re-reading it here is what keeps a resumed roster from
@@ -425,6 +509,7 @@ export function useSharedChapterPresence({
         ts: lastActiveAtRef.current ?? Date.now(),
         ...(self.status === "online" ? {} : { status: self.status }),
         ...(self.line ? { line: self.line } : {}),
+        ...(awayRef.current ? { away: true } : {}),
       });
     }
 
@@ -540,6 +625,18 @@ export function useSharedChapterPresence({
     publishRef.current?.();
   }, [ownStatus, ownLine]);
 
+  // Switching away, or coming back, publishes at once too: the phone has a
+  // moment between the two before it lets go of the topic (#3917). Only on a
+  // change of `away`: on mount the join's own publish carries the value, and
+  // a status change has its own publish above. `publish` itself says nothing
+  // while the status is unknown or Invisible.
+  const lastAway = useRef(away);
+  useEffect(() => {
+    if (lastAway.current === away) return;
+    lastAway.current = away;
+    publishRef.current?.();
+  }, [away]);
+
   // `now` advances on the interval above, which is what carries a member from
   // Online into Idle when nothing at all arrives on the wire.
   //
@@ -550,8 +647,8 @@ export function useSharedChapterPresence({
     (userId: string) =>
       userId === viewerId && ownStatus === "invisible"
         ? "invisible"
-        : presenceStatusFor(presentSince.get(userId), now),
-    [presentSince, now, viewerId, ownStatus],
+        : statusFor(presentSince, recentlyLeft, userId, now),
+    [presentSince, recentlyLeft, now, viewerId, ownStatus],
   );
 
   // Off the wire too, the viewer's own included, so the line a member sees

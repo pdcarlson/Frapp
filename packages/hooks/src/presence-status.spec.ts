@@ -13,7 +13,7 @@ import { CUSTOM_STATUS_MAX } from "./member-status";
 
 /** An automatic entry: activity only, nothing picked, no line. */
 function at(ts: number): PresenceEntry {
-  return { ts, picked: null, line: null };
+  return { ts, picked: null, line: null, away: false };
 }
 
 function roster(...entries: [string, number][]): Map<string, PresenceEntry> {
@@ -77,6 +77,12 @@ describe("presenceStatusFor", () => {
   test("DND stays DND after five minutes away, rather than going Idle", () => {
     const stale = now - IDLE_AFTER_MS - 1;
     expect(presenceStatusFor({ ...at(stale), picked: "dnd" }, now)).toBe("dnd");
+    // Switched away from the phone app (#3917): Idle, however fresh, but a
+    // picked status still wins.
+    expect(presenceStatusFor({ ...at(now), away: true }, now)).toBe("idle");
+    expect(
+      presenceStatusFor({ ...at(now), away: true, picked: "dnd" }, now),
+    ).toBe("dnd");
   });
 });
 
@@ -120,7 +126,7 @@ describe("presenceMapFrom", () => {
       a: [{ userId: "u1", ts: 10, status: "dnd", line: "old tab" }],
       b: [{ userId: "u1", ts: 99, status: "idle", line: "At practice" }],
     });
-    expect(map.get("u1")).toEqual({ ts: 99, picked: "idle", line: "At practice" });
+    expect(map.get("u1")).toEqual({ ts: 99, picked: "idle", line: "At practice", away: false });
   });
 
   test("reads status and line, and leaves them out when absent", () => {
@@ -130,8 +136,19 @@ describe("presenceMapFrom", () => {
         { userId: "u2", ts: 1 },
       ],
     });
-    expect(map.get("u1")).toEqual({ ts: 1, picked: "dnd", line: "Studying" });
+    expect(map.get("u1")).toEqual({ ts: 1, picked: "dnd", line: "Studying", away: false });
     expect(map.get("u2")).toEqual(at(1));
+  });
+
+  test("reads away only when it is exactly true (#3917)", () => {
+    const map = presenceMapFrom({
+      a: [
+        { userId: "u1", ts: 1, away: true },
+        { userId: "u2", ts: 1, away: "yes" },
+      ],
+    });
+    expect(map.get("u1")?.away).toBe(true);
+    expect(map.get("u2")?.away).toBe(false);
   });
 
   /**
@@ -224,6 +241,9 @@ describe("sameRoster", () => {
     const base = roster(["u1", 1]);
     expect(
       sameRoster(base, new Map([["u1", { ...at(1), picked: "dnd" }]])),
+    ).toBe(false);
+    expect(
+      sameRoster(base, new Map([["u1", { ...at(1), away: true }]])),
     ).toBe(false);
     expect(
       sameRoster(base, new Map([["u1", { ...at(1), line: "Out" }]])),

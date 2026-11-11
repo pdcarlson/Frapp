@@ -20,7 +20,8 @@
  *
  * which is the spec's three states read straight off the two signals. A
  * status the member picked (#3845) rides the same entry and beats the clock;
- * see `presenceStatusFor`.
+ * see `presenceStatusFor`. So does `away` (#3917), the phone's "switched to
+ * another app", which reads Idle.
  *
  * **What actually removes a member from the map**, verified against the
  * installed `@supabase/realtime-js` rather than assumed: nothing in
@@ -42,6 +43,13 @@ import { CUSTOM_STATUS_MAX, MEMBER_STATUS_LABEL } from "./member-status";
 
 /** Spec: "Idle (app open but inactive for >5 minutes)". */
 export const IDLE_AFTER_MS = 5 * 60 * 1000;
+
+/**
+ * How long a member who switched away from the phone app stays Idle after
+ * their entry leaves the topic (#3917, Shawn's call): people pop into another
+ * app and come back, so the dot doesn't go grey the moment they do.
+ */
+export const AWAY_GRACE_MS = 5 * 60 * 1000;
 
 /**
  * The spec's "~30 seconds" cadence.
@@ -77,6 +85,12 @@ export type PresenceEntry = {
   picked: PickedPresence | null;
   /** The custom status line, or `null` for none. */
   line: string | null;
+  /**
+   * The member switched away from the phone app (#3917): still present for
+   * a moment, about to leave. Reads Idle, and keeps them Idle for
+   * `AWAY_GRACE_MS` after their entry leaves.
+   */
+  away: boolean;
 };
 
 
@@ -94,6 +108,7 @@ export function presenceStatusFor(
 ): PresenceStatus {
   if (entry === null || entry === undefined) return "offline";
   if (entry.picked) return entry.picked;
+  if (entry.away) return "idle";
   // A clock-skewed peer can stamp `ts` slightly in the future. Treat that as
   // fresh rather than letting a negative age fall through to another branch.
   return now - entry.ts > IDLE_AFTER_MS ? "idle" : "online";
@@ -157,11 +172,12 @@ export function presenceMapFrom(
     if (!Array.isArray(entries)) continue;
     for (const entry of entries) {
       if (!entry || typeof entry !== "object") continue;
-      const { userId, ts, status, line } = entry as {
+      const { userId, ts, status, line, away } = entry as {
         userId?: unknown;
         ts?: unknown;
         status?: unknown;
         line?: unknown;
+        away?: unknown;
       };
       if (typeof userId !== "string" || userId.length === 0) continue;
       if (typeof ts !== "number" || !Number.isFinite(ts)) continue;
@@ -171,6 +187,7 @@ export function presenceMapFrom(
           ts,
           picked: pickedFrom(status),
           line: presenceLineFrom(line),
+          away: away === true,
         });
       }
     }
@@ -199,7 +216,8 @@ export function sameRoster(
       !other ||
       other.ts !== entry.ts ||
       other.picked !== entry.picked ||
-      other.line !== entry.line
+      other.line !== entry.line ||
+      other.away !== entry.away
     ) {
       return false;
     }

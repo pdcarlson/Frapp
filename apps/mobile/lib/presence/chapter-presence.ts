@@ -6,10 +6,14 @@
  *
  * - **One channel, foreground only.** The runtime holds exactly one extra
  *   Realtime channel, on the socket chat already keeps open, and only while
- *   the app is in the foreground. Going to the background turns it off, which
- *   releases the topic through the shared `releaseTopic`
- *   (`realtime-resilience` rule 1) and takes the member's entry off the topic,
- *   so they read Offline to the chapter. The return re-joins.
+ *   the app is in the foreground. Switching away first publishes the member
+ *   as `away` (Idle), then, `AWAY_RELEASE_DELAY_MS` later, releases the topic
+ *   through the shared `releaseTopic` (`realtime-resilience` rule 1), which
+ *   takes their entry off it. Every member who saw the away entry keeps them
+ *   Idle for `AWAY_GRACE_MS` (five minutes, Shawn's call), then Offline. The
+ *   return re-joins. The OS may freeze the app before the away publish goes
+ *   out; then the member reads Offline once their socket drops, which is the
+ *   honest fallback.
  * - **Gated on the link, not on `isOffline`** (rule 7). Realtime is a
  *   different service from `/health`, so three failed API probes must not make
  *   every member read Offline. `connectionMonitor.linkDown()` is the link half
@@ -29,7 +33,7 @@
  * the auth gate; screens read the result through `useChapterPresence()` in
  * `./presence-store.ts`, which costs a store read, not a channel.
  */
-import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { AppState } from "react-native";
 import { useActiveChapterId, useViewerUserId } from "@repo/hooks";
 import {
@@ -54,6 +58,13 @@ import { PRESENCE_NOT_READY, setChapterPresence } from "./presence-store";
 export const FOREGROUND_REFRESH_MS = 2 * 60 * 1000;
 
 /**
+ * How long the channel stays up after switching away, so the `away` publish
+ * reaches the topic before the release. iOS gives a backgrounded app a few
+ * seconds before it freezes it; this stays well inside that.
+ */
+export const AWAY_RELEASE_DELAY_MS = 1500;
+
+/**
  * `background` only, the line the connection monitor draws: `inactive` is
  * the app switcher or Control Center, with the app still running.
  */
@@ -61,9 +72,40 @@ function isForeground(): boolean {
   return AppState.currentState !== "background";
 }
 
-function subscribeToAppState(onChange: () => void): () => void {
-  const subscription = AppState.addEventListener("change", onChange);
-  return () => subscription.remove();
+/**
+ * Whether the app is in the foreground, and whether a switch away is still
+ * inside `AWAY_RELEASE_DELAY_MS`, when the channel stays up to say `away`.
+ */
+function useForeground(): { foreground: boolean; releasing: boolean } {
+  const [state, setState] = useState(() => ({
+    foreground: isForeground(),
+    releasing: false,
+  }));
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const subscription = AppState.addEventListener("change", () => {
+      if (timer !== null) clearTimeout(timer);
+      timer = null;
+      if (isForeground()) {
+        setState({ foreground: true, releasing: false });
+        return;
+      }
+      setState((previous) =>
+        previous.foreground ? { foreground: false, releasing: true } : previous,
+      );
+      timer = setTimeout(() => {
+        timer = null;
+        setState((previous) =>
+          previous.foreground ? previous : { foreground: false, releasing: false },
+        );
+      }, AWAY_RELEASE_DELAY_MS);
+    });
+    return () => {
+      subscription.remove();
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, []);
+  return state;
 }
 
 function subscribeToLink(onChange: () => void): () => void {
@@ -107,11 +149,7 @@ export function useChapterPresenceRuntime(): void {
   const own = useOwnStatus({ enabled: signedIn });
   // Keeps that status current across devices while the app is open.
   useOwnStatusSync();
-  const foreground = useSyncExternalStore(
-    subscribeToAppState,
-    isForeground,
-    isForeground,
-  );
+  const { foreground, releasing } = useForeground();
   const linkDown = useSyncExternalStore(subscribeToLink, isLinkDown, isLinkDown);
   const hasClient = useMemo(() => getSupabaseClient() !== null, []);
 
@@ -120,8 +158,9 @@ export function useChapterPresenceRuntime(): void {
     activity: phoneActivity,
     chapterId: signedIn ? chapterId : null,
     viewerId,
-    enabled: signedIn && hasClient && foreground && !linkDown,
+    enabled: signedIn && hasClient && (foreground || releasing) && !linkDown,
     own,
+    away: !foreground,
   });
 
   useEffect(() => {

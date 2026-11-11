@@ -6,7 +6,7 @@
  * `use-chapter-presence.spec.tsx`, which drives the same hook.
  */
 import { act, renderHook } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OwnStatus } from "@repo/hooks/member-status";
 
 const state = vi.hoisted(() => ({
@@ -90,7 +90,9 @@ vi.mock("@/lib/connection/monitor", () => ({
   },
 }));
 
-const { useChapterPresenceRuntime } = await import("./chapter-presence");
+const { useChapterPresenceRuntime, AWAY_RELEASE_DELAY_MS } = await import(
+  "./chapter-presence"
+);
 const { useChapterPresence } = await import("./presence-store");
 
 function own(patch: Partial<OwnStatus> = {}): OwnStatus {
@@ -124,6 +126,10 @@ function setLinkDown(next: boolean) {
   });
 }
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 beforeEach(() => {
   state.signedIn = true;
   state.chapterId = "11111111-2222-3333-4444-555555555555";
@@ -156,13 +162,47 @@ describe("useChapterPresenceRuntime (#3917)", () => {
     );
   });
 
-  it("releases the topic in the background and re-joins on the way back", async () => {
+  it("says away on switching away, then releases the topic, and re-joins on the way back", async () => {
+    vi.useFakeTimers();
     renderHook(() => useChapterPresenceRuntime());
     await settle();
     setAppState("background");
+    // First the away publish, on the channel still held.
+    expect(state.track).toHaveBeenLastCalledWith(
+      expect.objectContaining({ userId: "user-1", away: true }),
+    );
+    expect(state.detach).not.toHaveBeenCalled();
+    // Then the release, through the shared attach.
+    act(() => vi.advanceTimersByTime(AWAY_RELEASE_DELAY_MS));
     expect(state.detach).toHaveBeenCalledTimes(1);
     setAppState("active");
     expect(state.attach).toHaveBeenCalledTimes(2);
+    await settle();
+    expect(state.track).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ away: true }),
+    );
+  });
+
+  it("coming back inside the delay keeps the channel and clears away", async () => {
+    vi.useFakeTimers();
+    renderHook(() => useChapterPresenceRuntime());
+    await settle();
+    setAppState("background");
+    setAppState("active");
+    act(() => vi.advanceTimersByTime(AWAY_RELEASE_DELAY_MS));
+    expect(state.detach).not.toHaveBeenCalled();
+    expect(state.track).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ away: true }),
+    );
+  });
+
+  it("an Invisible member says nothing on switching away", async () => {
+    vi.useFakeTimers();
+    state.own = own({ status: "invisible" });
+    renderHook(() => useChapterPresenceRuntime());
+    await settle();
+    setAppState("background");
+    expect(state.track).not.toHaveBeenCalled();
   });
 
   it("keeps the channel through the app switcher (inactive is not background)", () => {
@@ -224,6 +264,8 @@ describe("useChapterPresenceRuntime (#3917)", () => {
     expect(screen.result.current.statusOf("user-3")).toBe("offline");
 
     setAppState("background");
+    await new Promise((resolve) => setTimeout(resolve, AWAY_RELEASE_DELAY_MS + 50));
+    await settle();
     expect(screen.result.current.isReady).toBe(false);
   });
 });
