@@ -61,6 +61,13 @@ const FAMILY = [
   "components/auth/new-account-actions.tsx",
   "components/auth/signet-mark.tsx",
   "components/profile/profile-panel.tsx",
+  // `/profile`'s settings blocks, moved to the personal Settings page (#3856).
+  // Listed so the rules that governed them inside `profile-panel.tsx` still do.
+  "app/(dashboard)/preferences/page.tsx",
+  "components/personal-settings/personal-settings-page.tsx",
+  "components/personal-settings/quiet-hours-section.tsx",
+  "components/personal-settings/chapter-alerts-section.tsx",
+  "components/personal-settings/account-section.tsx",
   "components/profile/profile-glyphs.tsx",
   "components/onboarding/chapter-wizard.tsx",
   // Split out of `chapter-wizard.tsx` by #2145 so the wizard could go behind

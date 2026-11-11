@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
  * `spec/ui/web-dashboard/README.md` § Responsive contract: at `lg` and up the
  * nav column fits a 1024×768 window for every seeded role without scrolling.
  * Before #2946 a President's 17 rows needed an 828px-tall window and scrolled
- * by 60px at 768. The fix folded the six-row Admin group into one Settings row.
+ * by 60px at 768. The fix folded the six-row Admin group into one row, now named Chapter settings.
  * This test is what stops the list growing back past the budget one "just one
  * more row" at a time. Each row costs 36px.
  *
@@ -39,7 +39,7 @@ test("the sidebar fits a 1024×768 window with every row showing", async ({
   // The last row of the list. If the fail-open premise above ever stops
   // holding, this is what goes missing, and the test says so instead of
   // passing on a shorter list.
-  await expect(nav.getByRole("link", { name: "Settings" })).toBeVisible();
+  await expect(nav.getByRole("link", { name: "Chapter settings" })).toBeVisible();
 
   const measured = await nav.evaluate((el) => ({
     scrollHeight: el.scrollHeight,

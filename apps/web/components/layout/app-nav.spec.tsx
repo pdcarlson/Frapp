@@ -92,7 +92,7 @@ describe("AppNav", () => {
     const rows = Array.from(document.querySelectorAll("nav a")).map(
       (el) => el.textContent,
     );
-    expect(rows.at(-1)).toBe("Settings");
+    expect(rows.at(-1)).toBe("Chapter settings");
     for (const gone of [
       "Roles",
       "Study Zones",
@@ -107,7 +107,7 @@ describe("AppNav", () => {
   it("hides Settings from an ordinary member", () => {
     renderNav({ permissions: ORDINARY_MEMBER });
     expect(
-      screen.queryByRole("link", { name: "Settings" }),
+      screen.queryByRole("link", { name: "Chapter settings" }),
     ).not.toBeInTheDocument();
   });
 
@@ -115,7 +115,7 @@ describe("AppNav", () => {
     // A treasurer's reports:export was a Reports row of its own; now it is the
     // reason the Settings row shows at all.
     renderNav({ permissions: ["members:view", "reports:export"] });
-    expect(screen.getByRole("link", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Chapter settings" })).toBeInTheDocument();
   });
 
   it("drops Settings for a tools-only officer whose tools are all switched off", () => {
@@ -126,7 +126,7 @@ describe("AppNav", () => {
       isModuleEnabled: (key: string) => key !== "reports",
     });
     expect(
-      screen.queryByRole("link", { name: "Settings" }),
+      screen.queryByRole("link", { name: "Chapter settings" }),
     ).not.toBeInTheDocument();
   });
 
@@ -135,12 +135,12 @@ describe("AppNav", () => {
       permissions: ["chapter-config:view"],
       isModuleEnabled: () => false,
     });
-    expect(screen.getByRole("link", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Chapter settings" })).toBeInTheDocument();
   });
 
   it("marks Settings as the current section while one of its tools is open", () => {
     renderNav({ pathname: "/reports" });
-    expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Chapter settings" })).toHaveAttribute(
       "aria-current",
       "true",
     );
@@ -150,7 +150,7 @@ describe("AppNav", () => {
     // Hiding a link one render early is a visible flash of nav items
     // disappearing; the route itself is guarded server-side.
     renderNav({ permissions: undefined });
-    expect(screen.getByRole("link", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Chapter settings" })).toBeInTheDocument();
   });
 
   it("hides a row whose module is switched off", () => {

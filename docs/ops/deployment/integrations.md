@@ -277,7 +277,7 @@ link to somebody else's Discord admin and end up reading that server. Do not
 "simplify" the flow by binding on the callback.
 
 **Members linking their own Discord account use the same application and the
-same redirect URI.** `/profile` → Discord history (#2878) sends a member
+same redirect URI.** Settings → Discord history (`/preferences?section=discord`, #2878) sends a member
 through Discord's sign-in with the `identify` scope alone and comes back to the
 same `/v1/discord/connect/callback`, so it needs no extra portal setup: once
 the bot path is available, so is linking. It parks and confirms for the same

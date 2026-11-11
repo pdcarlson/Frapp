@@ -113,7 +113,10 @@ async function build(config: Record<string, string | undefined> = {}) {
       }),
     ),
     attachPendingAuthorLink: jest.fn(async () =>
-      stateRow({ purpose: 'author_link', return_path: '/profile' }),
+      stateRow({
+        purpose: 'author_link',
+        return_path: AUTHOR_LINK_RETURN_PATH,
+      }),
     ),
     consumeAuthorLinkConfirmToken: jest.fn(async () => null),
     findStateReturnPath: jest.fn(async () => null),
@@ -1352,7 +1355,7 @@ describe('DiscordOAuthService — a member linking their Discord account (#2878)
     });
   }
 
-  it('mints an author_link handshake returning to /profile and asks for identify only', async () => {
+  it('mints an author_link handshake returning to Settings and asks for identify only', async () => {
     const service = await build();
     await service.beginAuthorLink(CHAPTER, USER);
 
@@ -1361,7 +1364,7 @@ describe('DiscordOAuthService — a member linking their Discord account (#2878)
         chapter_id: CHAPTER,
         created_by: USER,
         purpose: 'author_link',
-        return_path: '/profile',
+        return_path: '/preferences?section=discord',
       }),
     );
     expect(oauth.buildAuthorizeUrl).toHaveBeenCalledWith(
@@ -1382,7 +1385,7 @@ describe('DiscordOAuthService — a member linking their Discord account (#2878)
     expect(repo.createState).not.toHaveBeenCalled();
   });
 
-  it('sends an expired link attempt back to /profile, where it started', async () => {
+  it('sends an expired link attempt back to Settings, where it started', async () => {
     const service = await build();
     repo.consumeState.mockResolvedValue(null);
     repo.findStateReturnPath.mockResolvedValue(AUTHOR_LINK_RETURN_PATH);
@@ -1391,7 +1394,8 @@ describe('DiscordOAuthService — a member linking their Discord account (#2878)
 
     expect(outcome.code).toBe('expired');
     const url = new URL(outcome.returnUrl);
-    expect(url.pathname).toBe('/profile');
+    expect(url.pathname).toBe('/preferences');
+    expect(url.searchParams.get('section')).toBe('discord');
     expect(url.searchParams.get('discord')).toBe('expired');
   });
 
@@ -1405,7 +1409,7 @@ describe('DiscordOAuthService — a member linking their Discord account (#2878)
     expect(new URL(outcome.returnUrl).pathname).toBe(DEFAULT_RETURN_PATH);
   });
 
-  it('sends a link attempt the store failed to consume back to /profile', async () => {
+  it('sends a link attempt the store failed to consume back to Settings', async () => {
     const service = await build();
     repo.consumeState.mockRejectedValue(PGRST_TABLE_MISSING);
     repo.findStateReturnPath.mockResolvedValue(AUTHOR_LINK_RETURN_PATH);
@@ -1414,7 +1418,8 @@ describe('DiscordOAuthService — a member linking their Discord account (#2878)
 
     expect(outcome.code).toBe('failed');
     const url = new URL(outcome.returnUrl);
-    expect(url.pathname).toBe('/profile');
+    expect(url.pathname).toBe('/preferences');
+    expect(url.searchParams.get('section')).toBe('discord');
     expect(url.searchParams.get('discord')).toBe('failed');
   });
 
@@ -1435,7 +1440,10 @@ describe('DiscordOAuthService — a member linking their Discord account (#2878)
 
     expect(outcome.code).toBe('pending');
     const url = new URL(outcome.returnUrl);
-    expect(url.origin + url.pathname).toBe('https://app.example.test/profile');
+    expect(url.origin + url.pathname).toBe(
+      'https://app.example.test/preferences',
+    );
+    expect(url.searchParams.get('section')).toBe('discord');
     expect(url.searchParams.get('discord')).toBe('pending');
     expect(url.searchParams.get('handshake')).toMatch(/^[0-9a-f-]{36}$/);
 
@@ -1468,11 +1476,11 @@ describe('DiscordOAuthService — a member linking their Discord account (#2878)
     const outcome = await service.handleCallback({ code: 'c', state: STATE });
 
     expect(outcome.code).toBe('expired');
-    expect(new URL(outcome.returnUrl).pathname).toBe('/profile');
+    expect(new URL(outcome.returnUrl).pathname).toBe('/preferences');
     expect(oauth.revokeToken).toHaveBeenCalledWith('member-token');
   });
 
-  it('sends a declined link back to /profile, not the import wizard', async () => {
+  it('sends a declined link back to Settings, not the import wizard', async () => {
     const service = await build();
     repo.consumeState.mockResolvedValue(linkState());
 
@@ -1482,7 +1490,7 @@ describe('DiscordOAuthService — a member linking their Discord account (#2878)
     });
 
     expect(outcome.code).toBe('declined');
-    expect(new URL(outcome.returnUrl).pathname).toBe('/profile');
+    expect(new URL(outcome.returnUrl).pathname).toBe('/preferences');
     expect(oauth.exchangeCode).not.toHaveBeenCalled();
   });
 

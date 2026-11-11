@@ -31,11 +31,13 @@ import {
  * § Navigation map mirrors this file, and a change to one changes the other.
  *
  * Structure (#2946): a Chat anchor with no section header, then Chapter, then
- * Resources, then one unlabeled group holding Directory, Billing and Settings.
- * Chat leads because chat is the product's home — `/` and `/dashboard` both
- * redirect there. Profile is deliberately absent: it lives in the account menu,
- * which the shell hangs off the top-bar avatar (`account-menu.tsx`), because it
- * is about the viewer, not about the chapter.
+ * Resources, then one unlabeled group holding Directory, Billing and Chapter
+ * settings. Chat leads because chat is the product's home — `/` and
+ * `/dashboard` both redirect there. Profile and the personal Settings page are
+ * deliberately absent: they live in the account menu, which the shell hangs
+ * off the top-bar avatar (`account-menu.tsx`), because they are about the
+ * viewer, not about the chapter. That is the two doors (#3856): the row here
+ * is named "Chapter settings" so it cannot be mistaken for the member's own.
  *
  * **The nav fits a 1024×768 window for every seeded role.** A six-row Admin
  * group (Roles, Study Zones, Reports, Chat Admin, Discord Import, Settings)
@@ -275,7 +277,7 @@ export const DASHBOARD_NAV: NavSection[] = [
       },
       {
         id: "settings",
-        label: "Settings",
+        label: "Chapter settings",
         icon: SettingsGlyph,
         href: "/settings",
         description:
