@@ -868,7 +868,10 @@ export {
   APP_STORE_APP_ID,
   NATIVE_APP_ID,
   NATIVE_APP_SCHEME,
+  OPENED_FROM_APP_KEY,
+  OPENED_FROM_APP_VALUE,
   STORE_LISTING_URLS,
+  openAppUrl,
   openInAppUrl,
   phonePlatform,
 } from "./native-app";

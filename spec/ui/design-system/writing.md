@@ -240,6 +240,15 @@ The composer is shared by the Members panel and the web setup wizard's last step
 | List | Section `Invited`; a row is the address or `Invite link`, then `<role> · Sent today at 4:46 PM`, then `Pending`, `Joined` or `Expired`. Empty: `Nobody yet. People you invite show up here until they join.` |
 | Row menu | `Copy link`, `Send again`, `Revoke invite`; revoked toast `Invite revoked` / `<address> can't join with it now.` |
 
+### Get the app (dashboard, phones)
+
+The strip under the top bar on a phone ([`web-dashboard/README.md` § Get the app (phones)](../web-dashboard/README.md#get-the-app-phones), #4002). Store-facing wording: Paul approves it.
+
+| State | Title | Description |
+|---|---|---|
+| Shown | `Frapp works best in the app` | `Chat, events and check-in on your phone, with notifications. The app is in beta, so if the store says it isn't available yet, keep using Frapp here.` Then `Get the app` and `Open the app`. |
+| Close button | — | Labelled `Dismiss the Get the app suggestion` for a screen reader. |
+
 ### Events (dashboard)
 
 | State | Title | Description |

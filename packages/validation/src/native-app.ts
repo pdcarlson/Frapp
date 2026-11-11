@@ -1,11 +1,14 @@
 /**
- * Where the native app lives and how a web page hands an invite to it (#4002).
+ * Where the native app lives, and how a web page sends someone to it (#4002):
+ * an invite link's hand-off on web `/join`, and the phone dashboard's Get the
+ * app card.
  *
  * The identifiers are permanent (`spec/ui/brand-identity.md`): the iOS bundle id
  * and the Android package are both `live.frapp.mobile`, the scheme is `frapp://`,
  * and the App Store id is App Store Connect's Apple ID for the app
  * (`apps/mobile/eas.json` → `submit.production.ios.ascAppId`). One home, so the
- * web's invite hand-off (`apps/web/components/auth/app-handoff.tsx`), the API's
+ * web's invite hand-off (`apps/web/components/auth/app-handoff.tsx`), its Get
+ * the app card (`apps/web/components/layout/get-the-app-card.tsx`), the API's
  * update screen default and the app-link files can't name different apps.
  */
 
@@ -27,8 +30,8 @@ export const STORE_LISTING_URLS: Readonly<Record<NativePlatform, string>> = {
 
 /**
  * The paths on the dashboard origin the app claims as universal links (iOS)
- * and App Links (Android). Only the invite: every other dashboard page is web
- * work an officer does on a desktop. The web's `/.well-known` files publish
+ * and App Links (Android). Only the invite: every other dashboard page stays
+ * on the web (the phone dashboard suggests the app with a card it can close). The web's `/.well-known` files publish
  * these; the binary claims them through `apps/mobile/app.json`
  * (`ios.associatedDomains`, Android `intentFilters`), which must list the same
  * paths. Until a store build carries that native half (#4002), no installed
@@ -66,9 +69,35 @@ export function phonePlatform(
  * opens the app's Play listing instead of failing.
  */
 export function openInAppUrl(platform: NativePlatform, token: string): string {
-  const query = `token=${encodeURIComponent(token)}`;
-  if (platform === "android") {
-    return `intent://join?${query}#Intent;scheme=${NATIVE_APP_SCHEME};package=${NATIVE_APP_ID};end`;
-  }
-  return `${NATIVE_APP_SCHEME}://join?${query}`;
+  return appUrl(platform, `join?token=${encodeURIComponent(token)}`);
 }
+
+/**
+ * The one shape of a link into the app: `frapp://<route>` on iOS, Chrome's
+ * `intent:` form naming the package on Android.
+ */
+function appUrl(platform: NativePlatform, route: string): string {
+  if (platform === "android") {
+    return `intent://${route}#Intent;scheme=${NATIVE_APP_SCHEME};package=${NATIVE_APP_ID};end`;
+  }
+  return `${NATIVE_APP_SCHEME}://${route}`;
+}
+
+/**
+ * The link that opens the installed app at its home, with no invite: the
+ * phone dashboard's Get the app card. Android's `intent:` form opens Play when
+ * the app is missing; iOS's scheme is refused without it, so the card offers
+ * the store beside it.
+ */
+export function openAppUrl(platform: NativePlatform): string {
+  return appUrl(platform, "");
+}
+
+/**
+ * The query mark the app adds to a dashboard page it opens in its in-app
+ * browser (the setup list's web-only steps). That browser has a phone's user
+ * agent, so without it the dashboard would tell someone already using the app
+ * to get it.
+ */
+export const OPENED_FROM_APP_KEY = "from";
+export const OPENED_FROM_APP_VALUE = "app";

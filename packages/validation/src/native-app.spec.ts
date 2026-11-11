@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   STORE_LISTING_URLS,
   extractInviteToken,
+  openAppUrl,
   openInAppUrl,
   phonePlatform,
 } from "./index";
@@ -53,5 +54,14 @@ describe("STORE_LISTING_URLS", () => {
       android:
         "https://play.google.com/store/apps/details?id=live.frapp.mobile",
     });
+  });
+});
+
+describe("openAppUrl (#4002)", () => {
+  it("opens the app at home on iOS, and through Chrome's intent on Android", () => {
+    expect(openAppUrl("ios")).toBe("frapp://");
+    expect(openAppUrl("android")).toBe(
+      "intent://#Intent;scheme=frapp;package=live.frapp.mobile;end",
+    );
   });
 });
