@@ -1481,3 +1481,39 @@ describe("media picker dependencies (#2296, #2464)", () => {
     expect(importers).not.toEqual([]);
   });
 });
+
+describe("invite links open the app (#4002)", () => {
+  // The binary's half of universal links and App Links. The web's half is
+  // `/.well-known/apple-app-site-association` and `assetlinks.json` on
+  // app.frapp.live, which claim `/join` only; the two must agree.
+  it("claims app.frapp.live/join and nothing else, on both platforms", () => {
+    const appJson = JSON.parse(
+      readFileSync(new URL("./app.json", import.meta.url), "utf8"),
+    ) as {
+      expo: {
+        ios: { associatedDomains?: string[] };
+        android: {
+          intentFilters?: {
+            action: string;
+            autoVerify?: boolean;
+            data: { scheme: string; host: string; path?: string }[];
+            category: string[];
+          }[];
+        };
+      };
+    };
+    expect(appJson.expo.ios.associatedDomains).toEqual([
+      "applinks:app.frapp.live",
+    ]);
+    const filters = appJson.expo.android.intentFilters ?? [];
+    expect(filters).toHaveLength(1);
+    expect(filters[0]).toMatchObject({
+      action: "VIEW",
+      autoVerify: true,
+      category: ["BROWSABLE", "DEFAULT"],
+    });
+    expect(filters[0]!.data).toEqual([
+      { scheme: "https", host: "app.frapp.live", path: "/join" },
+    ]);
+  });
+});

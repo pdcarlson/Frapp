@@ -2,7 +2,7 @@
   "expo": {
     "name": "Frapp",
     "slug": "frapp",
-    "version": "0.10.3",
+    "version": "0.11.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "frapp",
@@ -23,6 +23,7 @@
       },
       "supportsTablet": false,
       "bundleIdentifier": "live.frapp.mobile",
+      "associatedDomains": ["applinks:app.frapp.live"],
       "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
@@ -57,7 +58,21 @@
         "backgroundColor": "#1A1A1A"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "live.frapp.mobile"
+      "package": "live.frapp.mobile",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "app.frapp.live",
+              "path": "/join"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "bundler": "metro",

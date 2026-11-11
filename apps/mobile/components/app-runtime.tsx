@@ -5,6 +5,7 @@ import { useBadgeSyncRuntime } from "@/lib/notifications/use-badge-sync";
 import { useNotificationSyncRuntime } from "@/lib/notifications/use-notification-sync";
 import { usePushRuntime } from "@/lib/notifications/use-push-runtime";
 import { useOnboardingRedirect } from "@/lib/onboarding/use-onboarding-redirect";
+import { useMemberInviteHandoff } from "@/lib/onboarding/use-member-invite-handoff";
 import { useChapterPresenceRuntime } from "@/lib/presence/chapter-presence";
 
 /**
@@ -57,6 +58,8 @@ export function AppRuntime(): null {
   useChatRealtimeBinding();
   usePushRuntime();
   useOnboardingRedirect();
+  // An invite link a member with a chapter opened goes to web `/join` (#4002).
+  useMemberInviteHandoff();
   // Ahead of badge sync: it reads the tray, which badge sync can empty on
   // Android (`lib/chat/use-unread-first-paint-runtime.ts`).
   useUnreadFirstPaintRuntime();
