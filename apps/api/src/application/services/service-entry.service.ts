@@ -39,6 +39,7 @@ import { ChatService } from './chat.service';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 const SERVICE_BUCKET = 'service';
 
@@ -582,7 +583,16 @@ export class ServiceEntryService {
         category: 'service',
         data: { target: { screen: 'service' } },
       });
-    } catch {}
+    } catch (error) {
+      // A notification nobody retries (#4096): best-effort for the caller,
+      // reported so a failing notifications write isn't silent.
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'service-entry-approved-notify',
+        message: `Could not notify member ${entry.user_id} that service entry ${id} was approved`,
+        error,
+      });
+    }
 
     return updated;
   }
@@ -615,7 +625,16 @@ export class ServiceEntryService {
         category: 'service',
         data: { target: { screen: 'service' } },
       });
-    } catch {}
+    } catch (error) {
+      // A notification nobody retries (#4096): best-effort for the caller,
+      // reported so a failing notifications write isn't silent.
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'service-entry-rejected-notify',
+        message: `Could not notify member ${entry.user_id} that service entry ${id} was rejected`,
+        error,
+      });
+    }
 
     return updated;
   }

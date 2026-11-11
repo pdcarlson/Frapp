@@ -80,7 +80,7 @@ export class PollService {
     const metadata: PollMetadata = {
       question: input.question,
       options: input.options,
-      expires_at: input.expiresAt ?? undefined,
+      expires_at: input.expiresAt ? inUtc(input.expiresAt) : undefined,
       choice_mode: input.choiceMode ?? 'single',
     };
 
@@ -621,4 +621,16 @@ export class PollService {
 
     return results;
   }
+}
+
+/**
+ * A deadline in UTC (`2026-11-12T18:00:00.000Z`). The expiry sweep compares
+ * `metadata->>expires_at` as text against UTC bounds, so a deadline stored
+ * with an offset (`+05:00`) would fall in the wrong window (#3498). One the
+ * API can't parse is kept as sent; the DTO refuses those, and the sweep
+ * reports any that reach it.
+ */
+function inUtc(timestamp: string): string {
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime()) ? timestamp : date.toISOString();
 }

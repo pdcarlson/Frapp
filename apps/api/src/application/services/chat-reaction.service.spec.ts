@@ -335,6 +335,56 @@ describe('ChatReactionService', () => {
         expect(mockActionRepo.create).not.toHaveBeenCalled();
       });
 
+      describe('a multi-choice card (#3793)', () => {
+        const multi: ChatMessage = {
+          ...pollMessage,
+          payload: { ...pollMessage.payload, choice_mode: 'multi' },
+        };
+
+        it('takes several options in the one vote row', async () => {
+          mockMessageRepo.findById.mockResolvedValue(multi);
+          mockActionRepo.create.mockResolvedValue(baseAction);
+
+          await vote({ option_id: ['opt-a', 'opt-b'] });
+
+          expect(mockActionRepo.create).toHaveBeenCalledWith(
+            expect.objectContaining({
+              action_type: 'vote',
+              payload: { option_id: ['opt-a', 'opt-b'] },
+            }),
+          );
+        });
+
+        it('takes an empty list, which clears the vote', async () => {
+          mockMessageRepo.findById.mockResolvedValue(multi);
+          mockActionRepo.create.mockResolvedValue(baseAction);
+
+          await vote({ option_id: [] });
+
+          expect(mockActionRepo.create).toHaveBeenCalledWith(
+            expect.objectContaining({ payload: { option_id: [] } }),
+          );
+        });
+
+        it('rejects a list naming an option that is not on the card', async () => {
+          mockMessageRepo.findById.mockResolvedValue(multi);
+
+          await expect(vote({ option_id: ['opt-a', 'opt-z'] })).rejects.toThrow(
+            /Invalid option/,
+          );
+          expect(mockActionRepo.create).not.toHaveBeenCalled();
+        });
+
+        it('still refuses several options on a single-choice card', async () => {
+          mockMessageRepo.findById.mockResolvedValue(pollMessage);
+
+          await expect(vote({ option_id: ['opt-a', 'opt-b'] })).rejects.toThrow(
+            'Single-choice poll requires exactly one option',
+          );
+          expect(mockActionRepo.create).not.toHaveBeenCalled();
+        });
+      });
+
       it('rejects an option that is not on the card', async () => {
         mockMessageRepo.findById.mockResolvedValue(pollMessage);
 

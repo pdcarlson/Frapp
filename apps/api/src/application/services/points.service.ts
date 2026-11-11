@@ -39,6 +39,7 @@ import {
 } from '#domain/utils/points-window';
 import { resolveSemesterArchiveRangeOrThrow } from './resolve-semester-archive-range';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 // Re-exported so existing importers (points.controller, etc.) keep their path;
 // the canonical definition now lives in domain/utils/points-window.
@@ -480,7 +481,16 @@ export class PointsService {
           data: { target: { screen: 'points' } },
         },
       );
-    } catch {}
+    } catch (error) {
+      // A notification nobody retries (#4096): best-effort for the caller,
+      // reported so a failing notifications write isn't silent.
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'points-granted-notify',
+        message: `Could not notify member ${input.targetUserId} of points transaction ${txn.id}`,
+        error,
+      });
+    }
 
     // The card is best-effort and the ledger row is the source of truth, so a
     // failed post is never rolled back — but the outcome is now REPORTED rather

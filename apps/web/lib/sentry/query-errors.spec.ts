@@ -149,6 +149,38 @@ describe("web query-error reporting", () => {
     });
   });
 
+  it("reports a client-contract 4xx at error level and a 404 at warning (#4096)", async () => {
+    const client = makeQueryClient();
+    await failQuery(client, ["channels", "chapter-1"], {
+      ...apiBody(400),
+      code: "chapter.context.required",
+    });
+    await failQuery(client, ["tasks", "chapter-1"], apiBody(404));
+
+    expect(captureException).toHaveBeenCalledTimes(2);
+    const [contractError, contract] = captureException.mock.calls[0]!;
+    expect((contractError as Error).name).toBe("ClientContractError");
+    expect(contract).toEqual({
+      level: "error",
+      fingerprint: [
+        "react-query",
+        "query",
+        "channels",
+        "4xx",
+        "chapter.context.required",
+        "client-contract",
+      ],
+      tags: expect.objectContaining({
+        error_code: "chapter.context.required",
+        api_error_class: "client-contract",
+      }),
+    });
+    expect(captureException.mock.calls[1]![1]).toMatchObject({
+      level: "warning",
+      fingerprint: ["react-query", "query", "tasks", "4xx"],
+    });
+  });
+
   it("gives each client its own rate limit", async () => {
     await failQuery(makeQueryClient(), ["events"], apiBody(500));
     await failQuery(makeQueryClient(), ["events"], apiBody(500));

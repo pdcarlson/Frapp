@@ -5,7 +5,8 @@ import {
   OnApplicationBootstrap,
   OnApplicationShutdown,
 } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { CronExpression } from '@nestjs/schedule';
+import { ReportedCron } from './reported-cron.decorator';
 import * as Sentry from '@sentry/nestjs';
 import type {
   RealtimeChannel,
@@ -332,11 +333,11 @@ export class ChatPushWorkerService
    * Drop dispatch claims older than {@link CHAT_PUSH_CLAIM_RETENTION_MS}.
    *
    * Hourly, on every instance: a delete is idempotent, so the instance that
-   * runs second finds nothing. Caught here because a rejection out of a
-   * `@Cron` reaches only Nest's raw `logger.error`; a failed purge costs one
-   * tick and reports to Sentry.
+   * runs second finds nothing. Caught here so a failed purge costs one tick
+   * and reports to Sentry under its own site; `@ReportedCron` catches
+   * anything that escapes (#3498).
    */
-  @Cron(CronExpression.EVERY_HOUR)
+  @ReportedCron(CronExpression.EVERY_HOUR)
   async handleDispatchClaimPurge(): Promise<void> {
     await this.purgeDispatchClaims(new Date());
   }

@@ -6,6 +6,7 @@ import {
   type IChapterConfigRepository,
 } from '#domain/repositories/chapter-config.repository.interface';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 /**
  * Used when a chapter has no `chapter_points_config` row yet. Mirrors the
@@ -58,14 +59,17 @@ export class ChapterPointsConfigService {
     try {
       row = await this.configRepo.findPointsConfig(chapterId);
     } catch (err) {
-      logThrowable(
-        this.logger,
-        'warn',
-        `chapter_points_config read failed for chapter ${chapterId}; applying default anti-fraud limits ` +
+      // Reported (#4096): the default can be looser than what the chapter
+      // configured, so a read that keeps failing relaxes a control silently.
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'chapter-points-config-read',
+        message:
+          `chapter_points_config read failed for chapter ${chapterId}; applying default anti-fraud limits ` +
           `(${POINTS_CONFIG_DEFAULTS.adjustment_rate_limit_per_hour}/hr, threshold ` +
           `${POINTS_CONFIG_DEFAULTS.anomaly_threshold})`,
-        err,
-      );
+        error: err,
+      });
       return { ...POINTS_CONFIG_DEFAULTS };
     }
 

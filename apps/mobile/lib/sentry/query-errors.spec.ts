@@ -45,6 +45,34 @@ describe("mobile query-error reporting", () => {
     clientPolicyQueryClient.clear();
   });
 
+  it("reports a client-contract 4xx at error level and a 404 at warning (#4096)", async () => {
+    await failQuery(queryClient, ["channel-notification-preferences", "c-1"], {
+      ...apiBody(400),
+      code: "chapter.context.required",
+    });
+    await failQuery(queryClient, ["event-details", "c-1"], apiBody(404));
+
+    expect(captureException).toHaveBeenCalledTimes(2);
+    const [contractError, contract] = captureException.mock.calls[0]!;
+    expect((contractError as Error).name).toBe("ClientContractError");
+    expect(contract).toEqual({
+      level: "error",
+      fingerprint: [
+        "react-query",
+        "query",
+        "channel-notification-preferences",
+        "4xx",
+        "chapter.context.required",
+        "client-contract",
+      ],
+      tags: expect.objectContaining({ api_error_class: "client-contract" }),
+    });
+    expect(captureException.mock.calls[1]![1]).toMatchObject({
+      level: "warning",
+      fingerprint: ["react-query", "query", "event-details", "4xx"],
+    });
+  });
+
   it("reports a failed product query once, however often it fails again", async () => {
     await failQuery(queryClient, ["members", "chapter-1"], apiBody(503));
     await failQuery(queryClient, ["members", "chapter-1"], apiBody(503));

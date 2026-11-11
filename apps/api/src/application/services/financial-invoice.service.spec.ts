@@ -1,3 +1,4 @@
+import * as caughtFailure from '../../infrastructure/observability/report-caught-failure';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   NotFoundException,
@@ -1275,11 +1276,12 @@ describe('FinancialInvoiceService', () => {
       loggerWarnSpy.mockRestore();
     });
 
-    it('should swallow notification failures', async () => {
+    it('should swallow notification failures, and report them (#4096)', async () => {
       mockInvoiceRepo.applyPayment.mockResolvedValue(paidInvoice);
       mockNotificationService.notifyUser.mockRejectedValue(
         new Error('push provider down'),
       );
+      const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
 
       await expect(
         service.applyStripePaymentSuccess({
@@ -1289,6 +1291,14 @@ describe('FinancialInvoiceService', () => {
           chargeId: 'ch_charge_1',
         }),
       ).resolves.toBeUndefined();
+      expect(reported).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          level: 'warning',
+          site: 'invoice-paid-notify',
+        }),
+      );
+      reported.mockRestore();
     });
   });
 
@@ -1440,6 +1450,30 @@ describe('FinancialInvoiceService', () => {
   });
 
   describe('notifications', () => {
+    it('opens the invoice when the new-invoice notice fails, and reports it (#4096)', async () => {
+      mockInvoiceRepo.findById.mockResolvedValue(baseInvoice);
+      mockInvoiceRepo.update.mockResolvedValue({
+        ...baseInvoice,
+        status: 'OPEN',
+      });
+      mockNotificationService.notifyUser.mockRejectedValueOnce(
+        new Error('notifications insert failed'),
+      );
+      const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
+
+      await expect(
+        service.transitionStatus('inv-1', 'ch-1', 'OPEN'),
+      ).resolves.toMatchObject({ status: 'OPEN' });
+      expect(reported).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          level: 'warning',
+          site: 'invoice-opened-notify',
+        }),
+      );
+      reported.mockRestore();
+    });
+
     it('should notify user when invoice transitions from DRAFT to OPEN', async () => {
       mockInvoiceRepo.findById.mockResolvedValue(baseInvoice);
       mockInvoiceRepo.update.mockResolvedValue({

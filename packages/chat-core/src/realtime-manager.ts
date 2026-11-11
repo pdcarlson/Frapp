@@ -60,6 +60,7 @@ import type {
 } from "@supabase/supabase-js";
 import {
   applyReactionDelete,
+  applyActionUpdate,
   applyReactionInsert,
   dropUnreadThrough,
   emptyCache,
@@ -1093,6 +1094,22 @@ class ChatRealtimeManager {
         this.dispatchActionInsert(row);
       },
     );
+    // A changed vote is an UPDATE of the member's one vote row (ADR-07), and
+    // on a multi-choice poll (#3793) so is every pick after their first.
+    // Without this, only the voter's own client saw it, from its HTTP answer.
+    channel.on(
+      "postgres_changes",
+      {
+        event: "UPDATE",
+        schema: "public",
+        table: "chat_message_actions",
+      },
+      (payload: RealtimePostgresChangesPayload<RawChatMessageAction>) => {
+        const row = payload.new as RawChatMessageAction | undefined;
+        if (!row?.id) return;
+        this.dispatchActionUpdate(row);
+      },
+    );
     channel.on(
       "postgres_changes",
       {
@@ -1246,6 +1263,29 @@ class ChatRealtimeManager {
           ? applyReactionInsert(cache, action)
           : cache,
       );
+    }
+  }
+
+  /**
+   * A vote row changed in place. A frame older than the row the cache holds is
+   * dropped: the voter's own client patches from its HTTP answer, and the echo
+   * of an earlier tap can arrive after the answer to a later one. An UPDATE
+   * for a row the cache never held (its INSERT was missed) is added.
+   */
+  private dispatchActionUpdate(action: RawChatMessageAction): void {
+    for (const channelId of this.channels.keys()) {
+      this.patchCache(channelId, (cache) => {
+        const message = cache.byId[action.message_id];
+        if (!message) return cache;
+        const held = message.actions.find(
+          (each) =>
+            each.user_id === action.user_id &&
+            each.action_type === action.action_type,
+        );
+        if (!held) return applyReactionInsert(cache, action);
+        if (held.created_at > action.created_at) return cache;
+        return applyActionUpdate(cache, action);
+      });
     }
   }
 

@@ -21,6 +21,7 @@ function draft(question: string, options: string[]): PollDraft {
     question,
     options: options.map((text, i) => ({ key: `k${i}`, text })),
     closes: DEFAULT_POLL_CLOSE,
+    multiple: false,
   };
 }
 
@@ -153,6 +154,12 @@ describe("closesAtFor (#3701)", () => {
   it("says the choice as mobile's More options row reads it", () => {
     expect(pollCloseSummary("1d")).toBe("Closes in 1 day");
     expect(pollCloseSummary("never")).toBe("Doesn't close");
+    expect(pollCloseSummary("1d", true)).toBe(
+      "Closes in 1 day · more than one choice",
+    );
+    // A new draft, and one read from a typed /poll, is single-choice.
+    expect(emptyPollDraft().multiple).toBe(false);
+    expect(pollDraftFromArgs('"Q" A B').multiple).toBe(false);
   });
 });
 

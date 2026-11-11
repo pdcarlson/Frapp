@@ -6,7 +6,15 @@ import {
   buildPollMessage,
   canClosePoll,
   isPollCardClosed,
+  isMultiChoicePoll,
+  currentPollPicks,
   makePollOptionId,
+  POLL_PICKS_PENDING_MS,
+  pollCardFooter,
+  pollChoiceHint,
+  pollOptionPercent,
+  pollVotePayload,
+  tallyPollVotes,
   pollCardEyebrow,
   pollsGateOf,
   pollsGateReason,
@@ -146,6 +154,132 @@ describe("buildPollMessage (#3701)", () => {
     });
     expect(new Set(payload.options.map((o) => o.id)).size).toBe(10);
     expect(makePollOptionId()).toMatch(/^[a-z0-9]+$/);
+  });
+});
+
+describe("a multi-choice poll card (#3793)", () => {
+  const options = [
+    { id: "a", label: "Fri" },
+    { id: "b", label: "Sat" },
+    { id: "c", label: "Sun" },
+  ];
+  const single = { question: "Which day?", options, closes_at: null };
+  const multi = { ...single, choice_mode: "multi" as const };
+  const votes = (rows: [string, unknown][]) =>
+    ({
+      actions: rows.map(([user_id, option_id], i) => ({
+        id: `v${i}`,
+        user_id,
+        action_type: "vote",
+        payload: { option_id },
+      })),
+    }) as unknown as ChatMessage;
+
+  it("builds the mode onto the card only when asked, and reads it back", () => {
+    const input = { question: "Which days?", options: ["Fri", "Sat"], closesAt: null };
+    const one = buildPollMessage(input).payload;
+    expect(one).not.toHaveProperty("choice_mode");
+    expect(isMultiChoicePoll(one)).toBe(false);
+    const many = buildPollMessage({ ...input, multiple: true }).payload;
+    expect(many.choice_mode).toBe("multi");
+    expect(readPollPayload({ payload: many } as unknown as ChatMessage)).toEqual(many);
+  });
+
+  it("reads a card without the mode, or marked single, as single-choice", () => {
+    const read = (payload: object) =>
+      readPollPayload({ payload } as unknown as ChatMessage)!;
+    expect(read(single)).not.toHaveProperty("choice_mode");
+    expect(read({ ...single, choice_mode: "single" })).not.toHaveProperty("choice_mode");
+    expect(read({ ...single, choice_mode: null })).not.toHaveProperty("choice_mode");
+    // Anything else votes as multi on the server, so it reads as multi here.
+    expect(read({ ...single, choice_mode: "many" }).choice_mode).toBe("multi");
+  });
+
+  it("tallies a single-choice card as before", () => {
+    const tally = tallyPollVotes(
+      votes([["u1", "a"], ["u2", "a"], ["me", "b"], ["u3", "zzz"]]),
+      options,
+      "me",
+    );
+    expect(tally).toEqual({
+      byOption: { a: 2, b: 1, c: 0 },
+      total: 3,
+      voters: 3,
+      myVotes: ["b"],
+    });
+    expect(pollOptionPercent(single, tally, "a")).toBe(67);
+    expect(pollCardFooter(single, tally, true)).toBe(
+      "3 votes · your vote is highlighted",
+    );
+    expect(pollChoiceHint(single, false)).toBeNull();
+  });
+
+  it("counts every pick, and each member once", () => {
+    const tally = tallyPollVotes(
+      votes([
+        ["u1", ["a", "b"]],
+        ["me", ["c", "a", "a", "zzz"]],
+        ["u2", "b"], // an older build's single pick on the same card
+        ["u3", []], // cleared
+      ]),
+      options,
+      "me",
+    );
+    expect(tally).toEqual({
+      byOption: { a: 2, b: 2, c: 1 },
+      total: 5,
+      voters: 3,
+      myVotes: ["a", "c"],
+    });
+    // A share of the three voters, so the options needn't add up to 100.
+    expect(pollOptionPercent(multi, tally, "a")).toBe(67);
+    expect(pollOptionPercent(multi, tally, "c")).toBe(33);
+    expect(pollCardFooter(multi, tally, true)).toBe(
+      "3 people voted · your choices are highlighted",
+    );
+  });
+
+  it("says who voted, and what an empty card says, in the footer", () => {
+    const none = tallyPollVotes(votes([["u3", []]]), options, "me");
+    expect(pollCardFooter(multi, none, true)).toBe(
+      "No votes yet · be the first to vote.",
+    );
+    expect(pollCardFooter(multi, none, false)).toBe("No votes yet.");
+    const one = tallyPollVotes(votes([["u1", ["a", "b"]]]), options, "me");
+    expect(pollCardFooter(multi, one, true)).toBe("1 person voted");
+    expect(pollOptionPercent(multi, none, "a")).toBe(0);
+  });
+
+  it("selects and clears on a multi-choice card, and replaces on a single one", () => {
+    // Single-choice: the tapped option, whatever was picked before.
+    expect(pollVotePayload(single, ["a"], "b")).toEqual({ option_id: "b" });
+    expect(pollVotePayload(single, ["a"], "a")).toEqual({ option_id: "a" });
+    // Multi-choice: add, in the card's order; tap again to clear.
+    expect(pollVotePayload(multi, [], "c")).toEqual({ option_id: ["c"] });
+    expect(pollVotePayload(multi, ["c"], "a")).toEqual({ option_id: ["a", "c"] });
+    expect(pollVotePayload(multi, ["a", "c"], "a")).toEqual({ option_id: ["c"] });
+    expect(pollVotePayload(multi, ["c"], "c")).toEqual({ option_id: [] });
+  });
+
+  it("builds a quick second tap on the first, not on a card that hasn't caught up", () => {
+    const NOW = 1_000_000;
+    // Tap Fri: the card still shows no picks, and the tap is remembered.
+    const first = pollVotePayload(multi, currentPollPicks([], null, NOW), "a");
+    expect(first).toEqual({ option_id: ["a"] });
+    const pending = { picks: first.option_id as string[], at: NOW };
+    // Tap Sat before the answer lands: both picks go, not Sat alone.
+    expect(
+      pollVotePayload(multi, currentPollPicks([], pending, NOW + 300), "b"),
+    ).toEqual({ option_id: ["a", "b"] });
+    // Much later the card's own picks are the truth again.
+    expect(
+      currentPollPicks(["c"], pending, NOW + POLL_PICKS_PENDING_MS),
+    ).toEqual(["c"]);
+  });
+
+  it("tells a member they can pick several", () => {
+    expect(pollChoiceHint(multi, false)).toBe("Select one or more");
+    expect(pollChoiceHint(multi, true)).toBe("More than one choice was allowed");
   });
 });
 

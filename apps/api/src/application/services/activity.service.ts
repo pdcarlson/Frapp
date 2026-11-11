@@ -23,10 +23,11 @@ import { SystemPermissions } from '#domain/constants/permissions';
 import {
   CARD_VOTE_ACTION_TYPE,
   cardPollClosedEarly,
+  cardVoteSelection,
   isPollClosed,
 } from '#domain/utils/poll-vote-rules';
 import type { CardPollPayload } from '#domain/utils/poll-vote-rules';
-import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { BackworkService } from './backwork.service';
 import { ChapterDocumentService } from './chapter-document.service';
 import { maskBlockedMessages } from './chat-block-mask';
@@ -392,7 +393,14 @@ export class ActivityService {
     };
   }
 
-  /** Run one section; a failure is logged and reported, never thrown. */
+  /**
+   * Run one section; a failure is logged and reported, never thrown.
+   *
+   * At `error` level: the member sees the section named in `unavailable`
+   * instead of its rows, the read a 5xx would have reported had it
+   * propagated. A broken query behind one section (#4087) otherwise reads
+   * as a quiet gap on the page for as long as it stays broken (#4096).
+   */
   private async settle<T>(
     section: ActivitySection,
     chapterId: string,
@@ -401,12 +409,12 @@ export class ActivityService {
     try {
       return { ok: true, value: await read() };
     } catch (error) {
-      logThrowable(
-        this.logger,
-        'warn',
-        `Activity section '${section}' failed for chapter ${chapterId}`,
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: `activity-section:${section.replace(/_/g, '-')}`,
+        message: `Activity section '${section}' failed for chapter ${chapterId}`,
         error,
-      );
+      });
       return { ok: false };
     }
   }
@@ -550,12 +558,18 @@ export class ActivityService {
     });
     const mine = own.filter(readable);
 
+    // A vote row with no picks is a cleared vote, not a vote: a member who
+    // clears every pick on a multi-choice card keeps the row with an empty
+    // list (#3793), and the poll goes back to needing them.
+    const voteRows = await this.actionRepo.findActionsOnMessages(
+      [...openOthers, ...mine].map((message) => message.id),
+      userId,
+      CARD_VOTE_ACTION_TYPE,
+    );
     const votedIds = new Set(
-      await this.actionRepo.findActedMessageIds(
-        [...openOthers, ...mine].map((message) => message.id),
-        userId,
-        CARD_VOTE_ACTION_TYPE,
-      ),
+      voteRows
+        .filter((row) => cardVoteSelection(row.payload ?? undefined).length > 0)
+        .map((row) => row.message_id),
     );
 
     const toRow = (message: ChatMessage): ActivityPoll | null => {
@@ -707,12 +721,14 @@ export class ActivityService {
       );
       return attendance !== null;
     } catch (error) {
-      logThrowable(
-        this.logger,
-        'warn',
-        `Activity could not read attendance for event ${eventId}`,
+      // Per event, and the event still lists: a best-effort step the page
+      // absorbs, so `warning`.
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'activity-attendance-read',
+        message: `Activity could not read attendance for event ${eventId}`,
         error,
-      );
+      });
       return null;
     }
   }

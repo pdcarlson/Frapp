@@ -451,3 +451,102 @@ describe("PollCard closed early by its creator (#3794)", () => {
     expect(closeButton(tree)).toHaveLength(0);
   });
 });
+
+describe("PollCard with more than one choice (#3793)", () => {
+  const vote = (id: string, userId: string, optionId: unknown) => ({
+    id,
+    message_id: "msg-1",
+    user_id: userId,
+    action_type: "vote",
+    payload: { option_id: optionId } as Record<string, unknown>,
+    created_at: new Date(2026, 7, 16, 17, 10).toISOString(),
+  });
+  const multi = (actions: ChatMessage["actions"]) =>
+    poll({
+      payload: {
+        question: "Which days work?",
+        options: [
+          { id: "fri", label: "Fri" },
+          { id: "sat", label: "Sat" },
+          { id: "sun", label: "Sun" },
+        ],
+        closes_at: "2999-01-01T00:00:00.000Z",
+        choice_mode: "multi",
+      },
+      actions,
+    });
+  /** The option rows: the card's only buttons with a `selected` state. */
+  const optionRows = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityState?.selected !== undefined,
+    );
+
+  it("says a member can pick several, and adds an option to their picks", () => {
+    const onVote = vi.fn();
+    const tree = renderPoll(
+      multi([vote("a-1", VIEWER, ["fri"]), vote("a-2", OTHER, ["fri", "sat"])]),
+      onVote,
+    );
+    const flat = JSON.stringify(tree.toJSON());
+
+    expect(flat).toContain("Select one or more");
+    expect(flat).toContain("2 people voted · your choices are highlighted");
+    // Shares are of the two voters, so they needn't add up to 100.
+    expect(flat).toContain('"2"," · ","100","%"');
+    expect(flat).toContain('"1"," · ","50","%"');
+    const [fri, sat, sun] = optionRows(tree);
+    expect(fri.props.accessibilityState.selected).toBe(true);
+    expect(sat.props.accessibilityState.selected).toBe(false);
+    act(() => sun.props.onPress());
+    expect(onVote).toHaveBeenCalledWith("msg-1", "vote", {
+      option_id: ["fri", "sun"],
+    });
+  });
+
+  it("highlights every one of the viewer's picks", () => {
+    const tree = renderPoll(
+      multi([vote("a-1", VIEWER, ["fri", "sun"]), vote("a-2", OTHER, ["sat"])]),
+    );
+    expect(
+      optionRows(tree).map((row) => row.props.accessibilityState.selected),
+    ).toEqual([true, false, true]);
+  });
+
+  it("keeps both picks when the second tap lands before the first answer", () => {
+    const onVote = vi.fn();
+    const tree = renderPoll(multi([]), onVote);
+
+    act(() => optionRows(tree)[0].props.onPress());
+    act(() => optionRows(tree)[1].props.onPress());
+    expect(onVote).toHaveBeenNthCalledWith(1, "msg-1", "vote", {
+      option_id: ["fri"],
+    });
+    expect(onVote).toHaveBeenNthCalledWith(2, "msg-1", "vote", {
+      option_id: ["fri", "sat"],
+    });
+  });
+
+  it("clears a pick on a second tap, down to none", () => {
+    const onVote = vi.fn();
+    const tree = renderPoll(multi([vote("a-1", VIEWER, ["fri"])]), onVote);
+
+    act(() => optionRows(tree)[0].props.onPress());
+    expect(onVote).toHaveBeenCalledWith("msg-1", "vote", { option_id: [] });
+  });
+
+  it("leaves a single-choice card as it was: no hint, one pick replacing another", () => {
+    const onVote = vi.fn();
+    const tree = renderPoll(
+      poll({ actions: [vote("a-1", VIEWER, "yes"), vote("a-2", OTHER, "yes")] }),
+      onVote,
+    );
+    const flat = JSON.stringify(tree.toJSON());
+
+    expect(flat).not.toContain("Select one or more");
+    expect(flat).toContain("2 votes · your vote is highlighted");
+    act(() => optionRows(tree)[1].props.onPress());
+    expect(onVote).toHaveBeenCalledWith("msg-1", "vote", { option_id: "no" });
+  });
+});

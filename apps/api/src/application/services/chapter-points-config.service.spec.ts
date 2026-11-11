@@ -1,3 +1,4 @@
+import * as caughtFailure from '../../infrastructure/observability/report-caught-failure';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Logger } from '@nestjs/common';
 import {
@@ -92,11 +93,12 @@ describe('ChapterPointsConfigService', () => {
   // A read failure silently applying the looser default is a weakening of an
   // anti-fraud control for a chapter that configured something tighter, so it
   // has to reach the log.
-  it('warns and applies the defaults when the read fails', async () => {
+  it('warns, reports, and applies the defaults when the read fails', async () => {
     const { service } = await build({
       data: null,
       error: { message: 'connection reset' },
     });
+    const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
 
     await expect(service.getConfig('ch-1')).resolves.toEqual(
       POINTS_CONFIG_DEFAULTS,
@@ -104,6 +106,14 @@ describe('ChapterPointsConfigService', () => {
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining('chapter_points_config read failed'),
     );
+    expect(reported).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        level: 'warning',
+        site: 'chapter-points-config-read',
+      }),
+    );
+    reported.mockRestore();
   });
 
   // The column CHECKs make these unreachable through the API. A row that

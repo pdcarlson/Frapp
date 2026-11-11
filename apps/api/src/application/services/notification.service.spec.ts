@@ -1,3 +1,4 @@
+import * as caughtFailure from '../../infrastructure/observability/report-caught-failure';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
@@ -286,6 +287,35 @@ describe('NotificationService', () => {
       ).not.toHaveBeenCalled();
       expect(mockNotificationRepo.create).toHaveBeenCalled();
       expect(mockPushProvider.sendToUser).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the in-app row and reports at error level when the push-token read fails (#4096)', async () => {
+      mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue(null);
+      mockSettingsRepo.findByUser.mockResolvedValue(null);
+      mockNotificationRepo.create.mockResolvedValue(baseNotification);
+      mockPushTokenRepo.findByUser.mockRejectedValue(
+        new Error('relation "push_tokens" does not exist'),
+      );
+      const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
+
+      await expect(
+        service.notifyUser('u-1', 'ch-1', {
+          title: 'Test',
+          body: 'Body',
+          category: 'events',
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(mockNotificationRepo.create).toHaveBeenCalled();
+      expect(mockPushProvider.sendToUser).not.toHaveBeenCalled();
+      expect(reported).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          level: 'error',
+          site: 'notify-user-push-tokens-read',
+        }),
+      );
+      reported.mockRestore();
     });
 
     // #1041: the category gate used to run *before* the priority check, so

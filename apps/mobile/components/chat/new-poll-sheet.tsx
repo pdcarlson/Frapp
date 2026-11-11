@@ -32,6 +32,7 @@ import {
 import { FilterChips } from "@/components/filter-chips";
 import { MoreOptionsRow } from "@/components/more-options-row";
 import { IconButton } from "@/components/icon-button";
+import { Toggle } from "@/components/toggle";
 import { CloseGlyph, DisclosureGlyph } from "@/components/control-glyphs";
 import { successHaptic } from "@/lib/haptics";
 import {
@@ -43,6 +44,7 @@ import {
   emptyPollDraft,
   movePollOption,
   pollCloseChoicesFor,
+  POLL_MULTIPLE_LABEL,
   pollCloseSummary,
   removePollOption,
   setPollOption,
@@ -59,8 +61,9 @@ import {
  *
  * The form: a question, two to ten options (add, remove, and move up or
  * down), and **More options** for when voting stops, a day by default as on
- * web, or not at all (**Doesn't close**, #3896). A chat-card poll is single-choice (multi-choice is #3793); its creator
- * closes it early from the card itself (`poll-card.tsx`, #3794).
+ * web, or not at all (**Doesn't close**, #3896), and whether a member may
+ * pick more than one option (#3793). Its creator closes a poll early from the
+ * card itself (`poll-card.tsx`, #3794).
  *
  * Posting goes through the outbox like any message, so it is optimistic and
  * survives a lost connection, and a server refusal (Polls switched off since
@@ -150,6 +153,7 @@ export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
         question: check.question,
         options: check.options,
         closesAt: closesAtFor(draft.closes, now ? now() : new Date()),
+        multiple: draft.multiple,
       });
       // `sendPoll` never rejects, but the lock is released whatever happens:
       // a rejection would otherwise hold the sheet at "Posting…" for good.
@@ -173,7 +177,17 @@ export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
           }
           if (isSameVisit(sentFrom)) setFailure(result.error);
         });
-    }, [check, draft.closes, now, onPost, reset, dismiss, visit, isSameVisit]);
+    }, [
+      check,
+      draft.closes,
+      draft.multiple,
+      now,
+      onPost,
+      reset,
+      dismiss,
+      visit,
+      isSameVisit,
+    ]);
 
     const problem = failure ?? (check.ok ? null : check.problem);
 
@@ -277,7 +291,7 @@ export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
 
           <MoreOptionsRow
             open={showMore}
-            summary={pollCloseSummary(draft.closes)}
+            summary={pollCloseSummary(draft.closes, draft.multiple)}
             onToggle={() => {
               Keyboard.dismiss();
               setShowMore((open) => !open);
@@ -302,6 +316,17 @@ export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
                 }}
                 accessibilityLabel="Voting closes in"
               />
+              <View style={styles.toggleRow}>
+                <Text style={styles.toggleLabel}>{POLL_MULTIPLE_LABEL}</Text>
+                <Toggle
+                  value={draft.multiple}
+                  accessibilityLabel={POLL_MULTIPLE_LABEL}
+                  onValueChange={(multiple) => {
+                    if (posting) return;
+                    edit((current) => ({ ...current, multiple }));
+                  }}
+                />
+              </View>
             </View>
           ) : null}
 
@@ -459,6 +484,18 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     },
     more: {
       gap: tokens.spacing.sm,
+    },
+    toggleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: tokens.spacing.md,
+      minHeight: tokens.touch.minimum,
+    },
+    toggleLabel: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.foreground,
+      flexShrink: 1,
     },
     caption: {
       ...typeRole(tokens.typography.role.caption),

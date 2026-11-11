@@ -29,8 +29,8 @@ import { isFromBlockedSender } from './chat-block-mask';
  * that is a malformed message, and refusing every vote on it would turn a data
  * problem into a dead card. A card whose `options` isn't a list is refused,
  * as it always was (it used to throw here), because nothing about it can be
- * checked. Cards default to single-choice, matching the composer, which
- * offers no multi-select.
+ * checked. A card is single-choice unless its creator allowed more than one
+ * choice (`choice_mode: 'multi'`, #3793).
  */
 function assertCardPollVoteAllowed(
   messagePayload: unknown,

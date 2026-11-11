@@ -1,3 +1,4 @@
+import * as caughtFailure from '../../infrastructure/observability/report-caught-failure';
 import { ActivityService } from './activity.service';
 import { TaskStatus } from '#domain/entities/task.entity';
 import type { TaskView } from '#domain/entities/task.entity';
@@ -94,7 +95,7 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
   const messageRepo = {
     findPollCardsByChapter: jest.fn().mockResolvedValue([]),
   };
-  const actionRepo = { findActedMessageIds: jest.fn().mockResolvedValue([]) };
+  const actionRepo = { findActionsOnMessages: jest.fn().mockResolvedValue([]) };
   const userRepo = {
     findDisplayIdentitiesByIds: jest.fn().mockResolvedValue([
       { id: ME, display_name: 'Me Member', avatar_url: null },
@@ -221,7 +222,7 @@ describe('ActivityService', () => {
       expect(view.made_by_you.polls).toEqual([]);
       expect(view.needs_you_count).toBe(0);
       // Nothing about the hidden polls is even asked of the vote table.
-      expect(actionRepo.findActedMessageIds).toHaveBeenCalledWith(
+      expect(actionRepo.findActionsOnMessages).toHaveBeenCalledWith(
         [],
         ME,
         'vote',
@@ -256,6 +257,28 @@ describe('ActivityService', () => {
       expect(view.unavailable).toEqual(['polls']);
     });
 
+    it('reports a failed section to Sentry at error level, not only the log (#4096)', async () => {
+      const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
+      const { service, messageRepo, chatBlocks } = build();
+      chatBlocks.listBlockedUserIds.mockRejectedValue(new Error('db down'));
+      servePolls(messageRepo, [pollCard({ id: 'poll-1' })]);
+
+      try {
+        await service.getActivity(CHAPTER, ME, null);
+        expect(reported).toHaveBeenCalledTimes(1);
+        expect(reported).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({
+            level: 'error',
+            site: 'activity-section:polls',
+            error: expect.any(Error),
+          }),
+        );
+      } finally {
+        reported.mockRestore();
+      }
+    });
+
     it('leaves out polls that are voted on, closed, expired, the caller’s own, or unreadable as a card', async () => {
       const { service, messageRepo, actionRepo } = build();
       const payloadOf = (extra: Record<string, unknown>) => ({
@@ -273,12 +296,29 @@ describe('ActivityService', () => {
         pollCard({ id: 'malformed', payload: { question: 'No options' } }),
         pollCard({ id: 'open' }),
       ]);
-      actionRepo.findActedMessageIds.mockResolvedValue(['voted']);
+      actionRepo.findActionsOnMessages.mockResolvedValue([
+        { message_id: 'voted', payload: { option_id: 'a' } },
+      ]);
 
       const view = await service.getActivity(CHAPTER, ME, null);
 
       expect(view.needs_you.polls.map((poll) => poll.message_id)).toEqual([
         'open',
+      ]);
+    });
+
+    it('counts a cleared multi-choice vote as not voted (#3793)', async () => {
+      const { service, messageRepo, actionRepo } = build();
+      servePolls(messageRepo, [pollCard({ id: 'cleared' })]);
+      // The row outlives the vote: every pick was cleared.
+      actionRepo.findActionsOnMessages.mockResolvedValue([
+        { message_id: 'cleared', payload: { option_id: [] } },
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.needs_you.polls.map((poll) => poll.message_id)).toEqual([
+        'cleared',
       ]);
     });
 
@@ -299,7 +339,9 @@ describe('ActivityService', () => {
           }),
         ],
       );
-      actionRepo.findActedMessageIds.mockResolvedValue(['mine-open']);
+      actionRepo.findActionsOnMessages.mockResolvedValue([
+        { message_id: 'mine-open', payload: { option_id: ['a', 'b'] } },
+      ]);
 
       const view = await service.getActivity(CHAPTER, ME, null);
 
@@ -610,6 +652,7 @@ describe('ActivityService', () => {
         }),
       ]);
       attendanceRepo.findByEventAndUser.mockRejectedValue(new Error('db down'));
+      const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
 
       const view = await service.getActivity(CHAPTER, ME, null);
 
@@ -618,6 +661,14 @@ describe('ActivityService', () => {
       );
       expect(view.needs_you_count).toBe(1);
       expect(view.unavailable).toEqual([]);
+      expect(reported).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          level: 'warning',
+          site: 'activity-attendance-read',
+        }),
+      );
+      reported.mockRestore();
     });
   });
 
