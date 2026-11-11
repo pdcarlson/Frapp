@@ -3401,6 +3401,31 @@ alter table public.events
   drop column if exists created_by;
 ```
 
+## Rollback Links on Activity (20261111030000)
+
+* **Migration**: `20261111030000_activity_links.sql`
+
+`chat_channels.activity_excluded`, the function `activity_action_links`, the tables `chat_message_links` and `chat_link_member_states`, and the triggers `chat_messages_index_links` / `chat_messages_reindex_links` with their function, and `anonymize_user` redefined to also delete `chat_link_member_states`. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API never reads the tables or the column. The triggers keep indexing, which costs a little on each message with a sign-up link and harms nothing; drop them if that is not wanted:
+
+```sql
+drop trigger if exists chat_messages_index_links on public.chat_messages;
+drop trigger if exists chat_messages_reindex_links on public.chat_messages;
+```
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses every member's Done and Hide, officers' removals and which channels were left out of Activity. First redefine `anonymize_user` without its `chat_link_member_states` delete (the `20261110220000_chat_message_threads.sql` body), or account deletion fails once the table is gone:
+
+```sql
+drop trigger if exists chat_messages_index_links on public.chat_messages;
+drop trigger if exists chat_messages_reindex_links on public.chat_messages;
+drop function if exists public.chat_messages_index_links();
+drop table if exists public.chat_link_member_states;
+drop table if exists public.chat_message_links;
+drop function if exists public.activity_action_links(text);
+alter table public.chat_channels drop column if exists activity_excluded;
+```
+
 ## Rollback Chapter-wide chat level (20261111120000)
 
 * **Migration**: `20261111120000_chat_notif_prefs_chapter_scope.sql`
