@@ -1,5 +1,5 @@
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, StyleSheet, View } from "react-native";
+import { Alert, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import {
   NavigationContext,
@@ -48,12 +48,26 @@ import {
   SUBSCRIPTION_REFUSAL_COPY,
   subscriptionRefusalOf,
 } from "@/lib/subscription-refusal";
-import { useFrappTheme } from "@/lib/theme";
+import { typeRole, useFrappTheme } from "@/lib/theme";
 
 type RowOf<K extends ActivityRow["kind"]> = Extract<ActivityRow, { kind: K }>;
 
 /** A row that opens the sheet: a file row goes to its own screen instead. */
 export type ActivitySheetRow = Exclude<ActivityRow, { kind: "file" }>;
+
+/**
+ * What a sign-up link's sheet can do. The screen owns these, not the sheet:
+ * Done, Hide and Remove take the row off the list at once, which closes the
+ * sheet, and the "Undo" bar that follows has to outlive it.
+ */
+export interface LinkSheetActions {
+  canRemove: boolean;
+  open: (row: RowOf<"link">) => void;
+  done: (row: RowOf<"link">) => void;
+  hide: (row: RowOf<"link">) => void;
+  openInChat: (row: RowOf<"link">) => void;
+  remove: (row: RowOf<"link">) => void;
+}
 
 const noop = () => {};
 
@@ -87,6 +101,9 @@ function frameFor(message: ChatMessage, viewerId: string): ChatCardFrameProps {
  * - a pending service entry gets Approve and Reject. Chat's hours card is a
  *   read-only record, and the phone has no other screen that reviews hours.
  *
+ * A sign-up link has no chat card: its sheet is `LinkSheet` below, the link
+ * and the screen's own actions for it (`LinkSheetActions`).
+ *
  * A tall sheet, as `spec/ui/mobile/patterns.md` § Bottom sheets gives a sheet
  * that holds a whole record. A sheet is drawn outside the screen's
  * navigator, so the screen's navigation context is handed down to the cards:
@@ -104,11 +121,13 @@ export function ActivitySheet({
   viewerId,
   onClosed,
   onActed,
+  linkActions,
 }: {
   row: ActivitySheetRow | null;
   viewerId: string | null;
   onClosed: () => void;
   onActed: () => void;
+  linkActions: LinkSheetActions;
 }) {
   const sheet = useRef<BottomSheetModal>(null);
   const closeSheet = useSheetClose(sheet);
@@ -156,6 +175,7 @@ export function ActivitySheet({
                 viewerId={viewerId}
                 onActed={onActed}
                 onNavigate={closeSheet}
+                linkActions={linkActions}
               />
             ) : row ? (
               // The cards decide whose controls to show from the viewer's id;
@@ -174,25 +194,130 @@ function SheetCard({
   viewerId,
   onActed,
   onNavigate,
+  linkActions,
 }: {
   row: ActivitySheetRow;
   viewerId: string;
   onActed: () => void;
   /** Closes the sheet before leaving this screen for another. */
   onNavigate: () => void;
+  linkActions: LinkSheetActions;
 }) {
   switch (row.kind) {
     case "task":
       return <TaskSheet row={row} viewerId={viewerId} />;
     case "event":
-      return <EventSheet row={row} viewerId={viewerId} />;
+      return (
+        <EventSheet row={row} viewerId={viewerId} onNavigate={onNavigate} />
+      );
     case "poll":
       return (
         <PollSheet row={row} viewerId={viewerId} onNavigate={onNavigate} />
       );
     case "hours":
       return <HoursSheet row={row} viewerId={viewerId} onActed={onActed} />;
+    case "link":
+      return (
+        <LinkSheet row={row} actions={linkActions} onNavigate={onNavigate} />
+      );
   }
+}
+
+/**
+ * A sign-up link (`spec/behavior/activity.md` § Links): what it is, who
+ * posted it where, and the address, so the member sees where it goes before
+ * opening it. "Open link" opens it in the in-app browser, as a link tapped in
+ * chat does. Every other button closes the sheet first.
+ */
+function LinkSheet({
+  row,
+  actions,
+  onNavigate,
+}: {
+  row: RowOf<"link">;
+  actions: LinkSheetActions;
+  onNavigate: () => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createLinkStyles(tokens);
+  const then = (action: (row: RowOf<"link">) => void) => () => {
+    onNavigate();
+    action(row);
+  };
+  return (
+    <>
+      <View style={styles.head}>
+        <Text style={styles.title} accessibilityRole="header">
+          {row.title}
+        </Text>
+        {row.detail ? <Text style={styles.detail}>{row.detail}</Text> : null}
+        <Text style={styles.url} numberOfLines={2} selectable>
+          {row.link.url}
+        </Text>
+      </View>
+      <CardActions>
+        <CardButton
+          label="Open link"
+          variant="primary"
+          accessibilityHint="Opens the form in the browser."
+          onPress={() => actions.open(row)}
+        />
+        <CardButton
+          label="Done"
+          accessibilityHint="You filled it in. Takes it off your Activity."
+          onPress={then(actions.done)}
+        />
+      </CardActions>
+      <CardActions>
+        <CardButton
+          label="Hide"
+          accessibilityHint="Not chapter business. Takes it off your Activity."
+          onPress={then(actions.hide)}
+        />
+        <CardButton
+          label="Open in chat"
+          accessibilityHint={
+            row.link.thread_root_id
+              ? "Opens the thread it was posted in."
+              : "Opens the channel it was posted in."
+          }
+          onPress={then(actions.openInChat)}
+        />
+      </CardActions>
+      {actions.canRemove ? (
+        <CardActions>
+          <CardButton
+            label="Remove for everyone"
+            accessibilityHint="Takes it off every member's Activity. The message stays in chat."
+            onPress={then(actions.remove)}
+          />
+        </CardActions>
+      ) : null}
+    </>
+  );
+}
+
+function createLinkStyles(tokens: SignetTokens) {
+  return StyleSheet.create({
+    head: {
+      gap: tokens.spacing.xs,
+    },
+    title: {
+      ...typeRole({
+        ...tokens.typography.role.body,
+        weight: tokens.typography.weight.bold,
+      }),
+      color: tokens.color.text.foreground,
+    },
+    detail: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+    },
+    url: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+    },
+  });
 }
 
 function TaskSheet({
@@ -212,15 +337,36 @@ function TaskSheet({
 function EventSheet({
   row,
   viewerId,
+  onNavigate,
 }: {
   row: RowOf<"event">;
   viewerId: string;
+  onNavigate: () => void;
 }) {
+  const router = useRouter();
   const message = useMemo(() => activityEventMessage(row.event), [row.event]);
   const payload = readEventPayload(message);
-  return payload ? (
-    <EventCard {...frameFor(message, viewerId)} payload={payload} />
-  ) : null;
+  if (!payload) return null;
+  return (
+    <>
+      <EventCard {...frameFor(message, viewerId)} payload={payload} />
+      <CardActions>
+        <CardButton
+          label="Open event"
+          accessibilityHint="Opens the event's page."
+          onPress={() => {
+            onNavigate();
+            // Object form: the shape `lib/routes.spec.ts` matches when a
+            // param is involved.
+            router.push({
+              pathname: "/event-details",
+              params: { id: row.event.id },
+            });
+          }}
+        />
+      </CardActions>
+    </>
+  );
 }
 
 function PollSheet({

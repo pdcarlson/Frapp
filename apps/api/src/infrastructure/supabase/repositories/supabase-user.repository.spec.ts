@@ -112,3 +112,59 @@ describe('SupabaseUserRepository — batched reads', () => {
     });
   });
 });
+
+describe("SupabaseUserRepository — What's new compare-and-set (#4043)", () => {
+  const row = (version: string | null, deletedAt: string | null = null) => ({
+    ...userRow(USER_A, 'Ann'),
+    whats_new_seen_version: version,
+    deleted_at: deletedAt,
+  });
+  const repoWith = (r: ReturnType<typeof row>) => {
+    const harness = createTenantHarness({
+      tables: { users: [r] },
+      untenantedTables: ['users'],
+    });
+    return new SupabaseUserRepository(harness.client);
+  };
+
+  it('writes while the row still holds the expected version, null included', async () => {
+    await expect(
+      repoWith(row(null)).compareAndSetWhatsNewSeen(
+        USER_A,
+        null,
+        '2026-11-10#1',
+      ),
+    ).resolves.toBe(true);
+    await expect(
+      repoWith(row('2026-11-09#3')).compareAndSetWhatsNewSeen(
+        USER_A,
+        '2026-11-09#3',
+        '2026-11-10#1',
+      ),
+    ).resolves.toBe(true);
+  });
+
+  it('refuses once the row has moved on, or is a tombstone', async () => {
+    await expect(
+      repoWith(row('2026-11-10#6')).compareAndSetWhatsNewSeen(
+        USER_A,
+        '2026-11-09#3',
+        '2026-11-10#5',
+      ),
+    ).resolves.toBe(false);
+    await expect(
+      repoWith(row('2026-11-10#6')).compareAndSetWhatsNewSeen(
+        USER_A,
+        null,
+        '2026-11-10#5',
+      ),
+    ).resolves.toBe(false);
+    await expect(
+      repoWith(row(null, '2026-11-01T00:00:00Z')).compareAndSetWhatsNewSeen(
+        USER_A,
+        null,
+        '2026-11-10#5',
+      ),
+    ).resolves.toBe(false);
+  });
+});

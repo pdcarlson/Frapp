@@ -25,6 +25,8 @@ import type {
   ChatMessageAction,
   ChatMessageAttachment,
   ChatMessageBookmark,
+  ChatMessageLink,
+  ChatLinkMemberState,
   ChatThreadFollow,
   FollowedThreadUnread,
   ChatMessageReport,
@@ -140,6 +142,8 @@ export interface Database {
       message_reactions: TableDefinition<MessageReaction>;
       channel_read_receipts: TableDefinition<ChannelReadReceipt>;
       chat_message_bookmarks: TableDefinition<ChatMessageBookmark>;
+      chat_message_links: TableDefinition<ChatMessageLink>;
+      chat_link_member_states: TableDefinition<ChatLinkMemberState>;
       chat_thread_follows: TableDefinition<ChatThreadFollow>;
       chat_message_reports: TableDefinition<ChatMessageReport>;
       chat_member_blocks: TableDefinition<ChatMemberBlock>;

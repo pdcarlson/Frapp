@@ -13,6 +13,7 @@ import { reactNativeStub } from "@/test/react-native-stub";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
+import { markWhatsNewQuiet, markWhatsNewRead } from "@/lib/whats-new";
 
 /**
  * s16 Settings, rendered. It renders `app/(app)/preferences.tsx` but lives
@@ -71,6 +72,16 @@ vi.mock("react-native", async () => {
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useBlockedUserIds: () => ({ data: [], isPending: false, isError: false }),
+  useChapterChatLevel: () => ({
+    data: "all",
+    isPending: false,
+    isError: false,
+  }),
+  useSetChapterChatLevel: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+    isError: false,
+  }),
   useCurrentChapter: () => ({
     data: undefined,
     isPending: true,
@@ -360,6 +371,39 @@ describe("Settings copy", () => {
     );
     act(() => row.props.onPress());
     expect(densitySheet.present).toHaveBeenCalled();
+  });
+
+  it("marks the What's new row while another device showed the newest entry first (#4043)", async () => {
+    const whatsNewRow = (tree: ReactTestRenderer) =>
+      tree.root.find(
+        (node) =>
+          node.props.accessibilityHint ===
+            "Shows the latest changes to the app." &&
+          typeof node.props.onPress === "function",
+      );
+    const plain = render();
+    expect(whatsNewRow(plain).props.accessibilityValue).toBeUndefined();
+    await act(async () => {
+      await markWhatsNewQuiet("2026-11-10#1");
+    });
+    expect(whatsNewRow(plain).props.accessibilityValue).toBe("New");
+    await act(async () => {
+      await markWhatsNewRead("2026-11-10#1");
+    });
+    expect(whatsNewRow(plain).props.accessibilityValue).toBeUndefined();
+  });
+
+  it("names the chapter-wide chat level on its own row (#3840)", () => {
+    // Found by the row's own props: the sheet behind it also draws "Chat
+    // messages" and "All messages", so screen text alone would pass with the
+    // row deleted.
+    const row = render().root.find(
+      (node) =>
+        node.props.label === "Chat messages" &&
+        node.props.value === "All messages" &&
+        typeof node.props.onPress === "function",
+    );
+    expect(row.props.disabled).toBe(false);
   });
 
   it("gives an editor's accent row no narration, and no web footnote", () => {

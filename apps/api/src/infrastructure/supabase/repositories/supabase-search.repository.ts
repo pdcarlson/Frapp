@@ -70,7 +70,7 @@ export const BACKWORK_SEARCH_COLUMNS =
   'id, chapter_id, department_id, course_number, professor_id, uploader_id, title, year, semester, assignment_type, assignment_number, document_variant, storage_path, file_hash, is_redacted, tags, created_at';
 
 export const EVENT_SEARCH_COLUMNS =
-  'id, chapter_id, name, description, location, start_time, end_time, point_value, is_mandatory, recurrence_rule, parent_event_id, required_role_ids, optional_role_ids, excluded_role_ids, others_invited, notes, created_at, check_in_zone, check_in_zone_name, check_in_opens_minutes';
+  'id, chapter_id, name, description, location, start_time, end_time, point_value, is_mandatory, recurrence_rule, parent_event_id, required_role_ids, optional_role_ids, excluded_role_ids, others_invited, notes, created_at, check_in_zone, check_in_zone_name, check_in_opens_minutes, created_by';
 
 /**
  * Not `*`: `content_search` is the STORED tsvector `searchMessages` matches on,

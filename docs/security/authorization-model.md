@@ -117,6 +117,7 @@ The interesting half. Each takes either **no** chapter id, or a client-supplied 
 | `POST /invites/preview` | A | Reads by opaque invite code, as redeem does, and returns only what joining would show the caller: the chapter's name, school, text mark and color, the inviter's display name and the role. A live code is the capability; a dead one is 410 (#3352) |
 | `GET/PATCH /users/me`, `DELETE /users/me` | A | **D** |
 | `GET/POST /users/me/legal-acceptance` | A | **D** — reads and stamps the caller's own row only; no chapter context, because a user accepts before they join one (#2302) |
+| `GET/PUT /users/me/whats-new` | A | **D** — reads and moves forward the caller's own `whats_new_seen_version` only; no chapter context (#4043) |
 | `GET /users/me/permissions`, `POST /users/me/avatar-url` | A+C | Chapter context needed; guard supplies it |
 | `POST /users/me/avatar` | A+C | **D** — `confirmAvatarUpload` accepts only a path directly in the caller's own `chapters/<active>/profiles/<uid>/` folder, and only once the object exists (#732) |
 | `DELETE /users/me/avatar` | A | **D** — clears the caller's own photo; deletes the object only when the stored path is in the caller's own folder |
@@ -176,11 +177,12 @@ select c.relname
  order by c.relname;
 ```
 
-That returns **59** rows. The "API only" row of that table is those 59 plus the three `*`-marked
+That returns **61** rows. The "API only" row of that table is those 61 plus the three `*`-marked
 tables (`members`, `users`, `member_custom_field_values`), which carry
 non-widening policies and are therefore listed there rather than in a row of
-their own — **62**. `20261111020000` added `role_tiers` (#4071) on 2026-11-10, added
-to the list by hand. The count was re-derived 2026-11-10 against a local stack at
+their own — **64**. Re-derived 2026-11-11 against a local stack at migration
+`20261111140000`, which added `role_tiers` (#4071). `20261111030000` added `chat_message_links` and `chat_link_member_states`
+(#3897). The count was re-derived 2026-11-10 against a local stack at
 migration `20261110220000`, which added `chat_thread_follows` (#3785); the names in
 the row were not re-checked one by one. `20261110170000` added `chapter_pledge_classes` (#3939) the same day. `20261109230000` added `backwork_courses`
 (#3848) on 2026-11-09. `20261105220000` added
@@ -206,7 +208,7 @@ a client that genuinely reads the table directly.
 
 | Enforcing layer | Tables | Count |
 | --- | --- | --- |
-| **API only** (RLS on, no policy → default-deny; service-role bypasses) | `backwork_courses`, `backwork_departments`, `backwork_professors`, `backwork_resources`, `channel_read_receipts`, `chapter_activation_milestones`, `chapter_custom_fields`, `chapter_custom_roles`, `chapter_directory`, `chapter_directory_requests`, `chapter_document_folders`, `chapter_documents`, `chapter_dues_config`, `chapter_pledge_classes`, `chapter_points_config`, `chapter_service_config`, `chapter_workflows`, `chapters`, `chat_channel_categories`, `chat_channels`, `chat_member_blocks`, `chat_message_attachments`, `chat_message_bookmarks`, `chat_message_reports`, `chat_push_dispatches`, `chat_sidebar_pins`, `chat_sidebar_preferences`, `chat_thread_follows`, `discord_author_links`, `discord_connections`, `discord_import_channels`, `discord_import_created_categories`, `discord_import_created_channels`, `discord_import_files`, `discord_imports`, `discord_oauth_states`, `event_attendance`†, `events`†, `financial_invoices`, `financial_transactions`, `invites`, `member_custom_field_values`\*, `members`\*, `message_reactions`, `notification_preferences`, `notifications`†, `point_transactions`, `poll_votes`, `push_tokens`, `role_tiers`, `roles`, `rush_candidate_votes`, `rush_candidates`, `scheduled_notification_dispatches`, `semester_archives`, `service_entries`, `stripe_webhook_events`, `study_geofences`, `study_sessions`, `tasks`, `user_settings`, `users`\* | 62 |
+| **API only** (RLS on, no policy → default-deny; service-role bypasses) | `backwork_courses`, `backwork_departments`, `backwork_professors`, `backwork_resources`, `channel_read_receipts`, `chapter_activation_milestones`, `chapter_custom_fields`, `chapter_custom_roles`, `chapter_directory`, `chapter_directory_requests`, `chapter_document_folders`, `chapter_documents`, `chapter_dues_config`, `chapter_pledge_classes`, `chapter_points_config`, `chapter_service_config`, `chapter_workflows`, `chapters`, `chat_channel_categories`, `chat_channels`, `chat_link_member_states`, `chat_member_blocks`, `chat_message_attachments`, `chat_message_bookmarks`, `chat_message_links`, `chat_message_reports`, `chat_push_dispatches`, `chat_sidebar_pins`, `chat_sidebar_preferences`, `chat_thread_follows`, `discord_author_links`, `discord_connections`, `discord_import_channels`, `discord_import_created_categories`, `discord_import_created_channels`, `discord_import_files`, `discord_imports`, `discord_oauth_states`, `event_attendance`†, `events`†, `financial_invoices`, `financial_transactions`, `invites`, `member_custom_field_values`\*, `members`\*, `message_reactions`, `notification_preferences`, `notifications`†, `point_transactions`, `poll_votes`, `push_tokens`, `role_tiers`, `roles`, `rush_candidate_votes`, `rush_candidates`, `scheduled_notification_dispatches`, `semester_archives`, `service_entries`, `stripe_webhook_events`, `study_geofences`, `study_sessions`, `tasks`, `user_settings`, `users`\* | 64 |
 | **RLS enforces** (read directly by a user-JWT client) | `chat_message_actions`, `chat_messages` | 2 |
 | **RLS enforces** (policy present, defense-in-depth) | `chat_notification_preferences`, `chapter_audit_log`‡ | 2 |
 

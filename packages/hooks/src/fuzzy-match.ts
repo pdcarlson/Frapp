@@ -52,6 +52,22 @@ export function normalizeWords(text: string): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Every word typed must start a word of the label, ignoring case and accents:
+ * "vi pre" finds "Vice President". Words split on anything that isn't a letter
+ * or digit (`normalizeWords`), because a role or course label is not a
+ * person's name: "exec" must find "(Exec) Treasurer" and "rec" must find
+ * "Rush/Recruitment Chair". An empty query (or one of punctuation only)
+ * matches everything. Web's searchable filter chip and the phone's Directory
+ * role filter both match with it, so the two find the same roles.
+ */
+export function matchesWordStarts(label: string, query: string): boolean {
+  const terms = normalizeWords(query);
+  if (!terms.length) return true;
+  const words = normalizeWords(label);
+  return terms.every((term) => words.some((word) => word.startsWith(term)));
+}
+
 const ROMAN_NUMERALS = ["i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"];
 
 /**

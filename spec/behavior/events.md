@@ -2,6 +2,7 @@
 
 ## Event Creation
 
+- **The maker is recorded** (2026-11-11, #3897): `events.created_by` is the member who called `POST /v1/events`, and a series' generated occurrences carry their head's. It is null on events made before then. Nothing gates on it; Activity reads it for "Made by you" ([`activity.md`](activity.md)).
 - Admins with `events:create` permission create events with: name, description, location (free text), start time, end time, point value (configurable, default 10), mandatory flag, and recurrence rule (optional).
 - **Recurring events:** Admins can set a recurrence rule (weekly, biweekly, monthly). The system generates individual event instances according to the rule. Each instance can be individually edited or canceled. Recurrence rules can be modified (changes apply to future instances only).
 - **Recurrence edit and cancellation scope.** `PATCH /v1/events/:id` accepts an optional `scope` in the body and `DELETE /v1/events/:id` an optional `scope` query parameter, each one of `instance` (the default) or `series`. There is deliberately no "this and past" — the rule above allows individual edits and future-only series changes, and nothing else.

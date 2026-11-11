@@ -31,6 +31,7 @@ import { useServiceReview } from "@/components/service/use-service-review";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
 import { chatDeepLink } from "@/lib/chat/chat-links";
+import { eventDeepLink } from "@/lib/events/event-links";
 import type { ActivityRow } from "@repo/hooks";
 import { useActivityPoll } from "./use-activity-poll";
 
@@ -40,6 +41,7 @@ const PANEL_TITLES: Record<ActivityRow["kind"], string> = {
   event: "Event",
   hours: "Service hours",
   file: "File",
+  link: "Link",
 };
 
 /**
@@ -129,7 +131,9 @@ function PanelCard({
         />
       );
     case "file":
-      // A file row is a link to where the file lives; it never opens the panel.
+    case "link":
+      // A file row is a link to where the file lives, and a sign-up link row
+      // opens the link; neither opens the panel.
       return null;
   }
 }
@@ -147,7 +151,19 @@ function TaskPanel({
 
 function EventPanel({ row }: { row: Extract<ActivityRow, { kind: "event" }> }) {
   const message = useMemo(() => activityEventMessage(row.event), [row.event]);
-  return <EventCard message={message} isConfirmed />;
+  return (
+    <>
+      <EventCard message={message} isConfirmed />
+      <div>
+        <Link
+          href={eventDeepLink(row.event.id)}
+          className={buttonVariants({ variant: "secondary", size: "sm" })}
+        >
+          Open in Events
+        </Link>
+      </div>
+    </>
+  );
 }
 
 function PollPanel({

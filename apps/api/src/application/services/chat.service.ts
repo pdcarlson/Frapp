@@ -433,6 +433,7 @@ export class ChatService {
         | 'is_read_only'
         | 'default_notification_level'
         | 'is_default'
+        | 'activity_excluded'
       >
     >,
   ): Promise<ChatChannel> {
@@ -459,6 +460,15 @@ export class ChatService {
     if (isDirectChannel(existing) && data.is_default === true) {
       throw new BadRequestException(
         "A DM or group DM can't be the chapter's default channel",
+      );
+    }
+
+    // Leaving a channel out of Activity is an officer's call about the
+    // chapter's channels; a DM has no officer (`spec/behavior/activity.md`
+    // § Links).
+    if (isDirectChannel(existing) && data.activity_excluded === true) {
+      throw new BadRequestException(
+        "A DM or group DM can't be left out of Activity",
       );
     }
 
@@ -946,6 +956,7 @@ export class ChatService {
       ? await this.assertThreadRoot(channel, threadRootId, input)
       : null;
 
+    let replyTo: ChatMessage | null = null;
     if (input.reply_to_id) {
       // A read-only channel is a broadcast surface, so nothing in it is
       // threadable — not for a holder of `announcements:post`, not for the
@@ -957,7 +968,7 @@ export class ChatService {
         );
       }
 
-      const replyTo = await this.messageRepo.findById(input.reply_to_id);
+      replyTo = await this.messageRepo.findById(input.reply_to_id);
       if (!replyTo || replyTo.channel_id !== input.channel_id) {
         throw new BadRequestException(
           'reply_to_id must reference a message in the same channel',
@@ -999,11 +1010,13 @@ export class ChatService {
     // Authoritative, and deliberately not a client responsibility: a mention
     // overrides a per-channel mute in the push rules, so a client-supplied
     // list would let any member force a push to any other member in a channel
-    // they had muted on purpose. `ChatMentionService` owns the rules.
+    // they had muted on purpose. `ChatMentionService` owns the rules,
+    // including that a reply mentions the author it quotes (#3844).
     const mentions = await this.mentions.resolveForSend(
       input.chapter_id,
       input.sender_id,
       input.content,
+      replyTo,
     );
 
     // Auto-follow BEFORE the insert, so the push worker, which reacts to the
@@ -1238,6 +1251,30 @@ export class ChatService {
     );
   }
 
+  /**
+   * Who wrote the message a reply quotes, for an edit to keep the reply's
+   * ping (`ChatMentionService.resolveForEdit`). `null` when it quotes
+   * nothing, and `undefined` when the read fails: an edit must not fail, or
+   * drop a ping it cannot check, for a lookup that only decides the ping.
+   */
+  private async quotedAuthorId(
+    replyToId: string | null,
+  ): Promise<string | null | undefined> {
+    if (!replyToId) return null;
+    try {
+      const quoted = await this.messageRepo.findById(replyToId);
+      return quoted?.sender_id ?? null;
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'chat-edit-quoted-author',
+        message: `Failed to read the message ${replyToId} a reply quotes; the edit keeps its stored mentions`,
+        error,
+      });
+      return undefined;
+    }
+  }
+
   async editMessage(
     messageId: string,
     chapterId: string,
@@ -1292,10 +1329,16 @@ export class ChatService {
     // No push fires on an edit, so adding a mention here highlights and counts
     // but does not notify — the alternative, re-running the push tier on every
     // edit, would make an edit a way to notify someone repeatedly.
-    const mentions = await this.mentions.resolveForSend(
+    //
+    // A reply's ping of the author it quotes (#3844) is not re-resolved: the
+    // edit keeps it exactly as the send stored it, since the reply still
+    // quotes them (`ChatMentionService.resolveForEdit`).
+    const mentions = await this.mentions.resolveForEdit(
       chapterId,
       senderId,
       content,
+      message.mentions ?? [],
+      await this.quotedAuthorId(message.reply_to_id ?? null),
     );
 
     return this.messageRepo.update(messageId, {

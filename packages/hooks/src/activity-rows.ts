@@ -12,6 +12,7 @@ export type ActivityPoll = components["schemas"]["ActivityPollDto"];
 export type ActivityEvent = components["schemas"]["ActivityEventDto"];
 export type ActivityHours = components["schemas"]["ActivityHoursEntryDto"];
 export type ActivityFile = components["schemas"]["ActivityFileDto"];
+export type ActivityLink = components["schemas"]["ActivityLinkDto"];
 export type ActivitySection = Activity["unavailable"][number];
 
 /** The filter chips: everything, or one kind of thing. */
@@ -22,6 +23,7 @@ export const ACTIVITY_FILTERS = [
   { value: "event", label: "Events" },
   { value: "hours", label: "Hours" },
   { value: "file", label: "Files" },
+  { value: "link", label: "Links" },
 ] as const;
 export type ActivityFilter = (typeof ACTIVITY_FILTERS)[number]["value"];
 export type ActivityKind = Exclude<ActivityFilter, "all">;
@@ -50,10 +52,11 @@ export type ActivityRow = RowBase &
     | { kind: "event"; event: ActivityEvent }
     | { kind: "hours"; entry: ActivityHours }
     | { kind: "file"; file: ActivityFile }
+    | { kind: "link"; link: ActivityLink }
   );
 
 export interface ActivityGroup {
-  id: "needs-you" | "coming-up" | "made-by-you";
+  id: "needs-you" | "coming-up" | "links" | "made-by-you";
   label: string;
   /** Said in place of the rows when the group has none. */
   empty: string;
@@ -69,13 +72,60 @@ export const ACTIVITY_SECTION_NAMES: Record<ActivitySection, string> = {
   polls: "polls",
   coming_up: "events",
   files: "files",
+  made_events: "events you made",
+  links: "links",
 };
 
-function channelLabel(poll: ActivityPoll): string {
+function channelLabel(
+  row: Pick<ActivityPoll, "channel_type" | "channel_name">,
+): string {
   // A direct message's channel name is server-generated (`dm-<id>-<id>`).
-  if (poll.channel_type === "DM") return "Direct message";
-  if (poll.channel_type === "GROUP_DM") return "Group message";
-  return `#${poll.channel_name}`;
+  if (row.channel_type === "DM") return "Direct message";
+  if (row.channel_type === "GROUP_DM") return "Group message";
+  return `#${row.channel_name}`;
+}
+
+/**
+ * What kind of sign-up a link is, from the hosts Activity gathers
+ * (`activity_action_links`, `spec/behavior/activity.md` § Links). A host the
+ * list later widens to falls back to the host itself, never a wrong name.
+ */
+export function activityLinkKind(
+  link: Pick<ActivityLink, "host" | "url">,
+): string {
+  const host = link.host;
+  if (host === "forms.gle") return "Google Form";
+  if (host === "docs.google.com") {
+    let path = "";
+    try {
+      path = new URL(link.url).pathname;
+    } catch {
+      return host;
+    }
+    // A Workspace account's links carry `/a/<domain>` first.
+    const rest = path.replace(/^\/a\/[^/]+/, "");
+    if (rest.startsWith("/forms/")) return "Google Form";
+    if (rest.startsWith("/spreadsheets/")) return "Google Sheet";
+    if (rest.startsWith("/document/")) return "Google Doc";
+    return host;
+  }
+  if (
+    host === "forms.office.com" ||
+    host === "forms.microsoft.com" ||
+    host === "forms.cloud.microsoft"
+  ) {
+    return "Microsoft Form";
+  }
+  if (host === "typeform.com" || host.endsWith(".typeform.com")) {
+    return "Typeform";
+  }
+  if (host === "signupgenius.com" || host.endsWith(".signupgenius.com")) {
+    return "SignUpGenius";
+  }
+  if (host === "calendly.com" || host.endsWith(".calendly.com")) {
+    return "Calendly";
+  }
+  return host;
 }
 
 function pollRow(poll: ActivityPoll, group: string): ActivityRow {
@@ -156,11 +206,11 @@ function hoursRow(entry: ActivityHours): ActivityRow {
   };
 }
 
-function eventRow(event: ActivityEvent): ActivityRow {
+function eventRow(event: ActivityEvent, group: string): ActivityRow {
   const needsCheckIn = event.check_in_open && !event.checked_in;
   return {
     kind: "event",
-    key: `event:${event.id}`,
+    key: `${group}:event:${event.id}`,
     event,
     title: event.name,
     detail: [formatRelativeDayTime(event.start_time), event.location]
@@ -190,8 +240,25 @@ function fileRow(file: ActivityFile): ActivityRow {
   };
 }
 
+function linkRow(link: ActivityLink): ActivityRow {
+  return {
+    kind: "link",
+    key: `link:${link.id}`,
+    link,
+    title: activityLinkKind(link),
+    detail: [
+      link.posted_by_name || null,
+      channelLabel(link),
+      formatRelativeDayTime(link.posted_at),
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    badge: null,
+  };
+}
+
 /**
- * The page's three groups, in the order it draws them, already narrowed to
+ * The page's four groups, in the order it draws them, already narrowed to
  * one kind when a chip is set.
  *
  * "Needs you" leads with what is most pressing: an event the member can check
@@ -225,7 +292,7 @@ export function activityGroups(
       label: "Needs you",
       empty: "Nothing is waiting on you.",
       rows: keep([
-        ...checkInNow.map(eventRow),
+        ...checkInNow.map((event) => eventRow(event, "needs")),
         ...activity.needs_you.tasks.map((task) =>
           taskRow(task, "needs", "mine"),
         ),
@@ -244,24 +311,35 @@ export function activityGroups(
       id: "coming-up",
       label: "Coming up",
       empty: "No events in the next two weeks.",
-      rows: keep(later.map(eventRow)),
+      rows: keep(later.map((event) => eventRow(event, "coming"))),
       unavailable: downFor(["coming_up"], ["event"]),
+    },
+    {
+      // Their own group, not "Needs you": a link may or may not be for this
+      // member, and Frapp can't see one filled in (spec § Links).
+      id: "links",
+      label: "Links",
+      empty:
+        "Sign-up forms, sheets and booking links posted in your channels show up here.",
+      rows: keep(activity.links.map(linkRow)),
+      unavailable: downFor(["links"], ["link"]),
     },
     {
       id: "made-by-you",
       label: "Made by you",
       empty:
-        "Polls you post, tasks you assign and files you upload show up here.",
+        "Polls you post, events you make, tasks you assign and files you upload show up here.",
       rows: keep([
         ...activity.made_by_you.polls.map((poll) => pollRow(poll, "made")),
+        ...activity.made_by_you.events.map((event) => eventRow(event, "made")),
         ...activity.made_by_you.tasks.map((task) =>
           taskRow(task, "made", "assigned"),
         ),
         ...activity.made_by_you.files.map(fileRow),
       ]),
       unavailable: downFor(
-        ["polls", "tasks", "files"],
-        ["poll", "task", "file"],
+        ["polls", "made_events", "tasks", "files"],
+        ["poll", "event", "task", "file"],
       ),
     },
   ];

@@ -2,6 +2,7 @@ import {
   decidePush,
   defaultLevelFor,
   resolveLevel,
+  resolveLevelWithSource,
   type PushRuleChannel,
 } from './push-rules';
 import type { ChatNotificationPreferenceRow } from '#domain/repositories/chat-notification-preference.repository.interface';
@@ -467,5 +468,100 @@ describe('officer-set channel defaults and DMs (#2771)', () => {
         },
       ]),
     ).toBe('all');
+  });
+});
+
+describe('resolveLevel: the chapter-wide "Mentions and DMs only" row (#3840)', () => {
+  const chapterRow: ChatNotificationPreferenceRow = {
+    user_id: 'u',
+    chapter_id: 'c',
+    scope: 'chapter',
+    scope_id: null,
+    scope_kind: null,
+    level: 'mentions',
+  };
+
+  it('lowers #general from all to mentions', () => {
+    expect(resolveLevelWithSource(ch('general'), 'text', [chapterRow])).toEqual(
+      { level: 'mentions', source: 'chapter' },
+    );
+  });
+
+  it('leaves an ordinary channel already at mentions on its own default', () => {
+    expect(resolveLevelWithSource(ch('random'), 'text', [chapterRow])).toEqual({
+      level: 'mentions',
+      source: 'default',
+    });
+  });
+
+  it("lowers an officer's all default", () => {
+    expect(
+      resolveLevel(ch('rush', { default_notification_level: 'all' }), 'text', [
+        chapterRow,
+      ]),
+    ).toBe('mentions');
+  });
+
+  it('never raises a quieter default (#chapter-audit, system_audit)', () => {
+    expect(resolveLevel(ch('chapter-audit'), 'text', [chapterRow])).toBe('off');
+    expect(resolveLevel(ch('general'), 'system_audit', [chapterRow])).toBe(
+      'off',
+    );
+  });
+
+  it('leaves the announcements channel at all', () => {
+    expect(
+      resolveLevel(ch('announcements', { is_read_only: true }), 'text', [
+        chapterRow,
+      ]),
+    ).toBe('all');
+  });
+
+  it('leaves DMs and group DMs at all', () => {
+    expect(resolveLevel(ch('dm', { type: 'DM' }), 'text', [chapterRow])).toBe(
+      'all',
+    );
+    expect(
+      resolveLevel(ch('group', { type: 'GROUP_DM' }), 'text', [chapterRow]),
+    ).toBe('all');
+  });
+
+  it("loses to the member's own channel choice", () => {
+    expect(
+      resolveLevelWithSource(ch('general'), 'text', [
+        chapterRow,
+        { ...chapterRow, scope: 'channel', scope_id: 'ch-1', level: 'all' },
+      ]),
+    ).toEqual({ level: 'all', source: 'channel' });
+  });
+
+  it("loses to the member's kind override", () => {
+    expect(
+      resolveLevel(ch('general'), 'text', [
+        chapterRow,
+        { ...chapterRow, scope: 'kind', scope_kind: 'text', level: 'all' },
+      ]),
+    ).toBe('all');
+  });
+
+  it('still lets a mention through', () => {
+    expect(
+      decidePush({
+        channel: ch('general'),
+        messageKind: 'text',
+        recipientIsPresent: false,
+        hasMention: true,
+        preferences: [chapterRow],
+      }),
+    ).toBe('send');
+    expect(
+      decidePush({
+        channel: ch('general'),
+        messageKind: 'text',
+        recipientIsPresent: false,
+        hasMention: false,
+        preferences: [chapterRow],
+      }),
+    ).toBe('skip-level');
   });
 });

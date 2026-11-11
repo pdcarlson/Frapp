@@ -284,6 +284,90 @@
         ]
       }
     },
+    "/v1/users/me/whats-new": {
+      "get": {
+        "description": "So What's new opens by itself on the first device a member opens after an update, and only marks its entry on the others (#4043). Needs no chapter.",
+        "operationId": "UserController_getMyWhatsNewSeen_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhatsNewSeenDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The newest What's new entry the caller has seen on any device",
+        "tags": [
+          "Users"
+        ]
+      },
+      "put": {
+        "description": "Moves the account's seen version forward to `seen_version`, never back, and answers with the version it holds afterwards. Idempotent.",
+        "operationId": "UserController_recordMyWhatsNewSeen_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordWhatsNewSeenDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhatsNewSeenDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Record that a device showed the caller What's new",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
     "/v1/users/me/avatar-url": {
       "post": {
         "operationId": "UserController_requestAvatarUploadUrl_v1",
@@ -3223,6 +3307,88 @@
           }
         ],
         "summary": "Clear the caller's override for one message kind, returning it to the default",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/notification-preferences/chapter": {
+      "get": {
+        "operationId": "ChatController_getChapterChatLevel_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterChatLevelDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's chapter-wide chat level: all (each channel at its default) or mentions (Mentions and DMs only)",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "put": {
+        "operationId": "ChatController_setChapterChatLevel_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetChapterChatLevelDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterChatLevelDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set the caller's chapter-wide chat level",
         "tags": [
           "Chat"
         ]
@@ -10668,7 +10834,7 @@
     },
     "/v1/activity": {
       "get": {
-        "description": "The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the tasks they assigned and the files they uploaded. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.",
+        "description": "The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, the tasks they assigned and the files they uploaded. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.",
         "operationId": "ActivityController_getActivity_v1",
         "parameters": [],
         "responses": {
@@ -10699,6 +10865,171 @@
           }
         ],
         "summary": "Get what needs the caller and what they made",
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
+    "/v1/activity/links/{id}/state": {
+      "put": {
+        "description": "Per member, idempotent; either replaces the other. 404 for a link the caller can’t read (its channel isn’t in their chat list) as for one that doesn’t exist. `spec/behavior/activity.md` § Links.",
+        "operationId": "ActivityController_setLinkState_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetActivityLinkStateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mark a link on Activity Done or Hidden for the caller",
+        "tags": [
+          "Activity"
+        ]
+      },
+      "delete": {
+        "description": "Idempotent. 404 for a link the caller can’t read, as for one that doesn’t exist.",
+        "operationId": "ActivityController_clearLinkState_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Clear the caller’s Done or Hidden on a link, so it shows again",
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
+    "/v1/activity/links/{id}/removed": {
+      "put": {
+        "description": "For a link that slipped through from a channel that should be left out of Activity. The message stays in chat. Idempotent.",
+        "operationId": "ActivityController_removeLink_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove a link from everyone’s Activity (channels:manage)",
+        "tags": [
+          "Activity"
+        ]
+      },
+      "delete": {
+        "operationId": "ActivityController_restoreLink_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Undo an officer’s remove, so a link shows on Activity again (channels:manage)",
         "tags": [
           "Activity"
         ]
@@ -11793,7 +12124,7 @@
     },
     "/v1/discord/author-link/start": {
       "post": {
-        "description": "Mints a single-use handshake bound to you and this chapter and returns the Discord authorize URL, which asks for `identify` only. Discord returns the browser to `/profile` with a one-time token that `POST /v1/discord/author-link/confirm` spends.",
+        "description": "Mints a single-use handshake bound to you and this chapter and returns the Discord authorize URL, which asks for `identify` only. Discord returns the browser to their Settings page with a one-time token that `POST /v1/discord/author-link/confirm` spends.",
         "operationId": "DiscordAuthorLinkController_begin_v1",
         "parameters": [],
         "responses": {
@@ -12090,6 +12421,33 @@
         },
         "required": [
           "accept_terms_privacy"
+        ]
+      },
+      "WhatsNewSeenDto": {
+        "type": "object",
+        "properties": {
+          "seen_version": {
+            "type": "string",
+            "nullable": true,
+            "description": "A `releaseNoteVersion` (`YYYY-MM-DD#lines`): the newest entry's date and how many lines it had. Null until one of the caller's devices records one.",
+            "example": "2026-11-10#6"
+          }
+        },
+        "required": [
+          "seen_version"
+        ]
+      },
+      "RecordWhatsNewSeenDto": {
+        "type": "object",
+        "properties": {
+          "seen_version": {
+            "type": "string",
+            "description": "The `releaseNoteVersion` of the newest entry the device just showed. The account keeps the later of this and what it already holds, so an older build never lowers it.",
+            "example": "2026-11-10#6"
+          }
+        },
+        "required": [
+          "seen_version"
         ]
       },
       "UpdateUserDto": {
@@ -14091,6 +14449,10 @@
               "mentions",
               "off"
             ]
+          },
+          "from_chapter_level": {
+            "type": "boolean",
+            "description": "True when the level comes from the member's chapter-wide chat level (GET /v1/channels/notification-preferences/chapter), not from this channel's own setting or default, so a client can label it \"your default\"."
           }
         },
         "required": [
@@ -14187,6 +14549,37 @@
           "level"
         ]
       },
+      "ChapterChatLevelDto": {
+        "type": "object",
+        "properties": {
+          "level": {
+            "type": "string",
+            "enum": [
+              "all",
+              "mentions"
+            ]
+          }
+        },
+        "required": [
+          "level"
+        ]
+      },
+      "SetChapterChatLevelDto": {
+        "type": "object",
+        "properties": {
+          "level": {
+            "type": "string",
+            "enum": [
+              "all",
+              "mentions"
+            ],
+            "description": "all = each channel at its own default; mentions = \"Mentions and DMs only\": every ordinary channel acts as mentions, while DMs, group DMs and the announcements channel keep notifying. A level the member set on one channel, or on a message kind, still wins."
+          }
+        },
+        "required": [
+          "level"
+        ]
+      },
       "CreateChannelDto": {
         "type": "object",
         "properties": {
@@ -14263,6 +14656,10 @@
           "is_default": {
             "type": "boolean",
             "description": "Make this the chapter's default channel, where Chat opens for a member whose device has no last channel (ahead of #general). Setting it moves the default off any other channel; `false` on the current default leaves the chapter with none. Refused as `true` on a DM or group DM."
+          },
+          "activity_excluded": {
+            "type": "boolean",
+            "description": "Leave out of Activity (#3897): sign-up links posted here never reach anyone's Activity page, for channels like #advertising whose links aren't chapter business. Refused as `true` on a DM or group DM."
           }
         }
       },
@@ -14472,7 +14869,7 @@
           },
           "mentions": {
             "nullable": true,
-            "description": "`users.id` of everyone mentioned, resolved server-side at send time. Null on a masked row: a mention overrides a per-channel mute, so leaving it would let a blocked member keep poking the blocker through a masked row.",
+            "description": "`users.id` of everyone mentioned, plus a reply's quoted author, resolved server-side at send time. Null on a masked row: a mention overrides a per-channel mute, so leaving it would let a blocked member keep poking the blocker through a masked row.",
             "type": "array",
             "items": {
               "type": "string"
@@ -15696,6 +16093,12 @@
             "maximum": 120,
             "description": "Minutes before start_time that check-in opens; it closes 15 minutes after end_time."
           },
+          "created_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Who made the event. Null for events made before it was recorded."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -15725,6 +16128,7 @@
           "check_in_zone",
           "check_in_zone_name",
           "check_in_opens_minutes",
+          "created_by",
           "created_at"
         ]
       },
@@ -17879,6 +18283,80 @@
           "checked_in"
         ]
       },
+      "ActivityLinkDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "url": {
+            "type": "string",
+            "description": "The link as posted. Opens outside Frapp."
+          },
+          "host": {
+            "type": "string",
+            "description": "The link’s host, lower-cased and without `www.`.",
+            "example": "docs.google.com"
+          },
+          "message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The chat message it was posted in, for “Open in chat”."
+          },
+          "thread_root_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Set when the message is a thread reply, which the channel’s timeline doesn’t show: “Open in chat” opens this thread."
+          },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "channel_name": {
+            "type": "string",
+            "description": "The channel’s name. A direct message’s is server-generated, so label those from `channel_type`."
+          },
+          "channel_type": {
+            "type": "string",
+            "enum": [
+              "PUBLIC",
+              "PRIVATE",
+              "ROLE_GATED",
+              "DM",
+              "GROUP_DM"
+            ]
+          },
+          "posted_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Null for an imported author with no Frapp account."
+          },
+          "posted_by_name": {
+            "type": "string",
+            "description": "Empty when the poster cannot be resolved."
+          },
+          "posted_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "host",
+          "message_id",
+          "thread_root_id",
+          "channel_id",
+          "channel_name",
+          "channel_type",
+          "posted_by",
+          "posted_by_name",
+          "posted_at"
+        ]
+      },
       "ActivityFileDto": {
         "type": "object",
         "properties": {
@@ -17933,12 +18411,20 @@
             "items": {
               "$ref": "#/components/schemas/ActivityFileDto"
             }
+          },
+          "events": {
+            "description": "Events the caller made that invite them and whose check-in has not closed, soonest first; a recurring series is one row, its next meeting. Events made before creators were recorded (#3897) are never here.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityEventDto"
+            }
           }
         },
         "required": [
           "polls",
           "tasks",
-          "files"
+          "files",
+          "events"
         ]
       },
       "ActivityDto": {
@@ -17952,6 +18438,13 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ActivityEventDto"
+            }
+          },
+          "links": {
+            "description": "Sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels the caller can read and an officer has not left out of Activity. Never the caller’s own, a blocked member’s, one an officer removed, or one the caller marked Done or Hidden. Newest first, at most 25. Not counted in `needs_you_count`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityLinkDto"
             }
           },
           "made_by_you": {
@@ -17971,7 +18464,9 @@
                 "hours_approvals",
                 "polls",
                 "coming_up",
-                "files"
+                "files",
+                "made_events",
+                "links"
               ]
             }
           }
@@ -17979,9 +18474,26 @@
         "required": [
           "needs_you",
           "coming_up",
+          "links",
           "made_by_you",
           "needs_you_count",
           "unavailable"
+        ]
+      },
+      "SetActivityLinkStateDto": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "done",
+              "hidden"
+            ],
+            "description": "`done`: the caller filled it in. `hidden`: not chapter business for them. Either takes it off their own list only."
+          }
+        },
+        "required": [
+          "state"
         ]
       },
       "CreateDiscordImportDto": {
@@ -18786,7 +19298,7 @@
         "properties": {
           "handshake": {
             "type": "string",
-            "description": "The one-time token the OAuth callback put on the redirect to `/profile`. It links the Discord account only for the member who started the handshake, in the chapter it was started in."
+            "description": "The one-time token the OAuth callback put on the redirect to the Settings page. It links the Discord account only for the member who started the handshake, in the chapter it was started in."
           }
         },
         "required": [

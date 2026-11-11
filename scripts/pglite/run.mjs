@@ -208,6 +208,7 @@ await import("./tiers/backwork-search.mjs");
 await import("./tiers/members-keep-base-role.mjs");
 await import("./tiers/transfer-presidency-keeps-member-access.mjs");
 await import("./tiers/check-in-once.mjs");
+await import("./tiers/activity-links.mjs");
 await import("./tiers/role-tiers.mjs");
 
 const tableCount = await db.query(

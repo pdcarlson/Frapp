@@ -103,8 +103,9 @@ export interface RawChatMessage {
   deleted_at?: string | null;
   client_message_id?: string | null;
   /**
-   * `users.id` of everyone the body mentions, resolved by the API at send and
-   * edit time (`spec/behavior/chat/README.md` § Mentions). `null` on a masked
+   * `users.id` of everyone the body mentions, plus a reply's quoted author,
+   * resolved by the API at send and edit time
+   * (`spec/behavior/chat/README.md` § Mentions). `null` on a masked
    * row, whose mentions the server withholds with its body.
    */
   mentions?: string[] | null;
@@ -197,7 +198,8 @@ export interface ChatMessage {
    */
   attachment_count: number;
   /**
-   * Who the body mentions, as the API resolved it (`users.id`). The one
+   * Who the body mentions, plus a reply's quoted author, as the API resolved
+   * it (`users.id`). The one
    * per-message answer to "was I addressed": the in-body chip marks any
    * `@handle`, this marks only the members the server notified (#1192). Empty
    * until the server's row arrives, so an optimistic send highlights nobody.

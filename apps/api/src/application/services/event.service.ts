@@ -99,6 +99,36 @@ export class EventService {
   ): Promise<Event[]> {
     const events = await this.eventRepo.findByChapter(chapterId, window);
     if (!viewerId) return events;
+    return this.visibleOf(events, chapterId, viewerId);
+  }
+
+  /**
+   * The events a member made that have not ended by `endsAfter`, earliest
+   * start first, as many as `limit`. Narrowed by the same visibility rule as
+   * the list: making an event grants no read of it, so a maker it leaves out
+   * who holds no `events:update` does not get it through this read.
+   */
+  async findCreatedBy(
+    chapterId: string,
+    creatorId: string,
+    endsAfter: string,
+    limit: number,
+  ): Promise<Event[]> {
+    const events = await this.eventRepo.findCreatedBy(
+      chapterId,
+      creatorId,
+      endsAfter,
+      limit,
+    );
+    return this.visibleOf(events, chapterId, creatorId);
+  }
+
+  /** `events` narrowed to those `viewerId` may read (see `isVisibleToViewer`). */
+  private async visibleOf(
+    events: Event[],
+    chapterId: string,
+    viewerId: string,
+  ): Promise<Event[]> {
     // Skip the permission/member lookups entirely for the common case — a
     // chapter with no role-targeted events — rather than paying for them on
     // every list call.
@@ -205,6 +235,7 @@ export class EventService {
       check_in_zone_name: input.check_in_zone_name ?? null,
       check_in_opens_minutes:
         input.check_in_opens_minutes ?? DEFAULT_CHECK_IN_OPENS_MINUTES,
+      created_by: input.created_by ?? null,
     });
 
     if (parent.recurrence_rule) {

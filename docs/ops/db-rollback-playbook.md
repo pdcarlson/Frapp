@@ -3354,9 +3354,9 @@ alter table public.chat_channels
   drop column if exists display_locked;
 ```
 
-## Rollback role tiers (20261111020000)
+## Rollback role tiers (20261111140000)
 
-* **Migration**: `20261111020000_role_tiers.sql`
+* **Migration**: `20261111140000_role_tiers.sql`
 
 One new table, `role_tiers`; two columns on `roles`, `tier_id` and `permission_overrides`, with a check and a composite foreign key; the function `role_effective_permissions`; and two triggers, `trg_roles_sync_permissions` on `roles` and `trg_role_tiers_sync_roles` on `role_tiers`. The migration wrote no role's `permissions`.
 
@@ -3413,4 +3413,84 @@ where capabilities && array[
   'rush:view', 'rush:add', 'rush:notes',
   'rush:vote', 'rush:view_results', 'rush:bid'
 ];
+```
+
+## Rollback What's new seen on the account (20261111130000)
+
+* **Migration**: `20261111130000_user_whats_new_seen.sql`
+
+One nullable column on `users`, `whats_new_seen_version` (#4043). Nothing existing changed, and code without #4043 neither reads nor writes it, so it is harmless left in place.
+
+**Revert the code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). A phone build with #4043 against the reverted API gets a 404 on `GET /v1/users/me/whats-new`, treats it as "the account doesn't know", and falls back to its own marker: What's new opens once per device again, as before #4043. A Settings mark already set on a phone stays until What's new is opened there.
+
+**To remove the column**, in a later forward migration after the code revert has shipped. It holds only which release notes a member has seen:
+
+```sql
+alter table public.users drop column if exists whats_new_seen_version;
+```
+
+## Rollback Events record their maker (20261111020000)
+
+* **Migration**: `20261111020000_events_created_by.sql`
+
+One column on `events`, `created_by`, its `events_created_by_fk` foreign key, and the partial index `events_chapter_created_by_start_idx`. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API never writes the column and returns it as a plain field (`select('*')`) that clients ignore; Activity's "Made by you" loses its events with the code that reads them.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. Dropping the column loses who made each event since this shipped; nothing else depends on it:
+
+```sql
+drop index if exists public.events_chapter_created_by_start_idx;
+alter table public.events
+  drop constraint if exists events_created_by_fk,
+  drop column if exists created_by;
+```
+
+## Rollback Links on Activity (20261111030000)
+
+* **Migration**: `20261111030000_activity_links.sql`
+
+`chat_channels.activity_excluded`, the function `activity_action_links`, the tables `chat_message_links` and `chat_link_member_states`, and the triggers `chat_messages_index_links` / `chat_messages_reindex_links` with their function, and `anonymize_user` redefined to also delete `chat_link_member_states`. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API never reads the tables or the column. The triggers keep indexing, which costs a little on each message with a sign-up link and harms nothing; drop them if that is not wanted:
+
+```sql
+drop trigger if exists chat_messages_index_links on public.chat_messages;
+drop trigger if exists chat_messages_reindex_links on public.chat_messages;
+```
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. This loses every member's Done and Hide, officers' removals and which channels were left out of Activity. First redefine `anonymize_user` without its `chat_link_member_states` delete (the `20261110220000_chat_message_threads.sql` body), or account deletion fails once the table is gone:
+
+```sql
+drop trigger if exists chat_messages_index_links on public.chat_messages;
+drop trigger if exists chat_messages_reindex_links on public.chat_messages;
+drop function if exists public.chat_messages_index_links();
+drop table if exists public.chat_link_member_states;
+drop table if exists public.chat_message_links;
+drop function if exists public.activity_action_links(text);
+alter table public.chat_channels drop column if exists activity_excluded;
+```
+
+## Rollback Chapter-wide chat level (20261111120000)
+
+* **Migration**: `20261111120000_chat_notif_prefs_chapter_scope.sql`
+
+Widens two CHECKs on `chat_notification_preferences` to admit `scope = 'chapter'` rows and adds the `idx_chat_notif_prefs_chapter_unique` index. No existing row changed.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The push worker reads every row for a member, so a reverted `resolveLevel` simply ignores `scope = 'chapter'` rows (it matches only `channel` and `kind`), and those members get each channel's default again.
+
+**To remove the schema**, in a later forward migration after the code revert has shipped. Deleting the rows loses each member's "Mentions and DMs only" choice; nothing else depends on them:
+
+```sql
+delete from public.chat_notification_preferences where scope = 'chapter';
+drop index if exists public.idx_chat_notif_prefs_chapter_unique;
+alter table public.chat_notification_preferences
+  drop constraint chat_notif_prefs_scope_id_when_channel,
+  drop constraint chat_notification_preferences_scope_check;
+alter table public.chat_notification_preferences
+  add constraint chat_notification_preferences_scope_check
+    check (scope in ('channel', 'kind')),
+  add constraint chat_notif_prefs_scope_id_when_channel
+    check ((scope = 'channel' and scope_id is not null and scope_kind is null)
+        or (scope = 'kind' and scope_kind is not null and scope_id is null));
 ```

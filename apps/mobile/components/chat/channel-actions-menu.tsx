@@ -59,6 +59,11 @@ export interface ChannelActionsMenuTarget {
   pinned: boolean;
   /** The effective level, or `undefined` while the levels are unknown. */
   level: ChatNotificationLevel | undefined;
+  /**
+   * `level` comes from the member's chapter-wide chat level (#3840), so the
+   * option is marked "(your default)", as the thread header's menu does.
+   */
+  fromChapterLevel?: boolean;
   /** From `channelRowActions` in `@repo/hooks`, the rule web's menu reads too. */
   actions: ChannelRowActionGroups;
   /**
@@ -371,7 +376,8 @@ function MenuBody({
               {channelDensityChoices(defaultDensity).map((choice) => {
                 // Locked, the member's own pick doesn't apply here, so none
                 // is marked and none can be picked (#3787).
-                const selected = !displayLocked && choice.value === densityOverride;
+                const selected =
+                  !displayLocked && choice.value === densityOverride;
                 return (
                   <Pressable
                     key={choice.value ?? "default"}
@@ -433,11 +439,15 @@ function MenuBody({
               </Pressable>
               {NOTIFICATION_LEVEL_OPTIONS.map((option) => {
                 const selected = option.level === target.level;
+                const label =
+                  selected && target.fromChapterLevel
+                    ? `${option.label} (your default)`
+                    : option.label;
                 return (
                   <Pressable
                     key={option.level}
                     accessibilityRole="menuitem"
-                    accessibilityLabel={`${option.label}. ${option.description}`}
+                    accessibilityLabel={`${label}. ${option.description}`}
                     accessibilityState={{ selected }}
                     onPress={() => {
                       onClose();
@@ -449,7 +459,7 @@ function MenuBody({
                       pressed ? styles.pressed : null,
                     ]}
                   >
-                    <Text style={styles.rowLabel}>{option.label}</Text>
+                    <Text style={styles.rowLabel}>{label}</Text>
                     <View
                       style={styles.check}
                       accessibilityElementsHidden

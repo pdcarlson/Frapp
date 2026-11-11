@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { db, miss } from "../harness.mjs";
 
-// ─── Functional: role tiers (20261111020000, #4071) ─────────────────────────
+// ─── Functional: role tiers (20261111140000, #4071) ─────────────────────────
 //
 // Replay runs the placement against an empty `chapters` table, so replay alone
 // proves nothing about it. This tier seeds chapters as they were before the
@@ -23,13 +23,13 @@ import { db, miss } from "../harness.mjs";
 // roles, no tier of another chapter) hold.
 //
 // Everything runs inside one transaction and is rolled back.
-console.log("\n=== Functional: role tiers (20261111020000) ===");
+console.log("\n=== Functional: role tiers (20261111140000) ===");
 {
   const A = "a4071000-0000-4000-8000-00000000000a";
   const B = "b4071000-0000-4000-8000-00000000000b";
   const C = "c4071000-0000-4000-8000-00000000000c";
   const sql = readFileSync(
-    join(process.cwd(), "supabase/migrations/20261111020000_role_tiers.sql"),
+    join(process.cwd(), "supabase/migrations/20261111140000_role_tiers.sql"),
     "utf8",
   );
   const results = [];

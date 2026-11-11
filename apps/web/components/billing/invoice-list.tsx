@@ -439,7 +439,7 @@ export function InvoiceList({ id }: { id?: string }) {
           Invoices
         </SectionLabel>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative w-full sm:w-64">
+          <div className="relative w-full @md:w-64">
             <SearchGlyph className={dashboardToolbarSearchGlyphClassName} />
             <Input
               aria-label="Search invoices or members"
@@ -796,7 +796,7 @@ export function InvoiceList({ id }: { id?: string }) {
                     // lane 4's flat `min-h-11` document row rather than
                     // `/members`' 36/44 — see the table of the two row shapes
                     // in `spec/ui/web-dashboard/README.md` § Page grammar.
-                    "flex min-h-11 flex-col gap-2 py-2 md:flex-row md:items-center",
+                    "flex min-h-11 flex-col gap-2 py-2 @2xl:flex-row @2xl:items-center",
                     selected && "bg-popover",
                   )}
                 >
@@ -841,7 +841,7 @@ export function InvoiceList({ id }: { id?: string }) {
                         .join(" · ")}
                     </p>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                  <div className="flex flex-wrap items-center gap-2 @2xl:justify-end">
                     <span className="text-sm font-semibold tabular-nums">
                       {formatCurrency(invoice.amount)}
                     </span>

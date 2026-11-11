@@ -66,6 +66,11 @@ import { useSelectChapter } from "@/lib/auth/select-chapter";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import { InviteComposer } from "@/components/members/invite-composer";
+import { ChatDensityControl } from "@/components/profile/chat-density-control";
+import {
+  DISPLAY_STEP_DESCRIPTION,
+  DISPLAY_STEP_TITLE,
+} from "@/components/onboarding/display-step";
 import { inspectLogoFile } from "@/lib/chapter-logo";
 import { FERPA_URL } from "@/lib/legal-links";
 import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confirm-drop-bulk-uploads";
@@ -91,12 +96,26 @@ import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confir
 const POST_CREATE_PATH = "/billing";
 const INVITE_ROLE = "Member";
 
-type WizardStep = "find" | "archetype" | "identity" | "invite";
-const STEP_ORDER: WizardStep[] = ["find", "archetype", "identity", "invite"];
+/**
+ * `display` is the founder's own chat display pick (#4056): founders never see
+ * the tutorial that asks a joining member, so the wizard asks it once the
+ * chapter exists, before the invite.
+ */
+type WizardStep = "find" | "archetype" | "identity" | "display" | "invite";
+const STEP_ORDER: WizardStep[] = [
+  "find",
+  "archetype",
+  "identity",
+  "display",
+  "invite",
+];
+/** The steps after create, which have no way back to before it. */
+const CREATED_STEPS: WizardStep[] = ["display", "invite"];
 const STEP_LABELS: Record<WizardStep, string> = {
   find: "Find your chapter",
   archetype: "Pick your archetype",
   identity: "Confirm identity",
+  display: DISPLAY_STEP_TITLE,
   invite: "Invite members",
 };
 
@@ -246,10 +265,10 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
           : {
               title: "Chapter created",
               description:
-                "Your chapter is set up. Invite your members to start chatting.",
+                "Your chapter is set up. Pick your chat display, then invite your members.",
             },
       );
-      setStep("invite");
+      setStep("display");
     } catch (error) {
       toast({
         title: "Unable to create chapter",
@@ -351,6 +370,8 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
                 />
               ) : null}
 
+              {step === "display" ? <DisplayStep /> : null}
+
               {step === "invite" ? (
                 <InviteStep onInvited={() => setInvited(true)} />
               ) : null}
@@ -361,7 +382,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
                 <Button variant="ghost" onClick={() => router.push("/join")}>
                   I have an invite
                 </Button>
-              ) : step !== "invite" ? (
+              ) : !CREATED_STEPS.includes(step) ? (
                 <Button variant="ghost" onClick={goBack}>
                   <ArrowLeft className="h-4 w-4" />
                   Back
@@ -388,6 +409,13 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
                     <Check className="h-4 w-4" />
                   )}
                   Create chapter
+                </Button>
+              ) : null}
+
+              {step === "display" ? (
+                <Button onClick={() => setStep("invite")}>
+                  Continue
+                  <ArrowRight className="h-4 w-4" />
                 </Button>
               ) : null}
 
@@ -824,6 +852,22 @@ function IdentityStep({
           .
         </p>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The same cards as Profile's Chat density and the tutorial's display slide.
+ * The browser's current display is preselected (Cozy on a browser that never
+ * picked one) and a click saves at once, so Continue keeps what is checked.
+ */
+function DisplayStep() {
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        {DISPLAY_STEP_DESCRIPTION}
+      </p>
+      <ChatDensityControl />
     </div>
   );
 }

@@ -19,8 +19,10 @@ import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  CHAT_CHAPTER_LEVELS,
   CHAT_MESSAGE_CONTENT_MAX_LENGTH,
   CHAT_NOTIFICATION_LEVELS,
+  type ChatChapterLevel,
 } from '@repo/validation';
 import { POSITION_MAX } from '#domain/constants/field-limits';
 import {
@@ -166,6 +168,14 @@ export class UpdateChannelDto {
   @ValidateIf((_object, value) => value !== undefined)
   @IsStrictBoolean()
   is_default?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      "Leave out of Activity (#3897): sign-up links posted here never reach anyone's Activity page, for channels like #advertising whose links aren't chapter business. Refused as `true` on a DM or group DM.",
+  })
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsStrictBoolean()
+  activity_excluded?: boolean;
 }
 
 export class CreateDmDto {
@@ -653,6 +663,28 @@ export class ChannelNotificationPreferenceDto {
 
   @ApiProperty({ enum: CHAT_NOTIFICATION_LEVELS })
   level: (typeof CHAT_NOTIFICATION_LEVELS)[number];
+
+  @ApiProperty({
+    required: false,
+    description:
+      'True when the level comes from the member\'s chapter-wide chat level (GET /v1/channels/notification-preferences/chapter), not from this channel\'s own setting or default, so a client can label it "your default".',
+  })
+  from_chapter_level?: boolean;
+}
+
+export class SetChapterChatLevelDto {
+  @ApiProperty({
+    enum: CHAT_CHAPTER_LEVELS,
+    description:
+      'all = each channel at its own default; mentions = "Mentions and DMs only": every ordinary channel acts as mentions, while DMs, group DMs and the announcements channel keep notifying. A level the member set on one channel, or on a message kind, still wins.',
+  })
+  @IsIn(CHAT_CHAPTER_LEVELS)
+  level: ChatChapterLevel;
+}
+
+export class ChapterChatLevelDto {
+  @ApiProperty({ enum: CHAT_CHAPTER_LEVELS })
+  level: ChatChapterLevel;
 }
 
 export class SetKindNotificationLevelDto {
@@ -825,7 +857,7 @@ export class ChatMessageDto {
     nullable: true,
     required: false,
     description:
-      '`users.id` of everyone mentioned, resolved server-side at send time. Null on a masked row: a mention overrides a per-channel mute, so leaving it would let a blocked member keep poking the blocker through a masked row.',
+      "`users.id` of everyone mentioned, plus a reply's quoted author, resolved server-side at send time. Null on a masked row: a mention overrides a per-channel mute, so leaving it would let a blocked member keep poking the blocker through a masked row.",
   })
   mentions?: string[] | null;
 

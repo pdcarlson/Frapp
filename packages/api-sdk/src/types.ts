@@ -104,6 +104,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/users/me/whats-new": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The newest What's new entry the caller has seen on any device
+         * @description So What's new opens by itself on the first device a member opens after an update, and only marks its entry on the others (#4043). Needs no chapter.
+         */
+        get: operations["UserController_getMyWhatsNewSeen_v1"];
+        /**
+         * Record that a device showed the caller What's new
+         * @description Moves the account's seen version forward to `seen_version`, never back, and answers with the version it holds afterwards. Idempotent.
+         */
+        put: operations["UserController_recordMyWhatsNewSeen_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/users/me/avatar-url": {
         parameters: {
             query?: never;
@@ -1022,6 +1046,24 @@ export interface paths {
         post?: never;
         /** Clear the caller's override for one message kind, returning it to the default */
         delete: operations["ChatController_clearKindNotificationLevel_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/notification-preferences/chapter": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's chapter-wide chat level: all (each channel at its default) or mentions (Mentions and DMs only) */
+        get: operations["ChatController_getChapterChatLevel_v1"];
+        /** Set the caller's chapter-wide chat level */
+        put: operations["ChatController_setChapterChatLevel_v1"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -3180,12 +3222,57 @@ export interface paths {
         };
         /**
          * Get what needs the caller and what they made
-         * @description The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the tasks they assigned and the files they uploaded. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.
+         * @description The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, the tasks they assigned and the files they uploaded. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.
          */
         get: operations["ActivityController_getActivity_v1"];
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/activity/links/{id}/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Mark a link on Activity Done or Hidden for the caller
+         * @description Per member, idempotent; either replaces the other. 404 for a link the caller can’t read (its channel isn’t in their chat list) as for one that doesn’t exist. `spec/behavior/activity.md` § Links.
+         */
+        put: operations["ActivityController_setLinkState_v1"];
+        post?: never;
+        /**
+         * Clear the caller’s Done or Hidden on a link, so it shows again
+         * @description Idempotent. 404 for a link the caller can’t read, as for one that doesn’t exist.
+         */
+        delete: operations["ActivityController_clearLinkState_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/activity/links/{id}/removed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Remove a link from everyone’s Activity (channels:manage)
+         * @description For a link that slipped through from a channel that should be left out of Activity. The message stays in chat. Idempotent.
+         */
+        put: operations["ActivityController_removeLink_v1"];
+        post?: never;
+        /** Undo an officer’s remove, so a link shows on Activity again (channels:manage) */
+        delete: operations["ActivityController_restoreLink_v1"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3581,7 +3668,7 @@ export interface paths {
         put?: never;
         /**
          * Start linking your Discord account
-         * @description Mints a single-use handshake bound to you and this chapter and returns the Discord authorize URL, which asks for `identify` only. Discord returns the browser to `/profile` with a one-time token that `POST /v1/discord/author-link/confirm` spends.
+         * @description Mints a single-use handshake bound to you and this chapter and returns the Discord authorize URL, which asks for `identify` only. Discord returns the browser to their Settings page with a one-time token that `POST /v1/discord/author-link/confirm` spends.
          */
         post: operations["DiscordAuthorLinkController_begin_v1"];
         delete?: never;
@@ -3702,6 +3789,20 @@ export interface components {
         AcceptLegalTermsDto: {
             /** @description The user ticked "I'm 18 or older and agree to the Terms of Service and Privacy Policy." Must be true. The timestamp and version are recorded server-side, never from this payload. */
             accept_terms_privacy: boolean;
+        };
+        WhatsNewSeenDto: {
+            /**
+             * @description A `releaseNoteVersion` (`YYYY-MM-DD#lines`): the newest entry's date and how many lines it had. Null until one of the caller's devices records one.
+             * @example 2026-11-10#6
+             */
+            seen_version: string | null;
+        };
+        RecordWhatsNewSeenDto: {
+            /**
+             * @description The `releaseNoteVersion` of the newest entry the device just showed. The account keeps the later of this and what it already holds, so an older build never lowers it.
+             * @example 2026-11-10#6
+             */
+            seen_version: string;
         };
         UpdateUserDto: {
             display_name?: string;
@@ -4406,6 +4507,8 @@ export interface components {
             channel_id: string;
             /** @enum {string} */
             level: "all" | "mentions" | "off";
+            /** @description True when the level comes from the member's chapter-wide chat level (GET /v1/channels/notification-preferences/chapter), not from this channel's own setting or default, so a client can label it "your default". */
+            from_chapter_level?: boolean;
         };
         KindNotificationPreferenceDto: {
             /**
@@ -4438,6 +4541,17 @@ export interface components {
              */
             level: "all" | "mentions" | "off" | null;
         };
+        ChapterChatLevelDto: {
+            /** @enum {string} */
+            level: "all" | "mentions";
+        };
+        SetChapterChatLevelDto: {
+            /**
+             * @description all = each channel at its own default; mentions = "Mentions and DMs only": every ordinary channel acts as mentions, while DMs, group DMs and the announcements channel keep notifying. A level the member set on one channel, or on a message kind, still wins.
+             * @enum {string}
+             */
+            level: "all" | "mentions";
+        };
         CreateChannelDto: {
             name: string;
             description?: string;
@@ -4464,6 +4578,8 @@ export interface components {
             default_notification_level?: "all" | "mentions" | "off" | null;
             /** @description Make this the chapter's default channel, where Chat opens for a member whose device has no last channel (ahead of #general). Setting it moves the default off any other channel; `false` on the current default leaves the chapter with none. Refused as `true` on a DM or group DM. */
             is_default?: boolean;
+            /** @description Leave out of Activity (#3897): sign-up links posted here never reach anyone's Activity page, for channels like #advertising whose links aren't chapter business. Refused as `true` on a DM or group DM. */
+            activity_excluded?: boolean;
         };
         SetChannelDisplayLockDto: {
             /** @description True sets the channel to Always formal for every member; false lets each member pick their own display there again. */
@@ -4539,7 +4655,7 @@ export interface components {
             pinned_at: string | null;
             edited_at: string | null;
             is_deleted: boolean;
-            /** @description `users.id` of everyone mentioned, resolved server-side at send time. Null on a masked row: a mention overrides a per-channel mute, so leaving it would let a blocked member keep poking the blocker through a masked row. */
+            /** @description `users.id` of everyone mentioned, plus a reply's quoted author, resolved server-side at send time. Null on a masked row: a mention overrides a per-channel mute, so leaving it would let a blocked member keep poking the blocker through a masked row. */
             mentions?: string[] | null;
             /**
              * Format: uuid
@@ -4944,6 +5060,11 @@ export interface components {
             check_in_zone_name: string | null;
             /** @description Minutes before start_time that check-in opens; it closes 15 minutes after end_time. */
             check_in_opens_minutes: number;
+            /**
+             * Format: uuid
+             * @description Who made the event. Null for events made before it was recorded.
+             */
+            created_by: string | null;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the event row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
@@ -5757,6 +5878,42 @@ export interface components {
             /** @description Whether the caller has an attendance row for it. Read only while check-in is open; null otherwise, and when that read failed. */
             checked_in: boolean | null;
         };
+        ActivityLinkDto: {
+            /** Format: uuid */
+            id: string;
+            /** @description The link as posted. Opens outside Frapp. */
+            url: string;
+            /**
+             * @description The link’s host, lower-cased and without `www.`.
+             * @example docs.google.com
+             */
+            host: string;
+            /**
+             * Format: uuid
+             * @description The chat message it was posted in, for “Open in chat”.
+             */
+            message_id: string;
+            /**
+             * Format: uuid
+             * @description Set when the message is a thread reply, which the channel’s timeline doesn’t show: “Open in chat” opens this thread.
+             */
+            thread_root_id: string | null;
+            /** Format: uuid */
+            channel_id: string;
+            /** @description The channel’s name. A direct message’s is server-generated, so label those from `channel_type`. */
+            channel_name: string;
+            /** @enum {string} */
+            channel_type: "PUBLIC" | "PRIVATE" | "ROLE_GATED" | "DM" | "GROUP_DM";
+            /**
+             * Format: uuid
+             * @description Null for an imported author with no Frapp account.
+             */
+            posted_by: string | null;
+            /** @description Empty when the poster cannot be resolved. */
+            posted_by_name: string;
+            /** Format: date-time */
+            posted_at: string;
+        };
         ActivityFileDto: {
             /** Format: uuid */
             id: string;
@@ -5777,16 +5934,27 @@ export interface components {
             tasks: components["schemas"]["ActivityTaskDto"][];
             /** @description Documents and backwork the caller uploaded, newest first. */
             files: components["schemas"]["ActivityFileDto"][];
+            /** @description Events the caller made that invite them and whose check-in has not closed, soonest first; a recurring series is one row, its next meeting. Events made before creators were recorded (#3897) are never here. */
+            events: components["schemas"]["ActivityEventDto"][];
         };
         ActivityDto: {
             needs_you: components["schemas"]["ActivityNeedsYouDto"];
             /** @description Events that invite the caller and start within 14 days, or whose check-in is still open, soonest first. At most 10. */
             coming_up: components["schemas"]["ActivityEventDto"][];
+            /** @description Sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels the caller can read and an officer has not left out of Activity. Never the caller’s own, a blocked member’s, one an officer removed, or one the caller marked Done or Hidden. Newest first, at most 25. Not counted in `needs_you_count`. */
+            links: components["schemas"]["ActivityLinkDto"][];
             made_by_you: components["schemas"]["ActivityMadeByYouDto"];
             /** @description How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t. */
             needs_you_count: number;
             /** @description Sections that could not be read this time. Each is served empty; the others are unaffected. */
-            unavailable: ("tasks" | "hours_approvals" | "polls" | "coming_up" | "files")[];
+            unavailable: ("tasks" | "hours_approvals" | "polls" | "coming_up" | "files" | "made_events" | "links")[];
+        };
+        SetActivityLinkStateDto: {
+            /**
+             * @description `done`: the caller filled it in. `hidden`: not chapter business for them. Either takes it off their own list only.
+             * @enum {string}
+             */
+            state: "done" | "hidden";
         };
         CreateDiscordImportDto: {
             /** @description The admin confirms they have posted an in-channel notice in their Discord server telling members the history is being archived into Frapp. Required — the API refuses without it, and the column is NOT NULL, so no import can exist that was not preceded by this. */
@@ -6067,7 +6235,7 @@ export interface components {
             expires_at: string;
         };
         ConfirmDiscordAuthorLinkDto: {
-            /** @description The one-time token the OAuth callback put on the redirect to `/profile`. It links the Discord account only for the member who started the handshake, in the chapter it was started in. */
+            /** @description The one-time token the OAuth callback put on the redirect to the Settings page. It links the Discord account only for the member who started the handshake, in the chapter it was started in. */
             handshake: string;
         };
         ConfirmDiscordAuthorLinkResponseDto: {
@@ -6318,6 +6486,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LegalAcceptanceDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    UserController_getMyWhatsNewSeen_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WhatsNewSeenDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    UserController_recordMyWhatsNewSeen_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecordWhatsNewSeenDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WhatsNewSeenDto"];
                 };
             };
             /** @description Error */
@@ -8397,6 +8625,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ClearedKindNotificationPreferenceDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_getChapterChatLevel_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterChatLevelDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_setChapterChatLevel_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetChapterChatLevelDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterChatLevelDto"];
                 };
             };
             /** @description Error */
@@ -13334,6 +13622,122 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ActivityDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_setLinkState_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetActivityLinkStateDto"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_clearLinkState_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_removeLink_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_restoreLink_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

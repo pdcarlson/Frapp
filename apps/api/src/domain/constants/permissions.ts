@@ -141,7 +141,7 @@ export const ALUMNI_ROLE_NAME = 'Alumni';
  * once a holder cannot edit their own tier.
  *
  * Chapters that existed before tiers were placed into the same four names by
- * migration `20261111020000_role_tiers.sql`. Changing this list changes new
+ * migration `20261111140000_role_tiers.sql`. Changing this list changes new
  * chapters and nothing else.
  */
 export const STARTING_ROLE_TIERS = [

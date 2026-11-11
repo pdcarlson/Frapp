@@ -9,7 +9,7 @@ import { setChatDensity, useChatDensity } from "@/lib/chat/chat-density";
 import { cn } from "@/lib/utils";
 
 /**
- * Profile → Chat → Density: three cards, each a small drawing of the thread in
+ * Settings → Appearance and chat → Chat density: three cards, each a small drawing of the thread in
  * that density, so the choice is made by looking rather than by reading
  * (`components.md` §11 § Density). It saves on the click, with no Save button,
  * and the thread redraws at once.

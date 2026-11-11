@@ -62,7 +62,7 @@ const SETTINGS_MARKER = "-- @settings";
  * App Review is handed (#2308), or any hosted account's.
  */
 export const LOCAL_DEMO_PASSWORD = "DemoShowcase!2026";
-/** The local marketing chapter's login: roster #1, the president. setup-demo.sh restates it. */
+/** The local marketing chapter's login: roster #1, the president. setup-demo.sh restates it, and so does apps/web/tests/visual/beside-chat-floor.spec.ts (with the chapter id). */
 export const LOCAL_DEMO_EMAIL = "marcus.ellison@example.com";
 export const MIN_HOSTED_PASSWORD_LENGTH = 12;
 

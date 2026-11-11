@@ -170,6 +170,7 @@ describe('ChapterService', () => {
       create: jest.fn(),
       update: jest.fn(),
       anonymize: jest.fn(),
+      compareAndSetWhatsNewSeen: jest.fn(),
     };
 
     mockChannelRepo = { createMany: jest.fn().mockResolvedValue(undefined) };

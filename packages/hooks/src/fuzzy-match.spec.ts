@@ -4,6 +4,7 @@ import {
   fuzzyMatch,
   fuzzyMatchWords,
   highlightRuns,
+  matchesWordStarts,
   matchQueryWord,
   normalizeWords,
   withNumeralVariants,
@@ -199,5 +200,18 @@ describe("matchQueryWord", () => {
   it("tries the alias too", () => {
     expect(matchQueryWord("hw", ["homework"], { hw: "homework" }).hit).toBe("homework");
     expect(matchQueryWord("hw", ["homework"]).score).toBe(0);
+  });
+});
+
+describe("matchesWordStarts", () => {
+  it("finds a word behind punctuation, which a name matcher would miss", () => {
+    expect(matchesWordStarts("(Exec) Treasurer", "exec")).toBe(true);
+    expect(matchesWordStarts("Rush/Recruitment Chair", "rec")).toBe(true);
+    expect(matchesWordStarts("MATH 2210 · Calc (Honors)", "honors 22")).toBe(true);
+    expect(matchesWordStarts("Vice President", "vi pre")).toBe(true);
+    expect(matchesWordStarts("Vice President", "ice")).toBe(false);
+    // Every word must match: a second word narrows, never widens.
+    expect(matchesWordStarts("Vice President", "vi tre")).toBe(false);
+    expect(matchesWordStarts("Anything", "  ")).toBe(true);
   });
 });

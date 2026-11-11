@@ -45,8 +45,8 @@ export class SupabaseChatNotificationPreferenceRepository implements IChatNotifi
   /**
    * Load every chat-pref row for a batch of users in one chapter, grouped by
    * user. The push worker decides per-message whether the channel-specific row
-   * or the kind-fallback row applies; loading both arms keeps the hot path
-   * cheap.
+   * or the kind-fallback row applies, or the chapter-wide row (#3840); loading
+   * every arm at once keeps the hot path cheap.
    *
    * This replaced a per-user `findForUser`, which `handleMessage` awaited once
    * per recipient inside its loop — ~150 round trips per message in a
@@ -251,6 +251,60 @@ export class SupabaseChatNotificationPreferenceRepository implements IChatNotifi
     return this.findPreferencesForUserByScope(userId, chapterId, 'kind');
   }
 
+  async findChapterPreferencesForUser(
+    userId: string,
+    chapterId: string,
+  ): Promise<ChatNotificationPreferenceRow[]> {
+    return this.findPreferencesForUserByScope(userId, chapterId, 'chapter');
+  }
+
+  /**
+   * The chapter arm's upsert target is `idx_chat_notif_prefs_chapter_unique`,
+   * which is `nulls not distinct`: both scope columns are null here, so only
+   * that index makes a second write update the row instead of adding one.
+   */
+  async upsertChapterLevel(
+    userId: string,
+    chapterId: string,
+    level: ChatNotificationLevel,
+  ): Promise<ChatNotificationPreferenceRow> {
+    const row: TablesInsert<'chat_notification_preferences'> = {
+      user_id: userId,
+      chapter_id: chapterId,
+      scope: 'chapter',
+      scope_id: null,
+      scope_kind: null,
+      level,
+    };
+
+    const { data, error } = await this.supabase
+      .from('chat_notification_preferences')
+      .upsert(row, {
+        onConflict: 'user_id,chapter_id,scope,scope_id,scope_kind',
+      })
+      .select('user_id, chapter_id, scope, scope_id, scope_kind, level')
+      .maybeSingle();
+
+    if (error) throw new SupabaseQueryError(error);
+    if (!data) {
+      throw new Error(
+        `chat-prefs: upsert returned no chapter row for user ${userId}`,
+      );
+    }
+    return data;
+  }
+
+  async deleteChapterLevel(userId: string, chapterId: string): Promise<void> {
+    const { error } = await this.supabase
+      .from('chat_notification_preferences')
+      .delete()
+      .eq('user_id', userId)
+      .eq('chapter_id', chapterId)
+      .eq('scope', 'chapter');
+
+    if (error) throw new SupabaseQueryError(error);
+  }
+
   /**
    * Drop the caller's kind-scoped row, returning that kind to its default.
    *
@@ -278,7 +332,7 @@ export class SupabaseChatNotificationPreferenceRepository implements IChatNotifi
   }
 
   /**
-   * The shared body of the two scope-specific finders above. They differ only
+   * The shared body of the scope-specific finders. They differ only
    * in the `scope` literal, and jscpd flagged them as clones; the public
    * methods stay separate because their *contracts* differ (each is documented
    * against its own arm and its own caller), but the query lives once.
@@ -286,7 +340,7 @@ export class SupabaseChatNotificationPreferenceRepository implements IChatNotifi
   private async findPreferencesForUserByScope(
     userId: string,
     chapterId: string,
-    scope: 'channel' | 'kind',
+    scope: 'channel' | 'kind' | 'chapter',
   ): Promise<ChatNotificationPreferenceRow[]> {
     const { data, error } = await this.supabase
       .from('chat_notification_preferences')
