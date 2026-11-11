@@ -866,12 +866,31 @@ describe('MemberService', () => {
     it('lets a chair give a brother a role below the chairs', async () => {
       await save(
         TIERED_MEMBER.brother,
-        [ROLE.brother, ROLE.treasuryAssistant],
+        [ROLE.brother, ROLE.pledge],
         USER.riskChair,
       );
       expect(mockRepo.update).toHaveBeenCalledWith(TIERED_MEMBER.brother, {
-        role_ids: [ROLE.brother, ROLE.treasuryAssistant],
+        role_ids: [ROLE.brother, ROLE.pledge],
       });
+    });
+
+    it("refuses a role below the chair that carries a permission the chair lacks, so a second account can't collect it", async () => {
+      // The treasury assistant ranks with the brothers but holds billing:view.
+      await expect(
+        save(
+          TIERED_MEMBER.brother,
+          [ROLE.brother, ROLE.treasuryAssistant],
+          USER.riskChair,
+        ),
+      ).rejects.toThrow(/billing:view/);
+      await expect(
+        save(
+          TIERED_MEMBER.brother,
+          [ROLE.brother, ROLE.alumni],
+          USER.riskChair,
+        ),
+      ).rejects.toThrow(/alumni:post/);
+      expect(mockRepo.update).not.toHaveBeenCalled();
     });
 
     it('lets an exec officer make a brother a chair, and the President do anything', async () => {

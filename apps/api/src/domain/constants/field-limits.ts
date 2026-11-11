@@ -54,3 +54,6 @@ export const INT4_MAX = 2_147_483_647;
  * `INT4_MAX` before this bound are not repaired here.
  */
 export const POSITION_MAX = 1_000_000_000;
+
+/** `role_tiers_position_range` (migration `20261111140000`): a chapter has at most this many tiers. */
+export const ROLE_TIER_POSITION_MAX = 1000;

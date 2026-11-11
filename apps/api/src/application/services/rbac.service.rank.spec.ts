@@ -6,7 +6,7 @@ import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface'
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
 import { ROLE_TIER_REPOSITORY } from '#domain/repositories/role-tier.repository.interface';
-import type { Role } from '#domain/entities/role.entity';
+import type { Role, RoleTier } from '#domain/entities/role.entity';
 import { effectivePermissions } from '#domain/utils/role-rank';
 import { createAuditLogServiceMock } from '#test/helpers/audit-log.mock';
 import {
@@ -28,6 +28,7 @@ import {
 describe('RbacService rank rules (#4071)', () => {
   let service: RbacService;
   let roles: Role[];
+  let tiers: RoleTier[];
   let audit: ReturnType<typeof createAuditLogServiceMock>;
   const roleRepo = {
     findById: jest.fn(),
@@ -45,7 +46,7 @@ describe('RbacService rank rules (#4071)', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     roles = tieredChapterRoles();
-    const tiers = tieredChapterTiers();
+    tiers = tieredChapterTiers();
     const members = tieredChapterMembers();
     roleRepo.findByChapter.mockResolvedValue(roles);
     roleRepo.findById.mockImplementation(
@@ -156,6 +157,21 @@ describe('RbacService rank rules (#4071)', () => {
           permission_overrides: { 'billing:manage': true },
         }),
       ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('cannot switch on an override for a permission they lack, even one the tier already grants', async () => {
+      // The override would outlive the tier's grant, so it is a grant too.
+      tiers
+        .find((tier) => tier.id === TIER.pledges)!
+        .permissions.push('billing:view');
+      const pledge = roles.find((role) => role.id === ROLE.pledge)!;
+      pledge.permissions = ['billing:view', 'members:view'];
+      await expect(
+        service.updateAsMember(ROLE.pledge, CHAPTER_ID, USER.riskChair, {
+          permission_overrides: { 'billing:view': true },
+        }),
+      ).rejects.toThrow(/billing:view/);
+      expect(roleRepo.update).not.toHaveBeenCalled();
     });
 
     it('takes permissions away from a role below them, even ones they lack', async () => {
@@ -269,6 +285,37 @@ describe('RbacService rank rules (#4071)', () => {
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
+  });
+
+  it("records an override change in the role's audit row, even when its permissions don't move", async () => {
+    // The Brothers tier already grants service:log, so nothing is added.
+    await service.updateAsMember(ROLE.brother, CHAPTER_ID, USER.president, {
+      permission_overrides: { 'service:log': true },
+    });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'role_updated',
+        diff: {
+          permission_overrides: { from: {}, to: { 'service:log': true } },
+        },
+      }),
+    );
+  });
+
+  it('refuses a member whose roles all sit outside the tiers, even for a role outside them', async () => {
+    memberRepo.findByUserAndChapter.mockResolvedValue({
+      id: 'member-alumnus',
+      user_id: 'user-alumnus',
+      chapter_id: CHAPTER_ID,
+      role_ids: [ROLE.alumni],
+    });
+    await expect(
+      service.createAsMember(CHAPTER_ID, 'user-alumnus', {
+        name: 'Alumni board',
+        permissions: [],
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(roleRepo.create).not.toHaveBeenCalled();
   });
 
   it('refuses a request that sends a list and a tier change together', async () => {

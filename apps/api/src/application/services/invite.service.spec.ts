@@ -2279,6 +2279,23 @@ describe('InviteService', () => {
       expect(mockInviteRepo.create).toHaveBeenCalledTimes(2);
     });
 
+    it("stops an inviter bringing in a role whose permissions they don't hold, a peer's included", async () => {
+      mockRbac.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.riskChair),
+      );
+      await expect(
+        service.create(CHAPTER_ID, USER.riskChair, 'Treasury assistant'),
+      ).rejects.toThrow(/billing:view/);
+      // The Vice President ranks with the Treasurer but lacks billing:manage.
+      mockRbac.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.vicePresident),
+      );
+      await expect(
+        service.create(CHAPTER_ID, USER.vicePresident, 'Treasurer'),
+      ).rejects.toThrow(/billing:manage/);
+      expect(mockInviteRepo.create).not.toHaveBeenCalled();
+    });
+
     it('stops even the President inviting someone as President', async () => {
       mockRbac.getRankContext.mockResolvedValue(
         tieredRankContext(USER.president),

@@ -27,6 +27,12 @@ export interface IRoleTierRepository {
     ids: string[],
     fixedIds: string[],
   ): Promise<RoleTier[] | 'stale'>;
-  /** `'has_roles'` when a role still sits in the tier. */
-  delete(id: string, chapterId: string): Promise<void | 'has_roles'>;
+  /**
+   * `'has_roles'` when a role still sits in the tier, and `'missing'` when no
+   * row matched (a concurrent delete got there first).
+   */
+  delete(
+    id: string,
+    chapterId: string,
+  ): Promise<'deleted' | 'missing' | 'has_roles'>;
 }

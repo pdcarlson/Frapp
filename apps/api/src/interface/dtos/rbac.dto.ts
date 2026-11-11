@@ -23,12 +23,13 @@ import {
   type PermissionModuleKey,
   type PermissionScope,
 } from '@repo/validation';
-import { POSITION_MAX } from '#domain/constants/field-limits';
+import {
+  POSITION_MAX,
+  ROLE_TIER_POSITION_MAX,
+} from '#domain/constants/field-limits';
 
 /** `role_tiers_name_len` (migration `20261111140000`). */
 export const ROLE_TIER_NAME_MAX_LENGTH = 80;
-/** `role_tiers_position_range`: a chapter has at most this many tiers. */
-export const ROLE_TIER_POSITION_MAX = 1000;
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 
 /**

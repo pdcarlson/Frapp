@@ -26,7 +26,10 @@ import {
   roleRank,
 } from '#domain/utils/role-rank';
 import { User } from '#domain/entities/user.entity';
-import { SystemPermissions } from '#domain/constants/permissions';
+import {
+  SystemPermissions,
+  SystemRoleKeys,
+} from '#domain/constants/permissions';
 import { CustomFieldService } from './custom-field.service';
 import { RbacService } from './rbac.service';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
@@ -401,16 +404,26 @@ export class MemberService {
         'You can only give or take away roles ranked below your own, and only from members ranked below you.',
       );
     }
-    if (isSelf) {
-      const gained = permissionsNotHeld(
-        reach,
-        flattenPermissionSets(after.map((role) => role.permissions)),
+    // Nobody hands out a permission they don't hold, to anyone: a lower role
+    // can still carry one (a role outside the tiers, an override), and a
+    // second account would otherwise collect it. What the Member role carries
+    // is exempt, since every member gets it.
+    const base = new Set(
+      roles.find((role) => role.system_key === SystemRoleKeys.MEMBER)
+        ?.permissions ?? [],
+    );
+    const missing = permissionsNotHeld(
+      reach,
+      flattenPermissionSets(
+        after
+          .filter((role) => !beforeIds.has(role.id))
+          .map((role) => role.permissions),
+      ),
+    ).filter((permission) => !base.has(permission));
+    if (missing.length > 0) {
+      throw new ForbiddenException(
+        `You can only give roles whose permissions you hold: ${missing.join(', ')}.`,
       );
-      if (gained.length > 0) {
-        throw new ForbiddenException(
-          `You can't give yourself a role with permissions you don't have: ${gained.join(', ')}.`,
-        );
-      }
     }
   }
 

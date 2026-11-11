@@ -29,7 +29,11 @@ import {
 import { isSubscriptionHardLocked } from '#domain/constants/subscription-grace';
 import { NotificationService } from './notification.service';
 import { RbacService } from './rbac.service';
-import { ranksAtOrAbove, roleRank } from '#domain/utils/role-rank';
+import {
+  permissionsNotHeld,
+  ranksAtOrAbove,
+  roleRank,
+} from '#domain/utils/role-rank';
 import { ActivationService } from './activation.service';
 import { ChatService } from './chat.service';
 import { LegalAcceptanceService } from './legal-acceptance.service';
@@ -265,7 +269,13 @@ export class InviteService {
    * included: the President role moves only through Transfer presidency, and
    * the redeem refuses it as well ({@link resolveRedeemRoles}).
    *
-   * A name no role carries passes: the redeem then grants the Member role.
+   * The inviter must also hold every permission the role carries, so an
+   * invite into a peer's role cannot bring in what the inviter lacks (a Vice
+   * President inviting a second account as Treasurer for `billing:manage`).
+   * What the chapter's Member role carries is exempt: every member gets it.
+   *
+   * The role checked is the one the redeem grants: a name no role carries is
+   * checked as the Member role it falls back to.
    */
   private async assertInviteRoleWithinReach(
     chapterId: string,
@@ -276,7 +286,9 @@ export class InviteService {
       chapterId,
       inviterUserId,
     );
-    const role = roles.find((candidate) => candidate.name === roleName);
+    const member = roles.find((r) => r.system_key === SystemRoleKeys.MEMBER);
+    const role =
+      roles.find((candidate) => candidate.name === roleName) ?? member;
     if (!role) return;
     if (role.permissions.includes(WILDCARD)) {
       throw new ForbiddenException(
@@ -289,6 +301,15 @@ export class InviteService {
     ) {
       throw new ForbiddenException(
         'You can only invite people into a role ranked at or below your own.',
+      );
+    }
+    const base = new Set(member?.permissions ?? []);
+    const missing = permissionsNotHeld(reach, role.permissions).filter(
+      (permission) => !base.has(permission),
+    );
+    if (missing.length > 0) {
+      throw new ForbiddenException(
+        `You can only invite people into a role whose permissions you hold: ${missing.join(', ')}.`,
       );
     }
   }

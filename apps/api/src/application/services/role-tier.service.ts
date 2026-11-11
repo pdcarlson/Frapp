@@ -10,19 +10,17 @@ import { ROLE_TIER_REPOSITORY } from '#domain/repositories/role-tier.repository.
 import type { IRoleTierRepository } from '#domain/repositories/role-tier.repository.interface';
 import { RoleTier } from '#domain/entities/role.entity';
 import { WILDCARD } from '#domain/constants/permissions';
+import { addedPermissions, canReach } from '#domain/utils/role-rank';
+import { ROLE_TIER_POSITION_MAX } from '#domain/constants/field-limits';
 import {
-  addedPermissions,
-  canReach,
-  permissionsNotHeld,
-} from '#domain/utils/role-rank';
-import { grantRefusal, RANK_REFUSAL, RbacService } from './rbac.service';
+  assertPermissionsHeld,
+  RANK_REFUSAL,
+  RbacService,
+} from './rbac.service';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
 
 /** `target_type` of a tier's audit rows. */
 const AUDIT_TARGET_TYPE = 'role_tier';
-
-/** `role_tiers_position_range` (migration `20261111140000`). */
-const MAX_TIERS = 1000;
 
 /**
  * A chapter's tiers of roles (#4071): add, rename, set permissions, reorder
@@ -71,11 +69,11 @@ export class RoleTierService {
     if (!reach.wildcard && !Number.isFinite(reach.rank)) {
       throw new ForbiddenException(RANK_REFUSAL);
     }
-    assertHeld(permissionsNotHeld(reach, permissions));
+    assertPermissionsHeld(reach, permissions);
     const position = Math.max(0, ...tiers.map((tier) => tier.position)) + 1;
-    if (position > MAX_TIERS) {
+    if (position > ROLE_TIER_POSITION_MAX) {
       throw new BadRequestException(
-        `A chapter can have at most ${MAX_TIERS} tiers`,
+        `A chapter can have at most ${ROLE_TIER_POSITION_MAX} tiers`,
       );
     }
 
@@ -128,11 +126,9 @@ export class RoleTierService {
       throw new ForbiddenException(RANK_REFUSAL);
     }
     if (changes.permissions) {
-      assertHeld(
-        permissionsNotHeld(
-          reach,
-          addedPermissions(tier.permissions, changes.permissions),
-        ),
+      assertPermissionsHeld(
+        reach,
+        addedPermissions(tier.permissions, changes.permissions),
       );
     }
     if (Object.keys(changes).length === 0) return tier;
@@ -234,7 +230,11 @@ export class RoleTierService {
       throw new ForbiddenException(RANK_REFUSAL);
     }
     const hasRoles = roles.some((role) => role.tier_id === tierId);
-    if (hasRoles || (await this.tierRepo.delete(tierId, chapterId))) {
+    const result = hasRoles
+      ? 'has_roles'
+      : await this.tierRepo.delete(tierId, chapterId);
+    if (result === 'missing') throw new NotFoundException('Tier not found');
+    if (result === 'has_roles') {
       throw new ConflictException(
         'Move the roles in this tier to another tier before deleting it',
       );
@@ -267,10 +267,6 @@ function tierPermissions(permissions: readonly string[]): string[] {
     );
   }
   return [...new Set(permissions)].sort();
-}
-
-function assertHeld(missing: string[]): void {
-  if (missing.length > 0) throw new ForbiddenException(grantRefusal(missing));
 }
 
 /**

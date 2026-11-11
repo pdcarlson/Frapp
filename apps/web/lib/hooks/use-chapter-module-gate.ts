@@ -15,7 +15,7 @@ import { useChapterStore } from "@/lib/stores/chapter-store";
  *
  * **It reads `enabled_modules` from `GET /v1/chapters/current`, not from
  * `useOrgConfig()`.** The config read (`GET /v1/chapters/:id/config`) is guarded
- * by `chapter-config:view`, which no seeded role below President holds. For an
+ * by `chapter-config:view`, which no seeded role below the Exec board holds. For an
  * ordinary member that query therefore errors on every load, and a gate built
  * on it failed open for good: members kept seeing rows for modules their
  * chapter had switched off (#1982). Chat's slash gate failed the other way,

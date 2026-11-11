@@ -67,7 +67,7 @@ export function ranksAtOrAbove(a: number, b: number): boolean {
 
 /**
  * Who is acting, for the rank rules: what they hold and how high they rank.
- * Built by `RbacService.getActorReach` from one read of the chapter's roles
+ * Built by `RbacService.getRankContext` from one read of the chapter's roles
  * and tiers.
  */
 export interface ActorReach {

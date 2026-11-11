@@ -607,7 +607,7 @@ export type MemberViewVocabulary = {
 /**
  * A chapter's vocabulary from the member view (`GET /v1/chapters/current`),
  * shaped for `vocab()`. Any member can read the member view; the config read
- * needs `chapter-config:view`, which no seeded role below President holds
+ * needs `chapter-config:view`, which no seeded role below the Exec board holds
  * (#2957). The member view carries the stored `vocabulary` column as-is, so
  * this lays the chapter's stored words over its archetype's defaults, as
  * `ChapterConfigService.getConfig` does. Without it a chapter with no stored

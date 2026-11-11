@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  NotFoundException,
 } from '@nestjs/common';
 import { RoleTierService } from './role-tier.service';
 import type { RbacService } from './rbac.service';
@@ -50,7 +51,7 @@ describe('RoleTierService', () => {
             position: index + 1,
           })),
       ),
-      delete: jest.fn().mockResolvedValue(undefined),
+      delete: jest.fn().mockResolvedValue('deleted'),
     };
     audit = createAuditLogServiceMock();
     const rbac = {
@@ -190,6 +191,26 @@ describe('RoleTierService', () => {
         targetId: 'tier-empty',
       }),
     );
+  });
+
+  it("stops a chair deleting their own tier or one above, even when it's empty", async () => {
+    // The top tier, emptied: the board's roles now sit in none.
+    tiers[0] = { ...tiers[0], id: 'tier-empty-top' };
+    for (const tierId of ['tier-empty-top', TIER.chairs]) {
+      await expect(
+        service.delete(tierId, CHAPTER_ID, USER.riskChair),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    }
+    expect(repo.delete).not.toHaveBeenCalled();
+  });
+
+  it('answers a tier someone else just deleted with 404, and records nothing', async () => {
+    tiers.push({ ...tiers[3], id: 'tier-empty', position: 5 });
+    repo.delete.mockResolvedValueOnce('missing');
+    await expect(
+      service.delete('tier-empty', CHAPTER_ID, USER.president),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(audit.record).not.toHaveBeenCalled();
   });
 
   it('records a rename and a permission change as one tier_updated row', async () => {

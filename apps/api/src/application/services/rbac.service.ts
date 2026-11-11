@@ -27,6 +27,7 @@ import { flattenPermissionSets } from '#domain/utils/permissions';
 import {
   addedPermissions,
   canReach,
+  OUTSIDE_TIERS_RANK,
   effectivePermissions,
   holderRank,
   permissionsNotHeld,
@@ -87,6 +88,17 @@ export const RANK_REFUSAL =
 /** Refusal when a write would grant what the caller does not hold (#4071). */
 export function grantRefusal(missing: readonly string[]): string {
   return `You can't give a role or tier a permission you don't have yourself: ${missing.join(', ')}.`;
+}
+
+/** Refuses (403) when `granted` holds a permission the caller lacks. */
+export function assertPermissionsHeld(
+  reach: ActorReach,
+  granted: Iterable<string>,
+): void {
+  const missing = permissionsNotHeld(reach, granted);
+  if (missing.length > 0) {
+    throw new ForbiddenException(grantRefusal(missing));
+  }
 }
 
 /**
@@ -201,8 +213,9 @@ export class RbacService {
 
   /**
    * `POST /v1/roles` for a member: {@link create} behind the rank rules. The
-   * role may only go into a tier ranked below the caller (outside the tiers
-   * is always below), and may only hold permissions the caller holds.
+   * role may only go into a tier ranked below the caller, or outside the
+   * tiers (below every tier, so refused to a caller who ranks there too),
+   * and may only hold permissions the caller holds.
    */
   async createAsMember(
     chapterId: string,
@@ -213,6 +226,9 @@ export class RbacService {
     > & { tier_id?: string | null },
   ): Promise<Role> {
     const context = await this.getRankContext(chapterId, actorUserId);
+    if (!canReach(context.reach, OUTSIDE_TIERS_RANK)) {
+      throw new ForbiddenException(RANK_REFUSAL);
+    }
     const tierId = data.tier_id ?? null;
     let tierPermissions: readonly string[] = [];
     if (tierId !== null) {
@@ -227,7 +243,7 @@ export class RbacService {
     // none takes its tier's.
     const listed = data.permissions ?? [];
     const holds = listed.length > 0 ? listed : tierPermissions;
-    this.assertHeld(context.reach, holds);
+    assertPermissionsHeld(context.reach, holds);
     return this.create(chapterId, actorUserId, { ...data, tier_id: tierId });
   }
 
@@ -310,7 +326,7 @@ export class RbacService {
           : context.tiers.find((candidate) => candidate.id === tierId);
       after = effectivePermissions(tier?.permissions ?? [], overrides);
     }
-    this.assertHeld(context.reach, [
+    assertPermissionsHeld(context.reach, [
       ...addedPermissions(role.permissions, after),
       ...switchedOn,
     ]);
@@ -345,14 +361,6 @@ export class RbacService {
       throw new ForbiddenException(RANK_REFUSAL);
     }
     return this.delete(roleId, chapterId, actorUserId);
-  }
-
-  /** Refuses (403) when `granted` holds a permission the caller lacks. */
-  private assertHeld(reach: ActorReach, granted: Iterable<string>): void {
-    const missing = permissionsNotHeld(reach, granted);
-    if (missing.length > 0) {
-      throw new ForbiddenException(grantRefusal(missing));
-    }
   }
 
   /** One of the chapter's tiers, or 400: a tier id is caller-supplied. */
@@ -662,13 +670,31 @@ export class RbacService {
     );
     if (!memberRole) return null;
 
+    // Ranked by tier, not by `display_order`, which a `roles:manage` holder
+    // can set on a role below them (#4071): an empty role outside the tiers
+    // at display_order 0 would otherwise make its holder the only claimant.
+    // Only roles in a tier ranked above the Member role's are candidates (any
+    // tier, once Member sits outside them, #4191); display_order breaks ties
+    // within a tier.
+    const positions = tierPositions(
+      await this.tierRepo.findByChapter(chapterId),
+    );
+    const memberRank = roleRank(memberRole, positions);
     const candidateRoles = roles
-      .filter(
-        (r) =>
+      .filter((r) => {
+        const rank = roleRank(r, positions);
+        return (
           r.id !== presidentRole.id &&
-          r.display_order < memberRole.display_order,
-      )
-      .sort((a, b) => a.display_order - b.display_order);
+          r.id !== memberRole.id &&
+          Number.isFinite(rank) &&
+          rank < memberRank
+        );
+      })
+      .sort(
+        (a, b) =>
+          roleRank(a, positions) - roleRank(b, positions) ||
+          a.display_order - b.display_order,
+      );
     if (!candidateRoles.length) return null;
 
     const members = await this.memberRepo.findByChapter(chapterId);
