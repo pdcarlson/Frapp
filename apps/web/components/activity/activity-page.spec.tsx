@@ -9,8 +9,10 @@ const mockNetwork = vi.fn(() => ({ isOffline: false }));
 vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/hooks")>();
   return {
-    TASK_STATUS_LABELS: actual.TASK_STATUS_LABELS,
-    TASK_CONFIRMED_LABEL: actual.TASK_CONFIRMED_LABEL,
+    // The row model is the real one (`activityGroups` and its tables).
+    ACTIVITY_FILTERS: actual.ACTIVITY_FILTERS,
+    ACTIVITY_SECTION_NAMES: actual.ACTIVITY_SECTION_NAMES,
+    activityGroups: actual.activityGroups,
     activityKeys: actual.activityKeys,
     useActiveChapterId: () => "chap-1",
     useActivity: () => mockActivity(),
