@@ -27,6 +27,7 @@ import type { ChatChannel, ChatMessage } from '#domain/entities/chat.entity';
 import { ReportedMessageGrant } from './channel-access.service';
 import type { ChatMessageReportView } from '#domain/entities/chat-moderation.entity';
 import { BLOCKED_MESSAGE_CONTENT } from './chat-block-mask';
+import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
 
 describe('ChatService', () => {
   let service: ChatService;
@@ -4115,6 +4116,91 @@ describe('ChatService', () => {
         'msg-1',
         expect.objectContaining({ mentions: [] }),
       );
+    });
+
+    // #3844: a reply pings the author it quotes, as an @mention does.
+    describe('a reply counts as a mention of the quoted author', () => {
+      const quoted = (overrides: Partial<ChatMessage> = {}): ChatMessage => ({
+        ...baseMessage,
+        id: 'msg-quoted',
+        sender_id: 'user-2',
+        ...overrides,
+      });
+      const reply = (content = 'agreed') =>
+        service.sendMessage({
+          channel_id: 'ch-chan-1',
+          chapter_id: 'ch-1',
+          sender_id: 'user-1',
+          content,
+          reply_to_id: 'msg-quoted',
+        });
+      const stored = () => mockMessageRepo.create.mock.calls.at(-1)?.[0]?.mentions;
+
+      beforeEach(() => {
+        seedRoster();
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+      });
+
+      it('adds the quoted author to mentions', async () => {
+        mockMessageRepo.findById.mockResolvedValue(quoted());
+        await reply();
+        expect(stored()).toEqual(['user-2']);
+        expect(mockChatBlocks.isBlockedEitherWay).toHaveBeenCalledWith(
+          'ch-1',
+          'user-1',
+          'user-2',
+        );
+      });
+
+      it('lists the author once when the reply also @mentions them', async () => {
+        mockMessageRepo.findById.mockResolvedValue(quoted());
+        await reply('@janedoe agreed');
+        expect(stored()).toEqual(['user-2']);
+      });
+
+      it.each([
+        ['a reply to yourself', { sender_id: 'user-1' }],
+        ['a row with no linked member', { sender_id: null, kind: 'imported' }],
+        ['a system row', { sender_id: SYSTEM_SENDER_ID }],
+        ['a deleted message', { is_deleted: true }],
+      ])('pings nobody for %s', async (_label, overrides) => {
+        mockMessageRepo.findById.mockResolvedValue(quoted(overrides));
+        await reply();
+        expect(stored()).toEqual([]);
+      });
+
+      it('pings nobody across a block, either way', async () => {
+        mockMessageRepo.findById.mockResolvedValue(quoted());
+        mockChatBlocks.isBlockedEitherWay.mockResolvedValue(true);
+        await reply();
+        expect(stored()).toEqual([]);
+      });
+
+      it('still sends, without the ping, when blocks cannot be read', async () => {
+        mockMessageRepo.findById.mockResolvedValue(quoted());
+        mockChatBlocks.isBlockedEitherWay.mockRejectedValue(new Error('pg down'));
+        await expect(reply()).resolves.toEqual({
+          message: baseMessage,
+          deduplicated: false,
+        });
+        expect(stored()).toEqual([]);
+      });
+
+      it('keeps the ping through an edit', async () => {
+        mockMessageRepo.findById.mockImplementation((id: string) =>
+          Promise.resolve(
+            id === 'msg-quoted'
+              ? quoted()
+              : { ...baseMessage, reply_to_id: 'msg-quoted' },
+          ),
+        );
+        mockMessageRepo.update.mockResolvedValue(baseMessage);
+        await service.editMessage('msg-1', 'ch-1', 'user-1', 'agreed, edited');
+        expect(mockMessageRepo.update).toHaveBeenCalledWith(
+          'msg-1',
+          expect.objectContaining({ mentions: ['user-2'] }),
+        );
+      });
     });
 
     it('still sends when the directory lookup fails', async () => {

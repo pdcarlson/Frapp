@@ -183,6 +183,7 @@ A message that would take too long to format renders as its raw text too, decide
 - A message can be a reply to another message via `reply_to_id`. The UI shows the replied-to message as a quote/preview above the reply.
 - This is Discord-style reply-with-quote, not Slack-style nested threads. All replies appear in the main channel timeline.
 - Replying to a reply references the root message (no deep nesting).
+- A reply notifies the author it quotes as an @mention does: push, mention badge and highlight (#3844, [`notifications.md` § Per-Channel Mute](../notifications.md#per-channel-mute)).
 - Reply is offered where the channel takes replies: the viewer can post there (`can_post`), and it is not read-only, since announcements can't be replied to in-thread. Both clients decide it with `channelAllowsReplies`, and root-normalize with `replyTargetId`, in `packages/chat-core/src/message-actions.ts`. Web stages a reply from a row's Reply control; mobile from the message's long-press sheet (#2775). Both show a "Replying to" strip above the composer with a cancel. Tapping a quote goes to the message it quotes when that message is loaded.
 
 **Message threads (#3785):**

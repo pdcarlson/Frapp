@@ -188,6 +188,7 @@ Users can mute specific chat channels. Muted channels:
 - Do not generate push notifications for new messages.
 - Still show unread indicators in the app when opened.
 - @mentions in muted channels still generate notifications (override mute).
+- A reply to your message counts as an @mention of you, so it overrides mute too (#3844). `ChatService` adds the quoted message's author to the reply's server-resolved `chat_messages.mentions` at send and keeps them there through an edit, so the push, the channel's `@ N` mention count (`GET /v1/channels/unread`), the in-app notification row and the mention highlight all follow from the one list, and a reply that also @mentions the author lists them once. The block rule is applied there in both directions; the push worker's own read and block filters still apply on top. A quote reply never overlaps a thread-reply push: a thread reply cannot carry `reply_to_id` ([`chat/README.md` § Message threads](chat/README.md)).
 
 The mention-override is implemented in the push worker's `decidePush`
 (`apps/api/src/application/services/push-rules.ts`): a `hasMention` recipient is sent a
@@ -375,6 +376,7 @@ A push is read on a lock screen, in a glance, next to iOS Calendar and Google Ca
 | Domain        | Trigger                                                            | Priority                    |
 | ------------- | ------------------------------------------------------------------ | --------------------------- |
 | Chat          | @mention                                                           | NORMAL                      |
+| Chat          | Reply to your message: counts as an @mention of the quoted author (#3844; Discord's default, "@ON" when replying). Not for a reply to yourself, to a deleted message, to a system row or an imported one with no linked member, across a block either way, or when the author can no longer read the channel. A reply that also @mentions them notifies once. No per-reply or member-side toggle yet | NORMAL |
 | Chat          | DM received                                                        | NORMAL                      |
 | Chat          | New message in unmuted channel                                     | NORMAL                      |
 | Announcements | New announcement posted                                            | URGENT                      |
