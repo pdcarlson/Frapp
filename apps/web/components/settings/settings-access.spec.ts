@@ -173,7 +173,8 @@ describe("hasSettingsDestination", () => {
     expect(hasSettingsDestination(MEMBER, () => true)).toBe(false);
   });
 
-  it("fails open while permissions are unresolved, like the nav", () => {
-    expect(hasSettingsDestination(undefined, () => false)).toBe(true);
+  it("is false while permissions are unresolved, like the nav (#3854)", () => {
+    expect(hasSettingsDestination(undefined, () => true)).toBe(false);
+    expect(hasSettingsDestination(null, () => true)).toBe(false);
   });
 });

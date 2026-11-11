@@ -74,12 +74,20 @@ function isGranted(
  * question before it draws a section's heading: a heading is a promise that
  * something the viewer can open sits under it.
  *
- * The permission and module gates are deliberately fail-open while their source is unresolved:
- * `permissions` is undefined until the query settles, and `isModuleEnabled` is
- * undefined until the current-chapter read settles. Showing a link one render early is
- * harmless — the route itself is guarded server-side — whereas hiding one is a
- * visible flash of nav items disappearing. (`<Can>` fails closed instead,
- * because it guards actions rather than signposts.)
+ * The permission gate fails CLOSED while `permissions` is unresolved
+ * (undefined until the query settles, and left that way if it fails): a row
+ * that declares `requirePermission`, `requireAnyOf` or `showWhen` stays hidden
+ * until the viewer's grants are known (#3854). It used to fail open, so on
+ * every reload a member saw officer doors (Chapter settings, Billing before
+ * #3827) appear, take a click, and vanish, which read as broken and as "I can
+ * get in there". Gated rows all sit at the foot of the list, above the pinned
+ * collapse toggle, so an officer's rows arriving a beat late move nothing
+ * already drawn. Rows with no permission rule render at once.
+ *
+ * The module gate still fails open: `isModuleEnabled` is undefined until the
+ * current-chapter read settles, and a module row is open to every member, so
+ * showing it early only risks a member-visible row disappearing when an
+ * officer has switched its module off.
  *
  * `hiddenFeatures` is the third gate, the setup gate, from
  * `useHiddenUnsetFeatures`: the features nobody has set up that this viewer
@@ -95,7 +103,14 @@ export function isNavItemVisible(
   hiddenFeatures?: ReadonlySet<UnsetFeatureKey>,
 ): boolean {
   const resolved = permissions !== undefined && permissions !== null;
-  if (resolved && !isGranted(item, permissions)) {
+  const gated =
+    item.requirePermission !== undefined ||
+    item.requireAnyOf !== undefined ||
+    item.showWhen !== undefined;
+  if (!resolved) {
+    // Fail closed (#3854): never draw a door before we know it opens.
+    if (gated) return false;
+  } else if (!isGranted(item, permissions)) {
     return false;
   }
   if (item.module && isModuleEnabled && !isModuleEnabled(item.module)) {
@@ -118,12 +133,11 @@ export function isNavItemVisible(
  * Dashboard sidebar entry that hides itself when the caller lacks the
  * item's required permissions.
  *
- * Permission checks fall back to the plain "always show" behavior while
- * the permissions query is loading — UI hides only when the fetch has
- * resolved and the caller definitively lacks access. This avoids a flash
- * of nav options during the initial load. Module gating (Chunk 06) layers
- * on top: an item tied to a disabled module is hidden once the current-chapter
- * read has settled.
+ * A permission-gated item stays hidden until the permissions query has
+ * answered and granted it (`isNavItemVisible`), so a member never sees, or
+ * clicks, an officer row that is about to vanish (#3854). Module gating
+ * layers on top: an item tied to a disabled module is hidden once the
+ * current-chapter read has settled.
  */
 export function ProtectedNavItem({
   item,

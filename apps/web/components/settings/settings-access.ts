@@ -197,13 +197,14 @@ export function visibleSettingsTools(
  * treasurer whose only tool is Reports loses the row when the chapter switches
  * Reports off, the same way the Reports row used to hide (#2946).
  *
- * Fails open while permissions are unresolved, like every nav gate.
+ * False while permissions are unresolved: a door is drawn only once the
+ * viewer's grants are known to open it (#3854), as the nav's gated rows wait.
  */
 export function hasSettingsDestination(
   permissions: readonly string[] | null | undefined,
   isModuleEnabled?: (moduleKey: string) => boolean,
 ): boolean {
-  if (permissions === undefined || permissions === null) return true;
+  if (permissions === undefined || permissions === null) return false;
   const anyTab = canAny(
     [
       CHAPTER_CONFIG_VIEW,

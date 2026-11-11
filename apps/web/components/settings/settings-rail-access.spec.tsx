@@ -27,7 +27,10 @@ afterEach(() => {
  */
 
 const { permissions, search, currentChapter } = vi.hoisted(() => ({
-  permissions: { current: undefined as string[] | undefined },
+  permissions: {
+    current: undefined as string[] | undefined,
+    failed: false,
+  },
   search: { current: "" },
   currentChapter: {
     current: {
@@ -52,8 +55,11 @@ vi.mock("@repo/hooks", () => ({
     data: permissions.current
       ? { permissions: permissions.current }
       : undefined,
-    isPending: false,
-    isError: false,
+    isPending: !permissions.current && !permissions.failed,
+    isError: permissions.failed,
+    error: permissions.failed ? new Error("Network down") : null,
+    fetchStatus: "idle",
+    refetch: vi.fn(),
   }),
   usePermissionsCatalog: () => ({ data: [], isPending: false, isError: false }),
   useSemesters: () => ({ data: [], isPending: false, isError: false }),
@@ -151,6 +157,7 @@ const MODULE_ROWS = [
 describe("Settings shows each viewer what they can use", () => {
   beforeEach(() => {
     permissions.current = undefined;
+    permissions.failed = false;
     search.current = "";
     currentChapter.current = {
       ...currentChapter.current,
@@ -298,8 +305,20 @@ describe("Settings shows each viewer what they can use", () => {
     expect(tabNames()).toEqual([]);
   });
 
-  it("shows every tab while permissions are still loading, so nothing flashes out", () => {
+  it("draws no tab or tool until permissions answer (#3854)", () => {
+    // A member who reaches /settings by URL, or by the nav's old early click,
+    // used to see an officer's whole rail before it was taken back.
     render(<SettingsPage />);
-    expect(tabNames()).toHaveLength(7 + MODULE_ROWS.length);
+    expect(tabNames()).toEqual([]);
+    expect(tools()).toEqual([]);
+    expect(screen.getByText("Loading chapter settings")).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing in Chapter settings/)).not.toBeInTheDocument();
+  });
+
+  it("refuses to guess when the permission read fails", () => {
+    permissions.failed = true;
+    render(<SettingsPage />);
+    expect(tabNames()).toEqual([]);
+    expect(screen.getByText("Couldn't load chapter settings")).toBeInTheDocument();
   });
 });

@@ -114,7 +114,7 @@ function SettingsPageContent() {
     enabled: !!activeChapterId,
   });
   const orgConfigQuery = useOrgConfig();
-  const { data: permissionsPayload } = useMyPermissions({
+  const { data: permissionsPayload, ...permissionsRead } = useMyPermissions({
     enabled: !!activeChapterId,
   });
   const isModuleEnabled = useChapterModuleGate();
@@ -241,7 +241,7 @@ function SettingsPageContent() {
   const chapterPaused =
     chapterQuery.isPending && chapterQuery.fetchStatus === "paused";
   let stateBanner: React.ReactNode = null;
-  if (isOffline && anyReadUncached(chapterQuery)) {
+  if (isOffline && anyReadUncached(chapterQuery, { data: permissionsPayload })) {
     stateBanner = (
       <OfflineState
         title="Chapter settings unavailable offline"
@@ -259,6 +259,24 @@ function SettingsPageContent() {
         onRetry={() => void chapterQuery.refetch()}
       />
     );
+  } else if (permissionsPayload === undefined) {
+    /*
+      The tabs and tools below are filtered by the viewer's permissions, and
+      `isSettingsTabVisible` shows everything while they are unknown. So until
+      the read answers, the page holds its skeleton rather than drawing an
+      officer's rail for a member who arrived by URL and then taking it back
+      (#3854). A failed read refuses to guess either way.
+    */
+    stateBanner =
+      permissionsRead.isError && permissionsRead.fetchStatus !== "fetching" ? (
+        <ErrorState
+          title="Couldn't load chapter settings"
+          description={`${describeLoadFailure(permissionsRead.error)} Your role decides what this page shows.`}
+          onRetry={() => void permissionsRead.refetch()}
+        />
+      ) : (
+        <SettingsBodySkeleton />
+      );
   }
 
   if (stateBanner) {
