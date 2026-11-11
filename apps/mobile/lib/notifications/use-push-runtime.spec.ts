@@ -20,12 +20,20 @@ const mockState = vi.hoisted(() => ({
   launchResponse: null as unknown,
   responseListeners: [] as Array<(response: unknown) => void>,
   markRead: vi.fn(),
+  pathname: "/",
+  searchParams: {} as Record<string, string>,
+  router: {
+    push: vi.fn(),
+    replace: vi.fn(),
+    navigate: vi.fn(),
+    dismissTo: vi.fn(),
+  },
 }));
 
 vi.mock("expo-router", () => ({
-  useRouter: () => ({ push: vi.fn() }),
-  usePathname: () => "/",
-  useGlobalSearchParams: () => ({}),
+  useRouter: () => mockState.router,
+  usePathname: () => mockState.pathname,
+  useGlobalSearchParams: () => mockState.searchParams,
 }));
 
 vi.mock("../auth-session", () => ({
@@ -109,6 +117,8 @@ beforeEach(() => {
   mockState.launchResponse = null;
   mockState.responseListeners = [];
   mockState.markRead.mockClear();
+  mockState.pathname = "/";
+  mockState.searchParams = {};
   mockState.register.mockClear();
   mockState.remove.mockClear();
 });
@@ -288,5 +298,59 @@ describe("usePushRuntime marks a tapped notification read", () => {
 
     expect(mockState.markRead).toHaveBeenCalledTimes(1);
     expect(mockState.markRead).toHaveBeenCalledWith("notif-held");
+  });
+});
+
+describe("usePushRuntime opens a tapped thread reply (#4054)", () => {
+  const threadTap = (threadRootId: string) => ({
+    notification: {
+      request: {
+        content: {
+          data: {
+            notificationId: "n-thread",
+            target: { screen: "chat", channelId: "c1", threadRootId },
+          },
+        },
+      },
+    },
+  });
+
+  beforeEach(() => {
+    mockState.isAuthenticated = true;
+    mockState.status = "authenticated";
+  });
+
+  it("pushes the thread's channel, then the thread over it", () => {
+    mockState.launchResponse = threadTap("m1");
+    renderHook(() => usePushRuntime());
+
+    expect(mockState.router.push.mock.calls).toEqual([
+      ["/chat-thread?channelId=c1"],
+      ["/chat-thread?channelId=c1&threadRootId=m1"],
+    ]);
+  });
+
+  it("stays on the thread when the tap is for the one already open", () => {
+    mockState.pathname = "/chat-thread";
+    mockState.searchParams = { channelId: "c1", threadRootId: "m1" };
+    mockState.launchResponse = threadTap("m1");
+    renderHook(() => usePushRuntime());
+
+    expect(mockState.router.push).not.toHaveBeenCalled();
+    expect(mockState.router.replace).not.toHaveBeenCalled();
+    // It was still seen, so it is still marked read.
+    expect(mockState.markRead).toHaveBeenCalledWith("n-thread");
+  });
+
+  it("stacks another thread's reply over the open one", () => {
+    mockState.pathname = "/chat-thread";
+    mockState.searchParams = { channelId: "c1", threadRootId: "m0" };
+    mockState.launchResponse = threadTap("m1");
+    renderHook(() => usePushRuntime());
+
+    expect(mockState.router.push.mock.calls).toEqual([
+      ["/chat-thread?channelId=c1"],
+      ["/chat-thread?channelId=c1&threadRootId=m1"],
+    ]);
   });
 });

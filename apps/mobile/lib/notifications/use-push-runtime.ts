@@ -109,9 +109,16 @@ export function usePushRuntime(): void {
   }>();
   const pathname = replaceablePathname(usePathname(), threadRootId);
   const pathnameRef = useRef(pathname);
+  // The open thread's root, so a tap for a reply in the thread already on
+  // screen stays put rather than stacking its channel and itself again.
+  const openRootId = Array.isArray(threadRootId)
+    ? threadRootId[0]
+    : threadRootId;
+  const openRootIdRef = useRef(openRootId);
   useLayoutEffect(() => {
     pathnameRef.current = pathname;
-  }, [pathname]);
+    openRootIdRef.current = openRootId;
+  }, [pathname, openRootId]);
   const isAuthenticated = useIsApiAuthenticated();
   const { isChapterResolving, status } = useAuthSession();
   const registerToken = useRegisterPushToken();
@@ -227,6 +234,8 @@ export function usePushRuntime(): void {
     // The same fallback check `app/(app)/notifications.tsx` makes: an
     // unrecognized payload resolves to the notification list, and pushing that
     // from a tap that arrived *as* a notification stacks the list on itself.
+    const rootId = target.params?.threadRootId;
+    if (rootId && rootId === openRootIdRef.current) return;
     if (target.pathname !== NOTIFICATION_FALLBACK_PATHNAME || target.params) {
       openNotificationTarget(router, target, pathnameRef.current);
     }
